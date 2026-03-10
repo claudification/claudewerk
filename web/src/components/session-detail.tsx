@@ -48,7 +48,10 @@ const InputBar = memo(function InputBar({ sessionId }: { sessionId: string }) {
       if (success) setInputValue('')
     } finally {
       setIsSending(false)
-      requestAnimationFrame(() => containerRef.current?.querySelector('textarea')?.focus())
+      // Re-focus on desktop only - on mobile this triggers the full-screen compose modal
+      if (window.innerWidth >= 640) {
+        requestAnimationFrame(() => containerRef.current?.querySelector('textarea')?.focus())
+      }
     }
   }
 
