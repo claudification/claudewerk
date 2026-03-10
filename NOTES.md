@@ -21,3 +21,5 @@
 - [x] In settings, add something where the voice input icon can be toggled on or off.. (and update markdowninput to take that as input)
 - [x] mobile ui need a button for QUICK NOTE
 - [x] push notifications!.. is there a hard coded key? or derived from rclaude key
+- [x] The agent, can already launch claude sessions at any CWD. I want to create a UI, where I can write, with completion, a path, where I want to spawn a new rclaude session using the same semantics... if the folder does NOT exist, I want to be prompted about it.
+- [ ] currently there can only be ONE agent, but the reality is, that there should be able to be multiple, one per machine, or container, or whatever.. that means, rclaude sessions MUST identify by some "machine" or something.. maybe we support mutliple rclaude_secret and that's how we identify what agent + rclaude runs on the same system?
