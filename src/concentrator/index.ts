@@ -523,6 +523,18 @@ async function main() {
                 }
                 break
               }
+              case 'spawn_result': {
+                if (verbose) {
+                  const ok = data.success ? 'OK' : 'FAIL'
+                  console.log(`[agent] Spawn ${ok}${data.error ? ` (${data.error})` : ''}`)
+                }
+                sessionStore.resolveSpawn(data.requestId, data)
+                break
+              }
+              case 'list_dirs_result': {
+                sessionStore.resolveDir(data.requestId, data)
+                break
+              }
 
               // Terminal relay: dashboard -> rclaude
               // Terminal messages: all routed by wrapperId (physical PTY identity)

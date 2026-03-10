@@ -4,7 +4,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import type { SendInput, Session, TeamInfo } from '../shared/protocol'
+import type { ListDirsResult, SendInput, Session, SpawnResult, TeamInfo } from '../shared/protocol'
 import { getGlobalSettings, updateGlobalSettings } from './global-settings'
 import { resolveInJail } from './path-jail'
 import { deleteProjectSettings, getAllProjectSettings, setProjectSettings } from './project-settings'
@@ -671,6 +671,122 @@ export function createApiHandler(options: ApiOptions) {
         })
       } catch (error) {
         return new Response(JSON.stringify({ error: `Failed to send revive: ${error}` }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+    }
+
+    // POST /api/spawn - Spawn a new rclaude session at an arbitrary CWD
+    if (req.method === 'POST' && path === '/api/spawn') {
+      const agent = sessionStore.getAgent()
+      if (!agent) {
+        return new Response(JSON.stringify({ error: 'No host agent connected' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      try {
+        const body = (await req.json()) as { cwd: string }
+        if (!body.cwd || typeof body.cwd !== 'string') {
+          return new Response(JSON.stringify({ error: 'Missing cwd field' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        }
+
+        const requestId = randomUUID()
+        const wrapperId = randomUUID()
+
+        // Set up a one-shot response listener with timeout
+        const result = await new Promise<SpawnResult>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            sessionStore.removeSpawnListener(requestId)
+            reject(new Error('Spawn timed out (15s)'))
+          }, 15000)
+
+          sessionStore.addSpawnListener(requestId, (msg: SpawnResult) => {
+            clearTimeout(timeout)
+            resolve(msg)
+          })
+
+          agent.send(
+            JSON.stringify({
+              type: 'spawn',
+              requestId,
+              cwd: body.cwd,
+              wrapperId,
+            }),
+          )
+        })
+
+        if (result.success) {
+          return new Response(
+            JSON.stringify({ success: true, wrapperId, tmuxSession: result.tmuxSession }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          )
+        }
+        return new Response(JSON.stringify({ error: result.error || 'Spawn failed' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      } catch (error) {
+        return new Response(JSON.stringify({ error: `Spawn failed: ${error}` }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+    }
+
+    // GET /api/dirs - List directories at a path (relayed to agent)
+    if (req.method === 'GET' && path === '/api/dirs') {
+      const agent = sessionStore.getAgent()
+      if (!agent) {
+        return new Response(JSON.stringify({ error: 'No host agent connected' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      const dirPath = url.searchParams.get('path') || '/'
+
+      try {
+        const requestId = randomUUID()
+
+        const result = await new Promise<ListDirsResult>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            sessionStore.removeDirListener(requestId)
+            reject(new Error('Directory listing timed out (5s)'))
+          }, 5000)
+
+          sessionStore.addDirListener(requestId, (msg: ListDirsResult) => {
+            clearTimeout(timeout)
+            resolve(msg)
+          })
+
+          agent.send(
+            JSON.stringify({
+              type: 'list_dirs',
+              requestId,
+              path: dirPath,
+            }),
+          )
+        })
+
+        if (result.error) {
+          return new Response(JSON.stringify({ error: result.error }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        }
+
+        return new Response(JSON.stringify({ path: dirPath, dirs: result.dirs }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      } catch (error) {
+        return new Response(JSON.stringify({ error: `${error}` }), {
           status: 500,
           headers: { 'Content-Type': 'application/json' },
         })

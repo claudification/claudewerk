@@ -9,8 +9,9 @@
  * connected, this process exits immediately.
  */
 
+import { existsSync, readdirSync, statSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
-import type { ConcentratorAgentMessage, ReviveResult } from '../shared/protocol'
+import type { ConcentratorAgentMessage, ListDirsResult, ReviveResult, SpawnResult } from '../shared/protocol'
 import { DEFAULT_CONCENTRATOR_URL } from '../shared/protocol'
 
 const RECONNECT_DELAY_MS = 5000
@@ -39,6 +40,8 @@ function parseArgs() {
   let secret = process.env.RCLAUDE_SECRET
   let verbose = false
   let reviveScript = DEFAULT_REVIVE_SCRIPT
+  let spawnRoot = process.env.HOME || '/root'
+  let noSpawn = false
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]
@@ -48,6 +51,10 @@ function parseArgs() {
       secret = args[++i]
     } else if (arg === '--revive-script') {
       reviveScript = resolve(args[++i])
+    } else if (arg === '--spawn-root') {
+      spawnRoot = resolve(args[++i])
+    } else if (arg === '--no-spawn') {
+      noSpawn = true
     } else if (arg === '-v' || arg === '--verbose') {
       verbose = true
     } else if (arg === '--help' || arg === '-h') {
@@ -58,14 +65,14 @@ function parseArgs() {
 
   if (!secret) secret = process.env.RCLAUDE_SECRET
 
-  return { concentratorUrl, secret, verbose, reviveScript }
+  return { concentratorUrl, secret, verbose, reviveScript, spawnRoot, noSpawn }
 }
 
 function printHelp() {
   console.log(`
-rclaude-agent - Host-side agent for session revival
+rclaude-agent - Host-side agent for session revival and spawning
 
-Connects to concentrator and listens for revive commands.
+Connects to concentrator and listens for revive/spawn commands.
 Spawns tmux + rclaude sessions on the host machine.
 
 USAGE:
@@ -75,10 +82,12 @@ OPTIONS:
   --concentrator <url>   Concentrator WebSocket URL (default: ${DEFAULT_CONCENTRATOR_URL})
   --secret <s>           Shared secret (or RCLAUDE_SECRET env)
   --revive-script <path> Path to revive-session.sh (default: auto-detected)
+  --spawn-root <path>    Root directory for relative spawn paths (default: $HOME)
   -v, --verbose          Enable verbose logging
   -h, --help             Show this help
 
-Only one agent can be connected at a time.
+Spawn security: directories need a .rclaude-spawn marker file at or above
+the target path to allow spawning. Only one agent can be connected at a time.
 `)
 }
 
@@ -157,7 +166,105 @@ async function reviveSession(
   return result
 }
 
-function connect(url: string, secret: string, reviveScript: string, verbose: boolean) {
+/**
+ * Expand path shortcuts: ~ -> $HOME, relative paths -> spawnRoot
+ */
+function expandPath(p: string, spawnRoot: string): string {
+  const home = process.env.HOME || '/root'
+  if (p.startsWith('~/')) return resolve(home, p.slice(2))
+  if (p === '~') return home
+  if (!p.startsWith('/')) return resolve(spawnRoot, p)
+  return resolve(p)
+}
+
+/**
+ * Check if a directory is spawn-approved.
+ * Walks up from `cwd` looking for a `.rclaude-spawn` marker file.
+ * If found at or above the target, spawn is allowed.
+ */
+function isSpawnApproved(cwd: string): boolean {
+  let dir = resolve(cwd)
+  const root = resolve('/')
+  while (true) {
+    if (existsSync(resolve(dir, '.rclaude-spawn'))) return true
+    if (dir === root) break
+    dir = dirname(dir)
+  }
+  return false
+}
+
+/**
+ * Spawn a new rclaude session at the given cwd.
+ * Reuses revive-session.sh with a synthetic sessionId.
+ */
+async function spawnSession(
+  cwd: string,
+  wrapperId: string,
+  reviveScript: string,
+  secret: string,
+  verbose: boolean,
+): Promise<{ success: boolean; error?: string; tmuxSession?: string }> {
+  if (!existsSync(cwd)) {
+    return { success: false, error: `Directory not found: ${cwd}` }
+  }
+
+  if (!isSpawnApproved(cwd)) {
+    return { success: false, error: `Spawn not allowed: no .rclaude-spawn marker at or above ${cwd}` }
+  }
+
+  // Use "spawn-<timestamp>" as synthetic sessionId (revive-session.sh uses it for tmux window naming)
+  const syntheticId = `spawn-${Date.now()}`
+  debug(`Spawning: ${reviveScript} ${syntheticId} ${cwd}`, verbose)
+
+  const proc = Bun.spawnSync([reviveScript, syntheticId, cwd], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+    env: { ...process.env, RCLAUDE_SECRET: secret, RCLAUDE_WRAPPER_ID: wrapperId },
+  })
+
+  const stdout = proc.stdout.toString().trim()
+  const stderr = proc.stderr.toString().trim()
+
+  if (verbose && stdout) debug(`Script stdout: ${stdout}`, verbose)
+  if (stderr) debug(`Script stderr: ${stderr}`, verbose)
+
+  let tmuxSession: string | undefined
+  for (const line of stdout.split('\n')) {
+    const [key, value] = line.split('=', 2)
+    if (key === 'TMUX_SESSION') tmuxSession = value
+  }
+
+  if (proc.exitCode === 0 || proc.exitCode === 1) {
+    return { success: true, tmuxSession }
+  }
+  return { success: false, error: stderr || `Script exited with code ${proc.exitCode}` }
+}
+
+/**
+ * List directories at a path for the dashboard's path autocomplete.
+ */
+function listDirs(dirPath: string): { dirs: string[]; error?: string } {
+  try {
+    const resolved = resolve(dirPath)
+    if (!existsSync(resolved)) {
+      return { dirs: [], error: `Path not found: ${dirPath}` }
+    }
+    const stat = statSync(resolved)
+    if (!stat.isDirectory()) {
+      return { dirs: [], error: `Not a directory: ${dirPath}` }
+    }
+    const entries = readdirSync(resolved, { withFileTypes: true })
+    const dirs = entries
+      .filter(e => e.isDirectory() && !e.name.startsWith('.'))
+      .map(e => e.name)
+      .sort()
+    return { dirs }
+  } catch (err) {
+    return { dirs: [], error: `${err}` }
+  }
+}
+
+function connect(url: string, secret: string, reviveScript: string, verbose: boolean, spawnRoot: string, noSpawn: boolean) {
   const wsUrl = secret ? `${url}?secret=${encodeURIComponent(secret)}` : url
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null
   let shouldReconnect = true
@@ -212,6 +319,52 @@ function connect(url: string, secret: string, reviveScript: string, verbose: boo
           }
           break
         }
+
+        case 'spawn': {
+          const spawnMsg = msg as { requestId: string; cwd: string; wrapperId: string }
+          if (noSpawn) {
+            ws.send(JSON.stringify({
+              type: 'spawn_result',
+              requestId: spawnMsg.requestId,
+              success: false,
+              error: 'Spawning disabled (--no-spawn)',
+            }))
+            break
+          }
+          const expandedCwd = expandPath(spawnMsg.cwd, spawnRoot)
+          log(`Spawning session at ${expandedCwd} (wrapper=${spawnMsg.wrapperId.slice(0, 8)})`)
+          const spawnRes = await spawnSession(expandedCwd, spawnMsg.wrapperId, reviveScript, secret, verbose)
+          const response: SpawnResult = {
+            type: 'spawn_result',
+            requestId: spawnMsg.requestId,
+            success: spawnRes.success,
+            error: spawnRes.error,
+            tmuxSession: spawnRes.tmuxSession,
+            wrapperId: spawnMsg.wrapperId,
+          }
+          ws.send(JSON.stringify(response))
+          if (spawnRes.success) {
+            log(`Spawned in tmux session "${spawnRes.tmuxSession}"`)
+          } else {
+            log(`Spawn failed: ${spawnRes.error}`)
+          }
+          break
+        }
+
+        case 'list_dirs': {
+          const dirMsg = msg as { requestId: string; path: string }
+          const expandedDir = expandPath(dirMsg.path, spawnRoot)
+          debug(`Listing dirs: ${expandedDir}`, verbose)
+          const dirResult = listDirs(expandedDir)
+          const dirResponse: ListDirsResult = {
+            type: 'list_dirs_result',
+            requestId: dirMsg.requestId,
+            dirs: dirResult.dirs,
+            error: dirResult.error,
+          }
+          ws.send(JSON.stringify(dirResponse))
+          break
+        }
       }
     } catch (err) {
       debug(`Failed to parse message: ${err}`, verbose)
@@ -223,7 +376,7 @@ function connect(url: string, secret: string, reviveScript: string, verbose: boo
 
     if (shouldReconnect) {
       log(`Disconnected. Reconnecting in ${RECONNECT_DELAY_MS / 1000}s...`)
-      setTimeout(() => connect(url, secret, reviveScript, verbose), RECONNECT_DELAY_MS)
+      setTimeout(() => connect(url, secret, reviveScript, verbose, spawnRoot, noSpawn), RECONNECT_DELAY_MS)
     }
   }
 
@@ -233,7 +386,7 @@ function connect(url: string, secret: string, reviveScript: string, verbose: boo
 }
 
 // Main
-const { concentratorUrl, secret, verbose, reviveScript } = parseArgs()
+const { concentratorUrl, secret, verbose, reviveScript, spawnRoot, noSpawn } = parseArgs()
 
 if (!secret) {
   console.error('ERROR: --secret or RCLAUDE_SECRET is required')
@@ -255,4 +408,5 @@ try {
 
 log('Starting host agent (single instance)')
 log(`Revive script: ${reviveScript}`)
-connect(concentratorUrl, secret, reviveScript, verbose)
+log(`Spawn root: ${spawnRoot}${noSpawn ? ' (DISABLED)' : ''}`)
+connect(concentratorUrl, secret, reviveScript, verbose, spawnRoot, noSpawn)

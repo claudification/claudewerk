@@ -143,6 +143,13 @@ export interface SessionStore {
   getAgent: () => ServerWebSocket<unknown> | undefined
   removeAgent: (ws: ServerWebSocket<unknown>) => void
   hasAgent: () => boolean
+  // Request-response listeners for agent relay (spawn, dir listing)
+  addSpawnListener: (requestId: string, cb: (result: any) => void) => void
+  removeSpawnListener: (requestId: string) => void
+  resolveSpawn: (requestId: string, result: any) => void
+  addDirListener: (requestId: string, cb: (result: any) => void) => void
+  removeDirListener: (requestId: string) => void
+  resolveDir: (requestId: string, result: any) => void
   saveState: () => Promise<void>
   clearState: () => Promise<void>
 }
@@ -1147,6 +1154,37 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     return bgTaskOutputCache.get(taskId)
   }
 
+  // Request-response listener maps for agent relay
+  const spawnListeners = new Map<string, (result: any) => void>()
+  const dirListeners = new Map<string, (result: any) => void>()
+
+  function addSpawnListener(requestId: string, cb: (result: any) => void) {
+    spawnListeners.set(requestId, cb)
+  }
+  function removeSpawnListener(requestId: string) {
+    spawnListeners.delete(requestId)
+  }
+  function resolveSpawn(requestId: string, result: any) {
+    const cb = spawnListeners.get(requestId)
+    if (cb) {
+      spawnListeners.delete(requestId)
+      cb(result)
+    }
+  }
+  function addDirListener(requestId: string, cb: (result: any) => void) {
+    dirListeners.set(requestId, cb)
+  }
+  function removeDirListener(requestId: string) {
+    dirListeners.delete(requestId)
+  }
+  function resolveDir(requestId: string, result: any) {
+    const cb = dirListeners.get(requestId)
+    if (cb) {
+      dirListeners.delete(requestId)
+      cb(result)
+    }
+  }
+
   function broadcastSessionUpdate(sessionId: string): void {
     const session = sessions.get(sessionId)
     if (session) {
@@ -1197,6 +1235,12 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     addBgTaskOutput,
     getBgTaskOutput,
     broadcastSessionUpdate,
+    addSpawnListener,
+    removeSpawnListener,
+    resolveSpawn,
+    addDirListener,
+    removeDirListener,
+    resolveDir,
     saveState,
     clearState,
   }

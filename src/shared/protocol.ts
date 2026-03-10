@@ -426,7 +426,23 @@ export interface ReviveResult {
   continued: boolean // true if --continue worked, false if fresh session
 }
 
-export type AgentMessage = AgentIdentify | ReviveResult
+export interface SpawnResult {
+  type: 'spawn_result'
+  requestId: string
+  success: boolean
+  error?: string
+  tmuxSession?: string
+  wrapperId?: string
+}
+
+export interface ListDirsResult {
+  type: 'list_dirs_result'
+  requestId: string
+  dirs: string[]
+  error?: string
+}
+
+export type AgentMessage = AgentIdentify | ReviveResult | SpawnResult | ListDirsResult
 
 // Concentrator -> Agent messages
 export interface ReviveSession {
@@ -434,6 +450,19 @@ export interface ReviveSession {
   sessionId: string
   cwd: string
   wrapperId: string // pre-assigned wrapperId so concentrator can correlate the incoming connection
+}
+
+export interface SpawnSession {
+  type: 'spawn'
+  requestId: string
+  cwd: string
+  wrapperId: string
+}
+
+export interface ListDirs {
+  type: 'list_dirs'
+  requestId: string
+  path: string
 }
 
 export interface AgentQuit {
@@ -446,7 +475,7 @@ export interface AgentReject {
   reason: string
 }
 
-export type ConcentratorAgentMessage = ReviveSession | AgentQuit | AgentReject
+export type ConcentratorAgentMessage = ReviveSession | SpawnSession | ListDirs | AgentQuit | AgentReject
 
 // Dashboard broadcast: agent status
 export interface AgentStatus {
