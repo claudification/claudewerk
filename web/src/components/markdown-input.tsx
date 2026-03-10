@@ -205,6 +205,13 @@ export function MarkdownInput({
     }
   }, [expanded])
 
+  // Focus textarea when entering expanded (mobile compose) mode
+  useEffect(() => {
+    if (expanded) {
+      requestAnimationFrame(() => textareaRef.current?.focus())
+    }
+  }, [expanded])
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     const ta = textareaRef.current
     // In expanded (mobile) mode: Enter = newline, no keyboard submit
