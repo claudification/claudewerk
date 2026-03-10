@@ -1,5 +1,6 @@
+import { Fzf } from 'fzf'
 import { FileText, FolderPlus } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FileInfo } from '@/hooks/use-file-editor'
 import { useSessionsStore } from '@/hooks/use-sessions'
 import { canTerminal, type Session } from '@/lib/types'
@@ -156,20 +157,27 @@ export function SessionSwitcher({ onSelect, onFileSelect, onClose }: SessionSwit
   const deduplicated = sessions.filter(s => s.status !== 'ended' || !activeCwds.has(s.cwd))
   const allSessions = [...deduplicated].sort((a, b) => b.startedAt - a.startedAt)
 
-  const filteredSessions = filter
-    ? allSessions.filter(s => {
-        const ps = projectSettings[s.cwd]
-        const haystack = `${s.cwd} ${ps?.label || ''} ${s.id} ${s.model || ''} ${s.status}`.toLowerCase()
-        return filter
-          .toLowerCase()
-          .split(/\s+/)
-          .every(word => haystack.includes(word))
-      })
+  // Fuzzy matching for sessions
+  const sessionFzf = useMemo(
+    () =>
+      new Fzf(allSessions, {
+        selector: (s: Session) => {
+          const ps = projectSettings[s.cwd]
+          return `${s.cwd} ${ps?.label || ''} ${s.id} ${s.model || ''} ${s.status}`
+        },
+      }),
+    [allSessions, projectSettings],
+  )
+  const filteredSessions = filter && !isFileMode && !isSpawnMode
+    ? sessionFzf.find(filter).map(r => r.item)
     : allSessions
 
-  const filteredFiles = fileFilter
-    ? files.filter(f => f.name.toLowerCase().includes(fileFilter) || f.path.toLowerCase().includes(fileFilter))
-    : files
+  // Fuzzy matching for files
+  const fileFzf = useMemo(
+    () => new Fzf(files, { selector: (f: FileInfo) => `${f.name} ${f.path}` }),
+    [files],
+  )
+  const filteredFiles = fileFilter ? fileFzf.find(fileFilter).map(r => r.item) : files
 
   const itemCount = isSpawnMode ? filteredSpawnDirs.length : isFileMode ? filteredFiles.length : filteredSessions.length
 

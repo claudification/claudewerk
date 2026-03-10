@@ -85,13 +85,13 @@ function Dashboard() {
   // Global keyboard shortcuts - work EVERYWHERE (dashboard + terminal)
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      // Ctrl+K - session switcher
-      if (e.ctrlKey && e.key === 'k') {
+      // Ctrl+K / Cmd+K - session switcher
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault()
         useSessionsStore.getState().toggleSwitcher()
       }
-      // Ctrl+O - toggle expand all / verbose mode
-      if (e.ctrlKey && e.key === 'o') {
+      // Ctrl+O / Cmd+O - toggle expand all / verbose mode
+      if ((e.ctrlKey || e.metaKey) && e.key === 'o') {
         // Don't trigger in terminal or inputs
         const el = e.target as HTMLElement
         if (el?.closest('.xterm') || el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA') return
@@ -114,12 +114,11 @@ function Dashboard() {
 
   function handleSwitcherSelect(id: string) {
     const store = useSessionsStore.getState()
-    const session = store.sessions.find(s => s.id === id)
-    if (session && canTerminal(session) && session.wrapperIds?.[0]) {
-      store.openTerminal(session.wrapperIds[0])
-    } else {
-      store.selectSession(id)
-      store.setShowSwitcher(false)
+    store.selectSession(id)
+    store.setShowSwitcher(false)
+    // Auto-focus input on desktop after session switch
+    if (!isMobileViewport()) {
+      requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('textarea')?.focus())
     }
   }
 
