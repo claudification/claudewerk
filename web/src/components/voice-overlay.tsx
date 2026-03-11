@@ -9,16 +9,18 @@
 import { Loader2, Check, X, Square } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSessionsStore } from '@/hooks/use-sessions'
-import { cn } from '@/lib/utils'
+import { cn, haptic } from '@/lib/utils'
 
 type VoiceState = 'idle' | 'connecting' | 'recording' | 'refining' | 'done' | 'error'
 
 interface VoiceOverlayProps {
   onResult: (text: string) => void
   onClose: () => void
+  holdMode?: boolean // true = stop recording on pointer release anywhere
+  onMicGranted?: () => void // called when getUserMedia succeeds (permission granted)
 }
 
-export function VoiceOverlay({ onResult, onClose }: VoiceOverlayProps) {
+export function VoiceOverlay({ onResult, onClose, holdMode = false, onMicGranted }: VoiceOverlayProps) {
   const [state, setState] = useState<VoiceState>('connecting')
   const [interimText, setInterimText] = useState('')
   const [finalText, setFinalText] = useState('')
@@ -53,6 +55,7 @@ export function VoiceOverlay({ onResult, onClose }: VoiceOverlayProps) {
         switch (msg.type) {
           case 'voice_ready':
             setState('recording')
+            haptic('double')
             break
           case 'voice_transcript':
             if (msg.isFinal) {
@@ -75,14 +78,17 @@ export function VoiceOverlay({ onResult, onClose }: VoiceOverlayProps) {
             break
           case 'voice_refining':
             setState('refining')
+            haptic('tick')
             break
           case 'voice_done':
             setRefinedText(msg.refined || msg.raw || '')
             setState('done')
+            haptic('success')
             break
           case 'voice_error':
             setErrorMsg(msg.error || 'Voice error')
             setState('error')
+            haptic('error')
             break
         }
       } catch {}
@@ -110,13 +116,38 @@ export function VoiceOverlay({ onResult, onClose }: VoiceOverlayProps) {
     }
   }, [])
 
-  // Auto-submit after done
+  // Hold-to-record: stop recording when finger lifts anywhere on screen
+  useEffect(() => {
+    if (!holdMode) return
+    // Skip the initial pointerup from the hold gesture that opened us
+    // The finger is still down when overlay mounts, so the first pointerup
+    // is the actual "release" we want -- but we need a small delay to avoid
+    // catching a phantom event during mount
+    let armed = false
+    const armTimer = setTimeout(() => { armed = true }, 100)
+    function handleRelease() {
+      if (!armed) return
+      if (stateRef.current === 'recording' || stateRef.current === 'connecting') {
+        stopRecording(true)
+      }
+    }
+    document.addEventListener('pointerup', handleRelease)
+    document.addEventListener('pointercancel', handleRelease)
+    return () => {
+      clearTimeout(armTimer)
+      document.removeEventListener('pointerup', handleRelease)
+      document.removeEventListener('pointercancel', handleRelease)
+    }
+  }, [holdMode])
+
+  // Auto-submit after done (instant in hold mode, 1s delay in normal mode)
   useEffect(() => {
     if (state === 'done' && refinedText) {
+      const delay = holdMode ? 200 : 1000
       autoCloseTimerRef.current = setTimeout(() => {
         onResult(refinedText)
         onClose()
-      }, 1000)
+      }, delay)
       return () => {
         if (autoCloseTimerRef.current) clearTimeout(autoCloseTimerRef.current)
       }
@@ -127,6 +158,7 @@ export function VoiceOverlay({ onResult, onClose }: VoiceOverlayProps) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       streamRef.current = stream
+      onMicGranted?.()
 
       const sessionId = useSessionsStore.getState().selectedSessionId
       sendWs({ type: 'voice_start', sessionId })
@@ -156,6 +188,7 @@ export function VoiceOverlay({ onResult, onClose }: VoiceOverlayProps) {
   function stopRecording(sendStop = true) {
     if (mediaRecorderRef.current?.state === 'recording') {
       mediaRecorderRef.current.stop()
+      haptic('tap')
     }
     mediaRecorderRef.current = null
     if (streamRef.current) {
@@ -211,7 +244,9 @@ export function VoiceOverlay({ onResult, onClose }: VoiceOverlayProps) {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
               <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
             </span>
-            <span className="text-xs text-red-400 font-mono uppercase tracking-wider">Listening...</span>
+            <span className="text-xs text-red-400 font-mono uppercase tracking-wider">
+              {holdMode ? 'Release to send...' : 'Listening...'}
+            </span>
           </>
         )}
         {state === 'refining' && (
@@ -264,7 +299,7 @@ export function VoiceOverlay({ onResult, onClose }: VoiceOverlayProps) {
       {/* Action buttons - BOTTOM (thumb zone) */}
       <div className="shrink-0 pb-safe">
         <div className="max-w-[700px] mx-auto px-4 pb-6 pt-3 flex items-center justify-center gap-3">
-          {state === 'recording' && (
+          {state === 'recording' && !holdMode && (
             <button
               type="button"
               onClick={handleStopClick}
@@ -275,7 +310,12 @@ export function VoiceOverlay({ onResult, onClose }: VoiceOverlayProps) {
               Stop
             </button>
           )}
-          {(state === 'refining' || state === 'connecting') && (
+          {state === 'recording' && holdMode && (
+            <span className="text-xs text-muted-foreground/60 font-mono uppercase tracking-wider">
+              Release to stop recording
+            </span>
+          )}
+          {(state === 'refining' || state === 'connecting') && !holdMode && (
             <button
               type="button"
               onClick={handleDiscard}
@@ -286,7 +326,12 @@ export function VoiceOverlay({ onResult, onClose }: VoiceOverlayProps) {
               Cancel
             </button>
           )}
-          {state === 'done' && (
+          {(state === 'refining' || state === 'connecting') && holdMode && (
+            <span className="text-xs text-muted-foreground/60 font-mono uppercase tracking-wider">
+              Processing...
+            </span>
+          )}
+          {state === 'done' && !holdMode && (
             <>
               <button
                 type="button"
@@ -307,6 +352,11 @@ export function VoiceOverlay({ onResult, onClose }: VoiceOverlayProps) {
                 Use
               </button>
             </>
+          )}
+          {state === 'done' && holdMode && (
+            <span className="text-xs text-green-400/60 font-mono uppercase tracking-wider">
+              Sending...
+            </span>
           )}
           {state === 'error' && (
             <button

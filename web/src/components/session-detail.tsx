@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { fetchSubagentTranscript, reviveSession, sendInput, useSessionsStore } from '@/hooks/use-sessions'
 import { canTerminal, type TranscriptEntry } from '@/lib/types'
-import { cn, formatAge, formatModel, isMobileViewport } from '@/lib/utils'
+import { cn, formatAge, formatModel, haptic, isMobileViewport } from '@/lib/utils'
 import { BgTasksView } from './bg-tasks-view'
 import { DiagView } from './diag-view'
 import { EventsView } from './events-view'
@@ -46,6 +46,7 @@ const InputBar = memo(function InputBar({ sessionId }: { sessionId: string }) {
 
   async function handleSend() {
     if (!inputValue.trim() || isSending) return
+    haptic('tap')
     setIsSending(true)
     try {
       const success = await sendInput(sessionId, inputValue)
@@ -511,7 +512,7 @@ export function SessionDetail() {
           <div className="shrink-0 flex items-center border-b border-border">
             <button
               type="button"
-              onClick={() => setActiveTab('transcript')}
+              onClick={() => { haptic('tick'); setActiveTab('transcript') }}
               className={cn(
                 'px-3 sm:px-4 py-2 text-xs border-b-2 transition-colors',
                 activeTab === 'transcript'
@@ -523,7 +524,7 @@ export function SessionDetail() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('events')}
+              onClick={() => { haptic('tick'); setActiveTab('events') }}
               className={cn(
                 'px-3 sm:px-4 py-2 text-xs border-b-2 transition-colors',
                 activeTab === 'events'
@@ -536,7 +537,7 @@ export function SessionDetail() {
             {(session.totalSubagentCount > 0 || session.activeSubagentCount > 0 || session.bgTasks.length > 0) && (
               <button
                 type="button"
-                onClick={() => setActiveTab('agents')}
+                onClick={() => { haptic('tick'); setActiveTab('agents') }}
                 className={cn(
                   'px-3 sm:px-4 py-2 text-xs border-b-2 transition-colors',
                   activeTab === 'agents'
@@ -555,7 +556,7 @@ export function SessionDetail() {
             {(session.taskCount > 0 || (session.archivedTaskCount ?? 0) > 0) && (
               <button
                 type="button"
-                onClick={() => setActiveTab('tasks')}
+                onClick={() => { haptic('tick'); setActiveTab('tasks') }}
                 className={cn(
                   'px-3 sm:px-4 py-2 text-xs border-b-2 transition-colors',
                   activeTab === 'tasks'
@@ -574,7 +575,7 @@ export function SessionDetail() {
             {session.status === 'active' && (
               <button
                 type="button"
-                onClick={() => setActiveTab('files')}
+                onClick={() => { haptic('tick'); setActiveTab('files') }}
                 className={cn(
                   'px-3 sm:px-4 py-2 text-xs border-b-2 transition-colors',
                   activeTab === 'files'
@@ -587,7 +588,7 @@ export function SessionDetail() {
             )}
             <button
               type="button"
-              onClick={() => setActiveTab('diag')}
+              onClick={() => { haptic('tick'); setActiveTab('diag') }}
               className={cn(
                 'px-3 sm:px-4 py-2 text-xs border-b-2 transition-colors',
                 activeTab === 'diag'

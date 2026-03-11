@@ -53,3 +53,31 @@ export function formatModel(model: string | undefined): string {
     .replace('-20250514', '')
     .replace(/-\d{8}$/, '')
 }
+
+/**
+ * Haptic feedback via web-haptics (works on iOS + Android).
+ * Uses hidden <input type="checkbox" switch> trick for iOS Safari Taptic Engine.
+ * Falls back to Vibration API on Android.
+ *
+ * Patterns: tap (default), double, success, error, tick
+ */
+import { WebHaptics } from 'web-haptics'
+
+let _haptics: WebHaptics | null = null
+function getHaptics(): WebHaptics {
+  if (!_haptics) _haptics = new WebHaptics()
+  return _haptics
+}
+
+export function haptic(pattern: 'tap' | 'double' | 'success' | 'error' | 'tick' = 'tap') {
+  // Don't guard on WebHaptics.isSupported -- it checks navigator.vibrate which iOS lacks.
+  // The library works on iOS via a hidden <input switch> DOM trick (the !isSupported path).
+  const h = getHaptics()
+  switch (pattern) {
+    case 'tap': h.trigger('light'); break
+    case 'tick': h.trigger('selection'); break
+    case 'double': h.trigger('medium'); break
+    case 'success': h.trigger('success'); break
+    case 'error': h.trigger('error'); break
+  }
+}

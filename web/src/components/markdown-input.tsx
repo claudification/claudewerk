@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { getShowVoiceInput } from '@/components/settings-page'
 import { VoiceOverlay } from '@/components/voice-overlay'
 import { useSessionsStore } from '@/hooks/use-sessions'
-import { cn, isMobileViewport } from '@/lib/utils'
+import { cn, haptic, isMobileViewport } from '@/lib/utils'
 
 interface MarkdownInputProps {
   value: string
@@ -102,6 +102,10 @@ export function MarkdownInput({
   const [expanded, setExpanded] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [showVoiceOverlay, setShowVoiceOverlay] = useState(false)
+  const [holdToRecord, setHoldToRecord] = useState(false) // true = voice overlay in hold-to-record mode
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const holdActiveRef = useRef(false) // track across renders for touchend handler
+  const micPermissionRef = useRef(false) // true after getUserMedia succeeds once
 
   // Sync scroll between textarea and highlight div
   const syncScroll = useCallback(() => {
@@ -368,12 +372,73 @@ export function MarkdownInput({
   }
 
   function handleSubmit() {
+    haptic('tap')
     onSubmit()
     if (expanded) {
       setExpanded(false)
     } else {
       // Re-focus on desktop after submit
       requestAnimationFrame(() => textareaRef.current?.focus())
+    }
+  }
+
+  // Hold-to-record: press Send when empty -> hold 300ms -> voice overlay
+  // First use: mic permission not yet granted -> fall back to normal tap overlay
+  // After permission granted: hold-to-record works (no iOS permission dialog in the way)
+  function handleSendPointerDown() {
+    if (value.trim() || !showVoice) return // only on empty input with voice enabled
+
+    if (!micPermissionRef.current) {
+      // No mic permission yet -- open normal overlay (user taps Allow, then records normally)
+      holdTimerRef.current = setTimeout(() => {
+        setHoldToRecord(false)
+        setShowVoiceOverlay(true)
+      }, 300)
+      return
+    }
+
+    // Mic permission already granted -- use hold-to-record mode
+    holdTimerRef.current = setTimeout(() => {
+      holdActiveRef.current = true
+      setHoldToRecord(true)
+      setShowVoiceOverlay(true)
+      haptic('double')
+    }, 300)
+  }
+
+  function handleSendPointerUp() {
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current)
+      holdTimerRef.current = null
+    }
+    if (holdActiveRef.current) {
+      holdActiveRef.current = false
+    }
+  }
+
+  // Clean up hold timer on unmount
+  useEffect(() => {
+    return () => {
+      if (holdTimerRef.current) clearTimeout(holdTimerRef.current)
+    }
+  }, [])
+
+  function handleVoiceClose() {
+    setShowVoiceOverlay(false)
+    setHoldToRecord(false)
+    holdActiveRef.current = false
+  }
+
+  function handleVoiceResultAndSubmit(text: string) {
+    handleVoiceResult(text)
+    // In hold-to-record mode, auto-submit after inserting
+    if (holdToRecord) {
+      // Need a tick for onChange to propagate
+      setTimeout(() => {
+        onSubmit()
+        setExpanded(false)
+        setHoldToRecord(false)
+      }, 50)
     }
   }
 
@@ -475,22 +540,29 @@ export function MarkdownInput({
             </button>
             <button
               type="button"
-              onClick={handleSubmit}
-              disabled={disabled || !value.trim()}
+              onClick={value.trim() ? handleSubmit : undefined}
+              onPointerDown={handleSendPointerDown}
+              onPointerUp={handleSendPointerUp}
+              onPointerCancel={handleSendPointerUp}
+              onContextMenu={!value.trim() && showVoice ? (e) => e.preventDefault() : undefined}
+              disabled={disabled}
               className={cn(
-                'text-sm font-bold px-4 py-1.5 rounded',
+                'text-sm font-bold px-4 py-1.5 rounded select-none',
                 value.trim() ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground',
               )}
+              style={{ touchAction: 'manipulation', WebkitTouchCallout: 'none' } as React.CSSProperties}
             >
-              Send
+              {!value.trim() && showVoice ? 'Hold' : 'Send'}
             </button>
           </div>
         </div>
       </div>
       {showVoiceOverlay && (
         <VoiceOverlay
-          onResult={handleVoiceResult}
-          onClose={() => setShowVoiceOverlay(false)}
+          onResult={holdToRecord ? handleVoiceResultAndSubmit : handleVoiceResult}
+          onClose={handleVoiceClose}
+          holdMode={holdToRecord}
+          onMicGranted={() => { micPermissionRef.current = true }}
         />
       )}
       </>
@@ -576,8 +648,10 @@ export function MarkdownInput({
       />
       {showVoiceOverlay && (
         <VoiceOverlay
-          onResult={handleVoiceResult}
-          onClose={() => setShowVoiceOverlay(false)}
+          onResult={holdToRecord ? handleVoiceResultAndSubmit : handleVoiceResult}
+          onClose={handleVoiceClose}
+          holdMode={holdToRecord}
+          onMicGranted={() => { micPermissionRef.current = true }}
         />
       )}
     </div>

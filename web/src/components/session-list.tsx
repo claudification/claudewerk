@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchSessionEvents, fetchTranscript, useSessionsStore } from '@/hooks/use-sessions'
 import type { Session } from '@/lib/types'
-import { cn, formatAge, formatModel, lastPathSegments } from '@/lib/utils'
+import { cn, formatAge, formatModel, haptic, lastPathSegments } from '@/lib/utils'
 import { ProjectSettingsButton, ProjectSettingsEditor, renderProjectIcon } from './project-settings-editor'
 import { usePrefs } from './settings-page'
 
@@ -43,6 +43,7 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
   const ps = projectSettings[session.cwd]
 
   async function handleClick() {
+    haptic('tap')
     selectSession(session.id)
     const [evts, transcript] = await Promise.all([fetchSessionEvents(session.id), fetchTranscript(session.id)])
     setEvents(session.id, evts)
@@ -306,6 +307,7 @@ function InactiveProjectItem({ sessions }: { sessions: Session[] }) {
   const displayColor = ps?.color
 
   async function handleClick() {
+    haptic('tap')
     selectSession(latest.id)
     const [evts, transcript] = await Promise.all([fetchSessionEvents(latest.id), fetchTranscript(latest.id)])
     setEvents(latest.id, evts)
