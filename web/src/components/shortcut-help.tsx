@@ -14,7 +14,7 @@ const SHORTCUTS = [
   { keys: 'Ctrl+O', action: 'Toggle verbose / expand all' },
   { keys: 'Shift+Click TTY', action: 'Popout terminal to new window' },
   { keys: 'Shift+?', action: 'This help screen' },
-  { keys: 'Esc', action: 'Close modal / exit file picker' },
+  { keys: 'Esc', action: 'Go to transcript + focus input' },
 ]
 
 const INPUT_SHORTCUTS = [

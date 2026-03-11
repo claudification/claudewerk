@@ -385,7 +385,11 @@ function ShellCommand({ command }: { command: string }) {
   return (
     <pre className="text-[10px] bg-black/30 p-2 overflow-auto whitespace-pre-wrap font-mono border-l-2 border-green-500/40">
       <span className="text-green-500/60 select-none">$ </span>
-      {html ? <code dangerouslySetInnerHTML={{ __html: html }} /> : <span className="text-foreground/80">{command}</span>}
+      {html ? (
+        <code dangerouslySetInnerHTML={{ __html: html }} />
+      ) : (
+        <span className="text-foreground/80">{command}</span>
+      )}
     </pre>
   )
 }
@@ -518,7 +522,12 @@ function ToolLine({
         details = (
           <div className="space-y-1">
             {expandAll && cmd && <ShellCommand command={cmd} />}
-            <pre className={cn('text-[10px] bg-black/30 p-2 overflow-auto whitespace-pre-wrap font-mono', expandAll ? 'max-h-[80vh]' : 'max-h-32')}>
+            <pre
+              className={cn(
+                'text-[10px] bg-black/30 p-2 overflow-auto whitespace-pre-wrap font-mono',
+                expandAll ? 'max-h-[80vh]' : 'max-h-32',
+              )}
+            >
               <AnsiText text={outputText} />
             </pre>
           </div>
@@ -774,7 +783,9 @@ function ToolLine({
     }
     case 'CronList': {
       const extra = toolUseResult as Record<string, unknown> | undefined
-      const jobs = extra?.jobs as Array<{ id: string; humanSchedule: string; prompt: string; recurring: boolean }> | undefined
+      const jobs = extra?.jobs as
+        | Array<{ id: string; humanSchedule: string; prompt: string; recurring: boolean }>
+        | undefined
       if (jobs?.length) {
         summary = `${jobs.length} job${jobs.length !== 1 ? 's' : ''}`
         details = (

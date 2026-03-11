@@ -104,7 +104,9 @@ export function QuickNoteModal() {
           />
         </div>
         <div className="flex items-center justify-between px-3 py-2 border-t border-border shrink-0">
-          <span className="text-[10px] text-muted-foreground">Enter to add, Shift+Enter for new line, Esc to close</span>
+          <span className="text-[10px] text-muted-foreground">
+            Enter to add, Shift+Enter for new line, Esc to close
+          </span>
           <button
             type="button"
             onClick={handleSubmit}

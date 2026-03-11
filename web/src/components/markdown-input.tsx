@@ -359,7 +359,7 @@ export function MarkdownInput({
     const before = value.slice(0, pos)
     const after = value.slice(pos)
     const spacer = before.length > 0 && !before.endsWith(' ') && !before.endsWith('\n') ? ' ' : ''
-    onChange(before + spacer + text + after)
+    onChange(before + spacer + 'voice-to-text: ' + text + after)
     // Focus synchronously - iOS Safari requires focus within the user gesture call stack
     // (rAF/setTimeout break the gesture chain and Safari refuses the focus)
     ta?.focus()

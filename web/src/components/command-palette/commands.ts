@@ -6,6 +6,21 @@ export function getPaletteCommands(onClose: () => void): PaletteCommand[] {
   const store = useSessionsStore.getState()
   const session = store.sessions.find(s => s.id === store.selectedSessionId)
   return [
+    ...(store.selectedSessionId
+      ? [
+          {
+            id: 'go-home',
+            label: 'Go to transcript + focus input',
+            shortcut: 'Esc',
+            action: () => {
+              store.selectSubagent(null)
+              store.openTab(store.selectedSessionId!, 'transcript')
+              onClose()
+              requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('textarea')?.focus())
+            },
+          },
+        ]
+      : []),
     {
       id: 'debug-console',
       label: 'Toggle debug console',

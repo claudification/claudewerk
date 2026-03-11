@@ -264,7 +264,14 @@ function listDirs(dirPath: string): { dirs: string[]; error?: string } {
   }
 }
 
-function connect(url: string, secret: string, reviveScript: string, verbose: boolean, spawnRoot: string, noSpawn: boolean) {
+function connect(
+  url: string,
+  secret: string,
+  reviveScript: string,
+  verbose: boolean,
+  spawnRoot: string,
+  noSpawn: boolean,
+) {
   const wsUrl = secret ? `${url}?secret=${encodeURIComponent(secret)}` : url
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null
   let shouldReconnect = true
@@ -309,8 +316,17 @@ function connect(url: string, secret: string, reviveScript: string, verbose: boo
 
         case 'revive': {
           const reviveMsg = msg as { sessionId: string; cwd: string; wrapperId: string }
-          log(`Reviving session ${reviveMsg.sessionId.slice(0, 8)}... wrapper=${reviveMsg.wrapperId.slice(0, 8)} (${reviveMsg.cwd})`)
-          const result = await reviveSession(reviveMsg.sessionId, reviveMsg.cwd, reviveMsg.wrapperId, reviveScript, secret, verbose)
+          log(
+            `Reviving session ${reviveMsg.sessionId.slice(0, 8)}... wrapper=${reviveMsg.wrapperId.slice(0, 8)} (${reviveMsg.cwd})`,
+          )
+          const result = await reviveSession(
+            reviveMsg.sessionId,
+            reviveMsg.cwd,
+            reviveMsg.wrapperId,
+            reviveScript,
+            secret,
+            verbose,
+          )
           ws.send(JSON.stringify(result))
           if (result.success) {
             log(`Revived in tmux session "${result.tmuxSession}" (continued: ${result.continued})`)
@@ -323,12 +339,14 @@ function connect(url: string, secret: string, reviveScript: string, verbose: boo
         case 'spawn': {
           const spawnMsg = msg as { requestId: string; cwd: string; wrapperId: string }
           if (noSpawn) {
-            ws.send(JSON.stringify({
-              type: 'spawn_result',
-              requestId: spawnMsg.requestId,
-              success: false,
-              error: 'Spawning disabled (--no-spawn)',
-            }))
+            ws.send(
+              JSON.stringify({
+                type: 'spawn_result',
+                requestId: spawnMsg.requestId,
+                success: false,
+                error: 'Spawning disabled (--no-spawn)',
+              }),
+            )
             break
           }
           const expandedCwd = expandPath(spawnMsg.cwd, spawnRoot)
