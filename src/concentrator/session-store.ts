@@ -599,7 +599,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
           entries: [marker],
           isInitial: false,
         } as any)
-      } else if (session.compacting) {
+      } else if (session.compacting && event.hookEvent === 'SessionStart') {
         session.compacting = false
         session.compactedAt = Date.now()
         const marker = { type: 'compacted', timestamp: new Date().toISOString() }
