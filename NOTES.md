@@ -23,3 +23,8 @@
 - [x] push notifications!.. is there a hard coded key? or derived from rclaude key
 - [x] The agent, can already launch claude sessions at any CWD. I want to create a UI, where I can write, with completion, a path, where I want to spawn a new rclaude session using the same semantics... if the folder does NOT exist, I want to be prompted about it.
 - [ ] currently there can only be ONE agent, but the reality is, that there should be able to be multiple, one per machine, or container, or whatever.. that means, rclaude sessions MUST identify by some "machine" or something.. maybe we support mutliple rclaude_secret and that's how we identify what agent + rclaude runs on the same system?
+- [x] BUG: When writing in the markdown input, sometimes it doesnt perfectly scroll DOWN.. and the text is overflowing onto the html...
+
+![hello-2DGCVDEA@2x.png](https://concentrator.frst.dev/file/6qpooh.png)
+- [x] PLAN: TLDRAW interface.. a TLDRAW surface where the user can take a screenshot, paste it into a TLDRAW surface, paint an annotate .... OR just create a new mockup! :-) EXPLORE ONLY!!! -> [TLDRAW.md](TLDRAW.md)
+- [x] BUG: When verbose is checked, I REALLY FUCKING WANT bash events to be expaned.. every event actually, but I don't see the bash output expanded.. that's my main conceern that it's not working ;-).. also VERIFY that thinking blocks are in the output when verbose is on!
