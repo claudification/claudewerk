@@ -9,6 +9,7 @@ import type {
   FileResponse,
   Heartbeat,
   HookEvent,
+  SessionClear,
   SessionEnd,
   SessionMeta,
   SubagentTranscript,
@@ -42,12 +43,14 @@ export interface WsClientOptions {
   onSubagentTranscriptRequest?: (agentId: string, limit?: number) => void
   onFileRequest?: (requestId: string, path: string) => void
   onFileEditorMessage?: (message: Record<string, unknown>) => void
+  onAck?: (origins: string[]) => void
 }
 
 export interface WsClient {
   send: (message: WrapperMessage) => void
   sendHookEvent: (event: HookEvent) => void
   sendSessionEnd: (reason: string) => void
+  sendSessionClear: (newSessionId: string, cwd: string, model?: string) => void
   sendTerminalData: (data: string) => void
   sendTranscriptEntries: (entries: TranscriptEntry[], isInitial: boolean) => void
   sendSubagentTranscript: (agentId: string, entries: TranscriptEntry[], isInitial: boolean) => void
@@ -64,7 +67,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
   const {
     concentratorUrl = DEFAULT_CONCENTRATOR_URL,
     concentratorSecret,
-    sessionId,
+    sessionId: initialSessionId,
     wrapperId,
     cwd,
     model,
@@ -82,8 +85,10 @@ export function createWsClient(options: WsClientOptions): WsClient {
     onSubagentTranscriptRequest,
     onFileRequest,
     onFileEditorMessage,
+    onAck,
   } = options
 
+  let sessionId = initialSessionId
   let ws: WebSocket | null = null
   let connected = false
   let shouldReconnect = true
@@ -198,7 +203,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
               onFileRequest?.(message.requestId, message.path)
               break
             case 'ack':
-              // Acknowledgements - no action needed
+              onAck?.(message.origins || [])
               break
             default: {
               // File editor messages are relayed as generic JSON (not part of ConcentratorMessage type)
@@ -245,6 +250,20 @@ export function createWsClient(options: WsClientOptions): WsClient {
       endedAt: Date.now(),
     }
     send(endMsg)
+  }
+
+  function sendSessionClear(newSessionId: string, newCwd: string, newModel?: string) {
+    const msg: SessionClear = {
+      type: 'session_clear',
+      oldSessionId: sessionId,
+      newSessionId,
+      wrapperId,
+      cwd: newCwd,
+      model: newModel,
+    }
+    send(msg)
+    // Update local session ID so subsequent messages use the new ID
+    sessionId = newSessionId
   }
 
   function sendTerminalData(data: string) {
@@ -323,6 +342,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
     send,
     sendHookEvent,
     sendSessionEnd,
+    sendSessionClear,
     sendTerminalData,
     sendTranscriptEntries,
     sendSubagentTranscript,

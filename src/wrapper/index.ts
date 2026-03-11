@@ -5,7 +5,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { appendFileSync, existsSync, readdirSync, readFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -589,9 +589,15 @@ async function main() {
       // Extract output path from the tool_result content
       const msg = (entry as any).message
       const content = msg?.content
-      const text = typeof content === 'string' ? content : Array.isArray(content)
-        ? content.filter((c: any) => typeof c === 'string' || c?.type === 'text').map((c: any) => typeof c === 'string' ? c : c.text).join('')
-        : ''
+      const text =
+        typeof content === 'string'
+          ? content
+          : Array.isArray(content)
+            ? content
+                .filter((c: any) => typeof c === 'string' || c?.type === 'text')
+                .map((c: any) => (typeof c === 'string' ? c : c.text))
+                .join('')
+            : ''
       const pathMatch = text.match(/Output is being written to: (\S+\.output)/)
       if (pathMatch) {
         startBgTaskOutputWatcher(taskId, pathMatch[1])
@@ -604,9 +610,15 @@ async function main() {
     for (const entry of entries) {
       const msg = (entry as any).message
       const content = msg?.content
-      const text = typeof content === 'string' ? content : Array.isArray(content)
-        ? content.filter((c: any) => typeof c === 'string' || c?.type === 'text').map((c: any) => typeof c === 'string' ? c : c.text).join('')
-        : ''
+      const text =
+        typeof content === 'string'
+          ? content
+          : Array.isArray(content)
+            ? content
+                .filter((c: any) => typeof c === 'string' || c?.type === 'text')
+                .map((c: any) => (typeof c === 'string' ? c : c.text))
+                .join('')
+            : ''
       if (!text.includes('<task-notification>')) continue
       const re = /<task-id>([^<]+)<\/task-id>/g
       let match: RegExpExecArray | null
@@ -711,15 +723,14 @@ async function main() {
             internalId,
           })
 
-          // Connect (or reconnect) to concentrator with the correct session ID
+          // Connect (or re-key) to concentrator with the correct session ID
           if (!wsClient) {
             connectToConcentrator(claudeSessionId)
           } else if (sessionChanged) {
-            // Session ID changed (e.g. /resume) - end old session cleanly, then reconnect
-            debug(`Session ID changed, ending old session and reconnecting`)
-            wsClient.sendSessionEnd('session_switch')
-            wsClient.close()
-            wsClient = null
+            // Session ID changed (e.g. /clear, /resume) - re-key on same connection
+            debug(`Session ID changed, sending session_clear to concentrator`)
+            const newModel = typeof data.model === 'string' ? data.model : undefined
+            wsClient.sendSessionClear(claudeSessionId, cwd, newModel)
 
             // Clean up all subagent watchers from old session
             for (const [agentId, watcher] of subagentWatchers) {
@@ -734,8 +745,7 @@ async function main() {
               taskWatcher.close()
               taskWatcher = null
             }
-
-            connectToConcentrator(claudeSessionId)
+            startTaskWatching()
           }
 
           // Start/restart transcript watcher if path is available and session changed
@@ -818,6 +828,27 @@ async function main() {
   // Set terminal title to last 2 path segments (shows in tmux)
   setTerminalTitle(cwd)
 
+  // Write system prompt additions for rclaude-specific behavior
+  const promptDir = join(homedir(), '.rclaude', 'prompts')
+  mkdirSync(promptDir, { recursive: true })
+  const promptFile = join(promptDir, `${internalId}.txt`)
+  writeFileSync(
+    promptFile,
+    [
+      '# Attached Files (rclaude)',
+      '',
+      'When the user sends a message containing markdown image or file links like `![filename](https://...)` or `[filename](https://...)`,',
+      'these are files attached via the remote dashboard. Handle them based on file type:',
+      '',
+      '- **Images** (.png, .jpg, .jpeg, .gif, .webp, .svg): Download with `curl -sL "<url>" -o /tmp/<filename>`, then use the Read tool to view the downloaded file.',
+      '- **Text/code files** (.txt, .md, .json, .csv, .xml, .yaml, .yml, .toml, .ts, .js, .py, etc.): Use `curl -sL "<url>"` to fetch and read the content directly.',
+      '- **PDFs** (.pdf): Download with `curl -sL "<url>" -o /tmp/<filename>`, then use the Read tool with the pages parameter.',
+      '',
+      'Always download and process these files - do not just acknowledge the links. The user expects you to see and work with the file contents.',
+    ].join('\n'),
+  )
+  claudeArgs.push('--append-system-prompt-file', promptFile)
+
   // Spawn claude with PTY
   // Convert WS URL to HTTP for tools/scripts that need to call the concentrator REST API
   const concentratorHttpUrl = noConcentrator
@@ -866,6 +897,9 @@ async function main() {
     stopLocalServer(localServer)
     wsClient?.close()
     cleanupSettings(internalId).catch(() => {})
+    try {
+      unlinkSync(promptFile)
+    } catch {}
   }
 
   // Handle unexpected exits
