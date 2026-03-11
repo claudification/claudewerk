@@ -30,6 +30,7 @@ export interface SessionStoreOptions {
 export interface DashboardMessage {
   type: 'session_update' | 'session_created' | 'session_ended' | 'event' | 'sessions_list' | 'agent_status'
   sessionId?: string
+  previousSessionId?: string // set when session was re-keyed (e.g. /clear)
   session?: SessionSummary
   sessions?: SessionSummary[]
   event?: HookEvent
@@ -96,6 +97,7 @@ export interface SessionStore {
     capabilities?: WrapperCapability[],
   ) => Session
   resumeSession: (id: string) => void
+  rekeySession: (oldId: string, newId: string, wrapperId: string, cwd: string, model?: string) => Session | undefined
   getSession: (id: string) => Session | undefined
   getAllSessions: () => Session[]
   getActiveSessions: () => Session[]
@@ -475,6 +477,70 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         }
       }
     }
+  }
+
+  // Re-key a session from oldId to newId (e.g. /clear changes Claude's session ID)
+  // Preserves the session entry and wrapper socket, resets ephemeral state
+  function rekeySession(
+    oldId: string,
+    newId: string,
+    _wrapperId: string,
+    newCwd: string,
+    newModel?: string,
+  ): Session | undefined {
+    const session = sessions.get(oldId)
+    if (!session) return undefined
+
+    // Re-key in sessions map
+    sessions.delete(oldId)
+    session.id = newId
+    session.cwd = newCwd
+    if (newModel) session.model = newModel
+    session.status = 'active'
+    session.lastActivity = Date.now()
+    sessions.set(newId, session)
+
+    // Reset ephemeral state
+    session.events = []
+    session.subagents = []
+    session.teammates = []
+    session.team = undefined
+    session.compacting = false
+    session.tasks = []
+    session.archivedTasks = []
+    session.diagLog = []
+    for (const bgTask of session.bgTasks) {
+      if (bgTask.status === 'running') {
+        bgTask.status = 'killed'
+        bgTask.completedAt = Date.now()
+      }
+    }
+
+    // Clear transcript caches for old session ID
+    transcriptCache.delete(oldId)
+    // Clear subagent transcript caches (keyed as "sessionId:agentId")
+    for (const key of subagentTranscriptCache.keys()) {
+      if (key.startsWith(`${oldId}:`)) {
+        subagentTranscriptCache.delete(key)
+      }
+    }
+
+    // Re-key socket map
+    const wrappers = sessionSockets.get(oldId)
+    if (wrappers) {
+      sessionSockets.delete(oldId)
+      sessionSockets.set(newId, wrappers)
+    }
+
+    // Broadcast update (not end+create) so dashboard stays on this session
+    broadcast({
+      type: 'session_update',
+      sessionId: newId,
+      previousSessionId: oldId,
+      session: toSessionSummary(session),
+    })
+
+    return session
   }
 
   function getSession(id: string): Session | undefined {
@@ -1199,6 +1265,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   return {
     createSession,
     resumeSession,
+    rekeySession,
     getSession,
     getAllSessions,
     getActiveSessions,

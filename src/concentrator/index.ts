@@ -446,7 +446,7 @@ async function main() {
                 // Broadcast session update so dashboard picks up new wrapperIds and status
                 sessionStore.broadcastSessionUpdate(data.sessionId)
 
-                ws.send(JSON.stringify({ type: 'ack', eventId: data.sessionId }))
+                ws.send(JSON.stringify({ type: 'ack', eventId: data.sessionId, origins }))
                 break
               }
               case 'hook': {
@@ -464,6 +464,33 @@ async function main() {
               case 'heartbeat': {
                 // Heartbeats keep the WS alive but do NOT count as activity.
                 // Only hook events and transcript entries reset lastActivity.
+                break
+              }
+              case 'session_clear': {
+                // Same wrapper, new Claude session ID (e.g. /clear)
+                // Re-key session in-place so dashboard stays connected
+                const oldId = data.oldSessionId || ws.data.sessionId
+                const newId = data.newSessionId
+                const clearWrapperId = data.wrapperId || ws.data.wrapperId
+                if (oldId && newId && clearWrapperId) {
+                  const session = sessionStore.rekeySession(oldId, newId, clearWrapperId, data.cwd, data.model)
+                  if (session) {
+                    ws.data.sessionId = newId
+                    if (verbose) {
+                      console.log(
+                        `[~] Session re-keyed: ${oldId.slice(0, 8)} -> ${newId.slice(0, 8)} wrapper=${clearWrapperId.slice(0, 8)} (${data.cwd})`,
+                      )
+                    }
+                  } else {
+                    // Fallback: create new session if old one was already gone
+                    if (verbose) {
+                      console.log(`[!] session_clear: old session ${oldId.slice(0, 8)} not found, creating new`)
+                    }
+                    sessionStore.createSession(newId, data.cwd, data.model)
+                    ws.data.sessionId = newId
+                    sessionStore.setSessionSocket(newId, clearWrapperId, ws)
+                  }
+                }
                 break
               }
               case 'end': {
@@ -740,7 +767,13 @@ async function main() {
                     // Tag with the dashboard socket so we can route the response back
                     targetSocket.send(JSON.stringify(data))
                   } else {
-                    ws.send(JSON.stringify({ type: data.type.replace('_request', '_response').replace('_save', '_save_response'), requestId: data.requestId, error: 'Session not connected' }))
+                    ws.send(
+                      JSON.stringify({
+                        type: data.type.replace('_request', '_response').replace('_save', '_save_response'),
+                        requestId: data.requestId,
+                        error: 'Session not connected',
+                      }),
+                    )
                   }
                 }
                 break
@@ -865,7 +898,11 @@ async function main() {
             // Notify terminal viewers attached to this wrapper's PTY
             const viewers = sessionStore.getTerminalViewers(closeWrapperId)
             if (viewers.size > 0) {
-              const msg = JSON.stringify({ type: 'terminal_error', wrapperId: closeWrapperId, error: 'Wrapper disconnected' })
+              const msg = JSON.stringify({
+                type: 'terminal_error',
+                wrapperId: closeWrapperId,
+                error: 'Wrapper disconnected',
+              })
               for (const viewer of viewers) {
                 try {
                   viewer.send(msg)

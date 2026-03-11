@@ -35,6 +35,17 @@ export interface SessionEnd {
   endedAt: number
 }
 
+// Wrapper tells concentrator the Claude session ID changed (e.g. /clear)
+// Same wrapper, same PTY, just a new Claude session -- re-key without ending
+export interface SessionClear {
+  type: 'session_clear'
+  oldSessionId: string
+  newSessionId: string
+  wrapperId: string
+  cwd: string
+  model?: string
+}
+
 export interface Heartbeat {
   type: 'heartbeat'
   sessionId: string
@@ -126,6 +137,7 @@ export type WrapperMessage =
   | HookEvent
   | SessionMeta
   | SessionEnd
+  | SessionClear
   | Heartbeat
   | TerminalData
   | TerminalError
@@ -139,6 +151,7 @@ export type WrapperMessage =
 export interface Ack {
   type: 'ack'
   eventId: string
+  origins?: string[]
 }
 
 export interface ConcentratorError {

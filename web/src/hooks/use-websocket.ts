@@ -57,6 +57,7 @@ interface SessionSummary {
 interface DashboardMessage {
   type: string
   sessionId?: string
+  previousSessionId?: string // set when session was re-keyed (e.g. /clear)
   session?: SessionSummary
   sessions?: SessionSummary[]
   event?: HookEvent
@@ -210,13 +211,34 @@ export function useWebSocket() {
             }
             case 'session_ended':
             case 'session_update': {
-              // Session updated
+              // Session updated (or re-keyed via /clear)
               if (msg.session && msg.sessionId) {
-                useSessionsStore.setState(state => ({
-                  sessions: state.sessions.map(s =>
-                    s.id === msg.sessionId ? { ...s, ...toSession(msg.session!) } : s,
-                  ),
-                }))
+                const matchId = msg.previousSessionId || msg.sessionId
+                useSessionsStore.setState(state => {
+                  const updated = toSession(msg.session!)
+                  const newState: Partial<typeof state> = {
+                    sessions: state.sessions.map(s => (s.id === matchId ? { ...s, ...updated } : s)),
+                  }
+                  // Re-key selected session if it was the one that changed
+                  if (msg.previousSessionId && state.selectedSessionId === msg.previousSessionId) {
+                    newState.selectedSessionId = msg.sessionId!
+                    // Re-key event/transcript maps
+                    const oldEvents = state.events[msg.previousSessionId]
+                    const oldTranscripts = state.transcripts[msg.previousSessionId]
+                    if (oldEvents || oldTranscripts) {
+                      const events = { ...state.events }
+                      const transcripts = { ...state.transcripts }
+                      delete events[msg.previousSessionId]
+                      delete transcripts[msg.previousSessionId]
+                      // New session starts fresh (concentrator cleared caches)
+                      events[msg.sessionId!] = []
+                      transcripts[msg.sessionId!] = []
+                      newState.events = events
+                      newState.transcripts = transcripts
+                    }
+                  }
+                  return newState
+                })
               }
               break
             }
