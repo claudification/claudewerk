@@ -61,13 +61,17 @@ fi
 TMUX_NAME="remote-claude"
 BASE_CMD="rclaude --dangerously-skip-permissions"
 
-# Build tmux env flags - pass RCLAUDE_SECRET and RCLAUDE_WRAPPER_ID if set
+# Build tmux env flags - pass RCLAUDE_SECRET only
+# RCLAUDE_WRAPPER_ID is passed inline to the command (not tmux env) to prevent
+# it from leaking to other tmux windows/sessions launched later
 TMUX_ENV=()
 if [[ -n "${RCLAUDE_SECRET:-}" ]]; then
   TMUX_ENV+=(-e "RCLAUDE_SECRET=$RCLAUDE_SECRET")
 fi
+# Prefix the command with RCLAUDE_WRAPPER_ID=... so it's scoped to THIS process only
+WRAPPER_PREFIX=""
 if [[ -n "${RCLAUDE_WRAPPER_ID:-}" ]]; then
-  TMUX_ENV+=(-e "RCLAUDE_WRAPPER_ID=$RCLAUDE_WRAPPER_ID")
+  WRAPPER_PREFIX="RCLAUDE_WRAPPER_ID=$RCLAUDE_WRAPPER_ID "
 fi
 
 SESSION_EXISTS=false
@@ -77,7 +81,8 @@ if tmux has-session -t "$TMUX_NAME" 2>/dev/null; then
 fi
 
 # Try with --continue first
-CONTINUE_CMD="$BASE_CMD --continue"
+CONTINUE_CMD="${WRAPPER_PREFIX}$BASE_CMD --continue"
+FRESH_CMD="${WRAPPER_PREFIX}$BASE_CMD"
 
 if [[ "$SESSION_EXISTS" == true ]]; then
   # Add new window to existing tmux session
@@ -104,13 +109,13 @@ if tmux has-session -t "$TMUX_NAME" 2>/dev/null; then
 fi
 
 if [[ "$SESSION_EXISTS" == true ]]; then
-  if tmux new-window "${TMUX_ENV[@]}" -t "$TMUX_NAME" -c "$CWD" "$BASE_CMD"; then
+  if tmux new-window "${TMUX_ENV[@]}" -t "$TMUX_NAME" -c "$CWD" "$FRESH_CMD"; then
     echo "TMUX_SESSION=$TMUX_NAME"
     echo "CONTINUED=false"
     exit 1
   fi
 else
-  if tmux new-session -d "${TMUX_ENV[@]}" -s "$TMUX_NAME" -c "$CWD" "$BASE_CMD"; then
+  if tmux new-session -d "${TMUX_ENV[@]}" -s "$TMUX_NAME" -c "$CWD" "$FRESH_CMD"; then
     echo "TMUX_SESSION=$TMUX_NAME"
     echo "CONTINUED=false"
     exit 1
