@@ -148,17 +148,15 @@ export function SessionDetail() {
   }, [requestedTab, requestedTabSeq])
 
   const sessions = useSessionsStore(state => state.sessions)
-  const allEvents = useSessionsStore(state => state.events)
-  const allTranscripts = useSessionsStore(state => state.transcripts)
+  const events = useSessionsStore(state => (selectedSessionId ? state.events[selectedSessionId] || [] : []))
+  const transcript = useSessionsStore(state =>
+    selectedSessionId ? state.transcripts[selectedSessionId] || [] : [],
+  )
   const agentConnected = useSessionsStore(state => state.agentConnected)
   const projectSettings = useSessionsStore(state => state.projectSettings)
   const selectedSubagentId = useSessionsStore(state => state.selectedSubagentId)
   const selectSubagent = useSessionsStore(state => state.selectSubagent)
-
-  // Derive values from raw state (no new object creation in selector)
   const session = sessions.find(s => s.id === selectedSessionId)
-  const events = selectedSessionId ? allEvents[selectedSessionId] || [] : []
-  const transcript = selectedSessionId ? allTranscripts[selectedSessionId] || [] : []
 
   // Subagent transcript: store (live WS push) + initial HTTP fetch
   const subagentKey = selectedSessionId && selectedSubagentId ? `${selectedSessionId}:${selectedSubagentId}` : ''

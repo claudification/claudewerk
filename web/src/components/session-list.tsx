@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchSessionEvents, fetchTranscript, useSessionsStore } from '@/hooks/use-sessions'
+import { useSessionsStore } from '@/hooks/use-sessions'
 import type { Session } from '@/lib/types'
 import { cn, formatAge, formatModel, haptic, lastPathSegments } from '@/lib/utils'
 import { ProjectSettingsButton, ProjectSettingsEditor, renderProjectIcon } from './project-settings-editor'
@@ -28,8 +28,6 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
     selectSession,
     selectSubagent,
     openTab,
-    setEvents,
-    setTranscript,
     events,
     projectSettings,
   } = useSessionsStore()
@@ -40,12 +38,10 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
     | undefined
   const ps = projectSettings[session.cwd]
 
-  async function handleClick() {
+  function handleClick() {
     haptic('tap')
     selectSession(session.id)
-    const [evts, transcript] = await Promise.all([fetchSessionEvents(session.id), fetchTranscript(session.id)])
-    setEvents(session.id, evts)
-    setTranscript(session.id, transcript)
+    // Events and transcript are fetched by useEffect in app.tsx when selectedSessionId changes
   }
 
   const displayName = ps?.label || lastPathSegments(session.cwd)
@@ -280,19 +276,16 @@ function SessionGroup({
 
 // Inactive project entry - one per cwd, shows latest session
 function InactiveProjectItem({ sessions }: { sessions: Session[] }) {
-  const { selectSession, setEvents, setTranscript, projectSettings } = useSessionsStore()
+  const { selectSession, projectSettings } = useSessionsStore()
   // Latest session by lastActivity
   const latest = sessions.reduce((a, b) => (a.lastActivity > b.lastActivity ? a : b))
   const ps = projectSettings[latest.cwd]
   const displayName = ps?.label || lastPathSegments(latest.cwd)
   const displayColor = ps?.color
 
-  async function handleClick() {
+  function handleClick() {
     haptic('tap')
     selectSession(latest.id)
-    const [evts, transcript] = await Promise.all([fetchSessionEvents(latest.id), fetchTranscript(latest.id)])
-    setEvents(latest.id, evts)
-    setTranscript(latest.id, transcript)
   }
 
   return (

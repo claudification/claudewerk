@@ -402,7 +402,7 @@ async function main() {
         },
         message(ws, message) {
           try {
-            const data = JSON.parse(message.toString())
+            const data = JSON.parse(message as string)
 
             switch (data.type) {
               case 'meta': {

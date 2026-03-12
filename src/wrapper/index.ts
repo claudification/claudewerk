@@ -578,6 +578,16 @@ async function main() {
     bgTaskOutputWatchers.set(taskId, { stop: stopWatcher })
   }
 
+  function extractEntryText(entry: TranscriptEntry): string {
+    const content = (entry as any).message?.content
+    if (typeof content === 'string') return content
+    if (!Array.isArray(content)) return ''
+    return content
+      .filter((c: any) => typeof c === 'string' || c?.type === 'text')
+      .map((c: any) => (typeof c === 'string' ? c : c.text))
+      .join('')
+  }
+
   // Scan transcript entries for background task IDs and start output watchers
   function scanForBgTasks(entries: TranscriptEntry[]) {
     for (const entry of entries) {
@@ -586,18 +596,7 @@ async function main() {
       const taskId = tur.backgroundTaskId as string
       if (bgTaskOutputWatchers.has(taskId)) continue
 
-      // Extract output path from the tool_result content
-      const msg = (entry as any).message
-      const content = msg?.content
-      const text =
-        typeof content === 'string'
-          ? content
-          : Array.isArray(content)
-            ? content
-                .filter((c: any) => typeof c === 'string' || c?.type === 'text')
-                .map((c: any) => (typeof c === 'string' ? c : c.text))
-                .join('')
-            : ''
+      const text = extractEntryText(entry)
       const pathMatch = text.match(/Output is being written to: (\S+\.output)/)
       if (pathMatch) {
         startBgTaskOutputWatcher(taskId, pathMatch[1])
@@ -608,17 +607,7 @@ async function main() {
 
     // Also check for task completions to stop watchers
     for (const entry of entries) {
-      const msg = (entry as any).message
-      const content = msg?.content
-      const text =
-        typeof content === 'string'
-          ? content
-          : Array.isArray(content)
-            ? content
-                .filter((c: any) => typeof c === 'string' || c?.type === 'text')
-                .map((c: any) => (typeof c === 'string' ? c : c.text))
-                .join('')
-            : ''
+      const text = extractEntryText(entry)
       if (!text.includes('<task-notification>')) continue
       const re = /<task-id>([^<]+)<\/task-id>/g
       let match: RegExpExecArray | null
@@ -719,10 +708,11 @@ async function main() {
         if (data.session_id && typeof data.session_id === 'string') {
           const newSessionId = data.session_id
           const sessionChanged = claudeSessionId !== newSessionId
+          const prevSessionId = claudeSessionId
           claudeSessionId = newSessionId
           diag('session', sessionChanged ? 'Session ID changed' : 'Session ID confirmed', {
             sessionId: claudeSessionId,
-            prev: sessionChanged ? claudeSessionId : undefined,
+            prev: sessionChanged ? prevSessionId : undefined,
             internalId,
           })
 

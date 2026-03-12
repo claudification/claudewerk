@@ -187,6 +187,10 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   // Pending agent descriptions: PreToolUse(Agent) pushes, SubagentStart pops
   const pendingAgentDescriptions = new Map<string, string[]>()
 
+  // Hooks that don't indicate Claude is actively working (hoisted to avoid per-call allocation)
+  const PASSIVE_HOOKS = new Set(['Stop', 'Notification', 'TeammateIdle', 'TaskCompleted', 'SessionEnd'])
+  const MAX_EVENTS = 1000
+
   // Transcript cache: sessionId -> entries (ring buffer, max 500 per session)
   const MAX_TRANSCRIPT_ENTRIES = 500
   const transcriptCache = new Map<string, TranscriptEntry[]>()
@@ -567,14 +571,15 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     const session = sessions.get(sessionId)
     if (session) {
       session.events.push(event)
+      if (session.events.length > MAX_EVENTS) {
+        session.events.splice(0, session.events.length - MAX_EVENTS)
+      }
       session.lastActivity = Date.now()
 
       // Status transitions based on actual Claude hooks (not artificial timers)
-      // These hooks don't indicate Claude is actively working
-      const passiveHooks = new Set(['Stop', 'Notification', 'TeammateIdle', 'TaskCompleted', 'SessionEnd'])
       if (event.hookEvent === 'Stop') {
         session.status = 'idle'
-      } else if (!passiveHooks.has(event.hookEvent) && session.status !== 'ended') {
+      } else if (!PASSIVE_HOOKS.has(event.hookEvent) && session.status !== 'ended') {
         session.status = 'active'
       }
 
@@ -935,8 +940,9 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     viewers.add(ws)
   }
 
+  const EMPTY_VIEWER_SET: Set<ServerWebSocket<unknown>> = new Set()
   function getTerminalViewers(wrapperId: string): Set<ServerWebSocket<unknown>> {
-    return terminalViewers.get(wrapperId) || new Set()
+    return terminalViewers.get(wrapperId) || EMPTY_VIEWER_SET
   }
 
   function removeTerminalViewer(wrapperId: string, ws: ServerWebSocket<unknown>): void {

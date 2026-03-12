@@ -1,5 +1,5 @@
 import { canTerminal, type Session } from '@/lib/types'
-import { cn, formatAge, lastPathSegments } from '@/lib/utils'
+import { cn, formatAge, formatModel, lastPathSegments } from '@/lib/utils'
 import { renderProjectIcon } from '../project-settings-editor'
 import type { SessionResultsProps } from './types'
 
@@ -73,7 +73,7 @@ export function SessionResults({
             <div className="text-[10px] text-[#565f89] flex items-center gap-2">
               <span>{session.id.slice(0, 8)}</span>
               <span>{formatAge(session.lastActivity)}</span>
-              {session.model && <span>{session.model.replace('claude-', '').replace(/-\d{8}$/, '')}</span>}
+              {session.model && <span>{formatModel(session.model)}</span>}
             </div>
           </div>
           {actionLabel(session, selectedSessionId) && (
