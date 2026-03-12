@@ -411,6 +411,8 @@ export function SessionList() {
           autoCorrect="off"
           autoCapitalize="off"
           spellCheck={false}
+          tabIndex={-1}
+          onPointerUp={e => (e.target as HTMLInputElement).focus()}
           className="w-full px-2 py-1.5 text-xs bg-transparent border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-accent"
         />
       )}
