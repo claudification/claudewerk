@@ -1444,6 +1444,8 @@ interface TranscriptViewProps {
 
 // Incremental grouping hook: only processes new entries since last call
 // Transcript entries are append-only (except initial load which replaces all)
+// IMPORTANT: returns new array/map references each time to avoid mutating
+// data that React components are currently rendering (React error #300)
 function useIncrementalGroups(entries: TranscriptEntry[]) {
   const cacheRef = useRef<{
     len: number
@@ -1463,7 +1465,7 @@ function useIncrementalGroups(entries: TranscriptEntry[]) {
       cache.lastGroup = null
     }
 
-    // Nothing new
+    // Nothing new - return stable references
     if (entries.length === cache.len) {
       return { resultMap: cache.resultMap, groups: cache.groups }
     }
@@ -1472,27 +1474,38 @@ function useIncrementalGroups(entries: TranscriptEntry[]) {
     const newEntries = entries.slice(cache.len)
     cache.len = entries.length
 
-    // Incremental buildResultMap
+    // Incremental buildResultMap - clone before mutating so existing renders aren't affected
+    const newResultMap = new Map(cache.resultMap)
     for (const entry of newEntries) {
       if (entry.type !== 'user') continue
       const content = entry.message?.content
       if (!Array.isArray(content)) continue
       for (const block of content) {
         if (block.type === 'tool_result' && block.tool_use_id) {
-          cache.resultMap.set(block.tool_use_id, {
+          newResultMap.set(block.tool_use_id, {
             result: typeof block.content === 'string' ? block.content : JSON.stringify(block.content),
             extra: entry.toolUseResult,
           })
         }
       }
     }
+    cache.resultMap = newResultMap
 
-    // Incremental groupEntries - continue from last group
+    // Incremental groupEntries - build new array (spread existing + new groups)
+    // Clone the last group if we'll be appending entries to it
+    const newGroups = [...cache.groups]
+    let lastGroup = cache.lastGroup
+    if (lastGroup && newGroups.length > 0) {
+      // Clone the last group so we don't mutate what React is currently rendering
+      lastGroup = { ...lastGroup, entries: [...lastGroup.entries] }
+      newGroups[newGroups.length - 1] = lastGroup
+    }
+
     for (const entry of newEntries) {
       if (entry.type === 'compacting' || entry.type === 'compacted') {
-        cache.lastGroup = null
+        lastGroup = null
         const g: DisplayGroup = { type: entry.type as 'compacting' | 'compacted', timestamp: entry.timestamp || '', entries: [entry] }
-        cache.groups.push(g)
+        newGroups.push(g)
         continue
       }
 
@@ -1517,8 +1530,8 @@ function useIncrementalGroups(entries: TranscriptEntry[]) {
         if (textContent.includes('<task-notification>')) {
           const notifications = parseTaskNotifications(textContent)
           if (notifications.length > 0) {
-            cache.lastGroup = null
-            cache.groups.push({ type: 'system', timestamp: entry.timestamp || '', entries: [entry], notifications })
+            lastGroup = null
+            newGroups.push({ type: 'system', timestamp: entry.timestamp || '', entries: [entry], notifications })
             continue
           }
         }
@@ -1532,15 +1545,17 @@ function useIncrementalGroups(entries: TranscriptEntry[]) {
       }
 
       const type = entry.type as 'user' | 'assistant'
-      if (cache.lastGroup && cache.lastGroup.type === type) {
-        cache.lastGroup.entries.push(entry)
+      if (lastGroup && lastGroup.type === type) {
+        lastGroup.entries.push(entry)
       } else {
-        cache.lastGroup = { type, timestamp: entry.timestamp || '', entries: [entry] }
-        cache.groups.push(cache.lastGroup)
+        lastGroup = { type, timestamp: entry.timestamp || '', entries: [entry] }
+        newGroups.push(lastGroup)
       }
     }
 
-    return { resultMap: cache.resultMap, groups: cache.groups }
+    cache.groups = newGroups
+    cache.lastGroup = lastGroup
+    return { resultMap: newResultMap, groups: newGroups }
   }, [entries])
 }
 
