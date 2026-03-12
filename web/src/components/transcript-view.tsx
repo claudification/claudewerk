@@ -1442,6 +1442,108 @@ interface TranscriptViewProps {
   onReachedBottom?: () => void
 }
 
+// Incremental grouping hook: only processes new entries since last call
+// Transcript entries are append-only (except initial load which replaces all)
+function useIncrementalGroups(entries: TranscriptEntry[]) {
+  const cacheRef = useRef<{
+    len: number
+    resultMap: Map<string, { result: string; extra?: Record<string, unknown> }>
+    groups: DisplayGroup[]
+    lastGroup: DisplayGroup | null
+  }>({ len: 0, resultMap: new Map(), groups: [], lastGroup: null })
+
+  return useMemo(() => {
+    const cache = cacheRef.current
+
+    // Full reset if entries shrunk (initial load replaced everything, or session switch)
+    if (entries.length < cache.len) {
+      cache.len = 0
+      cache.resultMap = new Map()
+      cache.groups = []
+      cache.lastGroup = null
+    }
+
+    // Nothing new
+    if (entries.length === cache.len) {
+      return { resultMap: cache.resultMap, groups: cache.groups }
+    }
+
+    // Process only the new entries
+    const newEntries = entries.slice(cache.len)
+    cache.len = entries.length
+
+    // Incremental buildResultMap
+    for (const entry of newEntries) {
+      if (entry.type !== 'user') continue
+      const content = entry.message?.content
+      if (!Array.isArray(content)) continue
+      for (const block of content) {
+        if (block.type === 'tool_result' && block.tool_use_id) {
+          cache.resultMap.set(block.tool_use_id, {
+            result: typeof block.content === 'string' ? block.content : JSON.stringify(block.content),
+            extra: entry.toolUseResult,
+          })
+        }
+      }
+    }
+
+    // Incremental groupEntries - continue from last group
+    for (const entry of newEntries) {
+      if (entry.type === 'compacting' || entry.type === 'compacted') {
+        cache.lastGroup = null
+        const g: DisplayGroup = { type: entry.type as 'compacting' | 'compacted', timestamp: entry.timestamp || '', entries: [entry] }
+        cache.groups.push(g)
+        continue
+      }
+
+      if (entry.type !== 'user' && entry.type !== 'assistant') continue
+      const content = entry.message?.content
+      if (!content) continue
+
+      if (entry.type === 'user' && Array.isArray(content)) {
+        if (content.some(c => c.type === 'tool_result')) continue
+      }
+      if (typeof content === 'string' && !content.trim()) continue
+
+      if (entry.type === 'user') {
+        const textContent =
+          typeof content === 'string'
+            ? content
+            : Array.isArray(content)
+              ? content.filter(c => c.type === 'text').map(c => c.text).join('')
+              : ''
+        if (textContent.includes('<system-reminder>')) continue
+        if (textContent.includes('<command-name>') || textContent.includes('<local-command-caveat>') || textContent.includes('<local-command-stdout>')) continue
+        if (textContent.includes('<task-notification>')) {
+          const notifications = parseTaskNotifications(textContent)
+          if (notifications.length > 0) {
+            cache.lastGroup = null
+            cache.groups.push({ type: 'system', timestamp: entry.timestamp || '', entries: [entry], notifications })
+            continue
+          }
+        }
+      }
+
+      if (Array.isArray(content)) {
+        const hasContent = content.some(
+          c => (c.type === 'text' && c.text?.trim()) || (c.type === 'thinking' && (c.thinking?.trim() || c.text?.trim())) || c.type === 'tool_use',
+        )
+        if (!hasContent) continue
+      }
+
+      const type = entry.type as 'user' | 'assistant'
+      if (cache.lastGroup && cache.lastGroup.type === type) {
+        cache.lastGroup.entries.push(entry)
+      } else {
+        cache.lastGroup = { type, timestamp: entry.timestamp || '', entries: [entry] }
+        cache.groups.push(cache.lastGroup)
+      }
+    }
+
+    return { resultMap: cache.resultMap, groups: cache.groups }
+  }, [entries])
+}
+
 export function TranscriptView({
   entries,
   follow = false,
@@ -1453,8 +1555,7 @@ export function TranscriptView({
   // Ref kills the scroll timer synchronously (before React re-renders)
   const followKilledRef = useRef(false)
 
-  const resultMap = useMemo(() => buildResultMap(entries), [entries])
-  const groups = useMemo(() => groupEntries(entries), [entries])
+  const { resultMap, groups } = useIncrementalGroups(entries)
 
   const virtualizer = useVirtualizer({
     count: groups.length,
