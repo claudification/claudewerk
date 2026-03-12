@@ -6,7 +6,8 @@ import tsconfigPaths from 'vite-tsconfig-paths'
 export default defineConfig({
   plugins: [react(), tailwindcss(), tsconfigPaths()],
   esbuild: {
-    keepNames: true, // Preserve function/component names in production for readable error stacks
+    keepNames: true,
+    minifyIdentifiers: false, // Preserve function/component names for readable error stacks
   },
   build: {
     outDir: 'dist',
