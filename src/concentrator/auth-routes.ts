@@ -16,7 +16,7 @@ import {
 import {
   addCredential,
   consumeInvite,
-  createSession,
+  createAuthToken,
   createUser,
   findUserByCredentialId,
   getChallenge,
@@ -26,6 +26,7 @@ import {
   getUser,
   hasAnyUsers,
   revokeSession,
+  SESSION_MAX_AGE_MS,
   type StoredCredential,
   storeChallenge,
   updateCredentialCounter,
@@ -45,7 +46,7 @@ function safeStringEqual(a: string, b: string): boolean {
 }
 
 const SESSION_COOKIE_NAME = 'concentrator-session'
-const SESSION_MAX_AGE_S = 7 * 24 * 60 * 60 // 7 days
+const SESSION_MAX_AGE_S = SESSION_MAX_AGE_MS / 1000
 
 function jsonResponse(data: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(data), {
@@ -256,7 +257,7 @@ export async function handleAuthRoute(req: Request): Promise<Response | null> {
       consumeInvite(token)
 
       // Create session
-      const sessionToken = createSession(invite.name)
+      const sessionToken = createAuthToken(invite.name)
 
       return new Response(JSON.stringify({ verified: true, name: invite.name }), {
         status: 200,
@@ -328,7 +329,7 @@ export async function handleAuthRoute(req: Request): Promise<Response | null> {
       updateCredentialCounter(credentialId, verification.authenticationInfo.newCounter)
 
       // Create session
-      const sessionToken = createSession(user.name)
+      const sessionToken = createAuthToken(user.name)
 
       return new Response(JSON.stringify({ verified: true, name: user.name }), {
         status: 200,

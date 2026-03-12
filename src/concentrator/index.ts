@@ -13,7 +13,7 @@ import { getAuthenticatedUser, handleAuthRoute, requireAuth, setRclaudeSecret } 
 import { initGlobalSettings } from './global-settings'
 import { addAllowedRoot, addPathMapping, getAllowedRoots } from './path-jail'
 import { initProjectSettings } from './project-settings'
-import { initPush, isConfigured as isPushConfigured, sendPushToAll } from './push'
+import { initPush, isPushConfigured, sendPushToAll } from './push'
 import { createSessionStore } from './session-store'
 import { cleanupVoiceForWs, handleVoiceData, handleVoiceStart, handleVoiceStop } from './voice-stream'
 import { createWsServer } from './ws-server'
@@ -155,7 +155,7 @@ EXAMPLES:
 `)
 }
 
-function formatTime(ms: number): string {
+function formatDuration(ms: number): string {
   const seconds = Math.floor(ms / 1000)
   if (seconds < 60) return `${seconds}s`
   const minutes = Math.floor(seconds / 60)
@@ -999,8 +999,8 @@ async function main() {
       if (sessions.length > 0) {
         console.log(`\n[i] Active sessions: ${sessions.length}`)
         for (const session of sessions) {
-          const age = formatTime(Date.now() - session.startedAt)
-          const idle = formatTime(Date.now() - session.lastActivity)
+          const age = formatDuration(Date.now() - session.startedAt)
+          const idle = formatDuration(Date.now() - session.lastActivity)
           console.log(
             `    ${session.id.slice(0, 8)}... [${session.status.toUpperCase()}] age=${age} idle=${idle} events=${session.events.length}`,
           )

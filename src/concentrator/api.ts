@@ -11,7 +11,7 @@ import { deleteProjectSettings, getAllProjectSettings, getProjectSettings, setPr
 import {
   addSubscription,
   getSubscriptionCount,
-  isConfigured as isPushConfigured,
+  isPushConfigured,
   removeSubscription,
   sendPushToAll,
 } from './push'

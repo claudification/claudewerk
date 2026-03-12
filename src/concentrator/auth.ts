@@ -44,7 +44,7 @@ interface AuthState {
 
 // --- Constants ---
 
-const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
+export const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
 const INVITE_MAX_AGE_MS = 30 * 60 * 1000 // 30 minutes
 const HMAC_SECRET_LENGTH = 32
 
@@ -267,7 +267,7 @@ export function getChallenge(key: string): string | undefined {
 
 // --- Session tokens (HMAC-signed cookies) ---
 
-export function createSession(name: string): string {
+export function createAuthToken(name: string): string {
   const user = state.users.find(u => u.name === name)
   if (user) user.lastUsedAt = Date.now()
 

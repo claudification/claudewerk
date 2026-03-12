@@ -12,10 +12,9 @@
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import type { ConcentratorAgentMessage, ListDirsResult, ReviveResult, SpawnResult } from '../shared/protocol'
-import { DEFAULT_CONCENTRATOR_URL } from '../shared/protocol'
+import { DEFAULT_CONCENTRATOR_URL, HEARTBEAT_INTERVAL_MS } from '../shared/protocol'
 
 const RECONNECT_DELAY_MS = 5000
-const HEARTBEAT_INTERVAL_MS = 30000
 
 // Find revive-session.sh in common locations
 function findReviveScript(): string {

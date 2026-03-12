@@ -14,7 +14,7 @@ import type { HookEvent, TaskInfo, TasksUpdate, TranscriptEntry } from '../share
 import { DEFAULT_CONCENTRATOR_URL } from '../shared/protocol'
 import { FileEditor } from './file-editor'
 import { startLocalServer, stopLocalServer } from './local-server'
-import { type PtyProcess, setupTerminalPassthrough, spawnClaude } from './pty-spawn'
+import { getTerminalSize, type PtyProcess, setupTerminalPassthrough, spawnClaude } from './pty-spawn'
 import { cleanupSettings, writeMergedSettings } from './settings-merge'
 import { createTranscriptWatcher, type TranscriptWatcher } from './transcript-watcher'
 import { createWsClient, type WsClient } from './ws-client'
@@ -34,12 +34,16 @@ function debug(msg: string) {
   }
 }
 
+function wsToHttpUrl(url: string): string {
+  return url.replace('ws://', 'http://').replace('wss://', 'https://')
+}
+
 /**
  * Check if concentrator is running
  */
 async function isConcentratorReady(url: string): Promise<boolean> {
   try {
-    const httpUrl = url.replace('ws://', 'http://').replace('wss://', 'https://')
+    const httpUrl = wsToHttpUrl(url)
     const resp = await fetch(`${httpUrl}/health`, {
       signal: AbortSignal.timeout(200),
     })
@@ -367,10 +371,7 @@ async function main() {
       onTerminalAttach(cols, rows) {
         terminalAttached = true
         // Save local terminal size before remote viewer takes over
-        savedTerminalSize = {
-          cols: process.stdout.columns || 80,
-          rows: process.stdout.rows || 24,
-        }
+        savedTerminalSize = getTerminalSize()
         debug(
           `Terminal attached (${cols}x${rows}), saved local size (${savedTerminalSize.cols}x${savedTerminalSize.rows})`,
         )
@@ -881,9 +882,7 @@ async function main() {
 
   // Spawn claude with PTY
   // Convert WS URL to HTTP for tools/scripts that need to call the concentrator REST API
-  const concentratorHttpUrl = noConcentrator
-    ? undefined
-    : concentratorUrl.replace('ws://', 'http://').replace('wss://', 'https://')
+  const concentratorHttpUrl = noConcentrator ? undefined : wsToHttpUrl(concentratorUrl)
 
   ptyProcess = spawnClaude({
     args: claudeArgs,

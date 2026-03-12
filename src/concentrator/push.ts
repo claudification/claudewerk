@@ -37,7 +37,7 @@ export function initPush(config: PushConfig): void {
   vapidConfigured = true
 }
 
-export function isConfigured(): boolean {
+export function isPushConfigured(): boolean {
   return vapidConfigured
 }
 

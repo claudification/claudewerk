@@ -29,7 +29,7 @@ export interface PtyProcess {
 /**
  * Get terminal size with fallback
  */
-function getTerminalSize(): { cols: number; rows: number } {
+export function getTerminalSize(): { cols: number; rows: number } {
   return {
     cols: process.stdout.columns || 80,
     rows: process.stdout.rows || 24,
@@ -131,10 +131,7 @@ export function setupTerminalPassthrough(ptyProcess: PtyProcess): () => void {
 
   // Handle terminal resize
   const resizeListener = () => {
-    const { cols, rows } = {
-      cols: process.stdout.columns || 80,
-      rows: process.stdout.rows || 24,
-    }
+    const { cols, rows } = getTerminalSize()
     ptyProcess.resize(cols, rows)
   }
   process.stdout.on('resize', resizeListener)
