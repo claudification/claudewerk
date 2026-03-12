@@ -1,13 +1,16 @@
 // Re-export shared types (single source of truth)
 export type {
   ArchivedTaskGroup,
+  BgTaskInfo as BgTaskSummary,
+  FileInfo,
   HookEventType,
+  ProjectSettings,
   SubagentInfo,
   TaskInfo,
   TeamInfo,
   WrapperCapability,
 } from '@shared/protocol'
-import type { WrapperCapability } from '@shared/protocol'
+import type { BgTaskInfo as BgTaskSummary, ProjectSettings, WrapperCapability } from '@shared/protocol'
 
 // Re-export HookEvent but with a looser data type for generic property access
 // (dashboard does e.data?.model, e.data?.tool_name, etc.)
@@ -16,15 +19,6 @@ export type { HookEvent } from '@shared/protocol'
 /** Check if a session can open a terminal. Requires explicit terminal capability. */
 export function canTerminal(s: Session): boolean {
   return (s.status === 'active' || s.status === 'idle') && !!s.capabilities?.includes('terminal')
-}
-
-export interface BgTaskSummary {
-  taskId: string
-  command: string
-  description: string
-  startedAt: number
-  completedAt?: number
-  status: 'running' | 'completed' | 'killed'
 }
 
 // Client-side session model (derived from SessionSummary wire format with defaults applied)
@@ -117,13 +111,6 @@ export interface TranscriptEntry {
     structuredPatch?: Array<{ oldStart: number; oldLines: number; newStart: number; newLines: number; lines: string[] }>
   }
   images?: TranscriptImage[]
-}
-
-export interface ProjectSettings {
-  label?: string
-  icon?: string
-  color?: string
-  keyterms?: string[]
 }
 
 export type ProjectSettingsMap = Record<string, ProjectSettings>

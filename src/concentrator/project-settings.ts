@@ -5,13 +5,9 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import type { ProjectSettings } from '../shared/protocol'
 
-export interface ProjectSettings {
-  label?: string
-  icon?: string
-  color?: string
-  keyterms?: string[]
-}
+export type { ProjectSettings } from '../shared/protocol'
 
 type SettingsMap = Record<string, ProjectSettings>
 

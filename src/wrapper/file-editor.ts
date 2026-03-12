@@ -8,6 +8,7 @@ import { readFile as fsReadFile, readdir, stat, writeFile } from 'node:fs/promis
 import { join, relative, resolve } from 'node:path'
 import { type FSWatcher as ChokidarWatcher, watch as chokidarWatch } from 'chokidar'
 import { computeUnifiedDiff, merge3way } from '../shared/diff'
+import type { FileInfo } from '../shared/protocol'
 
 const MAX_VERSIONS = 50
 const NOTES_FILE = 'NOTES.md'
@@ -44,13 +45,6 @@ interface HistoryEntry {
   size: number
   source: 'user' | 'disk'
   diffFromPrev?: string
-}
-
-interface FileInfo {
-  path: string
-  name: string
-  size: number
-  modifiedAt: number
 }
 
 export class FileEditor {

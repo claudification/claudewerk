@@ -380,6 +380,22 @@ export interface BgTaskInfo {
   status: 'running' | 'completed' | 'killed'
 }
 
+// Per-project customization settings (label, icon, color, keyterms)
+export interface ProjectSettings {
+  label?: string
+  icon?: string
+  color?: string
+  keyterms?: string[]
+}
+
+// File metadata for the file editor
+export interface FileInfo {
+  path: string
+  name: string
+  size: number
+  modifiedAt: number
+}
+
 // Session state in concentrator
 export interface TaskInfo {
   id: string

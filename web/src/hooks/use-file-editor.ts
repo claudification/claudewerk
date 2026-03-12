@@ -4,14 +4,10 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { FileInfo } from '@shared/protocol'
 import { useSessionsStore } from './use-sessions'
 
-export interface FileInfo {
-  path: string
-  name: string
-  size: number
-  modifiedAt: number
-}
+export type { FileInfo } from '@shared/protocol'
 
 export interface VersionInfo {
   version: number
