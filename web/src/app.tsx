@@ -61,7 +61,11 @@ function useSwipeToOpen(onOpen: () => void) {
 function Dashboard() {
   const [sheetOpen, setSheetOpen] = useState(() => isMobileViewport() && !useSessionsStore.getState().selectedSessionId)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sidebar-collapsed') === 'true')
-  const { selectedSessionId, setEvents, setTranscript, showSwitcher, showDebugConsole } = useSessionsStore()
+  const selectedSessionId = useSessionsStore(s => s.selectedSessionId)
+  const setEvents = useSessionsStore(s => s.setEvents)
+  const setTranscript = useSessionsStore(s => s.setTranscript)
+  const showSwitcher = useSessionsStore(s => s.showSwitcher)
+  const showDebugConsole = useSessionsStore(s => s.showDebugConsole)
   const swipeHandlers = useSwipeToOpen(() => setSheetOpen(true))
 
   function toggleSidebar() {

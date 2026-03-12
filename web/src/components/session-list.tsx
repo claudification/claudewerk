@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useSessionsStore } from '@/hooks/use-sessions'
 import type { Session } from '@/lib/types'
+import type { HookEvent } from '@shared/protocol'
 import { cn, formatAge, formatModel, haptic, lastPathSegments } from '@/lib/utils'
 import { ProjectSettingsButton, ProjectSettingsEditor, renderProjectIcon } from './project-settings-editor'
 
@@ -21,21 +22,19 @@ function StatusIndicator({ status }: { status: Session['status'] }) {
   return <span className="w-2 h-2 rounded-full shrink-0 bg-idle" title={status} />
 }
 
+const EMPTY_EVENTS: HookEvent[] = []
+
 function SessionItemContent({ session, compact }: { session: Session; compact?: boolean }) {
-  const {
-    selectedSessionId,
-    selectedSubagentId,
-    selectSession,
-    selectSubagent,
-    openTab,
-    events,
-    projectSettings,
-  } = useSessionsStore()
+  const selectedSessionId = useSessionsStore(s => s.selectedSessionId)
+  const selectedSubagentId = useSessionsStore(s => s.selectedSubagentId)
+  const selectSession = useSessionsStore(s => s.selectSession)
+  const selectSubagent = useSessionsStore(s => s.selectSubagent)
+  const openTab = useSessionsStore(s => s.openTab)
+  const cachedEvents = useSessionsStore(s => s.events[session.id] || EMPTY_EVENTS)
+  const ps = useSessionsStore(s => s.projectSettings[session.cwd])
   const isSelected = selectedSessionId === session.id
-  const cachedEvents = events[session.id] || []
   const sessionStartEvent = cachedEvents.find(e => e.hookEvent === 'SessionStart')
   const model = (sessionStartEvent?.data as { model?: string } | undefined)?.model
-  const ps = projectSettings[session.cwd]
 
   function handleClick() {
     haptic('tap')
@@ -275,7 +274,8 @@ function SessionGroup({
 
 // Inactive project entry - one per cwd, shows latest session
 function InactiveProjectItem({ sessions }: { sessions: Session[] }) {
-  const { selectSession, projectSettings } = useSessionsStore()
+  const selectSession = useSessionsStore(s => s.selectSession)
+  const projectSettings = useSessionsStore(s => s.projectSettings)
   // Latest session by lastActivity
   const latest = sessions.reduce((a, b) => (a.lastActivity > b.lastActivity ? a : b))
   const ps = projectSettings[latest.cwd]
@@ -316,7 +316,8 @@ function InactiveProjectItem({ sessions }: { sessions: Session[] }) {
 }
 
 export function SessionList() {
-  const { sessions, projectSettings } = useSessionsStore()
+  const sessions = useSessionsStore(s => s.sessions)
+  const projectSettings = useSessionsStore(s => s.projectSettings)
   const dashPrefs = useSessionsStore(s => s.dashboardPrefs)
   const [showInactive, setShowInactive] = useState(dashPrefs.showInactiveByDefault)
   const [filter, setFilter] = useState('')

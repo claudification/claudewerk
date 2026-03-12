@@ -28,7 +28,9 @@ export function Header() {
   const [pushState, setPushState] = useState<
     'loading' | 'unsupported' | 'prompt' | 'subscribing' | 'subscribed' | 'denied'
   >('loading')
-  const { isConnected, agentConnected, error } = useSessionsStore()
+  const isConnected = useSessionsStore(s => s.isConnected)
+  const agentConnected = useSessionsStore(s => s.agentConnected)
+  const error = useSessionsStore(s => s.error)
 
   useEffect(() => {
     getPushStatus().then(status => {
