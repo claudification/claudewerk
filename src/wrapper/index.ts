@@ -753,9 +753,15 @@ async function main() {
             const transcriptPath = data.transcript_path
             parentTranscriptPath = transcriptPath
             // Start watcher if transcript file exists, or retry until it does
-            // (brand new projects may not have the JSONL file yet when SessionStart fires)
-            async function tryStartTranscriptWatcher(path: string, retries = 10, delay = 500) {
-              for (let i = 0; i <= retries; i++) {
+            // Brand new projects can take 60-90s before Claude creates the JSONL file.
+            // Use exponential backoff: 500ms, 1s, 2s, 4s... capped at 10s, ~2.5 min total
+            async function tryStartTranscriptWatcher(path: string) {
+              let delay = 500
+              const maxDelay = 10_000
+              const maxTotal = 150_000 // 2.5 minutes total
+              let elapsed = 0
+              let attempt = 0
+              while (elapsed < maxTotal) {
                 if (existsSync(path)) {
                   if (sessionChanged || !transcriptWatcher) {
                     if (transcriptWatcher) {
@@ -770,12 +776,13 @@ async function main() {
                   }
                   return
                 }
-                if (i < retries) {
-                  debug(`Transcript file not found (attempt ${i + 1}/${retries + 1}), retrying in ${delay}ms: ${path}`)
-                  await new Promise(r => setTimeout(r, delay))
-                }
+                attempt++
+                debug(`Transcript file not found (attempt ${attempt}, ${(elapsed / 1000).toFixed(1)}s elapsed), retrying in ${delay}ms: ${path}`)
+                await new Promise(r => setTimeout(r, delay))
+                elapsed += delay
+                delay = Math.min(delay * 2, maxDelay)
               }
-              debug(`WARNING: Transcript file never appeared after ${retries} retries: ${path}`)
+              diag('error', 'Transcript file never appeared', { path, elapsed: `${(elapsed / 1000).toFixed(0)}s`, attempts: attempt })
             }
             tryStartTranscriptWatcher(transcriptPath)
           } else {
