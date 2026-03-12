@@ -110,6 +110,9 @@ export function requireAuth(req: Request): Response | null {
   // Health check always accessible (for Docker healthcheck / monitoring)
   if (url.pathname === '/health') return null
 
+  // Crash reports are public (errors can happen before/during auth)
+  if (url.pathname === '/api/crash') return null
+
   // Static assets must be public - SPA handles auth UI client-side
   if (
     url.pathname === '/manifest.json' ||

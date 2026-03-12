@@ -343,7 +343,7 @@ async function main() {
   })
 
   // Create REST API server (on same or different port)
-  const apiHandler = createApiHandler({ sessionStore, webDir, vapidPublicKey, rclaudeSecret })
+  const apiHandler = createApiHandler({ sessionStore, webDir, vapidPublicKey, rclaudeSecret, cacheDir: authCacheDir })
 
   if (apiPort && apiPort !== port) {
     // Separate API server

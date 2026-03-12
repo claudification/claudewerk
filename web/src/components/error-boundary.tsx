@@ -26,6 +26,32 @@ export class ErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     this.setState({ error, errorInfo })
     console.error('ErrorBoundary caught:', error, errorInfo)
+    this.reportCrash(error, errorInfo)
+  }
+
+  reportCrash(error: Error, errorInfo: ErrorInfo) {
+    try {
+      const store = useSessionsStore.getState()
+      const session = store.sessions.find(s => s.id === store.selectedSessionId)
+      fetch('/api/crash', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          error: { name: error.name, message: error.message, stack: error.stack },
+          componentStack: errorInfo.componentStack,
+          appState: this.getAppState(),
+          localStorage: this.getLocalStorageDump(),
+          version: BUILD_VERSION.gitHashShort,
+          buildTime: BUILD_VERSION.buildTime,
+          url: window.location.href,
+          viewport: `${window.innerWidth}x${window.innerHeight}`,
+          touch: navigator.maxTouchPoints > 0,
+          sessionId: store.selectedSessionId,
+          sessionStatus: session?.status,
+          sessionCwd: session?.cwd,
+        }),
+      }).catch(() => {})
+    } catch {}
   }
 
   getLocalStorageDump(): string {

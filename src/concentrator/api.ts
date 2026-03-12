@@ -4,6 +4,8 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { ListDirsResult, SendInput, Session, SpawnResult, TeamInfo } from '../shared/protocol'
 import { getGlobalSettings, updateGlobalSettings } from './global-settings'
 import { resolveInJail } from './path-jail'
@@ -180,6 +182,7 @@ export interface ApiOptions {
   webDir?: string
   vapidPublicKey?: string
   rclaudeSecret?: string
+  cacheDir?: string
 }
 
 // Build a map of embedded files for quick lookup
@@ -245,7 +248,7 @@ interface SessionOverview {
  * Create API request handler
  */
 export function createApiHandler(options: ApiOptions) {
-  const { sessionStore, webDir, vapidPublicKey, rclaudeSecret } = options
+  const { sessionStore, webDir, vapidPublicKey, rclaudeSecret, cacheDir } = options
 
   function sessionToOverview(session: Session): SessionOverview {
     const lastEvent = session.events[session.events.length - 1]
@@ -1008,6 +1011,85 @@ export function createApiHandler(options: ApiOptions) {
           headers: { 'Content-Type': 'application/json' },
         })
       }
+    }
+
+    // POST /api/crash - record a dashboard crash report (public - no auth required)
+    if (req.method === 'POST' && path === '/api/crash') {
+      if (!cacheDir) {
+        return new Response(JSON.stringify({ error: 'No cache dir configured' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      try {
+        const body = await req.json()
+        const crashDir = join(cacheDir, 'crashes')
+        if (!existsSync(crashDir)) mkdirSync(crashDir, { recursive: true })
+
+        const ts = new Date().toISOString().replace(/[:.]/g, '-')
+        const file = join(crashDir, `crash-${ts}.json`)
+        const report = {
+          timestamp: new Date().toISOString(),
+          userAgent: req.headers.get('user-agent') || 'unknown',
+          ...(body as Record<string, unknown>),
+        }
+        writeFileSync(file, JSON.stringify(report, null, 2))
+
+        // Keep only latest 50 crash reports
+        const files = readdirSync(crashDir)
+          .filter(f => f.startsWith('crash-') && f.endsWith('.json'))
+          .sort()
+        if (files.length > 50) {
+          for (const old of files.slice(0, files.length - 50)) {
+            try {
+              unlinkSync(join(crashDir, old))
+            } catch {}
+          }
+        }
+
+        return new Response(JSON.stringify({ success: true, file: file.split('/').pop() }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      } catch {
+        return new Response(JSON.stringify({ error: 'Invalid crash report' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+    }
+
+    // GET /api/crashes - list recent crash reports
+    if (req.method === 'GET' && path === '/api/crashes') {
+      if (!cacheDir) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      const crashDir = join(cacheDir, 'crashes')
+      if (!existsSync(crashDir)) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      const files = readdirSync(crashDir)
+        .filter(f => f.startsWith('crash-') && f.endsWith('.json'))
+        .sort()
+        .reverse()
+        .slice(0, 20)
+      const reports = files.map(f => {
+        try {
+          return JSON.parse(readFileSync(join(crashDir, f), 'utf-8'))
+        } catch {
+          return { file: f, error: 'parse failed' }
+        }
+      })
+      return new Response(JSON.stringify(reports, null, 2), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
     }
 
     // GET /api/settings/projects - get all project settings
