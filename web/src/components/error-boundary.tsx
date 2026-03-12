@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { useSessionsStore } from '@/hooks/use-sessions'
 import { BUILD_VERSION } from '../../../src/shared/version'
 
 interface Props {
@@ -25,6 +26,51 @@ export class ErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     this.setState({ error, errorInfo })
     console.error('ErrorBoundary caught:', error, errorInfo)
+  }
+
+  getLocalStorageDump(): string {
+    try {
+      const keys = ['dashboard-prefs', 'terminal-theme', 'terminal-font-size']
+      const entries: string[] = []
+      for (const key of keys) {
+        const val = localStorage.getItem(key)
+        if (val) entries.push(`  ${key}: ${val}`)
+      }
+      return entries.length > 0 ? entries.join('\n') : '  (none)'
+    } catch {
+      return '  (localStorage unavailable)'
+    }
+  }
+
+  getAppState(): string {
+    try {
+      const store = useSessionsStore.getState()
+      const session = store.sessions.find(s => s.id === store.selectedSessionId)
+      const transcriptEntries = store.selectedSessionId ? store.transcripts[store.selectedSessionId] : undefined
+      const lines = [
+        `  selectedSession: ${store.selectedSessionId?.slice(0, 8) || '(none)'}`,
+        `  sessionCount: ${store.sessions.length}`,
+        `  expandAll: ${store.expandAll}`,
+        `  showTerminal: ${store.showTerminal}`,
+        `  wsConnected: ${store.isConnected}`,
+        `  viewport: ${window.innerWidth}x${window.innerHeight} @${window.devicePixelRatio}x`,
+        `  touch: ${navigator.maxTouchPoints > 0}`,
+      ]
+      if (session) {
+        lines.push(
+          `  session.status: ${session.status}`,
+          `  session.cwd: ${session.cwd}`,
+          `  session.eventCount: ${session.eventCount}`,
+          `  session.wrapperIds: [${(session.wrapperIds || []).map(w => w.slice(0, 8)).join(', ')}]`,
+          `  transcriptEntries: ${transcriptEntries?.length ?? 0}`,
+          `  subagentCount: ${session.subagents?.length ?? 0}`,
+          `  taskCount: ${session.taskCount ?? 0}`,
+        )
+      }
+      return lines.join('\n')
+    } catch (e) {
+      return `  (failed to read store: ${e})`
+    }
   }
 
   getErrorText(): string {
@@ -58,7 +104,17 @@ export class ErrorBoundary extends Component<Props, State> {
       lines.push('─── COMPONENT STACK ─────────────────────────────────────────────', '', errorInfo.componentStack, '')
     }
 
-    lines.push('═══════════════════════════════════════════════════════════════')
+    lines.push(
+      '─── APP STATE ───────────────────────────────────────────────────',
+      '',
+      this.getAppState(),
+      '',
+      '─── LOCAL SETTINGS ──────────────────────────────────────────────',
+      '',
+      this.getLocalStorageDump(),
+      '',
+      '═══════════════════════════════════════════════════════════════',
+    )
 
     return lines.join('\n')
   }
@@ -167,6 +223,24 @@ export class ErrorBoundary extends Component<Props, State> {
                 </pre>
               </div>
             )}
+
+            {/* App State */}
+            <div className="border border-border mt-4">
+              <div className="p-3 border-b border-border bg-card text-primary font-bold text-sm">[ APP STATE ]</div>
+              <pre className="p-4 text-xs text-muted-foreground overflow-x-auto max-h-48 overflow-y-auto">
+                {this.getAppState()}
+              </pre>
+            </div>
+
+            {/* Local Settings */}
+            <div className="border border-border mt-4">
+              <div className="p-3 border-b border-border bg-card text-primary font-bold text-sm">
+                [ LOCAL SETTINGS ]
+              </div>
+              <pre className="p-4 text-xs text-muted-foreground overflow-x-auto max-h-48 overflow-y-auto">
+                {this.getLocalStorageDump()}
+              </pre>
+            </div>
 
             {/* Footer */}
             <div className="mt-6 text-muted-foreground text-xs">
