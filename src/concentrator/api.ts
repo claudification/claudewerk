@@ -228,6 +228,7 @@ interface SessionOverview {
   cwd: string
   model?: string
   status: Session['status']
+  wrapperIds: string[]
   startedAt: number
   lastActivity: number
   eventCount: number
@@ -253,6 +254,7 @@ export function createApiHandler(options: ApiOptions) {
       cwd: session.cwd,
       model: session.model,
       status: session.status,
+      wrapperIds: sessionStore.getWrapperIds(session.id),
       startedAt: session.startedAt,
       lastActivity: session.lastActivity,
       eventCount: session.events.length,
@@ -821,6 +823,7 @@ export function createApiHandler(options: ApiOptions) {
         cwd: session.cwd,
         model: session.model,
         status: session.status,
+        wrapperIds: sessionStore.getWrapperIds(sessionId),
         capabilities: session.capabilities,
         version: session.version,
         buildTime: session.buildTime,

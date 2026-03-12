@@ -115,6 +115,7 @@ export interface SessionStore {
   getSessionSocketByWrapper: (wrapperId: string) => ServerWebSocket<unknown> | undefined
   removeSessionSocket: (sessionId: string, wrapperId: string) => void
   getActiveWrapperCount: (sessionId: string) => number
+  getWrapperIds: (sessionId: string) => string[]
   // Transcript cache methods
   addTranscriptEntries: (sessionId: string, entries: TranscriptEntry[], isInitial: boolean) => void
   getTranscriptEntries: (sessionId: string, limit?: number) => TranscriptEntry[]
@@ -919,6 +920,11 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     return sessionSockets.get(sessionId)?.size ?? 0
   }
 
+  function getWrapperIds(sessionId: string): string[] {
+    const wrappers = sessionSockets.get(sessionId)
+    return wrappers ? Array.from(wrappers.keys()) : []
+  }
+
   // Terminal viewer management (multiple viewers per session)
   function addTerminalViewer(wrapperId: string, ws: ServerWebSocket<unknown>): void {
     let viewers = terminalViewers.get(wrapperId)
@@ -1323,6 +1329,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     getSessionSocketByWrapper,
     removeSessionSocket,
     getActiveWrapperCount,
+    getWrapperIds,
     addTerminalViewer,
     getTerminalViewers,
     removeTerminalViewer,
