@@ -17,7 +17,6 @@ import type {
   TranscriptEntry,
   WrapperCapability,
 } from '../shared/protocol'
-import { getGlobalSettings } from './global-settings'
 
 const DEFAULT_CACHE_DIR = join(homedir(), '.cache', 'concentrator')
 const CACHE_FILENAME = 'sessions.json'
@@ -277,20 +276,6 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     const STALE_AGENT_MS = 10 * 60 * 1000 // 10 minutes
     for (const session of sessions.values()) {
       let changed = false
-
-      const idleTimeoutMs = getGlobalSettings().idleTimeoutMinutes * 60 * 1000
-      if (session.status === 'active' && now - session.lastActivity > idleTimeoutMs) {
-        session.status = 'idle'
-        changed = true
-        // Toast: session went idle - clickable to switch to it
-        const projectName = getProjectSettings(session.cwd)?.label || session.cwd.split('/').pop() || session.cwd
-        broadcast({
-          type: 'toast',
-          sessionId: session.id,
-          title: 'Session idle',
-          message: `${projectName} - waiting for input`,
-        })
-      }
 
       // Clean up stale "running" agents (SubagentStop may have been missed)
       for (const agent of session.subagents) {
@@ -575,7 +560,13 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     if (session) {
       session.events.push(event)
       session.lastActivity = Date.now()
-      if (session.status === 'idle') {
+
+      // Status transitions based on actual Claude hooks (not artificial timers)
+      if (event.hookEvent === 'Stop') {
+        // Claude finished its turn - waiting for user input
+        session.status = 'idle'
+      } else if (session.status !== 'ended') {
+        // Any other hook event means Claude is active
         session.status = 'active'
       }
 
