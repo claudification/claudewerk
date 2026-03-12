@@ -86,7 +86,7 @@ const InputBar = memo(function InputBar({ sessionId }: { sessionId: string }) {
   }
 
   return (
-    <div ref={containerRef} className="absolute bottom-0 left-0 right-0 p-3 border-t border-border bg-background z-10">
+    <div ref={containerRef} className="shrink-0 p-3 border-t border-border bg-background z-10">
       <div className="flex gap-2 items-stretch">
         <MarkdownInput
           value={inputValue}
@@ -274,7 +274,7 @@ export function SessionDetail() {
   }
 
   return (
-    <div className="h-full flex flex-col overflow-hidden relative">
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
       {/* Session Info - Collapsible */}
       <div className="shrink-0 border-b border-border max-h-[30vh] overflow-y-auto">
         <button
@@ -664,9 +664,8 @@ export function SessionDetail() {
             </div>
           </div>
 
-          {/* Content - pb-20 reserves space for the absolutely-positioned input bar */}
           {activeTab === 'transcript' && (
-            <div className={cn('flex-1 min-h-0 overflow-hidden relative', canSendInput && 'pb-20')}>
+            <div className="flex-1 min-h-0 overflow-hidden relative">
               <TranscriptView
                 key={selectedSessionId}
                 entries={transcript}

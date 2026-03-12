@@ -569,11 +569,11 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       session.lastActivity = Date.now()
 
       // Status transitions based on actual Claude hooks (not artificial timers)
+      // These hooks don't indicate Claude is actively working
+      const passiveHooks = new Set(['Stop', 'Notification', 'TeammateIdle', 'TaskCompleted', 'SessionEnd'])
       if (event.hookEvent === 'Stop') {
-        // Claude finished its turn - waiting for user input
         session.status = 'idle'
-      } else if (session.status !== 'ended') {
-        // Any other hook event means Claude is active
+      } else if (!passiveHooks.has(event.hookEvent) && session.status !== 'ended') {
         session.status = 'active'
       }
 

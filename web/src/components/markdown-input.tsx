@@ -1,5 +1,6 @@
 import { Mic, Paperclip } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { getShowVoiceInput } from '@/components/settings-page'
 import { VoiceOverlay } from '@/components/voice-overlay'
 import { useSessionsStore } from '@/hooks/use-sessions'
@@ -460,10 +461,9 @@ export function MarkdownInput({
     const composeHeight = viewportHeight ? `${viewportHeight}px` : '100dvh'
     const composeTop = viewportHeight ? 'var(--vv-offset, 0px)' : '0px'
 
-    return (
-      <>
+    return createPortal(
       <div
-        className="fixed inset-x-0 z-50 flex flex-col bg-background"
+        className="fixed inset-0 z-[999] flex flex-col bg-background"
         style={{ touchAction: 'manipulation', height: composeHeight, top: composeTop }}
       >
         {/* Hidden file input for attachment */}
@@ -556,16 +556,16 @@ export function MarkdownInput({
             </button>
           </div>
         </div>
-      </div>
-      {showVoiceOverlay && (
-        <VoiceOverlay
-          onResult={holdToRecord ? handleVoiceResultAndSubmit : handleVoiceResult}
-          onClose={handleVoiceClose}
-          holdMode={holdToRecord}
-          onMicGranted={() => { micPermissionRef.current = true }}
-        />
-      )}
-      </>
+        {showVoiceOverlay && (
+          <VoiceOverlay
+            onResult={holdToRecord ? handleVoiceResultAndSubmit : handleVoiceResult}
+            onClose={handleVoiceClose}
+            holdMode={holdToRecord}
+            onMicGranted={() => { micPermissionRef.current = true }}
+          />
+        )}
+      </div>,
+      document.body,
     )
   }
 
