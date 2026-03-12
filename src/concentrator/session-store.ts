@@ -224,11 +224,16 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     loadStateSync()
   }
 
-  // Periodically mark idle sessions, clean stale agents, and save state
+  // Periodically mark idle sessions, clean stale agents, evict old sessions, and save state
+  const EVICTION_TTL_MS = 60 * 60 * 1000 // 1 hour after ending
+  const MAX_ENDED_SESSIONS = 50 // hard cap on ended sessions in memory
+
   setInterval(() => {
     const now = Date.now()
     const STALE_AGENT_MS = 10 * 60 * 1000 // 10 minutes
     const LIVENESS_MS = 30_000 // 30s without hooks = not "actively receiving"
+    const toEvict: string[] = []
+
     for (const session of sessions.values()) {
       let changed = false
 
@@ -251,6 +256,11 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         }
       }
 
+      // Mark ended sessions for eviction after TTL
+      if (session.status === 'ended' && now - session.lastActivity > EVICTION_TTL_MS) {
+        toEvict.push(session.id)
+      }
+
       if (changed) {
         broadcast({
           type: 'session_update',
@@ -258,6 +268,26 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
           session: toSessionSummary(session),
         })
       }
+    }
+
+    // Evict TTL-expired ended sessions
+    for (const id of toEvict) {
+      removeSession(id)
+    }
+
+    // Hard cap: if too many ended sessions, evict oldest first
+    const ended = Array.from(sessions.values())
+      .filter(s => s.status === 'ended')
+      .sort((a, b) => a.lastActivity - b.lastActivity)
+    if (ended.length > MAX_ENDED_SESSIONS) {
+      for (let i = 0; i < ended.length - MAX_ENDED_SESSIONS; i++) {
+        removeSession(ended[i].id)
+      }
+    }
+
+    if (toEvict.length > 0 || ended.length > MAX_ENDED_SESSIONS) {
+      const evictedCount = toEvict.length + Math.max(0, ended.length - MAX_ENDED_SESSIONS)
+      console.log(`[eviction] Removed ${evictedCount} ended sessions (${sessions.size} remaining)`)
     }
   }, 10000)
 
@@ -815,7 +845,21 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   }
 
   function removeSession(sessionId: string): void {
+    const session = sessions.get(sessionId)
+    if (session) {
+      for (const bg of session.bgTasks) {
+        bgTaskOutputCache.delete(bg.taskId)
+      }
+    }
     sessions.delete(sessionId)
+    sessionSockets.delete(sessionId)
+    transcriptCache.delete(sessionId)
+    pendingAgentDescriptions.delete(sessionId)
+    for (const key of subagentTranscriptCache.keys()) {
+      if (key.startsWith(`${sessionId}:`)) {
+        subagentTranscriptCache.delete(key)
+      }
+    }
   }
 
   function getSessionEvents(sessionId: string, limit?: number, since?: number): HookEvent[] {
