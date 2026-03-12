@@ -23,6 +23,21 @@ export function EventsView({ events, follow = false, onUserScroll, onReachedTop 
     getScrollElement: () => parentRef.current,
     estimateSize: () => 100,
     overscan: 5,
+    // Defer ResizeObserver callbacks to avoid setState-during-render (React #300)
+    observeElementRect: (instance, cb) => {
+      const el = instance.scrollElement
+      if (!el) return
+      const observer = new ResizeObserver(entries => {
+        const entry = entries[0]
+        if (entry) {
+          requestAnimationFrame(() => {
+            cb({ width: entry.contentRect.width, height: entry.contentRect.height })
+          })
+        }
+      })
+      observer.observe(el)
+      return () => observer.disconnect()
+    },
   })
 
   useEffect(() => {
