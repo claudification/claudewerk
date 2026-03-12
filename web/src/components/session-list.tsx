@@ -5,22 +5,18 @@ import { cn, formatAge, formatModel, haptic, lastPathSegments } from '@/lib/util
 import { ProjectSettingsButton, ProjectSettingsEditor, renderProjectIcon } from './project-settings-editor'
 import { usePrefs } from './settings-page'
 
-function StatusIndicator({ status, lastActivity }: { status: Session['status']; lastActivity?: number }) {
+function StatusIndicator({ status }: { status: Session['status'] }) {
   if (status === 'ended') {
     return <span className="px-1.5 py-0.5 text-[10px] uppercase font-bold bg-ended text-foreground">ended</span>
   }
-  // Active with recent activity (last 4 min) gets a spinning work indicator
-  if (status === 'active' && lastActivity && Date.now() - lastActivity < 4 * 60 * 1000) {
+  if (status === 'active') {
     return (
       <span className="w-3 h-3 shrink-0 flex items-center justify-center" title="working">
-        <span className="w-2.5 h-2.5 border-2 border-active border-t-transparent rounded-full animate-spin" />
+        <span className="w-2.5 h-2.5 rounded-full animate-spin" style={{ border: '2px solid var(--active)', borderTopColor: 'transparent' }} />
       </span>
     )
   }
-  // Server determines idle status via idleTimeoutMinutes setting
-  return (
-    <span className={cn('w-2 h-2 rounded-full shrink-0', status === 'idle' ? 'bg-idle' : 'bg-active')} title={status} />
-  )
+  return <span className="w-2 h-2 rounded-full shrink-0 bg-idle" title={status} />
 }
 
 function SessionItemContent({ session, compact }: { session: Session; compact?: boolean }) {
@@ -76,7 +72,7 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
       {/* Path - most important */}
       {!compact && (
         <div className="flex items-center gap-1.5">
-          <StatusIndicator status={session.status} lastActivity={session.lastActivity} />
+          <StatusIndicator status={session.status} />
           {ps?.icon && (
             <span style={displayColor && !isSelected ? { color: displayColor } : undefined}>
               {renderProjectIcon(ps.icon)}
@@ -97,7 +93,7 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
       )}
       {compact && (
         <div className="flex items-center gap-1.5">
-          <StatusIndicator status={session.status} lastActivity={session.lastActivity} />
+          <StatusIndicator status={session.status} />
           <span
             className={cn(
               'font-mono text-[11px] flex-1 truncate',
@@ -115,23 +111,23 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
         session.subagents.length > 0 ||
         session.teammates.some(t => t.status === 'working')) && (
         <div className="mt-1 space-y-0.5">
-          {session.activeTasks.slice(0, 3).map(task => (
+          {session.activeTasks.slice(0, 5).map(task => (
             <div key={task.id} className="text-[11px] text-active/80 font-mono truncate pl-1">
               <span className="text-active mr-1">{'\u25B8'}</span>
               {task.subject}
             </div>
           ))}
-          {session.activeTasks.length > 3 && (
-            <div className="text-[10px] text-muted-foreground pl-1 font-mono">
-              +{session.activeTasks.length - 3} more
-            </div>
-          )}
-          {session.pendingTasks.slice(0, 4).map(task => (
+          {session.pendingTasks.slice(0, Math.max(0, 5 - session.activeTasks.length)).map(task => (
             <div key={task.id} className="text-[11px] text-amber-400/50 font-mono truncate pl-1">
               <span className="text-amber-400/40 mr-1">{'\u25CB'}</span>
               {task.subject}
             </div>
           ))}
+          {session.activeTasks.length + session.pendingTasks.length > 5 && (
+            <div className="text-[10px] text-muted-foreground pl-1 font-mono">
+              ..{session.activeTasks.length + session.pendingTasks.length - 5} more
+            </div>
+          )}
           {session.subagents
             .filter(a => a.status === 'running')
             .map(a => (
@@ -184,23 +180,11 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
       {/* Status row (non-compact only, only if there's something to show) */}
       {!compact &&
         (session.status === 'ended' ||
-          session.pendingTaskCount > 0 ||
           session.runningBgTaskCount > 0 ||
           session.team) && (
           <div className="flex items-center gap-2 mt-2 text-xs flex-wrap">
             {session.status === 'ended' && (
-              <StatusIndicator status={session.status} lastActivity={session.lastActivity} />
-            )}
-            {session.pendingTaskCount > 0 && (
-              <span
-                className="px-1.5 py-0.5 bg-amber-400/20 text-amber-400 border border-amber-400/50 text-[10px] font-bold cursor-pointer hover:bg-amber-400/30"
-                onClick={e => {
-                  e.stopPropagation()
-                  openTab(session.id, 'tasks')
-                }}
-              >
-                [{session.pendingTaskCount}] task{session.pendingTaskCount !== 1 ? 's' : ''}
-              </span>
+              <StatusIndicator status={session.status} />
             )}
             {session.runningBgTaskCount > 0 && (
               <span

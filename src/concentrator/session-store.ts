@@ -274,8 +274,15 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   setInterval(() => {
     const now = Date.now()
     const STALE_AGENT_MS = 10 * 60 * 1000 // 10 minutes
+    const LIVENESS_MS = 30_000 // 30s without hooks = not "actively receiving"
     for (const session of sessions.values()) {
       let changed = false
+
+      // Liveness check: no hooks for 30s means session isn't actively receiving
+      if (session.status === 'active' && now - session.lastActivity > LIVENESS_MS) {
+        session.status = 'idle'
+        changed = true
+      }
 
       // Clean up stale "running" agents (SubagentStop may have been missed)
       for (const agent of session.subagents) {
@@ -429,7 +436,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       capabilities,
       startedAt: Date.now(),
       lastActivity: Date.now(),
-      status: 'active',
+      status: 'idle',
       events: [],
       subagents: [],
       tasks: [],
@@ -462,7 +469,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   function resumeSession(id: string): void {
     const session = sessions.get(id)
     if (session) {
-      session.status = 'active'
+      session.status = 'idle'
       session.lastActivity = Date.now()
       // Reset stale state from previous run
       session.subagents = []
@@ -496,7 +503,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     session.id = newId
     session.cwd = newCwd
     if (newModel) session.model = newModel
-    session.status = 'active'
+    session.status = 'idle'
     session.lastActivity = Date.now()
     sessions.set(newId, session)
 
