@@ -523,7 +523,7 @@ export function MarkdownInput({
 
   // iOS auto-zooms inputs with font-size < 16px. Root is 13px so rem units are broken for this.
   // Use 16px on inline (prevents zoom on focus) and 19px expanded (comfortable typing)
-  const expandedFontSize = expanded ? { fontSize: '19px', lineHeight: '1.5' } : { fontSize: '16px' }
+  const expandedFontSize = expanded ? { fontSize: '19px', lineHeight: '1.5' } : { fontSize: '16px', lineHeight: '1.4' }
 
   // Expanded mobile compose mode
   if (expanded) {
@@ -698,7 +698,7 @@ export function MarkdownInput({
           'placeholder:text-muted-foreground',
           'disabled:opacity-50',
         )}
-        style={{ minHeight: '2.25rem', fontSize: '16px' }}
+        style={{ minHeight: '2.25rem', ...expandedFontSize }}
       />
       {/* Action buttons */}
       <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
