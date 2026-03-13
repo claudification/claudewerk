@@ -105,10 +105,12 @@ function diag(type: string, msg: string, args?: unknown) {
   log(`[diag] ${type}: ${msg}${args ? ` ${JSON.stringify(args)}` : ''}`)
   if (activeWs?.readyState === WebSocket.OPEN) {
     try {
-      activeWs.send(JSON.stringify({
-        type: 'agent_diag',
-        entries: [{ t: Date.now(), type, msg, args }],
-      }))
+      activeWs.send(
+        JSON.stringify({
+          type: 'agent_diag',
+          entries: [{ t: Date.now(), type, msg, args }],
+        }),
+      )
     } catch {}
   }
 }
@@ -408,7 +410,14 @@ function connect(
             wrapperId: spawnMsg.wrapperId,
             mkdir: spawnMsg.mkdir,
           })
-          const spawnRes = await spawnSession(expandedCwd, spawnMsg.wrapperId, reviveScript, secret, verbose, spawnMsg.mkdir)
+          const spawnRes = await spawnSession(
+            expandedCwd,
+            spawnMsg.wrapperId,
+            reviveScript,
+            secret,
+            verbose,
+            spawnMsg.mkdir,
+          )
           const response: SpawnResult = {
             type: 'spawn_result',
             requestId: spawnMsg.requestId,

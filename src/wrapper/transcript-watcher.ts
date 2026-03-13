@@ -149,13 +149,13 @@ export function createTranscriptWatcher(options: TranscriptWatcherOptions): Tran
       depth: 0,
       awaitWriteFinish: { stabilityThreshold: 50, pollInterval: 25 },
     })
-    watcher.on('change', (changedPath) => {
+    watcher.on('change', changedPath => {
       if (resolve(changedPath) === absPath) {
         debug?.(`chokidar change event`)
         readNewLines(false)
       }
     })
-    watcher.on('add', (addedPath) => {
+    watcher.on('add', addedPath => {
       const name = addedPath.split('/').pop() || addedPath
       if (name.endsWith('.jsonl')) {
         debug?.(`New transcript file detected: ${name}`)

@@ -9,14 +9,13 @@ import { join } from 'node:path'
 import type { ListDirsResult, SendInput, Session, SpawnResult, TeamInfo } from '../shared/protocol'
 import { getGlobalSettings, updateGlobalSettings } from './global-settings'
 import { resolveInJail } from './path-jail'
-import { deleteProjectSettings, getAllProjectSettings, getProjectSettings, setProjectSettings } from './project-settings'
 import {
-  addSubscription,
-  getSubscriptionCount,
-  isPushConfigured,
-  removeSubscription,
-  sendPushToAll,
-} from './push'
+  deleteProjectSettings,
+  getAllProjectSettings,
+  getProjectSettings,
+  setProjectSettings,
+} from './project-settings'
+import { addSubscription, getSubscriptionCount, isPushConfigured, removeSubscription, sendPushToAll } from './push'
 import type { SessionStore } from './session-store'
 import { UI_HTML } from './ui'
 
@@ -1127,7 +1126,11 @@ export function createApiHandler(options: ApiOptions) {
         // Broadcast to all dashboard subscribers
         const json = JSON.stringify({ type: 'project_settings_updated', settings: allSettings })
         for (const ws of sessionStore.getSubscribers()) {
-          try { ws.send(json) } catch { /* dead socket */ }
+          try {
+            ws.send(json)
+          } catch {
+            /* dead socket */
+          }
         }
         return new Response(JSON.stringify({ success: true, settings: allSettings }), {
           status: 200,
@@ -1156,7 +1159,11 @@ export function createApiHandler(options: ApiOptions) {
         // Broadcast to all dashboard subscribers
         const json = JSON.stringify({ type: 'project_settings_updated', settings: allSettings })
         for (const ws of sessionStore.getSubscribers()) {
-          try { ws.send(json) } catch { /* dead socket */ }
+          try {
+            ws.send(json)
+          } catch {
+            /* dead socket */
+          }
         }
         return new Response(JSON.stringify({ success: true, settings: allSettings }), {
           status: 200,
@@ -1239,10 +1246,13 @@ export function createApiHandler(options: ApiOptions) {
         }
 
         if (fileContents.length === 0) {
-          return new Response(JSON.stringify({ error: 'No project files found (CLAUDE.md, package.json, README.md)' }), {
-            status: 404,
-            headers: { 'Content-Type': 'application/json' },
-          })
+          return new Response(
+            JSON.stringify({ error: 'No project files found (CLAUDE.md, package.json, README.md)' }),
+            {
+              status: 404,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          )
         }
 
         console.log(`[keyterms] Generating keyterms for ${body.cwd} from ${fileContents.length} files`)
@@ -1453,7 +1463,7 @@ Output a JSON array of strings. Each string should be the correct spelling of on
           model: 'nova-3',
           smart_format: 'true',
           punctuate: 'true',
-          filler_words: 'false',       // strip um, uh, etc.
+          filler_words: 'false', // strip um, uh, etc.
           diarize: 'false',
           language: 'en',
         })

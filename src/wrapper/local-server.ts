@@ -56,16 +56,25 @@ export async function startLocalServer(options: LocalServerOptions): Promise<{ s
       // Notify endpoint: POST /notify - send push notification via concentrator
       if (req.method === 'POST' && url.pathname === '/notify') {
         try {
-          const body = await req.json() as Record<string, unknown>
+          const body = (await req.json()) as Record<string, unknown>
           const message = typeof body.message === 'string' ? body.message : ''
           const title = typeof body.title === 'string' ? body.title : undefined
           if (!message.trim()) {
-            return new Response(JSON.stringify({ error: 'message is required' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+            return new Response(JSON.stringify({ error: 'message is required' }), {
+              status: 400,
+              headers: { 'Content-Type': 'application/json' },
+            })
           }
           onNotify?.(message.trim(), title?.trim())
-          return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+          return new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
         } catch {
-          return new Response(JSON.stringify({ error: 'invalid JSON' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+          return new Response(JSON.stringify({ error: 'invalid JSON' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          })
         }
       }
 

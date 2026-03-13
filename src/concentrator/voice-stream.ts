@@ -104,7 +104,9 @@ export function handleVoiceStart(
     // Flush any audio buffered during connection
     if (voiceSession.audioBuffer.length > 0) {
       const bufferedBytes = voiceSession.audioBuffer.reduce((sum, b) => sum + b.length, 0)
-      console.log(`[voice-stream] Deepgram WS connected, flushing ${voiceSession.audioBuffer.length} buffered chunks (${bufferedBytes}B)`)
+      console.log(
+        `[voice-stream] Deepgram WS connected, flushing ${voiceSession.audioBuffer.length} buffered chunks (${bufferedBytes}B)`,
+      )
       for (const chunk of voiceSession.audioBuffer) {
         dgWs.send(chunk)
       }
@@ -162,7 +164,9 @@ export function handleVoiceStart(
 
   dgWs.onclose = (event: CloseEvent) => {
     const reason = event.reason || 'no reason'
-    console.log(`[voice-stream] Deepgram WS closed (code: ${event.code}, reason: "${reason}", audioChunks: ${voiceDataCount}, totalBytes: ${voiceDataBytes})`)
+    console.log(
+      `[voice-stream] Deepgram WS closed (code: ${event.code}, reason: "${reason}", audioChunks: ${voiceDataCount}, totalBytes: ${voiceDataBytes})`,
+    )
 
     if (!voiceSession.closed) {
       if (voiceSession.finalTranscript) {
@@ -176,7 +180,12 @@ export function handleVoiceStart(
       } else if (voiceDataBytes > 0 && !voiceSession.finalTranscript) {
         // Got audio but no transcript -- Deepgram couldn't decode or no speech detected
         console.warn(`[voice-stream] Deepgram closed with ${voiceDataBytes}B audio but no transcript`)
-        ws.send(JSON.stringify({ type: 'voice_error', error: 'No speech detected. Try speaking louder or closer to the mic.' }))
+        ws.send(
+          JSON.stringify({
+            type: 'voice_error',
+            error: 'No speech detected. Try speaking louder or closer to the mic.',
+          }),
+        )
         voiceSession.closed = true
       }
     }
@@ -200,7 +209,9 @@ export function handleVoiceData(ws: ServerWebSocket<unknown>, audioBase64: strin
 
   // Log first chunk and then every 20th chunk
   if (voiceDataCount === 1 || voiceDataCount % 20 === 0) {
-    console.log(`[voice-stream] Audio chunk #${voiceDataCount}: ${bytes.length}B (total: ${voiceDataBytes}B, DG state: ${session.dgWs.readyState})`)
+    console.log(
+      `[voice-stream] Audio chunk #${voiceDataCount}: ${bytes.length}B (total: ${voiceDataBytes}B, DG state: ${session.dgWs.readyState})`,
+    )
   }
 
   if (session.dgWs.readyState === WebSocket.OPEN) {
@@ -279,9 +290,7 @@ async function refineAndSend(ws: ServerWebSocket<unknown>, rawText: string, keyt
 
   try {
     // ── Step 1: Context Extraction ──────────────────────────────────
-    const keytermHint = keyterms.length > 0
-      ? `\nKnown project terms: ${keyterms.join(', ')}`
-      : ''
+    const keytermHint = keyterms.length > 0 ? `\nKnown project terms: ${keyterms.join(', ')}` : ''
 
     const contextRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -329,7 +338,9 @@ ${rawText}`,
         if (ctx.tone) parts.push(`Tone: ${ctx.tone}`)
         if (ctx.proper_nouns?.length) parts.push(`Proper nouns/names: ${ctx.proper_nouns.join(', ')}`)
         if (ctx.corrections?.length) {
-          const fixes = ctx.corrections.map((c: { heard: string; meant: string }) => `"${c.heard}" -> "${c.meant}"`).join(', ')
+          const fixes = ctx.corrections
+            .map((c: { heard: string; meant: string }) => `"${c.heard}" -> "${c.meant}"`)
+            .join(', ')
           parts.push(`Likely ASR misrecognitions: ${fixes}`)
         }
         if (parts.length > 0) {
@@ -344,9 +355,10 @@ ${rawText}`,
     }
 
     // ── Step 2: Refinement with enriched context ────────────────────
-    const keytermBlock = keyterms.length > 0
-      ? `\nDomain vocabulary (correct spellings for this project): ${keyterms.join(', ')}\nWhen the transcript contains words that sound similar to these terms, prefer the domain term.`
-      : ''
+    const keytermBlock =
+      keyterms.length > 0
+        ? `\nDomain vocabulary (correct spellings for this project): ${keyterms.join(', ')}\nWhen the transcript contains words that sound similar to these terms, prefer the domain term.`
+        : ''
 
     const defaultSystemPrompt = `You are an expert ASR (Automatic Speech Recognition) post-processor. You specialize in cleaning up voice-transcribed text that will be used as prompts for a coding AI assistant.
 
@@ -376,7 +388,8 @@ Notice how: filler words removed, self-correction applied ("not authentication, 
       },
       {
         role: 'assistant' as const,
-        content: 'Understood. I will clean the transcript by removing disfluencies, applying self-corrections, fixing ASR errors (especially technical terms and word boundaries), and converting spoken syntax to written form - while preserving the speaker\'s original intent and tone.',
+        content:
+          "Understood. I will clean the transcript by removing disfluencies, applying self-corrections, fixing ASR errors (especially technical terms and word boundaries), and converting spoken syntax to written form - while preserving the speaker's original intent and tone.",
       },
       {
         role: 'user' as const,
