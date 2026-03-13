@@ -33,6 +33,7 @@ export interface DashboardPrefs {
   showInactiveByDefault: boolean
   compactMode: boolean
   showVoiceInput: boolean
+  showVoiceFab: boolean
   showWsStats: boolean
   showThinking: boolean
   toolDisplay: Partial<Record<ToolDisplayKey, Partial<ToolDisplayPrefs>>>
@@ -42,6 +43,7 @@ export const defaultPrefs: DashboardPrefs = {
   showInactiveByDefault: false,
   compactMode: false,
   showVoiceInput: true,
+  showVoiceFab: false,
   showWsStats: false,
   showThinking: false,
   toolDisplay: {},

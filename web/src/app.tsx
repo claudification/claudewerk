@@ -12,6 +12,7 @@ import { ShortcutHelp } from '@/components/shortcut-help'
 import { ToastContainer } from '@/components/toast'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
+import { VoiceFab } from '@/components/voice-fab'
 import { WebTerminal } from '@/components/web-terminal'
 import {
   fetchGlobalSettings,
@@ -281,10 +282,23 @@ function Dashboard() {
       {/* Shift+? shortcut help */}
       <ShortcutHelp />
 
+      {/* Voice FAB - mobile only, gated by pref */}
+      <VoiceFabGate />
+
       {/* Toast notifications */}
       <ToastContainer />
     </div>
   )
+}
+
+// Voice FAB gate - only show on mobile with pref enabled and active session
+function VoiceFabGate() {
+  const showVoiceFab = useSessionsStore(state => state.dashboardPrefs.showVoiceFab)
+  const selectedSessionId = useSessionsStore(state => state.selectedSessionId)
+  const isMobile = isMobileViewport()
+
+  if (!isMobile || !showVoiceFab || !selectedSessionId) return null
+  return <VoiceFab />
 }
 
 // Popout terminal - rendered when URL is #popout-terminal/{wrapperId}

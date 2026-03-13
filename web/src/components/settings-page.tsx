@@ -378,6 +378,18 @@ function DisplayTab() {
       </label>
       <label className="flex items-center justify-between cursor-pointer">
         <div>
+          <div className="text-sm text-foreground">Voice FAB (mobile)</div>
+          <div className="text-[10px] text-muted-foreground">Floating hold-to-record button on right edge</div>
+        </div>
+        <input
+          type="checkbox"
+          checked={prefs.showVoiceFab}
+          onChange={e => update({ showVoiceFab: e.target.checked })}
+          className="accent-primary w-4 h-4"
+        />
+      </label>
+      <label className="flex items-center justify-between cursor-pointer">
+        <div>
           <div className="text-sm text-foreground">WS traffic stats</div>
           <div className="text-[10px] text-muted-foreground">Show msg/s and KB/s in header bar</div>
         </div>
