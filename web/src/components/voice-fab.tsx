@@ -19,6 +19,7 @@ export function VoiceFab() {
   const [interimText, setInterimText] = useState('')
   const [finalText, setFinalText] = useState('')
   const [refinedText, setRefinedText] = useState('')
+  const [errorMsg, setErrorMsg] = useState('')
   const [dragOffset, setDragOffset] = useState(0)
   const [cancelled, setCancelled] = useState(false)
 
@@ -52,6 +53,8 @@ export function VoiceFab() {
   function attachWsListener() {
     const ws = useSessionsStore.getState().ws
     if (!ws) {
+      console.error('[voice-fab] WebSocket not connected')
+      setErrorMsg('WS not connected')
       setState('error')
       return
     }
@@ -99,6 +102,8 @@ export function VoiceFab() {
             break
           }
           case 'voice_error':
+            console.error('[voice-fab] Server voice error:', msg.error)
+            setErrorMsg(msg.error || 'Voice error')
             setState('error')
             haptic('error')
             setTimeout(resetState, 2000)
@@ -127,6 +132,7 @@ export function VoiceFab() {
     setInterimText('')
     setFinalText('')
     setRefinedText('')
+    setErrorMsg('')
     setDragOffset(0)
     setCancelled(false)
   }
@@ -196,7 +202,9 @@ export function VoiceFab() {
 
       recorder.start(250)
       mediaRecorderRef.current = recorder
-    } catch {
+    } catch (err) {
+      console.error('[voice-fab] Recording failed:', err)
+      setErrorMsg(err instanceof Error ? err.message : 'Mic access denied')
       setState('error')
       haptic('error')
       setTimeout(resetState, 2000)
@@ -296,7 +304,9 @@ export function VoiceFab() {
                   <span className="text-[10px] text-green-400 font-mono uppercase tracking-wider">Sent!</span>
                 )}
                 {state === 'error' && (
-                  <span className="text-[10px] text-red-400 font-mono uppercase tracking-wider">Mic error</span>
+                  <span className="text-[10px] text-red-400 font-mono uppercase tracking-wider">
+                    {errorMsg || 'Error'}
+                  </span>
                 )}
               </div>
 
