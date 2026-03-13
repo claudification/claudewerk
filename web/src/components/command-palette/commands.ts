@@ -52,10 +52,14 @@ export function getPaletteCommands(onClose: () => void): PaletteCommand[] {
       ? [
           {
             id: 'terminal',
-            label: 'Open terminal for current session',
+            label: 'Toggle terminal for current session',
             shortcut: 'Ctrl+Shift+T',
             action: () => {
-              store.openTerminal(session.wrapperIds![0])
+              if (store.showTerminal) {
+                store.setShowTerminal(false)
+              } else {
+                store.openTerminal(session.wrapperIds![0])
+              }
               onClose()
             },
           },

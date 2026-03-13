@@ -279,7 +279,7 @@ const SHORTCUTS = [
   ['Toggle sidebar', 'Ctrl+B'],
   ['Toggle verbose', 'Ctrl+O'],
   ['Quick note', 'Ctrl+Shift+N'],
-  ['Open terminal', 'Ctrl+Shift+T'],
+  ['Toggle terminal', 'Ctrl+Shift+T'],
   ['Debug console', 'Ctrl+Shift+D'],
   ['Shortcut help', 'Shift+?'],
   ['Go home / focus input', 'Escape'],
@@ -405,6 +405,24 @@ const SETTINGS: SettingItem[] = [
           defaultColor="rgba(168,85,247,1)"
         />
       </div>
+    ),
+  },
+  // --- Display ---
+  {
+    group: 'Display',
+    label: 'Default view',
+    description: 'What to show when selecting a session',
+    server: true,
+    keywords: 'terminal tty transcript',
+    render: ctx => (
+      <select
+        value={(ctx.server.defaultView as string) ?? 'transcript'}
+        onChange={e => ctx.setServer('defaultView', e.target.value)}
+        className="bg-muted border border-border text-foreground text-xs px-2 py-1 font-mono"
+      >
+        <option value="transcript">Transcript</option>
+        <option value="tty">TTY</option>
+      </select>
     ),
   },
   // --- Input ---

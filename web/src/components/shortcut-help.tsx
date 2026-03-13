@@ -10,7 +10,7 @@ const SHORTCUTS = [
   { keys: 'Ctrl+K F:', action: 'File browser (in switcher)' },
   { keys: 'Ctrl+Shift+N', action: 'Quick note (append to NOTES.md)' },
   { keys: 'Ctrl+Shift+D', action: 'Toggle debug console' },
-  { keys: 'Ctrl+Shift+T', action: 'Open terminal for current session' },
+  { keys: 'Ctrl+Shift+T', action: 'Toggle terminal for current session' },
   { keys: 'Ctrl+O', action: 'Toggle verbose / expand all' },
   { keys: 'Shift+Click TTY', action: 'Popout terminal to new window' },
   { keys: 'Shift+?', action: 'This help screen' },

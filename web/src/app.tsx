@@ -137,13 +137,17 @@ function Dashboard() {
         e.preventDefault()
         useSessionsStore.getState().toggleDebugConsole()
       }
-      // Ctrl+Shift+T - open TTY for current session
+      // Ctrl+Shift+T - toggle TTY for current session
       if (e.ctrlKey && e.shiftKey && e.key === 'T') {
         e.preventDefault()
         const store = useSessionsStore.getState()
-        const session = store.sessions.find(s => s.id === store.selectedSessionId)
-        if (session && canTerminal(session) && !store.showTerminal && session.wrapperIds?.[0]) {
-          store.openTerminal(session.wrapperIds[0])
+        if (store.showTerminal) {
+          store.setShowTerminal(false)
+        } else {
+          const session = store.sessions.find(s => s.id === store.selectedSessionId)
+          if (session && canTerminal(session) && session.wrapperIds?.[0]) {
+            store.openTerminal(session.wrapperIds[0])
+          }
         }
       }
       // Escape - go home to transcript + focus input (desktop only)
