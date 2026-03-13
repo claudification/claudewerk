@@ -39,6 +39,7 @@ interface DashboardMessage {
 
 const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
 const RECONNECT_DELAY_MS = 2000
+const SESSION_CHANNELS = ['session:events', 'session:transcript', 'session:tasks', 'session:bg_output'] as const
 
 // --- rAF message buffer (module-level, outside React) ---
 let msgBuffer: DashboardMessage[] = []
@@ -94,33 +95,6 @@ function flushMessages() {
   })
 }
 
-// Track unsubscribed data warnings (log once per session+type combo, after 1s grace period)
-const unsubWarnings = new Set<string>()
-let lastSelectedSessionId: string | null = null
-let lastSelectedAt = 0
-
-function isForSelectedSession(sessionId: string | undefined): boolean {
-  if (!sessionId) return true // messages without sessionId are global
-  const state = useSessionsStore.getState()
-  // Track session switches for the grace period
-  if (state.selectedSessionId !== lastSelectedSessionId) {
-    lastSelectedSessionId = state.selectedSessionId
-    lastSelectedAt = Date.now()
-  }
-  if (sessionId === state.selectedSessionId) return true
-  // Grace period: allow data from recently-deselected sessions (1s)
-  if (Date.now() - lastSelectedAt < 1000) return true
-  return false
-}
-
-function warnUnsubscribedData(type: string, sessionId: string) {
-  const key = `${type}:${sessionId}`
-  if (unsubWarnings.has(key)) return
-  unsubWarnings.add(key)
-  console.warn(
-    `[ws] Discarding ${type} for non-selected session ${sessionId.slice(0, 8)}... (selected: ${lastSelectedSessionId?.slice(0, 8) || 'none'}, switched ${Math.round((Date.now() - lastSelectedAt) / 1000)}s ago)`,
-  )
-}
 
 function processMessage(msg: DashboardMessage) {
   switch (msg.type) {
@@ -172,12 +146,18 @@ function processMessage(msg: DashboardMessage) {
       }
       break
     }
+    case 'channel_ack': {
+      // Channel subscription acknowledgment - log for debugging
+      const ack = msg as any
+      if (ack.previousSessionId) {
+        console.log(
+          `[ws] Channel ${ack.channel} rolled over: ${ack.previousSessionId.slice(0, 8)} -> ${ack.sessionId.slice(0, 8)}`,
+        )
+      }
+      break
+    }
     case 'event': {
       if (msg.event && msg.sessionId) {
-        if (!isForSelectedSession(msg.sessionId)) {
-          warnUnsubscribedData('event', msg.sessionId)
-          break
-        }
         useSessionsStore.setState(state => {
           const currentEvents = state.events[msg.sessionId!] || []
           return {
@@ -192,10 +172,6 @@ function processMessage(msg: DashboardMessage) {
     }
     case 'transcript_entries': {
       if (msg.sessionId && msg.entries?.length) {
-        if (!isForSelectedSession(msg.sessionId)) {
-          warnUnsubscribedData('transcript_entries', msg.sessionId)
-          break
-        }
         useSessionsStore.setState(state => {
           const existing = state.transcripts[msg.sessionId!] || []
           // Strip optimistic entries (injected by sendInput) when real data arrives
@@ -212,10 +188,6 @@ function processMessage(msg: DashboardMessage) {
     }
     case 'subagent_transcript': {
       if (msg.sessionId && msg.entries?.length) {
-        if (!isForSelectedSession(msg.sessionId)) {
-          warnUnsubscribedData('subagent_transcript', msg.sessionId)
-          break
-        }
         const agentId = (msg as any).agentId
         if (agentId) {
           const key = `${msg.sessionId}:${agentId}`
@@ -234,10 +206,6 @@ function processMessage(msg: DashboardMessage) {
     }
     case 'tasks_update': {
       if (msg.sessionId && msg.tasks) {
-        if (!isForSelectedSession(msg.sessionId)) {
-          warnUnsubscribedData('tasks_update', msg.sessionId)
-          break
-        }
         useSessionsStore.setState(state => ({
           tasks: { ...state.tasks, [msg.sessionId!]: msg.tasks! },
         }))
@@ -291,9 +259,19 @@ export function useWebSocket() {
         setConnected(true)
         setError(null)
         setWs(ws)
-        const sub = JSON.stringify({ type: 'subscribe' })
+        const sub = JSON.stringify({ type: 'subscribe', protocolVersion: 2 })
         recordOut(sub.length)
         ws.send(sub)
+
+        // Subscribe to channels for currently selected session
+        const selectedId = useSessionsStore.getState().selectedSessionId
+        if (selectedId) {
+          for (const ch of SESSION_CHANNELS) {
+            const chMsg = JSON.stringify({ type: 'channel_subscribe', channel: ch, sessionId: selectedId })
+            recordOut(chMsg.length)
+            ws.send(chMsg)
+          }
+        }
       }
 
       ws.onclose = e => {
@@ -391,7 +369,36 @@ export function useWebSocket() {
   useEffect(() => {
     connect()
 
+    // Watch for session selection changes and manage channel subscriptions
+    let lastSubscribedSession: string | null = null
+    const unsubscribe = useSessionsStore.subscribe(state => {
+      const ws = wsRef.current
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
+      const newId = state.selectedSessionId
+
+      if (newId === lastSubscribedSession) return
+      const prevId = lastSubscribedSession
+      lastSubscribedSession = newId
+
+      // Unsubscribe all previous channels
+      if (prevId) {
+        const unsub = JSON.stringify({ type: 'channel_unsubscribe_all' })
+        recordOut(unsub.length)
+        ws.send(unsub)
+      }
+
+      // Subscribe to new session channels
+      if (newId) {
+        for (const ch of SESSION_CHANNELS) {
+          const chMsg = JSON.stringify({ type: 'channel_subscribe', channel: ch, sessionId: newId })
+          recordOut(chMsg.length)
+          ws.send(chMsg)
+        }
+      }
+    })
+
     return () => {
+      unsubscribe()
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current)
       }

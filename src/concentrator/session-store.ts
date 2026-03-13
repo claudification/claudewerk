@@ -8,9 +8,13 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ServerWebSocket } from 'bun'
 import type {
+  ChannelStats,
   HookEvent,
   Session,
   SessionSummary,
+  SubscriberDiag,
+  SubscriptionChannel,
+  SubscriptionsDiag,
   TaskInfo,
   TranscriptEntry,
   WrapperCapability,
@@ -98,10 +102,32 @@ export interface SessionStore {
   removeTerminalViewerBySocket: (ws: ServerWebSocket<unknown>) => void
   hasTerminalViewers: (wrapperId: string) => boolean
   // Dashboard subscriber methods
-  addSubscriber: (ws: ServerWebSocket<unknown>) => void
+  addSubscriber: (ws: ServerWebSocket<unknown>, protocolVersion?: number) => void
   removeSubscriber: (ws: ServerWebSocket<unknown>) => void
   getSubscriberCount: () => number
   getSubscribers: () => Set<ServerWebSocket<unknown>>
+  // Channel subscription methods (v2 pub/sub)
+  subscribeChannel: (
+    ws: ServerWebSocket<unknown>,
+    channel: SubscriptionChannel,
+    sessionId: string,
+    agentId?: string,
+  ) => void
+  unsubscribeChannel: (
+    ws: ServerWebSocket<unknown>,
+    channel: SubscriptionChannel,
+    sessionId: string,
+    agentId?: string,
+  ) => void
+  unsubscribeAllChannels: (ws: ServerWebSocket<unknown>) => void
+  getChannelSubscribers: (
+    channel: SubscriptionChannel,
+    sessionId: string,
+    agentId?: string,
+  ) => Set<ServerWebSocket<unknown>>
+  broadcastToChannel: (channel: SubscriptionChannel, sessionId: string, message: unknown, agentId?: string) => void
+  isV2Subscriber: (ws: ServerWebSocket<unknown>) => boolean
+  getSubscriptionsDiag: () => SubscriptionsDiag
   // Agent methods (exclusive single agent connection)
   setAgent: (ws: ServerWebSocket<unknown>) => boolean
   getAgent: () => ServerWebSocket<unknown> | undefined
@@ -143,7 +169,37 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   // Terminal viewers keyed by wrapperId (each PTY is on a specific wrapper)
   const terminalViewers = new Map<string, Set<ServerWebSocket<unknown>>>()
   const dashboardSubscribers = new Set<ServerWebSocket<unknown>>()
+  const v2Subscribers = new Set<ServerWebSocket<unknown>>()
   let agentSocket: ServerWebSocket<unknown> | undefined
+
+  // Channel subscription registry (v2 pub/sub)
+  // Forward index: channel key -> set of subscriber sockets
+  const channelSubscribers = new Map<string, Set<ServerWebSocket<unknown>>>()
+  // Reverse index: socket -> subscriber info (channels, stats)
+  interface SubscriberEntry {
+    id: string
+    protocolVersion: number
+    connectedAt: number
+    channels: Map<
+      string,
+      {
+        channel: SubscriptionChannel
+        sessionId: string
+        agentId?: string
+        subscribedAt: number
+        messagesSent: number
+        bytesSent: number
+        lastMessageAt: number
+      }
+    >
+    totals: { messagesSent: number; bytesSent: number; messagesReceived: number; bytesReceived: number }
+  }
+  const subscriberRegistry = new Map<ServerWebSocket<unknown>, SubscriberEntry>()
+  let subscriberIdCounter = 0
+
+  function channelKey(channel: SubscriptionChannel, sessionId: string, agentId?: string): string {
+    return agentId ? `${channel}:${sessionId}:${agentId}` : `${channel}:${sessionId}`
+  }
 
   // Pending agent descriptions: PreToolUse(Agent) pushes, SubagentStart pops
   const pendingAgentDescriptions = new Map<string, string[]>()
@@ -560,6 +616,73 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       sessionSockets.set(newId, wrappers)
     }
 
+    // Migrate channel subscriptions from oldId to newId
+    const channelTypes: SubscriptionChannel[] = [
+      'session:events',
+      'session:transcript',
+      'session:tasks',
+      'session:bg_output',
+    ]
+    for (const channel of channelTypes) {
+      const oldKey = channelKey(channel, oldId)
+      const subs = channelSubscribers.get(oldKey)
+      if (!subs || subs.size === 0) continue
+
+      const newKey = channelKey(channel, newId)
+      let newSubs = channelSubscribers.get(newKey)
+      if (!newSubs) {
+        newSubs = new Set()
+        channelSubscribers.set(newKey, newSubs)
+      }
+
+      for (const ws of subs) {
+        newSubs.add(ws)
+        // Update reverse index
+        const entry = subscriberRegistry.get(ws)
+        if (entry) {
+          const oldStats = entry.channels.get(oldKey)
+          entry.channels.delete(oldKey)
+          entry.channels.set(newKey, {
+            channel,
+            sessionId: newId,
+            subscribedAt: oldStats?.subscribedAt || Date.now(),
+            messagesSent: oldStats?.messagesSent || 0,
+            bytesSent: oldStats?.bytesSent || 0,
+            lastMessageAt: oldStats?.lastMessageAt || 0,
+          })
+        }
+        // Notify dashboard of rollover
+        try {
+          ws.send(
+            JSON.stringify({
+              type: 'channel_ack',
+              channel,
+              sessionId: newId,
+              status: 'subscribed',
+              previousSessionId: oldId,
+            }),
+          )
+        } catch {
+          /* dead socket, will be cleaned up */
+        }
+      }
+      channelSubscribers.delete(oldKey)
+    }
+
+    // Clear subagent transcript subscriptions (subagents are reset on rekey)
+    for (const key of channelSubscribers.keys()) {
+      if (key.startsWith(`session:subagent_transcript:${oldId}:`)) {
+        const subs = channelSubscribers.get(key)
+        if (subs) {
+          for (const ws of subs) {
+            const entry = subscriberRegistry.get(ws)
+            if (entry) entry.channels.delete(key)
+          }
+        }
+        channelSubscribers.delete(key)
+      }
+    }
+
     // Broadcast update (not end+create) so dashboard stays on this session
     broadcast({
       type: 'session_update',
@@ -625,23 +748,23 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         session.compacting = true
         const marker = { type: 'compacting', timestamp: new Date().toISOString() }
         addTranscriptEntries(sessionId, [marker], false)
-        broadcast({
+        broadcastToChannel('session:transcript', sessionId, {
           type: 'transcript_entries',
           sessionId,
           entries: [marker],
           isInitial: false,
-        } as any)
+        })
       } else if (session.compacting && event.hookEvent === 'SessionStart') {
         session.compacting = false
         session.compactedAt = Date.now()
         const marker = { type: 'compacted', timestamp: new Date().toISOString() }
         addTranscriptEntries(sessionId, [marker], false)
-        broadcast({
+        broadcastToChannel('session:transcript', sessionId, {
           type: 'transcript_entries',
           sessionId,
           entries: [marker],
           isInitial: false,
-        } as any)
+        })
       }
 
       // Capture agent description from PreToolUse(Agent) tool calls
@@ -817,8 +940,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         })
       }
 
-      // Broadcast event to dashboard subscribers
-      broadcast({
+      // Broadcast event to dashboard subscribers (channel-filtered for v2)
+      broadcastToChannel('session:events', sessionId, {
         type: 'event',
         sessionId,
         event,
@@ -1001,8 +1124,20 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   }
 
   // Dashboard subscriber management
-  function addSubscriber(ws: ServerWebSocket<unknown>): void {
+  function addSubscriber(ws: ServerWebSocket<unknown>, protocolVersion = 1): void {
     dashboardSubscribers.add(ws)
+
+    // Track v2 subscribers and create registry entry
+    if (protocolVersion >= 2) {
+      v2Subscribers.add(ws)
+    }
+    subscriberRegistry.set(ws, {
+      id: `ws-${++subscriberIdCounter}`,
+      protocolVersion,
+      connectedAt: Date.now(),
+      channels: new Map(),
+      totals: { messagesSent: 0, bytesSent: 0, messagesReceived: 0, bytesReceived: 0 },
+    })
 
     // Send current sessions list immediately upon subscription
     const sessionsList = Array.from(sessions.values()).map(toSessionSummary)
@@ -1020,6 +1155,190 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
 
   function removeSubscriber(ws: ServerWebSocket<unknown>): void {
     dashboardSubscribers.delete(ws)
+    v2Subscribers.delete(ws)
+    unsubscribeAllChannels(ws)
+    subscriberRegistry.delete(ws)
+  }
+
+  // Channel subscription management (v2 pub/sub)
+  function subscribeChannel(
+    ws: ServerWebSocket<unknown>,
+    channel: SubscriptionChannel,
+    sessionId: string,
+    agentId?: string,
+  ): void {
+    const key = channelKey(channel, sessionId, agentId)
+    let subs = channelSubscribers.get(key)
+    if (!subs) {
+      subs = new Set()
+      channelSubscribers.set(key, subs)
+    }
+    subs.add(ws)
+
+    // Track in reverse index
+    const entry = subscriberRegistry.get(ws)
+    if (entry) {
+      entry.channels.set(key, {
+        channel,
+        sessionId,
+        agentId,
+        subscribedAt: Date.now(),
+        messagesSent: 0,
+        bytesSent: 0,
+        lastMessageAt: 0,
+      })
+    }
+  }
+
+  function unsubscribeChannel(
+    ws: ServerWebSocket<unknown>,
+    channel: SubscriptionChannel,
+    sessionId: string,
+    agentId?: string,
+  ): void {
+    const key = channelKey(channel, sessionId, agentId)
+    const subs = channelSubscribers.get(key)
+    if (subs) {
+      subs.delete(ws)
+      if (subs.size === 0) channelSubscribers.delete(key)
+    }
+
+    const entry = subscriberRegistry.get(ws)
+    if (entry) entry.channels.delete(key)
+  }
+
+  function unsubscribeAllChannels(ws: ServerWebSocket<unknown>): void {
+    const entry = subscriberRegistry.get(ws)
+    if (!entry) return
+
+    for (const key of entry.channels.keys()) {
+      const subs = channelSubscribers.get(key)
+      if (subs) {
+        subs.delete(ws)
+        if (subs.size === 0) channelSubscribers.delete(key)
+      }
+    }
+    entry.channels.clear()
+  }
+
+  function getChannelSubscribers(
+    channel: SubscriptionChannel,
+    sessionId: string,
+    agentId?: string,
+  ): Set<ServerWebSocket<unknown>> {
+    const key = channelKey(channel, sessionId, agentId)
+    return channelSubscribers.get(key) || new Set()
+  }
+
+  function broadcastToChannel(
+    channel: SubscriptionChannel,
+    sessionId: string,
+    message: unknown,
+    agentId?: string,
+  ): void {
+    const json = JSON.stringify(message)
+    const bytes = json.length
+    const sent = new Set<ServerWebSocket<unknown>>()
+
+    // Send to v2 channel subscribers
+    const key = channelKey(channel, sessionId, agentId)
+    const subs = channelSubscribers.get(key)
+    if (subs) {
+      for (const ws of subs) {
+        try {
+          ws.send(json)
+          sent.add(ws)
+          // Track per-channel stats
+          const entry = subscriberRegistry.get(ws)
+          if (entry) {
+            entry.totals.messagesSent++
+            entry.totals.bytesSent += bytes
+            const chStats = entry.channels.get(key)
+            if (chStats) {
+              chStats.messagesSent++
+              chStats.bytesSent += bytes
+              chStats.lastMessageAt = Date.now()
+            }
+          }
+        } catch {
+          subs.delete(ws)
+          if (subs.size === 0) channelSubscribers.delete(key)
+        }
+      }
+    }
+
+    // Also send to legacy (v1) subscribers that haven't received it
+    for (const ws of dashboardSubscribers) {
+      if (!sent.has(ws) && !v2Subscribers.has(ws)) {
+        try {
+          ws.send(json)
+          const entry = subscriberRegistry.get(ws)
+          if (entry) {
+            entry.totals.messagesSent++
+            entry.totals.bytesSent += bytes
+          }
+        } catch {
+          dashboardSubscribers.delete(ws)
+        }
+      }
+    }
+  }
+
+  function isV2Subscriber(ws: ServerWebSocket<unknown>): boolean {
+    return v2Subscribers.has(ws)
+  }
+
+  function getSubscriptionsDiag(): SubscriptionsDiag {
+    const subscribers: SubscriberDiag[] = []
+    for (const [ws, entry] of subscriberRegistry) {
+      const channels: ChannelStats[] = []
+      for (const ch of entry.channels.values()) {
+        channels.push({
+          channel: ch.channel,
+          sessionId: ch.sessionId,
+          agentId: ch.agentId,
+          subscribedAt: ch.subscribedAt,
+          messagesSent: ch.messagesSent,
+          bytesSent: ch.bytesSent,
+          lastMessageAt: ch.lastMessageAt,
+        })
+      }
+      const wsData = ws.data as { userName?: string } | undefined
+      subscribers.push({
+        id: entry.id,
+        userName: wsData?.userName,
+        protocolVersion: entry.protocolVersion,
+        connectedAt: entry.connectedAt,
+        channels,
+        totals: { ...entry.totals },
+      })
+    }
+
+    // Channel counts summary
+    const channelCounts: Record<string, number> = {}
+    for (const [key, subs] of channelSubscribers) {
+      const channelName = key.split(':').slice(0, 2).join(':')
+      channelCounts[channelName] = (channelCounts[channelName] || 0) + subs.size
+    }
+
+    let totalBytesSent = 0
+    let totalMessagesSent = 0
+    for (const entry of subscriberRegistry.values()) {
+      totalBytesSent += entry.totals.bytesSent
+      totalMessagesSent += entry.totals.messagesSent
+    }
+
+    return {
+      subscribers,
+      summary: {
+        totalSubscribers: dashboardSubscribers.size,
+        legacySubscribers: dashboardSubscribers.size - v2Subscribers.size,
+        v2Subscribers: v2Subscribers.size,
+        channelCounts,
+        totalBytesSent,
+        totalMessagesSent,
+      },
+    }
   }
 
   function updateTasks(sessionId: string, tasks: TaskInfo[]): void {
@@ -1222,13 +1541,18 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
           `[transcript] ${sessionId.slice(0, 8)}... live agent ${agentId.slice(0, 7)} ${agentBatch.length} entries from parent`,
         )
         addSubagentTranscriptEntries(sessionId, agentId, agentBatch, false)
-        broadcast({
-          type: 'subagent_transcript',
+        broadcastToChannel(
+          'session:subagent_transcript',
           sessionId,
+          {
+            type: 'subagent_transcript',
+            sessionId,
+            agentId,
+            entries: agentBatch,
+            isInitial: false,
+          },
           agentId,
-          entries: agentBatch,
-          isInitial: false,
-        } as any)
+        )
       }
     }
 
@@ -1412,6 +1736,13 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     removeSubscriber,
     getSubscriberCount,
     getSubscribers,
+    subscribeChannel,
+    unsubscribeChannel,
+    unsubscribeAllChannels,
+    getChannelSubscribers,
+    broadcastToChannel,
+    isV2Subscriber,
+    getSubscriptionsDiag,
     setAgent,
     getAgent,
     removeAgent,

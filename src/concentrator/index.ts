@@ -548,12 +548,46 @@ async function main() {
               case 'subscribe': {
                 // Dashboard client subscribing to updates
                 ws.data.isDashboard = true
-                sessionStore.addSubscriber(ws)
+                const pv = data.protocolVersion || 1
+                sessionStore.addSubscriber(ws, pv)
                 // Send current agent status
                 ws.send(JSON.stringify({ type: 'agent_status', connected: sessionStore.hasAgent() }))
                 if (verbose) {
-                  console.log(`[dashboard] Subscriber connected (total: ${sessionStore.getSubscriberCount()})`)
+                  console.log(`[dashboard] Subscriber connected (v${pv}, total: ${sessionStore.getSubscriberCount()})`)
                 }
+                break
+              }
+              case 'channel_subscribe': {
+                const { channel, sessionId: chSid, agentId } = data
+                if (!channel || !chSid) break
+                sessionStore.subscribeChannel(ws, channel, chSid, agentId)
+                ws.send(
+                  JSON.stringify({ type: 'channel_ack', channel, sessionId: chSid, agentId, status: 'subscribed' }),
+                )
+                if (verbose) {
+                  console.log(
+                    `[channel] ${channel}:${chSid.slice(0, 8)}${agentId ? ':' + agentId.slice(0, 8) : ''} +sub`,
+                  )
+                }
+                break
+              }
+              case 'channel_unsubscribe': {
+                const { channel, sessionId: chSid, agentId } = data
+                if (!channel || !chSid) break
+                sessionStore.unsubscribeChannel(ws, channel, chSid, agentId)
+                ws.send(
+                  JSON.stringify({ type: 'channel_ack', channel, sessionId: chSid, agentId, status: 'unsubscribed' }),
+                )
+                if (verbose) {
+                  console.log(
+                    `[channel] ${channel}:${chSid.slice(0, 8)}${agentId ? ':' + agentId.slice(0, 8) : ''} -sub`,
+                  )
+                }
+                break
+              }
+              case 'channel_unsubscribe_all': {
+                sessionStore.unsubscribeAllChannels(ws)
+                if (verbose) console.log('[channel] unsubscribed all')
                 break
               }
               case 'agent_identify': {
@@ -690,13 +724,12 @@ async function main() {
                 const sessionId = ws.data.sessionId || data.sessionId
                 if (sessionId) {
                   sessionStore.updateTasks(sessionId, data.tasks || [])
-                  // Forward active task list to dashboard subscribers (archived fetched on demand)
-                  const taskMsg = JSON.stringify({ type: 'tasks_update', sessionId, tasks: data.tasks || [] })
-                  for (const sub of sessionStore.getSubscribers()) {
-                    try {
-                      sub.send(taskMsg)
-                    } catch {}
-                  }
+                  // Forward active task list to subscribed dashboards
+                  sessionStore.broadcastToChannel('session:tasks', sessionId, {
+                    type: 'tasks_update',
+                    sessionId,
+                    tasks: data.tasks || [],
+                  })
                   if (verbose) {
                     console.log(`[*] ${sessionId.slice(0, 8)}... tasks_update (${(data.tasks || []).length} tasks)`)
                   }
@@ -725,13 +758,8 @@ async function main() {
                 if (sessionId) {
                   const entryCount = (data.entries || []).length
                   sessionStore.addTranscriptEntries(sessionId, data.entries || [], data.isInitial || false)
-                  // Broadcast to dashboard subscribers
-                  const msg = JSON.stringify(data)
-                  for (const sub of sessionStore.getSubscribers()) {
-                    try {
-                      sub.send(msg)
-                    } catch {}
-                  }
+                  // Broadcast to subscribed dashboards
+                  sessionStore.broadcastToChannel('session:transcript', sessionId, data)
                   // Always log transcript events (new feature - needs visibility)
                   console.log(
                     `[transcript] ${sessionId.slice(0, 8)}... ${entryCount} entries (initial: ${data.isInitial})`,
@@ -749,13 +777,8 @@ async function main() {
                     data.entries || [],
                     data.isInitial || false,
                   )
-                  // Broadcast to dashboard subscribers
-                  const msg = JSON.stringify(data)
-                  for (const sub of sessionStore.getSubscribers()) {
-                    try {
-                      sub.send(msg)
-                    } catch {}
-                  }
+                  // Broadcast to subscribed dashboards
+                  sessionStore.broadcastToChannel('session:subagent_transcript', sessionId, data, data.agentId)
                   console.log(
                     `[transcript] ${sessionId.slice(0, 8)}... subagent ${data.agentId.slice(0, 7)} ${entryCount} entries`,
                   )
@@ -766,13 +789,8 @@ async function main() {
                 const sessionId = ws.data.sessionId || data.sessionId
                 if (sessionId && data.taskId) {
                   sessionStore.addBgTaskOutput(sessionId, data.taskId, data.data || '', data.done || false)
-                  // Broadcast to dashboard subscribers
-                  const msg = JSON.stringify(data)
-                  for (const sub of sessionStore.getSubscribers()) {
-                    try {
-                      sub.send(msg)
-                    } catch {}
-                  }
+                  // Broadcast to subscribed dashboards
+                  sessionStore.broadcastToChannel('session:bg_output', sessionId, data)
                 }
                 break
               }

@@ -1522,6 +1522,14 @@ Output a JSON array of strings. Each string should be the correct spelling of on
       }
     }
 
+    // GET /api/subscriptions - diagnostic view of channel subscriptions
+    if (req.method === 'GET' && path === '/api/subscriptions') {
+      const diag = sessionStore.getSubscriptionsDiag()
+      return new Response(JSON.stringify(diag, null, 2), {
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
     return new Response(JSON.stringify({ error: 'Not found' }), {
       status: 404,
       headers: { 'Content-Type': 'application/json' },

@@ -583,6 +583,82 @@ export interface SessionSummary {
   gitBranch?: string
 }
 
+// Subscription channels (dashboard <-> concentrator pub/sub)
+export type SubscriptionChannel =
+  | 'session:events'
+  | 'session:transcript'
+  | 'session:tasks'
+  | 'session:bg_output'
+  | 'session:subagent_transcript'
+
+// Dashboard -> Concentrator: channel subscription management
+export interface ChannelSubscribe {
+  type: 'channel_subscribe'
+  channel: SubscriptionChannel
+  sessionId: string
+  agentId?: string // required for session:subagent_transcript
+}
+
+export interface ChannelUnsubscribe {
+  type: 'channel_unsubscribe'
+  channel: SubscriptionChannel
+  sessionId: string
+  agentId?: string
+}
+
+export interface ChannelUnsubscribeAll {
+  type: 'channel_unsubscribe_all'
+}
+
+// Concentrator -> Dashboard: subscription acknowledgment
+export interface ChannelAck {
+  type: 'channel_ack'
+  channel: SubscriptionChannel
+  sessionId: string
+  agentId?: string
+  status: 'subscribed' | 'unsubscribed'
+  previousSessionId?: string // set during rekey rollover
+}
+
+// Per-channel diagnostic stats
+export interface ChannelStats {
+  channel: SubscriptionChannel
+  sessionId: string
+  agentId?: string
+  subscribedAt: number
+  messagesSent: number
+  bytesSent: number
+  lastMessageAt: number
+}
+
+// Per-subscriber diagnostic info
+export interface SubscriberDiag {
+  id: string
+  userName?: string
+  protocolVersion: number
+  connectedAt: number
+  channels: ChannelStats[]
+  totals: {
+    messagesSent: number
+    bytesSent: number
+    messagesReceived: number
+    bytesReceived: number
+  }
+}
+
+// GET /api/subscriptions response
+export interface SubscriptionsDiag {
+  subscribers: SubscriberDiag[]
+  summary: {
+    totalSubscribers: number
+    legacySubscribers: number
+    v2Subscribers: number
+    channelCounts: Record<string, number>
+    totalBytesSent: number
+    totalMessagesSent: number
+  }
+}
+
 // Configuration
 export const DEFAULT_CONCENTRATOR_URL = 'ws://localhost:9999'
 export const DEFAULT_CONCENTRATOR_PORT = 9999
