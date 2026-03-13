@@ -3,11 +3,12 @@
  * Shows in the "Files" tab of session detail
  */
 
-import { AlertTriangle, ChevronLeft, Clock, FileText, Loader2, RefreshCw, Save } from 'lucide-react'
+import { AlertTriangle, ChevronLeft, Clock, Eye, FileText, Loader2, Pencil, RefreshCw, Save } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { type FileInfo, useFileEditor } from '@/hooks/use-file-editor'
 import { useSessionsStore } from '@/hooks/use-sessions'
 import { cn } from '@/lib/utils'
+import { Markdown } from './markdown'
 
 // Lazy-load CodeMirror (heavy dependency)
 let cmPromise: Promise<typeof import('./codemirror-setup')> | null = null
@@ -184,6 +185,7 @@ export function FileEditor({ sessionId }: { sessionId: string }) {
   } = useFileEditor(sessionId)
 
   const [showHistory, setShowHistory] = useState(false)
+  const [previewMode, setPreviewMode] = useState(true)
 
   // Load file list on mount
   useEffect(() => {
@@ -206,6 +208,7 @@ export function FileEditor({ sessionId }: { sessionId: string }) {
     (path: string) => {
       if (activeFile === path) return
       if (activeFile) closeFile()
+      setPreviewMode(true)
       openFile(path)
     },
     [activeFile, closeFile, openFile],
@@ -284,6 +287,30 @@ export function FileEditor({ sessionId }: { sessionId: string }) {
             )}
             {!dirty && !saving && version > 0 && <span className="text-emerald-400">v{version} saved</span>}
             <div className="ml-auto flex items-center gap-2">
+              <div className="flex items-center border border-border rounded-sm overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setPreviewMode(false)}
+                  className={cn(
+                    'px-1.5 py-0.5 text-[10px] flex items-center gap-1 transition-colors',
+                    !previewMode ? 'bg-accent/20 text-accent' : 'text-muted-foreground hover:text-foreground',
+                  )}
+                  title="Edit"
+                >
+                  <Pencil className="w-2.5 h-2.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewMode(true)}
+                  className={cn(
+                    'px-1.5 py-0.5 text-[10px] flex items-center gap-1 transition-colors',
+                    previewMode ? 'bg-accent/20 text-accent' : 'text-muted-foreground hover:text-foreground',
+                  )}
+                  title="Preview"
+                >
+                  <Eye className="w-2.5 h-2.5" />
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={handleShowHistory}
@@ -309,9 +336,15 @@ export function FileEditor({ sessionId }: { sessionId: string }) {
           </div>
         )}
 
-        {/* Editor content */}
+        {/* Editor / Preview content */}
         {activeFile ? (
-          <EditorPane content={content} onChange={updateContent} />
+          previewMode ? (
+            <div className="flex-1 min-h-0 overflow-y-auto p-4">
+              <Markdown>{content}</Markdown>
+            </div>
+          ) : (
+            <EditorPane content={content} onChange={updateContent} />
+          )
         ) : (
           <div className="flex-1 flex items-center justify-center text-muted-foreground text-xs">
             Select a file to edit

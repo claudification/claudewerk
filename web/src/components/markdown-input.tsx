@@ -668,6 +668,7 @@ export function MarkdownInput({
           textClasses,
           'text-foreground',
         )}
+        style={expandedFontSize}
         aria-hidden="true"
         dangerouslySetInnerHTML={{ __html: highlightMarkdown(value) }}
       />

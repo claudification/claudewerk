@@ -5,32 +5,67 @@
 
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { markdown } from '@codemirror/lang-markdown'
-import { bracketMatching } from '@codemirror/language'
+import { HighlightStyle, bracketMatching, syntaxHighlighting } from '@codemirror/language'
 import { EditorState } from '@codemirror/state'
-import { oneDark } from '@codemirror/theme-one-dark'
+import { tags } from '@lezer/highlight'
 import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers } from '@codemirror/view'
 
-// Tokyo Night-inspired overrides on top of oneDark
-const tokyoNightOverrides = EditorView.theme(
+// Tokyo Night colors for markdown
+const tokyoNightMarkdown = HighlightStyle.define([
+  { tag: tags.heading1, color: '#7aa2f7', fontWeight: 'bold', fontSize: '1.3em' },
+  { tag: tags.heading2, color: '#7aa2f7', fontWeight: 'bold', fontSize: '1.2em' },
+  { tag: tags.heading3, color: '#7aa2f7', fontWeight: 'bold', fontSize: '1.1em' },
+  { tag: [tags.heading4, tags.heading5, tags.heading6], color: '#7aa2f7', fontWeight: 'bold' },
+  { tag: tags.strong, color: '#c0caf5', fontWeight: 'bold' },
+  { tag: tags.emphasis, color: '#c0caf5', fontStyle: 'italic' },
+  { tag: tags.strikethrough, textDecoration: 'line-through', color: '#565f89' },
+  { tag: tags.link, color: '#73daca', textDecoration: 'underline' },
+  { tag: tags.url, color: '#73daca' },
+  { tag: tags.monospace, color: '#89ddff' },
+  { tag: tags.processingInstruction, color: '#565f89' },
+  { tag: tags.quote, color: '#9ece6a' },
+  { tag: tags.list, color: '#e0af68' },
+  { tag: tags.string, color: '#9ece6a' },
+  { tag: tags.labelName, color: '#bb9af7' },
+  { tag: tags.content, color: '#a9b1d6' },
+  { tag: tags.comment, color: '#565f89', fontStyle: 'italic' },
+  { tag: tags.escape, color: '#bb9af7' },
+  { tag: tags.character, color: '#bb9af7' },
+  { tag: tags.keyword, color: '#bb9af7' },
+  { tag: tags.operator, color: '#89ddff' },
+  { tag: tags.number, color: '#ff9e64' },
+  { tag: tags.function(tags.variableName), color: '#7aa2f7' },
+  { tag: tags.variableName, color: '#c0caf5' },
+  { tag: tags.typeName, color: '#2ac3de' },
+  { tag: tags.propertyName, color: '#73daca' },
+  { tag: tags.contentSeparator, color: '#565f89' },
+])
+
+// Editor theme (non-highlighting)
+const editorTheme = EditorView.theme(
   {
     '&': {
       fontSize: '13px',
       fontFamily: '"Geist Mono", "JetBrains Mono", monospace',
       height: '100%',
+      backgroundColor: '#1a1b26',
     },
     '.cm-content': {
       padding: '8px 0',
       caretColor: '#7aa2f7',
+      color: '#a9b1d6',
     },
     '.cm-cursor': {
       borderLeftColor: '#7aa2f7',
     },
     '.cm-gutters': {
       backgroundColor: 'transparent',
+      color: '#3b4261',
       borderRight: '1px solid rgba(122, 162, 247, 0.1)',
     },
     '.cm-activeLineGutter': {
       backgroundColor: 'rgba(122, 162, 247, 0.05)',
+      color: '#737aa2',
     },
     '.cm-activeLine': {
       backgroundColor: 'rgba(122, 162, 247, 0.05)',
@@ -69,8 +104,8 @@ export function createEditorView(
       history(),
       keymap.of([...defaultKeymap, ...historyKeymap]),
       markdown(),
-      oneDark,
-      tokyoNightOverrides,
+      editorTheme,
+      syntaxHighlighting(tokyoNightMarkdown),
       updateListener,
       EditorView.lineWrapping,
     ],

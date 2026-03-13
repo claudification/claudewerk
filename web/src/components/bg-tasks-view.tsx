@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { getBgTaskOutput, onBgTaskOutput, useSessionsStore } from '@/hooks/use-sessions'
 import type { BgTaskSummary } from '@/lib/types'
 import { cn, formatAge } from '@/lib/utils'
-import { AnsiText } from './transcript-view'
+import { AnsiText } from './transcript/shared'
 
 function StatusBadge({ status }: { status: BgTaskSummary['status'] }) {
   return (

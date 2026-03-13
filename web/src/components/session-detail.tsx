@@ -13,7 +13,7 @@ import { MarkdownInput } from './markdown-input'
 import { renderProjectIcon } from './project-settings-editor'
 import { SubagentView } from './subagent-view'
 import { TasksView } from './tasks-view'
-import { TranscriptView } from './transcript-view'
+import { TranscriptView } from './transcript'
 import { WebTerminal } from './web-terminal'
 
 type Tab = 'transcript' | 'events' | 'agents' | 'tasks' | 'files' | 'diag'
