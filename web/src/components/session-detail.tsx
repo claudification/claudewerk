@@ -92,7 +92,7 @@ const InputBar = memo(function InputBar({ sessionId }: { sessionId: string }) {
           onChange={setInputValue}
           onSubmit={handleSend}
           disabled={isSending}
-          placeholder="Enter to send, Shift+Enter for new line"
+          placeholder={isMobileViewport() ? 'Message...' : 'Enter to send, Shift+Enter for new line'}
           className="flex-1"
           autoFocus
         />
