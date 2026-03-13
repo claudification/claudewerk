@@ -85,7 +85,9 @@ FRESH_CMD="${WRAPPER_PREFIX}$BASE_CMD"
 
 # Count tmux windows in our session (0 if session doesn't exist)
 window_count() {
-  tmux list-windows -t "$TMUX_NAME" 2>/dev/null | wc -l | tr -d ' '
+  local count
+  count=$(tmux list-windows -t "$TMUX_NAME" 2>/dev/null | wc -l | tr -d ' ') || true
+  echo "${count:-0}"
 }
 
 # Launch a command in tmux (new window or new session as needed).
