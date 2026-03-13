@@ -611,7 +611,7 @@ export function SessionDetail() {
                 )}
               </button>
             )}
-            {session.status === 'active' && (
+            {(session.status === 'active' || session.status === 'idle') && (
               <button
                 type="button"
                 onClick={() => {
