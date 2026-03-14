@@ -810,7 +810,10 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         }
       }
 
-      // Track compacting state + inject synthetic transcript markers
+      // Track compacting state + inject synthetic transcript markers.
+      // PreCompact -> compacting=true, PostCompact -> compacting=false + compacted marker.
+      // PostCompact was added in Claude Code 2.1.76 as the definitive completion signal.
+      // Fallback: SessionStart after PreCompact also clears compacting (older CC versions).
       if (event.hookEvent === 'PreCompact') {
         session.compacting = true
         const marker = { type: 'compacting', timestamp: new Date().toISOString() }
@@ -821,22 +824,29 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
           entries: [marker],
           isInitial: false,
         })
-      } else if (session.compacting) {
-        // Any event after PreCompact means compaction finished (SessionStart) or was interrupted
+      } else if (event.hookEvent === 'PostCompact' && session.compacting) {
         session.compacting = false
-        if (event.hookEvent === 'SessionStart') {
-          // Successful compaction
-          session.compactedAt = Date.now()
-          const marker = { type: 'compacted', timestamp: new Date().toISOString() }
-          addTranscriptEntries(sessionId, [marker], false)
-          broadcastToChannel('session:transcript', sessionId, {
-            type: 'transcript_entries',
-            sessionId,
-            entries: [marker],
-            isInitial: false,
-          })
-        }
-        // Interrupted/canceled: just clear the flag, no divider
+        session.compactedAt = Date.now()
+        const marker = { type: 'compacted', timestamp: new Date().toISOString() }
+        addTranscriptEntries(sessionId, [marker], false)
+        broadcastToChannel('session:transcript', sessionId, {
+          type: 'transcript_entries',
+          sessionId,
+          entries: [marker],
+          isInitial: false,
+        })
+      } else if (session.compacting && event.hookEvent === 'SessionStart') {
+        // Fallback for CC < 2.1.76 (no PostCompact): SessionStart after PreCompact = done
+        session.compacting = false
+        session.compactedAt = Date.now()
+        const marker = { type: 'compacted', timestamp: new Date().toISOString() }
+        addTranscriptEntries(sessionId, [marker], false)
+        broadcastToChannel('session:transcript', sessionId, {
+          type: 'transcript_entries',
+          sessionId,
+          entries: [marker],
+          isInitial: false,
+        })
       }
 
       // Capture agent description from PreToolUse(Agent) tool calls

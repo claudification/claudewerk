@@ -3,7 +3,7 @@
 Everything rclaude knows about Claude Code's hook system, session lifecycle,
 transcript management, and the quirks that'll bite you at 3am.
 
-## Hook Events (All 18)
+## Hook Events (All 21)
 
 | Hook Event | When It Fires | Key Data Fields |
 |---|---|---|
@@ -18,6 +18,7 @@ transcript management, and the quirks that'll bite you at 3am.
 | `SubagentStart` | Subagent spawned | `session_id`, `agent_id`, `agent_type` |
 | `SubagentStop` | Subagent finished | `session_id`, `agent_id`, `agent_type`, `transcript`, `agent_transcript_path` |
 | `PreCompact` | Context compression starting | `session_id`, `trigger` |
+| `PostCompact` | Context compression finished (CC 2.1.76+) | `session_id` |
 | `PermissionRequest` | Tool needs user approval | `session_id`, `tool`, `suggestions[]` |
 | `TeammateIdle` | Teammate finished a task | `session_id`, `agent_id`, `agent_name`, `team_name` |
 | `TaskCompleted` | Team task done | `session_id`, `task_id`, `task_subject`, `owner`, `team_name` |
@@ -25,6 +26,8 @@ transcript management, and the quirks that'll bite you at 3am.
 | `ConfigChange` | Settings changed | `session_id` |
 | `WorktreeCreate` | Git worktree created | `session_id` |
 | `WorktreeRemove` | Git worktree removed | `session_id` |
+| `Elicitation` | MCP server requests user input (CC 2.1.76+) | `session_id` |
+| `ElicitationResult` | User responds to MCP elicitation (CC 2.1.76+) | `session_id` |
 
 \* `transcript_path` is NOT in the TypeScript interface -- accessed via cast to `Record<string, unknown>`.
 
@@ -48,12 +51,17 @@ PreCompact
   ├── Claude rewrites the JSONL file (truncates + new content)
   │   Transcript watcher detects size < offset, resets to 0
   │
+  ├── PostCompact (CC 2.1.76+, definitive completion signal)
+  │
   └── SessionStart (same session_id, fresh context)
 ```
 
-**IMPORTANT:** There is NO `PostCompact` hook. The only signal that compaction
-finished is the `SessionStart` that follows. Any other hook event between
-`PreCompact` and `SessionStart` does NOT mean compaction is done.
+**CC 2.1.76+:** `PostCompact` fires after compaction completes. This is
+the definitive signal. rclaude uses it as the primary trigger for clearing
+`compacting` state and injecting the `compacted` transcript marker.
+
+**CC < 2.1.76 fallback:** `SessionStart` after `PreCompact` also clears
+the compacting state. Both paths produce the same result.
 
 ### `/clear` Sequence
 

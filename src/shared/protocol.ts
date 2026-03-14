@@ -220,6 +220,7 @@ export type HookEventType =
   | 'SubagentStart'
   | 'SubagentStop'
   | 'PreCompact'
+  | 'PostCompact'
   | 'PermissionRequest'
   | 'TeammateIdle'
   | 'TaskCompleted'
@@ -227,6 +228,8 @@ export type HookEventType =
   | 'ConfigChange'
   | 'WorktreeCreate'
   | 'WorktreeRemove'
+  | 'Elicitation'
+  | 'ElicitationResult'
   | 'Setup'
 
 // Hook event data structures (based on Claude Code hook system)

@@ -38,6 +38,7 @@ interface ClaudeSettings {
     SubagentStart?: HookMatcher[]
     SubagentStop?: HookMatcher[]
     PreCompact?: HookMatcher[]
+    PostCompact?: HookMatcher[]
     PermissionRequest?: HookMatcher[]
     TeammateIdle?: HookMatcher[]
     TaskCompleted?: HookMatcher[]
@@ -45,6 +46,8 @@ interface ClaudeSettings {
     ConfigChange?: HookMatcher[]
     WorktreeCreate?: HookMatcher[]
     WorktreeRemove?: HookMatcher[]
+    Elicitation?: HookMatcher[]
+    ElicitationResult?: HookMatcher[]
     Setup?: HookMatcher[]
   }
   [key: string]: unknown
@@ -62,6 +65,7 @@ const HOOK_EVENTS = [
   'SubagentStart',
   'SubagentStop',
   'PreCompact',
+  'PostCompact',
   'PermissionRequest',
   'TeammateIdle',
   'TaskCompleted',
@@ -69,6 +73,8 @@ const HOOK_EVENTS = [
   'ConfigChange',
   'WorktreeCreate',
   'WorktreeRemove',
+  'Elicitation',
+  'ElicitationResult',
   'Setup',
 ] as const
 
