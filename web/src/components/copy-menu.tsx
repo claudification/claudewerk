@@ -67,20 +67,33 @@ async function copyAsText(text: string, format: 'rich' | 'markdown' | 'plain') {
   }
 }
 
+// Pre-load html-to-image eagerly on first import - must be ready before user gesture
+let toBlobFn: typeof import('html-to-image').toBlob | null = null
+import('html-to-image').then(mod => {
+  toBlobFn = mod.toBlob
+})
+
 async function copyAsImage(element: HTMLElement) {
-  const { toBlob } = await import('html-to-image')
+  if (!toBlobFn) throw new Error('html-to-image not loaded yet')
+
+  // Temporarily apply tight bounds - toBlob reads dimensions synchronously,
+  // then renders async. Restore before next paint (no flash).
+  const saved = {
+    display: element.style.display,
+    width: element.style.width,
+    padding: element.style.padding,
+  }
+  element.style.display = 'inline-block'
+  element.style.width = 'fit-content'
+  element.style.padding = '8px'
+
   const bgColor = getComputedStyle(document.body).backgroundColor || '#0a0a0a'
 
-  // Safari requires ClipboardItem to be created synchronously within the user
-  // gesture. Pass the blob PROMISE directly - don't await it first.
-  const blobPromise = toBlob(element, {
+  // Safari requires ClipboardItem creation within the user gesture context.
+  // Pass the blob PROMISE directly - don't await it first.
+  const blobPromise = toBlobFn(element, {
     pixelRatio: 2,
     backgroundColor: bgColor,
-    style: {
-      display: 'inline-block',
-      width: 'fit-content',
-      padding: '8px',
-    },
     filter: (node: HTMLElement) => {
       if (node.dataset?.copyMenu === 'true') return false
       if (node.classList?.contains('code-copy-btn')) return false
@@ -91,6 +104,11 @@ async function copyAsImage(element: HTMLElement) {
     if (!blob) throw new Error('toBlob returned null')
     return blob
   })
+
+  // Restore immediately - toBlob reads dimensions synchronously
+  element.style.display = saved.display
+  element.style.width = saved.width
+  element.style.padding = saved.padding
 
   await navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPromise })])
 }
