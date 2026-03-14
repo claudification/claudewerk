@@ -16,7 +16,9 @@ interface RenderableTranscriptEntry {
   images?: TranscriptImage[]
   toolUseResult?: TranscriptToolUseResult
 }
+
 import { Markdown } from '../markdown'
+import { AgentTranscriptInline } from './agent-views'
 import type { DisplayGroup, TaskNotification } from './grouping'
 import { MemoizedToolLine } from './tool-line'
 
@@ -42,8 +44,10 @@ function TaskNotificationLine({ notification: n, time }: { notification: TaskNot
         {n.usage && (
           <span className="text-[9px] text-muted-foreground/60 shrink-0">
             {Math.round(n.usage.totalTokens / 1000)}K tok
-            {' / '}{n.usage.toolUses} tools
-            {' / '}{formatDuration(n.usage.durationMs)}
+            {' / '}
+            {n.usage.toolUses} tools
+            {' / '}
+            {formatDuration(n.usage.durationMs)}
           </span>
         )}
         {n.result && (
@@ -81,6 +85,49 @@ type SubagentRef = Array<{
   eventCount: number
   tokenUsage?: { totalInput: number; totalOutput: number; cacheCreation: number; cacheRead: number }
 }>
+
+function collectGroupMarkdown(
+  items: Array<{ kind: string; text?: string; tool?: TranscriptContentBlock; result?: string }>,
+) {
+  const parts: string[] = []
+  for (const item of items) {
+    if (item.kind === 'text' && item.text) {
+      parts.push(item.text)
+    } else if (item.kind === 'tool' && item.result) {
+      const name = item.tool?.name || 'tool'
+      parts.push(`**${name}:**\n\`\`\`\n${item.result}\n\`\`\``)
+    }
+  }
+  return parts.join('\n\n')
+}
+
+function CopyGroupButton({
+  items,
+}: {
+  items: Array<{ kind: string; text?: string; tool?: TranscriptContentBlock; result?: string }>
+}) {
+  const [copied, setCopied] = useState(false)
+
+  function handleCopy() {
+    const md = collectGroupMarkdown(items)
+    if (!md) return
+    navigator.clipboard.writeText(md).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="opacity-30 sm:opacity-0 sm:group-hover/gv:opacity-60 hover:!opacity-100 transition-opacity text-[11px] text-muted-foreground shrink-0"
+      title="Copy as markdown"
+    >
+      {copied ? '✓' : '⧉'}
+    </button>
+  )
+}
 
 export function GroupView({
   group,
@@ -164,7 +211,7 @@ export function GroupView({
     'text-[10px]'
 
   return (
-    <div className="mb-4">
+    <div className="mb-4 group/gv">
       <div className="flex items-center gap-2 mb-2">
         <span className={cn('text-[10px]', borderColor)}>{'┌──'}</span>
         <span
@@ -184,6 +231,7 @@ export function GroupView({
           </span>
         )}
         <span className="text-muted-foreground text-[10px]">{time}</span>
+        {!isUser && <CopyGroupButton items={items} />}
         <span className={cn('flex-1 text-[10px] overflow-hidden', borderColor)}>{'─'.repeat(40)}</span>
       </div>
 
@@ -236,6 +284,7 @@ export function GroupView({
                   result={item.result}
                   toolUseResult={item.extra}
                   subagents={subagents}
+                  renderAgentInline={(agentId, toolId) => <AgentTranscriptInline agentId={agentId} toolId={toolId} />}
                 />
               )
           }
