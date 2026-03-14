@@ -93,7 +93,7 @@ function AgentGroupView({
 
   const content: AgentItem[] = []
   for (const entry of group.entries) {
-    const c = entry.message?.content
+    const c = (entry as { message?: { content?: string | TranscriptContentBlock[] } }).message?.content
     if (typeof c === 'string') {
       if (c.trim()) content.push({ kind: 'text', text: c })
     } else if (Array.isArray(c)) {

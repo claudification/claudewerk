@@ -80,19 +80,6 @@ export interface Session {
   }
 }
 
-// Transcript types (web-specific rich types for rendering, not the opaque Record<string,unknown> from shared)
-export interface TranscriptContentBlock {
-  type: 'text' | 'tool_use' | 'thinking' | 'tool_result' | string
-  text?: string
-  thinking?: string
-  signature?: string
-  name?: string
-  id?: string
-  input?: Record<string, unknown>
-  tool_use_id?: string
-  content?: string | unknown
-}
-
 export interface TranscriptImage {
   hash: string
   ext: string
@@ -100,21 +87,33 @@ export interface TranscriptImage {
   originalPath: string
 }
 
-export interface TranscriptEntry {
-  type: string
-  timestamp?: string
-  message?: {
-    role?: string
-    content?: string | TranscriptContentBlock[]
-  }
-  data?: Record<string, unknown>
-  toolUseResult?: {
-    filePath?: string
-    oldString?: string
-    newString?: string
-    structuredPatch?: Array<{ oldStart: number; oldLines: number; newStart: number; newLines: number; lines: string[] }>
-  }
+// Re-export all typed entry variants from shared protocol
+export type {
+  TranscriptContentBlock,
+  TranscriptEntry,
+  TranscriptUserEntry,
+  TranscriptAssistantEntry,
+  TranscriptAssistantMessage,
+  TranscriptProgressEntry,
+  TranscriptSystemEntry,
+  TranscriptQueueEntry,
+  TranscriptCompactingEntry,
+} from '@shared/protocol'
+
+// Frontend-specific rendering extensions on transcript entries.
+// The JSONL entries are augmented by the concentrator/dashboard with
+// images and structured tool results before rendering.
+export interface TranscriptToolUseResult {
+  filePath?: string
+  oldString?: string
+  newString?: string
+  structuredPatch?: Array<{ oldStart: number; oldLines: number; newStart: number; newLines: number; lines: string[] }>
+}
+
+// Augmented entry with rendering data (images, toolUseResult) added by the dashboard
+export interface RenderableEntry {
   images?: TranscriptImage[]
+  toolUseResult?: TranscriptToolUseResult
 }
 
 export type ProjectSettingsMap = Record<string, ProjectSettings>

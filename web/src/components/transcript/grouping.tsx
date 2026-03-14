@@ -4,7 +4,20 @@
  */
 
 import { useMemo, useRef } from 'react'
-import type { TranscriptEntry } from '@/lib/types'
+import type {
+  TranscriptAssistantEntry,
+  TranscriptEntry,
+  TranscriptQueueEntry,
+  TranscriptUserEntry,
+} from '@/lib/types'
+
+function isUser(e: TranscriptEntry): e is TranscriptUserEntry {
+  return e.type === 'user'
+}
+
+function isQueue(e: TranscriptEntry): e is TranscriptQueueEntry {
+  return e.type === 'queue-operation'
+}
 
 export interface TaskNotification {
   taskId: string
@@ -25,14 +38,14 @@ export interface DisplayGroup {
 export function buildResultMap(entries: TranscriptEntry[]) {
   const map = new Map<string, { result: string; extra?: Record<string, unknown> }>()
   for (const entry of entries) {
-    if (entry.type !== 'user') continue
+    if (!isUser(entry)) continue
     const content = entry.message?.content
     if (!Array.isArray(content)) continue
     for (const block of content) {
       if (block.type === 'tool_result' && block.tool_use_id) {
         map.set(block.tool_use_id, {
           result: typeof block.content === 'string' ? block.content : JSON.stringify(block.content),
-          extra: entry.toolUseResult,
+          extra: entry.toolUseResult as Record<string, unknown> | undefined,
         })
       }
     }
@@ -91,22 +104,20 @@ export function groupEntries(entries: TranscriptEntry[]): DisplayGroup[] {
     // queue-operation: enqueue = user interject, remove = consumed by Claude.
     // enqueue creates a queued user group; remove clears the queued flag on
     // the most recent queued group (FIFO - multiple enqueues, bulk remove).
-    if (entry.type === 'queue-operation') {
-      const op = (entry as any).operation
-      if (op === 'enqueue' && (entry as any).content) {
-        const synthetic: TranscriptEntry = {
+    if (isQueue(entry)) {
+      if (entry.operation === 'enqueue' && entry.content) {
+        const synthetic: TranscriptUserEntry = {
           type: 'user',
           timestamp: entry.timestamp,
-          message: { role: 'user', content: (entry as any).content },
+          message: { role: 'user', content: entry.content },
         }
         current = { type: 'user', timestamp: entry.timestamp || '', entries: [synthetic], queued: true }
         groups.push(current)
-      } else if (op === 'remove') {
-        // Clear queued flag on the oldest still-queued group
+      } else if (entry.operation === 'remove' || entry.operation === 'dequeue' || entry.operation === 'popAll') {
         for (const g of groups) {
           if (g.queued) {
             g.queued = false
-            break
+            if (entry.operation !== 'popAll') break
           }
         }
       }
@@ -114,7 +125,8 @@ export function groupEntries(entries: TranscriptEntry[]): DisplayGroup[] {
     }
 
     if (entry.type !== 'user' && entry.type !== 'assistant') continue
-    const content = entry.message?.content
+    const msgEntry = entry as TranscriptUserEntry | TranscriptAssistantEntry
+    const content = msgEntry.message?.content
     if (!content) continue
 
     if (entry.type === 'user' && Array.isArray(content)) {
@@ -211,14 +223,14 @@ export function useIncrementalGroups(entries: TranscriptEntry[]) {
     // Incremental buildResultMap - clone before mutating so existing renders aren't affected
     const newResultMap = new Map(cache.resultMap)
     for (const entry of newEntries) {
-      if (entry.type !== 'user') continue
+      if (!isUser(entry)) continue
       const content = entry.message?.content
       if (!Array.isArray(content)) continue
       for (const block of content) {
         if (block.type === 'tool_result' && block.tool_use_id) {
           newResultMap.set(block.tool_use_id, {
             result: typeof block.content === 'string' ? block.content : JSON.stringify(block.content),
-            extra: entry.toolUseResult,
+            extra: entry.toolUseResult as Record<string, unknown> | undefined,
           })
         }
       }
@@ -258,21 +270,20 @@ export function useIncrementalGroups(entries: TranscriptEntry[]) {
       }
 
       // queue-operation: enqueue/remove (see batch grouper for full explanation)
-      if (entry.type === 'queue-operation') {
-        const op = (entry as any).operation
-        if (op === 'enqueue' && (entry as any).content) {
-          const synthetic: TranscriptEntry = {
+      if (isQueue(entry)) {
+        if (entry.operation === 'enqueue' && entry.content) {
+          const synthetic: TranscriptUserEntry = {
             type: 'user',
             timestamp: entry.timestamp,
-            message: { role: 'user', content: (entry as any).content },
+            message: { role: 'user', content: entry.content },
           }
           lastGroup = { type: 'user', timestamp: entry.timestamp || '', entries: [synthetic], queued: true }
           newGroups.push(lastGroup)
-        } else if (op === 'remove') {
+        } else if (entry.operation === 'remove' || entry.operation === 'dequeue' || entry.operation === 'popAll') {
           for (const g of newGroups) {
             if (g.queued) {
               g.queued = false
-              break
+              if (entry.operation !== 'popAll') break
             }
           }
         }
@@ -280,7 +291,8 @@ export function useIncrementalGroups(entries: TranscriptEntry[]) {
       }
 
       if (entry.type !== 'user' && entry.type !== 'assistant') continue
-      const content = entry.message?.content
+      const msgEntry = entry as TranscriptUserEntry | TranscriptAssistantEntry
+      const content = msgEntry.message?.content
       if (!content) continue
 
       if (entry.type === 'user' && Array.isArray(content)) {

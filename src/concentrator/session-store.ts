@@ -16,7 +16,10 @@ import type {
   SubscriptionChannel,
   SubscriptionsDiag,
   TaskInfo,
+  TranscriptAssistantEntry,
   TranscriptEntry,
+  TranscriptProgressEntry,
+  TranscriptUserEntry,
   WrapperCapability,
 } from '../shared/protocol'
 import { getProjectSettings } from './project-settings'
@@ -1524,18 +1527,19 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         }
       }
       for (const entry of entries) {
-        // Extract git branch from any entry
-        if (!session.gitBranch && (entry as any).gitBranch) {
-          session.gitBranch = (entry as any).gitBranch
+        // Extract git branch from any entry (gitBranch is on TranscriptEntryBase)
+        if (!session.gitBranch && entry.gitBranch) {
+          session.gitBranch = entry.gitBranch
           sessionChanged = true
         }
 
         // Count user turns
         if (entry.type === 'user') {
-          const content = (entry as any).message?.content
+          const userEntry = entry as TranscriptUserEntry
+          const content = userEntry.message?.content
           // Only count actual user messages, not tool results
-          if (typeof content === 'string' || (Array.isArray(content) && content.some((c: any) => c.type === 'text'))) {
-            if (!Array.isArray(content) || !content.some((c: any) => c.type === 'tool_result')) {
+          if (typeof content === 'string' || (Array.isArray(content) && content.some(c => c.type === 'text'))) {
+            if (!Array.isArray(content) || !content.some(c => c.type === 'tool_result')) {
               session.stats.turnCount++
             }
           }
@@ -1547,21 +1551,22 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         }
 
         if (entry.type !== 'assistant') continue
+        const assistantEntry = entry as TranscriptAssistantEntry
 
         // Count tool calls
-        const content = (entry as any).message?.content
+        const content = assistantEntry.message?.content
         if (Array.isArray(content)) {
-          session.stats.toolCallCount += content.filter((c: any) => c.type === 'tool_use').length
+          session.stats.toolCallCount += content.filter(c => c.type === 'tool_use').length
         }
 
         // Extract model + effort from assistant messages (more reliable than SessionStart)
-        const assistantModel = (entry as any).message?.model
+        const assistantModel = assistantEntry.message?.model
         if (assistantModel && typeof assistantModel === 'string') {
           session.model = assistantModel
         }
 
         // Extract token usage (latest = context window, cumulative = totals)
-        const usage = (entry as any).message?.usage
+        const usage = assistantEntry.message?.usage
         if (usage && typeof usage.input_tokens === 'number') {
           // Extract effort level from API 'speed' field
           if (usage.speed && typeof usage.speed === 'string') {
@@ -1621,7 +1626,9 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     if (session) {
       const agentEntries = new Map<string, TranscriptEntry[]>()
       for (const entry of entries) {
-        const agentId = (entry as any).agentId || (entry as any).data?.agentId
+        const agentId = entry.type === 'progress'
+          ? ((entry as TranscriptProgressEntry).data?.agentId as string | undefined)
+          : undefined
         if (agentId && typeof agentId === 'string') {
           let batch = agentEntries.get(agentId)
           if (!batch) {
@@ -1697,7 +1704,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     let changed = false
     for (const entry of entries) {
       if (entry.type !== 'assistant') continue
-      const usage = (entry as any).message?.usage
+      const usage = (entry as TranscriptAssistantEntry).message?.usage
       if (!usage || typeof usage.input_tokens !== 'number') continue
 
       if (!subagent.tokenUsage) {

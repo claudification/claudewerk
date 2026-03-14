@@ -122,6 +122,19 @@ export interface FileResponse {
   error?: string
 }
 
+// Content block in a Claude API message (text, tool_use, tool_result, thinking)
+export interface TranscriptContentBlock {
+  type: string // 'text' | 'tool_use' | 'thinking' | 'tool_result' | ...
+  text?: string
+  thinking?: string
+  signature?: string
+  name?: string
+  id?: string
+  input?: Record<string, unknown>
+  tool_use_id?: string
+  content?: string | unknown
+}
+
 // Common fields present on most JSONL transcript entries
 interface TranscriptEntryBase {
   type: string
@@ -142,7 +155,7 @@ export interface TranscriptAssistantMessage {
   id?: string
   type?: string
   role: 'assistant'
-  content: unknown[]
+  content: TranscriptContentBlock[]
   stop_reason?: string | null
   stop_sequence?: string | null
   usage?: {
@@ -163,7 +176,7 @@ export interface TranscriptUserEntry extends TranscriptEntryBase {
   type: 'user'
   message?: {
     role: 'user'
-    content: string | unknown[]
+    content: string | TranscriptContentBlock[]
   }
   promptId?: string
   sourceToolAssistantUUID?: string

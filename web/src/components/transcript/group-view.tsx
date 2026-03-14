@@ -5,8 +5,17 @@
 
 import { memo, useState } from 'react'
 import { useSessionsStore } from '@/hooks/use-sessions'
-import type { TranscriptContentBlock } from '@/lib/types'
+import type { TranscriptContentBlock, TranscriptImage, TranscriptToolUseResult } from '@/lib/types'
 import { cn } from '@/lib/utils'
+
+// Transcript entries are augmented by the concentrator API with rendering data
+// (images extracted from base64, structured tool use results) before being sent
+// to the dashboard. This extends the base entry type for rendering purposes.
+interface RenderableTranscriptEntry {
+  message?: { role?: string; content?: string | TranscriptContentBlock[] }
+  images?: TranscriptImage[]
+  toolUseResult?: TranscriptToolUseResult
+}
 import { Markdown } from '../markdown'
 import type { DisplayGroup, TaskNotification } from './grouping'
 import { MemoizedToolLine } from './tool-line'
@@ -97,7 +106,8 @@ export function GroupView({
 
   const items: RenderItem[] = []
 
-  for (const entry of group.entries) {
+  for (const rawEntry of group.entries) {
+    const entry = rawEntry as RenderableTranscriptEntry
     if (entry.images?.length) {
       items.push({ kind: 'images', images: entry.images })
     }
