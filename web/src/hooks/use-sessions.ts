@@ -8,7 +8,6 @@ import {
   type ToolDisplayPrefs,
 } from '@/lib/dashboard-prefs'
 import { clearExpandedState } from '@/lib/expanded-state'
-import { resetHapticThrottle } from './use-websocket'
 import type {
   HookEvent,
   ProjectSettings,
@@ -342,8 +341,6 @@ export async function reviveSession(sessionId: string): Promise<{ success: boole
 }
 
 export async function sendInput(sessionId: string, input: string): Promise<boolean> {
-  // Reset haptic throttle so the first response after user input fires immediately
-  resetHapticThrottle()
   const crDelay = (useSessionsStore.getState().globalSettings.carriageReturnDelay as number) || 0
   const res = await fetch(`${API_BASE}/sessions/${sessionId}/input`, {
     method: 'POST',

@@ -7,7 +7,7 @@ import { AlertTriangle, ChevronLeft, Clock, Eye, FileText, Loader2, Pencil, Refr
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { type FileInfo, useFileEditor } from '@/hooks/use-file-editor'
 import { useSessionsStore } from '@/hooks/use-sessions'
-import { cn } from '@/lib/utils'
+import { cn, haptic } from '@/lib/utils'
 import { Markdown } from './markdown'
 
 // Lazy-load CodeMirror (heavy dependency)
@@ -209,6 +209,7 @@ export const FileEditor = memo(function FileEditor({ sessionId }: { sessionId: s
       if (activeFile === path) return
       if (activeFile) closeFile()
       setPreviewMode(true)
+      haptic('tap')
       openFile(path)
     },
     [activeFile, closeFile, openFile],
