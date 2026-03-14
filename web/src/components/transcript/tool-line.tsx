@@ -186,7 +186,11 @@ export function ToolLine({
     case 'Glob':
     case 'Grep': {
       const pattern = input.pattern as string
-      summary = pattern
+      const grepPath = (input.path as string) || ''
+      const grepGlob = (input.glob as string) || ''
+      const pathHint = grepPath ? ` in ${grepPath}` : ''
+      const globHint = grepGlob ? ` (${grepGlob})` : ''
+      summary = `${pattern}${pathHint}${globHint}`
       if (result) {
         let grepHighlight: RegExp | undefined
         if (pattern) {
