@@ -287,6 +287,8 @@ export function GroupView({
                   renderAgentInline={(agentId, toolId) => <AgentTranscriptInline agentId={agentId} toolId={toolId} />}
                 />
               )
+            default:
+              return null
           }
         })}
       </div>
