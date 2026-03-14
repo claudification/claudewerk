@@ -211,7 +211,7 @@ export function GroupView({
                   <Markdown>{item.text}</Markdown>
                   <CopyMenu
                     text={item.text}
-                    className="absolute top-0 right-0 opacity-0 group-hover/text:opacity-60 hover:!opacity-100 max-sm:opacity-30 transition-opacity"
+                    className="absolute top-0 right-0 opacity-0 group-hover/text:opacity-60 hover:!opacity-100 max-sm:opacity-60 transition-opacity"
                   />
                 </div>
               )
