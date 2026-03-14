@@ -22,8 +22,11 @@ function isQueue(e: TranscriptEntry): e is TranscriptQueueEntry {
 export interface TaskNotification {
   taskId: string
   summary: string
-  status: 'completed' | 'failed' | string
+  status: 'completed' | 'failed' | 'killed' | string
   result?: string
+  toolUseId?: string
+  outputFile?: string
+  usage?: { totalTokens: number; toolUses: number; durationMs: number }
 }
 
 export interface DisplayGroup {
@@ -66,8 +69,23 @@ export function parseTaskNotifications(text: string): TaskNotification[] {
       const status = doc.querySelector('status')?.textContent?.trim() || ''
       const summary = doc.querySelector('summary')?.textContent?.trim() || ''
       const result = doc.querySelector('result')?.textContent?.trim() || undefined
+      const toolUseId = doc.querySelector('tool-use-id')?.textContent?.trim() || undefined
+      const outputFile = doc.querySelector('output-file')?.textContent?.trim() || undefined
+
+      // Parse usage block: <usage><total_tokens>N</total_tokens><tool_uses>N</tool_uses><duration_ms>N</duration_ms></usage>
+      let usage: TaskNotification['usage']
+      const usageEl = doc.querySelector('usage')
+      if (usageEl) {
+        const totalTokens = Number.parseInt(usageEl.querySelector('total_tokens')?.textContent || '0', 10)
+        const toolUses = Number.parseInt(usageEl.querySelector('tool_uses')?.textContent || '0', 10)
+        const durationMs = Number.parseInt(usageEl.querySelector('duration_ms')?.textContent || '0', 10)
+        if (totalTokens || toolUses || durationMs) {
+          usage = { totalTokens, toolUses, durationMs }
+        }
+      }
+
       if (taskId || summary) {
-        results.push({ taskId, status, summary, result })
+        results.push({ taskId, status, summary, result, toolUseId, outputFile, usage })
       }
     } catch {
       // Malformed XML - skip
@@ -106,13 +124,29 @@ export function groupEntries(entries: TranscriptEntry[]): DisplayGroup[] {
     // the most recent queued group (FIFO - multiple enqueues, bulk remove).
     if (isQueue(entry)) {
       if (entry.operation === 'enqueue' && entry.content) {
-        const synthetic: TranscriptUserEntry = {
-          type: 'user',
-          timestamp: entry.timestamp,
-          message: { role: 'user', content: entry.content },
+        // Task-notifications are enqueued too but shouldn't render as user bubbles.
+        // Parse them into system notification groups instead.
+        if (entry.content.trimStart().startsWith('<task-notification>')) {
+          const notifications = parseTaskNotifications(entry.content)
+          if (notifications.length > 0) {
+            current = null
+            groups.push({
+              type: 'system',
+              timestamp: entry.timestamp || '',
+              entries: [entry],
+              notifications,
+              queued: true,
+            })
+          }
+        } else {
+          const synthetic: TranscriptUserEntry = {
+            type: 'user',
+            timestamp: entry.timestamp,
+            message: { role: 'user', content: entry.content },
+          }
+          current = { type: 'user', timestamp: entry.timestamp || '', entries: [synthetic], queued: true }
+          groups.push(current)
         }
-        current = { type: 'user', timestamp: entry.timestamp || '', entries: [synthetic], queued: true }
-        groups.push(current)
       } else if (entry.operation === 'remove' || entry.operation === 'dequeue' || entry.operation === 'popAll') {
         for (const g of groups) {
           if (g.queued) {
@@ -272,13 +306,27 @@ export function useIncrementalGroups(entries: TranscriptEntry[]) {
       // queue-operation: enqueue/remove (see batch grouper for full explanation)
       if (isQueue(entry)) {
         if (entry.operation === 'enqueue' && entry.content) {
-          const synthetic: TranscriptUserEntry = {
-            type: 'user',
-            timestamp: entry.timestamp,
-            message: { role: 'user', content: entry.content },
+          if (entry.content.trimStart().startsWith('<task-notification>')) {
+            const notifications = parseTaskNotifications(entry.content)
+            if (notifications.length > 0) {
+              lastGroup = null
+              newGroups.push({
+                type: 'system',
+                timestamp: entry.timestamp || '',
+                entries: [entry],
+                notifications,
+                queued: true,
+              })
+            }
+          } else {
+            const synthetic: TranscriptUserEntry = {
+              type: 'user',
+              timestamp: entry.timestamp,
+              message: { role: 'user', content: entry.content },
+            }
+            lastGroup = { type: 'user', timestamp: entry.timestamp || '', entries: [synthetic], queued: true }
+            newGroups.push(lastGroup)
           }
-          lastGroup = { type: 'user', timestamp: entry.timestamp || '', entries: [synthetic], queued: true }
-          newGroups.push(lastGroup)
         } else if (entry.operation === 'remove' || entry.operation === 'dequeue' || entry.operation === 'popAll') {
           for (const g of newGroups) {
             if (g.queued) {
