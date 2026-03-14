@@ -8,7 +8,6 @@ import { useSessionsStore } from '@/hooks/use-sessions'
 import { resolveToolDisplay, type ToolDisplayKey } from '@/lib/dashboard-prefs'
 import type { TranscriptContentBlock } from '@/lib/types'
 import { cn, truncate } from '@/lib/utils'
-import { CopyMenu } from '../copy-menu'
 import { JsonInspector } from '../json-inspector'
 import { Collapsible, getToolStyle, shortPath, TruncatedPre } from './shared'
 import { DiffView, ShellCommand, WritePreview } from './tool-renderers'
@@ -373,7 +372,6 @@ export function ToolLine({
         </span>
         <span className="text-foreground/80 truncate flex-1">{summary}</span>
         {agentBadge}
-        {result && <CopyMenu text={result} />}
         <JsonInspector title={name} data={input} result={result} extra={toolUseResult} />
       </div>
       {details && (
