@@ -197,7 +197,7 @@ export function Collapsible({
         {isOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
         {label}
       </button>
-      {isOpen && <div className="mt-1 ml-4">{children}</div>}
+      {isOpen && <div className="mt-1 ml-4 min-w-0 overflow-hidden">{children}</div>}
     </div>
   )
 }
@@ -234,7 +234,7 @@ export function TruncatedPre({ text, tool, highlight }: { text: string; tool?: T
 
   return (
     <div>
-      <pre className="text-[10px] bg-black/30 p-2 whitespace-pre-wrap font-mono">
+      <pre className="text-[10px] bg-black/30 p-2 whitespace-pre-wrap break-words overflow-x-auto font-mono">
         <AnsiText text={displayText} highlight={highlight} />
       </pre>
       {(needsLineTruncation || linesWereCapped) && !revealed && (
