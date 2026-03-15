@@ -155,6 +155,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import {
   deleteProjectSettings,
   generateProjectKeyterms,
@@ -446,194 +447,209 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
   const hasAnySettings = current.label || current.icon || current.color || (current.keyterms?.length ?? 0) > 0
 
   return (
-    <div className="border border-border bg-card p-3 space-y-3 text-xs" onClick={e => e.stopPropagation()}>
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <span className="text-accent font-bold uppercase tracking-wider text-[10px]">Project Settings</span>
-        <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground">
-          <X className="w-3.5 h-3.5" />
-        </button>
-      </div>
+    <Dialog
+      open
+      onOpenChange={v => {
+        if (!v) onClose()
+      }}
+    >
+      <DialogContent className="max-w-md">
+        <div className="p-4 space-y-3 text-xs">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <DialogTitle className="text-accent font-bold uppercase tracking-wider text-[10px]">
+              Project Settings
+            </DialogTitle>
+            <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
 
-      {/* Label */}
-      <div>
-        <label className="text-muted-foreground text-[10px] uppercase tracking-wider block mb-1">Label</label>
-        <input
-          type="text"
-          value={label}
-          onChange={e => setLabel(e.target.value)}
-          placeholder={cwd.split('/').pop() || 'project name'}
-          className="w-full bg-background border border-border px-2 py-1.5 text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-muted-foreground/50"
-          style={{ fontSize: '16px' }}
-        />
-      </div>
+          {/* Label */}
+          <div>
+            <label className="text-muted-foreground text-[10px] uppercase tracking-wider block mb-1">Label</label>
+            <input
+              type="text"
+              value={label}
+              onChange={e => setLabel(e.target.value)}
+              placeholder={cwd.split('/').pop() || 'project name'}
+              className="w-full bg-background border border-border px-2 py-1.5 text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-muted-foreground/50"
+              style={{ fontSize: '16px' }}
+            />
+          </div>
 
-      {/* Icon picker with search */}
-      <div>
-        <label className="text-muted-foreground text-[10px] uppercase tracking-wider block mb-1">Icon</label>
-        <div className="relative mb-1.5">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
-          <input
-            type="text"
-            value={iconSearch}
-            onChange={e => setIconSearch(e.target.value)}
-            placeholder="Search icons... (rocket, cloud, database...)"
-            className="w-full bg-background border border-border pl-6 pr-2 py-1 text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-muted-foreground/50"
-            style={{ fontSize: '16px' }}
-          />
-        </div>
-        <div className="flex flex-wrap gap-1 max-h-[120px] overflow-y-auto">
-          {/* None/clear option */}
-          <button
-            type="button"
-            onClick={() => setIcon('')}
-            className={cn(
-              'w-8 h-8 flex items-center justify-center border transition-colors',
-              icon === ''
-                ? 'border-accent bg-accent/20 text-accent'
-                : 'border-border hover:border-primary hover:bg-muted/30 text-muted-foreground',
-            )}
-          >
-            <span className="text-[10px]">--</span>
-          </button>
-          {filteredIcons.map(entry => {
-            const Icon = entry.icon
-            return (
+          {/* Icon picker with search */}
+          <div>
+            <label className="text-muted-foreground text-[10px] uppercase tracking-wider block mb-1">Icon</label>
+            <div className="relative mb-1.5">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
+              <input
+                type="text"
+                value={iconSearch}
+                onChange={e => setIconSearch(e.target.value)}
+                placeholder="Search icons... (rocket, cloud, database...)"
+                className="w-full bg-background border border-border pl-6 pr-2 py-1 text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-muted-foreground/50"
+                style={{ fontSize: '16px' }}
+              />
+            </div>
+            <div className="flex flex-wrap gap-1 max-h-[120px] overflow-y-auto">
+              {/* None/clear option */}
               <button
-                key={entry.id}
                 type="button"
-                onClick={() => setIcon(entry.id)}
-                title={entry.id}
+                onClick={() => setIcon('')}
                 className={cn(
                   'w-8 h-8 flex items-center justify-center border transition-colors',
-                  icon === entry.id
+                  icon === ''
                     ? 'border-accent bg-accent/20 text-accent'
                     : 'border-border hover:border-primary hover:bg-muted/30 text-muted-foreground',
                 )}
               >
-                <Icon className="w-4 h-4" />
+                <span className="text-[10px]">--</span>
               </button>
-            )
-          })}
-          {filteredIcons.length === 0 && (
-            <span className="text-muted-foreground text-[10px] py-2 px-1">No icons match "{iconSearch}"</span>
-          )}
-        </div>
-        {icon && (
-          <div className="mt-1 text-[10px] text-muted-foreground">
-            Selected: <span className="text-accent">{icon}</span>
+              {filteredIcons.map(entry => {
+                const Icon = entry.icon
+                return (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    onClick={() => setIcon(entry.id)}
+                    title={entry.id}
+                    className={cn(
+                      'w-8 h-8 flex items-center justify-center border transition-colors',
+                      icon === entry.id
+                        ? 'border-accent bg-accent/20 text-accent'
+                        : 'border-border hover:border-primary hover:bg-muted/30 text-muted-foreground',
+                    )}
+                  >
+                    <Icon className="w-4 h-4" />
+                  </button>
+                )
+              })}
+              {filteredIcons.length === 0 && (
+                <span className="text-muted-foreground text-[10px] py-2 px-1">No icons match "{iconSearch}"</span>
+              )}
+            </div>
+            {icon && (
+              <div className="mt-1 text-[10px] text-muted-foreground">
+                Selected: <span className="text-accent">{icon}</span>
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      {/* Color picker */}
-      <div>
-        <label className="text-muted-foreground text-[10px] uppercase tracking-wider block mb-1">Color</label>
-        <div className="flex flex-wrap gap-1">
-          {COLOR_OPTIONS.map(c => (
-            <button
-              key={c || '__none__'}
-              type="button"
-              onClick={() => setColor(c)}
-              className={cn(
-                'w-8 h-8 border transition-colors',
-                color === c ? 'border-accent ring-1 ring-accent' : 'border-border hover:border-primary',
-              )}
-              style={c ? { backgroundColor: c } : undefined}
-            >
-              {!c && (
-                <span className="text-muted-foreground text-[10px] flex items-center justify-center h-full">--</span>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
+          {/* Color picker */}
+          <div>
+            <label className="text-muted-foreground text-[10px] uppercase tracking-wider block mb-1">Color</label>
+            <div className="flex flex-wrap gap-1">
+              {COLOR_OPTIONS.map(c => (
+                <button
+                  key={c || '__none__'}
+                  type="button"
+                  onClick={() => setColor(c)}
+                  className={cn(
+                    'w-8 h-8 border transition-colors',
+                    color === c ? 'border-accent ring-1 ring-accent' : 'border-border hover:border-primary',
+                  )}
+                  style={c ? { backgroundColor: c } : undefined}
+                >
+                  {!c && (
+                    <span className="text-muted-foreground text-[10px] flex items-center justify-center h-full">
+                      --
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
 
-      {/* Voice Keyterms */}
-      <div>
-        <div className="flex items-center justify-between mb-1">
-          <label className="text-muted-foreground text-[10px] uppercase tracking-wider">Voice Keyterms</label>
-          <button
-            type="button"
-            onClick={handleGenerateKeyterms}
-            disabled={generating}
-            className="text-[10px] text-accent hover:text-accent/80 disabled:text-muted-foreground transition-colors"
-          >
-            {generating ? 'Generating...' : 'Auto-generate'}
-          </button>
-        </div>
-        {generateError && <div className="text-[10px] text-red-400 mb-1">{generateError}</div>}
-        <div className="flex flex-wrap gap-1 mb-1.5">
-          {keyterms.map(term => (
-            <span
-              key={term}
-              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-accent/10 border border-accent/30 text-accent text-[10px] font-mono"
-            >
-              {term}
-              <button type="button" onClick={() => removeKeyterm(term)} className="hover:text-red-400 ml-0.5">
-                <X className="w-2.5 h-2.5" />
+          {/* Voice Keyterms */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-muted-foreground text-[10px] uppercase tracking-wider">Voice Keyterms</label>
+              <button
+                type="button"
+                onClick={handleGenerateKeyterms}
+                disabled={generating}
+                className="text-[10px] text-accent hover:text-accent/80 disabled:text-muted-foreground transition-colors"
+              >
+                {generating ? 'Generating...' : 'Auto-generate'}
               </button>
-            </span>
-          ))}
-          {keyterms.length === 0 && (
-            <span className="text-muted-foreground text-[10px]">No keyterms - voice transcription uses defaults</span>
-          )}
-        </div>
-        <div className="flex gap-1">
-          <input
-            type="text"
-            value={keytermInput}
-            onChange={e => setKeytermInput(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                addKeyterm()
-              }
-            }}
-            placeholder="Add term..."
-            className="flex-1 bg-background border border-border px-2 py-1 text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-muted-foreground/50"
-            style={{ fontSize: '16px' }}
-          />
-          <button
-            type="button"
-            onClick={addKeyterm}
-            disabled={!keytermInput.trim()}
-            className="px-2 py-1 text-[10px] font-bold border border-border text-muted-foreground hover:text-accent hover:border-accent disabled:opacity-30 transition-colors"
-          >
-            +
-          </button>
-        </div>
-      </div>
+            </div>
+            {generateError && <div className="text-[10px] text-red-400 mb-1">{generateError}</div>}
+            <div className="flex flex-wrap gap-1 mb-1.5">
+              {keyterms.map(term => (
+                <span
+                  key={term}
+                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-accent/10 border border-accent/30 text-accent text-[10px] font-mono"
+                >
+                  {term}
+                  <button type="button" onClick={() => removeKeyterm(term)} className="hover:text-red-400 ml-0.5">
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </span>
+              ))}
+              {keyterms.length === 0 && (
+                <span className="text-muted-foreground text-[10px]">
+                  No keyterms - voice transcription uses defaults
+                </span>
+              )}
+            </div>
+            <div className="flex gap-1">
+              <input
+                type="text"
+                value={keytermInput}
+                onChange={e => setKeytermInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    addKeyterm()
+                  }
+                }}
+                placeholder="Add term..."
+                className="flex-1 bg-background border border-border px-2 py-1 text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-muted-foreground/50"
+                style={{ fontSize: '16px' }}
+              />
+              <button
+                type="button"
+                onClick={addKeyterm}
+                disabled={!keytermInput.trim()}
+                className="px-2 py-1 text-[10px] font-bold border border-border text-muted-foreground hover:text-accent hover:border-accent disabled:opacity-30 transition-colors"
+              >
+                +
+              </button>
+            </div>
+          </div>
 
-      {/* Actions */}
-      <div className="flex items-center gap-2 pt-1">
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saving || !hasChanges}
-          className={cn(
-            'flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider border transition-colors',
-            hasChanges
-              ? 'border-accent bg-accent/20 text-accent hover:bg-accent/30'
-              : 'border-border text-muted-foreground cursor-not-allowed',
-          )}
-        >
-          <Check className="w-3 h-3" />
-          Save
-        </button>
-        {hasAnySettings && (
-          <button
-            type="button"
-            onClick={handleClear}
-            disabled={saving}
-            className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider border border-red-500/50 text-red-400 hover:bg-red-500/20 transition-colors"
-          >
-            <Trash2 className="w-3 h-3" />
-            Clear
-          </button>
-        )}
-      </div>
-    </div>
+          {/* Actions */}
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving || !hasChanges}
+              className={cn(
+                'flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider border transition-colors',
+                hasChanges
+                  ? 'border-accent bg-accent/20 text-accent hover:bg-accent/30'
+                  : 'border-border text-muted-foreground cursor-not-allowed',
+              )}
+            >
+              <Check className="w-3 h-3" />
+              Save
+            </button>
+            {hasAnySettings && (
+              <button
+                type="button"
+                onClick={handleClear}
+                disabled={saving}
+                className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider border border-red-500/50 text-red-400 hover:bg-red-500/20 transition-colors"
+              >
+                <Trash2 className="w-3 h-3" />
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
