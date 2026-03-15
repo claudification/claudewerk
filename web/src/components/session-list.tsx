@@ -279,23 +279,6 @@ function NewGroupDropTarget() {
   )
 }
 
-// Drop target for unorganizing (only visible while dragging)
-function UnorganizedDropTarget() {
-  const { isOver, setNodeRef } = useDroppable({ id: '__unorganized__' })
-
-  return (
-    <div
-      ref={setNodeRef}
-      className={cn(
-        'border-2 border-dashed rounded py-2 px-3 text-center text-[11px] font-mono transition-colors',
-        isOver ? 'border-red-400/60 text-red-400 bg-red-400/10' : 'border-border/50 text-muted-foreground/50',
-      )}
-    >
-      unpin
-    </div>
-  )
-}
-
 function SessionCwdGroup({
   sessions,
   name,
@@ -480,16 +463,6 @@ export function SessionList() {
       return
     }
 
-    // Drop on "unorganized" zone -> unpin
-    if (over.id === '__unorganized__') {
-      if (isCurrentlyPinned) {
-        const newOrganized = sessionOrder.organized.filter(e => e.cwd !== draggedCwd)
-        useSessionsStore.getState().setSessionOrder({ organized: newOrganized })
-        updateSessionOrder('set', { organized: newOrganized })
-      }
-      return
-    }
-
     // Drop on another session
     const overCwd = over.id as string
     const overIsPinned = pinnedCwds.has(overCwd)
@@ -568,13 +541,15 @@ export function SessionList() {
             </div>
           )}
 
-          {/* Drop targets while dragging */}
-          {isDragging && (
-            <div className="mt-2 space-y-1">
-              <NewGroupDropTarget />
-              {hasOrganized && <UnorganizedDropTarget />}
-            </div>
-          )}
+          {/* Drop targets - always in DOM to avoid layout shift, hidden when not dragging */}
+          <div
+            className={cn(
+              'mt-2 transition-all',
+              isDragging ? 'opacity-100 max-h-16' : 'opacity-0 max-h-0 overflow-hidden',
+            )}
+          >
+            <NewGroupDropTarget />
+          </div>
 
           {/* Unorganized section */}
           {sortedUnpinned.length > 0 && (
