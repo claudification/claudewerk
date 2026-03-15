@@ -41,9 +41,11 @@ VERBOSE=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --concentrator) AGENT_ARGS+=(--concentrator "$2"); shift 2 ;;
+    --spawn-root)   AGENT_ARGS+=(--spawn-root "$2"); shift 2 ;;
+    --no-spawn)     AGENT_ARGS+=(--no-spawn); shift ;;
     -v|--verbose)   AGENT_ARGS+=(-v); VERBOSE=true; shift ;;
     --help|-h)
-      echo "Usage: start-agent.sh [--concentrator <url>] [-v|--verbose]"
+      echo "Usage: start-agent.sh [--concentrator <url>] [--spawn-root <path>] [--no-spawn] [-v|--verbose]"
       echo ""
       echo "Validates config and starts rclaude-agent in the background."
       echo "Reads RCLAUDE_SECRET from .env or environment."
