@@ -107,9 +107,9 @@ export function WebTerminal({ wrapperId, onClose, popout }: WebTerminalProps) {
       if (e.ctrlKey && e.key === ',') return false
       // Ctrl+Shift+Q - close
       if (e.ctrlKey && e.shiftKey && e.key === 'Q') return false
-      // Shift+Enter - send \n (newline) instead of \r (xterm sends \r for both Enter and Shift+Enter)
+      // Shift+Enter - send same as Alt+Enter (ESC + CR) so Claude Code treats it as newline
       if (e.shiftKey && e.key === 'Enter' && e.type === 'keydown') {
-        sendWsMessage({ type: 'terminal_data', wrapperId, data: '\n' })
+        sendWsMessage({ type: 'terminal_data', wrapperId, data: '\x1b\r' })
         return false
       }
       // When switcher is open, eat all keys so they don't go to PTY
@@ -138,6 +138,16 @@ export function WebTerminal({ wrapperId, onClose, popout }: WebTerminalProps) {
     const dataDisposable = terminal.onData(data => {
       sendWsMessage({ type: 'terminal_data', wrapperId, data })
     })
+
+    // Handle paste (Cmd+V / Ctrl+V) - xterm.js doesn't handle this natively
+    function handlePaste(e: ClipboardEvent) {
+      const text = e.clipboardData?.getData('text')
+      if (text) {
+        e.preventDefault()
+        sendWsMessage({ type: 'terminal_data', wrapperId, data: text })
+      }
+    }
+    terminalRef.current.addEventListener('paste', handlePaste)
 
     const handler = (msg: TerminalMessage) => {
       if (msg.wrapperId !== wrapperId) return
@@ -184,9 +194,11 @@ export function WebTerminal({ wrapperId, onClose, popout }: WebTerminalProps) {
 
     terminal.focus()
 
+    const termEl = terminalRef.current
     return () => {
       resizeObserver.disconnect()
       dataDisposable.dispose()
+      termEl?.removeEventListener('paste', handlePaste)
       setTerminalHandler(null)
       sendWsMessage({ type: 'terminal_detach', wrapperId })
       terminal.dispose()
