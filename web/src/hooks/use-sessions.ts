@@ -72,6 +72,7 @@ interface SessionsState {
   tasks: Record<string, TaskInfo[]>
   projectSettings: ProjectSettingsMap
   globalSettings: Record<string, unknown>
+  sessionOrder: { organized: Array<{ cwd: string }> }
   serverCapabilities: { voice: boolean }
   setServerCapabilities: (caps: { voice: boolean }) => void
   isConnected: boolean
@@ -109,6 +110,7 @@ interface SessionsState {
   setTranscript: (sessionId: string, entries: TranscriptEntry[]) => void
   setTasks: (sessionId: string, tasks: TaskInfo[]) => void
   setProjectSettings: (settings: ProjectSettingsMap) => void
+  setSessionOrder: (order: { organized: Array<{ cwd: string }> }) => void
   setConnected: (connected: boolean) => void
   setAgentConnected: (connected: boolean) => void
   setError: (error: string | null) => void
@@ -164,6 +166,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   tasks: {},
   projectSettings: {},
   globalSettings: {},
+  sessionOrder: { organized: [] },
   serverCapabilities: { voice: false },
   setServerCapabilities: caps => set({ serverCapabilities: caps }),
   isConnected: false,
@@ -275,6 +278,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     set(state => ({ transcripts: { ...state.transcripts, [sessionId]: entries }, newDataSeq: state.newDataSeq + 1 })),
   setTasks: (sessionId, tasks) => set(state => ({ tasks: { ...state.tasks, [sessionId]: tasks } })),
   setProjectSettings: settings => set({ projectSettings: settings }),
+  setSessionOrder: order => set({ sessionOrder: order }),
   setConnected: connected => set({ isConnected: connected }),
   setAgentConnected: connected => set({ agentConnected: connected }),
   setError: error => set({ error }),
@@ -509,6 +513,26 @@ export async function deleteProjectSettings(cwd: string): Promise<ProjectSetting
   if (!res.ok) return null
   const data = await res.json()
   return data.settings
+}
+
+// Session order API
+export type SessionOrderData = { organized: Array<{ cwd: string }> }
+
+export async function fetchSessionOrder(): Promise<SessionOrderData> {
+  const res = await fetch(`${API_BASE}/api/session-order`)
+  if (!res.ok) return { organized: [] }
+  return res.json()
+}
+
+export async function updateSessionOrder(
+  action: 'pin' | 'unpin' | 'move' | 'set',
+  payload: { cwd?: string; toIndex?: number; organized?: Array<{ cwd: string }> },
+): Promise<void> {
+  await fetch(`${API_BASE}/api/session-order`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ...payload }),
+  })
 }
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {

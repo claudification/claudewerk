@@ -1,8 +1,20 @@
+import {
+  closestCenter,
+  DndContext,
+  type DragEndEvent,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import type { HookEvent } from '@shared/protocol'
+import { ContextMenu, DropdownMenu } from 'radix-ui'
 import { useEffect, useState } from 'react'
-import { useSessionsStore } from '@/hooks/use-sessions'
+import { updateSessionOrder, useSessionsStore } from '@/hooks/use-sessions'
 import type { Session } from '@/lib/types'
-import { cn, formatAge, formatModel, haptic, lastPathSegments } from '@/lib/utils'
+import { cn, formatAge, formatModel, haptic, isMobileViewport, lastPathSegments } from '@/lib/utils'
 import { ProjectSettingsButton, ProjectSettingsEditor, renderProjectIcon } from './project-settings-editor'
 
 function StatusIndicator({ status }: { status: Session['status'] }) {
@@ -39,7 +51,6 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
   function handleClick() {
     haptic('tap')
     selectSession(session.id)
-    // Events and transcript are fetched by useEffect in app.tsx when selectedSessionId changes
   }
 
   const displayName = ps?.label || lastPathSegments(session.cwd)
@@ -65,7 +76,6 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
       }
       title={`${session.id}\n${formatModel(model || session.model)}`}
     >
-      {/* Path - most important */}
       {!compact && (
         <div className="flex items-center gap-1.5">
           <StatusIndicator status={session.status} />
@@ -101,7 +111,6 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
           {session.compacting && <span className="text-[9px] text-amber-400 font-bold animate-pulse">COMPACT</span>}
         </div>
       )}
-      {/* Active tasks + pending tasks + subagents + working teammates */}
       {(session.activeTasks.length > 0 ||
         session.pendingTasks.length > 0 ||
         session.subagents.length > 0 ||
@@ -173,7 +182,6 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
             ))}
         </div>
       )}
-      {/* Status row (non-compact only, only if there's something to show) */}
       {!compact && (session.status === 'ended' || session.runningBgTaskCount > 0 || session.team) && (
         <div className="flex items-center gap-2 mt-2 text-xs flex-wrap">
           {session.status === 'ended' && <StatusIndicator status={session.status} />}
@@ -201,23 +209,107 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
   )
 }
 
-function SessionItem({ session }: { session: Session }) {
+// Context menu items for pin/unpin/move
+const menuItemClass =
+  'px-3 py-2 sm:py-1.5 hover:bg-accent/50 active:bg-accent focus:bg-accent/50 outline-none transition-colors cursor-pointer text-sm sm:text-xs text-foreground'
+
+function SessionContextMenu({
+  session,
+  isPinned,
+  children,
+}: {
+  session: Session
+  isPinned: boolean
+  children: React.ReactNode
+}) {
+  function handlePin() {
+    haptic('tap')
+    updateSessionOrder(isPinned ? 'unpin' : 'pin', { cwd: session.cwd })
+  }
+
+  // Mobile: use DropdownMenu (tap), Desktop: use ContextMenu (right-click)
+  if (isMobileViewport()) {
+    return (
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger asChild>{children}</DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
+            className="min-w-[160px] bg-popover border border-border rounded-lg shadow-xl py-1 z-[100] animate-in fade-in zoom-in-95 duration-100"
+            align="start"
+            sideOffset={5}
+          >
+            <DropdownMenu.Item className={menuItemClass} onSelect={handlePin}>
+              {isPinned ? 'Unpin from organized' : 'Pin to organized'}
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+    )
+  }
+
+  return (
+    <ContextMenu.Root>
+      <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Content
+          className="min-w-[160px] bg-popover border border-border rounded-lg shadow-xl py-1 z-[100] animate-in fade-in zoom-in-95 duration-100"
+          alignOffset={5}
+        >
+          <ContextMenu.Item className={menuItemClass} onSelect={handlePin}>
+            {isPinned ? 'Unpin from organized' : 'Pin to organized'}
+          </ContextMenu.Item>
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
+  )
+}
+
+function SessionItem({ session, isPinned }: { session: Session; isPinned?: boolean }) {
   const [showSettings, setShowSettings] = useState(false)
 
   return (
     <div>
-      <div className="relative">
-        <SessionItemContent session={session} />
-        <div className="absolute top-2 right-2">
-          <ProjectSettingsButton
-            onClick={e => {
-              e.stopPropagation()
-              setShowSettings(!showSettings)
-            }}
-          />
+      <SessionContextMenu session={session} isPinned={!!isPinned}>
+        <div className="relative">
+          <SessionItemContent session={session} />
+          <div className="absolute top-2 right-2">
+            <ProjectSettingsButton
+              onClick={e => {
+                e.stopPropagation()
+                setShowSettings(!showSettings)
+              }}
+            />
+          </div>
         </div>
-      </div>
+      </SessionContextMenu>
       {showSettings && <ProjectSettingsEditor cwd={session.cwd} onClose={() => setShowSettings(false)} />}
+    </div>
+  )
+}
+
+// Sortable wrapper for organized CWD groups
+function SortableOrganizedGroup({ cwd, sessions }: { cwd: string; sessions: Session[] }) {
+  const projectSettings = useSessionsStore(s => s.projectSettings)
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cwd })
+  const ps = projectSettings[cwd]
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+
+  if (sessions.length === 1) {
+    return (
+      <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+        <SessionItem session={sessions[0]} isPinned />
+      </div>
+    )
+  }
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      <SessionGroup sessions={sessions} name={ps?.label || lastPathSegments(cwd)} ps={ps} />
     </div>
   )
 }
@@ -241,7 +333,6 @@ function SessionGroup({
         className="border border-border"
         style={displayColor ? { borderLeftColor: displayColor, borderLeftWidth: '3px' } : undefined}
       >
-        {/* Group header */}
         <div className="flex items-center gap-1.5 p-3 pb-1">
           {ps?.icon && (
             <span style={displayColor ? { color: displayColor } : undefined}>{renderProjectIcon(ps.icon)}</span>
@@ -260,7 +351,6 @@ function SessionGroup({
             }}
           />
         </div>
-        {/* Sub-sessions */}
         <div className="space-y-0.5 pb-1">
           {sessions.map(session => (
             <SessionItemContent key={session.id} session={session} compact />
@@ -272,11 +362,9 @@ function SessionGroup({
   )
 }
 
-// Inactive project entry - one per cwd, shows latest session
 function InactiveProjectItem({ sessions }: { sessions: Session[] }) {
   const selectSession = useSessionsStore(s => s.selectSession)
   const projectSettings = useSessionsStore(s => s.projectSettings)
-  // Latest session by lastActivity
   const latest = sessions.reduce((a, b) => (a.lastActivity > b.lastActivity ? a : b))
   const ps = projectSettings[latest.cwd]
   const displayName = ps?.label || lastPathSegments(latest.cwd)
@@ -318,15 +406,20 @@ function InactiveProjectItem({ sessions }: { sessions: Session[] }) {
 export function SessionList() {
   const sessions = useSessionsStore(s => s.sessions)
   const projectSettings = useSessionsStore(s => s.projectSettings)
+  const sessionOrder = useSessionsStore(s => s.sessionOrder)
   const dashPrefs = useSessionsStore(s => s.dashboardPrefs)
   const [showInactive, setShowInactive] = useState(dashPrefs.showInactiveByDefault)
   const [filter, setFilter] = useState('')
-  // Periodic tick to re-evaluate time-based visibility (spinner, 10min cutoff)
   const [, setTick] = useState(0)
   useEffect(() => {
     const t = setInterval(() => setTick(n => n + 1), 30_000)
     return () => clearInterval(t)
   }, [])
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+  )
 
   const matchesFilter = (s: Session) => {
     if (!filter) return true
@@ -335,16 +428,42 @@ export function SessionList() {
     return name.toLowerCase().includes(filter.toLowerCase())
   }
 
-  const active = sessions.filter(s => (s.status === 'active' || s.status === 'idle') && matchesFilter(s))
-  const activeCwds = new Set(active.map(s => s.cwd))
-  const inactive = sessions.filter(
-    s => s.status !== 'active' && s.status !== 'idle' && !activeCwds.has(s.cwd) && matchesFilter(s),
+  // Build organized vs unorganized lists (keyed by CWD)
+  const pinnedCwds = new Set(sessionOrder.organized.map(e => e.cwd))
+
+  // Group all sessions by CWD
+  const sessionsByCwd = new Map<string, Session[]>()
+  for (const s of sessions) {
+    if (!matchesFilter(s)) continue
+    const group = sessionsByCwd.get(s.cwd) || []
+    group.push(s)
+    sessionsByCwd.set(s.cwd, group)
+  }
+
+  // Organized: CWDs in pinned order, all their sessions (show even if inactive)
+  const organizedGroups = sessionOrder.organized
+    .filter(e => sessionsByCwd.has(e.cwd))
+    .map(e => ({ cwd: e.cwd, sessions: sessionsByCwd.get(e.cwd)! }))
+
+  // Active sessions that are NOT in a pinned CWD
+  const unpinnedActive = sessions.filter(
+    s => (s.status === 'active' || s.status === 'idle') && !pinnedCwds.has(s.cwd) && matchesFilter(s),
   )
 
-  const sorted = [...active].sort((a, b) => b.startedAt - a.startedAt)
+  // Inactive sessions: not active, not in pinned CWD, not sharing cwd with any active session
+  const unpinnedActiveCwds = new Set(unpinnedActive.map(s => s.cwd))
+  const inactive = sessions.filter(
+    s =>
+      s.status !== 'active' &&
+      s.status !== 'idle' &&
+      !pinnedCwds.has(s.cwd) &&
+      !unpinnedActiveCwds.has(s.cwd) &&
+      matchesFilter(s),
+  )
+
+  const sortedUnpinned = [...unpinnedActive].sort((a, b) => b.startedAt - a.startedAt)
   const sortedInactive = [...inactive].sort((a, b) => b.startedAt - a.startedAt)
 
-  // Group sessions by display name (cwd)
   function groupSessions(list: Session[]) {
     const groups = new Map<string, Session[]>()
     for (const s of list) {
@@ -373,6 +492,24 @@ export function SessionList() {
         />
       )
     })
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    haptic('tick')
+
+    const oldIndex = sessionOrder.organized.findIndex(e => e.cwd === active.id)
+    const newIndex = sessionOrder.organized.findIndex(e => e.cwd === over.id)
+    if (oldIndex === -1 || newIndex === -1) return
+
+    // Optimistic update
+    const newOrganized = [...sessionOrder.organized]
+    const [moved] = newOrganized.splice(oldIndex, 1)
+    newOrganized.splice(newIndex, 0, moved)
+    useSessionsStore.getState().setSessionOrder({ organized: newOrganized })
+
+    updateSessionOrder('set', { organized: newOrganized })
   }
 
   if (sessions.length === 0) {
@@ -406,7 +543,39 @@ export function SessionList() {
           className="w-full px-2 py-1.5 text-xs bg-transparent border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-accent"
         />
       )}
-      {renderGrouped(sorted)}
+
+      {/* Organized section */}
+      {organizedGroups.length > 0 && (
+        <div>
+          <div className="text-[10px] text-amber-400/70 font-bold uppercase tracking-wider px-1 mb-1">
+            {'\u2605'} Organized
+          </div>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={organizedGroups.map(g => g.cwd)} strategy={verticalListSortingStrategy}>
+              <div className="space-y-1">
+                {organizedGroups.map(g => (
+                  <SortableOrganizedGroup key={g.cwd} cwd={g.cwd} sessions={g.sessions} />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
+        </div>
+      )}
+
+      {/* Unorganized section */}
+      {sortedUnpinned.length > 0 && (
+        <div>
+          {organizedGroups.length > 0 && (
+            <div className="text-[10px] text-muted-foreground/50 font-bold uppercase tracking-wider px-1 mb-1 flex items-center gap-2">
+              <span>Unorganized</span>
+              <span className="flex-1 h-px bg-border" />
+            </div>
+          )}
+          <div className="space-y-1">{renderGrouped(sortedUnpinned)}</div>
+        </div>
+      )}
+
+      {/* Inactive section */}
       {inactive.length > 0 && (
         <label className="flex items-center gap-2 px-2 py-1.5 text-muted-foreground text-xs cursor-pointer select-none">
           <input
@@ -420,7 +589,6 @@ export function SessionList() {
       )}
       {showInactive &&
         (() => {
-          // Group inactive sessions by cwd, render one entry per project
           const byCwd = new Map<string, Session[]>()
           for (const s of sortedInactive) {
             const group = byCwd.get(s.cwd) || []

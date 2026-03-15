@@ -19,6 +19,7 @@ import {
   fetchProjectSettings,
   fetchServerCapabilities,
   fetchSessionEvents,
+  fetchSessionOrder,
   fetchTranscript,
   useSessionsStore,
 } from '@/hooks/use-sessions'
@@ -85,6 +86,7 @@ function Dashboard() {
     fetchProjectSettings().then(s => useSessionsStore.getState().setProjectSettings(s))
     fetchServerCapabilities().then(c => useSessionsStore.getState().setServerCapabilities(c))
     fetchGlobalSettings().then(s => useSessionsStore.setState({ globalSettings: s }))
+    fetchSessionOrder().then(o => useSessionsStore.getState().setSessionOrder(o))
   }, [])
 
   // Fetch events when session selected or WS reconnects (fills gaps from disconnection)

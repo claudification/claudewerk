@@ -16,6 +16,7 @@ import {
   setProjectSettings,
 } from './project-settings'
 import { addSubscription, getSubscriptionCount, isPushConfigured, removeSubscription, sendPushToAll } from './push'
+import { getSessionOrder, moveSession, pinSession, setSessionOrder, unpinSession } from './session-order'
 import type { SessionStore } from './session-store'
 import { UI_HTML } from './ui'
 
@@ -1414,6 +1415,60 @@ Output a JSON array of strings. Each string should be the correct spelling of on
       } catch (error) {
         return new Response(JSON.stringify({ error: `Upload failed: ${error}` }), {
           status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+    }
+
+    // GET /api/session-order - get session pin/organize metadata
+    if (req.method === 'GET' && path === '/api/session-order') {
+      return new Response(JSON.stringify(getSessionOrder()), {
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    // POST /api/session-order - update session order (full replace or action)
+    if (req.method === 'POST' && path === '/api/session-order') {
+      try {
+        const body = (await req.json()) as {
+          action?: 'pin' | 'unpin' | 'move' | 'set'
+          cwd?: string
+          toIndex?: number
+          organized?: Array<{ cwd: string }>
+        }
+
+        if (body.action === 'pin' && body.cwd) {
+          pinSession(body.cwd)
+        } else if (body.action === 'unpin' && body.cwd) {
+          unpinSession(body.cwd)
+        } else if (body.action === 'move' && body.cwd && body.toIndex !== undefined) {
+          moveSession(body.cwd, body.toIndex)
+        } else if (body.action === 'set' && body.organized) {
+          setSessionOrder({ organized: body.organized })
+        } else {
+          return new Response(JSON.stringify({ error: 'Invalid action' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        }
+
+        const order = getSessionOrder()
+        // Broadcast to all dashboard subscribers
+        const json = JSON.stringify({ type: 'session_order_updated', order })
+        for (const ws of sessionStore.getSubscribers()) {
+          try {
+            ws.send(json)
+          } catch {
+            /* dead socket */
+          }
+        }
+        return new Response(JSON.stringify({ success: true, order }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      } catch (error) {
+        return new Response(JSON.stringify({ error: `Failed: ${error}` }), {
+          status: 400,
           headers: { 'Content-Type': 'application/json' },
         })
       }

@@ -12,8 +12,8 @@ import { unstable_batchedUpdates as batchUpdates } from 'react-dom'
 const batch: (fn: () => void) => void = batchUpdates ?? (fn => fn())
 
 import type { SessionSummary } from '@shared/protocol'
-import { BUILD_VERSION } from '../../../src/shared/version'
 import type { HookEvent, Session, TaskInfo, TranscriptEntry } from '@/lib/types'
+import { BUILD_VERSION } from '../../../src/shared/version'
 import { applyHashRoute, handleBgTaskOutputMessage, type ProjectSettingsMap, useSessionsStore } from './use-sessions'
 import { recordIn, recordOut } from './ws-stats'
 
@@ -34,6 +34,7 @@ interface DashboardMessage {
   taskId?: string
   done?: boolean
   settings?: Record<string, unknown>
+  order?: { organized: Array<{ cwd: string }> }
   title?: string
   message?: string
 }
@@ -232,6 +233,12 @@ function processMessage(msg: DashboardMessage) {
     case 'project_settings_updated': {
       if (msg.settings) {
         useSessionsStore.getState().setProjectSettings(msg.settings as ProjectSettingsMap)
+      }
+      break
+    }
+    case 'session_order_updated': {
+      if (msg.order) {
+        useSessionsStore.getState().setSessionOrder(msg.order as { organized: Array<{ id: string }> })
       }
       break
     }

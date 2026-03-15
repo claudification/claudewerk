@@ -15,6 +15,7 @@ import { isPathWithinCwd } from './path-guard'
 import { addAllowedRoot, addPathMapping, getAllowedRoots } from './path-jail'
 import { initProjectSettings } from './project-settings'
 import { initPush, isPushConfigured, sendPushToAll } from './push'
+import { initSessionOrder } from './session-order'
 import { createSessionStore } from './session-store'
 import { cleanupVoiceForWs, handleVoiceData, handleVoiceStart, handleVoiceStop } from './voice-stream'
 import { createWsServer } from './ws-server'
@@ -228,6 +229,7 @@ async function main() {
   // Initialize settings
   initProjectSettings(authCacheDir)
   initGlobalSettings(authCacheDir)
+  initSessionOrder(authCacheDir)
 
   // Initialize web push (optional - needs VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY env vars)
   if (vapidPublicKey && vapidPrivateKey) {
