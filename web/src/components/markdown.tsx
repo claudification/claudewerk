@@ -159,7 +159,7 @@ export function Markdown({ children }: MarkdownProps) {
   return (
     <div
       ref={ref}
-      className="prose-hacker [overflow-wrap:anywhere]"
+      className="prose-hacker [overflow-wrap:break-word]"
       dangerouslySetInnerHTML={{ __html: html }}
       onClick={handleClick}
     />
