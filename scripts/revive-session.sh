@@ -23,7 +23,9 @@ if [[ ! -d "$CWD" ]]; then
 fi
 
 TMUX_NAME="remote-claude"
-BASE_CMD="rclaude --dangerously-skip-permissions --continue"
+# Use rclaude-boot.sh which tries --continue first, falls back to fresh start
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+BASE_CMD="$SCRIPT_DIR/rclaude-boot.sh --dangerously-skip-permissions"
 
 # Unset Claude Code env vars that prevent nested sessions.
 # Agent may inherit these if launched from within a Claude session.
