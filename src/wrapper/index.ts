@@ -377,19 +377,6 @@ async function main() {
         eventQueue.length = 0
         // Start polling task files
         startTaskWatching()
-        // Re-send transcript on reconnect (concentrator may have restarted)
-        // Delay slightly to let the connection stabilize before sending large payloads
-        if (transcriptWatcher) {
-          debug('Re-sending transcript on reconnect (delayed 1s)')
-          setTimeout(() => {
-            if (wsClient?.isConnected()) {
-              transcriptWatcher?.resend().catch(err => debug(`Resend failed: ${err}`))
-            }
-          }, 1000)
-        }
-        // Re-send tasks immediately
-        lastTasksJson = ''
-        readAndSendTasks()
       },
       onDisconnected() {
         debug('Disconnected from concentrator')
@@ -523,6 +510,16 @@ async function main() {
       },
       onFileEditorMessage(msg) {
         handleFileEditorMessage(msg)
+      },
+      onAck() {
+        // Concentrator has processed our meta message and registered the socket.
+        // This is the correct signal to resend state (not an arbitrary timeout).
+        if (transcriptWatcher) {
+          debug('Ack received, re-sending transcript')
+          transcriptWatcher.resend().catch(err => debug(`Resend failed: ${err}`))
+        }
+        lastTasksJson = ''
+        readAndSendTasks()
       },
       onTranscriptKick() {
         // Concentrator detected we have events but no transcript - retry the watcher
