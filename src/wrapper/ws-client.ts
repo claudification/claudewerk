@@ -286,9 +286,11 @@ export function createWsClient(options: WsClientOptions): WsClient {
       ws.send(json)
     } else {
       // Queue for later, cap size to prevent unbounded growth
-      if (messageQueue.length < MAX_QUEUE_SIZE) {
-        messageQueue.push(message)
+      if (messageQueue.length >= MAX_QUEUE_SIZE) {
+        const dropped = messageQueue.shift()
+        debug(`Queue full (${MAX_QUEUE_SIZE}), dropping oldest message: type=${dropped?.type}`)
       }
+      messageQueue.push(message)
     }
   }
 
