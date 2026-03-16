@@ -181,9 +181,8 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
             ))}
         </div>
       )}
-      {!compact && (session.status === 'ended' || session.runningBgTaskCount > 0 || session.team) && (
+      {!compact && (session.runningBgTaskCount > 0 || session.team) && (
         <div className="flex items-center gap-2 mt-2 text-xs flex-wrap">
-          {session.status === 'ended' && <StatusIndicator status={session.status} />}
           {session.runningBgTaskCount > 0 && (
             <span
               className="px-1.5 py-0.5 bg-emerald-400/20 text-emerald-400 border border-emerald-400/50 text-[10px] font-bold cursor-pointer hover:bg-emerald-400/30"
