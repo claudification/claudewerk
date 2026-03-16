@@ -2,7 +2,8 @@ import {
   closestCenter,
   DndContext,
   type DragEndEvent,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useDroppable,
   useSensor,
   useSensors,
@@ -240,7 +241,7 @@ function SortableSessionCard({ cwd, sessions, showGrip }: { cwd: string; session
       {...attributes}
       {...listeners}
       style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }}
-      className={cn('touch-none flex items-stretch', isDragging && 'z-10')}
+      className={cn('flex items-stretch', isDragging && 'z-10')}
     >
       {/* Visual grip indicator - no listeners, just CSS */}
       <div
@@ -409,8 +410,13 @@ export function SessionList() {
     return () => clearInterval(t)
   }, [])
 
-  // PointerSensor handles both mouse AND touch - don't add TouchSensor (conflicts)
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
+  // MouseSensor: 8px distance (instant drag on desktop).
+  // TouchSensor: 300ms long-press (allows normal scrolling on mobile).
+  // DON'T use PointerSensor - it handles both mouse+touch and conflicts with TouchSensor.
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 300, tolerance: 5 } }),
+  )
 
   // Build organized vs unorganized lists (keyed by CWD)
   const pinnedCwds = new Set(sessionOrder.organized.map(e => e.cwd))
