@@ -276,12 +276,23 @@ export function useWebSocket() {
         ws.send(sub)
 
         // Subscribe to channels for currently selected session
-        const selectedId = useSessionsStore.getState().selectedSessionId
-        if (selectedId) {
+        const { selectedSessionId, selectedSubagentId } = useSessionsStore.getState()
+        if (selectedSessionId) {
           for (const ch of SESSION_CHANNELS) {
-            const chMsg = JSON.stringify({ type: 'channel_subscribe', channel: ch, sessionId: selectedId })
+            const chMsg = JSON.stringify({ type: 'channel_subscribe', channel: ch, sessionId: selectedSessionId })
             recordOut(chMsg.length)
             ws.send(chMsg)
+          }
+          // Also subscribe to active subagent transcript channel
+          if (selectedSubagentId) {
+            const agentSub = JSON.stringify({
+              type: 'channel_subscribe',
+              channel: 'session:subagent_transcript',
+              sessionId: selectedSessionId,
+              agentId: selectedSubagentId,
+            })
+            recordOut(agentSub.length)
+            ws.send(agentSub)
           }
         }
       }
@@ -383,7 +394,7 @@ export function useWebSocket() {
 
     // Watch for session selection changes and manage channel subscriptions
     let lastSubscribedSession: string | null = null
-    const unsubscribe = useSessionsStore.subscribe(state => {
+    const unsubSessionion = useSessionsStore.subscribe(state => {
       const ws = wsRef.current
       if (!ws || ws.readyState !== WebSocket.OPEN) return
       const newId = state.selectedSessionId
@@ -392,11 +403,12 @@ export function useWebSocket() {
       const prevId = lastSubscribedSession
       lastSubscribedSession = newId
 
-      // Unsubscribe all previous channels
+      // Unsubscribe all previous channels (includes agent subscriptions)
       if (prevId) {
         const unsub = JSON.stringify({ type: 'channel_unsubscribe_all' })
         recordOut(unsub.length)
         ws.send(unsub)
+        lastSubagentKey = null
       }
 
       // Subscribe to new session channels
@@ -409,8 +421,48 @@ export function useWebSocket() {
       }
     })
 
+    // Watch for subagent selection and subscribe to its transcript channel
+    let lastSubagentKey: string | null = null
+    const unsubAgent = useSessionsStore.subscribe(state => {
+      const ws = wsRef.current
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
+      const sessionId = state.selectedSessionId
+      const agentId = state.selectedSubagentId
+      const key = sessionId && agentId ? `${sessionId}:${agentId}` : null
+
+      if (key === lastSubagentKey) return
+      const prevKey = lastSubagentKey
+      lastSubagentKey = key
+
+      // Unsubscribe previous agent channel
+      if (prevKey) {
+        const [prevSid, prevAid] = prevKey.split(':')
+        const unsub = JSON.stringify({
+          type: 'channel_unsubscribe',
+          channel: 'session:subagent_transcript',
+          sessionId: prevSid,
+          agentId: prevAid,
+        })
+        recordOut(unsub.length)
+        ws.send(unsub)
+      }
+
+      // Subscribe to new agent channel
+      if (key && sessionId && agentId) {
+        const sub = JSON.stringify({
+          type: 'channel_subscribe',
+          channel: 'session:subagent_transcript',
+          sessionId,
+          agentId,
+        })
+        recordOut(sub.length)
+        ws.send(sub)
+      }
+    })
+
     return () => {
-      unsubscribe()
+      unsubSessionion()
+      unsubAgent()
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current)
       }
