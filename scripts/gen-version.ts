@@ -15,12 +15,25 @@ try {
   gitHash = execSync('git rev-parse HEAD', { cwd: ROOT, stdio: ['pipe', 'pipe', 'pipe'] })
     .toString()
     .trim()
-  dirty =
-    execSync('git status --porcelain', { cwd: ROOT, stdio: ['pipe', 'pipe', 'pipe'] })
-      .toString()
-      .trim().length > 0
+  // Exclude version.ts from dirty check (it's always modified by this script)
+  const porcelain = execSync('git status --porcelain', { cwd: ROOT, stdio: ['pipe', 'pipe', 'pipe'] })
+    .toString()
+    .trim()
+  dirty = porcelain
+    .split('\n')
+    .some(line => line.trim() && !line.includes('src/shared/version.ts'))
 } catch {
   // No git available (Docker build, CI, etc.)
+  // If version.ts already has a real hash (pre-generated on host), keep it
+  try {
+    const existing = await Bun.file(OUT).text()
+    if (existing.includes("gitHash: '") && !existing.includes("gitHash: 'unknown'")) {
+      console.log('[version] No git, keeping pre-generated version.ts')
+      process.exit(0)
+    }
+  } catch {
+    // File doesn't exist yet, continue with 'unknown'
+  }
 }
 
 const gitHashShort = gitHash === 'unknown' ? 'unknown' : gitHash.slice(0, 7)
