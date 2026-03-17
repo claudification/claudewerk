@@ -47,12 +47,37 @@ const EMPTY_EVENTS: HookEvent[] = []
 
 function DismissButton({ sessionId }: { sessionId: string }) {
   const dismissSession = useSessionsStore(s => s.dismissSession)
+  const [confirming, setConfirming] = useState(false)
+
+  if (confirming) {
+    return (
+      <div className="flex items-center gap-1 text-[9px]" onClick={e => e.stopPropagation()}>
+        <div
+          onClick={() => {
+            haptic('tap')
+            dismissSession(sessionId)
+            setConfirming(false)
+          }}
+          className="text-destructive hover:text-destructive/80 cursor-pointer font-bold"
+        >
+          yes
+        </div>
+        <div
+          onClick={() => setConfirming(false)}
+          className="text-muted-foreground hover:text-foreground cursor-pointer"
+        >
+          no
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       onClick={e => {
         e.stopPropagation()
         haptic('tap')
-        dismissSession(sessionId)
+        setConfirming(true)
       }}
       className="opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 text-muted-foreground/40 hover:text-destructive transition-opacity cursor-pointer px-0.5"
       title="Dismiss session"
@@ -65,13 +90,39 @@ function DismissButton({ sessionId }: { sessionId: string }) {
 function DismissAllEndedButton({ sessions }: { sessions: Session[] }) {
   const dismissSession = useSessionsStore(s => s.dismissSession)
   const ended = sessions.filter(s => s.status === 'ended')
+  const [confirming, setConfirming] = useState(false)
   if (ended.length === 0) return null
+
+  if (confirming) {
+    return (
+      <div className="flex items-center gap-1 text-[9px]" onClick={e => e.stopPropagation()}>
+        <span className="text-muted-foreground">dismiss {ended.length}?</span>
+        <div
+          onClick={() => {
+            haptic('tap')
+            for (const s of ended) dismissSession(s.id)
+            setConfirming(false)
+          }}
+          className="text-destructive hover:text-destructive/80 cursor-pointer font-bold"
+        >
+          yes
+        </div>
+        <div
+          onClick={() => setConfirming(false)}
+          className="text-muted-foreground hover:text-foreground cursor-pointer"
+        >
+          no
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       onClick={e => {
         e.stopPropagation()
         haptic('tap')
-        for (const s of ended) dismissSession(s.id)
+        setConfirming(true)
       }}
       className="text-[9px] text-muted-foreground/40 hover:text-destructive cursor-pointer px-1 transition-colors"
       title={`Dismiss ${ended.length} ended session${ended.length > 1 ? 's' : ''}`}
