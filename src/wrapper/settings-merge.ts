@@ -99,9 +99,10 @@ async function readUserSettings(): Promise<ClaudeSettings> {
 
 /**
  * Create hook matcher for forwarding to local server
- * NOTE: HTTP hooks (type: "http") don't fire for SessionStart in Claude Code 2.1.71,
- * which means we never get the session ID and can't connect to the concentrator.
- * Using command+curl until this is resolved upstream.
+ * NOTE: HTTP hooks only support tool-related events (PreToolUse, PostToolUse, Stop, etc.)
+ * by design. Lifecycle events (SessionStart, SessionEnd, SubagentStart, PreCompact, etc.)
+ * are command-only. Since rclaude needs SessionStart for session_id + transcript_path,
+ * we use command+curl for all hooks.
  */
 function createHookMatcher(hookEvent: string, port: number, sessionId: string): HookMatcher {
   return {
