@@ -109,7 +109,7 @@ function createHookMatcher(hookEvent: string, port: number, sessionId: string): 
     hooks: [
       {
         type: 'command',
-        command: `curl -s -X POST "http://127.0.0.1:${port}/hook/${hookEvent}" -H "Content-Type: application/json" -H "X-Session-Id: ${sessionId}" -d @-`,
+        command: `curl -sf --max-time 3 -X POST "http://127.0.0.1:${port}/hook/${hookEvent}" -H "Content-Type: application/json" -H "X-Session-Id: ${sessionId}" -d @- 2>/dev/null || true`,
       },
     ],
   }
