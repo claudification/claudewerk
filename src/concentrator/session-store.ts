@@ -572,7 +572,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       capabilities,
       startedAt: Date.now(),
       lastActivity: Date.now(),
-      status: 'idle',
+      status: 'starting',
       events: [],
       subagents: [],
       tasks: [],
@@ -605,7 +605,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   function resumeSession(id: string): void {
     const session = sessions.get(id)
     if (session) {
-      session.status = 'idle'
+      session.status = 'starting'
       session.lastActivity = Date.now()
       // Reset stale state from previous run
       session.subagents = []
@@ -778,7 +778,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   }
 
   function getActiveSessions(): Session[] {
-    return Array.from(sessions.values()).filter(s => s.status === 'active' || s.status === 'idle')
+    return Array.from(sessions.values()).filter(s => s.status !== 'ended')
   }
 
   function addEvent(sessionId: string, event: HookEvent): void {

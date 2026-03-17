@@ -19,7 +19,7 @@ export function QuickNoteModal() {
   const selectedSessionId = useSessionsStore(state => state.selectedSessionId)
   const isActive = useSessionsStore(state => {
     const s = state.sessions.find(s => s.id === state.selectedSessionId)
-    return s?.status === 'active' || s?.status === 'idle'
+    return s != null && s.status !== 'ended'
   })
 
   const { appendQuickNote } = useFileEditor(selectedSessionId && isActive ? selectedSessionId : null)

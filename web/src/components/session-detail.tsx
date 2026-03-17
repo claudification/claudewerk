@@ -231,11 +231,7 @@ export function SessionDetail() {
       const reviveTime = reviveStartRef.current
       if (reviveTime === 0) return
       const newSession = state.sessions.find(
-        s =>
-          s.id !== reviveSessionId &&
-          s.cwd === reviveCwd &&
-          (s.status === 'active' || s.status === 'idle') &&
-          s.startedAt > reviveTime,
+        s => s.id !== reviveSessionId && s.cwd === reviveCwd && s.status !== 'ended' && s.startedAt > reviveTime,
       )
       if (newSession) {
         setReviveState('idle')
@@ -267,7 +263,7 @@ export function SessionDetail() {
 
   const model = events.find(e => e.hookEvent === 'SessionStart' && e.data?.model)?.data?.model as string | undefined
 
-  const canSendInput = session?.status === 'active' || session?.status === 'idle'
+  const canSendInput = session != null && session.status !== 'ended' && session.status !== 'starting'
   const hasTerminal = session ? canTerminal(session) : false
   const canRevive = session?.status === 'ended' && agentConnected
 
@@ -397,6 +393,7 @@ export function SessionDetail() {
                       'px-2 py-0.5 text-[10px] uppercase font-bold',
                       session.status === 'active' && 'bg-active text-background',
                       session.status === 'idle' && 'bg-idle text-background',
+                      session.status === 'starting' && 'bg-idle/50 text-background animate-pulse',
                       session.status === 'ended' && 'bg-ended text-foreground',
                     )}
                   >
@@ -677,7 +674,7 @@ export function SessionDetail() {
                 )}
               </button>
             )}
-            {(session.status === 'active' || session.status === 'idle') && (
+            {session.status !== 'ended' && (
               <button
                 type="button"
                 onClick={() => {

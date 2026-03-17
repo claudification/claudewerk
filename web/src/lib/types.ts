@@ -19,7 +19,7 @@ export type { HookEvent } from '@shared/protocol'
 
 /** Check if a session can open a terminal. Requires explicit terminal capability. */
 export function canTerminal(s: Session): boolean {
-  return (s.status === 'active' || s.status === 'idle') && !!s.capabilities?.includes('terminal')
+  return s.status !== 'ended' && !!s.capabilities?.includes('terminal')
 }
 
 // Client-side session model (derived from SessionSummary wire format with defaults applied)
@@ -29,7 +29,7 @@ export interface Session {
   model?: string
   capabilities?: WrapperCapability[]
   wrapperIds?: string[]
-  status: 'active' | 'idle' | 'ended'
+  status: 'active' | 'idle' | 'ended' | 'starting'
   compacting?: boolean
   compactedAt?: number
   startedAt: number

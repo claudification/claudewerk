@@ -7,6 +7,7 @@ function statusIndicator(s: Session, selectedSessionId: string | null) {
   if (canTerminal(s)) return '\u25B6' // ▶
   if (s.id === selectedSessionId) return '\u25C9' // ◉
   if (s.status === 'active') return '\u25CF' // ●
+  if (s.status === 'starting') return '\u25CB' // ○ (pulsing in sidebar)
   if (s.status === 'idle') return '\u25CB' // ○
   return '\u2716' // ✖
 }
@@ -15,7 +16,7 @@ function statusColor(s: Session, selectedSessionId: string | null) {
   if (canTerminal(s)) return s.status === 'active' ? 'text-[#9ece6a]' : 'text-[#e0af68]'
   if (s.id === selectedSessionId) return 'text-[#7aa2f7]'
   if (s.status === 'active') return 'text-[#9ece6a]'
-  if (s.status === 'idle') return 'text-[#e0af68]'
+  if (s.status === 'starting' || s.status === 'idle') return 'text-[#e0af68]'
   return 'text-[#565f89]'
 }
 

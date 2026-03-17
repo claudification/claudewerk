@@ -571,7 +571,7 @@ export interface Session {
   claudeVersion?: string
   startedAt: number
   lastActivity: number
-  status: 'active' | 'idle' | 'ended'
+  status: 'active' | 'idle' | 'ended' | 'starting'
   compacting?: boolean
   compactedAt?: number
   events: HookEvent[]

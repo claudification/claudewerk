@@ -31,6 +31,15 @@ function StatusIndicator({ status }: { status: Session['status'] }) {
       </span>
     )
   }
+  if (status === 'starting') {
+    return (
+      <span
+        className="w-2 h-2 rounded-full shrink-0 animate-pulse"
+        style={{ backgroundColor: 'var(--idle)' }}
+        title="starting"
+      />
+    )
+  }
   return <span className="w-2 h-2 rounded-full shrink-0 bg-idle" title={status} />
 }
 
@@ -436,7 +445,7 @@ export function SessionList() {
   const allOrganizedCwds = sessionOrder.organized.filter(e => sessionsByCwd.has(e.cwd)).map(e => e.cwd)
 
   // Active sessions that are NOT in a pinned CWD
-  const unpinnedActive = sessions.filter(s => (s.status === 'active' || s.status === 'idle') && !pinnedCwds.has(s.cwd))
+  const unpinnedActive = sessions.filter(s => s.status !== 'ended' && !pinnedCwds.has(s.cwd))
 
   // Inactive sessions
   const unpinnedActiveCwds = new Set(unpinnedActive.map(s => s.cwd))
@@ -606,7 +615,7 @@ export function SessionList() {
                   .filter((s, i, arr) => arr.findIndex(x => x.cwd === s.cwd) === i)
                   .map(s => {
                     const cwdSessions = sessionsByCwd.get(s.cwd) || [s]
-                    const unpinnedSessions = cwdSessions.filter(x => x.status === 'active' || x.status === 'idle')
+                    const unpinnedSessions = cwdSessions.filter(x => x.status !== 'ended')
                     return (
                       <SortableSessionCard
                         key={s.cwd}
