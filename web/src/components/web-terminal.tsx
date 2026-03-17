@@ -148,19 +148,35 @@ export function WebTerminal({ wrapperId, onClose, popout }: WebTerminalProps) {
       sendWsMessage({ type: 'terminal_data', wrapperId, data })
     })
 
-    // Handle paste - fallback for when xterm's internal paste doesn't fire
-    // xterm.js normally handles Cmd+V via its hidden textarea -> onData,
-    // but this catches paste events that bubble to the container
+    // Paste handler: intercept Cmd+V / Ctrl+V directly since xterm v6
+    // doesn't reliably handle paste via its hidden textarea
+    function handleKeyPaste(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'v' && e.type === 'keydown') {
+        console.log('[terminal] Cmd+V keydown detected, reading clipboard...')
+        navigator.clipboard
+          .readText()
+          .then(text => {
+            if (text) {
+              console.log('[terminal] clipboard read OK:', { length: text.length })
+              terminal.paste(text)
+            } else {
+              console.log('[terminal] clipboard empty')
+            }
+          })
+          .catch(err => {
+            console.warn('[terminal] clipboard read failed:', err.message)
+          })
+      }
+    }
+    terminalRef.current.addEventListener('keydown', handleKeyPaste)
+
+    // Fallback: DOM paste event on container
     function handlePaste(e: ClipboardEvent) {
       const text = e.clipboardData?.getData('text')
-      console.log('[terminal] paste event on container:', {
-        hasData: !!text,
-        length: text?.length ?? 0,
-        target: (e.target as HTMLElement)?.tagName,
-      })
+      console.log('[terminal] paste event:', { length: text?.length ?? 0, target: (e.target as HTMLElement)?.tagName })
       if (text) {
         e.preventDefault()
-        sendWsMessage({ type: 'terminal_data', wrapperId, data: text })
+        terminal.paste(text)
       }
     }
     terminalRef.current.addEventListener('paste', handlePaste)
@@ -214,6 +230,7 @@ export function WebTerminal({ wrapperId, onClose, popout }: WebTerminalProps) {
     return () => {
       resizeObserver.disconnect()
       dataDisposable.dispose()
+      termEl?.removeEventListener('keydown', handleKeyPaste)
       termEl?.removeEventListener('paste', handlePaste)
       setTerminalHandler(null)
       sendWsMessage({ type: 'terminal_detach', wrapperId })
