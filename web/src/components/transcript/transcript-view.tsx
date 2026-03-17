@@ -42,10 +42,17 @@ export function TranscriptView({
   }, [groups])
 
   // Lift subagents selector here (once) instead of per-GroupView (N times)
-  const subagents = useSessionsStore(state => {
+  // Return a primitive string so Zustand's Object.is check works - avoids re-renders
+  // from session_update creating new array references with identical content
+  const subagentsSummary = useSessionsStore(state => {
     const session = state.sessions.find(s => s.id === state.selectedSessionId)
-    return session?.subagents
+    if (!session?.subagents?.length) return ''
+    return session.subagents.map(a => `${a.agentId}:${a.status}:${a.description || ''}`).join('|')
   })
+  const subagents = useMemo(() => {
+    return useSessionsStore.getState().sessions.find(s => s.id === useSessionsStore.getState().selectedSessionId)
+      ?.subagents
+  }, [subagentsSummary])
 
   const virtualizer = useVirtualizer({
     count: mainGroups.length,

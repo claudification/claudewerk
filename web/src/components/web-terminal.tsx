@@ -139,12 +139,25 @@ export function WebTerminal({ wrapperId, onClose, popout }: WebTerminalProps) {
     terminal.write('\x1bc\x1b[2J\x1b[H\x1b[?25l')
 
     const dataDisposable = terminal.onData(data => {
+      if (data.length > 1) {
+        console.log('[terminal] onData (multi-char, likely paste):', {
+          length: data.length,
+          preview: data.slice(0, 80),
+        })
+      }
       sendWsMessage({ type: 'terminal_data', wrapperId, data })
     })
 
-    // Handle paste (Cmd+V / Ctrl+V) - xterm.js doesn't handle this natively
+    // Handle paste - fallback for when xterm's internal paste doesn't fire
+    // xterm.js normally handles Cmd+V via its hidden textarea -> onData,
+    // but this catches paste events that bubble to the container
     function handlePaste(e: ClipboardEvent) {
       const text = e.clipboardData?.getData('text')
+      console.log('[terminal] paste event on container:', {
+        hasData: !!text,
+        length: text?.length ?? 0,
+        target: (e.target as HTMLElement)?.tagName,
+      })
       if (text) {
         e.preventDefault()
         sendWsMessage({ type: 'terminal_data', wrapperId, data: text })
