@@ -10,16 +10,20 @@ import { javascript } from '@codemirror/lang-javascript'
 import { json } from '@codemirror/lang-json'
 import { markdown } from '@codemirror/lang-markdown'
 import { python } from '@codemirror/lang-python'
+import { bracketMatching, HighlightStyle, type LanguageSupport, syntaxTree } from '@codemirror/language'
+import { EditorState, type Extension, RangeSetBuilder } from '@codemirror/state'
 import {
-  bracketMatching,
-  defaultHighlightStyle,
-  HighlightStyle,
-  type LanguageSupport,
-  syntaxHighlighting,
-} from '@codemirror/language'
-import { EditorState, type Extension } from '@codemirror/state'
-import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers } from '@codemirror/view'
-import { tags } from '@lezer/highlight'
+  Decoration,
+  type DecorationSet,
+  drawSelection,
+  EditorView,
+  highlightActiveLine,
+  keymap,
+  lineNumbers,
+  ViewPlugin,
+  type ViewUpdate,
+} from '@codemirror/view'
+import { highlightTree, tags } from '@lezer/highlight'
 
 // Tokyo Night colors
 const tokyoNightHighlight = HighlightStyle.define([
@@ -141,6 +145,41 @@ export function createEditorView(
 
   const lang = langFromPath(filePath)
 
+  // Direct highlight plugin - bypasses CM6's broken syntaxHighlighting facet pipeline
+  // Uses the same highlightTree() that our diagnostics confirmed produces 101+ matches
+  const markCache: Record<string, Decoration> = Object.create(null)
+  const directHighlightPlugin = ViewPlugin.fromClass(
+    class {
+      decorations: DecorationSet
+      constructor(view: EditorView) {
+        this.decorations = this.build(view)
+      }
+      build(view: EditorView) {
+        const builder = new RangeSetBuilder<Decoration>()
+        const tree = syntaxTree(view.state)
+        for (const { from, to } of view.visibleRanges) {
+          highlightTree(
+            tree,
+            tokyoNightHighlight,
+            (hFrom, hTo, cls) => {
+              const mark = markCache[cls] || (markCache[cls] = Decoration.mark({ class: cls }))
+              builder.add(hFrom, hTo, mark)
+            },
+            from,
+            to,
+          )
+        }
+        return builder.finish()
+      }
+      update(update: ViewUpdate) {
+        if (update.docChanged || update.viewportChanged || syntaxTree(update.state) !== syntaxTree(update.startState)) {
+          this.decorations = this.build(update.view)
+        }
+      }
+    },
+    { decorations: v => v.decorations },
+  )
+
   const state = EditorState.create({
     doc: initialContent,
     extensions: [
@@ -152,8 +191,7 @@ export function createEditorView(
       keymap.of([...defaultKeymap, ...historyKeymap]),
       lang,
       editorTheme,
-      syntaxHighlighting(tokyoNightHighlight),
-      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+      directHighlightPlugin,
       updateListener,
       EditorView.lineWrapping,
     ],
@@ -161,16 +199,10 @@ export function createEditorView(
 
   const view = new EditorView({ state, parent })
 
-  // Debug: verify highlight spans appear after parse
+  // Verify highlighting after initial render
   requestAnimationFrame(() => {
-    const spans = parent.querySelectorAll('.cm-line span[class]')
-    const styleEls = document.querySelectorAll('style')
-    console.log(
-      `[cm] file=${filePath} lang=${(lang as any)?.language?.name ?? '?'} spans=${spans.length} styles=${styleEls.length} content=${initialContent.length}b`,
-    )
-    if (spans.length === 0 && initialContent.length > 0) {
-      console.warn('[cm] No highlighted spans found! Syntax highlighting may be broken.')
-    }
+    const spans = parent.querySelectorAll('.cm-line span')
+    console.log(`[cm] ${filePath}: ${spans.length} highlighted spans`)
   })
 
   return view
