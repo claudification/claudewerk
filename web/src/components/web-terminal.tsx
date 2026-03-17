@@ -108,8 +108,11 @@ export function WebTerminal({ wrapperId, onClose, popout }: WebTerminalProps) {
       // Ctrl+Shift+Q - close
       if (e.ctrlKey && e.shiftKey && e.key === 'Q') return false
       // Shift+Enter - send same as Alt+Enter (ESC + CR) so Claude Code treats it as newline
-      if (e.shiftKey && e.key === 'Enter' && e.type === 'keydown') {
-        sendWsMessage({ type: 'terminal_data', wrapperId, data: '\x1b\r' })
+      // Block ALL event types (keydown+keypress+keyup) to prevent xterm from also processing Enter
+      if (e.shiftKey && e.key === 'Enter') {
+        if (e.type === 'keydown') {
+          sendWsMessage({ type: 'terminal_data', wrapperId, data: '\x1b\r' })
+        }
         return false
       }
       // When switcher is open, eat all keys so they don't go to PTY

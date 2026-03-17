@@ -53,8 +53,11 @@ export function InlineTerminal({ wrapperId }: InlineTerminalProps) {
       // Let global shortcuts pass through
       if (e.ctrlKey && e.key === 'k') return false
       if (e.ctrlKey && e.shiftKey && (e.key === 'Q' || e.key === 'T')) return false
-      if (e.shiftKey && e.key === 'Enter' && e.type === 'keydown') {
-        sendWsMessage({ type: 'terminal_data', wrapperId, data: '\n' })
+      // Block ALL event types to prevent xterm from also processing Enter
+      if (e.shiftKey && e.key === 'Enter') {
+        if (e.type === 'keydown') {
+          sendWsMessage({ type: 'terminal_data', wrapperId, data: '\n' })
+        }
         return false
       }
       if (useSessionsStore.getState().showSwitcher) return false
