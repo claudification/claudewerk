@@ -21,6 +21,7 @@ import { CopyMenu } from '../copy-menu'
 import { Markdown } from '../markdown'
 import { AgentTranscriptInline } from './agent-views'
 import type { DisplayGroup, TaskNotification } from './grouping'
+import { BashOutput } from './tool-renderers'
 import { MemoizedToolLine } from './tool-line'
 
 function formatDuration(ms: number): string {
@@ -123,6 +124,7 @@ export function GroupView({
     | { kind: 'text'; text: string }
     | { kind: 'thinking'; text: string }
     | { kind: 'tool'; tool: TranscriptContentBlock; result?: string; extra?: Record<string, unknown> }
+    | { kind: 'bash'; text: string }
     | { kind: 'images'; images: Array<{ hash: string; ext: string; url: string; originalPath: string }> }
 
   const items: RenderItem[] = []
@@ -135,12 +137,28 @@ export function GroupView({
 
     const content = entry.message?.content
     if (typeof content === 'string') {
-      if (content.trim()) items.push({ kind: 'text', text: content })
+      if (content.trim()) {
+        const hasBashTags = /<bash-(input|stdout|stderr)>/.test(content)
+        if (hasBashTags) {
+          // Merge consecutive bash items (input entry + stdout/stderr entry)
+          const prev = items[items.length - 1]
+          if (prev?.kind === 'bash') {
+            prev.text += content
+          } else {
+            items.push({ kind: 'bash', text: content })
+          }
+        } else {
+          items.push({ kind: 'text', text: content })
+        }
+      }
     } else if (Array.isArray(content)) {
       for (const block of content) {
         if (block.type === 'text' && block.text) {
           const text = typeof block.text === 'string' ? block.text : JSON.stringify(block.text)
-          if (text.trim()) items.push({ kind: 'text', text })
+          if (text.trim()) {
+            const hasBashTags = /<bash-(input|stdout|stderr)>/.test(text)
+            items.push(hasBashTags ? { kind: 'bash', text } : { kind: 'text', text })
+          }
         } else if (block.type === 'thinking' && (block.thinking || block.text)) {
           const raw = block.thinking || block.text
           const text = typeof raw === 'string' ? raw : JSON.stringify(raw)
@@ -236,6 +254,12 @@ export function GroupView({
                       />
                     </a>
                   ))}
+                </div>
+              )
+            case 'bash':
+              return (
+                <div key={i} className="text-sm">
+                  <BashOutput result={item.text} />
                 </div>
               )
             case 'tool':

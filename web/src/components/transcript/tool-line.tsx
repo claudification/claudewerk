@@ -10,7 +10,7 @@ import type { TranscriptContentBlock } from '@/lib/types'
 import { cn, truncate } from '@/lib/utils'
 import { JsonInspector } from '../json-inspector'
 import { Collapsible, getToolStyle, shortPath, TruncatedPre } from './shared'
-import { DiffView, ShellCommand, WritePreview } from './tool-renderers'
+import { BashOutput, DiffView, ShellCommand, WritePreview } from './tool-renderers'
 
 function formatTokenCount(tokens: number): string {
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M tok`
@@ -58,12 +58,7 @@ export function ToolLine({
       const cmd = input.command as string
       summary = cmd?.length > 80 && !expandAll ? `${cmd.slice(0, 80)}...` : cmd
       if (result) {
-        details = (
-          <div className="space-y-1">
-            {expandAll && cmd && <ShellCommand command={cmd} />}
-            <TruncatedPre text={result} tool="Bash" />
-          </div>
-        )
+        details = <BashOutput result={result} command={expandAll ? cmd : undefined} />
       } else if (expandAll && cmd) {
         details = <ShellCommand command={cmd} />
       }

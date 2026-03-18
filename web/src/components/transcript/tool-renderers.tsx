@@ -1,13 +1,13 @@
 /**
  * Syntax-highlighted tool output renderers:
- * DiffView (Edit), WritePreview (Write), ShellCommand (Bash)
+ * DiffView (Edit), WritePreview (Write), ShellCommand (Bash), BashOutput (structured)
  */
 
 import { useEffect, useState } from 'react'
 import { useSessionsStore } from '@/hooks/use-sessions'
 import { resolveToolDisplay } from '@/lib/dashboard-prefs'
 import { cn } from '@/lib/utils'
-import { escapeHtml } from './shared'
+import { escapeHtml, TruncatedPre } from './shared'
 import { ensureLang, getHighlighter, langFromPath } from './syntax'
 
 // Syntax-highlighted diff view for Edit operations
@@ -241,6 +241,58 @@ export function WritePreview({ content, filePath }: { content: string; filePath?
         >
           +{lines.length - limit} more lines
         </button>
+      )}
+    </div>
+  )
+}
+
+// Parse structured bash output with <bash-input>, <bash-stdout>, <bash-stderr> tags
+interface BashParts {
+  input?: string
+  stdout?: string
+  stderr?: string
+}
+
+function parseBashTags(result: string): BashParts | null {
+  const hasTag = /<bash-(input|stdout|stderr)>/.test(result)
+  if (!hasTag) return null
+
+  function extract(tag: string): string | undefined {
+    const re = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`)
+    const m = result.match(re)
+    return m ? m[1] : undefined
+  }
+
+  return {
+    input: extract('bash-input'),
+    stdout: extract('bash-stdout'),
+    stderr: extract('bash-stderr'),
+  }
+}
+
+// Structured bash output renderer - separates input/stdout/stderr
+export function BashOutput({ result, command }: { result: string; command?: string }) {
+  const parts = parseBashTags(result)
+
+  if (!parts) {
+    return <TruncatedPre text={result} tool="Bash" />
+  }
+
+  const hasStdout = parts.stdout && parts.stdout.trim().length > 0
+  const hasStderr = parts.stderr && parts.stderr.trim().length > 0
+  const displayCommand = parts.input || command
+
+  return (
+    <div className="space-y-1">
+      {displayCommand && <ShellCommand command={displayCommand.trim()} />}
+      {hasStdout && <TruncatedPre text={parts.stdout!.trim()} tool="Bash" />}
+      {hasStderr && (
+        <div className="border-l-2 border-red-500/40">
+          <TruncatedPre text={parts.stderr!.trim()} tool="Bash" />
+        </div>
+      )}
+      {!hasStdout && !hasStderr && !displayCommand && (
+        <pre className="text-[10px] bg-black/30 p-2 font-mono text-muted-foreground">(no output)</pre>
       )}
     </div>
   )
