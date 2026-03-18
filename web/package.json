@@ -54,7 +54,6 @@
     "marked-highlight": "^2.2.3",
     "radix-ui": "^1.4.3",
     "react": "latest",
-    "react-arborist": "^3.4.3",
     "react-dom": "latest",
     "shiki": "^4.0.2",
     "tailwind-merge": "^3.5.0",
