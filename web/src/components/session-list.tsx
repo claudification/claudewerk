@@ -1,21 +1,12 @@
-import {
-  closestCenter,
-  DndContext,
-  type DragEndEvent,
-  MouseSensor,
-  TouchSensor,
-  useDroppable,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core'
-import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
 import type { HookEvent } from '@shared/protocol'
-import { useEffect, useState } from 'react'
-import { updateSessionOrder, useSessionsStore } from '@/hooks/use-sessions'
-import type { Session } from '@/lib/types'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Tree, type NodeRendererProps } from 'react-arborist'
+import { saveSessionOrder, useSessionsStore } from '@/hooks/use-sessions'
+import type { Session, SessionOrderGroup, SessionOrderNode, SessionOrderSession, SessionOrderV2 } from '@/lib/types'
 import { cn, formatAge, formatModel, haptic, lastPathSegments } from '@/lib/utils'
 import { ProjectSettingsButton, ProjectSettingsEditor, renderProjectIcon } from './project-settings-editor'
+
+// ─── Shared visual components (unchanged) ──────────────────────────
 
 function StatusIndicator({ status }: { status: Session['status'] }) {
   if (status === 'ended') {
@@ -314,127 +305,6 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
   )
 }
 
-function SessionItem({ session }: { session: Session }) {
-  const [showSettings, setShowSettings] = useState(false)
-
-  return (
-    <div>
-      <div className="relative">
-        <SessionItemContent session={session} />
-        <div className="absolute top-2 right-2">
-          <ProjectSettingsButton
-            onClick={e => {
-              e.stopPropagation()
-              setShowSettings(!showSettings)
-            }}
-          />
-        </div>
-      </div>
-      {showSettings && <ProjectSettingsEditor cwd={session.cwd} onClose={() => setShowSettings(false)} />}
-    </div>
-  )
-}
-
-// Sortable wrapper for a single pinned CWD entry
-function SortableSessionCard({ cwd, sessions, showGrip }: { cwd: string; sessions: Session[]; showGrip?: boolean }) {
-  const projectSettings = useSessionsStore(s => s.projectSettings)
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cwd })
-  const ps = projectSettings[cwd]
-
-  return (
-    <div
-      ref={setNodeRef}
-      {...attributes}
-      {...listeners}
-      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }}
-      className={cn('flex items-stretch', isDragging && 'z-10')}
-    >
-      {/* Visual grip indicator - no listeners, just CSS */}
-      <div
-        className={cn(
-          'w-3 shrink-0 flex items-center justify-center select-none cursor-grab active:cursor-grabbing transition-opacity',
-          showGrip ? 'text-muted-foreground/40' : 'text-muted-foreground/20',
-        )}
-      >
-        <span className="text-[9px] leading-none">{'\u2807'}</span>
-      </div>
-      <div className="flex-1 min-w-0">
-        {sessions.length === 1 ? (
-          <SessionItem session={sessions[0]} />
-        ) : (
-          <SessionCwdGroup sessions={sessions} name={ps?.label || lastPathSegments(cwd)} ps={ps} />
-        )}
-      </div>
-    </div>
-  )
-}
-
-// Drop target for creating a new group (only visible while dragging)
-function NewGroupDropTarget() {
-  const { isOver, setNodeRef } = useDroppable({ id: '__new_group__' })
-
-  return (
-    <div
-      ref={setNodeRef}
-      className={cn(
-        'border-2 border-dashed rounded py-2 px-3 text-center text-[11px] font-mono transition-colors',
-        isOver ? 'border-accent text-accent bg-accent/10' : 'border-border/50 text-muted-foreground/50',
-      )}
-    >
-      + new group
-    </div>
-  )
-}
-
-function SessionCwdGroup({
-  sessions,
-  name,
-  ps,
-}: {
-  sessions: Session[]
-  name: string
-  ps?: { label?: string; icon?: string; color?: string }
-}) {
-  const [showSettings, setShowSettings] = useState(false)
-  const displayColor = ps?.color
-  const cwd = sessions[0].cwd
-
-  return (
-    <div>
-      <div
-        className="border border-border"
-        style={displayColor ? { borderLeftColor: displayColor, borderLeftWidth: '3px' } : undefined}
-      >
-        <div className="flex items-center gap-1.5 p-3 pb-1">
-          {ps?.icon && (
-            <span style={displayColor ? { color: displayColor } : undefined}>{renderProjectIcon(ps.icon)}</span>
-          )}
-          <span
-            className="font-bold text-sm flex-1 truncate text-primary"
-            style={displayColor ? { color: displayColor } : undefined}
-          >
-            {name}
-          </span>
-          <span className="text-[10px] text-muted-foreground font-mono">{sessions.length} sessions</span>
-          {sessions.some(s => s.status === 'ended') && <DismissAllEndedButton sessions={sessions} />}
-          <ProjectSettingsButton
-            onClick={e => {
-              e.stopPropagation()
-              setShowSettings(!showSettings)
-            }}
-          />
-        </div>
-        <div className="space-y-0.5 pb-1">
-          {sessions.map(session => (
-            <SessionItemContent key={session.id} session={session} compact />
-          ))}
-        </div>
-      </div>
-      {showSettings && <ProjectSettingsEditor cwd={cwd} onClose={() => setShowSettings(false)} />}
-    </div>
-  )
-}
-
 function InactiveProjectItem({ sessions }: { sessions: Session[] }) {
   const selectSession = useSessionsStore(s => s.selectSession)
   const projectSettings = useSessionsStore(s => s.projectSettings)
@@ -475,59 +345,22 @@ function InactiveProjectItem({ sessions }: { sessions: Session[] }) {
   )
 }
 
-// Helper: group organized entries by their group field
-function buildOrganizedByGroup(
-  organized: Array<{ cwd: string; group?: string }>,
-  sessionsByCwd: Map<string, Session[]>,
-) {
-  const groups: Array<{ name: string; entries: Array<{ cwd: string; sessions: Session[] }> }> = []
-  const groupMap = new Map<string, Array<{ cwd: string; sessions: Session[] }>>()
+// ─── Tree data model ───────────────────────────────────────────────
 
-  for (const entry of organized) {
-    const sessions = sessionsByCwd.get(entry.cwd)
-    if (!sessions) continue
-    const groupName = entry.group || ''
-    if (!groupMap.has(groupName)) {
-      groupMap.set(groupName, [])
-      groups.push({ name: groupName, entries: groupMap.get(groupName)! })
-    }
-    groupMap.get(groupName)!.push({ cwd: entry.cwd, sessions })
-  }
-
-  return groups
+interface TreeNodeData {
+  id: string
+  name: string
+  type: 'group' | 'session' | 'cwd'
+  cwd?: string
+  sessions?: Session[]
+  children?: TreeNodeData[]
 }
 
-export function SessionList() {
-  const sessions = useSessionsStore(s => s.sessions)
-  const sessionOrder = useSessionsStore(s => s.sessionOrder)
-  const dashPrefs = useSessionsStore(s => s.dashboardPrefs)
-  const [showInactive, setShowInactive] = useState(dashPrefs.showInactiveByDefault)
-  const [isDragging, setIsDragging] = useState(false)
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
-    try {
-      const stored = localStorage.getItem('collapsed-groups')
-      return stored ? new Set(JSON.parse(stored)) : new Set()
-    } catch {
-      return new Set()
-    }
-  })
-  const [, setTick] = useState(0)
-  useEffect(() => {
-    const t = setInterval(() => setTick(n => n + 1), 30_000)
-    return () => clearInterval(t)
-  }, [])
-
-  // MouseSensor: 8px distance (instant drag on desktop).
-  // TouchSensor: 300ms long-press (allows normal scrolling on mobile).
-  // DON'T use PointerSensor - it handles both mouse+touch and conflicts with TouchSensor.
-  const sensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 300, tolerance: 5 } }),
-  )
-
-  // Build organized vs unorganized lists (keyed by CWD)
-  const pinnedCwds = new Set(sessionOrder.organized.map(e => e.cwd))
-
+function buildTreeData(
+  sessionOrder: SessionOrderV2,
+  sessions: Session[],
+  showInactive: boolean,
+): TreeNodeData[] {
   // Group all sessions by CWD
   const sessionsByCwd = new Map<string, Session[]>()
   for (const s of sessions) {
@@ -536,85 +369,343 @@ export function SessionList() {
     sessionsByCwd.set(s.cwd, group)
   }
 
-  // Organized: CWDs grouped by their group field
-  const organizedByGroup = buildOrganizedByGroup(sessionOrder.organized, sessionsByCwd)
-  const hasOrganized = organizedByGroup.length > 0
+  // Track which CWDs are in the tree
+  const treeCwds = new Set<string>()
 
-  // All organized CWDs as flat list for DnD
-  const allOrganizedCwds = sessionOrder.organized.filter(e => sessionsByCwd.has(e.cwd)).map(e => e.cwd)
-
-  // Active sessions that are NOT in a pinned CWD
-  const unpinnedActive = sessions.filter(s => s.status !== 'ended' && !pinnedCwds.has(s.cwd))
-
-  // Inactive sessions
-  const unpinnedActiveCwds = new Set(unpinnedActive.map(s => s.cwd))
-  const inactive = sessions.filter(
-    s => s.status !== 'active' && s.status !== 'idle' && !pinnedCwds.has(s.cwd) && !unpinnedActiveCwds.has(s.cwd),
-  )
-
-  const sortedUnpinned = [...unpinnedActive].sort((a, b) => b.startedAt - a.startedAt)
-  const sortedInactive = [...inactive].sort((a, b) => b.startedAt - a.startedAt)
-
-  // All draggable CWDs (organized + unorganized)
-  const allDraggableCwds = [...allOrganizedCwds, ...sortedUnpinned.map(s => s.cwd).filter(cwd => !pinnedCwds.has(cwd))]
-  // Deduplicate (multiple sessions can share a CWD)
-  const uniqueDraggableCwds = [...new Set(allDraggableCwds)]
-
-  function handleDragEnd(event: DragEndEvent) {
-    setIsDragging(false)
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-    haptic('tick')
-
-    const draggedCwd = active.id as string
-    const isCurrentlyPinned = pinnedCwds.has(draggedCwd)
-
-    // Drop on "new group" target -> pin + create group
-    if (over.id === '__new_group__') {
-      const name = window.prompt('Group name:')
-      if (!name?.trim()) return
-      let newOrganized = [...sessionOrder.organized]
-      if (isCurrentlyPinned) {
-        newOrganized = newOrganized.map(e => (e.cwd === draggedCwd ? { ...e, group: name.trim() } : e))
-      } else {
-        newOrganized.push({ cwd: draggedCwd, group: name.trim() })
+  function buildNode(node: SessionOrderNode): TreeNodeData | null {
+    if (node.type === 'group') {
+      const children = node.children.map(buildNode).filter(Boolean) as TreeNodeData[]
+      return {
+        id: node.id,
+        name: node.name,
+        type: 'group',
+        children,
       }
-      useSessionsStore.getState().setSessionOrder({ organized: newOrganized })
-      updateSessionOrder('set', { organized: newOrganized })
-      return
     }
-
-    // Drop on another session
-    const overCwd = over.id as string
-    const overIsPinned = pinnedCwds.has(overCwd)
-
-    if (overIsPinned) {
-      // Dropping onto an organized item -> pin (if not already) and reorder
-      const newOrganized = [...sessionOrder.organized]
-      const targetGroup = newOrganized.find(e => e.cwd === overCwd)?.group
-
-      if (isCurrentlyPinned) {
-        // Reorder within organized
-        const oldIndex = newOrganized.findIndex(e => e.cwd === draggedCwd)
-        const newIndex = newOrganized.findIndex(e => e.cwd === overCwd)
-        if (oldIndex === -1 || newIndex === -1) return
-        const [moved] = newOrganized.splice(oldIndex, 1)
-        moved.group = targetGroup
-        newOrganized.splice(newIndex, 0, moved)
-      } else {
-        // Pin and insert at the target position
-        const newIndex = newOrganized.findIndex(e => e.cwd === overCwd)
-        newOrganized.splice(newIndex, 0, { cwd: draggedCwd, group: targetGroup })
-      }
-      useSessionsStore.getState().setSessionOrder({ organized: newOrganized })
-      updateSessionOrder('set', { organized: newOrganized })
-    } else if (isCurrentlyPinned) {
-      // Dropping organized onto unorganized -> unpin
-      const newOrganized = sessionOrder.organized.filter(e => e.cwd !== draggedCwd)
-      useSessionsStore.getState().setSessionOrder({ organized: newOrganized })
-      updateSessionOrder('set', { organized: newOrganized })
+    // Session node - extract CWD
+    const cwd = node.id.startsWith('cwd:') ? node.id.slice(4) : node.id
+    treeCwds.add(cwd)
+    const cwdSessions = sessionsByCwd.get(cwd)
+    if (!cwdSessions) return null // No live sessions for this CWD
+    return {
+      id: node.id,
+      name: lastPathSegments(cwd),
+      type: 'cwd',
+      cwd,
+      sessions: cwdSessions,
     }
   }
+
+  // Build organized tree
+  const organized = sessionOrder.tree.map(buildNode).filter(Boolean) as TreeNodeData[]
+
+  // Unorganized: active sessions not in tree
+  const unorganized: TreeNodeData[] = []
+  const activeCwds = new Set<string>()
+  for (const s of sessions) {
+    if (s.status !== 'ended' && !treeCwds.has(s.cwd) && !activeCwds.has(s.cwd)) {
+      activeCwds.add(s.cwd)
+      const cwdSessions = sessionsByCwd.get(s.cwd) || [s]
+      unorganized.push({
+        id: `cwd:${s.cwd}`,
+        name: lastPathSegments(s.cwd),
+        type: 'cwd',
+        cwd: s.cwd,
+        sessions: cwdSessions.filter(x => x.status !== 'ended'),
+      })
+    }
+  }
+  // Sort unorganized by most recent
+  unorganized.sort((a, b) => {
+    const aMax = Math.max(...(a.sessions?.map(s => s.startedAt) || [0]))
+    const bMax = Math.max(...(b.sessions?.map(s => s.startedAt) || [0]))
+    return bMax - aMax
+  })
+
+  // Combine: organized tree + unorganized flat
+  const result = [...organized, ...unorganized]
+
+  // Inactive: ended sessions not in tree and not in unorganized
+  if (showInactive) {
+    const coveredCwds = new Set([...treeCwds, ...activeCwds])
+    const inactiveByCwd = new Map<string, Session[]>()
+    for (const s of sessions) {
+      if (s.status === 'ended' && !coveredCwds.has(s.cwd)) {
+        const group = inactiveByCwd.get(s.cwd) || []
+        group.push(s)
+        inactiveByCwd.set(s.cwd, group)
+      }
+    }
+    if (inactiveByCwd.size > 0) {
+      result.push({
+        id: '__inactive__',
+        name: `Inactive (${inactiveByCwd.size})`,
+        type: 'group',
+        children: Array.from(inactiveByCwd.entries())
+          .sort((a, b) => {
+            const aMax = Math.max(...a[1].map(s => s.lastActivity))
+            const bMax = Math.max(...b[1].map(s => s.lastActivity))
+            return bMax - aMax
+          })
+          .map(([cwd, cwdSessions]) => ({
+            id: `inactive:${cwd}`,
+            name: lastPathSegments(cwd),
+            type: 'cwd' as const,
+            cwd,
+            sessions: cwdSessions,
+          })),
+      })
+    }
+  }
+
+  return result
+}
+
+// Convert tree data back to SessionOrderV2 (for persistence after DnD)
+function treeDataToOrder(nodes: TreeNodeData[]): SessionOrderV2 {
+  function toNode(data: TreeNodeData): SessionOrderNode | null {
+    if (data.id === '__inactive__') return null // Don't persist inactive group
+    if (data.id.startsWith('inactive:')) return null
+    if (data.type === 'group') {
+      return {
+        id: data.id,
+        type: 'group',
+        name: data.name,
+        children: (data.children || []).map(toNode).filter(Boolean) as SessionOrderNode[],
+      } satisfies SessionOrderGroup
+    }
+    return { id: data.id, type: 'session' } satisfies SessionOrderSession
+  }
+  return {
+    version: 2,
+    tree: nodes.map(toNode).filter(Boolean) as SessionOrderNode[],
+  }
+}
+
+// ─── Tree node renderer ────────────────────────────────────────────
+
+function TreeNode({ node, style, dragHandle }: NodeRendererProps<TreeNodeData>) {
+  const data = node.data
+  const [showSettings, setShowSettings] = useState(false)
+  const projectSettings = useSessionsStore(s => (data.cwd ? s.projectSettings[data.cwd] : undefined))
+
+  // Group node
+  if (data.type === 'group') {
+    const isInactive = data.id === '__inactive__'
+    return (
+      <div style={style}>
+        <div
+          ref={dragHandle}
+          className={cn(
+            'text-[10px] font-bold uppercase tracking-wider px-1 py-1 flex items-center gap-1.5 cursor-pointer select-none',
+            isInactive ? 'text-muted-foreground/50' : 'text-primary/60',
+          )}
+          onClick={() => node.toggle()}
+        >
+          <span>{node.isOpen ? '\u25BE' : '\u25B8'}</span>
+          {node.isEditing ? (
+            <input
+              type="text"
+              defaultValue={data.name}
+              autoFocus
+              className="bg-transparent border-b border-primary text-primary text-[10px] font-bold uppercase outline-none w-full"
+              onBlur={e => node.submit(e.currentTarget.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') node.submit(e.currentTarget.value)
+                if (e.key === 'Escape') node.reset()
+              }}
+            />
+          ) : (
+            <>
+              <span onDoubleClick={() => !isInactive && node.edit()}>{data.name}</span>
+              {!node.isOpen && (
+                <span className="text-muted-foreground/40 font-normal normal-case">
+                  ({data.children?.length || 0})
+                </span>
+              )}
+            </>
+          )}
+          <span className="flex-1 h-px bg-border/50" />
+        </div>
+      </div>
+    )
+  }
+
+  // CWD/Session node
+  const cwdSessions = data.sessions || []
+  const ps = projectSettings
+
+  if (cwdSessions.length === 0) return <div style={style} />
+
+  if (cwdSessions.length === 1) {
+    // Single session
+    return (
+      <div style={style} ref={dragHandle}>
+        <div className="relative">
+          <SessionItemContent session={cwdSessions[0]} />
+          <div className="absolute top-2 right-2">
+            <ProjectSettingsButton
+              onClick={e => {
+                e.stopPropagation()
+                setShowSettings(!showSettings)
+              }}
+            />
+          </div>
+        </div>
+        {showSettings && data.cwd && (
+          <ProjectSettingsEditor cwd={data.cwd} onClose={() => setShowSettings(false)} />
+        )}
+      </div>
+    )
+  }
+
+  // Multi-session CWD group
+  const displayName = ps?.label || data.name
+  const displayColor = ps?.color
+
+  return (
+    <div style={style} ref={dragHandle}>
+      <div
+        className="border border-border"
+        style={displayColor ? { borderLeftColor: displayColor, borderLeftWidth: '3px' } : undefined}
+      >
+        <div className="flex items-center gap-1.5 p-3 pb-1">
+          {ps?.icon && (
+            <span style={displayColor ? { color: displayColor } : undefined}>{renderProjectIcon(ps.icon)}</span>
+          )}
+          <span
+            className="font-bold text-sm flex-1 truncate text-primary"
+            style={displayColor ? { color: displayColor } : undefined}
+          >
+            {displayName}
+          </span>
+          <span className="text-[10px] text-muted-foreground font-mono">{cwdSessions.length} sessions</span>
+          {cwdSessions.some(s => s.status === 'ended') && <DismissAllEndedButton sessions={cwdSessions} />}
+          <ProjectSettingsButton
+            onClick={e => {
+              e.stopPropagation()
+              setShowSettings(!showSettings)
+            }}
+          />
+        </div>
+        <div className="space-y-0.5 pb-1">
+          {cwdSessions.map(session => (
+            <SessionItemContent key={session.id} session={session} compact />
+          ))}
+        </div>
+      </div>
+      {showSettings && data.cwd && (
+        <ProjectSettingsEditor cwd={data.cwd} onClose={() => setShowSettings(false)} />
+      )}
+    </div>
+  )
+}
+
+// ─── Main SessionList component ────────────────────────────────────
+
+export function SessionList() {
+  const sessions = useSessionsStore(s => s.sessions)
+  const sessionOrder = useSessionsStore(s => s.sessionOrder)
+  const dashPrefs = useSessionsStore(s => s.dashboardPrefs)
+  const [showInactive, setShowInactive] = useState(dashPrefs.showInactiveByDefault)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [containerHeight, setContainerHeight] = useState(600)
+
+  // Refresh timestamps periodically
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const t = setInterval(() => setTick(n => n + 1), 30_000)
+    return () => clearInterval(t)
+  }, [])
+
+  // Track container height for react-arborist
+  useEffect(() => {
+    if (!containerRef.current) return
+    const observer = new ResizeObserver(entries => {
+      const h = entries[0]?.contentRect.height
+      if (h) setContainerHeight(h)
+    })
+    observer.observe(containerRef.current)
+    return () => observer.disconnect()
+  }, [])
+
+  // Build tree data from session order + live sessions
+  const treeData = useMemo(
+    () => buildTreeData(sessionOrder, sessions, showInactive),
+    [sessionOrder, sessions, showInactive],
+  )
+
+  // Inactive session count (for toggle)
+  const inactiveCount = useMemo(() => {
+    const treeCwds = new Set<string>()
+    function walk(nodes: SessionOrderNode[]) {
+      for (const n of nodes) {
+        if (n.type === 'session') {
+          const cwd = n.id.startsWith('cwd:') ? n.id.slice(4) : n.id
+          treeCwds.add(cwd)
+        } else if (n.type === 'group') walk(n.children)
+      }
+    }
+    walk(sessionOrder.tree)
+    const activeCwds = new Set(sessions.filter(s => s.status !== 'ended').map(s => s.cwd))
+    return new Set(
+      sessions.filter(s => s.status === 'ended' && !treeCwds.has(s.cwd) && !activeCwds.has(s.cwd)).map(s => s.cwd),
+    ).size
+  }, [sessionOrder, sessions])
+
+  // Persist tree order after any DnD operation
+  const handleMoveFinished = useCallback(
+    (_args: { dragIds: string[]; parentId: string | null; index: number; dragNodes: any[]; parentNode: any }) => {
+      // After react-arborist applies the move, read the new tree structure and persist
+      // We defer this to let the tree component update first
+      setTimeout(() => {
+        const treeApi = treeRef.current
+        if (!treeApi) return
+        // Walk the tree API to extract the current structure
+        const root = treeApi.root
+        function extractNodes(node: any): TreeNodeData[] {
+          if (!node.children) return []
+          return node.children.map((child: any) => {
+            const data = child.data as TreeNodeData
+            if (data.type === 'group') {
+              return { ...data, children: extractNodes(child) }
+            }
+            return data
+          })
+        }
+        const newTree = extractNodes(root)
+        const newOrder = treeDataToOrder(newTree)
+        useSessionsStore.getState().setSessionOrder(newOrder)
+        saveSessionOrder(newOrder)
+      }, 0)
+    },
+    [],
+  )
+
+  const treeRef = useRef<any>(null)
+
+  // Handle rename
+  const handleRename = useCallback(
+    ({ id, name }: { id: string; name: string }) => {
+      if (!name.trim()) return
+      // Update the group name in the order
+      function renameInTree(nodes: SessionOrderNode[]): SessionOrderNode[] {
+        return nodes.map(n => {
+          if (n.type === 'group' && n.id === id) {
+            return { ...n, name: name.trim() }
+          }
+          if (n.type === 'group') {
+            return { ...n, children: renameInTree(n.children) }
+          }
+          return n
+        })
+      }
+      const newOrder: SessionOrderV2 = { version: 2, tree: renameInTree(sessionOrder.tree) }
+      useSessionsStore.getState().setSessionOrder(newOrder)
+      saveSessionOrder(newOrder)
+    },
+    [sessionOrder],
+  )
 
   if (sessions.length === 0) {
     return (
@@ -632,125 +723,41 @@ export function SessionList() {
   }
 
   return (
-    <div className="space-y-2">
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={() => setIsDragging(true)}
-        onDragEnd={handleDragEnd}
-        onDragCancel={() => setIsDragging(false)}
-      >
-        <SortableContext items={uniqueDraggableCwds} strategy={verticalListSortingStrategy}>
-          {/* Organized section with groups */}
-          {hasOrganized && (
-            <div className="space-y-2">
-              {organizedByGroup.map(group => {
-                const groupKey = group.name || '__default__'
-                const isCollapsed = collapsedGroups.has(groupKey)
-                return (
-                  <div key={groupKey}>
-                    <div
-                      className="text-[10px] font-bold uppercase tracking-wider px-1 mb-1 flex items-center gap-1.5 cursor-pointer select-none"
-                      onClick={() => {
-                        haptic('tick')
-                        setCollapsedGroups(prev => {
-                          const next = new Set(prev)
-                          if (next.has(groupKey)) next.delete(groupKey)
-                          else next.add(groupKey)
-                          localStorage.setItem('collapsed-groups', JSON.stringify([...next]))
-                          return next
-                        })
-                      }}
-                    >
-                      <span className={group.name ? 'text-primary/60' : 'text-amber-400/70'}>
-                        {group.name ? `${isCollapsed ? '\u25B8' : '\u25BE'} ${group.name}` : `\u2605 Organized`}
-                      </span>
-                      {isCollapsed && (
-                        <span className="text-muted-foreground/40 font-normal normal-case">
-                          ({group.entries.length})
-                        </span>
-                      )}
-                      <span className="flex-1 h-px bg-border/50" />
-                      {!group.name && (
-                        <span className="text-muted-foreground/40 font-normal">
-                          {isCollapsed ? '\u25B8' : '\u25BE'}
-                        </span>
-                      )}
-                    </div>
-                    {!isCollapsed && (
-                      <div className="space-y-1">
-                        {group.entries.map(entry => (
-                          <SortableSessionCard key={entry.cwd} cwd={entry.cwd} sessions={entry.sessions} showGrip />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )}
+    <div className="flex flex-col h-full">
+      <div ref={containerRef} className="flex-1 min-h-0">
+        <Tree<TreeNodeData>
+          ref={treeRef}
+          data={treeData}
+          width="100%"
+          height={containerHeight}
+          rowHeight={64}
+          indent={16}
+          padding={8}
+          onMove={handleMoveFinished}
+          onRename={handleRename}
+          disableDrop={({ parentNode }) => {
+            // Only allow dropping into groups or root, not into session/cwd nodes
+            if (!parentNode) return false // root drop OK
+            return parentNode.data.type !== 'group'
+          }}
+          openByDefault={true}
+        >
+          {TreeNode}
+        </Tree>
+      </div>
 
-          {/* Drop targets - always in DOM to avoid layout shift, hidden when not dragging */}
-          <div
-            className={cn(
-              'mt-2 transition-all',
-              isDragging ? 'opacity-100 max-h-16' : 'opacity-0 max-h-0 overflow-hidden',
-            )}
-          >
-            <NewGroupDropTarget />
-          </div>
-
-          {/* Unorganized section */}
-          {sortedUnpinned.length > 0 && (
-            <div>
-              {hasOrganized && (
-                <div className="text-[10px] text-muted-foreground/50 font-bold uppercase tracking-wider px-1 mb-1 flex items-center gap-2">
-                  <span>Unorganized</span>
-                  <span className="flex-1 h-px bg-border" />
-                </div>
-              )}
-              <div className="space-y-1">
-                {sortedUnpinned
-                  .filter((s, i, arr) => arr.findIndex(x => x.cwd === s.cwd) === i)
-                  .map(s => {
-                    const cwdSessions = sessionsByCwd.get(s.cwd) || [s]
-                    const unpinnedSessions = cwdSessions.filter(x => x.status !== 'ended')
-                    return (
-                      <SortableSessionCard
-                        key={s.cwd}
-                        cwd={s.cwd}
-                        sessions={unpinnedSessions.length > 0 ? unpinnedSessions : [s]}
-                      />
-                    )
-                  })}
-              </div>
-            </div>
-          )}
-        </SortableContext>
-      </DndContext>
-
-      {/* Inactive section */}
-      {inactive.length > 0 && (
-        <label className="flex items-center gap-2 px-2 py-1.5 text-muted-foreground text-xs cursor-pointer select-none">
+      {/* Inactive toggle */}
+      {inactiveCount > 0 && (
+        <label className="shrink-0 flex items-center gap-2 px-2 py-1.5 text-muted-foreground text-xs cursor-pointer select-none border-t border-border">
           <input
             type="checkbox"
             checked={showInactive}
             onChange={e => setShowInactive(e.target.checked)}
             className="accent-primary"
           />
-          show inactive ({new Set(inactive.map(s => s.cwd)).size})
+          show inactive ({inactiveCount})
         </label>
       )}
-      {showInactive &&
-        (() => {
-          const byCwd = new Map<string, Session[]>()
-          for (const s of sortedInactive) {
-            const group = byCwd.get(s.cwd) || []
-            group.push(s)
-            byCwd.set(s.cwd, group)
-          }
-          return Array.from(byCwd.values()).map(group => <InactiveProjectItem key={group[0].cwd} sessions={group} />)
-        })()}
     </div>
   )
 }
