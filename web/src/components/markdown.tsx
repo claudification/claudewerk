@@ -91,20 +91,24 @@ marked.setOptions({
   async: false,
 })
 
-// Sanitize: escape HTML tags in the source before marked processes them.
+// Sanitize: escape HTML tags in source before marked processes them.
 // This ensures <foo> in transcript text renders as visible "&lt;foo&gt;" not invisible HTML.
-// Marked's built-in html:false doesn't exist in v15+ - we use a walkTokens hook instead.
+// Only markdown syntax (links, bold, code, etc.) should produce HTML via the renderer.
+//
+// Strategy: escape HTML tags everywhere EXCEPT inside fenced code blocks and inline code.
+// The split regex must handle multiple code fences correctly (non-greedy, ordered alternation).
 marked.use({
   hooks: {
     preprocess(src: string) {
-      // Escape HTML tags that aren't inside fenced code blocks
-      // Split on fenced code blocks, only escape outside them
-      const parts = src.split(/(```[\s\S]*?```|`[^`\n]+`)/g)
+      // Split on fenced code blocks (``` ... ```) and inline code (` ... `)
+      // Fenced blocks: match opening ``` with optional lang, then everything up to closing ```
+      // Use non-greedy match and require ``` at start of line for opening fence
+      const parts = src.split(/(^```[^\n]*\n[\s\S]*?\n```$|`[^`\n]+`)/gm)
       return parts
         .map((part, i) => {
           // Odd indices are code blocks/inline code - leave them alone
           if (i % 2 === 1) return part
-          // Escape < that look like HTML tags (not operators like < in math)
+          // Escape ALL angle brackets that look like HTML tags
           return part.replace(/<(\/?[a-zA-Z][a-zA-Z0-9_-]*(?:\s[^>]*)?)>/g, '&lt;$1&gt;')
         })
         .join('')
