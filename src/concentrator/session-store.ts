@@ -337,6 +337,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       team: session.team,
       effortLevel: session.effortLevel,
       lastError: session.lastError,
+      pendingAttention: session.pendingAttention,
       tokenUsage: session.tokenUsage,
       stats: session.stats,
       gitBranch: session.gitBranch,
@@ -899,6 +900,47 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
             queue.push(input.description)
             pendingAgentDescriptions.set(sessionId, queue)
           }
+        }
+        // Track AskUserQuestion PreToolUse - might block waiting for user
+        if (data.tool_name === 'AskUserQuestion') {
+          session.pendingAttention = {
+            type: 'ask',
+            toolName: 'AskUserQuestion',
+            question: (data.tool_input as Record<string, unknown>)?.question as string | undefined,
+            timestamp: event.timestamp,
+          }
+        }
+      }
+
+      // PermissionRequest - Claude is blocked waiting for permission approval
+      if (event.hookEvent === 'PermissionRequest' && event.data) {
+        const data = event.data as Record<string, unknown>
+        session.pendingAttention = {
+          type: 'permission',
+          toolName: data.tool_name as string | undefined,
+          filePath: (data.tool_input as Record<string, unknown>)?.file_path as string | undefined,
+          timestamp: event.timestamp,
+        }
+      }
+
+      // Elicitation - Claude is asking a structured question
+      if (event.hookEvent === 'Elicitation' && event.data) {
+        const data = event.data as Record<string, unknown>
+        session.pendingAttention = {
+          type: 'elicitation',
+          question: data.message as string | undefined,
+          timestamp: event.timestamp,
+        }
+      }
+
+      // Clear pendingAttention on resolution events
+      if (
+        event.hookEvent === 'PostToolUse' ||
+        event.hookEvent === 'PostToolUseFailure' ||
+        event.hookEvent === 'ElicitationResult'
+      ) {
+        if (session.pendingAttention) {
+          session.pendingAttention = undefined
         }
       }
 

@@ -42,9 +42,26 @@ function ScrollToBottomButton({ onClick, direction = 'down' }: { onClick: () => 
 const InputBar = memo(function InputBar({ sessionId }: { sessionId: string }) {
   const [inputValue, setLocalInput] = useState(() => useSessionsStore.getState().inputDrafts[sessionId] ?? '')
   const [isSending, setIsSending] = useState(false)
+  const [showAttention, setShowAttention] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef(inputValue)
   const sessionRef = useRef(sessionId)
+
+  // Track pendingAttention with 15s delay before showing
+  const pendingAttention = useSessionsStore(
+    s => s.sessions.find(sess => sess.id === sessionId)?.pendingAttention,
+  )
+  useEffect(() => {
+    if (!pendingAttention) {
+      setShowAttention(false)
+      return
+    }
+    // Show after 15s delay (permission/elicitation/ask might resolve quickly)
+    const elapsed = Date.now() - pendingAttention.timestamp
+    const remaining = Math.max(0, 15_000 - elapsed)
+    const timer = setTimeout(() => setShowAttention(true), remaining)
+    return () => clearTimeout(timer)
+  }, [pendingAttention])
 
   function setInputValue(text: string) {
     setLocalInput(text)
@@ -96,6 +113,23 @@ const InputBar = memo(function InputBar({ sessionId }: { sessionId: string }) {
 
   return (
     <div ref={containerRef} className="shrink-0 p-3 border-t border-border bg-background z-10">
+      {showAttention && pendingAttention && (
+        <div className="mb-2 px-3 py-2 bg-amber-500/10 border border-amber-500/30 rounded font-mono text-xs text-amber-400 flex items-center gap-2 animate-pulse">
+          <span className="text-amber-500 font-bold shrink-0">!</span>
+          <span className="flex-1">
+            {pendingAttention.type === 'permission' && (
+              <>TTY needs permission for <span className="text-amber-200">{pendingAttention.toolName || 'tool'}</span>{pendingAttention.filePath && <> on <span className="text-amber-200">{pendingAttention.filePath.split('/').pop()}</span></>}</>
+            )}
+            {pendingAttention.type === 'elicitation' && (
+              <>TTY is asking a question{pendingAttention.question && <>: <span className="text-amber-200">{pendingAttention.question.slice(0, 60)}</span></>}</>
+            )}
+            {pendingAttention.type === 'ask' && (
+              <>TTY is waiting for your answer</>
+            )}
+          </span>
+          <span className="text-amber-500/60 shrink-0 text-[10px]">open terminal</span>
+        </div>
+      )}
       <div className="flex gap-2 items-stretch">
         <MarkdownInput
           value={inputValue}

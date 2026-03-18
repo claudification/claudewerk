@@ -63,6 +63,13 @@ export interface Session {
   team?: { teamName: string; role: 'lead' | 'teammate' }
   effortLevel?: string
   lastError?: { stopReason?: string; errorType?: string; errorMessage?: string; timestamp: number }
+  pendingAttention?: {
+    type: 'permission' | 'elicitation' | 'ask'
+    toolName?: string
+    filePath?: string
+    question?: string
+    timestamp: number
+  }
   tokenUsage?: { input: number; cacheCreation: number; cacheRead: number; output: number }
   stats?: {
     totalInputTokens: number
