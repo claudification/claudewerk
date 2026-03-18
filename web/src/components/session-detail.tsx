@@ -78,7 +78,13 @@ const InputBar = memo(function InputBar({ sessionId }: { sessionId: string }) {
       if (success) {
         setInputValue('')
         useSessionsStore.getState().setInputDraft(sessionId, '')
+      } else {
+        haptic('error')
+        console.error('[input] sendInput failed for session', sessionId)
       }
+    } catch (err) {
+      haptic('error')
+      console.error('[input] sendInput error:', err)
     } finally {
       setIsSending(false)
       // Re-focus on desktop only - on mobile this triggers the full-screen compose modal

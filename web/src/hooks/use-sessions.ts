@@ -364,6 +364,10 @@ export async function sendInput(sessionId: string, input: string): Promise<boole
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ input, ...(crDelay > 0 && { crDelay }) }),
   })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    console.error(`[sendInput] ${res.status} ${res.statusText}: ${body}`)
+  }
   return res.ok
 }
 
