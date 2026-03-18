@@ -190,6 +190,14 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
               compacting
             </span>
           )}
+          {session.lastError && (
+            <span
+              className="px-1.5 py-0.5 text-[10px] uppercase font-bold bg-destructive/20 text-destructive border border-destructive/50"
+              title={session.lastError.errorMessage || session.lastError.errorType || 'API error'}
+            >
+              error
+            </span>
+          )}
           {session.status === 'ended' && <DismissButton sessionId={session.id} />}
         </div>
       )}
@@ -205,6 +213,7 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
             {session.id.slice(0, 8)}
           </span>
           {session.compacting && <span className="text-[9px] text-amber-400 font-bold animate-pulse">COMPACT</span>}
+          {session.lastError && <span className="text-[9px] text-destructive font-bold">ERROR</span>}
           {session.status === 'ended' && <DismissButton sessionId={session.id} />}
         </div>
       )}

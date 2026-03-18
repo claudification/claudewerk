@@ -584,6 +584,7 @@ export interface Session {
   team?: TeamInfo
   diagLog: Array<{ t: number; type: string; msg: string; args?: unknown }>
   effortLevel?: string // 'speed' field from API usage: e.g. 'standard', maps to low/medium/high
+  lastError?: { stopReason?: string; errorType?: string; errorMessage?: string; timestamp: number }
   tokenUsage?: { input: number; cacheCreation: number; cacheRead: number; output: number }
   stats: {
     totalInputTokens: number
@@ -719,6 +720,7 @@ export interface SessionSummary {
   }>
   team?: TeamInfo
   effortLevel?: string
+  lastError?: Session['lastError']
   tokenUsage?: { input: number; cacheCreation: number; cacheRead: number; output: number }
   stats: Session['stats']
   gitBranch?: string

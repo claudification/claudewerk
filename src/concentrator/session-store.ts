@@ -328,6 +328,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       })),
       team: session.team,
       effortLevel: session.effortLevel,
+      lastError: session.lastError,
       tokenUsage: session.tokenUsage,
       stats: session.stats,
       gitBranch: session.gitBranch,
@@ -793,8 +794,20 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       // Status transitions based on actual Claude hooks (not artificial timers)
       if (event.hookEvent === 'Stop' || event.hookEvent === 'StopFailure') {
         session.status = 'idle'
+        // Capture error details from StopFailure
+        if (event.hookEvent === 'StopFailure' && event.data) {
+          const d = event.data as Record<string, unknown>
+          session.lastError = {
+            stopReason: String(d.stop_reason || d.stopReason || ''),
+            errorType: String(d.error_type || d.errorType || ''),
+            errorMessage: String(d.error_message || d.errorMessage || d.error || ''),
+            timestamp: event.timestamp,
+          }
+        }
       } else if (!PASSIVE_HOOKS.has(event.hookEvent) && session.status !== 'ended') {
         session.status = 'active'
+        // Clear error when session resumes working
+        if (session.lastError) session.lastError = undefined
       }
 
       // Correlate hook events to subagents: if the hook's session_id differs

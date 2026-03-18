@@ -510,6 +510,27 @@ export function SessionDetail() {
                   </span>
                 </div>
 
+                {/* Error banner */}
+                {session.lastError && (
+                  <div className="px-2 py-1.5 bg-destructive/15 border border-destructive/40 text-[10px] font-mono space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-destructive font-bold uppercase">API Error</span>
+                      {session.lastError.errorType && (
+                        <span className="text-destructive/80">{session.lastError.errorType}</span>
+                      )}
+                      <span className="text-muted-foreground ml-auto">
+                        {new Date(session.lastError.timestamp).toLocaleTimeString('en-US', { hour12: false })}
+                      </span>
+                    </div>
+                    {session.lastError.errorMessage && (
+                      <div className="text-destructive/70">{session.lastError.errorMessage}</div>
+                    )}
+                    {session.lastError.stopReason && (
+                      <div className="text-muted-foreground">reason: {session.lastError.stopReason}</div>
+                    )}
+                  </div>
+                )}
+
                 {/* CWD */}
                 <div className="text-[10px] text-muted-foreground truncate">{session.cwd}</div>
               </div>
