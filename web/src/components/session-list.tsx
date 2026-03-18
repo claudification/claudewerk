@@ -1,7 +1,19 @@
+import {
+  closestCenter,
+  DndContext,
+  type DragEndEvent,
+  MouseSensor,
+  TouchSensor,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import type { HookEvent } from '@shared/protocol'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { saveSessionOrder, useSessionsStore } from '@/hooks/use-sessions'
-import type { Session, SessionOrderGroup, SessionOrderNode, SessionOrderSession, SessionOrderV2 } from '@/lib/types'
+import type { Session, SessionOrderGroup, SessionOrderNode, SessionOrderV2 } from '@/lib/types'
 import { cn, formatAge, formatModel, haptic, lastPathSegments } from '@/lib/utils'
 import { ProjectSettingsButton, ProjectSettingsEditor, renderProjectIcon } from './project-settings-editor'
 
@@ -379,6 +391,38 @@ function CwdNode({ cwd, sessions }: { cwd: string; sessions: Session[] }) {
   return <CwdSessionGroup sessions={sessions} cwd={cwd} />
 }
 
+// ─── Sortable wrapper ──────────────────────────────────────────────
+
+function SortableNode({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }}
+      className={cn(isDragging && 'z-10 relative')}
+    >
+      {children}
+    </div>
+  )
+}
+
+function NewGroupDropTarget() {
+  const { isOver, setNodeRef } = useDroppable({ id: '__new_group__' })
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        'border-2 border-dashed rounded py-2 px-3 text-center text-[11px] font-mono transition-colors',
+        isOver ? 'border-accent text-accent bg-accent/10' : 'border-border/50 text-muted-foreground/50',
+      )}
+    >
+      + new group
+    </div>
+  )
+}
+
 // ─── Group node (collapsible folder) ───────────────────────────────
 
 function GroupNode({
@@ -626,6 +670,163 @@ export function SessionList() {
     [sessionOrder],
   )
 
+  // Flatten tree + unorganized into sortable IDs
+  const sortableIds = useMemo(() => {
+    const ids: string[] = []
+    for (const node of sessionOrder.tree) {
+      ids.push(node.id) // group or root session
+      if (node.type === 'group' && !collapsedGroups.has(node.id)) {
+        for (const child of node.children) ids.push(child.id)
+      }
+    }
+    for (const { cwd } of unorganized) ids.push(`cwd:${cwd}`)
+    return ids
+  }, [sessionOrder, unorganized, collapsedGroups])
+
+  // Sensors: mouse (8px) + touch (300ms long-press)
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 300, tolerance: 5 } }),
+  )
+  const [isDragging, setIsDragging] = useState(false)
+
+  // Find which group an ID belongs to
+  function findParentGroup(id: string): string | null {
+    for (const node of sessionOrder.tree) {
+      if (node.type === 'group') {
+        if (node.children.some(c => c.id === id)) return node.id
+      }
+    }
+    return null
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    setIsDragging(false)
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    haptic('tick')
+
+    const draggedId = active.id as string
+    const overId = over.id as string
+
+    // Drop onto "new group" target
+    if (overId === '__new_group__') {
+      const name = window.prompt('Group name:')
+      if (!name?.trim()) return
+      const groupId = `group-${name.trim().toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`
+      // Remove from current position
+      const newTree = removeFromTree(sessionOrder.tree, draggedId)
+      // Add new group with this item
+      const sessionNode = draggedId.startsWith('group-')
+        ? sessionOrder.tree.find(n => n.id === draggedId) // dragging a group into a new group? just rename
+        : { id: draggedId, type: 'session' as const }
+      if (sessionNode) {
+        newTree.push({
+          id: groupId,
+          type: 'group',
+          name: name.trim(),
+          children: [sessionNode.type === 'group' ? sessionNode : { id: draggedId, type: 'session' }],
+        })
+      }
+      persistTree(newTree)
+      return
+    }
+
+    // Is the over target a group header?
+    const overIsGroup = overId.startsWith('group-')
+    const draggedIsGroup = draggedId.startsWith('group-')
+    const draggedIsInTree = sessionOrder.tree.some(n => n.id === draggedId) || findParentGroup(draggedId) !== null
+    const overIsInTree = sessionOrder.tree.some(n => n.id === overId) || findParentGroup(overId) !== null
+
+    if (draggedIsGroup && overIsGroup) {
+      // Reorder groups at root level
+      const newTree = [...sessionOrder.tree]
+      const fromIdx = newTree.findIndex(n => n.id === draggedId)
+      const toIdx = newTree.findIndex(n => n.id === overId)
+      if (fromIdx === -1 || toIdx === -1) return
+      const [moved] = newTree.splice(fromIdx, 1)
+      newTree.splice(toIdx, 0, moved)
+      persistTree(newTree)
+    } else if (overIsGroup && !draggedIsGroup) {
+      // Drop session into a group
+      const newTree = removeFromTree(sessionOrder.tree, draggedId)
+      const targetGroup = newTree.find(n => n.id === overId && n.type === 'group') as SessionOrderGroup | undefined
+      if (targetGroup) {
+        targetGroup.children.push({
+          id: draggedId.startsWith('cwd:') ? draggedId : `cwd:${draggedId}`,
+          type: 'session',
+        })
+      }
+      persistTree(newTree)
+    } else if (overIsInTree && !draggedIsInTree) {
+      // Drag unorganized onto organized -> pin it (insert near target)
+      const overParent = findParentGroup(overId)
+      const newTree = [...sessionOrder.tree]
+      const sessionId = draggedId.startsWith('cwd:') ? draggedId : `cwd:${draggedId}`
+      if (overParent) {
+        const group = newTree.find(n => n.id === overParent && n.type === 'group') as SessionOrderGroup | undefined
+        if (group) {
+          const idx = group.children.findIndex(c => c.id === overId)
+          group.children.splice(idx >= 0 ? idx : group.children.length, 0, { id: sessionId, type: 'session' })
+        }
+      } else {
+        const idx = newTree.findIndex(n => n.id === overId)
+        newTree.splice(idx >= 0 ? idx : newTree.length, 0, { id: sessionId, type: 'session' })
+      }
+      persistTree(newTree)
+    } else if (draggedIsInTree && !overIsInTree) {
+      // Drag organized onto unorganized -> unpin
+      const newTree = removeFromTree(sessionOrder.tree, draggedId)
+      persistTree(newTree)
+    } else if (draggedIsInTree && overIsInTree) {
+      // Reorder within tree
+      const newTree = removeFromTree(sessionOrder.tree, draggedId)
+      const draggedNode: SessionOrderNode = { id: draggedId, type: 'session' }
+      // Find original node data (might be a group)
+      const origNode = findInTree(sessionOrder.tree, draggedId)
+      const nodeToInsert = origNode || draggedNode
+
+      const overParent = findParentGroup(overId)
+      if (overParent) {
+        const group = newTree.find(n => n.id === overParent && n.type === 'group') as SessionOrderGroup | undefined
+        if (group) {
+          const idx = group.children.findIndex(c => c.id === overId)
+          group.children.splice(idx >= 0 ? idx : group.children.length, 0, nodeToInsert)
+        }
+      } else {
+        const idx = newTree.findIndex(n => n.id === overId)
+        newTree.splice(idx >= 0 ? idx : newTree.length, 0, nodeToInsert)
+      }
+      persistTree(newTree)
+    }
+  }
+
+  function removeFromTree(tree: SessionOrderNode[], id: string): SessionOrderNode[] {
+    return tree
+      .filter(n => n.id !== id)
+      .map(n => {
+        if (n.type === 'group') return { ...n, children: n.children.filter(c => c.id !== id) }
+        return n
+      })
+  }
+
+  function findInTree(tree: SessionOrderNode[], id: string): SessionOrderNode | null {
+    for (const n of tree) {
+      if (n.id === id) return n
+      if (n.type === 'group') {
+        const found = n.children.find(c => c.id === id)
+        if (found) return found
+      }
+    }
+    return null
+  }
+
+  function persistTree(tree: SessionOrderNode[]) {
+    const newOrder: SessionOrderV2 = { version: 2, tree }
+    useSessionsStore.getState().setSessionOrder(newOrder)
+    saveSessionOrder(newOrder)
+  }
+
   if (sessions.length === 0) {
     return (
       <div className="text-muted-foreground text-center py-10">
@@ -645,43 +846,86 @@ export function SessionList() {
 
   return (
     <div className="space-y-2 overflow-y-auto">
-      {/* Organized tree */}
-      {sessionOrder.tree.map(node => {
-        if (node.type === 'group') {
-          return (
-            <GroupNode
-              key={node.id}
-              group={node}
-              sessionsByCwd={sessionsByCwd}
-              collapsed={collapsedGroups.has(node.id)}
-              onToggle={() => toggleGroup(node.id)}
-              onRename={name => handleRename(node.id, name)}
-            />
-          )
-        }
-        // Root-level session node
-        const cwd = node.id.startsWith('cwd:') ? node.id.slice(4) : node.id
-        const cwdSessions = sessionsByCwd.get(cwd)
-        if (!cwdSessions || cwdSessions.length === 0) return null
-        return <CwdNode key={node.id} cwd={cwd} sessions={cwdSessions} />
-      })}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={() => setIsDragging(true)}
+        onDragEnd={handleDragEnd}
+        onDragCancel={() => setIsDragging(false)}
+      >
+        <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
+          {/* Organized tree */}
+          {sessionOrder.tree.map(node => {
+            if (node.type === 'group') {
+              const isCollapsed = collapsedGroups.has(node.id)
+              return (
+                <SortableNode key={node.id} id={node.id}>
+                  <GroupNode
+                    group={node}
+                    sessionsByCwd={sessionsByCwd}
+                    collapsed={isCollapsed}
+                    onToggle={() => toggleGroup(node.id)}
+                    onRename={name => handleRename(node.id, name)}
+                  />
+                  {!isCollapsed && (
+                    <div className="space-y-1 ml-2">
+                      {node.children.map(child => {
+                        if (child.type === 'group') return null
+                        const childCwd = child.id.startsWith('cwd:') ? child.id.slice(4) : child.id
+                        const childSessions = sessionsByCwd.get(childCwd)
+                        if (!childSessions || childSessions.length === 0) return null
+                        return (
+                          <SortableNode key={child.id} id={child.id}>
+                            <CwdNode cwd={childCwd} sessions={childSessions} />
+                          </SortableNode>
+                        )
+                      })}
+                    </div>
+                  )}
+                </SortableNode>
+              )
+            }
+            // Root-level session node
+            const cwd = node.id.startsWith('cwd:') ? node.id.slice(4) : node.id
+            const cwdSessions = sessionsByCwd.get(cwd)
+            if (!cwdSessions || cwdSessions.length === 0) return null
+            return (
+              <SortableNode key={node.id} id={node.id}>
+                <CwdNode cwd={cwd} sessions={cwdSessions} />
+              </SortableNode>
+            )
+          })}
 
-      {/* Unorganized section */}
-      {unorganized.length > 0 && (
-        <div>
-          {hasOrganized && (
-            <div className="text-[10px] text-muted-foreground/50 font-bold uppercase tracking-wider px-1 mb-1 flex items-center gap-2">
-              <span>Unorganized</span>
-              <span className="flex-1 h-px bg-border" />
+          {/* Drop target for new group */}
+          <div
+            className={cn(
+              'mt-2 transition-all',
+              isDragging ? 'opacity-100 max-h-16' : 'opacity-0 max-h-0 overflow-hidden',
+            )}
+          >
+            <NewGroupDropTarget />
+          </div>
+
+          {/* Unorganized section */}
+          {unorganized.length > 0 && (
+            <div>
+              {hasOrganized && (
+                <div className="text-[10px] text-muted-foreground/50 font-bold uppercase tracking-wider px-1 mb-1 flex items-center gap-2">
+                  <span>Unorganized</span>
+                  <span className="flex-1 h-px bg-border" />
+                </div>
+              )}
+              <div className="space-y-1">
+                {unorganized.map(({ cwd, sessions: cwdSessions }) => (
+                  <SortableNode key={`cwd:${cwd}`} id={`cwd:${cwd}`}>
+                    <CwdNode cwd={cwd} sessions={cwdSessions} />
+                  </SortableNode>
+                ))}
+              </div>
             </div>
           )}
-          <div className="space-y-1">
-            {unorganized.map(({ cwd, sessions: cwdSessions }) => (
-              <CwdNode key={cwd} cwd={cwd} sessions={cwdSessions} />
-            ))}
-          </div>
-        </div>
-      )}
+        </SortableContext>
+      </DndContext>
 
       {/* Inactive section */}
       {inactive.length > 0 && (
