@@ -13,6 +13,7 @@ import type {
   ProjectSettings,
   ProjectSettingsMap,
   Session,
+  SessionOrderV2,
   SubagentInfo,
   TaskInfo,
   TranscriptEntry,
@@ -72,7 +73,7 @@ interface SessionsState {
   tasks: Record<string, TaskInfo[]>
   projectSettings: ProjectSettingsMap
   globalSettings: Record<string, unknown>
-  sessionOrder: { organized: Array<{ cwd: string; group?: string }> }
+  sessionOrder: SessionOrderV2
   serverCapabilities: { voice: boolean }
   setServerCapabilities: (caps: { voice: boolean }) => void
   isConnected: boolean
@@ -112,7 +113,7 @@ interface SessionsState {
   setTranscript: (sessionId: string, entries: TranscriptEntry[]) => void
   setTasks: (sessionId: string, tasks: TaskInfo[]) => void
   setProjectSettings: (settings: ProjectSettingsMap) => void
-  setSessionOrder: (order: { organized: Array<{ cwd: string; group?: string }> }) => void
+  setSessionOrder: (order: SessionOrderV2) => void
   setConnected: (connected: boolean) => void
   setAgentConnected: (connected: boolean) => void
   setError: (error: string | null) => void
@@ -169,7 +170,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   tasks: {},
   projectSettings: {},
   globalSettings: {},
-  sessionOrder: { organized: [] },
+  sessionOrder: { version: 2, tree: [] },
   serverCapabilities: { voice: false },
   setServerCapabilities: caps => set({ serverCapabilities: caps }),
   isConnected: false,
@@ -528,22 +529,20 @@ export async function deleteProjectSettings(cwd: string): Promise<ProjectSetting
 }
 
 // Session order API
-export type SessionOrderData = { organized: Array<{ cwd: string; group?: string }> }
-
-export async function fetchSessionOrder(): Promise<SessionOrderData> {
+export async function fetchSessionOrder(): Promise<SessionOrderV2> {
   const res = await fetch(`${API_BASE}/api/session-order`)
-  if (!res.ok) return { organized: [] }
-  return res.json()
+  if (!res.ok) return { version: 2, tree: [] }
+  const data = await res.json()
+  // Handle legacy v1 response from old server
+  if (data.version !== 2) return { version: 2, tree: [] }
+  return data
 }
 
-export async function updateSessionOrder(
-  action: 'pin' | 'unpin' | 'move' | 'set',
-  payload: { cwd?: string; toIndex?: number; organized?: Array<{ cwd: string; group?: string }> },
-): Promise<void> {
+export async function saveSessionOrder(order: SessionOrderV2): Promise<void> {
   await fetch(`${API_BASE}/api/session-order`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action, ...payload }),
+    body: JSON.stringify(order),
   })
 }
 

@@ -81,6 +81,27 @@ export interface Session {
   }
 }
 
+// Session order tree types (v2)
+export interface SessionOrderGroup {
+  id: string
+  type: 'group'
+  name: string
+  children: SessionOrderNode[]
+  isOpen?: boolean
+}
+
+export interface SessionOrderSession {
+  id: string // "cwd:<path>" format
+  type: 'session'
+}
+
+export type SessionOrderNode = SessionOrderGroup | SessionOrderSession
+
+export interface SessionOrderV2 {
+  version: 2
+  tree: SessionOrderNode[]
+}
+
 export interface TranscriptImage {
   hash: string
   ext: string

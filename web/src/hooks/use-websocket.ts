@@ -34,7 +34,7 @@ interface DashboardMessage {
   taskId?: string
   done?: boolean
   settings?: Record<string, unknown>
-  order?: { organized: Array<{ cwd: string; group?: string }> }
+  order?: { version: number; tree: unknown[] }
   title?: string
   message?: string
 }
@@ -239,7 +239,7 @@ function processMessage(msg: DashboardMessage) {
     }
     case 'session_order_updated': {
       if (msg.order) {
-        useSessionsStore.getState().setSessionOrder(msg.order as { organized: Array<{ cwd: string; group?: string }> })
+        useSessionsStore.getState().setSessionOrder(msg.order as any)
       }
       break
     }

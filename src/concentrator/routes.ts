@@ -18,7 +18,7 @@ import {
   setProjectSettings,
 } from './project-settings'
 import { addSubscription, getSubscriptionCount, isPushConfigured, removeSubscription, sendPushToAll } from './push'
-import { getSessionOrder, moveSession, pinSession, setSessionOrder, unpinSession } from './session-order'
+import { getSessionOrder, setSessionOrder } from './session-order'
 import type { SessionStore } from './session-store'
 import { UI_HTML } from './ui'
 
@@ -779,19 +779,11 @@ Output a JSON array of strings. Each string should be the correct spelling of on
   app.get('/api/session-order', c => c.json(getSessionOrder()))
 
   app.post('/api/session-order', async c => {
-    const body = await c.req.json<{
-      action?: 'pin' | 'unpin' | 'move' | 'set'
-      cwd?: string
-      toIndex?: number
-      organized?: Array<{ cwd: string; group?: string }>
-    }>()
-
-    if (body.action === 'pin' && body.cwd) pinSession(body.cwd)
-    else if (body.action === 'unpin' && body.cwd) unpinSession(body.cwd)
-    else if (body.action === 'move' && body.cwd && body.toIndex !== undefined) moveSession(body.cwd, body.toIndex)
-    else if (body.action === 'set' && body.organized) setSessionOrder({ organized: body.organized })
-    else return c.json({ error: 'Invalid action' }, 400)
-
+    const body = await c.req.json<{ version: number; tree: unknown[] }>()
+    if (body.version !== 2 || !Array.isArray(body.tree)) {
+      return c.json({ error: 'Invalid session order: expected { version: 2, tree: [...] }' }, 400)
+    }
+    setSessionOrder(body as any)
     const order = getSessionOrder()
     broadcastToSubscribers(sessionStore, { type: 'session_order_updated', order })
     return c.json({ success: true, order })
