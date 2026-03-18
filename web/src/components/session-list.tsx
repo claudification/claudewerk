@@ -855,7 +855,7 @@ export function SessionList() {
                     onRename={name => handleRename(node.id, name)}
                   />
                   {!isCollapsed && (
-                    <div className="space-y-1 ml-2">
+                    <div className="space-y-1">
                       {node.children.map(child => {
                         if (child.type === 'group') return null
                         const childCwd = child.id.startsWith('cwd:') ? child.id.slice(4) : child.id
