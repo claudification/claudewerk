@@ -390,7 +390,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   }
 
   // Periodically mark idle sessions, clean stale agents, evict old sessions, and save state
-  const EVICTION_TTL_MS = 60 * 60 * 1000 // 1 hour after ending
+  const EVICTION_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours after ending
   const MAX_ENDED_SESSIONS = 50 // hard cap on ended sessions in memory
 
   setInterval(() => {
@@ -452,11 +452,22 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     }
   }, 10000)
 
-  // Auto-save state periodically (every 30 seconds)
+  // Debounced save - coalesces rapid mutations into a single write
+  let saveTimer: ReturnType<typeof setTimeout> | null = null
+  function scheduleSave(delayMs = 5000) {
+    if (!enablePersistence) return
+    if (saveTimer) clearTimeout(saveTimer)
+    saveTimer = setTimeout(() => {
+      saveTimer = null
+      saveState().catch(() => {})
+    }, delayMs)
+  }
+
+  // Also save periodically as a safety net
   if (enablePersistence) {
     setInterval(() => {
       saveState().catch(() => {})
-    }, 30000)
+    }, 60000)
   }
 
   function loadStateSync(): void {
@@ -1149,6 +1160,9 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         sessionId,
         session: toSessionSummary(session),
       })
+
+      // Persist immediately so ended sessions survive restarts
+      scheduleSave(1000)
     }
   }
 
@@ -1169,6 +1183,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         subagentTranscriptCache.delete(key)
       }
     }
+    scheduleSave(1000)
   }
 
   function getSessionEvents(sessionId: string, limit?: number, since?: number): HookEvent[] {
