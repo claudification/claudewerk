@@ -277,7 +277,7 @@ export function createRouter(options: RouteOptions): Hono {
   app.get('/file/:hash', async c => {
     const hash = c.req.param('hash').replace(/\.[a-z]+$/i, '') // strip extension
     const source = getImageSource(hash)
-    if (!source) return c.json({ error: 'Image not found' }, 404)
+    if (!source) return new Response(null, { status: 404 })
 
     if (source.type === 'blob') {
       return new Response(source.bytes, {
@@ -286,10 +286,10 @@ export function createRouter(options: RouteOptions): Hono {
     }
 
     const safePath = resolveInJail(source.path)
-    if (!safePath) return c.json({ error: 'Access denied' }, 403)
+    if (!safePath) return new Response(null, { status: 403 })
 
     const file = Bun.file(safePath)
-    if (!(await file.exists())) return c.json({ error: 'File not found on disk' }, 404)
+    if (!(await file.exists())) return new Response(null, { status: 404 })
 
     return new Response(file, {
       headers: { 'Content-Type': getMimeType(safePath), 'Cache-Control': 'public, max-age=3600' },
