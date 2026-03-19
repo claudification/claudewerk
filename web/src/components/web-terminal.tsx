@@ -232,10 +232,14 @@ export function WebTerminal({ wrapperId, onClose, popout }: WebTerminalProps) {
     sendWsMessage({ type: 'terminal_attach', wrapperId, cols, rows })
   }, [isConnected, wrapperId, sendWsMessage])
 
-  // Terminal-local shortcuts (Ctrl+, for settings, Ctrl+Shift+Q for close)
+  // Terminal-local shortcuts
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.ctrlKey && e.shiftKey && e.key === 'Q') {
+        e.preventDefault()
+        onClose()
+      }
+      if (e.ctrlKey && e.shiftKey && e.key === 'T') {
         e.preventDefault()
         onClose()
       }

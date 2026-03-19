@@ -895,7 +895,11 @@ export function SessionDetail() {
 
       {/* Terminal overlay - routed by wrapperId (physical PTY) */}
       {showTerminal && terminalWrapperId && (
-        <WebTerminal wrapperId={terminalWrapperId} onClose={() => setShowTerminal(false)} />
+        <WebTerminal wrapperId={terminalWrapperId} onClose={() => {
+          setShowTerminal(false)
+          const store = useSessionsStore.getState()
+          if (store.selectedSessionId) store.openTab(store.selectedSessionId, 'transcript')
+        }} />
       )}
 
       {/* Revive button for ended sessions */}
