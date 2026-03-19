@@ -101,9 +101,17 @@ export function createTranscriptWatcher(options: TranscriptWatcherOptions): Tran
 
       if (entries.length > 0) {
         entryCount += entries.length
-        // On initial read, only send the tail - concentrator ring buffer caps at 500 anyway
-        const toSend = isInitial && entries.length > 500 ? entries.slice(-500) : entries
-        onEntries(toSend, isInitial)
+        if (isInitial && entries.length > 500) {
+          // On initial read, send the tail (ring buffer caps at 500) but preserve
+          // metadata entries from earlier in the transcript (summary, title, pr-link, etc.)
+          const METADATA_TYPES = new Set(['summary', 'custom-title', 'agent-name', 'pr-link'])
+          const tail = entries.slice(-500)
+          const tailSet = new Set(tail)
+          const metadata = entries.filter(e => METADATA_TYPES.has((e as Record<string, unknown>).type as string) && !tailSet.has(e))
+          onEntries([...metadata, ...tail], isInitial)
+        } else {
+          onEntries(entries, isInitial)
+        }
       }
     } catch (err) {
       if (!stopped) {
