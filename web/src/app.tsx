@@ -149,6 +149,7 @@ function Dashboard() {
         const store = useSessionsStore.getState()
         if (store.showTerminal) {
           store.setShowTerminal(false)
+          if (store.selectedSessionId) store.openTab(store.selectedSessionId, 'transcript')
         } else {
           const session = store.sessions.find(s => s.id === store.selectedSessionId)
           if (session && canTerminal(session) && session.wrapperIds?.[0]) {

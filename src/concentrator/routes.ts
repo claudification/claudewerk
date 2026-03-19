@@ -235,6 +235,10 @@ interface SessionOverview {
   activeSubagentCount: number
   totalSubagentCount: number
   team?: TeamInfo
+  summary?: string
+  title?: string
+  agentName?: string
+  prLinks?: Session['prLinks']
   lastEvent?: { hookEvent: string; timestamp: number }
 }
 
