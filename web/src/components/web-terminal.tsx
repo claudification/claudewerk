@@ -105,6 +105,8 @@ export function WebTerminal({ wrapperId, onClose, popout }: WebTerminalProps) {
       if (e.ctrlKey && e.key === 'k') return false
       // Ctrl+, - settings
       if (e.ctrlKey && e.key === ',') return false
+      // Ctrl+Shift+T - toggle terminal (handled by app.tsx)
+      if (e.ctrlKey && e.shiftKey && e.key === 'T') return false
       // Ctrl+Shift+Q - close
       if (e.ctrlKey && e.shiftKey && e.key === 'Q') return false
       // Shift+Enter - send same as Alt+Enter (ESC + CR) so Claude Code treats it as newline
