@@ -338,6 +338,10 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       effortLevel: session.effortLevel,
       lastError: session.lastError,
       pendingAttention: session.pendingAttention,
+      summary: session.summary,
+      title: session.title,
+      agentName: session.agentName,
+      prLinks: session.prLinks,
       tokenUsage: session.tokenUsage,
       stats: session.stats,
       gitBranch: session.gitBranch,
@@ -1674,6 +1678,48 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         // Count compactions
         if (entry.type === 'compacted') {
           session.stats.compactionCount++
+        }
+
+        // Extract transcript-derived metadata from special entry types
+        if (entry.type === 'summary') {
+          const s = (entry as Record<string, unknown>).summary
+          if (typeof s === 'string' && s.trim()) {
+            session.summary = s.trim()
+            sessionChanged = true
+          }
+        }
+        if (entry.type === 'custom-title') {
+          const t = (entry as Record<string, unknown>).customTitle
+          if (typeof t === 'string' && t.trim()) {
+            session.title = t.trim()
+            sessionChanged = true
+          }
+        }
+        if (entry.type === 'agent-name') {
+          const n = (entry as Record<string, unknown>).agentName
+          if (typeof n === 'string' && n.trim()) {
+            session.agentName = n.trim()
+            sessionChanged = true
+          }
+        }
+        if (entry.type === 'pr-link') {
+          const e = entry as Record<string, unknown>
+          const prNumber = e.prNumber as number | undefined
+          const prUrl = e.prUrl as string | undefined
+          const prRepository = e.prRepository as string | undefined
+          if (prNumber && prUrl) {
+            if (!session.prLinks) session.prLinks = []
+            // Deduplicate by prUrl
+            if (!session.prLinks.some(p => p.prUrl === prUrl)) {
+              session.prLinks.push({
+                prNumber,
+                prUrl,
+                prRepository: prRepository || '',
+                timestamp: (e.timestamp as string) || new Date().toISOString(),
+              })
+              sessionChanged = true
+            }
+          }
         }
 
         if (entry.type !== 'assistant') continue

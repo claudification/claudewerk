@@ -153,7 +153,7 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
     selectSession(session.id)
   }
 
-  const displayName = ps?.label || lastPathSegments(session.cwd)
+  const displayName = session.title || ps?.label || lastPathSegments(session.cwd)
   const displayColor = ps?.color
 
   return (
@@ -313,6 +313,28 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
                 ` (${session.teammates.filter(t => t.status !== 'stopped').length}/${session.teammates.length})`}
             </span>
           )}
+        </div>
+      )}
+      {!compact && session.summary && (
+        <div className="mt-1 text-[10px] text-muted-foreground truncate" title={session.summary}>
+          {session.summary}
+        </div>
+      )}
+      {!compact && session.prLinks && session.prLinks.length > 0 && (
+        <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+          {session.prLinks.map(pr => (
+            <a
+              key={pr.prUrl}
+              href={pr.prUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              className="text-[10px] font-mono text-sky-400 hover:text-sky-300 transition-colors"
+              title={`${pr.prRepository}#${pr.prNumber}`}
+            >
+              PR#{pr.prNumber}
+            </a>
+          ))}
         </div>
       )}
     </div>

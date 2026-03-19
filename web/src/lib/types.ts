@@ -71,6 +71,10 @@ export interface Session {
     timestamp: number
   }
   tokenUsage?: { input: number; cacheCreation: number; cacheRead: number; output: number }
+  summary?: string
+  title?: string
+  agentName?: string
+  prLinks?: Array<{ prNumber: number; prUrl: string; prRepository: string; timestamp: string }>
   stats?: {
     totalInputTokens: number
     totalOutputTokens: number

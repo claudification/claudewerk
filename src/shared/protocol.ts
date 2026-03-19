@@ -593,6 +593,11 @@ export interface Session {
     timestamp: number
   }
   tokenUsage?: { input: number; cacheCreation: number; cacheRead: number; output: number }
+  // Transcript-derived metadata (from special JSONL entry types)
+  summary?: string // AI-generated session summary
+  title?: string // custom session title (from /rename or auto-generated)
+  agentName?: string // agent/skill name (for --agent sessions)
+  prLinks?: Array<{ prNumber: number; prUrl: string; prRepository: string; timestamp: string }>
   stats: {
     totalInputTokens: number
     totalOutputTokens: number
@@ -729,6 +734,10 @@ export interface SessionSummary {
   effortLevel?: string
   lastError?: Session['lastError']
   pendingAttention?: Session['pendingAttention']
+  summary?: string
+  title?: string
+  agentName?: string
+  prLinks?: Session['prLinks']
   tokenUsage?: { input: number; cacheCreation: number; cacheRead: number; output: number }
   stats: Session['stats']
   gitBranch?: string

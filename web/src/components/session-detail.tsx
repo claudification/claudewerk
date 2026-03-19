@@ -354,7 +354,7 @@ export function SessionDetail() {
                     </span>
                   )}
                   <span style={ps?.color ? { color: ps.color } : undefined}>
-                    {ps?.label || session.cwd.split('/').slice(-2).join('/')}
+                    {session.title || ps?.label || session.cwd.split('/').slice(-2).join('/')}
                   </span>
                   <span>
                     {' · '}
@@ -573,6 +573,26 @@ export function SessionDetail() {
 
                 {/* CWD */}
                 <div className="text-[10px] text-muted-foreground truncate">{session.cwd}</div>
+                {session.summary && (
+                  <div className="text-[10px] text-muted-foreground/70 truncate" title={session.summary}>
+                    {session.summary}
+                  </div>
+                )}
+                {session.prLinks && session.prLinks.length > 0 && (
+                  <div className="flex items-center gap-2 mt-0.5">
+                    {session.prLinks.map(pr => (
+                      <a
+                        key={pr.prUrl}
+                        href={pr.prUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[10px] font-mono text-sky-400 hover:text-sky-300 hover:underline transition-colors"
+                      >
+                        {pr.prRepository.split('/').pop()}#{pr.prNumber}
+                      </a>
+                    ))}
+                  </div>
+                )}
               </div>
             )
           })()}
