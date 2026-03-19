@@ -88,23 +88,27 @@ const InputBar = memo(function InputBar({ sessionId }: { sessionId: string }) {
 
   async function handleSend() {
     if (!inputValue.trim() || isSending) return
+    const text = inputValue
     haptic('tap')
+    // Clear optimistically -- restore on failure
+    setInputValue('')
+    useSessionsStore.getState().setInputDraft(sessionId, '')
     setIsSending(true)
     try {
-      const success = await sendInput(sessionId, inputValue)
-      if (success) {
-        setInputValue('')
-        useSessionsStore.getState().setInputDraft(sessionId, '')
-      } else {
+      const success = await sendInput(sessionId, text)
+      if (!success) {
         haptic('error')
         console.error('[input] sendInput failed for session', sessionId)
+        setInputValue(text) // restore on failure
+        useSessionsStore.getState().setInputDraft(sessionId, text)
       }
     } catch (err) {
       haptic('error')
       console.error('[input] sendInput error:', err)
+      setInputValue(text) // restore on failure
+      useSessionsStore.getState().setInputDraft(sessionId, text)
     } finally {
       setIsSending(false)
-      // Re-focus on desktop only - on mobile this triggers the full-screen compose modal
       if (!isMobileViewport()) {
         requestAnimationFrame(() => containerRef.current?.querySelector('textarea')?.focus())
       }
