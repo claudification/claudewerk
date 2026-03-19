@@ -22,18 +22,43 @@ import { getSessionOrder, setSessionOrder } from './session-order'
 import type { SessionStore } from './session-store'
 import { UI_HTML } from './ui'
 
-// ─── Image/Blob Registry (migrated from api.ts) ───────────────────────
+// ─── Image/Blob Store (disk-only, survives restarts) ────────────────────
 
-const fileRegistry = new Map<string, string>()
-const blobRegistry = new Map<string, { bytes: Uint8Array; mediaType: string; createdAt: number }>()
+let blobDir = '' // set by initBlobStore()
 
-const BLOB_MAX_AGE_MS = 24 * 60 * 60 * 1000
+const BLOB_MAX_AGE_MS = 48 * 60 * 60 * 1000 // 48h TTL
+
+function initBlobStore(cacheDir: string): void {
+  blobDir = join(cacheDir, 'blobs')
+  mkdirSync(blobDir, { recursive: true })
+  // Count existing blobs
+  try {
+    const count = readdirSync(blobDir).filter(f => f.endsWith('.meta')).length
+    if (count > 0) console.log(`[blobs] ${count} blobs on disk`)
+  } catch { /* empty dir */ }
+}
+
+// Evict expired blobs from disk hourly
 setInterval(
   () => {
+    if (!blobDir) return
     const now = Date.now()
-    for (const [hash, entry] of blobRegistry) {
-      if (now - entry.createdAt > BLOB_MAX_AGE_MS) blobRegistry.delete(hash)
-    }
+    let evicted = 0
+    try {
+      for (const file of readdirSync(blobDir)) {
+        if (!file.endsWith('.meta')) continue
+        try {
+          const meta = JSON.parse(readFileSync(join(blobDir, file), 'utf8'))
+          if (now - meta.createdAt > BLOB_MAX_AGE_MS) {
+            const hash = file.replace('.meta', '')
+            try { unlinkSync(join(blobDir, hash)) } catch {}
+            try { unlinkSync(join(blobDir, file)) } catch {}
+            evicted++
+          }
+        } catch { /* corrupt meta */ }
+      }
+    } catch { /* dir gone */ }
+    if (evicted > 0) console.log(`[blobs] Evicted ${evicted} expired blobs`)
   },
   60 * 60 * 1000,
 )
@@ -48,29 +73,42 @@ function hashString(input: string): string {
 }
 
 export function registerFilePath(path: string): string {
+  if (!blobDir) return hashString(path)
+  // Copy file to blob store so it survives even if source disappears
   const hash = hashString(path)
-  fileRegistry.set(hash, path)
+  const blobPath = join(blobDir, hash)
+  if (!existsSync(blobPath)) {
+    try {
+      const ext = path.split('.').pop()?.toLowerCase() || 'png'
+      const mediaType = `image/${ext === 'jpg' ? 'jpeg' : ext}`
+      writeFileSync(blobPath, readFileSync(path))
+      writeFileSync(`${blobPath}.meta`, JSON.stringify({ mediaType, createdAt: Date.now() }))
+    } catch { /* source file might not exist yet */ }
+  }
   return hash
 }
 
 export function registerBlob(data: string, mediaType: string): string {
   const key = `${data.length}:${data.slice(0, 200)}`
   const hash = hashString(key)
-  if (!blobRegistry.has(hash)) {
-    const bytes = Buffer.from(data, 'base64')
-    blobRegistry.set(hash, { bytes: new Uint8Array(bytes), mediaType, createdAt: Date.now() })
+  if (blobDir) {
+    const blobPath = join(blobDir, hash)
+    if (!existsSync(blobPath)) {
+      const bytes = Buffer.from(data, 'base64')
+      writeFileSync(blobPath, bytes)
+      writeFileSync(`${blobPath}.meta`, JSON.stringify({ mediaType, createdAt: Date.now() }))
+    }
   }
   return hash
 }
 
-function getImageSource(
-  hash: string,
-): { type: 'file'; path: string } | { type: 'blob'; bytes: Uint8Array; mediaType: string } | null {
-  const blob = blobRegistry.get(hash)
-  if (blob) return { type: 'blob', ...blob }
-  const path = fileRegistry.get(hash)
-  if (path) return { type: 'file', path }
-  return null
+function storeBlobDirect(hash: string, bytes: Uint8Array, mediaType: string): void {
+  if (!blobDir) return
+  const blobPath = join(blobDir, hash)
+  if (!existsSync(blobPath)) {
+    writeFileSync(blobPath, bytes)
+    writeFileSync(`${blobPath}.meta`, JSON.stringify({ mediaType, createdAt: Date.now() }))
+  }
 }
 
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'heic', 'svg']
@@ -245,6 +283,9 @@ export interface RouteOptions {
 export function createRouter(options: RouteOptions): Hono {
   const { sessionStore, webDir, vapidPublicKey, rclaudeSecret, cacheDir, serverStartTime = Date.now() } = options
 
+  // Initialize disk-backed blob store
+  if (cacheDir) initBlobStore(cacheDir)
+
   const app = new Hono()
 
   // ─── Auth middleware ───────────────────────────────────────────────
@@ -275,24 +316,22 @@ export function createRouter(options: RouteOptions): Hono {
 
   // ─── File serving by hash ──────────────────────────────────────────
   app.get('/file/:hash', async c => {
+    if (!blobDir) return new Response(null, { status: 503 })
     const hash = c.req.param('hash').replace(/\.[a-z]+$/i, '') // strip extension
-    const source = getImageSource(hash)
-    if (!source) return new Response(null, { status: 404 })
+    const blobPath = join(blobDir, hash)
+    const metaPath = `${blobPath}.meta`
 
-    if (source.type === 'blob') {
-      return new Response(source.bytes, {
-        headers: { 'Content-Type': source.mediaType, 'Cache-Control': 'public, max-age=86400' },
-      })
-    }
-
-    const safePath = resolveInJail(source.path)
-    if (!safePath) return new Response(null, { status: 403 })
-
-    const file = Bun.file(safePath)
+    const file = Bun.file(blobPath)
     if (!(await file.exists())) return new Response(null, { status: 404 })
 
+    let mediaType = 'application/octet-stream'
+    try {
+      const meta = JSON.parse(readFileSync(metaPath, 'utf8'))
+      mediaType = meta.mediaType || mediaType
+    } catch { /* no meta, use generic type */ }
+
     return new Response(file, {
-      headers: { 'Content-Type': getMimeType(safePath), 'Cache-Control': 'public, max-age=3600' },
+      headers: { 'Content-Type': mediaType, 'Cache-Control': 'public, max-age=86400' },
     })
   })
 
@@ -762,9 +801,7 @@ Output a JSON array of strings. Each string should be the correct spelling of on
 
     const key = `${bytes.length}:${Array.from(bytes.slice(0, 200)).join(',')}`
     const hash = hashString(key)
-    if (!blobRegistry.has(hash)) {
-      blobRegistry.set(hash, { bytes, mediaType, createdAt: Date.now() })
-    }
+    storeBlobDirect(hash, bytes, mediaType)
 
     const ext = mediaType.split('/')[1]?.replace('jpeg', 'jpg') || 'png'
     const filePath = `/file/${hash}.${ext}`
