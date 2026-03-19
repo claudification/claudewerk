@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronDown, ChevronRight, ChevronUp, Terminal } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, ChevronUp, Copy, Terminal } from 'lucide-react'
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -468,7 +468,7 @@ export function SessionDetail() {
 
                 {/* Row 2: Context window bar */}
                 {tu && (
-                  <div className="space-y-1">
+                  <div className="space-y-0.5">
                     <div className="flex items-center gap-2">
                       <span className="text-muted-foreground text-[10px] w-16">context</span>
                       <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
@@ -480,13 +480,16 @@ export function SessionDetail() {
                           style={{ width: `${contextPct}%` }}
                         />
                       </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="w-16" />
                       <span
                         className={cn(
-                          'text-[10px] w-16 text-right',
-                          contextPct < 60 ? 'text-emerald-400' : contextPct < 85 ? 'text-amber-400' : 'text-red-400',
+                          'text-[10px] font-mono',
+                          contextPct < 60 ? 'text-emerald-400/70' : contextPct < 85 ? 'text-amber-400/70' : 'text-red-400/70',
                         )}
                       >
-                        {Math.round(contextTotal / 1000)}K / {Math.round(ctxWindow / 1000)}K
+                        {Math.round(contextTotal / 1000)}K / {Math.round(ctxWindow / 1000)}K ({contextPct}%)
                       </span>
                     </div>
                   </div>
@@ -576,7 +579,20 @@ export function SessionDetail() {
                 )}
 
                 {/* CWD */}
-                <div className="text-[10px] text-muted-foreground truncate">{session.cwd}</div>
+                <div className="flex items-center gap-1 group/cwd">
+                  <span className="text-[10px] text-muted-foreground truncate">{session.cwd}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(session.cwd)
+                      haptic('tap')
+                    }}
+                    className="shrink-0 text-muted-foreground/30 hover:text-muted-foreground [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/cwd:opacity-100 transition-opacity"
+                    title="Copy path"
+                  >
+                    <Copy className="w-3 h-3" />
+                  </button>
+                </div>
                 {session.summary && (
                   <div className="text-[10px] text-muted-foreground/70 truncate" title={session.summary}>
                     {session.summary}
