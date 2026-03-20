@@ -17,7 +17,8 @@ import { DEBUG, debug } from './debug'
 import { FileEditor } from './file-editor'
 import { startLocalServer, stopLocalServer } from './local-server'
 import { getTerminalSize, type PtyProcess, setupTerminalPassthrough, spawnClaude } from './pty-spawn'
-import { cleanupSettings, writeMergedSettings } from './settings-merge'
+import { initMcpChannel, pushChannelMessage, closeMcpChannel, isMcpChannelReady } from './mcp-channel'
+import { cleanupMcpConfig, cleanupSettings, writeMcpConfig, writeMergedSettings } from './settings-merge'
 import { createTranscriptWatcher, type TranscriptWatcher } from './transcript-watcher'
 import { createWsClient, type WsClient } from './ws-client'
 
@@ -164,6 +165,7 @@ async function main() {
   let concentratorSecret = process.env.RCLAUDE_SECRET
   let noConcentrator = false
   let noTerminal = false
+  let channelEnabled = !!process.env.RCLAUDE_CHANNELS
   const claudeArgs: string[] = []
 
   debug(`Concentrator URL: ${concentratorUrl} (source: ${process.env.RCLAUDE_CONCENTRATOR ? 'env' : 'default'})`)
@@ -183,6 +185,8 @@ async function main() {
       noConcentrator = true
     } else if (arg === '--no-terminal') {
       noTerminal = true
+    } else if (arg === '--channels') {
+      channelEnabled = true
     } else {
       claudeArgs.push(arg)
     }
@@ -360,6 +364,17 @@ async function main() {
       },
       onInput(input, crDelay) {
         if (!ptyProcess) return
+
+        // Channel mode: push through MCP instead of PTY injection
+        if (channelEnabled && isMcpChannelReady()) {
+          const sent = pushChannelMessage(input)
+          if (sent) {
+            debug(`[channel] Input routed via MCP channel (${input.length} chars)`)
+            return
+          }
+          debug('[channel] MCP push failed, falling back to PTY')
+        }
+
         const trimmed = input.replace(/[\r\n]+$/, '')
         const lines = trimmed.split('\n')
 
@@ -773,9 +788,27 @@ async function main() {
     }
   }
 
-  // Start local HTTP server for hook callbacks
+  // Initialize MCP channel if enabled
+  if (channelEnabled) {
+    debug('[channel] Channel mode enabled')
+    initMcpChannel({
+      onReply(message) {
+        if (wsClient?.isConnected()) {
+          wsClient.send({ type: 'channel_reply', sessionId: claudeSessionId || internalId, message })
+        }
+      },
+      onNotify(message, title) {
+        if (wsClient?.isConnected()) {
+          wsClient.send({ type: 'notify', sessionId: claudeSessionId || internalId, message, title })
+        }
+      },
+    })
+  }
+
+  // Start local HTTP server for hook callbacks (+ MCP endpoint when channels enabled)
   const { server: localServer, port: localServerPort } = await startLocalServer({
     sessionId: internalId,
+    channelEnabled,
     onHookEvent(event: HookEvent) {
       // Extract Claude's real session ID from SessionStart
       if (event.hookEvent === 'SessionStart' && event.data) {
@@ -925,6 +958,12 @@ async function main() {
   // Generate merged settings with hook injection
   const settingsPath = await writeMergedSettings(internalId, localServerPort)
 
+  // Write .mcp.json for channel support
+  if (channelEnabled) {
+    await writeMcpConfig(cwd, localServerPort)
+    debug(`[channel] Wrote .mcp.json with rclaude MCP server on port ${localServerPort}`)
+  }
+
   // Set terminal title to last 2 path segments (shows in tmux)
   setTerminalTitle(cwd)
 
@@ -967,8 +1006,13 @@ async function main() {
   // Convert WS URL to HTTP for tools/scripts that need to call the concentrator REST API
   const concentratorHttpUrl = noConcentrator ? undefined : wsToHttpUrl(concentratorUrl)
 
+  // Add --channels flag for MCP channel support (use dev flag until CC officially supports http channels)
+  const finalClaudeArgs = channelEnabled
+    ? ['--dangerously-load-development-channels', 'server:rclaude', ...claudeArgs]
+    : claudeArgs
+
   ptyProcess = spawnClaude({
-    args: claudeArgs,
+    args: finalClaudeArgs,
     settingsPath,
     sessionId: internalId,
     localServerPort,
@@ -1009,6 +1053,10 @@ async function main() {
     stopLocalServer(localServer)
     wsClient?.close()
     cleanupSettings(internalId).catch(() => {})
+    if (channelEnabled) {
+      closeMcpChannel().catch(() => {})
+      cleanupMcpConfig(cwd).catch(() => {})
+    }
     try {
       unlinkSync(promptFile)
     } catch {}

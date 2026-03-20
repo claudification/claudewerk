@@ -183,6 +183,46 @@ export async function writeMergedSettings(sessionId: string, port: number): Prom
 }
 
 /**
+ * Write .mcp.json for channel support.
+ * Merges rclaude MCP server into existing project .mcp.json without overwriting user servers.
+ */
+export async function writeMcpConfig(cwd: string, port: number): Promise<void> {
+  const mcpPath = join(cwd, '.mcp.json')
+  let existing: Record<string, unknown> = {}
+  try {
+    const file = Bun.file(mcpPath)
+    if (await file.exists()) {
+      existing = JSON.parse(await file.text())
+    }
+  } catch { /* no existing config or parse error */ }
+
+  const mcpServers = (existing.mcpServers || {}) as Record<string, unknown>
+  mcpServers.rclaude = {
+    type: 'http',
+    url: `http://localhost:${port}/mcp`,
+  }
+
+  await Bun.write(mcpPath, JSON.stringify({ ...existing, mcpServers }, null, 2) + '\n')
+}
+
+/**
+ * Remove rclaude entry from .mcp.json on cleanup
+ */
+export async function cleanupMcpConfig(cwd: string): Promise<void> {
+  const mcpPath = join(cwd, '.mcp.json')
+  try {
+    const file = Bun.file(mcpPath)
+    if (!(await file.exists())) return
+    const config = JSON.parse(await file.text())
+    const mcpServers = config.mcpServers as Record<string, unknown> | undefined
+    if (mcpServers?.rclaude) {
+      delete mcpServers.rclaude
+      await Bun.write(mcpPath, JSON.stringify(config, null, 2) + '\n')
+    }
+  } catch { /* ignore */ }
+}
+
+/**
  * Clean up the temp settings file
  */
 export async function cleanupSettings(sessionId: string): Promise<void> {

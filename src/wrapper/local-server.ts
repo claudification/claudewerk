@@ -1,15 +1,18 @@
 /**
  * Local HTTP Server
  * Receives hook callbacks from claude via curl POST
+ * Optionally serves MCP Streamable HTTP endpoint for channel input
  */
 
 import type { Server } from 'bun'
 import type { HookEvent, HookEventData, HookEventType } from '../shared/protocol'
+import { handleMcpRequest } from './mcp-channel'
 
 type HttpServer = Server<unknown>
 
 export interface LocalServerOptions {
   sessionId: string
+  channelEnabled: boolean
   onHookEvent: (event: HookEvent) => void
   onNotify?: (message: string, title?: string) => void
 }
@@ -39,7 +42,7 @@ async function findAvailablePort(startPort: number): Promise<number> {
  * Create and start the local HTTP server for hook callbacks
  */
 export async function startLocalServer(options: LocalServerOptions): Promise<{ server: HttpServer; port: number }> {
-  const { sessionId, onHookEvent, onNotify } = options
+  const { sessionId, channelEnabled, onHookEvent, onNotify } = options
 
   const port = await findAvailablePort(19000 + Math.floor(Math.random() * 1000))
 
@@ -117,6 +120,11 @@ export async function startLocalServer(options: LocalServerOptions): Promise<{ s
           console.error(`Error processing hook ${eventType}:`, error)
           return new Response('Error processing hook', { status: 500 })
         }
+      }
+
+      // MCP Streamable HTTP endpoint for channel communication
+      if (channelEnabled && (url.pathname === '/mcp' || url.pathname.startsWith('/mcp/'))) {
+        return handleMcpRequest(req)
       }
 
       return new Response('Not found', { status: 404 })

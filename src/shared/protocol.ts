@@ -270,6 +270,12 @@ export interface WrapperNotify {
   title?: string
 }
 
+export interface ChannelReply {
+  type: 'channel_reply'
+  sessionId: string
+  message: string
+}
+
 export type WrapperMessage =
   | HookEvent
   | SessionMeta
@@ -284,6 +290,7 @@ export type WrapperMessage =
   | FileResponse
   | BgTaskOutput
   | WrapperNotify
+  | ChannelReply
 
 // Concentrator -> Wrapper messages
 export interface Ack {
