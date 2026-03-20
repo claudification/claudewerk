@@ -22,8 +22,8 @@ import {
 import { debug } from './debug'
 
 export interface McpChannelCallbacks {
-  onReply?: (message: string, meta?: Record<string, string>) => void
   onNotify?: (message: string, title?: string) => void
+  onShareFile?: (filePath: string) => Promise<string | null> // returns public URL or null
   onDisconnect?: () => void
 }
 
@@ -55,20 +55,9 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
     },
   )
 
-  // Register tools for two-way communication
+  // Register MCP tools for dashboard communication
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
-      {
-        name: 'reply',
-        description: 'Send a message back to the rclaude dashboard. Use this to communicate structured responses, status updates, or completion notifications to the remote user.',
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            message: { type: 'string', description: 'The message to send to the dashboard' },
-          },
-          required: ['message'],
-        },
-      },
       {
         name: 'notify',
         description: 'Send a push notification to the user\'s devices (phone, browser). Use for important alerts that need attention even when the dashboard is not in focus.',
@@ -81,6 +70,17 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
           required: ['message'],
         },
       },
+      {
+        name: 'share_file',
+        description: 'Upload a local file to the rclaude concentrator and get a public URL back. To present the file to the user, use markdown image syntax: ![description](url). Works for images, screenshots, build artifacts, or any file.',
+        inputSchema: {
+          type: 'object' as const,
+          properties: {
+            file_path: { type: 'string', description: 'Absolute path to the local file to share' },
+          },
+          required: ['file_path'],
+        },
+      },
     ],
   }))
 
@@ -89,13 +89,6 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
     const params = (args || {}) as Record<string, string>
 
     switch (name) {
-      case 'reply': {
-        const message = params.message
-        if (!message) return { content: [{ type: 'text', text: 'Error: message is required' }], isError: true }
-        callbacks.onReply?.(message)
-        debug(`[channel] reply: ${message.slice(0, 80)}`)
-        return { content: [{ type: 'text', text: 'Sent to dashboard' }] }
-      }
       case 'notify': {
         const message = params.message
         const title = params.title
@@ -103,6 +96,14 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
         callbacks.onNotify?.(message, title)
         debug(`[channel] notify: ${message.slice(0, 80)}`)
         return { content: [{ type: 'text', text: 'Notification sent' }] }
+      }
+      case 'share_file': {
+        const filePath = params.file_path
+        if (!filePath) return { content: [{ type: 'text', text: 'Error: file_path is required' }], isError: true }
+        const url = await callbacks.onShareFile?.(filePath)
+        if (!url) return { content: [{ type: 'text', text: `Failed to upload ${filePath}` }], isError: true }
+        debug(`[channel] share_file: ${filePath} -> ${url}`)
+        return { content: [{ type: 'text', text: url }] }
       }
       default:
         return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true }

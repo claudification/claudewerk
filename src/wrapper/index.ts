@@ -815,16 +815,40 @@ async function main() {
   if (channelEnabled) {
     diag('channel', 'Channel mode enabled')
     initMcpChannel({
-      onReply(message) {
-        diag('channel', `Reply: ${message.slice(0, 80)}`)
-        if (wsClient?.isConnected()) {
-          wsClient.send({ type: 'channel_reply', sessionId: claudeSessionId || internalId, message })
-        }
-      },
       onNotify(message, title) {
         diag('channel', `Notify: ${title ? `[${title}] ` : ''}${message.slice(0, 80)}`)
         if (wsClient?.isConnected()) {
           wsClient.send({ type: 'notify', sessionId: claudeSessionId || internalId, message, title })
+        }
+      },
+      async onShareFile(filePath) {
+        // Upload file to concentrator blob store, get public URL back
+        const httpUrl = noConcentrator ? null : wsToHttpUrl(concentratorUrl)
+        if (!httpUrl) return null
+        try {
+          const file = Bun.file(filePath)
+          if (!(await file.exists())) {
+            debug(`[channel] share_file: file not found: ${filePath}`)
+            return null
+          }
+          const res = await fetch(`${httpUrl}/api/files`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': file.type || 'application/octet-stream',
+              ...(concentratorSecret ? { Authorization: `Bearer ${concentratorSecret}` } : {}),
+            },
+            body: file,
+          })
+          if (!res.ok) {
+            debug(`[channel] share_file: upload failed: ${res.status}`)
+            return null
+          }
+          const data = await res.json() as { url?: string }
+          diag('channel', `Shared: ${filePath} -> ${data.url}`)
+          return data.url || null
+        } catch (err) {
+          debug(`[channel] share_file error: ${err instanceof Error ? err.message : err}`)
+          return null
         }
       },
       onDisconnect() {
@@ -1030,10 +1054,11 @@ async function main() {
             'The user may be on their phone or another device, not at the terminal.',
             '',
             '**Available MCP tools (rclaude server):**',
-            '- `mcp__rclaude__reply` - Send a structured message back to the dashboard',
-            '- `mcp__rclaude__notify` - Send a push notification to the user\'s devices',
+            '- `mcp__rclaude__notify` - Send a push notification to the user\'s devices (phone, browser)',
+            '- `mcp__rclaude__share_file` - Upload a local file and get a public URL for the dashboard user',
             '',
             'Prefer the MCP `notify` tool over the curl endpoint when the channel is active.',
+            'Use `share_file` to share screenshots, images, build artifacts, or any file the user needs to see.',
           ]
         : []),
     ].join('\n'),
