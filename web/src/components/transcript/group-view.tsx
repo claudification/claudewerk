@@ -21,8 +21,8 @@ import { CopyMenu } from '../copy-menu'
 import { Markdown } from '../markdown'
 import { AgentTranscriptInline } from './agent-views'
 import type { DisplayGroup, TaskNotification } from './grouping'
-import { BashOutput } from './tool-renderers'
 import { MemoizedToolLine } from './tool-line'
+import { BashOutput } from './tool-renderers'
 
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`
@@ -144,7 +144,10 @@ export function GroupView({
         if (channelMatch) {
           const attrs = channelMatch[1]
           const msg = channelMatch[2].trim()
-          const getAttr = (name: string) => { const m = attrs.match(new RegExp(`${name}="([^"]*)"`)); return m?.[1] }
+          const getAttr = (name: string) => {
+            const m = attrs.match(new RegExp(`${name}="([^"]*)"`))
+            return m?.[1]
+          }
           const source = getAttr('source') || 'unknown'
           const sender = getAttr('sender')
           const fromProject = getAttr('from_project')
@@ -225,17 +228,14 @@ export function GroupView({
         >
           {label}
         </span>
-        {channelServer && (
-          channelServer === 'rclaude' ? (
-            <span className="text-[9px] text-teal-400/50 font-mono">
-              via channel
-            </span>
+        {channelServer &&
+          (channelServer === 'rclaude' ? (
+            <span className="text-[9px] text-teal-400/50 font-mono">via channel</span>
           ) : (
             <span className="px-1.5 py-0.5 text-[10px] font-bold bg-teal-400/20 text-teal-400 border border-teal-400/50 animate-pulse">
               CHANNEL: {channelServer}
             </span>
-          )
-        )}
+          ))}
         {effortBadge && (
           <span className="px-1.5 py-0.5 text-[10px] font-bold bg-orange-400/20 text-orange-400">
             {effortBadge.symbol} {effortBadge.label}

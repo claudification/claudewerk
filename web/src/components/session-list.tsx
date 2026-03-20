@@ -218,7 +218,9 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
           </span>
           {session.compacting && <span className="text-[9px] text-amber-400 font-bold animate-pulse">COMPACT</span>}
           {session.lastError && <span className="text-[9px] text-destructive font-bold">ERROR</span>}
-          {session.pendingAttention && <span className="text-[9px] text-amber-400 font-bold animate-pulse">WAITING</span>}
+          {session.pendingAttention && (
+            <span className="text-[9px] text-amber-400 font-bold animate-pulse">WAITING</span>
+          )}
           {session.status === 'ended' && <DismissButton sessionId={session.id} />}
         </div>
       )}

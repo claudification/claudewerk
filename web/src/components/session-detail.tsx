@@ -91,9 +91,7 @@ const InputBar = memo(function InputBar({ sessionId }: { sessionId: string }) {
   const sessionRef = useRef(sessionId)
 
   // Track pendingAttention with 15s delay before showing
-  const pendingAttention = useSessionsStore(
-    s => s.sessions.find(sess => sess.id === sessionId)?.pendingAttention,
-  )
+  const pendingAttention = useSessionsStore(s => s.sessions.find(sess => sess.id === sessionId)?.pendingAttention)
   useEffect(() => {
     if (!pendingAttention) {
       setShowAttention(false)
@@ -161,18 +159,38 @@ const InputBar = memo(function InputBar({ sessionId }: { sessionId: string }) {
   return (
     <div ref={containerRef} className="shrink-0 p-3 border-t border-border bg-background z-10">
       {showAttention && pendingAttention && (
-        <div className="mb-2 px-3 py-2 bg-amber-500/10 border border-amber-500/30 rounded font-mono text-xs text-amber-400 flex items-center gap-2 animate-pulse">
+        <div
+          className="mb-2 px-3 py-2 bg-amber-500/10 border border-amber-500/30 rounded font-mono text-xs text-amber-400 flex items-center gap-2 animate-pulse cursor-pointer hover:bg-amber-500/20 transition-colors"
+          onClick={() => {
+            haptic('tap')
+            const store = useSessionsStore.getState()
+            if (store.selectedSessionId) store.openTab(store.selectedSessionId, 'tty')
+          }}
+        >
           <span className="text-amber-500 font-bold shrink-0">!</span>
           <span className="flex-1">
             {pendingAttention.type === 'permission' && (
-              <>TTY needs permission for <span className="text-amber-200">{pendingAttention.toolName || 'tool'}</span>{pendingAttention.filePath && <> on <span className="text-amber-200">{pendingAttention.filePath.split('/').pop()}</span></>}</>
+              <>
+                TTY needs permission for <span className="text-amber-200">{pendingAttention.toolName || 'tool'}</span>
+                {pendingAttention.filePath && (
+                  <>
+                    {' '}
+                    on <span className="text-amber-200">{pendingAttention.filePath.split('/').pop()}</span>
+                  </>
+                )}
+              </>
             )}
             {pendingAttention.type === 'elicitation' && (
-              <>TTY is asking a question{pendingAttention.question && <>: <span className="text-amber-200">{pendingAttention.question.slice(0, 60)}</span></>}</>
+              <>
+                TTY is asking a question
+                {pendingAttention.question && (
+                  <>
+                    : <span className="text-amber-200">{pendingAttention.question.slice(0, 60)}</span>
+                  </>
+                )}
+              </>
             )}
-            {pendingAttention.type === 'ask' && (
-              <>TTY is waiting for your answer</>
-            )}
+            {pendingAttention.type === 'ask' && <>TTY is waiting for your answer</>}
           </span>
           <span className="text-amber-500/60 shrink-0 text-[10px]">open terminal</span>
         </div>
@@ -508,17 +526,19 @@ export function SessionDetail() {
                     </span>
                   )}
                   <span className="text-muted-foreground text-[10px]">{session.id.slice(0, 8)}</span>
-                  {session.capabilities && session.capabilities.length > 0 && session.capabilities.map(cap => (
-                    <span
-                      key={cap}
-                      className={cn(
-                        'px-1.5 py-0.5 text-[9px] uppercase font-bold',
-                        cap === 'channel' ? 'bg-teal-400/20 text-teal-400' : 'bg-sky-400/20 text-sky-400',
-                      )}
-                    >
-                      {cap}
-                    </span>
-                  ))}
+                  {session.capabilities &&
+                    session.capabilities.length > 0 &&
+                    session.capabilities.map(cap => (
+                      <span
+                        key={cap}
+                        className={cn(
+                          'px-1.5 py-0.5 text-[9px] uppercase font-bold',
+                          cap === 'channel' ? 'bg-teal-400/20 text-teal-400' : 'bg-sky-400/20 text-sky-400',
+                        )}
+                      >
+                        {cap}
+                      </span>
+                    ))}
                 </div>
 
                 {/* Row 2: Context window bar */}
@@ -541,7 +561,11 @@ export function SessionDetail() {
                       <span
                         className={cn(
                           'text-[10px] font-mono',
-                          contextPct < 60 ? 'text-emerald-400/70' : contextPct < 85 ? 'text-amber-400/70' : 'text-red-400/70',
+                          contextPct < 60
+                            ? 'text-emerald-400/70'
+                            : contextPct < 85
+                              ? 'text-amber-400/70'
+                              : 'text-red-400/70',
                         )}
                       >
                         {Math.round(contextTotal / 1000)}K / {Math.round(ctxWindow / 1000)}K ({contextPct}%)
@@ -972,11 +996,14 @@ export function SessionDetail() {
 
       {/* Terminal overlay - routed by wrapperId (physical PTY) */}
       {showTerminal && terminalWrapperId && (
-        <WebTerminal wrapperId={terminalWrapperId} onClose={() => {
-          setShowTerminal(false)
-          const store = useSessionsStore.getState()
-          if (store.selectedSessionId) store.openTab(store.selectedSessionId, 'transcript')
-        }} />
+        <WebTerminal
+          wrapperId={terminalWrapperId}
+          onClose={() => {
+            setShowTerminal(false)
+            const store = useSessionsStore.getState()
+            if (store.selectedSessionId) store.openTab(store.selectedSessionId, 'transcript')
+          }}
+        />
       )}
 
       {/* Revive button for ended sessions */}
