@@ -12,6 +12,7 @@
  * Two-way: Claude calls mcp tools (reply, notify) -> rclaude -> concentrator -> dashboard
  */
 
+import { randomUUID } from 'node:crypto'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import {
@@ -30,6 +31,9 @@ interface McpChannelState {
   transport: WebStandardStreamableHTTPServerTransport
   connected: boolean
 }
+
+// Track active transports by session ID for multi-request support
+const transports = new Map<string, WebStandardStreamableHTTPServerTransport>()
 
 let state: McpChannelState | null = null
 let callbacks: McpChannelCallbacks = {}
@@ -105,51 +109,68 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
     }
   })
 
-  // Create Streamable HTTP transport (stateless - single session per rclaude instance)
-  const transport = new WebStandardStreamableHTTPServerTransport()
-
-  state = { server, transport, connected: false }
+  state = { server, transport: null as any, connected: false }
   debug('[channel] MCP channel server initialized')
 }
 
 /**
- * Connect the MCP server to the transport.
- * Call after initMcpChannel() and before handling requests.
- */
-export async function connectMcpChannel(): Promise<void> {
-  if (!state) throw new Error('MCP channel not initialized')
-  if (state.connected) return
-
-  await state.server.connect(state.transport)
-  state.connected = true
-  debug('[channel] MCP channel server connected to transport')
-}
-
-/**
  * Handle an incoming HTTP request on the /mcp endpoint.
- * Delegates to the MCP Streamable HTTP transport.
+ * Creates a new transport per MCP session (initialize request),
+ * reuses existing transport for subsequent requests with session ID.
  */
 export async function handleMcpRequest(req: Request): Promise<Response> {
   if (!state) return new Response('MCP channel not initialized', { status: 503 })
-  if (!state.connected) {
-    await connectMcpChannel()
+
+  // Check for existing session
+  const sessionId = req.headers.get('mcp-session-id')
+
+  if (sessionId && transports.has(sessionId)) {
+    // Existing session -- reuse transport
+    return transports.get(sessionId)!.handleRequest(req)
   }
-  return state.transport.handleRequest(req)
+
+  if (req.method === 'DELETE' && sessionId) {
+    // Session termination
+    const transport = transports.get(sessionId)
+    if (transport) {
+      await transport.close()
+      transports.delete(sessionId)
+      debug(`[channel] Session closed: ${sessionId}`)
+    }
+    return new Response(null, { status: 200 })
+  }
+
+  // New session -- create transport, connect server
+  const transport = new WebStandardStreamableHTTPServerTransport({
+    sessionIdGenerator: () => randomUUID(),
+    onsessioninitialized: (id) => {
+      transports.set(id, transport)
+      state!.transport = transport
+      state!.connected = true
+      debug(`[channel] MCP session initialized: ${id}`)
+    },
+  })
+
+  // Connect the server to this transport
+  await state.server.connect(transport)
+
+  return transport.handleRequest(req)
 }
 
 /**
  * Push a channel notification to Claude Code.
  * This is the primary input path -- dashboard messages go through here.
  */
-export function pushChannelMessage(message: string, meta?: Record<string, string>): boolean {
-  if (!state?.connected) {
+export async function pushChannelMessage(message: string, meta?: Record<string, string>): Promise<boolean> {
+  if (!state?.connected || transports.size === 0) {
     debug('[channel] Cannot push: not connected')
     return false
   }
 
   try {
-    state.server.notification({
-      method: 'notifications/claude/channel',
+    // Send notification through the active transport
+    const notification = {
+      method: 'notifications/claude/channel' as const,
       params: {
         content: message,
         meta: {
@@ -158,7 +179,8 @@ export function pushChannelMessage(message: string, meta?: Record<string, string
           ...meta,
         },
       },
-    })
+    }
+    await state.server.notification(notification)
     debug(`[channel] Pushed message: ${message.slice(0, 80)}`)
     return true
   } catch (err) {
@@ -179,10 +201,11 @@ export function isMcpChannelReady(): boolean {
  */
 export async function closeMcpChannel(): Promise<void> {
   if (state) {
-    try {
-      await state.transport.close()
-      await state.server.close()
-    } catch { /* cleanup */ }
+    for (const [id, transport] of transports) {
+      try { await transport.close() } catch {}
+      transports.delete(id)
+    }
+    try { await state.server.close() } catch {}
     state = null
     debug('[channel] MCP channel server closed')
   }

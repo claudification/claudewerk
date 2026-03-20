@@ -381,12 +381,19 @@ async function main() {
 
         // Channel mode: push through MCP instead of PTY injection
         if (channelEnabled && isMcpChannelReady()) {
-          const sent = pushChannelMessage(input)
-          if (sent) {
-            diag('channel', `Input via MCP (${input.length} chars)`)
-            return
-          }
-          diag('channel', 'MCP push failed, falling back to PTY')
+          pushChannelMessage(input).then(sent => {
+            if (sent) {
+              diag('channel', `Input via MCP (${input.length} chars)`)
+            } else {
+              diag('channel', 'MCP push failed, falling back to PTY')
+              if (ptyProcess) {
+                const trimmed = input.replace(/[\r\n]+$/, '')
+                ptyProcess.write(trimmed)
+                setTimeout(() => ptyProcess?.write('\r'), 150)
+              }
+            }
+          })
+          return
         }
 
         const trimmed = input.replace(/[\r\n]+$/, '')
