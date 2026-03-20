@@ -221,14 +221,23 @@ async function main() {
   const eventQueue: HookEvent[] = []
 
   // Diagnostic log - sends structured debug entries to concentrator
+  const diagBuffer: Array<{ t: number; type: string; msg: string; args?: unknown }> = []
+  let diagFlushTimer: ReturnType<typeof setTimeout> | null = null
+
+  function flushDiag() {
+    diagFlushTimer = null
+    if (diagBuffer.length === 0) return
+    if (!wsClient?.isConnected() || !claudeSessionId) return
+    const entries = diagBuffer.splice(0)
+    wsClient.send({ type: 'diag', sessionId: claudeSessionId, entries } as any)
+  }
+
   function diag(type: string, msg: string, args?: unknown) {
     debug(`[diag] ${type}: ${msg}${args ? ` ${JSON.stringify(args)}` : ''}`)
-    if (!wsClient?.isConnected() || !claudeSessionId) return
-    wsClient.send({
-      type: 'diag',
-      sessionId: claudeSessionId,
-      entries: [{ t: Date.now(), type, msg, args }],
-    } as any)
+    diagBuffer.push({ t: Date.now(), type, msg, args })
+    if (!diagFlushTimer) {
+      diagFlushTimer = setTimeout(flushDiag, 500)
+    }
   }
 
   /**
@@ -343,6 +352,8 @@ async function main() {
       capabilities,
       onConnected() {
         diag('ws', 'Connected to concentrator', { sessionId })
+        // Flush buffered diag entries
+        flushDiag()
         // Flush queued events
         for (const event of eventQueue) {
           wsClient?.sendHookEvent({ ...event, sessionId })
