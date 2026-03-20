@@ -1049,10 +1049,13 @@ async function main() {
       // Strip ANSI escape codes before matching since PTY output includes formatting
       if (channelEnabled && !devChannelConfirmed) {
         const plain = data.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+        debug(`[channel-detect] chunk(${data.length}): ${plain.slice(0, 120).replace(/\n/g, '\\n')}`)
         if (plain.includes('Loading development channels')) {
           devChannelConfirmed = true
-          // Wait for the prompt to fully render, then press Enter (option 1 is pre-selected)
-          setTimeout(() => ptyProcess?.write('\r'), 800)
+          setTimeout(() => {
+            debug('[channel-detect] Sending \\r to confirm')
+            ptyProcess?.write('\r')
+          }, 800)
           diag('channel', 'Auto-confirmed dev channel warning')
         }
       }
