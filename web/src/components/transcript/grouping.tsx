@@ -189,6 +189,8 @@ export function groupEntries(entries: TranscriptEntry[]): DisplayGroup[] {
               typeof synthMsg.message?.content === 'string' ? synthMsg.message.content : undefined
             if (synthText === textContent) {
               groups.splice(gi, 1)
+              // Reset current if it pointed at the spliced group
+              if (current === g) current = null
               break
             }
           }
@@ -389,6 +391,7 @@ export function useIncrementalGroups(entries: TranscriptEntry[]) {
                 typeof synthMsg.message?.content === 'string' ? synthMsg.message.content : undefined
               if (synthText === textContent) {
                 newGroups.splice(gi, 1)
+                if (lastGroup === g) lastGroup = null
                 break
               }
             }
