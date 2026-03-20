@@ -48,6 +48,7 @@ export async function startLocalServer(options: LocalServerOptions): Promise<{ s
 
   const server = Bun.serve({
     port,
+    idleTimeout: 255, // max value (seconds) -- MCP SSE streams need long-lived connections
     async fetch(req) {
       const url = new URL(req.url)
 
