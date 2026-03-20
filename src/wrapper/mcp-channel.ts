@@ -24,6 +24,7 @@ import { debug } from './debug'
 export interface McpChannelCallbacks {
   onReply?: (message: string, meta?: Record<string, string>) => void
   onNotify?: (message: string, title?: string) => void
+  onDisconnect?: () => void
 }
 
 interface McpChannelState {
@@ -34,6 +35,7 @@ interface McpChannelState {
 
 let state: McpChannelState | null = null
 let callbacks: McpChannelCallbacks = {}
+let keepaliveTimer: ReturnType<typeof setInterval> | null = null
 
 /**
  * Initialize the MCP channel server.
@@ -111,7 +113,37 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
     sessionIdGenerator: () => randomUUID(),
   })
 
+  // Detect transport close (disconnect)
+  transport.onclose = () => {
+    debug('[channel] Transport closed (client disconnected)')
+    if (state) state.connected = false
+    callbacks.onDisconnect?.()
+  }
+
+  transport.onerror = (err) => {
+    debug(`[channel] Transport error: ${err.message}`)
+  }
+
   state = { server, transport, connected: false }
+
+  // Keepalive: send periodic no-op notifications to prevent idle timeout.
+  // The MCP SDK sends these through the SSE stream as events, keeping it alive.
+  keepaliveTimer = setInterval(() => {
+    if (!state?.connected) return
+    try {
+      // Send an empty log notification as keepalive -- lightweight, doesn't pollute Claude's context
+      state.server.notification({
+        method: 'notifications/message',
+        params: { level: 'debug', data: 'keepalive', logger: 'rclaude' },
+      })
+    } catch {
+      // Transport might be dead
+      debug('[channel] Keepalive failed, marking disconnected')
+      if (state) state.connected = false
+      callbacks.onDisconnect?.()
+    }
+  }, 120_000) // every 2 minutes (well under 255s Bun timeout)
+
   debug('[channel] MCP channel server initialized')
 }
 
@@ -153,14 +185,14 @@ export async function pushChannelMessage(message: string, meta?: Record<string, 
       params: {
         content: message,
         meta: {
-          source: 'dashboard',
+          sender: 'dashboard',
           ts: new Date().toISOString(),
           ...meta,
         },
       },
     }
     await state.server.notification(notification)
-    debug(`[channel] Pushed message: ${message.slice(0, 80)}`)
+    debug(`[channel] Pushed: ${message.slice(0, 80)}`)
     return true
   } catch (err) {
     debug(`[channel] Push failed: ${err instanceof Error ? err.message : err}`)
@@ -179,6 +211,10 @@ export function isMcpChannelReady(): boolean {
  * Shut down the MCP channel server.
  */
 export async function closeMcpChannel(): Promise<void> {
+  if (keepaliveTimer) {
+    clearInterval(keepaliveTimer)
+    keepaliveTimer = null
+  }
   if (state) {
     try { await state.transport.close() } catch {}
     try { await state.server.close() } catch {}

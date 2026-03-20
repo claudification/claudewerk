@@ -125,6 +125,7 @@ export function GroupView({
     | { kind: 'thinking'; text: string }
     | { kind: 'tool'; tool: TranscriptContentBlock; result?: string; extra?: Record<string, unknown> }
     | { kind: 'bash'; text: string }
+    | { kind: 'channel'; text: string; source: string }
     | { kind: 'images'; images: Array<{ hash: string; ext: string; url: string; originalPath: string }> }
 
   const items: RenderItem[] = []
@@ -139,7 +140,17 @@ export function GroupView({
     if (typeof content === 'string') {
       if (content.trim()) {
         const hasBashTags = /<bash-(input|stdout|stderr)>/.test(content)
-        if (hasBashTags) {
+        const channelMatch = content.match(/^<channel\s+source="([^"]*)"[^>]*>\n?([\s\S]*?)\n?<\/channel>$/)
+        if (channelMatch) {
+          const source = channelMatch[1]
+          const msg = channelMatch[2].trim()
+          // rclaude channel = our own dashboard input, strip wrapper and show as text
+          if (source === 'rclaude') {
+            items.push({ kind: 'text', text: msg })
+          } else {
+            items.push({ kind: 'channel', text: msg, source })
+          }
+        } else if (hasBashTags) {
           // Merge consecutive bash items (input entry + stdout/stderr entry)
           const prev = items[items.length - 1]
           if (prev?.kind === 'bash') {
@@ -254,6 +265,15 @@ export function GroupView({
                       />
                     </a>
                   ))}
+                </div>
+              )
+            case 'channel':
+              return (
+                <div key={i} className="text-sm border-l-2 border-teal-400/40 pl-3 py-1">
+                  <div className="text-[10px] text-teal-400/70 uppercase font-bold tracking-wider mb-1">
+                    channel: {item.source}
+                  </div>
+                  <Markdown>{item.text}</Markdown>
                 </div>
               )
             case 'bash':

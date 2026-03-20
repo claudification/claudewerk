@@ -825,6 +825,9 @@ async function main() {
           wsClient.send({ type: 'notify', sessionId: claudeSessionId || internalId, message, title })
         }
       },
+      onDisconnect() {
+        diag('channel', 'Channel disconnected')
+      },
     })
   }
 
