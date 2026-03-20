@@ -18,7 +18,7 @@ import { FileEditor } from './file-editor'
 import { startLocalServer, stopLocalServer } from './local-server'
 import { getTerminalSize, type PtyProcess, setupTerminalPassthrough, spawnClaude } from './pty-spawn'
 import { initMcpChannel, pushChannelMessage, closeMcpChannel, isMcpChannelReady } from './mcp-channel'
-import { cleanupMcpConfig, cleanupSettings, writeMcpConfig, writeMergedSettings } from './settings-merge'
+import { cleanupSettings, writeMergedSettings } from './settings-merge'
 import { createTranscriptWatcher, type TranscriptWatcher } from './transcript-watcher'
 import { createWsClient, type WsClient } from './ws-client'
 
@@ -958,12 +958,6 @@ async function main() {
   // Generate merged settings with hook injection
   const settingsPath = await writeMergedSettings(internalId, localServerPort)
 
-  // Write .mcp.json for channel support
-  if (channelEnabled) {
-    await writeMcpConfig(cwd, localServerPort)
-    debug(`[channel] Wrote .mcp.json with rclaude MCP server on port ${localServerPort}`)
-  }
-
   // Set terminal title to last 2 path segments (shows in tmux)
   setTerminalTitle(cwd)
 
@@ -1006,9 +1000,13 @@ async function main() {
   // Convert WS URL to HTTP for tools/scripts that need to call the concentrator REST API
   const concentratorHttpUrl = noConcentrator ? undefined : wsToHttpUrl(concentratorUrl)
 
-  // Add --channels flag for MCP channel support (use dev flag until CC officially supports http channels)
+  // Add --channels + --mcp-config for MCP channel support
   const finalClaudeArgs = channelEnabled
-    ? ['--dangerously-load-development-channels', 'server:rclaude', ...claudeArgs]
+    ? [
+        '--dangerously-load-development-channels', 'server:rclaude',
+        '--mcp-config', JSON.stringify({ rclaude: { type: 'http', url: `http://localhost:${localServerPort}/mcp` } }),
+        ...claudeArgs,
+      ]
     : claudeArgs
 
   ptyProcess = spawnClaude({
@@ -1055,7 +1053,6 @@ async function main() {
     cleanupSettings(internalId).catch(() => {})
     if (channelEnabled) {
       closeMcpChannel().catch(() => {})
-      cleanupMcpConfig(cwd).catch(() => {})
     }
     try {
       unlinkSync(promptFile)
