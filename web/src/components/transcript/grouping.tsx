@@ -208,13 +208,19 @@ export function groupEntries(entries: TranscriptEntry[]): DisplayGroup[] {
       if (textContent.includes('<task-notification>')) {
         const notifications = parseTaskNotifications(textContent)
         if (notifications.length > 0) {
-          current = null
-          groups.push({
-            type: 'system',
-            timestamp: entry.timestamp || '',
-            entries: [entry],
-            notifications,
-          })
+          // Dedup: queue-operation enqueue already created a system group with same notifications
+          const prevSystem = groups[groups.length - 1]
+          const isDuplicate = prevSystem?.type === 'system' && prevSystem.notifications?.length === notifications.length
+            && notifications.every(n => prevSystem.notifications!.some(p => p.taskId === n.taskId && p.status === n.status))
+          if (!isDuplicate) {
+            current = null
+            groups.push({
+              type: 'system',
+              timestamp: entry.timestamp || '',
+              entries: [entry],
+              notifications,
+            })
+          }
           continue
         }
       }
@@ -409,8 +415,13 @@ export function useIncrementalGroups(entries: TranscriptEntry[]) {
         if (textContent.includes('<task-notification>')) {
           const notifications = parseTaskNotifications(textContent)
           if (notifications.length > 0) {
-            lastGroup = null
-            newGroups.push({ type: 'system', timestamp: entry.timestamp || '', entries: [entry], notifications })
+            const prevSystem = newGroups[newGroups.length - 1]
+            const isDuplicate = prevSystem?.type === 'system' && prevSystem.notifications?.length === notifications.length
+              && notifications.every(n => prevSystem.notifications!.some(p => p.taskId === n.taskId && p.status === n.status))
+            if (!isDuplicate) {
+              lastGroup = null
+              newGroups.push({ type: 'system', timestamp: entry.timestamp || '', entries: [entry], notifications })
+            }
             continue
           }
         }
