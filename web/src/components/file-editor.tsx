@@ -56,6 +56,7 @@ function FileList({
             key={f.path}
             type="button"
             onClick={() => onSelect(f.path)}
+            title={f.path}
             className={cn(
               'w-full text-left px-2 py-1 text-xs font-mono flex items-center gap-1.5 transition-colors',
               f.path === activeFile
@@ -246,10 +247,39 @@ export const FileEditor = memo(function FileEditor({ sessionId }: { sessionId: s
     [activeFile, restoreVersion],
   )
 
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = localStorage.getItem('file-editor-sidebar-width')
+    return saved ? Number.parseInt(saved, 10) : 176 // 44 * 4 = 176px (w-44)
+  })
+  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
+
+  useEffect(() => {
+    function handleMouseMove(e: MouseEvent) {
+      if (!dragRef.current) return
+      const delta = e.clientX - dragRef.current.startX
+      const newWidth = Math.max(120, Math.min(400, dragRef.current.startWidth + delta))
+      setSidebarWidth(newWidth)
+    }
+    function handleMouseUp() {
+      if (dragRef.current) {
+        localStorage.setItem('file-editor-sidebar-width', String(sidebarWidth))
+        dragRef.current = null
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+      }
+    }
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [sidebarWidth])
+
   return (
     <div className="flex h-full">
       {/* File list sidebar */}
-      <div className="w-44 shrink-0 border-r border-border">
+      <div className="shrink-0 border-r border-border" style={{ width: sidebarWidth }}>
         <FileList
           files={files}
           activeFile={activeFile}
@@ -259,6 +289,17 @@ export const FileEditor = memo(function FileEditor({ sessionId }: { sessionId: s
           loading={loading}
         />
       </div>
+
+      {/* Draggable resize handle */}
+      <div
+        className="w-1 shrink-0 cursor-col-resize hover:bg-accent/30 active:bg-accent/50 transition-colors"
+        onMouseDown={e => {
+          e.preventDefault()
+          dragRef.current = { startX: e.clientX, startWidth: sidebarWidth }
+          document.body.style.cursor = 'col-resize'
+          document.body.style.userSelect = 'none'
+        }}
+      />
 
       {/* Editor area */}
       <div className="flex-1 flex flex-col min-w-0 relative">

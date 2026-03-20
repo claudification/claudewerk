@@ -314,17 +314,17 @@ export class FileEditor {
     // Compute relative from cwd to check depth/location
     const rel = relative(this.cwd, absPath)
 
-    // Allow: root-level .md files (no slash) or .claude/*.md (one level deep)
+    // Allow: root-level .md files (no slash) or .claude/**/*.md (any depth)
     const segments = rel.split('/')
     if (segments.length === 1) {
       // Root level .md - allowed
       return
     }
-    if (segments.length === 2 && segments[0] === '.claude') {
-      // .claude/*.md - allowed
+    if (segments[0] === '.claude') {
+      // .claude/**/*.md - allowed at any depth
       return
     }
-    throw new Error(`Path not in allowed scope (root/*.md or .claude/*.md): ${relPath}`)
+    throw new Error(`Path not in allowed scope (root/*.md or .claude/**/*.md): ${relPath}`)
   }
 
   /**
