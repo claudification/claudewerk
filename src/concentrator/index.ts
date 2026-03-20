@@ -757,6 +757,18 @@ async function main() {
                 break
               }
 
+              case 'channel_unlink': {
+                // Dashboard severs a session link
+                const { sessionA, sessionB } = data
+                if (sessionA && sessionB) {
+                  sessionStore.unlinkSessions(sessionA, sessionB)
+                  sessionStore.broadcastSessionUpdate(sessionA)
+                  sessionStore.broadcastSessionUpdate(sessionB)
+                  if (verbose) console.log(`[inter-session] Link severed: ${sessionA.slice(0, 8)} X ${sessionB.slice(0, 8)}`)
+                }
+                break
+              }
+
               // Terminal relay: dashboard -> rclaude
               // Terminal messages: all routed by wrapperId (physical PTY identity)
               case 'terminal_attach': {

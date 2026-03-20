@@ -668,6 +668,28 @@ export function SessionDetail() {
                     ))}
                   </div>
                 )}
+                {session.linkedSessions && session.linkedSessions.length > 0 && (
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <span className="text-[10px] text-teal-400/60">linked:</span>
+                    {session.linkedSessions.map(ls => (
+                      <span key={ls.id} className="inline-flex items-center gap-1 text-[10px] font-mono">
+                        <span className="text-teal-400">{ls.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            haptic('error')
+                            const ws = useSessionsStore.getState().ws
+                            ws?.send(JSON.stringify({ type: 'channel_unlink', sessionA: session.id, sessionB: ls.id }))
+                          }}
+                          className="text-red-400/40 hover:text-red-400 transition-colors"
+                          title={`Sever link to ${ls.name}`}
+                        >
+                          x
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             )
           })()}

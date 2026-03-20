@@ -79,6 +79,7 @@ function toSession(summary: SessionSummary): Session {
     title: summary.title,
     agentName: summary.agentName,
     prLinks: summary.prLinks,
+    linkedSessions: summary.linkedSessions,
     tokenUsage: summary.tokenUsage,
     stats: summary.stats,
     gitBranch: summary.gitBranch,

@@ -337,6 +337,11 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
           ))}
         </div>
       )}
+      {!compact && session.linkedSessions && session.linkedSessions.length > 0 && (
+        <div className="mt-1 text-[10px] text-teal-400/50 font-mono truncate">
+          {'\u2194'} {session.linkedSessions.map(s => s.name).join(', ')}
+        </div>
+      )}
     </div>
   )
 }

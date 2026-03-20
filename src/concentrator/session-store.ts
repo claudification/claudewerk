@@ -152,7 +152,9 @@ export interface SessionStore {
   resolveFile: (requestId: string, result: any) => boolean
   // Inter-session messaging
   checkSessionLink: (from: string, to: string) => 'linked' | 'blocked' | 'unknown'
+  getLinkedSessions: (sessionId: string) => string[]
   linkSessions: (a: string, b: string) => void
+  unlinkSessions: (a: string, b: string) => void
   blockSession: (blocker: string, blocked: string) => void
   queueInterSessionMessage: (from: string, to: string, message: Record<string, unknown>) => void
   drainQueuedMessages: (from: string, to: string) => Array<Record<string, unknown>>
@@ -348,6 +350,10 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       title: session.title,
       agentName: session.agentName,
       prLinks: session.prLinks,
+      linkedSessions: getLinkedSessions(session.id).map(id => {
+        const s = sessions.get(id)
+        return { id, name: s?.title || getProjectSettings(s?.cwd || '')?.label || s?.cwd?.split('/').pop() || id.slice(0, 8) }
+      }),
       tokenUsage: session.tokenUsage,
       stats: session.stats,
       gitBranch: session.gitBranch,
@@ -2013,6 +2019,20 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     return [a, b].sort().join(':')
   }
 
+  function getLinkedSessions(sessionId: string): string[] {
+    const linked: string[] = []
+    for (const key of sessionLinks) {
+      const [a, b] = key.split(':')
+      if (a === sessionId) linked.push(b)
+      else if (b === sessionId) linked.push(a)
+    }
+    return linked
+  }
+
+  function unlinkSessions(a: string, b: string): void {
+    sessionLinks.delete(linkKey(a, b))
+  }
+
   function checkSessionLink(from: string, to: string): 'linked' | 'blocked' | 'unknown' {
     const key = linkKey(from, to)
     if (sessionLinks.has(key)) return 'linked'
@@ -2107,7 +2127,9 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     removeFileListener,
     resolveFile,
     checkSessionLink,
+    getLinkedSessions,
     linkSessions,
+    unlinkSessions,
     blockSession,
     queueInterSessionMessage,
     drainQueuedMessages,
