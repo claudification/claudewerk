@@ -1020,7 +1020,7 @@ async function main() {
   const finalClaudeArgs = channelEnabled
     ? [
         '--dangerously-load-development-channels', 'server:rclaude',
-        '--mcp-config', JSON.stringify({ rclaude: { type: 'http', url: `http://localhost:${localServerPort}/mcp` } }),
+        '--mcp-config', JSON.stringify({ mcpServers: { rclaude: { type: 'http', url: `http://localhost:${localServerPort}/mcp` } } }),
         ...claudeArgs,
       ]
     : claudeArgs
