@@ -644,6 +644,7 @@ async function main() {
               // Inter-session messaging (channel-enabled sessions)
               case 'channel_list_sessions': {
                 const status = data.status || 'live'
+                const callerSession = ws.data.sessionId
                 const all = Array.from(sessionStore.getAllSessions())
                 const result = all
                   .filter(s => s.capabilities?.includes('channel'))
@@ -652,15 +653,19 @@ async function main() {
                     const isLive = sessionStore.getActiveWrapperCount(s.id) > 0
                     return status === 'live' ? isLive : !isLive
                   })
-                  .filter(s => s.id !== ws.data.sessionId) // exclude self
-                  .map(s => ({
-                    id: s.id,
-                    name: s.title || getProjectSettings(s.cwd)?.label || s.cwd.split('/').pop() || s.cwd,
-                    cwd: s.cwd,
-                    status: (sessionStore.getActiveWrapperCount(s.id) > 0 ? 'live' : 'inactive') as 'live' | 'inactive',
-                    title: s.title,
-                    summary: s.summary,
-                  }))
+                  .filter(s => s.id !== callerSession) // exclude self
+                  .map(s => {
+                    const isLinked = callerSession ? sessionStore.checkSessionLink(callerSession, s.id) === 'linked' : false
+                    const shortCwd = s.cwd.split('/').slice(-2).join('/')
+                    return {
+                      id: s.id,
+                      name: s.title || getProjectSettings(s.cwd)?.label || s.cwd.split('/').pop() || s.cwd,
+                      cwd: isLinked ? s.cwd : shortCwd, // full CWD only for linked sessions
+                      status: (sessionStore.getActiveWrapperCount(s.id) > 0 ? 'live' : 'inactive') as 'live' | 'inactive',
+                      title: s.title,
+                      summary: s.summary,
+                    }
+                  })
                 ws.send(JSON.stringify({ type: 'channel_sessions_list', sessions: result }))
                 break
               }
@@ -706,15 +711,19 @@ async function main() {
                     ws.send(JSON.stringify({ type: 'channel_send_result', ok: false, error: 'Target session not connected' }))
                   }
                 } else {
-                  // Not linked -- queue message + send link request to target
+                  // Not linked -- queue message + send link request to DASHBOARD (not target session)
+                  // User approves/blocks via dashboard UI, never exposed to Claude
                   sessionStore.queueInterSessionMessage(fromSession, toSession, delivery)
-                  const targetWs = sessionStore.getSessionSocket(toSession)
-                  if (targetWs) {
-                    targetWs.send(JSON.stringify({
-                      type: 'channel_link_request',
-                      fromSession,
-                      fromProject,
-                    }))
+                  const toProject = toSess.title || getProjectSettings(toSess.cwd)?.label || toSess.cwd.split('/').pop() || toSession.slice(0, 8)
+                  const linkReqMsg = JSON.stringify({
+                    type: 'channel_link_request',
+                    fromSession,
+                    fromProject,
+                    toSession,
+                    toProject,
+                  })
+                  for (const sub of sessionStore.getSubscribers()) {
+                    try { sub.send(linkReqMsg) } catch {}
                   }
                   ws.send(JSON.stringify({ type: 'channel_send_result', ok: true, conversationId, queued: true }))
                 }
@@ -724,25 +733,26 @@ async function main() {
                 break
               }
               case 'channel_link_response': {
-                const respondingSession = ws.data.sessionId
-                const targetSession = data.sessionId
-                if (!respondingSession || !targetSession) break
+                // Comes from DASHBOARD, not from a session wrapper
+                const fromSession = data.fromSession
+                const toSession = data.toSession
+                if (!fromSession || !toSession) break
 
                 if (data.action === 'approve') {
-                  sessionStore.linkSessions(respondingSession, targetSession)
-                  // Deliver queued messages
-                  const queued = sessionStore.drainQueuedMessages(targetSession, respondingSession)
-                  const targetWs = sessionStore.getSessionSocket(respondingSession)
+                  sessionStore.linkSessions(fromSession, toSession)
+                  // Deliver queued messages to target session
+                  const queued = sessionStore.drainQueuedMessages(fromSession, toSession)
+                  const targetWs = sessionStore.getSessionSocket(toSession)
                   if (targetWs) {
                     for (const msg of queued) {
                       targetWs.send(JSON.stringify(msg))
                     }
                   }
-                  if (verbose) console.log(`[inter-session] Link approved: ${respondingSession.slice(0, 8)} <-> ${targetSession.slice(0, 8)}`)
+                  if (verbose) console.log(`[inter-session] Link approved: ${fromSession.slice(0, 8)} <-> ${toSession.slice(0, 8)}`)
                 } else {
-                  sessionStore.blockSession(respondingSession, targetSession)
-                  sessionStore.drainQueuedMessages(targetSession, respondingSession) // discard
-                  if (verbose) console.log(`[inter-session] Link blocked: ${respondingSession.slice(0, 8)} X ${targetSession.slice(0, 8)}`)
+                  sessionStore.blockSession(fromSession, toSession)
+                  sessionStore.drainQueuedMessages(fromSession, toSession) // discard
+                  if (verbose) console.log(`[inter-session] Link blocked: ${fromSession.slice(0, 8)} X ${toSession.slice(0, 8)}`)
                 }
                 break
               }

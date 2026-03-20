@@ -548,14 +548,8 @@ async function main() {
           diag('channel', `Received from ${delivery.fromProject}: ${delivery.message.slice(0, 60)}`)
         }
       },
-      onChannelLinkRequest(request) {
-        if (channelEnabled && isMcpChannelReady()) {
-          pushChannelMessage(
-            `Session "${request.fromProject}" (${request.fromSession.slice(0, 8)}) wants to communicate with you.\nUse mcp__rclaude__approve_session or mcp__rclaude__block_session with session_id="${request.fromSession}".`,
-            { sender: 'system', intent: 'permission_request', from_session: request.fromSession, from_project: request.fromProject },
-          )
-          diag('channel', `Link request from ${request.fromProject} (${request.fromSession.slice(0, 8)})`)
-        }
+      onChannelLinkRequest() {
+        // Link requests are handled by the dashboard UI, not by Claude
       },
     })
   }
@@ -912,14 +906,6 @@ async function main() {
           } as any)
         })
       },
-      onApproveSession(sessionId) {
-        wsClient?.send({ type: 'channel_link_response', sessionId, action: 'approve' } as any)
-        diag('channel', `Approved link: ${sessionId.slice(0, 8)}`)
-      },
-      onBlockSession(sessionId) {
-        wsClient?.send({ type: 'channel_link_response', sessionId, action: 'block' } as any)
-        diag('channel', `Blocked link: ${sessionId.slice(0, 8)}`)
-      },
       onDisconnect() {
         diag('channel', 'Channel disconnected')
       },
@@ -1138,14 +1124,14 @@ async function main() {
             '',
             'You can communicate with other active Claude Code sessions that have channels enabled:',
             '- `mcp__rclaude__list_sessions` - discover live sessions (only shows channel-capable sessions)',
-            '- `mcp__rclaude__send_message` - send a message to another session (requires approval on first contact)',
-            '- `mcp__rclaude__approve_session` / `mcp__rclaude__block_session` - manage session links',
+            '- `mcp__rclaude__send_message` - send a message to another session (first contact requires user approval via dashboard)',
             '',
             'Messages from other sessions arrive as `<channel sender="session">`. They include:',
             '- `from_session` / `from_project`: who sent it',
             '- `intent`: request (they need something), response (answering you), notify (FYI), progress (status update)',
             '- `conversation_id`: include this in replies to maintain thread context',
             '',
+            'Session linking is managed by the user via the dashboard -- you cannot approve or block sessions.',
             'Always include conversation_id when replying to maintain context threading.',
           ]
         : []),

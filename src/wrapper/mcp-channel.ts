@@ -35,8 +35,6 @@ export interface McpChannelCallbacks {
   onShareFile?: (filePath: string) => Promise<string | null>
   onListSessions?: (status?: string) => Promise<SessionInfo[]>
   onSendMessage?: (to: string, intent: string, message: string, context?: string, conversationId?: string) => Promise<{ ok: boolean; error?: string; conversationId?: string }>
-  onApproveSession?: (sessionId: string) => void
-  onBlockSession?: (sessionId: string) => void
   onDisconnect?: () => void
 }
 
@@ -119,28 +117,6 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
           required: ['to', 'intent', 'message'],
         },
       },
-      {
-        name: 'approve_session',
-        description: 'Approve a session link request, allowing inter-session messaging. Use when you receive a permission_request from another session.',
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            session_id: { type: 'string', description: 'Session ID to approve' },
-          },
-          required: ['session_id'],
-        },
-      },
-      {
-        name: 'block_session',
-        description: 'Block a session from sending messages. Blocked sessions cannot send permission requests for 1 minute.',
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            session_id: { type: 'string', description: 'Session ID to block' },
-          },
-          required: ['session_id'],
-        },
-      },
     ],
   }))
 
@@ -185,20 +161,6 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
           ? `Sent. conversation_id: ${result.conversationId}`
           : 'Sent.'
         return { content: [{ type: 'text', text: response }] }
-      }
-      case 'approve_session': {
-        const sid = params.session_id
-        if (!sid) return { content: [{ type: 'text', text: 'Error: session_id is required' }], isError: true }
-        callbacks.onApproveSession?.(sid)
-        debug(`[channel] approved session: ${sid}`)
-        return { content: [{ type: 'text', text: `Session ${sid} approved for messaging` }] }
-      }
-      case 'block_session': {
-        const sid = params.session_id
-        if (!sid) return { content: [{ type: 'text', text: 'Error: session_id is required' }], isError: true }
-        callbacks.onBlockSession?.(sid)
-        debug(`[channel] blocked session: ${sid}`)
-        return { content: [{ type: 'text', text: `Session ${sid} blocked` }] }
       }
       default:
         return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true }
