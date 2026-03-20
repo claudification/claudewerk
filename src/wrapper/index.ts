@@ -846,6 +846,11 @@ async function main() {
       },
       async onShareFile(filePath) {
         // Upload file to concentrator blob store, get public URL back
+        // SECURITY: restrict to files within the session CWD
+        if (!isPathWithinCwd(filePath, cwd)) {
+          debug(`[channel] share_file: path outside CWD: ${filePath}`)
+          return null
+        }
         const httpUrl = noConcentrator ? null : wsToHttpUrl(concentratorUrl)
         if (!httpUrl) return null
         try {

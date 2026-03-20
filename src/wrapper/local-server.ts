@@ -25,6 +25,7 @@ async function findAvailablePort(startPort: number): Promise<number> {
     try {
       const server = Bun.serve({
         port,
+        hostname: '127.0.0.1',
         fetch() {
           return new Response('test')
         },
@@ -48,6 +49,7 @@ export async function startLocalServer(options: LocalServerOptions): Promise<{ s
 
   const server = Bun.serve({
     port,
+    hostname: '127.0.0.1', // loopback only -- NEVER bind 0.0.0.0
     idleTimeout: 255, // max value (seconds) -- MCP SSE streams need long-lived connections
     async fetch(req) {
       const url = new URL(req.url)
