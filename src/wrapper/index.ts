@@ -327,7 +327,10 @@ async function main() {
     if (noConcentrator || wsClient) return
 
     // Build capabilities list
-    const capabilities = noTerminal ? [] : ['terminal' as const]
+    const capabilities = [
+      ...(!noTerminal ? ['terminal' as const] : []),
+      ...(channelEnabled ? ['channel' as const] : []),
+    ]
 
     wsClient = createWsClient({
       concentratorUrl,

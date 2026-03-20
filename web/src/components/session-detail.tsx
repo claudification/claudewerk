@@ -463,6 +463,17 @@ export function SessionDetail() {
                     </span>
                   )}
                   <span className="text-muted-foreground text-[10px]">{session.id.slice(0, 8)}</span>
+                  {session.capabilities && session.capabilities.length > 0 && session.capabilities.map(cap => (
+                    <span
+                      key={cap}
+                      className={cn(
+                        'px-1.5 py-0.5 text-[9px] uppercase font-bold',
+                        cap === 'channel' ? 'bg-teal-400/20 text-teal-400' : 'bg-sky-400/20 text-sky-400',
+                      )}
+                    >
+                      {cap}
+                    </span>
+                  ))}
                 </div>
 
                 {/* Row 2: Context window bar */}
