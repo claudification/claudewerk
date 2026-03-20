@@ -1046,16 +1046,17 @@ async function main() {
     concentratorSecret,
     onData(data) {
       // Auto-confirm dev channel warning prompt (fires once on startup)
-      // Strip ANSI escape codes before matching since PTY output includes formatting
+      // CC uses Ink/React TUI -- the warning text is painted via cursor positioning,
+      // not as sequential text. But "Entertoconfirm" appears in the raw stream
+      // (ANSI-stripped, no spaces due to Ink rendering). Detect that + confirm.
       if (channelEnabled && !devChannelConfirmed) {
-        const plain = data.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
-        debug(`[channel-detect] chunk(${data.length}): ${plain.slice(0, 120).replace(/\n/g, '\\n')}`)
-        if (plain.includes('Loading development channels')) {
+        const plain = data.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b[=>?][0-9]*[a-zA-Z]/g, '')
+        if (plain.includes('Entertoconfirm')) {
           devChannelConfirmed = true
           setTimeout(() => {
-            debug('[channel-detect] Sending \\r to confirm')
+            debug('[channel] Sending Enter to confirm dev channel warning')
             ptyProcess?.write('\r')
-          }, 800)
+          }, 300)
           diag('channel', 'Auto-confirmed dev channel warning')
         }
       }
