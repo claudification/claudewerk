@@ -211,6 +211,7 @@ export const FileEditor = memo(function FileEditor({ sessionId }: { sessionId: s
     function handleKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         e.preventDefault()
+        e.stopImmediatePropagation()
         setFullscreen(false)
       }
     }
