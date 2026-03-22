@@ -53,6 +53,7 @@ export interface WsClientOptions {
   onChannelSendResult?: (result: any) => void
   onChannelDeliver?: (delivery: any) => void
   onChannelLinkRequest?: (request: any) => void
+  onPermissionResponse?: (requestId: string, behavior: 'allow' | 'deny') => void
 }
 
 export interface WsClient {
@@ -101,6 +102,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
     onChannelSendResult,
     onChannelDeliver,
     onChannelLinkRequest,
+    onPermissionResponse,
   } = options
 
   let sessionId = initialSessionId
@@ -237,6 +239,9 @@ export function createWsClient(options: WsClientOptions): WsClient {
               break
             case 'channel_link_request':
               onChannelLinkRequest?.(message as any)
+              break
+            case 'permission_response':
+              onPermissionResponse?.((message as any).requestId, (message as any).behavior)
               break
             default: {
               const msgType = (message as any).type as string

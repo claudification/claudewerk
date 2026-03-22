@@ -15,10 +15,7 @@
 import { randomUUID } from 'node:crypto'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js'
+import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { debug } from './debug'
 
 export interface SessionInfo {
@@ -30,11 +27,25 @@ export interface SessionInfo {
   summary?: string
 }
 
+export interface PermissionRequestData {
+  requestId: string
+  toolName: string
+  description: string
+  inputPreview: string
+}
+
 export interface McpChannelCallbacks {
   onNotify?: (message: string, title?: string) => void
   onShareFile?: (filePath: string) => Promise<string | null>
   onListSessions?: (status?: string) => Promise<SessionInfo[]>
-  onSendMessage?: (to: string, intent: string, message: string, context?: string, conversationId?: string) => Promise<{ ok: boolean; error?: string; conversationId?: string }>
+  onSendMessage?: (
+    to: string,
+    intent: string,
+    message: string,
+    context?: string,
+    conversationId?: string,
+  ) => Promise<{ ok: boolean; error?: string; conversationId?: string }>
+  onPermissionRequest?: (data: PermissionRequestData) => void
   onDisconnect?: () => void
 }
 
@@ -61,7 +72,10 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
       capabilities: {
         tools: {},
         logging: {},
-        experimental: { 'claude/channel': {} },
+        experimental: {
+          'claude/channel': {},
+          'claude/channel/permission': {},
+        },
       },
     },
   )
@@ -71,7 +85,8 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
     tools: [
       {
         name: 'notify',
-        description: 'Send a push notification to the user\'s devices (phone, browser). Use for important alerts that need attention even when the dashboard is not in focus.',
+        description:
+          "Send a push notification to the user's devices (phone, browser). Use for important alerts that need attention even when the dashboard is not in focus.",
         inputSchema: {
           type: 'object' as const,
           properties: {
@@ -83,7 +98,8 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
       },
       {
         name: 'share_file',
-        description: 'Upload a local file to the rclaude concentrator and get a public URL back. For images use ![description](url), for other files use [filename](url). Works for images, screenshots, build artifacts, logs, or any file.',
+        description:
+          'Upload a local file to the rclaude concentrator and get a public URL back. For images use ![description](url), for other files use [filename](url). Works for images, screenshots, build artifacts, logs, or any file.',
         inputSchema: {
           type: 'object' as const,
           properties: {
@@ -94,22 +110,32 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
       },
       {
         name: 'list_sessions',
-        description: 'List other active Claude Code sessions that support channel communication. Returns session ID, project name, status, and optional title/summary.',
+        description:
+          'List other active Claude Code sessions that support channel communication. Returns session ID, project name, status, and optional title/summary.',
         inputSchema: {
           type: 'object' as const,
           properties: {
-            status: { type: 'string', enum: ['live', 'inactive', 'all'], description: 'Filter by status (default: live)' },
+            status: {
+              type: 'string',
+              enum: ['live', 'inactive', 'all'],
+              description: 'Filter by status (default: live)',
+            },
           },
         },
       },
       {
         name: 'send_message',
-        description: 'Send a message to another Claude Code session. Requires an established link (first contact triggers approval prompt on the receiving session). Include conversation_id in replies to maintain thread context.',
+        description:
+          'Send a message to another Claude Code session. Requires an established link (first contact triggers approval prompt on the receiving session). Include conversation_id in replies to maintain thread context.',
         inputSchema: {
           type: 'object' as const,
           properties: {
             to: { type: 'string', description: 'Target session ID (from list_sessions)' },
-            intent: { type: 'string', enum: ['request', 'response', 'notify', 'progress'], description: 'Message intent' },
+            intent: {
+              type: 'string',
+              enum: ['request', 'response', 'notify', 'progress'],
+              description: 'Message intent',
+            },
             message: { type: 'string', description: 'Message content' },
             context: { type: 'string', description: 'Brief context about what this relates to' },
             conversation_id: { type: 'string', description: 'Thread ID for multi-turn exchanges' },
@@ -120,7 +146,7 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
     ],
   }))
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, async request => {
     const { name, arguments: args } = request.params
     const params = (args || {}) as Record<string, string>
 
@@ -142,7 +168,7 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
         return { content: [{ type: 'text', text: url }] }
       }
       case 'list_sessions': {
-        const sessions = await callbacks.onListSessions?.(params.status) || []
+        const sessions = (await callbacks.onListSessions?.(params.status)) || []
         debug(`[channel] list_sessions: ${sessions.length} results`)
         return { content: [{ type: 'text', text: JSON.stringify(sessions, null, 2) }] }
       }
@@ -157,15 +183,30 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
           return { content: [{ type: 'text', text: result?.error || 'Failed to send message' }], isError: true }
         }
         debug(`[channel] send_message to ${to}: ${message.slice(0, 60)}`)
-        const response = result.conversationId
-          ? `Sent. conversation_id: ${result.conversationId}`
-          : 'Sent.'
+        const response = result.conversationId ? `Sent. conversation_id: ${result.conversationId}` : 'Sent.'
         return { content: [{ type: 'text', text: response }] }
       }
       default:
         return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true }
     }
   })
+
+  // Listen for notifications FROM Claude Code (permission requests, future event types).
+  // CC sends permission_request when it needs tool approval and we declared claude/channel/permission.
+  server.fallbackNotificationHandler = async notification => {
+    if (notification.method === 'notifications/claude/channel/permission_request') {
+      const params = (notification.params || {}) as Record<string, unknown>
+      const requestId = typeof params.request_id === 'string' ? params.request_id : ''
+      const toolName = typeof params.tool_name === 'string' ? params.tool_name : ''
+      const description = typeof params.description === 'string' ? params.description : ''
+      const inputPreview = typeof params.input_preview === 'string' ? params.input_preview : ''
+
+      debug(`[channel] Permission request: ${requestId} ${toolName} - ${description.slice(0, 80)}`)
+      callbacks.onPermissionRequest?.({ requestId, toolName, description, inputPreview })
+    } else {
+      debug(`[channel] Unhandled notification: ${notification.method}`)
+    }
+  }
 
   // Create stateful transport -- single session, single client (Claude Code)
   const transport = new WebStandardStreamableHTTPServerTransport({
@@ -179,7 +220,7 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
     callbacks.onDisconnect?.()
   }
 
-  transport.onerror = (err) => {
+  transport.onerror = err => {
     debug(`[channel] Transport error: ${err.message}`)
   }
 
@@ -267,6 +308,29 @@ export function isMcpChannelReady(): boolean {
 }
 
 /**
+ * Send a permission response back to Claude Code.
+ * Called when the dashboard user clicks ALLOW or DENY.
+ */
+export async function sendPermissionResponse(requestId: string, behavior: 'allow' | 'deny'): Promise<boolean> {
+  if (!state?.connected) {
+    debug('[channel] Cannot send permission response: not connected')
+    return false
+  }
+
+  try {
+    await state.server.notification({
+      method: 'notifications/claude/channel/permission' as const,
+      params: { request_id: requestId, behavior },
+    })
+    debug(`[channel] Permission response: ${requestId} -> ${behavior}`)
+    return true
+  } catch (err) {
+    debug(`[channel] Permission response failed: ${err instanceof Error ? err.message : err}`)
+    return false
+  }
+}
+
+/**
  * Shut down the MCP channel server.
  */
 export async function closeMcpChannel(): Promise<void> {
@@ -275,8 +339,12 @@ export async function closeMcpChannel(): Promise<void> {
     keepaliveTimer = null
   }
   if (state) {
-    try { await state.transport.close() } catch {}
-    try { await state.server.close() } catch {}
+    try {
+      await state.transport.close()
+    } catch {}
+    try {
+      await state.server.close()
+    } catch {}
     state = null
     debug('[channel] MCP channel server closed')
   }

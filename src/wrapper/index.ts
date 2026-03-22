@@ -16,8 +16,14 @@ import { DEFAULT_CONCENTRATOR_URL } from '../shared/protocol'
 import { DEBUG, debug } from './debug'
 import { FileEditor } from './file-editor'
 import { startLocalServer, stopLocalServer } from './local-server'
+import {
+  closeMcpChannel,
+  initMcpChannel,
+  isMcpChannelReady,
+  pushChannelMessage,
+  sendPermissionResponse,
+} from './mcp-channel'
 import { getTerminalSize, type PtyProcess, setupTerminalPassthrough, spawnClaude } from './pty-spawn'
-import { initMcpChannel, pushChannelMessage, closeMcpChannel, isMcpChannelReady } from './mcp-channel'
 import { cleanupSettings, writeMergedSettings } from './settings-merge'
 import { createTranscriptWatcher, type TranscriptWatcher } from './transcript-watcher'
 import { createWsClient, type WsClient } from './ws-client'
@@ -128,7 +134,15 @@ OPTIONS:
   --rclaude-secret <s>   Shared secret for concentrator auth (or RCLAUDE_SECRET env)
   --no-concentrator      Run without forwarding to concentrator
   --no-terminal          Disable remote terminal capability
+  --no-channels          Disable MCP channel (channels are ON by default)
+  --channels             Enable MCP channel (already default, for explicitness)
   --rclaude-help         Show this help message
+
+ENVIRONMENT:
+  RCLAUDE_SECRET         Shared secret for concentrator auth
+  RCLAUDE_CONCENTRATOR   Concentrator WebSocket URL
+  RCLAUDE_CHANNELS=0     Disable MCP channel (enabled by default)
+  RCLAUDE_DEBUG=1        Enable debug logging to /tmp/rclaude-debug.log
 
 All other arguments are passed through to claude.
 
@@ -165,7 +179,7 @@ async function main() {
   let concentratorSecret = process.env.RCLAUDE_SECRET
   let noConcentrator = false
   let noTerminal = false
-  let channelEnabled = !!process.env.RCLAUDE_CHANNELS
+  let channelEnabled = process.env.RCLAUDE_CHANNELS !== '0'
   const claudeArgs: string[] = []
 
   debug(`Concentrator URL: ${concentratorUrl} (source: ${process.env.RCLAUDE_CONCENTRATOR ? 'env' : 'default'})`)
@@ -187,6 +201,8 @@ async function main() {
       noTerminal = true
     } else if (arg === '--channels') {
       channelEnabled = true
+    } else if (arg === '--no-channels') {
+      channelEnabled = false
     } else {
       claudeArgs.push(arg)
     }
@@ -379,8 +395,13 @@ async function main() {
       onInput(input, crDelay) {
         if (!ptyProcess) return
 
+        // Slash commands (/compact, /clear, /model, etc.) must go via PTY -
+        // they're processed by Claude Code's CLI input layer, not the model.
+        // Channel messages bypass the CLI and go straight to model context.
+        const isSlashCommand = input.trimStart().startsWith('/')
+
         // Channel mode: push through MCP instead of PTY injection
-        if (channelEnabled && isMcpChannelReady()) {
+        if (channelEnabled && isMcpChannelReady() && !isSlashCommand) {
           pushChannelMessage(input).then(sent => {
             if (sent) {
               diag('channel', `Input via MCP (${input.length} chars)`)
@@ -550,6 +571,12 @@ async function main() {
       },
       onChannelLinkRequest() {
         // Link requests are handled by the dashboard UI, not by Claude
+      },
+      onPermissionResponse(requestId: string, behavior: 'allow' | 'deny') {
+        if (channelEnabled && isMcpChannelReady()) {
+          sendPermissionResponse(requestId, behavior)
+          diag('channel', `Permission response: ${requestId} -> ${behavior}`)
+        }
       },
     })
   }
@@ -871,7 +898,7 @@ async function main() {
             debug(`[channel] share_file: upload failed: ${res.status}`)
             return null
           }
-          const data = await res.json() as { url?: string }
+          const data = (await res.json()) as { url?: string }
           diag('channel', `Shared: ${filePath} -> ${data.url}`)
           return data.url || null
         } catch (err) {
@@ -881,9 +908,9 @@ async function main() {
       },
       async onListSessions(status) {
         if (!wsClient?.isConnected()) return []
-        return new Promise((resolve) => {
+        return new Promise(resolve => {
           const timeout = setTimeout(() => resolve([]), 5000)
-          pendingListSessions = (sessions) => {
+          pendingListSessions = sessions => {
             clearTimeout(timeout)
             pendingListSessions = null
             resolve(sessions)
@@ -893,9 +920,9 @@ async function main() {
       },
       async onSendMessage(to, intent, message, context, conversationId) {
         if (!wsClient?.isConnected()) return { ok: false, error: 'Not connected' }
-        return new Promise((resolve) => {
+        return new Promise(resolve => {
           const timeout = setTimeout(() => resolve({ ok: false, error: 'Timeout' }), 10000)
-          pendingSendResult = (result) => {
+          pendingSendResult = result => {
             clearTimeout(timeout)
             pendingSendResult = null
             resolve(result)
@@ -910,6 +937,19 @@ async function main() {
             conversationId,
           } as any)
         })
+      },
+      onPermissionRequest(data) {
+        diag('channel', `Permission request: ${data.requestId} ${data.toolName}`)
+        if (wsClient?.isConnected()) {
+          wsClient.send({
+            type: 'permission_request',
+            sessionId: claudeSessionId || internalId,
+            requestId: data.requestId,
+            toolName: data.toolName,
+            description: data.description,
+            inputPreview: data.inputPreview,
+          })
+        }
       },
       onDisconnect() {
         diag('channel', 'Channel disconnected')
@@ -1118,7 +1158,7 @@ async function main() {
             'The user may be on their phone or another device, not at the terminal.',
             '',
             '**Available MCP tools (rclaude server):**',
-            '- `mcp__rclaude__notify` - Send a push notification to the user\'s devices (phone, browser)',
+            "- `mcp__rclaude__notify` - Send a push notification to the user's devices (phone, browser)",
             '- `mcp__rclaude__share_file` - Upload a local file and get a public URL for the dashboard user',
             '',
             '',
@@ -1151,8 +1191,10 @@ async function main() {
   // Add --channels + --mcp-config for MCP channel support
   const finalClaudeArgs = channelEnabled
     ? [
-        '--dangerously-load-development-channels', 'server:rclaude',
-        '--mcp-config', JSON.stringify({ mcpServers: { rclaude: { type: 'http', url: `http://localhost:${localServerPort}/mcp` } } }),
+        '--dangerously-load-development-channels',
+        'server:rclaude',
+        '--mcp-config',
+        JSON.stringify({ mcpServers: { rclaude: { type: 'http', url: `http://localhost:${localServerPort}/mcp` } } }),
         ...claudeArgs,
       ]
     : claudeArgs

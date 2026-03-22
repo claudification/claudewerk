@@ -262,12 +262,37 @@ function processMessage(msg: DashboardMessage) {
             return state
           }
           return {
-            pendingLinkRequests: [...state.pendingLinkRequests, {
-              fromSession: req.fromSession,
-              fromProject: req.fromProject || req.fromSession.slice(0, 8),
-              toSession: req.toSession,
-              toProject: req.toProject || req.toSession.slice(0, 8),
-            }],
+            pendingLinkRequests: [
+              ...state.pendingLinkRequests,
+              {
+                fromSession: req.fromSession,
+                fromProject: req.fromProject || req.fromSession.slice(0, 8),
+                toSession: req.toSession,
+                toProject: req.toProject || req.toSession.slice(0, 8),
+              },
+            ],
+          }
+        })
+      }
+      break
+    }
+    case 'permission_request': {
+      const req = msg as any
+      if (req.sessionId && req.requestId) {
+        useSessionsStore.setState(state => {
+          if (state.pendingPermissions.some(p => p.requestId === req.requestId)) return state
+          return {
+            pendingPermissions: [
+              ...state.pendingPermissions,
+              {
+                sessionId: req.sessionId,
+                requestId: req.requestId,
+                toolName: req.toolName || 'Unknown',
+                description: req.description || '',
+                inputPreview: req.inputPreview || '',
+                timestamp: Date.now(),
+              },
+            ],
           }
         })
       }

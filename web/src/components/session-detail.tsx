@@ -67,6 +67,59 @@ function LinkRequestBanners() {
   )
 }
 
+function PermissionBanners() {
+  const permissions = useSessionsStore(s => s.pendingPermissions)
+  const respond = useSessionsStore(s => s.respondToPermission)
+  const selectedSession = useSessionsStore(s => s.selectedSessionId)
+  // Only show permissions for the currently viewed session
+  const relevant = permissions.filter(p => p.sessionId === selectedSession)
+  if (relevant.length === 0) return null
+  return (
+    <div className="shrink-0 space-y-1 p-2">
+      {relevant.map(perm => (
+        <div
+          key={perm.requestId}
+          className="flex flex-col gap-1.5 px-3 py-2 bg-amber-500/10 border border-amber-500/30 rounded font-mono text-xs"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-amber-400 font-bold shrink-0">PERMISSION</span>
+            <span className="text-foreground font-bold truncate">{perm.toolName}</span>
+            <span className="text-muted-foreground text-[10px] ml-auto">{perm.requestId}</span>
+          </div>
+          {perm.description && <div className="text-foreground/70 text-[11px]">{perm.description}</div>}
+          {perm.inputPreview && (
+            <pre className="text-muted-foreground text-[10px] bg-background/50 px-2 py-1 rounded overflow-x-auto max-h-20 whitespace-pre-wrap break-all">
+              {perm.inputPreview}
+            </pre>
+          )}
+          <div className="flex items-center gap-2 mt-0.5">
+            <button
+              type="button"
+              onClick={() => {
+                haptic('success')
+                respond(perm.sessionId, perm.requestId, 'allow')
+              }}
+              className="px-3 py-1 text-[11px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/30 transition-colors"
+            >
+              ALLOW
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                haptic('error')
+                respond(perm.sessionId, perm.requestId, 'deny')
+              }}
+              className="px-3 py-1 text-[11px] font-bold bg-red-500/20 text-red-400 border border-red-500/40 hover:bg-red-500/30 transition-colors"
+            >
+              DENY
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function ScrollToBottomButton({ onClick, direction = 'down' }: { onClick: () => void; direction?: 'down' | 'up' }) {
   const Icon = direction === 'up' ? ChevronUp : ChevronDown
   return (
@@ -396,6 +449,8 @@ export function SessionDetail() {
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
       {/* Link Request Banners */}
       <LinkRequestBanners />
+      {/* Permission Relay Banners */}
+      <PermissionBanners />
       {/* Session Info - Collapsible */}
       <div className="shrink-0 border-b border-border max-h-[30vh] overflow-y-auto">
         <button

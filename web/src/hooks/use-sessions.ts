@@ -89,6 +89,15 @@ interface SessionsState {
   showDebugConsole: boolean
   pendingLinkRequests: Array<{ fromSession: string; fromProject: string; toSession: string; toProject: string }>
   respondToLinkRequest: (fromSession: string, toSession: string, action: 'approve' | 'block') => void
+  pendingPermissions: Array<{
+    sessionId: string
+    requestId: string
+    toolName: string
+    description: string
+    inputPreview: string
+    timestamp: number
+  }>
+  respondToPermission: (sessionId: string, requestId: string, behavior: 'allow' | 'deny') => void
   requestedTab: string | null
   requestedTabSeq: number
   pendingFilePath: string | null
@@ -198,6 +207,16 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       pendingLinkRequests: state.pendingLinkRequests.filter(
         r => !(r.fromSession === fromSession && r.toSession === toSession),
       ),
+    }))
+  },
+  pendingPermissions: [],
+  respondToPermission: (sessionId, requestId, behavior) => {
+    const ws = useSessionsStore.getState().ws
+    if (ws) {
+      ws.send(JSON.stringify({ type: 'permission_response', sessionId, requestId, behavior }))
+    }
+    useSessionsStore.setState(state => ({
+      pendingPermissions: state.pendingPermissions.filter(p => p.requestId !== requestId),
     }))
   },
   requestedTab: null,
