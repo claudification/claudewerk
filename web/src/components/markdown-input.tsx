@@ -43,15 +43,23 @@ function highlightMarkdown(text: string): string {
   // Inline code (`...`)
   html = html.replace(/(`[^`\n]+`)/g, '<span class="text-cyan-400">$1</span>')
 
-  // Bold (**...**)
-  html = html.replace(/(\*\*[^*]+\*\*)/g, '<span class="text-foreground font-bold">$1</span>')
-
-  // Italic (*...* or _..._) - avoid matching ** or __
-  html = html.replace(/(?<!\*)(\*[^*\n]+\*)(?!\*)/g, '<span class="text-foreground/70 italic">$1</span>')
-  html = html.replace(/(?<!_)(_[^_\n]+_)(?!_)/g, '<span class="text-foreground/70 italic">$1</span>')
-
-  // Headings (# at start of line)
-  html = html.replace(/^(#{1,6}\s.*)$/gm, '<span class="text-accent font-bold">$1</span>')
+  // Bold, italic, headings, etc. must not match inside already-highlighted code spans.
+  // Split on code spans (already wrapped in <span>...</span> from above), process only non-code parts.
+  html = html
+    .split(/(<span class="text-cyan-[^"]*">[^]*?<\/span>)/g)
+    .map((part, i) => {
+      // Odd indices are code spans - leave them alone
+      if (i % 2 === 1) return part
+      // Bold (**...**)
+      let p = part.replace(/(\*\*[^*]+\*\*)/g, '<span class="text-foreground font-bold">$1</span>')
+      // Italic (*...* or _..._) - avoid matching ** or __
+      p = p.replace(/(?<!\*)(\*[^*\n]+\*)(?!\*)/g, '<span class="text-foreground/70 italic">$1</span>')
+      p = p.replace(/(?<!_)(_[^_\n]+_)(?!_)/g, '<span class="text-foreground/70 italic">$1</span>')
+      // Headings (# at start of line)
+      p = p.replace(/^(#{1,6}\s.*)$/gm, '<span class="text-accent font-bold">$1</span>')
+      return p
+    })
+    .join('')
 
   // Blockquotes (> at start of line)
   html = html.replace(/^(&gt;\s?.*)$/gm, '<span class="text-muted-foreground">$1</span>')
