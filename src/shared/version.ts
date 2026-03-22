@@ -9,13 +9,9 @@ export interface BuildVersion {
 }
 
 export const BUILD_VERSION: BuildVersion = {
-  gitHash: 'e97f67e9f7519abc1487452f8e4cfd5a9a0b89a6',
-  gitHashShort: 'e97f67e-dirty',
-  buildTime: '2026-03-13T15:50:11.885Z',
+  gitHash: '51f269801928b81b63e72359cf6ae007c605ec36',
+  gitHashShort: '51f2698-dirty',
+  buildTime: '2026-03-22T11:08:44.413Z',
   dirty: true,
-  recentCommits: [
-    { hash: 'e97f67e', message: '(HEAD -> main, origin/main, origin/HEAD) chore: Update build version' },
-    { hash: 'cad17dc', message: 'feat: Per-subagent token usage tracking and display' },
-    { hash: '4d62e78', message: 'fix: Eliminate Zustand re-render storms causing React error #185 and UI jank' },
-  ],
+  recentCommits: [{"hash":"51f2698","message":"(HEAD -> main, origin/main, origin/HEAD) feat: Show link status (connected/blocked) in list_sessions results"},{"hash":"bb19d7e","message":"fix: Deduplicate agent completion notifications in transcript"},{"hash":"3bbb466","message":"fix: stopImmediatePropagation on ESC in fullscreen to prevent tab switch"}],
 }

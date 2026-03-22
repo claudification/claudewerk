@@ -107,7 +107,9 @@ export function createTranscriptWatcher(options: TranscriptWatcherOptions): Tran
           const METADATA_TYPES = new Set(['summary', 'custom-title', 'agent-name', 'pr-link'])
           const tail = entries.slice(-500)
           const tailSet = new Set(tail)
-          const metadata = entries.filter(e => METADATA_TYPES.has((e as Record<string, unknown>).type as string) && !tailSet.has(e))
+          const metadata = entries.filter(
+            e => METADATA_TYPES.has((e as Record<string, unknown>).type as string) && !tailSet.has(e),
+          )
           onEntries([...metadata, ...tail], isInitial)
         } else {
           onEntries(entries, isInitial)

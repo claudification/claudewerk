@@ -185,8 +185,7 @@ export function groupEntries(entries: TranscriptEntry[]): DisplayGroup[] {
           const synth = g.entries[0] as unknown as Record<string, unknown> | undefined
           if (synth && !synth.uuid) {
             const synthMsg = synth as unknown as TranscriptUserEntry
-            const synthText =
-              typeof synthMsg.message?.content === 'string' ? synthMsg.message.content : undefined
+            const synthText = typeof synthMsg.message?.content === 'string' ? synthMsg.message.content : undefined
             if (synthText === textContent) {
               groups.splice(gi, 1)
               // Reset current if it pointed at the spliced group
@@ -210,8 +209,12 @@ export function groupEntries(entries: TranscriptEntry[]): DisplayGroup[] {
         if (notifications.length > 0) {
           // Dedup: queue-operation enqueue already created a system group with same notifications
           const prevSystem = groups[groups.length - 1]
-          const isDuplicate = prevSystem?.type === 'system' && prevSystem.notifications?.length === notifications.length
-            && notifications.every(n => prevSystem.notifications!.some(p => p.taskId === n.taskId && p.status === n.status))
+          const isDuplicate =
+            prevSystem?.type === 'system' &&
+            prevSystem.notifications?.length === notifications.length &&
+            notifications.every(n =>
+              prevSystem.notifications!.some(p => p.taskId === n.taskId && p.status === n.status),
+            )
           if (!isDuplicate) {
             current = null
             groups.push({
@@ -393,8 +396,7 @@ export function useIncrementalGroups(entries: TranscriptEntry[]) {
             const synth = g.entries[0] as unknown as Record<string, unknown> | undefined
             if (synth && !synth.uuid) {
               const synthMsg = synth as unknown as TranscriptUserEntry
-              const synthText =
-                typeof synthMsg.message?.content === 'string' ? synthMsg.message.content : undefined
+              const synthText = typeof synthMsg.message?.content === 'string' ? synthMsg.message.content : undefined
               if (synthText === textContent) {
                 newGroups.splice(gi, 1)
                 if (lastGroup === g) lastGroup = null
@@ -416,8 +418,12 @@ export function useIncrementalGroups(entries: TranscriptEntry[]) {
           const notifications = parseTaskNotifications(textContent)
           if (notifications.length > 0) {
             const prevSystem = newGroups[newGroups.length - 1]
-            const isDuplicate = prevSystem?.type === 'system' && prevSystem.notifications?.length === notifications.length
-              && notifications.every(n => prevSystem.notifications!.some(p => p.taskId === n.taskId && p.status === n.status))
+            const isDuplicate =
+              prevSystem?.type === 'system' &&
+              prevSystem.notifications?.length === notifications.length &&
+              notifications.every(n =>
+                prevSystem.notifications!.some(p => p.taskId === n.taskId && p.status === n.status),
+              )
             if (!isDuplicate) {
               lastGroup = null
               newGroups.push({ type: 'system', timestamp: entry.timestamp || '', entries: [entry], notifications })

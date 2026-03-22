@@ -194,7 +194,9 @@ export async function writeMcpConfig(cwd: string, port: number): Promise<void> {
     if (await file.exists()) {
       existing = JSON.parse(await file.text())
     }
-  } catch { /* no existing config or parse error */ }
+  } catch {
+    /* no existing config or parse error */
+  }
 
   const mcpServers = (existing.mcpServers || {}) as Record<string, unknown>
   mcpServers.rclaude = {
@@ -219,7 +221,9 @@ export async function cleanupMcpConfig(cwd: string): Promise<void> {
       delete mcpServers.rclaude
       await Bun.write(mcpPath, JSON.stringify(config, null, 2) + '\n')
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 /**

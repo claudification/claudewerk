@@ -3,7 +3,19 @@
  * Shows in the "Files" tab of session detail
  */
 
-import { AlertTriangle, ChevronLeft, Clock, Eye, FileText, Loader2, Maximize2, Minimize2, Pencil, RefreshCw, Save } from 'lucide-react'
+import {
+  AlertTriangle,
+  ChevronLeft,
+  Clock,
+  Eye,
+  FileText,
+  Loader2,
+  Maximize2,
+  Minimize2,
+  Pencil,
+  RefreshCw,
+  Save,
+} from 'lucide-react'
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { type FileInfo, useFileEditor } from '@/hooks/use-file-editor'
 import { useSessionsStore } from '@/hooks/use-sessions'
