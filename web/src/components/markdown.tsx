@@ -116,9 +116,18 @@ marked.use({
   },
 })
 
-// Override GFM strikethrough to require double tildes only (~~text~~)
-// Default marked GFM also matches single ~text~ which breaks paths like ~/foo
+// Override GFM strikethrough:
+// - Double tildes only (single ~ breaks ~/foo paths, triple ~~~ blocked)
+// - Content must start and end with non-whitespace
+// - Max 200 chars content (prevents long-distance accidental matches like ~~50..long text..~~40)
+// - Word-adjacent ~~ is allowed (foo~~bar~~, ~~struck~~baz) - matches GFM spec
+// - Built-in GFM del disabled to prevent fallback without our rules
 marked.use({
+  tokenizer: {
+    del() {
+      return undefined as ReturnType<typeof this.del>
+    },
+  },
   extensions: [
     {
       name: 'del',
@@ -127,9 +136,11 @@ marked.use({
         return src.indexOf('~~')
       },
       tokenizer(src: string) {
-        const match = src.match(/^~~(?!~)([\s\S]+?)~~(?!~)/)
+        const match = src.match(/^~~(?!~)(\S[\s\S]{0,198}?\S|\S)~~(?!~)/)
         if (match) {
-          return { type: 'del', raw: match[0], text: match[1], tokens: [] }
+          const token = { type: 'del', raw: match[0], text: match[1], tokens: [] as any[] }
+          ;(this as any).lexer.inlineTokens(match[1], token.tokens)
+          return token
         }
         return undefined
       },
