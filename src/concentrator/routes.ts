@@ -35,7 +35,9 @@ function initBlobStore(cacheDir: string): void {
   try {
     const count = readdirSync(blobDir).filter(f => f.endsWith('.meta')).length
     if (count > 0) console.log(`[blobs] ${count} blobs on disk`)
-  } catch { /* empty dir */ }
+  } catch {
+    /* empty dir */
+  }
 }
 
 // Evict expired blobs from disk hourly
@@ -51,13 +53,21 @@ setInterval(
           const meta = JSON.parse(readFileSync(join(blobDir, file), 'utf8'))
           if (now - meta.createdAt > BLOB_MAX_AGE_MS) {
             const hash = file.replace('.meta', '')
-            try { unlinkSync(join(blobDir, hash)) } catch {}
-            try { unlinkSync(join(blobDir, file)) } catch {}
+            try {
+              unlinkSync(join(blobDir, hash))
+            } catch {}
+            try {
+              unlinkSync(join(blobDir, file))
+            } catch {}
             evicted++
           }
-        } catch { /* corrupt meta */ }
+        } catch {
+          /* corrupt meta */
+        }
       }
-    } catch { /* dir gone */ }
+    } catch {
+      /* dir gone */
+    }
     if (evicted > 0) console.log(`[blobs] Evicted ${evicted} expired blobs`)
   },
   60 * 60 * 1000,
@@ -83,7 +93,9 @@ export function registerFilePath(path: string): string {
       const mediaType = `image/${ext === 'jpg' ? 'jpeg' : ext}`
       writeFileSync(blobPath, readFileSync(path))
       writeFileSync(`${blobPath}.meta`, JSON.stringify({ mediaType, createdAt: Date.now() }))
-    } catch { /* source file might not exist yet */ }
+    } catch {
+      /* source file might not exist yet */
+    }
   }
   return hash
 }
@@ -336,7 +348,9 @@ export function createRouter(options: RouteOptions): Hono {
     try {
       const meta = JSON.parse(readFileSync(metaPath, 'utf8'))
       mediaType = meta.mediaType || mediaType
-    } catch { /* no meta, use generic type */ }
+    } catch {
+      /* no meta, use generic type */
+    }
 
     return new Response(file, {
       headers: { 'Content-Type': mediaType, 'Cache-Control': 'public, max-age=86400' },
@@ -480,7 +494,11 @@ export function createRouter(options: RouteOptions): Hono {
   })
 
   // ─── Agent ─────────────────────────────────────────────────────────
-  app.get('/agent/status', c => c.json({ connected: sessionStore.hasAgent() }))
+  app.get('/agent/status', c => {
+    const connected = sessionStore.hasAgent()
+    const info = sessionStore.getAgentInfo()
+    return c.json({ connected, machineId: info?.machineId, hostname: info?.hostname })
+  })
 
   app.post('/agent/quit', c => {
     const agent = sessionStore.getAgent()
@@ -490,7 +508,13 @@ export function createRouter(options: RouteOptions): Hono {
   })
 
   app.get('/api/agent/diag', c => {
-    return c.json({ connected: sessionStore.hasAgent(), entries: sessionStore.getAgentDiag() })
+    const info = sessionStore.getAgentInfo()
+    return c.json({
+      connected: sessionStore.hasAgent(),
+      machineId: info?.machineId,
+      hostname: info?.hostname,
+      entries: sessionStore.getAgentDiag(),
+    })
   })
 
   // ─── Spawn ─────────────────────────────────────────────────────────

@@ -287,6 +287,7 @@ export type WrapperMessage =
   | InterSessionMessage
   | InterSessionLinkResponse
   | InterSessionListRequest
+  | PermissionRequest
 
 // Concentrator -> Wrapper messages
 export interface Ack {
@@ -384,6 +385,23 @@ export interface InterSessionListResponse {
   }>
 }
 
+// Permission relay (CC -> channel -> dashboard -> channel -> CC)
+export interface PermissionRequest {
+  type: 'permission_request'
+  sessionId: string
+  requestId: string // 5-char hash from CC
+  toolName: string
+  description: string
+  inputPreview: string // JSON.stringify(input), truncated to 200 chars
+}
+
+export interface PermissionResponse {
+  type: 'permission_response'
+  sessionId: string
+  requestId: string
+  behavior: 'allow' | 'deny'
+}
+
 export type ConcentratorMessage =
   | Ack
   | ConcentratorError
@@ -399,6 +417,7 @@ export type ConcentratorMessage =
   | InterSessionDelivery
   | InterSessionLinkRequest
   | InterSessionListResponse
+  | PermissionResponse
 
 // Hook event types from Claude Code
 export type HookEventType =
@@ -671,6 +690,8 @@ export interface Session {
 // Agent -> Concentrator messages
 export interface AgentIdentify {
   type: 'agent_identify'
+  machineId?: string // short fingerprint (truncated SHA-256 of platform UUID/machine-id)
+  hostname?: string
 }
 
 export interface ReviveResult {

@@ -9,10 +9,44 @@
  * connected, this process exits immediately.
  */
 
-import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { hostname as osHostname } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import type { ConcentratorAgentMessage, ListDirsResult, ReviveResult, SpawnResult } from '../shared/protocol'
 import { DEFAULT_CONCENTRATOR_URL, HEARTBEAT_INTERVAL_MS } from '../shared/protocol'
+
+function getRawMachineId(): string {
+  const platform = process.platform
+
+  if (platform === 'darwin') {
+    try {
+      const result = Bun.spawnSync(['ioreg', '-rd1', '-c', 'IOPlatformExpertDevice'], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      })
+      if (result.success) {
+        const output = result.stdout.toString()
+        const match = output.match(/"IOPlatformUUID"\s*=\s*"([^"]+)"/)
+        if (match) return match[1]
+      }
+    } catch {}
+  }
+
+  if (platform === 'linux') {
+    try {
+      const id = readFileSync('/etc/machine-id', 'utf8').trim()
+      if (id) return id
+    } catch {}
+  }
+
+  return osHostname()
+}
+
+function getMachineId(): string {
+  const raw = getRawMachineId()
+  return createHash('sha256').update(raw).digest('hex').slice(0, 16)
+}
 
 const RECONNECT_DELAY_MS = 5000
 
@@ -335,8 +369,8 @@ function connect(
   ws.onopen = () => {
     log('Connected to concentrator')
     activeWs = ws
-    // Identify as agent
-    ws.send(JSON.stringify({ type: 'agent_identify' }))
+    // Identify as agent with machine fingerprint
+    ws.send(JSON.stringify({ type: 'agent_identify', machineId: getMachineId(), hostname: osHostname() }))
 
     // Start heartbeat
     heartbeatTimer = setInterval(() => {

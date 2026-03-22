@@ -44,6 +44,8 @@ export interface DashboardMessage {
   sessions?: SessionSummary[]
   event?: HookEvent
   connected?: boolean
+  machineId?: string
+  hostname?: string
   title?: string
   message?: string
   settings?: unknown
@@ -133,8 +135,9 @@ export interface SessionStore {
   isV2Subscriber: (ws: ServerWebSocket<unknown>) => boolean
   getSubscriptionsDiag: () => SubscriptionsDiag
   // Agent methods (exclusive single agent connection)
-  setAgent: (ws: ServerWebSocket<unknown>) => boolean
+  setAgent: (ws: ServerWebSocket<unknown>, info?: { machineId?: string; hostname?: string }) => boolean
   getAgent: () => ServerWebSocket<unknown> | undefined
+  getAgentInfo: () => { machineId?: string; hostname?: string } | undefined
   removeAgent: (ws: ServerWebSocket<unknown>) => void
   hasAgent: () => boolean
   // Agent diagnostics (structured log entries from host agent)
@@ -188,6 +191,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   const dashboardSubscribers = new Set<ServerWebSocket<unknown>>()
   const v2Subscribers = new Set<ServerWebSocket<unknown>>()
   let agentSocket: ServerWebSocket<unknown> | undefined
+  let agentInfo: { machineId?: string; hostname?: string } | undefined
 
   // Channel subscription registry (v2 pub/sub)
   // Forward index: channel key -> set of subscriber sockets
@@ -226,10 +230,18 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   // SessionStart/InstructionsLoaded = initialization, not work
   // ConfigChange/Setup/Elicitation = configuration, not work
   const PASSIVE_HOOKS = new Set([
-    'Stop', 'StopFailure', 'SessionStart', 'SessionEnd',
-    'Notification', 'TeammateIdle', 'TaskCompleted',
-    'InstructionsLoaded', 'ConfigChange', 'Setup',
-    'Elicitation', 'ElicitationResult',
+    'Stop',
+    'StopFailure',
+    'SessionStart',
+    'SessionEnd',
+    'Notification',
+    'TeammateIdle',
+    'TaskCompleted',
+    'InstructionsLoaded',
+    'ConfigChange',
+    'Setup',
+    'Elicitation',
+    'ElicitationResult',
   ])
   const MAX_EVENTS = 1000
 
@@ -352,7 +364,10 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       prLinks: session.prLinks,
       linkedSessions: getLinkedSessions(session.id).map(id => {
         const s = sessions.get(id)
-        return { id, name: s?.title || getProjectSettings(s?.cwd || '')?.label || s?.cwd?.split('/').pop() || id.slice(0, 8) }
+        return {
+          id,
+          name: s?.title || getProjectSettings(s?.cwd || '')?.label || s?.cwd?.split('/').pop() || id.slice(0, 8),
+        }
       }),
       tokenUsage: session.tokenUsage,
       stats: session.stats,
@@ -1597,10 +1612,11 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   }
 
   // Agent management (exclusive single connection)
-  function setAgent(ws: ServerWebSocket<unknown>): boolean {
+  function setAgent(ws: ServerWebSocket<unknown>, info?: { machineId?: string; hostname?: string }): boolean {
     if (agentSocket) return false // reject - already connected
     agentSocket = ws
-    broadcast({ type: 'agent_status', connected: true })
+    agentInfo = info
+    broadcast({ type: 'agent_status', connected: true, machineId: info?.machineId, hostname: info?.hostname })
     return true
   }
 
@@ -1608,9 +1624,14 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     return agentSocket
   }
 
+  function getAgentInfo(): { machineId?: string; hostname?: string } | undefined {
+    return agentInfo
+  }
+
   function removeAgent(ws: ServerWebSocket<unknown>): void {
     if (agentSocket === ws) {
       agentSocket = undefined
+      agentInfo = undefined
       broadcast({ type: 'agent_status', connected: false })
     }
   }
@@ -1736,7 +1757,9 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
                 prRepository: prRepository || '',
                 timestamp: (e.timestamp as string) || new Date().toISOString(),
               })
-              console.log(`[meta] pr-link: ${prRepository}#${prNumber} (session ${sessionId.slice(0, 8)}, total: ${session.prLinks.length})`)
+              console.log(
+                `[meta] pr-link: ${prRepository}#${prNumber} (session ${sessionId.slice(0, 8)}, total: ${session.prLinks.length})`,
+              )
               sessionChanged = true
             }
           }
@@ -2104,6 +2127,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     getSubscriptionsDiag,
     setAgent,
     getAgent,
+    getAgentInfo,
     removeAgent,
     hasAgent,
     pushAgentDiag,
