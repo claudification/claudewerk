@@ -24,10 +24,14 @@ export function ToolLine({
   toolUseResult,
   subagents,
   renderAgentInline,
+  planContent,
+  planPath,
 }: {
   tool: TranscriptContentBlock
   result?: string
   toolUseResult?: Record<string, unknown>
+  planContent?: string
+  planPath?: string
   subagents?: Array<{
     agentId: string
     agentType: string
@@ -279,7 +283,10 @@ export function ToolLine({
       summary = 'entering plan mode'
       break
     case 'ExitPlanMode':
-      summary = 'exiting plan mode'
+      summary = planPath ? `plan: ${shortPath(planPath)}` : 'exiting plan mode'
+      if (planContent) {
+        details = <WritePreview content={planContent} filePath={planPath || 'plan.md'} />
+      }
       break
     case 'NotebookEdit': {
       const cellId = input.cell_id as string
