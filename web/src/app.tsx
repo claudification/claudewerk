@@ -89,6 +89,23 @@ function Dashboard() {
     fetchSessionOrder().then(o => useSessionsStore.getState().setSessionOrder(o))
   }, [])
 
+  // Re-fetch transcript when page returns from background (iOS/Android PWA, tab switch).
+  // Mobile browsers throttle/pause WS delivery while backgrounded - transcript entries
+  // can be silently lost even if the WS stays connected. Bump connectSeq to trigger
+  // a full re-fetch if we were hidden for 30s+.
+  useEffect(() => {
+    let hiddenAt = 0
+    function handleVisibility() {
+      if (document.hidden) {
+        hiddenAt = Date.now()
+      } else if (hiddenAt && Date.now() - hiddenAt > 30_000) {
+        useSessionsStore.setState(s => ({ connectSeq: s.connectSeq + 1 }))
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [])
+
   // Fetch events/transcript when session selected or WS reconnects.
   // connectSeq monotonically increases on each connect, ensuring re-fetch even if
   // isConnected transitions false->true faster than React can observe.

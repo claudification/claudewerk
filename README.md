@@ -562,10 +562,20 @@ OPTIONS:
   --rclaude-secret <s>   Shared secret for concentrator auth (or RCLAUDE_SECRET env)
   --no-concentrator      Run without forwarding to concentrator
   --no-terminal          Disable remote terminal capability
+  --no-channels          Disable MCP channel (channels are ON by default)
+  --channels             Enable MCP channel (already default, for explicitness)
   --rclaude-help         Show rclaude help
 
 All other arguments pass through to claude CLI.
 ```
+
+**MCP Channel mode** (enabled by default) connects Claude Code to rclaude via MCP,
+enabling dashboard input without PTY keystroke injection and inter-session messaging.
+
+> **Note:** Claude Code 2.1.83+ disables `AskUserQuestion` and plan mode tools when
+> channels are active. These features require interactive terminal prompts that can't
+> flow through the channel yet. Use `--no-channels` or `RCLAUDE_CHANNELS=0` if you
+> need plan mode or structured questions. Terminal TTY access still works regardless.
 
 **Environment variables:**
 
@@ -573,6 +583,7 @@ All other arguments pass through to claude CLI.
 |----------|-------------|
 | `RCLAUDE_SECRET` | Shared secret (alternative to `--rclaude-secret`) |
 | `RCLAUDE_CONCENTRATOR` | Concentrator URL (alternative to `--concentrator`) |
+| `RCLAUDE_CHANNELS` | Set to `0` to disable MCP channel (enabled by default) |
 | `RCLAUDE_DEBUG` | Set to `1` to enable debug logging |
 | `RCLAUDE_DEBUG_LOG` | Debug log file path (default: `/tmp/rclaude-debug.log`) |
 

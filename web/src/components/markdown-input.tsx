@@ -37,7 +37,7 @@ function highlightMarkdown(text: string): string {
   // Fenced code blocks (``` ... ```) - fence markers + lang tag in bright cyan, content in dimmer cyan
   html = html.replace(
     /(```(\w*)\n?)([\s\S]*?)(```)/g,
-    '<span class="text-cyan-300 font-bold">$1</span><span class="text-cyan-400/70">$3</span><span class="text-cyan-300 font-bold">$4</span>',
+    '<span class="text-cyan-300">$1</span><span class="text-cyan-400/70">$3</span><span class="text-cyan-300">$4</span>',
   )
 
   // Inline code (`...`)
@@ -50,13 +50,13 @@ function highlightMarkdown(text: string): string {
     .map((part, i) => {
       // Odd indices are code spans - leave them alone
       if (i % 2 === 1) return part
-      // Bold (**...**)
-      let p = part.replace(/(\*\*[^*]+\*\*)/g, '<span class="text-foreground font-bold">$1</span>')
-      // Italic (*...* or _..._) - avoid matching ** or __
-      p = p.replace(/(?<!\*)(\*[^*\n]+\*)(?!\*)/g, '<span class="text-foreground/70 italic">$1</span>')
-      p = p.replace(/(?<!_)(_[^_\n]+_)(?!_)/g, '<span class="text-foreground/70 italic">$1</span>')
-      // Headings (# at start of line)
-      p = p.replace(/^(#{1,6}\s.*)$/gm, '<span class="text-accent font-bold">$1</span>')
+      // Bold (**...**) - color only, NO font-bold (shifts glyph widths, misaligns caret)
+      let p = part.replace(/(\*\*[^*]+\*\*)/g, '<span class="text-foreground">$1</span>')
+      // Italic (*...* or _..._) - color only, NO italic (shifts glyph widths, misaligns caret)
+      p = p.replace(/(?<!\*)(\*[^*\n]+\*)(?!\*)/g, '<span class="text-foreground/70">$1</span>')
+      p = p.replace(/(?<!_)(_[^_\n]+_)(?!_)/g, '<span class="text-foreground/70">$1</span>')
+      // Headings (# at start of line) - color only
+      p = p.replace(/^(#{1,6}\s.*)$/gm, '<span class="text-accent">$1</span>')
       return p
     })
     .join('')

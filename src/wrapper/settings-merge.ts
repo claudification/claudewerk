@@ -50,6 +50,7 @@ interface ClaudeSettings {
     ElicitationResult?: HookMatcher[]
     StopFailure?: HookMatcher[]
     Setup?: HookMatcher[]
+    [key: string]: HookMatcher[] | undefined
   }
   [key: string]: unknown
 }
@@ -102,7 +103,7 @@ function isVersionAtLeast(actual: string, required: string): boolean {
  * Get the list of hook events supported by the given Claude Code version.
  */
 function getSupportedHookEvents(claudeVersion?: string): string[] {
-  const events = [...CORE_HOOK_EVENTS]
+  const events: string[] = [...CORE_HOOK_EVENTS]
   if (claudeVersion) {
     for (const { minVersion, events: versionEvents } of VERSIONED_HOOK_EVENTS) {
       if (isVersionAtLeast(claudeVersion, minVersion)) {
@@ -207,9 +208,9 @@ export async function generateMergedSettings(sessionId: string, port: number, cl
 /**
  * Write merged settings to a temp file and return the path
  */
-export async function writeMergedSettings(sessionId: string, port: number, claudeVersion?: string): Promise<string> {
+export async function writeMergedSettings(sessionId: string, port: number, claudeVersion?: string, dir?: string): Promise<string> {
   const settings = await generateMergedSettings(sessionId, port, claudeVersion)
-  const settingsPath = `/tmp/rclaude-settings-${sessionId}.json`
+  const settingsPath = dir ? `${dir}/settings-${sessionId}.json` : `/tmp/rclaude-settings-${sessionId}.json`
 
   await Bun.write(settingsPath, JSON.stringify(settings, null, 2))
 
@@ -263,8 +264,8 @@ export async function cleanupMcpConfig(cwd: string): Promise<void> {
 /**
  * Clean up the temp settings file
  */
-export async function cleanupSettings(sessionId: string): Promise<void> {
-  const settingsPath = `/tmp/rclaude-settings-${sessionId}.json`
+export async function cleanupSettings(sessionId: string, dir?: string): Promise<void> {
+  const settingsPath = dir ? `${dir}/settings-${sessionId}.json` : `/tmp/rclaude-settings-${sessionId}.json`
   try {
     ;(await Bun.file(settingsPath).exists()) && (await Bun.$`rm ${settingsPath}`.quiet())
   } catch {

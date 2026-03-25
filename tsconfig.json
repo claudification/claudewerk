@@ -12,9 +12,8 @@
     "isolatedModules": true,
     "lib": ["ESNext"],
     "types": ["bun-types"],
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src/**/*.ts"],

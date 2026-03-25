@@ -9,9 +9,9 @@ export interface BuildVersion {
 }
 
 export const BUILD_VERSION: BuildVersion = {
-  gitHash: '51f269801928b81b63e72359cf6ae007c605ec36',
-  gitHashShort: '51f2698-dirty',
-  buildTime: '2026-03-22T11:08:44.413Z',
+  gitHash: 'c416ab61a80a1ac14c191521916c923c5cb4c7c7',
+  gitHashShort: 'c416ab6-dirty',
+  buildTime: '2026-03-25T16:58:08.041Z',
   dirty: true,
-  recentCommits: [{"hash":"51f2698","message":"(HEAD -> main, origin/main, origin/HEAD) feat: Show link status (connected/blocked) in list_sessions results"},{"hash":"bb19d7e","message":"fix: Deduplicate agent completion notifications in transcript"},{"hash":"3bbb466","message":"fix: stopImmediatePropagation on ESC in fullscreen to prevent tab switch"}],
+  recentCommits: [{"hash":"c416ab6","message":"(HEAD -> main, origin/main, origin/HEAD) Merge pull request #27 from ziadsawalha/feat/plan-transcript-view"},{"hash":"4dfcd8c","message":"Merge pull request #28 from ziadsawalha/fix/version-aware-hooks"},{"hash":"c7c467b","message":"Merge pull request #29 from ziadsawalha/fix/install-preserve-config"}],
 }
