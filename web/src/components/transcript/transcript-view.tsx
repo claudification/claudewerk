@@ -41,6 +41,29 @@ export function TranscriptView({
     return { mainGroups: main, queuedGroups: queued }
   }, [groups])
 
+  // Extract plan content from entries for ExitPlanMode display.
+  // Finds the last Write to a plans/*.md path across all entries.
+  const planContext = useMemo(() => {
+    let content: string | undefined
+    let path: string | undefined
+    for (const entry of entries) {
+      const msg = (entry as any)?.message
+      if (msg?.role !== 'assistant') continue
+      const blocks = msg.content
+      if (!Array.isArray(blocks)) continue
+      for (const block of blocks) {
+        if (block.type === 'tool_use' && block.name === 'Write' && block.input) {
+          const filePath = block.input.file_path as string
+          if (filePath && /plans\/[^/]+\.md$/.test(filePath)) {
+            content = block.input.content as string
+            path = filePath
+          }
+        }
+      }
+    }
+    return content ? { content, path } : undefined
+  }, [entries])
+
   // Lift subagents selector here (once) instead of per-GroupView (N times)
   // Return a primitive string so Zustand's Object.is check works - avoids re-renders
   // from session_update creating new array references with identical content
@@ -200,6 +223,7 @@ export function TranscriptView({
                   resultMap={resultMap}
                   showThinking={showThinking}
                   subagents={subagents}
+                  planContext={planContext}
                 />
               )
             })()}

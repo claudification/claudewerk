@@ -93,11 +93,13 @@ export function GroupView({
   resultMap,
   showThinking = false,
   subagents,
+  planContext,
 }: {
   group: DisplayGroup
   resultMap: Map<string, { result: string; extra?: Record<string, unknown> }>
   showThinking?: boolean
   subagents?: SubagentRef
+  planContext?: { content: string; path?: string }
 }) {
   const expandAll = useSessionsStore(state => state.expandAll)
   const userLabel = useSessionsStore(state => (state.globalSettings.userLabel as string)?.trim() || 'USER')
@@ -320,6 +322,9 @@ export function GroupView({
                   toolUseResult={item.extra}
                   subagents={subagents}
                   renderAgentInline={(agentId, toolId) => <AgentTranscriptInline agentId={agentId} toolId={toolId} />}
+                  {...(item.tool.name === 'ExitPlanMode' && planContext
+                    ? { planContent: planContext.content, planPath: planContext.path }
+                    : {})}
                 />
               )
             default:
