@@ -230,9 +230,10 @@ export function TranscriptView({
           </div>
         ))}
       </div>
-      {/* Queued messages: sticky at the bottom until consumed */}
+      {/* Queued messages: rendered inline at the bottom of the transcript */}
       {queuedGroups.length > 0 && (
-        <div className="sticky bottom-0 z-10 pb-2 pt-3 -mx-3 sm:-mx-4 px-3 sm:px-4 bg-gradient-to-t from-background via-background to-transparent">
+        <div className="mt-2 border-t border-dashed border-amber-500/30 pt-2">
+          <div className="text-[10px] font-mono text-amber-500/60 px-1 mb-1">QUEUED</div>
           {queuedGroups.map((group, i) => (
             <MemoizedGroupView
               key={`queued-${group.timestamp}-${i}`}

@@ -242,6 +242,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     'Setup',
     'Elicitation',
     'ElicitationResult',
+    'CwdChanged',
+    'FileChanged',
   ])
   const MAX_EVENTS = 1000
 
@@ -879,6 +881,14 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         }
         if (data.model && typeof data.model === 'string' && !session.model) {
           session.model = data.model
+        }
+      }
+
+      // Update CWD when Claude changes directory
+      if (event.hookEvent === 'CwdChanged' && event.data) {
+        const data = event.data as Record<string, unknown>
+        if (data.cwd && typeof data.cwd === 'string') {
+          session.cwd = data.cwd
         }
       }
 

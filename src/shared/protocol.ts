@@ -444,6 +444,8 @@ export type HookEventType =
   | 'ElicitationResult'
   | 'StopFailure'
   | 'Setup'
+  | 'CwdChanged'
+  | 'FileChanged'
 
 // Hook event data structures (based on Claude Code hook system)
 export interface SessionStartData {

@@ -50,6 +50,8 @@ interface ClaudeSettings {
     ElicitationResult?: HookMatcher[]
     StopFailure?: HookMatcher[]
     Setup?: HookMatcher[]
+    CwdChanged?: HookMatcher[]
+    FileChanged?: HookMatcher[]
     [key: string]: HookMatcher[] | undefined
   }
   [key: string]: unknown
@@ -86,6 +88,7 @@ const CORE_HOOK_EVENTS = [
  */
 const VERSIONED_HOOK_EVENTS: { minVersion: string; events: string[] }[] = [
   { minVersion: '2.1.76', events: ['PostCompact', 'Elicitation', 'ElicitationResult', 'StopFailure'] },
+  { minVersion: '2.1.83', events: ['CwdChanged', 'FileChanged'] },
 ]
 
 /**

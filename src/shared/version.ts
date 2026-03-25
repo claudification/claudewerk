@@ -9,9 +9,9 @@ export interface BuildVersion {
 }
 
 export const BUILD_VERSION: BuildVersion = {
-  gitHash: 'c416ab61a80a1ac14c191521916c923c5cb4c7c7',
-  gitHashShort: 'c416ab6-dirty',
-  buildTime: '2026-03-25T16:58:08.041Z',
+  gitHash: '715653fae46d6f8641872954efc766c094dab17c',
+  gitHashShort: '715653f-dirty',
+  buildTime: '2026-03-25T17:47:03.727Z',
   dirty: true,
-  recentCommits: [{"hash":"c416ab6","message":"(HEAD -> main, origin/main, origin/HEAD) Merge pull request #27 from ziadsawalha/feat/plan-transcript-view"},{"hash":"4dfcd8c","message":"Merge pull request #28 from ziadsawalha/fix/version-aware-hooks"},{"hash":"c7c467b","message":"Merge pull request #29 from ziadsawalha/fix/install-preserve-config"}],
+  recentCommits: [{"hash":"715653f","message":"(HEAD -> main, origin/main, origin/HEAD) Merge pull request #9 from ziadsawalha/fix/disconnect"},{"hash":"430477d","message":"feat: Dependency updates, TS6 migration, UX fixes"},{"hash":"c416ab6","message":"Merge pull request #27 from ziadsawalha/feat/plan-transcript-view"}],
 }

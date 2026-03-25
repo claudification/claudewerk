@@ -576,7 +576,8 @@ function InactiveProjectItem({ sessions }: { sessions: Session[] }) {
 
 export function SessionList() {
   const sessions = useSessionsStore(s => s.sessions)
-  const sessionOrder = useSessionsStore(s => s.sessionOrder)
+  const rawSessionOrder = useSessionsStore(s => s.sessionOrder)
+  const sessionOrder = rawSessionOrder?.tree ? rawSessionOrder : { version: 2 as const, tree: [] }
   const dashPrefs = useSessionsStore(s => s.dashboardPrefs)
   const [showInactive, setShowInactive] = useState(dashPrefs.showInactiveByDefault)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
