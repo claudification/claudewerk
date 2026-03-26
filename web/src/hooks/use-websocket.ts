@@ -101,6 +101,21 @@ function flushMessages() {
   const pending = msgBuffer
   msgBuffer = []
 
+  // Track sync state (epoch+seq) from incoming messages
+  const { syncSeq: prevSeq, syncEpoch: prevEpoch } = useSessionsStore.getState()
+  let maxSeq = prevSeq
+  let epoch = prevEpoch
+  for (const msg of pending) {
+    const m = msg as any
+    if (m._epoch && m._seq) {
+      epoch = m._epoch
+      if (m._seq > maxSeq) maxSeq = m._seq
+    }
+  }
+  if (maxSeq > prevSeq || epoch !== prevEpoch) {
+    useSessionsStore.setState({ syncEpoch: epoch, syncSeq: maxSeq })
+  }
+
   batch(() => {
     for (const msg of pending) {
       processMessage(msg)
@@ -110,11 +125,32 @@ function flushMessages() {
 
 function processMessage(msg: DashboardMessage) {
   switch (msg.type) {
+    // Sync protocol responses
+    case 'sync_ok' as any: {
+      console.log(`[sync] ok (epoch=${(msg as any).epoch?.slice(0, 8)} seq=${(msg as any).seq})`)
+      break
+    }
+    case 'sync_catchup' as any: {
+      const m = msg as any
+      console.log(`[sync] catchup: ${m.count} missed messages (epoch=${m.epoch?.slice(0, 8)} seq=${m.seq})`)
+      // The missed messages will arrive as subsequent WS messages and be processed normally
+      break
+    }
+    case 'sync_stale' as any: {
+      const m = msg as any
+      console.log(`[sync] stale: ${m.reason || 'unknown'} (missed=${m.missed || '?'})`)
+      // Full resync needed - bump connectSeq
+      useSessionsStore.setState(s => ({ connectSeq: s.connectSeq + 1, syncEpoch: m.epoch || '', syncSeq: m.seq || 0 }))
+      break
+    }
     case 'sessions_list': {
       if (msg.sessions) {
         useSessionsStore.getState().setSessions(msg.sessions.map(toSession))
         applyHashRoute()
       }
+      // Track sync state from initial sessions_list
+      const m = msg as any
+      if (m._epoch) useSessionsStore.setState({ syncEpoch: m._epoch, syncSeq: m._seq || 0 })
       // Check for version mismatch between server and this frontend bundle
       if ((msg as any).serverVersion) {
         const mismatch = (msg as any).serverVersion !== BUILD_VERSION.gitHashShort
@@ -325,6 +361,15 @@ export function useWebSocket() {
   const setError = useSessionsStore(s => s.setError)
   const setWs = useSessionsStore(s => s.setWs)
 
+  // Tracked send: serializes + records byte count. Uses wsRef for subscription watchers.
+  function send(msg: Record<string, unknown>) {
+    const w = wsRef.current
+    if (!w || w.readyState !== WebSocket.OPEN) return
+    const json = JSON.stringify(msg)
+    recordOut(json.length)
+    w.send(json)
+  }
+
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return
 
@@ -336,28 +381,16 @@ export function useWebSocket() {
         setConnected(true)
         setError(null)
         setWs(ws)
-        const sub = JSON.stringify({ type: 'subscribe', protocolVersion: 2 })
-        recordOut(sub.length)
-        ws.send(sub)
+        send({ type: 'subscribe', protocolVersion: 2 })
 
         // Subscribe to channels for currently selected session
         const { selectedSessionId, selectedSubagentId } = useSessionsStore.getState()
         if (selectedSessionId) {
           for (const ch of SESSION_CHANNELS) {
-            const chMsg = JSON.stringify({ type: 'channel_subscribe', channel: ch, sessionId: selectedSessionId })
-            recordOut(chMsg.length)
-            ws.send(chMsg)
+            send({ type: 'channel_subscribe', channel: ch, sessionId: selectedSessionId })
           }
-          // Also subscribe to active subagent transcript channel
           if (selectedSubagentId) {
-            const agentSub = JSON.stringify({
-              type: 'channel_subscribe',
-              channel: 'session:subagent_transcript',
-              sessionId: selectedSessionId,
-              agentId: selectedSubagentId,
-            })
-            recordOut(agentSub.length)
-            ws.send(agentSub)
+            send({ type: 'channel_subscribe', channel: 'session:subagent_transcript', sessionId: selectedSessionId, agentId: selectedSubagentId })
           }
         }
       }
@@ -460,28 +493,20 @@ export function useWebSocket() {
     // Watch for session selection changes and manage channel subscriptions
     let lastSubscribedSession: string | null = null
     const unsubSessionion = useSessionsStore.subscribe(state => {
-      const ws = wsRef.current
-      if (!ws || ws.readyState !== WebSocket.OPEN) return
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
       const newId = state.selectedSessionId
 
       if (newId === lastSubscribedSession) return
       const prevId = lastSubscribedSession
       lastSubscribedSession = newId
 
-      // Unsubscribe all previous channels (includes agent subscriptions)
       if (prevId) {
-        const unsub = JSON.stringify({ type: 'channel_unsubscribe_all' })
-        recordOut(unsub.length)
-        ws.send(unsub)
+        send({ type: 'channel_unsubscribe_all' })
         lastSubagentKey = null
       }
-
-      // Subscribe to new session channels
       if (newId) {
         for (const ch of SESSION_CHANNELS) {
-          const chMsg = JSON.stringify({ type: 'channel_subscribe', channel: ch, sessionId: newId })
-          recordOut(chMsg.length)
-          ws.send(chMsg)
+          send({ type: 'channel_subscribe', channel: ch, sessionId: newId })
         }
       }
     })
@@ -489,8 +514,7 @@ export function useWebSocket() {
     // Watch for subagent selection and subscribe to its transcript channel
     let lastSubagentKey: string | null = null
     const unsubAgent = useSessionsStore.subscribe(state => {
-      const ws = wsRef.current
-      if (!ws || ws.readyState !== WebSocket.OPEN) return
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
       const sessionId = state.selectedSessionId
       const agentId = state.selectedSubagentId
       const key = sessionId && agentId ? `${sessionId}:${agentId}` : null
@@ -499,29 +523,12 @@ export function useWebSocket() {
       const prevKey = lastSubagentKey
       lastSubagentKey = key
 
-      // Unsubscribe previous agent channel
       if (prevKey) {
         const [prevSid, prevAid] = prevKey.split(':')
-        const unsub = JSON.stringify({
-          type: 'channel_unsubscribe',
-          channel: 'session:subagent_transcript',
-          sessionId: prevSid,
-          agentId: prevAid,
-        })
-        recordOut(unsub.length)
-        ws.send(unsub)
+        send({ type: 'channel_unsubscribe', channel: 'session:subagent_transcript', sessionId: prevSid, agentId: prevAid })
       }
-
-      // Subscribe to new agent channel
       if (key && sessionId && agentId) {
-        const sub = JSON.stringify({
-          type: 'channel_subscribe',
-          channel: 'session:subagent_transcript',
-          sessionId,
-          agentId,
-        })
-        recordOut(sub.length)
-        ws.send(sub)
+        send({ type: 'channel_subscribe', channel: 'session:subagent_transcript', sessionId, agentId })
       }
     })
 

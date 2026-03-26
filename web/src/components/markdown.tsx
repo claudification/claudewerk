@@ -125,7 +125,7 @@ marked.use({
 marked.use({
   tokenizer: {
     del() {
-      return undefined as ReturnType<typeof this.del>
+      return undefined
     },
   },
   extensions: [

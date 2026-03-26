@@ -2,7 +2,7 @@ import { ArrowLeft, ChevronDown, ChevronRight, ChevronUp, Copy, Terminal } from 
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { fetchSubagentTranscript, reviveSession, sendInput, useSessionsStore } from '@/hooks/use-sessions'
+import { fetchSubagentTranscript, reviveSession, sendInput, useSessionsStore, wsSend } from '@/hooks/use-sessions'
 import { canTerminal, type TranscriptEntry } from '@/lib/types'
 import { cn, contextWindowSize, formatAge, formatEffort, formatModel, haptic, isMobileViewport } from '@/lib/utils'
 import { BgTasksView } from './bg-tasks-view'
@@ -757,8 +757,7 @@ export function SessionDetail() {
                           type="button"
                           onClick={() => {
                             haptic('error')
-                            const ws = useSessionsStore.getState().ws
-                            ws?.send(JSON.stringify({ type: 'channel_unlink', sessionA: session.id, sessionB: ls.id }))
+                            wsSend('channel_unlink', { sessionA: session.id, sessionB: ls.id })
                           }}
                           className="text-red-400/40 hover:text-red-400 transition-colors"
                           title={`Sever link to ${ls.name}`}

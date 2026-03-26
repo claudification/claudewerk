@@ -78,6 +78,8 @@ interface SessionsState {
   setServerCapabilities: (caps: { voice: boolean }) => void
   isConnected: boolean
   connectSeq: number // increments on each WS connect, used to trigger re-fetches
+  syncEpoch: string // server epoch (changes on server restart)
+  syncSeq: number // last received sequence number
   agentConnected: boolean
   error: string | null
   ws: WebSocket | null
@@ -187,6 +189,8 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   setServerCapabilities: caps => set({ serverCapabilities: caps }),
   isConnected: false,
   connectSeq: 0,
+  syncEpoch: '',
+  syncSeq: 0,
   agentConnected: false,
   error: null,
   ws: null,
@@ -199,10 +203,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   showDebugConsole: false,
   pendingLinkRequests: [],
   respondToLinkRequest: (fromSession, toSession, action) => {
-    const ws = useSessionsStore.getState().ws
-    if (ws) {
-      ws.send(JSON.stringify({ type: 'channel_link_response', fromSession, toSession, action }))
-    }
+    wsSend('channel_link_response', { fromSession, toSession, action })
     useSessionsStore.setState(state => ({
       pendingLinkRequests: state.pendingLinkRequests.filter(
         r => !(r.fromSession === fromSession && r.toSession === toSession),
@@ -211,10 +212,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   },
   pendingPermissions: [],
   respondToPermission: (sessionId, requestId, behavior) => {
-    const ws = useSessionsStore.getState().ws
-    if (ws) {
-      ws.send(JSON.stringify({ type: 'permission_response', sessionId, requestId, behavior }))
-    }
+    wsSend('permission_response', { sessionId, requestId, behavior })
     useSessionsStore.setState(state => ({
       pendingPermissions: state.pendingPermissions.filter(p => p.requestId !== requestId),
     }))
@@ -362,6 +360,17 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
 }))
 
 const API_BASE = ''
+
+/**
+ * Send a typed message over the dashboard WebSocket.
+ * Handles JSON serialization and readyState check.
+ */
+export function wsSend(type: string, data?: Record<string, unknown>): boolean {
+  const ws = useSessionsStore.getState().ws
+  if (!ws || ws.readyState !== WebSocket.OPEN) return false
+  ws.send(JSON.stringify({ type, ...data }))
+  return true
+}
 
 export async function fetchSessionEvents(sessionId: string): Promise<HookEvent[]> {
   const res = await fetch(`${API_BASE}/sessions/${sessionId}/events?limit=200`)

@@ -110,6 +110,8 @@ export interface SessionStore {
   // Dashboard subscriber methods
   addSubscriber: (ws: ServerWebSocket<unknown>, protocolVersion?: number) => void
   sendSessionsList: (ws: ServerWebSocket<unknown>) => void
+  handleSyncCheck: (ws: ServerWebSocket<unknown>, clientEpoch: string, clientSeq: number) => void
+  getSyncState: () => { epoch: string; seq: number }
   removeSubscriber: (ws: ServerWebSocket<unknown>) => void
   getSubscriberCount: () => number
   getSubscribers: () => Set<ServerWebSocket<unknown>>
@@ -218,6 +220,62 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   }
   const subscriberRegistry = new Map<ServerWebSocket<unknown>, SubscriberEntry>()
   let subscriberIdCounter = 0
+
+  // Sync protocol: epoch + monotonic sequence for message ordering and gap detection.
+  // Epoch changes on server restart. Clients detect epoch mismatch -> full resync.
+  // Ring buffer holds last N messages for small-gap catchup.
+  const SYNC_EPOCH = Math.random().toString(36).slice(2, 10)
+  let syncSeq = 0
+  const SYNC_BUFFER_SIZE = 500
+  const syncBuffer: Array<{ seq: number; json: string }> = []
+
+  function wrapBroadcast(message: unknown): string {
+    const seq = ++syncSeq
+    const wrapped = { _epoch: SYNC_EPOCH, _seq: seq, ...(message as Record<string, unknown>) }
+    const json = JSON.stringify(wrapped)
+    syncBuffer.push({ seq, json })
+    if (syncBuffer.length > SYNC_BUFFER_SIZE) syncBuffer.shift()
+    return json
+  }
+
+  function handleSyncCheck(
+    ws: ServerWebSocket<unknown>,
+    clientEpoch: string,
+    clientSeq: number,
+  ): void {
+    if (clientEpoch !== SYNC_EPOCH) {
+      // Server restarted - client must full resync
+      ws.send(JSON.stringify({ type: 'sync_stale', reason: 'epoch_changed', epoch: SYNC_EPOCH, seq: syncSeq }))
+      return
+    }
+    if (clientSeq >= syncSeq) {
+      // Client is caught up
+      ws.send(JSON.stringify({ type: 'sync_ok', epoch: SYNC_EPOCH, seq: syncSeq }))
+      return
+    }
+    // Check if gap is within buffer
+    const oldestBuffered = syncBuffer.length > 0 ? syncBuffer[0].seq : syncSeq + 1
+    if (clientSeq < oldestBuffered) {
+      // Gap too large - client must full resync
+      ws.send(JSON.stringify({ type: 'sync_stale', reason: 'gap_too_large', missed: syncSeq - clientSeq, epoch: SYNC_EPOCH, seq: syncSeq }))
+      return
+    }
+    // Send missed messages
+    const startIdx = syncBuffer.findIndex(b => b.seq > clientSeq)
+    if (startIdx === -1) {
+      ws.send(JSON.stringify({ type: 'sync_ok', epoch: SYNC_EPOCH, seq: syncSeq }))
+      return
+    }
+    const missed = syncBuffer.slice(startIdx)
+    ws.send(JSON.stringify({ type: 'sync_catchup', epoch: SYNC_EPOCH, seq: syncSeq, count: missed.length }))
+    for (const entry of missed) {
+      try {
+        ws.send(entry.json)
+      } catch {
+        break
+      }
+    }
+  }
 
   function channelKey(channel: SubscriptionChannel, sessionId: string, agentId?: string): string {
     return agentId ? `${channel}:${sessionId}:${agentId}` : `${channel}:${sessionId}`
@@ -378,9 +436,9 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     }
   }
 
-  // Broadcast message to all dashboard subscribers
+  // Broadcast message to all dashboard subscribers (with epoch+seq for sync protocol)
   function broadcast(message: DashboardMessage): void {
-    const json = JSON.stringify(message)
+    const json = wrapBroadcast(message)
     for (const ws of dashboardSubscribers) {
       try {
         ws.send(json)
@@ -1391,7 +1449,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       totals: { messagesSent: 0, bytesSent: 0, messagesReceived: 0, bytesReceived: 0 },
     })
 
-    // Send current sessions list immediately upon subscription
+    // Send current sessions list immediately upon subscription (with sync state)
     const sessionsList = Array.from(sessions.values()).map(toSessionSummary)
     try {
       ws.send(
@@ -1399,6 +1457,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
           type: 'sessions_list',
           sessions: sessionsList,
           serverVersion: BUILD_VERSION.gitHashShort,
+          _epoch: SYNC_EPOCH,
+          _seq: syncSeq,
         }),
       )
     } catch {
@@ -1409,7 +1469,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   function sendSessionsList(ws: ServerWebSocket<unknown>): void {
     const sessionsList = Array.from(sessions.values()).map(toSessionSummary)
     try {
-      ws.send(JSON.stringify({ type: 'sessions_list', sessions: sessionsList, serverVersion: BUILD_VERSION.gitHashShort }))
+      ws.send(JSON.stringify({ type: 'sessions_list', sessions: sessionsList, serverVersion: BUILD_VERSION.gitHashShort, _epoch: SYNC_EPOCH, _seq: syncSeq }))
     } catch {}
   }
 
@@ -1496,7 +1556,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     message: unknown,
     agentId?: string,
   ): void {
-    const json = JSON.stringify(message)
+    const json = wrapBroadcast(message)
     const bytes = json.length
     const sent = new Set<ServerWebSocket<unknown>>()
 
@@ -2134,6 +2194,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     hasTerminalViewers,
     addSubscriber,
     sendSessionsList,
+    handleSyncCheck,
+    getSyncState: () => ({ epoch: SYNC_EPOCH, seq: syncSeq }),
     removeSubscriber,
     getSubscriberCount,
     getSubscribers,

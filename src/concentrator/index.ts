@@ -570,6 +570,15 @@ async function main() {
                 sessionStore.sendSessionsList(ws)
                 break
               }
+              // Sync protocol: client sends epoch+lastSeq, server responds with
+              // sync_ok, sync_catchup (missed messages), or sync_stale (full resync).
+              case 'sync_check': {
+                sessionStore.handleSyncCheck(ws, data.epoch || '', data.lastSeq || 0)
+                if (verbose) {
+                  console.log(`[sync] check from dashboard: epoch=${(data.epoch || '').slice(0, 8)} seq=${data.lastSeq || 0}`)
+                }
+                break
+              }
               case 'channel_subscribe': {
                 const { channel, sessionId: chSid, agentId } = data
                 if (!channel || !chSid) break

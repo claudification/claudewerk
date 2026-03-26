@@ -22,6 +22,7 @@ import {
   fetchSessionOrder,
   fetchTranscript,
   useSessionsStore,
+  wsSend,
 } from '@/hooks/use-sessions'
 import { useWebSocket } from '@/hooks/use-websocket'
 import { canTerminal } from '@/lib/types'
@@ -89,26 +90,22 @@ function Dashboard() {
     fetchSessionOrder().then(o => useSessionsStore.getState().setSessionOrder(o))
   }, [])
 
-  // Re-fetch everything when page returns from background on touch devices (iOS/Android PWA).
-  // iOS suspends the JS runtime entirely when backgrounded - WS messages are silently
-  // lost even after just a few seconds. Bump connectSeq on visibility restore to trigger
-  // full re-fetch. Desktop: only refresh after 60s+ hidden (avoids churn on alt-tab).
-  // TODO: Replace with sequence-based sync_check for both platforms.
+  // Sync protocol: on visibility restore, send sync_check with our last known epoch+seq.
+  // Server responds with sync_ok (caught up), sync_catchup (missed messages pushed),
+  // or sync_stale (full resync needed). Works on both mobile and desktop without
+  // unnecessary re-fetches on alt-tab.
   useEffect(() => {
     let hiddenAt = 0
-    const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0
     function handleVisibility() {
       if (document.hidden) {
         hiddenAt = Date.now()
-        console.log('[visibility] hidden')
+        console.log('[sync] hidden')
       } else if (hiddenAt) {
         const elapsed = Date.now() - hiddenAt
         hiddenAt = 0
-        const willRefresh = isTouch || elapsed > 60_000
-        console.log(`[visibility] restored after ${(elapsed / 1000).toFixed(1)}s (touch=${isTouch}, refresh=${willRefresh})`)
-        if (willRefresh) {
-          useSessionsStore.setState(s => ({ connectSeq: s.connectSeq + 1 }))
-        }
+        const { syncEpoch, syncSeq } = useSessionsStore.getState()
+        console.log(`[sync] restored after ${(elapsed / 1000).toFixed(1)}s - sending sync_check (epoch=${syncEpoch.slice(0, 8)} seq=${syncSeq})`)
+        wsSend('sync_check', { epoch: syncEpoch, lastSeq: syncSeq })
       }
     }
     document.addEventListener('visibilitychange', handleVisibility)
@@ -121,21 +118,17 @@ function Dashboard() {
   const isConnected = useSessionsStore(state => state.isConnected)
   const connectSeq = useSessionsStore(state => state.connectSeq)
 
-  // Re-fetch session list (sidebar) on reconnect/visibility restore.
-  // Uses lightweight refresh_sessions (no subscription reset) to avoid
-  // clearing channel subscriptions that addSubscriber would reset.
+  // Re-fetch session list + transcript on connectSeq change.
+  // connectSeq bumps on: WS reconnect, sync_stale response (epoch mismatch or gap too large).
   useEffect(() => {
     if (!isConnected) return
-    const ws = useSessionsStore.getState().ws
-    if (ws?.readyState === WebSocket.OPEN) {
-      console.log(`[sync] refresh_sessions (connectSeq=${connectSeq})`)
-      ws.send(JSON.stringify({ type: 'refresh_sessions' }))
-    }
+    console.log(`[sync] full resync: refresh_sessions (connectSeq=${connectSeq})`)
+    wsSend('refresh_sessions')
   }, [connectSeq]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!selectedSessionId || !isConnected) return
-    console.log(`[sync] fetchEvents + fetchTranscript for ${selectedSessionId.slice(0, 8)} (connectSeq=${connectSeq})`)
+    console.log(`[sync] full resync: fetchEvents + fetchTranscript for ${selectedSessionId.slice(0, 8)} (connectSeq=${connectSeq})`)
     fetchSessionEvents(selectedSessionId).then(events => setEvents(selectedSessionId, events))
   }, [selectedSessionId, connectSeq, setEvents]) // eslint-disable-line react-hooks/exhaustive-deps
 
