@@ -446,6 +446,7 @@ export type HookEventType =
   | 'Setup'
   | 'CwdChanged'
   | 'FileChanged'
+  | 'TaskCreated'
 
 // Hook event data structures (based on Claude Code hook system)
 export interface SessionStartData {

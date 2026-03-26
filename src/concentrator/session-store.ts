@@ -310,6 +310,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     'ElicitationResult',
     'CwdChanged',
     'FileChanged',
+    'TaskCreated',
   ])
   const MAX_EVENTS = 1000
 
