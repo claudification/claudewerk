@@ -89,18 +89,23 @@ function Dashboard() {
     fetchSessionOrder().then(o => useSessionsStore.getState().setSessionOrder(o))
   }, [])
 
-  // Re-fetch everything when page returns from background (iOS/Android PWA, tab switch).
+  // Re-fetch everything when page returns from background on touch devices (iOS/Android PWA).
   // iOS suspends the JS runtime entirely when backgrounded - WS messages are silently
-  // lost even after just a few seconds. Always bump connectSeq on visibility restore
-  // to trigger full re-fetch of sessions, events, and transcript.
+  // lost even after just a few seconds. Bump connectSeq on visibility restore to trigger
+  // full re-fetch. Desktop: only refresh after 60s+ hidden (avoids churn on alt-tab).
+  // TODO: Replace with sequence-based sync_check for both platforms.
   useEffect(() => {
     let hiddenAt = 0
+    const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0
     function handleVisibility() {
       if (document.hidden) {
         hiddenAt = Date.now()
       } else if (hiddenAt) {
+        const elapsed = Date.now() - hiddenAt
         hiddenAt = 0
-        useSessionsStore.setState(s => ({ connectSeq: s.connectSeq + 1 }))
+        if (isTouch || elapsed > 60_000) {
+          useSessionsStore.setState(s => ({ connectSeq: s.connectSeq + 1 }))
+        }
       }
     }
     document.addEventListener('visibilitychange', handleVisibility)
