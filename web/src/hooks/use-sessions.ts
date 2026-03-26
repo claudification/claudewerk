@@ -368,7 +368,9 @@ const API_BASE = ''
 export function wsSend(type: string, data?: Record<string, unknown>): boolean {
   const ws = useSessionsStore.getState().ws
   if (!ws || ws.readyState !== WebSocket.OPEN) return false
-  ws.send(JSON.stringify({ type, ...data }))
+  const json = JSON.stringify({ type, ...data })
+  recordOut(json.length)
+  ws.send(json)
   return true
 }
 

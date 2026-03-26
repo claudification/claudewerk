@@ -148,9 +148,6 @@ function processMessage(msg: DashboardMessage) {
         useSessionsStore.getState().setSessions(msg.sessions.map(toSession))
         applyHashRoute()
       }
-      // Track sync state from initial sessions_list
-      const m = msg as any
-      if (m._epoch) useSessionsStore.setState({ syncEpoch: m._epoch, syncSeq: m._seq || 0 })
       // Check for version mismatch between server and this frontend bundle
       if ((msg as any).serverVersion) {
         const mismatch = (msg as any).serverVersion !== BUILD_VERSION.gitHashShort

@@ -9,9 +9,9 @@ export interface BuildVersion {
 }
 
 export const BUILD_VERSION: BuildVersion = {
-  gitHash: '715653fae46d6f8641872954efc766c094dab17c',
-  gitHashShort: '715653f-dirty',
-  buildTime: '2026-03-25T17:47:03.727Z',
+  gitHash: 'e93a0b8ad9a504cd3d0dcd839df2a32c78a3d3e3',
+  gitHashShort: 'e93a0b8-dirty',
+  buildTime: '2026-03-26T06:09:42.308Z',
   dirty: true,
-  recentCommits: [{"hash":"715653f","message":"(HEAD -> main, origin/main, origin/HEAD) Merge pull request #9 from ziadsawalha/fix/disconnect"},{"hash":"430477d","message":"feat: Dependency updates, TS6 migration, UX fixes"},{"hash":"c416ab6","message":"Merge pull request #27 from ziadsawalha/feat/plan-transcript-view"}],
+  recentCommits: [{"hash":"e93a0b8","message":"(HEAD -> main, origin/main, origin/HEAD) feat: Epoch+seq sync protocol + WS send refactor + zero TS errors"},{"hash":"77a4cc4","message":"debug: Add console logging for visibility restore + sync flow"},{"hash":"05f6424","message":"fix: Only force-refresh on visibility restore for touch devices"}],
 }

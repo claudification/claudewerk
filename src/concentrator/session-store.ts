@@ -223,54 +223,62 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
 
   // Sync protocol: epoch + monotonic sequence for message ordering and gap detection.
   // Epoch changes on server restart. Clients detect epoch mismatch -> full resync.
-  // Ring buffer holds last N messages for small-gap catchup.
+  // Capped array holds last N broadcast messages for small-gap catchup.
+  // Only broadcast() messages (sent to ALL subscribers) are sequenced and buffered.
+  // Channel messages (per-session transcript/events) are NOT buffered - clients
+  // re-subscribe and get fresh initial pushes on reconnect.
   const SYNC_EPOCH = Math.random().toString(36).slice(2, 10)
   let syncSeq = 0
   const SYNC_BUFFER_SIZE = 500
-  const syncBuffer: Array<{ seq: number; json: string }> = []
+  const syncBuffer = new Array<{ seq: number; json: string }>(SYNC_BUFFER_SIZE)
+  let syncBufferHead = 0
+  let syncBufferCount = 0
 
-  function wrapBroadcast(message: unknown): string {
+  function stampAndBuffer(message: unknown): string {
     const seq = ++syncSeq
-    const wrapped = { _epoch: SYNC_EPOCH, _seq: seq, ...(message as Record<string, unknown>) }
-    const json = JSON.stringify(wrapped)
-    syncBuffer.push({ seq, json })
-    if (syncBuffer.length > SYNC_BUFFER_SIZE) syncBuffer.shift()
+    const json = JSON.stringify({ _epoch: SYNC_EPOCH, _seq: seq, ...(message as Record<string, unknown>) })
+    syncBuffer[syncBufferHead] = { seq, json }
+    syncBufferHead = (syncBufferHead + 1) % SYNC_BUFFER_SIZE
+    if (syncBufferCount < SYNC_BUFFER_SIZE) syncBufferCount++
     return json
   }
 
-  function handleSyncCheck(
-    ws: ServerWebSocket<unknown>,
-    clientEpoch: string,
-    clientSeq: number,
-  ): void {
+  function syncStamp(message: unknown): string {
+    return JSON.stringify({ _epoch: SYNC_EPOCH, _seq: syncSeq, ...(message as Record<string, unknown>) })
+  }
+
+  function sendSyncResponse(ws: ServerWebSocket<unknown>, type: string, extra?: Record<string, unknown>): void {
+    ws.send(JSON.stringify({ type, epoch: SYNC_EPOCH, seq: syncSeq, ...extra }))
+  }
+
+  function handleSyncCheck(ws: ServerWebSocket<unknown>, clientEpoch: string, clientSeq: number): void {
     if (clientEpoch !== SYNC_EPOCH) {
-      // Server restarted - client must full resync
-      ws.send(JSON.stringify({ type: 'sync_stale', reason: 'epoch_changed', epoch: SYNC_EPOCH, seq: syncSeq }))
+      sendSyncResponse(ws, 'sync_stale', { reason: 'epoch_changed' })
       return
     }
     if (clientSeq >= syncSeq) {
-      // Client is caught up
-      ws.send(JSON.stringify({ type: 'sync_ok', epoch: SYNC_EPOCH, seq: syncSeq }))
+      sendSyncResponse(ws, 'sync_ok')
       return
     }
-    // Check if gap is within buffer
-    const oldestBuffered = syncBuffer.length > 0 ? syncBuffer[0].seq : syncSeq + 1
-    if (clientSeq < oldestBuffered) {
-      // Gap too large - client must full resync
-      ws.send(JSON.stringify({ type: 'sync_stale', reason: 'gap_too_large', missed: syncSeq - clientSeq, epoch: SYNC_EPOCH, seq: syncSeq }))
+    // Find oldest buffered seq
+    if (syncBufferCount === 0) {
+      sendSyncResponse(ws, 'sync_ok')
       return
     }
-    // Send missed messages
-    const startIdx = syncBuffer.findIndex(b => b.seq > clientSeq)
-    if (startIdx === -1) {
-      ws.send(JSON.stringify({ type: 'sync_ok', epoch: SYNC_EPOCH, seq: syncSeq }))
+    const oldestIdx = (syncBufferHead - syncBufferCount + SYNC_BUFFER_SIZE) % SYNC_BUFFER_SIZE
+    const oldestSeq = syncBuffer[oldestIdx].seq
+    if (clientSeq < oldestSeq) {
+      sendSyncResponse(ws, 'sync_stale', { reason: 'gap_too_large', missed: syncSeq - clientSeq })
       return
     }
-    const missed = syncBuffer.slice(startIdx)
-    ws.send(JSON.stringify({ type: 'sync_catchup', epoch: SYNC_EPOCH, seq: syncSeq, count: missed.length }))
-    for (const entry of missed) {
+    // Direct index arithmetic: seqs are monotonic, offset = clientSeq - oldestSeq + 1
+    const startOffset = clientSeq - oldestSeq + 1
+    const count = syncBufferCount - startOffset
+    sendSyncResponse(ws, 'sync_catchup', { count })
+    for (let i = 0; i < count; i++) {
+      const idx = (oldestIdx + startOffset + i) % SYNC_BUFFER_SIZE
       try {
-        ws.send(entry.json)
+        ws.send(syncBuffer[idx].json)
       } catch {
         break
       }
@@ -284,8 +292,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   // Pending agent descriptions: PreToolUse(Agent) pushes, SubagentStart pops
   const pendingAgentDescriptions = new Map<string, string[]>()
 
-  // Hooks that don't indicate Claude is actively working (hoisted to avoid per-call allocation)
-  // Hooks that don't indicate Claude is actively working on a task
+  // Passive hooks: don't transition session status to 'active'
   // SessionStart/InstructionsLoaded = initialization, not work
   // ConfigChange/Setup/Elicitation = configuration, not work
   const PASSIVE_HOOKS = new Set([
@@ -436,9 +443,9 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     }
   }
 
-  // Broadcast message to all dashboard subscribers (with epoch+seq for sync protocol)
+  // Broadcast to all dashboard subscribers (sequenced + buffered for sync catchup)
   function broadcast(message: DashboardMessage): void {
-    const json = wrapBroadcast(message)
+    const json = stampAndBuffer(message)
     for (const ws of dashboardSubscribers) {
       try {
         ws.send(json)
@@ -1449,27 +1456,22 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       totals: { messagesSent: 0, bytesSent: 0, messagesReceived: 0, bytesReceived: 0 },
     })
 
-    // Send current sessions list immediately upon subscription (with sync state)
-    const sessionsList = Array.from(sessions.values()).map(toSessionSummary)
-    try {
-      ws.send(
-        JSON.stringify({
-          type: 'sessions_list',
-          sessions: sessionsList,
-          serverVersion: BUILD_VERSION.gitHashShort,
-          _epoch: SYNC_EPOCH,
-          _seq: syncSeq,
-        }),
-      )
-    } catch {
-      dashboardSubscribers.delete(ws)
-    }
+    sendSessionsList(ws)
+  }
+
+  function buildSessionsListMessage(): string {
+    return JSON.stringify({
+      type: 'sessions_list',
+      sessions: Array.from(sessions.values()).map(toSessionSummary),
+      serverVersion: BUILD_VERSION.gitHashShort,
+      _epoch: SYNC_EPOCH,
+      _seq: syncSeq,
+    })
   }
 
   function sendSessionsList(ws: ServerWebSocket<unknown>): void {
-    const sessionsList = Array.from(sessions.values()).map(toSessionSummary)
     try {
-      ws.send(JSON.stringify({ type: 'sessions_list', sessions: sessionsList, serverVersion: BUILD_VERSION.gitHashShort, _epoch: SYNC_EPOCH, _seq: syncSeq }))
+      ws.send(buildSessionsListMessage())
     } catch {}
   }
 
@@ -1556,7 +1558,9 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     message: unknown,
     agentId?: string,
   ): void {
-    const json = wrapBroadcast(message)
+    // Channel messages are per-session, not buffered for sync catchup.
+    // Clients re-subscribe on reconnect and get fresh initial data.
+    const json = syncStamp(message)
     const bytes = json.length
     const sent = new Set<ServerWebSocket<unknown>>()
 
