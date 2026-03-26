@@ -67,11 +67,70 @@ function LinkRequestBanners() {
   )
 }
 
+function formatPermissionInput(toolName: string, inputPreview: string, cwd?: string): React.ReactNode {
+  try {
+    const input = JSON.parse(inputPreview)
+    const relativize = (p: string) => cwd && p.startsWith(cwd + '/') ? p.slice(cwd.length + 1) : p
+
+    if (toolName === 'Write' || toolName === 'Edit') {
+      const path = input.file_path || input.path
+      const content = input.content || input.new_string
+      return (
+        <>
+          {path && <div className="text-amber-300 text-[11px] truncate">{relativize(path)}</div>}
+          {content && (
+            <pre className="text-muted-foreground text-[10px] bg-background/50 px-2 py-1 rounded max-h-16 overflow-hidden whitespace-pre-wrap">
+              {content.length > 300 ? `${content.slice(0, 300)}...` : content}
+            </pre>
+          )}
+        </>
+      )
+    }
+
+    if (toolName === 'Bash') {
+      const cmd = input.command || input.cmd
+      return cmd ? (
+        <pre className="text-cyan-400 text-[11px] bg-background/50 px-2 py-1 rounded whitespace-pre-wrap">{cmd}</pre>
+      ) : null
+    }
+
+    if (toolName === 'Read') {
+      const path = input.file_path || input.path
+      return path ? <div className="text-amber-300 text-[11px]">{relativize(path)}</div> : null
+    }
+
+    // Generic: show parsed JSON nicely
+    const entries = Object.entries(input)
+    if (entries.length === 0) return null
+    return (
+      <div className="text-[10px] space-y-0.5">
+        {entries.map(([k, v]) => {
+          const val = typeof v === 'string' ? v : JSON.stringify(v)
+          const display = typeof v === 'string' && cwd ? relativize(val) : val
+          return (
+            <div key={k} className="flex gap-1.5">
+              <span className="text-muted-foreground shrink-0">{k}:</span>
+              <span className="text-foreground/80 truncate">{String(display).slice(0, 200)}</span>
+            </div>
+          )
+        })}
+      </div>
+    )
+  } catch {
+    // Not valid JSON - show raw
+    return (
+      <pre className="text-muted-foreground text-[10px] bg-background/50 px-2 py-1 rounded overflow-x-auto max-h-20 whitespace-pre-wrap break-all">
+        {inputPreview}
+      </pre>
+    )
+  }
+}
+
 function PermissionBanners() {
   const permissions = useSessionsStore(s => s.pendingPermissions)
   const respond = useSessionsStore(s => s.respondToPermission)
   const selectedSession = useSessionsStore(s => s.selectedSessionId)
-  // Only show permissions for the currently viewed session
+  const session = useSessionsStore(s => s.sessions.find(sess => sess.id === selectedSession))
   const relevant = permissions.filter(p => p.sessionId === selectedSession)
   if (relevant.length === 0) return null
   return (
@@ -87,11 +146,7 @@ function PermissionBanners() {
             <span className="text-muted-foreground text-[10px] ml-auto">{perm.requestId}</span>
           </div>
           {perm.description && <div className="text-foreground/70 text-[11px]">{perm.description}</div>}
-          {perm.inputPreview && (
-            <pre className="text-muted-foreground text-[10px] bg-background/50 px-2 py-1 rounded overflow-x-auto max-h-20 whitespace-pre-wrap break-all">
-              {perm.inputPreview}
-            </pre>
-          )}
+          {perm.inputPreview && formatPermissionInput(perm.toolName, perm.inputPreview, session?.cwd)}
           <div className="flex items-center gap-2 mt-0.5">
             <button
               type="button"
