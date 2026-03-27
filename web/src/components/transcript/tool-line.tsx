@@ -63,7 +63,7 @@ export function ToolLine({
       const bashDesc = input.description as string | undefined
       summary = bashDesc || (cmd?.length > 80 && !expandAll ? `${cmd.slice(0, 80)}...` : cmd)
       if (result) {
-        details = <BashOutput result={result} command={expandAll ? cmd : undefined} />
+        details = <BashOutput result={result} command={cmd} />
       } else if (expandAll && cmd) {
         details = <ShellCommand command={cmd} />
       }
