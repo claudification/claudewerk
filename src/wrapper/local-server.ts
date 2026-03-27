@@ -148,6 +148,14 @@ export async function startLocalServer(options: LocalServerOptions): Promise<{ s
         try {
           const body = await req.text()
           const data = body.trim() ? (JSON.parse(body) as Record<string, unknown>) : {}
+
+          // Safety guard: only block for actual AskUserQuestion tool calls.
+          // If CC's `if` field isn't supported (pre-2.1.85) or doesn't filter,
+          // this endpoint may fire for ALL PreToolUse events. Return fast for non-matches.
+          if (data.tool_name !== 'AskUserQuestion') {
+            return new Response(null, { status: 200 })
+          }
+
           const toolInput = data.tool_input as Record<string, unknown> | undefined
           const toolUseId = (data.tool_use_id as string) || `ask_${Date.now()}`
           const questions = (toolInput?.questions as AskQuestionItem[]) || []
