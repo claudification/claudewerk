@@ -287,7 +287,12 @@ export function BashOutput({ result, command }: { result: string; command?: stri
   const parts = parseBashTags(result)
 
   if (!parts) {
-    return <TruncatedPre text={result} tool="Bash" />
+    return (
+      <div className="space-y-1">
+        {command && <ShellCommand command={command.trim()} />}
+        <TruncatedPre text={result} tool="Bash" />
+      </div>
+    )
   }
 
   const hasStdout = parts.stdout && parts.stdout.trim().length > 0
