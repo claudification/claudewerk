@@ -60,7 +60,8 @@ export function ToolLine({
   switch (name) {
     case 'Bash': {
       const cmd = input.command as string
-      summary = cmd?.length > 80 && !expandAll ? `${cmd.slice(0, 80)}...` : cmd
+      const bashDesc = input.description as string | undefined
+      summary = bashDesc || (cmd?.length > 80 && !expandAll ? `${cmd.slice(0, 80)}...` : cmd)
       if (result) {
         details = <BashOutput result={result} command={expandAll ? cmd : undefined} />
       } else if (expandAll && cmd) {
