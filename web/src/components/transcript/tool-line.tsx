@@ -64,7 +64,7 @@ export function ToolLine({
       summary = bashDesc || (cmd?.length > 80 && !expandAll ? `${cmd.slice(0, 80)}...` : cmd)
       if (result) {
         details = <BashOutput result={result} command={cmd} />
-      } else if (expandAll && cmd) {
+      } else if (cmd) {
         details = <ShellCommand command={cmd} />
       }
       break
