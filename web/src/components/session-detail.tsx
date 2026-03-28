@@ -118,7 +118,40 @@ function formatPermissionInput(toolName: string, inputPreview: string, cwd?: str
       </div>
     )
   } catch {
-    // Not valid JSON - show raw
+    // JSON parse failed (likely truncated). Try to extract known fields with regex.
+    const relativize = (p: string) => (cwd && p.startsWith(`${cwd}/`) ? p.slice(cwd.length + 1) : p)
+    const pathMatch = inputPreview.match(/"file_path"\s*:\s*"([^"]+)"/)
+    const cmdMatch = inputPreview.match(/"command"\s*:\s*"([^"]*(?:\\.[^"]*)*)/)
+    const oldStrMatch = inputPreview.match(/"old_string"\s*:\s*"([^"]*(?:\\.[^"]*)*)/)
+    const contentMatch = inputPreview.match(/"content"\s*:\s*"([^"]*(?:\\.[^"]*)*)/)
+
+    if ((toolName === 'Write' || toolName === 'Edit') && pathMatch) {
+      const preview = oldStrMatch?.[1] || contentMatch?.[1]
+      return (
+        <>
+          <div className="text-amber-300 text-[11px] truncate">{relativize(pathMatch[1])}</div>
+          {preview && (
+            <pre className="text-muted-foreground text-[10px] bg-background/50 px-2 py-1 rounded max-h-16 overflow-hidden whitespace-pre-wrap">
+              {preview.replace(/\\n/g, '\n').replace(/\\"/g, '"').slice(0, 300)}
+            </pre>
+          )}
+        </>
+      )
+    }
+
+    if (toolName === 'Bash' && cmdMatch) {
+      return (
+        <pre className="text-cyan-400 text-[11px] bg-background/50 px-2 py-1 rounded whitespace-pre-wrap">
+          {cmdMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"')}
+        </pre>
+      )
+    }
+
+    if (toolName === 'Read' && pathMatch) {
+      return <div className="text-amber-300 text-[11px]">{relativize(pathMatch[1])}</div>
+    }
+
+    // Fallback: show raw
     return (
       <pre className="text-muted-foreground text-[10px] bg-background/50 px-2 py-1 rounded overflow-x-auto max-h-20 whitespace-pre-wrap break-all">
         {inputPreview}
