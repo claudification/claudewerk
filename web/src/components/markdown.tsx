@@ -74,18 +74,19 @@ const ALERT_STYLES: Record<string, { icon: string; color: string; border: string
 }
 renderer.blockquote = ({ text }) => {
   // Check for [!TYPE] pattern at the start of the blockquote content.
-  // The `text` is already HTML-rendered by marked, so [!TIP] may be inside <p> tags.
-  // Pattern: optional <p>, then [!TYPE], then optional </p> or <br>, then the rest.
-  const alertMatch = text.match(/^\s*(?:<p>)?\s*\[!(TIP|NOTE|IMPORTANT|WARNING|CAUTION)\]\s*(?:<\/p>|<br\s*\/?>)?\s*/i)
+  // In marked 17, `text` is raw (not HTML-rendered), so we match raw markdown.
+  const alertMatch = text.match(/^\s*\[!(TIP|NOTE|IMPORTANT|WARNING|CAUTION)\]\s*\n?/i)
   if (alertMatch) {
     const type = alertMatch[1].toUpperCase()
     const style = ALERT_STYLES[type]
     if (style) {
-      const content = text.slice(alertMatch[0].length)
+      const rawContent = text.slice(alertMatch[0].length)
+      const content = marked.parseInline(rawContent) as string
       return `<div class="alert-callout border-l-2 ${style.border} pl-3 py-1.5 my-2"><div class="${style.color} font-bold text-[10px] uppercase mb-0.5">${style.icon} ${type}</div><div class="text-foreground/80">${content}</div></div>`
     }
   }
-  return `<blockquote>${text}</blockquote>`
+  // Regular blockquote -- parse inline markdown in content
+  return `<blockquote>${marked.parseInline(text)}</blockquote>`
 }
 
 renderer.code = ({ text, lang }) => {
