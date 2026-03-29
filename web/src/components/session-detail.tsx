@@ -242,10 +242,11 @@ function ClipboardBanners() {
               className="max-h-32 max-w-full rounded border border-border/30 object-contain"
             />
           )}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 relative z-10">
             <button
               type="button"
-              onClick={async () => {
+              onPointerDown={async (e) => {
+                e.stopPropagation()
                 try {
                   if (cap.contentType === 'text' && cap.text) {
                     await navigator.clipboard.writeText(cap.text)
@@ -257,8 +258,8 @@ function ClipboardBanners() {
                     await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })])
                   }
                   haptic('success')
+                  dismiss(cap.id)
                 } catch {
-                  // Fallback: textarea select+copy for text
                   if (cap.text) {
                     const ta = document.createElement('textarea')
                     ta.value = cap.text
@@ -268,22 +269,24 @@ function ClipboardBanners() {
                     document.execCommand('copy')
                     document.body.removeChild(ta)
                     haptic('success')
+                    dismiss(cap.id)
                   } else {
                     haptic('error')
                   }
                 }
               }}
-              className="px-3 py-1 text-[11px] font-bold bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 hover:bg-cyan-500/30 transition-colors"
+              className="px-3 py-2 text-[11px] font-bold bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 hover:bg-cyan-500/30 active:bg-cyan-500/40 transition-colors cursor-pointer touch-manipulation"
             >
               COPY
             </button>
             <button
               type="button"
-              onClick={() => {
+              onPointerDown={(e) => {
+                e.stopPropagation()
                 haptic('tick')
                 dismiss(cap.id)
               }}
-              className="px-3 py-1 text-[11px] font-bold bg-muted/20 text-muted-foreground border border-border/30 hover:bg-muted/30 transition-colors"
+              className="px-3 py-2 text-[11px] font-bold bg-muted/20 text-muted-foreground border border-border/30 hover:bg-muted/30 active:bg-muted/40 transition-colors cursor-pointer touch-manipulation"
             >
               DISMISS
             </button>
