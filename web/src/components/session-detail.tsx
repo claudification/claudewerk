@@ -462,21 +462,31 @@ const InputBar = memo(function InputBar({ sessionId }: { sessionId: string }) {
     setInputValue('')
     useSessionsStore.getState().setInputDraft(sessionId, '')
     setIsSending(true)
+    let failed = false
     try {
       const success = await sendInput(sessionId, text)
       if (!success) {
+        failed = true
         haptic('error')
         console.error('[input] sendInput failed for session', sessionId)
-        setInputValue(text) // restore on failure
-        useSessionsStore.getState().setInputDraft(sessionId, text)
       }
     } catch (err) {
+      failed = true
       haptic('error')
       console.error('[input] sendInput error:', err)
-      setInputValue(text) // restore on failure
-      useSessionsStore.getState().setInputDraft(sessionId, text)
     } finally {
       setIsSending(false)
+      if (failed) {
+        // Restore on failure
+        setInputValue(text)
+        useSessionsStore.getState().setInputDraft(sessionId, text)
+      } else {
+        // Defensive re-clear: if component remounted during the async send,
+        // the useState initializer may have restored a stale draft.
+        // Force both state and store to empty.
+        setInputValue('')
+        useSessionsStore.getState().setInputDraft(sessionId, '')
+      }
       if (!isMobileViewport()) {
         requestAnimationFrame(() => containerRef.current?.querySelector('textarea')?.focus())
       }
