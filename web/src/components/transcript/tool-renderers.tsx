@@ -164,9 +164,7 @@ export function ShellCommand({ command, maxLines = 10 }: { command: string; maxL
       ) : (
         <span className="text-foreground/80">{display}</span>
       )}
-      {truncated && (
-        <span className="text-muted-foreground/40">{`\n... ${lines.length - maxLines} more lines`}</span>
-      )}
+      {truncated && <span className="text-muted-foreground/40">{`\n... ${lines.length - maxLines} more lines`}</span>}
     </pre>
   )
 }

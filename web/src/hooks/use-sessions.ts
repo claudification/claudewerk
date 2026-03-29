@@ -118,6 +118,16 @@ interface SessionsState {
     annotations?: Record<string, { preview?: string; notes?: string }>,
     skip?: boolean,
   ) => void
+  clipboardCaptures: Array<{
+    id: string
+    sessionId: string
+    contentType: 'text' | 'image'
+    text?: string
+    base64?: string
+    mimeType?: string
+    timestamp: number
+  }>
+  dismissClipboard: (id: string) => void
   requestedTab: string | null
   requestedTabSeq: number
   pendingFilePath: string | null
@@ -242,6 +252,11 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       pendingAskQuestions: state.pendingAskQuestions.filter(q => q.toolUseId !== toolUseId),
     }))
   },
+  clipboardCaptures: [],
+  dismissClipboard: id =>
+    useSessionsStore.setState(state => ({
+      clipboardCaptures: state.clipboardCaptures.filter(c => c.id !== id),
+    })),
   requestedTab: null,
   requestedTabSeq: 0,
   pendingFilePath: null,

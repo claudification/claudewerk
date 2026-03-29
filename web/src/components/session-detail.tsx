@@ -209,6 +209,75 @@ function PermissionBanners() {
   )
 }
 
+function ClipboardBanners() {
+  const captures = useSessionsStore(s => s.clipboardCaptures)
+  const dismiss = useSessionsStore(s => s.dismissClipboard)
+  const selectedSession = useSessionsStore(s => s.selectedSessionId)
+  const relevant = captures.filter(c => c.sessionId === selectedSession)
+  if (relevant.length === 0) return null
+
+  return (
+    <div className="shrink-0 space-y-1 p-2">
+      {relevant.map(cap => (
+        <div
+          key={cap.id}
+          className="flex flex-col gap-1.5 px-3 py-2 bg-cyan-500/10 border border-cyan-500/30 rounded font-mono text-xs"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-cyan-400 font-bold shrink-0">CLIPBOARD</span>
+            <span className="text-muted-foreground text-[10px]">{cap.contentType}</span>
+            <span className="text-muted-foreground text-[10px] ml-auto">
+              {new Date(cap.timestamp).toLocaleTimeString()}
+            </span>
+          </div>
+          {cap.contentType === 'text' && cap.text && (
+            <pre className="text-foreground/80 text-[10px] bg-background/50 px-2 py-1 rounded max-h-20 overflow-hidden whitespace-pre-wrap">
+              {cap.text.length > 500 ? `${cap.text.slice(0, 500)}...` : cap.text}
+            </pre>
+          )}
+          {cap.contentType === 'image' && cap.base64 && (
+            <img
+              src={`data:${cap.mimeType || 'image/png'};base64,${cap.base64}`}
+              alt="clipboard"
+              className="max-h-32 max-w-full rounded border border-border/30 object-contain"
+            />
+          )}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                haptic('success')
+                if (cap.contentType === 'text' && cap.text) {
+                  navigator.clipboard.writeText(cap.text)
+                } else if (cap.contentType === 'image' && cap.base64) {
+                  const binary = atob(cap.base64)
+                  const bytes = new Uint8Array(binary.length)
+                  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+                  const blob = new Blob([bytes], { type: cap.mimeType || 'image/png' })
+                  navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })])
+                }
+              }}
+              className="px-3 py-1 text-[11px] font-bold bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 hover:bg-cyan-500/30 transition-colors"
+            >
+              COPY
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                haptic('tick')
+                dismiss(cap.id)
+              }}
+              className="px-3 py-1 text-[11px] font-bold bg-muted/20 text-muted-foreground border border-border/30 hover:bg-muted/30 transition-colors"
+            >
+              DISMISS
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function AskQuestionBanners() {
   const questions = useSessionsStore(s => s.pendingAskQuestions)
   const respond = useSessionsStore(s => s.respondToAskQuestion)
@@ -746,6 +815,8 @@ export function SessionDetail() {
       <PermissionBanners />
       {/* AskUserQuestion Banners */}
       <AskQuestionBanners />
+      {/* Clipboard Capture Banners */}
+      <ClipboardBanners />
       {/* Session Info - Collapsible */}
       <div className="shrink-0 border-b border-border max-h-[30vh] overflow-y-auto">
         <button

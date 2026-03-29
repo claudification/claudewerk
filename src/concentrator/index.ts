@@ -827,6 +827,32 @@ async function main() {
                 break
               }
 
+              // Clipboard capture: wrapper -> dashboard (broadcast)
+              case 'clipboard_capture': {
+                const sessionId = ws.data.sessionId || data.sessionId
+                if (!sessionId) break
+                const msg = JSON.stringify({
+                  type: 'clipboard_capture',
+                  sessionId,
+                  contentType: data.contentType,
+                  text: data.text,
+                  base64: data.base64,
+                  mimeType: data.mimeType,
+                  timestamp: data.timestamp || Date.now(),
+                })
+                for (const sub of sessionStore.getSubscribers()) {
+                  try {
+                    sub.send(msg)
+                  } catch {}
+                }
+                if (verbose) {
+                  console.log(
+                    `[clipboard] ${data.contentType}${data.mimeType ? ` (${data.mimeType})` : ''} from ${sessionId.slice(0, 8)}`,
+                  )
+                }
+                break
+              }
+
               // AskUserQuestion relay: wrapper -> dashboard (broadcast)
               case 'ask_question': {
                 const sessionId = ws.data.sessionId || data.sessionId

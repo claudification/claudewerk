@@ -24,6 +24,7 @@ import {
   type SessionInfo,
   sendPermissionResponse,
 } from './mcp-channel'
+import { Osc52Parser } from './osc52-parser'
 import { getTerminalSize, type PtyProcess, setupTerminalPassthrough, spawnClaude } from './pty-spawn'
 import { cleanupSettings, writeMergedSettings } from './settings-merge'
 import { createTranscriptWatcher, type TranscriptWatcher } from './transcript-watcher'
@@ -889,6 +890,7 @@ async function main() {
   }
 
   let devChannelConfirmed = false
+  const osc52Parser = new Osc52Parser()
 
   // Initialize MCP channel if enabled
   if (channelEnabled) {
@@ -1270,9 +1272,29 @@ async function main() {
         }
       }
 
-      // Forward PTY output to remote terminal viewer when attached
+      // Scan for OSC 52 clipboard sequences and forward captures to concentrator
+      const cleaned = osc52Parser.write(data, capture => {
+        if (wsClient?.isConnected()) {
+          const sessionId = claudeSessionId || internalId
+          wsClient.send({
+            type: 'clipboard_capture',
+            sessionId,
+            contentType: capture.contentType,
+            text: capture.text,
+            base64: capture.contentType === 'image' ? capture.base64 : undefined,
+            mimeType: capture.mimeType,
+            timestamp: Date.now(),
+          })
+          diag(
+            'clipboard',
+            `${capture.contentType}${capture.mimeType ? ` (${capture.mimeType})` : ''} ${capture.text ? `${capture.text.length} chars` : `${capture.base64.length} b64 bytes`}`,
+          )
+        }
+      })
+
+      // Forward PTY output to remote terminal viewer when attached (OSC 52 stripped)
       if (terminalAttached && claudeSessionId && wsClient?.isConnected()) {
-        wsClient.sendTerminalData(data)
+        wsClient.sendTerminalData(cleaned)
       }
     },
     onExit(code) {

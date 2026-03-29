@@ -289,6 +289,18 @@ export type WrapperMessage =
   | InterSessionListRequest
   | PermissionRequest
   | AskQuestionRequest
+  | ClipboardCapture
+
+// Clipboard capture from PTY OSC 52 sequences
+export interface ClipboardCapture {
+  type: 'clipboard_capture'
+  sessionId: string
+  contentType: 'text' | 'image'
+  text?: string // decoded text (for text content)
+  base64?: string // raw base64 (for images -- text omits this to save bandwidth)
+  mimeType?: string // 'image/png', 'image/jpeg', etc.
+  timestamp: number
+}
 
 // Concentrator -> Wrapper messages
 export interface Ack {

@@ -9,9 +9,9 @@ export interface BuildVersion {
 }
 
 export const BUILD_VERSION: BuildVersion = {
-  gitHash: '53302af251db4690a8058eb556ac45db082e7344',
-  gitHashShort: '53302af-dirty',
-  buildTime: '2026-03-27T02:25:25.185Z',
+  gitHash: 'f711f10510d6614f87d7a2742d2882ff1101fe33',
+  gitHashShort: 'f711f10-dirty',
+  buildTime: '2026-03-29T06:20:04.701Z',
   dirty: true,
-  recentCommits: [{"hash":"53302af","message":"(HEAD -> main, origin/main, origin/HEAD) fix: Version mismatch check ignores -dirty suffix"},{"hash":"3512b92","message":"fix: Resolve all biome lint issues and last TS error"},{"hash":"44c7b73","message":"feat: Context window usage bar in session sidebar"}],
+  recentCommits: [{"hash":"f711f10","message":"(HEAD -> main, origin/main, origin/HEAD) fix: Add stream_close_delay to Caddy reverse proxy for WS resilience"},{"hash":"a038a85","message":"fix: Defensive re-clear of input after successful send"},{"hash":"8b8e099","message":"fix: Improve AskUserQuestion card contrast"}],
 }

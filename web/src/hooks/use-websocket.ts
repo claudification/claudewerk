@@ -397,6 +397,32 @@ function processMessage(msg: DashboardMessage) {
       }
       break
     }
+    case 'clipboard_capture': {
+      const clipMsg = msg as DashboardMessage & {
+        contentType?: 'text' | 'image'
+        text?: string
+        base64?: string
+        mimeType?: string
+        timestamp?: number
+      }
+      if (clipMsg.sessionId && clipMsg.contentType) {
+        useSessionsStore.setState(state => {
+          const capture = {
+            id: `clip_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            sessionId: clipMsg.sessionId || '',
+            contentType: clipMsg.contentType || ('text' as const),
+            text: clipMsg.text,
+            base64: clipMsg.base64,
+            mimeType: clipMsg.mimeType,
+            timestamp: clipMsg.timestamp || Date.now(),
+          }
+          // Stack max 4, drop oldest
+          const next = [capture, ...state.clipboardCaptures].slice(0, 4)
+          return { clipboardCaptures: next }
+        })
+      }
+      break
+    }
     case 'session_dismissed': {
       if (msg.sessionId) {
         useSessionsStore.setState(state => ({
