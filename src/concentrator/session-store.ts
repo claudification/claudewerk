@@ -1862,9 +1862,10 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         }
 
         // Detect OSC 52 clipboard sequences in Bash tool results.
+        // Skip on initial transcript loads to avoid re-surfacing old captures on reconnect.
         // terminal-copy and CC's own clipboard writes emit OSC 52 which CC captures
         // as tool output text. Extract the base64 payload and broadcast to dashboard.
-        if (entry.type === 'user') {
+        if (!isInitial && entry.type === 'user') {
           const userContent = (entry as TranscriptUserEntry).message?.content
           if (Array.isArray(userContent)) {
             for (const block of userContent) {
