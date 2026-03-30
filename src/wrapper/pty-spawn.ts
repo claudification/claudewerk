@@ -88,12 +88,20 @@ export function spawnClaude(options: PtyOptions): PtyProcess {
       cols,
       rows,
       data(_terminal, data) {
-        // Write to stdout
-        process.stdout.write(data)
-        // Decode with streaming TextDecoder to handle split UTF-8 sequences
-        // Strip U+FFFD replacement chars (invalid bytes from PTY binary output)
-        const decoded = utf8Decoder.decode(data, { stream: true })
-        onData?.(decoded.indexOf('\uFFFD') >= 0 ? decoded.replaceAll('\uFFFD', '') : decoded)
+        try {
+          // Write to stdout
+          process.stdout.write(data)
+        } catch {
+          // stdout closed/broken pipe - ignore
+        }
+        try {
+          // Decode with streaming TextDecoder to handle split UTF-8 sequences
+          // Strip U+FFFD replacement chars (invalid bytes from PTY binary output)
+          const decoded = utf8Decoder.decode(data, { stream: true })
+          onData?.(decoded.indexOf('\uFFFD') >= 0 ? decoded.replaceAll('\uFFFD', '') : decoded)
+        } catch {
+          // onData callback error - swallow to prevent PTY crash
+        }
       },
     },
     onExit(_proc, exitCode, _signalCode, _error) {
@@ -116,7 +124,11 @@ export function spawnClaude(options: PtyOptions): PtyProcess {
       // Send SIGWINCH to force the application to repaint the screen
       // Works with Claude Code (ink/React), vim, htop, etc.
       if (proc.pid) {
-        process.kill(proc.pid, 'SIGWINCH')
+        try {
+          process.kill(proc.pid, 'SIGWINCH')
+        } catch {
+          // Process may have exited - ignore
+        }
       }
     },
   }

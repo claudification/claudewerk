@@ -134,47 +134,59 @@ export function createWsClient(options: WsClientOptions): WsClient {
       ws = new WebSocket(wsUrl)
 
       ws.onopen = () => {
-        connected = true
-        reconnectAttempts = 0
-        debug('WebSocket connected')
+        try {
+          connected = true
+          reconnectAttempts = 0
+          debug('WebSocket connected')
 
-        // Send session metadata with capabilities + version
-        const meta: SessionMeta = {
-          type: 'meta',
-          sessionId,
-          wrapperId,
-          cwd,
-          startedAt: Date.now(),
-          model,
-          capabilities,
-          args,
-          version: `rclaude/${BUILD_VERSION.gitHashShort}`,
-          buildTime: BUILD_VERSION.buildTime,
-          claudeVersion,
-        }
-        ws?.send(JSON.stringify(meta))
-
-        // Flush queued messages
-        while (messageQueue.length > 0) {
-          const msg = messageQueue.shift()
-          if (msg) {
-            ws?.send(JSON.stringify(msg))
+          // Send session metadata with capabilities + version
+          const meta: SessionMeta = {
+            type: 'meta',
+            sessionId,
+            wrapperId,
+            cwd,
+            startedAt: Date.now(),
+            model,
+            capabilities,
+            args,
+            version: `rclaude/${BUILD_VERSION.gitHashShort}`,
+            buildTime: BUILD_VERSION.buildTime,
+            claudeVersion,
           }
-        }
+          ws?.send(JSON.stringify(meta))
 
-        // Start heartbeat
-        heartbeatInterval = setInterval(() => {
-          if (connected) {
-            const heartbeat: Heartbeat = {
-              type: 'heartbeat',
-              sessionId,
-              timestamp: Date.now(),
+          // Flush queued messages
+          while (messageQueue.length > 0) {
+            const msg = messageQueue.shift()
+            if (msg) {
+              try {
+                ws?.send(JSON.stringify(msg))
+              } catch (err) {
+                debug(`Failed to flush queued message: ${err instanceof Error ? err.message : err}`)
+              }
             }
-            ws?.send(JSON.stringify(heartbeat))
           }
-        }, 30000) // 30 seconds
 
-        onConnected?.()
+          // Start heartbeat
+          heartbeatInterval = setInterval(() => {
+            if (connected) {
+              try {
+                const heartbeat: Heartbeat = {
+                  type: 'heartbeat',
+                  sessionId,
+                  timestamp: Date.now(),
+                }
+                ws?.send(JSON.stringify(heartbeat))
+              } catch (err) {
+                debug(`Heartbeat send failed: ${err instanceof Error ? err.message : err}`)
+              }
+            }
+          }, 30000) // 30 seconds
+
+          onConnected?.()
+        } catch (err) {
+          debug(`onopen handler error: ${err instanceof Error ? err.message : err}`)
+        }
       }
 
       ws.onclose = (event: CloseEvent) => {
@@ -290,20 +302,24 @@ export function createWsClient(options: WsClientOptions): WsClient {
   }
 
   function send(message: WrapperMessage) {
-    if (connected && ws?.readyState === WebSocket.OPEN) {
-      const json = JSON.stringify(message)
-      // Log large messages for debugging disconnects
-      if (json.length > 100_000) {
-        onError?.(new Error(`Large WS message: type=${message.type} size=${(json.length / 1024).toFixed(0)}KB`))
+    try {
+      if (connected && ws?.readyState === WebSocket.OPEN) {
+        const json = JSON.stringify(message)
+        // Log large messages for debugging disconnects
+        if (json.length > 100_000) {
+          onError?.(new Error(`Large WS message: type=${message.type} size=${(json.length / 1024).toFixed(0)}KB`))
+        }
+        ws.send(json)
+      } else {
+        // Queue for later, cap size to prevent unbounded growth
+        if (messageQueue.length >= MAX_QUEUE_SIZE) {
+          const dropped = messageQueue.shift()
+          debug(`Queue full (${MAX_QUEUE_SIZE}), dropping oldest message: type=${dropped?.type}`)
+        }
+        messageQueue.push(message)
       }
-      ws.send(json)
-    } else {
-      // Queue for later, cap size to prevent unbounded growth
-      if (messageQueue.length >= MAX_QUEUE_SIZE) {
-        const dropped = messageQueue.shift()
-        debug(`Queue full (${MAX_QUEUE_SIZE}), dropping oldest message: type=${dropped?.type}`)
-      }
-      messageQueue.push(message)
+    } catch (err) {
+      debug(`WS send failed (type=${message.type}): ${err instanceof Error ? err.message : err}`)
     }
   }
 

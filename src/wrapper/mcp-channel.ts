@@ -147,64 +147,76 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
   }))
 
   server.setRequestHandler(CallToolRequestSchema, async request => {
-    const { name, arguments: args } = request.params
-    const params = (args || {}) as Record<string, string>
+    try {
+      const { name, arguments: args } = request.params
+      const params = (args || {}) as Record<string, string>
 
-    switch (name) {
-      case 'notify': {
-        const message = params.message
-        const title = params.title
-        if (!message) return { content: [{ type: 'text', text: 'Error: message is required' }], isError: true }
-        callbacks.onNotify?.(message, title)
-        debug(`[channel] notify: ${message.slice(0, 80)}`)
-        return { content: [{ type: 'text', text: 'Notification sent' }] }
-      }
-      case 'share_file': {
-        const filePath = params.file_path
-        if (!filePath) return { content: [{ type: 'text', text: 'Error: file_path is required' }], isError: true }
-        const url = await callbacks.onShareFile?.(filePath)
-        if (!url) return { content: [{ type: 'text', text: `Failed to upload ${filePath}` }], isError: true }
-        debug(`[channel] share_file: ${filePath} -> ${url}`)
-        return { content: [{ type: 'text', text: url }] }
-      }
-      case 'list_sessions': {
-        const sessions = (await callbacks.onListSessions?.(params.status)) || []
-        debug(`[channel] list_sessions: ${sessions.length} results`)
-        return { content: [{ type: 'text', text: JSON.stringify(sessions, null, 2) }] }
-      }
-      case 'send_message': {
-        const { to, intent, message, context, conversation_id } = params
-        if (!to || !intent || !message) {
-          return { content: [{ type: 'text', text: 'Error: to, intent, and message are required' }], isError: true }
+      switch (name) {
+        case 'notify': {
+          const message = params.message
+          const title = params.title
+          if (!message) return { content: [{ type: 'text', text: 'Error: message is required' }], isError: true }
+          callbacks.onNotify?.(message, title)
+          debug(`[channel] notify: ${message.slice(0, 80)}`)
+          return { content: [{ type: 'text', text: 'Notification sent' }] }
         }
-        const result = await callbacks.onSendMessage?.(to, intent, message, context, conversation_id)
-        if (!result?.ok) {
-          debug(`[channel] send_message failed: ${result?.error}`)
-          return { content: [{ type: 'text', text: result?.error || 'Failed to send message' }], isError: true }
+        case 'share_file': {
+          const filePath = params.file_path
+          if (!filePath) return { content: [{ type: 'text', text: 'Error: file_path is required' }], isError: true }
+          const url = await callbacks.onShareFile?.(filePath)
+          if (!url) return { content: [{ type: 'text', text: `Failed to upload ${filePath}` }], isError: true }
+          debug(`[channel] share_file: ${filePath} -> ${url}`)
+          return { content: [{ type: 'text', text: url }] }
         }
-        debug(`[channel] send_message to ${to}: ${message.slice(0, 60)}`)
-        const response = result.conversationId ? `Sent. conversation_id: ${result.conversationId}` : 'Sent.'
-        return { content: [{ type: 'text', text: response }] }
+        case 'list_sessions': {
+          const sessions = (await callbacks.onListSessions?.(params.status)) || []
+          debug(`[channel] list_sessions: ${sessions.length} results`)
+          return { content: [{ type: 'text', text: JSON.stringify(sessions, null, 2) }] }
+        }
+        case 'send_message': {
+          const { to, intent, message, context, conversation_id } = params
+          if (!to || !intent || !message) {
+            return { content: [{ type: 'text', text: 'Error: to, intent, and message are required' }], isError: true }
+          }
+          const result = await callbacks.onSendMessage?.(to, intent, message, context, conversation_id)
+          if (!result?.ok) {
+            debug(`[channel] send_message failed: ${result?.error}`)
+            return { content: [{ type: 'text', text: result?.error || 'Failed to send message' }], isError: true }
+          }
+          debug(`[channel] send_message to ${to}: ${message.slice(0, 60)}`)
+          const response = result.conversationId ? `Sent. conversation_id: ${result.conversationId}` : 'Sent.'
+          return { content: [{ type: 'text', text: response }] }
+        }
+        default:
+          return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true }
       }
-      default:
-        return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true }
+    } catch (err) {
+      debug(`[channel] CallTool error: ${err instanceof Error ? err.message : err}`)
+      return {
+        content: [{ type: 'text', text: `Internal error: ${err instanceof Error ? err.message : 'unknown'}` }],
+        isError: true,
+      }
     }
   })
 
   // Listen for notifications FROM Claude Code (permission requests, future event types).
   // CC sends permission_request when it needs tool approval and we declared claude/channel/permission.
   server.fallbackNotificationHandler = async notification => {
-    if (notification.method === 'notifications/claude/channel/permission_request') {
-      const params = (notification.params || {}) as Record<string, unknown>
-      const requestId = typeof params.request_id === 'string' ? params.request_id : ''
-      const toolName = typeof params.tool_name === 'string' ? params.tool_name : ''
-      const description = typeof params.description === 'string' ? params.description : ''
-      const inputPreview = typeof params.input_preview === 'string' ? params.input_preview : ''
+    try {
+      if (notification.method === 'notifications/claude/channel/permission_request') {
+        const params = (notification.params || {}) as Record<string, unknown>
+        const requestId = typeof params.request_id === 'string' ? params.request_id : ''
+        const toolName = typeof params.tool_name === 'string' ? params.tool_name : ''
+        const description = typeof params.description === 'string' ? params.description : ''
+        const inputPreview = typeof params.input_preview === 'string' ? params.input_preview : ''
 
-      debug(`[channel] Permission request: ${requestId} ${toolName} - ${description.slice(0, 80)}`)
-      callbacks.onPermissionRequest?.({ requestId, toolName, description, inputPreview })
-    } else {
-      debug(`[channel] Unhandled notification: ${notification.method}`)
+        debug(`[channel] Permission request: ${requestId} ${toolName} - ${description.slice(0, 80)}`)
+        callbacks.onPermissionRequest?.({ requestId, toolName, description, inputPreview })
+      } else {
+        debug(`[channel] Unhandled notification: ${notification.method}`)
+      }
+    } catch (err) {
+      debug(`[channel] Notification handler error: ${err instanceof Error ? err.message : err}`)
     }
   }
 
@@ -253,9 +265,13 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
  */
 export async function connectMcpChannel(): Promise<void> {
   if (!state || state.connected) return
-  await state.server.connect(state.transport)
-  state.connected = true
-  debug('[channel] MCP server connected to transport')
+  try {
+    await state.server.connect(state.transport)
+    state.connected = true
+    debug('[channel] MCP server connected to transport')
+  } catch (err) {
+    debug(`[channel] MCP server connect failed: ${err instanceof Error ? err.message : err}`)
+  }
 }
 
 /**
@@ -264,8 +280,13 @@ export async function connectMcpChannel(): Promise<void> {
  */
 export async function handleMcpRequest(req: Request): Promise<Response> {
   if (!state) return new Response('MCP channel not initialized', { status: 503 })
-  if (!state.connected) await connectMcpChannel()
-  return state.transport.handleRequest(req)
+  try {
+    if (!state.connected) await connectMcpChannel()
+    return await state.transport.handleRequest(req)
+  } catch (err) {
+    debug(`[channel] handleMcpRequest error: ${err instanceof Error ? err.message : err}`)
+    return new Response('MCP request failed', { status: 500 })
+  }
 }
 
 /**

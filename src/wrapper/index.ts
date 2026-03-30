@@ -414,18 +414,22 @@ async function main() {
 
         // Channel mode: push through MCP instead of PTY injection
         if (channelEnabled && isMcpChannelReady() && !isSlashCommand) {
-          pushChannelMessage(input).then(sent => {
-            if (sent) {
-              diag('channel', `Input via MCP (${input.length} chars)`)
-            } else {
-              diag('channel', 'MCP push failed, falling back to PTY')
-              if (ptyProcess) {
-                const trimmed = input.replace(/[\r\n]+$/, '')
-                ptyProcess.write(trimmed)
-                setTimeout(() => ptyProcess?.write('\r'), 150)
+          pushChannelMessage(input)
+            .then(sent => {
+              if (sent) {
+                diag('channel', `Input via MCP (${input.length} chars)`)
+              } else {
+                diag('channel', 'MCP push failed, falling back to PTY')
+                if (ptyProcess) {
+                  const trimmed = input.replace(/[\r\n]+$/, '')
+                  ptyProcess.write(trimmed)
+                  setTimeout(() => ptyProcess?.write('\r'), 150)
+                }
               }
-            }
-          })
+            })
+            .catch(err => {
+              debug(`pushChannelMessage error: ${err instanceof Error ? err.message : err}`)
+            })
           return
         }
 
@@ -564,7 +568,9 @@ async function main() {
             }
             diag('error', 'Transcript file still not found after kick', { path })
           }
-          retryTranscriptWatcher(parentTranscriptPath)
+          retryTranscriptWatcher(parentTranscriptPath).catch(err => {
+            debug(`retryTranscriptWatcher error: ${err instanceof Error ? err.message : err}`)
+          })
         } else if (transcriptWatcher) {
           debug('Transcript kick received but watcher already running')
         } else {
@@ -587,7 +593,9 @@ async function main() {
           }
           if (delivery.conversationId) meta.conversation_id = delivery.conversationId
           if (delivery.context) meta.context = delivery.context
-          pushChannelMessage(delivery.message, meta)
+          pushChannelMessage(delivery.message, meta).catch(err => {
+            debug(`pushChannelMessage (deliver) error: ${err instanceof Error ? err.message : err}`)
+          })
           diag('channel', `Received from ${delivery.fromProject}: ${delivery.message.slice(0, 60)}`)
         }
       },
@@ -596,7 +604,9 @@ async function main() {
       },
       onPermissionResponse(requestId: string, behavior: 'allow' | 'deny') {
         if (channelEnabled && isMcpChannelReady()) {
-          sendPermissionResponse(requestId, behavior)
+          sendPermissionResponse(requestId, behavior).catch(err => {
+            debug(`sendPermissionResponse error: ${err instanceof Error ? err.message : err}`)
+          })
           diag('channel', `Permission response: ${requestId} -> ${behavior}`)
         }
       },
@@ -1082,7 +1092,9 @@ async function main() {
                 attempts: attempt,
               })
             }
-            tryStartTranscriptWatcher(transcriptPath)
+            tryStartTranscriptWatcher(transcriptPath).catch(err => {
+              debug(`tryStartTranscriptWatcher error: ${err instanceof Error ? err.message : err}`)
+            })
           } else {
             debug(`WARNING: No transcript_path in SessionStart data!`)
           }
@@ -1342,13 +1354,18 @@ async function main() {
   // Handle unexpected exits
   process.on('exit', cleanup)
   process.on('uncaughtException', error => {
-    debug(`Uncaught exception: ${error instanceof Error ? error.stack || error.message : error}`)
-    cleanup()
-    process.exit(1)
+    debug(`[FATAL] Uncaught exception (swallowed): ${error instanceof Error ? error.stack || error.message : error}`)
+    // DO NOT process.exit() - keep running. The wrapper must never crash.
+  })
+  process.on('unhandledRejection', reason => {
+    debug(
+      `[FATAL] Unhandled rejection (swallowed): ${reason instanceof Error ? reason.stack || reason.message : reason}`,
+    )
+    // DO NOT process.exit() - keep running.
   })
 }
 
 main().catch(error => {
-  debug(`Fatal error: ${error instanceof Error ? error.stack || error.message : error}`)
+  debug(`Fatal bootstrap error: ${error instanceof Error ? error.stack || error.message : error}`)
   process.exit(1)
 })
