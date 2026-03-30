@@ -150,13 +150,11 @@ function Dashboard() {
     if (sid) fetchSessionData(sid, connectSeq)
   }, [connectSeq, fetchSessionData]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // On session switch: fetch if the session hasn't been fetched at the current connectSeq
+  // On session switch: always fetch. selectSession evicts non-selected transcripts
+  // to prevent memory bloat, so data must be re-fetched on every switch.
   useEffect(() => {
     if (!selectedSessionId || !isConnected) return
-    const lastFetched = fetchedAtRef.current[selectedSessionId] ?? -1
-    if (lastFetched < connectSeq) {
-      fetchSessionData(selectedSessionId, connectSeq)
-    }
+    fetchSessionData(selectedSessionId, connectSeq)
   }, [selectedSessionId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close sheet when a session is selected (mobile UX)
