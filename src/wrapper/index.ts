@@ -961,116 +961,112 @@ async function main() {
 
   let devChannelConfirmed = false
   const osc52Parser = new Osc52Parser()
-
-  // Initialize MCP channel if enabled
-  if (channelEnabled) {
-    diag('channel', 'Channel mode enabled')
-    initMcpChannel({
-      onNotify(message, title) {
-        diag('channel', `Notify: ${title ? `[${title}] ` : ''}${message.slice(0, 80)}`)
-        if (wsClient?.isConnected()) {
-          wsClient.send({ type: 'notify', sessionId: claudeSessionId || internalId, message, title })
-        }
-      },
-      async onShareFile(filePath) {
-        // Upload file to concentrator blob store, get public URL back
-        // SECURITY: restrict to files within the session CWD
-        if (!isPathWithinCwd(filePath, cwd)) {
-          debug(`[channel] share_file: path outside CWD: ${filePath}`)
+  diag('channel', `MCP enabled (channel input: ${channelEnabled})`)
+  initMcpChannel({
+    onNotify(message, title) {
+      diag('channel', `Notify: ${title ? `[${title}] ` : ''}${message.slice(0, 80)}`)
+      if (wsClient?.isConnected()) {
+        wsClient.send({ type: 'notify', sessionId: claudeSessionId || internalId, message, title })
+      }
+    },
+    async onShareFile(filePath) {
+      // Upload file to concentrator blob store, get public URL back
+      // SECURITY: restrict to files within the session CWD
+      if (!isPathWithinCwd(filePath, cwd)) {
+        debug(`[channel] share_file: path outside CWD: ${filePath}`)
+        return null
+      }
+      const httpUrl = noConcentrator ? null : wsToHttpUrl(concentratorUrl)
+      if (!httpUrl) return null
+      try {
+        const file = Bun.file(filePath)
+        if (!(await file.exists())) {
+          debug(`[channel] share_file: file not found: ${filePath}`)
           return null
         }
-        const httpUrl = noConcentrator ? null : wsToHttpUrl(concentratorUrl)
-        if (!httpUrl) return null
-        try {
-          const file = Bun.file(filePath)
-          if (!(await file.exists())) {
-            debug(`[channel] share_file: file not found: ${filePath}`)
-            return null
-          }
-          const res = await fetch(`${httpUrl}/api/files`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': file.type || 'application/octet-stream',
-              'X-Session-Id': claudeSessionId || internalId,
-              ...(concentratorSecret ? { Authorization: `Bearer ${concentratorSecret}` } : {}),
-            },
-            body: file,
-          })
-          if (!res.ok) {
-            debug(`[channel] share_file: upload failed: ${res.status}`)
-            return null
-          }
-          const data = (await res.json()) as { url?: string }
-          diag('channel', `Shared: ${filePath} -> ${data.url}`)
-          return data.url || null
-        } catch (err) {
-          debug(`[channel] share_file error: ${err instanceof Error ? err.message : err}`)
+        const res = await fetch(`${httpUrl}/api/files`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': file.type || 'application/octet-stream',
+            'X-Session-Id': claudeSessionId || internalId,
+            ...(concentratorSecret ? { Authorization: `Bearer ${concentratorSecret}` } : {}),
+          },
+          body: file,
+        })
+        if (!res.ok) {
+          debug(`[channel] share_file: upload failed: ${res.status}`)
           return null
         }
-      },
-      async onListSessions(status) {
-        if (!wsClient?.isConnected()) return []
-        return new Promise(resolve => {
-          const timeout = setTimeout(() => resolve([]), 5000)
-          pendingListSessions = sessions => {
-            clearTimeout(timeout)
-            pendingListSessions = null
-            resolve(sessions)
-          }
-          wsClient?.send({ type: 'channel_list_sessions', status } as unknown as WrapperMessage)
-        })
-      },
-      async onSendMessage(to, intent, message, context, conversationId) {
-        if (!wsClient?.isConnected()) return { ok: false, error: 'Not connected' }
-        return new Promise(resolve => {
-          const timeout = setTimeout(() => resolve({ ok: false, error: 'Timeout' }), 10000)
-          pendingSendResult = result => {
-            clearTimeout(timeout)
-            pendingSendResult = null
-            resolve(result)
-          }
-          wsClient?.send({
-            type: 'channel_send',
-            fromSession: claudeSessionId || internalId,
-            toSession: to,
-            intent,
-            message,
-            context,
-            conversationId,
-          } as unknown as WrapperMessage)
-        })
-      },
-      onPermissionRequest(data) {
-        diag('channel', `Permission request: ${data.requestId} ${data.toolName}`)
-        if (wsClient?.isConnected()) {
-          wsClient.send({
-            type: 'permission_request',
-            sessionId: claudeSessionId || internalId,
-            requestId: data.requestId,
-            toolName: data.toolName,
-            description: data.description,
-            inputPreview: data.inputPreview,
-          })
+        const data = (await res.json()) as { url?: string }
+        diag('channel', `Shared: ${filePath} -> ${data.url}`)
+        return data.url || null
+      } catch (err) {
+        debug(`[channel] share_file error: ${err instanceof Error ? err.message : err}`)
+        return null
+      }
+    },
+    async onListSessions(status) {
+      if (!wsClient?.isConnected()) return []
+      return new Promise(resolve => {
+        const timeout = setTimeout(() => resolve([]), 5000)
+        pendingListSessions = sessions => {
+          clearTimeout(timeout)
+          pendingListSessions = null
+          resolve(sessions)
         }
-      },
-      onDisconnect() {
-        diag('channel', 'Channel disconnected')
-      },
-      onTogglePlanMode() {
-        diag('channel', 'toggle_plan_mode: injecting /plan via PTY')
-        if (ptyProcess) ptyProcess.write('/plan\r')
-      },
-    })
-  }
+        wsClient?.send({ type: 'channel_list_sessions', status } as unknown as WrapperMessage)
+      })
+    },
+    async onSendMessage(to, intent, message, context, conversationId) {
+      if (!wsClient?.isConnected()) return { ok: false, error: 'Not connected' }
+      return new Promise(resolve => {
+        const timeout = setTimeout(() => resolve({ ok: false, error: 'Timeout' }), 10000)
+        pendingSendResult = result => {
+          clearTimeout(timeout)
+          pendingSendResult = null
+          resolve(result)
+        }
+        wsClient?.send({
+          type: 'channel_send',
+          fromSession: claudeSessionId || internalId,
+          toSession: to,
+          intent,
+          message,
+          context,
+          conversationId,
+        } as unknown as WrapperMessage)
+      })
+    },
+    onPermissionRequest(data) {
+      diag('channel', `Permission request: ${data.requestId} ${data.toolName}`)
+      if (wsClient?.isConnected()) {
+        wsClient.send({
+          type: 'permission_request',
+          sessionId: claudeSessionId || internalId,
+          requestId: data.requestId,
+          toolName: data.toolName,
+          description: data.description,
+          inputPreview: data.inputPreview,
+        })
+      }
+    },
+    onDisconnect() {
+      diag('channel', 'Channel disconnected')
+    },
+    onTogglePlanMode() {
+      diag('channel', 'toggle_plan_mode: injecting /plan via PTY')
+      if (ptyProcess) ptyProcess.write('/plan\r')
+    },
+  })
 
   // Pending callbacks for inter-session request/response
   let pendingListSessions: ((sessions: SessionInfo[]) => void) | null = null
   let pendingSendResult: ((result: { ok: boolean; error?: string; conversationId?: string }) => void) | null = null
 
-  // Start local HTTP server for hook callbacks (+ MCP endpoint when channels enabled)
+  // Start local HTTP server for hook callbacks + MCP endpoint (always enabled)
   const { server: localServer, port: localServerPort } = await startLocalServer({
     sessionId: internalId,
-    channelEnabled,
+    mcpEnabled: true,
     onHookEvent(event: HookEvent) {
       // Extract Claude's real session ID from SessionStart
       if (event.hookEvent === 'SessionStart' && event.data) {
@@ -1267,6 +1263,15 @@ async function main() {
       '- `title` (optional): Notification title (defaults to project name)',
       '',
       "This sends a real push notification to the user's phone/browser AND shows a toast in the dashboard.",
+      '',
+      '# MCP Tools (rclaude)',
+      '',
+      '**Available MCP tools (rclaude server):**',
+      "- `mcp__rclaude__notify` - Send a push notification to the user's devices (phone, browser)",
+      '- `mcp__rclaude__share_file` - Upload a local file and get a public URL for the dashboard user',
+      '',
+      'Prefer the MCP `notify` tool over the curl endpoint when the channel is active.',
+      'Use `share_file` to share screenshots, images, build artifacts, or any file the user needs to see.',
       ...(channelEnabled
         ? [
             '',
@@ -1275,14 +1280,6 @@ async function main() {
             'This session has an active MCP channel connection to the rclaude remote dashboard.',
             'Messages from the dashboard arrive as `<channel source="rclaude">` -- treat them as regular user input.',
             'The user may be on their phone or another device, not at the terminal.',
-            '',
-            '**Available MCP tools (rclaude server):**',
-            "- `mcp__rclaude__notify` - Send a push notification to the user's devices (phone, browser)",
-            '- `mcp__rclaude__share_file` - Upload a local file and get a public URL for the dashboard user',
-            '',
-            '',
-            'Prefer the MCP `notify` tool over the curl endpoint when the channel is active.',
-            'Use `share_file` to share screenshots, images, build artifacts, or any file the user needs to see.',
             '',
             '# Inter-Session Communication (rclaude)',
             '',
@@ -1307,27 +1304,21 @@ async function main() {
   // Convert WS URL to HTTP for tools/scripts that need to call the concentrator REST API
   const concentratorHttpUrl = noConcentrator ? undefined : wsToHttpUrl(concentratorUrl)
 
-  // Add --channels + --mcp-config for MCP channel support
-  // Write MCP config to a temp file (CC 2.1.83+ may resolve file configs before inline JSON)
-  let mcpConfigPath: string | undefined
-  if (channelEnabled) {
-    mcpConfigPath = join(rclaudeDir, `mcp-${internalId}.json`)
-    await Bun.write(
-      mcpConfigPath,
-      JSON.stringify({
-        mcpServers: { rclaude: { type: 'http', url: `http://localhost:${localServerPort}/mcp` } },
-      }),
-    )
-  }
-  const finalClaudeArgs = channelEnabled
-    ? [
-        '--dangerously-load-development-channels',
-        'server:rclaude',
-        '--mcp-config',
-        mcpConfigPath as string,
-        ...claudeArgs,
-      ]
-    : claudeArgs
+  // Always inject MCP config (tools: notify, share_file, list_sessions, send_message, toggle_plan_mode)
+  // Channel input (--dangerously-load-development-channels) only when channels enabled
+  const mcpConfigPath = join(rclaudeDir, `mcp-${internalId}.json`)
+  await Bun.write(
+    mcpConfigPath,
+    JSON.stringify({
+      mcpServers: { rclaude: { type: 'http', url: `http://localhost:${localServerPort}/mcp` } },
+    }),
+  )
+  const finalClaudeArgs = [
+    '--mcp-config',
+    mcpConfigPath,
+    ...(channelEnabled ? ['--dangerously-load-development-channels', 'server:rclaude'] : []),
+    ...claudeArgs,
+  ]
 
   ptyProcess = spawnClaude({
     args: finalClaudeArgs,
@@ -1414,13 +1405,11 @@ async function main() {
     diagBuffer.length = 0
     eventQueue.length = 0
     cleanupSettings(internalId, rclaudeDir).catch(() => {})
-    if (channelEnabled) {
-      closeMcpChannel().catch(() => {})
-      if (mcpConfigPath)
-        try {
-          unlinkSync(mcpConfigPath)
-        } catch {}
-    }
+    closeMcpChannel().catch(() => {})
+    if (mcpConfigPath)
+      try {
+        unlinkSync(mcpConfigPath)
+      } catch {}
     try {
       unlinkSync(promptFile)
     } catch {}
