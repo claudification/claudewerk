@@ -829,22 +829,27 @@ export function SessionDetail() {
           className="w-full p-3 sm:p-4 flex items-center gap-2 hover:bg-muted/30 transition-colors"
         >
           {infoExpanded ? (
-            <ChevronDown className="w-3 h-3 text-muted-foreground" />
+            <>
+              <ChevronDown className="w-3 h-3 text-muted-foreground" />
+              <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Session Info</span>
+            </>
           ) : (
             <ChevronRight className="w-3 h-3 text-muted-foreground" />
           )}
-          <span className="text-accent text-xs uppercase tracking-wider">Session Info</span>
           {!infoExpanded &&
             (() => {
               const ps = projectSettings
               return (
-                <span className="text-muted-foreground text-[10px] ml-2 inline-flex items-center gap-1">
+                <span className="inline-flex items-center gap-1.5">
                   {ps?.icon && (
                     <span style={ps?.color ? { color: ps.color } : undefined}>
-                      {renderProjectIcon(ps.icon, 'w-3 h-3')}
+                      {renderProjectIcon(ps.icon, 'w-3.5 h-3.5')}
                     </span>
                   )}
-                  <span style={ps?.color ? { color: ps.color } : undefined}>
+                  <span
+                    className="text-sm font-bold truncate"
+                    style={ps?.color ? { color: ps.color } : undefined}
+                  >
                     {session.title || ps?.label || session.cwd.split('/').slice(-2).join('/')}
                   </span>
                   <span>
