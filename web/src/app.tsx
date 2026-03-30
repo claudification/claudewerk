@@ -115,33 +115,49 @@ function Dashboard() {
   }, [])
 
   // Fetch events/transcript/sessions when session selected or WS reconnects.
-  // connectSeq monotonically increases on each connect AND on visibility restore,
-  // ensuring re-fetch even if the WS stayed connected but lost messages in background.
+  // Uses a per-session fetch generation tracker to avoid the iOS resume storm:
+  // when sync_stale bumps connectSeq, only the CURRENTLY SELECTED session is
+  // re-fetched immediately. Other sessions lazy-load when the user switches to them.
   const isConnected = useSessionsStore(state => state.isConnected)
   const connectSeq = useSessionsStore(state => state.connectSeq)
 
-  // Re-fetch session list + transcript on connectSeq change.
-  // connectSeq bumps on: WS reconnect, sync_stale response (epoch mismatch or gap too large).
+  // Track which connectSeq each session was last fetched at.
+  // When connectSeq bumps, sessions with fetchedAt < connectSeq are stale.
+  const fetchedAtRef = useRef<Record<string, number>>({})
+
+  // Helper: fetch events + transcript for a session and mark it as fetched
+  const fetchSessionData = useCallback(
+    (sessionId: string, seq: number) => {
+      fetchedAtRef.current[sessionId] = seq
+      console.log(`[sync] fetch events + transcript for ${sessionId.slice(0, 8)} (connectSeq=${seq})`)
+      fetchSessionEvents(sessionId).then(events => setEvents(sessionId, events))
+      fetchTranscript(sessionId).then(transcript => {
+        if (transcript) setTranscript(sessionId, transcript)
+      })
+    },
+    [setEvents, setTranscript],
+  )
+
+  // On connectSeq bump (WS reconnect or sync_stale): refresh session list
+  // and re-fetch ONLY the currently selected session. Other sessions will
+  // lazy-fetch when the user switches to them.
   useEffect(() => {
     if (!isConnected) return
-    console.log(`[sync] full resync: refresh_sessions (connectSeq=${connectSeq})`)
+    console.log(`[sync] resync: refresh_sessions (connectSeq=${connectSeq})`)
     wsSend('refresh_sessions')
-  }, [connectSeq]) // eslint-disable-line react-hooks/exhaustive-deps
 
+    const sid = useSessionsStore.getState().selectedSessionId
+    if (sid) fetchSessionData(sid, connectSeq)
+  }, [connectSeq, fetchSessionData]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // On session switch: fetch if the session hasn't been fetched at the current connectSeq
   useEffect(() => {
     if (!selectedSessionId || !isConnected) return
-    console.log(
-      `[sync] full resync: fetchEvents + fetchTranscript for ${selectedSessionId.slice(0, 8)} (connectSeq=${connectSeq})`,
-    )
-    fetchSessionEvents(selectedSessionId).then(events => setEvents(selectedSessionId, events))
-  }, [selectedSessionId, connectSeq, setEvents]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!selectedSessionId || !isConnected) return
-    fetchTranscript(selectedSessionId).then(transcript => {
-      if (transcript) setTranscript(selectedSessionId, transcript)
-    })
-  }, [selectedSessionId, connectSeq, setTranscript]) // eslint-disable-line react-hooks/exhaustive-deps
+    const lastFetched = fetchedAtRef.current[selectedSessionId] ?? -1
+    if (lastFetched < connectSeq) {
+      fetchSessionData(selectedSessionId, connectSeq)
+    }
+  }, [selectedSessionId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close sheet when a session is selected (mobile UX)
   useEffect(() => {

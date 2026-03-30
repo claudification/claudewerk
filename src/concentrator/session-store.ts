@@ -463,8 +463,11 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       try {
         ws.send(json)
         recordTraffic('out', json.length)
-      } catch {
-        // Remove dead connections
+      } catch (err) {
+        const subInfo = subscriberRegistry.get(ws)
+        console.error(
+          `[broadcast] Send failed to ${subInfo?.id || 'unknown'}: ${err instanceof Error ? err.message : err}`,
+        )
         dashboardSubscribers.delete(ws)
       }
     }
@@ -537,6 +540,16 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       // Mark ended sessions for eviction after TTL
       if (session.status === 'ended' && now - session.lastActivity > EVICTION_TTL_MS) {
         toEvict.push(session.id)
+      }
+
+      // Evict zombie sessions: STARTING with 0 events, idle > 24h, no active wrapper
+      if (session.status === 'starting' && session.events.length === 0) {
+        const idleMs = now - session.lastActivity
+        if (idleMs > EVICTION_TTL_MS && !sessionSockets.has(session.id)) {
+          const hours = Math.round(idleMs / 3600000)
+          console.log(`[evict] Zombie session ${session.id.slice(0, 8)} (STARTING, 0 events, idle ${hours}h)`)
+          toEvict.push(session.id)
+        }
       }
 
       if (changed) {
@@ -1600,7 +1613,11 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
               chStats.lastMessageAt = Date.now()
             }
           }
-        } catch {
+        } catch (err) {
+          const subInfo = subscriberRegistry.get(ws)
+          console.error(
+            `[broadcast] Send failed to ${subInfo?.id || 'unknown'}: ${err instanceof Error ? err.message : err}`,
+          )
           subs.delete(ws)
           if (subs.size === 0) channelSubscribers.delete(key)
         }
@@ -1618,7 +1635,11 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
             entry.totals.messagesSent++
             entry.totals.bytesSent += bytes
           }
-        } catch {
+        } catch (err) {
+          const subInfo = subscriberRegistry.get(ws)
+          console.error(
+            `[broadcast] Send failed to ${subInfo?.id || 'unknown'}: ${err instanceof Error ? err.message : err}`,
+          )
           dashboardSubscribers.delete(ws)
         }
       }
