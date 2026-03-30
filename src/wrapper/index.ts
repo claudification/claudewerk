@@ -656,6 +656,12 @@ async function main() {
           resolved ? `Answer resolved: ${toolUseId.slice(0, 12)}` : `No pending request: ${toolUseId.slice(0, 12)}`,
         )
       },
+      onQuitSession() {
+        diag('session', 'Quit requested from dashboard - sending SIGTERM')
+        if (ptyProcess) {
+          ptyProcess.kill('SIGTERM')
+        }
+      },
     })
   }
 

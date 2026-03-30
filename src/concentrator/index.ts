@@ -901,6 +901,19 @@ async function main() {
                 break
               }
 
+              // Quit session: dashboard -> wrapper (SIGTERM)
+              case 'quit_session': {
+                const sessionId = data.sessionId
+                const targetWs = sessionId ? sessionStore.getSessionSocket(sessionId) : null
+                if (targetWs) {
+                  targetWs.send(JSON.stringify({ type: 'quit_session', sessionId }))
+                  if (verbose) {
+                    console.log(`[quit] Session ${sessionId.slice(0, 8)} - SIGTERM sent to wrapper`)
+                  }
+                }
+                break
+              }
+
               case 'channel_link_response': {
                 // Comes from DASHBOARD, not from a session wrapper
                 const fromSession = data.fromSession

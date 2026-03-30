@@ -63,6 +63,7 @@ export interface WsClientOptions {
     annotations?: Record<string, { preview?: string; notes?: string }>,
     skip?: boolean,
   ) => void
+  onQuitSession?: () => void
 }
 
 export interface WsClient {
@@ -113,6 +114,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
     onChannelLinkRequest,
     onPermissionResponse,
     onAskAnswer,
+    onQuitSession,
   } = options
 
   let sessionId = initialSessionId
@@ -272,6 +274,9 @@ export function createWsClient(options: WsClientOptions): WsClient {
               break
             case 'ask_answer':
               onAskAnswer?.(message.toolUseId, message.answers, message.annotations, message.skip)
+              break
+            case 'quit_session':
+              onQuitSession?.()
               break
             default: {
               const msgType = (message as Record<string, unknown>).type as string

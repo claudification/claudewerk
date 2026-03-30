@@ -13,7 +13,7 @@ import { CSS } from '@dnd-kit/utilities'
 import type { HookEvent } from '@shared/protocol'
 import { ContextMenu } from 'radix-ui'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { saveSessionOrder, useSessionsStore } from '@/hooks/use-sessions'
+import { saveSessionOrder, useSessionsStore, wsSend } from '@/hooks/use-sessions'
 import type { Session, SessionOrderGroup, SessionOrderNode, SessionOrderV2 } from '@/lib/types'
 import { cn, contextWindowSize, formatAge, formatModel, haptic, lastPathSegments } from '@/lib/utils'
 import { ProjectSettingsButton, ProjectSettingsEditor, renderProjectIcon } from './project-settings-editor'
@@ -570,6 +570,20 @@ function SessionContextMenu({ session, children }: { session: Session; children:
           <ContextMenu.Item className={menuItemClass} onSelect={createGroupAndMove}>
             New group...
           </ContextMenu.Item>
+          {session.status !== 'ended' && (
+            <>
+              <ContextMenu.Separator className="h-px bg-border my-1" />
+              <ContextMenu.Item
+                className={cn(menuItemClass, 'text-destructive')}
+                onSelect={() => {
+                  haptic('error')
+                  wsSend('quit_session', { sessionId: session.id })
+                }}
+              >
+                Quit session
+              </ContextMenu.Item>
+            </>
+          )}
           {session.status === 'ended' && (
             <>
               <ContextMenu.Separator className="h-px bg-border my-1" />

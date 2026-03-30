@@ -329,6 +329,9 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   // Transcript cache: sessionId -> entries (ring buffer, max 500 per session)
   const MAX_TRANSCRIPT_ENTRIES = 500
   const transcriptCache = new Map<string, TranscriptEntry[]>()
+  // Deduplicate clipboard captures by tool_use_id (prevents re-processing on transcript re-reads)
+  const processedClipboardIds = new Set<string>()
+
   // Subagent transcript cache: `${sessionId}:${agentId}` -> entries
   const subagentTranscriptCache = new Map<string, TranscriptEntry[]>()
   // Transcript kick tracking: sessionId -> last kick timestamp (debounce 60s)
@@ -1886,13 +1889,14 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
 
         // Detect OSC 52 clipboard sequences in Bash tool results.
         // Skip on initial transcript loads to avoid re-surfacing old captures on reconnect.
-        // terminal-copy and CC's own clipboard writes emit OSC 52 which CC captures
-        // as tool output text. Extract the base64 payload and broadcast to dashboard.
+        // Deduplicate by tool_use_id to prevent re-processing on transcript re-reads.
         if (!isInitial && entry.type === 'user') {
           const userContent = (entry as TranscriptUserEntry).message?.content
           if (Array.isArray(userContent)) {
             for (const block of userContent) {
               if (block.type !== 'tool_result' || typeof block.content !== 'string') continue
+              const toolUseId = block.tool_use_id as string | undefined
+              if (toolUseId && processedClipboardIds.has(toolUseId)) continue
               // Match OSC 52: direct (\x1b]52;c;BASE64\x07) or tmux-wrapped (Ptmux;\x1b]52;c;BASE64)
               const osc52Match =
                 block.content.match(/(?:\x1bPtmux;\x1b)?(?:\x1b)?\]52;[a-z]*;([A-Za-z0-9+/=]+)/) ||
@@ -1909,6 +1913,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
                   timestamp: Date.now(),
                 }
                 broadcast(capture)
+                if (toolUseId) processedClipboardIds.add(toolUseId)
                 // Persist to shared files log (per-CWD, survives restarts)
                 const clipHash = `clip_${Date.now().toString(36)}_${base64.slice(0, 8)}`
                 appendSharedFile({

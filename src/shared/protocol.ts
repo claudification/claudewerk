@@ -462,6 +462,12 @@ export type ConcentratorMessage =
   | InterSessionListResponse
   | PermissionResponse
   | AskQuestionResponse
+  | QuitSession
+
+export interface QuitSession {
+  type: 'quit_session'
+  sessionId: string
+}
 
 // Hook event types from Claude Code
 export type HookEventType =

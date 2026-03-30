@@ -9,9 +9,9 @@ export interface BuildVersion {
 }
 
 export const BUILD_VERSION: BuildVersion = {
-  gitHash: '649baaf5250462e41195c3383dc8b673953d1c7c',
-  gitHashShort: '649baaf-dirty',
-  buildTime: '2026-03-30T11:05:05.815Z',
+  gitHash: 'dddfefc6e973b9b9f00684d5c339aee26b8eb44c',
+  gitHashShort: 'dddfefc-dirty',
+  buildTime: '2026-03-30T15:35:35.290Z',
   dirty: true,
-  recentCommits: [{"hash":"649baaf","message":"(HEAD -> main, origin/main, origin/HEAD) feat: Shared tab with uploaded files + clipboard copy history"},{"hash":"7a1ffe3","message":"fix: Memory leak audit - cap all unbounded collections"},{"hash":"2d15ea8","message":"fix: Wrapper crash resilience audit - 18 fixes, zero crash paths"}],
+  recentCommits: [{"hash":"dddfefc","message":"(HEAD -> main, origin/main, origin/HEAD) fix: Zombie session eviction at 30 days, not 24 hours"},{"hash":"53c4862","message":"fix: Evict zombie sessions, log broadcast errors, fix resync storm"},{"hash":"7fa92d0","message":"feat: MCP tool output display with configurable line limits"}],
 }
