@@ -48,8 +48,9 @@ export function ToolLine({
   const input = tool.input || {}
   const style = getToolStyle(name)
   const expandAll = useSessionsStore(state => state.expandAll)
+  const displayKey = name.startsWith('mcp__') ? 'MCP' : name
   const toolDefaultOpen = useSessionsStore(
-    state => resolveToolDisplay(state.dashboardPrefs, name as ToolDisplayKey).defaultOpen,
+    state => resolveToolDisplay(state.dashboardPrefs, displayKey as ToolDisplayKey).defaultOpen,
   )
 
   let summary = ''
@@ -355,7 +356,19 @@ export function ToolLine({
         const parts = name.split('__')
         const server = parts[1] || ''
         const toolName = parts.slice(2).join('__') || ''
-        summary = `${server}/${toolName}`
+        // Build a concise summary from input params
+        const inputEntries = Object.entries(input).filter(([k]) => k !== 'type')
+        const inputSummary = inputEntries
+          .map(([k, v]) => {
+            const val = typeof v === 'string' ? v : JSON.stringify(v)
+            return `${k}=${typeof val === 'string' && val.length > 40 ? `${val.slice(0, 40)}...` : val}`
+          })
+          .join(', ')
+        summary = inputSummary || `${server}/${toolName}`
+        // Show result as expandable output
+        if (result && typeof result === 'string' && result.trim()) {
+          details = <TruncatedPre text={result} tool="MCP" />
+        }
       } else {
         summary = JSON.stringify(input).slice(0, 60)
       }
