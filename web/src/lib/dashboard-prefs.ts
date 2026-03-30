@@ -50,7 +50,7 @@ export const defaultPrefs: DashboardPrefs = {
   showWsStats: false,
   showThinking: false,
   showContextInList: true,
-  chatBubbles: false,
+  chatBubbles: true,
   defaultView: 'transcript',
   toolDisplay: {},
 }
