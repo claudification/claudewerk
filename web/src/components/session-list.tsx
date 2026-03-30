@@ -11,6 +11,7 @@ import {
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { HookEvent } from '@shared/protocol'
+import { ContextMenu } from 'radix-ui'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { saveSessionOrder, useSessionsStore } from '@/hooks/use-sessions'
 import type { Session, SessionOrderGroup, SessionOrderNode, SessionOrderV2 } from '@/lib/types'
@@ -467,25 +468,149 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
   )
 }
 
+// ─── Session context menu (right-click) ─────────────────────────────
+
+function SessionContextMenu({ session, children }: { session: Session; children: React.ReactNode }) {
+  const rawSessionOrder = useSessionsStore(s => s.sessionOrder) as SessionOrderV2 | null
+  const sessionOrder = rawSessionOrder?.tree ? rawSessionOrder : { version: 2 as const, tree: [] }
+  const dismissSession = useSessionsStore(s => s.dismissSession)
+
+  const groups = sessionOrder.tree.filter((n): n is SessionOrderGroup => n.type === 'group')
+  const sessionCwdKey = `cwd:${session.cwd}`
+
+  function moveToGroup(groupId: string) {
+    haptic('tap')
+    const newTree = sessionOrder.tree.map(node => {
+      if (node.type === 'group') {
+        // Remove from any existing group
+        const filtered = { ...node, children: node.children.filter(c => c.id !== sessionCwdKey) }
+        // Add to target group
+        if (node.id === groupId) {
+          return { ...filtered, children: [...filtered.children, { id: sessionCwdKey, type: 'session' as const }] }
+        }
+        return filtered
+      }
+      return node
+    })
+    // Remove from root level if it was there
+    const rootFiltered = newTree.filter(n => n.id !== sessionCwdKey)
+    saveSessionOrder({ version: 2, tree: rootFiltered })
+  }
+
+  function removeFromGroups() {
+    haptic('tap')
+    const newTree = sessionOrder.tree.map(node => {
+      if (node.type === 'group') {
+        return { ...node, children: node.children.filter(c => c.id !== sessionCwdKey) }
+      }
+      return node
+    })
+    // Add to root level if not already there
+    if (!newTree.some(n => n.id === sessionCwdKey)) {
+      newTree.push({ id: sessionCwdKey, type: 'session' as const })
+    }
+    saveSessionOrder({ version: 2, tree: newTree })
+  }
+
+  function createGroupAndMove() {
+    const name = prompt('Group name:')
+    if (!name?.trim()) return
+    haptic('tap')
+    const groupId = `group-${name.trim().toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`
+    // Remove session from any existing group/root
+    let newTree = sessionOrder.tree
+      .filter(n => n.id !== sessionCwdKey)
+      .map(node => {
+        if (node.type === 'group') {
+          return { ...node, children: node.children.filter(c => c.id !== sessionCwdKey) }
+        }
+        return node
+      })
+    // Create new group with the session
+    newTree = [
+      {
+        id: groupId,
+        type: 'group' as const,
+        name: name.trim(),
+        children: [{ id: sessionCwdKey, type: 'session' as const }],
+      },
+      ...newTree,
+    ]
+    saveSessionOrder({ version: 2, tree: newTree })
+  }
+
+  const menuItemClass =
+    'flex items-center px-3 py-1.5 text-[11px] font-mono cursor-pointer outline-none data-[highlighted]:bg-accent/20 data-[highlighted]:text-accent'
+
+  return (
+    <ContextMenu.Root>
+      <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Content className="min-w-[180px] bg-popover border border-border rounded-md shadow-lg py-1 z-50">
+          {groups.length > 0 && (
+            <ContextMenu.Sub>
+              <ContextMenu.SubTrigger className={menuItemClass}>
+                Move to <span className="ml-auto text-muted-foreground">{'\u25B8'}</span>
+              </ContextMenu.SubTrigger>
+              <ContextMenu.Portal>
+                <ContextMenu.SubContent className="min-w-[160px] bg-popover border border-border rounded-md shadow-lg py-1 z-50">
+                  {groups.map(g => (
+                    <ContextMenu.Item key={g.id} className={menuItemClass} onSelect={() => moveToGroup(g.id)}>
+                      {g.name}
+                    </ContextMenu.Item>
+                  ))}
+                  <ContextMenu.Separator className="h-px bg-border my-1" />
+                  <ContextMenu.Item className={menuItemClass} onSelect={removeFromGroups}>
+                    Unpin (no group)
+                  </ContextMenu.Item>
+                </ContextMenu.SubContent>
+              </ContextMenu.Portal>
+            </ContextMenu.Sub>
+          )}
+          <ContextMenu.Item className={menuItemClass} onSelect={createGroupAndMove}>
+            New group...
+          </ContextMenu.Item>
+          {session.status === 'ended' && (
+            <>
+              <ContextMenu.Separator className="h-px bg-border my-1" />
+              <ContextMenu.Item
+                className={cn(menuItemClass, 'text-destructive')}
+                onSelect={() => {
+                  haptic('tap')
+                  dismissSession(session.id)
+                }}
+              >
+                Dismiss
+              </ContextMenu.Item>
+            </>
+          )}
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
+  )
+}
+
 // ─── Session card with settings button ─────────────────────────────
 
 function SessionCard({ session }: { session: Session }) {
   const [showSettings, setShowSettings] = useState(false)
   return (
-    <div>
-      <div className="relative">
-        <SessionItemContent session={session} />
-        <div className="absolute top-2 right-2">
-          <ProjectSettingsButton
-            onClick={e => {
-              e.stopPropagation()
-              setShowSettings(!showSettings)
-            }}
-          />
+    <SessionContextMenu session={session}>
+      <div>
+        <div className="relative">
+          <SessionItemContent session={session} />
+          <div className="absolute top-2 right-2">
+            <ProjectSettingsButton
+              onClick={e => {
+                e.stopPropagation()
+                setShowSettings(!showSettings)
+              }}
+            />
+          </div>
         </div>
+        {showSettings && <ProjectSettingsEditor cwd={session.cwd} onClose={() => setShowSettings(false)} />}
       </div>
-      {showSettings && <ProjectSettingsEditor cwd={session.cwd} onClose={() => setShowSettings(false)} />}
-    </div>
+    </SessionContextMenu>
   )
 }
 
@@ -524,7 +649,11 @@ function CwdSessionGroup({ sessions, cwd }: { sessions: Session[]; cwd: string }
         </div>
         <div className="space-y-0.5 pb-1">
           {sessions.map(session => (
-            <SessionItemContent key={session.id} session={session} compact />
+            <SessionContextMenu key={session.id} session={session}>
+              <div>
+                <SessionItemContent session={session} compact />
+              </div>
+            </SessionContextMenu>
           ))}
         </div>
       </div>
