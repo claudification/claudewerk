@@ -52,7 +52,7 @@ export const defaultPrefs: DashboardPrefs = {
   showVoiceInput: true,
   showVoiceFab: false,
   showWsStats: false,
-  showThinking: false,
+  showThinking: true,
   showContextInList: true,
   chatBubbles: true,
   sessionCacheSize: 3,

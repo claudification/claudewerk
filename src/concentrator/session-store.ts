@@ -341,6 +341,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     'CwdChanged',
     'FileChanged',
     'TaskCreated',
+    'PermissionDenied',
   ])
   const MAX_EVENTS = 1000
 

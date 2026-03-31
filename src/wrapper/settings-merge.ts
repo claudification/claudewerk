@@ -54,6 +54,7 @@ interface ClaudeSettings {
     CwdChanged?: HookMatcher[]
     FileChanged?: HookMatcher[]
     TaskCreated?: HookMatcher[]
+    PermissionDenied?: HookMatcher[]
     [key: string]: HookMatcher[] | undefined
   }
   [key: string]: unknown
@@ -92,6 +93,7 @@ const VERSIONED_HOOK_EVENTS: { minVersion: string; events: string[] }[] = [
   { minVersion: '2.1.76', events: ['PostCompact', 'Elicitation', 'ElicitationResult', 'StopFailure'] },
   { minVersion: '2.1.83', events: ['CwdChanged', 'FileChanged'] },
   { minVersion: '2.1.84', events: ['TaskCreated'] },
+  { minVersion: '2.1.88', events: ['PermissionDenied'] },
 ]
 
 /**
