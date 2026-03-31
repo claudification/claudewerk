@@ -194,10 +194,51 @@ Session went idle? Revive it from the dashboard. The host agent (`rclaude-agent`
 revive commands and spawns a new tmux session with `rclaude --resume`, reconnecting your Claude
 session without touching the host machine.
 
+### Inter-Session Communication
+
+Sessions can discover and message each other. Any Claude can ask `list_sessions` to see other
+running sessions, then `send_message` to talk to them. Messages flow through the concentrator
+with intent tags (request/response/notify/progress) and conversation threading.
+
+**Trust levels** control who can talk to whom:
+- **Default** -- first contact requires dashboard approval (ALLOW/BLOCK banner)
+- **Open** -- any session can message this project without approval
+- **Benevolent** -- this project can message any session AND control their lifecycle (revive/quit)
+
+Links persist across restarts (stored as CWD pairs, not session IDs). Message history logged
+with 200-char previews. Click a linked session name to see the conversation timeline.
+
+Benevolent sessions get extra MCP tools: `revive_session` and `quit_session` for managing
+other sessions' lifecycles remotely.
+
+### Voice Input
+
+**Touch devices (FAB):** Floating hold-to-record button on the right edge. Two-stage activation:
+first tap requests mic permission, second tap starts recording. Drag left to cancel. Release to
+submit. Interim transcription via Deepgram, optional Haiku refinement pass.
+
+**Desktop (push-to-talk):** Configure any key as a push-to-talk binding in Settings > Input.
+Hold the key to record, release to submit. Works with F-keys, modifier keys, ScrollLock, etc.
+Recording indicator banner with live transcript at the top of the screen.
+
+### Clipboard Capture
+
+When Claude copies text to clipboard, the dashboard captures it as a cyan CLIPBOARD banner
+with COPY/DISMISS buttons. Works via OSC 52 interception -- Claude's clipboard writes go
+through the PTY stream, rclaude extracts them, and forwards to the dashboard. Supports both
+text and images. History persisted in the Shared tab.
+
+### Chat Bubbles & Customization
+
+User messages render as iMessage-style right-aligned bubbles. Pick from 7 color presets
+(blue, teal, purple, green, orange, pink, indigo) in Settings > Display. Inter-session
+messages render as teal cards with sender name, intent badge, and clickable project name.
+
 ### Project Customization
 
-Label your projects, pick icons (50+ Lucide icons), set colors. The sidebar and session switcher
-show your custom branding. Settings persist on the server, shared across all dashboard clients.
+Label your projects, pick icons (50+ Lucide icons), set colors, configure trust levels.
+The sidebar and session switcher show your custom branding. Settings persist on the server,
+shared across all dashboard clients.
 
 ---
 
@@ -236,9 +277,9 @@ sharing between host and Docker.
 
 | Component | What it does |
 |-----------|-------------|
-| **rclaude** | CLI wrapper. Spawns claude with PTY, injects hooks, streams to concentrator |
-| **concentrator** | Central server. HTTP + WS + WebAuthn auth. Runs in Docker |
-| **dashboard** | React SPA. Vite + Tailwind + Zustand. Served by concentrator |
+| **rclaude** | CLI wrapper. Spawns claude with PTY, injects hooks, MCP channel, streams to concentrator |
+| **concentrator** | Central server. HTTP + WS + WebAuthn auth + inter-session routing. Runs in Docker |
+| **dashboard** | React SPA. Vite + Tailwind + Zustand. Voice, terminal, transcript, chat. Served by concentrator |
 | **rclaude-agent** | Host-side agent. Listens for revive commands, spawns tmux sessions |
 | **concentrator-cli** | CLI for auth management. Create invites, list/revoke users |
 
