@@ -15,7 +15,7 @@ import type { HookEvent, TaskInfo, TasksUpdate, TranscriptEntry, WrapperMessage 
 import { DEFAULT_CONCENTRATOR_URL } from '../shared/protocol'
 import { DEBUG, debug } from './debug'
 import { FileEditor } from './file-editor'
-import { resolveAskRequest, startLocalServer, stopLocalServer } from './local-server'
+import { resolveAskRequest, setLocalServerDebug, startLocalServer, stopLocalServer } from './local-server'
 import {
   closeMcpChannel,
   initMcpChannel,
@@ -1069,6 +1069,9 @@ async function main() {
   let pendingListSessions: ((sessions: SessionInfo[]) => void) | null = null
   let pendingSendResult: ((result: { ok: boolean; error?: string; conversationId?: string }) => void) | null = null
 
+  // Wire debug logging into local server
+  setLocalServerDebug(debug)
+
   // Start local HTTP server for hook callbacks + MCP endpoint (always enabled)
   const { server: localServer, port: localServerPort } = await startLocalServer({
     sessionId: internalId,
@@ -1206,15 +1209,17 @@ async function main() {
       // Forward to concentrator, or queue until session ID + WS are ready
       if (claudeSessionId && wsClient?.isConnected()) {
         wsClient.sendHookEvent({ ...event, sessionId: claudeSessionId })
+        debug(`Hook: ${event.hookEvent} -> forwarded (sid=${claudeSessionId.slice(0, 8)})`)
       } else {
         if (eventQueue.length >= MAX_EVENT_QUEUE) {
           const dropped = eventQueue.shift()
           debug(`Event queue full (${MAX_EVENT_QUEUE}), dropping oldest: ${dropped?.hookEvent}`)
         }
         eventQueue.push(event)
+        debug(
+          `Hook: ${event.hookEvent} -> QUEUED (claudeSessionId=${claudeSessionId?.slice(0, 8) || 'null'} ws=${wsClient?.isConnected() || false} queue=${eventQueue.length})`,
+        )
       }
-
-      debug(`Hook: ${event.hookEvent}`)
     },
     onNotify(message: string, title?: string) {
       const sessionId = claudeSessionId || internalId

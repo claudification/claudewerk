@@ -8,6 +8,11 @@ import type { Server } from 'bun'
 import type { AskQuestionItem, AskQuestionRequest, HookEvent, HookEventData, HookEventType } from '../shared/protocol'
 import { handleMcpRequest } from './mcp-channel'
 
+let debugFn: (msg: string) => void = () => {}
+export function setLocalServerDebug(fn: (msg: string) => void) {
+  debugFn = fn
+}
+
 type HttpServer = Server<unknown>
 
 /** Hook response JSON for AskUserQuestion -- returned to CC via PreToolUse hook stdout */
@@ -109,6 +114,10 @@ export async function startLocalServer(options: LocalServerOptions): Promise<{ s
   // with a different port, hooks silently fail (curl to dead port, || true hides it).
   const hash = sessionId.split('').reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0)
   const port = await findAvailablePort(19000 + (Math.abs(hash) % 900))
+
+  debugFn(
+    `[server] Starting local server on port ${port} (sessionId=${sessionId.slice(0, 8)}, hash=${Math.abs(hash) % 900})`,
+  )
 
   const server = Bun.serve({
     port,
@@ -249,13 +258,14 @@ export async function startLocalServer(options: LocalServerOptions): Promise<{ s
 
             try {
               onHookEvent(event)
-            } catch {
-              // onHookEvent callback error - swallow to prevent HTTP handler crash
+              debugFn(`[hook] ${eventType} received (sid=${effectiveSessionId.slice(0, 8)})`)
+            } catch (err) {
+              debugFn(`[hook] ${eventType} callback error: ${err instanceof Error ? err.message : err}`)
             }
 
             return new Response(null, { status: 200 })
-          } catch (_error) {
-            // Hook processing error -- silently return 500
+          } catch (parseErr) {
+            debugFn(`[hook] ${eventType} parse error: ${parseErr instanceof Error ? parseErr.message : parseErr}`)
             return new Response('Error processing hook', { status: 500 })
           }
         }
