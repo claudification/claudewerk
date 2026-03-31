@@ -1809,16 +1809,23 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   // Transcript cache methods
   function addTranscriptEntries(sessionId: string, entries: TranscriptEntry[], isInitial: boolean): void {
     if (isInitial) {
-      // Initial batch replaces everything (watcher read the full file)
       transcriptCache.set(sessionId, entries.slice(-MAX_TRANSCRIPT_ENTRIES))
     } else {
       const existing = transcriptCache.get(sessionId) || []
       existing.push(...entries)
-      // Trim to max
       if (existing.length > MAX_TRANSCRIPT_ENTRIES) {
         transcriptCache.set(sessionId, existing.slice(-MAX_TRANSCRIPT_ENTRIES))
       } else {
         transcriptCache.set(sessionId, existing)
+      }
+      // Non-initial transcript entries = session is actively working.
+      // Catches cases where hooks aren't flowing (stale claudeSessionId after
+      // compaction/rekey) but transcript streaming still works.
+      const session = sessions.get(sessionId)
+      if (session && (session.status === 'starting' || session.status === 'idle')) {
+        session.status = 'active'
+        session.lastActivity = Date.now()
+        scheduleSessionUpdate(sessionId)
       }
     }
 
