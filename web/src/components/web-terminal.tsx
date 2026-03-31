@@ -367,6 +367,9 @@ export function WebTerminal({ wrapperId, onClose, popout }: WebTerminalProps) {
         </div>
       )}
 
+      {/* Shortcut toolbar - above terminal to avoid iOS task switcher conflict at bottom */}
+      <TerminalToolbar onSend={sendData} />
+
       {/* Terminal area */}
       <div className="relative flex-1 min-h-0 overflow-hidden" style={{ overscrollBehavior: 'contain' }}>
         <div
@@ -383,9 +386,6 @@ export function WebTerminal({ wrapperId, onClose, popout }: WebTerminalProps) {
           />
         )}
       </div>
-
-      {/* Shortcut toolbar */}
-      <TerminalToolbar onSend={sendData} />
     </div>
   )
 }

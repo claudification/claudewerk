@@ -150,8 +150,8 @@ export function InlineTerminal({ wrapperId }: InlineTerminalProps) {
           </span>
         </div>
       )}
-      <div ref={terminalRef} className="flex-1 min-h-0 p-1 overflow-hidden" />
       <TerminalToolbar onSend={data => sendWsMessage({ type: 'terminal_data', wrapperId, data })} />
+      <div ref={terminalRef} className="flex-1 min-h-0 p-1 overflow-hidden" />
     </div>
   )
 }

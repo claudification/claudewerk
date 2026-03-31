@@ -77,7 +77,7 @@ export function TerminalToolbar({ onSend }: TerminalToolbarProps) {
 
   return (
     <div
-      className="shrink-0 border-t border-border bg-background/95 select-none"
+      className="shrink-0 border-b border-border bg-background/95 select-none"
       style={{ touchAction: 'manipulation' }}
     >
       {/* Primary shortcuts */}
