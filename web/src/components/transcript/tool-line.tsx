@@ -76,7 +76,7 @@ function lookupTaskSubject(taskId: string | undefined): string {
   )
 }
 
-function taskSummaryJsx(
+function createTaskSummary(
   taskId: string | undefined,
   status: string | undefined,
   subject: string,
@@ -310,7 +310,7 @@ export function ToolLine({
     }
     case 'TaskCreate': {
       const taskId = parseTaskIdFromResult(result)
-      const jsx = taskSummaryJsx(taskId, 'pending', (input.subject as string) || '', input.description as string)
+      const jsx = createTaskSummary(taskId, 'pending', (input.subject as string) || '', input.description as string)
       summary = jsx.summary
       details = jsx.details
       break
@@ -319,7 +319,7 @@ export function ToolLine({
       const taskId = (input.taskId || input.id || input.task_id) as string | undefined
       const status = (input.status || input.state) as string | undefined
       const subject = (input.subject as string) || parseTaskSubjectFromResult(result) || lookupTaskSubject(taskId)
-      const jsx = taskSummaryJsx(taskId, status, subject, input.description as string)
+      const jsx = createTaskSummary(taskId, status, subject, input.description as string)
       summary = jsx.summary
       details = jsx.details
       break
