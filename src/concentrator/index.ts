@@ -772,19 +772,29 @@ async function main() {
                   conversationId,
                 }
 
-                // Check if CWD pair has a persisted link (auto-approve)
-                const effectiveLinkStatus =
-                  linkStatus === 'unknown' && fromSess?.cwd && toSess.cwd && findLink(fromSess.cwd, toSess.cwd)
-                    ? 'persisted'
-                    : linkStatus
+                // Check trust levels: open = accepts from anyone, benevolent = can message anyone
+                const targetTrust = toSess.cwd ? getProjectSettings(toSess.cwd)?.trustLevel : undefined
+                const fromTrust = fromSess?.cwd ? getProjectSettings(fromSess.cwd)?.trustLevel : undefined
+                const isTrusted = targetTrust === 'open' || fromTrust === 'benevolent'
 
-                if (effectiveLinkStatus === 'linked' || effectiveLinkStatus === 'persisted') {
-                  // Auto-link runtime session IDs if restored from persisted link
-                  if (effectiveLinkStatus === 'persisted') {
+                const effectiveLinkStatus =
+                  linkStatus === 'unknown' && isTrusted
+                    ? 'trusted'
+                    : linkStatus === 'unknown' && fromSess?.cwd && toSess.cwd && findLink(fromSess.cwd, toSess.cwd)
+                      ? 'persisted'
+                      : linkStatus
+
+                if (
+                  effectiveLinkStatus === 'linked' ||
+                  effectiveLinkStatus === 'persisted' ||
+                  effectiveLinkStatus === 'trusted'
+                ) {
+                  // Auto-link runtime session IDs if not already linked
+                  if (effectiveLinkStatus !== 'linked') {
                     sessionStore.linkSessions(fromSession, toSession)
                     if (verbose)
                       console.log(
-                        `[links] Auto-linked from persisted: ${fromSession.slice(0, 8)} <-> ${toSession.slice(0, 8)}`,
+                        `[links] Auto-linked (${effectiveLinkStatus}): ${fromSession.slice(0, 8)} <-> ${toSession.slice(0, 8)}`,
                       )
                   }
 

@@ -578,6 +578,7 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
   const [icon, setIcon] = useState(current.icon || '')
   const [color, setColor] = useState(current.color || '')
   const [keyterms, setKeyterms] = useState<string[]>(current.keyterms || [])
+  const [trustLevel, setTrustLevel] = useState<string>(current.trustLevel || 'default')
   const [keytermInput, setKeytermInput] = useState('')
   const [iconSearch, setIconSearch] = useState('')
   const [saving, setSaving] = useState(false)
@@ -590,6 +591,7 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
     setIcon(c.icon || '')
     setColor(c.color || '')
     setKeyterms(c.keyterms || [])
+    setTrustLevel(c.trustLevel || 'default')
   }, [projectSettings, cwd])
 
   const filteredIcons = useMemo(() => {
@@ -606,6 +608,7 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
       icon: icon || '',
       color: color || '',
       keyterms: keyterms.length ? keyterms : [],
+      trustLevel: trustLevel === 'default' ? undefined : (trustLevel as 'open' | 'benevolent'),
     }
 
     const result = await updateProjectSettings(cwd, settings)
@@ -653,9 +656,11 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
     label.trim() !== (current.label || '') ||
     icon !== (current.icon || '') ||
     color !== (current.color || '') ||
-    JSON.stringify(keyterms) !== JSON.stringify(current.keyterms || [])
+    JSON.stringify(keyterms) !== JSON.stringify(current.keyterms || []) ||
+    trustLevel !== (current.trustLevel || 'default')
 
-  const hasAnySettings = current.label || current.icon || current.color || (current.keyterms?.length ?? 0) > 0
+  const hasAnySettings =
+    current.label || current.icon || current.color || (current.keyterms?.length ?? 0) > 0 || current.trustLevel
 
   return (
     <Dialog
@@ -831,6 +836,39 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
               >
                 +
               </button>
+            </div>
+          </div>
+
+          {/* Trust level */}
+          <div>
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">Trust Level</div>
+            <div className="flex gap-1.5">
+              {[
+                { value: 'default', label: 'Default', desc: 'Requires approval' },
+                { value: 'open', label: 'Open', desc: 'Anyone can message' },
+                { value: 'benevolent', label: 'Benevolent', desc: 'Can message anyone' },
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setTrustLevel(opt.value)}
+                  className={cn(
+                    'px-2 py-1 text-[10px] font-mono border rounded transition-colors',
+                    trustLevel === opt.value
+                      ? opt.value === 'open'
+                        ? 'border-green-500 bg-green-500/20 text-green-400'
+                        : opt.value === 'benevolent'
+                          ? 'border-amber-500 bg-amber-500/20 text-amber-400'
+                          : 'border-border bg-muted text-foreground'
+                      : 'border-border/50 text-muted-foreground hover:text-foreground',
+                  )}
+                  title={opt.desc}
+                >
+                  {opt.value === 'open' && '🔓 '}
+                  {opt.value === 'benevolent' && '🤝 '}
+                  {opt.label}
+                </button>
+              ))}
             </div>
           </div>
 

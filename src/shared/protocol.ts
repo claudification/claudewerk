@@ -677,6 +677,7 @@ export interface ProjectSettings {
   icon?: string
   color?: string
   keyterms?: string[]
+  trustLevel?: 'default' | 'open' | 'benevolent' // open = accepts from anyone, benevolent = can message anyone
 }
 
 // File metadata for the file editor

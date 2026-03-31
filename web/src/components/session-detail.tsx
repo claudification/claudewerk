@@ -1132,6 +1132,20 @@ export function SessionDetail() {
                     ))}
                   </div>
                 )}
+                {projectSettings?.trustLevel && projectSettings.trustLevel !== 'default' && (
+                  <div className="mt-1">
+                    <span
+                      className={cn(
+                        'px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border rounded',
+                        projectSettings.trustLevel === 'open'
+                          ? 'bg-green-400/15 text-green-400 border-green-400/30'
+                          : 'bg-amber-400/15 text-amber-400 border-amber-400/30',
+                      )}
+                    >
+                      {projectSettings.trustLevel === 'open' ? '🔓 Open' : '🤝 Benevolent'}
+                    </span>
+                  </div>
+                )}
                 {session.linkedSessions && session.linkedSessions.length > 0 && (
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
                     <span className="text-[10px] text-teal-400/60">linked:</span>
