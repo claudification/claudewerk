@@ -999,7 +999,7 @@ const CODE_LABELS: Record<string, string> = {
   Tab: 'Tab',
 }
 
-function formatKeyCode(code: string): string {
+export function formatKeyCode(code: string): string {
   if (code in CODE_LABELS) return CODE_LABELS[code]
   const fKey = code.match(/^F(\d{1,2})$/)
   if (fKey) return `F${fKey[1]}`

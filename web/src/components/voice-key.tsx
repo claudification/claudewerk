@@ -1,14 +1,23 @@
 /**
  * VoiceKey - Keyboard push-to-talk: hold configured key to record, release to submit.
- * Headless component (no UI) - just a global keydown/keyup listener.
+ * Shows a recording indicator banner with live transcript.
  * Reuses the same voice WS protocol as voice-fab.tsx.
  */
 
-import { useEffect, useRef } from 'react'
+import { Mic } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { sendInput, useSessionsStore } from '@/hooks/use-sessions'
+import { cn } from '@/lib/utils'
+import { formatKeyCode } from './settings-page'
+
+type VoiceKeyState = 'idle' | 'recording' | 'refining' | 'submitting'
 
 export function VoiceKey() {
   const voiceHoldKey = useSessionsStore(s => s.dashboardPrefs.voiceHoldKey)
+  const [state, setState] = useState<VoiceKeyState>('idle')
+  const [interimText, setInterimText] = useState('')
+  const [finalText, setFinalText] = useState('')
+
   const recordingRef = useRef(false)
   const streamRef = useRef<MediaStream | null>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
@@ -33,9 +42,16 @@ export function VoiceKey() {
         try {
           const msg = JSON.parse(event.data)
           if (msg.type === 'voice_transcript') {
-            if (msg.isFinal) finalTextRef.current = msg.text || ''
+            if (msg.isFinal) {
+              finalTextRef.current = msg.text || ''
+              setFinalText(msg.text || '')
+            } else {
+              setInterimText(msg.text || '')
+            }
           } else if (msg.type === 'voice_refined') {
             refinedTextRef.current = msg.text || ''
+            setFinalText(msg.text || '')
+            setState('submitting')
           } else if (msg.type === 'voice_done') {
             const text = refinedTextRef.current || finalTextRef.current
             if (text.trim()) {
@@ -43,6 +59,9 @@ export function VoiceKey() {
               if (sessionId) sendInput(sessionId, text)
             }
             cleanup()
+            setState('idle')
+            setInterimText('')
+            setFinalText('')
           }
         } catch {
           /* ignore */
@@ -73,15 +92,12 @@ export function VoiceKey() {
     async function startRecording() {
       const sessionId = useSessionsStore.getState().selectedSessionId
       if (!sessionId) {
-        console.log('[voice-key] No session selected, aborting')
         recordingRef.current = false
         return
       }
-      console.log(`[voice-key] Starting recording for ${sessionId.slice(0, 8)}`)
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-        // Check if key was released while we waited for mic
         if (!recordingRef.current) {
           for (const t of stream.getTracks()) t.stop()
           return
@@ -90,6 +106,7 @@ export function VoiceKey() {
         streamRef.current = stream
         attachWsListener()
         sendWs({ type: 'voice_start', sessionId })
+        setState('recording')
 
         const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
           ? 'audio/webm;codecs=opus'
@@ -109,31 +126,27 @@ export function VoiceKey() {
       } catch (err) {
         console.error('[voice-key] Recording failed:', err)
         cleanup()
+        setState('idle')
       }
     }
 
     function handleKeyDown(e: KeyboardEvent) {
       if (e.code !== voiceHoldKey) return
       if (e.repeat) return
-      if (recordingRef.current) return // already recording or getUserMedia in flight
+      if (recordingRef.current) return
 
       e.preventDefault()
-      console.log(
-        `[voice-key] DOWN: ${e.code} (selected=${useSessionsStore.getState().selectedSessionId?.slice(0, 8)})`,
-      )
       recordingRef.current = true
+      setInterimText('')
+      setFinalText('')
       startRecording()
     }
 
     function handleKeyUp(e: KeyboardEvent) {
       if (e.code !== voiceHoldKey) return
-      if (!recordingRef.current) {
-        console.log(`[voice-key] UP: ${e.code} (not recording, ignoring)`)
-        return
-      }
+      if (!recordingRef.current) return
 
       e.preventDefault()
-      console.log(`[voice-key] UP: ${e.code} - stopping, recorder=${recorderRef.current?.state}`)
       if (recorderRef.current?.state === 'recording') recorderRef.current.stop()
       recorderRef.current = null
       if (streamRef.current) {
@@ -142,7 +155,7 @@ export function VoiceKey() {
       }
       sendWs({ type: 'voice_stop' })
       recordingRef.current = false
-      // voice_done WS message will trigger submit via the listener
+      setState('refining')
     }
 
     window.addEventListener('keydown', handleKeyDown)
@@ -155,5 +168,43 @@ export function VoiceKey() {
     }
   }, [voiceHoldKey])
 
-  return null // headless component
+  if (state === 'idle') return null
+
+  const displayText = finalText || interimText
+  const keyLabel = voiceHoldKey ? formatKeyCode(voiceHoldKey) : ''
+
+  return (
+    <div className="fixed top-0 left-0 right-0 z-[60] pointer-events-none">
+      <div className="mx-auto max-w-[600px] px-4 pt-2 animate-in slide-in-from-top duration-200">
+        <div className="px-4 py-2.5 rounded-xl backdrop-blur-xl bg-background/90 border border-border/50 shadow-lg">
+          <div className="flex items-center gap-2">
+            <span className={cn('relative flex h-3 w-3 shrink-0', state === 'recording' && 'animate-pulse')}>
+              {state === 'recording' && (
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+              )}
+              <span
+                className={cn(
+                  'relative inline-flex rounded-full h-3 w-3',
+                  state === 'recording' && 'bg-red-500',
+                  state === 'refining' && 'bg-amber-500',
+                  state === 'submitting' && 'bg-green-500',
+                )}
+              />
+            </span>
+
+            {state === 'recording' && !displayText && (
+              <span className="text-xs text-muted-foreground font-mono">
+                <Mic className="w-3 h-3 inline mr-1" />
+                Hold <kbd className="px-1 py-0.5 bg-muted border border-border rounded text-[10px]">{keyLabel}</kbd> to
+                record
+              </span>
+            )}
+            {state === 'recording' && displayText && <span className="text-sm text-foreground">{displayText}</span>}
+            {state === 'refining' && <span className="text-xs text-amber-400 font-mono">refining...</span>}
+            {state === 'submitting' && <span className="text-sm text-green-400">{displayText}</span>}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
