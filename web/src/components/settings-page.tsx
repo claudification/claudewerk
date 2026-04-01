@@ -275,6 +275,37 @@ function NotificationsSection() {
   )
 }
 
+// --- Default session picker ---
+function DefaultSessionPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const sessions = useSessionsStore(s => s.sessions)
+  const projectSettings = useSessionsStore(s => s.projectSettings)
+  // Unique projects by CWD
+  const options = useMemo(() => {
+    const seen = new Map<string, string>()
+    for (const s of sessions) {
+      if (s.cwd && !seen.has(s.cwd)) {
+        seen.set(s.cwd, projectSettings[s.cwd]?.label || s.cwd.split('/').pop() || s.cwd)
+      }
+    }
+    return Array.from(seen.entries()).sort((a, b) => a[1].localeCompare(b[1]))
+  }, [sessions, projectSettings])
+
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      className="w-44 px-2 py-1 text-xs font-mono bg-muted border border-border text-foreground"
+    >
+      <option value="">None</option>
+      {options.map(([cwd, label]) => (
+        <option key={cwd} value={cwd}>
+          {label}
+        </option>
+      ))}
+    </select>
+  )
+}
+
 // --- Shortcuts (inline) ---
 const SHORTCUTS = [
   ['Command palette', 'Ctrl+K'],
@@ -392,6 +423,18 @@ const SETTINGS: SettingItem[] = [
           defaultColor="rgba(168,85,247,1)"
         />
       </div>
+    ),
+  },
+  {
+    group: 'General',
+    label: 'Default session',
+    description: 'Auto-select this project when opening the dashboard (per-device)',
+    keywords: 'startup auto select home',
+    render: ctx => (
+      <DefaultSessionPicker
+        value={ctx.prefs.defaultSessionCwd ?? ''}
+        onChange={v => ctx.updatePrefs({ defaultSessionCwd: v })}
+      />
     ),
   },
   // --- Display ---

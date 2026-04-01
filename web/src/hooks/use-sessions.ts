@@ -189,6 +189,9 @@ export function applyHashRoute() {
 
   processHash()
 
+  // Auto-select default session if no hash route matched
+  applyDefaultSession()
+
   // Listen for hash changes from service worker navigation (push notification deep links)
   window.addEventListener('hashchange', () => processHash())
 
@@ -198,6 +201,32 @@ export function applyHashRoute() {
       useSessionsStore.getState().selectSession(event.data.sessionId)
     }
   })
+}
+
+let defaultApplied = false
+
+const STATUS_PRIORITY: Record<string, number> = { active: 0, idle: 1, starting: 2, ended: 3 }
+
+function findBestSessionForCwd(sessions: Session[], cwd: string): Session | undefined {
+  return sessions
+    .filter(s => s.cwd === cwd)
+    .sort(
+      (a, b) => (STATUS_PRIORITY[a.status] ?? 9) - (STATUS_PRIORITY[b.status] ?? 9) || b.lastActivity - a.lastActivity,
+    )[0]
+}
+
+function applyDefaultSession() {
+  if (defaultApplied) return
+  defaultApplied = true
+  const store = useSessionsStore.getState()
+  // Don't override if a session was already selected (hash route, deep link, etc.)
+  if (store.selectedSessionId) return
+
+  const cwd = store.dashboardPrefs.defaultSessionCwd
+  if (!cwd) return
+
+  const best = findBestSessionForCwd(store.sessions, cwd)
+  if (best) store.selectSession(best.id)
 }
 
 function processHash() {
