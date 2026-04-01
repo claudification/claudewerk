@@ -702,9 +702,12 @@ async function main() {
               case 'channel_list_sessions': {
                 const status = data.status || 'live'
                 const callerSession = ws.data.sessionId
+                const callerSess = callerSession ? sessionStore.getSession(callerSession) : undefined
+                const isBenevolent = callerSess?.cwd
+                  ? getProjectSettings(callerSess.cwd)?.trustLevel === 'benevolent'
+                  : false
                 const all = Array.from(sessionStore.getAllSessions())
                 const result = all
-                  .filter(s => s.capabilities?.includes('channel'))
                   .filter(s => {
                     if (status === 'all') return true
                     const isLive = sessionStore.getActiveWrapperCount(s.id) > 0
@@ -714,14 +717,17 @@ async function main() {
                   .map(s => {
                     const linkStatus = callerSession ? sessionStore.checkSessionLink(callerSession, s.id) : 'unknown'
                     const isLinked = linkStatus === 'linked'
+                    // Benevolent callers see full CWD + wrapperIds; others see short CWD only
+                    const showFull = isBenevolent || isLinked
                     const shortCwd = s.cwd.split('/').slice(-2).join('/')
                     return {
                       id: s.id,
                       name: s.title || getProjectSettings(s.cwd)?.label || s.cwd.split('/').pop() || s.cwd,
-                      cwd: isLinked ? s.cwd : shortCwd,
+                      cwd: showFull ? s.cwd : shortCwd,
                       status: (sessionStore.getActiveWrapperCount(s.id) > 0 ? 'live' : 'inactive') as
                         | 'live'
                         | 'inactive',
+                      ...(showFull ? { wrapperIds: sessionStore.getWrapperIds(s.id) } : {}),
                       link: isLinked ? 'connected' : linkStatus === 'blocked' ? 'blocked' : undefined,
                       title: s.title,
                       summary: s.summary,
