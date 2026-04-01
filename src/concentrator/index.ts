@@ -7,7 +7,7 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DEFAULT_CONCENTRATOR_PORT } from '../shared/protocol'
-import { getUser, initAuth, reloadState } from './auth'
+import { getUser, initAuth, reloadState, validateSession } from './auth'
 import { getAuthenticatedUser, requireAuth, setRclaudeSecret } from './auth-routes'
 import { initGlobalSettings } from './global-settings'
 import { appendMessage, initInterSessionLog, purgeMessages, queryMessages } from './inter-session-log'
@@ -297,6 +297,24 @@ async function main() {
     }
   })
 
+  // Periodically close dashboard WS connections with expired auth tokens
+  setInterval(() => {
+    const subscribers = sessionStore.getSubscribers()
+    for (const ws of subscribers) {
+      const data = ws.data as { authToken?: string; userName?: string }
+      if (!data.authToken) continue // rclaude/agent connections use secret, not tokens
+      const session = validateSession(data.authToken)
+      if (!session) {
+        console.log(`[auth] Closing expired WS for user: ${data.userName || 'unknown'}`)
+        sessionStore.removeTerminalViewerBySocket(ws)
+        sessionStore.removeSubscriber(ws)
+        try {
+          ws.close(4401, 'Session expired')
+        } catch {}
+      }
+    }
+  }, 60_000) // check every minute
+
   // Write PID file so CLI can send signals
   if (cacheDir) {
     const pidFile = join(cacheDir, 'concentrator.pid')
@@ -384,6 +402,7 @@ async function main() {
       isDashboard?: boolean
       isAgent?: boolean
       userName?: string // authenticated user name (for revocation tracking)
+      authToken?: string // signed session token (for periodic expiry checks)
     }
 
     Bun.serve<WsData>({
@@ -400,8 +419,12 @@ async function main() {
           if (authBlock) return authBlock
 
           const wsUserName = getAuthenticatedUser(req) ?? undefined
+          // Extract auth token for periodic expiry checks on the WS connection
+          const cookieHeader = req.headers.get('cookie')
+          const tokenMatch = cookieHeader?.match(/concentrator-session=([^;]+)/)
+          const authToken = tokenMatch?.[1]
           const success = server.upgrade(req, {
-            data: { userName: wsUserName } as WsData,
+            data: { userName: wsUserName, authToken } as WsData,
           })
           if (success) return undefined
           return new Response('WebSocket upgrade failed', { status: 500 })

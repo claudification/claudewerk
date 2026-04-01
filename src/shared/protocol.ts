@@ -888,7 +888,7 @@ export interface SessionSummary {
   title?: string
   agentName?: string
   prLinks?: Session['prLinks']
-  linkedSessions?: Array<{ id: string; name: string }>
+  linkedSessions?: Array<{ id: string; name: string; cwd: string }>
   tokenUsage?: { input: number; cacheCreation: number; cacheRead: number; output: number }
   stats: Session['stats']
   gitBranch?: string
