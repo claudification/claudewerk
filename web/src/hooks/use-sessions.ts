@@ -101,6 +101,7 @@ interface SessionsState {
     timestamp: number
   }>
   respondToPermission: (sessionId: string, requestId: string, behavior: 'allow' | 'deny') => void
+  sendPermissionRule: (sessionId: string, toolName: string, behavior: 'allow' | 'deny') => void
   pendingAskQuestions: Array<{
     sessionId: string
     toolUseId: string
@@ -290,6 +291,9 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     useSessionsStore.setState(state => ({
       pendingPermissions: state.pendingPermissions.filter(p => p.requestId !== requestId),
     }))
+  },
+  sendPermissionRule: (sessionId, toolName, behavior) => {
+    wsSend('permission_rule', { sessionId, toolName, behavior })
   },
   pendingAskQuestions: [],
   respondToAskQuestion: (sessionId, toolUseId, answers, annotations, skip) => {

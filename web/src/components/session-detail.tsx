@@ -165,6 +165,7 @@ function formatPermissionInput(toolName: string, inputPreview: string, cwd?: str
 function PermissionBanners() {
   const permissions = useSessionsStore(s => s.pendingPermissions)
   const respond = useSessionsStore(s => s.respondToPermission)
+  const sendRule = useSessionsStore(s => s.sendPermissionRule)
   const selectedSession = useSessionsStore(s => s.selectedSessionId)
   const session = useSessionsStore(s => s.sessions.find(sess => sess.id === selectedSession))
   const relevant = permissions.filter(p => p.sessionId === selectedSession)
@@ -193,6 +194,17 @@ function PermissionBanners() {
               className="px-3 py-1 text-[11px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/30 transition-colors"
             >
               ALLOW
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                haptic('double')
+                respond(perm.sessionId, perm.requestId, 'allow')
+                sendRule(perm.sessionId, perm.toolName, 'allow')
+              }}
+              className="px-3 py-1 text-[11px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/40 hover:bg-blue-500/30 transition-colors"
+            >
+              ALWAYS
             </button>
             <button
               type="button"

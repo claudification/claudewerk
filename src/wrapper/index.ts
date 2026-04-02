@@ -25,6 +25,7 @@ import {
   sendPermissionResponse,
 } from './mcp-channel'
 import { Osc52Parser } from './osc52-parser'
+import { createRulesEngine } from './permission-rules'
 import { getTerminalSize, type PtyProcess, setupTerminalPassthrough, spawnClaude } from './pty-spawn'
 import { cleanupSettings, writeMergedSettings } from './settings-merge'
 import { createTranscriptWatcher, type TranscriptWatcher } from './transcript-watcher'
@@ -265,6 +266,7 @@ async function main() {
   const internalId = process.env.RCLAUDE_WRAPPER_ID || randomUUID()
   const cwd = process.cwd()
   const rclaudeDir = ensureRclaudeDir(cwd)
+  const permissionRules = createRulesEngine(cwd)
 
   // Will be set when we receive SessionStart from Claude
   let claudeSessionId: string | null = null
@@ -656,6 +658,15 @@ async function main() {
           resolved ? `Answer resolved: ${toolUseId.slice(0, 12)}` : `No pending request: ${toolUseId.slice(0, 12)}`,
         )
       },
+      onPermissionRule(toolName: string, behavior: 'allow' | 'deny') {
+        if (behavior === 'allow') {
+          permissionRules.addSessionRule(toolName)
+          diag('channel', `Auto-approve rule added: ${toolName}`)
+        } else {
+          permissionRules.removeSessionRule(toolName)
+          diag('channel', `Auto-approve rule removed: ${toolName}`)
+        }
+      },
       onQuitSession() {
         diag('session', 'Quit requested from dashboard - sending SIGTERM')
         if (ptyProcess) {
@@ -1044,6 +1055,25 @@ async function main() {
       })
     },
     onPermissionRequest(data) {
+      // Check auto-approve rules before forwarding to dashboard
+      if (permissionRules.shouldAutoApprove(data.toolName, data.inputPreview)) {
+        sendPermissionResponse(data.requestId, 'allow').catch(err => {
+          debug(`sendPermissionResponse (auto) error: ${err instanceof Error ? err.message : err}`)
+        })
+        diag('channel', `Permission auto-approved: ${data.requestId} ${data.toolName}`)
+        // Notify dashboard for visibility (not for approval)
+        if (wsClient?.isConnected()) {
+          wsClient.send({
+            type: 'permission_auto_approved',
+            sessionId: claudeSessionId || internalId,
+            requestId: data.requestId,
+            toolName: data.toolName,
+            description: data.description,
+          } as unknown as WrapperMessage)
+        }
+        return
+      }
+
       diag('channel', `Permission request: ${data.requestId} ${data.toolName}`)
       if (wsClient?.isConnected()) {
         wsClient.send({

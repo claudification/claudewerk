@@ -441,6 +441,22 @@ function processMessage(msg: DashboardMessage) {
       }
       break
     }
+    case 'permission_auto_approved': {
+      const auto = msg as DashboardMessage & {
+        requestId?: string
+        toolName?: string
+        description?: string
+      }
+      if (auto.sessionId && auto.toolName) {
+        // Emit a custom event that the session-detail can pick up for a brief toast
+        window.dispatchEvent(
+          new CustomEvent('permission-auto-approved', {
+            detail: { sessionId: auto.sessionId, toolName: auto.toolName, description: auto.description },
+          }),
+        )
+      }
+      break
+    }
     case 'ask_question': {
       const askMsg = msg as DashboardMessage & {
         toolUseId?: string

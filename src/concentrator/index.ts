@@ -940,6 +940,46 @@ async function main() {
                 break
               }
 
+              // Permission rule: dashboard -> wrapper (forward session-scoped auto-approve)
+              case 'permission_rule': {
+                const sessionId = data.sessionId
+                const targetWs = sessionId ? sessionStore.getSessionSocket(sessionId) : null
+                if (targetWs) {
+                  targetWs.send(
+                    JSON.stringify({
+                      type: 'permission_rule',
+                      toolName: data.toolName,
+                      behavior: data.behavior,
+                    }),
+                  )
+                  if (verbose) {
+                    console.log(
+                      `[permission] Rule: ${data.toolName} -> ${data.behavior} (session ${sessionId.slice(0, 8)})`,
+                    )
+                  }
+                }
+                break
+              }
+
+              // Permission auto-approved: wrapper -> dashboard (notification)
+              case 'permission_auto_approved': {
+                const sessionId = ws.data.sessionId || data.sessionId
+                if (!sessionId) break
+                const msg = JSON.stringify({
+                  type: 'permission_auto_approved',
+                  sessionId,
+                  requestId: data.requestId,
+                  toolName: data.toolName,
+                  description: data.description,
+                })
+                for (const sub of sessionStore.getSubscribers()) {
+                  try {
+                    sub.send(msg)
+                  } catch {}
+                }
+                break
+              }
+
               // Clipboard capture: wrapper -> dashboard (broadcast)
               case 'clipboard_capture': {
                 const sessionId = ws.data.sessionId || data.sessionId

@@ -57,6 +57,7 @@ export interface WsClientOptions {
   onChannelDeliver?: (delivery: InterSessionDelivery) => void
   onChannelLinkRequest?: (request: InterSessionLinkRequest) => void
   onPermissionResponse?: (requestId: string, behavior: 'allow' | 'deny') => void
+  onPermissionRule?: (toolName: string, behavior: 'allow' | 'deny') => void
   onAskAnswer?: (
     toolUseId: string,
     answers?: Record<string, string>,
@@ -113,6 +114,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
     onChannelDeliver,
     onChannelLinkRequest,
     onPermissionResponse,
+    onPermissionRule,
     onAskAnswer,
     onQuitSession,
   } = options
@@ -283,6 +285,11 @@ export function createWsClient(options: WsClientOptions): WsClient {
               // Inter-session send result (not in formal ConcentratorMessage type)
               if (msgType === 'channel_send_result') {
                 onChannelSendResult?.(message)
+                break
+              }
+              if (msgType === 'permission_rule') {
+                const m = message as Record<string, unknown>
+                onPermissionRule?.(m.toolName as string, m.behavior as 'allow' | 'deny')
                 break
               }
               if (msgType?.startsWith('file_') || msgType === 'quick_note_append') {
