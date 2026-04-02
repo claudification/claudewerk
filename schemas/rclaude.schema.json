@@ -11,12 +11,15 @@
     },
     "permissions": {
       "type": "object",
-      "description": "Auto-approve rules for Write/Edit permission requests on protected directories (.claude/, .git/, etc). Only Write and Edit are supported - all other tool permissions are handled by Claude Code's own permission system.",
+      "description": "Auto-approve rules for Write/Edit/Read permission requests on protected directories (.claude/, .git/, etc). All other tool permissions are handled by Claude Code's own permission system.",
       "properties": {
         "Write": {
           "$ref": "#/$defs/fileRule"
         },
         "Edit": {
+          "$ref": "#/$defs/fileRule"
+        },
+        "Read": {
           "$ref": "#/$defs/fileRule"
         }
       },
@@ -31,7 +34,7 @@
         "allow": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Glob patterns matching relative file paths from the project root. Use ** for recursive directory matching. Example: .claude/docs/** allows all files under .claude/docs/"
+          "description": "Glob patterns matching file paths. Relative patterns match against the project root. Absolute patterns (starting with /) match against the full file path. Use ** for recursive directory matching. Example: .claude/docs/** allows all files under .claude/docs/"
         }
       },
       "required": ["allow"],

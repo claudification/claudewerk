@@ -13,10 +13,15 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { isAbsolute, join, relative } from 'node:path'
 
+interface FileRule {
+  allow?: string[]
+}
+
 interface PermissionConfig {
   permissions?: {
-    Write?: { allow?: string[] }
-    Edit?: { allow?: string[] }
+    Write?: FileRule
+    Edit?: FileRule
+    Read?: FileRule
   }
 }
 
@@ -60,18 +65,25 @@ export function createRulesEngine(cwd: string): RulesEngine {
   const sessionRules = new Set<string>()
 
   function checkProjectRules(toolName: string, inputPreview: string): boolean {
-    if (toolName !== 'Write' && toolName !== 'Edit') return false
+    if (toolName !== 'Write' && toolName !== 'Edit' && toolName !== 'Read') return false
 
-    const patterns = projectRules.permissions?.[toolName]?.allow
+    const rules = projectRules.permissions?.[toolName as keyof typeof projectRules.permissions]
+    const patterns = rules?.allow
     if (!patterns?.length) return false
 
     const filePath = extractFilePath(inputPreview)
     if (!filePath) return false
 
     const rel = isAbsolute(filePath) ? relative(cwd, filePath) : filePath
+    // Reject paths outside CWD (../something)
     if (rel.startsWith('..')) return false
 
-    return patterns.some(pattern => matchGlob(pattern, rel))
+    return patterns.some(pattern => {
+      // Absolute pattern: match against absolute file path directly
+      if (isAbsolute(pattern)) return matchGlob(pattern, isAbsolute(filePath) ? filePath : join(cwd, filePath))
+      // Relative pattern: match against relative path
+      return matchGlob(pattern, rel)
+    })
   }
 
   return {
@@ -95,8 +107,10 @@ export function createRulesEngine(cwd: string): RulesEngine {
 
     getProjectRulesSummary(): Record<string, string[]> {
       const summary: Record<string, string[]> = {}
-      if (projectRules.permissions?.Write?.allow) summary.Write = projectRules.permissions.Write.allow
-      if (projectRules.permissions?.Edit?.allow) summary.Edit = projectRules.permissions.Edit.allow
+      for (const tool of ['Write', 'Edit', 'Read'] as const) {
+        const patterns = projectRules.permissions?.[tool]?.allow
+        if (patterns?.length) summary[tool] = patterns
+      }
       return summary
     },
   }
