@@ -523,6 +523,65 @@ export function ToolLine({
       summary = (input.message as string)?.slice(0, 80) || 'notification'
       break
     }
+    case 'mcp__rclaude__spawn_session': {
+      const cwd = input.cwd as string
+      const mode = input.mode as string | undefined
+      const shortCwd = shortPath(cwd) || cwd
+      const modeLabel = mode === 'continue' ? 'continue' : mode === 'resume' ? 'resume' : 'fresh'
+      // Parse result for session metadata
+      let spawnedSession: Record<string, unknown> | undefined
+      if (result) {
+        try {
+          let parsed = JSON.parse(result)
+          if (Array.isArray(parsed) && parsed[0]?.type === 'text') parsed = JSON.parse(parsed[0].text)
+          if (parsed.session) spawnedSession = parsed.session as Record<string, unknown>
+        } catch {}
+      }
+      summary = (
+        <span className="flex items-center gap-1.5">
+          <span className="text-green-400">spawn</span>
+          <span className="text-foreground font-bold">{shortCwd}</span>
+          <span className="text-muted-foreground text-[10px]">[{modeLabel}]</span>
+        </span>
+      )
+      if (isError) {
+        details = <pre className="text-[10px] text-red-400 bg-red-400/10 p-2 rounded whitespace-pre-wrap">{result}</pre>
+      } else if (spawnedSession) {
+        const sid = (spawnedSession.id as string) || ''
+        const ver = spawnedSession.claudeVersion as string
+        const model = spawnedSession.model as string
+        details = (
+          <div className="text-[10px] font-mono text-green-400/80 bg-green-400/5 p-2 rounded space-y-0.5">
+            <div>
+              <span className="text-muted-foreground">session:</span> {sid.slice(0, 12)}
+            </div>
+            {model && (
+              <div>
+                <span className="text-muted-foreground">model:</span> {model}
+              </div>
+            )}
+            {ver && (
+              <div>
+                <span className="text-muted-foreground">cc:</span> {ver}
+              </div>
+            )}
+          </div>
+        )
+      }
+      break
+    }
+    case 'mcp__rclaude__quit_session': {
+      const sessionId = (input.session_id as string) || ''
+      const sess = useSessionsStore.getState().sessions.find(s => s.id === sessionId)
+      const sessName = sess?.title || sess?.cwd?.split('/').pop() || sessionId.slice(0, 8)
+      summary = (
+        <span className="flex items-center gap-1.5">
+          <span className="text-red-400">quit</span>
+          <span className="text-foreground font-bold">{sessName}</span>
+        </span>
+      )
+      break
+    }
     default: {
       if (name.startsWith('mcp__')) {
         const parts = name.split('__')
@@ -572,7 +631,11 @@ export function ToolLine({
         <JsonInspector title={name} data={input} result={result} extra={toolUseResult} />
       </div>
       {details && (
-        <Collapsible id={tool.id ? `tool-${tool.id}` : undefined} label="output" defaultOpen={isError || toolDefaultOpen}>
+        <Collapsible
+          id={tool.id ? `tool-${tool.id}` : undefined}
+          label="output"
+          defaultOpen={isError || toolDefaultOpen}
+        >
           {details}
         </Collapsible>
       )}

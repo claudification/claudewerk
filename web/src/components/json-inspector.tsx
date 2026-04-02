@@ -1,6 +1,8 @@
-import { Info } from 'lucide-react'
+import { Copy, Info } from 'lucide-react'
+import { useState } from 'react'
 import { create } from 'zustand'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { haptic } from '@/lib/utils'
 import JsonHighlight from './json-highlight'
 
 // Global store so dialog state survives virtualizer remounts
@@ -49,6 +51,43 @@ export function JsonInspector({ title, data, result, extra }: JsonInspectorProps
   )
 }
 
+function CopyBar({
+  title,
+  data,
+  result,
+  extra,
+}: {
+  title: string
+  data: Record<string, unknown> | null
+  result?: string
+  extra?: Record<string, unknown>
+}) {
+  const [copied, setCopied] = useState(false)
+  function handleCopy() {
+    const payload: Record<string, unknown> = {}
+    if (data) payload.input = data
+    if (result) payload.result = result
+    if (extra && Object.keys(extra).length > 0) payload.extra = extra
+    navigator.clipboard.writeText(JSON.stringify(payload, null, 2))
+    haptic('success')
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+  return (
+    <div className="p-4 border-b border-border flex items-center gap-2">
+      <DialogTitle className="flex-1">{title}</DialogTitle>
+      <button
+        type="button"
+        onClick={handleCopy}
+        className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted rounded transition-colors"
+      >
+        <Copy className="w-3 h-3" />
+        {copied ? 'COPIED' : 'COPY'}
+      </button>
+    </div>
+  )
+}
+
 /** Render once at the top level - dialog is global, not per-item */
 export function JsonInspectorDialog() {
   const { open, title, data, result, extra, close } = useInspectorStore()
@@ -61,9 +100,7 @@ export function JsonInspectorDialog() {
       }}
     >
       <DialogContent>
-        <div className="p-4 border-b border-border">
-          <DialogTitle>{title}</DialogTitle>
-        </div>
+        <CopyBar title={title} data={data} result={result} extra={extra} />
         <div className="flex-1 overflow-y-auto p-4 font-mono text-xs">
           {open && data && (
             <div className="space-y-4">
