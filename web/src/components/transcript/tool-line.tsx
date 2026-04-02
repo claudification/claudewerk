@@ -553,35 +553,70 @@ export function ToolLine({
         const rcVer = spawnedSession.version as string
         const caps = spawnedSession.capabilities as string[] | undefined
         const auth = spawnedSession.claudeAuth as { email?: string; subscriptionType?: string } | undefined
+        const status = spawnedSession.status as string
+        const capColors: Record<string, string> = {
+          terminal: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
+          channel: 'bg-violet-500/20 text-violet-400 border-violet-500/30',
+        }
+        const subColors: Record<string, string> = {
+          max: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+          pro: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+          team: 'bg-teal-500/20 text-teal-400 border-teal-500/30',
+        }
         details = (
-          <div className="text-[10px] font-mono text-green-400/80 bg-green-400/5 p-2 rounded space-y-0.5">
-            <div>
-              <span className="text-muted-foreground">session:</span> {sid.slice(0, 12)}
+          <div className="text-[10px] font-mono bg-green-400/5 border border-green-500/20 rounded p-2.5 space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-green-400 font-bold">{sid.slice(0, 12)}</span>
+              {status && (
+                <span className="px-1.5 py-0.5 bg-green-500/20 text-green-400 border border-green-500/30 rounded text-[9px] font-bold uppercase">
+                  {status}
+                </span>
+              )}
+              {auth?.subscriptionType && (
+                <span
+                  className={cn(
+                    'px-1.5 py-0.5 border rounded text-[9px] font-bold uppercase',
+                    subColors[auth.subscriptionType] || 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
+                  )}
+                >
+                  {auth.subscriptionType}
+                </span>
+              )}
+              {caps?.map(c => (
+                <span
+                  key={c}
+                  className={cn(
+                    'px-1.5 py-0.5 border rounded text-[9px] font-bold',
+                    capColors[c] || 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
+                  )}
+                >
+                  {c}
+                </span>
+              ))}
             </div>
-            {model && (
-              <div>
-                <span className="text-muted-foreground">model:</span> {model}
-              </div>
-            )}
-            {ver && (
-              <div>
-                <span className="text-muted-foreground">cc:</span> {ver}
-              </div>
-            )}
-            {rcVer && (
-              <div>
-                <span className="text-muted-foreground">rclaude:</span> {rcVer}
-              </div>
-            )}
-            {caps?.length && (
-              <div>
-                <span className="text-muted-foreground">capabilities:</span> {caps.join(', ')}
-              </div>
-            )}
+            <div className="flex items-center gap-3 text-muted-foreground flex-wrap">
+              {model && (
+                <span>
+                  <span className="text-muted-foreground/50">model</span>{' '}
+                  <span className="text-foreground/70">{model}</span>
+                </span>
+              )}
+              {ver && (
+                <span>
+                  <span className="text-muted-foreground/50">cc</span>{' '}
+                  <span className="text-foreground/70">{ver}</span>
+                </span>
+              )}
+              {rcVer && (
+                <span>
+                  <span className="text-muted-foreground/50">rclaude</span>{' '}
+                  <span className="text-foreground/70">{rcVer}</span>
+                </span>
+              )}
+            </div>
             {auth?.email && (
-              <div>
-                <span className="text-muted-foreground">account:</span> {auth.email}
-                {auth.subscriptionType ? ` [${auth.subscriptionType}]` : ''}
+              <div className="text-muted-foreground/60">
+                <span className="text-foreground/50">{auth.email}</span>
               </div>
             )}
           </div>
