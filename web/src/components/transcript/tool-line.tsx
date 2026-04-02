@@ -490,7 +490,12 @@ export function ToolLine({
       summary = input.status ? `status=${input.status}` : 'all'
       if (result) {
         try {
-          const sessions = JSON.parse(result) as Array<{ id: string; name: string; cwd: string; status: string }>
+          let parsed = JSON.parse(result)
+          // MCP tool results are wrapped: [{ type: 'text', text: '...' }] - unwrap
+          if (Array.isArray(parsed) && parsed[0]?.type === 'text' && typeof parsed[0].text === 'string') {
+            parsed = JSON.parse(parsed[0].text)
+          }
+          const sessions = parsed as Array<{ id: string; name: string; cwd: string; status: string }>
           summary = `${sessions.length} sessions`
           details = (
             <div className="text-[10px] font-mono space-y-0.5 mt-1">
