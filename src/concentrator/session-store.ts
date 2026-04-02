@@ -173,6 +173,15 @@ export interface SessionStore {
   addFileListener: (requestId: string, cb: (result: unknown) => void) => void
   removeFileListener: (requestId: string) => void
   resolveFile: (requestId: string, result: unknown) => boolean
+  // Session rendezvous (spawn/revive callback)
+  addRendezvous: (
+    wrapperId: string,
+    callerSessionId: string,
+    cwd: string,
+    action: 'spawn' | 'revive',
+  ) => Promise<SessionSummary>
+  resolveRendezvous: (wrapperId: string, sessionId: string) => boolean
+  getRendezvousInfo: (wrapperId: string) => { callerSessionId: string; action: string } | undefined
   // Inter-session messaging
   checkSessionLink: (from: string, to: string) => 'linked' | 'blocked' | 'unknown'
   getLinkedSessions: (sessionId: string) => string[]
@@ -2215,6 +2224,77 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     }
   }
 
+  // Session rendezvous: callers waiting for a session to connect at a specific wrapperId
+  // Used by spawn/revive to notify the caller when the spawned session is ready
+  interface SessionRendezvous {
+    callerSessionId: string
+    wrapperId: string
+    cwd: string
+    action: 'spawn' | 'revive'
+    resolve: (session: SessionSummary) => void
+    reject: (error: string) => void
+    timer: ReturnType<typeof setTimeout>
+    registeredAt: number
+  }
+  const RENDEZVOUS_TIMEOUT_MS = 120_000 // 2 minutes
+  const sessionRendezvous = new Map<string, SessionRendezvous>() // keyed by wrapperId
+
+  function addRendezvous(
+    wrapperId: string,
+    callerSessionId: string,
+    cwd: string,
+    action: 'spawn' | 'revive',
+  ): Promise<SessionSummary> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        sessionRendezvous.delete(wrapperId)
+        reject(`Session did not connect within ${RENDEZVOUS_TIMEOUT_MS / 1000}s`)
+        console.log(
+          `[rendezvous] TIMEOUT: ${action} wrapperId=${wrapperId.slice(0, 8)} cwd=${cwd.split('/').pop()} caller=${callerSessionId.slice(0, 8)}`,
+        )
+      }, RENDEZVOUS_TIMEOUT_MS)
+
+      sessionRendezvous.set(wrapperId, {
+        callerSessionId,
+        wrapperId,
+        cwd,
+        action,
+        resolve,
+        reject,
+        timer,
+        registeredAt: Date.now(),
+      })
+      console.log(
+        `[rendezvous] REGISTERED: ${action} wrapperId=${wrapperId.slice(0, 8)} cwd=${cwd.split('/').pop()} caller=${callerSessionId.slice(0, 8)}`,
+      )
+    })
+  }
+
+  function resolveRendezvous(wrapperId: string, sessionId: string): boolean {
+    const rv = sessionRendezvous.get(wrapperId)
+    if (!rv) return false
+    sessionRendezvous.delete(wrapperId)
+    clearTimeout(rv.timer)
+    const session = sessions.get(sessionId)
+    if (!session) {
+      rv.reject('Session created but not found in store')
+      return false
+    }
+    const summary = toSessionSummary(session)
+    rv.resolve(summary)
+    const elapsed = Date.now() - rv.registeredAt
+    console.log(
+      `[rendezvous] RESOLVED: ${rv.action} session=${sessionId.slice(0, 8)} wrapperId=${wrapperId.slice(0, 8)} elapsed=${elapsed}ms caller=${rv.callerSessionId.slice(0, 8)}`,
+    )
+    return true
+  }
+
+  function getRendezvousInfo(wrapperId: string): { callerSessionId: string; action: string } | undefined {
+    const rv = sessionRendezvous.get(wrapperId)
+    if (!rv) return undefined
+    return { callerSessionId: rv.callerSessionId, action: rv.action }
+  }
+
   const fileListeners = new Map<string, (result: unknown) => void>()
   function addFileListener(requestId: string, cb: (result: unknown) => void) {
     fileListeners.set(requestId, cb)
@@ -2364,6 +2444,9 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     blockSession,
     queueInterSessionMessage,
     drainQueuedMessages,
+    addRendezvous,
+    resolveRendezvous,
+    getRendezvousInfo,
     recordTraffic,
     getTrafficStats,
     saveState,

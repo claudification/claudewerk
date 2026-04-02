@@ -59,6 +59,7 @@ export interface WsClientOptions {
   onChannelLinkRequest?: (request: InterSessionLinkRequest) => void
   onPermissionResponse?: (requestId: string, behavior: 'allow' | 'deny') => void
   onPermissionRule?: (toolName: string, behavior: 'allow' | 'deny') => void
+  onRendezvousResult?: (message: Record<string, unknown>) => void
   onAskAnswer?: (
     toolUseId: string,
     answers?: Record<string, string>,
@@ -117,6 +118,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
     onChannelLinkRequest,
     onPermissionResponse,
     onPermissionRule,
+    onRendezvousResult,
     onAskAnswer,
     onQuitSession,
   } = options
@@ -293,6 +295,15 @@ export function createWsClient(options: WsClientOptions): WsClient {
               if (msgType === 'permission_rule') {
                 const m = message as Record<string, unknown>
                 onPermissionRule?.(m.toolName as string, m.behavior as 'allow' | 'deny')
+                break
+              }
+              if (
+                msgType === 'spawn_ready' ||
+                msgType === 'spawn_timeout' ||
+                msgType === 'revive_ready' ||
+                msgType === 'revive_timeout'
+              ) {
+                onRendezvousResult?.(message as Record<string, unknown>)
                 break
               }
               if (msgType?.startsWith('file_') || msgType === 'quick_note_append') {

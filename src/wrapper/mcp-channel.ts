@@ -309,19 +309,43 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
             }
           }
           const mkdir = String(params.mkdir) === 'true'
-          const result = await callbacks.onSpawnSession?.({ cwd, mode, resumeId, mkdir })
+          const result = (await callbacks.onSpawnSession?.({ cwd, mode, resumeId, mkdir })) as
+            | { ok: boolean; error?: string; wrapperId?: string; session?: Record<string, unknown>; timedOut?: boolean }
+            | undefined
           if (!result?.ok) {
             debug(`[channel] spawn_session failed: ${result?.error}`)
             return { content: [{ type: 'text', text: result?.error || 'Failed to spawn session' }], isError: true }
           }
           const modeDesc =
             mode === 'resume' ? `resuming ${resumeId}` : mode === 'continue' ? 'continuing latest' : 'fresh start'
-          debug(`[channel] spawn_session: ${cwd} (${modeDesc})`)
+          debug(`[channel] spawn_session: ${cwd} (${modeDesc}) session=${result.session ? 'ready' : 'pending'}`)
+
+          if (result.session) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    {
+                      status: 'ready',
+                      message: `Session spawned and connected at ${cwd} (${modeDesc})`,
+                      session: result.session,
+                    },
+                    null,
+                    2,
+                  ),
+                },
+              ],
+            }
+          }
+
           return {
             content: [
               {
                 type: 'text',
-                text: `Spawning session at ${cwd} (${modeDesc}). This is async - takes 10-30 seconds to boot. Use list_sessions to check when the new session appears.`,
+                text: result.timedOut
+                  ? `Session spawn sent to ${cwd} (${modeDesc}) but session did not connect within 2 minutes. It may still be booting - use list_sessions to check.`
+                  : `Session spawning at ${cwd} (${modeDesc}). Use list_sessions to check when ready.`,
               },
             ],
           }

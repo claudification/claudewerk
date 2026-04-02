@@ -512,6 +512,9 @@ async function main() {
                 // Broadcast session update so dashboard picks up new wrapperIds and status
                 sessionStore.broadcastSessionUpdate(data.sessionId)
 
+                // Check rendezvous: someone may be waiting for this wrapper to connect
+                sessionStore.resolveRendezvous(wrapperId, data.sessionId)
+
                 ws.send(JSON.stringify({ type: 'ack', eventId: data.sessionId, origins }))
                 break
               }

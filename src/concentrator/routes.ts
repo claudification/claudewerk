@@ -568,6 +568,41 @@ export function createRouter(options: RouteOptions): Hono {
     const name =
       session.title || getProjectSettings(session.cwd)?.label || session.cwd.split('/').pop() || sessionId.slice(0, 8)
     agent.send(JSON.stringify({ type: 'revive', sessionId, cwd: session.cwd, wrapperId, mode: 'continue' }))
+
+    // Register rendezvous for MCP callers
+    if (callerSessionId) {
+      sessionStore
+        .addRendezvous(wrapperId, callerSessionId, session.cwd, 'revive')
+        .then(revived => {
+          const callerWs = sessionStore.getSessionSocket(callerSessionId)
+          if (callerWs) {
+            callerWs.send(
+              JSON.stringify({
+                type: 'revive_ready',
+                sessionId: revived.id,
+                cwd: revived.cwd,
+                wrapperId,
+                session: revived,
+              }),
+            )
+          }
+        })
+        .catch(err => {
+          const callerWs = sessionStore.getSessionSocket(callerSessionId)
+          if (callerWs) {
+            callerWs.send(
+              JSON.stringify({
+                type: 'revive_timeout',
+                wrapperId,
+                sessionId,
+                cwd: session.cwd,
+                error: typeof err === 'string' ? err : 'Revive rendezvous timed out',
+              }),
+            )
+          }
+        })
+    }
+
     return c.json({ success: true, name, message: 'Revive command sent to agent', wrapperId }, 202)
   })
 
@@ -656,10 +691,47 @@ export function createRouter(options: RouteOptions): Hono {
       )
     })
 
-    if (result.success) {
-      return c.json({ success: true, wrapperId, tmuxSession: result.tmuxSession })
+    if (!result.success) {
+      return c.json({ error: result.error || 'Spawn failed' }, 500)
     }
-    return c.json({ error: result.error || 'Spawn failed' }, 500)
+
+    // Register rendezvous: wait for the spawned wrapper to connect (up to 2 min)
+    if (callerSessionId) {
+      // Don't block the HTTP response - caller gets immediate success + wrapperId.
+      // Rendezvous resolves async and delivers to caller via inter-session channel.
+      sessionStore
+        .addRendezvous(wrapperId, callerSessionId, body.cwd, 'spawn')
+        .then(session => {
+          // Deliver session metadata to caller via their WS connection
+          const callerWs = sessionStore.getSessionSocket(callerSessionId)
+          if (callerWs) {
+            callerWs.send(
+              JSON.stringify({
+                type: 'spawn_ready',
+                sessionId: session.id,
+                cwd: session.cwd,
+                wrapperId,
+                session,
+              }),
+            )
+          }
+        })
+        .catch(err => {
+          const callerWs = sessionStore.getSessionSocket(callerSessionId)
+          if (callerWs) {
+            callerWs.send(
+              JSON.stringify({
+                type: 'spawn_timeout',
+                wrapperId,
+                cwd: body.cwd,
+                error: typeof err === 'string' ? err : 'Spawn rendezvous timed out',
+              }),
+            )
+          }
+        })
+    }
+
+    return c.json({ success: true, wrapperId, tmuxSession: result.tmuxSession })
   })
 
   // ─── Directory listing (agent relay) ───────────────────────────────

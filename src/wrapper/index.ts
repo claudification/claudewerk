@@ -684,6 +684,43 @@ async function main() {
           resolved ? `Answer resolved: ${toolUseId.slice(0, 12)}` : `No pending request: ${toolUseId.slice(0, 12)}`,
         )
       },
+      onRendezvousResult(message: Record<string, unknown>) {
+        const msgType = message.type as string
+        const sessionId = message.sessionId as string | undefined
+        const cwd = message.cwd as string | undefined
+        const error = message.error as string | undefined
+        const isReady = msgType === 'spawn_ready' || msgType === 'revive_ready'
+        const action = msgType.startsWith('spawn') ? 'spawn' : 'revive'
+
+        if (isReady) {
+          diag('rendezvous', `${action} ready: session=${sessionId?.slice(0, 8)} cwd=${cwd}`)
+        } else {
+          diag('rendezvous', `${action} timeout: ${error || 'unknown'}`)
+        }
+
+        // Resolve pending spawn/revive promise if one exists
+        const pending = pendingRendezvous.get(message.wrapperId as string)
+        if (pending) {
+          pendingRendezvous.delete(message.wrapperId as string)
+          if (isReady) {
+            pending.resolve(message)
+          } else {
+            pending.reject(error || `${action} timed out`)
+          }
+        }
+
+        // Also push to channel so Claude sees the result
+        if (channelEnabled && isMcpChannelReady()) {
+          const text = isReady
+            ? `Session ${action === 'spawn' ? 'spawned' : 'revived'}: ${cwd?.split('/').pop() || sessionId?.slice(0, 8)} (${sessionId?.slice(0, 8)})`
+            : `Session ${action} timed out: ${error || 'no response within 2 minutes'}`
+          pushChannelMessage(text, {
+            sender: 'system',
+            [`${action}_result`]: isReady ? 'ready' : 'timeout',
+            ...(sessionId ? { target_session: sessionId } : {}),
+          }).catch(() => {})
+        }
+      },
       onPermissionRule(toolName: string, behavior: 'allow' | 'deny') {
         if (behavior === 'allow') {
           permissionRules.addSessionRule(toolName)
@@ -1155,7 +1192,24 @@ async function main() {
         })
         const data = (await res.json()) as { success?: boolean; error?: string; wrapperId?: string }
         if (!res.ok || !data.success) return { ok: false, error: data.error || `HTTP ${res.status}` }
-        diag('channel', `spawn_session: ${cwd} mode=${mode || 'default'}`)
+        diag('channel', `spawn_session: ${cwd} mode=${mode || 'default'} wrapperId=${data.wrapperId?.slice(0, 8)}`)
+
+        // Await rendezvous: concentrator will send spawn_ready/spawn_timeout when session connects
+        if (data.wrapperId) {
+          try {
+            const result = await new Promise<Record<string, unknown>>((resolve, reject) => {
+              pendingRendezvous.set(data.wrapperId!, { resolve, reject: (e: string) => reject(new Error(e)) })
+            })
+            const session = result.session as Record<string, unknown> | undefined
+            diag('channel', `spawn_session: rendezvous resolved session=${(result.sessionId as string)?.slice(0, 8)}`)
+            return { ok: true, wrapperId: data.wrapperId, session }
+          } catch (err) {
+            diag('channel', `spawn_session: rendezvous failed: ${err instanceof Error ? err.message : err}`)
+            // Spawn succeeded but session didn't connect in time - still return success with wrapperId
+            return { ok: true, wrapperId: data.wrapperId, timedOut: true }
+          }
+        }
+
         return { ok: true, wrapperId: data.wrapperId }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : 'Network error' }
@@ -1181,6 +1235,10 @@ async function main() {
   // Pending callbacks for inter-session request/response
   let pendingListSessions: ((sessions: SessionInfo[]) => void) | null = null
   let pendingSendResult: ((result: { ok: boolean; error?: string; conversationId?: string }) => void) | null = null
+  const pendingRendezvous = new Map<
+    string,
+    { resolve: (msg: Record<string, unknown>) => void; reject: (error: string) => void }
+  >()
 
   // Wire debug logging into local server
   setLocalServerDebug(debug)
