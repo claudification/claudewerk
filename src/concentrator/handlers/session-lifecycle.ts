@@ -70,6 +70,21 @@ const meta: MessageHandler = (ctx, data) => {
   }
 
   ctx.reply({ type: 'ack', eventId: sessionId, origins: ctx.origins })
+
+  // Drain queued messages for this CWD (sent while session was offline)
+  const drainCwd = (existingSession || ctx.sessions.getSession(sessionId))?.cwd
+  if (drainCwd) {
+    const queued = ctx.messageQueue.drain(drainCwd)
+    if (queued.length > 0) {
+      const targetWs = ctx.sessions.getSessionSocket(sessionId)
+      if (targetWs) {
+        for (const item of queued) {
+          targetWs.send(JSON.stringify(item.message))
+        }
+        ctx.log.info(`Drained ${queued.length} queued message(s) for ${drainCwd.split('/').pop()}`)
+      }
+    }
+  }
 }
 
 // ─── Hook events ───────────────────────────────────────────────────

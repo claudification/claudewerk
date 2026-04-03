@@ -7,6 +7,7 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DEFAULT_CONCENTRATOR_PORT } from '../shared/protocol'
+import { getOrAssign, initAddressBook, resolve } from './address-book'
 import { getUser, initAuth, reloadState, validateSession } from './auth'
 import { getAuthenticatedUser, requireAuth, setRclaudeSecret } from './auth-routes'
 import { type ContextDeps, createContext } from './create-context'
@@ -14,6 +15,7 @@ import { initGlobalSettings } from './global-settings'
 import type { WsData } from './handler-context'
 import { registerAllHandlers } from './handlers'
 import { appendMessage, initInterSessionLog } from './inter-session-log'
+import { drain, enqueue, getQueueSize, initMessageQueue } from './message-queue'
 import { routeMessage } from './message-router'
 import { addAllowedRoot, addPathMapping, getAllowedRoots } from './path-jail'
 import { getAllProjectSettings, getProjectSettings, initProjectSettings, setProjectSettings } from './project-settings'
@@ -243,6 +245,8 @@ async function main() {
   initSessionOrder(authCacheDir)
   initSessionLinks(authCacheDir)
   initInterSessionLog(authCacheDir)
+  initAddressBook(authCacheDir)
+  initMessageQueue(authCacheDir)
 
   // Initialize web push (optional - needs VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY env vars)
   if (vapidPublicKey && vapidPrivateKey) {
@@ -420,6 +424,8 @@ async function main() {
       removeLink: removePersistedLink,
       touchLink,
       logMessage: appendMessage,
+      addressBook: { getOrAssign, resolve },
+      messageQueue: { enqueue, drain, getQueueSize },
     }
 
     Bun.serve<WsData>({

@@ -83,6 +83,20 @@ export interface HandlerContext {
     fullLength: number
   }): void
 
+  /** Address book: per-caller stable routing IDs */
+  addressBook: {
+    getOrAssign(callerCwd: string, targetCwd: string, targetName: string): string
+    resolve(callerCwd: string, localId: string): string | undefined
+  }
+  /** Persistent message queue for offline delivery */
+  messageQueue: {
+    enqueue(targetCwd: string, fromCwd: string, fromProject: string, message: Record<string, unknown>): void
+    drain(
+      targetCwd: string,
+    ): Array<{ ts: number; fromCwd: string; fromProject: string; message: Record<string, unknown> }>
+    getQueueSize(targetCwd: string): number
+  }
+
   /** Guard: throws GuardError if caller is not benevolent */
   requireBenevolent(): void
   /** Guard: throws GuardError if no host agent connected */

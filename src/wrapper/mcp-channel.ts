@@ -131,7 +131,7 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
       {
         name: 'list_sessions',
         description:
-          'List other Claude Code sessions. Returns an addressable ID (wrapper ID for live sessions, session ID for inactive), project name, status, and optional title/summary. Use the returned ID for send_message, quit_session, configure_session. Use show_metadata to include icon/color/keyterms (benevolent only).',
+          'List other Claude Code sessions. Returns a stable addressable ID per session (persisted, survives restarts). Use the returned ID for send_message, quit_session, configure_session. Messages to offline sessions are queued for delivery on reconnect. Use show_metadata for icon/color/keyterms (benevolent only).',
         inputSchema: {
           type: 'object' as const,
           properties: {
@@ -151,14 +151,11 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
       {
         name: 'send_message',
         description:
-          'Send a message to another Claude Code session. Requires an established link (first contact triggers approval prompt on the receiving session). Include conversation_id in replies to maintain thread context.',
+          'Send a message to another Claude Code session. Use the ID from list_sessions. Messages to offline sessions are queued and delivered on reconnect. Returns status: "delivered" or "queued". First contact triggers approval prompt. Include conversation_id in replies to maintain thread context.',
         inputSchema: {
           type: 'object' as const,
           properties: {
-            to: {
-              type: 'string',
-              description: 'Target ID from list_sessions (wrapper ID for live, session ID for inactive)',
-            },
+            to: { type: 'string', description: 'Target ID from list_sessions' },
             intent: {
               type: 'string',
               enum: ['request', 'response', 'notify', 'progress'],
@@ -296,7 +293,11 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
             return { content: [{ type: 'text', text: result?.error || 'Failed to send message' }], isError: true }
           }
           debug(`[channel] send_message to ${to}: ${message.slice(0, 60)}`)
-          const response = result.conversationId ? `Sent. conversation_id: ${result.conversationId}` : 'Sent.'
+          const status = (result as Record<string, unknown>).status || 'delivered'
+          const statusLabel = status === 'queued' ? 'Queued (target offline, will deliver on reconnect)' : 'Delivered'
+          const response = result.conversationId
+            ? `${statusLabel}. conversation_id: ${result.conversationId}`
+            : statusLabel
           return { content: [{ type: 'text', text: response }] }
         }
         case 'toggle_plan_mode': {

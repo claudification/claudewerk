@@ -66,6 +66,7 @@ const channelListSessions: MessageHandler = (ctx, data) => {
   const status = (data.status as string) || 'live'
   const showMetadata = !!data.show_metadata
   const callerSession = ctx.ws.data.sessionId
+  const callerCwd = ctx.caller?.cwd
   const isBenevolent = ctx.callerSettings?.trustLevel === 'benevolent'
   const all = Array.from(ctx.sessions.getAllSessions())
   const result = all
@@ -81,20 +82,24 @@ const channelListSessions: MessageHandler = (ctx, data) => {
       const showFull = isBenevolent || isLinked
       const shortCwd = s.cwd.split('/').slice(-2).join('/')
       const projSettings = ctx.getProjectSettings(s.cwd)
-      const wrapperIds = ctx.sessions.getWrapperIds(s.id)
-      // Primary wrapper ID = the addressable endpoint (last connected wrapper)
-      const primaryWrapperId = wrapperIds[wrapperIds.length - 1]
+      const sessionName = s.title || projSettings?.label || s.cwd.split('/').pop() || s.cwd
+      const isLive = ctx.sessions.getActiveWrapperCount(s.id) > 0
+      const queueSize = ctx.messageQueue.getQueueSize(s.cwd)
+
+      // Assign a stable local ID via the caller's address book
+      const localId = callerCwd ? ctx.addressBook.getOrAssign(callerCwd, s.cwd, sessionName) : s.id
+
       return {
-        id: primaryWrapperId || s.id, // wrapper ID for addressing (falls back to session ID if no wrappers)
-        session_id: s.id, // CC session ID for context (transcript, tasks, etc.)
-        name: s.title || projSettings?.label || s.cwd.split('/').pop() || s.cwd,
+        id: localId, // stable local address (use for send_message, etc.)
+        session_id: s.id,
+        name: sessionName,
         cwd: showFull ? s.cwd : shortCwd,
-        status: (wrapperIds.length > 0 ? 'live' : 'inactive') as 'live' | 'inactive',
-        ...(showFull && wrapperIds.length > 1 ? { wrapperIds } : {}),
+        status: (isLive ? 'live' : 'inactive') as 'live' | 'inactive',
         ...(projSettings?.description ? { description: projSettings.description } : {}),
         link: isLinked ? 'connected' : linkStatus === 'blocked' ? 'blocked' : undefined,
         title: s.title,
         summary: s.summary,
+        ...(queueSize > 0 ? { queued: queueSize } : {}),
         ...(showMetadata && isBenevolent && projSettings
           ? {
               metadata: {
@@ -118,15 +123,43 @@ const channelSend: MessageHandler = (ctx, data) => {
   if (!fromSession || !toTarget) return
 
   const fromSess = ctx.sessions.getSession(fromSession)
+  const callerCwd = fromSess?.cwd
 
-  // Resolve target: try as wrapper ID first, then session ID (backwards compat)
-  const toSess = ctx.sessions.getSessionByWrapper(toTarget) || ctx.sessions.getSession(toTarget)
+  // Resolve target: address book first, then wrapper ID, then session ID (backwards compat)
+  const targetCwd = callerCwd ? ctx.addressBook.resolve(callerCwd, toTarget) : undefined
+  const toSess = targetCwd
+    ? Array.from(ctx.sessions.getAllSessions()).find(s => s.cwd === targetCwd)
+    : ctx.sessions.getSessionByWrapper(toTarget) || ctx.sessions.getSession(toTarget)
   const toSession = toSess?.id
+
+  // If we resolved a CWD but no active session, queue for offline delivery
+  if (targetCwd && !toSess) {
+    const fromProject =
+      fromSess?.title ||
+      ctx.getProjectSettings(callerCwd || '')?.label ||
+      callerCwd?.split('/').pop() ||
+      fromSession.slice(0, 8)
+    const conversationId = (data.conversationId as string) || `conv_${Date.now().toString(36)}`
+    const delivery = {
+      type: 'channel_deliver',
+      fromSession,
+      fromProject,
+      intent: data.intent,
+      message: data.message,
+      context: data.context,
+      conversationId,
+    }
+    ctx.messageQueue.enqueue(targetCwd, callerCwd || '', fromProject, delivery)
+    ctx.reply({ type: 'channel_send_result', ok: true, conversationId, status: 'queued' })
+    ctx.log.debug(`[inter-session] ${fromSession.slice(0, 8)} -> ${toTarget} (queued, target offline)`)
+    return
+  }
+
   if (!toSess || !toSession) {
     ctx.reply({
       type: 'channel_send_result',
       ok: false,
-      error: 'Target not found. It may have restarted with a new ID. Use list_sessions to discover current sessions.',
+      error: 'Target not found. Use list_sessions to discover current sessions.',
     })
     return
   }
@@ -176,7 +209,7 @@ const channelSend: MessageHandler = (ctx, data) => {
     const targetWs = ctx.sessions.getSessionSocket(toSession)
     if (targetWs) {
       targetWs.send(JSON.stringify(delivery))
-      ctx.reply({ type: 'channel_send_result', ok: true, conversationId })
+      ctx.reply({ type: 'channel_send_result', ok: true, conversationId, status: 'delivered' })
 
       const toProject =
         toSess.title ||
@@ -213,7 +246,7 @@ const channelSend: MessageHandler = (ctx, data) => {
       toSession,
       toProject,
     })
-    ctx.reply({ type: 'channel_send_result', ok: true, conversationId, queued: true })
+    ctx.reply({ type: 'channel_send_result', ok: true, conversationId, status: 'queued' })
   }
   ctx.log.debug(
     `[inter-session] ${fromSession.slice(0, 8)} -> ${toSession.slice(0, 8)}: ${data.intent} (${linkStatus})`,

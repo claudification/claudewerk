@@ -23,6 +23,17 @@ export interface ContextDeps {
   removeLink(cwdA: string, cwdB: string): void
   touchLink(cwdA: string, cwdB: string): void
   logMessage(entry: Parameters<import('./handler-context').HandlerContext['logMessage']>[0]): void
+  addressBook: {
+    getOrAssign(callerCwd: string, targetCwd: string, targetName: string): string
+    resolve(callerCwd: string, localId: string): string | undefined
+  }
+  messageQueue: {
+    enqueue(targetCwd: string, fromCwd: string, fromProject: string, message: Record<string, unknown>): void
+    drain(
+      targetCwd: string,
+    ): Array<{ ts: number; fromCwd: string; fromProject: string; message: Record<string, unknown> }>
+    getQueueSize(targetCwd: string): number
+  }
 }
 
 export function createContext(ws: ServerWebSocket<WsData>, deps: ContextDeps): HandlerContext {
@@ -69,6 +80,8 @@ export function createContext(ws: ServerWebSocket<WsData>, deps: ContextDeps): H
       touch: deps.touchLink,
     },
     logMessage: deps.logMessage,
+    addressBook: deps.addressBook,
+    messageQueue: deps.messageQueue,
     getProjectSettings: deps.getProjectSettings,
     setProjectSettings: deps.setProjectSettings,
     getAllProjectSettings: deps.getAllProjectSettings,
