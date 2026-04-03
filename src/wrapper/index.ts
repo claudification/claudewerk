@@ -650,6 +650,15 @@ async function main() {
       onChannelSendResult(result) {
         pendingSendResult?.(result as { ok: boolean; error?: string; conversationId?: string })
       },
+      onChannelReviveResult(result) {
+        pendingReviveResult?.(result)
+      },
+      onChannelSpawnResult(result) {
+        pendingSpawnResult?.(result)
+      },
+      onChannelConfigureResult(result) {
+        pendingConfigureResult?.(result)
+      },
       onChannelDeliver(delivery) {
         if (channelEnabled && isMcpChannelReady()) {
           const meta: Record<string, string> = {
@@ -1085,7 +1094,7 @@ async function main() {
         return null
       }
     },
-    async onListSessions(status) {
+    async onListSessions(status, showMetadata) {
       if (!wsClient?.isConnected()) return []
       return new Promise(resolve => {
         const timeout = setTimeout(() => resolve([]), 5000)
@@ -1094,7 +1103,11 @@ async function main() {
           pendingListSessions = null
           resolve(sessions)
         }
-        wsClient?.send({ type: 'channel_list_sessions', status } as unknown as WrapperMessage)
+        wsClient?.send({
+          type: 'channel_list_sessions',
+          status,
+          show_metadata: showMetadata,
+        } as unknown as WrapperMessage)
       })
     },
     async onSendMessage(to, intent, message, context, conversationId) {
@@ -1157,63 +1170,73 @@ async function main() {
       if (ptyProcess) ptyProcess.write('/plan\r')
     },
     async onReviveSession(sessionId) {
-      const httpUrl = noConcentrator ? null : wsToHttpUrl(concentratorUrl)
-      if (!httpUrl) return { ok: false, error: 'No concentrator connection' }
-      try {
-        const headers: Record<string, string> = {
-          'X-Caller-Session': claudeSessionId || internalId,
+      if (!wsClient?.isConnected()) return { ok: false, error: 'Not connected to concentrator' }
+      return new Promise(resolve => {
+        const timeout = setTimeout(() => resolve({ ok: false, error: 'Timeout' }), 10000)
+        pendingReviveResult = result => {
+          clearTimeout(timeout)
+          pendingReviveResult = null
+          resolve(result)
         }
-        if (concentratorSecret) headers.Authorization = `Bearer ${concentratorSecret}`
-        const res = await fetch(`${httpUrl}/sessions/${sessionId}/revive`, {
-          method: 'POST',
-          headers,
-        })
-        const data = (await res.json()) as { success?: boolean; error?: string; name?: string }
-        if (!res.ok || !data.success) return { ok: false, error: data.error || `HTTP ${res.status}` }
-        diag('channel', `revive_session: ${sessionId.slice(0, 8)} (${data.name})`)
-        return { ok: true, name: data.name }
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : 'Network error' }
-      }
+        wsClient?.send({
+          type: 'channel_revive',
+          sessionId,
+        } as unknown as WrapperMessage)
+      })
     },
     async onSpawnSession({ cwd, mode, resumeId, mkdir }) {
-      const httpUrl = noConcentrator ? null : wsToHttpUrl(concentratorUrl)
-      if (!httpUrl) return { ok: false, error: 'No concentrator connection' }
-      try {
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-          'X-Caller-Session': claudeSessionId || internalId,
-        }
-        if (concentratorSecret) headers.Authorization = `Bearer ${concentratorSecret}`
-        const res = await fetch(`${httpUrl}/api/spawn`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ cwd, mode, resumeId, mkdir }),
-        })
-        const data = (await res.json()) as { success?: boolean; error?: string; wrapperId?: string }
-        if (!res.ok || !data.success) return { ok: false, error: data.error || `HTTP ${res.status}` }
-        diag('channel', `spawn_session: ${cwd} mode=${mode || 'default'} wrapperId=${data.wrapperId?.slice(0, 8)}`)
+      if (!wsClient?.isConnected()) return { ok: false, error: 'Not connected to concentrator' }
 
-        // Await rendezvous: concentrator will send spawn_ready/spawn_timeout when session connects
-        if (data.wrapperId) {
-          try {
-            const result = await new Promise<Record<string, unknown>>((resolve, reject) => {
-              pendingRendezvous.set(data.wrapperId!, { resolve, reject: (e: string) => reject(new Error(e)) })
+      // Step 1: Send spawn request via WS, get immediate ack with wrapperId
+      const spawnResult = await new Promise<{ ok: boolean; error?: string; wrapperId?: string }>(resolve => {
+        const timeout = setTimeout(() => resolve({ ok: false, error: 'Timeout' }), 15000)
+        pendingSpawnResult = result => {
+          clearTimeout(timeout)
+          pendingSpawnResult = null
+          resolve(result)
+        }
+        wsClient?.send({
+          type: 'channel_spawn',
+          cwd,
+          mode,
+          resumeId,
+          mkdir,
+        } as unknown as WrapperMessage)
+      })
+
+      if (!spawnResult.ok) return spawnResult
+      diag('channel', `spawn_session: ${cwd} mode=${mode || 'default'} wrapperId=${spawnResult.wrapperId?.slice(0, 8)}`)
+
+      // Step 2: Await rendezvous (concentrator sends spawn_ready/spawn_timeout when session connects)
+      if (spawnResult.wrapperId) {
+        try {
+          const wid = spawnResult.wrapperId
+          const result = await new Promise<Record<string, unknown>>((resolve, reject) => {
+            const timer = setTimeout(() => {
+              pendingRendezvous.delete(wid)
+              reject(new Error('Rendezvous timeout (45s)'))
+            }, 45_000)
+            pendingRendezvous.set(wid, {
+              resolve: msg => {
+                clearTimeout(timer)
+                resolve(msg)
+              },
+              reject: (e: string) => {
+                clearTimeout(timer)
+                reject(new Error(e))
+              },
             })
-            const session = result.session as Record<string, unknown> | undefined
-            diag('channel', `spawn_session: rendezvous resolved session=${(result.sessionId as string)?.slice(0, 8)}`)
-            return { ok: true, wrapperId: data.wrapperId, session }
-          } catch (err) {
-            diag('channel', `spawn_session: rendezvous failed: ${err instanceof Error ? err.message : err}`)
-            // Spawn succeeded but session didn't connect in time - still return success with wrapperId
-            return { ok: true, wrapperId: data.wrapperId, timedOut: true }
-          }
+          })
+          const session = result.session as Record<string, unknown> | undefined
+          diag('channel', `spawn_session: rendezvous resolved session=${(result.sessionId as string)?.slice(0, 8)}`)
+          return { ok: true, wrapperId: spawnResult.wrapperId, session }
+        } catch (err) {
+          diag('channel', `spawn_session: rendezvous failed: ${err instanceof Error ? err.message : err}`)
+          return { ok: true, wrapperId: spawnResult.wrapperId, timedOut: true }
         }
-
-        return { ok: true, wrapperId: data.wrapperId }
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : 'Network error' }
       }
+
+      return { ok: true, wrapperId: spawnResult.wrapperId }
     },
     async onQuitSession(sessionId) {
       if (!wsClient?.isConnected()) return { ok: false, error: 'Not connected to concentrator' }
@@ -1230,11 +1253,34 @@ async function main() {
         resolve({ ok: true })
       })
     },
+    async onConfigureSession({ sessionId, label, icon, color, description, keyterms }) {
+      if (!wsClient?.isConnected()) return { ok: false, error: 'Not connected to concentrator' }
+      return new Promise(resolve => {
+        const timeout = setTimeout(() => resolve({ ok: false, error: 'Timeout' }), 10000)
+        pendingConfigureResult = result => {
+          clearTimeout(timeout)
+          pendingConfigureResult = null
+          resolve(result)
+        }
+        wsClient?.send({
+          type: 'channel_configure',
+          sessionId,
+          label,
+          icon,
+          color,
+          description,
+          keyterms,
+        } as unknown as WrapperMessage)
+      })
+    },
   })
 
   // Pending callbacks for inter-session request/response
   let pendingListSessions: ((sessions: SessionInfo[]) => void) | null = null
   let pendingSendResult: ((result: { ok: boolean; error?: string; conversationId?: string }) => void) | null = null
+  let pendingReviveResult: ((result: { ok: boolean; error?: string; name?: string }) => void) | null = null
+  let pendingSpawnResult: ((result: { ok: boolean; error?: string; wrapperId?: string }) => void) | null = null
+  let pendingConfigureResult: ((result: { ok: boolean; error?: string }) => void) | null = null
   const pendingRendezvous = new Map<
     string,
     { resolve: (msg: Record<string, unknown>) => void; reject: (error: string) => void }

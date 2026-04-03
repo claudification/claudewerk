@@ -39,7 +39,7 @@ export interface PermissionRequestData {
 export interface McpChannelCallbacks {
   onNotify?: (message: string, title?: string) => void
   onShareFile?: (filePath: string) => Promise<string | null>
-  onListSessions?: (status?: string) => Promise<SessionInfo[]>
+  onListSessions?: (status?: string, showMetadata?: boolean) => Promise<SessionInfo[]>
   onSendMessage?: (
     to: string,
     intent: string,
@@ -58,6 +58,14 @@ export interface McpChannelCallbacks {
     resumeId?: string
     mkdir?: boolean
   }) => Promise<{ ok: boolean; error?: string; wrapperId?: string }>
+  onConfigureSession?: (params: {
+    sessionId: string
+    label?: string
+    icon?: string
+    color?: string
+    description?: string
+    keyterms?: string[]
+  }) => Promise<{ ok: boolean; error?: string }>
 }
 
 interface McpChannelState {
@@ -122,7 +130,7 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
       {
         name: 'list_sessions',
         description:
-          'List other active Claude Code sessions that support channel communication. Returns session ID, project name, status, and optional title/summary.',
+          'List other active Claude Code sessions that support channel communication. Returns session ID, project name, status, and optional title/summary. Use show_metadata to include icon/color/keyterms (benevolent only).',
         inputSchema: {
           type: 'object' as const,
           properties: {
@@ -130,6 +138,11 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
               type: 'string',
               enum: ['live', 'inactive', 'all'],
               description: 'Filter by status (default: live)',
+            },
+            show_metadata: {
+              type: 'boolean',
+              description:
+                'Include project metadata (icon, color, keyterms) in response. Only available for benevolent sessions.',
             },
           },
         },
@@ -213,6 +226,27 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
           required: ['cwd'],
         },
       },
+      {
+        name: 'configure_session',
+        description:
+          "Update another session's project settings: label, icon, color, description, keyterms. Requires benevolent trust level. Cannot change trust/permission levels.",
+        inputSchema: {
+          type: 'object' as const,
+          properties: {
+            session_id: { type: 'string', description: 'Target session ID (from list_sessions)' },
+            label: { type: 'string', description: 'Display name for the project' },
+            icon: { type: 'string', description: 'Lucide icon ID (e.g. "rocket", "database", "globe")' },
+            color: { type: 'string', description: 'Hex color (e.g. "#ff6600")' },
+            description: { type: 'string', description: 'Project description for routing context' },
+            keyterms: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Keywords for project search/categorization',
+            },
+          },
+          required: ['session_id'],
+        },
+      },
     ],
   }))
 
@@ -239,8 +273,9 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
           return { content: [{ type: 'text', text: url }] }
         }
         case 'list_sessions': {
-          const sessions = (await callbacks.onListSessions?.(params.status)) || []
-          debug(`[channel] list_sessions: ${sessions.length} results`)
+          const showMeta = String(params.show_metadata) === 'true'
+          const sessions = (await callbacks.onListSessions?.(params.status, showMeta)) || []
+          debug(`[channel] list_sessions: ${sessions.length} results (metadata=${showMeta})`)
           return { content: [{ type: 'text', text: JSON.stringify(sessions, null, 2) }] }
         }
         case 'send_message': {
@@ -278,6 +313,32 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
               },
             ],
           }
+        }
+        case 'configure_session': {
+          const sessionId = params.session_id
+          if (!sessionId) return { content: [{ type: 'text', text: 'Error: session_id is required' }], isError: true }
+          const update: Record<string, unknown> = {}
+          if (params.label !== undefined) update.label = params.label
+          if (params.icon !== undefined) update.icon = params.icon
+          if (params.color !== undefined) update.color = params.color
+          if (params.description !== undefined) update.description = params.description
+          if (params.keyterms !== undefined) update.keyterms = params.keyterms
+          if (Object.keys(update).length === 0) {
+            return { content: [{ type: 'text', text: 'Error: at least one setting is required' }], isError: true }
+          }
+          const result = await callbacks.onConfigureSession?.({
+            sessionId,
+            ...update,
+          } as Parameters<NonNullable<McpChannelCallbacks['onConfigureSession']>>[0])
+          if (!result?.ok) {
+            debug(`[channel] configure_session failed: ${result?.error}`)
+            return {
+              content: [{ type: 'text', text: result?.error || 'Failed to configure session' }],
+              isError: true,
+            }
+          }
+          debug(`[channel] configure_session: ${sessionId.slice(0, 8)} ${Object.keys(update).join(',')}`)
+          return { content: [{ type: 'text', text: `Session configured: ${Object.keys(update).join(', ')} updated` }] }
         }
         case 'quit_session': {
           const sessionId = params.session_id

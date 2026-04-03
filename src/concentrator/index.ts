@@ -4,22 +4,22 @@
  * Aggregates sessions from multiple rclaude instances
  */
 
+import { randomUUID } from 'node:crypto'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DEFAULT_CONCENTRATOR_PORT } from '../shared/protocol'
 import { getUser, initAuth, reloadState, validateSession } from './auth'
 import { getAuthenticatedUser, requireAuth, setRclaudeSecret } from './auth-routes'
 import { initGlobalSettings } from './global-settings'
-import { appendMessage, initInterSessionLog, purgeMessages, queryMessages } from './inter-session-log'
+import { appendMessage, initInterSessionLog } from './inter-session-log'
 import { addAllowedRoot, addPathMapping, getAllowedRoots } from './path-jail'
-import { getProjectSettings, initProjectSettings } from './project-settings'
+import { getAllProjectSettings, getProjectSettings, initProjectSettings, setProjectSettings } from './project-settings'
 import { initPush, isPushConfigured, sendPushToAll } from './push'
 import { createRouter } from './routes'
 import {
   addPersistedLink,
   findLink,
   getLinksForCwd,
-  getPersistedLinks,
   initSessionLinks,
   removePersistedLink,
   touchLink,
@@ -513,7 +513,13 @@ async function main() {
                 sessionStore.broadcastSessionUpdate(data.sessionId)
 
                 // Check rendezvous: someone may be waiting for this wrapper to connect
-                sessionStore.resolveRendezvous(wrapperId, data.sessionId)
+                const rvResolved = sessionStore.resolveRendezvous(wrapperId, data.sessionId)
+                if (!rvResolved && verbose) {
+                  const rvInfo = sessionStore.getRendezvousInfo(wrapperId)
+                  if (rvInfo) {
+                    console.log(`[rendezvous] wrapperId matched but resolve failed: ${wrapperId.slice(0, 8)}`)
+                  }
+                }
 
                 ws.send(JSON.stringify({ type: 'ack', eventId: data.sessionId, origins }))
                 break
@@ -728,6 +734,7 @@ async function main() {
               // Inter-session messaging (channel-enabled sessions)
               case 'channel_list_sessions': {
                 const status = data.status || 'live'
+                const showMetadata = !!data.show_metadata
                 const callerSession = ws.data.sessionId
                 const callerSess = callerSession ? sessionStore.getSession(callerSession) : undefined
                 const isBenevolent = callerSess?.cwd
@@ -760,6 +767,17 @@ async function main() {
                       link: isLinked ? 'connected' : linkStatus === 'blocked' ? 'blocked' : undefined,
                       title: s.title,
                       summary: s.summary,
+                      // Metadata only for benevolent callers who request it
+                      ...(showMetadata && isBenevolent && projSettings
+                        ? {
+                            metadata: {
+                              label: projSettings.label,
+                              icon: projSettings.icon,
+                              color: projSettings.color,
+                              keyterms: projSettings.keyterms,
+                            },
+                          }
+                        : {}),
                     }
                   })
                 ws.send(JSON.stringify({ type: 'channel_sessions_list', sessions: result }))
@@ -1170,6 +1188,295 @@ async function main() {
                     JSON.stringify({ type: 'quit_remote_result', ok: false, error: 'Target session not connected' }),
                   )
                 }
+                break
+              }
+
+              case 'channel_revive': {
+                const targetSessionId = data.sessionId
+                const callerSession = ws.data.sessionId
+                if (!targetSessionId || !callerSession) break
+
+                // Check benevolent trust
+                const revCallerSess = sessionStore.getSession(callerSession)
+                const revCallerTrust = revCallerSess?.cwd
+                  ? getProjectSettings(revCallerSess.cwd)?.trustLevel
+                  : undefined
+                if (revCallerTrust !== 'benevolent') {
+                  ws.send(
+                    JSON.stringify({
+                      type: 'channel_revive_result',
+                      ok: false,
+                      error: 'Requires benevolent trust level',
+                    }),
+                  )
+                  break
+                }
+
+                const revTarget = sessionStore.getSession(targetSessionId)
+                if (!revTarget) {
+                  ws.send(JSON.stringify({ type: 'channel_revive_result', ok: false, error: 'Session not found' }))
+                  break
+                }
+                if (revTarget.status === 'active') {
+                  ws.send(
+                    JSON.stringify({ type: 'channel_revive_result', ok: false, error: 'Session is already active' }),
+                  )
+                  break
+                }
+
+                const revAgent = sessionStore.getAgent()
+                if (!revAgent) {
+                  ws.send(
+                    JSON.stringify({ type: 'channel_revive_result', ok: false, error: 'No host agent connected' }),
+                  )
+                  break
+                }
+
+                const revWrapperId = randomUUID()
+                const revName =
+                  revTarget.title ||
+                  getProjectSettings(revTarget.cwd)?.label ||
+                  revTarget.cwd.split('/').pop() ||
+                  targetSessionId.slice(0, 8)
+                revAgent.send(
+                  JSON.stringify({
+                    type: 'revive',
+                    sessionId: targetSessionId,
+                    cwd: revTarget.cwd,
+                    wrapperId: revWrapperId,
+                    mode: 'continue',
+                  }),
+                )
+
+                // Register rendezvous
+                sessionStore
+                  .addRendezvous(revWrapperId, callerSession, revTarget.cwd, 'revive')
+                  .then(revived => {
+                    const callerWs = sessionStore.getSessionSocket(callerSession)
+                    if (callerWs) {
+                      callerWs.send(
+                        JSON.stringify({
+                          type: 'revive_ready',
+                          sessionId: revived.id,
+                          cwd: revived.cwd,
+                          wrapperId: revWrapperId,
+                          session: revived,
+                        }),
+                      )
+                    }
+                  })
+                  .catch(err => {
+                    const callerWs = sessionStore.getSessionSocket(callerSession)
+                    if (callerWs) {
+                      callerWs.send(
+                        JSON.stringify({
+                          type: 'revive_timeout',
+                          wrapperId: revWrapperId,
+                          sessionId: targetSessionId,
+                          cwd: revTarget.cwd,
+                          error: typeof err === 'string' ? err : 'Revive rendezvous timed out',
+                        }),
+                      )
+                    }
+                  })
+
+                ws.send(JSON.stringify({ type: 'channel_revive_result', ok: true, name: revName }))
+                if (verbose)
+                  console.log(
+                    `[inter-session] Benevolent revive via WS: ${callerSession.slice(0, 8)} -> ${targetSessionId.slice(0, 8)}`,
+                  )
+                break
+              }
+
+              case 'channel_spawn': {
+                const callerSession = ws.data.sessionId
+                if (!callerSession) break
+
+                // Check benevolent trust
+                const spCallerSess = sessionStore.getSession(callerSession)
+                const spCallerTrust = spCallerSess?.cwd ? getProjectSettings(spCallerSess.cwd)?.trustLevel : undefined
+                if (spCallerTrust !== 'benevolent') {
+                  ws.send(
+                    JSON.stringify({
+                      type: 'channel_spawn_result',
+                      ok: false,
+                      error: 'Spawn requires benevolent trust level',
+                    }),
+                  )
+                  break
+                }
+
+                const spAgent = sessionStore.getAgent()
+                if (!spAgent) {
+                  ws.send(JSON.stringify({ type: 'channel_spawn_result', ok: false, error: 'No host agent connected' }))
+                  break
+                }
+
+                const spCwd = data.cwd
+                if (!spCwd || typeof spCwd !== 'string') {
+                  ws.send(JSON.stringify({ type: 'channel_spawn_result', ok: false, error: 'Missing cwd' }))
+                  break
+                }
+                if (data.mode === 'resume' && !data.resumeId) {
+                  ws.send(
+                    JSON.stringify({
+                      type: 'channel_spawn_result',
+                      ok: false,
+                      error: 'resumeId required for resume mode',
+                    }),
+                  )
+                  break
+                }
+
+                const spRequestId = randomUUID()
+                const spWrapperId = randomUUID()
+
+                const spawnPromise = new Promise<{ success?: boolean; error?: string; tmuxSession?: string }>(
+                  (resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                      sessionStore.removeSpawnListener(spRequestId)
+                      reject(new Error('Spawn timed out (15s)'))
+                    }, 15000)
+                    sessionStore.addSpawnListener(spRequestId, msg => {
+                      clearTimeout(timeout)
+                      resolve(msg as { success?: boolean; error?: string; tmuxSession?: string })
+                    })
+                    spAgent.send(
+                      JSON.stringify({
+                        type: 'spawn',
+                        requestId: spRequestId,
+                        cwd: spCwd,
+                        wrapperId: spWrapperId,
+                        mkdir: !!data.mkdir,
+                        mode: data.mode,
+                        resumeId: data.resumeId,
+                      }),
+                    )
+                  },
+                )
+
+                spawnPromise
+                  .then(spResult => {
+                    if (!spResult.success) {
+                      ws.send(
+                        JSON.stringify({
+                          type: 'channel_spawn_result',
+                          ok: false,
+                          error: spResult.error || 'Spawn failed',
+                        }),
+                      )
+                      return
+                    }
+
+                    // Register rendezvous
+                    sessionStore
+                      .addRendezvous(spWrapperId, callerSession, spCwd, 'spawn')
+                      .then(session => {
+                        const callerWs = sessionStore.getSessionSocket(callerSession)
+                        if (callerWs) {
+                          callerWs.send(
+                            JSON.stringify({
+                              type: 'spawn_ready',
+                              sessionId: session.id,
+                              cwd: session.cwd,
+                              wrapperId: spWrapperId,
+                              session,
+                            }),
+                          )
+                        }
+                      })
+                      .catch(err => {
+                        const callerWs = sessionStore.getSessionSocket(callerSession)
+                        if (callerWs) {
+                          callerWs.send(
+                            JSON.stringify({
+                              type: 'spawn_timeout',
+                              wrapperId: spWrapperId,
+                              cwd: spCwd,
+                              error: typeof err === 'string' ? err : 'Spawn rendezvous timed out',
+                            }),
+                          )
+                        }
+                      })
+
+                    ws.send(JSON.stringify({ type: 'channel_spawn_result', ok: true, wrapperId: spWrapperId }))
+                    if (verbose)
+                      console.log(`[inter-session] Benevolent spawn via WS: ${callerSession.slice(0, 8)} -> ${spCwd}`)
+                  })
+                  .catch(err => {
+                    ws.send(
+                      JSON.stringify({
+                        type: 'channel_spawn_result',
+                        ok: false,
+                        error: err instanceof Error ? err.message : 'Spawn error',
+                      }),
+                    )
+                  })
+                break
+              }
+
+              case 'channel_configure': {
+                const callerSession = ws.data.sessionId
+                const targetSessionId = data.sessionId
+                if (!callerSession || !targetSessionId) {
+                  ws.send(JSON.stringify({ type: 'channel_configure_result', ok: false, error: 'Missing session ID' }))
+                  break
+                }
+
+                // Check benevolent trust
+                const cfgCallerSess = sessionStore.getSession(callerSession)
+                const cfgCallerTrust = cfgCallerSess?.cwd
+                  ? getProjectSettings(cfgCallerSess.cwd)?.trustLevel
+                  : undefined
+                if (cfgCallerTrust !== 'benevolent') {
+                  ws.send(
+                    JSON.stringify({
+                      type: 'channel_configure_result',
+                      ok: false,
+                      error: 'Requires benevolent trust level',
+                    }),
+                  )
+                  break
+                }
+
+                const cfgTarget = sessionStore.getSession(targetSessionId)
+                if (!cfgTarget) {
+                  ws.send(JSON.stringify({ type: 'channel_configure_result', ok: false, error: 'Session not found' }))
+                  break
+                }
+
+                // Build update -- NEVER allow trustLevel changes via MCP
+                const cfgUpdate: Record<string, unknown> = {}
+                if (data.label !== undefined) cfgUpdate.label = data.label
+                if (data.icon !== undefined) cfgUpdate.icon = data.icon
+                if (data.color !== undefined) cfgUpdate.color = data.color
+                if (data.description !== undefined) cfgUpdate.description = data.description
+                if (data.keyterms !== undefined) cfgUpdate.keyterms = data.keyterms
+
+                if (Object.keys(cfgUpdate).length === 0) {
+                  ws.send(
+                    JSON.stringify({ type: 'channel_configure_result', ok: false, error: 'No settings to update' }),
+                  )
+                  break
+                }
+
+                setProjectSettings(cfgTarget.cwd, cfgUpdate as Record<string, string>)
+                const allSettings = getAllProjectSettings()
+                // Broadcast to dashboard subscribers
+                const cfgJson = JSON.stringify({ type: 'project_settings_updated', settings: allSettings })
+                for (const sub of sessionStore.getSubscribers()) {
+                  try {
+                    sub.send(cfgJson)
+                  } catch {
+                    /* dead socket */
+                  }
+                }
+
+                ws.send(JSON.stringify({ type: 'channel_configure_result', ok: true }))
+                if (verbose)
+                  console.log(
+                    `[inter-session] Configure via WS: ${callerSession.slice(0, 8)} -> ${targetSessionId.slice(0, 8)} ${Object.keys(cfgUpdate).join(',')}`,
+                  )
                 break
               }
 

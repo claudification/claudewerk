@@ -60,6 +60,9 @@ export interface WsClientOptions {
   onPermissionResponse?: (requestId: string, behavior: 'allow' | 'deny') => void
   onPermissionRule?: (toolName: string, behavior: 'allow' | 'deny') => void
   onRendezvousResult?: (message: Record<string, unknown>) => void
+  onChannelReviveResult?: (result: { ok: boolean; error?: string; name?: string }) => void
+  onChannelSpawnResult?: (result: { ok: boolean; error?: string; wrapperId?: string }) => void
+  onChannelConfigureResult?: (result: { ok: boolean; error?: string }) => void
   onAskAnswer?: (
     toolUseId: string,
     answers?: Record<string, string>,
@@ -119,6 +122,9 @@ export function createWsClient(options: WsClientOptions): WsClient {
     onPermissionResponse,
     onPermissionRule,
     onRendezvousResult,
+    onChannelReviveResult,
+    onChannelSpawnResult,
+    onChannelConfigureResult,
     onAskAnswer,
     onQuitSession,
   } = options
@@ -295,6 +301,18 @@ export function createWsClient(options: WsClientOptions): WsClient {
               if (msgType === 'permission_rule') {
                 const m = message as Record<string, unknown>
                 onPermissionRule?.(m.toolName as string, m.behavior as 'allow' | 'deny')
+                break
+              }
+              if (msgType === 'channel_revive_result') {
+                onChannelReviveResult?.(message as unknown as { ok: boolean; error?: string; name?: string })
+                break
+              }
+              if (msgType === 'channel_spawn_result') {
+                onChannelSpawnResult?.(message as unknown as { ok: boolean; error?: string; wrapperId?: string })
+                break
+              }
+              if (msgType === 'channel_configure_result') {
+                onChannelConfigureResult?.(message as unknown as { ok: boolean; error?: string })
                 break
               }
               if (
