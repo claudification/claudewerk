@@ -16,6 +16,7 @@ import { VoiceFab } from '@/components/voice-fab'
 import { VoiceKey } from '@/components/voice-key'
 
 const WebTerminal = lazy(() => import('@/components/web-terminal').then(m => ({ default: m.WebTerminal })))
+const UserAdminDialog = lazy(() => import('@/components/user-admin').then(m => ({ default: m.UserAdminDialog })))
 
 import {
   fetchGlobalSettings,
@@ -67,6 +68,7 @@ function useSwipeToOpen(onOpen: () => void) {
 function Dashboard() {
   const [sheetOpen, setSheetOpen] = useState(() => isMobileViewport() && !useSessionsStore.getState().selectedSessionId)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sidebar-collapsed') === 'true')
+  const [showUserAdmin, setShowUserAdmin] = useState(false)
   const selectedSessionId = useSessionsStore(s => s.selectedSessionId)
   const setEvents = useSessionsStore(s => s.setEvents)
   const setTranscript = useSessionsStore(s => s.setTranscript)
@@ -91,6 +93,15 @@ function Dashboard() {
     fetchServerCapabilities().then(c => useSessionsStore.getState().setServerCapabilities(c))
     fetchGlobalSettings().then(s => useSessionsStore.setState({ globalSettings: s }))
     fetchSessionOrder().then(o => useSessionsStore.getState().setSessionOrder(o))
+  }, [])
+
+  // Listen for user admin open event (from command palette)
+  useEffect(() => {
+    function handleOpen() {
+      setShowUserAdmin(true)
+    }
+    window.addEventListener('open-user-admin', handleOpen)
+    return () => window.removeEventListener('open-user-admin', handleOpen)
   }, [])
 
   // Periodic auth status check - renews cookie silently (server extends if past halfway)
@@ -491,6 +502,13 @@ function Dashboard() {
       {canAdmin && <QuickNoteModal />}
       {/* Shift+? shortcut help - admin only */}
       {canAdmin && <ShortcutHelp />}
+
+      {/* User admin modal (lazy loaded, user-editor gated) */}
+      {showUserAdmin && (
+        <Suspense fallback={null}>
+          <UserAdminDialog open={showUserAdmin} onOpenChange={setShowUserAdmin} />
+        </Suspense>
+      )}
 
       {/* Voice FAB (touch) + Voice Key (keyboard push-to-talk) */}
       <VoiceFabGate />
