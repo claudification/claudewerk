@@ -125,8 +125,8 @@ export function createContext(ws: ServerWebSocket<WsData>, deps: ContextDeps): H
       if (!grants) return
       // Use provided CWD, fall back to caller session CWD, then '*' for global checks
       const targetCwd = cwd || caller?.cwd || '*'
-      const perms = resolvePermissions(grants, targetCwd)
-      if (!perms.has(permission)) {
+      const { permissions: perms, isAdmin } = resolvePermissions(grants, targetCwd)
+      if (!isAdmin && !perms.has(permission)) {
         throw new GuardError(`Permission denied: ${permission} required`)
       }
     },

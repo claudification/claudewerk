@@ -55,7 +55,7 @@ const dismissSession: MessageHandler = (ctx, data) => {
   const session = ctx.sessions.getSession(sessionId)
   if (!session) throw new GuardError('Session not found')
   if (session.status !== 'ended') throw new GuardError('Only ended sessions can be dismissed')
-  ctx.requirePermission('admin', session.cwd)
+  ctx.requirePermission('settings', session.cwd)
 
   ctx.sessions.removeSession(sessionId)
   ctx.broadcast({ type: 'session_dismissed', sessionId })
@@ -109,7 +109,7 @@ const updateSessionOrder: MessageHandler = (ctx, data) => {
   if (!order || order.version !== 2 || !Array.isArray(order.tree)) {
     throw new GuardError('Invalid session order: expected { version: 2, tree: [...] }')
   }
-  ctx.requirePermission('admin')
+  ctx.requirePermission('settings')
 
   setSessionOrder(order)
   const saved = getSessionOrder()

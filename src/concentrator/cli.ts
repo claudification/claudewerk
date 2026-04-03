@@ -124,7 +124,9 @@ function main(): void {
     }
   }
 
-  /** Parse --grant "cwd:perm,perm" into UserGrant[] */
+  const KNOWN_ROLES = new Set(['admin'])
+
+  /** Parse --grant "cwd:role_or_perm,role_or_perm" into UserGrant[] */
   function parseGrants(grantStrs: string[]): UserGrant[] {
     return grantStrs.map(s => {
       const colonIdx = s.indexOf(':')
@@ -133,11 +135,17 @@ function main(): void {
         process.exit(1)
       }
       const cwd = s.slice(0, colonIdx)
-      const permissions = s
+      const items = s
         .slice(colonIdx + 1)
         .split(',')
-        .map(p => p.trim()) as UserGrant['permissions']
-      return { cwd, permissions }
+        .map(p => p.trim())
+      const roles = items.filter(i => KNOWN_ROLES.has(i)) as UserGrant['roles']
+      const permissions = items.filter(i => !KNOWN_ROLES.has(i)) as UserGrant['permissions']
+      return {
+        cwd,
+        ...(roles && roles.length > 0 && { roles }),
+        ...(permissions && permissions.length > 0 && { permissions }),
+      }
     })
   }
 
@@ -173,7 +181,9 @@ function main(): void {
 
       const grants = grantArgs.length > 0 ? parseGrants(grantArgs) : undefined
       const grantLabel = grants
-        ? grants.map(g => `${g.cwd}: ${g.permissions.join(', ')}`).join('\n│           ')
+        ? grants
+            .map(g => `${g.cwd}: ${[...(g.roles || []), ...(g.permissions || [])].join(', ')}`)
+            .join('\n           ')
         : '* (admin -- full access)'
 
       try {
@@ -211,7 +221,8 @@ function main(): void {
         const lastUsed = user.lastUsedAt ? new Date(user.lastUsedAt).toLocaleString() : 'never'
         const grants = (user.grants || [])
           .map(g => {
-            let label = `${g.cwd}: ${g.permissions.join(', ')}`
+            const parts = [...(g.roles || []), ...(g.permissions || [])]
+            let label = `${g.cwd}: ${parts.join(', ')}`
             if (g.notBefore) label += ` [from ${new Date(g.notBefore).toLocaleDateString()}]`
             if (g.notAfter) label += ` [until ${new Date(g.notAfter).toLocaleDateString()}]`
             return label
@@ -238,9 +249,16 @@ function main(): void {
         console.error('ERROR: --permissions is required')
         process.exit(1)
       }
-      const perms = permissionsArg.split(',').map(p => p.trim()) as UserGrant['permissions']
-      if (addUserGrant(name, { cwd: cwdArg, permissions: perms })) {
-        console.log(`Added grant: ${cwdArg} -> ${perms.join(', ')} for "${name}"`)
+      const items = permissionsArg.split(',').map(p => p.trim())
+      const roles = items.filter(i => KNOWN_ROLES.has(i)) as UserGrant['roles']
+      const perms = items.filter(i => !KNOWN_ROLES.has(i)) as UserGrant['permissions']
+      const grant: UserGrant = {
+        cwd: cwdArg,
+        ...(roles && roles.length > 0 && { roles }),
+        ...(perms && perms.length > 0 && { permissions: perms }),
+      }
+      if (addUserGrant(name, grant)) {
+        console.log(`Added grant: ${cwdArg} -> ${items.join(', ')} for "${name}"`)
         notifyServer(cacheDir)
       } else {
         console.error(`ERROR: User "${name}" not found.`)

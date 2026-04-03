@@ -1,13 +1,23 @@
 /**
- * Permission system: grant-based, CWD-scoped, with temporal bounds.
+ * Permission system: grant-based, CWD-scoped, with roles + permissions.
  *
- * Users have grants: [{ cwd, permissions, notBefore?, notAfter? }]
- * Each grant binds a set of permissions to a CWD glob pattern.
- * Resolution is per-session: check all grants against the session's CWD.
+ * Roles are shorthand for permission bundles (admin -> all permissions).
+ * Permissions are granular capabilities (chat, terminal:read, etc.).
+ * Grants combine both: roles expand first, then explicit permissions merge in.
  */
 
+// ─── Roles (expand into permission sets) ──────────────────────────
+
+export type Role = 'admin'
+
+/** Role -> permission expansion map */
+const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
+  admin: ['chat', 'chat:read', 'terminal', 'terminal:read', 'files', 'files:read', 'spawn', 'settings', 'voice'],
+}
+
+// ─── Permissions (granular capabilities) ──────────────────────────
+
 export type Permission =
-  | 'admin'
   | 'chat'
   | 'chat:read'
   | 'terminal'
@@ -18,81 +28,86 @@ export type Permission =
   | 'settings'
   | 'voice'
 
-export const ALL_PERMISSIONS: Permission[] = [
-  'admin',
-  'chat',
-  'chat:read',
-  'terminal',
-  'terminal:read',
-  'files',
-  'files:read',
-  'spawn',
-  'settings',
-  'voice',
-]
+// ─── Grants ───────────────────────────────────────────────────────
 
 export interface UserGrant {
   /** CWD glob pattern. '*' = all projects. */
   cwd: string
-  /** What the user can do with matching sessions */
-  permissions: Permission[]
+  /** Roles that expand into permission sets */
+  roles?: Role[]
+  /** Granular permissions (combined with role-expanded permissions) */
+  permissions?: Permission[]
   /** Grant is not valid before this timestamp (ms). Omit = immediately valid. */
   notBefore?: number
   /** Grant expires after this timestamp (ms). Omit = never expires. */
   notAfter?: number
 }
 
-/**
- * Simple glob matching for CWD patterns.
- * Supports: '*' (match all), '/exact/path', '/prefix/*' (trailing wildcard).
- */
+// ─── Internal helpers ─────────────────────────────────────────────
+
 function matchCwdGlob(pattern: string, cwd: string): boolean {
   if (pattern === '*') return true
   if (pattern === cwd) return true
-  // Trailing wildcard: /foo/bar/* matches /foo/bar/anything
   if (pattern.endsWith('/*')) {
-    const prefix = pattern.slice(0, -1) // keep the trailing /
+    const prefix = pattern.slice(0, -1)
     return cwd.startsWith(prefix) || cwd === pattern.slice(0, -2)
   }
   return false
 }
 
-/**
- * Check if a grant is temporally valid right now.
- */
 function isGrantActive(grant: UserGrant, now = Date.now()): boolean {
   if (grant.notBefore && now < grant.notBefore) return false
   if (grant.notAfter && now > grant.notAfter) return false
   return true
 }
 
+function hasRole(grant: UserGrant, role: Role): boolean {
+  return grant.roles?.includes(role) ?? false
+}
+
+// ─── Resolution ───────────────────────────────────────────────────
+
 /**
- * Resolve effective permissions for a user against a specific CWD.
- * Returns the union of all matching, active grants.
+ * Resolve effective permissions for grants against a specific CWD.
+ * Expands roles into permissions, merges explicit permissions, applies hierarchy.
  */
-export function resolvePermissions(grants: UserGrant[], cwd: string): Set<Permission> {
+export function resolvePermissions(
+  grants: UserGrant[],
+  cwd: string,
+): { permissions: Set<Permission>; isAdmin: boolean } {
   const result = new Set<Permission>()
+  let admin = false
   const now = Date.now()
 
   for (const grant of grants) {
     if (!isGrantActive(grant, now)) continue
     if (!matchCwdGlob(grant.cwd, cwd)) continue
-    for (const p of grant.permissions) result.add(p)
+
+    // Expand roles into permissions
+    if (grant.roles) {
+      for (const role of grant.roles) {
+        if (role === 'admin') admin = true
+        const expanded = ROLE_PERMISSIONS[role]
+        if (expanded) for (const p of expanded) result.add(p)
+      }
+    }
+
+    // Add explicit permissions
+    if (grant.permissions) {
+      for (const p of grant.permissions) result.add(p)
+    }
   }
 
-  // admin implies everything
-  if (result.has('admin')) {
-    for (const p of ALL_PERMISSIONS) result.add(p)
-  }
   // Hierarchical implications
   if (result.has('chat')) result.add('chat:read')
   if (result.has('terminal')) result.add('terminal:read')
   if (result.has('files')) result.add('files:read')
 
-  return result
+  return { permissions: result, isAdmin: admin }
 }
 
-/** Flat resolved permission flags -- what the client receives */
+// ─── Resolved flags (what the client receives) ───────────────────
+
 export interface ResolvedPermissions {
   canAdmin: boolean
   canChat: boolean
@@ -106,76 +121,31 @@ export interface ResolvedPermissions {
   canVoice: boolean
 }
 
-/** Resolve grants to flat boolean flags for a specific CWD */
 export function resolvePermissionFlags(grants: UserGrant[], cwd = '*'): ResolvedPermissions {
-  const perms = resolvePermissions(grants, cwd)
+  const { permissions, isAdmin } = resolvePermissions(grants, cwd)
   return {
-    canAdmin: perms.has('admin'),
-    canChat: perms.has('chat'),
-    canReadChat: perms.has('chat:read'),
-    canTerminal: perms.has('terminal'),
-    canReadTerminal: perms.has('terminal:read'),
-    canFiles: perms.has('files'),
-    canReadFiles: perms.has('files:read'),
-    canSpawn: perms.has('spawn'),
-    canSettings: perms.has('settings'),
-    canVoice: perms.has('voice'),
+    canAdmin: isAdmin,
+    canChat: permissions.has('chat'),
+    canReadChat: permissions.has('chat:read'),
+    canTerminal: permissions.has('terminal'),
+    canReadTerminal: permissions.has('terminal:read'),
+    canFiles: permissions.has('files'),
+    canReadFiles: permissions.has('files:read'),
+    canSpawn: permissions.has('spawn'),
+    canSettings: permissions.has('settings'),
+    canVoice: permissions.has('voice'),
   }
 }
 
-/**
- * Find the earliest notAfter across all active grants.
- * Returns null if no grants have expiry (forever session).
- */
-export function earliestGrantExpiry(grants: UserGrant[]): number | null {
-  let earliest: number | null = null
-  const now = Date.now()
-  for (const g of grants) {
-    if (!isGrantActive(g, now)) continue
-    if (g.notAfter) {
-      if (earliest === null || g.notAfter < earliest) earliest = g.notAfter
-    }
-  }
-  return earliest
-}
+// ─── Grant queries ────────────────────────────────────────────────
 
-/**
- * Check if ALL grants have expired (user should be disconnected).
- */
-export function allGrantsExpired(grants: UserGrant[]): boolean {
-  if (grants.length === 0) return true
-  const now = Date.now()
-  return grants.every(g => g.notAfter && g.notAfter < now)
-}
-
-/**
- * Check if grants give ANY permission for ANY CWD (used to filter session visibility).
- * A grant with cwd '*' matches everything. Otherwise checks specific CWD.
- */
 export function hasAnyCwdAccess(grants: UserGrant[], cwd: string): boolean {
   const now = Date.now()
   return grants.some(g => isGrantActive(g, now) && matchCwdGlob(g.cwd, cwd))
 }
 
-/**
- * Check if grants include admin for any CWD (global admin check).
- */
-export function isAdmin(grants: UserGrant[]): boolean {
+export function allGrantsExpired(grants: UserGrant[]): boolean {
+  if (grants.length === 0) return true
   const now = Date.now()
-  return grants.some(g => isGrantActive(g, now) && g.permissions.includes('admin'))
-}
-
-/**
- * Check if a user has ONLY chat/chat:read/voice permissions (no power perms).
- * Used to auto-detect normie users for the simplified chat view.
- */
-export function isNormieUser(grants: UserGrant[]): boolean {
-  if (isAdmin(grants)) return false
-  const powerPerms: Permission[] = ['terminal', 'terminal:read', 'files', 'files:read', 'spawn', 'settings']
-  const now = Date.now()
-  for (const g of grants) {
-    if (!isGrantActive(g, now)) continue
-    if (g.permissions.some(p => powerPerms.includes(p))) return false
-  }
-  return true
+  return grants.every(g => g.notAfter && g.notAfter < now)
 }

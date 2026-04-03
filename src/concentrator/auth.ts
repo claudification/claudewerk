@@ -94,17 +94,28 @@ export function initAuth(opts: {
   if (existsSync(authFilePath)) {
     try {
       state = JSON.parse(readFileSync(authFilePath, 'utf-8'))
-      // Migrate: add grants to existing users that don't have them (admin by default)
+      // Migrate grants: no grants -> admin, permissions:['admin'] -> roles:['admin']
       let migrated = false
       for (const user of state.users) {
         if (!user.grants) {
-          user.grants = [{ cwd: '*', permissions: ['admin'] }]
+          user.grants = [{ cwd: '*', roles: ['admin'] }]
           migrated = true
+        } else {
+          // Migrate old permissions:['admin'] to roles:['admin']
+          for (const grant of user.grants) {
+            if ((grant.permissions as string[] | undefined)?.includes('admin')) {
+              grant.roles = grant.roles || []
+              if (!grant.roles.includes('admin')) grant.roles.push('admin')
+              grant.permissions = grant.permissions!.filter((p: string) => p !== 'admin')
+              if (grant.permissions!.length === 0) delete grant.permissions
+              migrated = true
+            }
+          }
         }
       }
       if (migrated) {
         writeFileSync(authFilePath, JSON.stringify(state, null, 2), { mode: 0o600 })
-        console.log('[auth] Migrated existing users to grant-based permissions (admin)')
+        console.log('[auth] Migrated user grants (roles/permissions split)')
       }
       // Clean expired sessions on load
       const now = Date.now()
@@ -203,7 +214,7 @@ export function createUser(name: string, grants?: UserGrant[]): PasskeyUser {
     credentials: [],
     createdAt: Date.now(),
     revoked: false,
-    grants: grants || [{ cwd: '*', permissions: ['admin'] }],
+    grants: grants || [{ cwd: '*', roles: ['admin'] }],
   }
   state.users.push(user)
   save()
