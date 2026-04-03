@@ -81,12 +81,16 @@ const channelListSessions: MessageHandler = (ctx, data) => {
       const showFull = isBenevolent || isLinked
       const shortCwd = s.cwd.split('/').slice(-2).join('/')
       const projSettings = ctx.getProjectSettings(s.cwd)
+      const wrapperIds = ctx.sessions.getWrapperIds(s.id)
+      // Primary wrapper ID = the addressable endpoint (last connected wrapper)
+      const primaryWrapperId = wrapperIds[wrapperIds.length - 1]
       return {
-        id: s.id,
+        id: primaryWrapperId || s.id, // wrapper ID for addressing (falls back to session ID if no wrappers)
+        session_id: s.id, // CC session ID for context (transcript, tasks, etc.)
         name: s.title || projSettings?.label || s.cwd.split('/').pop() || s.cwd,
         cwd: showFull ? s.cwd : shortCwd,
-        status: (ctx.sessions.getActiveWrapperCount(s.id) > 0 ? 'live' : 'inactive') as 'live' | 'inactive',
-        ...(showFull ? { wrapperIds: ctx.sessions.getWrapperIds(s.id) } : {}),
+        status: (wrapperIds.length > 0 ? 'live' : 'inactive') as 'live' | 'inactive',
+        ...(showFull && wrapperIds.length > 1 ? { wrapperIds } : {}),
         ...(projSettings?.description ? { description: projSettings.description } : {}),
         link: isLinked ? 'connected' : linkStatus === 'blocked' ? 'blocked' : undefined,
         title: s.title,
@@ -110,17 +114,19 @@ const channelListSessions: MessageHandler = (ctx, data) => {
 
 const channelSend: MessageHandler = (ctx, data) => {
   const fromSession = ctx.ws.data.sessionId || (data.fromSession as string)
-  const toSession = data.toSession as string
-  if (!fromSession || !toSession) return
+  const toTarget = data.toSession as string
+  if (!fromSession || !toTarget) return
 
   const fromSess = ctx.sessions.getSession(fromSession)
-  const toSess = ctx.sessions.getSession(toSession)
-  if (!toSess) {
+
+  // Resolve target: try as wrapper ID first, then session ID (backwards compat)
+  const toSess = ctx.sessions.getSessionByWrapper(toTarget) || ctx.sessions.getSession(toTarget)
+  const toSession = toSess?.id
+  if (!toSess || !toSession) {
     ctx.reply({
       type: 'channel_send_result',
       ok: false,
-      error:
-        'Target session not found. It may have restarted with a new ID. Use list_sessions to discover current sessions.',
+      error: 'Target not found. It may have restarted with a new ID. Use list_sessions to discover current sessions.',
     })
     return
   }

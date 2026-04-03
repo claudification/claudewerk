@@ -93,6 +93,7 @@ export interface SessionStore {
   setSessionSocket: (sessionId: string, wrapperId: string, ws: ServerWebSocket<unknown>) => void
   getSessionSocket: (sessionId: string) => ServerWebSocket<unknown> | undefined
   getSessionSocketByWrapper: (wrapperId: string) => ServerWebSocket<unknown> | undefined
+  getSessionByWrapper: (wrapperId: string) => Session | undefined
   removeSessionSocket: (sessionId: string, wrapperId: string) => void
   getActiveWrapperCount: (sessionId: string) => number
   getWrapperIds: (sessionId: string) => string[]
@@ -1470,6 +1471,13 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     return undefined
   }
 
+  function getSessionByWrapper(wrapperId: string): Session | undefined {
+    for (const [sessionId, wrappers] of sessionSockets.entries()) {
+      if (wrappers.has(wrapperId)) return sessions.get(sessionId)
+    }
+    return undefined
+  }
+
   function removeSessionSocket(sessionId: string, wrapperId: string): void {
     const wrappers = sessionSockets.get(sessionId)
     if (wrappers) {
@@ -2420,6 +2428,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     setSessionSocket,
     getSessionSocket,
     getSessionSocketByWrapper,
+    getSessionByWrapper,
     removeSessionSocket,
     getActiveWrapperCount,
     getWrapperIds,

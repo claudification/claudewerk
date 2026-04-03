@@ -8,30 +8,31 @@ import type { MessageHandler } from '../handler-context'
 import { registerHandlers } from '../message-router'
 
 const handleQuitRemoteSession: MessageHandler = (ctx, data) => {
-  const targetSession = data.targetSession as string
+  const targetId = data.targetSession as string
   const fromSession = (data.fromSession as string) || ctx.ws.data.sessionId
-  if (!targetSession) return
+  if (!targetId) return
 
   ctx.requireBenevolent()
 
-  const targetWs = ctx.sessions.getSessionSocket(targetSession)
-  if (!targetWs) {
+  // Resolve target: wrapper ID first, then session ID
+  const targetSess = ctx.sessions.getSessionByWrapper(targetId) || ctx.sessions.getSession(targetId)
+  const targetWs = ctx.sessions.getSessionSocketByWrapper(targetId) || ctx.sessions.getSessionSocket(targetId)
+  if (!targetWs || !targetSess) {
     ctx.reply({
       type: 'quit_remote_result',
       ok: false,
-      error: 'Target session not connected. Use list_sessions to find current sessions.',
+      error: 'Target not connected. Use list_sessions to find current sessions.',
     })
     return
   }
 
-  const targetSess = ctx.sessions.getSession(targetSession)
-  targetWs.send(JSON.stringify({ type: 'quit_session', sessionId: targetSession }))
+  targetWs.send(JSON.stringify({ type: 'quit_session', sessionId: targetSess.id }))
   ctx.reply({
     type: 'quit_remote_result',
     ok: true,
-    name: targetSess?.title || targetSess?.cwd?.split('/').pop(),
+    name: targetSess.title || targetSess.cwd?.split('/').pop(),
   })
-  ctx.log.debug(`Benevolent quit: ${fromSession?.slice(0, 8)} -> ${targetSession.slice(0, 8)}`)
+  ctx.log.debug(`Benevolent quit: ${fromSession?.slice(0, 8)} -> ${targetSess.id.slice(0, 8)}`)
 }
 
 const handleChannelRevive: MessageHandler = (ctx, data) => {
@@ -199,15 +200,16 @@ const handleChannelSpawn: MessageHandler = (ctx, data) => {
 }
 
 const handleChannelConfigure: MessageHandler = (ctx, data) => {
-  const targetSessionId = data.sessionId as string
-  if (!targetSessionId) {
-    ctx.reply({ type: 'channel_configure_result', ok: false, error: 'Missing session ID' })
+  const targetId = data.sessionId as string
+  if (!targetId) {
+    ctx.reply({ type: 'channel_configure_result', ok: false, error: 'Missing target ID' })
     return
   }
 
   ctx.requireBenevolent()
 
-  const target = ctx.sessions.getSession(targetSessionId)
+  // Resolve target: wrapper ID first, then session ID
+  const target = ctx.sessions.getSessionByWrapper(targetId) || ctx.sessions.getSession(targetId)
   if (!target) {
     ctx.reply({
       type: 'channel_configure_result',
@@ -233,7 +235,7 @@ const handleChannelConfigure: MessageHandler = (ctx, data) => {
   ctx.setProjectSettings(target.cwd, update as Record<string, string>)
   ctx.broadcast({ type: 'project_settings_updated', settings: ctx.getAllProjectSettings() })
   ctx.reply({ type: 'channel_configure_result', ok: true })
-  ctx.log.debug(`Configure: -> ${targetSessionId.slice(0, 8)} ${Object.keys(update).join(',')}`)
+  ctx.log.debug(`Configure: -> ${target.id.slice(0, 8)} ${Object.keys(update).join(',')}`)
 }
 
 export function registerInterSessionHandlers(): void {

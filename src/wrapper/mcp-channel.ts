@@ -19,11 +19,12 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { debug } from './debug'
 
 export interface SessionInfo {
-  id: string
+  id: string // wrapper ID for live sessions, session ID for inactive
+  session_id?: string // CC session ID (for transcript/task context)
   name: string
   cwd: string
   status: 'live' | 'inactive'
-  wrapperIds?: string[]
+  wrapperIds?: string[] // only present when multiple wrappers share a session
   description?: string
   title?: string
   summary?: string
@@ -130,7 +131,7 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
       {
         name: 'list_sessions',
         description:
-          'List other active Claude Code sessions that support channel communication. Returns session ID, project name, status, and optional title/summary. Use show_metadata to include icon/color/keyterms (benevolent only).',
+          'List other Claude Code sessions. Returns an addressable ID (wrapper ID for live sessions, session ID for inactive), project name, status, and optional title/summary. Use the returned ID for send_message, quit_session, configure_session. Use show_metadata to include icon/color/keyterms (benevolent only).',
         inputSchema: {
           type: 'object' as const,
           properties: {
@@ -154,7 +155,10 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
         inputSchema: {
           type: 'object' as const,
           properties: {
-            to: { type: 'string', description: 'Target session ID (from list_sessions)' },
+            to: {
+              type: 'string',
+              description: 'Target ID from list_sessions (wrapper ID for live, session ID for inactive)',
+            },
             intent: {
               type: 'string',
               enum: ['request', 'response', 'notify', 'progress'],
@@ -180,7 +184,10 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
         inputSchema: {
           type: 'object' as const,
           properties: {
-            session_id: { type: 'string', description: 'Target session ID to revive (from list_sessions)' },
+            session_id: {
+              type: 'string',
+              description: 'Target ID from list_sessions (for inactive sessions this is the session ID)',
+            },
           },
           required: ['session_id'],
         },
@@ -192,7 +199,7 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
         inputSchema: {
           type: 'object' as const,
           properties: {
-            session_id: { type: 'string', description: 'Target session ID to quit (from list_sessions)' },
+            session_id: { type: 'string', description: 'Target ID from list_sessions' },
           },
           required: ['session_id'],
         },
@@ -233,7 +240,7 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
         inputSchema: {
           type: 'object' as const,
           properties: {
-            session_id: { type: 'string', description: 'Target session ID (from list_sessions)' },
+            session_id: { type: 'string', description: 'Target ID from list_sessions' },
             label: { type: 'string', description: 'Display name for the project' },
             icon: { type: 'string', description: 'Lucide icon ID (e.g. "rocket", "database", "globe")' },
             color: { type: 'string', description: 'Hex color (e.g. "#ff6600")' },
