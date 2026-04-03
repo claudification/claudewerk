@@ -549,34 +549,21 @@ const InputBar = memo(function InputBar({ sessionId }: { sessionId: string }) {
     setInputValue('')
     useSessionsStore.getState().setInputDraft(sessionId, '')
     setIsSending(true)
-    let failed = false
-    try {
-      const success = await sendInput(sessionId, text)
-      if (!success) {
-        failed = true
-        haptic('error')
-        console.error('[input] sendInput failed for session', sessionId)
-      }
-    } catch (err) {
-      failed = true
+    const success = sendInput(sessionId, text)
+    setIsSending(false)
+    if (!success) {
       haptic('error')
-      console.error('[input] sendInput error:', err)
-    } finally {
-      setIsSending(false)
-      if (failed) {
-        // Restore on failure
-        setInputValue(text)
-        useSessionsStore.getState().setInputDraft(sessionId, text)
-      } else {
-        // Defensive re-clear: if component remounted during the async send,
-        // the useState initializer may have restored a stale draft.
-        // Force both state and store to empty.
-        setInputValue('')
-        useSessionsStore.getState().setInputDraft(sessionId, '')
-      }
-      if (!isMobileViewport()) {
-        requestAnimationFrame(() => containerRef.current?.querySelector('textarea')?.focus())
-      }
+      console.error('[input] sendInput failed for session', sessionId)
+      // Restore on failure
+      setInputValue(text)
+      useSessionsStore.getState().setInputDraft(sessionId, text)
+    } else {
+      // Defensive re-clear
+      setInputValue('')
+      useSessionsStore.getState().setInputDraft(sessionId, '')
+    }
+    if (!isMobileViewport()) {
+      requestAnimationFrame(() => containerRef.current?.querySelector('textarea')?.focus())
     }
   }
 
@@ -815,25 +802,20 @@ export function SessionDetail() {
   const hasTerminal = session ? canTerminal(session) : false
   const canRevive = session?.status === 'ended' && agentConnected
 
-  async function handleRevive() {
+  function handleRevive() {
     if (!selectedSessionId || reviveState !== 'idle') return
     setReviveState('sending')
     setReviveError(null)
-    try {
-      const result = await reviveSession(selectedSessionId)
-      if (!result.success) {
-        setReviveError(result.error || 'Revive failed')
-        setReviveState('error')
-        return
-      }
-      // Signal sent - now wait for new session to connect
-      reviveStartRef.current = Date.now()
-      setReviveState('waiting')
-      setReviveCountdown(30)
-    } catch {
-      setReviveError('Network error')
+    const sent = reviveSession(selectedSessionId)
+    if (!sent) {
+      setReviveError('WebSocket not connected')
       setReviveState('error')
+      return
     }
+    // Signal sent - now wait for new session to connect
+    reviveStartRef.current = Date.now()
+    setReviveState('waiting')
+    setReviveCountdown(30)
   }
 
   return (

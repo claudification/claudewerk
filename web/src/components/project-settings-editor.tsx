@@ -614,8 +614,8 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
       trustLevel: trustLevel === 'default' ? undefined : (trustLevel as 'open' | 'benevolent'),
     }
 
-    const result = await updateProjectSettings(cwd, settings)
-    if (result) setProjectSettings(result)
+    updateProjectSettings(cwd, settings)
+    // Server broadcasts updated settings via WS (project_settings_updated)
     setSaving(false)
     onClose()
   }
@@ -647,10 +647,10 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
     setKeyterms(keyterms.filter(t => t !== term))
   }
 
-  async function handleClear() {
+  function handleClear() {
     setSaving(true)
-    const result = await deleteProjectSettings(cwd)
-    if (result) setProjectSettings(result)
+    deleteProjectSettings(cwd)
+    // Server broadcasts updated settings via WS (project_settings_updated)
     setSaving(false)
     onClose()
   }

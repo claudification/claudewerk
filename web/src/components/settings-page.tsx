@@ -1,7 +1,7 @@
 import { Bell, BellOff, Cloud, Save } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
-import { getPushStatus, subscribeToPush, useSessionsStore } from '@/hooks/use-sessions'
+import { getPushStatus, subscribeToPush, useSessionsStore, wsSend } from '@/hooks/use-sessions'
 import { resolveToolDisplay, TOOL_DISPLAY_KEYS } from '@/lib/dashboard-prefs'
 import { cn } from '@/lib/utils'
 import { BUILD_VERSION } from '../../../src/shared/version'
@@ -698,20 +698,10 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
     setDirty(true)
   }
 
-  async function handleSave() {
+  function handleSave() {
     setSaving(true)
-    try {
-      const res = await fetch('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(serverDraft),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        useSessionsStore.setState({ globalSettings: data.settings })
-        setDirty(false)
-      }
-    } catch {}
+    const sent = wsSend('update_settings', { settings: serverDraft })
+    if (sent) setDirty(false)
     setSaving(false)
   }
 

@@ -43,6 +43,7 @@ interface DashboardMessage {
   order?: { version: number; tree: unknown[] }
   title?: string
   message?: string
+  ok?: boolean
 }
 
 const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
@@ -521,6 +522,19 @@ function processMessage(msg: DashboardMessage) {
           sessions: state.sessions.filter(s => s.id !== msg.sessionId),
           selectedSessionId: state.selectedSessionId === msg.sessionId ? null : state.selectedSessionId,
         }))
+      }
+      break
+    }
+    // WS action results (fire-and-forget error feedback)
+    case 'send_input_result':
+    case 'dismiss_session_result':
+    case 'update_settings_result':
+    case 'update_project_settings_result':
+    case 'delete_project_settings_result':
+    case 'update_session_order_result':
+    case 'revive_session_result': {
+      if (msg.ok === false) {
+        console.error(`[ws] ${msg.type}: ${msg.error}`)
       }
       break
     }

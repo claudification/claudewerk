@@ -442,7 +442,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     }
   },
   dismissSession: sessionId => {
-    fetch(`/sessions/${sessionId}`, { method: 'DELETE' }).catch(() => {})
+    wsSend('dismiss_session', { sessionId })
     set(state => ({
       sessions: state.sessions.filter(s => s.id !== sessionId),
       selectedSessionId: state.selectedSessionId === sessionId ? null : state.selectedSessionId,
@@ -506,27 +506,13 @@ export async function fetchSubagentTranscript(sessionId: string, agentId: string
   return res.json()
 }
 
-export async function reviveSession(sessionId: string): Promise<{ success: boolean; error?: string }> {
-  const res = await fetch(`${API_BASE}/sessions/${sessionId}/revive`, { method: 'POST' })
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({ error: 'Request failed' }))
-    return { success: false, error: data.error || `HTTP ${res.status}` }
-  }
-  return { success: true }
+export function reviveSession(sessionId: string): boolean {
+  return wsSend('revive_session', { sessionId })
 }
 
-export async function sendInput(sessionId: string, input: string): Promise<boolean> {
+export function sendInput(sessionId: string, input: string): boolean {
   const crDelay = (useSessionsStore.getState().globalSettings.carriageReturnDelay as number) || 0
-  const res = await fetch(`${API_BASE}/sessions/${sessionId}/input`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ input, ...(crDelay > 0 && { crDelay }) }),
-  })
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    console.error(`[sendInput] ${res.status} ${res.statusText}: ${body}`)
-  }
-  return res.ok
+  return wsSend('send_input', { sessionId, input, ...(crDelay > 0 && { crDelay }) })
 }
 
 // Push notification subscription
@@ -650,18 +636,8 @@ export async function fetchProjectSettings(): Promise<ProjectSettingsMap> {
   return res.json()
 }
 
-export async function updateProjectSettings(
-  cwd: string,
-  settings: ProjectSettings,
-): Promise<ProjectSettingsMap | null> {
-  const res = await fetch(`${API_BASE}/api/settings/projects`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ cwd, settings }),
-  })
-  if (!res.ok) return null
-  const data = await res.json()
-  return data.settings
+export function updateProjectSettings(cwd: string, settings: ProjectSettings): boolean {
+  return wsSend('update_project_settings', { cwd, settings })
 }
 
 export async function generateProjectKeyterms(
@@ -679,15 +655,8 @@ export async function generateProjectKeyterms(
   return res.json()
 }
 
-export async function deleteProjectSettings(cwd: string): Promise<ProjectSettingsMap | null> {
-  const res = await fetch(`${API_BASE}/api/settings/projects`, {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ cwd }),
-  })
-  if (!res.ok) return null
-  const data = await res.json()
-  return data.settings
+export function deleteProjectSettings(cwd: string): boolean {
+  return wsSend('delete_project_settings', { cwd })
 }
 
 // Session order API
@@ -700,12 +669,8 @@ export async function fetchSessionOrder(): Promise<SessionOrderV2> {
   return data
 }
 
-export async function saveSessionOrder(order: SessionOrderV2): Promise<void> {
-  await fetch(`${API_BASE}/api/session-order`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(order),
-  })
+export function saveSessionOrder(order: SessionOrderV2): void {
+  wsSend('update_session_order', { order })
 }
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
