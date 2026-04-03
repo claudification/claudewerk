@@ -12,7 +12,18 @@ export type Role = 'admin'
 
 /** Role -> permission expansion map */
 const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
-  admin: ['chat', 'chat:read', 'terminal', 'terminal:read', 'files', 'files:read', 'spawn', 'settings', 'voice'],
+  admin: [
+    'chat',
+    'chat:read',
+    'terminal',
+    'terminal:read',
+    'files',
+    'files:read',
+    'spawn',
+    'settings',
+    'voice',
+    'notifications',
+  ],
 }
 
 // ─── Permissions (granular capabilities) ──────────────────────────
@@ -27,6 +38,7 @@ export type Permission =
   | 'spawn'
   | 'settings'
   | 'voice'
+  | 'notifications'
 
 // ─── Grants ───────────────────────────────────────────────────────
 
@@ -119,6 +131,7 @@ export interface ResolvedPermissions {
   canSpawn: boolean
   canSettings: boolean
   canVoice: boolean
+  canNotifications: boolean
 }
 
 export function resolvePermissionFlags(grants: UserGrant[], cwd = '*'): ResolvedPermissions {
@@ -134,6 +147,7 @@ export function resolvePermissionFlags(grants: UserGrant[], cwd = '*'): Resolved
     canSpawn: permissions.has('spawn'),
     canSettings: permissions.has('settings'),
     canVoice: permissions.has('voice'),
+    canNotifications: permissions.has('notifications'),
   }
 }
 

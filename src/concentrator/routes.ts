@@ -8,7 +8,7 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, unlin
 import { join } from 'node:path'
 import { Hono } from 'hono'
 import type { ListDirsResult, SendInput, Session, SpawnResult, TeamInfo } from '../shared/protocol'
-import { handleAuthRoute, requireAuth } from './auth-routes'
+import { getAuthenticatedUser, handleAuthRoute, requireAuth } from './auth-routes'
 import { getGlobalSettings, updateGlobalSettings } from './global-settings'
 import { purgeMessages, queryMessages } from './inter-session-log'
 import { resolveInJail } from './path-jail'
@@ -773,14 +773,18 @@ export function createRouter(options: RouteOptions): Hono {
     if (!body.subscription?.endpoint || !body.subscription?.keys) {
       return c.json({ error: 'Invalid subscription' }, 400)
     }
-    addSubscription(body.subscription, c.req.header('user-agent'))
+    const pushUser = getAuthenticatedUser(c.req.raw)
+    if (!pushUser) return c.json({ error: 'Not authenticated' }, 401)
+    addSubscription(pushUser, body.subscription, c.req.header('user-agent'))
     return c.json({ success: true, total: getSubscriptionCount() })
   })
 
   app.post('/api/push/unsubscribe', async c => {
     const body = await c.req.json<{ endpoint: string }>()
     if (!body.endpoint) return c.json({ error: 'Missing endpoint' }, 400)
-    removeSubscription(body.endpoint)
+    const unsubUser = getAuthenticatedUser(c.req.raw)
+    if (!unsubUser) return c.json({ error: 'Not authenticated' }, 401)
+    removeSubscription(unsubUser, body.endpoint)
     return c.json({ success: true })
   })
 

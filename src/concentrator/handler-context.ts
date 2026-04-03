@@ -45,7 +45,7 @@ export interface HandlerContext {
   /** Web push notifications */
   push: {
     configured: boolean
-    sendToAll(payload: { title: string; body: string; sessionId?: string; tag?: string }): void
+    sendToAll(payload: { title: string; body: string; sessionId?: string; sessionCwd?: string; tag?: string }): void
   }
   /** WebAuthn origins (for meta ack) */
   origins: string[]

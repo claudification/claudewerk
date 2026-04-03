@@ -21,6 +21,12 @@ export interface StoredCredential {
   registeredAt: number
 }
 
+export interface PushSubscriptionEntry {
+  subscription: { endpoint: string; keys: { p256dh: string; auth: string } }
+  createdAt: number
+  userAgent?: string
+}
+
 export interface PasskeyUser {
   name: string // unique, required
   credentials: StoredCredential[]
@@ -28,6 +34,7 @@ export interface PasskeyUser {
   lastUsedAt?: number
   revoked: boolean
   grants: UserGrant[]
+  pushSubscriptions?: PushSubscriptionEntry[]
 }
 
 export interface Invite {
@@ -138,7 +145,7 @@ export function initAuth(opts: {
   }
 }
 
-function save(): void {
+export function save(): void {
   writeFileSync(authFilePath, JSON.stringify(state, null, 2), { mode: 0o600 })
 }
 

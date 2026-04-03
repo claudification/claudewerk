@@ -16,6 +16,7 @@ export interface ResolvedPermissions {
   canSpawn: boolean
   canSettings: boolean
   canVoice: boolean
+  canNotifications: boolean
 }
 
 /** Default permissions (admin -- everything enabled) */
@@ -30,4 +31,5 @@ export const DEFAULT_PERMISSIONS: ResolvedPermissions = {
   canSpawn: true,
   canSettings: true,
   canVoice: true,
+  canNotifications: true,
 }
