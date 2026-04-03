@@ -132,7 +132,7 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     wsListenerRef.current = handleMessage
   }
 
-  function reset() {
+  const reset = useCallback(() => {
     cleanup()
     setState('idle')
     setInterimText('')
@@ -140,9 +140,9 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     setRefinedText('')
     setErrorMsg('')
     cancelledRef.current = false
-  }
+  }, [])
 
-  async function start() {
+  const start = useCallback(async () => {
     if (stateRef.current !== 'idle') return
 
     cancelledRef.current = false
@@ -185,11 +185,10 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
       setErrorMsg(err instanceof Error ? err.message : 'Mic access denied')
       setState('error')
     }
-  }
+  }, [sendWs])
 
-  function stop() {
+  const stop = useCallback(() => {
     if (stateRef.current === 'connecting') {
-      // getUserMedia hasn't resolved yet - cancel
       cancelledRef.current = true
       reset()
       return
@@ -207,13 +206,13 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     }
     sendWs({ type: 'voice_stop' })
     setState('refining')
-  }
+  }, [sendWs, reset])
 
-  function cancel() {
+  const cancel = useCallback(() => {
     cancelledRef.current = true
     sendWs({ type: 'voice_stop' })
     reset()
-  }
+  }, [sendWs, reset])
 
   return {
     state,
