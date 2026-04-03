@@ -43,7 +43,7 @@ export interface HandlerContext {
   /** Web push notifications */
   push: {
     configured: boolean
-    sendToAll(title: string, body: string): void
+    sendToAll(payload: { title: string; body: string; sessionId?: string; tag?: string }): void
   }
   /** WebAuthn origins (for meta ack) */
   origins: string[]
@@ -65,6 +65,24 @@ export interface HandlerContext {
     debug(msg: string): void
   }
 
+  /** Persisted link operations (CWD-pair based, survives restarts) */
+  links: {
+    find(cwdA: string, cwdB: string): boolean
+    add(cwdA: string, cwdB: string): void
+    remove(cwdA: string, cwdB: string): void
+    touch(cwdA: string, cwdB: string): void
+  }
+  /** Log an inter-session message for history */
+  logMessage(entry: {
+    ts: number
+    from: { sessionId: string; wrapperId?: string; cwd: string; name: string }
+    to: { sessionId: string; cwd: string; name: string }
+    intent: string
+    conversationId: string
+    preview: string
+    fullLength: number
+  }): void
+
   /** Guard: throws GuardError if caller is not benevolent */
   requireBenevolent(): void
   /** Guard: throws GuardError if no host agent connected */
@@ -73,7 +91,10 @@ export interface HandlerContext {
   requireSession(): NonNullable<ReturnType<SessionStore['getSession']>>
 }
 
-export type MessageHandler = (ctx: HandlerContext, data: Record<string, unknown>) => void
+// biome-ignore lint/suspicious/noExplicitAny: WS JSON data is untyped at the parse boundary
+export type MessageData = Record<string, any>
+
+export type MessageHandler = (ctx: HandlerContext, data: MessageData) => void
 
 /** Create a log prefix from WS connection data */
 export function logPrefix(ws: { data: WsData }): string {

@@ -962,9 +962,22 @@ remote-claude/
 │   │   ├── settings-merge.ts     # Claude settings injection
 │   │   └── debug.ts              # Debug logging
 │   ├── concentrator/             # Server implementation
-│   │   ├── index.ts              # Server entry, WS relay
+│   │   ├── index.ts              # Server startup, Bun.serve, context wiring
+│   │   ├── message-router.ts     # WS message dispatch (GuardError catch)
+│   │   ├── handler-context.ts    # HandlerContext type, guards, MessageData
+│   │   ├── create-context.ts     # Context factory (wires deps)
+│   │   ├── handlers/             # WS message handlers (one file per domain)
+│   │   │   ├── session-lifecycle.ts  # meta, hook, heartbeat, clear, notify, end
+│   │   │   ├── channel.ts           # subscribe, list_sessions, send, links
+│   │   │   ├── inter-session.ts     # revive, spawn, configure (benevolent)
+│   │   │   ├── permissions.ts       # permission relay, clipboard, ask/answer
+│   │   │   ├── terminal.ts          # PTY relay (attach/detach/data/resize)
+│   │   │   ├── transcript.ts        # transcript streaming, tasks, diag
+│   │   │   ├── files.ts             # file editor relay (18 message types)
+│   │   │   ├── agent.ts             # sentinel: identify, spawn/revive results
+│   │   │   └── voice.ts             # Deepgram voice relay
 │   │   ├── routes.ts             # Hono HTTP routes (REST API)
-│   │   ├── ws-server.ts          # WebSocket message handling
+│   │   ├── ws-server.ts          # WebSocket server (separate port mode)
 │   │   ├── session-store.ts      # Session registry + persistence
 │   │   ├── session-order.ts      # Tree-based session organization (DnD)
 │   │   ├── session-links.ts      # Inter-session permission management

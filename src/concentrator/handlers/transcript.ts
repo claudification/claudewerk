@@ -7,15 +7,10 @@
 import type { MessageHandler } from '../handler-context'
 import { registerHandlers } from '../message-router'
 
-// biome-ignore lint/suspicious/noExplicitAny: WS JSON data is untyped at the boundary
-function d(data: Record<string, unknown>): any {
-  return data
-}
-
 const tasksUpdate: MessageHandler = (ctx, data) => {
-  const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
+  const sessionId = ctx.ws.data.sessionId || data.sessionId
   if (!sessionId) return
-  const tasks = d(data).tasks || []
+  const tasks = data.tasks || []
   ctx.sessions.updateTasks(sessionId, tasks)
   ctx.sessions.broadcastToChannel('session:tasks', sessionId, {
     type: 'tasks_update',
@@ -26,11 +21,11 @@ const tasksUpdate: MessageHandler = (ctx, data) => {
 }
 
 const diagHandler: MessageHandler = (ctx, data) => {
-  const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
+  const sessionId = ctx.ws.data.sessionId || data.sessionId
   if (!sessionId || !Array.isArray(data.entries)) return
   const session = ctx.sessions.getSession(sessionId)
   if (session) {
-    session.diagLog.push(...(data.entries as Array<{ t: number; type: string; msg: string; args?: unknown }>))
+    session.diagLog.push(...data.entries)
     if (session.diagLog.length > 500) {
       session.diagLog.splice(0, session.diagLog.length - 500)
     }
@@ -38,54 +33,55 @@ const diagHandler: MessageHandler = (ctx, data) => {
 }
 
 const transcriptEntries: MessageHandler = (ctx, data) => {
-  const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
+  const sessionId = ctx.ws.data.sessionId || data.sessionId
   if (!sessionId) return
-  const entries = d(data).entries || []
+  const entries = data.entries || []
   ctx.sessions.addTranscriptEntries(sessionId, entries, !!data.isInitial)
   ctx.sessions.broadcastToChannel('session:transcript', sessionId, data)
   console.log(`[transcript] ${sessionId.slice(0, 8)}... ${entries.length} entries (initial: ${data.isInitial})`)
 }
 
 const subagentTranscript: MessageHandler = (ctx, data) => {
-  const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
-  const agentId = data.agentId as string
+  const sessionId = ctx.ws.data.sessionId || data.sessionId
+  const agentId = data.agentId
   if (!sessionId || !agentId) return
-  const entries = d(data).entries || []
+  const entries = data.entries || []
   ctx.sessions.addSubagentTranscriptEntries(sessionId, agentId, entries, !!data.isInitial)
   ctx.sessions.broadcastToChannel('session:subagent_transcript', sessionId, data, agentId)
   console.log(`[transcript] ${sessionId.slice(0, 8)}... subagent ${agentId.slice(0, 7)} ${entries.length} entries`)
 }
 
 const bgTaskOutput: MessageHandler = (ctx, data) => {
-  const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
+  const sessionId = ctx.ws.data.sessionId || data.sessionId
   if (!sessionId || !data.taskId) return
-  ctx.sessions.addBgTaskOutput(sessionId, data.taskId as string, (data.data as string) || '', !!data.done)
+  ctx.sessions.addBgTaskOutput(sessionId, data.taskId, data.data || '', !!data.done)
   ctx.sessions.broadcastToChannel('session:bg_output', sessionId, data)
 }
 
-// Dashboard -> rclaude: request transcript (serve from cache or proxy)
 const transcriptRequest: MessageHandler = (ctx, data) => {
-  const sessionId = data.sessionId as string
-  if (!sessionId) return
-  if (ctx.sessions.hasTranscriptCache(sessionId)) {
-    const entries = ctx.sessions.getTranscriptEntries(sessionId, data.limit as number | undefined)
-    ctx.reply({ type: 'transcript_entries', sessionId, entries, isInitial: true })
+  if (!data.sessionId) return
+  if (ctx.sessions.hasTranscriptCache(data.sessionId)) {
+    const entries = ctx.sessions.getTranscriptEntries(data.sessionId, data.limit)
+    ctx.reply({ type: 'transcript_entries', sessionId: data.sessionId, entries, isInitial: true })
   } else {
-    const sessionSocket = ctx.sessions.getSessionSocket(sessionId)
+    const sessionSocket = ctx.sessions.getSessionSocket(data.sessionId)
     if (sessionSocket) sessionSocket.send(JSON.stringify(data))
   }
 }
 
-// Dashboard -> rclaude: request subagent transcript
 const subagentTranscriptRequest: MessageHandler = (ctx, data) => {
-  const sessionId = data.sessionId as string
-  const agentId = data.agentId as string
-  if (!sessionId || !agentId) return
-  if (ctx.sessions.hasSubagentTranscriptCache(sessionId, agentId)) {
-    const entries = ctx.sessions.getSubagentTranscriptEntries(sessionId, agentId, data.limit as number | undefined)
-    ctx.reply({ type: 'subagent_transcript', sessionId, agentId, entries, isInitial: true })
+  if (!data.sessionId || !data.agentId) return
+  if (ctx.sessions.hasSubagentTranscriptCache(data.sessionId, data.agentId)) {
+    const entries = ctx.sessions.getSubagentTranscriptEntries(data.sessionId, data.agentId, data.limit)
+    ctx.reply({
+      type: 'subagent_transcript',
+      sessionId: data.sessionId,
+      agentId: data.agentId,
+      entries,
+      isInitial: true,
+    })
   } else {
-    const sessionSocket = ctx.sessions.getSessionSocket(sessionId)
+    const sessionSocket = ctx.sessions.getSessionSocket(data.sessionId)
     if (sessionSocket) sessionSocket.send(JSON.stringify(data))
   }
 }

@@ -12,22 +12,21 @@ import { getAuthenticatedUser, requireAuth, setRclaudeSecret } from './auth-rout
 import { type ContextDeps, createContext } from './create-context'
 import { initGlobalSettings } from './global-settings'
 import type { WsData } from './handler-context'
-import { registerAgentHandlers } from './handlers/agent'
-import { registerChannelHandlers } from './handlers/channel'
-import { registerFileHandlers } from './handlers/files'
-import { registerInterSessionHandlers } from './handlers/inter-session'
-import { registerPermissionHandlers } from './handlers/permissions'
-import { registerSessionLifecycleHandlers } from './handlers/session-lifecycle'
-import { registerTerminalHandlers } from './handlers/terminal'
-import { registerTranscriptHandlers } from './handlers/transcript'
-import { registerVoiceHandlers } from './handlers/voice'
-import { initInterSessionLog } from './inter-session-log'
+import { registerAllHandlers } from './handlers'
+import { appendMessage, initInterSessionLog } from './inter-session-log'
 import { routeMessage } from './message-router'
 import { addAllowedRoot, addPathMapping, getAllowedRoots } from './path-jail'
 import { getAllProjectSettings, getProjectSettings, initProjectSettings, setProjectSettings } from './project-settings'
 import { initPush, isPushConfigured, sendPushToAll } from './push'
 import { createRouter } from './routes'
-import { getLinksForCwd, initSessionLinks } from './session-links'
+import {
+  addPersistedLink,
+  findLink,
+  getLinksForCwd,
+  initSessionLinks,
+  removePersistedLink,
+  touchLink,
+} from './session-links'
 import { initSessionOrder } from './session-order'
 import { createSessionStore } from './session-store'
 import { cleanupVoiceForWs } from './voice-stream'
@@ -401,15 +400,7 @@ async function main() {
     wsServer.stop()
 
     // Register message handlers
-    registerAgentHandlers()
-    registerChannelHandlers()
-    registerFileHandlers()
-    registerInterSessionHandlers()
-    registerPermissionHandlers()
-    registerSessionLifecycleHandlers()
-    registerTerminalHandlers()
-    registerTranscriptHandlers()
-    registerVoiceHandlers()
+    registerAllHandlers()
 
     // Context deps shared by all handler contexts
     const contextDeps: ContextDeps = {
@@ -420,10 +411,15 @@ async function main() {
       setProjectSettings,
       getAllProjectSettings,
       pushConfigured: isPushConfigured(),
-      pushSendToAll: (title, body) => {
-        if (isPushConfigured()) sendPushToAll({ title, body })
+      pushSendToAll: payload => {
+        if (isPushConfigured()) sendPushToAll(payload)
       },
       getLinksForCwd,
+      findLink: (cwdA: string, cwdB: string) => !!findLink(cwdA, cwdB),
+      addLink: addPersistedLink,
+      removeLink: removePersistedLink,
+      touchLink,
+      logMessage: appendMessage,
     }
 
     Bun.serve<WsData>({

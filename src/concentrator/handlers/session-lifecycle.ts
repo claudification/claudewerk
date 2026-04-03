@@ -6,11 +6,6 @@
 import type { MessageHandler } from '../handler-context'
 import { registerHandlers } from '../message-router'
 
-// biome-ignore lint/suspicious/noExplicitAny: WS JSON data is untyped at the boundary
-function d(data: Record<string, unknown>): any {
-  return data
-}
-
 // ─── Session meta (wrapper connecting) ─────────────────────────────
 
 const meta: MessageHandler = (ctx, data) => {
@@ -22,7 +17,7 @@ const meta: MessageHandler = (ctx, data) => {
   const existingSession = ctx.sessions.getSession(sessionId)
   if (existingSession) {
     ctx.sessions.resumeSession(sessionId)
-    if (data.capabilities) existingSession.capabilities = d(data).capabilities
+    if (data.capabilities) existingSession.capabilities = data.capabilities
     if (data.version) existingSession.version = data.version as string
     if (data.buildTime) existingSession.buildTime = data.buildTime as string
     if (data.claudeVersion) existingSession.claudeVersion = data.claudeVersion as string
@@ -35,8 +30,8 @@ const meta: MessageHandler = (ctx, data) => {
       sessionId,
       data.cwd as string,
       data.model as string,
-      d(data).args,
-      d(data).capabilities,
+      data.args,
+      data.capabilities,
     )
     if (data.version) newSession.version = data.version as string
     if (data.buildTime) newSession.buildTime = data.buildTime as string
@@ -82,7 +77,7 @@ const meta: MessageHandler = (ctx, data) => {
 const hook: MessageHandler = (ctx, data) => {
   const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
   if (!sessionId) return
-  ctx.sessions.addEvent(sessionId, d(data))
+  ctx.sessions.addEvent(sessionId, data as import('../../shared/protocol').HookEvent)
   const toolName = (data.data as Record<string, unknown>)?.tool_name
   ctx.log.debug(`${(data.hookEvent as string) || 'hook'}${toolName ? ` (${toolName})` : ''}`)
 }
@@ -126,7 +121,7 @@ const notify: MessageHandler = (ctx, data) => {
   console.log(`[notify] ${title}: ${message}`)
 
   if (ctx.push.configured) {
-    ctx.push.sendToAll(title, message)
+    ctx.push.sendToAll({ title, body: message, sessionId, tag: `notify-${sessionId}` })
   }
 
   ctx.broadcast({ type: 'toast', title, message, sessionId })

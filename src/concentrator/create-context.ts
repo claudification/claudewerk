@@ -16,8 +16,13 @@ export interface ContextDeps {
   setProjectSettings(cwd: string, update: Partial<ProjectSettings>): void
   getAllProjectSettings(): Record<string, ProjectSettings>
   pushConfigured: boolean
-  pushSendToAll(title: string, body: string): void
+  pushSendToAll(payload: { title: string; body: string; sessionId?: string; tag?: string }): void
   getLinksForCwd(cwd: string): Array<{ cwdA: string; cwdB: string }>
+  findLink(cwdA: string, cwdB: string): boolean
+  addLink(cwdA: string, cwdB: string): void
+  removeLink(cwdA: string, cwdB: string): void
+  touchLink(cwdA: string, cwdB: string): void
+  logMessage(entry: Parameters<import('./handler-context').HandlerContext['logMessage']>[0]): void
 }
 
 export function createContext(ws: ServerWebSocket<WsData>, deps: ContextDeps): HandlerContext {
@@ -50,12 +55,20 @@ export function createContext(ws: ServerWebSocket<WsData>, deps: ContextDeps): H
 
     push: {
       configured: deps.pushConfigured,
-      sendToAll: deps.pushSendToAll,
+      sendToAll: payload => deps.pushSendToAll(payload),
     },
 
     origins: deps.origins,
     getAgent: () => deps.sessions.getAgent(),
     getLinksForCwd: deps.getLinksForCwd,
+
+    links: {
+      find: (cwdA, cwdB) => deps.findLink(cwdA, cwdB),
+      add: deps.addLink,
+      remove: deps.removeLink,
+      touch: deps.touchLink,
+    },
+    logMessage: deps.logMessage,
     getProjectSettings: deps.getProjectSettings,
     setProjectSettings: deps.setProjectSettings,
     getAllProjectSettings: deps.getAllProjectSettings,

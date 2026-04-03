@@ -5,9 +5,7 @@
 
 import type { SubscriptionChannel } from '../../shared/protocol'
 import type { MessageHandler } from '../handler-context'
-import { appendMessage } from '../inter-session-log'
 import { registerHandlers } from '../message-router'
-import { addPersistedLink, findLink, removePersistedLink, touchLink } from '../session-links'
 
 // ─── Dashboard subscription ────────────────────────────────────────
 
@@ -152,7 +150,7 @@ const channelSend: MessageHandler = (ctx, data) => {
   const effectiveLinkStatus =
     linkStatus === 'unknown' && isTrusted
       ? 'trusted'
-      : linkStatus === 'unknown' && fromSess?.cwd && toSess.cwd && findLink(fromSess.cwd, toSess.cwd)
+      : linkStatus === 'unknown' && fromSess?.cwd && toSess.cwd && ctx.links.find(fromSess.cwd, toSess.cwd)
         ? 'persisted'
         : linkStatus
 
@@ -175,8 +173,8 @@ const channelSend: MessageHandler = (ctx, data) => {
         toSess.cwd.split('/').pop() ||
         toSession.slice(0, 8)
       if (fromSess?.cwd && toSess.cwd) {
-        touchLink(fromSess.cwd, toSess.cwd)
-        appendMessage({
+        ctx.links.touch(fromSess.cwd, toSess.cwd)
+        ctx.logMessage({
           ts: Date.now(),
           from: { sessionId: fromSession, wrapperId: ctx.ws.data.wrapperId, cwd: fromSess.cwd, name: fromProject },
           to: { sessionId: toSession, cwd: toSess.cwd, name: toProject },
@@ -229,7 +227,7 @@ const channelLinkResponse: MessageHandler = (ctx, data) => {
     ctx.sessions.linkSessions(fromSession, toSession)
     const fromSess = ctx.sessions.getSession(fromSession)
     const toSess = ctx.sessions.getSession(toSession)
-    if (fromSess?.cwd && toSess?.cwd) addPersistedLink(fromSess.cwd, toSess.cwd)
+    if (fromSess?.cwd && toSess?.cwd) ctx.links.add(fromSess.cwd, toSess.cwd)
     const queued = ctx.sessions.drainQueuedMessages(fromSession, toSession)
     const targetWs = ctx.sessions.getSessionSocket(toSession)
     if (targetWs) {
@@ -240,7 +238,7 @@ const channelLinkResponse: MessageHandler = (ctx, data) => {
     ctx.sessions.blockSession(fromSession, toSession)
     const fromSess = ctx.sessions.getSession(fromSession)
     const toSess = ctx.sessions.getSession(toSession)
-    if (fromSess?.cwd && toSess?.cwd) removePersistedLink(fromSess.cwd, toSess.cwd)
+    if (fromSess?.cwd && toSess?.cwd) ctx.links.remove(fromSess.cwd, toSess.cwd)
     ctx.sessions.drainQueuedMessages(fromSession, toSession) // discard
     ctx.log.debug(`Link blocked: ${fromSession.slice(0, 8)} X ${toSession.slice(0, 8)}`)
   }
@@ -253,7 +251,7 @@ const channelUnlink: MessageHandler = (ctx, data) => {
   ctx.sessions.unlinkSessions(sessionA, sessionB)
   const sessA = ctx.sessions.getSession(sessionA)
   const sessB = ctx.sessions.getSession(sessionB)
-  if (sessA?.cwd && sessB?.cwd) removePersistedLink(sessA.cwd, sessB.cwd)
+  if (sessA?.cwd && sessB?.cwd) ctx.links.remove(sessA.cwd, sessB.cwd)
   ctx.sessions.broadcastSessionUpdate(sessionA)
   ctx.sessions.broadcastSessionUpdate(sessionB)
   ctx.log.debug(`Link severed: ${sessionA.slice(0, 8)} X ${sessionB.slice(0, 8)}`)

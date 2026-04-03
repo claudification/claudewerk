@@ -4,7 +4,7 @@
  * which the router catches and sends as error replies.
  */
 
-import { GuardError, type HandlerContext, type MessageHandler } from './handler-context'
+import { GuardError, type HandlerContext, type MessageData, type MessageHandler } from './handler-context'
 
 const handlers = new Map<string, MessageHandler>()
 
@@ -21,7 +21,7 @@ export function registerHandlers(map: Record<string, MessageHandler>): void {
 }
 
 /** Route a message to its handler. Returns true if handled. */
-export function routeMessage(ctx: HandlerContext, type: string, data: Record<string, unknown>): boolean {
+export function routeMessage(ctx: HandlerContext, type: string, data: MessageData): boolean {
   const handler = handlers.get(type)
   if (!handler) return false
 
