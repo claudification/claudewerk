@@ -472,7 +472,8 @@ export function ToolLine({
     }
     case 'mcp__rclaude__revive_session':
     case 'mcp__rclaude__terminate_session':
-    case 'mcp__rclaude__quit_session': { // deprecated alias
+    case 'mcp__rclaude__quit_session': {
+      // deprecated alias
       const sessionId = (input.session_id as string) || ''
       const action = name.includes('revive') ? 'revive' : 'terminate'
       const actionColor = action === 'revive' ? 'text-green-400' : 'text-red-400'
@@ -604,8 +605,7 @@ export function ToolLine({
               )}
               {ver && (
                 <span>
-                  <span className="text-muted-foreground/50">cc</span>{' '}
-                  <span className="text-foreground/70">{ver}</span>
+                  <span className="text-muted-foreground/50">cc</span> <span className="text-foreground/70">{ver}</span>
                 </span>
               )}
               {rcVer && (
@@ -625,19 +625,7 @@ export function ToolLine({
       }
       break
     }
-    case 'mcp__rclaude__terminate_session':
-    case 'mcp__rclaude__quit_session': { // deprecated alias
-      const sessionId = (input.session_id as string) || ''
-      const sess = useSessionsStore.getState().sessions.find(s => s.id === sessionId)
-      const sessName = sess?.title || sess?.cwd?.split('/').pop() || sessionId.slice(0, 8)
-      summary = (
-        <span className="flex items-center gap-1.5">
-          <span className="text-red-400">terminate</span>
-          <span className="text-foreground font-bold">{sessName}</span>
-        </span>
-      )
-      break
-    }
+    // mcp__rclaude__terminate_session + quit_session handled above (line ~473)
     default: {
       if (name.startsWith('mcp__')) {
         const parts = name.split('__')

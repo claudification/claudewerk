@@ -349,7 +349,8 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
           return { content: [{ type: 'text', text: `Session configured: ${Object.keys(update).join(', ')} updated` }] }
         }
         case 'terminate_session':
-        case 'quit_session': { // deprecated alias
+        case 'quit_session': {
+          // deprecated alias
           const sessionId = params.session_id
           if (!sessionId) return { content: [{ type: 'text', text: 'Error: session_id is required' }], isError: true }
           const result = await callbacks.onQuitSession?.(sessionId)
