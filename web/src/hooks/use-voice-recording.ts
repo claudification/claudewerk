@@ -41,6 +41,7 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
   const streamRef = useRef<MediaStream | null>(null)
   const wsListenerRef = useRef<((event: MessageEvent) => void) | null>(null)
   const cancelledRef = useRef(false)
+  const pendingStopRef = useRef(false) // user released key while still connecting
   const utteranceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   stateRef.current = state
@@ -140,12 +141,14 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     setRefinedText('')
     setErrorMsg('')
     cancelledRef.current = false
+    pendingStopRef.current = false
   }, [])
 
   const start = useCallback(async () => {
     if (stateRef.current !== 'idle') return
 
     cancelledRef.current = false
+    pendingStopRef.current = false
     setInterimText('')
     setFinalText('')
     setRefinedText('')
@@ -180,6 +183,14 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
 
       recorder.start(250)
       mediaRecorderRef.current = recorder
+      setState('recording')
+
+      // User released key during getUserMedia -- capture a brief moment then stop
+      if (pendingStopRef.current) {
+        pendingStopRef.current = false
+        // Give recorder 300ms to capture at least one chunk before stopping
+        setTimeout(() => stop(), 300)
+      }
     } catch (err) {
       console.error('[voice] Recording failed:', err)
       setErrorMsg(err instanceof Error ? err.message : 'Mic access denied')
@@ -189,22 +200,34 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
 
   const stop = useCallback(() => {
     if (stateRef.current === 'connecting') {
-      cancelledRef.current = true
-      reset()
+      // getUserMedia hasn't resolved yet. Set a flag so start() will
+      // auto-stop after capturing whatever audio it can.
+      pendingStopRef.current = true
       return
     }
 
     if (stateRef.current !== 'recording') return
 
-    if (mediaRecorderRef.current?.state === 'recording') {
-      mediaRecorderRef.current.stop()
+    const recorder = mediaRecorderRef.current
+    if (recorder?.state === 'recording') {
+      // MediaRecorder.stop() fires one final ondataavailable with remaining buffer.
+      // Wait for that last chunk before sending voice_stop so the server gets all audio.
+      recorder.onstop = () => {
+        mediaRecorderRef.current = null
+        if (streamRef.current) {
+          for (const t of streamRef.current.getTracks()) t.stop()
+          streamRef.current = null
+        }
+        sendWs({ type: 'voice_stop' })
+      }
+      recorder.stop()
+    } else {
+      if (streamRef.current) {
+        for (const t of streamRef.current.getTracks()) t.stop()
+        streamRef.current = null
+      }
+      sendWs({ type: 'voice_stop' })
     }
-    mediaRecorderRef.current = null
-    if (streamRef.current) {
-      for (const t of streamRef.current.getTracks()) t.stop()
-      streamRef.current = null
-    }
-    sendWs({ type: 'voice_stop' })
     setState('refining')
   }, [sendWs, reset])
 
