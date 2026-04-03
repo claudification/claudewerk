@@ -139,11 +139,13 @@ const channelSend: MessageHandler = (ctx, data) => {
       ctx.getProjectSettings(callerCwd || '')?.label ||
       callerCwd?.split('/').pop() ||
       fromSession.slice(0, 8)
+    // Resolve sender slug from receiver's address book (works even when target is offline)
+    const fromSlug = callerCwd ? ctx.addressBook.getOrAssign(targetCwd, callerCwd, fromProject) : fromSession
     const conversationId = (data.conversationId as string) || `conv_${Date.now().toString(36)}`
     const delivery = {
       type: 'channel_deliver',
-      fromSession,
-      fromProject,
+      fromSession: fromSlug,
+      fromProject: fromSlug,
       intent: data.intent,
       message: data.message,
       context: data.context,
@@ -177,10 +179,15 @@ const channelSend: MessageHandler = (ctx, data) => {
   }
 
   const conversationId = (data.conversationId as string) || `conv_${Date.now().toString(36)}`
+
+  // Resolve sender identity from the RECEIVER's address book perspective
+  const fromSlug =
+    toSess.cwd && fromSess?.cwd ? ctx.addressBook.getOrAssign(toSess.cwd, fromSess.cwd, fromProject) : fromSession
+
   const delivery = {
     type: 'channel_deliver',
-    fromSession,
-    fromProject,
+    fromSession: fromSlug,
+    fromProject: fromSlug,
     intent: data.intent,
     message: data.message,
     context: data.context,
