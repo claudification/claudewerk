@@ -928,15 +928,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       channelSubscribers.delete(oldKey)
     }
 
-    // Migrate session links from oldId to newId
-    for (const key of sessionLinks) {
-      const [a, b] = key.split(':')
-      if (a === oldId || b === oldId) {
-        sessionLinks.delete(key)
-        const other = a === oldId ? b : a
-        sessionLinks.add(linkKey(newId, other))
-      }
-    }
+    // Session links are CWD-based, no migration needed on rekey.
 
     // Clear subagent transcript subscriptions (subagents are reset on rekey)
     for (const key of channelSubscribers.keys()) {
@@ -2331,46 +2323,71 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
 
   // ─── Inter-session link registry ──────────────────────────────────────
   // Links are bidirectional. If A->B is approved, B->A is also approved.
-  const sessionLinks = new Set<string>() // "a:b" format (sorted)
-  const sessionBlocks = new Map<string, number>() // "a:b" -> block timestamp
-  const messageQueue = new Map<string, Array<Record<string, unknown>>>() // "from:to" -> queued messages
+  // Links are stored by CWD pair (not session ID) so they survive rekey/restart.
+  // All public functions accept session IDs and resolve to CWDs internally.
+  const cwdLinks = new Set<string>() // "cwdA:cwdB" format (sorted)
+  const cwdBlocks = new Map<string, number>() // "cwdA:cwdB" -> block timestamp
+  const messageQueue = new Map<string, Array<Record<string, unknown>>>() // "from:to" -> queued messages (session IDs for queue key)
 
-  function linkKey(a: string, b: string): string {
-    return [a, b].sort().join(':')
+  function cwdLinkKey(cwdA: string, cwdB: string): string {
+    return [cwdA, cwdB].sort().join(':')
+  }
+
+  function sessionToCwd(sessionId: string): string | undefined {
+    return sessions.get(sessionId)?.cwd
   }
 
   function getLinkedSessions(sessionId: string): string[] {
+    const cwd = sessionToCwd(sessionId)
+    if (!cwd) return []
     const linked: string[] = []
-    for (const key of sessionLinks) {
+    for (const key of cwdLinks) {
       const [a, b] = key.split(':')
-      if (a === sessionId) linked.push(b)
-      else if (b === sessionId) linked.push(a)
+      const otherCwd = a === cwd ? b : b === cwd ? a : null
+      if (!otherCwd) continue
+      // Find active sessions with that CWD (excluding self)
+      for (const [id, s] of sessions) {
+        if (s.cwd === otherCwd && id !== sessionId) {
+          linked.push(id)
+        }
+      }
     }
     return linked
   }
 
   function unlinkSessions(a: string, b: string): void {
-    sessionLinks.delete(linkKey(a, b))
+    const cwdA = sessionToCwd(a)
+    const cwdB = sessionToCwd(b)
+    if (cwdA && cwdB) cwdLinks.delete(cwdLinkKey(cwdA, cwdB))
   }
 
   function checkSessionLink(from: string, to: string): 'linked' | 'blocked' | 'unknown' {
-    const key = linkKey(from, to)
-    if (sessionLinks.has(key)) return 'linked'
-    const blockTs = sessionBlocks.get(key)
+    const cwdFrom = sessionToCwd(from)
+    const cwdTo = sessionToCwd(to)
+    if (!cwdFrom || !cwdTo) return 'unknown'
+    const key = cwdLinkKey(cwdFrom, cwdTo)
+    if (cwdLinks.has(key)) return 'linked'
+    const blockTs = cwdBlocks.get(key)
     if (blockTs && Date.now() - blockTs < 60_000) return 'blocked' // 1 min debounce
-    if (blockTs) sessionBlocks.delete(key) // expired
+    if (blockTs) cwdBlocks.delete(key) // expired
     return 'unknown'
   }
 
   function linkSessions(a: string, b: string): void {
-    sessionLinks.add(linkKey(a, b))
-    sessionBlocks.delete(linkKey(a, b))
+    const cwdA = sessionToCwd(a)
+    const cwdB = sessionToCwd(b)
+    if (!cwdA || !cwdB) return
+    cwdLinks.add(cwdLinkKey(cwdA, cwdB))
+    cwdBlocks.delete(cwdLinkKey(cwdA, cwdB))
   }
 
   function blockSession(blocker: string, blocked: string): void {
-    const key = linkKey(blocker, blocked)
-    sessionLinks.delete(key)
-    sessionBlocks.set(key, Date.now())
+    const cwdA = sessionToCwd(blocker)
+    const cwdB = sessionToCwd(blocked)
+    if (!cwdA || !cwdB) return
+    const key = cwdLinkKey(cwdA, cwdB)
+    cwdLinks.delete(key)
+    cwdBlocks.set(key, Date.now())
   }
 
   function queueInterSessionMessage(from: string, to: string, message: Record<string, unknown>): void {
