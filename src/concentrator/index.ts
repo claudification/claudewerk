@@ -14,6 +14,8 @@ import { initGlobalSettings } from './global-settings'
 import type { WsData } from './handler-context'
 import { registerAgentHandlers } from './handlers/agent'
 import { registerInterSessionHandlers } from './handlers/inter-session'
+import { registerPermissionHandlers } from './handlers/permissions'
+import { registerTerminalHandlers } from './handlers/terminal'
 import { registerVoiceHandlers } from './handlers/voice'
 import { appendMessage, initInterSessionLog } from './inter-session-log'
 import { routeMessage } from './message-router'
@@ -404,6 +406,8 @@ async function main() {
     // Register message handlers
     registerAgentHandlers()
     registerInterSessionHandlers()
+    registerPermissionHandlers()
+    registerTerminalHandlers()
     registerVoiceHandlers()
 
     // Context deps shared by all handler contexts
@@ -882,165 +886,6 @@ async function main() {
                 }
                 break
               }
-              // Permission relay: wrapper -> dashboard (broadcast)
-              case 'permission_request': {
-                const sessionId = ws.data.sessionId || data.sessionId
-                if (!sessionId) break
-                const msg = JSON.stringify({
-                  type: 'permission_request',
-                  sessionId,
-                  requestId: data.requestId,
-                  toolName: data.toolName,
-                  description: data.description,
-                  inputPreview: data.inputPreview,
-                })
-                for (const sub of sessionStore.getSubscribers()) {
-                  try {
-                    sub.send(msg)
-                  } catch {}
-                }
-                if (verbose) {
-                  console.log(
-                    `[permission] Request: ${data.requestId} ${data.toolName} (session ${sessionId.slice(0, 8)})`,
-                  )
-                }
-                break
-              }
-
-              // Permission relay: dashboard -> wrapper (forward)
-              case 'permission_response': {
-                const sessionId = data.sessionId
-                const targetWs = sessionId ? sessionStore.getSessionSocket(sessionId) : null
-                if (targetWs) {
-                  targetWs.send(
-                    JSON.stringify({
-                      type: 'permission_response',
-                      sessionId,
-                      requestId: data.requestId,
-                      behavior: data.behavior,
-                    }),
-                  )
-                  if (verbose) {
-                    console.log(
-                      `[permission] Response: ${data.requestId} -> ${data.behavior} (session ${sessionId.slice(0, 8)})`,
-                    )
-                  }
-                }
-                break
-              }
-
-              // Permission rule: dashboard -> wrapper (forward session-scoped auto-approve)
-              case 'permission_rule': {
-                const sessionId = data.sessionId
-                const targetWs = sessionId ? sessionStore.getSessionSocket(sessionId) : null
-                if (targetWs) {
-                  targetWs.send(
-                    JSON.stringify({
-                      type: 'permission_rule',
-                      toolName: data.toolName,
-                      behavior: data.behavior,
-                    }),
-                  )
-                  if (verbose) {
-                    console.log(
-                      `[permission] Rule: ${data.toolName} -> ${data.behavior} (session ${sessionId.slice(0, 8)})`,
-                    )
-                  }
-                }
-                break
-              }
-
-              // Permission auto-approved: wrapper -> dashboard (notification)
-              case 'permission_auto_approved': {
-                const sessionId = ws.data.sessionId || data.sessionId
-                if (!sessionId) break
-                const msg = JSON.stringify({
-                  type: 'permission_auto_approved',
-                  sessionId,
-                  requestId: data.requestId,
-                  toolName: data.toolName,
-                  description: data.description,
-                })
-                for (const sub of sessionStore.getSubscribers()) {
-                  try {
-                    sub.send(msg)
-                  } catch {}
-                }
-                break
-              }
-
-              // Clipboard capture: wrapper -> dashboard (broadcast)
-              case 'clipboard_capture': {
-                const sessionId = ws.data.sessionId || data.sessionId
-                if (!sessionId) break
-                const msg = JSON.stringify({
-                  type: 'clipboard_capture',
-                  sessionId,
-                  contentType: data.contentType,
-                  text: data.text,
-                  base64: data.base64,
-                  mimeType: data.mimeType,
-                  timestamp: data.timestamp || Date.now(),
-                })
-                for (const sub of sessionStore.getSubscribers()) {
-                  try {
-                    sub.send(msg)
-                  } catch {}
-                }
-                if (verbose) {
-                  console.log(
-                    `[clipboard] ${data.contentType}${data.mimeType ? ` (${data.mimeType})` : ''} from ${sessionId.slice(0, 8)}`,
-                  )
-                }
-                break
-              }
-
-              // AskUserQuestion relay: wrapper -> dashboard (broadcast)
-              case 'ask_question': {
-                const sessionId = ws.data.sessionId || data.sessionId
-                if (!sessionId) break
-                const msg = JSON.stringify({
-                  type: 'ask_question',
-                  sessionId,
-                  toolUseId: data.toolUseId,
-                  questions: data.questions,
-                })
-                for (const sub of sessionStore.getSubscribers()) {
-                  try {
-                    sub.send(msg)
-                  } catch {}
-                }
-                if (verbose) {
-                  console.log(
-                    `[ask] Question: ${data.toolUseId?.slice(0, 12)} ${(data.questions as unknown[])?.length || 0}q (session ${sessionId.slice(0, 8)})`,
-                  )
-                }
-                break
-              }
-
-              // AskUserQuestion relay: dashboard -> wrapper (forward)
-              case 'ask_answer': {
-                const sessionId = data.sessionId
-                const targetWs = sessionId ? sessionStore.getSessionSocket(sessionId) : null
-                if (targetWs) {
-                  targetWs.send(
-                    JSON.stringify({
-                      type: 'ask_answer',
-                      sessionId,
-                      toolUseId: data.toolUseId,
-                      answers: data.answers,
-                      annotations: data.annotations,
-                      skip: data.skip,
-                    }),
-                  )
-                  if (verbose) {
-                    console.log(
-                      `[ask] Answer: ${data.toolUseId?.slice(0, 12)} ${data.skip ? 'SKIP' : 'answered'} (session ${sessionId.slice(0, 8)})`,
-                    )
-                  }
-                }
-                break
-              }
 
               // Quit session: dashboard -> wrapper (SIGTERM)
               case 'quit_session': {
@@ -1122,89 +967,6 @@ async function main() {
               // quit_remote_session, channel_revive, channel_spawn, channel_configure
               // -> migrated to handlers/inter-session.ts (handled by router above)
 
-              // Terminal relay: dashboard -> rclaude
-              // Terminal messages: all routed by wrapperId (physical PTY identity)
-              case 'terminal_attach': {
-                const wid = data.wrapperId
-                const targetSocket = sessionStore.getSessionSocketByWrapper(wid)
-                if (targetSocket) {
-                  const isFirstViewer = !sessionStore.hasTerminalViewers(wid)
-                  sessionStore.addTerminalViewer(wid, ws)
-                  if (isFirstViewer) {
-                    targetSocket.send(JSON.stringify(data))
-                  }
-                  if (verbose) {
-                    const viewers = sessionStore.getTerminalViewers(wid)
-                    console.log(
-                      `[terminal] Attached to wrapper=${wid.slice(0, 8)} (${data.cols}x${data.rows}) [${viewers.size} viewer(s)]`,
-                    )
-                  }
-                } else {
-                  ws.send(
-                    JSON.stringify({
-                      type: 'terminal_error',
-                      wrapperId: wid,
-                      error: 'Wrapper not connected',
-                    }),
-                  )
-                }
-                break
-              }
-              case 'terminal_detach': {
-                const wid = data.wrapperId
-                sessionStore.removeTerminalViewer(wid, ws)
-                if (!sessionStore.hasTerminalViewers(wid)) {
-                  const detachSocket = sessionStore.getSessionSocketByWrapper(wid)
-                  if (detachSocket) {
-                    detachSocket.send(JSON.stringify(data))
-                  }
-                }
-                if (verbose) {
-                  const viewers = sessionStore.getTerminalViewers(wid)
-                  console.log(
-                    `[terminal] Detached from wrapper=${wid.slice(0, 8)} [${viewers.size} viewer(s) remaining]`,
-                  )
-                }
-                break
-              }
-              case 'terminal_data': {
-                const wid = data.wrapperId
-                if (ws.data.isDashboard) {
-                  // Dashboard -> rclaude (user keystrokes)
-                  const targetSocket = sessionStore.getSessionSocketByWrapper(wid)
-                  if (targetSocket) {
-                    targetSocket.send(JSON.stringify(data))
-                  }
-                } else if (ws.data.wrapperId) {
-                  // rclaude -> dashboard (PTY output) - broadcast to all viewers of this wrapper
-                  const viewers = sessionStore.getTerminalViewers(wid || ws.data.wrapperId)
-                  const msg = JSON.stringify(data)
-                  for (const viewer of viewers) {
-                    try {
-                      viewer.send(msg)
-                    } catch {}
-                  }
-                }
-                break
-              }
-              case 'terminal_resize': {
-                const targetSocket = sessionStore.getSessionSocketByWrapper(data.wrapperId)
-                if (targetSocket) {
-                  targetSocket.send(JSON.stringify(data))
-                }
-                break
-              }
-              case 'terminal_error': {
-                // rclaude -> dashboard - broadcast to all viewers of this wrapper
-                const viewers = sessionStore.getTerminalViewers(data.wrapperId || ws.data.wrapperId || '')
-                const msg = JSON.stringify(data)
-                for (const viewer of viewers) {
-                  try {
-                    viewer.send(msg)
-                  } catch {}
-                }
-                break
-              }
               case 'tasks_update': {
                 const sessionId = ws.data.sessionId || data.sessionId
                 if (sessionId) {
