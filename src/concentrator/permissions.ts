@@ -73,10 +73,6 @@ function isGrantActive(grant: UserGrant, now = Date.now()): boolean {
   return true
 }
 
-function hasRole(grant: UserGrant, role: Role): boolean {
-  return grant.roles?.includes(role) ?? false
-}
-
 // ─── Resolution ───────────────────────────────────────────────────
 
 /**
@@ -122,6 +118,7 @@ export function resolvePermissions(
 
 export interface ResolvedPermissions {
   canAdmin: boolean
+  canEditUsers: boolean
   canChat: boolean
   canReadChat: boolean
   canTerminal: boolean
@@ -134,10 +131,11 @@ export interface ResolvedPermissions {
   canNotifications: boolean
 }
 
-export function resolvePermissionFlags(grants: UserGrant[], cwd = '*'): ResolvedPermissions {
+export function resolvePermissionFlags(grants: UserGrant[], cwd = '*', serverRoles?: string[]): ResolvedPermissions {
   const { permissions, isAdmin } = resolvePermissions(grants, cwd)
   return {
     canAdmin: isAdmin,
+    canEditUsers: serverRoles?.includes('user-editor') ?? false,
     canChat: permissions.has('chat'),
     canReadChat: permissions.has('chat:read'),
     canTerminal: permissions.has('terminal'),

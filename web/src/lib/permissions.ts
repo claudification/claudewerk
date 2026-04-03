@@ -7,6 +7,7 @@
 /** Flat resolved permission flags -- pushed by server on WS connect */
 export interface ResolvedPermissions {
   canAdmin: boolean
+  canEditUsers: boolean
   canChat: boolean
   canReadChat: boolean
   canTerminal: boolean
@@ -22,6 +23,7 @@ export interface ResolvedPermissions {
 /** Default permissions (admin -- everything enabled) */
 export const DEFAULT_PERMISSIONS: ResolvedPermissions = {
   canAdmin: true,
+  canEditUsers: true,
   canChat: true,
   canReadChat: true,
   canTerminal: true,

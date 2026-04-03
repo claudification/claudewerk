@@ -4,6 +4,7 @@
  */
 
 import type { SubscriptionChannel } from '../../shared/protocol'
+import { getUser } from '../auth'
 import type { MessageHandler } from '../handler-context'
 import { registerHandlers } from '../message-router'
 import { resolvePermissionFlags } from '../permissions'
@@ -19,12 +20,14 @@ const subscribe: MessageHandler = (ctx, data) => {
   // Push resolved permissions to client (server owns grant resolution)
   const grants = ctx.ws.data.grants
   if (grants) {
+    const user = ctx.ws.data.userName ? getUser(ctx.ws.data.userName) : undefined
+    const serverRoles = user?.serverRoles
     // Global permissions (cwd='*')
-    const global = resolvePermissionFlags(grants)
+    const global = resolvePermissionFlags(grants, '*', serverRoles)
     // Per-session permissions (resolved against each session's CWD)
     const sessions: Record<string, ReturnType<typeof resolvePermissionFlags>> = {}
     for (const s of ctx.sessions.getActiveSessions()) {
-      sessions[s.id] = resolvePermissionFlags(grants, s.cwd)
+      sessions[s.id] = resolvePermissionFlags(grants, s.cwd, serverRoles)
     }
     ctx.reply({ type: 'permissions', global, sessions })
   }

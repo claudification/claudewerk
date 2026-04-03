@@ -27,6 +27,8 @@ export interface PushSubscriptionEntry {
   userAgent?: string
 }
 
+export type ServerRole = 'user-editor'
+
 export interface PasskeyUser {
   name: string // unique, required
   credentials: StoredCredential[]
@@ -34,6 +36,7 @@ export interface PasskeyUser {
   lastUsedAt?: number
   revoked: boolean
   grants: UserGrant[]
+  serverRoles?: ServerRole[]
   pushSubscriptions?: PushSubscriptionEntry[]
 }
 
@@ -120,9 +123,20 @@ export function initAuth(opts: {
           }
         }
       }
+      // Migrate serverRoles: first admin user gets user-editor
+      if (!state.users.some((u: PasskeyUser) => u.serverRoles?.includes('user-editor'))) {
+        const firstAdmin = state.users.find((u: PasskeyUser) =>
+          u.grants?.some((g: UserGrant) => g.roles?.includes('admin')),
+        )
+        if (firstAdmin) {
+          firstAdmin.serverRoles = firstAdmin.serverRoles || []
+          firstAdmin.serverRoles.push('user-editor')
+          migrated = true
+        }
+      }
       if (migrated) {
         writeFileSync(authFilePath, JSON.stringify(state, null, 2), { mode: 0o600 })
-        console.log('[auth] Migrated user grants (roles/permissions split)')
+        console.log('[auth] Migrated user data (grants + serverRoles)')
       }
       // Clean expired sessions on load
       const now = Date.now()
@@ -278,6 +292,21 @@ export function unrevokeUser(name: string): boolean {
   user.revoked = false
   save()
   return true
+}
+
+// --- Server role management ---
+
+export function setServerRoles(name: string, roles: ServerRole[]): boolean {
+  const user = state.users.find(u => u.name === name)
+  if (!user) return false
+  user.serverRoles = roles.length > 0 ? roles : undefined
+  save()
+  return true
+}
+
+export function hasServerRole(name: string, role: ServerRole): boolean {
+  const user = state.users.find(u => u.name === name)
+  return user?.serverRoles?.includes(role) ?? false
 }
 
 // --- Grant management ---
