@@ -44,6 +44,9 @@ interface DashboardMessage {
   title?: string
   message?: string
   ok?: boolean
+  global?: Record<string, boolean>
+  // biome-ignore lint/suspicious/noExplicitAny: DashboardMessage is a loose WS type
+  [key: string]: any
 }
 
 const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
@@ -523,6 +526,14 @@ function processMessage(msg: DashboardMessage) {
           selectedSessionId: state.selectedSessionId === msg.sessionId ? null : state.selectedSessionId,
         }))
       }
+      break
+    }
+    // Server-pushed permissions (resolved from grants)
+    case 'permissions': {
+      const update: Record<string, unknown> = {}
+      if (msg.global) update.permissions = msg.global
+      if (msg.sessions) update.sessionPermissions = msg.sessions
+      if (Object.keys(update).length > 0) useSessionsStore.setState(update)
       break
     }
     // WS action results (fire-and-forget error feedback)

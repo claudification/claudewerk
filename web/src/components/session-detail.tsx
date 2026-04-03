@@ -4,7 +4,6 @@ import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState } from '
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { fetchSubagentTranscript, reviveSession, sendInput, useSessionsStore, wsSend } from '@/hooks/use-sessions'
-import { resolvePermissionsFor } from '@/lib/permissions'
 import { canTerminal, type TranscriptEntry } from '@/lib/types'
 import { cn, contextWindowSize, formatAge, formatEffort, formatModel, haptic, isMobileViewport } from '@/lib/utils'
 import { BgTasksView } from './bg-tasks-view'
@@ -656,7 +655,6 @@ export function SessionDetail() {
   const [activeTab, setActiveTab] = useState<Tab>('transcript')
   const [follow, setFollow] = useState(true)
   const showThinking = useSessionsStore(s => s.dashboardPrefs.showThinking)
-  const grants = useSessionsStore(s => s.grants)
   const [reviveState, setReviveState] = useState<'idle' | 'sending' | 'waiting' | 'error'>('idle')
   const [reviveError, setReviveError] = useState<string | null>(null)
   const [conversationTarget, setConversationTarget] = useState<{
@@ -697,7 +695,9 @@ export function SessionDetail() {
   }, [requestedTab, requestedTabSeq])
 
   const session = useSessionsStore(state => state.sessions.find(s => s.id === state.selectedSessionId))
-  const { canAdmin, canChat, canReadTerminal, canReadFiles, canVoice } = resolvePermissionsFor(grants, session?.cwd)
+  const { canAdmin, canChat, canReadTerminal, canReadFiles } = useSessionsStore(
+    s => (s.selectedSessionId && s.sessionPermissions[s.selectedSessionId]) || s.permissions,
+  )
 
   // Track activeTab in a ref so selectors can skip updates when data isn't visible.
   // This prevents transcript/event updates from re-rendering the file editor and vice versa.

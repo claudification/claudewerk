@@ -7,7 +7,7 @@ import {
   type ToolDisplayPrefs,
 } from '@/lib/dashboard-prefs'
 import { clearExpandedState } from '@/lib/expanded-state'
-import type { UserGrant } from '@/lib/permissions'
+import { DEFAULT_PERMISSIONS, type ResolvedPermissions } from '@/lib/permissions'
 import type {
   HookEvent,
   ProjectSettings,
@@ -74,7 +74,9 @@ interface SessionsState {
   tasks: Record<string, TaskInfo[]>
   projectSettings: ProjectSettingsMap
   globalSettings: Record<string, unknown>
-  grants: UserGrant[]
+  permissions: ResolvedPermissions
+  /** Per-session resolved permissions (keyed by sessionId) */
+  sessionPermissions: Record<string, ResolvedPermissions>
   sessionOrder: SessionOrderV2
   serverCapabilities: { voice: boolean }
   setServerCapabilities: (caps: { voice: boolean }) => void
@@ -260,7 +262,8 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   tasks: {},
   projectSettings: {},
   globalSettings: {},
-  grants: [{ cwd: '*', permissions: ['admin'] }] as UserGrant[],
+  permissions: DEFAULT_PERMISSIONS,
+  sessionPermissions: {},
   sessionOrder: { version: 2, tree: [] },
   serverCapabilities: { voice: false },
   setServerCapabilities: caps => set({ serverCapabilities: caps }),

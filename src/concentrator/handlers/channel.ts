@@ -6,6 +6,7 @@
 import type { SubscriptionChannel } from '../../shared/protocol'
 import type { MessageHandler } from '../handler-context'
 import { registerHandlers } from '../message-router'
+import { resolvePermissionFlags } from '../permissions'
 
 // ─── Dashboard subscription ────────────────────────────────────────
 
@@ -14,6 +15,20 @@ const subscribe: MessageHandler = (ctx, data) => {
   const pv = (data.protocolVersion as number) || 1
   ctx.sessions.addSubscriber(ctx.ws, pv)
   ctx.reply({ type: 'agent_status', connected: ctx.sessions.hasAgent() })
+
+  // Push resolved permissions to client (server owns grant resolution)
+  const grants = ctx.ws.data.grants
+  if (grants) {
+    // Global permissions (cwd='*')
+    const global = resolvePermissionFlags(grants)
+    // Per-session permissions (resolved against each session's CWD)
+    const sessions: Record<string, ReturnType<typeof resolvePermissionFlags>> = {}
+    for (const s of ctx.sessions.getActiveSessions()) {
+      sessions[s.id] = resolvePermissionFlags(grants, s.cwd)
+    }
+    ctx.reply({ type: 'permissions', global, sessions })
+  }
+
   ctx.log.debug(`Subscriber connected (v${pv}, total: ${ctx.sessions.getSubscriberCount()})`)
 }
 

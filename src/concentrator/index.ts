@@ -18,6 +18,7 @@ import { appendMessage, initInterSessionLog } from './inter-session-log'
 import { drain, enqueue, getQueueSize, initMessageQueue } from './message-queue'
 import { routeMessage } from './message-router'
 import { addAllowedRoot, addPathMapping, getAllowedRoots } from './path-jail'
+import { allGrantsExpired } from './permissions'
 import { getAllProjectSettings, getProjectSettings, initProjectSettings, setProjectSettings } from './project-settings'
 import { initPush, isPushConfigured, sendPushToAll } from './push'
 import { createRouter } from './routes'
@@ -324,6 +325,23 @@ async function main() {
       }
     }
   }, 60_000) // check every minute
+
+  // Periodically check grant expiry -- disconnect users whose grants have all expired
+  setInterval(() => {
+    const subscribers = sessionStore.getSubscribers()
+    for (const ws of subscribers) {
+      const data = ws.data as WsData
+      if (!data.grants || data.grants.length === 0) continue
+      if (allGrantsExpired(data.grants)) {
+        console.log(`[auth] All grants expired for user: ${data.userName || 'unknown'} -- disconnecting`)
+        sessionStore.removeTerminalViewerBySocket(ws)
+        sessionStore.removeSubscriber(ws)
+        try {
+          ws.close(4403, 'Grants expired')
+        } catch {}
+      }
+    }
+  }, 30_000) // check every 30 seconds
 
   // Write PID file so CLI can send signals
   if (cacheDir) {

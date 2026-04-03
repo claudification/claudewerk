@@ -7,8 +7,6 @@
 
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser'
 import { type ReactNode, useCallback, useEffect, useState } from 'react'
-import { useSessionsStore } from '@/hooks/use-sessions'
-import type { UserGrant } from '@/lib/permissions'
 
 const API_BASE = `${window.location.protocol}//${window.location.host}`
 
@@ -16,7 +14,6 @@ interface AuthStatus {
   authenticated: boolean
   name: string | null
   hasUsers: boolean
-  grants?: UserGrant[]
 }
 
 async function fetchAuthStatus(): Promise<AuthStatus> {
@@ -246,12 +243,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     fetchAuthStatus()
-      .then(status => {
-        setAuthStatus(status)
-        if (status.grants) {
-          useSessionsStore.setState({ grants: status.grants })
-        }
-      })
+      .then(setAuthStatus)
       .finally(() => setLoading(false))
   }, [])
 

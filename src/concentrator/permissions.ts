@@ -92,6 +92,62 @@ export function resolvePermissions(grants: UserGrant[], cwd: string): Set<Permis
   return result
 }
 
+/** Flat resolved permission flags -- what the client receives */
+export interface ResolvedPermissions {
+  canAdmin: boolean
+  canChat: boolean
+  canReadChat: boolean
+  canTerminal: boolean
+  canReadTerminal: boolean
+  canFiles: boolean
+  canReadFiles: boolean
+  canSpawn: boolean
+  canSettings: boolean
+  canVoice: boolean
+}
+
+/** Resolve grants to flat boolean flags for a specific CWD */
+export function resolvePermissionFlags(grants: UserGrant[], cwd = '*'): ResolvedPermissions {
+  const perms = resolvePermissions(grants, cwd)
+  return {
+    canAdmin: perms.has('admin'),
+    canChat: perms.has('chat'),
+    canReadChat: perms.has('chat:read'),
+    canTerminal: perms.has('terminal'),
+    canReadTerminal: perms.has('terminal:read'),
+    canFiles: perms.has('files'),
+    canReadFiles: perms.has('files:read'),
+    canSpawn: perms.has('spawn'),
+    canSettings: perms.has('settings'),
+    canVoice: perms.has('voice'),
+  }
+}
+
+/**
+ * Find the earliest notAfter across all active grants.
+ * Returns null if no grants have expiry (forever session).
+ */
+export function earliestGrantExpiry(grants: UserGrant[]): number | null {
+  let earliest: number | null = null
+  const now = Date.now()
+  for (const g of grants) {
+    if (!isGrantActive(g, now)) continue
+    if (g.notAfter) {
+      if (earliest === null || g.notAfter < earliest) earliest = g.notAfter
+    }
+  }
+  return earliest
+}
+
+/**
+ * Check if ALL grants have expired (user should be disconnected).
+ */
+export function allGrantsExpired(grants: UserGrant[]): boolean {
+  if (grants.length === 0) return true
+  const now = Date.now()
+  return grants.every(g => g.notAfter && g.notAfter < now)
+}
+
 /**
  * Check if grants give ANY permission for ANY CWD (used to filter session visibility).
  * A grant with cwd '*' matches everything. Otherwise checks specific CWD.

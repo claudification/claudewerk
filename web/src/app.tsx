@@ -28,7 +28,6 @@ import {
   wsSend,
 } from '@/hooks/use-sessions'
 import { useWebSocket } from '@/hooks/use-websocket'
-import { resolvePermissionsFor } from '@/lib/permissions'
 import { canTerminal } from '@/lib/types'
 import { isMobileViewport, isTouchDevice } from '@/lib/utils'
 
@@ -373,8 +372,7 @@ function Dashboard() {
     }
   }
 
-  const grants = useSessionsStore(s => s.grants)
-  const { canAdmin, canSpawn } = resolvePermissionsFor(grants)
+  const { canAdmin, canSpawn } = useSessionsStore(s => s.permissions)
   const showSessionList = canAdmin || canSpawn
 
   return (
