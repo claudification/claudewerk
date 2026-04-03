@@ -17,6 +17,7 @@ import { registerChannelHandlers } from './handlers/channel'
 import { registerFileHandlers } from './handlers/files'
 import { registerInterSessionHandlers } from './handlers/inter-session'
 import { registerPermissionHandlers } from './handlers/permissions'
+import { registerSessionLifecycleHandlers } from './handlers/session-lifecycle'
 import { registerTerminalHandlers } from './handlers/terminal'
 import { registerTranscriptHandlers } from './handlers/transcript'
 import { registerVoiceHandlers } from './handlers/voice'
@@ -405,6 +406,7 @@ async function main() {
     registerFileHandlers()
     registerInterSessionHandlers()
     registerPermissionHandlers()
+    registerSessionLifecycleHandlers()
     registerTerminalHandlers()
     registerTranscriptHandlers()
     registerVoiceHandlers()
@@ -413,6 +415,7 @@ async function main() {
     const contextDeps: ContextDeps = {
       sessions: sessionStore,
       verbose,
+      origins,
       getProjectSettings,
       setProjectSettings,
       getAllProjectSettings,
@@ -420,6 +423,7 @@ async function main() {
       pushSendToAll: (title, body) => {
         if (isPushConfigured()) sendPushToAll({ title, body })
       },
+      getLinksForCwd,
     }
 
     Bun.serve<WsData>({
@@ -463,181 +467,10 @@ async function main() {
             sessionStore.recordTraffic('in', msgStr.length)
             const data = JSON.parse(msgStr)
 
-            // Try router first (migrated handlers)
+            // Route to registered handler
             const ctx = createContext(ws, contextDeps)
-            if (routeMessage(ctx, data.type, data)) return
-
-            switch (data.type) {
-              case 'meta': {
-                const wrapperId = data.wrapperId || data.sessionId // backwards compat
-                ws.data.sessionId = data.sessionId
-                ws.data.wrapperId = wrapperId
-
-                // Check if session exists (resume case)
-                const existingSession = sessionStore.getSession(data.sessionId)
-                if (existingSession) {
-                  sessionStore.resumeSession(data.sessionId)
-                  // Update capabilities + version on reconnect
-                  if (data.capabilities) existingSession.capabilities = data.capabilities
-                  if (data.version) existingSession.version = data.version
-                  if (data.buildTime) existingSession.buildTime = data.buildTime
-                  if (data.claudeVersion) existingSession.claudeVersion = data.claudeVersion
-                  if (data.claudeAuth) existingSession.claudeAuth = data.claudeAuth
-                  if (verbose) {
-                    const wrapperCount = sessionStore.getActiveWrapperCount(data.sessionId) + 1
-                    console.log(
-                      `[~] Session resumed: ${data.sessionId.slice(0, 8)}... wrapper=${wrapperId.slice(0, 8)} (${data.cwd}) [${wrapperCount} wrapper(s)]${data.version ? ` [${data.version}]` : ''}`,
-                    )
-                  }
-                } else {
-                  const newSession = sessionStore.createSession(
-                    data.sessionId,
-                    data.cwd,
-                    data.model,
-                    data.args,
-                    data.capabilities,
-                  )
-                  if (data.version) newSession.version = data.version
-                  if (data.buildTime) newSession.buildTime = data.buildTime
-                  if (data.claudeVersion) newSession.claudeVersion = data.claudeVersion
-                  if (verbose) {
-                    console.log(
-                      `[+] Session started: ${data.sessionId.slice(0, 8)}... wrapper=${wrapperId.slice(0, 8)} (${data.cwd})${data.version ? ` [${data.version}]` : ''}`,
-                    )
-                  }
-                }
-
-                // Track socket by wrapperId (multiple wrappers can share a sessionId)
-                sessionStore.setSessionSocket(data.sessionId, wrapperId, ws)
-
-                // Auto-restore persisted links for this session's CWD
-                const sessionCwd = (existingSession || sessionStore.getSession(data.sessionId))?.cwd
-                if (sessionCwd) {
-                  const persistedLinks = getLinksForCwd(sessionCwd)
-                  for (const pl of persistedLinks) {
-                    const otherCwd = pl.cwdA === sessionCwd ? pl.cwdB : pl.cwdA
-                    // Find active sessions for the other CWD
-                    for (const s of sessionStore.getActiveSessions()) {
-                      if (s.cwd === otherCwd && s.id !== data.sessionId) {
-                        sessionStore.linkSessions(data.sessionId, s.id)
-                        if (verbose) {
-                          console.log(
-                            `[links] Auto-restored: ${data.sessionId.slice(0, 8)} (${sessionCwd.split('/').pop()}) <-> ${s.id.slice(0, 8)} (${otherCwd.split('/').pop()})`,
-                          )
-                        }
-                      }
-                    }
-                  }
-                }
-
-                // Broadcast session update so dashboard picks up new wrapperIds and status
-                sessionStore.broadcastSessionUpdate(data.sessionId)
-
-                // Check rendezvous: someone may be waiting for this wrapper to connect
-                const rvResolved = sessionStore.resolveRendezvous(wrapperId, data.sessionId)
-                if (!rvResolved && verbose) {
-                  const rvInfo = sessionStore.getRendezvousInfo(wrapperId)
-                  if (rvInfo) {
-                    console.log(`[rendezvous] wrapperId matched but resolve failed: ${wrapperId.slice(0, 8)}`)
-                  }
-                }
-
-                ws.send(JSON.stringify({ type: 'ack', eventId: data.sessionId, origins }))
-                break
-              }
-              case 'hook': {
-                const sessionId = ws.data.sessionId || data.sessionId
-                if (sessionId) {
-                  sessionStore.addEvent(sessionId, data)
-                  if (verbose) {
-                    const toolName = data.data?.tool_name || ''
-                    const suffix = toolName ? ` (${toolName})` : ''
-                    console.log(`[*] ${sessionId.slice(0, 8)}... ${data.hookEvent}${suffix}`)
-                  }
-                }
-                break
-              }
-              case 'heartbeat': {
-                // Heartbeats keep the WS alive but do NOT count as activity.
-                // Only hook events and transcript entries reset lastActivity.
-                break
-              }
-              case 'session_clear': {
-                // Same wrapper, new Claude session ID (e.g. /clear)
-                // Re-key session in-place so dashboard stays connected
-                const oldId = data.oldSessionId || ws.data.sessionId
-                const newId = data.newSessionId
-                const clearWrapperId = data.wrapperId || ws.data.wrapperId
-                if (oldId && newId && clearWrapperId) {
-                  const session = sessionStore.rekeySession(oldId, newId, clearWrapperId, data.cwd, data.model)
-                  if (session) {
-                    ws.data.sessionId = newId
-                    if (verbose) {
-                      console.log(
-                        `[~] Session re-keyed: ${oldId.slice(0, 8)} -> ${newId.slice(0, 8)} wrapper=${clearWrapperId.slice(0, 8)} (${data.cwd})`,
-                      )
-                    }
-                  } else {
-                    // Fallback: create new session if old one was already gone
-                    if (verbose) {
-                      console.log(`[!] session_clear: old session ${oldId.slice(0, 8)} not found, creating new`)
-                    }
-                    sessionStore.createSession(newId, data.cwd, data.model)
-                    ws.data.sessionId = newId
-                    sessionStore.setSessionSocket(newId, clearWrapperId, ws)
-                  }
-                }
-                break
-              }
-              case 'notify': {
-                // Push notification from wrapper (triggered by Claude via curl)
-                const sessionId = ws.data.sessionId || data.sessionId
-                const session = sessionId ? sessionStore.getSession(sessionId) : undefined
-                const cwd = session?.cwd?.split('/').slice(-2).join('/') || sessionId?.slice(0, 8) || 'rclaude'
-                const message = data.message || 'Notification'
-                const title = data.title || cwd
-                console.log(`[notify] ${title}: ${message}`)
-
-                // Send push notification
-                if (isPushConfigured()) {
-                  sendPushToAll({
-                    title,
-                    body: message,
-                    sessionId,
-                    tag: `notify-${sessionId}`,
-                  }).catch(() => {})
-                }
-
-                // Broadcast toast to all dashboard subscribers
-                const toastMsg = JSON.stringify({ type: 'toast', title, message, sessionId })
-                for (const sub of sessionStore.getSubscribers()) {
-                  try {
-                    sub.send(toastMsg)
-                  } catch {}
-                }
-                break
-              }
-              case 'end': {
-                const sessionId = ws.data.sessionId || data.sessionId
-                const endWrapperId = ws.data.wrapperId
-                if (sessionId && endWrapperId) {
-                  // Remove this wrapper's socket
-                  sessionStore.removeSessionSocket(sessionId, endWrapperId)
-                  const remaining = sessionStore.getActiveWrapperCount(sessionId)
-                  if (remaining === 0) {
-                    // Last wrapper disconnected - actually end the session
-                    sessionStore.endSession(sessionId, data.reason)
-                    if (verbose) {
-                      console.log(`[-] Session ended: ${sessionId.slice(0, 8)}... (${data.reason})`)
-                    }
-                  } else if (verbose) {
-                    console.log(
-                      `[~] Wrapper ${endWrapperId.slice(0, 8)} ended for session ${sessionId.slice(0, 8)}... (${remaining} wrapper(s) remaining)`,
-                    )
-                  }
-                }
-                break
-              }
+            if (!routeMessage(ctx, data.type, data) && verbose) {
+              console.log(`[ws] Unhandled message type: ${data.type}`)
             }
           } catch (error) {
             ws.send(

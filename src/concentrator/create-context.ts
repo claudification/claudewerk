@@ -11,11 +11,13 @@ import type { SessionStore } from './session-store'
 export interface ContextDeps {
   sessions: SessionStore
   verbose: boolean
+  origins: string[]
   getProjectSettings(cwd: string): ProjectSettings | null
   setProjectSettings(cwd: string, update: Partial<ProjectSettings>): void
   getAllProjectSettings(): Record<string, ProjectSettings>
   pushConfigured: boolean
   pushSendToAll(title: string, body: string): void
+  getLinksForCwd(cwd: string): Array<{ cwdA: string; cwdB: string }>
 }
 
 export function createContext(ws: ServerWebSocket<WsData>, deps: ContextDeps): HandlerContext {
@@ -51,7 +53,9 @@ export function createContext(ws: ServerWebSocket<WsData>, deps: ContextDeps): H
       sendToAll: deps.pushSendToAll,
     },
 
+    origins: deps.origins,
     getAgent: () => deps.sessions.getAgent(),
+    getLinksForCwd: deps.getLinksForCwd,
     getProjectSettings: deps.getProjectSettings,
     setProjectSettings: deps.setProjectSettings,
     getAllProjectSettings: deps.getAllProjectSettings,

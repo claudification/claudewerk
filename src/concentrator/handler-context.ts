@@ -45,8 +45,12 @@ export interface HandlerContext {
     configured: boolean
     sendToAll(title: string, body: string): void
   }
+  /** WebAuthn origins (for meta ack) */
+  origins: string[]
   /** Get the host agent WebSocket (if connected) */
   getAgent(): ServerWebSocket<unknown> | undefined
+  /** Get persisted links for a CWD */
+  getLinksForCwd(cwd: string): Array<{ cwdA: string; cwdB: string }>
   /** Get project settings for a CWD */
   getProjectSettings(cwd: string): ProjectSettings | null
   /** Set project settings for a CWD */
