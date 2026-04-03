@@ -198,11 +198,12 @@ When running with channels (default), Claude gets MCP tools for interacting with
 |------|-------------|
 | `notify` | Send push notification to user's devices |
 | `share_file` | Upload a file and get a public URL |
-| `list_sessions` | Discover other running sessions |
-| `send_message` | Message another session (with intent + threading) |
-| `spawn_session` | Launch a new session in a project |
-| `quit_session` | Stop another session (benevolent trust only) |
-| `revive_session` | Restart an ended session (benevolent trust only) |
+| `list_sessions` | Discover sessions (returns stable address book IDs) |
+| `send_message` | Message a session by ID (delivers or queues if offline) |
+| `configure_session` | Update project label/icon/color/keyterms (benevolent) |
+| `spawn_session` | Launch a new session in a project (benevolent) |
+| `quit_session` | Stop another session (benevolent) |
+| `revive_session` | Restart an ended session (benevolent) |
 | `toggle_plan_mode` | Switch plan mode on/off |
 
 ### Session Organization
@@ -219,17 +220,26 @@ Session went idle? Revive it from the dashboard or via MCP tool. The host agent
 
 ### Inter-Session Communication
 
-Sessions can discover and message each other. Any Claude can ask `list_sessions` to see other
-running sessions, then `send_message` to talk to them. Messages flow through the concentrator
-with intent tags (request/response/notify/progress) and conversation threading.
+Sessions can discover and message each other. `list_sessions` returns stable, human-readable
+IDs (e.g. `"agent-drop"`, `"wandershelf"`) that persist forever -- auto-assigned per caller
+from project names. Use these IDs with `send_message` to talk to other sessions.
+
+**Offline delivery:** Messages to disconnected sessions are queued and delivered automatically
+when the target reconnects. `send_message` returns `status: "delivered"` or `status: "queued"`
+so Claude knows whether the message arrived immediately or is waiting.
 
 **Trust levels** control who can talk to whom:
 - **Default** -- first contact requires dashboard approval (ALLOW/BLOCK banner)
 - **Open** -- any session can message this project without approval
-- **Benevolent** -- this project can message any session AND control their lifecycle (revive/quit)
+- **Benevolent** -- this project can message any session AND control their lifecycle (revive/quit/configure)
 
 Links persist across restarts (stored as CWD pairs, not session IDs). Message history logged
 with 200-char previews. Click a linked session name to see the conversation timeline.
+
+**Address book isolation:** Each session sees other sessions through locally-scoped IDs.
+Session A's `"agent-drop"` and session B's `"agent-drop"` might point to different projects.
+Leaked IDs are useless to other sessions -- the concentrator validates every address lookup
+against the caller's own address book.
 
 Benevolent sessions get extra MCP tools: `revive_session` and `quit_session` for managing
 other sessions' lifecycles remotely.
@@ -976,6 +986,8 @@ remote-claude/
 │   │   │   ├── files.ts             # file editor relay (18 message types)
 │   │   │   ├── agent.ts             # sentinel: identify, spawn/revive results
 │   │   │   └── voice.ts             # Deepgram voice relay
+│   │   ├── address-book.ts        # Per-caller routing slugs (persisted)
+│   │   ├── message-queue.ts      # Offline message queue (persisted, 24h TTL)
 │   │   ├── routes.ts             # Hono HTTP routes (REST API)
 │   │   ├── ws-server.ts          # WebSocket server (separate port mode)
 │   │   ├── session-store.ts      # Session registry + persistence
