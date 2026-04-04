@@ -402,68 +402,69 @@ export function UserAdminDialog({ open, onOpenChange }: { open: boolean; onOpenC
   return (
     <>
       <Dialog open={open && !showInvite} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
-          <div className="flex items-center justify-between mb-4">
+        <DialogContent className="max-w-lg max-h-[80vh] p-0">
+          <div className="flex items-center justify-between px-6 pt-5 pb-3 pr-12">
             <DialogTitle className="text-accent font-bold uppercase tracking-wider text-[10px]">Users</DialogTitle>
             <Button size="sm" variant="outline" onClick={() => setShowInvite(true)} className="text-xs h-7">
               <UserPlus className="w-3 h-3 mr-1" /> Invite
             </Button>
           </div>
-
-          {editUser ? (
-            <UserEditPanel
-              user={editUser}
-              onSave={() => {
-                setEditingUser(null)
-                loadUsers()
-              }}
-              onClose={() => setEditingUser(null)}
-            />
-          ) : loading ? (
-            <p className="text-xs text-muted-foreground text-center py-4">Loading...</p>
-          ) : (
-            <div className="space-y-2">
-              {users.map(user => (
-                <div
-                  key={user.name}
-                  onClick={() => {
-                    haptic('tap')
-                    setEditingUser(user.name)
-                  }}
-                  onKeyDown={e => e.key === 'Enter' && setEditingUser(user.name)}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors cursor-pointer"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-foreground">{user.name}</span>
-                      {user.revoked && (
-                        <span className="px-1.5 py-0.5 text-[9px] font-bold bg-destructive/20 text-destructive rounded">
-                          REVOKED
-                        </span>
-                      )}
-                      {user.serverRoles?.includes('user-editor') && (
-                        <span className="px-1.5 py-0.5 text-[9px] font-bold bg-violet-500/20 text-violet-400 rounded">
-                          editor
-                        </span>
-                      )}
+          <div className="px-6 pb-6 overflow-y-auto">
+            {editUser ? (
+              <UserEditPanel
+                user={editUser}
+                onSave={() => {
+                  setEditingUser(null)
+                  loadUsers()
+                }}
+                onClose={() => setEditingUser(null)}
+              />
+            ) : loading ? (
+              <p className="text-xs text-muted-foreground text-center py-4">Loading...</p>
+            ) : (
+              <div className="space-y-2">
+                {users.map(user => (
+                  <div
+                    key={user.name}
+                    onClick={() => {
+                      haptic('tap')
+                      setEditingUser(user.name)
+                    }}
+                    onKeyDown={e => e.key === 'Enter' && setEditingUser(user.name)}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors cursor-pointer"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-foreground">{user.name}</span>
+                        {user.revoked && (
+                          <span className="px-1.5 py-0.5 text-[9px] font-bold bg-destructive/20 text-destructive rounded">
+                            REVOKED
+                          </span>
+                        )}
+                        {user.serverRoles?.includes('user-editor') && (
+                          <span className="px-1.5 py-0.5 text-[9px] font-bold bg-violet-500/20 text-violet-400 rounded">
+                            editor
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground mt-0.5">
+                        {user.grants
+                          .map(g => {
+                            const parts = [...(g.roles || []), ...(g.permissions || [])]
+                            const cwdLabel = g.cwd === '*' ? 'all' : g.cwd.split('/').pop()
+                            return `${cwdLabel}: ${parts.join(', ')}`
+                          })
+                          .join(' / ')}
+                      </div>
                     </div>
-                    <div className="text-[10px] text-muted-foreground mt-0.5">
-                      {user.grants
-                        .map(g => {
-                          const parts = [...(g.roles || []), ...(g.permissions || [])]
-                          const cwdLabel = g.cwd === '*' ? 'all' : g.cwd.split('/').pop()
-                          return `${cwdLabel}: ${parts.join(', ')}`
-                        })
-                        .join(' / ')}
+                    <div className="text-muted-foreground/40 text-[10px] shrink-0">
+                      {user.credentialCount} key{user.credentialCount !== 1 ? 's' : ''}
                     </div>
                   </div>
-                  <div className="text-muted-foreground/40 text-[10px] shrink-0">
-                    {user.credentialCount} key{user.credentialCount !== 1 ? 's' : ''}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 
