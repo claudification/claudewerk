@@ -1186,6 +1186,12 @@ Output a JSON array of strings. Each string should be the correct spelling of on
       grants: u.grants,
       serverRoles: u.serverRoles,
       credentialCount: u.credentials.length,
+      credentials: u.credentials.map(c => ({
+        credentialId: c.credentialId,
+        registeredAt: c.registeredAt,
+        counter: c.counter,
+        transports: c.transports,
+      })),
       pushSubscriptionCount: u.pushSubscriptions?.length || 0,
     }))
     return c.json({ users })

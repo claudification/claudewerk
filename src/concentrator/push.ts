@@ -114,9 +114,10 @@ export async function sendPushToAll(payload: PushPayload): Promise<{ sent: numbe
     }
   }
 
-  // Clean up stale subscriptions
+  // Clean up stale subscriptions (404/410 = endpoint no longer valid)
   if (staleEntries.length > 0) {
     for (const { userName, endpoint } of staleEntries) {
+      console.log(`[push] Removing stale subscription for "${userName}" (endpoint gone: ${endpoint.slice(0, 60)}...)`)
       removeSubscription(userName, endpoint)
     }
   }
@@ -156,6 +157,7 @@ export async function sendPushToUser(
   }
 
   for (const endpoint of staleEndpoints) {
+    console.log(`[push] Removing stale subscription for "${userName}" (endpoint gone: ${endpoint.slice(0, 60)}...)`)
     removeSubscription(userName, endpoint)
   }
 

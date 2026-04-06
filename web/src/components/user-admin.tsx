@@ -3,7 +3,7 @@
  * Gated behind canEditUsers (user-editor server role).
  */
 
-import { Copy, Plus, Shield, ShieldOff, UserPlus, X } from 'lucide-react'
+import { Copy, KeyRound, Plus, Shield, ShieldOff, Trash2, UserPlus, X } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
@@ -25,6 +25,12 @@ interface UserSummary {
   }>
   serverRoles?: string[]
   credentialCount: number
+  credentials: Array<{
+    credentialId: string
+    registeredAt: number
+    counter: number
+    transports?: string[]
+  }>
   pushSubscriptionCount: number
 }
 
@@ -275,6 +281,30 @@ function UserEditPanel({ user, onSave, onClose }: { user: UserSummary; onSave: (
   const [grants, setGrants] = useState(user.grants)
   const [serverRoles, setServerRoles] = useState<string[]>(user.serverRoles || [])
   const [saving, setSaving] = useState(false)
+  const [deletingCredential, setDeletingCredential] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+
+  async function handleDeleteCredential(credentialId: string) {
+    setDeletingCredential(credentialId)
+    try {
+      const res = await fetch(
+        `${API}/api/users/${encodeURIComponent(user.name)}/credentials/${encodeURIComponent(credentialId)}`,
+        { method: 'DELETE' },
+      )
+      const data = await res.json()
+      if (!res.ok) {
+        console.error('Delete passkey failed:', data.error)
+        haptic('error')
+      } else {
+        haptic('success')
+        onSave()
+      }
+    } catch {
+      haptic('error')
+    }
+    setDeletingCredential(null)
+    setConfirmDelete(null)
+  }
 
   async function handleSave() {
     setSaving(true)
@@ -337,6 +367,67 @@ function UserEditPanel({ user, onSave, onClose }: { user: UserSummary; onSave: (
           >
             user-editor
           </button>
+        </div>
+      </div>
+
+      {/* Passkeys */}
+      <div>
+        <label className="text-[10px] text-muted-foreground uppercase tracking-wider">
+          Passkeys ({user.credentials.length})
+        </label>
+        <div className="mt-1 space-y-1.5">
+          {user.credentials.map(cred => (
+            <div
+              key={cred.credentialId}
+              className="flex items-center gap-2 bg-secondary/50 rounded px-3 py-2 text-xs group"
+            >
+              <KeyRound className="w-3 h-3 text-muted-foreground shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="font-mono text-foreground/80 truncate text-[10px]">
+                  {cred.credentialId.slice(0, 24)}...
+                </div>
+                <div className="text-[10px] text-muted-foreground">
+                  {new Date(cred.registeredAt).toLocaleDateString()}
+                  {cred.transports?.length ? ` / ${cred.transports.join(', ')}` : ''}
+                  {cred.counter > 0 && ` / ${cred.counter} uses`}
+                </div>
+              </div>
+              {confirmDelete === cred.credentialId ? (
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-destructive">Kill sessions?</span>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="text-[10px] h-5 px-2"
+                    disabled={deletingCredential === cred.credentialId}
+                    onClick={() => handleDeleteCredential(cred.credentialId)}
+                  >
+                    {deletingCredential === cred.credentialId ? '...' : 'Yes'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-[10px] h-5 px-2"
+                    onClick={() => setConfirmDelete(null)}
+                  >
+                    No
+                  </Button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    haptic('tick')
+                    setConfirmDelete(cred.credentialId)
+                  }}
+                  className="text-muted-foreground/40 hover:text-destructive p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Delete passkey"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          ))}
         </div>
       </div>
 
