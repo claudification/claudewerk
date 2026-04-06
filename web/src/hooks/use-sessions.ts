@@ -229,11 +229,21 @@ function applyDefaultSession() {
   // Don't override if a session was already selected (hash route, deep link, etc.)
   if (store.selectedSessionId) return
 
+  // Try configured default session CWD
   const cwd = store.dashboardPrefs.defaultSessionCwd
-  if (!cwd) return
+  if (cwd) {
+    const best = findBestSessionForCwd(store.sessions, cwd)
+    if (best) {
+      store.selectSession(best.id)
+      return
+    }
+  }
 
-  const best = findBestSessionForCwd(store.sessions, cwd)
-  if (best) store.selectSession(best.id)
+  // Auto-select if only one non-ended session visible (common for restricted users)
+  const activeSessions = store.sessions.filter(s => s.status !== 'ended')
+  if (activeSessions.length === 1) {
+    store.selectSession(activeSessions[0].id)
+  }
 }
 
 function processHash() {

@@ -393,8 +393,8 @@ function Dashboard() {
     }
   }
 
-  const { canAdmin, canSpawn } = useSessionsStore(s => s.permissions)
-  const showSessionList = canAdmin || canSpawn
+  const { canAdmin } = useSessionsStore(s => s.permissions)
+  const showSessionList = true // sidebar always visible for authenticated users
 
   return (
     <div className="h-full flex flex-col p-2 sm:p-4 max-w-[1400px] mx-auto overflow-hidden" {...swipeHandlers}>
