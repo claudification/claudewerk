@@ -833,6 +833,8 @@ export function SessionDetail() {
       <AskQuestionBanners />
       {/* Clipboard Capture Banners */}
       <ClipboardBanners />
+      {/* Share banner - always visible when shares active (admin only) */}
+      {canAdmin && session && <ShareBanner sessionCwd={session.cwd} />}
       {/* Session Info - Collapsible */}
       <div className="shrink-0 border-b border-border max-h-[30vh] overflow-y-auto">
         <button
@@ -1104,9 +1106,6 @@ export function SessionDetail() {
                     )}
                   </div>
                 )}
-
-                {/* Share banner (admin only) */}
-                {canAdmin && <ShareBanner sessionCwd={session.cwd} />}
 
                 {/* CWD */}
                 <div className="flex items-center gap-1 group/cwd">
