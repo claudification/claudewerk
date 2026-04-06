@@ -2,6 +2,7 @@ import { Fzf } from 'fzf'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FileInfo } from '@/hooks/use-file-editor'
 import { useSessionsStore } from '@/hooks/use-sessions'
+import { getFrequencyMap, recordSwitch } from '@/lib/session-frequency'
 import type { Session } from '@/lib/types'
 import { getPaletteCommands } from './commands'
 import type { PaletteMode } from './types'
@@ -40,14 +41,24 @@ export function useCommandPalette(onClose: () => void) {
   const filteredCommands = isCommandMode ? commands.filter(c => c.label.toLowerCase().includes(commandFilter)) : []
 
   // --- Session mode ---
+  // Sort by: MRU top 2 (alt-tab), then frequency-weighted for the rest
   const activeCwds = new Set(sessions.filter(s => s.status !== 'ended').map(s => s.cwd))
   const deduplicated = sessions.filter(s => s.status !== 'ended' || !activeCwds.has(s.cwd))
   const mruIndex = new Map(sessionMru.map((id, i) => [id, i]))
+  const freqMap = useMemo(() => getFrequencyMap(), [])
   const allSessions = [...deduplicated].sort((a, b) => {
     const ai = mruIndex.get(a.id) ?? Number.MAX_SAFE_INTEGER
     const bi = mruIndex.get(b.id) ?? Number.MAX_SAFE_INTEGER
-    if (ai !== bi) return ai - bi
-    return b.startedAt - a.startedAt
+    // Top 2 MRU spots are sacred (alt-tab behavior)
+    const aTop = ai < 2
+    const bTop = bi < 2
+    if (aTop !== bTop) return aTop ? -1 : 1
+    if (aTop && bTop) return ai - bi
+    // Rest sorted by frequency (descending), then recency as tiebreaker
+    const af = freqMap[a.cwd]?.count || 0
+    const bf = freqMap[b.cwd]?.count || 0
+    if (af !== bf) return bf - af
+    return b.lastActivity - a.lastActivity
   })
 
   const sessionFzf = useMemo(
@@ -223,6 +234,12 @@ export function useCommandPalette(onClose: () => void) {
     inputRef.current?.focus()
   }, [])
 
+  // Track frequency when selecting via switcher (keyboard or click)
+  function selectSessionWithTracking(session: Session, onSelectSession: (id: string) => void) {
+    recordSwitch(session.cwd)
+    onSelectSession(session.id)
+  }
+
   // --- Keyboard handler ---
   function handleKeyDown(
     e: React.KeyboardEvent,
@@ -281,7 +298,7 @@ export function useCommandPalette(onClose: () => void) {
             callbacks.onFileSelect(selectedSessionId, file.path)
           }
         } else if (filteredSessions[activeIndex]) {
-          callbacks.onSelectSession(filteredSessions[activeIndex].id)
+          selectSessionWithTracking(filteredSessions[activeIndex], callbacks.onSelectSession)
         }
         break
     }
@@ -329,5 +346,6 @@ export function useCommandPalette(onClose: () => void) {
     handleKeyDown,
     handleSpawn,
     handleDirSelect,
+    selectSessionWithTracking,
   }
 }

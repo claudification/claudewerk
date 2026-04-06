@@ -92,7 +92,11 @@ export function CommandPalette({ onSelect, onFileSelect, onClose }: CommandPalet
               projectSettings={palette.projectSettings}
               activeIndex={palette.activeIndex}
               setActiveIndex={palette.setActiveIndex}
-              onSelect={onSelect}
+              onSelect={id => {
+                const session = palette.sessions.find(s => s.id === id)
+                if (session) palette.selectSessionWithTracking(session, onSelect)
+                else onSelect(id)
+              }}
             />
           )}
         </div>

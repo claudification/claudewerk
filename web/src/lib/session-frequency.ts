@@ -1,0 +1,58 @@
+/**
+ * Session frequency tracker - persisted in localStorage.
+ *
+ * Tracks how often each project (by CWD) is switched to via the command palette.
+ * Used to sort the switcher list by frequency + recency (alt-tab style).
+ */
+
+const STORAGE_KEY = 'session-switch-frequency'
+const MAX_ENTRIES = 200
+
+interface FrequencyEntry {
+  count: number
+  lastUsed: number // timestamp
+}
+
+type FrequencyMap = Record<string, FrequencyEntry>
+
+function load(): FrequencyMap {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    return raw ? JSON.parse(raw) : {}
+  } catch {
+    return {}
+  }
+}
+
+function save(map: FrequencyMap) {
+  // Prune old entries if over limit
+  const entries = Object.entries(map)
+  if (entries.length > MAX_ENTRIES) {
+    entries.sort((a, b) => b[1].lastUsed - a[1].lastUsed)
+    const pruned = Object.fromEntries(entries.slice(0, MAX_ENTRIES))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(pruned))
+  } else {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(map))
+  }
+}
+
+/** Record a switch to a session (by CWD). Call when user selects via switcher. */
+export function recordSwitch(cwd: string) {
+  const map = load()
+  const entry = map[cwd] || { count: 0, lastUsed: 0 }
+  entry.count++
+  entry.lastUsed = Date.now()
+  map[cwd] = entry
+  save(map)
+}
+
+/** Get the frequency count for a CWD. */
+export function getFrequency(cwd: string): number {
+  const map = load()
+  return map[cwd]?.count || 0
+}
+
+/** Get all frequency data (for sorting). Cached per call to avoid repeated localStorage reads. */
+export function getFrequencyMap(): FrequencyMap {
+  return load()
+}
