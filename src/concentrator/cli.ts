@@ -44,7 +44,10 @@ function notifyServer(cacheDir: string): void {
   }
 }
 
-const DEFAULT_CACHE_DIR = join(process.env.HOME || process.env.USERPROFILE || '/root', '.cache', 'concentrator')
+// Docker container uses /data/cache; detect it automatically
+const DEFAULT_CACHE_DIR = existsSync('/data/cache')
+  ? '/data/cache'
+  : join(process.env.HOME || process.env.USERPROFILE || '/root', '.cache', 'concentrator')
 
 function printUsage(): void {
   console.log(`

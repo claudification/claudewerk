@@ -1158,6 +1158,11 @@ Output a JSON array of strings. Each string should be the correct spelling of on
   // ─── User admin (gated behind user-editor server role) ─────────────
 
   function requireUserEditor(c: { req: { raw: Request } }): Response | null {
+    // Bearer token with shared secret = full admin access (CLI/scripts)
+    const authHeader = c.req.raw.headers.get('authorization')
+    const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+    if (rclaudeSecret && bearerToken && bearerToken === rclaudeSecret) return null
+
     const userName = getAuthenticatedUser(c.req.raw)
     if (!userName)
       return c.req.raw.headers.get('accept')?.includes('json')
