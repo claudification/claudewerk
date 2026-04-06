@@ -87,13 +87,18 @@ function Dashboard() {
   // Connect to WebSocket for real-time session updates
   useWebSocket()
 
-  // Fetch project settings, server capabilities, and global settings on mount
-  useEffect(() => {
+  // Fetch sidebar metadata (project settings, capabilities, global settings, session order).
+  // Called on mount AND on reconnect/visibility-restore to catch renames, reorders, etc.
+  const fetchSidebarMetadata = useCallback(() => {
     fetchProjectSettings().then(s => useSessionsStore.getState().setProjectSettings(s))
     fetchServerCapabilities().then(c => useSessionsStore.getState().setServerCapabilities(c))
     fetchGlobalSettings().then(s => useSessionsStore.setState({ globalSettings: s }))
     fetchSessionOrder().then(o => useSessionsStore.getState().setSessionOrder(o))
   }, [])
+
+  useEffect(() => {
+    fetchSidebarMetadata()
+  }, [fetchSidebarMetadata])
 
   // Listen for user admin open event (from command palette)
   useEffect(() => {
@@ -151,9 +156,11 @@ function Dashboard() {
         // Mobile browsers freeze JS during background - transcript entries received by the
         // WS buffer may be incomplete. Don't trust the WS kept up; just refetch.
         if (elapsed > 5000) {
+          console.log(`[sync] force refetch sidebar metadata after ${(elapsed / 1000).toFixed(0)}s background`)
+          fetchSidebarMetadata()
           const sid = useSessionsStore.getState().selectedSessionId
           if (sid) {
-            console.log(`[sync] force refetch after ${(elapsed / 1000).toFixed(0)}s background`)
+            console.log(`[sync] force refetch transcript after ${(elapsed / 1000).toFixed(0)}s background`)
             fetchedAtRef.current = {}
             fetchSessionData(sid, 'visibility-restore')
           }
@@ -215,11 +222,14 @@ function Dashboard() {
   useEffect(() => {
     if (!isConnected) return
     const sid = useSessionsStore.getState().selectedSessionId
-    console.log(`[sync] connectSeq=${connectSeq} - refresh sessions, re-fetch ${sid?.slice(0, 8) || 'none'}`)
+    console.log(
+      `[sync] connectSeq=${connectSeq} - refresh sessions + sidebar metadata, re-fetch ${sid?.slice(0, 8) || 'none'}`,
+    )
     wsSend('refresh_sessions')
+    fetchSidebarMetadata()
     fetchedAtRef.current = {}
     if (sid) fetchSessionData(sid, 'reconnect')
-  }, [connectSeq, fetchSessionData]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [connectSeq, fetchSessionData, fetchSidebarMetadata]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // On session switch: fetch only if transcript not in LIFO cache.
   // Cached sessions have active WS subscriptions pushing entries in real-time.
