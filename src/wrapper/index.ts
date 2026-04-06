@@ -11,6 +11,7 @@ import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { type FSWatcher as ChokidarWatcher, watch as chokidarWatch } from 'chokidar'
 import { isPathWithinCwd } from '../shared/path-guard'
+import { checkForUpdate, formatUpdateResult, formatVersion } from '../shared/update-check'
 import type { HookEvent, TaskInfo, TasksUpdate, TranscriptEntry, WrapperMessage } from '../shared/protocol'
 import { DEFAULT_CONCENTRATOR_URL } from '../shared/protocol'
 import { DEBUG, debug } from './debug'
@@ -163,6 +164,8 @@ OPTIONS:
   --no-terminal          Disable remote terminal capability
   --no-channels          Disable MCP channel (channels are ON by default)
   --channels             Enable MCP channel (already default, for explicitness)
+  --rclaude-version      Show rclaude build version
+  --rclaude-check-update Check if a newer version is available on GitHub
   --rclaude-help         Show this help message
 
 ENVIRONMENT:
@@ -261,6 +264,13 @@ async function main() {
 
     if (arg === '--rclaude-help') {
       printHelp()
+      process.exit(0)
+    } else if (arg === '--rclaude-version') {
+      console.log(formatVersion())
+      process.exit(0)
+    } else if (arg === '--rclaude-check-update') {
+      const result = await checkForUpdate()
+      console.log(formatUpdateResult(result))
       process.exit(0)
     } else if (arg === '--concentrator') {
       concentratorUrl = args[++i] || DEFAULT_CONCENTRATOR_URL

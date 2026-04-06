@@ -652,6 +652,8 @@ OPTIONS:
   --no-terminal          Disable remote terminal capability
   --no-channels          Disable MCP channel (channels are ON by default)
   --channels             Enable MCP channel (already default, for explicitness)
+  --rclaude-version      Show build version (commit hash, branch, repo, build time)
+  --rclaude-check-update Check if a newer version is available on GitHub
   --rclaude-help         Show rclaude help
 
 All other arguments pass through to claude CLI.
@@ -1009,7 +1011,8 @@ remote-claude/
 │       ├── protocol.ts           # WebSocket protocol types
 │       ├── path-guard.ts         # File path validation (wrapper-side)
 │       ├── diff.ts               # Diff utilities
-│       └── version.ts            # Build-time git hash + timestamp
+│       ├── update-check.ts        # GitHub-based update checking
+│       └── version.ts            # Build-time git hash, branch, repo + timestamp
 ├── web/                          # React dashboard
 │   └── src/
 │       ├── components/
@@ -1059,7 +1062,7 @@ remote-claude/
 │       │   └── ws-stats.ts        # WebSocket statistics
 │       └── styles/                # Tokyo Night theme
 ├── scripts/
-│   ├── gen-version.ts             # Bakes git hash + build time
+│   ├── gen-version.ts             # Bakes git hash, branch, GitHub repo + build time
 │   ├── build-concentrator.ts      # Concentrator build script
 │   ├── rclaude-boot.sh            # Smart tmux launcher (continue/fresh)
 │   ├── revive-session.sh          # Session revival via tmux
