@@ -300,6 +300,8 @@ const channelSend: MessageHandler = (ctx, data) => {
 
 const quitSession: MessageHandler = (ctx, data) => {
   const sessionId = data.sessionId as string
+  const session = sessionId ? ctx.sessions.getSession(sessionId) : undefined
+  if (session) ctx.requirePermission('chat', session.cwd)
   const targetWs = sessionId ? ctx.sessions.getSessionSocket(sessionId) : null
   if (targetWs) {
     targetWs.send(JSON.stringify({ type: 'terminate_session', sessionId }))
@@ -313,6 +315,7 @@ const sessionViewed: MessageHandler = (ctx, data) => {
   const sessionId = data.sessionId as string
   if (!sessionId) return
   const session = ctx.sessions.getSession(sessionId)
+  if (session) ctx.requirePermission('chat:read', session.cwd)
   if (session?.hasNotification) {
     session.hasNotification = false
     ctx.sessions.broadcastSessionUpdate(sessionId)
@@ -325,6 +328,11 @@ const channelLinkResponse: MessageHandler = (ctx, data) => {
   const fromSession = data.fromSession as string
   const toSession = data.toSession as string
   if (!fromSession || !toSession) return
+
+  const fromSess = ctx.sessions.getSession(fromSession)
+  if (fromSess) ctx.requirePermission('chat', fromSess.cwd)
+  const toSess = ctx.sessions.getSession(toSession)
+  if (toSess) ctx.requirePermission('chat', toSess.cwd)
 
   if (data.action === 'approve') {
     ctx.sessions.linkSessions(fromSession, toSession)
@@ -351,6 +359,10 @@ const channelUnlink: MessageHandler = (ctx, data) => {
   const sessionA = data.sessionA as string
   const sessionB = data.sessionB as string
   if (!sessionA || !sessionB) return
+  const sessACheck = ctx.sessions.getSession(sessionA)
+  if (sessACheck) ctx.requirePermission('chat', sessACheck.cwd)
+  const sessBCheck = ctx.sessions.getSession(sessionB)
+  if (sessBCheck) ctx.requirePermission('chat', sessBCheck.cwd)
   ctx.sessions.unlinkSessions(sessionA, sessionB)
   const sessA = ctx.sessions.getSession(sessionA)
   const sessB = ctx.sessions.getSession(sessionB)

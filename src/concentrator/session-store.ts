@@ -845,11 +845,14 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         }
       }
       // Notify dashboards that this session resumed - triggers transcript re-fetch
-      broadcast({
-        type: 'session_update',
-        sessionId: id,
-        session: toSessionSummary(session),
-      })
+      broadcastSessionScoped(
+        {
+          type: 'session_update',
+          sessionId: id,
+          session: toSessionSummary(session),
+        },
+        session.cwd,
+      )
     }
   }
 
@@ -978,12 +981,15 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     }
 
     // Broadcast update (not end+create) so dashboard stays on this session
-    broadcast({
-      type: 'session_update',
-      sessionId: newId,
-      previousSessionId: oldId,
-      session: toSessionSummary(session),
-    })
+    broadcastSessionScoped(
+      {
+        type: 'session_update',
+        sessionId: newId,
+        previousSessionId: oldId,
+        session: toSessionSummary(session),
+      },
+      session.cwd,
+    )
 
     // If compaction was in progress, re-inject the compacting marker into the new transcript.
     // Sent AFTER session_update so dashboard has already switched to newId and won't wipe it.
@@ -1335,12 +1341,15 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         const data = event.data as Record<string, unknown>
         const message = typeof data.message === 'string' ? data.message : 'Needs attention'
         const projectName = getProjectSettings(session.cwd)?.label || session.cwd.split('/').pop() || session.cwd
-        broadcast({
-          type: 'toast',
-          sessionId,
-          title: projectName,
-          message,
-        })
+        broadcastSessionScoped(
+          {
+            type: 'toast',
+            sessionId,
+            title: projectName,
+            message,
+          },
+          session.cwd,
+        )
       }
 
       // Broadcast event to dashboard subscribers (channel-filtered for v2)
@@ -2023,7 +2032,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
                   ...(mime ? { base64, mimeType: mime } : { text: decodedText }),
                   timestamp: Date.now(),
                 }
-                broadcast(capture)
+                broadcastSessionScoped(capture, session.cwd)
                 if (toolUseId) processedClipboardIds.add(toolUseId)
                 // Persist to shared files log (per-CWD, survives restarts)
                 const clipHash = `clip_${Date.now().toString(36)}_${base64.slice(0, 8)}`

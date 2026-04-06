@@ -47,6 +47,8 @@ const permissionResponse: MessageHandler = (ctx, data) => {
 // Permission rule: dashboard -> wrapper (session-scoped auto-approve)
 const permissionRule: MessageHandler = (ctx, data) => {
   const sessionId = data.sessionId as string
+  const sess = sessionId ? ctx.sessions.getSession(sessionId) : undefined
+  if (sess) ctx.requirePermission('chat', sess.cwd)
   const targetWs = sessionId ? ctx.sessions.getSessionSocket(sessionId) : null
   if (targetWs) {
     targetWs.send(
