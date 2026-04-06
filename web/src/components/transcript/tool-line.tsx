@@ -699,7 +699,41 @@ export function ToolLine({
 
   // Show error result when no details are set but tool returned an error
   if (isError && !details && result) {
-    details = <pre className="text-[10px] text-red-400 bg-red-400/10 p-2 rounded whitespace-pre-wrap">{result}</pre>
+    // Extract clean error message from tool_use_error XML
+    const errorMatch = result.match(/<tool_use_error>([\s\S]*?)<\/tool_use_error>/)
+    const errorMsg = errorMatch ? errorMatch[1].trim() : result
+    details = (
+      <div className="text-[10px] text-red-400/90 bg-red-400/5 border border-red-400/20 rounded px-2.5 py-1.5 font-mono">
+        {errorMsg}
+      </div>
+    )
+  }
+
+  // Handle persisted-output (tool result too large)
+  if (!isError && !details && result) {
+    const persistedMatch = result.match(/<persisted-output>\s*([\s\S]*?)\s*<\/persisted-output>/)
+    if (persistedMatch) {
+      const inner = persistedMatch[1]
+      const sizeMatch = inner.match(/Output too large \(([^)]+)\)/)
+      const pathMatch = inner.match(/Full output saved to: (.+?)(?:\n|$)/)
+      const previewMatch = inner.match(/Preview \(first [^)]+\):\s*([\s\S]*)/)
+      const size = sizeMatch?.[1] || 'large'
+      const path = pathMatch?.[1]?.trim()
+      details = (
+        <div className="text-[10px] font-mono">
+          <div className="flex items-center gap-2 px-2.5 py-1.5 bg-amber-400/5 border border-amber-400/15 rounded-t text-amber-400/80">
+            <span className="font-bold">{size}</span>
+            <span className="text-muted-foreground">output truncated</span>
+            {path && <span className="text-muted-foreground/50 truncate ml-auto">{path.split('/').pop()}</span>}
+          </div>
+          {previewMatch?.[1] && (
+            <pre className="bg-black/30 p-2 rounded-b whitespace-pre-wrap break-words text-foreground/70 max-h-32 overflow-y-auto">
+              {previewMatch[1].trim().slice(0, 500)}
+            </pre>
+          )}
+        </div>
+      )
+    }
   }
 
   return (
