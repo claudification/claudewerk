@@ -148,8 +148,9 @@ export const ExplorerModal = memo(function ExplorerModal({
         setValues(prev => ({ ...prev, [id]: value }))
         onInteraction()
       },
+      activeAction: lastAction,
     }),
-    [values, onInteraction],
+    [values, onInteraction, lastAction],
   )
 
   const handleSubmit = useCallback(

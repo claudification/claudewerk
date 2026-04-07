@@ -31,6 +31,7 @@ const COLOR_CLASSES: Record<string, string> = {
 export interface ExplorerFormState {
   values: Record<string, unknown>
   setValue: (id: string, value: unknown) => void
+  activeAction?: string | null
 }
 
 // ─── Component renderers ───────────────────────────────────────────
@@ -358,12 +359,14 @@ function ActionButton({
   variant,
   intent,
   onAction,
+  isActive,
 }: {
   id: string
   label: string
   variant?: ButtonVariant
   intent?: ButtonIntent
   onAction: (actionId: string) => void
+  isActive?: boolean
 }) {
   const btnVariant = intent === 'destructive' ? 'destructive' : BUTTON_VARIANT_MAP[variant || 'default'] || 'default'
 
@@ -371,6 +374,7 @@ function ActionButton({
     <Button
       variant={btnVariant}
       size="sm"
+      className={cn(isActive && 'ring-2 ring-primary ring-offset-1 ring-offset-background')}
       onClick={() => {
         haptic('tap')
         onAction(id)
@@ -541,6 +545,7 @@ export const ComponentRenderer = memo(function ComponentRenderer({
           variant={component.variant}
           intent={component.intent}
           onAction={onAction}
+          isActive={form.activeAction === component.id}
         />
       )
 
