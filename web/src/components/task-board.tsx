@@ -9,6 +9,20 @@ import { type TaskNoteMeta, type TaskStatus, useTaskNotes } from '@/hooks/use-ta
 import { cn, haptic } from '@/lib/utils'
 import { MarkdownInput } from './markdown-input'
 
+function noteAge(created: string): string {
+  if (!created) return ''
+  const ms = Date.now() - new Date(created).getTime()
+  if (ms < 0) return ''
+  const mins = Math.floor(ms / 60000)
+  if (mins < 1) return 'now'
+  if (mins < 60) return `${mins}m`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h`
+  const days = Math.floor(hrs / 24)
+  if (days < 30) return `${days}d`
+  return `${Math.floor(days / 30)}mo`
+}
+
 const COLUMNS: { status: TaskStatus; label: string; color: string }[] = [
   { status: 'open', label: 'Open', color: 'text-[#7aa2f7]' },
   { status: 'in-progress', label: 'In Progress', color: 'text-[#e0af68]' },
@@ -47,7 +61,12 @@ function TaskCard({
     <div className="group px-3 py-2 bg-[#1a1b26] border border-[#33467c]/30 hover:border-[#33467c]/60 transition-colors">
       <div className="flex items-start gap-2">
         <div className="flex-1 min-w-0">
-          <div className="text-xs font-mono text-foreground truncate">{note.title}</div>
+          <div className="text-xs font-mono text-foreground truncate flex items-center gap-1.5">
+            <span className="truncate">{note.title}</span>
+            {note.created && (
+              <span className="text-[9px] text-muted-foreground/40 shrink-0">{noteAge(note.created)}</span>
+            )}
+          </div>
           {note.bodyPreview && (
             <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{note.bodyPreview}</div>
           )}
