@@ -26,6 +26,7 @@ import {
   type SessionInfo,
   sendPermissionResponse,
   setClaudeCodeVersion,
+  setExplorerCwd,
 } from './mcp-channel'
 import { Osc52Parser } from './osc52-parser'
 import { createRulesEngine } from './permission-rules'
@@ -333,6 +334,7 @@ async function main() {
   // Detect Claude Code version and auth info early - needed for settings merge and concentrator
   const claudeVersion = detectClaudeVersion()
   setClaudeCodeVersion(claudeVersion)
+  setExplorerCwd(cwd)
   const claudeAuth = detectClaudeAuth()
 
   // Queue events until we have the real session ID (capped to prevent unbounded growth)

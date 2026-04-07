@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
-  validateExplorerLayout,
-  explorerToolInputSchema,
-  type ExplorerLayout,
   type ExplorerComponent,
+  type ExplorerLayout,
+  explorerToolInputSchema,
+  validateExplorerLayout,
 } from './explorer-schema'
 
 describe('validateExplorerLayout', () => {
@@ -18,9 +18,7 @@ describe('validateExplorerLayout', () => {
   it('accepts a minimal valid layout with pages', () => {
     const layout: ExplorerLayout = {
       title: 'Test',
-      pages: [
-        { label: 'Page 1', body: [{ type: 'Markdown', content: 'Hello' }] },
-      ],
+      pages: [{ label: 'Page 1', body: [{ type: 'Markdown', content: 'Hello' }] }],
     }
     expect(validateExplorerLayout(layout)).toEqual([])
   })
@@ -195,10 +193,14 @@ describe('validateExplorerLayout', () => {
           body: [
             { type: 'Markdown', content: '## Step 1' },
             { type: 'TextInput', id: 'name', label: 'Project name', required: true },
-            { type: 'Options', id: 'lang', options: [
-              { value: 'ts', label: 'TypeScript' },
-              { value: 'py', label: 'Python' },
-            ]},
+            {
+              type: 'Options',
+              id: 'lang',
+              options: [
+                { value: 'ts', label: 'TypeScript' },
+                { value: 'py', label: 'Python' },
+              ],
+            },
           ],
         },
         {

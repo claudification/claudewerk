@@ -13,6 +13,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { resolve } from 'node:path'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
@@ -90,6 +91,66 @@ interface PendingExplorer {
   timer: ReturnType<typeof setTimeout>
 }
 const pendingExplorers = new Map<string, PendingExplorer>()
+
+/** Module-level CWD for file resolution in explorer */
+let explorerCwd = process.cwd()
+
+/** Set the CWD used for resolving relative paths in explorer layouts */
+export function setExplorerCwd(cwd: string): void {
+  explorerCwd = cwd
+}
+
+function isUrl(s: string): boolean {
+  return s.startsWith('http://') || s.startsWith('https://')
+}
+
+/**
+ * Walk an explorer layout and upload any local file paths (Image.url, ImagePicker.images[].url).
+ * Returns an error message if any file doesn't exist or fails to upload, null on success.
+ * Mutates the layout in place, replacing file paths with uploaded URLs.
+ */
+async function resolveExplorerFiles(
+  components: Array<Record<string, unknown>>,
+  uploadFile: (path: string) => Promise<string | null>,
+  cwd: string,
+): Promise<string | null> {
+  for (const comp of components) {
+    const type = comp.type as string
+
+    if (type === 'Image' && typeof comp.url === 'string' && !isUrl(comp.url)) {
+      const absPath = resolve(cwd, comp.url)
+      const file = Bun.file(absPath)
+      if (!(await file.exists())) {
+        return `Image file not found: ${comp.url} (resolved to ${absPath})`
+      }
+      const url = await uploadFile(absPath)
+      if (!url) return `Failed to upload image: ${comp.url}`
+      comp.url = url
+    }
+
+    if (type === 'ImagePicker' && Array.isArray(comp.images)) {
+      for (const img of comp.images as Array<Record<string, unknown>>) {
+        if (typeof img.url === 'string' && !isUrl(img.url)) {
+          const absPath = resolve(cwd, img.url)
+          const file = Bun.file(absPath)
+          if (!(await file.exists())) {
+            return `ImagePicker file not found: ${img.url} (resolved to ${absPath})`
+          }
+          const url = await uploadFile(absPath)
+          if (!url) return `Failed to upload image: ${img.url}`
+          img.url = url
+        }
+      }
+    }
+
+    // Recurse into layout children
+    if (Array.isArray(comp.children)) {
+      const err = await resolveExplorerFiles(comp.children as Array<Record<string, unknown>>, uploadFile, cwd)
+      if (err) return err
+    }
+  }
+  return null
+}
 
 /** Resolve a pending explorer with the user's result (called from WS handler) */
 export function resolveExplorer(explorerId: string, result: ExplorerResult): boolean {
@@ -467,6 +528,21 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
             return {
               content: [{ type: 'text', text: `Invalid explorer layout:\n${validationErrors.join('\n')}` }],
               isError: true,
+            }
+          }
+
+          // Resolve local file paths in Image/ImagePicker components
+          const allComponents: Array<Record<string, unknown>> = []
+          if (layout.body) allComponents.push(...(layout.body as unknown as Array<Record<string, unknown>>))
+          if (layout.pages) {
+            for (const page of layout.pages as unknown as Array<{ body: Array<Record<string, unknown>> }>) {
+              allComponents.push(...page.body)
+            }
+          }
+          if (callbacks.onShareFile) {
+            const uploadErr = await resolveExplorerFiles(allComponents, callbacks.onShareFile, explorerCwd)
+            if (uploadErr) {
+              return { content: [{ type: 'text', text: `Explorer file error: ${uploadErr}` }], isError: true }
             }
           }
 
