@@ -21,6 +21,7 @@ import {
   unrevokeUser,
 } from './auth'
 import { getAuthenticatedUser, handleAuthRoute, requireAuth } from './auth-routes'
+import { startFileReaper } from './file-reaper'
 import { getGlobalSettings, updateGlobalSettings } from './global-settings'
 import { purgeMessages, queryMessages } from './inter-session-log'
 import { resolveInJail } from './path-jail'
@@ -49,8 +50,6 @@ import { UI_HTML } from './ui'
 
 let blobDir = '' // set by initBlobStore()
 
-const BLOB_MAX_AGE_MS = 48 * 60 * 60 * 1000 // 48h TTL
-
 function initBlobStore(cacheDir: string): void {
   blobDir = join(cacheDir, 'blobs')
   mkdirSync(blobDir, { recursive: true })
@@ -62,39 +61,6 @@ function initBlobStore(cacheDir: string): void {
     /* empty dir */
   }
 }
-
-// Evict expired blobs from disk hourly
-setInterval(
-  () => {
-    if (!blobDir) return
-    const now = Date.now()
-    let evicted = 0
-    try {
-      for (const file of readdirSync(blobDir)) {
-        if (!file.endsWith('.meta')) continue
-        try {
-          const meta = JSON.parse(readFileSync(join(blobDir, file), 'utf8'))
-          if (now - meta.createdAt > BLOB_MAX_AGE_MS) {
-            const hash = file.replace('.meta', '')
-            try {
-              unlinkSync(join(blobDir, hash))
-            } catch {}
-            try {
-              unlinkSync(join(blobDir, file))
-            } catch {}
-            evicted++
-          }
-        } catch {
-          /* corrupt meta */
-        }
-      }
-    } catch {
-      /* dir gone */
-    }
-    if (evicted > 0) console.log(`[blobs] Evicted ${evicted} expired blobs`)
-  },
-  60 * 60 * 1000,
-)
 
 function hashString(input: string): string {
   const hasher = new Bun.CryptoHasher('sha256')
@@ -452,6 +418,7 @@ export function createRouter(options: RouteOptions): Hono {
   // Initialize disk-backed blob store + shared files log
   if (cacheDir) {
     initBlobStore(cacheDir)
+    startFileReaper(blobDir)
     initSharedFilesLog(cacheDir)
   }
 
