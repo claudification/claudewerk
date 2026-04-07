@@ -503,9 +503,20 @@ const InputBar = memo(function InputBar({ sessionId }: { sessionId: string }) {
   const [inputValue, setLocalInput] = useState(() => useSessionsStore.getState().inputDrafts[sessionId] ?? '')
   const [isSending, setIsSending] = useState(false)
   const [showAttention, setShowAttention] = useState(false)
+  const [voiceActive, setVoiceActive] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef(inputValue)
   const sessionRef = useRef(sessionId)
+
+  // Listen for voice state changes from VoiceFab
+  useEffect(() => {
+    function handleVoiceState(e: Event) {
+      const state = (e as CustomEvent).detail
+      setVoiceActive(state !== 'idle')
+    }
+    window.addEventListener('voice-state', handleVoiceState)
+    return () => window.removeEventListener('voice-state', handleVoiceState)
+  }, [])
 
   // Track pendingAttention with 15s delay before showing
   const pendingAttention = useSessionsStore(s => s.sessions.find(sess => sess.id === sessionId)?.pendingAttention)
@@ -571,7 +582,13 @@ const InputBar = memo(function InputBar({ sessionId }: { sessionId: string }) {
   }
 
   return (
-    <div ref={containerRef} className="shrink-0 p-3 border-t border-border bg-background z-10">
+    <div
+      ref={containerRef}
+      className={cn(
+        'shrink-0 p-3 border-t bg-background z-10 transition-colors duration-200',
+        voiceActive ? 'border-t-2 border-red-500/60 shadow-[0_-2px_12px_rgba(239,68,68,0.15)]' : 'border-border',
+      )}
+    >
       {showAttention && pendingAttention && (
         <div
           role="button"

@@ -146,6 +146,14 @@ export function VoiceFab() {
     }
   }
 
+  // Broadcast voice state to input area for visual indicators
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('voice-state', { detail: voice.state }))
+    return () => {
+      window.dispatchEvent(new CustomEvent('voice-state', { detail: 'idle' }))
+    }
+  }, [voice.state])
+
   const needsUnlock = micPermission === 'prompt' || micPermission === 'unknown'
   const isRecording = voice.state === 'recording'
   const isActive = voice.state !== 'idle'
