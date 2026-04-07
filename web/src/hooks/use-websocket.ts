@@ -504,6 +504,31 @@ function processMessage(msg: DashboardMessage) {
       }
       break
     }
+    case 'explorer_show': {
+      const exSid = msg.sessionId as string
+      const exId = msg.explorerId as string
+      const exLayout = msg.layout as import('@shared/explorer-schema').ExplorerLayout
+      if (exSid && exId && exLayout) {
+        useSessionsStore.setState(state => ({
+          pendingExplorers: {
+            ...state.pendingExplorers,
+            [exSid]: { explorerId: exId, layout: exLayout, timestamp: Date.now() },
+          },
+        }))
+      }
+      break
+    }
+    case 'explorer_dismiss': {
+      const exSid = msg.sessionId as string
+      if (exSid) {
+        useSessionsStore.setState(state => {
+          const updated = { ...state.pendingExplorers }
+          delete updated[exSid]
+          return { pendingExplorers: updated }
+        })
+      }
+      break
+    }
     case 'clipboard_capture': {
       const clipMsg = msg as DashboardMessage & {
         contentType?: 'text' | 'image'

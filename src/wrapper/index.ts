@@ -11,9 +11,9 @@ import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { type FSWatcher as ChokidarWatcher, watch as chokidarWatch } from 'chokidar'
 import { isPathWithinCwd } from '../shared/path-guard'
-import { checkForUpdate, formatUpdateResult, formatVersion } from '../shared/update-check'
 import type { HookEvent, TaskInfo, TasksUpdate, TranscriptEntry, WrapperMessage } from '../shared/protocol'
 import { DEFAULT_CONCENTRATOR_URL } from '../shared/protocol'
+import { checkForUpdate, formatUpdateResult, formatVersion } from '../shared/update-check'
 import { DEBUG, debug } from './debug'
 import { FileEditor } from './file-editor'
 import { resolveAskRequest, setLocalServerDebug, startLocalServer, stopLocalServer } from './local-server'
@@ -22,6 +22,7 @@ import {
   initMcpChannel,
   isMcpChannelReady,
   pushChannelMessage,
+  resolveExplorer,
   type SessionInfo,
   sendPermissionResponse,
   setClaudeCodeVersion,
@@ -302,9 +303,7 @@ async function main() {
     .then(result => {
       if (!result.upToDate && !result.error) {
         const behind = result.behindBy ? `${result.behindBy} commit(s)` : 'commits'
-        console.error(
-          `\x1b[33m⚠ rclaude update available (${behind} behind) — git pull && bun run build:client\x1b[0m`,
-        )
+        console.error(`\x1b[33m⚠ rclaude update available (${behind} behind) — git pull && bun run build:client\x1b[0m`)
       }
     })
     .catch(() => {}) // silently ignore network errors on startup
@@ -715,6 +714,15 @@ async function main() {
         diag(
           'ask',
           resolved ? `Answer resolved: ${toolUseId.slice(0, 12)}` : `No pending request: ${toolUseId.slice(0, 12)}`,
+        )
+      },
+      onExplorerResult(explorerId, result) {
+        const resolved = resolveExplorer(explorerId, result)
+        diag(
+          'explorer',
+          resolved
+            ? `Result resolved: ${explorerId.slice(0, 8)} action=${result._action}`
+            : `No pending explorer: ${explorerId.slice(0, 8)}`,
         )
       },
       onRendezvousResult(message: Record<string, unknown>) {
@@ -1184,6 +1192,17 @@ async function main() {
           description: data.description,
           inputPreview: data.inputPreview,
         })
+      }
+    },
+    onExplore(explorerId, layout) {
+      diag('explorer', `Show: "${layout.title}" (${explorerId.slice(0, 8)})`)
+      if (wsClient?.isConnected()) {
+        wsClient.send({
+          type: 'explorer_show',
+          sessionId: claudeSessionId || internalId,
+          explorerId,
+          layout,
+        } as unknown as WrapperMessage)
       }
     },
     onDisconnect() {

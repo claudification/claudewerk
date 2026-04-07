@@ -297,6 +297,8 @@ export type WrapperMessage =
   | PermissionRequest
   | AskQuestionRequest
   | ClipboardCapture
+  | ExplorerShowMessage
+  | ExplorerDismissMessage
 
 // Clipboard capture from PTY OSC 52 sequences
 export interface ClipboardCapture {
@@ -448,6 +450,30 @@ export interface AskQuestionResponse {
   skip?: boolean // true = fall through to terminal UI
 }
 
+// Explorer MCP tool (channel-based rich UI for user interaction)
+export type { ExplorerComponent, ExplorerLayout, ExplorerResult } from './explorer-schema'
+
+export interface ExplorerShowMessage {
+  type: 'explorer_show'
+  sessionId: string
+  explorerId: string
+  layout: import('./explorer-schema').ExplorerLayout
+}
+
+export interface ExplorerResultMessage {
+  type: 'explorer_result'
+  sessionId: string
+  explorerId: string
+  result: import('./explorer-schema').ExplorerResult
+  [key: string]: unknown
+}
+
+export interface ExplorerDismissMessage {
+  type: 'explorer_dismiss'
+  sessionId: string
+  explorerId: string
+}
+
 // Permission relay (CC -> channel -> dashboard -> channel -> CC)
 export interface PermissionRequest {
   type: 'permission_request'
@@ -483,6 +509,7 @@ export type ConcentratorMessage =
   | PermissionResponse
   | AskQuestionResponse
   | QuitSession
+  | ExplorerResultMessage
 
 export interface QuitSession {
   type: 'terminate_session'
@@ -748,6 +775,7 @@ export interface Session {
     timestamp: number
   }
   hasNotification?: boolean // unread notification (cleared when session is viewed)
+  pendingExplorer?: { explorerId: string; layout: import('./explorer-schema').ExplorerLayout; timestamp: number }
   tokenUsage?: { input: number; cacheCreation: number; cacheRead: number; output: number }
   // Transcript-derived metadata (from special JSONL entry types)
   summary?: string // AI-generated session summary

@@ -10,6 +10,7 @@ import { BgTasksView } from './bg-tasks-view'
 import { ConversationView } from './conversation-view'
 import { DiagView } from './diag-view'
 import { EventsView } from './events-view'
+import { ExplorerModal } from './explorer'
 import { FileEditor } from './file-editor'
 import { InlineTerminal } from './inline-terminal'
 import { MarkdownInput } from './markdown-input'
@@ -652,6 +653,24 @@ const InputBar = memo(function InputBar({ sessionId }: { sessionId: string }) {
   )
 })
 
+const EMPTY_EXPLORER = undefined
+
+function ExplorerOverlay({ sessionId }: { sessionId: string }) {
+  const pending = useSessionsStore(s => s.pendingExplorers[sessionId] || EMPTY_EXPLORER)
+  const submitExplorer = useSessionsStore(s => s.submitExplorer)
+  const dismissExplorer = useSessionsStore(s => s.dismissExplorer)
+
+  if (!pending) return null
+
+  return (
+    <ExplorerModal
+      layout={pending.layout}
+      onSubmit={result => submitExplorer(sessionId, pending.explorerId, result)}
+      onCancel={() => dismissExplorer(sessionId, pending.explorerId)}
+    />
+  )
+}
+
 export function SessionDetail() {
   const [activeTab, setActiveTab] = useState<Tab>('transcript')
   const [follow, setFollow] = useState(true)
@@ -835,6 +854,8 @@ export function SessionDetail() {
       <ClipboardBanners />
       {/* Share banner - always visible when shares active (admin only) */}
       {canAdmin && session && <ShareBanner sessionCwd={session.cwd} />}
+      {/* Explorer Modal */}
+      {selectedSessionId && <ExplorerOverlay sessionId={selectedSessionId} />}
       {/* Session Info - Collapsible */}
       <div className="shrink-0 border-b border-border max-h-[30vh] overflow-y-auto">
         <button

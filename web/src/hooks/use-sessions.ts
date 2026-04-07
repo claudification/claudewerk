@@ -125,6 +125,22 @@ interface SessionsState {
     annotations?: Record<string, { preview?: string; notes?: string }>,
     skip?: boolean,
   ) => void
+  // Explorer dialog state (pending per session)
+  pendingExplorers: Record<
+    string,
+    {
+      explorerId: string
+      layout: import('@shared/explorer-schema').ExplorerLayout
+      timestamp: number
+    }
+  >
+  submitExplorer: (
+    sessionId: string,
+    explorerId: string,
+    result: import('@shared/explorer-schema').ExplorerResult,
+  ) => void
+  dismissExplorer: (sessionId: string, explorerId: string) => void
+
   clipboardCaptures: Array<{
     id: string
     sessionId: string
@@ -341,6 +357,43 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     useSessionsStore.setState(state => ({
       pendingAskQuestions: state.pendingAskQuestions.filter(q => q.toolUseId !== toolUseId),
     }))
+  },
+  pendingExplorers: {},
+  submitExplorer: (sessionId, explorerId, result) => {
+    const { ws } = get()
+    if (ws?.readyState === WebSocket.OPEN) {
+      const msg = JSON.stringify({
+        type: 'explorer_result',
+        sessionId,
+        explorerId,
+        result,
+      })
+      ws.send(msg)
+      recordOut(msg.length)
+    }
+    set(state => {
+      const updated = { ...state.pendingExplorers }
+      delete updated[sessionId]
+      return { pendingExplorers: updated }
+    })
+  },
+  dismissExplorer: (sessionId, explorerId) => {
+    const { ws } = get()
+    if (ws?.readyState === WebSocket.OPEN) {
+      const msg = JSON.stringify({
+        type: 'explorer_result',
+        sessionId,
+        explorerId,
+        result: { _action: 'submit', _timeout: false, _cancelled: true },
+      })
+      ws.send(msg)
+      recordOut(msg.length)
+    }
+    set(state => {
+      const updated = { ...state.pendingExplorers }
+      delete updated[sessionId]
+      return { pendingExplorers: updated }
+    })
   },
   clipboardCaptures: [],
   dismissClipboard: id =>

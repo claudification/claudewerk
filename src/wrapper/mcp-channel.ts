@@ -16,6 +16,8 @@ import { randomUUID } from 'node:crypto'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
+import type { ExplorerLayout, ExplorerResult } from '../shared/explorer-schema'
+import { explorerToolInputSchema, validateExplorerLayout } from '../shared/explorer-schema'
 import { checkForUpdate, formatUpdateResult } from '../shared/update-check'
 import { debug } from './debug'
 
@@ -68,6 +70,7 @@ export interface McpChannelCallbacks {
     description?: string
     keyterms?: string[]
   }) => Promise<{ ok: boolean; error?: string }>
+  onExplore?: (explorerId: string, layout: ExplorerLayout) => void
 }
 
 interface McpChannelState {
@@ -80,6 +83,23 @@ let state: McpChannelState | null = null
 let callbacks: McpChannelCallbacks = {}
 let keepaliveTimer: ReturnType<typeof setInterval> | null = null
 let claudeCodeVersion: string | undefined
+
+// ─── Pending Explorer state ────────────────────────────────────────
+interface PendingExplorer {
+  resolve: (result: ExplorerResult) => void
+  timer: ReturnType<typeof setTimeout>
+}
+const pendingExplorers = new Map<string, PendingExplorer>()
+
+/** Resolve a pending explorer with the user's result (called from WS handler) */
+export function resolveExplorer(explorerId: string, result: ExplorerResult): boolean {
+  const pending = pendingExplorers.get(explorerId)
+  if (!pending) return false
+  clearTimeout(pending.timer)
+  pendingExplorers.delete(explorerId)
+  pending.resolve(result)
+  return true
+}
 
 /**
  * Initialize the MCP channel server.
@@ -259,6 +279,12 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
           'Check if a newer version of rclaude is available. Queries the GitHub API to compare the installed build against the latest commit on the branch it was built from. No arguments needed.',
         inputSchema: { type: 'object' as const, properties: {} },
       },
+      {
+        name: 'explore',
+        description:
+          'Show a rich interactive dialog to the user and wait for their response. Use this instead of asking questions in plain text when you need structured input: choices, toggles, text fields, image selection, sliders, or multi-page wizards. The dialog renders as a modal in the dashboard. This is a BLOCKING call - it waits for the user to submit or cancel (default 5 min timeout). Components: Markdown (text/code), Diagram (mermaid), Image, Alert, Divider, Options (single/multi select), TextInput, ImagePicker, Toggle, Slider, Button, Stack, Grid, Group. Use "body" for single-page or "pages" for multi-step wizards.',
+        inputSchema: explorerToolInputSchema(),
+      },
     ],
   }))
 
@@ -433,6 +459,48 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
           const result = await checkForUpdate()
           debug(`[channel] check_update: ${result.upToDate ? 'up to date' : `${result.behindBy} behind`}`)
           return { content: [{ type: 'text', text: formatUpdateResult(result, claudeCodeVersion) }] }
+        }
+        case 'explore': {
+          const layout = args as unknown as ExplorerLayout
+          const validationErrors = validateExplorerLayout(layout)
+          if (validationErrors.length > 0) {
+            return {
+              content: [{ type: 'text', text: `Invalid explorer layout:\n${validationErrors.join('\n')}` }],
+              isError: true,
+            }
+          }
+
+          // Apply defaults
+          const timeout = (layout.timeout ?? 300) * 1000
+          const explorerId = randomUUID()
+
+          debug(`[channel] explore: "${layout.title}" (${explorerId.slice(0, 8)}, timeout=${timeout / 1000}s)`)
+
+          // Forward to concentrator via callback
+          callbacks.onExplore?.(explorerId, layout)
+
+          // Block until user responds or timeout
+          const result = await new Promise<ExplorerResult>(resolve => {
+            const timer = setTimeout(() => {
+              pendingExplorers.delete(explorerId)
+              resolve({ _action: 'submit', _timeout: true, _cancelled: false })
+            }, timeout)
+
+            pendingExplorers.set(explorerId, { resolve, timer })
+          })
+
+          if (result._timeout) {
+            debug(`[channel] explore timeout: ${explorerId.slice(0, 8)}`)
+            return { content: [{ type: 'text', text: 'Explorer dialog timed out - user did not respond.' }] }
+          }
+
+          if (result._cancelled) {
+            debug(`[channel] explore cancelled: ${explorerId.slice(0, 8)}`)
+            return { content: [{ type: 'text', text: 'User cancelled the explorer dialog.' }] }
+          }
+
+          debug(`[channel] explore result: ${explorerId.slice(0, 8)} action=${result._action}`)
+          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
         }
         default:
           return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true }

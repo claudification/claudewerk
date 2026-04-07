@@ -69,6 +69,7 @@ export interface WsClientOptions {
     annotations?: Record<string, { preview?: string; notes?: string }>,
     skip?: boolean,
   ) => void
+  onExplorerResult?: (explorerId: string, result: import('../shared/explorer-schema').ExplorerResult) => void
   onQuitSession?: () => void
 }
 
@@ -126,6 +127,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
     onChannelSpawnResult,
     onChannelConfigureResult,
     onAskAnswer,
+    onExplorerResult,
     onQuitSession,
   } = options
 
@@ -287,6 +289,9 @@ export function createWsClient(options: WsClientOptions): WsClient {
               break
             case 'ask_answer':
               onAskAnswer?.(message.toolUseId, message.answers, message.annotations, message.skip)
+              break
+            case 'explorer_result':
+              onExplorerResult?.(message.explorerId, message.result)
               break
             case 'terminate_session':
               onQuitSession?.()
