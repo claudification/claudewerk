@@ -156,14 +156,45 @@ export const ExplorerModal = memo(function ExplorerModal({
   const handleSubmit = useCallback(
     (actionId = 'submit') => {
       haptic('success')
+      // Clean up result: rename internal keys to user-friendly names
+      const cleaned: Record<string, unknown> = {}
+      const optionNotes: Record<string, string> = {}
+      for (const [k, v] of Object.entries(values)) {
+        // Page notes: _page_notes_0 -> notes (single page) or notes_Page1 (multi)
+        if (k.startsWith('_page_notes_')) {
+          if (typeof v === 'string' && v.trim()) {
+            const idx = Number.parseInt(k.slice('_page_notes_'.length), 10)
+            const pageLabel = pages[idx]?.label
+            const key = pages.length <= 1 ? 'notes' : `notes_${pageLabel || `page${idx + 1}`}`
+            cleaned[key] = v.trim()
+          }
+          continue
+        }
+        // Option notes: {id}_note_{value} -> collected into {id}_notes
+        const noteMatch = k.match(/^(.+)_note_(.+)$/)
+        if (noteMatch) {
+          if (typeof v === 'string' && v.trim()) {
+            const optId = noteMatch[1]
+            const optVal = noteMatch[2]
+            if (!optionNotes[optId]) optionNotes[optId] = ''
+            optionNotes[optId] += (optionNotes[optId] ? '; ' : '') + `${optVal}: ${v.trim()}`
+          }
+          continue
+        }
+        cleaned[k] = v
+      }
+      // Merge option notes
+      for (const [id, notes] of Object.entries(optionNotes)) {
+        cleaned[`${id}_notes`] = notes
+      }
       onSubmit({
-        ...values,
+        ...cleaned,
         _action: lastAction || actionId,
         _timeout: false,
         _cancelled: false,
       })
     },
-    [values, lastAction, onSubmit],
+    [values, lastAction, pages, onSubmit],
   )
 
   // Buttons record their action but don't dismiss
@@ -288,6 +319,19 @@ export const ExplorerModal = memo(function ExplorerModal({
           {currentPage?.body.map((component, i) => (
             <ComponentRenderer key={`${activePage}-${i}`} component={component} form={form} onAction={handleAction} />
           ))}
+          {/* Auto-injected notes field per page */}
+          <div className="pt-1">
+            <textarea
+              placeholder="Anything to add..."
+              value={(values[`_page_notes_${activePage}`] as string) || ''}
+              onChange={e => {
+                setValues(prev => ({ ...prev, [`_page_notes_${activePage}`]: e.target.value }))
+                onInteraction()
+              }}
+              rows={2}
+              className="w-full text-sm bg-muted/20 border border-border/30 rounded px-3 py-2 placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-primary/30 resize-y min-h-10"
+            />
+          </div>
         </div>
 
         {/* Footer */}

@@ -157,6 +157,19 @@ function OptionsInput({
                     <Markdown inline>{opt.description}</Markdown>
                   </div>
                 )}
+                {selected && (
+                  <input
+                    type="text"
+                    placeholder="Add a note..."
+                    value={(form.values[`${id}_note_${opt.value}`] as string) || ''}
+                    onChange={e => {
+                      e.stopPropagation()
+                      form.setValue(`${id}_note_${opt.value}`, e.target.value)
+                    }}
+                    onClick={e => e.stopPropagation()}
+                    className="mt-1.5 w-full text-xs bg-background/50 border border-border/40 rounded px-2 py-1 placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
+                  />
+                )}
               </div>
             </div>
           )
