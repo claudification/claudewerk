@@ -55,9 +55,10 @@ try {
 let branch = 'main'
 let githubRepo = ''
 try {
-  branch = execSync('git branch --show-current', { cwd: ROOT, stdio: ['pipe', 'pipe', 'pipe'] })
-    .toString()
-    .trim() || 'main'
+  branch =
+    execSync('git branch --show-current', { cwd: ROOT, stdio: ['pipe', 'pipe', 'pipe'] })
+      .toString()
+      .trim() || 'main'
 
   // Find the remote tracking this branch (e.g. "origin")
   let remote = ''
