@@ -469,6 +469,45 @@ async function main() {
     diag('watch', 'Task watcher started', { dirs: taskCandidateDirs.map(d => d.split('/').pop()), watchPaths })
   }
 
+  /**
+   * Watch .claude/.rclaude/tasks/ for note changes (created by dashboard, Claude, or manually).
+   * Debounces and sends task_notes_changed to concentrator so dashboard can refresh.
+   */
+  let taskNotesWatcher: ChokidarWatcher | null = null
+  let taskNotesDebounce: ReturnType<typeof setTimeout> | null = null
+  const TASK_NOTES_PATTERN = /\.claude\/\.rclaude\/tasks\/(open|in-progress|done|archived)\/.+\.md$/
+
+  function startTaskNotesWatching() {
+    if (taskNotesWatcher) return
+    const tasksDir = join(cwd, '.claude', '.rclaude', 'tasks')
+    taskNotesWatcher = chokidarWatch(join(tasksDir, '**', '*.md'), {
+      ignoreInitial: true,
+      awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },
+      depth: 2,
+    })
+
+    function onTaskNoteChange(path: string) {
+      if (!TASK_NOTES_PATTERN.test(path)) return
+      if (taskNotesDebounce) clearTimeout(taskNotesDebounce)
+      taskNotesDebounce = setTimeout(() => {
+        taskNotesDebounce = null
+        if (!wsClient?.isConnected() || !claudeSessionId) return
+        const notes = listTaskNotes(cwd)
+        wsClient.send({
+          type: 'task_notes_changed',
+          sessionId: claudeSessionId,
+          notes,
+        } as unknown as WrapperMessage)
+        debug(`Task notes changed: ${notes.length} notes`)
+      }, 300)
+    }
+
+    taskNotesWatcher.on('add', onTaskNoteChange)
+    taskNotesWatcher.on('change', onTaskNoteChange)
+    taskNotesWatcher.on('unlink', onTaskNoteChange)
+    debug('Task notes watcher started')
+  }
+
   function connectToConcentrator(sessionId: string) {
     if (noConcentrator || wsClient) return
 
@@ -497,8 +536,9 @@ async function main() {
           wsClient?.sendHookEvent({ ...event, sessionId })
         }
         eventQueue.length = 0
-        // Start polling task files
+        // Start polling task files + watching task notes
         startTaskWatching()
+        startTaskNotesWatching()
       },
       onDisconnected() {
         debug('Disconnected from concentrator')
@@ -1465,6 +1505,7 @@ async function main() {
               taskWatcher = null
             }
             startTaskWatching()
+            startTaskNotesWatching()
           }
 
           // Start/restart transcript watcher if path is available and session changed

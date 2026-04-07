@@ -96,6 +96,8 @@ export function registerFileHandlers(): void {
     task_notes_delete_response: fileEditorResponse,
     task_notes_read_response: fileEditorResponse,
     task_notes_update_response: fileEditorResponse,
+    // Task notes filesystem change notification (wrapper -> dashboard)
+    task_notes_changed: fileEditorResponse,
     // File proxy
     file_request: fileRequest,
   })

@@ -716,7 +716,11 @@ export function useWebSocket() {
           }
 
           // Task notes messages -> direct handler callback
-          if (typeof msg.type === 'string' && msg.type.startsWith('task_notes_') && msg.type.endsWith('_response')) {
+          if (
+            typeof msg.type === 'string' &&
+            ((msg.type.startsWith('task_notes_') && msg.type.endsWith('_response')) ||
+              msg.type === 'task_notes_changed')
+          ) {
             const handler = useSessionsStore.getState().taskNotesHandler
             handler?.(msg as unknown as Record<string, unknown>)
             return

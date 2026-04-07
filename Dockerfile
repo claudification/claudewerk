@@ -10,8 +10,8 @@ RUN bun install --frozen-lockfile && cd web && bun install --frozen-lockfile
 # Copy source
 COPY . .
 
-# Build only server targets (skip wrapper + agent client binaries)
-RUN bun run gen-version && bun run build:server
+# Build server binaries only (web is built locally and volume-mounted)
+RUN bun run gen-version && bun run build:concentrator && bun run build:cli
 
 # Runtime stage - minimal image
 FROM debian:bookworm-slim
@@ -20,10 +20,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy compiled binaries + web assets
+# Copy compiled binaries
 COPY --from=builder /build/bin/concentrator /usr/local/bin/concentrator
 COPY --from=builder /build/bin/concentrator-cli /usr/local/bin/concentrator-cli
-COPY --from=builder /build/web/dist /srv/web
+
+# Copy pre-built web assets (built locally with Vite 8, volume-mounted in production)
+COPY web/dist /srv/web
 
 # Data directories
 RUN mkdir -p /data/cache /data/transcripts

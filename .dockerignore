@@ -1,6 +1,5 @@
 node_modules
 web/node_modules
-web/dist
 bin
 .git
 *.md

@@ -49,6 +49,11 @@ export function useTaskNotes(sessionId: string | null) {
   }
 
   const handleMessage = useCallback((msg: Record<string, unknown>) => {
+    // Filesystem change notification -- update notes from the pushed data
+    if (msg.type === 'task_notes_changed' && msg.notes) {
+      setNotes(msg.notes as TaskNoteMeta[])
+      return
+    }
     const requestId = msg.requestId as string | undefined
     if (requestId) {
       const pending = pendingRequests.current.get(requestId)
