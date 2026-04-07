@@ -125,10 +125,23 @@ const explorerDismiss: MessageHandler = (ctx, data) => {
   ctx.log.debug(`[explorer] Dismiss: ${explorerId.slice(0, 8)} session=${sessionId.slice(0, 8)}`)
 }
 
+// Explorer keepalive: dashboard -> concentrator -> wrapper (extend timeout)
+const explorerKeepalive: MessageHandler = (ctx, data) => {
+  const sessionId = data.sessionId as string
+  const explorerId = data.explorerId as string
+  if (!sessionId || !explorerId) return
+
+  const targetWs = ctx.sessions.getSessionSocket(sessionId)
+  if (targetWs) {
+    targetWs.send(JSON.stringify({ type: 'explorer_keepalive', explorerId }))
+  }
+}
+
 export function registerExplorerHandlers(): void {
   registerHandlers({
     explorer_show: explorerShow,
     explorer_result: explorerResult,
     explorer_dismiss: explorerDismiss,
+    explorer_keepalive: explorerKeepalive,
   })
 }

@@ -140,6 +140,7 @@ interface SessionsState {
     result: import('@shared/explorer-schema').ExplorerResult,
   ) => void
   dismissExplorer: (sessionId: string, explorerId: string) => void
+  keepaliveExplorer: (sessionId: string, explorerId: string) => void
 
   clipboardCaptures: Array<{
     id: string
@@ -394,6 +395,14 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       delete updated[sessionId]
       return { pendingExplorers: updated }
     })
+  },
+  keepaliveExplorer: (sessionId, explorerId) => {
+    const { ws } = get()
+    if (ws?.readyState === WebSocket.OPEN) {
+      const msg = JSON.stringify({ type: 'explorer_keepalive', sessionId, explorerId })
+      ws.send(msg)
+      recordOut(msg.length)
+    }
   },
   clipboardCaptures: [],
   dismissClipboard: id =>

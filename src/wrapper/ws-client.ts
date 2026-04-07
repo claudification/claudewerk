@@ -70,6 +70,7 @@ export interface WsClientOptions {
     skip?: boolean,
   ) => void
   onExplorerResult?: (explorerId: string, result: import('../shared/explorer-schema').ExplorerResult) => void
+  onExplorerKeepalive?: (explorerId: string) => void
   onQuitSession?: () => void
 }
 
@@ -128,6 +129,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
     onChannelConfigureResult,
     onAskAnswer,
     onExplorerResult,
+    onExplorerKeepalive,
     onQuitSession,
   } = options
 
@@ -301,6 +303,11 @@ export function createWsClient(options: WsClientOptions): WsClient {
               // Deprecated alias for terminate_session
               if (msgType === 'quit_session') {
                 onQuitSession?.()
+                break
+              }
+              if (msgType === 'explorer_keepalive') {
+                const m = message as Record<string, unknown>
+                onExplorerKeepalive?.(m.explorerId as string)
                 break
               }
               // Inter-session send result (not in formal ConcentratorMessage type)

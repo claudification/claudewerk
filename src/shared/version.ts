@@ -5,20 +5,17 @@ export interface BuildVersion {
   gitHashShort: string
   buildTime: string
   dirty: boolean
+  branch: string
+  githubRepo: string
   recentCommits: Array<{ hash: string; message: string }>
 }
 
 export const BUILD_VERSION: BuildVersion = {
-  gitHash: '596de15311f9423059aa31353100e16f53da0175',
-  gitHashShort: '596de15-dirty',
-  buildTime: '2026-03-31T14:52:51.350Z',
+  gitHash: 'dd75fc5607fc917a4f94629e116f35106cac1192',
+  gitHashShort: 'dd75fc5-dirty',
+  buildTime: '2026-04-07T06:16:54.201Z',
   dirty: true,
-  recentCommits: [
-    {
-      hash: '596de15',
-      message: '(HEAD -> main, origin/main, origin/HEAD) fix: Move terminal toolbar from bottom to top',
-    },
-    { hash: '8e3219b', message: 'docs: Update README with new features + add CHANGELOG' },
-    { hash: '0336b8f', message: 'fix: MCP tool display - session names, clean list rendering' },
-  ],
+  branch: 'main',
+  githubRepo: 'claudification/remote-claude',
+  recentCommits: [{"hash":"dd75fc5","message":"(HEAD -> main, origin/main, origin/HEAD) fix: Explorer uses ArrayBuffer for upload + always-on logging"},{"hash":"fa88124","message":"fix: Add crash logging for explorer + global crash file"},{"hash":"1da6016","message":"fix: Explorer file upload - add onUploadFile (no CWD jail) + error handling"}],
 }

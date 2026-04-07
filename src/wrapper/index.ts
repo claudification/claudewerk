@@ -21,6 +21,7 @@ import {
   closeMcpChannel,
   initMcpChannel,
   isMcpChannelReady,
+  keepaliveExplorer,
   pushChannelMessage,
   resolveExplorer,
   type SessionInfo,
@@ -726,6 +727,9 @@ async function main() {
             ? `Result resolved: ${explorerId.slice(0, 8)} action=${result._action}`
             : `No pending explorer: ${explorerId.slice(0, 8)}`,
         )
+      },
+      onExplorerKeepalive(explorerId) {
+        keepaliveExplorer(explorerId)
       },
       onRendezvousResult(message: Record<string, unknown>) {
         const msgType = message.type as string

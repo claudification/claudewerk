@@ -659,6 +659,7 @@ function ExplorerOverlay({ sessionId }: { sessionId: string }) {
   const pending = useSessionsStore(s => s.pendingExplorers[sessionId] || EMPTY_EXPLORER)
   const submitExplorer = useSessionsStore(s => s.submitExplorer)
   const dismissExplorer = useSessionsStore(s => s.dismissExplorer)
+  const keepaliveExplorer = useSessionsStore(s => s.keepaliveExplorer)
 
   if (!pending) return null
 
@@ -667,6 +668,7 @@ function ExplorerOverlay({ sessionId }: { sessionId: string }) {
       layout={pending.layout}
       onSubmit={result => submitExplorer(sessionId, pending.explorerId, result)}
       onCancel={() => dismissExplorer(sessionId, pending.explorerId)}
+      onKeepalive={() => keepaliveExplorer(sessionId, pending.explorerId)}
     />
   )
 }

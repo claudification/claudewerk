@@ -104,6 +104,8 @@ let claudeCodeVersion: string | undefined
 interface PendingExplorer {
   resolve: (result: ExplorerResult) => void
   timer: ReturnType<typeof setTimeout>
+  timeoutMs: number // initial timeout duration
+  deadline: number // Date.now() + timeoutMs
 }
 const pendingExplorers = new Map<string, PendingExplorer>()
 
@@ -187,6 +189,28 @@ export function resolveExplorer(explorerId: string, result: ExplorerResult): boo
   clearTimeout(pending.timer)
   pendingExplorers.delete(explorerId)
   pending.resolve(result)
+  return true
+}
+
+/** Extend explorer timeout on user interaction (called from WS handler) */
+export function keepaliveExplorer(explorerId: string): boolean {
+  const pending = pendingExplorers.get(explorerId)
+  if (!pending) return false
+
+  const minRemaining = pending.timeoutMs * 0.5
+  const remaining = pending.deadline - Date.now()
+
+  if (remaining < minRemaining) {
+    // Extend to at least 50% of original timeout
+    clearTimeout(pending.timer)
+    const newDeadline = Date.now() + minRemaining
+    pending.deadline = newDeadline
+    pending.timer = setTimeout(() => {
+      pendingExplorers.delete(explorerId)
+      pending.resolve({ _action: 'submit', _timeout: true, _cancelled: false })
+    }, minRemaining)
+    elog(`keepalive: ${explorerId.slice(0, 8)} extended to ${Math.round(minRemaining / 1000)}s`)
+  }
   return true
 }
 
@@ -603,7 +627,7 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
                 resolve({ _action: 'submit', _timeout: true, _cancelled: false })
               }, timeout)
 
-              pendingExplorers.set(explorerId, { resolve, timer })
+              pendingExplorers.set(explorerId, { resolve, timer, timeoutMs: timeout, deadline: Date.now() + timeout })
             })
 
             if (result._timeout) {

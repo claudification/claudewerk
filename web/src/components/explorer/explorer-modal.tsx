@@ -3,10 +3,15 @@
  *
  * Full-screen overlay (mobile) / centered modal (desktop) that renders
  * the explorer layout and collects user input.
+ *
+ * Features:
+ * - Countdown timer (subtle, top of dialog)
+ * - Auto-extends timeout on user interaction (50% rule)
+ * - Buttons record their id in _action but don't dismiss (only Submit/Next does)
  */
 
 import { X } from 'lucide-react'
-import { memo, useCallback, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Markdown } from '@/components/markdown'
 import { Button } from '@/components/ui/button'
 import { cn, haptic } from '@/lib/utils'
@@ -30,7 +35,6 @@ function collectDefaults(components: ExplorerComponent[], values: Record<string,
         values[comp.id] = comp.default ?? comp.min ?? 0
         break
       case 'ImagePicker':
-        // No default for image picker
         break
       case 'Stack':
       case 'Grid':
@@ -53,7 +57,6 @@ function getInitialValues(layout: ExplorerLayout): Record<string, unknown> {
   return values
 }
 
-// Check required fields
 function collectRequired(components: ExplorerComponent[]): string[] {
   const ids: string[] = []
   for (const comp of components) {
@@ -73,15 +76,60 @@ function hasValue(val: unknown): boolean {
   return true
 }
 
+function formatCountdown(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return m > 0 ? `${m}:${s.toString().padStart(2, '0')}` : `${s}s`
+}
+
 interface ExplorerModalProps {
   layout: ExplorerLayout
   onSubmit: (result: ExplorerResult) => void
   onCancel: () => void
+  onKeepalive?: () => void
 }
 
-export const ExplorerModal = memo(function ExplorerModal({ layout, onSubmit, onCancel }: ExplorerModalProps) {
+export const ExplorerModal = memo(function ExplorerModal({
+  layout,
+  onSubmit,
+  onCancel,
+  onKeepalive,
+}: ExplorerModalProps) {
   const [values, setValues] = useState(() => getInitialValues(layout))
   const [activePage, setActivePage] = useState(0)
+  const [lastAction, setLastAction] = useState<string | null>(null)
+  const timeoutSec = layout.timeout ?? 300
+  const [remaining, setRemaining] = useState(timeoutSec)
+  const lastInteractionRef = useRef(Date.now())
+
+  // Countdown timer
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setRemaining(prev => {
+        if (prev <= 1) {
+          clearInterval(interval)
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Send keepalive on user interaction and reset local countdown
+  const onInteraction = useCallback(() => {
+    const now = Date.now()
+    // Debounce: max 1 keepalive per second
+    if (now - lastInteractionRef.current < 1000) return
+    lastInteractionRef.current = now
+
+    // Reset local countdown to at least 50% of original
+    const minRemaining = Math.ceil(timeoutSec * 0.5)
+    setRemaining(prev => Math.max(prev, minRemaining))
+
+    // Tell the server to extend
+    onKeepalive?.()
+  }, [timeoutSec, onKeepalive])
 
   const pages = useMemo(() => {
     if (layout.pages) return layout.pages
@@ -98,9 +146,10 @@ export const ExplorerModal = memo(function ExplorerModal({ layout, onSubmit, onC
       values,
       setValue: (id: string, value: unknown) => {
         setValues(prev => ({ ...prev, [id]: value }))
+        onInteraction()
       },
     }),
-    [values],
+    [values, onInteraction],
   )
 
   const handleSubmit = useCallback(
@@ -108,19 +157,22 @@ export const ExplorerModal = memo(function ExplorerModal({ layout, onSubmit, onC
       haptic('success')
       onSubmit({
         ...values,
-        _action: actionId,
+        _action: lastAction || actionId,
         _timeout: false,
         _cancelled: false,
       })
     },
-    [values, onSubmit],
+    [values, lastAction, onSubmit],
   )
 
+  // Buttons record their action but don't dismiss
   const handleAction = useCallback(
     (actionId: string) => {
-      handleSubmit(actionId)
+      haptic('tap')
+      setLastAction(actionId)
+      onInteraction()
     },
-    [handleSubmit],
+    [onInteraction],
   )
 
   const handleCancel = useCallback(() => {
@@ -130,22 +182,27 @@ export const ExplorerModal = memo(function ExplorerModal({ layout, onSubmit, onC
 
   const handleNext = useCallback(() => {
     haptic('tap')
+    onInteraction()
     if (isLastPage) {
       handleSubmit()
     } else {
       setActivePage(p => p + 1)
     }
-  }, [isLastPage, handleSubmit])
+  }, [isLastPage, handleSubmit, onInteraction])
 
   const handlePrev = useCallback(() => {
     haptic('tap')
+    onInteraction()
     setActivePage(p => Math.max(0, p - 1))
-  }, [])
+  }, [onInteraction])
 
-  // Check if all required fields on current page are filled
   const allComponents = currentPage?.body || []
   const requiredIds = useMemo(() => collectRequired(allComponents), [allComponents])
   const canProceed = requiredIds.every(id => hasValue(values[id]))
+
+  // Countdown visual state
+  const urgent = remaining <= 30
+  const critical = remaining <= 10
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -157,14 +214,34 @@ export const ExplorerModal = memo(function ExplorerModal({ layout, onSubmit, onC
       <div
         className={cn(
           'relative flex flex-col bg-background border border-border/50 shadow-2xl',
-          // Mobile: full screen with safe area. Desktop: centered modal
           'w-full h-full sm:w-[560px] sm:max-h-[85vh] sm:h-auto sm:rounded-lg',
         )}
       >
+        {/* Countdown bar */}
+        <div className="shrink-0 h-0.5 bg-muted/20">
+          <div
+            className={cn(
+              'h-full transition-all duration-1000 ease-linear',
+              critical ? 'bg-destructive' : urgent ? 'bg-amber-500' : 'bg-primary/40',
+            )}
+            style={{ width: `${(remaining / timeoutSec) * 100}%` }}
+          />
+        </div>
+
         {/* Header */}
-        <div className="flex items-start gap-3 px-4 pt-4 pb-3 border-b border-border/30 shrink-0">
+        <div className="flex items-start gap-3 px-4 pt-3 pb-2 border-b border-border/30 shrink-0">
           <div className="flex-1 min-w-0">
-            <h2 className="text-base font-semibold text-foreground truncate">{layout.title}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-semibold text-foreground truncate">{layout.title}</h2>
+              <span
+                className={cn(
+                  'text-[10px] font-mono shrink-0 tabular-nums',
+                  critical ? 'text-destructive animate-pulse' : urgent ? 'text-amber-500' : 'text-muted-foreground/50',
+                )}
+              >
+                {formatCountdown(remaining)}
+              </span>
+            </div>
             {layout.description && (
               <div className="text-sm text-muted-foreground mt-0.5">
                 <Markdown>{layout.description}</Markdown>
@@ -189,6 +266,7 @@ export const ExplorerModal = memo(function ExplorerModal({ layout, onSubmit, onC
                 type="button"
                 onClick={() => {
                   haptic('tap')
+                  onInteraction()
                   setActivePage(i)
                 }}
                 className={cn(
@@ -211,13 +289,14 @@ export const ExplorerModal = memo(function ExplorerModal({ layout, onSubmit, onC
           ))}
         </div>
 
-        {/* Footer -- extra bottom padding for mobile (home indicator area) */}
+        {/* Footer */}
         <div className="flex items-center justify-between gap-2 px-4 pt-3 pb-5 sm:pb-3 border-t border-border/30 shrink-0">
           <Button variant="ghost" onClick={handleCancel}>
             {layout.cancelLabel || 'Cancel'}
           </Button>
 
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            {lastAction && <span className="text-[10px] text-muted-foreground font-mono">[{lastAction}]</span>}
             {isMultiPage && activePage > 0 && (
               <Button variant="outline" onClick={handlePrev}>
                 Back
