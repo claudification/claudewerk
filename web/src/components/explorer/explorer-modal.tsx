@@ -211,19 +211,19 @@ export const ExplorerModal = memo(function ExplorerModal({ layout, onSubmit, onC
           ))}
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-border/30 shrink-0">
-          <Button variant="ghost" size="sm" onClick={handleCancel}>
+        {/* Footer -- extra bottom padding for mobile (home indicator area) */}
+        <div className="flex items-center justify-between gap-2 px-4 pt-3 pb-5 sm:pb-3 border-t border-border/30 shrink-0">
+          <Button variant="ghost" onClick={handleCancel}>
             {layout.cancelLabel || 'Cancel'}
           </Button>
 
           <div className="flex gap-2">
             {isMultiPage && activePage > 0 && (
-              <Button variant="outline" size="sm" onClick={handlePrev}>
+              <Button variant="outline" onClick={handlePrev}>
                 Back
               </Button>
             )}
-            <Button size="sm" onClick={handleNext} disabled={!canProceed}>
+            <Button onClick={handleNext} disabled={!canProceed}>
               {isLastPage ? layout.submitLabel || 'Submit' : 'Next'}
             </Button>
           </div>

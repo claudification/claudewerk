@@ -129,7 +129,7 @@ function OptionsInput({
               key={opt.value}
               onClick={() => handleSelect(opt.value)}
               className={cn(
-                'flex items-start gap-2.5 px-3 py-2 rounded cursor-pointer border transition-colors text-sm',
+                'flex items-start gap-3 px-3.5 py-3 rounded cursor-pointer border transition-colors text-sm',
                 selected
                   ? 'bg-primary/10 border-primary/40 text-foreground'
                   : 'bg-muted/30 border-border/30 text-foreground/70 hover:bg-muted/50',
@@ -140,11 +140,11 @@ function OptionsInput({
               ) : (
                 <div
                   className={cn(
-                    'size-4 mt-0.5 rounded-full border-2 shrink-0 flex items-center justify-center',
+                    'size-5 mt-0.5 rounded-full border-2 shrink-0 flex items-center justify-center',
                     selected ? 'border-primary' : 'border-muted-foreground/40',
                   )}
                 >
-                  {selected && <div className="size-2 rounded-full bg-primary" />}
+                  {selected && <div className="size-2.5 rounded-full bg-primary" />}
                 </div>
               )}
               <div className="flex-1 min-w-0">
