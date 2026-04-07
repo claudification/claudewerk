@@ -182,13 +182,23 @@ async function resolveExplorerFiles(
   return null
 }
 
-/** Resolve a pending explorer with the user's result (called from WS handler) */
+/** Resolve a pending explorer with the user's result (called from WS handler).
+ * Delivers result as a channel notification since the tool call returned immediately. */
 export function resolveExplorer(explorerId: string, result: ExplorerResult): boolean {
   const pending = pendingExplorers.get(explorerId)
   if (!pending) return false
   clearTimeout(pending.timer)
   pendingExplorers.delete(explorerId)
-  pending.resolve(result)
+
+  // Deliver result as channel notification (the tool call already returned)
+  if (result._timeout) {
+    pushChannelMessage('Explorer timed out - user did not respond.', { source: 'explorer' })
+  } else if (result._cancelled) {
+    pushChannelMessage('User cancelled the explorer dialog.', { source: 'explorer' })
+  } else {
+    const formatted = JSON.stringify(result, null, 2)
+    pushChannelMessage(`Explorer result:\n${formatted}`, { source: 'explorer' })
+  }
   return true
 }
 
@@ -207,7 +217,7 @@ export function keepaliveExplorer(explorerId: string): boolean {
     pending.deadline = newDeadline
     pending.timer = setTimeout(() => {
       pendingExplorers.delete(explorerId)
-      pending.resolve({ _action: 'submit', _timeout: true, _cancelled: false })
+      pushChannelMessage('Explorer timed out - user did not respond.', { source: 'explorer' })
     }, minRemaining)
     elog(`keepalive: ${explorerId.slice(0, 8)} extended to ${Math.round(minRemaining / 1000)}s`)
   }
@@ -620,53 +630,35 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
             callbacks.onExplore?.(explorerId, layout)
             elog(` forwarded to concentrator, waiting for result...`)
 
-            // Block until user responds or timeout.
-            // Send periodic keepalive notifications to prevent CC from timing out the tool call.
-            const result = await new Promise<ExplorerResult>(resolve => {
-              const timer = setTimeout(() => {
+            // Non-blocking: return immediately, deliver result via channel notification.
+            // CC has an internal ~60s timeout on MCP tool calls that we can't override.
+            // The result will arrive as a <channel> message when the user submits.
+            const timer = setTimeout(() => {
+              const pending = pendingExplorers.get(explorerId)
+              if (pending) {
                 pendingExplorers.delete(explorerId)
-                resolve({ _action: 'submit', _timeout: true, _cancelled: false })
-              }, timeout)
-
-              // Keepalive: send progress notification every 30s to keep the MCP SSE stream alive
-              const keepalive = setInterval(() => {
-                try {
-                  state?.server.notification({
-                    method: 'notifications/message',
-                    params: { level: 'debug', data: `explorer:${explorerId.slice(0, 8)}:waiting`, logger: 'rclaude' },
-                  })
-                } catch {
-                  // Transport dead -- stop keepalive
-                  clearInterval(keepalive)
-                }
-              }, 30_000)
-
-              const originalResolve = resolve
-              const wrappedResolve = (r: ExplorerResult) => {
-                clearInterval(keepalive)
-                originalResolve(r)
+                elog(` timeout: ${explorerId.slice(0, 8)}`)
+                // Dismiss on dashboard
+                callbacks.onExplore?.(explorerId, { title: '__dismiss__' } as ExplorerLayout)
               }
+            }, timeout)
 
-              pendingExplorers.set(explorerId, {
-                resolve: wrappedResolve,
-                timer,
-                timeoutMs: timeout,
-                deadline: Date.now() + timeout,
-              })
+            pendingExplorers.set(explorerId, {
+              resolve: () => {}, // resolved via channel notification, not tool return
+              timer,
+              timeoutMs: timeout,
+              deadline: Date.now() + timeout,
             })
 
-            if (result._timeout) {
-              elog(` timeout: ${explorerId.slice(0, 8)}`)
-              return { content: [{ type: 'text', text: 'Explorer dialog timed out - user did not respond.' }] }
+            elog(` returned immediately (result via channel)`)
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: `Explorer dialog "${layout.title}" shown to user. The response will arrive as a channel message when the user submits. Explorer ID: ${explorerId}`,
+                },
+              ],
             }
-
-            if (result._cancelled) {
-              elog(` cancelled: ${explorerId.slice(0, 8)}`)
-              return { content: [{ type: 'text', text: 'User cancelled the explorer dialog.' }] }
-            }
-
-            elog(` result: ${explorerId.slice(0, 8)} action=${result._action}`)
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
           } catch (exploreErr) {
             const msg = exploreErr instanceof Error ? exploreErr.stack || exploreErr.message : String(exploreErr)
             elog(` CRASH: ${msg}`)
