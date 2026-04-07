@@ -20,6 +20,7 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import type { ExplorerLayout, ExplorerResult } from '../shared/explorer-schema'
 import { explorerToolInputSchema, validateExplorerLayout } from '../shared/explorer-schema'
+import { isPathWithinCwd } from '../shared/path-guard'
 import { checkForUpdate, formatUpdateResult } from '../shared/update-check'
 import { debug } from './debug'
 
@@ -86,8 +87,6 @@ export interface McpChannelCallbacks {
   }) => Promise<{ ok: boolean; error?: string }>
   onExplore?: (explorerId: string, layout: ExplorerLayout) => void
   onExploreDismiss?: (explorerId: string) => void
-  /** Upload a file without CWD restriction (for explorer image auto-upload) */
-  onUploadFile?: (filePath: string) => Promise<string | null>
 }
 
 interface McpChannelState {
@@ -136,10 +135,13 @@ async function resolveExplorerFiles(
     try {
       const type = comp.type as string
 
-      // Markdown: resolve file prop -> inline content
+      // Markdown: resolve file prop -> inline content (CWD-jailed)
       if (type === 'Markdown' && typeof comp.file === 'string' && !comp.content) {
         const filePath = comp.file as string
         const absPath = resolvePath(cwd, filePath)
+        if (!isPathWithinCwd(absPath, cwd)) {
+          return `Markdown file outside project directory: ${filePath}. Move it into ${cwd} first.`
+        }
         try {
           const file = Bun.file(absPath)
           if (!(await file.exists())) {
@@ -155,6 +157,9 @@ async function resolveExplorerFiles(
 
       if (type === 'Image' && typeof comp.url === 'string' && !isUrl(comp.url)) {
         const absPath = resolvePath(cwd, comp.url)
+        if (!isPathWithinCwd(absPath, cwd)) {
+          return `Image file outside project directory: ${comp.url}. Move it into ${cwd} first.`
+        }
         try {
           const file = Bun.file(absPath)
           if (!(await file.exists())) {
@@ -172,6 +177,9 @@ async function resolveExplorerFiles(
         for (const img of comp.images as Array<Record<string, unknown>>) {
           if (typeof img.url === 'string' && !isUrl(img.url)) {
             const absPath = resolvePath(cwd, img.url)
+            if (!isPathWithinCwd(absPath, cwd)) {
+              return `ImagePicker file outside project directory: ${img.url}. Move it into ${cwd} first.`
+            }
             try {
               const file = Bun.file(absPath)
               if (!(await file.exists())) {
@@ -645,11 +653,9 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
               }
             }
             elog(` ${allComponents.length} top-level components`)
-            const uploader = callbacks.onUploadFile || callbacks.onShareFile
+            const uploader = callbacks.onShareFile
             if (uploader) {
-              debug(
-                `[channel] explore: uploading files (using ${callbacks.onUploadFile ? 'onUploadFile' : 'onShareFile'})`,
-              )
+              debug('[channel] explore: uploading files (CWD-jailed)')
               const uploadErr = await resolveExplorerFiles(allComponents, uploader, explorerCwd)
               if (uploadErr) {
                 elog(` upload error: ${uploadErr}`)

@@ -1111,41 +1111,9 @@ async function main() {
           debug(`[channel] share_file: file not found: ${filePath}`)
           return null
         }
-        const res = await fetch(`${httpUrl}/api/files`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': file.type || 'application/octet-stream',
-            'X-Session-Id': claudeSessionId || internalId,
-            ...(concentratorSecret ? { Authorization: `Bearer ${concentratorSecret}` } : {}),
-          },
-          body: file,
-        })
-        if (!res.ok) {
-          debug(`[channel] share_file: upload failed: ${res.status}`)
-          return null
-        }
-        const data = (await res.json()) as { url?: string }
-        diag('channel', `Shared: ${filePath} -> ${data.url}`)
-        return data.url || null
-      } catch (err) {
-        debug(`[channel] share_file error: ${err instanceof Error ? err.message : err}`)
-        return null
-      }
-    },
-    async onUploadFile(filePath) {
-      // Upload file to concentrator blob store -- NO CWD restriction (for explorer images)
-      // Uses readFile + ArrayBuffer to avoid Bun crash when streaming BunFile as fetch body
-      const httpUrl = noConcentrator ? null : wsToHttpUrl(concentratorUrl)
-      if (!httpUrl) return null
-      try {
-        const file = Bun.file(filePath)
-        if (!(await file.exists())) {
-          debug(`[channel] upload_file: file not found: ${filePath}`)
-          return null
-        }
+        // Use ArrayBuffer instead of BunFile as fetch body to avoid Bun SIGTRAP crash
         const bytes = await file.arrayBuffer()
         const contentType = file.type || 'application/octet-stream'
-        debug(`[channel] upload_file: uploading ${filePath} (${bytes.byteLength} bytes, ${contentType})`)
         const res = await fetch(`${httpUrl}/api/files`, {
           method: 'POST',
           headers: {
@@ -1156,14 +1124,14 @@ async function main() {
           body: bytes,
         })
         if (!res.ok) {
-          debug(`[channel] upload_file: upload failed: ${res.status}`)
+          debug(`[channel] share_file: upload failed: ${res.status}`)
           return null
         }
         const data = (await res.json()) as { url?: string }
-        diag('explorer', `Uploaded: ${filePath} -> ${data.url}`)
+        diag('channel', `Shared: ${filePath} -> ${data.url}`)
         return data.url || null
       } catch (err) {
-        debug(`[channel] upload_file error: ${err instanceof Error ? err.message : err}`)
+        debug(`[channel] share_file error: ${err instanceof Error ? err.message : err}`)
         return null
       }
     },
