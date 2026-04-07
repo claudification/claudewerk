@@ -154,10 +154,10 @@ function Dashboard() {
         )
         wsSend('sync_check', { epoch: syncEpoch, lastSeq: syncSeq, transcripts: transcriptCounts })
 
-        // Force-refetch selected session transcript after significant background period.
-        // Mobile browsers freeze JS during background - transcript entries received by the
-        // WS buffer may be incomplete. Don't trust the WS kept up; just refetch.
-        if (elapsed > 5000) {
+        // Force-refetch selected session transcript after background period.
+        // iOS freezes JS within ~1s of background, WS buffer delivery is unreliable.
+        // 2s threshold catches most iOS app-switches (previous 5s missed many).
+        if (elapsed > 2000) {
           console.log(`[sync] force refetch sidebar metadata after ${(elapsed / 1000).toFixed(0)}s background`)
           fetchSidebarMetadata()
           const sid = useSessionsStore.getState().selectedSessionId

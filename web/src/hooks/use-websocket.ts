@@ -145,17 +145,21 @@ function flushMessages() {
 
 function refetchStaleTranscripts(staleTranscripts?: Record<string, number>): void {
   if (!staleTranscripts) return
-  const { transcripts, setTranscript, selectedSessionId } = useSessionsStore.getState()
-  // Skip selected session - the connectSeq effect handles it to avoid double-fetch
-  const sids = Object.keys(staleTranscripts).filter(s => s !== selectedSessionId)
-  if (sids.length === 0) {
+  const { transcripts, setTranscript } = useSessionsStore.getState()
+  const sids = Object.keys(staleTranscripts)
+  const actuallyStale = sids.filter(s => {
+    const local = transcripts[s]?.length ?? 0
+    const server = staleTranscripts[s]
+    return server > local
+  })
+  if (actuallyStale.length === 0) {
     console.log('[sync] transcript counts: all in sync')
     return
   }
   console.log(
-    `[sync] STALE transcripts: ${sids.map(s => `${s.slice(0, 8)} server=${staleTranscripts[s]} local=${transcripts[s]?.length ?? 0}`).join(', ')}`,
+    `[sync] STALE transcripts: ${actuallyStale.map(s => `${s.slice(0, 8)} server=${staleTranscripts[s]} local=${transcripts[s]?.length ?? 0}`).join(', ')}`,
   )
-  for (const sid of sids) {
+  for (const sid of actuallyStale) {
     fetchTranscript(sid).then(transcript => {
       if (transcript) {
         console.log(`[sync] REFETCH transcript ${sid.slice(0, 8)}: ${transcript.length} entries`)
