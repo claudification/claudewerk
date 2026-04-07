@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight, Command, FileText, Menu } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { ActionFab } from '@/components/action-fab'
 import { AuthGate } from '@/components/auth-gate'
 import { CommandPalette } from '@/components/command-palette'
 import { DebugConsole } from '@/components/debug-console'
@@ -522,8 +523,9 @@ function Dashboard() {
         </Suspense>
       )}
 
-      {/* Voice FAB (touch) + Voice Key (keyboard push-to-talk) */}
+      {/* Voice FAB (touch) + Voice Key (keyboard push-to-talk) + Action FAB (mobile) */}
       <VoiceFabGate />
+      <ActionFabGate />
       <VoiceKey />
 
       {/* Auth expired modal */}
@@ -571,6 +573,13 @@ function VoiceFabGate() {
 
   if (!isTouchDevice() || !showVoiceFab || !selectedSessionId) return null
   return <VoiceFab />
+}
+
+// Action FAB gate - show on touch devices with active session
+function ActionFabGate() {
+  const selectedSessionId = useSessionsStore(state => state.selectedSessionId)
+  if (!isTouchDevice() || !selectedSessionId) return null
+  return <ActionFab />
 }
 
 // Popout terminal - rendered when URL is #popout-terminal/{wrapperId}
