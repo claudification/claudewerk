@@ -161,6 +161,15 @@ export function VoiceFab() {
   const displayText = voice.refinedText || voice.finalText
   const displayInterim = voice.state === 'recording' ? voice.interimText : ''
   const hasText = !!(displayText || displayInterim)
+  const totalChars = (displayText?.length || 0) + (displayInterim?.length || 0)
+  const transcriptRef = useRef<HTMLDivElement>(null)
+
+  // Auto-scroll transcript to bottom on new text
+  useEffect(() => {
+    if (transcriptRef.current) {
+      transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight
+    }
+  }, [displayText, displayInterim])
 
   if (micPermission === 'denied') return null
 
@@ -213,8 +222,9 @@ export function VoiceFab() {
               {/* Transcript text - yellow interim for uncertain words */}
               {hasText && (
                 <div
+                  ref={transcriptRef}
                   className={cn(
-                    'text-sm font-mono leading-relaxed max-h-[30vh] overflow-y-auto',
+                    'text-sm font-mono leading-relaxed max-h-[60vh] overflow-y-auto',
                     isCancelling ? 'line-through text-red-400/60' : 'text-foreground',
                   )}
                 >
@@ -224,6 +234,9 @@ export function VoiceFab() {
                       {displayText ? ' ' : ''}
                       {displayInterim}
                     </span>
+                  )}
+                  {totalChars > 5000 && (
+                    <div className="mt-1 text-[10px] text-amber-400/70 font-mono">Getting long...</div>
                   )}
                 </div>
               )}
