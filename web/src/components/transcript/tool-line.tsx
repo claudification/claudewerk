@@ -667,6 +667,84 @@ export function ToolLine({
       }
       break
     }
+    case 'mcp__rclaude__explore': {
+      const title = (input.title as string) || 'Explorer'
+      const pageCount = Array.isArray(input.pages) ? (input.pages as unknown[]).length : 0
+      const bodyCount = Array.isArray(input.body) ? (input.body as unknown[]).length : 0
+      const componentDesc = pageCount > 0 ? `${pageCount} pages` : `${bodyCount} components`
+      summary = (
+        <span className="flex items-center gap-1.5">
+          <span className="text-violet-400 font-bold">{title}</span>
+          <span className="text-muted-foreground/50 text-[10px]">{componentDesc}</span>
+        </span>
+      )
+      if (result) {
+        try {
+          let parsed = JSON.parse(result)
+          // Unwrap MCP wrapper: [{type:'text', text:'...'}]
+          if (Array.isArray(parsed) && parsed[0]?.type === 'text' && typeof parsed[0].text === 'string') {
+            parsed = JSON.parse(parsed[0].text)
+          }
+          const res = parsed as Record<string, unknown>
+          const action = res._action as string
+          const timeout = res._timeout === true
+          const cancelled = res._cancelled === true
+
+          if (timeout) {
+            details = (
+              <div className="text-[10px] font-mono bg-amber-500/10 border border-amber-500/20 rounded px-3 py-2 text-amber-400">
+                Timed out - no response
+              </div>
+            )
+          } else if (cancelled) {
+            details = (
+              <div className="text-[10px] font-mono bg-zinc-500/10 border border-zinc-500/20 rounded px-3 py-2 text-muted-foreground">
+                Cancelled
+              </div>
+            )
+          } else {
+            // Build a nice result display
+            const userValues = Object.entries(res).filter(([k]) => !k.startsWith('_'))
+            details = (
+              <div className="text-[10px] font-mono bg-violet-500/5 border border-violet-500/20 rounded p-2.5 space-y-1">
+                {action && action !== 'submit' && (
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className="text-muted-foreground/50">action</span>
+                    <span className="px-1.5 py-0.5 bg-violet-500/20 text-violet-400 border border-violet-500/30 rounded text-[9px] font-bold">
+                      {action}
+                    </span>
+                  </div>
+                )}
+                {userValues.map(([key, val]) => (
+                  <div key={key} className="flex items-start gap-2">
+                    <span className="text-violet-400/70 shrink-0">{key}</span>
+                    <span className="text-foreground/80 break-all">
+                      {typeof val === 'boolean' ? (
+                        <span className={val ? 'text-green-400' : 'text-muted-foreground/50'}>{String(val)}</span>
+                      ) : Array.isArray(val) ? (
+                        val.map((v, i) => (
+                          <span key={i}>
+                            {i > 0 && <span className="text-muted-foreground/30">, </span>}
+                            <span className="text-foreground/70">{String(v)}</span>
+                          </span>
+                        ))
+                      ) : (
+                        String(val)
+                      )}
+                    </span>
+                  </div>
+                ))}
+                {userValues.length === 0 && <span className="text-muted-foreground/50">submitted (no inputs)</span>}
+              </div>
+            )
+          }
+        } catch {
+          // Fallback: show raw result
+          details = <TruncatedPre text={result} tool="MCP" />
+        }
+      }
+      break
+    }
     // mcp__rclaude__terminate_session + quit_session handled above (line ~473)
     default: {
       if (name.startsWith('mcp__')) {
