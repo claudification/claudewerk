@@ -3,8 +3,9 @@
  * Three columns: Open | In Progress | Done
  */
 
-import { ArrowLeft, ArrowRight, MoreHorizontal, Trash2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, MoreHorizontal, Trash2, X } from 'lucide-react'
 import { memo, useCallback, useState } from 'react'
+import type { TaskNote } from '@/hooks/use-task-notes'
 import { type TaskNoteMeta, type TaskStatus, useTaskNotes } from '@/hooks/use-task-notes'
 import { cn, haptic } from '@/lib/utils'
 import { MarkdownInput } from './markdown-input'
@@ -44,21 +45,132 @@ const PRIORITY_COLORS: Record<string, string> = {
   low: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
 }
 
+function NoteEditor({
+  note,
+  onSave,
+  onClose,
+}: {
+  note: TaskNote
+  onSave: (
+    slug: string,
+    status: TaskStatus,
+    patch: { title?: string; body?: string; priority?: string },
+  ) => Promise<unknown>
+  onClose: () => void
+}) {
+  const [title, setTitle] = useState(note.title)
+  const [body, setBody] = useState(note.body)
+  const [priority, setPriority] = useState<'low' | 'medium' | 'high'>(note.priority || 'medium')
+  const [saving, setSaving] = useState(false)
+
+  async function handleSave() {
+    setSaving(true)
+    await onSave(note.slug, note.status, { title, body, priority })
+    setSaving(false)
+    haptic('success')
+    onClose()
+  }
+
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: backdrop
+    <div
+      role="presentation"
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+      onClick={onClose}
+      onKeyDown={e => {
+        if (e.key === 'Escape') onClose()
+      }}
+    >
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div
+        role="dialog"
+        className="relative w-full max-w-2xl bg-[#1a1b26] border border-[#33467c] shadow-2xl flex flex-col max-h-[80vh]"
+        onClick={e => e.stopPropagation()}
+        onKeyDown={e => {
+          if (e.key === 'Escape') onClose()
+          else e.stopPropagation()
+        }}
+      >
+        {/* Header */}
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-[#33467c]/50 shrink-0">
+          <input
+            type="text"
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            className="flex-1 bg-transparent text-sm font-mono text-foreground outline-none placeholder:text-muted-foreground/30"
+            placeholder="Title..."
+          />
+          <select
+            value={priority}
+            onChange={e => setPriority(e.target.value as 'low' | 'medium' | 'high')}
+            className="text-[10px] font-mono bg-transparent border border-[#33467c]/50 text-muted-foreground px-1 py-0.5 outline-none"
+          >
+            <option value="low">low</option>
+            <option value="medium">medium</option>
+            <option value="high">high</option>
+          </select>
+          <span className="text-[9px] text-muted-foreground/40 font-mono">{noteAge(note.created)}</span>
+          <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground ml-1">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 min-h-0 overflow-y-auto p-4">
+          <textarea
+            value={body}
+            onChange={e => setBody(e.target.value)}
+            className="w-full h-full min-h-[200px] bg-transparent text-sm font-mono text-foreground outline-none resize-none placeholder:text-muted-foreground/30 leading-relaxed"
+            placeholder="Note body (markdown)..."
+          />
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between px-4 py-2 border-t border-[#33467c]/50 shrink-0">
+          <span className="text-[10px] text-muted-foreground/40 font-mono">{note.slug}.md</span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-1 text-xs font-mono text-muted-foreground hover:text-foreground"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="px-3 py-1 text-xs font-bold font-mono bg-accent/20 text-accent hover:bg-accent/30 transition-colors disabled:opacity-50"
+            >
+              {saving ? '...' : 'Save'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function TaskCard({
   note,
   onMove,
   onDelete,
+  onEdit,
 }: {
   note: TaskNoteMeta
   onMove: (slug: string, from: TaskStatus, to: TaskStatus) => void
   onDelete: (slug: string, status: TaskStatus) => void
+  onEdit: (note: TaskNoteMeta) => void
 }) {
   const [showActions, setShowActions] = useState(false)
   const canMoveRight = note.status in NEXT_STATUS
   const canMoveLeft = note.status in PREV_STATUS
 
   return (
-    <div className="group px-3 py-2 bg-[#1a1b26] border border-[#33467c]/30 hover:border-[#33467c]/60 transition-colors">
+    <div
+      className="group px-3 py-2 bg-[#1a1b26] border border-[#33467c]/30 hover:border-[#33467c]/60 transition-colors cursor-pointer"
+      onClick={() => onEdit(note)}
+    >
       <div className="flex items-start gap-2">
         <div className="flex-1 min-w-0">
           <div className="text-xs font-mono text-foreground truncate flex items-center gap-1.5">
@@ -86,7 +198,8 @@ function TaskCard({
         <button
           type="button"
           className="shrink-0 p-0.5 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-          onClick={() => {
+          onClick={e => {
+            e.stopPropagation()
             haptic('tap')
             setShowActions(!showActions)
           }}
@@ -96,7 +209,11 @@ function TaskCard({
       </div>
 
       {showActions && (
-        <div className="flex items-center gap-1 mt-2 pt-2 border-t border-[#33467c]/20">
+        <div
+          role="toolbar"
+          className="flex items-center gap-1 mt-2 pt-2 border-t border-[#33467c]/20"
+          onClick={e => e.stopPropagation()}
+        >
           {canMoveLeft && (
             <button
               type="button"
@@ -207,7 +324,8 @@ function InlineAdd({ onAdd }: { onAdd: (text: string) => void }) {
 }
 
 export const TaskBoard = memo(function TaskBoard({ sessionId }: { sessionId: string }) {
-  const { notes, loading, refresh, createNote, moveNote, deleteNote } = useTaskNotes(sessionId)
+  const { notes, loading, refresh, createNote, moveNote, deleteNote, readNote, updateNote } = useTaskNotes(sessionId)
+  const [editingNote, setEditingNote] = useState<TaskNote | null>(null)
 
   const handleCreate = useCallback(
     async (text: string) => {
@@ -272,7 +390,16 @@ export const TaskBoard = memo(function TaskBoard({ sessionId }: { sessionId: str
                 {/* Cards */}
                 <div className="flex-1 overflow-y-auto space-y-0">
                   {colNotes.map(note => (
-                    <TaskCard key={note.slug} note={note} onMove={handleMove} onDelete={handleDelete} />
+                    <TaskCard
+                      key={note.slug}
+                      note={note}
+                      onMove={handleMove}
+                      onDelete={handleDelete}
+                      onEdit={async meta => {
+                        const full = await readNote(meta.slug, meta.status)
+                        if (full) setEditingNote(full)
+                      }}
+                    />
                   ))}
 
                   {col.status === 'open' && <InlineAdd onAdd={handleCreate} />}
@@ -282,6 +409,17 @@ export const TaskBoard = memo(function TaskBoard({ sessionId }: { sessionId: str
           })}
         </div>
       </div>
+
+      {/* Full-screen editor modal */}
+      {editingNote && (
+        <NoteEditor
+          note={editingNote}
+          onSave={async (slug, status, patch) => {
+            await updateNote(slug, status, patch)
+          }}
+          onClose={() => setEditingNote(null)}
+        />
+      )}
     </div>
   )
 })
