@@ -673,6 +673,20 @@ const SETTINGS: SettingItem[] = [
       />
     ),
   },
+  {
+    group: 'Debug',
+    label: 'Show Diag tab',
+    description: 'Show the Diag tab in session detail (debug info)',
+    keywords: 'diagnostics debug',
+    render: ctx => (
+      <input
+        type="checkbox"
+        checked={ctx.prefs.showDiag}
+        onChange={e => ctx.updatePrefs({ showDiag: e.target.checked })}
+        className="accent-primary w-4 h-4"
+      />
+    ),
+  },
 ]
 
 export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {

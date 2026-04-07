@@ -46,6 +46,7 @@ export interface DashboardPrefs {
   voiceHoldKey: string | null // KeyboardEvent.code for push-to-talk (e.g. 'F13', 'ScrollLock')
   chatBubbleColor: string // tailwind color class prefix (e.g. 'blue', 'teal', 'purple')
   defaultSessionCwd: string // auto-select this project on dashboard load (per-device)
+  showDiag: boolean
   toolDisplay: Partial<Record<ToolDisplayKey, Partial<ToolDisplayPrefs>>>
 }
 
@@ -63,6 +64,7 @@ export const defaultPrefs: DashboardPrefs = {
   defaultView: 'transcript',
   voiceHoldKey: null,
   chatBubbleColor: 'blue',
+  showDiag: false,
   defaultSessionCwd: '',
   toolDisplay: {},
 }

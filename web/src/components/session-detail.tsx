@@ -681,6 +681,7 @@ export function SessionDetail() {
   const [activeTab, setActiveTab] = useState<Tab>('transcript')
   const [follow, setFollow] = useState(true)
   const showThinking = useSessionsStore(s => s.dashboardPrefs.showThinking)
+  const showDiag = useSessionsStore(s => s.dashboardPrefs.showDiag)
   const [reviveState, setReviveState] = useState<'idle' | 'sending' | 'waiting' | 'error'>('idle')
   const [reviveError, setReviveError] = useState<string | null>(null)
   const [conversationTarget, setConversationTarget] = useState<{
@@ -1436,7 +1437,7 @@ export function SessionDetail() {
             >
               Shared
             </button>
-            {canAdmin && (
+            {canAdmin && showDiag && (
               <button
                 type="button"
                 onClick={() => {
