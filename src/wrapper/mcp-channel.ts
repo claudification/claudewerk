@@ -191,14 +191,27 @@ export function resolveExplorer(explorerId: string, result: ExplorerResult): boo
   clearTimeout(pending.timer)
   pendingExplorers.delete(explorerId)
 
+  const meta: Record<string, string> = {
+    sender: 'explorer',
+    explorer_id: explorerId,
+  }
+
   // Deliver result as channel notification (the tool call already returned)
   if (result._timeout) {
-    pushChannelMessage('Explorer timed out - user did not respond.', { source: 'explorer' })
+    meta.status = 'timeout'
+    pushChannelMessage('Explorer timed out - user did not respond.', meta)
   } else if (result._cancelled) {
-    pushChannelMessage('User cancelled the explorer dialog.', { source: 'explorer' })
+    meta.status = 'cancelled'
+    pushChannelMessage('User cancelled the explorer dialog.', meta)
   } else {
-    const formatted = JSON.stringify(result, null, 2)
-    pushChannelMessage(`Explorer result:\n${formatted}`, { source: 'explorer' })
+    meta.status = 'submitted'
+    if (result._action && result._action !== 'submit') meta.action = result._action as string
+    // Format: user-facing values only (strip _ prefixed internal fields)
+    const userValues: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(result)) {
+      if (!k.startsWith('_')) userValues[k] = v
+    }
+    pushChannelMessage(JSON.stringify(userValues, null, 2), meta)
   }
   // Dismiss on all dashboard subscribers (cleanup for other tabs/devices)
   callbacks.onExploreDismiss?.(explorerId)
@@ -220,7 +233,11 @@ export function keepaliveExplorer(explorerId: string): boolean {
     pending.deadline = newDeadline
     pending.timer = setTimeout(() => {
       pendingExplorers.delete(explorerId)
-      pushChannelMessage('Explorer timed out - user did not respond.', { source: 'explorer' })
+      pushChannelMessage('Explorer timed out - user did not respond.', {
+        sender: 'explorer',
+        explorer_id: explorerId,
+        status: 'timeout',
+      })
       callbacks.onExploreDismiss?.(explorerId)
     }, minRemaining)
     elog(`keepalive: ${explorerId.slice(0, 8)} extended to ${Math.round(minRemaining / 1000)}s`)
@@ -642,7 +659,11 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
               if (pending) {
                 pendingExplorers.delete(explorerId)
                 elog(` timeout: ${explorerId.slice(0, 8)}`)
-                pushChannelMessage('Explorer timed out - user did not respond.', { source: 'explorer' })
+                pushChannelMessage('Explorer timed out - user did not respond.', {
+                  sender: 'explorer',
+                  explorer_id: explorerId,
+                  status: 'timeout',
+                })
                 callbacks.onExploreDismiss?.(explorerId)
               }
             }, timeout)
