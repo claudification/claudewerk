@@ -512,10 +512,11 @@ export interface ExplorerDismissMessage {
 export interface PermissionRequest {
   type: 'permission_request'
   sessionId: string
-  requestId: string // 5-char hash from CC
+  requestId: string // request_id from CC's control_request
   toolName: string
   description: string
   inputPreview: string // JSON.stringify(input), truncated to 200 chars
+  toolUseId?: string // tool_use_id from CC, needed for control_response
 }
 
 export interface PermissionResponse {
@@ -523,6 +524,7 @@ export interface PermissionResponse {
   sessionId: string
   requestId: string
   behavior: 'allow' | 'deny'
+  toolUseId?: string
 }
 
 export type ConcentratorMessage =

@@ -807,10 +807,10 @@ async function main() {
       onChannelLinkRequest() {
         // Link requests are handled by the dashboard UI, not by Claude
       },
-      onPermissionResponse(requestId: string, behavior: 'allow' | 'deny') {
+      onPermissionResponse(requestId: string, behavior: 'allow' | 'deny', toolUseId?: string) {
         if (headless && streamProc) {
           // Headless: respond via control_response on stdin
-          streamProc.sendPermissionResponse(requestId, behavior === 'allow')
+          streamProc.sendPermissionResponse(requestId, behavior === 'allow', undefined, toolUseId)
           diag('headless', `Permission response: ${requestId} -> ${behavior}`)
         } else if (channelEnabled && isMcpChannelReady()) {
           // PTY + channel: respond via MCP channel
@@ -1960,16 +1960,35 @@ async function main() {
         }
       },
       onPermissionRequest(request) {
-        // Forward permission request to concentrator for dashboard handling
+        const inputStr = JSON.stringify(request.toolInput)
+        const toolUseId = request.tool_use_id as string | undefined
+
+        // Check auto-approve rules (rclaude.json + session rules) before forwarding to dashboard
+        if (permissionRules.shouldAutoApprove(request.toolName, inputStr.slice(0, 200))) {
+          streamProc?.sendPermissionResponse(request.requestId, true, undefined, toolUseId)
+          diag('headless', `Permission auto-approved: ${request.requestId} ${request.toolName}`)
+          if (wsClient?.isConnected()) {
+            wsClient.send({
+              type: 'permission_auto_approved',
+              sessionId: claudeSessionId || internalId,
+              requestId: request.requestId,
+              toolName: request.toolName,
+              description: (request.decision_reason as string) || `${request.toolName}: ${inputStr.slice(0, 100)}`,
+            } as unknown as WrapperMessage)
+          }
+          return
+        }
+
+        // Forward to concentrator for dashboard handling
         if (wsClient?.isConnected()) {
-          const inputStr = JSON.stringify(request.toolInput)
           wsClient.send({
             type: 'permission_request',
             sessionId: claudeSessionId || internalId,
             toolName: request.toolName,
-            description: `${request.toolName}: ${inputStr.slice(0, 100)}`,
+            description: (request.decision_reason as string) || `${request.toolName}: ${inputStr.slice(0, 100)}`,
             inputPreview: inputStr.slice(0, 200),
             requestId: request.requestId,
+            toolUseId,
           })
           diag('headless', `Permission request: ${request.toolName} (${request.requestId.slice(0, 8)})`)
         }

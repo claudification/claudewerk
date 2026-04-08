@@ -110,7 +110,12 @@ export interface StreamPermissionRequest {
 export interface StreamProcess {
   proc: Subprocess
   sendUserMessage: (text: string, source?: string) => void
-  sendPermissionResponse: (requestId: string, allow: boolean, updatedInput?: Record<string, unknown>) => void
+  sendPermissionResponse: (
+    requestId: string,
+    allow: boolean,
+    updatedInput?: Record<string, unknown>,
+    toolUseId?: string,
+  ) => void
   sendSetModel: (model: string) => void
   sendInterrupt: () => void
   forwardStdin: () => void
@@ -158,6 +163,8 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
     'stream-json',
     '--include-partial-messages',
     '--replay-user-messages',
+    '--permission-prompt-tool',
+    'stdio',
     '--settings',
     settingsPath,
     ...filteredArgs,
@@ -268,12 +275,15 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
         if (!request) break
         const subtype = request.subtype as string
         if (subtype === 'can_use_tool') {
-          const toolUse = request.tool_use as Record<string, unknown> | undefined
-          debug(`Permission request: ${toolUse?.name || 'unknown'} (${request.request_id})`)
+          // CC sends tool_name/input at top level of request, NOT nested under tool_use
+          const toolName = (request.tool_name as string) || ''
+          const toolInput = (request.input as Record<string, unknown>) || {}
+          const requestId = (msg.request_id as string) || (request.request_id as string) || ''
+          debug(`Permission request: ${toolName} (${requestId}) reason=${request.decision_reason || ''}`)
           onPermissionRequest?.({
-            requestId: request.request_id as string,
-            toolName: (toolUse?.name as string) || '',
-            toolInput: (toolUse?.input as Record<string, unknown>) || {},
+            requestId,
+            toolName,
+            toolInput,
             ...request,
           })
         }
@@ -382,16 +392,21 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
       })
     },
 
-    sendPermissionResponse(requestId: string, allow: boolean, updatedInput?: Record<string, unknown>) {
+    sendPermissionResponse(
+      requestId: string,
+      allow: boolean,
+      updatedInput?: Record<string, unknown>,
+      toolUseId?: string,
+    ) {
       debug(`Permission response: ${requestId} -> ${allow ? 'allow' : 'deny'}`)
       writeStdin({
         type: 'control_response',
         response: {
+          subtype: 'success',
           request_id: requestId,
-          subtype: 'can_use_tool',
           response: allow
-            ? { behavior: 'allow', updatedInput: updatedInput || {} }
-            : { behavior: 'deny', message: 'Denied by user' },
+            ? { behavior: 'allow', updatedInput: updatedInput || {}, ...(toolUseId && { toolUseID: toolUseId }) }
+            : { behavior: 'deny', message: 'Denied by user', ...(toolUseId && { toolUseID: toolUseId }) },
         },
       })
     },

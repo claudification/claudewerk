@@ -57,7 +57,7 @@ export interface WsClientOptions {
   onChannelSendResult?: (result: unknown) => void
   onChannelDeliver?: (delivery: InterSessionDelivery) => void
   onChannelLinkRequest?: (request: InterSessionLinkRequest) => void
-  onPermissionResponse?: (requestId: string, behavior: 'allow' | 'deny') => void
+  onPermissionResponse?: (requestId: string, behavior: 'allow' | 'deny', toolUseId?: string) => void
   onPermissionRule?: (toolName: string, behavior: 'allow' | 'deny') => void
   onRendezvousResult?: (message: Record<string, unknown>) => void
   onChannelReviveResult?: (result: { ok: boolean; error?: string; name?: string }) => void
@@ -304,7 +304,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
               onChannelLinkRequest?.(message)
               break
             case 'permission_response':
-              onPermissionResponse?.(message.requestId, message.behavior)
+              onPermissionResponse?.(message.requestId, message.behavior, message.toolUseId)
               break
             case 'ask_answer':
               onAskAnswer?.(message.toolUseId, message.answers, message.annotations, message.skip)

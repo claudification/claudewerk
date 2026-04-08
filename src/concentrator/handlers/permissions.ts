@@ -22,6 +22,7 @@ const permissionRequest: MessageHandler = (ctx, data) => {
     toolName: data.toolName,
     description: data.description,
     inputPreview: data.inputPreview,
+    toolUseId: data.toolUseId,
   }
   if (session?.cwd) ctx.broadcastScoped(msg, session.cwd)
   else ctx.broadcast(msg)
@@ -41,6 +42,7 @@ const permissionResponse: MessageHandler = (ctx, data) => {
         sessionId,
         requestId: data.requestId,
         behavior: data.behavior,
+        toolUseId: data.toolUseId,
       }),
     )
     ctx.log.debug(`[permission] Response: ${data.requestId} -> ${data.behavior}`)
