@@ -108,9 +108,9 @@ const sessionInfo: MessageHandler = (ctx, data) => {
     claudeCodeVersion: data.claudeCodeVersion,
     fastModeState: data.fastModeState,
   }
-  // Broadcast to subscribers
+  // Broadcast with canonical session ID (not whatever the wrapper sent)
   if (session.cwd) {
-    ctx.broadcastScoped({ type: 'session_info', sessionId, ...data }, session.cwd)
+    ctx.broadcastScoped({ ...data, type: 'session_info', sessionId }, session.cwd)
   }
   ctx.log.debug(
     `session_info: ${(data.tools as unknown[])?.length} tools, ${(data.skills as unknown[])?.length} skills, ${(data.agents as unknown[])?.length} agents`,

@@ -107,6 +107,7 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
     '--input-format',
     'stream-json',
     '--include-partial-messages',
+    '--replay-user-messages',
     '--settings',
     settingsPath,
     ...filteredArgs,
