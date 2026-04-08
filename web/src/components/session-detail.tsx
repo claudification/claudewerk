@@ -565,6 +565,23 @@ const InputBar = memo(function InputBar({ sessionId }: { sessionId: string }) {
       // Defensive re-clear
       setInputValue('')
       useSessionsStore.getState().setInputDraft(sessionId, '')
+      // Headless: inject optimistic user entry so it appears immediately
+      // (PTY sessions get this from the UserPromptSubmit hook instead)
+      const sess = useSessionsStore.getState().sessions.find(s => s.id === sessionId)
+      if (sess && !canTerminal(sess)) {
+        const optimistic: TranscriptEntry = {
+          type: 'user',
+          timestamp: new Date().toISOString(),
+          message: { role: 'user', content: text },
+        } as TranscriptEntry
+        useSessionsStore.setState(state => {
+          const existing = state.transcripts[sessionId] || []
+          return {
+            transcripts: { ...state.transcripts, [sessionId]: [...existing, optimistic] },
+            newDataSeq: state.newDataSeq + 1,
+          }
+        })
+      }
     }
     if (!isMobileViewport()) {
       requestAnimationFrame(() => containerRef.current?.querySelector('textarea')?.focus())
@@ -1132,6 +1149,17 @@ export function SessionDetail() {
                     {session.lastError.stopReason && (
                       <div className="text-muted-foreground">reason: {session.lastError.stopReason}</div>
                     )}
+                  </div>
+                )}
+
+                {/* Rate limit warning */}
+                {session.rateLimit && (
+                  <div className="px-2 py-1 bg-amber-500/10 border border-amber-500/30 text-[10px] font-mono flex items-center gap-2">
+                    <span className="text-amber-400 font-bold uppercase">Rate Limited</span>
+                    <span className="text-amber-400/70">{session.rateLimit.message}</span>
+                    <span className="text-muted-foreground ml-auto">
+                      {new Date(session.rateLimit.timestamp).toLocaleTimeString('en-US', { hour12: false })}
+                    </span>
                   </div>
                 )}
 
