@@ -92,10 +92,19 @@ const subagentTranscriptRequest: MessageHandler = (ctx, data) => {
 
 // Session info from headless init - store on session and broadcast to dashboard
 const sessionInfo: MessageHandler = (ctx, data) => {
-  const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
-  if (!sessionId) return
-  const session = ctx.sessions.getSession(sessionId)
-  if (!session) return // Store on session object for later retrieval (reconnect, catch-up)
+  const wsSessionId = ctx.ws.data.sessionId as string | undefined
+  const wrapperId = ctx.ws.data.wrapperId as string | undefined
+  // Resolve session: try session ID first, then wrapper ID (session ID may have changed via SessionStart)
+  const session =
+    (wsSessionId ? ctx.sessions.getSession(wsSessionId) : null) ||
+    (wrapperId ? ctx.sessions.getSessionByWrapper(wrapperId) : null)
+  if (!session) {
+    ctx.log.debug(
+      `session_info: no session found (wsSessionId=${wsSessionId?.slice(0, 8)}, wrapperId=${wrapperId?.slice(0, 8)})`,
+    )
+    return
+  }
+  const sessionId = session.id
   ;(session as unknown as Record<string, unknown>).sessionInfo = {
     tools: data.tools,
     slashCommands: data.slashCommands,
