@@ -4,6 +4,8 @@
  * Parses structured output and converts to TranscriptEntry format.
  */
 
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Subprocess } from 'bun'
 import type { TranscriptEntry } from '../shared/protocol'
 import { debug as _debug } from './debug'
@@ -133,16 +135,37 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
     },
   })
 
+  // Diagnostic log - raw capture of everything from stdout/stderr for post-mortem analysis
+  const diagDir = join(cwd || process.cwd(), '.claude', '.rclaude')
+  const diagPath = join(diagDir, `headless-${sessionId}.ndjsonl`)
+  try {
+    mkdirSync(diagDir, { recursive: true })
+    writeFileSync(diagPath, `# headless stream log - ${new Date().toISOString()}\n# pid=${proc.pid}\n`)
+    debug(`Diagnostic log: ${diagPath}`)
+  } catch {
+    debug('Failed to create diagnostic log')
+  }
+
+  function diagLog(prefix: string, line: string) {
+    try {
+      appendFileSync(diagPath, `${prefix} ${line}\n`)
+    } catch {
+      // ignore write errors
+    }
+  }
+
   // Line buffer for NDJSON parsing
   let lineBuf = ''
 
   function processLine(line: string) {
     if (!line.trim()) return
+    diagLog('>>>', line)
     try {
       const msg = JSON.parse(line) as Record<string, unknown>
       handleMessage(msg)
     } catch (err) {
       debug(`Failed to parse NDJSON line: ${err}`)
+      diagLog('ERR', `parse: ${err}`)
     }
   }
 
@@ -255,7 +278,10 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
         const { done, value } = await reader.read()
         if (done) break
         const text = decoder.decode(value, { stream: true })
-        if (text.trim()) debug(`stderr: ${text.trim()}`)
+        if (text.trim()) {
+          debug(`stderr: ${text.trim()}`)
+          diagLog('ERR', text.trim())
+        }
       }
     } catch {
       // ignore
@@ -270,8 +296,9 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
       debug('stdin not available')
       return
     }
-    const line = `${JSON.stringify(json)}\n`
-    proc.stdin.write(line)
+    const line = JSON.stringify(json)
+    diagLog('<<<', line)
+    proc.stdin.write(`${line}\n`)
     proc.stdin.flush()
   }
 
