@@ -52,6 +52,7 @@ const sendInput: MessageHandler = (ctx, data) => {
     ...(crDelay && { crDelay }),
   }
   ws.send(JSON.stringify(inputMsg))
+  ctx.log.debug(`send_input: ${sessionId.slice(0, 8)} "${input.slice(0, 50)}"`)
   ctx.reply({ type: 'send_input_result', ok: true })
 }
 
