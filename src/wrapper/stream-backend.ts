@@ -356,9 +356,16 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
     // PtyProcess-compatible stub: dashboard input as plain user message
     write(data: string) {
       const trimmed = data.trim()
-      if (trimmed && !trimmed.startsWith('\x1b') && trimmed !== '\r' && trimmed !== '\n') {
-        this.sendUserMessage(trimmed)
+      if (!trimmed || trimmed.startsWith('\x1b') || trimmed === '\r' || trimmed === '\n') return
+
+      // Intercept commands that don't work in --print mode
+      if (trimmed === '/exit' || trimmed === '/quit') {
+        debug('Exit command received - terminating headless process')
+        proc.kill('SIGTERM')
+        return
       }
+
+      this.sendUserMessage(trimmed)
     },
 
     resize() {
