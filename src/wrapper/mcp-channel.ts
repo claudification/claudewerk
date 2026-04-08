@@ -453,14 +453,22 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
       {
         name: 'tasks',
         description:
-          'List task notes from the project kanban board (.claude/.rclaude/tasks/). Returns tasks grouped by status (open, in-progress, done) with their frontmatter (title, priority, tags, refs) and relative file paths. Use this to discover what tasks exist before working on them. To edit tasks, read/write the markdown files directly. To change status, mv the file between status folders.',
+          'List task notes from the project kanban board (.claude/.rclaude/tasks/). Returns tasks grouped by status with their frontmatter (title, priority, tags, refs) and relative file paths. By default shows open + in-progress only. To edit tasks, read/write the markdown files directly. To change status, mv the file between status folders.',
         inputSchema: {
           type: 'object' as const,
           properties: {
             status: {
               type: 'string',
-              enum: ['open', 'in-progress', 'done', 'all'],
-              description: 'Filter by status folder. Default: all',
+              enum: ['open', 'in-progress', 'done', 'archived', 'all'],
+              description: 'Filter by status folder. Default: all (open + in-progress)',
+            },
+            show_done: {
+              type: 'boolean',
+              description: 'Include done tasks when status is "all" (default: false)',
+            },
+            show_archived: {
+              type: 'boolean',
+              description: 'Include archived tasks when status is "all" (default: false)',
             },
           },
         },
@@ -490,7 +498,14 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
         }
         case 'tasks': {
           const statusFilter = params.status || 'all'
-          const statuses = statusFilter === 'all' ? ['open', 'in-progress', 'done'] : [statusFilter]
+          let statuses: string[]
+          if (statusFilter === 'all') {
+            statuses = ['open', 'in-progress']
+            if (String(params.show_done) === 'true') statuses.push('done')
+            if (String(params.show_archived) === 'true') statuses.push('archived')
+          } else {
+            statuses = [statusFilter]
+          }
           const tasksDir = join(explorerCwd, '.claude', '.rclaude', 'tasks')
           const results: string[] = []
           for (const status of statuses) {
