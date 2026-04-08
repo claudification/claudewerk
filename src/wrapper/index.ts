@@ -570,6 +570,11 @@ async function main() {
           // Intercept headless-specific commands
           if (trimmed === '/exit' || trimmed === '/quit' || trimmed === ':q' || trimmed === ':q!') {
             streamProc.kill()
+          } else if (trimmed === '/clear') {
+            // Clear = kill and restart (new session, clean context)
+            diag('headless', 'Clear requested - restarting process')
+            streamProc.kill()
+            // Process exit handler will trigger session end, dashboard can revive
           } else if (trimmed.startsWith('/model ')) {
             const model = trimmed.slice(7).trim()
             if (model) streamProc.sendSetModel(model)
