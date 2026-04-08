@@ -10,6 +10,102 @@ import type { Subprocess } from 'bun'
 import type { TranscriptEntry } from '../shared/protocol'
 import { debug as _debug } from './debug'
 
+// Console transcript output (RCLAUDE_SHOW_TRANSCRIPT=1)
+const SHOW_TRANSCRIPT = !!process.env.RCLAUDE_SHOW_TRANSCRIPT
+const SHOW_PRETTY = !!process.env.RCLAUDE_SHOW_TRANSCRIPT_PRETTY
+
+// ANSI color helpers
+const C = {
+  reset: '\x1b[0m',
+  dim: '\x1b[2m',
+  bold: '\x1b[1m',
+  green: '\x1b[32m',
+  blue: '\x1b[34m',
+  cyan: '\x1b[36m',
+  yellow: '\x1b[33m',
+  magenta: '\x1b[35m',
+  red: '\x1b[31m',
+  gray: '\x1b[90m',
+  white: '\x1b[37m',
+  bgGray: '\x1b[100m',
+}
+
+function transcriptLog(direction: '>>>' | '<<<', msg: Record<string, unknown>) {
+  if (!SHOW_TRANSCRIPT) return
+  const type = msg.type as string
+  const subtype = (msg.subtype as string) || ''
+
+  if (SHOW_PRETTY) {
+    // Pretty mode: human-readable colored output
+    const arrow = direction === '>>>' ? `${C.cyan}>>>${C.reset}` : `${C.green}<<<${C.reset}`
+    switch (type) {
+      case 'user': {
+        const content = (msg.message as Record<string, unknown>)?.content
+        const text = typeof content === 'string' ? content : JSON.stringify(content)
+        const label = direction === '<<<' ? `${C.green}${C.bold}YOU${C.reset}` : `${C.green}USER${C.reset}`
+        process.stderr.write(`${arrow} ${label} ${C.dim}${text.slice(0, 200)}${C.reset}\n`)
+        break
+      }
+      case 'assistant': {
+        const m = msg.message as Record<string, unknown>
+        const content = m?.content as Array<Record<string, unknown>> | undefined
+        if (!content) break
+        for (const block of content) {
+          if (block.type === 'text') {
+            process.stderr.write(
+              `${arrow} ${C.blue}${C.bold}ASSISTANT${C.reset} ${(block.text as string).slice(0, 200)}\n`,
+            )
+          } else if (block.type === 'tool_use') {
+            process.stderr.write(
+              `${arrow} ${C.yellow}TOOL${C.reset} ${C.bold}${block.name}${C.reset} ${C.dim}${JSON.stringify(block.input).slice(0, 120)}${C.reset}\n`,
+            )
+          } else if (block.type === 'thinking') {
+            process.stderr.write(
+              `${arrow} ${C.magenta}THINK${C.reset} ${C.dim}${(block.thinking as string).slice(0, 100)}...${C.reset}\n`,
+            )
+          }
+        }
+        break
+      }
+      case 'system': {
+        if (subtype === 'init') {
+          process.stderr.write(
+            `${arrow} ${C.cyan}INIT${C.reset} model=${C.bold}${msg.model}${C.reset} tools=${(msg.tools as unknown[])?.length}\n`,
+          )
+        } else if (subtype === 'task_started') {
+          process.stderr.write(
+            `${arrow} ${C.yellow}TASK${C.reset} ${msg.task_type} ${C.dim}${msg.description}${C.reset}\n`,
+          )
+        } else if (subtype === 'task_notification') {
+          process.stderr.write(`${arrow} ${C.yellow}TASK${C.reset} ${C.dim}${msg.status}${C.reset}\n`)
+        } else {
+          process.stderr.write(`${arrow} ${C.gray}SYS:${subtype}${C.reset}\n`)
+        }
+        break
+      }
+      case 'result': {
+        const cost = msg.total_cost_usd as number
+        process.stderr.write(
+          `${arrow} ${C.bold}RESULT${C.reset} ${subtype} ${C.dim}cost=$${cost?.toFixed(4)} turns=${msg.num_turns}${C.reset}\n`,
+        )
+        break
+      }
+      case 'stream_event':
+        break // skip deltas in pretty mode
+      case 'rate_limit_event': {
+        const info = msg.rate_limit_info as Record<string, unknown>
+        process.stderr.write(`${arrow} ${C.red}RATE${C.reset} ${C.dim}${info?.status}${C.reset}\n`)
+        break
+      }
+      default:
+        process.stderr.write(`${arrow} ${C.gray}${type}:${subtype}${C.reset}\n`)
+    }
+  } else {
+    // Raw mode: plain NDJSON to stderr, no colors
+    process.stderr.write(`${direction} ${JSON.stringify(msg)}\n`)
+  }
+}
+
 const debug = (msg: string) => _debug(`[stream] ${msg}`)
 
 export interface StreamBackendOptions {
@@ -163,6 +259,7 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
     diagLog('>>>', line)
     try {
       const msg = JSON.parse(line) as Record<string, unknown>
+      transcriptLog('>>>', msg)
       handleMessage(msg)
     } catch (err) {
       debug(`Failed to parse NDJSON line: ${err}`)
@@ -306,6 +403,7 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
     }
     const line = JSON.stringify(json)
     diagLog('<<<', line)
+    transcriptLog('<<<', json)
     proc.stdin.write(`${line}\n`)
     proc.stdin.flush()
   }
