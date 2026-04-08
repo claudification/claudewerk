@@ -79,6 +79,7 @@ export interface WsClientOptions {
   onExplorerResult?: (explorerId: string, result: import('../shared/explorer-schema').ExplorerResult) => void
   onExplorerKeepalive?: (explorerId: string) => void
   onQuitSession?: () => void
+  onInterrupt?: () => void
 }
 
 export interface WsClient {
@@ -92,6 +93,7 @@ export interface WsClient {
   sendFileResponse: (requestId: string, data?: string, mediaType?: string, error?: string) => void
   sendBgTaskOutput: (taskId: string, data: string, done: boolean) => void
   sendStreamDelta: (event: Record<string, unknown>) => void
+  sendRateLimit: (retryAfterMs: number, message: string) => void
   close: () => void
   isConnected: () => boolean
 }
@@ -140,6 +142,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
     onExplorerResult,
     onExplorerKeepalive,
     onQuitSession,
+    onInterrupt,
   } = options
 
   let sessionId = initialSessionId
@@ -308,6 +311,9 @@ export function createWsClient(options: WsClientOptions): WsClient {
               break
             case 'dialog_result':
               onExplorerResult?.(message.explorerId, message.result)
+              break
+            case 'interrupt':
+              onInterrupt?.()
               break
             case 'terminate_session':
               onQuitSession?.()
@@ -531,6 +537,9 @@ export function createWsClient(options: WsClientOptions): WsClient {
     sendBgTaskOutput,
     sendStreamDelta(event: Record<string, unknown>) {
       send({ type: 'stream_delta', sessionId, event } as WrapperMessage)
+    },
+    sendRateLimit(retryAfterMs: number, message: string) {
+      send({ type: 'rate_limit', sessionId, retryAfterMs, message } as WrapperMessage)
     },
     close,
     isConnected,

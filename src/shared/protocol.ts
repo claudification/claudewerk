@@ -300,6 +300,7 @@ export type WrapperMessage =
   | ExplorerShowMessage
   | ExplorerDismissMessage
   | StreamDelta
+  | WrapperRateLimit
   | SessionInfoUpdate
 
 // Session info from stream-json init (skills, tools, agents, etc.)
@@ -323,6 +324,14 @@ export interface StreamDelta {
   type: 'stream_delta'
   sessionId: string
   event: Record<string, unknown> // raw Anthropic API SSE event
+}
+
+// Rate limit notification from headless stream-json backend
+export interface WrapperRateLimit {
+  type: 'rate_limit'
+  sessionId: string
+  retryAfterMs: number
+  message: string
 }
 
 // Clipboard capture from PTY OSC 52 sequences
@@ -531,10 +540,16 @@ export type ConcentratorMessage =
   | InterSessionDelivery
   | InterSessionLinkRequest
   | InterSessionListResponse
+  | SendInterrupt
   | PermissionResponse
   | AskQuestionResponse
   | QuitSession
   | ExplorerResultMessage
+
+export interface SendInterrupt {
+  type: 'interrupt'
+  sessionId: string
+}
 
 export interface QuitSession {
   type: 'terminate_session'
@@ -792,6 +807,7 @@ export interface Session {
   diagLog: Array<{ t: number; type: string; msg: string; args?: unknown }>
   effortLevel?: string // 'speed' field from API usage: e.g. 'standard', maps to low/medium/high
   lastError?: { stopReason?: string; errorType?: string; errorMessage?: string; timestamp: number }
+  rateLimit?: { retryAfterMs: number; message: string; timestamp: number }
   pendingAttention?: {
     type: 'permission' | 'elicitation' | 'ask' | 'dialog'
     toolName?: string
@@ -946,6 +962,7 @@ export interface SessionSummary {
   team?: TeamInfo
   effortLevel?: string
   lastError?: Session['lastError']
+  rateLimit?: Session['rateLimit']
   pendingAttention?: Session['pendingAttention']
   hasNotification?: boolean
   summary?: string

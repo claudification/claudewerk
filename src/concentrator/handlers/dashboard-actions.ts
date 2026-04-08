@@ -181,6 +181,32 @@ const updateSessionOrder: MessageHandler = (ctx, data) => {
   ctx.reply({ type: 'update_session_order_result', ok: true, order: saved })
 }
 
+// ─── Interrupt a session (headless) ───────────────────────────────
+
+const sendInterrupt: MessageHandler = (ctx, data) => {
+  const sessionId = data.sessionId as string
+  if (!sessionId) throw new GuardError('Missing sessionId')
+
+  const session = ctx.sessions.getSession(sessionId)
+  if (!session) throw new GuardError('Session not found')
+  if (session.status === 'ended') throw new GuardError('Session has ended')
+  ctx.requirePermission('chat', session.cwd)
+
+  let ws = ctx.sessions.getSessionSocket(sessionId)
+  if (!ws) {
+    const wrapperIds = ctx.sessions.getWrapperIds(sessionId)
+    for (const wid of wrapperIds) {
+      ws = ctx.sessions.getSessionSocketByWrapper(wid)
+      if (ws) break
+    }
+  }
+  if (!ws) throw new GuardError('Session not connected')
+
+  ws.send(JSON.stringify({ type: 'interrupt', sessionId }))
+  ctx.log.debug(`send_interrupt: ${sessionId.slice(0, 8)}`)
+  ctx.reply({ type: 'send_interrupt_result', ok: true })
+}
+
 // ─── Revive a session ─────────────────────────────────────────────
 
 const reviveSession: MessageHandler = (ctx, data) => {
@@ -209,6 +235,7 @@ const reviveSession: MessageHandler = (ctx, data) => {
 export function registerDashboardActionHandlers(): void {
   registerHandlers({
     send_input: sendInput,
+    send_interrupt: sendInterrupt,
     dismiss_session: dismissSession,
     update_settings: updateSettings,
     update_project_settings: updateProjectSettings,

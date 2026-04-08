@@ -297,6 +297,9 @@ function Dashboard() {
     }
   }, [selectedSessionId])
 
+  // Double-Esc interrupt tracking
+  const lastEscRef = useRef(0)
+
   // Global keyboard shortcuts - work EVERYWHERE (dashboard + terminal)
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -368,18 +371,39 @@ function Dashboard() {
           store.setPendingFilePath('NOTES.md')
         }
       }
-      // Escape - go home to transcript + focus input (desktop only)
-      if (e.key === 'Escape' && !e.ctrlKey && !e.metaKey && !e.shiftKey && !isMobileViewport()) {
-        const el = e.target as HTMLElement
-        // Don't capture when terminal, modal, palette, or input has focus
-        if (el?.closest('.xterm')) return
-        const store = useSessionsStore.getState()
-        if (store.showSwitcher || store.showDebugConsole || store.showTerminal) return
-        if (!store.selectedSessionId) return
-        e.preventDefault()
-        store.selectSubagent(null)
-        store.openTab(store.selectedSessionId, 'transcript')
-        requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('textarea')?.focus())
+      // Escape - double-Esc (within 700ms) sends interrupt, single-Esc goes home
+      if (e.key === 'Escape' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        const now = Date.now()
+        const elapsed = now - lastEscRef.current
+        lastEscRef.current = now
+
+        // Double-Esc within 700ms: interrupt the active session
+        if (elapsed < 700) {
+          lastEscRef.current = 0 // reset so triple-Esc doesn't re-trigger
+          const store = useSessionsStore.getState()
+          const sid = store.selectedSessionId
+          if (sid) {
+            const session = store.sessions.find(s => s.id === sid)
+            if (session && session.status !== 'ended') {
+              e.preventDefault()
+              wsSend('send_interrupt', { sessionId: sid })
+            }
+          }
+          return
+        }
+
+        // Single Esc - go home to transcript + focus input (desktop only)
+        if (!isMobileViewport()) {
+          const el = e.target as HTMLElement
+          if (el?.closest('.xterm')) return
+          const store = useSessionsStore.getState()
+          if (store.showSwitcher || store.showDebugConsole || store.showTerminal) return
+          if (!store.selectedSessionId) return
+          e.preventDefault()
+          store.selectSubagent(null)
+          store.openTab(store.selectedSessionId, 'transcript')
+          requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('textarea')?.focus())
+        }
       }
     }
     window.addEventListener('keydown', handleKeyDown)

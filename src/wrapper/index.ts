@@ -884,6 +884,15 @@ async function main() {
         if (headless && streamProc) streamProc.kill()
         else if (ptyProcess) ptyProcess.kill('SIGTERM')
       },
+      onInterrupt() {
+        if (headless && streamProc) {
+          diag('session', 'Interrupt requested from dashboard')
+          streamProc.sendInterrupt()
+        } else if (ptyProcess) {
+          diag('session', 'Interrupt requested from dashboard - sending Ctrl+C to PTY')
+          ptyProcess.write('\x03')
+        }
+      },
     })
   }
 
@@ -1906,6 +1915,11 @@ async function main() {
         // Forward raw API SSE deltas to concentrator for real-time streaming
         if (wsClient?.isConnected()) {
           wsClient.sendStreamDelta(event)
+        }
+      },
+      onRateLimit(retryAfterMs, message) {
+        if (wsClient?.isConnected()) {
+          wsClient.sendRateLimit(retryAfterMs, message)
         }
       },
       onTaskStarted(task) {

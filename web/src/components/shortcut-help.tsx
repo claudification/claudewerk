@@ -17,6 +17,7 @@ const SHORTCUTS = [
   { keys: 'Shift+Click TTY', action: 'Popout terminal to new window' },
   { keys: 'Shift+?', action: 'This help screen' },
   { keys: 'Esc', action: 'Go to transcript + focus input' },
+  { keys: 'Esc Esc', action: 'Interrupt current turn (700ms window)' },
 ]
 
 const INPUT_SHORTCUTS = [
