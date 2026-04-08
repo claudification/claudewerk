@@ -260,6 +260,7 @@ async function spawnSession(
   mkdir = false,
   mode?: 'fresh' | 'continue' | 'resume',
   resumeId?: string,
+  headless = true,
 ): Promise<{ success: boolean; error?: string; tmuxSession?: string }> {
   // Diagnostic dump
   const whichRclaude = Bun.spawnSync(['which', 'rclaude'])
@@ -297,7 +298,12 @@ async function spawnSession(
   const scriptArgs = [reviveScript, syntheticId, cwd]
   if (mode) scriptArgs.push('--mode', mode)
   if (mode === 'resume' && resumeId) scriptArgs.push('--resume-id', resumeId)
-  const scriptEnv = { ...process.env, RCLAUDE_SECRET: secret, RCLAUDE_WRAPPER_ID: wrapperId }
+  const scriptEnv = {
+    ...process.env,
+    RCLAUDE_SECRET: secret,
+    RCLAUDE_WRAPPER_ID: wrapperId,
+    ...(headless ? { RCLAUDE_HEADLESS: '1' } : {}),
+  }
 
   diag('spawn', 'Running revive script', { args: scriptArgs })
 
@@ -442,6 +448,7 @@ function connect(
             mkdir?: boolean
             mode?: 'fresh' | 'continue' | 'resume'
             resumeId?: string
+            headless?: boolean
           }
           if (noSpawn) {
             ws.send(
@@ -473,6 +480,7 @@ function connect(
             spawnMsg.mkdir,
             spawnMsg.mode,
             spawnMsg.resumeId,
+            spawnMsg.headless !== false, // default true
           )
           const response: SpawnResult = {
             type: 'spawn_result',
