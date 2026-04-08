@@ -564,6 +564,13 @@ async function main() {
       onInput(input, crDelay) {
         if (!ptyProcess) return
 
+        // Headless mode: send entire input as one user message (no PTY line-by-line chunking)
+        if (headless) {
+          const trimmed = input.replace(/[\r\n]+$/, '').trim()
+          if (trimmed) ptyProcess.write(trimmed)
+          return
+        }
+
         // Slash commands (/compact, /clear, /model, etc.) must go via PTY -
         // they're processed by Claude Code's CLI input layer, not the model.
         // Channel messages bypass the CLI and go straight to model context.

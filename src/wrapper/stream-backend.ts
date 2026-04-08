@@ -61,6 +61,8 @@ export interface StreamProcess {
   proc: Subprocess
   sendUserMessage: (text: string, source?: string) => void
   sendPermissionResponse: (requestId: string, allow: boolean, updatedInput?: Record<string, unknown>) => void
+  sendSetModel: (model: string) => void
+  sendInterrupt: () => void
   forwardStdin: () => void
   kill: (signal?: NodeJS.Signals) => void
   // PtyProcess-compatible stubs
@@ -333,6 +335,22 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
       })
     },
 
+    sendSetModel(model: string) {
+      debug(`Setting model: ${model}`)
+      writeStdin({
+        type: 'control_request',
+        request: { subtype: 'set_model', model },
+      })
+    },
+
+    sendInterrupt() {
+      debug('Sending interrupt')
+      writeStdin({
+        type: 'control_request',
+        request: { subtype: 'interrupt' },
+      })
+    },
+
     forwardStdin() {
       // Forward parent process stdin to claude's stdin (for piped NDJSON input)
       if (!process.stdin.isTTY) {
@@ -363,6 +381,13 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
       if (trimmed === '/exit' || trimmed === '/quit' || trimmed === ':q' || trimmed === ':q!') {
         debug('Exit command received - terminating headless process')
         proc.kill('SIGTERM')
+        return
+      }
+
+      // /model command - switch model via control message
+      if (trimmed.startsWith('/model ')) {
+        const model = trimmed.slice(7).trim()
+        if (model) this.sendSetModel(model)
         return
       }
 
