@@ -683,6 +683,7 @@ export function createRouter(options: RouteOptions): Hono {
   })
 
   app.get('/api/agent/diag', c => {
+    if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
     const info = sessionStore.getAgentInfo()
     return c.json({
       connected: sessionStore.hasAgent(),
@@ -790,6 +791,8 @@ export function createRouter(options: RouteOptions): Hono {
 
   // ─── Directory listing (agent relay) ───────────────────────────────
   app.get('/api/dirs', async c => {
+    if (!httpHasPermission(c.req.raw, 'spawn', '*'))
+      return c.json({ error: 'Forbidden: spawn permission required' }, 403)
     const agent = sessionStore.getAgent()
     if (!agent) return c.json({ error: 'No host agent connected' }, 503)
 
@@ -906,6 +909,7 @@ export function createRouter(options: RouteOptions): Hono {
   })
 
   app.get('/api/crashes', c => {
+    if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
     if (!cacheDir) return c.json([])
     const crashDir = join(cacheDir, 'crashes')
     if (!existsSync(crashDir)) return c.json([])
@@ -926,7 +930,17 @@ export function createRouter(options: RouteOptions): Hono {
   })
 
   // ─── Project settings ──────────────────────────────────────────────
-  app.get('/api/settings/projects', c => c.json(getAllProjectSettings()))
+  app.get('/api/settings/projects', c => {
+    const all = getAllProjectSettings()
+    const grants = resolveHttpGrants(c.req.raw)
+    if (!grants) return c.json(all) // admin sees all
+    const filtered: Record<string, unknown> = {}
+    for (const [cwd, settings] of Object.entries(all)) {
+      const { permissions } = resolvePermissions(grants, cwd)
+      if (permissions.has('chat:read')) filtered[cwd] = settings
+    }
+    return c.json(filtered)
+  })
 
   app.post('/api/settings/projects', async c => {
     if (!httpHasPermission(c.req.raw, 'settings', '*'))
@@ -951,6 +965,8 @@ export function createRouter(options: RouteOptions): Hono {
   })
 
   app.post('/api/settings/projects/generate-keyterms', async c => {
+    if (!httpHasPermission(c.req.raw, 'settings', '*'))
+      return c.json({ error: 'Forbidden: settings permission required' }, 403)
     const openrouterKey = process.env.OPENROUTER_API_KEY
     if (!openrouterKey) return c.json({ error: 'OPENROUTER_API_KEY not configured' }, 500)
 
@@ -1062,6 +1078,11 @@ Output a JSON array of strings. Each string should be the correct spelling of on
 
   // ─── File upload ───────────────────────────────────────────────────
   app.post('/api/files', async c => {
+    // Require files permission (check against session CWD if available, else global)
+    const uploadSessionId = c.req.header('x-session-id') || c.req.query('sessionId') || undefined
+    const uploadCwd = uploadSessionId ? sessionStore.getSession(uploadSessionId)?.cwd : undefined
+    if (!httpHasPermission(c.req.raw, 'files', uploadCwd || '*'))
+      return c.json({ error: 'Forbidden: files permission required' }, 403)
     const contentType = c.req.header('content-type') || ''
     let bytes: Uint8Array
     let mediaType: string
@@ -1116,10 +1137,20 @@ Output a JSON array of strings. Each string should be the correct spelling of on
     let files = readSharedFiles()
     if (cwd) files = files.filter(f => f.cwd === cwd)
     else if (sessionId) files = files.filter(f => f.sessionId === sessionId)
+    // Filter by CWDs the caller can access
+    const grants = resolveHttpGrants(c.req.raw)
+    if (grants) {
+      files = files.filter(f => {
+        if (!f.cwd) return false
+        const { permissions } = resolvePermissions(grants, f.cwd)
+        return permissions.has('chat:read')
+      })
+    }
     return c.json({ files })
   })
 
   app.delete('/api/shared-files/:hash', c => {
+    if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
     const hash = c.req.param('hash')
     const ok = dismissSharedFile(hash)
     return c.json({ ok })
@@ -1189,6 +1220,8 @@ Output a JSON array of strings. Each string should be the correct spelling of on
 
   // ─── Transcribe ────────────────────────────────────────────────────
   app.post('/api/transcribe', async c => {
+    if (!httpHasPermission(c.req.raw, 'voice', '*'))
+      return c.json({ error: 'Forbidden: voice permission required' }, 403)
     const deepgramKey = process.env.DEEPGRAM_API_KEY
     if (!deepgramKey) {
       console.error('[transcribe] DEEPGRAM_API_KEY not configured')
@@ -1423,20 +1456,8 @@ Output a JSON array of strings. Each string should be the correct spelling of on
 
   // ─── Session Shares ────────────────────────────────────────────────
 
-  /** Get caller identity from cookie or bearer token */
-  function getCallerIdentity(c: { req: { raw: Request } }): string | null {
-    const user = getAuthenticatedUser(c.req.raw)
-    if (user) return user
-    // Bearer token = admin
-    const authHeader = c.req.raw.headers.get('authorization')
-    const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
-    if (rclaudeSecret && bearer && bearer === rclaudeSecret) return 'admin'
-    return null
-  }
-
   app.post('/api/shares', async c => {
-    const caller = getCallerIdentity(c)
-    if (!caller) return c.json({ error: 'Not authenticated' }, 401)
+    if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
     const body = await c.req.json<{
       sessionCwd: string
       expiresIn?: number // ms from now
@@ -1450,7 +1471,7 @@ Output a JSON array of strings. Each string should be the correct spelling of on
       const share = createSessionShare({
         sessionCwd: body.sessionCwd,
         expiresAt,
-        createdBy: caller,
+        createdBy: getAuthenticatedUser(c.req.raw) || 'admin',
         label: body.label,
         permissions: body.permissions,
       })
@@ -1467,8 +1488,7 @@ Output a JSON array of strings. Each string should be the correct spelling of on
   })
 
   app.get('/api/shares', c => {
-    const caller = getCallerIdentity(c)
-    if (!caller) return c.json({ error: 'Not authenticated' }, 401)
+    if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
     const active = listAllShares()
     // Include connected viewer count per share
     const shares = active.map(s => ({
@@ -1479,8 +1499,7 @@ Output a JSON array of strings. Each string should be the correct spelling of on
   })
 
   app.get('/api/shares/:token', c => {
-    const caller = getCallerIdentity(c)
-    if (!caller) return c.json({ error: 'Not authenticated' }, 401)
+    if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
     const share = getShareByToken(c.req.param('token'))
     if (!share) return c.json({ error: 'Share not found' }, 404)
     return c.json({
@@ -1490,8 +1509,7 @@ Output a JSON array of strings. Each string should be the correct spelling of on
   })
 
   app.delete('/api/shares/:token', c => {
-    const caller = getCallerIdentity(c)
-    if (!caller) return c.json({ error: 'Not authenticated' }, 401)
+    if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
     const token = c.req.param('token')
     if (revokeSessionShare(token)) {
       // Kill all WS connections authenticated with this share token
@@ -1538,7 +1556,10 @@ Output a JSON array of strings. Each string should be the correct spelling of on
     })
   })
 
-  app.get('/api/subscriptions', c => c.json(sessionStore.getSubscriptionsDiag()))
+  app.get('/api/subscriptions', c => {
+    if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
+    return c.json(sessionStore.getSubscriptionsDiag())
+  })
 
   // ─── Static file serving ───────────────────────────────────────────
 
@@ -1641,6 +1662,7 @@ Output a JSON array of strings. Each string should be the correct spelling of on
 
   // ─── Inter-session links ─────────────────────────────────────────
   app.get('/api/links', c => {
+    if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
     const persisted = getPersistedLinks()
     const activeSessions = sessionStore.getActiveSessions()
 
@@ -1665,6 +1687,7 @@ Output a JSON array of strings. Each string should be the correct spelling of on
   })
 
   app.post('/api/links', async c => {
+    if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
     const body = await c.req.json<{ cwdA: string; cwdB: string }>()
     if (!body.cwdA || !body.cwdB) return c.json({ error: 'cwdA and cwdB required' }, 400)
     if (body.cwdA === body.cwdB) return c.json({ error: 'Cannot link a project to itself' }, 400)
@@ -1685,6 +1708,7 @@ Output a JSON array of strings. Each string should be the correct spelling of on
   })
 
   app.delete('/api/links', async c => {
+    if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
     const body = await c.req.json<{ cwdA: string; cwdB: string; purgeHistory?: boolean }>()
     if (!body.cwdA || !body.cwdB) return c.json({ error: 'cwdA and cwdB required' }, 400)
 
@@ -1710,6 +1734,7 @@ Output a JSON array of strings. Each string should be the correct spelling of on
 
   // ─── Inter-session message history ──────────────────────────────────
   app.get('/api/links/messages', c => {
+    if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
     const cwdA = c.req.query('cwdA')
     const cwdB = c.req.query('cwdB')
     const cwd = c.req.query('cwd')

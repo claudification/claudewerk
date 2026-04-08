@@ -66,6 +66,10 @@ export function createContext(ws: ServerWebSocket<WsData>, deps: ContextDeps): H
       }
     },
 
+    broadcastScoped(msg, cwd) {
+      deps.sessions.broadcastSessionScoped(msg, cwd)
+    },
+
     push: {
       configured: deps.pushConfigured,
       sendToAll: payload => deps.pushSendToAll(payload),

@@ -14,14 +14,17 @@ import { registerHandlers } from '../message-router'
 const permissionRequest: MessageHandler = (ctx, data) => {
   const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
   if (!sessionId) return
-  ctx.broadcast({
+  const session = ctx.sessions.getSession(sessionId)
+  const msg = {
     type: 'permission_request',
     sessionId,
     requestId: data.requestId,
     toolName: data.toolName,
     description: data.description,
     inputPreview: data.inputPreview,
-  })
+  }
+  if (session?.cwd) ctx.broadcastScoped(msg, session.cwd)
+  else ctx.broadcast(msg)
   ctx.log.debug(`[permission] Request: ${data.requestId} ${data.toolName}`)
 }
 
@@ -66,20 +69,24 @@ const permissionRule: MessageHandler = (ctx, data) => {
 const permissionAutoApproved: MessageHandler = (ctx, data) => {
   const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
   if (!sessionId) return
-  ctx.broadcast({
+  const session = ctx.sessions.getSession(sessionId)
+  const msg = {
     type: 'permission_auto_approved',
     sessionId,
     requestId: data.requestId,
     toolName: data.toolName,
     description: data.description,
-  })
+  }
+  if (session?.cwd) ctx.broadcastScoped(msg, session.cwd)
+  else ctx.broadcast(msg)
 }
 
 // Clipboard capture: wrapper -> dashboard (broadcast)
 const clipboardCapture: MessageHandler = (ctx, data) => {
   const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
   if (!sessionId) return
-  ctx.broadcast({
+  const session = ctx.sessions.getSession(sessionId)
+  const msg = {
     type: 'clipboard_capture',
     sessionId,
     contentType: data.contentType,
@@ -87,7 +94,9 @@ const clipboardCapture: MessageHandler = (ctx, data) => {
     base64: data.base64,
     mimeType: data.mimeType,
     timestamp: data.timestamp || Date.now(),
-  })
+  }
+  if (session?.cwd) ctx.broadcastScoped(msg, session.cwd)
+  else ctx.broadcast(msg)
   ctx.log.debug(`[clipboard] ${data.contentType}${data.mimeType ? ` (${data.mimeType})` : ''}`)
 }
 
@@ -95,12 +104,15 @@ const clipboardCapture: MessageHandler = (ctx, data) => {
 const askQuestion: MessageHandler = (ctx, data) => {
   const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
   if (!sessionId) return
-  ctx.broadcast({
+  const session = ctx.sessions.getSession(sessionId)
+  const msg = {
     type: 'ask_question',
     sessionId,
     toolUseId: data.toolUseId,
     questions: data.questions,
-  })
+  }
+  if (session?.cwd) ctx.broadcastScoped(msg, session.cwd)
+  else ctx.broadcast(msg)
   ctx.log.debug(
     `[ask] Question: ${(data.toolUseId as string)?.slice(0, 12)} ${(data.questions as unknown[])?.length || 0}q`,
   )

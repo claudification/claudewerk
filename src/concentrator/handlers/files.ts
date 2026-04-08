@@ -13,7 +13,10 @@ const fileResponse: MessageHandler = (ctx, data) => {
   if (data.requestId && ctx.sessions.resolveFile(data.requestId as string, data)) {
     return // Handled server-side, don't broadcast
   }
-  ctx.broadcast(data)
+  const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
+  const session = sessionId ? ctx.sessions.getSession(sessionId) : undefined
+  if (session?.cwd) ctx.broadcastScoped(data, session.cwd)
+  else ctx.broadcast(data)
 }
 
 // Dashboard -> wrapper: file operation requests
@@ -43,9 +46,12 @@ const fileEditorRequest: MessageHandler = (ctx, data) => {
   }
 }
 
-// Wrapper -> dashboard: file operation responses (forward to all subscribers)
+// Wrapper -> dashboard: file operation responses (forward to subscribers with access)
 const fileEditorResponse: MessageHandler = (ctx, data) => {
-  ctx.broadcast(data)
+  const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
+  const session = sessionId ? ctx.sessions.getSession(sessionId) : undefined
+  if (session?.cwd) ctx.broadcastScoped(data, session.cwd)
+  else ctx.broadcast(data)
 }
 
 // Dashboard -> wrapper: file request (proxy to rclaude)

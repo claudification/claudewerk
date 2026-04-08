@@ -195,6 +195,7 @@ export interface SessionStore {
   blockSession: (blocker: string, blocked: string) => void
   queueInterSessionMessage: (from: string, to: string, message: Record<string, unknown>) => void
   drainQueuedMessages: (from: string, to: string) => Array<Record<string, unknown>>
+  broadcastSessionScoped: (message: Record<string, unknown>, cwd: string) => void
   broadcastSharesUpdate: () => void
   recordTraffic: (direction: 'in' | 'out', bytes: number) => void
   getTrafficStats: () => {
@@ -2555,6 +2556,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     getSubscriberCount,
     getSubscribers,
     getShareViewerCount,
+    broadcastSessionScoped: (message: Record<string, unknown>, cwd: string) =>
+      broadcastSessionScoped(message as unknown as DashboardMessage, cwd),
     broadcastSharesUpdate,
     subscribeChannel,
     unsubscribeChannel,

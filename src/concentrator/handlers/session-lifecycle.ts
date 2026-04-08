@@ -139,7 +139,9 @@ const notify: MessageHandler = (ctx, data) => {
     ctx.push.sendToAll({ title, body: message, sessionId, tag: `notify-${sessionId}` })
   }
 
-  ctx.broadcast({ type: 'toast', title, message, sessionId })
+  const toastMsg = { type: 'toast', title, message, sessionId }
+  if (session?.cwd) ctx.broadcastScoped(toastMsg, session.cwd)
+  else ctx.broadcast(toastMsg)
 }
 
 // ─── Session end ───────────────────────────────────────────────────

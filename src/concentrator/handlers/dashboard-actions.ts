@@ -8,8 +8,9 @@
 
 import type { SendInput } from '../../shared/protocol'
 import { updateGlobalSettings } from '../global-settings'
-import { GuardError, type MessageHandler } from '../handler-context'
+import { GuardError, type MessageHandler, type WsData } from '../handler-context'
 import { registerHandlers } from '../message-router'
+import { resolvePermissions } from '../permissions'
 import {
   deleteProjectSettings,
   getAllProjectSettings,
@@ -46,6 +47,30 @@ const sendInput: MessageHandler = (ctx, data) => {
   ctx.reply({ type: 'send_input_result', ok: true })
 }
 
+/** Broadcast project settings filtered per subscriber's grants */
+function broadcastFilteredProjectSettings(
+  ctx: { sessions: { getSubscribers(): Set<import('bun').ServerWebSocket<unknown>> } },
+  all: Record<string, unknown>,
+): void {
+  for (const ws of ctx.sessions.getSubscribers()) {
+    try {
+      const wsGrants = (ws.data as WsData).grants
+      if (!wsGrants) {
+        ws.send(JSON.stringify({ type: 'project_settings_updated', settings: all }))
+      } else {
+        const filtered: Record<string, unknown> = {}
+        for (const [cwd, settings] of Object.entries(all)) {
+          const { permissions } = resolvePermissions(wsGrants, cwd)
+          if (permissions.has('chat:read')) filtered[cwd] = settings
+        }
+        ws.send(JSON.stringify({ type: 'project_settings_updated', settings: filtered }))
+      }
+    } catch {
+      /* dead socket */
+    }
+  }
+}
+
 // ─── Dismiss an ended session ─────────────────────────────────────
 
 const dismissSession: MessageHandler = (ctx, data) => {
@@ -57,8 +82,9 @@ const dismissSession: MessageHandler = (ctx, data) => {
   if (session.status !== 'ended') throw new GuardError('Only ended sessions can be dismissed')
   ctx.requirePermission('settings', session.cwd)
 
+  const cwd = session.cwd
   ctx.sessions.removeSession(sessionId)
-  ctx.broadcast({ type: 'session_dismissed', sessionId })
+  ctx.broadcastScoped({ type: 'session_dismissed', sessionId }, cwd)
   ctx.reply({ type: 'dismiss_session_result', ok: true })
 }
 
@@ -85,7 +111,7 @@ const updateProjectSettings: MessageHandler = (ctx, data) => {
 
   setProjectSettings(cwd, settings)
   const all = getAllProjectSettings()
-  ctx.broadcast({ type: 'project_settings_updated', settings: all })
+  broadcastFilteredProjectSettings(ctx, all)
   ctx.reply({ type: 'update_project_settings_result', ok: true, projectSettings: all })
 }
 
@@ -98,7 +124,7 @@ const deleteProjectSettingsHandler: MessageHandler = (ctx, data) => {
 
   deleteProjectSettings(cwd)
   const all = getAllProjectSettings()
-  ctx.broadcast({ type: 'project_settings_updated', settings: all })
+  broadcastFilteredProjectSettings(ctx, all)
   ctx.reply({ type: 'delete_project_settings_result', ok: true, projectSettings: all })
 }
 
@@ -113,7 +139,36 @@ const updateSessionOrder: MessageHandler = (ctx, data) => {
 
   setSessionOrder(order)
   const saved = getSessionOrder()
-  ctx.broadcast({ type: 'session_order_updated', order: saved })
+
+  // Broadcast filtered order per subscriber's grants (same as HTTP POST handler)
+  for (const ws of ctx.sessions.getSubscribers()) {
+    try {
+      const wsGrants = (ws.data as WsData).grants
+      if (!wsGrants) {
+        ws.send(JSON.stringify({ type: 'session_order_updated', order: saved }))
+      } else {
+        const grants = wsGrants
+        function filterNodes(nodes: SessionOrderV2['tree']): SessionOrderV2['tree'] {
+          const result: SessionOrderV2['tree'] = []
+          for (const node of nodes) {
+            if (node.type === 'session') {
+              const cwd = node.id.startsWith('cwd:') ? node.id.slice(4) : node.id
+              const { permissions } = resolvePermissions(grants, cwd)
+              if (permissions.has('chat:read')) result.push(node)
+            } else if (node.type === 'group') {
+              const children = filterNodes(node.children)
+              if (children.length > 0) result.push({ ...node, children })
+            }
+          }
+          return result
+        }
+        ws.send(JSON.stringify({ type: 'session_order_updated', order: { ...saved, tree: filterNodes(saved.tree) } }))
+      }
+    } catch {
+      /* dead socket */
+    }
+  }
+
   ctx.reply({ type: 'update_session_order_result', ok: true, order: saved })
 }
 

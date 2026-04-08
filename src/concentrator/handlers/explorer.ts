@@ -35,17 +35,15 @@ const explorerShow: MessageHandler = (ctx, data) => {
     ctx.sessions.broadcastSessionUpdate(sessionId)
   }
 
-  // Broadcast to dashboard subscribers
-  // Note: uses unscoped broadcast (all subscribers). The security boundary is on
-  // explorer_result where ctx.requirePermission('chat') blocks unauthorized responses.
-  // Share viewers without chat perm see the modal but cannot submit answers.
-  // TODO: expose broadcastSessionScoped on HandlerContext and use it here.
-  ctx.broadcast({
+  // Broadcast to dashboard subscribers with access to this session's CWD
+  const explorerMsg = {
     type: 'explorer_show',
     sessionId,
     explorerId,
     layout,
-  })
+  }
+  if (session?.cwd) ctx.broadcastScoped(explorerMsg, session.cwd)
+  else ctx.broadcast(explorerMsg)
 
   ctx.log.info(
     `[explorer] Show: "${layout.title}" (${explorerId.toString().slice(0, 8)}) session=${sessionId.slice(0, 8)}`,
@@ -92,11 +90,9 @@ const explorerResult: MessageHandler = (ctx, data) => {
   }
 
   // Broadcast dismiss to other dashboard subscribers (clean up UI)
-  ctx.broadcast({
-    type: 'explorer_dismiss',
-    sessionId,
-    explorerId,
-  })
+  const dismissMsg = { type: 'explorer_dismiss', sessionId, explorerId }
+  if (sess?.cwd) ctx.broadcastScoped(dismissMsg, sess.cwd)
+  else ctx.broadcast(dismissMsg)
 }
 
 // Explorer dismiss: wrapper -> concentrator -> dashboard
@@ -116,11 +112,9 @@ const explorerDismiss: MessageHandler = (ctx, data) => {
     ctx.sessions.broadcastSessionUpdate(sessionId)
   }
 
-  ctx.broadcast({
-    type: 'explorer_dismiss',
-    sessionId,
-    explorerId,
-  })
+  const dismissMsg2 = { type: 'explorer_dismiss', sessionId, explorerId }
+  if (session?.cwd) ctx.broadcastScoped(dismissMsg2, session.cwd)
+  else ctx.broadcast(dismissMsg2)
 
   ctx.log.debug(`[explorer] Dismiss: ${explorerId.slice(0, 8)} session=${sessionId.slice(0, 8)}`)
 }

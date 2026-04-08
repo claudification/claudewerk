@@ -45,6 +45,8 @@ export interface HandlerContext {
   reply(msg: Record<string, unknown>): void
   /** Broadcast a JSON message to all dashboard subscribers */
   broadcast(msg: Record<string, unknown>): void
+  /** Broadcast a JSON message only to subscribers with chat:read for the given CWD */
+  broadcastScoped(msg: Record<string, unknown>, cwd: string): void
   /** Web push notifications */
   push: {
     configured: boolean
