@@ -400,9 +400,12 @@ export function createRouter(options: RouteOptions): Hono {
     return permissions.has(permission)
   }
 
-  /** Check if the caller is an admin (no grant restrictions). */
-  function httpIsAdmin(req: Request): boolean {
-    return resolveHttpGrants(req) === null
+  /** Check if the caller is an admin (bearer token OR admin role in grants). */
+  function httpIsAdmin(req: Request, cwd = '*'): boolean {
+    const grants = resolveHttpGrants(req)
+    if (grants === null) return true // bearer token
+    const { isAdmin } = resolvePermissions(grants, cwd)
+    return isAdmin
   }
 
   /** Filter sessions by caller's grants. */
@@ -705,6 +708,7 @@ export function createRouter(options: RouteOptions): Hono {
       mkdir?: boolean
       mode?: 'fresh' | 'continue' | 'resume'
       resumeId?: string
+      headless?: boolean
     }>()
     if (!body.cwd || typeof body.cwd !== 'string') return c.json({ error: 'Missing cwd field' }, 400)
     if (body.mode === 'resume' && !body.resumeId) return c.json({ error: 'resumeId required for resume mode' }, 400)
@@ -733,6 +737,10 @@ export function createRouter(options: RouteOptions): Hono {
         resolve(msg as SpawnResult)
       })
 
+      // Resolve headless: explicit override > project default > true
+      const projSettings = getProjectSettings(body.cwd)
+      const headless = body.headless ?? projSettings?.defaultLaunchMode !== 'pty'
+
       agent.send(
         JSON.stringify({
           type: 'spawn',
@@ -742,6 +750,7 @@ export function createRouter(options: RouteOptions): Hono {
           mkdir: body.mkdir || false,
           mode: body.mode,
           resumeId: body.resumeId,
+          headless,
         }),
       )
     })

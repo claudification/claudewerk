@@ -164,6 +164,7 @@ async function reviveSession(
   secret: string,
   verbose: boolean,
   mode?: string,
+  headless = true,
 ): Promise<ReviveResult> {
   const result: ReviveResult = {
     type: 'revive_result',
@@ -181,7 +182,12 @@ async function reviveSession(
   const proc = Bun.spawnSync(scriptArgs, {
     stdout: 'pipe',
     stderr: 'pipe',
-    env: { ...process.env, RCLAUDE_SECRET: secret, RCLAUDE_WRAPPER_ID: wrapperId },
+    env: {
+      ...process.env,
+      RCLAUDE_SECRET: secret,
+      RCLAUDE_WRAPPER_ID: wrapperId,
+      ...(headless ? { RCLAUDE_HEADLESS: '1' } : {}),
+    },
   })
 
   const stdout = proc.stdout.toString().trim()
@@ -418,9 +424,15 @@ function connect(
           break
 
         case 'revive': {
-          const reviveMsg = msg as { sessionId: string; cwd: string; wrapperId: string; mode?: string }
+          const reviveMsg = msg as {
+            sessionId: string
+            cwd: string
+            wrapperId: string
+            mode?: string
+            headless?: boolean
+          }
           log(
-            `Reviving session ${reviveMsg.sessionId.slice(0, 8)}... wrapper=${reviveMsg.wrapperId.slice(0, 8)} mode=${reviveMsg.mode || 'default'} (${reviveMsg.cwd})`,
+            `Reviving session ${reviveMsg.sessionId.slice(0, 8)}... wrapper=${reviveMsg.wrapperId.slice(0, 8)} mode=${reviveMsg.mode || 'default'} headless=${reviveMsg.headless !== false} (${reviveMsg.cwd})`,
           )
           const result = await reviveSession(
             reviveMsg.sessionId,
@@ -430,6 +442,7 @@ function connect(
             secret,
             verbose,
             reviveMsg.mode,
+            reviveMsg.headless !== false,
           )
           ws.send(JSON.stringify(result))
           if (result.success) {

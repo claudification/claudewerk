@@ -222,11 +222,18 @@ const reviveSession: MessageHandler = (ctx, data) => {
   if (!agent) throw new GuardError('No host agent connected')
 
   const wrapperId = crypto.randomUUID()
-  const name =
-    session.title || getProjectSettings(session.cwd)?.label || session.cwd.split('/').pop() || sessionId.slice(0, 8)
-  agent.send(JSON.stringify({ type: 'revive', sessionId, cwd: session.cwd, wrapperId, mode: 'continue' }))
+  const projSettings = getProjectSettings(session.cwd)
+  const name = session.title || projSettings?.label || session.cwd.split('/').pop() || sessionId.slice(0, 8)
 
-  ctx.log.info(`[revive] ${name} (${sessionId.slice(0, 8)}) via WS, wrapperId=${wrapperId.slice(0, 8)}`)
+  // Resolve headless: explicit override > project default > true
+  const headlessParam = data.headless as boolean | undefined
+  const headless = headlessParam ?? projSettings?.defaultLaunchMode !== 'pty'
+
+  agent.send(JSON.stringify({ type: 'revive', sessionId, cwd: session.cwd, wrapperId, mode: 'continue', headless }))
+
+  ctx.log.info(
+    `[revive] ${name} (${sessionId.slice(0, 8)}) via WS, wrapperId=${wrapperId.slice(0, 8)} headless=${headless}`,
+  )
   ctx.reply({ type: 'revive_session_result', ok: true, name, wrapperId, message: 'Revive command sent to agent' })
 }
 

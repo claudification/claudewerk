@@ -646,8 +646,8 @@ export async function fetchSubagentTranscript(sessionId: string, agentId: string
   return res.json()
 }
 
-export function reviveSession(sessionId: string): boolean {
-  return wsSend('revive_session', { sessionId })
+export function reviveSession(sessionId: string, headless?: boolean): boolean {
+  return wsSend('revive_session', { sessionId, ...(headless !== undefined && { headless }) })
 }
 
 export function sendInput(sessionId: string, input: string): boolean {

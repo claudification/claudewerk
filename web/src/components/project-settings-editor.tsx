@@ -580,6 +580,7 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
   const [description, setDescription] = useState(current.description || '')
   const [keyterms, setKeyterms] = useState<string[]>(current.keyterms || [])
   const [trustLevel, setTrustLevel] = useState<string>(current.trustLevel || 'default')
+  const [launchMode, setLaunchMode] = useState<string>(current.defaultLaunchMode || 'headless')
   const [keytermInput, setKeytermInput] = useState('')
   const [iconSearch, setIconSearch] = useState('')
   const [saving, setSaving] = useState(false)
@@ -594,6 +595,7 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
     setDescription(c.description || '')
     setKeyterms(c.keyterms || [])
     setTrustLevel(c.trustLevel || 'default')
+    setLaunchMode(c.defaultLaunchMode || 'headless')
   }, [projectSettings, cwd])
 
   const filteredIcons = useMemo(() => {
@@ -612,6 +614,7 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
       description: description.trim() || '',
       keyterms: keyterms.length ? keyterms : [],
       trustLevel: trustLevel === 'default' ? undefined : (trustLevel as 'open' | 'benevolent'),
+      defaultLaunchMode: launchMode === 'headless' ? undefined : (launchMode as 'pty'),
     }
 
     updateProjectSettings(cwd, settings)
@@ -661,7 +664,8 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
     color !== (current.color || '') ||
     description.trim() !== (current.description || '') ||
     JSON.stringify(keyterms) !== JSON.stringify(current.keyterms || []) ||
-    trustLevel !== (current.trustLevel || 'default')
+    trustLevel !== (current.trustLevel || 'default') ||
+    launchMode !== (current.defaultLaunchMode || 'headless')
 
   const hasAnySettings =
     current.label ||
@@ -895,6 +899,37 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
                   {opt.label}
                 </button>
               ))}
+            </div>
+          </div>
+
+          {/* Default launch mode */}
+          <div>
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">Default Launch Mode</div>
+            <div className="flex gap-1.5">
+              {[
+                { value: 'headless', label: 'Headless', desc: 'No terminal, structured I/O' },
+                { value: 'pty', label: 'PTY', desc: 'Full terminal access' },
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setLaunchMode(opt.value)}
+                  className={cn(
+                    'px-2 py-1 text-[10px] font-mono border rounded transition-colors',
+                    launchMode === opt.value
+                      ? opt.value === 'headless'
+                        ? 'border-cyan-500 bg-cyan-500/20 text-cyan-400'
+                        : 'border-purple-500 bg-purple-500/20 text-purple-400'
+                      : 'border-border/50 text-muted-foreground hover:text-foreground',
+                  )}
+                  title={opt.desc}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <div className="text-[9px] text-muted-foreground mt-0.5">
+              Used when spawning/reviving sessions for this project
             </div>
           </div>
 

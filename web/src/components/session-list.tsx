@@ -13,7 +13,7 @@ import { CSS } from '@dnd-kit/utilities'
 import type { HookEvent } from '@shared/protocol'
 import { ContextMenu } from 'radix-ui'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { saveSessionOrder, useSessionsStore, wsSend } from '@/hooks/use-sessions'
+import { reviveSession, saveSessionOrder, useSessionsStore, wsSend } from '@/hooks/use-sessions'
 import type { Session, SessionOrderGroup, SessionOrderNode, SessionOrderV2 } from '@/lib/types'
 import { cn, contextWindowSize, formatAge, formatModel, haptic, lastPathSegments } from '@/lib/utils'
 import { ProjectSettingsButton, ProjectSettingsEditor, renderProjectIcon } from './project-settings-editor'
@@ -267,6 +267,14 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
               error
             </span>
           )}
+          {session.rateLimit && !session.lastError && (
+            <span
+              className="px-1.5 py-0.5 text-[10px] uppercase font-bold bg-amber-500/20 text-amber-400 border border-amber-500/40"
+              title={session.rateLimit.message}
+            >
+              throttled
+            </span>
+          )}
           <ShareIndicator sessionCwd={session.cwd} />
           {session.status === 'ended' && <DismissButton sessionId={session.id} />}
         </div>
@@ -284,6 +292,9 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
           </span>
           {session.compacting && <span className="text-[9px] text-amber-400 font-bold animate-pulse">COMPACT</span>}
           {session.lastError && <span className="text-[9px] text-destructive font-bold">ERROR</span>}
+          {session.rateLimit && !session.lastError && (
+            <span className="text-[9px] text-amber-400 font-bold">THROTTLED</span>
+          )}
           {session.pendingAttention && (
             <span className="text-[9px] text-amber-400 font-bold animate-pulse">WAITING</span>
           )}
@@ -479,6 +490,8 @@ function SessionContextMenu({ session, children }: { session: Session; children:
   const sessionOrder = rawSessionOrder?.tree ? rawSessionOrder : { version: 2 as const, tree: [] }
   const dismissSession = useSessionsStore(s => s.dismissSession)
   const selectSession = useSessionsStore(s => s.selectSession)
+  const projectSettings = useSessionsStore(s => s.projectSettings)
+  const defaultMode = projectSettings[session.cwd]?.defaultLaunchMode || 'headless'
 
   const groups = sessionOrder.tree.filter((n): n is SessionOrderGroup => n.type === 'group')
   const sessionCwdKey = `cwd:${session.cwd}`
@@ -594,9 +607,20 @@ function SessionContextMenu({ session, children }: { session: Session; children:
                 onSelect={() => {
                   haptic('tap')
                   selectSession(session.id)
+                  reviveSession(session.id, true)
                 }}
               >
-                Revive
+                Revive (headless){defaultMode === 'headless' ? ' *' : ''}
+              </ContextMenu.Item>
+              <ContextMenu.Item
+                className={cn(menuItemClass, 'text-purple-400')}
+                onSelect={() => {
+                  haptic('tap')
+                  selectSession(session.id)
+                  reviveSession(session.id, false)
+                }}
+              >
+                Revive (PTY){defaultMode === 'pty' ? ' *' : ''}
               </ContextMenu.Item>
               <ContextMenu.Item
                 className={cn(menuItemClass, 'text-destructive')}
