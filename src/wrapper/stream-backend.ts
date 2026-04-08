@@ -359,7 +359,7 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
       if (!trimmed || trimmed.startsWith('\x1b') || trimmed === '\r' || trimmed === '\n') return
 
       // Intercept commands that don't work in --print mode
-      if (trimmed === '/exit' || trimmed === '/quit') {
+      if (trimmed === '/exit' || trimmed === '/quit' || trimmed === ':q' || trimmed === ':q!') {
         debug('Exit command received - terminating headless process')
         proc.kill('SIGTERM')
         return
