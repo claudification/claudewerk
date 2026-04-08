@@ -6,6 +6,8 @@
 import {
   DndContext,
   type DragEndEvent,
+  DragOverlay,
+  type DragStartEvent,
   MouseSensor,
   TouchSensor,
   useDraggable,
@@ -422,13 +424,22 @@ function DroppableColumn({ status, children }: { status: TaskStatus; children: R
 export const TaskBoard = memo(function TaskBoard({ sessionId }: { sessionId: string }) {
   const { notes, loading, refresh, createNote, moveNote, deleteNote, readNote, updateNote } = useTaskNotes(sessionId)
   const [editingNote, setEditingNote] = useState<TaskNote | null>(null)
+  const [activeDragNote, setActiveDragNote] = useState<TaskNoteMeta | null>(null)
 
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 300, tolerance: 5 } }),
   )
 
+  function handleDragStart(event: DragStartEvent) {
+    const data = event.active.data.current as { slug: string; status: TaskStatus } | undefined
+    if (!data) return
+    const note = notes.find(n => n.slug === data.slug && n.status === data.status)
+    if (note) setActiveDragNote(note)
+  }
+
   function handleDragEnd(event: DragEndEvent) {
+    setActiveDragNote(null)
     const { active, over } = event
     if (!over) return
     const targetStatus = over.id as TaskStatus
@@ -484,7 +495,7 @@ export const TaskBoard = memo(function TaskBoard({ sessionId }: { sessionId: str
       </div>
 
       {/* Kanban columns */}
-      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+      <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <div className="flex-1 min-h-0 overflow-auto">
           <div className="flex gap-0 min-h-full">
             {COLUMNS.map(col => {
@@ -521,6 +532,18 @@ export const TaskBoard = memo(function TaskBoard({ sessionId }: { sessionId: str
             })}
           </div>
         </div>
+        <DragOverlay dropAnimation={null}>
+          {activeDragNote && (
+            <div className="px-3 py-2 bg-[#1a1b26] border border-[#33467c]/60 shadow-xl opacity-90 max-w-[250px]">
+              <div className="text-xs font-mono text-foreground truncate">{activeDragNote.title}</div>
+              {activeDragNote.bodyPreview && (
+                <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">
+                  {activeDragNote.bodyPreview}
+                </div>
+              )}
+            </div>
+          )}
+        </DragOverlay>
       </DndContext>
 
       {/* Full-screen editor modal */}
