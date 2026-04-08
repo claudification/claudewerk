@@ -249,6 +249,11 @@ export function createWsClient(options: WsClientOptions): WsClient {
       ws.onmessage = event => {
         try {
           const message = JSON.parse(event.data as string) as ConcentratorMessage
+          if (process.env.RCLAUDE_SHOW_WEBSOCKET_MESSAGES) {
+            const m = message as unknown as Record<string, unknown>
+            const summary = message.type === 'input' ? `input: "${m.input}"` : message.type
+            debug(`WS <<< ${summary}`)
+          }
           // Handle messages from concentrator
           switch (message.type) {
             case 'error':
@@ -392,6 +397,9 @@ export function createWsClient(options: WsClientOptions): WsClient {
   function send(message: WrapperMessage) {
     try {
       if (connected && ws?.readyState === WebSocket.OPEN) {
+        if (process.env.RCLAUDE_SHOW_WEBSOCKET_MESSAGES) {
+          debug(`WS >>> ${message.type}`)
+        }
         const json = JSON.stringify(message)
         // Log large messages for debugging disconnects
         if (json.length > 100_000) {
