@@ -1198,7 +1198,8 @@ async function main() {
   }
 
   function startSubagentWatcher(agentId: string, transcriptPath: string, live: boolean) {
-    if (headless) return // subagent output comes inline in stdout stream
+    // Subagent transcripts are separate files even in headless mode -
+    // agent output does NOT appear inline in the parent stdout stream
     if (subagentWatchers.has(agentId)) return
 
     // Evict oldest live watchers if at capacity (prevents unbounded growth if SubagentStop never fires)
