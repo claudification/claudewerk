@@ -266,6 +266,10 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
           timestamp: new Date().toISOString(),
           message: msg.message as TranscriptEntry extends { message?: infer M } ? M : never,
         } as TranscriptEntry
+        // CC puts Edit diff data on tool_use_result (snake_case) - copy to toolUseResult (camelCase)
+        if (msg.tool_use_result) {
+          ;(entry as Record<string, unknown>).toolUseResult = msg.tool_use_result
+        }
         onTranscriptEntries?.([entry], false)
         break
       }
