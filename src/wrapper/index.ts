@@ -564,10 +564,9 @@ async function main() {
       onInput(input, crDelay) {
         if (!ptyProcess) return
 
-        // Headless mode: send entire input as one user message (no PTY line-by-line chunking)
+        // Headless mode: send entire input as-is as one user message
         if (headless) {
-          const trimmed = input.replace(/[\r\n]+$/, '').trim()
-          if (trimmed) ptyProcess.write(trimmed)
+          if (input) ptyProcess.write(input)
           return
         }
 
