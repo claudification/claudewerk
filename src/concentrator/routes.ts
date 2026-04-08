@@ -1126,7 +1126,27 @@ Output a JSON array of strings. Each string should be the correct spelling of on
   })
 
   // ─── Session order ─────────────────────────────────────────────────
-  app.get('/api/session-order', c => c.json(getSessionOrder()))
+  app.get('/api/session-order', c => {
+    const order = getSessionOrder()
+    const grants = resolveHttpGrants(c.req.raw)
+    if (!grants) return c.json(order) // admin sees full tree
+    // Filter tree to only include CWDs the user can access
+    function filterTree(nodes: SessionOrderV2['tree']): SessionOrderV2['tree'] {
+      const result: SessionOrderV2['tree'] = []
+      for (const node of nodes) {
+        if (node.type === 'session') {
+          const cwd = node.id.startsWith('cwd:') ? node.id.slice(4) : node.id
+          const { permissions } = resolvePermissions(grants!, cwd)
+          if (permissions.has('chat:read')) result.push(node)
+        } else if (node.type === 'group') {
+          const children = filterTree(node.children)
+          if (children.length > 0) result.push({ ...node, children })
+        }
+      }
+      return result
+    }
+    return c.json({ ...order, tree: filterTree(order.tree) })
+  })
 
   app.post('/api/session-order', async c => {
     if (!httpHasPermission(c.req.raw, 'settings', '*'))
@@ -1137,7 +1157,33 @@ Output a JSON array of strings. Each string should be the correct spelling of on
     }
     setSessionOrder(body as SessionOrderV2)
     const order = getSessionOrder()
-    broadcastToSubscribers(sessionStore, { type: 'session_order_updated', order })
+    // Broadcast filtered order per subscriber's grants
+    for (const ws of sessionStore.getSubscribers()) {
+      try {
+        const wsGrants = (ws.data as { grants?: UserGrant[] }).grants
+        if (!wsGrants) {
+          ws.send(JSON.stringify({ type: 'session_order_updated', order }))
+        } else {
+          function filterNodes(nodes: SessionOrderV2['tree']): SessionOrderV2['tree'] {
+            const result: SessionOrderV2['tree'] = []
+            for (const node of nodes) {
+              if (node.type === 'session') {
+                const cwd = node.id.startsWith('cwd:') ? node.id.slice(4) : node.id
+                const { permissions } = resolvePermissions(wsGrants!, cwd)
+                if (permissions.has('chat:read')) result.push(node)
+              } else if (node.type === 'group') {
+                const children = filterNodes(node.children)
+                if (children.length > 0) result.push({ ...node, children })
+              }
+            }
+            return result
+          }
+          ws.send(JSON.stringify({ type: 'session_order_updated', order: { ...order, tree: filterNodes(order.tree) } }))
+        }
+      } catch {
+        /* dead socket */
+      }
+    }
     return c.json({ success: true, order })
   })
 
