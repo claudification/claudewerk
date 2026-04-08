@@ -72,6 +72,19 @@ interface SessionsState {
   events: Record<string, HookEvent[]>
   transcripts: Record<string, TranscriptEntry[]>
   streamingText: Record<string, string> // sessionId -> accumulating text from headless stream deltas
+  sessionInfo: Record<
+    string,
+    {
+      tools: string[]
+      slashCommands: string[]
+      skills: string[]
+      agents: string[]
+      mcpServers: Array<{ name: string; status?: string }>
+      model: string
+      permissionMode: string
+      claudeCodeVersion: string
+    }
+  >
   subagentTranscripts: Record<string, TranscriptEntry[]> // key: `${sessionId}:${agentId}`
   tasks: Record<string, TaskInfo[]>
   projectSettings: ProjectSettingsMap
@@ -312,6 +325,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   events: {},
   transcripts: {},
   streamingText: {},
+  sessionInfo: {},
   subagentTranscripts: {},
   tasks: {},
   projectSettings: {},

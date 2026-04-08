@@ -337,6 +337,31 @@ function processMessage(msg: DashboardMessage) {
       }
       break
     }
+    case 'session_info': {
+      // Session metadata from headless init - store for autocomplete
+      const sid = msg.sessionId as string
+      if (sid) {
+        useSessionsStore.setState(state => ({
+          sessionInfo: {
+            ...state.sessionInfo,
+            [sid]: {
+              tools: (msg.tools as string[]) || [],
+              slashCommands: (msg.slashCommands as string[]) || [],
+              skills: (msg.skills as string[]) || [],
+              agents: (msg.agents as string[]) || [],
+              mcpServers: (msg.mcpServers as Array<{ name: string; status?: string }>) || [],
+              model: (msg.model as string) || '',
+              permissionMode: (msg.permissionMode as string) || '',
+              claudeCodeVersion: (msg.claudeCodeVersion as string) || '',
+            },
+          },
+        }))
+        console.log(
+          `[ws] session_info ${sid.slice(0, 8)}: ${(msg.tools as unknown[])?.length} tools, ${(msg.skills as unknown[])?.length} skills`,
+        )
+      }
+      break
+    }
     case 'stream_delta': {
       // Headless token streaming - accumulate text deltas
       const sid = msg.sessionId as string

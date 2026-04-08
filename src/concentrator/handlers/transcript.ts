@@ -90,6 +90,33 @@ const subagentTranscriptRequest: MessageHandler = (ctx, data) => {
   }
 }
 
+// Session info from headless init - store on session and broadcast to dashboard
+const sessionInfo: MessageHandler = (ctx, data) => {
+  const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
+  if (!sessionId) return
+  const session = ctx.sessions.getSession(sessionId)
+  if (!session) return // Store on session object for later retrieval (reconnect, catch-up)
+  ;(session as unknown as Record<string, unknown>).sessionInfo = {
+    tools: data.tools,
+    slashCommands: data.slashCommands,
+    skills: data.skills,
+    agents: data.agents,
+    mcpServers: data.mcpServers,
+    plugins: data.plugins,
+    model: data.model,
+    permissionMode: data.permissionMode,
+    claudeCodeVersion: data.claudeCodeVersion,
+    fastModeState: data.fastModeState,
+  }
+  // Broadcast to subscribers
+  if (session.cwd) {
+    ctx.broadcastScoped({ type: 'session_info', sessionId, ...data }, session.cwd)
+  }
+  ctx.log.debug(
+    `session_info: ${(data.tools as unknown[])?.length} tools, ${(data.skills as unknown[])?.length} skills, ${(data.agents as unknown[])?.length} agents`,
+  )
+}
+
 // Headless stream deltas - forward raw API SSE events to dashboard subscribers
 const streamDelta: MessageHandler = (ctx, data) => {
   const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
@@ -110,5 +137,6 @@ export function registerTranscriptHandlers(): void {
     transcript_request: transcriptRequest,
     subagent_transcript_request: subagentTranscriptRequest,
     stream_delta: streamDelta,
+    session_info: sessionInfo,
   })
 }

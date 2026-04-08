@@ -1822,10 +1822,31 @@ async function main() {
       },
       onInit(init) {
         debug(`[headless] init: session=${init.session_id?.slice(0, 8)} model=${init.model}`)
-        // Update claude session ID from init message if available
         if (init.session_id && !claudeSessionId) {
           claudeSessionId = init.session_id
           diag('headless', `CC session ID from init: ${init.session_id.slice(0, 8)}`)
+        }
+        // Forward full init metadata to concentrator for dashboard autocomplete
+        if (wsClient?.isConnected()) {
+          wsClient.send({
+            type: 'session_info',
+            sessionId: claudeSessionId || internalId,
+            tools:
+              (init.tools as Array<{ name: string } | string>)?.map(t => (typeof t === 'string' ? t : t.name)) || [],
+            slashCommands: (init.slash_commands as string[]) || [],
+            skills: (init.skills as string[]) || [],
+            agents: (init.agents as string[]) || [],
+            mcpServers: (init.mcp_servers as Array<{ name: string; status?: string }>) || [],
+            plugins: (init.plugins as Array<{ name: string; source?: string }>) || [],
+            model: (init.model as string) || '',
+            permissionMode: (init.permissionMode as string) || '',
+            claudeCodeVersion: (init.claude_code_version as string) || '',
+            fastModeState: (init.fast_mode_state as string) || '',
+          } as WrapperMessage)
+          diag(
+            'headless',
+            `Sent session_info: ${(init.tools as unknown[])?.length || 0} tools, ${(init.skills as unknown[])?.length || 0} skills, ${(init.agents as unknown[])?.length || 0} agents`,
+          )
         }
       },
       onResult(result) {

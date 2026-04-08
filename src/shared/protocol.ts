@@ -300,6 +300,23 @@ export type WrapperMessage =
   | ExplorerShowMessage
   | ExplorerDismissMessage
   | StreamDelta
+  | SessionInfoUpdate
+
+// Session info from stream-json init (skills, tools, agents, etc.)
+export interface SessionInfoUpdate {
+  type: 'session_info'
+  sessionId: string
+  tools: string[]
+  slashCommands: string[]
+  skills: string[]
+  agents: string[]
+  mcpServers: Array<{ name: string; status?: string }>
+  plugins: Array<{ name: string; source?: string }>
+  model: string
+  permissionMode: string
+  claudeCodeVersion: string
+  fastModeState: string
+}
 
 // Headless streaming deltas (token-by-token from --include-partial-messages)
 export interface StreamDelta {
