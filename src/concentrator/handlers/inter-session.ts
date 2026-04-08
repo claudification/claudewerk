@@ -145,6 +145,7 @@ const handleChannelSpawn: MessageHandler = (ctx, data) => {
         mkdir: !!data.mkdir,
         mode: data.mode,
         resumeId: data.resumeId,
+        headless: data.headless !== false, // default true
       }),
     )
   })

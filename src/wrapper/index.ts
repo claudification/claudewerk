@@ -175,7 +175,8 @@ OPTIONS:
   --concentrator <url>   Concentrator WebSocket URL (default: ${DEFAULT_CONCENTRATOR_URL})
   --rclaude-secret <s>   Shared secret for concentrator auth (or RCLAUDE_SECRET env)
   --no-concentrator      Run without forwarding to concentrator
-  --headless             Use stream-json backend instead of PTY (no terminal, structured I/O)
+  --headless             Use stream-json backend (default, no terminal, structured I/O)
+  --no-headless / --pty  Use PTY backend (interactive terminal mode)
   --no-terminal          Disable remote terminal capability
   --no-channels          Disable MCP channel (channels are ON by default)
   --channels             Enable MCP channel (already default, for explicitness)
@@ -268,7 +269,7 @@ async function main() {
   let concentratorSecret = process.env.RCLAUDE_SECRET
   let noConcentrator = false
   let noTerminal = false
-  let headless = false
+  let headless = process.env.RCLAUDE_HEADLESS !== '0' // headless by default
   let channelEnabled = process.env.RCLAUDE_CHANNELS !== '0'
   const claudeArgs: string[] = []
 
@@ -298,8 +299,8 @@ async function main() {
       noTerminal = true
     } else if (arg === '--headless') {
       headless = true
-      noTerminal = true // headless implies no terminal
-      channelEnabled = false // headless uses stdin/stdout, not MCP channel
+    } else if (arg === '--no-headless' || arg === '--pty') {
+      headless = false
     } else if (arg === '--channels') {
       channelEnabled = true
     } else if (arg === '--no-channels') {
@@ -307,6 +308,12 @@ async function main() {
     } else {
       claudeArgs.push(arg)
     }
+  }
+
+  // Headless mode implications
+  if (headless) {
+    noTerminal = true
+    channelEnabled = false
   }
 
   // Check if concentrator is reachable (unless --no-concentrator)
@@ -1382,7 +1389,7 @@ async function main() {
         } as unknown as WrapperMessage)
       })
     },
-    async onSpawnSession({ cwd, mode, resumeId, mkdir }) {
+    async onSpawnSession({ cwd, mode, resumeId, mkdir, headless: spawnHeadless }) {
       if (!wsClient?.isConnected()) return { ok: false, error: 'Not connected to concentrator' }
 
       // Step 1: Send spawn request via WS, get immediate ack with wrapperId
@@ -1399,6 +1406,7 @@ async function main() {
           mode,
           resumeId,
           mkdir,
+          headless: spawnHeadless,
         } as unknown as WrapperMessage)
       })
 

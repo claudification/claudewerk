@@ -83,6 +83,7 @@ export interface McpChannelCallbacks {
     mode?: 'fresh' | 'continue' | 'resume'
     resumeId?: string
     mkdir?: boolean
+    headless?: boolean
   }) => Promise<{ ok: boolean; error?: string; wrapperId?: string }>
   onConfigureSession?: (params: {
     sessionId: string
@@ -420,6 +421,11 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
               type: 'boolean',
               description: 'Create the directory if it does not exist (default: false, only for action=spawn)',
             },
+            headless: {
+              type: 'boolean',
+              description:
+                'Spawn in headless mode (stream-json, no terminal). Default: true. Set false for interactive PTY mode.',
+            },
           },
         },
       },
@@ -714,7 +720,8 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
             }
           }
           const mkdir = String(params.mkdir) === 'true'
-          const result = (await callbacks.onSpawnSession?.({ cwd, mode, resumeId, mkdir })) as
+          const spawnHeadless = params.headless !== undefined ? String(params.headless) !== 'false' : true
+          const result = (await callbacks.onSpawnSession?.({ cwd, mode, resumeId, mkdir, headless: spawnHeadless })) as
             | { ok: boolean; error?: string; wrapperId?: string; session?: Record<string, unknown>; timedOut?: boolean }
             | undefined
           if (!result?.ok) {
