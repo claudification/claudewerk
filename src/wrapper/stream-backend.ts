@@ -74,6 +74,7 @@ export interface StreamBackendOptions {
   onResult?: (result: StreamResultMessage) => void
   onPermissionRequest?: (request: StreamPermissionRequest) => void
   onStreamEvent?: (event: Record<string, unknown>) => void
+  onRateLimit?: (retryAfterMs: number, message: string) => void
   onTaskStarted?: (task: { taskId: string; toolUseId: string; taskType: string; description: string }) => void
   onExit?: (code: number | null) => void
 }
@@ -134,6 +135,7 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
     onResult,
     onPermissionRequest,
     onStreamEvent,
+    onRateLimit,
     onTaskStarted,
     onExit,
   } = options
@@ -286,12 +288,16 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
 
       case 'stream_event': {
         // Raw API SSE deltas - token-by-token streaming
-        onStreamEvent?.(msg)
+        // Send the inner event (content_block_delta, message_stop, etc.), not the CC wrapper
+        onStreamEvent?.((msg.event as Record<string, unknown>) || msg)
         break
       }
 
       case 'rate_limit_event': {
-        // Informational - ignore for now
+        const retryMs = (msg.retry_after_ms as number) || 5000
+        const rateLimitMsg = (msg.message as string) || `Rate limited. Retrying in ${Math.ceil(retryMs / 1000)}s.`
+        debug(`Rate limit: ${rateLimitMsg} (retry in ${retryMs}ms)`)
+        onRateLimit?.(retryMs, rateLimitMsg)
         break
       }
 
