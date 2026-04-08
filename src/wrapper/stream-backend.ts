@@ -30,78 +30,30 @@ const C = {
   bgGray: '\x1b[100m',
 }
 
+// Colorize JSON keys and values for terminal output
+function colorizeJson(json: string): string {
+  return json
+    .replace(/"([^"]+)":/g, `${C.cyan}"$1"${C.reset}:`) // keys in cyan
+    .replace(/: "([^"]*?)"/g, `: ${C.green}"$1"${C.reset}`) // string values in green
+    .replace(/: (\d+\.?\d*)/g, `: ${C.yellow}$1${C.reset}`) // numbers in yellow
+    .replace(/: (true|false|null)/g, `: ${C.magenta}$1${C.reset}`) // literals in magenta
+}
+
 function transcriptLog(direction: '>>>' | '<<<', msg: Record<string, unknown>) {
   if (!SHOW_TRANSCRIPT) return
   const type = msg.type as string
-  const subtype = (msg.subtype as string) || ''
+
+  // Skip stream_event deltas (too noisy)
+  if (type === 'stream_event') return
+
+  const arrow = direction === '>>>' ? `${C.cyan}>>>${C.reset}` : `${C.green}<<<${C.reset}`
 
   if (SHOW_PRETTY) {
-    // Pretty mode: human-readable colored output
-    const arrow = direction === '>>>' ? `${C.cyan}>>>${C.reset}` : `${C.green}<<<${C.reset}`
-    switch (type) {
-      case 'user': {
-        const content = (msg.message as Record<string, unknown>)?.content
-        const text = typeof content === 'string' ? content : JSON.stringify(content)
-        const label = direction === '<<<' ? `${C.green}${C.bold}YOU${C.reset}` : `${C.green}USER${C.reset}`
-        process.stderr.write(`${arrow} ${label} ${C.dim}${text.slice(0, 200)}${C.reset}\n`)
-        break
-      }
-      case 'assistant': {
-        const m = msg.message as Record<string, unknown>
-        const content = m?.content as Array<Record<string, unknown>> | undefined
-        if (!content) break
-        for (const block of content) {
-          if (block.type === 'text') {
-            process.stderr.write(
-              `${arrow} ${C.blue}${C.bold}ASSISTANT${C.reset} ${(block.text as string).slice(0, 200)}\n`,
-            )
-          } else if (block.type === 'tool_use') {
-            process.stderr.write(
-              `${arrow} ${C.yellow}TOOL${C.reset} ${C.bold}${block.name}${C.reset} ${C.dim}${JSON.stringify(block.input).slice(0, 120)}${C.reset}\n`,
-            )
-          } else if (block.type === 'thinking') {
-            process.stderr.write(
-              `${arrow} ${C.magenta}THINK${C.reset} ${C.dim}${(block.thinking as string).slice(0, 100)}...${C.reset}\n`,
-            )
-          }
-        }
-        break
-      }
-      case 'system': {
-        if (subtype === 'init') {
-          process.stderr.write(
-            `${arrow} ${C.cyan}INIT${C.reset} model=${C.bold}${msg.model}${C.reset} tools=${(msg.tools as unknown[])?.length}\n`,
-          )
-        } else if (subtype === 'task_started') {
-          process.stderr.write(
-            `${arrow} ${C.yellow}TASK${C.reset} ${msg.task_type} ${C.dim}${msg.description}${C.reset}\n`,
-          )
-        } else if (subtype === 'task_notification') {
-          process.stderr.write(`${arrow} ${C.yellow}TASK${C.reset} ${C.dim}${msg.status}${C.reset}\n`)
-        } else {
-          process.stderr.write(`${arrow} ${C.gray}SYS:${subtype}${C.reset}\n`)
-        }
-        break
-      }
-      case 'result': {
-        const cost = msg.total_cost_usd as number
-        process.stderr.write(
-          `${arrow} ${C.bold}RESULT${C.reset} ${subtype} ${C.dim}cost=$${cost?.toFixed(4)} turns=${msg.num_turns}${C.reset}\n`,
-        )
-        break
-      }
-      case 'stream_event':
-        break // skip deltas in pretty mode
-      case 'rate_limit_event': {
-        const info = msg.rate_limit_info as Record<string, unknown>
-        process.stderr.write(`${arrow} ${C.red}RATE${C.reset} ${C.dim}${info?.status}${C.reset}\n`)
-        break
-      }
-      default:
-        process.stderr.write(`${arrow} ${C.gray}${type}:${subtype}${C.reset}\n`)
-    }
+    // Pretty mode: indented JSON with colorized keys/values
+    const json = JSON.stringify(msg, null, 2)
+    process.stderr.write(`${arrow} ${colorizeJson(json)}\n`)
   } else {
-    // Raw mode: plain NDJSON to stderr, no colors
+    // Raw mode: compact NDJSON, no colors
     process.stderr.write(`${direction} ${JSON.stringify(msg)}\n`)
   }
 }
