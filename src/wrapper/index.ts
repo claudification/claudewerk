@@ -1864,6 +1864,18 @@ async function main() {
           claudeSessionId = init.session_id
           diag('headless', `CC session ID from init: ${init.session_id.slice(0, 8)}`)
         }
+        // Derive transcript path from init if not yet set by SessionStart hook
+        if (init.session_id && !parentTranscriptPath) {
+          const cwdSlug = cwd.replace(/\//g, '-').replace(/^-/, '')
+          parentTranscriptPath = join(
+            process.env.HOME || '',
+            '.claude',
+            'projects',
+            cwdSlug,
+            `${init.session_id}.jsonl`,
+          )
+          debug(`[headless] Derived transcript path: ${parentTranscriptPath}`)
+        }
         // Forward full init metadata to concentrator for dashboard autocomplete
         if (wsClient?.isConnected()) {
           wsClient.send({
@@ -1894,6 +1906,15 @@ async function main() {
         // Forward raw API SSE deltas to concentrator for real-time streaming
         if (wsClient?.isConnected()) {
           wsClient.sendStreamDelta(event)
+        }
+      },
+      onTaskStarted(task) {
+        if (task.taskType === 'local_agent' && task.taskId && parentTranscriptPath) {
+          // Derive subagent transcript path and start watching
+          const sessionDir = parentTranscriptPath.replace(/\.jsonl$/, '')
+          const agentTranscriptPath = join(sessionDir, 'subagents', `agent-${task.taskId}.jsonl`)
+          debug(`[headless] Agent started: ${task.taskId.slice(0, 8)} -> ${agentTranscriptPath}`)
+          startSubagentWatcher(task.taskId, agentTranscriptPath, true)
         }
       },
       onPermissionRequest(request) {

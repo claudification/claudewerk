@@ -26,6 +26,7 @@ export interface StreamBackendOptions {
   onResult?: (result: StreamResultMessage) => void
   onPermissionRequest?: (request: StreamPermissionRequest) => void
   onStreamEvent?: (event: Record<string, unknown>) => void
+  onTaskStarted?: (task: { taskId: string; toolUseId: string; taskType: string; description: string }) => void
   onExit?: (code: number | null) => void
 }
 
@@ -85,6 +86,7 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
     onResult,
     onPermissionRequest,
     onStreamEvent,
+    onTaskStarted,
     onExit,
   } = options
 
@@ -177,6 +179,13 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
         if (subtype === 'init') {
           debug(`init: session=${(msg.session_id as string)?.slice(0, 8)} model=${msg.model}`)
           onInit?.(msg as unknown as StreamInitMessage)
+        } else if (subtype === 'task_started') {
+          const taskType = msg.task_type as string
+          const taskId = msg.task_id as string
+          const toolUseId = msg.tool_use_id as string
+          const description = (msg.description as string) || ''
+          debug(`task_started: ${taskType} id=${taskId?.slice(0, 8)} ${description.slice(0, 40)}`)
+          onTaskStarted?.({ taskId, toolUseId, taskType, description })
         }
         // Hook events (hook_started, hook_response) are informational - hooks still fire via HTTP
         break
