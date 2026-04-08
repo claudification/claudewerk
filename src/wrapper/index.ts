@@ -808,7 +808,12 @@ async function main() {
         // Link requests are handled by the dashboard UI, not by Claude
       },
       onPermissionResponse(requestId: string, behavior: 'allow' | 'deny') {
-        if (channelEnabled && isMcpChannelReady()) {
+        if (headless && streamProc) {
+          // Headless: respond via control_response on stdin
+          streamProc.sendPermissionResponse(requestId, behavior === 'allow')
+          diag('headless', `Permission response: ${requestId} -> ${behavior}`)
+        } else if (channelEnabled && isMcpChannelReady()) {
+          // PTY + channel: respond via MCP channel
           sendPermissionResponse(requestId, behavior).catch(err => {
             debug(`sendPermissionResponse error: ${err instanceof Error ? err.message : err}`)
           })
@@ -1369,10 +1374,14 @@ async function main() {
     onPermissionRequest(data) {
       // Check auto-approve rules before forwarding to dashboard
       if (permissionRules.shouldAutoApprove(data.toolName, data.inputPreview)) {
-        sendPermissionResponse(data.requestId, 'allow').catch(err => {
-          debug(`sendPermissionResponse (auto) error: ${err instanceof Error ? err.message : err}`)
-        })
-        diag('channel', `Permission auto-approved: ${data.requestId} ${data.toolName}`)
+        if (headless && streamProc) {
+          streamProc.sendPermissionResponse(data.requestId, true)
+        } else {
+          sendPermissionResponse(data.requestId, 'allow').catch(err => {
+            debug(`sendPermissionResponse (auto) error: ${err instanceof Error ? err.message : err}`)
+          })
+        }
+        diag(headless ? 'headless' : 'channel', `Permission auto-approved: ${data.requestId} ${data.toolName}`)
         // Notify dashboard for visibility (not for approval)
         if (wsClient?.isConnected()) {
           wsClient.send({
