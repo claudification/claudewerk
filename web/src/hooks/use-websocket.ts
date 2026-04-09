@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useRef } from 'react'
 import { unstable_batchedUpdates as batchUpdates } from 'react-dom'
+import { haptic } from '@/lib/utils'
 
 // Graceful fallback if unstable_batchedUpdates is ever removed
 const batch: (fn: () => void) => void = batchUpdates ?? (fn => fn())
@@ -511,6 +512,8 @@ function processMessage(msg: DashboardMessage) {
             ],
           }
         })
+        // Haptic + visual alert for permission requests (haptic may be silent on iOS outside gestures)
+        haptic('double')
       }
       break
     }
