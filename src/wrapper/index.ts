@@ -346,6 +346,7 @@ async function main() {
   let wsClient: WsClient | null = null
   let ptyProcess: PtyProcess | null = null
   let streamProc: StreamProcess | null = null
+  let clearRequested = false
   let terminalAttached = false
   let fileEditor: FileEditor | null = null
   let savedTerminalSize: { cols: number; rows: number } | null = null
@@ -573,10 +574,11 @@ async function main() {
           if (trimmed === '/exit' || trimmed === '/quit' || trimmed === ':q' || trimmed === ':q!') {
             streamProc.kill()
           } else if (trimmed === '/clear') {
-            // In --print mode, /clear isn't a CLI command. Send as user message --
-            // CC may handle it internally or the model sees it as text (harmless).
-            // The PTY path handles /clear via CC's interactive CLI layer.
-            streamProc.sendUserMessage(input)
+            // Kill CC process and respawn fresh (no --continue/--resume)
+            diag('headless', 'Clear requested - killing CC and respawning fresh')
+            streamProc.kill()
+            // Don't exit -- respawn handled in onExit when clearRequested is set
+            clearRequested = true
           } else if (trimmed.startsWith('/model ')) {
             const model = trimmed.slice(7).trim()
             if (model) streamProc.sendSetModel(model)
@@ -1965,7 +1967,7 @@ async function main() {
     debug('Starting in HEADLESS mode (stream-json)')
     diag('headless', 'Stream-JSON backend active')
 
-    streamProc = spawnStreamClaude({
+    const headlessSpawnOptions: Parameters<typeof spawnStreamClaude>[0] = {
       args: finalClaudeArgs,
       settingsPath,
       sessionId: internalId,
@@ -2100,14 +2102,45 @@ async function main() {
         }
       },
       onExit(code) {
+        if (clearRequested) {
+          // /clear: respawn CC fresh (strip --continue/--resume/--session-id)
+          clearRequested = false
+          const freshArgs = finalClaudeArgs.filter(
+            (a, i, arr) =>
+              a !== '--continue' &&
+              a !== '--resume' &&
+              !(i > 0 && arr[i - 1] === '--resume') &&
+              a !== '--session-id' &&
+              !(i > 0 && arr[i - 1] === '--session-id'),
+          )
+          const oldSessionId = claudeSessionId
+          claudeSessionId = ''
+          parentTranscriptPath = ''
+          pendingEditInputs.clear()
+          agentToolUseMap.clear()
+          pendingAskRequests.clear()
+          diag('headless', `Respawning CC fresh after /clear (old: ${oldSessionId?.slice(0, 8) || 'none'})`)
+          if (oldSessionId && wsClient?.isConnected()) {
+            wsClient.sendSessionClear(randomUUID(), cwd)
+          }
+          respawnHeadless(freshArgs)
+          return
+        }
         if (claudeSessionId) {
           wsClient?.sendSessionEnd(code === 0 ? 'normal' : `exit_code_${code}`)
         }
         cleanup()
         process.exit(code ?? 0)
       },
-    })
-    // Forward parent stdin to claude (for piped NDJSON input)
+    }
+
+    // Respawn helper for /clear -- reuses all callbacks (they reference outer scope)
+    function respawnHeadless(args: string[]) {
+      streamProc = spawnStreamClaude({ ...headlessSpawnOptions, args })
+      streamProc.forwardStdin()
+    }
+
+    streamProc = spawnStreamClaude(headlessSpawnOptions)
     streamProc.forwardStdin()
   } else {
     // --- PTY MODE: existing behavior ---
