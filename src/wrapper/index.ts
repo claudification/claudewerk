@@ -1063,20 +1063,24 @@ async function main() {
     for (const entry of entries) {
       const e = entry as Record<string, unknown>
 
-      // Path 1: JSONL entries with toolUseResult.oldString
+      // Path 1: toolUseResult with oldString/newString -- recompute structuredPatch with
+      // proper file line numbers using originalFile when available
       const tur = e.toolUseResult as Record<string, unknown> | undefined
-      if (tur?.oldString && tur?.newString && !tur.structuredPatch) {
+      if (tur?.oldString && tur?.newString) {
         try {
-          const patch = computeStructuredPatch(
-            'file',
-            'file',
-            tur.oldString as string,
-            tur.newString as string,
-            '',
-            '',
-            { context: 3 },
-          )
-          if (patch.hunks.length > 0) tur.structuredPatch = patch.hunks
+          const oldStr = tur.oldString as string
+          const newStr = tur.newString as string
+          const originalFile = tur.originalFile as string | undefined
+          if (originalFile) {
+            // Diff the full file: original vs original-with-edit-applied
+            const modifiedFile = originalFile.replace(oldStr, newStr)
+            const patch = computeStructuredPatch('file', 'file', originalFile, modifiedFile, '', '', { context: 3 })
+            if (patch.hunks.length > 0) tur.structuredPatch = patch.hunks
+          } else if (!tur.structuredPatch) {
+            // No original file -- fall back to snippet diff (oldStart: 1)
+            const patch = computeStructuredPatch('file', 'file', oldStr, newStr, '', '', { context: 3 })
+            if (patch.hunks.length > 0) tur.structuredPatch = patch.hunks
+          }
         } catch {}
         continue
       }

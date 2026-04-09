@@ -199,10 +199,17 @@ export function ToolLine({
       if (patches?.length) {
         details = <DiffView patches={patches} filePath={path} />
       } else if (input.old_string && input.new_string) {
-        // Compute proper diff from tool input when structuredPatch isn't on toolUseResult
-        const patch = structuredPatch('file', 'file', input.old_string as string, input.new_string as string, '', '', {
-          context: 3,
-        })
+        // Compute diff with proper line numbers using originalFile when available
+        const oldStr = input.old_string as string
+        const newStr = input.new_string as string
+        const originalFile = (toolUseResult as { originalFile?: string })?.originalFile
+        let patch: ReturnType<typeof structuredPatch>
+        if (originalFile) {
+          const modifiedFile = originalFile.replace(oldStr, newStr)
+          patch = structuredPatch('file', 'file', originalFile, modifiedFile, '', '', { context: 3 })
+        } else {
+          patch = structuredPatch('file', 'file', oldStr, newStr, '', '', { context: 3 })
+        }
         if (patch.hunks.length > 0) {
           details = <DiffView patches={patch.hunks} filePath={path} />
         }
