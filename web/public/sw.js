@@ -10,6 +10,9 @@
 
 const CACHE_NAME = 'rclaude-v1'
 const SHELL_CACHE = 'rclaude-shell-v1'
+const FILE_CACHE = 'rclaude-files-v1'
+const FILE_CACHE_MAX = 50 // max entries
+const FILE_CACHE_MAX_SIZE = 2 * 1024 * 1024 // skip files > 2MB
 
 // Hashed assets are immutable - cache forever
 function isHashedAsset(url) {
@@ -28,7 +31,6 @@ function shouldSkip(url) {
     url.pathname.startsWith('/sessions/') ||
     url.pathname.startsWith('/auth/') ||
     url.pathname.startsWith('/ws') ||
-    url.pathname.startsWith('/file/') ||
     url.pathname.protocol === 'chrome-extension:'
   )
 }
@@ -43,7 +45,11 @@ self.addEventListener('activate', event => {
   event.waitUntil(
     caches
       .keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE_NAME && k !== SHELL_CACHE).map(k => caches.delete(k))))
+      .then(keys =>
+        Promise.all(
+          keys.filter(k => k !== CACHE_NAME && k !== SHELL_CACHE && k !== FILE_CACHE).map(k => caches.delete(k)),
+        ),
+      )
       .then(() => clients.claim()),
   )
   // Notify all clients that a new SW is active (update available)
@@ -104,6 +110,33 @@ self.addEventListener('fetch', event => {
             const clone = response.clone()
             caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone))
           }
+          return response
+        })
+      }),
+    )
+    return
+  }
+
+  // Shared files (/file/*): cache-first, LRU eviction, skip large files
+  if (url.pathname.startsWith('/file/')) {
+    event.respondWith(
+      caches.match(event.request).then(cached => {
+        if (cached) return cached
+        return fetch(event.request).then(response => {
+          if (!response.ok) return response
+          // Skip large files (videos, etc.)
+          const size = response.headers.get('content-length')
+          if (size && parseInt(size, 10) > FILE_CACHE_MAX_SIZE) return response
+          const clone = response.clone()
+          caches.open(FILE_CACHE).then(async cache => {
+            await cache.put(event.request, clone)
+            // LRU eviction: trim to max entries
+            const keys = await cache.keys()
+            if (keys.length > FILE_CACHE_MAX) {
+              const toDelete = keys.slice(0, keys.length - FILE_CACHE_MAX)
+              for (const key of toDelete) await cache.delete(key)
+            }
+          })
           return response
         })
       }),
