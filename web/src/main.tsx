@@ -23,5 +23,8 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
 
 // Register service worker for caching + push notifications
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').catch(() => {})
+  navigator.serviceWorker.register('/sw.js').then(reg => {
+    // Check for SW updates every 10 minutes (browser default is 24h)
+    setInterval(() => reg.update().catch(() => {}), 10 * 60 * 1000)
+  }).catch(() => {})
 }
