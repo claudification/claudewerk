@@ -437,7 +437,13 @@ function Dashboard() {
           <span className="flex-1">New version available</span>
           <button
             type="button"
-            onClick={() => window.location.reload()}
+            onClick={async () => {
+              const keys = await caches.keys()
+              await Promise.all(keys.map(k => caches.delete(k)))
+              const reg = await navigator.serviceWorker?.getRegistration('/sw.js')
+              if (reg) await reg.unregister()
+              window.location.reload()
+            }}
             className="px-2 py-0.5 text-[10px] font-bold bg-cyan-500/20 border border-cyan-500/40 hover:bg-cyan-500/30 transition-colors"
           >
             RELOAD
