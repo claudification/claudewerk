@@ -707,6 +707,42 @@ export const TaskBoard = memo(function TaskBoard({ sessionId }: { sessionId: str
         </DragOverlay>
       </DndContext>
 
+      {/* Archived section - collapsible */}
+      {archivedNotes.length > 0 && (
+        <div className="border-t border-border shrink-0">
+          <button
+            type="button"
+            className="w-full flex items-center gap-2 px-3 py-2 text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+            onClick={() => {
+              haptic('tap')
+              setArchiveExpanded(!archiveExpanded)
+            }}
+          >
+            {archiveExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+            <Archive className="w-3 h-3" />
+            <span className="text-[11px] font-mono uppercase tracking-wider">Archived</span>
+            <span className="text-[10px] font-mono">{archivedNotes.length}</span>
+          </button>
+          {archiveExpanded && (
+            <div className="max-h-[200px] overflow-y-auto border-t border-border/30">
+              {archivedNotes.map(note => (
+                <TaskCard
+                  key={note.slug}
+                  note={note}
+                  onMove={handleMove}
+                  onDelete={handleDelete}
+                  onArchive={handleArchive}
+                  onEdit={async meta => {
+                    const full = await readNote(meta.slug, meta.status)
+                    if (full) setEditingNote(full)
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Full-screen editor modal */}
       {editingNote && (
         <NoteEditor

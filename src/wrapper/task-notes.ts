@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSyn
 import { join } from 'node:path'
 
 export type TaskStatus = 'open' | 'in-progress' | 'done' | 'archived'
-const STATUSES: TaskStatus[] = ['open', 'in-progress', 'done']
+const STATUSES: TaskStatus[] = ['open', 'in-progress', 'done', 'archived']
 
 export interface TaskNoteMeta {
   slug: string
