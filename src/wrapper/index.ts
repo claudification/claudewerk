@@ -1149,11 +1149,48 @@ async function main() {
     return entries
   }
 
+  /**
+   * Scan transcript entries for TodoWrite tool_use blocks and synthesize
+   * them into tasks_update WS messages (same format as CC's native tasks).
+   */
+  function interceptTodoWrite(entries: TranscriptEntry[]) {
+    if (!claudeSessionId || !wsClient?.isConnected()) return
+    for (const entry of entries) {
+      if (entry.type !== 'assistant') continue
+      const msg = (entry as Record<string, unknown>).message as Record<string, unknown> | undefined
+      const content = msg?.content
+      if (!Array.isArray(content)) continue
+      for (const block of content) {
+        if (block.type !== 'tool_use' || block.name !== 'TodoWrite') continue
+        const input = block.input as { todos?: Array<{ content: string; status: string; activeForm?: string }> }
+        if (!Array.isArray(input?.todos)) continue
+        const STATUS_MAP: Record<string, TaskInfo['status']> = {
+          pending: 'pending',
+          in_progress: 'in_progress',
+          completed: 'completed',
+        }
+        const tasks: TaskInfo[] = input.todos.map((todo, i) => ({
+          id: `todo-${i}`,
+          subject: todo.content,
+          description: todo.activeForm,
+          status: STATUS_MAP[todo.status] || 'pending',
+          updatedAt: Date.now(),
+        }))
+        const msg: TasksUpdate = { type: 'tasks_update', sessionId: claudeSessionId, tasks }
+        wsClient?.send(msg)
+        debug(`TodoWrite intercepted: ${tasks.length} items -> tasks_update`)
+      }
+    }
+  }
+
   function sendTranscriptEntriesChunked(entries: TranscriptEntry[], isInitial: boolean, agentId?: string) {
     if (!claudeSessionId || !wsClient?.isConnected()) {
       debug(`Cannot send ${entries.length} entries: sessionId=${!!claudeSessionId} ws=${wsClient?.isConnected()}`)
       return
     }
+    // Intercept TodoWrite tool calls and synthesize as tasks
+    if (!agentId) interceptTodoWrite(entries)
+
     // Augment Edit tool results with structuredPatch for diff rendering
     const augmented = augmentEditPatches(entries)
     const send = (chunk: TranscriptEntry[], initial: boolean) =>
