@@ -54,7 +54,7 @@ function StatRow({ label, value, accent, dim }: { label: string; value: string; 
   )
 }
 
-type Tab = 'traffic' | 'cache' | 'log'
+type Tab = 'traffic' | 'cache' | 'sw' | 'log'
 
 function TrafficTab({ serverStats, fetchError }: { serverStats: ServerStats | null; fetchError: string | null }) {
   const clientRates = useSyncExternalStore(subscribeStats, getRates)
@@ -256,6 +256,92 @@ function LogTab() {
   )
 }
 
+function SwTab() {
+  const [swStatus, setSwStatus] = useState('...')
+  const [cacheInfo, setCacheInfo] = useState<Array<{ name: string; count: number; sizeKB: number }>>([])
+  const [totalKB, setTotalKB] = useState(0)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function load() {
+      if (!('serviceWorker' in navigator)) {
+        setSwStatus('unsupported')
+        setLoading(false)
+        return
+      }
+      try {
+        const reg = await navigator.serviceWorker.getRegistration('/sw.js')
+        setSwStatus(reg?.active ? 'active' : reg?.waiting ? 'waiting' : reg ? 'installing' : 'not registered')
+      } catch {
+        setSwStatus('error')
+      }
+      try {
+        const keys = await caches.keys()
+        let total = 0
+        const infos: typeof cacheInfo = []
+        for (const name of keys) {
+          const cache = await caches.open(name)
+          const entries = await cache.keys()
+          let sizeKB = 0
+          for (const req of entries) {
+            try {
+              const res = await cache.match(req)
+              if (res) {
+                const blob = await res.clone().blob()
+                sizeKB += blob.size / 1024
+              }
+            } catch {}
+          }
+          sizeKB = Math.round(sizeKB)
+          total += sizeKB
+          infos.push({ name, count: entries.length, sizeKB })
+        }
+        setCacheInfo(infos)
+        setTotalKB(Math.round(total))
+      } catch {}
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  return (
+    <div className="space-y-3">
+      <div className="text-[10px] uppercase tracking-wider text-[#565f89]">Service Worker</div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+        <StatRow
+          label="status"
+          value={loading ? '...' : swStatus}
+          accent={swStatus === 'active'}
+          dim={swStatus === 'not registered' || swStatus === 'unsupported'}
+        />
+        <StatRow label="total cached" value={totalKB > 1024 ? `${(totalKB / 1024).toFixed(1)} MB` : `${totalKB} KB`} />
+      </div>
+
+      {cacheInfo.length > 0 && (
+        <>
+          <div className="text-[10px] uppercase tracking-wider text-[#565f89] mt-3">Caches</div>
+          {cacheInfo.map(c => (
+            <div
+              key={c.name}
+              className="flex items-center justify-between py-1 border-b border-[#33467c]/20 text-[11px]"
+            >
+              <span className="text-[#a9b1d6] truncate mr-2 flex-1">{c.name}</span>
+              <span className="text-[#565f89] shrink-0 mr-3">{c.count} files</span>
+              <span className="text-[#7aa2f7] tabular-nums shrink-0">
+                {c.sizeKB > 1024 ? `${(c.sizeKB / 1024).toFixed(1)} MB` : `${c.sizeKB} KB`}
+              </span>
+            </div>
+          ))}
+        </>
+      )}
+
+      {cacheInfo.length === 0 && !loading && (
+        <div className="text-[11px] text-[#565f89]">No caches found. SW may not be registered yet.</div>
+      )}
+    </div>
+  )
+}
+
 export function NerdModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [tab, setTab] = useState<Tab>('cache')
   const [serverStats, setServerStats] = useState<ServerStats | null>(null)
@@ -299,6 +385,7 @@ export function NerdModal({ open, onClose }: { open: boolean; onClose: () => voi
   const tabs: { id: Tab; label: string }[] = [
     { id: 'cache', label: 'Cache' },
     { id: 'traffic', label: 'Traffic' },
+    { id: 'sw', label: 'SW' },
     { id: 'log', label: 'Log' },
   ]
 
@@ -341,6 +428,7 @@ export function NerdModal({ open, onClose }: { open: boolean; onClose: () => voi
         <div className="flex-1 overflow-y-auto px-4 pb-4">
           {tab === 'traffic' && <TrafficTab serverStats={serverStats} fetchError={fetchError} />}
           {tab === 'cache' && <CacheTab />}
+          {tab === 'sw' && <SwTab />}
           {tab === 'log' && <LogTab />}
         </div>
 
