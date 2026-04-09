@@ -562,6 +562,7 @@ export function createRouter(options: RouteOptions): Hono {
       teammates: session.teammates,
       team: session.team,
       args: session.args,
+      sessionInfo: (session as unknown as Record<string, unknown>).sessionInfo,
       diagLog: session.diagLog,
     })
   })

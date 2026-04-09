@@ -4,7 +4,7 @@
  */
 
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { Profiler, type ProfilerOnRenderCallback, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useSessionsStore } from '@/hooks/use-sessions'
 import type { TranscriptEntry } from '@/lib/types'
 import { Markdown } from '../markdown'
@@ -12,6 +12,12 @@ import { CompactedDivider, CompactingBanner, MemoizedGroupView, SkillDivider } f
 import { type DisplayGroup, useIncrementalGroups } from './grouping'
 
 const EMPTY_STREAMING = ''
+
+const onRenderProfile: ProfilerOnRenderCallback = (id, phase, actualDuration, baseDuration) => {
+  if (actualDuration > 10) {
+    console.log(`[perf] ${id} ${phase}: ${actualDuration.toFixed(1)}ms (base: ${baseDuration.toFixed(1)}ms)`)
+  }
+}
 
 interface TranscriptViewProps {
   entries: TranscriptEntry[]
@@ -237,48 +243,50 @@ export function TranscriptView({
           position: 'relative',
         }}
       >
-        {virtualizer.getVirtualItems().map(virtualItem => (
-          <div
-            key={virtualItem.key}
-            data-index={virtualItem.index}
-            ref={virtualizer.measureElement}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: '100%',
-              transform: `translateY(${virtualItem.start}px)`,
-            }}
-          >
-            {(() => {
-              const group = mainGroups[virtualItem.index]
-              if (group.type === 'compacted') return <CompactedDivider />
-              if (group.type === 'compacting') return <CompactingBanner />
-              if (group.type === 'skill') {
-                const entry = group.entries[0] as {
-                  message?: { content?: string | Array<{ type: string; text?: string }> }
+        <Profiler id="TranscriptGroups" onRender={onRenderProfile}>
+          {virtualizer.getVirtualItems().map(virtualItem => (
+            <div
+              key={virtualItem.key}
+              data-index={virtualItem.index}
+              ref={virtualizer.measureElement}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualItem.start}px)`,
+              }}
+            >
+              {(() => {
+                const group = mainGroups[virtualItem.index]
+                if (group.type === 'compacted') return <CompactedDivider />
+                if (group.type === 'compacting') return <CompactingBanner />
+                if (group.type === 'skill') {
+                  const entry = group.entries[0] as {
+                    message?: { content?: string | Array<{ type: string; text?: string }> }
+                  }
+                  const content = Array.isArray(entry?.message?.content)
+                    ? entry.message.content
+                        .filter(b => b.type === 'text')
+                        .map(b => b.text || '')
+                        .join('')
+                    : ''
+                  return <SkillDivider name={group.skillName || 'skill'} content={content} />
                 }
-                const content = Array.isArray(entry?.message?.content)
-                  ? entry.message.content
-                      .filter(b => b.type === 'text')
-                      .map(b => b.text || '')
-                      .join('')
-                  : ''
-                return <SkillDivider name={group.skillName || 'skill'} content={content} />
-              }
-              return (
-                <MemoizedGroupView
-                  group={group}
-                  getResult={getResult}
-                  settings={transcriptSettings}
-                  showThinking={showThinking}
-                  subagents={subagents}
-                  planContext={planContext}
-                />
-              )
-            })()}
-          </div>
-        ))}
+                return (
+                  <MemoizedGroupView
+                    group={group}
+                    getResult={getResult}
+                    settings={transcriptSettings}
+                    showThinking={showThinking}
+                    subagents={subagents}
+                    planContext={planContext}
+                  />
+                )
+              })()}
+            </div>
+          ))}
+        </Profiler>
       </div>
       {/* Headless streaming text - shows token-by-token as they arrive */}
       {showStreaming && streamingText && (
