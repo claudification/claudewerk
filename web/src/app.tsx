@@ -33,7 +33,7 @@ import {
 } from '@/hooks/use-sessions'
 import { useWebSocket } from '@/hooks/use-websocket'
 import { canTerminal } from '@/lib/types'
-import { isMobileViewport, isTouchDevice } from '@/lib/utils'
+import { clearCacheAndReload, isMobileViewport, isTouchDevice } from '@/lib/utils'
 
 // Swipe-right from left edge to open session list (mobile)
 function useSwipeToOpen(onOpen: () => void) {
@@ -437,13 +437,7 @@ function Dashboard() {
           <span className="flex-1">New version available</span>
           <button
             type="button"
-            onClick={async () => {
-              const keys = await caches.keys()
-              await Promise.all(keys.map(k => caches.delete(k)))
-              const reg = await navigator.serviceWorker?.getRegistration('/sw.js')
-              if (reg) await reg.unregister()
-              window.location.reload()
-            }}
+            onClick={() => clearCacheAndReload()}
             className="px-2 py-0.5 text-[10px] font-bold bg-cyan-500/20 border border-cyan-500/40 hover:bg-cyan-500/30 transition-colors"
           >
             RELOAD

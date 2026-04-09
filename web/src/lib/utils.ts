@@ -119,3 +119,12 @@ export function haptic(pattern: 'tap' | 'double' | 'success' | 'error' | 'tick' 
       break
   }
 }
+
+/** Clear all SW caches, unregister service worker, and reload */
+export async function clearCacheAndReload(): Promise<void> {
+  const keys = await caches.keys()
+  await Promise.all(keys.map(k => caches.delete(k)))
+  const reg = await navigator.serviceWorker?.getRegistration('/sw.js')
+  if (reg) await reg.unregister()
+  window.location.reload()
+}

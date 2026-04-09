@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { getPushStatus, subscribeToPush, useSessionsStore, wsSend } from '@/hooks/use-sessions'
 import { resolveToolDisplay, TOOL_DISPLAY_KEYS } from '@/lib/dashboard-prefs'
-import { cn } from '@/lib/utils'
+import { clearCacheAndReload, cn } from '@/lib/utils'
 import { BUILD_VERSION } from '../../../src/shared/version'
 import { BUBBLE_COLOR_OPTIONS } from './transcript/group-view'
 
@@ -681,13 +681,7 @@ const SETTINGS: SettingItem[] = [
     render: () => (
       <button
         type="button"
-        onClick={async () => {
-          const keys = await caches.keys()
-          await Promise.all(keys.map(k => caches.delete(k)))
-          const reg = await navigator.serviceWorker?.getRegistration('/sw.js')
-          if (reg) await reg.unregister()
-          window.location.reload()
-        }}
+        onClick={() => clearCacheAndReload()}
         className="px-3 py-1 text-[11px] font-bold bg-red-500/20 text-red-400 border border-red-500/40 hover:bg-red-500/30 transition-colors"
       >
         Clear & Reload

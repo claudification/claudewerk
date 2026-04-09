@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { useSessionsStore } from '@/hooks/use-sessions'
 import { getRates, subscribe as subscribeStats } from '@/hooks/ws-stats'
 import { clearLog, copyLogText, getLogEntries, type LogEntry, subscribeLog } from '@/lib/debug-log'
-import { cn } from '@/lib/utils'
+import { clearCacheAndReload, cn } from '@/lib/utils'
 
 interface ServerStats {
   uptime: number
@@ -342,13 +342,7 @@ function SwTab() {
       <div className="mt-4 pt-3 border-t border-[#33467c]/30">
         <button
           type="button"
-          onClick={async () => {
-            const keys = await caches.keys()
-            await Promise.all(keys.map(k => caches.delete(k)))
-            const reg = await navigator.serviceWorker?.getRegistration('/sw.js')
-            if (reg) await reg.unregister()
-            window.location.reload()
-          }}
+          onClick={() => clearCacheAndReload()}
           className="px-3 py-1 text-[11px] font-bold bg-red-500/20 text-red-400 border border-red-500/40 hover:bg-red-500/30 transition-colors"
         >
           Clear Cache & Reload
