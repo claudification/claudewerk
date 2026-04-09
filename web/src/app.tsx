@@ -154,19 +154,14 @@ function Dashboard() {
           `[sync] restored after ${(elapsed / 1000).toFixed(1)}s - sending sync_check (epoch=${syncEpoch.slice(0, 8)} seq=${syncSeq} transcripts=${Object.keys(transcriptCounts).length})`,
         )
         wsSend('sync_check', { epoch: syncEpoch, lastSeq: syncSeq, transcripts: transcriptCounts })
-
-        // Force-refetch selected session transcript after background period.
-        // iOS freezes JS within ~1s of background, WS buffer delivery is unreliable.
-        // 2s threshold catches most iOS app-switches (previous 5s missed many).
-        if (elapsed > 2000) {
-          console.log(`[sync] force refetch sidebar metadata after ${(elapsed / 1000).toFixed(0)}s background`)
+        // No force-refetch here. The sync_check response handles it:
+        // - sync_ok: nothing to do (WS kept up)
+        // - sync_catchup: server pushes missed messages
+        // - sync_stale: bumps connectSeq which triggers proper refetch
+        // Only refetch sidebar metadata if away > 30s (settings/labels may have changed)
+        if (elapsed > 30_000) {
+          console.log(`[sync] refetch sidebar metadata after ${(elapsed / 1000).toFixed(0)}s background`)
           fetchSidebarMetadata()
-          const sid = useSessionsStore.getState().selectedSessionId
-          if (sid) {
-            console.log(`[sync] force refetch transcript after ${(elapsed / 1000).toFixed(0)}s background`)
-            fetchedAtRef.current = {}
-            fetchSessionData(sid, 'visibility-restore')
-          }
         }
       }
     }
