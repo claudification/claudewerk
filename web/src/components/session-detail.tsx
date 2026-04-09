@@ -508,8 +508,10 @@ const InputBar = memo(function InputBar({ sessionId }: { sessionId: string }) {
   const inputRef = useRef(inputValue)
   const sessionRef = useRef(sessionId)
 
-  // Track pendingAttention with 15s delay before showing
-  const pendingAttention = useSessionsStore(s => s.sessions.find(sess => sess.id === sessionId)?.pendingAttention)
+  // Track pendingAttention with 15s delay before showing (PTY only - headless uses PermissionBanners)
+  const session = useSessionsStore(s => s.sessions.find(sess => sess.id === sessionId))
+  const pendingAttention = session?.pendingAttention
+  const sessionHasTerminal = session ? canTerminal(session) : false
   useEffect(() => {
     if (!pendingAttention) {
       setShowAttention(false)
@@ -593,7 +595,7 @@ const InputBar = memo(function InputBar({ sessionId }: { sessionId: string }) {
       ref={containerRef}
       className={cn('shrink-0 p-3 border-t bg-background z-10 transition-colors duration-200', 'border-border')}
     >
-      {showAttention && pendingAttention && (
+      {showAttention && pendingAttention && sessionHasTerminal && (
         <div
           role="button"
           tabIndex={0}
