@@ -43,6 +43,15 @@ export function getPaletteCommands(onClose: () => void): PaletteCommand[] {
       },
     },
     {
+      id: 'clear-reload',
+      label: 'Clear cache & reload',
+      action: async () => {
+        onClose()
+        const { clearCacheAndReload } = await import('@/lib/utils')
+        clearCacheAndReload()
+      },
+    },
+    {
       id: 'debug-console',
       label: 'Toggle debug console',
       shortcut: 'Ctrl+Shift+D',
