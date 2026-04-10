@@ -6,7 +6,7 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { Profiler, type ProfilerOnRenderCallback, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useSessionsStore } from '@/hooks/use-sessions'
-import { record } from '@/lib/perf-metrics'
+import { isPerfEnabled, record } from '@/lib/perf-metrics'
 import type { TranscriptEntry } from '@/lib/types'
 import { Markdown } from '../markdown'
 import { CompactedDivider, CompactingBanner, MemoizedGroupView, SkillDivider } from './group-view'
@@ -16,9 +16,6 @@ const EMPTY_STREAMING = ''
 
 const onRenderProfile: ProfilerOnRenderCallback = (id, phase, actualDuration, baseDuration) => {
   record('render', id, actualDuration, `${phase} base=${baseDuration.toFixed(1)}ms`)
-  if (actualDuration > 10) {
-    console.log(`[perf] ${id} ${phase}: ${actualDuration.toFixed(1)}ms (base: ${baseDuration.toFixed(1)}ms)`)
-  }
 }
 
 interface TranscriptViewProps {

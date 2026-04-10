@@ -51,6 +51,10 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), assetManifestPlugin()],
   resolve: {
     tsconfigPaths: true,
+    alias: {
+      // Enable React Profiler in production builds (for perf monitoring)
+      'react-dom/client': 'react-dom/profiling',
+    },
   },
   build: {
     outDir: 'dist',
