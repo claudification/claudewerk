@@ -45,24 +45,42 @@ export function useCommandPalette(onClose: () => void) {
           : 'session'
 
   // --- Command mode ---
-  const commandFilter = isCommandMode ? filter.slice(1).trim().toLowerCase() : ''
-  const _gen = getCommandGeneration() // ensures re-render when commands change
+  // Parse: "> effort high" -> commandSearch="effort high", commandArgs parsed on execute
+  const commandRaw = isCommandMode ? filter.slice(1).trim() : ''
+  const commandSearch = commandRaw.toLowerCase()
+  const _gen = getCommandGeneration()
   const registryCommands = useMemo(
     () =>
       getCommands().map(c => ({
         id: c.id,
         label: c.label,
         shortcut: c.shortcut ? formatShortcut(c.shortcut) : undefined,
-        action: () => {
-          c.action()
+        action: (...args: string[]) => {
+          c.action(...args)
           onClose()
         },
       })),
     [_gen, onClose],
   )
+  // Match by label or id, parse args from remainder
   const filteredCommands = isCommandMode
-    ? registryCommands.filter(c => c.label.toLowerCase().includes(commandFilter))
+    ? registryCommands.filter(c => {
+        const id = c.id.toLowerCase()
+        const label = c.label.toLowerCase()
+        // "effort high" matches command "effort" -- the "high" part is an arg
+        return label.includes(commandSearch) || id.includes(commandSearch) || commandSearch.startsWith(id)
+      })
     : []
+
+  // Extract args: if filter is "> effort high", and selected command is "effort", args = ["high"]
+  function getCommandArgs(cmd: (typeof registryCommands)[0]): string[] {
+    const parts = commandRaw.split(/\s+/)
+    const idLower = cmd.id.toLowerCase()
+    if (parts[0]?.toLowerCase() === idLower && parts.length > 1) {
+      return parts.slice(1)
+    }
+    return []
+  }
 
   // --- Session mode ---
   // Sort by: MRU top 2 (alt-tab), then frequency-weighted for the rest
@@ -343,7 +361,7 @@ export function useCommandPalette(onClose: () => void) {
         e.preventDefault()
         if (isCommandMode) {
           const cmd = filteredCommands[activeIndex]
-          if (cmd) cmd.action()
+          if (cmd) cmd.action(...getCommandArgs(cmd))
         } else if (isSpawnMode) {
           if (filteredSpawnDirs.length > 0 && !spawnPath.endsWith('/')) {
             const selected = filteredSpawnDirs[activeIndex]

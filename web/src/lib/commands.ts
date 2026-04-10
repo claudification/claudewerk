@@ -3,13 +3,14 @@ import { useKeyLayer } from './key-layers'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
+export type CommandAction = (...args: string[]) => void
+
 export interface Command {
   id: string
   label: string
   shortcut?: string
-  action: () => void
+  action: CommandAction
   when?: () => boolean
-  /** Group for palette display (e.g. 'Session', 'View', 'Navigation') */
   group?: string
 }
 
@@ -23,7 +24,7 @@ interface UseCommandOptions {
 // ── Registry (module singleton) ──────────────────────────────────────────
 
 const commands = new Map<string, Command>()
-let generation = 0 // bumped on every change so React can detect updates
+let generation = 0
 
 export function registerCommand(cmd: Command): () => void {
   commands.set(cmd.id, cmd)
@@ -34,11 +35,11 @@ export function registerCommand(cmd: Command): () => void {
   }
 }
 
-export function executeCommand(id: string): boolean {
+export function executeCommand(id: string, ...args: string[]): boolean {
   const cmd = commands.get(id)
   if (!cmd) return false
   if (cmd.when && !cmd.when()) return false
-  cmd.action()
+  cmd.action(...args)
   return true
 }
 
@@ -52,29 +53,24 @@ export function getCommandGeneration(): number {
 
 // ── useCommand hook ─────────────────────────────────────────────────────
 
-export function useCommand(id: string, action: () => void, options: UseCommandOptions = {}) {
+export function useCommand(id: string, action: CommandAction, options: UseCommandOptions = {}) {
   const actionRef = useRef(action)
   const whenRef = useRef(options.when)
   actionRef.current = action
   whenRef.current = options.when
 
-  // Register/unregister command on mount/unmount
   useEffect(() => {
     const cmd: Command = {
       id,
       label: options.label ?? id,
       shortcut: options.shortcut,
       group: options.group,
-      action: () => actionRef.current(),
+      action: (...args: string[]) => actionRef.current(...args),
       when: whenRef.current ? () => whenRef.current!() : undefined,
     }
-    const unregister = registerCommand(cmd)
-    return unregister
-    // Only re-register if identity-level props change (id, label, shortcut, group)
-    // action/when are synced via refs
+    return registerCommand(cmd)
   }, [id, options.label, options.shortcut, options.group])
 
-  // If the command has a shortcut, register it on the base key layer
   useKeyLayer(
     options.shortcut
       ? {
@@ -94,7 +90,6 @@ const isMac =
   typeof navigator !== 'undefined' &&
   (/Mac|iPhone|iPad|iPod/.test(navigator.platform) || /Macintosh/.test(navigator.userAgent))
 
-/** Format a shortcut string for display (e.g. 'mod+k' -> '⌘K' on Mac, 'Ctrl+K' elsewhere) */
 export function formatShortcut(shortcut: string): string {
   return shortcut
     .split(' ')

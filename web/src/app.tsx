@@ -438,36 +438,12 @@ function Dashboard() {
   })
 
   useCommand(
-    'effort-low',
-    () => {
+    'effort',
+    (level = 'medium') => {
       const sid = useSessionsStore.getState().selectedSessionId
-      if (sid) sendInput(sid, '/effort low')
+      if (sid) sendInput(sid, `/effort ${level}`)
     },
-    { label: 'Set effort: low', group: 'Session' },
-  )
-  useCommand(
-    'effort-medium',
-    () => {
-      const sid = useSessionsStore.getState().selectedSessionId
-      if (sid) sendInput(sid, '/effort medium')
-    },
-    { label: 'Set effort: medium', group: 'Session' },
-  )
-  useCommand(
-    'effort-high',
-    () => {
-      const sid = useSessionsStore.getState().selectedSessionId
-      if (sid) sendInput(sid, '/effort high')
-    },
-    { label: 'Set effort: high', group: 'Session' },
-  )
-  useCommand(
-    'effort-max',
-    () => {
-      const sid = useSessionsStore.getState().selectedSessionId
-      if (sid) sendInput(sid, '/effort max')
-    },
-    { label: 'Set effort: max', group: 'Session' },
+    { label: 'Set effort level', group: 'Session' },
   )
 
   function handleSwitcherSelect(id: string) {
