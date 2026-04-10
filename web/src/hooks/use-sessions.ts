@@ -204,6 +204,8 @@ interface SessionsState {
   sendWsMessage: (msg: Record<string, unknown>) => void
   dismissSession: (sessionId: string) => void
   setPendingFilePath: (path: string | null) => void
+  pendingTaskEdit: { slug: string; status: string } | null
+  setPendingTaskEdit: (task: { slug: string; status: string } | null) => void
   inputDrafts: Record<string, string>
   setInputDraft: (sessionId: string, text: string) => void
 
@@ -428,6 +430,8 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   requestedTab: null,
   requestedTabSeq: 0,
   pendingFilePath: null,
+  pendingTaskEdit: null,
+  setPendingTaskEdit: task => set({ pendingTaskEdit: task }),
   inputDrafts: {},
   setInputDraft: (sessionId, text) => set(state => ({ inputDrafts: { ...state.inputDrafts, [sessionId]: text } })),
   newDataSeq: 0,

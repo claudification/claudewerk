@@ -28,10 +28,11 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useMemo, useRef, useState } from 'react'
 import type { ProjectTask } from '@/hooks/use-project'
 import { type ProjectTaskMeta, type TaskStatus, useProject } from '@/hooks/use-project'
 import { sendInput } from '@/hooks/use-sessions'
+import { useKeyLayer } from '@/lib/key-layers'
 import { cn, haptic } from '@/lib/utils'
 import { Markdown } from './markdown'
 import { MarkdownInput } from './markdown-input'
@@ -107,7 +108,7 @@ function fuzzyScore(query: string, task: ProjectTaskMeta): number {
   return score
 }
 
-function TaskEditor({
+export function TaskEditor({
   task,
   sessionId,
   onSave,
@@ -129,6 +130,7 @@ function TaskEditor({
   const [tagInput, setTagInput] = useState('')
   const [saving, setSaving] = useState(false)
   const [editing, setEditing] = useState(!body.trim())
+  useKeyLayer({ Escape: () => onClose() }, { id: 'task-editor' })
 
   function addTag() {
     const t = tagInput.trim().toLowerCase()
@@ -148,23 +150,12 @@ function TaskEditor({
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: backdrop
-    <div
-      role="presentation"
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4"
-      onClick={onClose}
-      onKeyDown={e => {
-        if (e.key === 'Escape') onClose()
-      }}
-    >
+    <div role="presentation" className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
         role="dialog"
         className="relative w-full max-w-2xl bg-[#1a1b26] border border-[#33467c] shadow-2xl flex flex-col max-h-[80vh]"
         onClick={e => e.stopPropagation()}
-        onKeyDown={e => {
-          if (e.key === 'Escape') onClose()
-          else e.stopPropagation()
-        }}
       >
         {/* Header */}
         <div className="flex items-center gap-2 px-4 py-3 border-b border-[#33467c]/50 shrink-0">
@@ -543,19 +534,6 @@ export const ProjectBoard = memo(function ProjectBoard({ sessionId }: { sessionI
   const [searchQuery, setSearchQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
-
-  // Listen for open-task-editor events from command palette T: mode
-  useEffect(() => {
-    function handleOpenTask(e: Event) {
-      const detail = (e as CustomEvent).detail as { slug: string; status: string }
-      if (!detail?.slug) return
-      readTask(detail.slug, detail.status as TaskStatus).then(full => {
-        if (full) setEditingTask(full)
-      })
-    }
-    window.addEventListener('open-task-editor', handleOpenTask)
-    return () => window.removeEventListener('open-task-editor', handleOpenTask)
-  }, [readTask])
 
   const filteredTasks = useMemo(() => {
     if (!searchQuery.trim()) return tasks

@@ -2,9 +2,9 @@ import { Fzf } from 'fzf'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FileInfo } from '@/hooks/use-file-editor'
 import { useSessionsStore } from '@/hooks/use-sessions'
+import { formatShortcut, getCommandGeneration, getCommands } from '@/lib/commands'
 import { getFrequencyMap, recordSwitch } from '@/lib/session-frequency'
 import type { Session } from '@/lib/types'
-import { getPaletteCommands } from './commands'
 import type { PaletteMode, TaskItem } from './types'
 
 export function useCommandPalette(onClose: () => void) {
@@ -46,8 +46,23 @@ export function useCommandPalette(onClose: () => void) {
 
   // --- Command mode ---
   const commandFilter = isCommandMode ? filter.slice(1).trim().toLowerCase() : ''
-  const commands = useMemo(() => getPaletteCommands(onClose), [onClose])
-  const filteredCommands = isCommandMode ? commands.filter(c => c.label.toLowerCase().includes(commandFilter)) : []
+  const _gen = getCommandGeneration() // ensures re-render when commands change
+  const registryCommands = useMemo(
+    () =>
+      getCommands().map(c => ({
+        id: c.id,
+        label: c.label,
+        shortcut: c.shortcut ? formatShortcut(c.shortcut) : undefined,
+        action: () => {
+          c.action()
+          onClose()
+        },
+      })),
+    [_gen, onClose],
+  )
+  const filteredCommands = isCommandMode
+    ? registryCommands.filter(c => c.label.toLowerCase().includes(commandFilter))
+    : []
 
   // --- Session mode ---
   // Sort by: MRU top 2 (alt-tab), then frequency-weighted for the rest
@@ -260,7 +275,14 @@ export function useCommandPalette(onClose: () => void) {
       }),
     [tasks],
   )
-  const filteredTasks = taskFilter ? taskFzf.find(taskFilter).map(r => r.item) : tasks
+  const statusBoost = (status: string) => (status === 'in-progress' ? 1.5 : status === 'open' ? 1.3 : 1)
+  const filteredTasks = taskFilter
+    ? taskFzf
+        .find(taskFilter)
+        .sort((a, b) => b.score * statusBoost(b.item.status) - a.score * statusBoost(a.item.status))
+        .map(r => r.item)
+    : // Default order: in-progress first, then open, then rest
+      [...tasks].sort((a, b) => statusBoost(b.status) - statusBoost(a.status))
 
   // --- Item count & index clamping ---
   const itemCount = isCommandMode
@@ -299,15 +321,6 @@ export function useCommandPalette(onClose: () => void) {
     },
   ) {
     switch (e.key) {
-      case 'Escape':
-        e.preventDefault()
-        if (isFileMode || isSpawnMode || isCommandMode || isTaskMode) {
-          setFilter('')
-          setActiveIndex(0)
-        } else {
-          onClose()
-        }
-        break
       case 'ArrowDown':
         e.preventDefault()
         setActiveIndex(i => Math.min(i + 1, itemCount - 1))
@@ -350,10 +363,8 @@ export function useCommandPalette(onClose: () => void) {
         } else if (isTaskMode) {
           const task = filteredTasks[activeIndex]
           if (task) {
+            useSessionsStore.getState().setPendingTaskEdit({ slug: task.slug, status: task.status })
             onClose()
-            // Switch to project tab first, then open editor after mount
-            if (selectedSessionId) useSessionsStore.getState().openTab(selectedSessionId, 'project' as never)
-            setTimeout(() => window.dispatchEvent(new CustomEvent('open-task-editor', { detail: task })), 100)
           }
         } else if (filteredSessions[activeIndex]) {
           selectSessionWithTracking(filteredSessions[activeIndex], callbacks.onSelectSession)

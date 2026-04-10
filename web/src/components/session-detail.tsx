@@ -3,6 +3,7 @@ import { ArrowLeft, ChevronDown, ChevronRight, ChevronUp, Copy, Terminal } from 
 import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { type TaskStatus, useProject } from '@/hooks/use-project'
 import { fetchSubagentTranscript, reviveSession, sendInput, useSessionsStore, wsSend } from '@/hooks/use-sessions'
 import { canTerminal, type TranscriptEntry } from '@/lib/types'
 import { cn, contextWindowSize, formatAge, formatEffort, formatModel, haptic, isMobileViewport } from '@/lib/utils'
@@ -14,7 +15,7 @@ import { EventsView } from './events-view'
 import { FileEditor } from './file-editor'
 import { InlineTerminal } from './inline-terminal'
 import { MarkdownInput } from './markdown-input'
-import { ProjectBoard } from './project-board'
+import { ProjectBoard, TaskEditor } from './project-board'
 import { renderProjectIcon } from './project-settings-editor'
 import { ShareBanner } from './share-panel'
 import { SharedView } from './shared-view'
@@ -802,6 +803,18 @@ export function SessionDetail() {
     }
   }, [selectedSessionId, selectedSubagentId])
 
+  // T: command palette -> task editor overlay (no tab switch, transcript stays mounted)
+  const pendingTaskEdit = useSessionsStore(s => s.pendingTaskEdit)
+  const { readTask, updateTask } = useProject(selectedSessionId ?? null)
+  const [taskEditorTask, setTaskEditorTask] = useState<import('@/hooks/use-project').ProjectTask | null>(null)
+  useEffect(() => {
+    if (!pendingTaskEdit) return
+    useSessionsStore.getState().setPendingTaskEdit(null)
+    readTask(pendingTaskEdit.slug, pendingTaskEdit.status as TaskStatus).then(full => {
+      if (full) setTaskEditorTask(full)
+    })
+  }, [pendingTaskEdit, readTask])
+
   // HOOKS MUST BE BEFORE EARLY RETURNS - React rules!
 
   // Countdown timer while waiting for revived session
@@ -891,6 +904,17 @@ export function SessionDetail() {
       {canAdmin && session && <ShareBanner sessionCwd={session.cwd} />}
       {/* Dialog Modal */}
       {selectedSessionId && <DialogOverlay sessionId={selectedSessionId} />}
+      {/* Task Editor Modal (from T: command palette, renders over any tab) */}
+      {taskEditorTask && selectedSessionId && (
+        <TaskEditor
+          task={taskEditorTask}
+          sessionId={selectedSessionId}
+          onSave={async (slug, status, patch) => {
+            await updateTask(slug, status, patch)
+          }}
+          onClose={() => setTaskEditorTask(null)}
+        />
+      )}
       {/* Session Info - Collapsible */}
       <div className="shrink-0 border-b border-border max-h-[30vh] overflow-y-auto">
         <button
