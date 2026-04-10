@@ -30,6 +30,7 @@ export interface DisplayGroup {
   entries: TranscriptEntry[]
   notifications?: TaskNotification[]
   localCommandOutput?: string
+  systemSubtype?: string // system message subtype (api_retry, informational, etc.)
   queued?: boolean // user interject waiting to be consumed
   skillName?: string // skill/command name for 'skill' groups
 }
@@ -183,18 +184,20 @@ export function groupEntries(entries: TranscriptEntry[]): DisplayGroup[] {
       continue
     }
 
-    // Local command output (slash command results like /effort, /cost, or "Unknown skill: X")
-    if (entry.type === 'system' && (entry as Record<string, unknown>).subtype === 'local_command') {
-      const content = (entry as Record<string, unknown>).content as string
-      if (content) {
-        current = null
-        groups.push({
-          type: 'system',
-          timestamp: entry.timestamp || '',
-          entries: [entry],
-          localCommandOutput: content,
-        })
-      }
+    // System messages (slash commands, api retries, informational, state changes, etc.)
+    if (entry.type === 'system' && (entry as Record<string, unknown>).subtype) {
+      const sub = (entry as Record<string, unknown>).subtype as string
+      // Skip internal/noise subtypes
+      if (sub === 'file_snapshot' || sub === 'post_turn_summary') continue
+      current = null
+      const content = (entry as Record<string, unknown>).content as string | undefined
+      groups.push({
+        type: 'system',
+        timestamp: entry.timestamp || '',
+        entries: [entry],
+        ...(sub === 'local_command' && content ? { localCommandOutput: content } : {}),
+        systemSubtype: sub,
+      })
       continue
     }
 
@@ -441,18 +444,19 @@ export function useIncrementalGroups(entries: TranscriptEntry[]) {
         continue
       }
 
-      // Local command output (slash command results)
-      if (entry.type === 'system' && (entry as Record<string, unknown>).subtype === 'local_command') {
-        const lcContent = (entry as Record<string, unknown>).content as string
-        if (lcContent) {
-          lastGroup = null
-          newGroups.push({
-            type: 'system',
-            timestamp: entry.timestamp || '',
-            entries: [entry],
-            localCommandOutput: lcContent,
-          })
-        }
+      // System messages (slash commands, api retries, informational, state changes, etc.)
+      if (entry.type === 'system' && (entry as Record<string, unknown>).subtype) {
+        const sub = (entry as Record<string, unknown>).subtype as string
+        if (sub === 'file_snapshot' || sub === 'post_turn_summary') continue
+        const lcContent = (entry as Record<string, unknown>).content as string | undefined
+        lastGroup = null
+        newGroups.push({
+          type: 'system',
+          timestamp: entry.timestamp || '',
+          entries: [entry],
+          ...(sub === 'local_command' && lcContent ? { localCommandOutput: lcContent } : {}),
+          systemSubtype: sub,
+        })
         continue
       }
 

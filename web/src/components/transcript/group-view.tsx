@@ -46,6 +46,86 @@ function formatDuration(ms: number): string {
   return `${m}m${Math.round(s % 60)}s`
 }
 
+/** Render system messages (slash commands, api retries, informational, state changes, etc.) */
+function SystemLine({ group, time }: { group: DisplayGroup; time: string }) {
+  const entry = group.entries[0] as Record<string, unknown>
+  const sub = group.systemSubtype || ''
+  const content = (entry.content as string) || ''
+
+  let text = ''
+  let color = 'text-muted-foreground'
+
+  switch (sub) {
+    case 'local_command':
+      text = content
+      if (content.startsWith('Unknown skill') || content.startsWith('Error') || content.startsWith('Failed'))
+        color = 'text-red-400'
+      break
+    case 'api_retry':
+      text = `API retry ${entry.attempt}/${entry.max_retries} (${entry.error_status || 'timeout'}) - retrying in ${Math.ceil((entry.retry_delay_ms as number) / 1000)}s`
+      color = 'text-amber-400'
+      break
+    case 'informational':
+      text = content
+      color = 'text-cyan-400/70'
+      break
+    case 'compact_boundary':
+      text = 'Context compacted'
+      color = 'text-purple-400/70'
+      break
+    case 'session_state_changed':
+      text = `Session: ${entry.state}`
+      color = 'text-muted-foreground/70'
+      break
+    case 'task_notification': {
+      const status = entry.status as string
+      const summary = entry.summary as string
+      text = `Task ${status}${summary ? `: ${summary}` : ''}`
+      color = status === 'completed' ? 'text-emerald-400' : status === 'failed' ? 'text-red-400' : 'text-amber-400'
+      break
+    }
+    case 'task_progress': {
+      const desc = (entry.description as string) || ''
+      const tokens = (entry.usage as Record<string, unknown>)?.total_tokens
+      text = `${desc}${tokens ? ` (${tokens} tokens)` : ''}`
+      color = 'text-muted-foreground/70'
+      break
+    }
+    case 'turn_duration':
+      text = `Turn: ${formatDuration((entry.duration_ms as number) / 1000)}${entry.duration_api_ms ? ` (API: ${formatDuration((entry.duration_api_ms as number) / 1000)})` : ''}`
+      color = 'text-muted-foreground/50'
+      break
+    case 'memory_saved':
+      text = 'Memory saved'
+      color = 'text-cyan-400/70'
+      break
+    case 'agents_killed':
+      text = 'Background agents stopped'
+      color = 'text-red-400/70'
+      break
+    case 'permission_retry':
+      text = `Allowed: ${(entry.commands as string[])?.join(', ') || content}`
+      color = 'text-green-400/70'
+      break
+    case 'scheduled_task_fire':
+      text = content || 'Scheduled task fired'
+      color = 'text-muted-foreground'
+      break
+    default:
+      text = content || `[${sub}]`
+      break
+  }
+
+  if (!text) return null
+
+  return (
+    <div className="mb-1 flex items-center justify-center gap-2 text-[10px]">
+      <span className={color}>{text}</span>
+      <span className="text-muted-foreground/40">{time}</span>
+    </div>
+  )
+}
+
 function TaskNotificationLine({ notification: n, time }: { notification: TaskNotification; time: string }) {
   const [expanded, setExpanded] = useState(false)
   const statusColor =
@@ -144,14 +224,8 @@ export function GroupView({
     )
   }
 
-  if (group.type === 'system' && group.localCommandOutput) {
-    const isError = group.localCommandOutput.startsWith('Unknown skill')
-    return (
-      <div className="mb-2 flex items-center justify-center gap-2 text-[10px]">
-        <span className={isError ? 'text-red-400' : 'text-muted-foreground'}>{group.localCommandOutput}</span>
-        <span className="text-muted-foreground/50">{time}</span>
-      </div>
-    )
+  if (group.type === 'system' && group.systemSubtype) {
+    return <SystemLine group={group} time={time} />
   }
 
   const isUser = group.type === 'user'

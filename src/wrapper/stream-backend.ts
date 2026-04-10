@@ -240,6 +240,12 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
     replayBuffer = []
   }
 
+  /** Strip transport-only fields, keep everything CC sent */
+  function extractSystemFields(msg: Record<string, unknown>): Record<string, unknown> {
+    const { type: _t, subtype: _s, session_id: _sid, ...rest } = msg
+    return rest
+  }
+
   // Line buffer for NDJSON parsing
   let lineBuf = ''
 
@@ -262,30 +268,88 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
     switch (type) {
       case 'system': {
         const subtype = msg.subtype as string
+        const ts = new Date().toISOString()
+
         if (subtype === 'init') {
           debug(`init: session=${(msg.session_id as string)?.slice(0, 8)} model=${msg.model}`)
           onInit?.(msg as unknown as StreamInitMessage)
-        } else if (subtype === 'task_started') {
+          break
+        }
+
+        if (subtype === 'task_started') {
           const taskType = msg.task_type as string
           const taskId = msg.task_id as string
           const toolUseId = msg.tool_use_id as string
           const description = (msg.description as string) || ''
           debug(`task_started: ${taskType} id=${taskId?.slice(0, 8)} ${description.slice(0, 40)}`)
           onTaskStarted?.({ taskId, toolUseId, taskType, description })
-        } else if (subtype === 'local_command_output') {
-          // Slash command results (e.g. /effort, /cost, /voice, or "Unknown skill: X")
-          const content = (msg.content as string) || ''
-          debug(`local_command_output: ${content.slice(0, 80)}`)
-          if (!replayDone) flushReplayBuffer()
-          const entry: TranscriptEntry = {
-            type: 'system',
-            subtype: 'local_command',
-            timestamp: new Date().toISOString(),
-            content,
-          } as TranscriptEntry
-          onTranscriptEntries?.([entry], false)
+          break
         }
-        // Hook events (hook_started, hook_response) are informational - hooks still fire via HTTP
+
+        // Hook events are informational -- hooks still fire via HTTP
+        if (subtype === 'hook_started' || subtype === 'hook_response') break
+
+        // Everything below produces a transcript entry for the dashboard
+        if (!replayDone) flushReplayBuffer()
+
+        // Build a system transcript entry preserving all fields from CC
+        const systemEntry = {
+          type: 'system' as const,
+          subtype,
+          timestamp: ts,
+          ...extractSystemFields(msg),
+        } as TranscriptEntry
+
+        switch (subtype) {
+          case 'local_command_output':
+            debug(`local_command_output: ${((msg.content as string) || '').slice(0, 80)}`)
+            // Remap to 'local_command' subtype (matches JSONL transcript format)
+            ;(systemEntry as Record<string, unknown>).subtype = 'local_command'
+            break
+          case 'api_retry':
+            debug(
+              `api_retry: attempt=${msg.attempt}/${msg.max_retries} delay=${msg.retry_delay_ms}ms status=${msg.error_status}`,
+            )
+            break
+          case 'informational':
+            debug(`informational: ${((msg.content as string) || '').slice(0, 80)}`)
+            break
+          case 'compact_boundary':
+            debug('compact_boundary')
+            break
+          case 'session_state_changed':
+            debug(`session_state_changed: ${msg.state}`)
+            break
+          case 'task_notification':
+            debug(`task_notification: task=${msg.task_id} status=${msg.status}`)
+            break
+          case 'task_progress':
+            debug(`task_progress: task=${msg.task_id} tokens=${(msg.usage as Record<string, unknown>)?.total_tokens}`)
+            break
+          case 'turn_duration':
+            debug(`turn_duration: ${JSON.stringify(msg.duration_ms ?? msg)}`)
+            break
+          case 'memory_saved':
+            debug('memory_saved')
+            break
+          case 'agents_killed':
+            debug('agents_killed')
+            break
+          case 'permission_retry':
+            debug(`permission_retry: ${msg.content}`)
+            break
+          case 'post_turn_summary':
+            debug(`post_turn_summary: ${msg.status_category} "${(msg.title as string)?.slice(0, 40)}"`)
+            break
+          case 'scheduled_task_fire':
+            debug(`scheduled_task_fire: ${msg.content}`)
+            break
+          default:
+            debug(`system/${subtype}: ${JSON.stringify(msg).slice(0, 120)}`)
+            break
+        }
+
+        onTranscriptEntries?.([systemEntry], false)
         break
       }
 
