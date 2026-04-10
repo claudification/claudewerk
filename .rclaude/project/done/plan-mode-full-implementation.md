@@ -158,8 +158,10 @@ Wrapper sends `plan_mode_changed` message on approve/exit.
    that reads the most recently modified `.md` from that directory as fallback when
    `input.plan` is empty. Verified by reading CC 2.1.97 source: `ExitPlanModeInput` schema
    has only `allowedPrompts`; `plan`/`planFilePath` are in an extended schema marked
-   "injected by normalizeToolInput from disk" but this injection may not happen before
-   the `can_use_tool` control_request is sent.
+   "injected by normalizeToolInput from disk". **UPDATE:** Confirmed from real payload
+   that CC DOES inject both `plan` (full markdown) and `planFilePath` (exact path) into
+   the `can_use_tool` input. Removed the `readLatestPlanFile()` directory scan hack.
+   Fallback: read from `planFilePath` if `plan` is empty; hard fallback to placeholder.
 
 ### Files modified
 
@@ -178,3 +180,43 @@ Wrapper sends `plan_mode_changed` message on approve/exit.
 | `web/src/hooks/use-websocket.ts` | Added `plan_approval` case: builds DialogLayout from plan content, stores with `source: 'plan_approval'`; maps `planMode` from summary |
 | `web/src/components/session-list.tsx` | Blue PLAN badge in sidebar |
 | `web/src/components/session-detail.tsx` | Blue PLAN badge in header; `bg-blue-950/20` transcript tint |
+
+### Testing
+
+**Unit tests (permission-rules.test.ts):**
+- `isPlanModeAllowed()` returns true by default
+- `isPlanModeAllowed()` returns false when `allowPlanMode: false` in rclaude.json
+- `isPlanModeAllowed()` returns false when `RCLAUDE_NO_PLAN_MODE=1`
+
+**Integration test (simulated control_request):**
+- Simulate `can_use_tool` with `tool_name: "EnterPlanMode"` -> verify auto-approve
+  sent back, `plan_mode_changed` WS message sent with `planMode: true`
+- Simulate `can_use_tool` with `tool_name: "ExitPlanMode"` + plan content in input
+  -> verify `plan_approval` WS message sent with plan content
+- Simulate `plan_approval_response` from concentrator with `action: "approve"`
+  -> verify `control_response` sent to CC with `behavior: "allow"`
+- Simulate `plan_approval_response` with `action: "feedback"` + feedback text
+  -> verify `control_response` sent with `behavior: "allow"` + `updatedInput: { feedback }`
+- Simulate `plan_approval_response` with `action: "reject"`
+  -> verify `control_response` sent with `behavior: "deny"`
+
+**End-to-end (manual, live session):**
+1. Build: `bun run build`
+2. Deploy concentrator: `docker compose build && docker compose up -d`
+3. Start headless session: `rclaude --headless`
+4. Tell Claude: "Enter plan mode and create a plan for adding a health check endpoint"
+5. Verify: sidebar shows blue PLAN badge, transcript has blue tint
+6. Wait for ExitPlanMode -> verify approval dialog appears in dashboard
+7. Test Approve -> verify Claude continues with implementation
+8. Repeat, test Reject -> verify Claude gets denial
+9. Repeat, test Approve with feedback -> verify Claude gets feedback text
+10. Test `allowPlanMode: false` in `.rclaude/rclaude.json` -> verify EnterPlanMode denied
+11. Test spawned session with `RCLAUDE_NO_PLAN_MODE=1` -> verify denied
+
+**Dashboard visual checks:**
+- PLAN badge appears in sidebar when planMode is true
+- PLAN badge appears in session header info bar
+- Transcript container has `bg-blue-950/20` tint during plan mode
+- Approval dialog renders plan markdown correctly (headers, code blocks, etc.)
+- Dialog has Approve/Reject options + optional feedback textarea
+- Badges/tint clear when plan mode exits
