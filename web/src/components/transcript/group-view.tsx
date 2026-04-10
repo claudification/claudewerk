@@ -7,6 +7,7 @@ import { memo, useState } from 'react'
 import { useSessionsStore } from '@/hooks/use-sessions'
 import type { TranscriptContentBlock, TranscriptImage, TranscriptToolUseResult } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
+import { JsonInspector } from '../json-inspector'
 
 // Chat bubble color presets - keys match dashboardPrefs.chatBubbleColor
 const BUBBLE_COLORS: Record<string, string> = {
@@ -91,10 +92,16 @@ function SystemLine({ group, time }: { group: DisplayGroup; time: string }) {
       color = 'text-muted-foreground/70'
       break
     }
-    case 'turn_duration':
-      text = `Turn: ${formatDuration((entry.duration_ms as number) / 1000)}${entry.duration_api_ms ? ` (API: ${formatDuration((entry.duration_api_ms as number) / 1000)})` : ''}`
+    case 'turn_duration': {
+      const dMs = (entry.durationMs as number) || (entry.duration_ms as number) || 0
+      const dApiMs = (entry.durationApiMs as number) || (entry.duration_api_ms as number)
+      const msgCount = entry.messageCount as number
+      text = dMs
+        ? `Turn: ${formatDuration(dMs / 1000)}${dApiMs ? ` (API: ${formatDuration(dApiMs / 1000)})` : ''}${msgCount ? ` -- ${msgCount} messages` : ''}`
+        : 'Turn ended'
       color = 'text-muted-foreground/50'
       break
+    }
     case 'memory_saved':
       text = 'Memory saved'
       color = 'text-cyan-400/70'
@@ -107,6 +114,15 @@ function SystemLine({ group, time }: { group: DisplayGroup; time: string }) {
       text = `Allowed: ${(entry.commands as string[])?.join(', ') || content}`
       color = 'text-green-400/70'
       break
+    case 'stop_hook_summary': {
+      const reason = (entry.stopReason as string) || (entry.stop_reason as string) || 'end_turn'
+      const numTurns = (entry.numTurns as number) || (entry.num_turns as number)
+      const parts = [`Stop: ${reason}`]
+      if (numTurns) parts.push(`${numTurns} turns`)
+      text = parts.join(' -- ')
+      color = 'text-muted-foreground/50'
+      break
+    }
     case 'scheduled_task_fire':
       text = content || 'Scheduled task fired'
       color = 'text-muted-foreground'
@@ -122,6 +138,7 @@ function SystemLine({ group, time }: { group: DisplayGroup; time: string }) {
     <div className="mb-1 flex items-center justify-center gap-2 text-[10px]">
       <span className={color}>{text}</span>
       <span className="text-muted-foreground/40">{time}</span>
+      <JsonInspector title={sub || 'system'} data={entry as Record<string, unknown>} />
     </div>
   )
 }
