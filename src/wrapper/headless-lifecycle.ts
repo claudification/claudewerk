@@ -15,7 +15,10 @@ const debug = (msg: string) => _debug(msg)
 
 export interface HeadlessCallbackDeps {
   ctx: WrapperContext
-  permissionRules: { shouldAutoApprove: (toolName: string, inputPreview: string) => boolean }
+  permissionRules: {
+    shouldAutoApprove: (toolName: string, inputPreview: string) => boolean
+    isPlanModeAllowed: () => boolean
+  }
   finalClaudeArgs: string[]
   settingsPath: string
   localServerPort: number
@@ -150,21 +153,49 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
       const inputStr = JSON.stringify(request.toolInput)
       const toolUseId = request.tool_use_id as string | undefined
 
-      // EnterPlanMode / ExitPlanMode: auto-approve immediately.
-      // These are user-initiated (Claude called them because the user asked).
-      // Full plan mode UI (review plan, give feedback) is a separate task.
-      if (request.toolName === 'EnterPlanMode' || request.toolName === 'ExitPlanMode') {
+      // EnterPlanMode: check allowPlanMode config, approve or deny
+      if (request.toolName === 'EnterPlanMode') {
+        const sessionId = ctx.claudeSessionId || ctx.internalId
+        if (!permissionRules.isPlanModeAllowed()) {
+          ctx.streamProc?.sendPermissionResponse(request.requestId, false, undefined, toolUseId)
+          ctx.diag('headless', 'EnterPlanMode denied: allowPlanMode is false')
+          return
+        }
         ctx.streamProc?.sendPermissionResponse(request.requestId, true, undefined, toolUseId)
-        ctx.diag('headless', `Plan mode auto-approved: ${request.toolName}`)
+        ctx.diag('headless', 'EnterPlanMode approved')
         if (ctx.wsClient?.isConnected()) {
           ctx.wsClient.send({
-            type: 'permission_auto_approved',
-            sessionId: ctx.claudeSessionId || ctx.internalId,
-            requestId: request.requestId,
-            toolName: request.toolName,
-            description: request.toolName,
+            type: 'plan_mode_changed',
+            sessionId,
+            planMode: true,
           } as unknown as WrapperMessage)
         }
+        return
+      }
+
+      // ExitPlanMode: intercept and forward plan to dashboard for approval
+      if (request.toolName === 'ExitPlanMode') {
+        const sessionId = ctx.claudeSessionId || ctx.internalId
+        const plan = (request.toolInput?.plan as string) || ''
+        const planFilePath = request.toolInput?.planFilePath as string | undefined
+        const allowedPrompts = request.toolInput?.allowedPrompts as string[] | undefined
+
+        // Store pending request for response routing
+        const pendingKey = `plan_${request.requestId}`
+        ctx.pendingAskRequests.set(pendingKey, { requestId: request.requestId, questions: [] })
+
+        if (ctx.wsClient?.isConnected()) {
+          ctx.wsClient.send({
+            type: 'plan_approval',
+            sessionId,
+            requestId: request.requestId,
+            toolUseId,
+            plan,
+            planFilePath,
+            allowedPrompts,
+          } as unknown as WrapperMessage)
+        }
+        ctx.diag('headless', `ExitPlanMode: forwarded for approval (${request.requestId.slice(0, 8)})`)
         return
       }
 

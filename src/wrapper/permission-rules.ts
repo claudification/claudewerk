@@ -23,6 +23,7 @@ interface PermissionConfig {
     Edit?: FileRule
     Read?: FileRule
   }
+  allowPlanMode?: boolean // default: true
 }
 
 interface RulesEngine {
@@ -31,6 +32,7 @@ interface RulesEngine {
   removeSessionRule(toolName: string): void
   getSessionRules(): string[]
   getProjectRulesSummary(): Record<string, string[]>
+  isPlanModeAllowed(): boolean
 }
 
 function matchGlob(pattern: string, value: string): boolean {
@@ -125,6 +127,13 @@ export function createRulesEngine(cwd: string): RulesEngine {
         if (patterns?.length) summary[tool] = patterns
       }
       return summary
+    },
+
+    isPlanModeAllowed(): boolean {
+      // Env var override for spawned sessions
+      if (process.env.RCLAUDE_NO_PLAN_MODE === '1') return false
+      // rclaude.json setting (default: true)
+      return projectRules.allowPlanMode !== false
     },
   }
 }

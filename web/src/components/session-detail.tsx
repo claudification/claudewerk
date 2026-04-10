@@ -939,6 +939,11 @@ export function SessionDetail() {
                         ) : null
                       })()}
                   </span>
+                  {session.planMode && (
+                    <span className="text-[10px] text-blue-400 font-bold ml-1 px-1 py-0.5 bg-blue-500/10 rounded">
+                      PLAN
+                    </span>
+                  )}
                   {session.tokenUsage &&
                     (() => {
                       const { input, cacheCreation, cacheRead } = session.tokenUsage
@@ -1543,7 +1548,12 @@ export function SessionDetail() {
           )}
 
           {!conversationTarget && (activeTab === 'transcript' || (activeTab === 'tty' && !hasTerminal)) && (
-            <div className="flex-1 min-h-0 overflow-hidden relative">
+            <div
+              className={cn(
+                'flex-1 min-h-0 overflow-hidden relative transition-colors duration-300',
+                session?.planMode && 'bg-blue-950/20',
+              )}
+            >
               <TranscriptView
                 key={selectedSessionId}
                 entries={transcript}

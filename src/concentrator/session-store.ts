@@ -495,6 +495,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       effortLevel: session.effortLevel,
       lastError: session.lastError,
       rateLimit: session.rateLimit,
+      planMode: session.planMode || undefined,
       pendingAttention: session.pendingAttention,
       hasNotification: session.hasNotification,
       summary: session.summary,
@@ -1426,6 +1427,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     const session = sessions.get(sessionId)
     if (session) {
       session.status = 'ended'
+      session.planMode = false
 
       // Mark all running subagents as stopped (SubagentStop hook may not fire)
       for (const agent of session.subagents) {

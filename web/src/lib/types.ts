@@ -67,8 +67,9 @@ export interface Session {
   effortLevel?: string
   lastError?: { stopReason?: string; errorType?: string; errorMessage?: string; timestamp: number }
   rateLimit?: { retryAfterMs: number; message: string; timestamp: number }
+  planMode?: boolean
   pendingAttention?: {
-    type: 'permission' | 'elicitation' | 'ask' | 'dialog'
+    type: 'permission' | 'elicitation' | 'ask' | 'dialog' | 'plan_approval'
     toolName?: string
     filePath?: string
     question?: string

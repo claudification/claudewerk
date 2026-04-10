@@ -295,6 +295,7 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
           {session.rateLimit && !session.lastError && (
             <span className="text-[9px] text-amber-400 font-bold">THROTTLED</span>
           )}
+          {session.planMode && <span className="text-[9px] text-blue-400 font-bold">PLAN</span>}
           {session.pendingAttention && (
             <span className="text-[9px] text-amber-400 font-bold animate-pulse">WAITING</span>
           )}

@@ -10,6 +10,7 @@ import { registerDialogHandlers } from './dialog'
 import { registerFileHandlers } from './files'
 import { registerInterSessionHandlers } from './inter-session'
 import { registerPermissionHandlers } from './permissions'
+import { registerPlanApprovalHandlers } from './plan-approval'
 import { registerSessionLifecycleHandlers } from './session-lifecycle'
 import { registerTerminalHandlers } from './terminal'
 import { registerTranscriptHandlers } from './transcript'
@@ -23,6 +24,7 @@ export function registerAllHandlers(): void {
   registerFileHandlers()
   registerInterSessionHandlers()
   registerPermissionHandlers()
+  registerPlanApprovalHandlers()
   registerSessionLifecycleHandlers()
   registerTerminalHandlers()
   registerTranscriptHandlers()

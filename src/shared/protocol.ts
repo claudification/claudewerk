@@ -299,6 +299,8 @@ export type WrapperMessage =
   | ClipboardCapture
   | DialogShowMessage
   | DialogDismissMessage
+  | PlanApprovalRequest
+  | PlanModeChanged
   | StreamDelta
   | WrapperRateLimit
   | SessionInfoUpdate
@@ -508,6 +510,33 @@ export interface DialogDismissMessage {
   dialogId: string
 }
 
+// Plan approval relay (headless: ExitPlanMode -> wrapper -> concentrator -> dashboard -> back)
+export interface PlanApprovalRequest {
+  type: 'plan_approval'
+  sessionId: string
+  requestId: string // control_request request_id from CC
+  toolUseId?: string
+  plan: string // the plan content (markdown)
+  planFilePath?: string
+  allowedPrompts?: string[]
+}
+
+export interface PlanApprovalResponse {
+  type: 'plan_approval_response'
+  sessionId: string
+  requestId: string
+  toolUseId?: string
+  action: 'approve' | 'reject' | 'feedback'
+  feedback?: string // user feedback text (when action === 'feedback')
+  [key: string]: unknown // WS JSON boundary
+}
+
+export interface PlanModeChanged {
+  type: 'plan_mode_changed'
+  sessionId: string
+  planMode: boolean
+}
+
 // Permission relay (CC -> channel -> dashboard -> channel -> CC)
 export interface PermissionRequest {
   type: 'permission_request'
@@ -547,6 +576,7 @@ export type ConcentratorMessage =
   | AskQuestionResponse
   | QuitSession
   | DialogResultMessage
+  | PlanApprovalResponse
 
 export interface SendInterrupt {
   type: 'interrupt'
@@ -757,6 +787,7 @@ export interface ProjectSettings {
   trustLevel?: 'default' | 'open' | 'benevolent' // open = accepts from anyone, benevolent = can message anyone
   defaultLaunchMode?: 'headless' | 'pty'
   defaultEffort?: 'default' | 'low' | 'medium' | 'high' | 'max' // 'default' = don't pass --effort flag
+  allowPlanMode?: boolean // default: true. Set false to auto-deny EnterPlanMode
 }
 
 // File metadata for the file editor
@@ -813,12 +844,13 @@ export interface Session {
   lastError?: { stopReason?: string; errorType?: string; errorMessage?: string; timestamp: number }
   rateLimit?: { retryAfterMs: number; message: string; timestamp: number }
   pendingAttention?: {
-    type: 'permission' | 'elicitation' | 'ask' | 'dialog'
+    type: 'permission' | 'elicitation' | 'ask' | 'dialog' | 'plan_approval'
     toolName?: string
     filePath?: string
     question?: string
     timestamp: number
   }
+  planMode?: boolean // true when session is in plan mode (EnterPlanMode approved, not yet exited)
   hasNotification?: boolean // unread notification (cleared when session is viewed)
   pendingDialog?: { dialogId: string; layout: import('./dialog-schema').DialogLayout; timestamp: number }
   tokenUsage?: { input: number; cacheCreation: number; cacheRead: number; output: number }
@@ -968,6 +1000,7 @@ export interface SessionSummary {
   effortLevel?: string
   lastError?: Session['lastError']
   rateLimit?: Session['rateLimit']
+  planMode?: boolean
   pendingAttention?: Session['pendingAttention']
   hasNotification?: boolean
   summary?: string

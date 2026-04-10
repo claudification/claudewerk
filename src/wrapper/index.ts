@@ -926,6 +926,31 @@ async function main() {
       onDialogKeepalive(dialogId) {
         keepaliveDialog(dialogId)
       },
+      onPlanApprovalResponse(requestId, action, feedback, toolUseId) {
+        if (!headless || !ctx.streamProc) return
+        const pendingKey = `plan_${requestId}`
+        ctx.pendingAskRequests.delete(pendingKey)
+
+        const sessionId = ctx.claudeSessionId || ctx.internalId
+        if (action === 'approve') {
+          ctx.streamProc.sendPermissionResponse(requestId, true, undefined, toolUseId)
+          diag('plan', `Plan approved: ${requestId.slice(0, 8)}`)
+        } else if (action === 'feedback') {
+          ctx.streamProc.sendPermissionResponse(requestId, true, { feedback: feedback || '' }, toolUseId)
+          diag('plan', `Plan approved with feedback: ${requestId.slice(0, 8)}`)
+        } else {
+          ctx.streamProc.sendPermissionResponse(requestId, false, undefined, toolUseId)
+          diag('plan', `Plan rejected: ${requestId.slice(0, 8)}`)
+        }
+        // Broadcast plan mode exit
+        if (ctx.wsClient?.isConnected()) {
+          ctx.wsClient.send({
+            type: 'plan_mode_changed',
+            sessionId,
+            planMode: false,
+          } as unknown as WrapperMessage)
+        }
+      },
       onRendezvousResult(message: Record<string, unknown>) {
         const msgType = message.type as string
         const sessionId = message.sessionId as string | undefined

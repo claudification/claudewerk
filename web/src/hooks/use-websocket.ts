@@ -94,6 +94,7 @@ function toSession(summary: SessionSummary): Session {
     effortLevel: summary.effortLevel,
     lastError: summary.lastError,
     rateLimit: summary.rateLimit,
+    planMode: summary.planMode,
     pendingAttention: summary.pendingAttention,
     hasNotification: summary.hasNotification,
     summary: summary.summary,
@@ -604,6 +605,61 @@ function processMessage(msg: DashboardMessage) {
           delete updated[exSid]
           return { pendingDialogs: updated }
         })
+      }
+      break
+    }
+    case 'plan_approval': {
+      const pa = msg as DashboardMessage & {
+        requestId?: string
+        toolUseId?: string
+        plan?: string
+        planFilePath?: string
+        allowedPrompts?: string[]
+      }
+      const paSid = pa.sessionId
+      if (paSid && pa.requestId && pa.plan) {
+        // Build a dialog layout from the plan content
+        const layout: import('@shared/dialog-schema').DialogLayout = {
+          title: 'Plan Approval',
+          timeout: 600,
+          submitLabel: 'Approve',
+          cancelLabel: 'Reject',
+          body: [
+            { type: 'Alert', intent: 'info', content: 'Claude wants to exit plan mode and execute this plan.' },
+            { type: 'Markdown', content: pa.plan },
+            { type: 'Divider' },
+            {
+              type: 'TextInput',
+              id: 'feedback',
+              label: 'Feedback (optional)',
+              placeholder: 'Suggestions, changes, or additional instructions...',
+              multiline: true,
+            },
+            {
+              type: 'Options',
+              id: '_action',
+              options: [
+                { value: 'approve', label: 'Approve', description: 'Execute the plan as-is' },
+                { value: 'reject', label: 'Reject', description: 'Reject the plan entirely' },
+              ],
+              default: 'approve',
+            },
+          ],
+        }
+        const dialogId = `plan_${pa.requestId}`
+        useSessionsStore.setState(state => ({
+          pendingDialogs: {
+            ...state.pendingDialogs,
+            [paSid]: {
+              dialogId,
+              layout,
+              timestamp: Date.now(),
+              source: 'plan_approval',
+              meta: { requestId: pa.requestId, toolUseId: pa.toolUseId },
+            },
+          },
+        }))
+        haptic('double')
       }
       break
     }

@@ -78,6 +78,12 @@ export interface WsClientOptions {
   ) => void
   onDialogResult?: (dialogId: string, result: import('../shared/dialog-schema').DialogResult) => void
   onDialogKeepalive?: (dialogId: string) => void
+  onPlanApprovalResponse?: (
+    requestId: string,
+    action: 'approve' | 'reject' | 'feedback',
+    feedback?: string,
+    toolUseId?: string,
+  ) => void
   onQuitSession?: () => void
   onInterrupt?: () => void
 }
@@ -141,6 +147,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
     onAskAnswer,
     onDialogResult,
     onDialogKeepalive,
+    onPlanApprovalResponse,
     onQuitSession,
     onInterrupt,
   } = options
@@ -311,6 +318,9 @@ export function createWsClient(options: WsClientOptions): WsClient {
               break
             case 'dialog_result':
               onDialogResult?.(message.dialogId, message.result)
+              break
+            case 'plan_approval_response':
+              onPlanApprovalResponse?.(message.requestId, message.action, message.feedback, message.toolUseId)
               break
             case 'interrupt':
               onInterrupt?.()

@@ -147,6 +147,8 @@ interface SessionsState {
       dialogId: string
       layout: import('@shared/dialog-schema').DialogLayout
       timestamp: number
+      source?: 'mcp' | 'plan_approval'
+      meta?: Record<string, unknown> // requestId, toolUseId, etc.
     }
   >
   submitDialog: (sessionId: string, dialogId: string, result: import('@shared/dialog-schema').DialogResult) => void
@@ -379,16 +381,32 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   },
   pendingDialogs: {},
   submitDialog: (sessionId, dialogId, result) => {
-    const { ws } = get()
+    const { ws, pendingDialogs } = get()
+    const pending = pendingDialogs[sessionId]
     if (ws?.readyState === WebSocket.OPEN) {
-      const msg = JSON.stringify({
-        type: 'dialog_result',
-        sessionId,
-        dialogId,
-        result,
-      })
-      ws.send(msg)
-      recordOut(msg.length)
+      if (pending?.source === 'plan_approval' && pending.meta) {
+        // Plan approval: route as plan_approval_response instead of dialog_result
+        const action = result._action === 'reject' ? 'reject' : result.feedback ? 'feedback' : 'approve'
+        const msg = JSON.stringify({
+          type: 'plan_approval_response',
+          sessionId,
+          requestId: pending.meta.requestId,
+          toolUseId: pending.meta.toolUseId,
+          action,
+          feedback: result.feedback || undefined,
+        })
+        ws.send(msg)
+        recordOut(msg.length)
+      } else {
+        const msg = JSON.stringify({
+          type: 'dialog_result',
+          sessionId,
+          dialogId,
+          result,
+        })
+        ws.send(msg)
+        recordOut(msg.length)
+      }
     }
     set(state => {
       const updated = { ...state.pendingDialogs }
@@ -397,16 +415,30 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     })
   },
   dismissDialog: (sessionId, dialogId) => {
-    const { ws } = get()
+    const { ws, pendingDialogs } = get()
+    const pending = pendingDialogs[sessionId]
     if (ws?.readyState === WebSocket.OPEN) {
-      const msg = JSON.stringify({
-        type: 'dialog_result',
-        sessionId,
-        dialogId,
-        result: { _action: 'submit', _timeout: false, _cancelled: true },
-      })
-      ws.send(msg)
-      recordOut(msg.length)
+      if (pending?.source === 'plan_approval' && pending.meta) {
+        // Plan approval dismiss = reject
+        const msg = JSON.stringify({
+          type: 'plan_approval_response',
+          sessionId,
+          requestId: pending.meta.requestId,
+          toolUseId: pending.meta.toolUseId,
+          action: 'reject',
+        })
+        ws.send(msg)
+        recordOut(msg.length)
+      } else {
+        const msg = JSON.stringify({
+          type: 'dialog_result',
+          sessionId,
+          dialogId,
+          result: { _action: 'submit', _timeout: false, _cancelled: true },
+        })
+        ws.send(msg)
+        recordOut(msg.length)
+      }
     }
     set(state => {
       const updated = { ...state.pendingDialogs }
