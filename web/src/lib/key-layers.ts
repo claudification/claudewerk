@@ -146,8 +146,10 @@ function dispatch(e: KeyboardEvent) {
   // Single-key dispatch with layer resolution
   const isModified = hasModifier(normalized)
 
-  // For non-modifier keys in text inputs, bail (let the input handle it)
-  if (inTextInput && !isModified) return
+  // For printable keys in text inputs, bail (let the input handle it).
+  // Non-printable keys (Escape, arrows, etc.) and modifier combos always pass through.
+  const isNonPrintable = e.key.length > 1 // 'Escape', 'ArrowDown', 'Enter', etc.
+  if (inTextInput && !isModified && !isNonPrintable) return
 
   for (let i = layers.length - 1; i >= 0; i--) {
     const layer = layers[i]

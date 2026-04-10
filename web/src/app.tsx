@@ -28,6 +28,7 @@ import {
   fetchSessionEvents,
   fetchSessionOrder,
   fetchTranscript,
+  sendInput,
   useSessionsStore,
   wsSend,
 } from '@/hooks/use-sessions'
@@ -417,6 +418,56 @@ function Dashboard() {
       }
     },
     { label: 'Interrupt current turn', shortcut: 'Escape Escape', group: 'Session' },
+  )
+
+  useCommand(
+    'clear-reload',
+    async () => {
+      const { clearCacheAndReload } = await import('@/lib/utils')
+      clearCacheAndReload()
+    },
+    { label: 'Clear cache & reload', group: 'System' },
+  )
+
+  useCommand('settings', () => window.dispatchEvent(new Event('open-settings')), { label: 'Settings', group: 'System' })
+
+  useCommand('manage-users', () => window.dispatchEvent(new Event('open-user-admin')), {
+    label: 'Manage users',
+    group: 'System',
+    when: () => useSessionsStore.getState().permissions.canEditUsers,
+  })
+
+  useCommand(
+    'effort-low',
+    () => {
+      const sid = useSessionsStore.getState().selectedSessionId
+      if (sid) sendInput(sid, '/effort low')
+    },
+    { label: 'Set effort: low', group: 'Session' },
+  )
+  useCommand(
+    'effort-medium',
+    () => {
+      const sid = useSessionsStore.getState().selectedSessionId
+      if (sid) sendInput(sid, '/effort medium')
+    },
+    { label: 'Set effort: medium', group: 'Session' },
+  )
+  useCommand(
+    'effort-high',
+    () => {
+      const sid = useSessionsStore.getState().selectedSessionId
+      if (sid) sendInput(sid, '/effort high')
+    },
+    { label: 'Set effort: high', group: 'Session' },
+  )
+  useCommand(
+    'effort-max',
+    () => {
+      const sid = useSessionsStore.getState().selectedSessionId
+      if (sid) sendInput(sid, '/effort max')
+    },
+    { label: 'Set effort: max', group: 'Session' },
   )
 
   function handleSwitcherSelect(id: string) {
