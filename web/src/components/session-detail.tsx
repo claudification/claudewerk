@@ -573,26 +573,9 @@ const InputBar = memo(function InputBar({ sessionId }: { sessionId: string }) {
       setInputValue(text)
       useSessionsStore.getState().setInputDraft(sessionId, text)
     } else {
-      // Defensive re-clear
+      // Defensive re-clear (optimistic transcript entry now handled inside sendInput)
       setInputValue('')
       useSessionsStore.getState().setInputDraft(sessionId, '')
-      // Headless: inject optimistic user entry so it appears immediately
-      // (PTY sessions get this from the UserPromptSubmit hook instead)
-      const sess = useSessionsStore.getState().sessions.find(s => s.id === sessionId)
-      if (sess && !canTerminal(sess)) {
-        const optimistic: TranscriptEntry = {
-          type: 'user',
-          timestamp: new Date().toISOString(),
-          message: { role: 'user', content: text },
-        } as TranscriptEntry
-        useSessionsStore.setState(state => {
-          const existing = state.transcripts[sessionId] || []
-          return {
-            transcripts: { ...state.transcripts, [sessionId]: [...existing, optimistic] },
-            newDataSeq: state.newDataSeq + 1,
-          }
-        })
-      }
     }
     if (!isMobileViewport()) {
       requestAnimationFrame(() => containerRef.current?.querySelector('textarea')?.focus())

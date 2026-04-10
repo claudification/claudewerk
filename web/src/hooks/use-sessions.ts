@@ -659,7 +659,28 @@ export function reviveSession(sessionId: string, headless?: boolean): boolean {
 
 export function sendInput(sessionId: string, input: string): boolean {
   const crDelay = (useSessionsStore.getState().globalSettings.carriageReturnDelay as number) || 0
-  return wsSend('send_input', { sessionId, input, ...(crDelay > 0 && { crDelay }) })
+  const ok = wsSend('send_input', { sessionId, input, ...(crDelay > 0 && { crDelay }) })
+  // Headless sessions: inject optimistic user entry so text appears immediately
+  // (PTY sessions get this from the UserPromptSubmit hook echo instead)
+  if (ok) {
+    const sess = useSessionsStore.getState().sessions.find(s => s.id === sessionId)
+    if (sess && !sess.capabilities?.includes('terminal')) {
+      useSessionsStore.setState(state => {
+        const existing = state.transcripts[sessionId] || []
+        return {
+          transcripts: {
+            ...state.transcripts,
+            [sessionId]: [
+              ...existing,
+              { type: 'user', timestamp: new Date().toISOString(), message: { role: 'user', content: input } },
+            ],
+          },
+          newDataSeq: state.newDataSeq + 1,
+        }
+      })
+    }
+  }
+  return ok
 }
 
 // Push notification subscription
