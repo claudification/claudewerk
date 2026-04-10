@@ -1554,6 +1554,11 @@ export function SessionDetail() {
                 session?.planMode && 'bg-blue-950/20',
               )}
             >
+              {session?.planMode && (
+                <div className="sticky top-0 z-10 px-3 py-1.5 bg-blue-600/20 border-b border-blue-500/30 text-blue-400 text-[11px] font-mono font-bold tracking-wider text-center backdrop-blur-sm">
+                  PLANNING MODE
+                </div>
+              )}
               <TranscriptView
                 key={selectedSessionId}
                 entries={transcript}

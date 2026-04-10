@@ -34,6 +34,7 @@ export interface DisplayGroup {
   systemSubtype?: string // system message subtype (api_retry, informational, etc.)
   queued?: boolean // user interject waiting to be consumed
   skillName?: string // skill/command name for 'skill' groups
+  planMode?: boolean // entries produced while session was in plan mode
 }
 
 // Build map of tool_use_id -> result
@@ -318,6 +319,23 @@ export function groupEntries(entries: TranscriptEntry[]): DisplayGroup[] {
       current = { type, timestamp: entry.timestamp || '', entries: [entry] }
       groups.push(current)
     }
+  }
+
+  // Tag groups between EnterPlanMode and ExitPlanMode tool calls
+  let pm = false
+  for (const g of groups) {
+    for (const e of g.entries) {
+      const blocks = (e as Record<string, unknown>).message
+        ? ((e as Record<string, unknown>).message as Record<string, unknown>)?.content
+        : undefined
+      if (Array.isArray(blocks)) {
+        for (const b of blocks) {
+          if (b.type === 'tool_use' && b.name === 'EnterPlanMode') pm = true
+          if (b.type === 'tool_use' && b.name === 'ExitPlanMode') pm = false
+        }
+      }
+    }
+    if (pm) g.planMode = true
   }
 
   return groups

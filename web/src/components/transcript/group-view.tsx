@@ -426,7 +426,7 @@ export function GroupView({
   }
 
   return (
-    <div className="mb-4">
+    <div className={cn('mb-4', group.planMode && 'border-l-2 border-blue-500/30 pl-2 bg-blue-950/10 rounded-r')}>
       <div className="flex items-center gap-2 mb-2">
         <span className={cn('text-[10px]', borderColor)}>{'┌──'}</span>
         <span
