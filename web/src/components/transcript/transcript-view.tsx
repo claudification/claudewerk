@@ -4,7 +4,7 @@
  */
 
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { Profiler, type ProfilerOnRenderCallback, useCallback, useEffect, useMemo, useRef } from 'react'
+import { memo, Profiler, type ProfilerOnRenderCallback, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useSessionsStore } from '@/hooks/use-sessions'
 import { isPerfEnabled, record } from '@/lib/perf-metrics'
 import type { TranscriptEntry } from '@/lib/types'
@@ -14,8 +14,36 @@ import { type DisplayGroup, useIncrementalGroups } from './grouping'
 
 const EMPTY_STREAMING = ''
 
+/** Isolated streaming text component - subscribes to its own store slice so token updates don't re-render the virtualizer */
+const StreamingBlock = memo(function StreamingBlock({ sessionId }: { sessionId: string | null }) {
+  const showStreaming = useSessionsStore(state => state.dashboardPrefs.showStreaming !== false)
+  const streamingText = useSessionsStore(
+    state => (sessionId ? state.streamingText[sessionId] : null) || EMPTY_STREAMING,
+  )
+  if (!showStreaming || !streamingText) return null
+  return (
+    <div className="mt-2 pl-4">
+      <div className="border-l-2 border-emerald-400/40 pl-3 py-1">
+        <div className="text-[10px] text-emerald-400/70 uppercase font-bold tracking-wider mb-1">streaming</div>
+        <div className="text-sm opacity-75">
+          <Markdown>{streamingText}</Markdown>
+          <span className="inline-block w-1.5 h-4 bg-emerald-500 animate-pulse ml-0.5 align-text-bottom" />
+        </div>
+      </div>
+    </div>
+  )
+})
+
+let lastVirtualItemCount = 0
+let lastTotalGroupCount = 0
+
 const onRenderProfile: ProfilerOnRenderCallback = (id, phase, actualDuration, baseDuration) => {
-  record('render', id, actualDuration, `${phase} base=${baseDuration.toFixed(1)}ms`)
+  record(
+    'render',
+    id,
+    actualDuration,
+    `${phase} base=${baseDuration.toFixed(1)}ms visible=${lastVirtualItemCount}/${lastTotalGroupCount}`,
+  )
 }
 
 interface TranscriptViewProps {
@@ -71,6 +99,8 @@ export function TranscriptView({
 
   // Extract plan content from entries for ExitPlanMode display.
   // Finds the last Write to a plans/*.md path across all entries.
+  // IMPORTANT: return stable reference when content hasn't changed to avoid busting memo on all GroupViews.
+  const planContextRef = useRef<{ content: string; path?: string } | undefined>(undefined)
   const planContext = useMemo(() => {
     let content: string | undefined
     let path: string | undefined
@@ -90,7 +120,11 @@ export function TranscriptView({
         }
       }
     }
-    return content ? { content, path } : undefined
+    const next = content ? { content, path } : undefined
+    const prev = planContextRef.current
+    if (prev?.content === next?.content && prev?.path === next?.path) return prev
+    planContextRef.current = next
+    return next
   }, [entries])
 
   // Lift subagents selector here (once) instead of per-GroupView (N times)
@@ -106,12 +140,7 @@ export function TranscriptView({
       ?.subagents
   }, [subagentsSummary])
 
-  // Headless streaming text - accumulates token-by-token
   const selectedSessionId = useSessionsStore(state => state.selectedSessionId)
-  const showStreaming = useSessionsStore(state => state.dashboardPrefs.showStreaming !== false)
-  const streamingText = useSessionsStore(
-    state => (selectedSessionId ? state.streamingText[selectedSessionId] : null) || EMPTY_STREAMING,
-  )
 
   const virtualizer = useVirtualizer({
     count: mainGroups.length,
@@ -243,7 +272,9 @@ export function TranscriptView({
         }}
       >
         <Profiler id="TranscriptGroups" onRender={onRenderProfile}>
-          {virtualizer.getVirtualItems().map(virtualItem => (
+          {((lastVirtualItemCount = virtualizer.getVirtualItems().length),
+          (lastTotalGroupCount = mainGroups.length),
+          virtualizer.getVirtualItems()).map(virtualItem => (
             <div
               key={virtualItem.key}
               data-index={virtualItem.index}
@@ -287,18 +318,8 @@ export function TranscriptView({
           ))}
         </Profiler>
       </div>
-      {/* Headless streaming text - shows token-by-token as they arrive */}
-      {showStreaming && streamingText && (
-        <div className="mt-2 pl-4">
-          <div className="border-l-2 border-emerald-400/40 pl-3 py-1">
-            <div className="text-[10px] text-emerald-400/70 uppercase font-bold tracking-wider mb-1">streaming</div>
-            <div className="text-sm opacity-75">
-              <Markdown>{streamingText}</Markdown>
-              <span className="inline-block w-1.5 h-4 bg-emerald-500 animate-pulse ml-0.5 align-text-bottom" />
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Headless streaming text - isolated component so token updates don't re-render the virtualizer */}
+      <StreamingBlock sessionId={selectedSessionId} />
       {/* Queued messages: rendered inline at the bottom of the transcript */}
       {queuedGroups.length > 0 && (
         <div className="mt-2 border-t border-dashed border-amber-500/30 pt-2">
