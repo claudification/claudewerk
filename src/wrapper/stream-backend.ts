@@ -77,6 +77,7 @@ export interface StreamBackendOptions {
   onRateLimit?: (retryAfterMs: number, message: string) => void
   onTaskStarted?: (task: { taskId: string; toolUseId: string; taskType: string; description: string }) => void
   onSubagentEntry?: (toolUseId: string, entry: TranscriptEntry) => void
+  onPlanModeChanged?: (planMode: boolean) => void
   onExit?: (code: number | null) => void
 }
 
@@ -144,6 +145,7 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
     onRateLimit,
     onTaskStarted,
     onSubagentEntry,
+    onPlanModeChanged,
     onExit,
   } = options
 
@@ -351,6 +353,14 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
           case 'scheduled_task_fire':
             debug(`scheduled_task_fire: ${msg.content}`)
             break
+          case 'status': {
+            const permMode = msg.permissionMode as string | undefined
+            debug(`status: permissionMode=${permMode}`)
+            if (permMode && onPlanModeChanged) {
+              onPlanModeChanged(permMode === 'plan')
+            }
+            break
+          }
           default:
             debug(`system/${subtype}: ${JSON.stringify(msg).slice(0, 120)}`)
             break

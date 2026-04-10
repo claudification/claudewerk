@@ -150,6 +150,18 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
       }
     },
 
+    onPlanModeChanged(planMode) {
+      const sessionId = ctx.claudeSessionId || ctx.internalId
+      ctx.diag('headless', `Plan mode: ${planMode ? 'ON' : 'OFF'} (from status message)`)
+      if (ctx.wsClient?.isConnected()) {
+        ctx.wsClient.send({
+          type: 'plan_mode_changed',
+          sessionId,
+          planMode,
+        } as unknown as WrapperMessage)
+      }
+    },
+
     onPermissionRequest(request) {
       const inputStr = JSON.stringify(request.toolInput)
       const toolUseId = request.tool_use_id as string | undefined
