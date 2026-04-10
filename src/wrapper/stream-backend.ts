@@ -272,6 +272,18 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
           const description = (msg.description as string) || ''
           debug(`task_started: ${taskType} id=${taskId?.slice(0, 8)} ${description.slice(0, 40)}`)
           onTaskStarted?.({ taskId, toolUseId, taskType, description })
+        } else if (subtype === 'local_command_output') {
+          // Slash command results (e.g. /effort, /cost, /voice, or "Unknown skill: X")
+          const content = (msg.content as string) || ''
+          debug(`local_command_output: ${content.slice(0, 80)}`)
+          if (!replayDone) flushReplayBuffer()
+          const entry: TranscriptEntry = {
+            type: 'system',
+            subtype: 'local_command',
+            timestamp: new Date().toISOString(),
+            content,
+          } as TranscriptEntry
+          onTranscriptEntries?.([entry], false)
         }
         // Hook events (hook_started, hook_response) are informational - hooks still fire via HTTP
         break

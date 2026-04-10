@@ -29,6 +29,7 @@ export interface DisplayGroup {
   timestamp: string
   entries: TranscriptEntry[]
   notifications?: TaskNotification[]
+  localCommandOutput?: string
   queued?: boolean // user interject waiting to be consumed
   skillName?: string // skill/command name for 'skill' groups
 }
@@ -178,6 +179,21 @@ export function groupEntries(entries: TranscriptEntry[]): DisplayGroup[] {
             if (entry.operation !== 'popAll') break
           }
         }
+      }
+      continue
+    }
+
+    // Local command output (slash command results like /effort, /cost, or "Unknown skill: X")
+    if (entry.type === 'system' && (entry as Record<string, unknown>).subtype === 'local_command') {
+      const content = (entry as Record<string, unknown>).content as string
+      if (content) {
+        current = null
+        groups.push({
+          type: 'system',
+          timestamp: entry.timestamp || '',
+          entries: [entry],
+          localCommandOutput: content,
+        })
       }
       continue
     }
@@ -421,6 +437,21 @@ export function useIncrementalGroups(entries: TranscriptEntry[]) {
               if (entry.operation !== 'popAll') break
             }
           }
+        }
+        continue
+      }
+
+      // Local command output (slash command results)
+      if (entry.type === 'system' && (entry as Record<string, unknown>).subtype === 'local_command') {
+        const lcContent = (entry as Record<string, unknown>).content as string
+        if (lcContent) {
+          lastGroup = null
+          newGroups.push({
+            type: 'system',
+            timestamp: entry.timestamp || '',
+            entries: [entry],
+            localCommandOutput: lcContent,
+          })
         }
         continue
       }

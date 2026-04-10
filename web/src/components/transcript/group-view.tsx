@@ -144,6 +144,16 @@ export function GroupView({
     )
   }
 
+  if (group.type === 'system' && group.localCommandOutput) {
+    const isError = group.localCommandOutput.startsWith('Unknown skill')
+    return (
+      <div className="mb-2 flex items-center justify-center gap-2 text-[10px]">
+        <span className={isError ? 'text-red-400' : 'text-muted-foreground'}>{group.localCommandOutput}</span>
+        <span className="text-muted-foreground/50">{time}</span>
+      </div>
+    )
+  }
+
   const isUser = group.type === 'user'
 
   type RenderItem =
