@@ -150,6 +150,24 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
       const inputStr = JSON.stringify(request.toolInput)
       const toolUseId = request.tool_use_id as string | undefined
 
+      // EnterPlanMode / ExitPlanMode: auto-approve immediately.
+      // These are user-initiated (Claude called them because the user asked).
+      // Full plan mode UI (review plan, give feedback) is a separate task.
+      if (request.toolName === 'EnterPlanMode' || request.toolName === 'ExitPlanMode') {
+        ctx.streamProc?.sendPermissionResponse(request.requestId, true, undefined, toolUseId)
+        ctx.diag('headless', `Plan mode auto-approved: ${request.toolName}`)
+        if (ctx.wsClient?.isConnected()) {
+          ctx.wsClient.send({
+            type: 'permission_auto_approved',
+            sessionId: ctx.claudeSessionId || ctx.internalId,
+            requestId: request.requestId,
+            toolName: request.toolName,
+            description: request.toolName,
+          } as unknown as WrapperMessage)
+        }
+        return
+      }
+
       // AskUserQuestion: route to dashboard ask_question UI, respond with answers
       if (request.toolName === 'AskUserQuestion' && toolUseId) {
         const questions = (request.toolInput?.questions as unknown[]) || []
