@@ -300,6 +300,13 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
           ...extractSystemFields(msg),
         } as TranscriptEntry
 
+        // Route subagent system messages to subagent transcript
+        const sysParentToolUseId = msg.parent_tool_use_id as string | null
+        if (sysParentToolUseId && onSubagentEntry) {
+          onSubagentEntry(sysParentToolUseId, systemEntry)
+          break
+        }
+
         switch (subtype) {
           case 'local_command_output':
             debug(`local_command_output: ${((msg.content as string) || '').slice(0, 80)}`)
