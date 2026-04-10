@@ -15,8 +15,15 @@
 ARGS=("$@")
 START_TIME=$(date +%s)
 
-# Try --continue first
-rclaude "${ARGS[@]}" --continue
+# Try --continue first to resume the last session in this CWD.
+# If RCLAUDE_SESSION_ID is set, pass --resume with explicit ID.
+# --continue picks "last session in CWD" (may be wrong after /clear).
+# --resume resumes a specific session (CC 2.1+).
+if [[ -n "${RCLAUDE_SESSION_ID:-}" ]]; then
+  rclaude "${ARGS[@]}" --resume "$RCLAUDE_SESSION_ID"
+else
+  rclaude "${ARGS[@]}" --continue
+fi
 EXIT_CODE=$?
 
 ELAPSED=$(( $(date +%s) - START_TIME ))
