@@ -625,24 +625,14 @@ function processMessage(msg: DashboardMessage) {
           submitLabel: 'Approve',
           cancelLabel: 'Reject',
           body: [
-            { type: 'Alert', intent: 'info', content: 'Claude wants to exit plan mode and execute this plan.' },
             { type: 'Markdown', content: pa.plan },
             { type: 'Divider' },
             {
               type: 'TextInput',
               id: 'feedback',
               label: 'Feedback (optional)',
-              placeholder: 'Suggestions, changes, or additional instructions...',
+              placeholder: 'Changes or additional instructions...',
               multiline: true,
-            },
-            {
-              type: 'Options',
-              id: '_action',
-              options: [
-                { value: 'approve', label: 'Approve', description: 'Execute the plan as-is' },
-                { value: 'reject', label: 'Reject', description: 'Reject the plan entirely' },
-              ],
-              default: 'approve',
             },
           ],
         }
