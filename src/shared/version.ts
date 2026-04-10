@@ -11,11 +11,11 @@ export interface BuildVersion {
 }
 
 export const BUILD_VERSION: BuildVersion = {
-  gitHash: '8c68795eac28de2901b8491387e55ae025a54858',
-  gitHashShort: '8c68795-dirty',
-  buildTime: '2026-04-10T08:25:16.349Z',
+  gitHash: 'a732e7b737006f7bf565fa01f5fd1e35b6de1f59',
+  gitHashShort: 'a732e7b-dirty',
+  buildTime: '2026-04-10T11:34:38.009Z',
   dirty: true,
   branch: 'main',
   githubRepo: 'claudification/remote-claude',
-  recentCommits: [{"hash":"8c68795","message":"(HEAD -> main, origin/main, origin/HEAD) cosmetic: move token count below verb in thinking spinner"},{"hash":"fd0bca9","message":"fix: transcript loss on /clear - defer rekey until real CC session ID"},{"hash":"71681d3","message":"feat: T: prefix in command palette for fuzzy project task search"}],
+  recentCommits: [{"hash":"a732e7b","message":"(HEAD -> main) chore: version bump + minor main.tsx cleanup"},{"hash":"1961358","message":"feat: unified keyboard command system (key-layers + command registry)"},{"hash":"8f208e8","message":"fix: T: task selection opens editor without tab switch"}],
 }
