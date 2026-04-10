@@ -11,11 +11,11 @@ export interface BuildVersion {
 }
 
 export const BUILD_VERSION: BuildVersion = {
-  gitHash: '0924154fc0096872dbfaed92b923322c3173ecd2',
-  gitHashShort: '0924154-dirty',
-  buildTime: '2026-04-08T04:44:51.035Z',
+  gitHash: '8c68795eac28de2901b8491387e55ae025a54858',
+  gitHashShort: '8c68795-dirty',
+  buildTime: '2026-04-10T08:25:16.349Z',
   dirty: true,
   branch: 'main',
   githubRepo: 'claudification/remote-claude',
-  recentCommits: [{"hash":"0924154","message":"(HEAD -> main, origin/main, origin/HEAD) perf: Voice recording 100ms chunks + optimized audio constraints"},{"hash":"50e4d60","message":"fix: Re-check mic permission on app focus/visibility change"},{"hash":"95d97fe","message":"security: Comprehensive permission enforcement audit"}],
+  recentCommits: [{"hash":"8c68795","message":"(HEAD -> main, origin/main, origin/HEAD) cosmetic: move token count below verb in thinking spinner"},{"hash":"fd0bca9","message":"fix: transcript loss on /clear - defer rekey until real CC session ID"},{"hash":"71681d3","message":"feat: T: prefix in command palette for fuzzy project task search"}],
 }
