@@ -1,4 +1,6 @@
 import { FileText, FolderPlus } from 'lucide-react'
+import { useSessionsStore } from '@/hooks/use-sessions'
+import { useKeyLayer } from '@/lib/key-layers'
 import { CommandResults } from './command-results'
 import { FileResults } from './file-results'
 import { FooterHints } from './footer-hints'
@@ -10,21 +12,19 @@ import { useCommandPalette } from './use-command-palette'
 export function CommandPalette({ onSelect, onFileSelect, onClose }: CommandPaletteProps) {
   const palette = useCommandPalette(onClose)
 
+  useKeyLayer({ Escape: () => onClose() }, { id: 'command-palette' })
+
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: backdrop overlay closes on click
     <div
       role="presentation"
       className="fixed inset-0 z-[60] flex items-start justify-center pt-[15vh]"
       onClick={onClose}
-      onKeyDown={e => {
-        if (e.key === 'Escape') onClose()
-      }}
     >
       <div
         role="dialog"
         className="w-full max-w-lg bg-[#16161e] border border-[#33467c] shadow-2xl font-mono"
         onClick={e => e.stopPropagation()}
-        onKeyDown={e => e.stopPropagation()}
       >
         {/* Search input */}
         <div className="px-3 py-2 border-b border-[#33467c] flex items-center gap-2">
@@ -93,8 +93,8 @@ export function CommandPalette({ onSelect, onFileSelect, onClose }: CommandPalet
                       i === palette.activeIndex ? 'bg-[#283457] text-[#c0caf5]' : 'text-[#a9b1d6] hover:bg-[#1a1b26]'
                     }`}
                     onClick={() => {
+                      useSessionsStore.getState().setPendingTaskEdit({ slug: task.slug, status: task.status })
                       onClose()
-                      window.dispatchEvent(new CustomEvent('open-task-editor', { detail: task }))
                     }}
                     onMouseEnter={() => palette.setActiveIndex(i)}
                   >

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { useSessionsStore } from '@/hooks/use-sessions'
 import { getRates, subscribe as subscribeStats } from '@/hooks/ws-stats'
 import { clearLog, copyLogText, getLogEntries, type LogEntry, subscribeLog } from '@/lib/debug-log'
+import { useKeyLayer } from '@/lib/key-layers'
 import {
   categoryStats,
   clearEntries as clearPerfEntries,
@@ -522,17 +523,7 @@ export function NerdModal({ open, onClose }: { open: boolean; onClose: () => voi
     return () => clearInterval(id)
   }, [open, fetchStats])
 
-  useEffect(() => {
-    if (!open) return
-    function handleKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        onClose()
-      }
-    }
-    window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
-  }, [open, onClose])
+  useKeyLayer({ Escape: () => onClose() }, { id: 'nerd-modal', enabled: open })
 
   if (!open) return null
 

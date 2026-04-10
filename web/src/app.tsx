@@ -32,6 +32,7 @@ import {
   wsSend,
 } from '@/hooks/use-sessions'
 import { useWebSocket } from '@/hooks/use-websocket'
+import { executeCommand, useCommand } from '@/lib/commands'
 import { canTerminal } from '@/lib/types'
 import { clearCacheAndReload, isMobileViewport, isTouchDevice } from '@/lib/utils'
 
@@ -302,120 +303,121 @@ function Dashboard() {
     }
   }, [selectedSessionId])
 
-  // Double-Esc interrupt tracking
-  const lastEscRef = useRef(0)
+  // ── Global commands (registered via key-layers, show in palette + help) ──
 
-  // Global keyboard shortcuts - work EVERYWHERE (dashboard + terminal)
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      // Ctrl+K / Cmd+K - session switcher (closes terminal if open)
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-        e.preventDefault()
-        const store = useSessionsStore.getState()
-        if (store.showTerminal) store.setShowTerminal(false)
-        store.toggleSwitcher()
-      }
-      // Ctrl+O / Cmd+O - toggle expand all / verbose mode
-      if ((e.ctrlKey || e.metaKey) && e.key === 'o') {
-        // Don't trigger in terminal or inputs
-        const el = e.target as HTMLElement
-        if (el?.closest('.xterm') || el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA') return
-        e.preventDefault()
-        useSessionsStore.getState().toggleExpandAll()
-      }
-      // Ctrl+B / Cmd+B - toggle sidebar
-      if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
-        const el = e.target as HTMLElement
-        if (el?.closest('.xterm') || el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA') return
-        e.preventDefault()
-        toggleSidebar()
-      }
-      // Ctrl+Shift+D - toggle debug console
-      if (e.ctrlKey && e.shiftKey && e.key === 'D') {
-        e.preventDefault()
-        useSessionsStore.getState().toggleDebugConsole()
-      }
-      // Ctrl+Shift+T - toggle between transcript and TTY tab
-      if (e.ctrlKey && e.shiftKey && !e.altKey && e.key === 'T') {
-        e.preventDefault()
-        const store = useSessionsStore.getState()
-        if (store.showTerminal) {
-          store.setShowTerminal(false)
-          if (store.selectedSessionId) store.openTab(store.selectedSessionId, 'transcript')
-        } else if (store.selectedSessionId) {
-          const currentTab = store.requestedTab
-          store.openTab(store.selectedSessionId, currentTab === 'tty' ? 'transcript' : 'tty')
-        }
-      }
-      // Ctrl+Shift+Alt+T - toggle fullscreen terminal
-      if (e.ctrlKey && e.shiftKey && e.altKey && e.key === 'T') {
-        e.preventDefault()
-        const store = useSessionsStore.getState()
-        if (store.showTerminal) {
-          store.setShowTerminal(false)
-          if (store.selectedSessionId) store.openTab(store.selectedSessionId, 'transcript')
-        } else {
-          const session = store.sessions.find(s => s.id === store.selectedSessionId)
-          if (session && canTerminal(session) && session.wrapperIds?.[0]) {
-            store.openTerminal(session.wrapperIds[0])
-          }
-        }
-      }
-      // Ctrl+Shift+S - open spawn session dialog (Ctrl+K with S: prefilled)
-      if (e.ctrlKey && e.shiftKey && e.code === 'KeyS') {
-        e.preventDefault()
-        useSessionsStore.getState().openSwitcherWithFilter('S:./')
-      }
-      // Ctrl+Shift+Alt+N - open NOTES.md in file editor
-      // Use e.code instead of e.key because Alt on macOS remaps key to special chars
-      if (e.ctrlKey && e.shiftKey && e.altKey && e.code === 'KeyN') {
-        e.preventDefault()
-        const store = useSessionsStore.getState()
-        if (store.selectedSessionId) {
-          store.openTab(store.selectedSessionId, 'files')
-          store.setPendingFilePath('NOTES.md')
-        }
-      }
-      // Escape - double-Esc (within 700ms) sends interrupt, single-Esc goes home
-      if (e.key === 'Escape' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-        const now = Date.now()
-        const elapsed = now - lastEscRef.current
-        lastEscRef.current = now
+  useCommand(
+    'open-switcher',
+    () => {
+      const store = useSessionsStore.getState()
+      if (store.showTerminal) store.setShowTerminal(false)
+      store.toggleSwitcher()
+    },
+    { label: 'Session switcher', shortcut: 'mod+k', group: 'Navigation' },
+  )
 
-        // Double-Esc within 700ms: interrupt the active session
-        if (elapsed < 700) {
-          lastEscRef.current = 0 // reset so triple-Esc doesn't re-trigger
-          const store = useSessionsStore.getState()
-          const sid = store.selectedSessionId
-          if (sid) {
-            const session = store.sessions.find(s => s.id === sid)
-            if (session && session.status !== 'ended') {
-              e.preventDefault()
-              wsSend('send_interrupt', { sessionId: sid })
-            }
-          }
-          return
-        }
+  useCommand(
+    'toggle-verbose',
+    () => {
+      useSessionsStore.getState().toggleExpandAll()
+    },
+    { label: 'Toggle verbose / expand all', shortcut: 'mod+o', group: 'View' },
+  )
 
-        // Single Esc - go home to transcript + focus input (desktop only)
-        if (!isMobileViewport()) {
-          const el = e.target as HTMLElement
-          if (el?.closest('.xterm')) return
-          // Don't steal Esc from open modals/dialogs -- they handle their own dismissal
-          if (el?.closest('[role="dialog"], [role="presentation"]')) return
-          const store = useSessionsStore.getState()
-          if (store.showSwitcher || store.showDebugConsole || store.showTerminal) return
-          if (!store.selectedSessionId) return
-          e.preventDefault()
-          store.selectSubagent(null)
-          store.openTab(store.selectedSessionId, 'transcript')
-          requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('textarea')?.focus())
+  useCommand(
+    'toggle-sidebar',
+    () => {
+      toggleSidebar()
+    },
+    { label: 'Toggle sidebar', shortcut: 'mod+b', group: 'View' },
+  )
+
+  useCommand(
+    'toggle-debug',
+    () => {
+      useSessionsStore.getState().toggleDebugConsole()
+    },
+    { label: 'Toggle debug console', shortcut: 'mod+shift+d', group: 'View' },
+  )
+
+  useCommand(
+    'toggle-tty',
+    () => {
+      const store = useSessionsStore.getState()
+      if (store.showTerminal) {
+        store.setShowTerminal(false)
+        if (store.selectedSessionId) store.openTab(store.selectedSessionId, 'transcript')
+      } else if (store.selectedSessionId) {
+        const currentTab = store.requestedTab
+        store.openTab(store.selectedSessionId, currentTab === 'tty' ? 'transcript' : 'tty')
+      }
+    },
+    { label: 'Toggle terminal tab', shortcut: 'mod+shift+t', group: 'Navigation' },
+  )
+
+  useCommand(
+    'fullscreen-terminal',
+    () => {
+      const store = useSessionsStore.getState()
+      if (store.showTerminal) {
+        store.setShowTerminal(false)
+        if (store.selectedSessionId) store.openTab(store.selectedSessionId, 'transcript')
+      } else {
+        const session = store.sessions.find(s => s.id === store.selectedSessionId)
+        if (session && canTerminal(session) && session.wrapperIds?.[0]) {
+          store.openTerminal(session.wrapperIds[0])
         }
       }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
+    },
+    { label: 'Toggle fullscreen terminal', shortcut: 'mod+shift+alt+t', group: 'Navigation' },
+  )
+
+  useCommand(
+    'spawn-session',
+    () => {
+      useSessionsStore.getState().openSwitcherWithFilter('S:./')
+    },
+    { label: 'Spawn new session', shortcut: 'mod+shift+s', group: 'Session' },
+  )
+
+  useCommand(
+    'open-notes',
+    () => {
+      const store = useSessionsStore.getState()
+      if (store.selectedSessionId) {
+        store.openTab(store.selectedSessionId, 'files')
+        store.setPendingFilePath('NOTES.md')
+      }
+    },
+    { label: 'Open NOTES.md', shortcut: 'mod+shift+alt+n', group: 'Navigation' },
+  )
+
+  useCommand(
+    'go-home',
+    () => {
+      if (isMobileViewport()) return
+      const store = useSessionsStore.getState()
+      if (store.showSwitcher || store.showDebugConsole || store.showTerminal) return
+      if (!store.selectedSessionId) return
+      store.selectSubagent(null)
+      store.openTab(store.selectedSessionId, 'transcript')
+      requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('textarea')?.focus())
+    },
+    { label: 'Go to transcript + focus input', shortcut: 'Escape', group: 'Navigation' },
+  )
+
+  useCommand(
+    'interrupt',
+    () => {
+      const store = useSessionsStore.getState()
+      const sid = store.selectedSessionId
+      if (!sid) return
+      const session = store.sessions.find(s => s.id === sid)
+      if (session && session.status !== 'ended') {
+        wsSend('send_interrupt', { sessionId: sid })
+      }
+    },
+    { label: 'Interrupt current turn', shortcut: 'Escape Escape', group: 'Session' },
+  )
 
   function handleSwitcherSelect(id: string) {
     const store = useSessionsStore.getState()
@@ -485,7 +487,7 @@ function Dashboard() {
             variant="outline"
             size="icon"
             className="shrink-0 sm:hidden"
-            onClick={() => window.dispatchEvent(new Event('open-quick-task'))}
+            onClick={() => executeCommand('quick-task')}
             title="Quick task"
           >
             <FileText className="h-4 w-4" />

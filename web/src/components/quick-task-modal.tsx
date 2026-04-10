@@ -4,9 +4,11 @@
  */
 
 import { FileText, X } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useProject } from '@/hooks/use-project'
 import { useSessionsStore } from '@/hooks/use-sessions'
+import { useCommand } from '@/lib/commands'
+import { useKeyLayer } from '@/lib/key-layers'
 import { haptic } from '@/lib/utils'
 import { MarkdownInput } from './markdown-input'
 
@@ -23,33 +25,28 @@ export function QuickTaskModal() {
 
   const { createTask } = useProject(selectedSessionId && isActive ? selectedSessionId : null)
 
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.ctrlKey && e.shiftKey && !e.altKey && e.key === 'N') {
-        e.preventDefault()
-        if (selectedSessionId && isActive) {
-          haptic('tap')
-          setOpen(true)
-        }
-      }
-      if (e.key === 'Escape' && open) {
-        setOpen(false)
-        setText('')
-      }
-    }
-    function handleOpenEvent() {
+  // Open via command (registered here so it has access to selectedSessionId/isActive)
+  useCommand(
+    'quick-task',
+    () => {
       if (selectedSessionId && isActive) {
         haptic('tap')
         setOpen(true)
       }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    window.addEventListener('open-quick-task', handleOpenEvent)
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown)
-      window.removeEventListener('open-quick-task', handleOpenEvent)
-    }
-  }, [open, selectedSessionId, isActive])
+    },
+    { label: 'Quick task', shortcut: 'mod+shift+n', group: 'Navigation' },
+  )
+
+  // ESC closes when open
+  useKeyLayer(
+    {
+      Escape: () => {
+        setOpen(false)
+        setText('')
+      },
+    },
+    { id: 'quick-task', enabled: open },
+  )
 
   const handleSubmit = useCallback(() => {
     if (!text.trim()) return

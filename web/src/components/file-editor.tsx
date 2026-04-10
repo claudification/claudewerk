@@ -19,6 +19,7 @@ import {
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { type FileInfo, useFileEditor } from '@/hooks/use-file-editor'
 import { useSessionsStore } from '@/hooks/use-sessions'
+import { useKeyLayer } from '@/lib/key-layers'
 import { cn, haptic } from '@/lib/utils'
 import { Markdown } from './markdown'
 
@@ -218,19 +219,7 @@ export const FileEditor = memo(function FileEditor({ sessionId }: { sessionId: s
   const [previewMode, setPreviewMode] = useState(true)
   const [fullscreen, setFullscreen] = useState(false)
 
-  // ESC closes fullscreen
-  useEffect(() => {
-    if (!fullscreen) return
-    function handleKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        e.stopImmediatePropagation()
-        setFullscreen(false)
-      }
-    }
-    window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
-  }, [fullscreen])
+  useKeyLayer({ Escape: () => setFullscreen(false) }, { id: 'file-editor-fullscreen', enabled: fullscreen })
 
   // Load file list on mount
   useEffect(() => {

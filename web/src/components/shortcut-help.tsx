@@ -3,22 +3,9 @@
  * Shows all available shortcuts in a demoscene-aesthetic modal
  */
 
-import { useEffect, useState } from 'react'
-
-const SHORTCUTS = [
-  { keys: 'Ctrl+K', action: 'Session switcher (fuzzy finder)' },
-  { keys: 'Ctrl+K F:', action: 'File browser (in switcher)' },
-  { keys: 'Ctrl+Shift+N', action: 'Quick note (append to NOTES.md)' },
-  { keys: 'Ctrl+Shift+Alt+N', action: 'Open NOTES.md in file editor' },
-  { keys: 'Ctrl+Shift+D', action: 'Toggle debug console' },
-  { keys: 'Ctrl+Shift+S', action: 'Spawn new session' },
-  { keys: 'Ctrl+Shift+T', action: 'Toggle terminal for current session' },
-  { keys: 'Ctrl+O', action: 'Toggle verbose / expand all' },
-  { keys: 'Shift+Click TTY', action: 'Popout terminal to new window' },
-  { keys: 'Shift+?', action: 'This help screen' },
-  { keys: 'Esc', action: 'Go to transcript + focus input' },
-  { keys: 'Esc Esc', action: 'Interrupt current turn (700ms window)' },
-]
+import { useMemo, useState } from 'react'
+import { formatShortcut, getCommandGeneration, getCommands, useCommand } from '@/lib/commands'
+import { useKeyLayer } from '@/lib/key-layers'
 
 const INPUT_SHORTCUTS = [
   { keys: 'Enter', action: 'Send message' },
@@ -30,24 +17,21 @@ const INPUT_SHORTCUTS = [
 export function ShortcutHelp() {
   const [open, setOpen] = useState(false)
 
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === '?' && e.shiftKey && !e.ctrlKey && !e.metaKey) {
-        // Don't trigger when typing in inputs/textareas/contenteditable or terminal
-        const el = e.target as HTMLElement
-        const tag = el?.tagName
-        if (tag === 'INPUT' || tag === 'TEXTAREA') return
-        if (el?.closest('.xterm') || el?.getAttribute('contenteditable')) return
-        e.preventDefault()
-        setOpen(v => !v)
-      }
-      if (e.key === 'Escape' && open) {
-        setOpen(false)
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [open])
+  useCommand('shortcut-help', () => setOpen(v => !v), {
+    label: 'Keyboard shortcuts',
+    shortcut: 'shift+?',
+    group: 'Help',
+  })
+  useKeyLayer({ Escape: () => setOpen(false) }, { id: 'shortcut-help', enabled: open })
+
+  const _gen = getCommandGeneration()
+  const shortcuts = useMemo(
+    () =>
+      getCommands()
+        .filter(c => c.shortcut)
+        .map(c => ({ keys: formatShortcut(c.shortcut!), action: c.label })),
+    [_gen],
+  )
 
   if (!open) return null
 
@@ -57,15 +41,11 @@ export function ShortcutHelp() {
       role="presentation"
       className="fixed inset-0 z-[70] flex items-center justify-center"
       onClick={() => setOpen(false)}
-      onKeyDown={e => {
-        if (e.key === 'Escape') setOpen(false)
-      }}
     >
       <div
         role="dialog"
         className="w-full max-w-md bg-[#16161e] border border-[#33467c] shadow-2xl font-mono p-6"
         onClick={e => e.stopPropagation()}
-        onKeyDown={e => e.stopPropagation()}
       >
         <pre className="text-[#7aa2f7] text-[10px] leading-tight mb-4 select-none">
           {`┌──────────────────────────────────────┐
@@ -80,7 +60,7 @@ export function ShortcutHelp() {
 
         <div className="mb-4">
           <div className="text-[10px] uppercase tracking-wider text-[#565f89] mb-2">Global</div>
-          {SHORTCUTS.map(s => (
+          {shortcuts.map(s => (
             <div key={s.keys} className="flex items-center justify-between py-1 border-b border-[#33467c]/30">
               <kbd className="px-1.5 py-0.5 bg-[#33467c]/40 text-[#7aa2f7] text-[11px]">{s.keys}</kbd>
               <span className="text-[11px] text-[#a9b1d6]">{s.action}</span>
