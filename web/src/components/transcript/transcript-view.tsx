@@ -78,9 +78,17 @@ const ThinkingSpinner = memo(function ThinkingSpinner({ sessionId }: { sessionId
   const session = useSessionsStore(state => state.sessions.find(s => s.id === sessionId))
   const [verb, setVerb] = useState(() => VERBS[Math.floor(Math.random() * VERBS.length)])
   const [dots, setDots] = useState(0)
+  const baselineRef = useRef(0)
 
   const isActive = session?.status === 'active'
-  const tokens = session?.stats?.totalOutputTokens ?? 0
+  const totalOutput = session?.stats?.totalOutputTokens ?? 0
+
+  // Capture baseline when turn starts
+  useEffect(() => {
+    if (isActive) baselineRef.current = totalOutput
+  }, [isActive]) // only on status transition, not on every token update
+
+  const turnTokens = isActive ? Math.max(0, totalOutput - baselineRef.current) : 0
 
   useEffect(() => {
     if (!isActive) return
@@ -105,8 +113,8 @@ const ThinkingSpinner = memo(function ThinkingSpinner({ sessionId }: { sessionId
         {verb}
         {'.'.repeat(dots)}
       </span>
-      {tokens > 0 && (
-        <span className="text-muted-foreground/40 tabular-nums">{(tokens / 1000).toFixed(1)}K tokens</span>
+      {turnTokens > 0 && (
+        <span className="text-muted-foreground/40 tabular-nums">{(turnTokens / 1000).toFixed(1)}K tokens</span>
       )}
     </div>
   )
