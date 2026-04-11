@@ -788,6 +788,7 @@ export interface ProjectSettings {
   defaultLaunchMode?: 'headless' | 'pty'
   defaultEffort?: 'default' | 'low' | 'medium' | 'high' | 'max' // 'default' = don't pass --effort flag
   allowPlanMode?: boolean // default: true. Set false to auto-deny EnterPlanMode
+  verbs?: string[] // custom spinner verbs (merged with defaults)
 }
 
 // File metadata for the file editor

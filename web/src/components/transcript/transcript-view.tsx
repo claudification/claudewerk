@@ -79,6 +79,13 @@ const ThinkingSpinner = memo(function ThinkingSpinner({ sessionId }: { sessionId
   const totalOutput = useSessionsStore(
     state => state.sessions.find(s => s.id === sessionId)?.stats?.totalOutputTokens ?? 0,
   )
+  // Custom verbs from project settings, merged with defaults
+  const customVerbs = useSessionsStore(state => {
+    const cwd = state.sessions.find(s => s.id === sessionId)?.cwd
+    return cwd ? state.projectSettings[cwd]?.verbs : undefined
+  })
+  const verbList = customVerbs?.length ? [...VERBS, ...customVerbs] : VERBS
+
   const [verb, setVerb] = useState(() => VERBS[Math.floor(Math.random() * VERBS.length)])
   const [dots, setDots] = useState(0)
   const baselineRef = useRef(0)
@@ -93,7 +100,7 @@ const ThinkingSpinner = memo(function ThinkingSpinner({ sessionId }: { sessionId
   useEffect(() => {
     if (!isActive) return
     const verbInterval = setInterval(() => {
-      setVerb(VERBS[Math.floor(Math.random() * VERBS.length)])
+      setVerb(verbList[Math.floor(Math.random() * verbList.length)])
     }, 3000)
     const dotInterval = setInterval(() => {
       setDots(d => (d + 1) % 4)
