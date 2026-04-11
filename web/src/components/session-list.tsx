@@ -213,7 +213,8 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
     selectSession(session.id)
   }
 
-  const displayName = session.title || ps?.label || lastPathSegments(session.cwd)
+  const projectName = ps?.label || lastPathSegments(session.cwd)
+  const sessionName = session.title || session.agentName
   const displayColor = ps?.color
 
   return (
@@ -253,7 +254,7 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
             className={cn('font-bold text-sm flex-1 truncate', isSelected ? 'text-accent' : 'text-primary')}
             style={displayColor && !isSelected ? { color: displayColor } : undefined}
           >
-            {displayName}
+            {projectName}
           </span>
           {session.compacting && (
             <span className="px-1.5 py-0.5 text-[10px] uppercase font-bold bg-amber-400/20 text-amber-400 border border-amber-400/50 animate-pulse">
@@ -295,6 +296,11 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
                 </span>
               )
             })()}
+        </div>
+      )}
+      {!compact && sessionName && (
+        <div className="mt-0.5 text-[10px] text-muted-foreground font-mono truncate pl-1">
+          {sessionName}
         </div>
       )}
       {compact && (
