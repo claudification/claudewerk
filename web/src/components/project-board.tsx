@@ -694,9 +694,9 @@ export const ProjectBoard = memo(function ProjectBoard({ sessionId }: { sessionI
             </button>
           </div>
         </div>
-        {searchOpen && (
-          <div className="px-3 pb-2 space-y-1.5">
-            {/* Text search */}
+        <div className="px-3 pb-2 space-y-1.5">
+          {/* Text search -- toggleable */}
+          {searchOpen && (
             <div className="flex items-center gap-2">
               <input
                 ref={searchRef}
@@ -717,47 +717,47 @@ export const ProjectBoard = memo(function ProjectBoard({ sessionId }: { sessionI
                 </button>
               )}
             </div>
+          )}
 
-            {/* Priority filter */}
-            <div className="flex items-center gap-1">
-              {(['high', 'medium', 'low'] as const).map(p => (
+          {/* Priority + tag filters -- always visible */}
+          <div className="flex items-center gap-1">
+            {(['high', 'medium', 'low'] as const).map(p => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => togglePriority(p)}
+                className={cn(
+                  'px-1.5 py-0.5 text-[9px] font-mono border rounded transition-colors',
+                  selectedPriority === p
+                    ? PRIORITY_COLORS[p]
+                    : 'border-border/40 text-muted-foreground/60 hover:text-muted-foreground',
+                )}
+              >
+                {p}
+              </button>
+            ))}
+            <span className="w-px h-3 bg-border/30 mx-0.5" />
+            {/* Tag pills */}
+            <div className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0 scrollbar-none">
+              {tagFreqs.map(({ tag, count }) => (
                 <button
-                  key={p}
+                  key={tag}
                   type="button"
-                  onClick={() => togglePriority(p)}
+                  onClick={() => toggleTag(tag)}
                   className={cn(
-                    'px-1.5 py-0.5 text-[9px] font-mono border rounded transition-colors',
-                    selectedPriority === p
-                      ? PRIORITY_COLORS[p]
-                      : 'border-border/30 text-muted-foreground/40 hover:text-muted-foreground',
+                    'px-1.5 py-0.5 text-[9px] font-mono border rounded whitespace-nowrap shrink-0 transition-colors',
+                    selectedTags.has(tag)
+                      ? tagColor(tag)
+                      : 'border-border/40 text-muted-foreground/60 hover:text-muted-foreground',
                   )}
                 >
-                  {p}
+                  {tag}
+                  <span className="ml-0.5 opacity-50">{count}</span>
                 </button>
               ))}
-              <span className="w-px h-3 bg-border/30 mx-0.5" />
-              {/* Tag pills */}
-              <div className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0 scrollbar-none">
-                {tagFreqs.map(({ tag, count }) => (
-                  <button
-                    key={tag}
-                    type="button"
-                    onClick={() => toggleTag(tag)}
-                    className={cn(
-                      'px-1.5 py-0.5 text-[9px] font-mono border rounded whitespace-nowrap shrink-0 transition-colors',
-                      selectedTags.has(tag)
-                        ? tagColor(tag)
-                        : 'border-border/30 text-muted-foreground/40 hover:text-muted-foreground',
-                    )}
-                  >
-                    {tag}
-                    <span className="ml-0.5 opacity-50">{count}</span>
-                  </button>
-                ))}
-              </div>
             </div>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Kanban columns */}
