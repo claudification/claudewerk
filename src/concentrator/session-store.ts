@@ -781,6 +781,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
           compactionCount: 0,
           linesAdded: 0,
           linesRemoved: 0,
+          totalApiDurationMs: 0,
         },
         costTimeline: s.costTimeline,
         gitBranch: s.gitBranch,
@@ -962,6 +963,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         compactionCount: 0,
         linesAdded: 0,
         linesRemoved: 0,
+        totalApiDurationMs: 0,
       },
       costTimeline: [],
     }
@@ -2199,6 +2201,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
           compactionCount: 0,
           linesAdded: 0,
           linesRemoved: 0,
+          totalApiDurationMs: 0,
         }
       }
       for (const entry of entries) {
@@ -2317,6 +2320,15 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
                 console.log(`[clipboard] ${capture.contentType} from transcript (session ${sessionId.slice(0, 8)})`)
               }
             }
+          }
+        }
+
+        // Extract turn_duration from system entries
+        if (!isInitial && entry.type === 'system') {
+          const sysEntry = entry as { subtype?: string; durationMs?: number }
+          if (sysEntry.subtype === 'turn_duration' && typeof sysEntry.durationMs === 'number') {
+            session.stats.totalApiDurationMs += sysEntry.durationMs
+            sessionChanged = true
           }
         }
 

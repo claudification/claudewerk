@@ -655,6 +655,7 @@ const InputBar = memo(function InputBar({ sessionId }: { sessionId: string }) {
           className="flex-1"
           autoFocus
           enableAutocomplete
+          enableEffortKeywords
         />
         <button
           type="button"
@@ -1240,6 +1241,16 @@ export const SessionDetail = memo(function SessionDetail() {
                     <span>
                       <span className="text-muted-foreground">compactions </span>
                       <span className="text-amber-400">{s.compactionCount}</span>
+                    </span>
+                  )}
+                  {s && s.totalApiDurationMs > 0 && (
+                    <span>
+                      <span className="text-muted-foreground">API </span>
+                      <span className="text-foreground">
+                        {s.totalApiDurationMs < 60000
+                          ? `${(s.totalApiDurationMs / 1000).toFixed(0)}s`
+                          : `${Math.floor(s.totalApiDurationMs / 60000)}m${Math.round((s.totalApiDurationMs % 60000) / 1000)}s`}
+                      </span>
                     </span>
                   )}
                   <span>

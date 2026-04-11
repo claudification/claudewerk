@@ -889,6 +889,7 @@ export interface Session {
     totalCostUsd?: number
     linesAdded: number
     linesRemoved: number
+    totalApiDurationMs: number
   }
   costTimeline?: Array<{ t: number; cost: number }>
   gitBranch?: string

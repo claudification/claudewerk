@@ -39,6 +39,7 @@ interface MarkdownInputProps {
   autoFocus?: boolean
   inline?: boolean // Force inline mode: no mobile expand, autoFocus works on mobile
   enableAutocomplete?: boolean // Enable slash command / @ autocomplete (default: false)
+  enableEffortKeywords?: boolean // Highlight ultrathink keyword (default: false, prompt input only)
 }
 
 function useIsMobile() {
@@ -53,7 +54,7 @@ function useIsMobile() {
 }
 
 // Lightweight markdown syntax highlighter - colors syntax markers, not rendered output
-function highlightMarkdown(text: string): string {
+function highlightMarkdown(text: string, enableEffortKeywords = false): string {
   if (!text) return '\n' // Need at least a newline for height matching
 
   // Escape HTML first
@@ -95,11 +96,13 @@ function highlightMarkdown(text: string): string {
   // Links [text](url)
   html = html.replace(/(\[[^\]]*\]\([^)]*\))/g, '<span class="text-accent underline">$1</span>')
 
-  // Effort keywords (ultrathink = high effort ●)
-  html = html.replace(
-    /\b(ultrathink)\b/gi,
-    '<span class="text-orange-400 font-bold">$1</span><span class="text-orange-400/60 text-[10px]"> ●</span>',
-  )
+  // Effort keywords (ultrathink = high effort) - only in prompt input, not task editors
+  if (enableEffortKeywords) {
+    html = html.replace(
+      /\b(ultrathink)\b/gi,
+      '<span class="text-orange-400 underline decoration-orange-400/40 decoration-2 underline-offset-2">$1</span>',
+    )
+  }
 
   // Ensure trailing newline for height matching
   if (!html.endsWith('\n')) html += '\n'
@@ -117,6 +120,7 @@ export function MarkdownInput({
   autoFocus,
   inline,
   enableAutocomplete = false,
+  enableEffortKeywords = false,
 }: MarkdownInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const highlightRef = useRef<HTMLDivElement>(null)
@@ -807,7 +811,7 @@ export function MarkdownInput({
             )}
             style={expandedFontSize}
             aria-hidden="true"
-            dangerouslySetInnerHTML={{ __html: highlightMarkdown(value) }}
+            dangerouslySetInnerHTML={{ __html: highlightMarkdown(value, enableEffortKeywords) }}
           />
           {/* Textarea - uses ref callback to auto-focus on mount */}
           <textarea
@@ -995,7 +999,7 @@ export function MarkdownInput({
         )}
         style={expandedFontSize}
         aria-hidden="true"
-        dangerouslySetInnerHTML={{ __html: highlightMarkdown(value) }}
+        dangerouslySetInnerHTML={{ __html: highlightMarkdown(value, enableEffortKeywords) }}
       />
       {/* Textarea - transparent text, visible caret */}
       <textarea
