@@ -28,7 +28,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { memo, useCallback, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ProjectTask } from '@/hooks/use-project'
 import { type ProjectTaskMeta, type TaskStatus, useProject } from '@/hooks/use-project'
 import { sendInput } from '@/hooks/use-sessions'
@@ -88,24 +88,23 @@ const PRIORITY_COLORS: Record<string, string> = {
   low: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
 }
 
-function fuzzyScore(query: string, task: ProjectTaskMeta): number {
-  if (!query) return 1
+function matchesTextFilter(query: string, task: ProjectTaskMeta): boolean {
+  if (!query) return true
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
-  if (terms.length === 0) return 1
+  if (terms.length === 0) return true
   const title = task.title.toLowerCase()
-  const body = (task.bodyPreview || '').toLowerCase()
-  const tagStr = task.tags.join(' ').toLowerCase()
-  let score = 0
-  for (const term of terms) {
-    const inTitle = title.includes(term)
-    const inBody = body.includes(term)
-    const inTags = tagStr.includes(term)
-    if (!inTitle && !inBody && !inTags) return 0
-    if (inTitle) score += 2
-    if (inBody) score += 1
-    if (inTags) score += 1
+  return terms.every(term => title.includes(term))
+}
+
+/** Get unique tags from all tasks, sorted by frequency (descending) */
+function getTagFrequencies(tasks: ProjectTaskMeta[]): Array<{ tag: string; count: number }> {
+  const counts = new Map<string, number>()
+  for (const task of tasks) {
+    for (const tag of task.tags) {
+      counts.set(tag, (counts.get(tag) || 0) + 1)
+    }
   }
-  return score
+  return [...counts.entries()].map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count)
 }
 
 export function TaskEditor({
@@ -545,12 +544,56 @@ export const ProjectBoard = memo(function ProjectBoard({ sessionId }: { sessionI
   const [archiveExpanded, setArchiveExpanded] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
+  const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set())
+  const [selectedPriority, setSelectedPriority] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
 
+  const tagFreqs = useMemo(() => getTagFrequencies(tasks), [tasks])
+  const hasActiveFilters = searchQuery.trim() || selectedTags.size > 0 || selectedPriority
+
   const filteredTasks = useMemo(() => {
-    if (!searchQuery.trim()) return tasks
-    return tasks.filter(n => fuzzyScore(searchQuery, n) > 0)
-  }, [tasks, searchQuery])
+    return tasks.filter(task => {
+      if (!matchesTextFilter(searchQuery, task)) return false
+      if (selectedTags.size > 0 && !task.tags.some(t => selectedTags.has(t))) return false
+      if (selectedPriority && task.priority !== selectedPriority) return false
+      return true
+    })
+  }, [tasks, searchQuery, selectedTags, selectedPriority])
+
+  function toggleTag(tag: string) {
+    setSelectedTags(prev => {
+      const next = new Set(prev)
+      if (next.has(tag)) next.delete(tag)
+      else next.add(tag)
+      return next
+    })
+    haptic('tap')
+  }
+
+  function togglePriority(p: string) {
+    setSelectedPriority(prev => (prev === p ? null : p))
+    haptic('tap')
+  }
+
+  function clearFilters() {
+    setSearchQuery('')
+    setSelectedTags(new Set())
+    setSelectedPriority(null)
+    haptic('tap')
+  }
+
+  // Ctrl+F / Cmd+F opens filter and focuses search input
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        e.preventDefault()
+        setSearchOpen(true)
+        requestAnimationFrame(() => searchRef.current?.focus())
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
@@ -652,29 +695,67 @@ export const ProjectBoard = memo(function ProjectBoard({ sessionId }: { sessionI
           </div>
         </div>
         {searchOpen && (
-          <div className="flex items-center gap-2 px-3 pb-2">
-            <input
-              ref={searchRef}
-              type="text"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              onFocus={() => haptic('tap')}
-              placeholder="Filter..."
-              className="flex-1 bg-[#1a1b26] border border-[#33467c]/40 px-2 py-1 text-xs font-mono text-foreground outline-none placeholder:text-muted-foreground/30 focus:border-accent/50"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                className="text-muted-foreground/40 hover:text-muted-foreground"
-                onClick={() => {
-                  haptic('tap')
-                  setSearchQuery('')
-                  searchRef.current?.focus()
-                }}
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
+          <div className="px-3 pb-2 space-y-1.5">
+            {/* Text search */}
+            <div className="flex items-center gap-2">
+              <input
+                ref={searchRef}
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                onFocus={() => haptic('tap')}
+                placeholder="Filter by title..."
+                className="flex-1 bg-[#1a1b26] border border-[#33467c]/40 px-2 py-1 text-xs font-mono text-foreground outline-none placeholder:text-muted-foreground/30 focus:border-accent/50"
+              />
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  className="text-[9px] text-muted-foreground/60 hover:text-foreground font-mono shrink-0"
+                  onClick={clearFilters}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
+            {/* Priority filter */}
+            <div className="flex items-center gap-1">
+              {(['high', 'medium', 'low'] as const).map(p => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => togglePriority(p)}
+                  className={cn(
+                    'px-1.5 py-0.5 text-[9px] font-mono border rounded transition-colors',
+                    selectedPriority === p
+                      ? PRIORITY_COLORS[p]
+                      : 'border-border/30 text-muted-foreground/40 hover:text-muted-foreground',
+                  )}
+                >
+                  {p}
+                </button>
+              ))}
+              <span className="w-px h-3 bg-border/30 mx-0.5" />
+              {/* Tag pills */}
+              <div className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0 scrollbar-none">
+                {tagFreqs.map(({ tag, count }) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => toggleTag(tag)}
+                    className={cn(
+                      'px-1.5 py-0.5 text-[9px] font-mono border rounded whitespace-nowrap shrink-0 transition-colors',
+                      selectedTags.has(tag)
+                        ? tagColor(tag)
+                        : 'border-border/30 text-muted-foreground/40 hover:text-muted-foreground',
+                    )}
+                  >
+                    {tag}
+                    <span className="ml-0.5 opacity-50">{count}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         )}
       </div>
