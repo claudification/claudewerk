@@ -1,0 +1,10 @@
+# Ignore everything by default
+*
+
+# Keep project board and config
+!.gitignore
+!rclaude.json
+!project/
+!project/**
+!docs/
+!docs/**

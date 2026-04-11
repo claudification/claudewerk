@@ -178,14 +178,15 @@ export function MarkdownInput({
     const scored: Array<{ item: string; score: number; builtin: boolean }> = []
 
     if (ch === '/') {
-      // Built-in + CC slash commands only autocomplete at start of input (position 0)
-      if (start !== 0) return []
-      // Built-in commands first
-      for (const item of BUILTIN_COMMANDS) {
-        const score = !q ? 100 : item.includes(q) ? 100 + (item.startsWith(q) ? 10 : 0) : 0
-        if (score > 0) scored.push({ item, score, builtin: true })
+      const atStart = start === 0
+      // Built-in commands (model, clear, exit, etc.) only at start of input
+      if (atStart) {
+        for (const item of BUILTIN_COMMANDS) {
+          const score = !q ? 100 : item.includes(q) ? 100 + (item.startsWith(q) ? 10 : 0) : 0
+          if (score > 0) scored.push({ item, score, builtin: true })
+        }
       }
-      // CC slash commands
+      // CC slash commands (skills, etc.) complete anywhere in text
       for (const item of sessionInfoData.slashCommands || []) {
         if (BUILTIN_COMMANDS.includes(item)) continue // skip dupes
         const score = fuzzyScore(q, item)
