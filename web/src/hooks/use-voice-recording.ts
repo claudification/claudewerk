@@ -43,6 +43,7 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
   const cancelledRef = useRef(false)
   const pendingStopRef = useRef(false) // user released key while still connecting
   const utteranceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingDataRef = useRef<Promise<void>>(Promise.resolve()) // tracks last ondataavailable
 
   stateRef.current = state
 
@@ -175,11 +176,14 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/mp4'
       const recorder = new MediaRecorder(stream, { mimeType })
 
-      recorder.ondataavailable = async ev => {
+      recorder.ondataavailable = ev => {
         if (ev.data.size > 0) {
-          const buffer = await ev.data.arrayBuffer()
-          const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)))
-          sendWs({ type: 'voice_data', audio: base64 })
+          // Track the async work so stop() can wait for the last chunk
+          pendingDataRef.current = (async () => {
+            const buffer = await ev.data.arrayBuffer()
+            const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)))
+            sendWs({ type: 'voice_data', audio: base64 })
+          })()
         }
       }
 
@@ -212,9 +216,12 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
 
     const recorder = mediaRecorderRef.current
     if (recorder?.state === 'recording') {
-      // MediaRecorder.stop() fires one final ondataavailable with remaining buffer.
-      // Wait for that last chunk before sending voice_stop so the server gets all audio.
-      recorder.onstop = () => {
+      // MediaRecorder.stop() fires ondataavailable (final chunk) then onstop.
+      // But ondataavailable is async (arrayBuffer + base64), so onstop fires
+      // before the last chunk is actually sent. We await the pending data
+      // promise to ensure voice_stop goes AFTER the final audio chunk.
+      recorder.onstop = async () => {
+        await pendingDataRef.current
         mediaRecorderRef.current = null
         if (streamRef.current) {
           for (const t of streamRef.current.getTracks()) t.stop()
