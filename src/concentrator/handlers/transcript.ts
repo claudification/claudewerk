@@ -4,6 +4,7 @@
  * and diagnostic entries from rclaude -> concentrator cache -> dashboard.
  */
 
+import { recordTurnFromCumulatives } from '../cost-store'
 import type { MessageHandler } from '../handler-context'
 import { registerHandlers } from '../message-router'
 
@@ -164,6 +165,36 @@ const turnCost: MessageHandler = (ctx, data) => {
       session.costTimeline = session.costTimeline.slice(-MAX_COST_TIMELINE)
     }
     ctx.sessions.broadcastSessionUpdate(sessionId)
+
+    // Record to persistent cost store (delta computed internally)
+    const now = Date.now()
+    recordTurnFromCumulatives({
+      timestamp: now,
+      sessionId,
+      cwd: session.cwd,
+      account: session.claudeAuth?.email || '',
+      orgId: session.claudeAuth?.orgId || '',
+      model: session.model || '',
+      totalInputTokens: session.stats.totalInputTokens,
+      totalOutputTokens: session.stats.totalOutputTokens,
+      totalCacheRead: session.stats.totalCacheRead,
+      totalCacheWrite: session.stats.totalCacheCreation,
+      totalCostUsd: costUsd,
+      exactCost: true,
+    })
+
+    // Broadcast live update for stats page
+    ctx.broadcast({
+      type: 'turn_recorded',
+      sessionId,
+      cwd: session.cwd,
+      account: session.claudeAuth?.email || '',
+      model: session.model || '',
+      costUsd,
+      inputTokens: session.stats.totalInputTokens,
+      outputTokens: session.stats.totalOutputTokens,
+      timestamp: now,
+    })
   }
 }
 

@@ -21,6 +21,7 @@ import {
   unrevokeUser,
 } from './auth'
 import { getAuthenticatedUser, handleAuthRoute, requireAuth } from './auth-routes'
+import { queryHourly, querySummary, queryTurns } from './cost-store'
 import { startFileReaper } from './file-reaper'
 import { getGlobalSettings, updateGlobalSettings } from './global-settings'
 import { purgeMessages, queryMessages } from './inter-session-log'
@@ -1600,6 +1601,48 @@ Output a JSON array of strings. Each string should be the correct spelling of on
   app.get('/api/subscriptions', c => {
     if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
     return c.json(sessionStore.getSubscriptionsDiag())
+  })
+
+  // ─── Cost reporting ─────────────────────────────────────────────────
+
+  app.get('/api/stats/turns', c => {
+    if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
+    const q = c.req.query()
+    return c.json(
+      queryTurns({
+        from: q.from ? Number(q.from) : undefined,
+        to: q.to ? Number(q.to) : undefined,
+        account: q.account || undefined,
+        model: q.model || undefined,
+        cwd: q.cwd || undefined,
+        limit: q.limit ? Number(q.limit) : undefined,
+        offset: q.offset ? Number(q.offset) : undefined,
+      }),
+    )
+  })
+
+  app.get('/api/stats/hourly', c => {
+    if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
+    const q = c.req.query()
+    return c.json(
+      queryHourly({
+        from: q.from ? Number(q.from) : undefined,
+        to: q.to ? Number(q.to) : undefined,
+        account: q.account || undefined,
+        model: q.model || undefined,
+        cwd: q.cwd || undefined,
+        groupBy: (q.groupBy as 'hour' | 'day') || undefined,
+      }),
+    )
+  })
+
+  app.get('/api/stats/summary', c => {
+    if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
+    const period = (c.req.query('period') || '24h') as '24h' | '7d' | '30d'
+    if (!['24h', '7d', '30d'].includes(period)) {
+      return c.json({ error: 'Invalid period. Use 24h, 7d, or 30d' }, 400)
+    }
+    return c.json(querySummary(period))
   })
 
   // ─── Static file serving ───────────────────────────────────────────

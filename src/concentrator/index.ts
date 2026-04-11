@@ -14,6 +14,7 @@ import { DEFAULT_CONCENTRATOR_PORT } from '../shared/protocol'
 import { getOrAssign, initAddressBook, resolve } from './address-book'
 import { getUser, initAuth, reloadState, validateSession } from './auth'
 import { getAuthenticatedUser, requireAuth, setRclaudeSecret, setShareValidator } from './auth-routes'
+import { closeCostStore, initCostStore } from './cost-store'
 import { type ContextDeps, createContext } from './create-context'
 import { initGlobalSettings } from './global-settings'
 import type { WsData } from './handler-context'
@@ -254,6 +255,9 @@ async function main() {
   // Initialize model pricing (LiteLLM database)
   initModelPricing(authCacheDir)
 
+  // Initialize cost reporting store (SQLite)
+  initCostStore(authCacheDir)
+
   // Initialize settings
   initProjectSettings(authCacheDir)
   initGlobalSettings(authCacheDir)
@@ -292,10 +296,12 @@ async function main() {
   // Save state on shutdown
   process.on('SIGINT', async () => {
     console.log('\n[shutdown] Saving state...')
+    closeCostStore()
     await Promise.all([sessionStore.saveState(), sessionStore.flushTranscripts()])
     process.exit(0)
   })
   process.on('SIGTERM', async () => {
+    closeCostStore()
     await Promise.all([sessionStore.saveState(), sessionStore.flushTranscripts()])
     process.exit(0)
   })

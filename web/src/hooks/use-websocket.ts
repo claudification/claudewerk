@@ -104,6 +104,7 @@ function toSession(summary: SessionSummary): Session {
     linkedSessions: summary.linkedSessions,
     tokenUsage: summary.tokenUsage,
     stats: summary.stats,
+    costTimeline: summary.costTimeline,
     gitBranch: summary.gitBranch,
     version: summary.version,
     buildTime: summary.buildTime,

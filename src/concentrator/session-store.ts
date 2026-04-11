@@ -23,6 +23,8 @@ import type {
   WrapperCapability,
 } from '../shared/protocol'
 import { BUILD_VERSION } from '../shared/version'
+import { recordTurnFromCumulatives } from './cost-store'
+import { getModelInfo } from './model-pricing'
 import type { UserGrant } from './permissions'
 import { resolvePermissions } from './permissions'
 import { getProjectSettings } from './project-settings'
@@ -1205,6 +1207,46 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
               errorType: String(d.error_type || d.errorType || ''),
               errorMessage: String(d.error_message || d.errorMessage || d.error || ''),
               timestamp: event.timestamp,
+            }
+          }
+
+          // Record estimated cost for PTY sessions (headless uses exact turn_cost)
+          if (event.hookEvent === 'Stop' && !session.capabilities?.includes('headless')) {
+            const s = session.stats
+            if (s.totalInputTokens > 0 || s.totalOutputTokens > 0) {
+              // Estimate cumulative cost using LiteLLM pricing
+              const info = session.model ? getModelInfo(session.model) : undefined
+              let totalEstCost: number
+              if (info) {
+                const uncached = Math.max(0, s.totalInputTokens - s.totalCacheCreation - s.totalCacheRead)
+                const cacheReadCost = info.cacheReadCostPerToken ?? info.inputCostPerToken * 0.125
+                const cacheWriteCost = info.cacheWriteCostPerToken ?? info.inputCostPerToken * 1.25
+                totalEstCost =
+                  uncached * info.inputCostPerToken +
+                  s.totalOutputTokens * info.outputCostPerToken +
+                  s.totalCacheRead * cacheReadCost +
+                  s.totalCacheCreation * cacheWriteCost
+              } else {
+                const uncached = Math.max(0, s.totalInputTokens - s.totalCacheCreation - s.totalCacheRead)
+                totalEstCost =
+                  (uncached * 15 + s.totalOutputTokens * 75 + s.totalCacheRead * 1.875 + s.totalCacheCreation * 18.75) /
+                  1_000_000
+              }
+              // Delta computation handled inside recordTurnFromCumulatives
+              recordTurnFromCumulatives({
+                timestamp: event.timestamp,
+                sessionId,
+                cwd: session.cwd,
+                account: session.claudeAuth?.email || '',
+                orgId: session.claudeAuth?.orgId || '',
+                model: session.model || '',
+                totalInputTokens: s.totalInputTokens,
+                totalOutputTokens: s.totalOutputTokens,
+                totalCacheRead: s.totalCacheRead,
+                totalCacheWrite: s.totalCacheCreation,
+                totalCostUsd: totalEstCost,
+                exactCost: false,
+              })
             }
           }
         } else if (!PASSIVE_HOOKS.has(event.hookEvent) && session.status !== 'ended') {
