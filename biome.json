@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.9/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.4.11/schema.json",
   "assist": {
     "actions": {
       "source": {
@@ -24,15 +24,31 @@
   },
   "linter": {
     "enabled": true,
+    "domains": {
+      "react": "recommended"
+    },
     "rules": {
       "recommended": true,
+      "correctness": {
+        "useHookAtTopLevel": "error",
+        "useExhaustiveDependencies": "warn"
+      },
+      "nursery": {
+        "noJsxPropsBind": "off",
+        "noLeakedRender": "off"
+      },
       "style": {
         "useConst": "warn",
+        "useComponentExportOnlyModules": "off",
         "noNonNullAssertion": "warn"
       },
       "suspicious": {
         "noExplicitAny": "warn",
-        "noControlCharactersInRegex": "off"
+        "noControlCharactersInRegex": "off",
+        "noArrayIndexKey": "warn"
+      },
+      "security": {
+        "noDangerouslySetInnerHtml": "off"
       },
       "a11y": {
         "noStaticElementInteractions": "warn",
