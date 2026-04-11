@@ -11,15 +11,18 @@ export interface BuildVersion {
 }
 
 export const BUILD_VERSION: BuildVersion = {
-  gitHash: '2fc715f842ea6f3fcf9af19fdf5d12949eb3aa6c',
-  gitHashShort: '2fc715f-dirty',
-  buildTime: '2026-04-10T14:00:41.071Z',
+  gitHash: '49d1bb19d57576c2257ce03cb8a6320a9fac9645',
+  gitHashShort: '49d1bb1-dirty',
+  buildTime: '2026-04-11T07:57:19.216Z',
   dirty: true,
   branch: 'main',
   githubRepo: 'claudification/remote-claude',
   recentCommits: [
-    { hash: '2fc715f', message: '(HEAD -> main) feat: plan mode detection via CC status message + dialog dedup fix' },
-    { hash: '59202be', message: 'fix: hide auto-injected notes textarea when dialog has a TextInput' },
-    { hash: '08165c6', message: 'feat: plan mode visual indicators - blue tint, banner, entry styling' },
+    {
+      hash: '49d1bb1',
+      message: '(HEAD -> main) feat: show cost in collapsed session header, fix project name override',
+    },
+    { hash: 'dd254bf', message: 'feat: add "Cost in sidebar" toggle to dashboard settings' },
+    { hash: 'a094ca0', message: 'fix: project name is primary in sidebar, session name shown underneath' },
   ],
 }
