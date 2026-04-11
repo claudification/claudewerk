@@ -779,6 +779,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
           turnCount: 0,
           toolCallCount: 0,
           compactionCount: 0,
+          linesAdded: 0,
+          linesRemoved: 0,
         },
         costTimeline: s.costTimeline,
         gitBranch: s.gitBranch,
@@ -958,6 +960,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         turnCount: 0,
         toolCallCount: 0,
         compactionCount: 0,
+        linesAdded: 0,
+        linesRemoved: 0,
       },
       costTimeline: [],
     }
@@ -2193,6 +2197,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
           turnCount: 0,
           toolCallCount: 0,
           compactionCount: 0,
+          linesAdded: 0,
+          linesRemoved: 0,
         }
       }
       for (const entry of entries) {
@@ -2310,6 +2316,29 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
                 })
                 console.log(`[clipboard] ${capture.contentType} from transcript (session ${sessionId.slice(0, 8)})`)
               }
+            }
+          }
+        }
+
+        // Count lines changed from Edit/MultiEdit structuredPatch on tool results
+        if (!isInitial && entry.type === 'user') {
+          const userContent = (entry as TranscriptUserEntry).message?.content
+          if (Array.isArray(userContent)) {
+            for (const block of userContent) {
+              if (block.type !== 'tool_result') continue
+              const tur = (block as unknown as Record<string, unknown>).toolUseResult as
+                | Record<string, unknown>
+                | undefined
+              const patches = tur?.structuredPatch as Array<{ lines?: string[] }> | undefined
+              if (!Array.isArray(patches)) continue
+              for (const hunk of patches) {
+                if (!Array.isArray(hunk.lines)) continue
+                for (const line of hunk.lines) {
+                  if (line.startsWith('+')) session.stats.linesAdded++
+                  else if (line.startsWith('-')) session.stats.linesRemoved++
+                }
+              }
+              sessionChanged = true
             }
           }
         }

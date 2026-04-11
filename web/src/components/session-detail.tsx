@@ -1229,6 +1229,13 @@ export const SessionDetail = memo(function SessionDetail() {
                       <span className="text-foreground">{session.totalSubagentCount}</span>
                     </span>
                   )}
+                  {s && (s.linesAdded > 0 || s.linesRemoved > 0) && (
+                    <span>
+                      <span className="text-emerald-400">+{s.linesAdded}</span>
+                      <span className="text-muted-foreground">/</span>
+                      <span className="text-red-400">-{s.linesRemoved}</span>
+                    </span>
+                  )}
                   {s && s.compactionCount > 0 && (
                     <span>
                       <span className="text-muted-foreground">compactions </span>

@@ -94,6 +94,8 @@ export interface Session {
     toolCallCount: number
     compactionCount: number
     totalCostUsd?: number
+    linesAdded: number
+    linesRemoved: number
   }
   costTimeline?: Array<{ t: number; cost: number }>
   claudeVersion?: string
