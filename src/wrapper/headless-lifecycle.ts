@@ -205,7 +205,7 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
           }
         }
         if (!plan) {
-          plan = '(Plan content not available)'
+          plan = '(Plan content not available -- file missing or empty)'
         }
 
         // Store pending request for response routing
@@ -222,8 +222,13 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
             planFilePath,
             allowedPrompts,
           } as unknown as WrapperMessage)
+          ctx.diag('headless', `ExitPlanMode: forwarded for approval (${request.requestId.slice(0, 8)})`)
+        } else {
+          // No dashboard connected -- auto-approve to prevent CC from hanging
+          ctx.diag('headless', 'ExitPlanMode: no WS connection, auto-approving')
+          ctx.streamProc?.sendPermissionResponse(request.requestId, true, undefined, toolUseId)
+          ctx.pendingAskRequests.delete(pendingKey)
         }
-        ctx.diag('headless', `ExitPlanMode: forwarded for approval (${request.requestId.slice(0, 8)})`)
         return
       }
 
