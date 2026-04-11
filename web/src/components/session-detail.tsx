@@ -965,7 +965,7 @@ export const SessionDetail = memo(function SessionDetail() {
                     </span>
                   )}
                   <span className="text-sm font-bold truncate" style={ps?.color ? { color: ps.color } : undefined}>
-                    {session.title || ps?.label || session.cwd.split('/').slice(-2).join('/')}
+                    {ps?.label || session.cwd.split('/').slice(-2).join('/')}
                   </span>
                   <span>
                     {' · '}
@@ -1010,7 +1010,20 @@ export const SessionDetail = memo(function SessionDetail() {
                               pct < 60 ? 'text-emerald-400/70' : pct < 85 ? 'text-amber-400/70' : 'text-red-400/70',
                             )}
                           >
-                            {totalK}K ({pct}%)
+                            {totalK.toLocaleString()}K ({pct}%)
+                          </span>
+                        </span>
+                      )
+                    })()}
+                  {session.stats &&
+                    (() => {
+                      const { cost, exact } = getSessionCost(session.stats, model || session.model)
+                      if (cost < 0.01) return null
+                      return (
+                        <span className="inline-flex items-center gap-1 ml-1">
+                          <span className="text-muted-foreground">·</span>
+                          <span className={cn('text-[10px] font-mono', getCostColor(cost))}>
+                            {formatCost(cost, exact)}
                           </span>
                         </span>
                       )
