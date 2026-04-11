@@ -11,11 +11,15 @@ export interface BuildVersion {
 }
 
 export const BUILD_VERSION: BuildVersion = {
-  gitHash: 'a732e7b737006f7bf565fa01f5fd1e35b6de1f59',
-  gitHashShort: 'a732e7b-dirty',
-  buildTime: '2026-04-10T11:34:38.009Z',
+  gitHash: '2fc715f842ea6f3fcf9af19fdf5d12949eb3aa6c',
+  gitHashShort: '2fc715f-dirty',
+  buildTime: '2026-04-10T14:00:41.071Z',
   dirty: true,
   branch: 'main',
   githubRepo: 'claudification/remote-claude',
-  recentCommits: [{"hash":"a732e7b","message":"(HEAD -> main) chore: version bump + minor main.tsx cleanup"},{"hash":"1961358","message":"feat: unified keyboard command system (key-layers + command registry)"},{"hash":"8f208e8","message":"fix: T: task selection opens editor without tab switch"}],
+  recentCommits: [
+    { hash: '2fc715f', message: '(HEAD -> main) feat: plan mode detection via CC status message + dialog dedup fix' },
+    { hash: '59202be', message: 'fix: hide auto-injected notes textarea when dialog has a TextInput' },
+    { hash: '08165c6', message: 'feat: plan mode visual indicators - blue tint, banner, entry styling' },
+  ],
 }

@@ -104,11 +104,20 @@ function Dashboard() {
 
   // Fetch sidebar metadata (project settings, capabilities, global settings, session order).
   // Called on mount AND on reconnect/visibility-restore to catch renames, reorders, etc.
-  const fetchSidebarMetadata = useCallback(() => {
-    fetchProjectSettings().then(s => useSessionsStore.getState().setProjectSettings(s))
-    fetchServerCapabilities().then(c => useSessionsStore.getState().setServerCapabilities(c))
-    fetchGlobalSettings().then(s => useSessionsStore.setState({ globalSettings: s }))
-    fetchSessionOrder().then(o => useSessionsStore.getState().setSessionOrder(o))
+  // Uses Promise.all + single batched setState to avoid useSyncExternalStore tearing (#310).
+  const fetchSidebarMetadata = useCallback(async () => {
+    const [settings, capabilities, globalSettings, order] = await Promise.all([
+      fetchProjectSettings(),
+      fetchServerCapabilities(),
+      fetchGlobalSettings(),
+      fetchSessionOrder(),
+    ])
+    useSessionsStore.setState({
+      projectSettings: settings,
+      serverCapabilities: capabilities,
+      globalSettings,
+      sessionOrder: order,
+    })
   }, [])
 
   useEffect(() => {
@@ -208,19 +217,13 @@ function Dashboard() {
         `[sync] FETCH ${sessionId.slice(0, 8)} (${reason || '?'}) cached=${cachedCount} lastFetch=${lastFetch ? `${elapsed}ms ago` : 'never'}`,
       )
       fetchedAtRef.current[sessionId] = now
-      fetchSessionEvents(sessionId).then(events => {
-        console.log(`[sync] GOT events ${sessionId.slice(0, 8)}: ${events.length} entries`)
+      // Batch both fetches into a single state update to avoid useSyncExternalStore tearing (#310)
+      Promise.all([fetchSessionEvents(sessionId), fetchTranscript(sessionId)]).then(([events, transcript]) => {
+        console.log(
+          `[sync] GOT ${sessionId.slice(0, 8)}: events=${events.length} transcript=${transcript?.length ?? 'null'} (was ${cachedCount})`,
+        )
         setEvents(sessionId, events)
-      })
-      fetchTranscript(sessionId).then(transcript => {
-        if (transcript) {
-          console.log(
-            `[sync] GOT transcript ${sessionId.slice(0, 8)}: ${transcript.length} entries (was ${cachedCount})`,
-          )
-          setTranscript(sessionId, transcript)
-        } else {
-          console.log(`[sync] GOT transcript ${sessionId.slice(0, 8)}: null (server has no cache)`)
-        }
+        if (transcript) setTranscript(sessionId, transcript)
       })
     },
     [setEvents, setTranscript],
@@ -456,7 +459,7 @@ function Dashboard() {
     }
   }
 
-  const { canAdmin } = useSessionsStore(s => s.permissions)
+  const canAdmin = useSessionsStore(s => s.permissions.canAdmin)
   const showSessionList = true // sidebar always visible for authenticated users
 
   return (

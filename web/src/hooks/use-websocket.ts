@@ -737,10 +737,6 @@ export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const setConnected = useSessionsStore(s => s.setConnected)
-  const setError = useSessionsStore(s => s.setError)
-  const setWs = useSessionsStore(s => s.setWs)
-
   // Tracked send: serializes + records byte count. Uses wsRef for subscription watchers.
   function send(msg: Record<string, unknown>) {
     const w = wsRef.current
@@ -758,27 +754,36 @@ export function useWebSocket() {
       wsRef.current = ws
 
       ws.onopen = () => {
-        setConnected(true)
-        setError(null)
-        setWs(ws)
         send({ type: 'subscribe', protocolVersion: 2 })
 
-        // On reconnect: evict all non-selected sessions from LIFO cache.
-        // Their data is potentially stale (missed WS entries during disconnect).
-        // They'll be re-fetched fresh when the user navigates to them.
-        // Only the current session keeps its cache + gets re-subscribed.
-        const { selectedSessionId, selectedSubagentId, transcripts, events } = useSessionsStore.getState()
+        // Single batched setState for ALL onopen state changes.
+        // Multiple separate setState calls fire Zustand subscribers individually,
+        // causing useSyncExternalStore tearing detection to loop (React #310).
+        const { selectedSessionId, selectedSubagentId, transcripts, events, connectSeq } = useSessionsStore.getState()
+
+        // Evict stale sessions from LIFO cache (non-selected sessions may have missed WS entries)
         const evictedSids = Object.keys(transcripts).filter(sid => sid !== selectedSessionId)
+        let newTranscripts = transcripts
+        let newEvents = events
         if (evictedSids.length > 0) {
-          const newTranscripts = { ...transcripts }
-          const newEvents = { ...events }
+          newTranscripts = { ...transcripts }
+          newEvents = { ...events }
           for (const sid of evictedSids) {
             delete newTranscripts[sid]
             delete newEvents[sid]
           }
           console.log(`[sync] reconnect: evicted ${evictedSids.length} stale sessions from LIFO cache`)
-          useSessionsStore.setState({ transcripts: newTranscripts, events: newEvents })
         }
+
+        // ONE setState call instead of 5 separate ones
+        useSessionsStore.setState({
+          isConnected: true,
+          error: null,
+          ws,
+          transcripts: newTranscripts,
+          events: newEvents,
+          connectSeq: connectSeq + 1,
+        })
 
         // Reset subscription tracking - only current session
         clearSubscribedSessions()
@@ -798,25 +803,27 @@ export function useWebSocket() {
             })
           }
         }
-
-        // Bump connectSeq to trigger re-fetch of current session
-        useSessionsStore.setState(s => ({ connectSeq: s.connectSeq + 1 }))
       }
 
       ws.onclose = e => {
-        setConnected(false)
-        setWs(null)
         wsRef.current = null
 
         if (e.code === 1008 || e.code === 4401) {
           // Auth failure - don't reconnect, show expiry modal
-          useSessionsStore.getState().setAuthExpired(true)
-          setError(`Session expired or unauthorized`)
+          useSessionsStore.setState({
+            isConnected: false,
+            ws: null,
+            authExpired: true,
+            error: 'Session expired or unauthorized',
+          })
           return
         }
-        if (e.code !== 1000) {
-          setError(`WebSocket closed (${e.code}${e.reason ? `: ${e.reason}` : ''})`)
-        }
+        // Single setState for disconnect state
+        useSessionsStore.setState({
+          isConnected: false,
+          ws: null,
+          ...(e.code !== 1000 ? { error: `WebSocket closed (${e.code}${e.reason ? `: ${e.reason}` : ''})` } : {}),
+        })
 
         if (!reconnectTimeoutRef.current) {
           reconnectTimeoutRef.current = setTimeout(() => {
@@ -827,7 +834,7 @@ export function useWebSocket() {
       }
 
       ws.onerror = () => {
-        setError(`WebSocket connection failed: ${WS_URL}`)
+        useSessionsStore.setState({ error: `WebSocket connection failed: ${WS_URL}` })
       }
 
       ws.onmessage = event => {
@@ -908,9 +915,9 @@ export function useWebSocket() {
         }
       }
     } catch {
-      setConnected(false)
+      useSessionsStore.setState({ isConnected: false })
     }
-  }, [setConnected, setError, setWs])
+  }, [])
 
   useEffect(() => {
     connect()

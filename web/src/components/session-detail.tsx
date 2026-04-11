@@ -1,6 +1,7 @@
 import type { HookEvent } from '@shared/protocol'
 import { ArrowLeft, ChevronDown, ChevronRight, ChevronUp, Copy, Terminal } from 'lucide-react'
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { type TaskStatus, useProject } from '@/hooks/use-project'
@@ -172,7 +173,7 @@ function PermissionBanners() {
   const respond = useSessionsStore(s => s.respondToPermission)
   const sendRule = useSessionsStore(s => s.sendPermissionRule)
   const selectedSession = useSessionsStore(s => s.selectedSessionId)
-  const session = useSessionsStore(s => s.sessions.find(sess => sess.id === selectedSession))
+  const sessionCwd = useSessionsStore(s => s.sessions.find(sess => sess.id === s.selectedSessionId)?.cwd)
   const relevant = permissions.filter(p => p.sessionId === selectedSession)
   if (relevant.length === 0) return null
   return (
@@ -188,7 +189,7 @@ function PermissionBanners() {
             <span className="text-muted-foreground text-[10px] ml-auto">{perm.requestId}</span>
           </div>
           {perm.description && <div className="text-foreground/70 text-[11px]">{perm.description}</div>}
-          {perm.inputPreview && formatPermissionInput(perm.toolName, perm.inputPreview, session?.cwd)}
+          {perm.inputPreview && formatPermissionInput(perm.toolName, perm.inputPreview, sessionCwd)}
           <div className="flex items-center gap-2 mt-0.5">
             <button
               type="button"
@@ -510,9 +511,11 @@ const InputBar = memo(function InputBar({ sessionId }: { sessionId: string }) {
   const sessionRef = useRef(sessionId)
 
   // Track pendingAttention with 15s delay before showing (PTY only - headless uses PermissionBanners)
-  const session = useSessionsStore(s => s.sessions.find(sess => sess.id === sessionId))
-  const pendingAttention = session?.pendingAttention
-  const sessionHasTerminal = session ? canTerminal(session) : false
+  const pendingAttention = useSessionsStore(s => s.sessions.find(sess => sess.id === sessionId)?.pendingAttention)
+  const sessionHasTerminal = useSessionsStore(s => {
+    const sess = s.sessions.find(se => se.id === sessionId)
+    return sess ? canTerminal(sess) : false
+  })
   useEffect(() => {
     if (!pendingAttention) {
       setShowAttention(false)
@@ -689,7 +692,7 @@ function DialogOverlay({ sessionId }: { sessionId: string }) {
   )
 }
 
-export function SessionDetail() {
+export const SessionDetail = memo(function SessionDetail() {
   const [activeTab, setActiveTab] = useState<Tab>('transcript')
   const [follow, setFollow] = useState(true)
   const showThinking = useSessionsStore(s => s.dashboardPrefs.showThinking)
@@ -735,7 +738,16 @@ export function SessionDetail() {
 
   const session = useSessionsStore(state => state.sessions.find(s => s.id === state.selectedSessionId))
   const { canAdmin, canChat, canReadTerminal, canReadFiles, canSpawn } = useSessionsStore(
-    s => (s.selectedSessionId && s.sessionPermissions[s.selectedSessionId]) || s.permissions,
+    useShallow(s => {
+      const p = (s.selectedSessionId && s.sessionPermissions[s.selectedSessionId]) || s.permissions
+      return {
+        canAdmin: p.canAdmin,
+        canChat: p.canChat,
+        canReadTerminal: p.canReadTerminal,
+        canReadFiles: p.canReadFiles,
+        canSpawn: p.canSpawn,
+      }
+    }),
   )
 
   // Track activeTab in a ref so selectors can skip updates when data isn't visible.
@@ -764,6 +776,7 @@ export function SessionDetail() {
     subagentKey ? state.subagentTranscripts[subagentKey] : undefined,
   )
   const subagentTranscript = subagentTranscriptRaw || EMPTY_TRANSCRIPT
+
   const [subagentLoading, setSubagentLoading] = useState(false)
 
   // Fetch initial subagent transcript via HTTP, seed into store
@@ -832,6 +845,25 @@ export function SessionDetail() {
     })
   }, [reviveState, reviveCwd, reviveSessionId])
 
+  // Plan mode: prefer concentrator state, fall back to transcript scan.
+  // MUST be above the `if (!session)` early return -- hooks can't be after conditional returns.
+  const inPlanMode = useMemo(() => {
+    if (session?.planMode) return true
+    let pm = false
+    for (const e of transcript) {
+      const blocks = (e as Record<string, unknown>).message
+        ? ((e as Record<string, unknown>).message as Record<string, unknown>)?.content
+        : undefined
+      if (!Array.isArray(blocks)) continue
+      for (const b of blocks) {
+        if (b.type === 'tool_use' && b.name === 'EnterPlanMode') pm = true
+        if (b.type === 'tool_use' && b.name === 'ExitPlanMode') pm = false
+      }
+    }
+    return pm
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.planMode, transcript.length])
+
   if (!session) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -855,24 +887,6 @@ export function SessionDetail() {
 
   const canSendInput = session != null && session.status !== 'ended' && canChat
   const hasTerminal = session ? canTerminal(session) : false
-
-  // Plan mode: prefer concentrator state, fall back to transcript scan
-  const inPlanMode = useMemo(() => {
-    if (session?.planMode) return true
-    // Derive from transcript: last EnterPlanMode without matching ExitPlanMode
-    let pm = false
-    for (const e of transcript) {
-      const blocks = (e as Record<string, unknown>).message
-        ? ((e as Record<string, unknown>).message as Record<string, unknown>)?.content
-        : undefined
-      if (!Array.isArray(blocks)) continue
-      for (const b of blocks) {
-        if (b.type === 'tool_use' && b.name === 'EnterPlanMode') pm = true
-        if (b.type === 'tool_use' && b.name === 'ExitPlanMode') pm = false
-      }
-    }
-    return pm
-  }, [session?.planMode, transcript])
   const canRevive = session?.status === 'ended' && agentConnected && canSpawn
 
   function handleRevive() {
@@ -1713,4 +1727,4 @@ export function SessionDetail() {
       )}
     </div>
   )
-}
+})

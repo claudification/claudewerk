@@ -70,7 +70,9 @@ function TaskRow({ task, onToggleDesc, expanded }: { task: TaskInfo; onToggleDes
 
 export function TasksView({ sessionId, pendingCount }: TasksViewProps) {
   const storeTasks = useSessionsStore(state => state.tasks[sessionId])
-  const session = useSessionsStore(state => state.sessions.find(s => s.id === sessionId))
+  const archivedTaskCount = useSessionsStore(
+    state => state.sessions.find(s => s.id === sessionId)?.archivedTaskCount ?? 0,
+  )
   const [initialTasks, setInitialTasks] = useState<TaskInfo[] | null>(null)
   const [expandedDescs, setExpandedDescs] = useState<Set<string>>(new Set())
   const [showArchived, setShowArchived] = useState(false)
@@ -121,7 +123,7 @@ export function TasksView({ sessionId, pendingCount }: TasksViewProps) {
   const tasks: TaskInfo[] = storeTasks || initialTasks || []
   const loading = !storeTasks && !initialTasks
   // Archived count from session summary (lightweight, pushed via WS)
-  const totalArchived = session?.archivedTaskCount || 0
+  const totalArchived = archivedTaskCount
 
   if (loading) {
     return <div className="text-xs text-muted-foreground p-4">Loading tasks...</div>

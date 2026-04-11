@@ -75,13 +75,13 @@ const VERBS = [
 
 /** Shows a fun random verb spinner while the session is active (between UserPromptSubmit and Stop) */
 const ThinkingSpinner = memo(function ThinkingSpinner({ sessionId }: { sessionId: string | null }) {
-  const session = useSessionsStore(state => state.sessions.find(s => s.id === sessionId))
+  const isActive = useSessionsStore(state => state.sessions.find(s => s.id === sessionId)?.status === 'active')
+  const totalOutput = useSessionsStore(
+    state => state.sessions.find(s => s.id === sessionId)?.stats?.totalOutputTokens ?? 0,
+  )
   const [verb, setVerb] = useState(() => VERBS[Math.floor(Math.random() * VERBS.length)])
   const [dots, setDots] = useState(0)
   const baselineRef = useRef(0)
-
-  const isActive = session?.status === 'active'
-  const totalOutput = session?.stats?.totalOutputTokens ?? 0
 
   // Capture baseline when turn starts
   useEffect(() => {

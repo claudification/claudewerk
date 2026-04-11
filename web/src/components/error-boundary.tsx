@@ -155,10 +155,6 @@ export class ErrorBoundary extends Component<Props, State> {
     }
   }
 
-  reload() {
-    window.location.reload()
-  }
-
   render() {
     if (this.state.hasError) {
       const { error, copied } = this.state
@@ -223,7 +219,17 @@ export class ErrorBoundary extends Component<Props, State> {
               </button>
               <button
                 type="button"
-                onClick={() => this.reload()}
+                onClick={async () => {
+                  // Nuke SW + all caches, then hard reload
+                  try {
+                    const regs = await navigator.serviceWorker?.getRegistrations()
+                    if (regs) for (const r of regs) await r.unregister()
+                    const names = await caches?.keys()
+                    if (names) for (const n of names) await caches.delete(n)
+                  } catch {}
+                  // Cache-bust: add timestamp to force fresh fetch past any proxy/CDN cache
+                  window.location.href = `${window.location.origin}/?_cb=${Date.now()}${window.location.hash}`
+                }}
                 className="px-4 py-2 bg-secondary text-secondary-foreground font-bold text-sm hover:bg-secondary/80 transition-colors"
               >
                 ↻ RELOAD

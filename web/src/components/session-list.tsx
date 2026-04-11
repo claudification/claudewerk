@@ -916,7 +916,7 @@ function InactiveProjectItem({ sessions }: { sessions: Session[] }) {
 
 export function SessionList() {
   const allSessions = useSessionsStore(s => s.sessions)
-  const { canAdmin } = useSessionsStore(s => s.permissions)
+  const canAdmin = useSessionsStore(s => s.permissions.canAdmin)
   const sessionPermissions = useSessionsStore(s => s.sessionPermissions)
   // Non-admin users only see sessions they have read access to
   const sessions = useMemo(() => {
