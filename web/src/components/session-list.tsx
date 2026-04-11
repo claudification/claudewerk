@@ -277,31 +277,24 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
             </span>
           )}
           <ShareIndicator sessionCwd={session.cwd} />
+          {session.status === 'ended' && <DismissButton sessionId={session.id} />}
           {session.stats &&
             (() => {
               const { cost, exact } = getSessionCost(session.stats, model || session.model)
               if (cost < 0.01) return null
               const level = getCostLevel(cost)
-              if (level === 'low') {
-                return (
-                  <span
-                    className="text-[9px] text-emerald-400/50 font-mono"
-                    title={`Session cost: ${formatCost(cost, exact)}`}
-                  >
-                    {formatCost(cost, exact)}
-                  </span>
-                )
-              }
               return (
                 <span
-                  className={cn('px-1 py-0.5 text-[9px] font-bold font-mono border', getCostBgColor(cost))}
+                  className={cn(
+                    'text-[9px] font-mono ml-auto shrink-0',
+                    level === 'low' ? 'text-emerald-400/40' : cn('px-1 py-0.5 font-bold border', getCostBgColor(cost)),
+                  )}
                   title={`Session cost: ${formatCost(cost, exact)}`}
                 >
                   {formatCost(cost, exact)}
                 </span>
               )
             })()}
-          {session.status === 'ended' && <DismissButton sessionId={session.id} />}
         </div>
       )}
       {compact && (

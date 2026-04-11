@@ -1148,11 +1148,6 @@ export const SessionDetail = memo(function SessionDetail() {
                       <span className="text-blue-400">{(s.totalCacheRead / 1000).toFixed(0)}K</span>
                       <span className="text-muted-foreground"> / </span>
                       <span className="text-purple-400">{(s.totalCacheCreation / 1000).toFixed(0)}K</span>
-                      {cacheEff && (
-                        <span className={cn('ml-1', cacheEff.color)}>
-                          ({cacheEff.ratio.toFixed(1)}x {cacheEff.label})
-                        </span>
-                      )}
                     </div>
                     <div>
                       <span className="text-muted-foreground">cost </span>
@@ -1161,6 +1156,11 @@ export const SessionDetail = memo(function SessionDetail() {
                       </span>
                       {burnRate != null && burnRate >= 0.1 && (
                         <span className="text-muted-foreground ml-1">({burnRate.toFixed(1)}/hr)</span>
+                      )}
+                      {cacheEff && (
+                        <span className={cn('ml-2', cacheEff.color)}>
+                          cache {cacheEff.ratio.toFixed(1)}x {cacheEff.label}
+                        </span>
                       )}
                     </div>
                   </div>
