@@ -625,12 +625,17 @@ export function createRouter(options: RouteOptions): Hono {
     const wrapperId = randomUUID()
     const name =
       session.title || getProjectSettings(session.cwd)?.label || session.cwd.split('/').pop() || sessionId.slice(0, 8)
-    // Resolve effort: project default > global default > undefined
+    // Resolve effort + model: project default > global default > undefined
     const projSettings = getProjectSettings(session.cwd)
-    const effortRaw = projSettings?.defaultEffort || getGlobalSettings().defaultEffort
+    const globalSettings = getGlobalSettings()
+    const effortRaw = projSettings?.defaultEffort || globalSettings.defaultEffort
     const effort = effortRaw && effortRaw !== 'default' ? effortRaw : undefined
+    const modelRaw = projSettings?.defaultModel || globalSettings.defaultModel
+    const model = modelRaw || undefined
 
-    agent.send(JSON.stringify({ type: 'revive', sessionId, cwd: session.cwd, wrapperId, mode: 'continue', effort }))
+    agent.send(
+      JSON.stringify({ type: 'revive', sessionId, cwd: session.cwd, wrapperId, mode: 'continue', effort, model }),
+    )
 
     // Register rendezvous for MCP callers
     if (callerSessionId) {
@@ -752,9 +757,11 @@ export function createRouter(options: RouteOptions): Hono {
       const globalSettings = getGlobalSettings()
       const headless = body.headless ?? (projSettings?.defaultLaunchMode || globalSettings.defaultLaunchMode) !== 'pty'
 
-      // Resolve effort: project default > global default > undefined (don't pass flag)
+      // Resolve effort + model: project default > global default > undefined
       const effortRaw = projSettings?.defaultEffort || globalSettings.defaultEffort
       const effort = effortRaw && effortRaw !== 'default' ? effortRaw : undefined
+      const modelRaw = projSettings?.defaultModel || globalSettings.defaultModel
+      const model = modelRaw || undefined
 
       agent.send(
         JSON.stringify({
@@ -767,6 +774,7 @@ export function createRouter(options: RouteOptions): Hono {
           resumeId: body.resumeId,
           headless,
           effort,
+          model,
         }),
       )
     })

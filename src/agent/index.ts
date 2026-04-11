@@ -174,6 +174,7 @@ async function reviveSession(
   mode?: string,
   headless = true,
   effort?: string,
+  model?: string,
 ): Promise<ReviveResult> {
   const result: ReviveResult = {
     type: 'revive_result',
@@ -198,6 +199,7 @@ async function reviveSession(
       RCLAUDE_SESSION_ID: sessionId,
       ...(headless ? { RCLAUDE_HEADLESS: '1' } : {}),
       ...(effort ? { RCLAUDE_EFFORT: effort } : {}),
+      ...(model ? { RCLAUDE_MODEL: model } : {}),
     },
   })
 
@@ -279,6 +281,7 @@ async function spawnSession(
   resumeId?: string,
   headless = true,
   effort?: string,
+  model?: string,
 ): Promise<{ success: boolean; error?: string; tmuxSession?: string }> {
   // Diagnostic dump
   const whichRclaude = Bun.spawnSync(['which', 'rclaude'])
@@ -322,6 +325,7 @@ async function spawnSession(
     RCLAUDE_WRAPPER_ID: wrapperId,
     ...(headless ? { RCLAUDE_HEADLESS: '1' } : {}),
     ...(effort ? { RCLAUDE_EFFORT: effort } : {}),
+    ...(model ? { RCLAUDE_MODEL: model } : {}),
   }
 
   diag('spawn', 'Running revive script', { args: scriptArgs })
@@ -615,9 +619,10 @@ function connect(
             mode?: string
             headless?: boolean
             effort?: string
+            model?: string
           }
           log(
-            `Reviving session ${reviveMsg.sessionId.slice(0, 8)}... wrapper=${reviveMsg.wrapperId.slice(0, 8)} mode=${reviveMsg.mode || 'default'} headless=${reviveMsg.headless !== false}${reviveMsg.effort ? ` effort=${reviveMsg.effort}` : ''} (${reviveMsg.cwd})`,
+            `Reviving session ${reviveMsg.sessionId.slice(0, 8)}... wrapper=${reviveMsg.wrapperId.slice(0, 8)} mode=${reviveMsg.mode || 'default'} headless=${reviveMsg.headless !== false}${reviveMsg.effort ? ` effort=${reviveMsg.effort}` : ''}${reviveMsg.model ? ` model=${reviveMsg.model}` : ''} (${reviveMsg.cwd})`,
           )
           const result = await reviveSession(
             reviveMsg.sessionId,
@@ -629,6 +634,7 @@ function connect(
             reviveMsg.mode,
             reviveMsg.headless !== false,
             reviveMsg.effort,
+            reviveMsg.model,
           )
           ws.send(JSON.stringify(result))
           if (result.success) {
@@ -649,6 +655,7 @@ function connect(
             resumeId?: string
             headless?: boolean
             effort?: string
+            model?: string
           }
           if (noSpawn) {
             ws.send(
@@ -682,6 +689,7 @@ function connect(
             spawnMsg.resumeId,
             spawnMsg.headless !== false, // default true
             spawnMsg.effort,
+            spawnMsg.model,
           )
           const response: SpawnResult = {
             type: 'spawn_result',

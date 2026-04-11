@@ -795,6 +795,7 @@ export interface ProjectSettings {
   trustLevel?: 'default' | 'open' | 'benevolent' // open = accepts from anyone, benevolent = can message anyone
   defaultLaunchMode?: 'headless' | 'pty'
   defaultEffort?: 'default' | 'low' | 'medium' | 'high' | 'max' // 'default' = don't pass --effort flag
+  defaultModel?: string // model alias or full name (e.g. 'sonnet', 'opus', 'claude-sonnet-4-6')
   allowPlanMode?: boolean // default: true. Set false to auto-deny EnterPlanMode
   verbs?: string[] // custom spinner verbs (merged with defaults)
 }

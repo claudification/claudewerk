@@ -289,7 +289,7 @@ export function TaskEditor({
               type="button"
               onClick={() => {
                 const taskPath = `.rclaude/project/${status}/${task.slug}.md`
-                const prompt = `Work on this task: ${taskPath}`
+                const prompt = `Work on this task: ${taskPath}\nSet status to in-progress when you start, done when complete. Use mcp__rclaude__project_set_status with id="${task.slug}".`
                 sendInput(sessionId, prompt)
                 haptic('success')
                 onClose()

@@ -766,6 +766,21 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    group: 'Sessions',
+    label: 'Default model',
+    description: 'Default --model for new sessions (per-project overrides this)',
+    keywords: 'model opus sonnet haiku claude',
+    render: ctx => (
+      <input
+        type="text"
+        value={(ctx.server.defaultModel as string) || ''}
+        onChange={e => ctx.setServer('defaultModel', e.target.value)}
+        placeholder="e.g. sonnet, opus"
+        className="bg-muted border border-border px-2 py-1 text-xs font-mono text-foreground w-40 placeholder:text-muted-foreground/50"
+      />
+    ),
+  },
+  {
     group: 'Display',
     label: 'Show streaming',
     description: 'Show token-by-token streaming block for headless sessions',

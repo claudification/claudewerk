@@ -94,7 +94,13 @@ if [[ -n "${RCLAUDE_EFFORT:-}" ]]; then
   EFFORT_FLAG=" --effort $RCLAUDE_EFFORT"
 fi
 
-SPAWN_CMD="${CMD_PREFIX}${BASE_CMD}${EFFORT_FLAG}"
+# Append --model flag if set (passed through to claude CLI)
+MODEL_FLAG=""
+if [[ -n "${RCLAUDE_MODEL:-}" ]]; then
+  MODEL_FLAG=" --model $RCLAUDE_MODEL"
+fi
+
+SPAWN_CMD="${CMD_PREFIX}${BASE_CMD}${EFFORT_FLAG}${MODEL_FLAG}"
 
 # Launch a command in tmux via a login shell so .zshrc/.zprofile are sourced.
 # Without this, the tmux pane runs the command directly (no shell init),

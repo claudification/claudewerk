@@ -582,6 +582,7 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
   const [trustLevel, setTrustLevel] = useState<string>(current.trustLevel || 'default')
   const [launchMode, setLaunchMode] = useState<string>(current.defaultLaunchMode || 'headless')
   const [effort, setEffort] = useState<string>(current.defaultEffort || 'default')
+  const [model, setModel] = useState<string>(current.defaultModel || '')
   const [keytermInput, setKeytermInput] = useState('')
   const [iconSearch, setIconSearch] = useState('')
   const [saving, setSaving] = useState(false)
@@ -618,6 +619,7 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
       trustLevel: trustLevel === 'default' ? undefined : (trustLevel as 'open' | 'benevolent'),
       defaultLaunchMode: launchMode === 'headless' ? undefined : (launchMode as 'pty'),
       defaultEffort: effort === 'default' ? undefined : (effort as 'low' | 'medium' | 'high' | 'max'),
+      defaultModel: model.trim() || undefined,
     }
 
     updateProjectSettings(cwd, settings)
@@ -669,7 +671,8 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
     JSON.stringify(keyterms) !== JSON.stringify(current.keyterms || []) ||
     trustLevel !== (current.trustLevel || 'default') ||
     launchMode !== (current.defaultLaunchMode || 'headless') ||
-    effort !== (current.defaultEffort || 'default')
+    effort !== (current.defaultEffort || 'default') ||
+    model.trim() !== (current.defaultModel || '')
 
   const hasAnySettings =
     current.label ||
@@ -975,6 +978,25 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
             </div>
             <div className="text-[9px] text-muted-foreground mt-0.5">
               Passed as --effort flag when launching sessions
+            </div>
+          </div>
+
+          {/* Default model */}
+          <div>
+            <label htmlFor="ps-model" className="text-muted-foreground text-[10px] uppercase tracking-wider block mb-1">
+              Default Model
+            </label>
+            <input
+              id="ps-model"
+              type="text"
+              value={model}
+              onChange={e => setModel(e.target.value)}
+              placeholder="e.g. sonnet, opus, claude-sonnet-4-6"
+              className="w-full bg-background border border-border px-2 py-1.5 text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-muted-foreground/50"
+              style={{ fontSize: '16px' }}
+            />
+            <div className="text-[9px] text-muted-foreground mt-0.5">
+              Passed as --model flag when launching sessions
             </div>
           </div>
         </div>
