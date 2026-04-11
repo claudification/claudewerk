@@ -125,6 +125,16 @@ export function interceptTodoWrite(ctx: WrapperContext, entries: TranscriptEntry
 }
 
 /**
+ * Filter out subagent entries from a parent transcript stream.
+ * CC writes ALL entries (including subagent) to the parent JSONL, but subagent
+ * entries have their own file watchers. Sending them as parent entries causes
+ * duplicates in the dashboard transcript.
+ */
+function filterParentEntries(entries: TranscriptEntry[]): TranscriptEntry[] {
+  return entries.filter(e => !(e as Record<string, unknown>).parent_tool_use_id)
+}
+
+/**
  * Send transcript entries to concentrator in fixed-size chunks.
  */
 export function sendTranscriptEntriesChunked(
@@ -285,9 +295,10 @@ export function resendTranscriptFromFile(ctx: WrapperContext) {
           entries.push(JSON.parse(line))
         } catch {}
       }
-      if (entries.length > 0) {
-        debug(`resendTranscript: sending ${entries.length} entries from ${path}`)
-        sendTranscriptEntriesChunked(ctx, entries, true)
+      const parentEntries = filterParentEntries(entries)
+      if (parentEntries.length > 0) {
+        debug(`resendTranscript: sending ${parentEntries.length}/${entries.length} entries from ${path}`)
+        sendTranscriptEntriesChunked(ctx, parentEntries, true)
       }
     })
   } catch (err) {
@@ -311,8 +322,12 @@ export function startTranscriptWatcher(ctx: WrapperContext, transcriptPath: stri
   ctx.transcriptWatcher = createTranscriptWatcher({
     debug: DEBUG ? (msg: string) => debug(`[tw] ${msg}`) : undefined,
     onEntries(entries, isInitial) {
-      sendTranscriptEntriesChunked(ctx, entries, isInitial)
-      // Scan for background tasks to watch their output files
+      // Filter out subagent entries -- they have their own file watchers
+      const parentEntries = filterParentEntries(entries)
+      if (parentEntries.length > 0) {
+        sendTranscriptEntriesChunked(ctx, parentEntries, isInitial)
+      }
+      // Scan all entries (including subagent) for bg tasks
       scanForBgTasks(ctx, entries)
     },
     onNewFile(filename) {
