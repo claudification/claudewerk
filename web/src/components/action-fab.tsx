@@ -20,6 +20,8 @@ interface FanAction {
   label: string
   action: () => void
   color: string
+  /** Dangerous actions get extra spacing and require confirmation */
+  dangerous?: boolean
 }
 
 function buildActions(session: Session | undefined, selectedSessionId: string | null): FanAction[] {
@@ -66,6 +68,7 @@ function buildActions(session: Session | undefined, selectedSessionId: string | 
           useSessionsStore.getState().terminateSession(session.id)
         },
         color: 'bg-red-500',
+        dangerous: true,
       })
     } else {
       // Ended session actions
@@ -95,6 +98,7 @@ function buildActions(session: Session | undefined, selectedSessionId: string | 
         label: 'Dismiss',
         action: () => useSessionsStore.getState().dismissSession(session.id),
         color: 'bg-red-500/80',
+        dangerous: true,
       })
     }
   }
@@ -104,11 +108,20 @@ function buildActions(session: Session | undefined, selectedSessionId: string | 
 
 export function ActionFab() {
   const [expanded, setExpanded] = useState(false)
+  const [confirmId, setConfirmId] = useState<string | null>(null)
   const lastTapRef = useRef(0)
   const selectedSessionId = useSessionsStore(state => state.selectedSessionId)
   const session = useSessionsStore(state => state.sessions.find(s => s.id === state.selectedSessionId))
 
   const actions = buildActions(session, selectedSessionId)
+
+  // Compute cumulative Y offsets with extra gap before dangerous actions
+  const offsets = actions.reduce<number[]>((acc, action, i) => {
+    const prevBottom = i === 0 ? 0 : acc[i - 1]
+    const gap = action.dangerous ? 60 : 44 // extra spacing for dangerous
+    acc.push(prevBottom + gap)
+    return acc
+  }, [])
 
   const singleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -150,7 +163,10 @@ export function ActionFab() {
     return () => document.removeEventListener('click', handleClick, { capture: true })
   }, [expanded])
 
-  const buttonSpacing = 44
+  // Clear confirmation when fan closes
+  useEffect(() => {
+    if (!expanded) setConfirmId(null)
+  }, [expanded])
 
   return (
     <div data-action-fab className="fixed z-[56] right-3" style={{ width: 44, height: 44, top: 'calc(50% + 32px)' }}>
@@ -164,7 +180,7 @@ export function ActionFab() {
           )}
           style={{
             right: 0,
-            bottom: expanded ? (i + 1) * buttonSpacing + 4 : 0,
+            bottom: expanded ? offsets[i] + 4 : 0,
             transitionDelay: expanded ? `${i * 30}ms` : '0ms',
           }}
         >
@@ -175,10 +191,11 @@ export function ActionFab() {
               'bg-black/70 text-white/90 border border-white/10',
               'transition-all duration-200',
               expanded ? 'translate-x-0 opacity-100' : 'translate-x-4 opacity-0',
+              confirmId === action.id && 'border-red-500/50 text-red-300',
             )}
             style={{ transitionDelay: expanded ? `${i * 30 + 50}ms` : '0ms' }}
           >
-            {action.label}
+            {confirmId === action.id ? `${action.label}?` : action.label}
           </span>
           {/* Button */}
           <button
@@ -189,13 +206,21 @@ export function ActionFab() {
               'transition-transform duration-200 ease-out active:scale-90',
               action.color,
               expanded ? 'scale-100' : 'scale-0',
+              confirmId === action.id && 'ring-2 ring-red-500/60 animate-pulse',
             )}
             style={{ transitionDelay: expanded ? `${i * 30}ms` : '0ms' }}
             onClick={e => {
               e.stopPropagation()
+              if (action.dangerous && confirmId !== action.id) {
+                // First tap on dangerous action: show confirmation
+                haptic('tick')
+                setConfirmId(action.id)
+                return
+              }
               haptic('tap')
               action.action()
               setExpanded(false)
+              setConfirmId(null)
             }}
           >
             {action.icon}
