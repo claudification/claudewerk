@@ -44,7 +44,7 @@ if ('serviceWorker' in navigator) {
     .then(reg => {
       // Check for SW updates immediately on load + every hour
       reg.update().catch(() => {})
-      setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000)
+      setInterval(() => reg.update().catch(() => {}), 10 * 60 * 1000)
     })
     .catch(() => {})
 }
