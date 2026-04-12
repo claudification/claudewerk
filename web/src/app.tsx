@@ -37,7 +37,8 @@ import {
 import { useWebSocket } from '@/hooks/use-websocket'
 import { executeCommand, useCommand } from '@/lib/commands'
 import { canTerminal } from '@/lib/types'
-import { clearCacheAndReload, isMobileViewport, isTouchDevice } from '@/lib/utils'
+import { clearCacheAndReload, isMobileViewport, isTouchDevice, PRE_RELOAD_KEY } from '@/lib/utils'
+import { BUILD_VERSION } from '../../src/shared/version'
 
 // Swipe-right from left edge to open session list (mobile)
 function useSwipeToOpen(onOpen: () => void) {
@@ -76,12 +77,14 @@ function Dashboard() {
   const [sheetOpen, setSheetOpen] = useState(() => isMobileViewport() && !useSessionsStore.getState().selectedSessionId)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sidebar-collapsed') === 'true')
   const [showUserAdmin, setShowUserAdmin] = useState(false)
-  const [swUpdateAvailable, setSwUpdateAvailable] = useState(false)
+  const [swUpdate, setSwUpdate] = useState<{ from: string | null; to: string | null } | null>(null)
 
-  // Listen for service worker update notifications (belt-and-suspenders)
+  // Listen for service worker update notifications
   useEffect(() => {
     function handleSwMessage(event: MessageEvent) {
-      if (event.data?.type === 'sw-updated') setSwUpdateAvailable(true)
+      if (event.data?.type === 'sw-updated') {
+        setSwUpdate({ from: event.data.from ?? null, to: event.data.to ?? null })
+      }
     }
     navigator.serviceWorker?.addEventListener('message', handleSwMessage)
     return () => navigator.serviceWorker?.removeEventListener('message', handleSwMessage)
@@ -101,7 +104,7 @@ function Dashboard() {
         if (knownHash === null) {
           knownHash = hash // first load, just remember it
         } else if (hash !== knownHash) {
-          setSwUpdateAvailable(true)
+          setSwUpdate({ from: knownHash, to: hash })
         }
       } catch {}
     }
@@ -109,6 +112,42 @@ function Dashboard() {
     checkManifest()
     const timer = setInterval(checkManifest, 5 * 60 * 1000) // every 5 minutes
     return () => clearInterval(timer)
+  }, [])
+
+  // Post-reload feedback: detect whether clearCacheAndReload actually moved us
+  // to a new build, and surface a toast either way.
+  useEffect(() => {
+    let stashed: string | null
+    try {
+      stashed = localStorage.getItem(PRE_RELOAD_KEY)
+    } catch {
+      return
+    }
+    if (!stashed) return
+    try {
+      localStorage.removeItem(PRE_RELOAD_KEY)
+    } catch {}
+    try {
+      const { hash, ts } = JSON.parse(stashed) as { hash: string; ts: number }
+      // Stale stashes (>5 min) are ignored - user probably navigated, not reloaded.
+      if (!hash || typeof ts !== 'number' || Date.now() - ts > 5 * 60 * 1000) return
+      const current = BUILD_VERSION.gitHashShort
+      if (current && current !== hash) {
+        window.dispatchEvent(
+          new CustomEvent('rclaude-toast', {
+            detail: { title: 'UPDATED', body: `Web build ${hash} -> ${current}` },
+          }),
+        )
+      } else {
+        window.dispatchEvent(
+          new CustomEvent('rclaude-toast', {
+            detail: { title: 'NO UPDATE', body: `Already on latest build (${hash})` },
+          }),
+        )
+        // Suppress any false-positive banner from the fresh SW install.
+        setSwUpdate(null)
+      }
+    } catch {}
   }, [])
   const selectedSessionId = useSessionsStore(s => s.selectedSessionId)
   const setEvents = useSessionsStore(s => s.setEvents)
@@ -491,11 +530,15 @@ function Dashboard() {
 
   return (
     <div className="h-full flex flex-col p-2 sm:p-4 max-w-[1400px] mx-auto overflow-hidden" {...swipeHandlers}>
-      {/* SW update banner */}
-      {swUpdateAvailable && (
+      {/* SW update banner - frontend bundle only, not wrapper/backend */}
+      {swUpdate && (
         <div className="mb-2 px-3 py-2 bg-cyan-500/10 border border-cyan-500/30 rounded font-mono text-xs text-cyan-400 flex items-center gap-2 shrink-0">
-          <span className="font-bold">UPDATE</span>
-          <span className="flex-1">New version available</span>
+          <span className="font-bold" title="New web app build available">
+            WEB UPDATE
+          </span>
+          <span className="flex-1 truncate">
+            {swUpdate.from && swUpdate.to ? `${swUpdate.from} -> ${swUpdate.to}` : 'New web build available'}
+          </span>
           <button
             type="button"
             onClick={() => clearCacheAndReload()}
@@ -505,7 +548,7 @@ function Dashboard() {
           </button>
           <button
             type="button"
-            onClick={() => setSwUpdateAvailable(false)}
+            onClick={() => setSwUpdate(null)}
             className="px-2 py-0.5 text-[10px] font-bold text-muted-foreground hover:text-foreground transition-colors"
           >
             LATER
