@@ -310,17 +310,23 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
       {compact && (
         <div className="flex items-center gap-1.5">
           <StatusIndicator status={session.status} />
-          <span
-            className={cn(
-              'font-mono text-[11px] flex-1 truncate',
-              isSelected ? 'text-accent' : 'text-muted-foreground',
-            )}
-            title={session.id}
-          >
-            {session.title || session.agentName
-              ? `${(session.title || session.agentName)!.slice(0, 20)} [${session.id.slice(0, 6)}]`
-              : session.id.slice(0, 8)}
-          </span>
+          {isRenaming ? (
+            <div className="flex-1 min-w-0">
+              <InlineRename session={session} />
+            </div>
+          ) : (
+            <span
+              className={cn(
+                'font-mono text-[11px] flex-1 truncate',
+                isSelected ? 'text-accent' : 'text-muted-foreground',
+              )}
+              title={session.id}
+            >
+              {session.title || session.agentName
+                ? `${(session.title || session.agentName)!.slice(0, 20)} [${session.id.slice(0, 6)}]`
+                : session.id.slice(0, 8)}
+            </span>
+          )}
           {session.compacting && <span className="text-[9px] text-amber-400 font-bold animate-pulse">COMPACT</span>}
           {session.lastError && <span className="text-[9px] text-destructive font-bold">ERROR</span>}
           {session.rateLimit && !session.lastError && (
