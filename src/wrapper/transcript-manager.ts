@@ -171,7 +171,7 @@ function detectRename(ctx: WrapperContext, entries: TranscriptEntry[]): void {
   for (const entry of entries) {
     const e = entry as Record<string, unknown>
     if (e.type !== 'system' || e.subtype !== 'local_command' || typeof e.content !== 'string') continue
-    const match = e.content.match(/Session renamed to: (.+)/)
+    const match = e.content.match(/Session renamed to: ([^<]+)/)
     if (match) {
       const name = match[1].trim()
       debug(`Detected /rename: "${name}"`)

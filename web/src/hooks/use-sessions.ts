@@ -209,6 +209,9 @@ interface SessionsState {
   sendWsMessage: (msg: Record<string, unknown>) => void
   dismissSession: (sessionId: string) => void
   terminateSession: (sessionId: string) => void
+  renamingSessionId: string | null
+  setRenamingSessionId: (sessionId: string | null) => void
+  renameSession: (sessionId: string, name: string) => void
   setPendingFilePath: (path: string | null) => void
   pendingTaskEdit: { slug: string; status: string } | null
   setPendingTaskEdit: (task: { slug: string; status: string } | null) => void
@@ -469,6 +472,15 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   pendingFilePath: null,
   pendingTaskEdit: null,
   setPendingTaskEdit: task => set({ pendingTaskEdit: task }),
+  renamingSessionId: null,
+  setRenamingSessionId: sessionId => set({ renamingSessionId: sessionId }),
+  renameSession: (sessionId, name) => {
+    wsSend('rename_session', { sessionId, name })
+    set(state => ({
+      renamingSessionId: null,
+      sessions: state.sessions.map(s => (s.id === sessionId ? { ...s, title: name || undefined } : s)),
+    }))
+  },
   inputDrafts: {},
   setInputDraft: (sessionId, text) => set(state => ({ inputDrafts: { ...state.inputDrafts, [sessionId]: text } })),
   newDataSeq: 0,

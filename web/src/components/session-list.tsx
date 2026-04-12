@@ -206,6 +206,7 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
   const ps = useSessionsStore(s => s.projectSettings[session.cwd])
   const showContextBar = useSessionsStore(s => s.dashboardPrefs.showContextInList)
   const showCost = useSessionsStore(s => s.dashboardPrefs.showCostInList)
+  const isRenaming = useSessionsStore(s => s.renamingSessionId === session.id)
   const isSelected = selectedSessionId === session.id
   const sessionStartEvent = cachedEvents.find(e => e.hookEvent === 'SessionStart')
   const model = (sessionStartEvent?.data as { model?: string } | undefined)?.model
@@ -301,8 +302,10 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
             })()}
         </div>
       )}
-      {!compact && sessionName && (
-        <div className="mt-0.5 text-[10px] text-muted-foreground font-mono truncate pl-1">{sessionName}</div>
+      {!compact && (isRenaming || sessionName) && (
+        <div className="mt-0.5 text-[10px] text-muted-foreground font-mono truncate pl-1">
+          {isRenaming ? <InlineRename session={session} /> : sessionName}
+        </div>
       )}
       {compact && (
         <div className="flex items-center gap-1.5">
@@ -523,6 +526,42 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
   )
 }
 
+// ─── Inline rename input ─────────────────────────────────────────────
+
+function InlineRename({ session }: { session: Session }) {
+  const renameSession = useSessionsStore(s => s.renameSession)
+  const setRenamingSessionId = useSessionsStore(s => s.setRenamingSessionId)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [value, setValue] = useState(session.title || '')
+
+  useEffect(() => {
+    inputRef.current?.focus()
+    inputRef.current?.select()
+  }, [])
+
+  function submit() {
+    renameSession(session.id, value.trim())
+    haptic('success')
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      value={value}
+      onChange={e => setValue(e.target.value)}
+      onKeyDown={e => {
+        e.stopPropagation()
+        if (e.key === 'Enter') submit()
+        if (e.key === 'Escape') setRenamingSessionId(null)
+      }}
+      onClick={e => e.stopPropagation()}
+      onBlur={submit}
+      className="w-full bg-background/80 border border-accent text-[10px] font-mono px-1 py-0.5 outline-none text-foreground"
+      placeholder="session name"
+    />
+  )
+}
+
 // ─── Session context menu (right-click) ─────────────────────────────
 
 function SessionContextMenu({ session, children }: { session: Session; children: React.ReactNode }) {
@@ -627,6 +666,15 @@ function SessionContextMenu({ session, children }: { session: Session; children:
           )}
           <ContextMenu.Item className={menuItemClass} onSelect={createGroupAndMove}>
             New group...
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            className={menuItemClass}
+            onSelect={() => {
+              haptic('tap')
+              useSessionsStore.getState().setRenamingSessionId(session.id)
+            }}
+          >
+            Rename...
           </ContextMenu.Item>
           <ContextMenu.Item
             className={cn(menuItemClass, 'text-cyan-400')}

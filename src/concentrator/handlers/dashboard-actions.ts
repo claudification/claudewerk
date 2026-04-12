@@ -258,6 +258,29 @@ const reviveSession: MessageHandler = (ctx, data) => {
   ctx.reply({ type: 'revive_session_result', ok: true, name, wrapperId, message: 'Revive command sent to agent' })
 }
 
+// ─── Rename Session ──────────────────────────────────────────────
+
+const renameSession: MessageHandler = (ctx, data) => {
+  const sessionId = data.sessionId as string
+  const name = (data.name as string)?.trim()
+  if (!sessionId) throw new GuardError('Missing sessionId')
+
+  const session = ctx.sessions.getSession(sessionId)
+  if (!session) throw new GuardError('Session not found')
+  ctx.requirePermission('chat', session.cwd)
+
+  if (name) {
+    session.title = name
+    session.titleUserSet = true
+  } else {
+    // Empty name = clear user-set title (revert to auto-name or none)
+    session.title = undefined
+    session.titleUserSet = false
+  }
+  ctx.sessions.broadcastSessionUpdate(sessionId)
+  ctx.reply({ type: 'rename_session_result', ok: true })
+}
+
 // ─── Register all dashboard action handlers ───────────────────────
 
 export function registerDashboardActionHandlers(): void {
@@ -270,5 +293,6 @@ export function registerDashboardActionHandlers(): void {
     delete_project_settings: deleteProjectSettingsHandler,
     update_session_order: updateSessionOrder,
     revive_session: reviveSession,
+    rename_session: renameSession,
   })
 }
