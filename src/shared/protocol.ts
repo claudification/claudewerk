@@ -882,6 +882,8 @@ export interface Session {
     totalInputTokens: number
     totalOutputTokens: number
     totalCacheCreation: number
+    totalCacheWrite5m: number // 5-min TTL cache writes (1.25x input price)
+    totalCacheWrite1h: number // 1-hour TTL cache writes (2.0x input price)
     totalCacheRead: number
     turnCount: number
     toolCallCount: number

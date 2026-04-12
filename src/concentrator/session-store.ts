@@ -775,6 +775,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
           totalInputTokens: 0,
           totalOutputTokens: 0,
           totalCacheCreation: 0,
+          totalCacheWrite5m: 0,
+          totalCacheWrite1h: 0,
           totalCacheRead: 0,
           turnCount: 0,
           toolCallCount: 0,
@@ -957,6 +959,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         totalInputTokens: 0,
         totalOutputTokens: 0,
         totalCacheCreation: 0,
+        totalCacheWrite5m: 0,
+        totalCacheWrite1h: 0,
         totalCacheRead: 0,
         turnCount: 0,
         toolCallCount: 0,
@@ -1220,22 +1224,28 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
           if (event.hookEvent === 'Stop' && !session.capabilities?.includes('headless')) {
             const s = session.stats
             if (s.totalInputTokens > 0 || s.totalOutputTokens > 0) {
-              // Estimate cumulative cost using LiteLLM pricing
+              // Estimate cumulative cost using LiteLLM pricing + split cache write tiers
               const info = session.model ? getModelInfo(session.model) : undefined
               let totalEstCost: number
               if (info) {
                 const uncached = Math.max(0, s.totalInputTokens - s.totalCacheCreation - s.totalCacheRead)
                 const cacheReadCost = info.cacheReadCostPerToken ?? info.inputCostPerToken * 0.125
-                const cacheWriteCost = info.cacheWriteCostPerToken ?? info.inputCostPerToken * 1.25
+                const cacheWrite5mCost = info.cacheWriteCostPerToken ?? info.inputCostPerToken * 1.25
+                const cacheWrite1hCost = info.inputCostPerToken * 2.0
                 totalEstCost =
                   uncached * info.inputCostPerToken +
                   s.totalOutputTokens * info.outputCostPerToken +
                   s.totalCacheRead * cacheReadCost +
-                  s.totalCacheCreation * cacheWriteCost
+                  s.totalCacheWrite5m * cacheWrite5mCost +
+                  s.totalCacheWrite1h * cacheWrite1hCost
               } else {
                 const uncached = Math.max(0, s.totalInputTokens - s.totalCacheCreation - s.totalCacheRead)
                 totalEstCost =
-                  (uncached * 15 + s.totalOutputTokens * 75 + s.totalCacheRead * 1.875 + s.totalCacheCreation * 18.75) /
+                  (uncached * 15 +
+                    s.totalOutputTokens * 75 +
+                    s.totalCacheRead * 1.875 +
+                    s.totalCacheWrite5m * 18.75 +
+                    s.totalCacheWrite1h * 30) /
                   1_000_000
               }
               // Delta computation handled inside recordTurnFromCumulatives
@@ -2215,6 +2225,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
           totalInputTokens: 0,
           totalOutputTokens: 0,
           totalCacheCreation: 0,
+          totalCacheWrite5m: 0,
+          totalCacheWrite1h: 0,
           totalCacheRead: 0,
           turnCount: 0,
           toolCallCount: 0,
@@ -2403,21 +2415,34 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
             cacheRead: usage.cache_read_input_tokens || 0,
             output: usage.output_tokens || 0,
           }
-          session.stats.totalInputTokens +=
-            (usage.input_tokens || 0) + (usage.cache_creation_input_tokens || 0) + (usage.cache_read_input_tokens || 0)
+          // Extract 5m/1h cache write split from usage.cache_creation
+          const cc = usage.cache_creation as Record<string, number> | undefined
+          const cw5m = cc?.ephemeral_5m_input_tokens || 0
+          const cw1h = cc?.ephemeral_1h_input_tokens || 0
+          // Fallback: if total cache_creation > sum of 5m+1h, remainder -> 5m bucket
+          const cwTotal = usage.cache_creation_input_tokens || 0
+          const cwRemainder = Math.max(0, cwTotal - cw5m - cw1h)
+
+          session.stats.totalInputTokens += (usage.input_tokens || 0) + cwTotal + (usage.cache_read_input_tokens || 0)
           session.stats.totalOutputTokens += usage.output_tokens || 0
-          session.stats.totalCacheCreation += usage.cache_creation_input_tokens || 0
+          session.stats.totalCacheCreation += cwTotal
+          session.stats.totalCacheWrite5m += cw5m + cwRemainder
+          session.stats.totalCacheWrite1h += cw1h
           session.stats.totalCacheRead += usage.cache_read_input_tokens || 0
           sessionChanged = true
 
           // Record estimated cost snapshot for PTY sessions (headless uses turn_cost)
           if (!session.stats.totalCostUsd) {
             if (!session.costTimeline) session.costTimeline = []
-            // Estimate cost from accumulated token totals (Opus pricing as conservative default)
+            // Estimate cost using split cache write pricing (5m=1.25x, 1h=2.0x input price)
             const s = session.stats
             const uncached = Math.max(0, s.totalInputTokens - s.totalCacheCreation - s.totalCacheRead)
             const est =
-              (uncached * 15 + s.totalOutputTokens * 75 + s.totalCacheRead * 1.875 + s.totalCacheCreation * 18.75) /
+              (uncached * 15 +
+                s.totalOutputTokens * 75 +
+                s.totalCacheRead * 1.875 +
+                s.totalCacheWrite5m * 18.75 +
+                s.totalCacheWrite1h * 30) /
               1_000_000
             session.costTimeline.push({ t: Date.now(), cost: est })
             if (session.costTimeline.length > 500) {

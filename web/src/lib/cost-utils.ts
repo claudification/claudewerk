@@ -6,28 +6,32 @@
 import { getModelInfo } from './model-db'
 
 // Hardcoded fallback pricing (per-million-token)
+// cacheWrite5m = 1.25x input, cacheWrite1h = 2.0x input
 interface ModelPricing {
   input: number
   output: number
   cacheRead: number
-  cacheWrite: number
+  cacheWrite5m: number
+  cacheWrite1h: number
 }
 
 const FALLBACK_PRICING: Record<string, ModelPricing> = {
-  opus: { input: 15, output: 75, cacheRead: 1.875, cacheWrite: 18.75 },
-  sonnet: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-  haiku: { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1.0 },
+  opus: { input: 15, output: 75, cacheRead: 1.875, cacheWrite5m: 18.75, cacheWrite1h: 30 },
+  sonnet: { input: 3, output: 15, cacheRead: 0.3, cacheWrite5m: 3.75, cacheWrite1h: 6 },
+  haiku: { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite5m: 1.0, cacheWrite1h: 1.6 },
 }
 
 function getPricing(model?: string): ModelPricing {
   // Try LiteLLM DB first
   const info = getModelInfo(model)
   if (info) {
+    const inputPPM = info.inputCostPerToken * 1_000_000
     return {
-      input: info.inputCostPerToken * 1_000_000,
+      input: inputPPM,
       output: info.outputCostPerToken * 1_000_000,
       cacheRead: (info.cacheReadCostPerToken ?? info.inputCostPerToken * 0.125) * 1_000_000,
-      cacheWrite: (info.cacheWriteCostPerToken ?? info.inputCostPerToken * 1.25) * 1_000_000,
+      cacheWrite5m: (info.cacheWriteCostPerToken ?? info.inputCostPerToken * 1.25) * 1_000_000,
+      cacheWrite1h: inputPPM * 2.0,
     }
   }
   // Hardcoded fallback
@@ -40,16 +44,27 @@ function getPricing(model?: string): ModelPricing {
 
 /** Estimate cost from token counts when exact cost isn't available */
 export function estimateCost(
-  stats: { totalInputTokens: number; totalOutputTokens: number; totalCacheCreation: number; totalCacheRead: number },
+  stats: {
+    totalInputTokens: number
+    totalOutputTokens: number
+    totalCacheCreation: number
+    totalCacheWrite5m?: number
+    totalCacheWrite1h?: number
+    totalCacheRead: number
+  },
   model?: string,
 ): number {
   const p = getPricing(model)
   const uncachedInput = stats.totalInputTokens - stats.totalCacheCreation - stats.totalCacheRead
+  // Use split cache write pricing when available, fall back to 5m rate for all
+  const cw5m = stats.totalCacheWrite5m ?? stats.totalCacheCreation
+  const cw1h = stats.totalCacheWrite1h ?? 0
   return (
     (Math.max(0, uncachedInput) * p.input +
       stats.totalOutputTokens * p.output +
       stats.totalCacheRead * p.cacheRead +
-      stats.totalCacheCreation * p.cacheWrite) /
+      cw5m * p.cacheWrite5m +
+      cw1h * p.cacheWrite1h) /
     1_000_000
   )
 }
@@ -60,6 +75,8 @@ export function getSessionCost(
     totalInputTokens: number
     totalOutputTokens: number
     totalCacheCreation: number
+    totalCacheWrite5m?: number
+    totalCacheWrite1h?: number
     totalCacheRead: number
     totalCostUsd?: number
   },
@@ -154,9 +171,9 @@ export function getCacheWarning(
   if (contextTokens < 50_000) return null // not worth warning about
 
   const p = getPricing(model)
-  // Re-cache cost = context size * (cacheWrite - cacheRead) per token
+  // Re-cache cost = context size * (cacheWrite5m - cacheRead) per token
   // because a warm cache would pay cacheRead, but cold cache pays cacheWrite
-  const reCacheCost = (contextTokens * (p.cacheWrite - p.cacheRead)) / 1_000_000
+  const reCacheCost = (contextTokens * (p.cacheWrite5m - p.cacheRead)) / 1_000_000
 
   if (reCacheCost < 0.1) return null // not worth showing
 

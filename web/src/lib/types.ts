@@ -89,6 +89,8 @@ export interface Session {
     totalInputTokens: number
     totalOutputTokens: number
     totalCacheCreation: number
+    totalCacheWrite5m?: number
+    totalCacheWrite1h?: number
     totalCacheRead: number
     turnCount: number
     toolCallCount: number
