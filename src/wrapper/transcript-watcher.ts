@@ -14,6 +14,30 @@ import { dirname, resolve } from 'node:path'
 import { type FSWatcher as ChokidarWatcher, watch as chokidarWatch } from 'chokidar'
 import type { TranscriptEntry } from '../shared/protocol'
 
+/** Parse JSONL lines with Bun.JSONL fast path + manual fallback */
+function parseJsonlLines(lines: string[], debug?: (msg: string) => void): TranscriptEntry[] {
+  if (typeof Bun !== 'undefined' && Bun.JSONL) {
+    try {
+      const text = lines.filter(l => l.trim()).join('\n')
+      if (!text) return []
+      return Bun.JSONL.parse(text) as TranscriptEntry[]
+    } catch {
+      debug?.('Bun.JSONL.parse failed, falling back to per-line parsing')
+    }
+  }
+  const entries: TranscriptEntry[] = []
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    try {
+      entries.push(JSON.parse(trimmed) as TranscriptEntry)
+    } catch {
+      debug?.(`malformed JSON line (${trimmed.length} chars)`)
+    }
+  }
+  return entries
+}
+
 export interface TranscriptWatcherOptions {
   onEntries: (entries: TranscriptEntry[], isInitial: boolean) => void
   onNewFile?: (filename: string) => void
@@ -86,16 +110,7 @@ export function createTranscriptWatcher(options: TranscriptWatcherOptions): Tran
       // Last element might be incomplete if file is still being written
       partial = lines.pop() || ''
 
-      const entries: TranscriptEntry[] = []
-      for (const line of lines) {
-        const trimmed = line.trim()
-        if (!trimmed) continue
-        try {
-          entries.push(JSON.parse(trimmed) as TranscriptEntry)
-        } catch {
-          debug?.(`readNewLines: malformed JSON line (${trimmed.length} chars)`)
-        }
-      }
+      const entries = parseJsonlLines(lines, debug)
 
       debug?.(`readNewLines: ${lines.length} lines, ${entries.length} entries, partial=${partial.length} chars`)
 
