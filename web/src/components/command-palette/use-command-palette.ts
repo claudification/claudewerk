@@ -109,7 +109,7 @@ export function useCommandPalette(onClose: () => void) {
       new Fzf(allSessions, {
         selector: (s: Session) => {
           const ps = projectSettings[s.cwd]
-          return `${s.cwd} ${ps?.label || ''} ${s.id} ${s.model || ''} ${s.status}`
+          return `${s.cwd} ${ps?.label || ''} ${s.title || ''} ${s.agentName || ''} ${s.id} ${s.model || ''} ${s.status}`
         },
         casing: 'case-insensitive',
       }),
