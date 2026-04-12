@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 
 interface CostTimelineEntry {
@@ -25,8 +25,21 @@ function formatDollar(n: number): string {
   return `$${Math.round(n)}`
 }
 
+function formatTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
+function barColor(delta: number, maxDelta: number): string {
+  if (delta === 0) return 'rgba(100,100,100,0.2)'
+  if (delta >= maxDelta * 0.8) return '#f87171'
+  if (delta >= maxDelta * 0.4) return '#fbbf24'
+  return '#34d399'
+}
+
 export function CostSparkline({ timeline, className }: CostSparklineProps) {
   const [windowIdx, setWindowIdx] = useState(0)
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
+  const svgRef = useRef<SVGSVGElement>(null)
   const win = WINDOWS[windowIdx]
 
   const { buckets, maxDelta, totalInWindow } = useMemo(() => {
@@ -35,14 +48,12 @@ export function CostSparkline({ timeline, className }: CostSparklineProps) {
     const filtered = timeline.filter(e => e.t >= cutoff)
     if (filtered.length === 0) return { buckets: [], maxDelta: 0, totalInWindow: 0 }
 
-    // Build buckets
     const bucketCount = Math.ceil(win.ms / win.bucketMs)
     const buckets: Array<{ start: number; delta: number }> = []
     for (let i = 0; i < bucketCount; i++) {
       buckets.push({ start: cutoff + i * win.bucketMs, delta: 0 })
     }
 
-    // Compute deltas between consecutive points
     let prevCost = filtered[0].cost
     const startCost = filtered[0].cost
     for (let i = 1; i < filtered.length; i++) {
@@ -59,20 +70,41 @@ export function CostSparkline({ timeline, className }: CostSparklineProps) {
     return { buckets, maxDelta, totalInWindow }
   }, [timeline, win])
 
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      if (!svgRef.current || buckets.length === 0) return
+      const rect = svgRef.current.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const barW = Math.max(2, (W - 4) / buckets.length - 1)
+      const idx = Math.floor((x - 2) / (barW + 1))
+      setHoverIdx(idx >= 0 && idx < buckets.length ? idx : null)
+    },
+    [buckets.length],
+  )
+
   if (timeline.length < 2) return null
 
   const W = 240
   const H = 40
   const barW = Math.max(2, (W - 4) / buckets.length - 1)
+  const hovered = hoverIdx != null ? buckets[hoverIdx] : null
 
   return (
     <div className={cn('text-[10px] font-mono', className)}>
       <div className="flex items-center gap-2 mb-1">
         <span className="text-muted-foreground">cost/time</span>
-        <span className="text-muted-foreground">
-          {formatDollar(totalInWindow)} in {win.label}
-        </span>
-        <span className="text-muted-foreground">({win.bucketLabel} buckets)</span>
+        {hovered ? (
+          <span className="text-foreground tabular-nums">
+            {formatTime(hovered.start)}: {formatDollar(hovered.delta)}
+          </span>
+        ) : (
+          <>
+            <span className="text-muted-foreground">
+              {formatDollar(totalInWindow)} in {win.label}
+            </span>
+            <span className="text-muted-foreground">({win.bucketLabel} buckets)</span>
+          </>
+        )}
         <div className="flex gap-0.5 ml-auto">
           {WINDOWS.map((w, i) => (
             <button
@@ -89,28 +121,44 @@ export function CostSparkline({ timeline, className }: CostSparklineProps) {
           ))}
         </div>
       </div>
-      <svg width={W} height={H} className="block" role="img" aria-label="Cost over time">
+      <svg
+        ref={svgRef}
+        width={W}
+        height={H}
+        className="block cursor-crosshair"
+        role="img"
+        aria-label="Cost over time"
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setHoverIdx(null)}
+      >
         {buckets.map((b, i) => {
           const barH = maxDelta > 0 ? (b.delta / maxDelta) * (H - 4) : 0
           const x = 2 + i * (barW + 1)
-          const color =
-            b.delta === 0
-              ? 'rgba(100,100,100,0.2)'
-              : b.delta >= maxDelta * 0.8
-                ? '#f87171'
-                : b.delta >= maxDelta * 0.4
-                  ? '#fbbf24'
-                  : '#34d399'
+          const isHovered = i === hoverIdx
           return (
-            <g key={b.start}>
-              <title>
-                {new Date(b.start).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}:{' '}
-                {formatDollar(b.delta)}
-              </title>
-              <rect x={x} y={H - 2 - barH} width={barW} height={Math.max(1, barH)} fill={color} rx={0.5} />
-            </g>
+            <rect
+              key={b.start}
+              x={x}
+              y={H - 2 - barH}
+              width={barW}
+              height={Math.max(1, barH)}
+              fill={barColor(b.delta, maxDelta)}
+              rx={0.5}
+              opacity={hoverIdx != null && !isHovered ? 0.4 : 1}
+            />
           )
         })}
+        {/* Hover highlight line */}
+        {hoverIdx != null && (
+          <line
+            x1={2 + hoverIdx * (barW + 1) + barW / 2}
+            y1={0}
+            x2={2 + hoverIdx * (barW + 1) + barW / 2}
+            y2={H}
+            stroke="rgba(255,255,255,0.15)"
+            strokeWidth={barW + 2}
+          />
+        )}
       </svg>
     </div>
   )
