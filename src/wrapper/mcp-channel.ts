@@ -470,8 +470,8 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
           properties: {
             status: {
               type: 'string',
-              enum: ['open', 'in-progress', 'done', 'archived', 'all'],
-              description: 'Filter by status folder. Default: all (open + in-progress)',
+              enum: ['inbox', 'open', 'in-progress', 'in-review', 'done', 'archived', 'all'],
+              description: 'Filter by status folder. Default: all (inbox + open + in-progress + in-review)',
             },
             show_done: {
               type: 'boolean',
@@ -497,7 +497,7 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
             },
             status: {
               type: 'string',
-              enum: ['open', 'in-progress', 'done', 'archived'],
+              enum: ['inbox', 'open', 'in-progress', 'in-review', 'done', 'archived'],
               description: 'Target status folder',
             },
           },
@@ -531,7 +531,7 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
           const statusFilter = params.status || 'all'
           let statuses: string[]
           if (statusFilter === 'all') {
-            statuses = ['open', 'in-progress']
+            statuses = ['inbox', 'open', 'in-progress', 'in-review']
             if (String(params.show_done) === 'true') statuses.push('done')
             if (String(params.show_archived) === 'true') statuses.push('archived')
           } else {
@@ -571,11 +571,11 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
           const taskId = params.id
           const targetStatus = params.status as TaskStatus
           if (!taskId) return { content: [{ type: 'text', text: 'Error: id is required' }], isError: true }
-          if (!['open', 'in-progress', 'done', 'archived'].includes(targetStatus))
+          if (!['inbox', 'open', 'in-progress', 'in-review', 'done', 'archived'].includes(targetStatus))
             return { content: [{ type: 'text', text: `Error: invalid status "${targetStatus}"` }], isError: true }
 
           // Find the task in any status folder
-          const allStatuses: TaskStatus[] = ['open', 'in-progress', 'done', 'archived']
+          const allStatuses: TaskStatus[] = ['inbox', 'open', 'in-progress', 'in-review', 'done', 'archived']
           let fromStatus: TaskStatus | null = null
           for (const s of allStatuses) {
             const dir = join(dialogCwd, '.rclaude', 'project', s)

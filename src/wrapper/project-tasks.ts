@@ -8,8 +8,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-export type TaskStatus = 'open' | 'in-progress' | 'done' | 'archived'
-const STATUSES: TaskStatus[] = ['open', 'in-progress', 'done', 'archived']
+export type TaskStatus = 'inbox' | 'open' | 'in-progress' | 'in-review' | 'done' | 'archived'
+const STATUSES: TaskStatus[] = ['inbox', 'open', 'in-progress', 'in-review', 'done', 'archived']
 
 export interface ProjectTaskMeta {
   slug: string
@@ -155,7 +155,7 @@ export function getProjectTask(cwd: string, status: TaskStatus, slug: string): P
 }
 
 export function createProjectTask(cwd: string, input: ProjectTaskInput): ProjectTaskMeta {
-  const dir = statusDir(cwd, 'open')
+  const dir = statusDir(cwd, 'inbox')
   const baseSlug = input.title ? slugify(input.title) : `task-${Date.now()}`
   const slug = dedupSlug(dir, baseSlug)
   const content = toMarkdown(input)
@@ -163,7 +163,7 @@ export function createProjectTask(cwd: string, input: ProjectTaskInput): Project
 
   return {
     slug,
-    status: 'open',
+    status: 'inbox',
     title: input.title || slug,
     priority: input.priority,
     tags: input.tags || [],

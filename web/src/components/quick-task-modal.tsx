@@ -1,6 +1,6 @@
 /**
  * Quick Task Modal - Ctrl+Shift+N shortcut
- * Creates a project task in .rclaude/project/open/
+ * Creates a project task in .rclaude/project/inbox/
  */
 
 import { FileText, X } from 'lucide-react'

@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSessionsStore } from './use-sessions'
 
-export type TaskStatus = 'open' | 'in-progress' | 'done' | 'archived'
+export type TaskStatus = 'inbox' | 'open' | 'in-progress' | 'in-review' | 'done' | 'archived'
 
 export interface ProjectTaskMeta {
   slug: string

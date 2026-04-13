@@ -52,18 +52,24 @@ function taskAge(created: string): string {
 }
 
 const COLUMNS: { status: TaskStatus; label: string; color: string }[] = [
+  { status: 'inbox', label: 'Inbox', color: 'text-[#bb9af7]' },
   { status: 'open', label: 'Open', color: 'text-[#7aa2f7]' },
   { status: 'in-progress', label: 'In Progress', color: 'text-[#e0af68]' },
+  { status: 'in-review', label: 'In Review', color: 'text-[#2ac3de]' },
   { status: 'done', label: 'Done', color: 'text-[#9ece6a]' },
 ]
 
 const NEXT_STATUS: Record<string, TaskStatus> = {
+  inbox: 'open',
   open: 'in-progress',
-  'in-progress': 'done',
+  'in-progress': 'in-review',
+  'in-review': 'done',
 }
 const PREV_STATUS: Record<string, TaskStatus> = {
+  open: 'inbox',
   'in-progress': 'open',
-  done: 'in-progress',
+  'in-review': 'in-progress',
+  done: 'in-review',
 }
 
 // Rotating tag pill colors
@@ -181,14 +187,18 @@ export function TaskEditor({
             }}
             className={cn(
               'text-[10px] font-mono bg-transparent border px-1 py-0.5 outline-none',
-              status === 'open' && 'border-amber-500/50 text-amber-400',
-              status === 'in-progress' && 'border-blue-500/50 text-blue-400',
+              status === 'inbox' && 'border-[#bb9af7]/50 text-[#bb9af7]',
+              status === 'open' && 'border-[#7aa2f7]/50 text-[#7aa2f7]',
+              status === 'in-progress' && 'border-[#e0af68]/50 text-[#e0af68]',
+              status === 'in-review' && 'border-[#2ac3de]/50 text-[#2ac3de]',
               status === 'done' && 'border-emerald-500/50 text-emerald-400',
               status === 'archived' && 'border-[#33467c]/50 text-muted-foreground',
             )}
           >
+            <option value="inbox">inbox</option>
             <option value="open">open</option>
             <option value="in-progress">in-progress</option>
+            <option value="in-review">in-review</option>
             <option value="done">done</option>
             <option value="archived">archived</option>
           </select>
@@ -407,58 +417,62 @@ function ProjectCard({
       {showActions && (
         <div
           role="toolbar"
-          className="flex items-center gap-1 mt-2 pt-2 border-t border-[#33467c]/20"
+          className="flex items-center gap-0.5 mt-2 pt-2 border-t border-[#33467c]/20"
           onClick={e => e.stopPropagation()}
         >
           {canMoveLeft && (
             <button
               type="button"
-              className="flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors font-mono"
+              title={`Move to ${PREV_STATUS[task.status]}`}
+              className="p-1 text-muted-foreground hover:text-foreground transition-colors"
               onClick={() => {
                 haptic('tap')
                 onMove(task.slug, task.status, PREV_STATUS[task.status])
                 setShowActions(false)
               }}
             >
-              <ArrowLeft className="w-3 h-3" /> Back
+              <ArrowLeft className="w-3.5 h-3.5" />
             </button>
           )}
           {canMoveRight && (
             <button
               type="button"
-              className="flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors font-mono"
+              title={`Move to ${NEXT_STATUS[task.status]}`}
+              className="p-1 text-muted-foreground hover:text-foreground transition-colors"
               onClick={() => {
                 haptic('tap')
                 onMove(task.slug, task.status, NEXT_STATUS[task.status])
                 setShowActions(false)
               }}
             >
-              Next <ArrowRight className="w-3 h-3" />
+              <ArrowRight className="w-3.5 h-3.5" />
             </button>
           )}
           {task.status !== 'archived' && (
             <button
               type="button"
-              className="flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] text-muted-foreground/60 hover:text-muted-foreground transition-colors font-mono"
+              title="Archive"
+              className="p-1 text-muted-foreground/60 hover:text-muted-foreground transition-colors"
               onClick={() => {
                 haptic('tap')
                 onArchive(task.slug, task.status)
                 setShowActions(false)
               }}
             >
-              <Archive className="w-3 h-3" /> Archive
+              <Archive className="w-3.5 h-3.5" />
             </button>
           )}
           <button
             type="button"
-            className="ml-auto flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] text-red-400/60 hover:text-red-400 transition-colors font-mono"
+            title="Delete"
+            className="ml-auto p-1 text-red-400/60 hover:text-red-400 transition-colors"
             onClick={() => {
               haptic('error')
               onDelete(task.slug, task.status)
               setShowActions(false)
             }}
           >
-            <Trash2 className="w-3 h-3" /> Delete
+            <Trash2 className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
@@ -538,7 +552,7 @@ function DroppableColumn({ status, children }: { status: TaskStatus; children: R
     <div
       ref={setNodeRef}
       className={cn(
-        'flex-1 min-w-0 flex flex-col border-r border-border last:border-r-0 transition-colors',
+        'flex-1 min-w-[220px] w-[220px] flex flex-col border-r border-border last:border-r-0 transition-colors',
         isOver && 'bg-accent/5',
       )}
     >
@@ -772,8 +786,8 @@ export const ProjectBoard = memo(function ProjectBoard({ sessionId }: { sessionI
 
       {/* Kanban columns */}
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div className="flex-1 min-h-0 overflow-hidden">
-          <div className="flex gap-0 h-full">
+        <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden">
+          <div className="flex gap-0 h-full min-w-max">
             {COLUMNS.map(col => {
               const colTasks = activeTasks.filter(n => n.status === col.status)
               return (
@@ -802,7 +816,7 @@ export const ProjectBoard = memo(function ProjectBoard({ sessionId }: { sessionI
                       />
                     ))}
 
-                    {col.status === 'open' && <InlineAdd onAdd={handleCreate} />}
+                    {col.status === 'inbox' && <InlineAdd onAdd={handleCreate} />}
                   </div>
                 </DroppableColumn>
               )
