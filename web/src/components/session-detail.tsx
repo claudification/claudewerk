@@ -1000,6 +1000,21 @@ export const SessionDetail = memo(function SessionDetail() {
                       PLAN
                     </span>
                   )}
+                  {session.capabilities?.includes('ad-hoc') && (
+                    <span
+                      className="text-[10px] text-amber-400 font-bold ml-1 px-1 py-0.5 bg-amber-500/10 rounded cursor-pointer hover:bg-amber-500/20"
+                      onClick={() => {
+                        if (session.adHocTaskId) {
+                          window.dispatchEvent(
+                            new CustomEvent('open-project-task', { detail: { taskId: session.adHocTaskId } }),
+                          )
+                        }
+                      }}
+                      title={session.adHocTaskId ? `Task: ${session.adHocTaskId}` : 'Ad-hoc session'}
+                    >
+                      &#x26A1; AD-HOC{session.adHocTaskId ? ` (${session.adHocTaskId})` : ''}
+                    </span>
+                  )}
                   {session.tokenUsage &&
                     (() => {
                       const { input, cacheCreation, cacheRead } = session.tokenUsage

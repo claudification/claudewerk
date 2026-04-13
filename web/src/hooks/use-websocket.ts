@@ -909,7 +909,15 @@ export function useWebSocket() {
             const title = (msg.title as string) || 'Notification'
             const body = (msg.message as string) || ''
             window.dispatchEvent(
-              new CustomEvent('rclaude-toast', { detail: { title, body, sessionId: msg.sessionId } }),
+              new CustomEvent('rclaude-toast', {
+                detail: {
+                  title,
+                  body,
+                  sessionId: msg.sessionId,
+                  taskId: msg.taskId,
+                  variant: msg.variant,
+                },
+              }),
             )
             return
           }

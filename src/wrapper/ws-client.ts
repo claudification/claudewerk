@@ -40,6 +40,7 @@ export interface WsClientOptions {
   claudeAuth?: { email?: string; orgId?: string; orgName?: string; subscriptionType?: string }
   spinnerVerbs?: string[]
   autocompactPct?: number
+  adHocTaskId?: string
   onConnected?: () => void
   onDisconnected?: () => void
   onError?: (error: Error) => void
@@ -122,6 +123,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
     claudeAuth,
     spinnerVerbs,
     autocompactPct,
+    adHocTaskId,
     onConnected,
     onDisconnected,
     onError,
@@ -196,6 +198,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
             claudeAuth,
             spinnerVerbs,
             autocompactPct,
+            adHocTaskId,
           }
           ws?.send(JSON.stringify(meta))
 

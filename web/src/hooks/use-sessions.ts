@@ -272,6 +272,9 @@ export function applyHashRoute() {
     if (event.data?.type === 'navigate-session' && event.data.sessionId) {
       useSessionsStore.getState().selectSession(event.data.sessionId)
     }
+    if (event.data?.type === 'navigate-task' && event.data.taskId) {
+      window.dispatchEvent(new CustomEvent('open-project-task', { detail: { taskId: event.data.taskId } }))
+    }
   })
 }
 
@@ -323,6 +326,9 @@ function processHash() {
     store.openTerminal(id) // id is wrapperId
   } else if (mode === 'session') {
     store.selectSession(id)
+  } else if (mode === 'task') {
+    // Dispatch event for project board to open the task modal
+    window.dispatchEvent(new CustomEvent('open-project-task', { detail: { taskId: id } }))
   }
 }
 

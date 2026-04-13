@@ -4,7 +4,7 @@
  * onPermissionRequest, onTaskStarted, onSubagentEntry, respawn for /clear.
  */
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import type { WrapperMessage } from '../shared/protocol'
 import { debug as _debug } from './debug'
@@ -103,6 +103,26 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
           `Sent session_info: ${(init.tools as unknown[])?.length || 0} tools, ${(init.skills as unknown[])?.length || 0} skills, ${(init.agents as unknown[])?.length || 0} agents`,
         )
       }
+
+      // Ad-hoc initial prompt: read from file and send as first user message
+      const promptFile = process.env.RCLAUDE_INITIAL_PROMPT_FILE
+      if (promptFile) {
+        try {
+          const prompt = readFileSync(promptFile, 'utf-8').trim()
+          if (prompt) {
+            debug(`[ad-hoc] Sending initial prompt (${prompt.length} chars) from ${promptFile}`)
+            // Small delay to let CC finish init before sending
+            setTimeout(() => {
+              ctx.streamProc?.sendUserMessage(prompt)
+              ctx.diag('ad-hoc', `Sent initial prompt (${prompt.length} chars)`)
+            }, 500)
+          }
+          // Clean up the prompt file
+          unlinkSync(promptFile)
+        } catch (e) {
+          debug(`[ad-hoc] Failed to read prompt file ${promptFile}: ${e}`)
+        }
+      }
     },
 
     onResult(result) {
@@ -112,6 +132,14 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
           type: 'turn_cost',
           sessionId: ctx.claudeSessionId,
           costUsd: result.total_cost_usd,
+        } as unknown as WrapperMessage)
+      }
+      // Capture result text for ad-hoc sessions (forwarded to concentrator for task completion display)
+      if (result.result_text && typeof result.result_text === 'string' && ctx.wsClient?.isConnected()) {
+        ctx.wsClient.send({
+          type: 'result_text',
+          sessionId: ctx.claudeSessionId || ctx.internalId,
+          text: result.result_text,
         } as unknown as WrapperMessage)
       }
     },

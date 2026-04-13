@@ -23,7 +23,25 @@ import { openSpawnDialog } from './spawn-dialog'
 
 // ─── Shared visual components ──────────────────────────────────────
 
-function StatusIndicator({ status }: { status: Session['status'] }) {
+function StatusIndicator({ status, adHoc }: { status: Session['status']; adHoc?: boolean }) {
+  // Ad-hoc sessions get a lightning bolt instead of status dots
+  if (adHoc) {
+    if (status === 'ended') {
+      return (
+        <span className="text-[10px] shrink-0" title="ad-hoc completed">
+          &#x2713;
+        </span>
+      )
+    }
+    return (
+      <span
+        className={cn('text-xs shrink-0', status === 'active' ? 'text-amber-400 animate-pulse' : 'text-amber-400/60')}
+        title="ad-hoc task"
+      >
+        &#x26A1;
+      </span>
+    )
+  }
   if (status === 'ended') {
     return <span className="px-1.5 py-0.5 text-[10px] uppercase font-bold bg-ended text-foreground">ended</span>
   }
@@ -247,7 +265,7 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
     >
       {!compact && (
         <div className="flex items-center gap-1.5">
-          <StatusIndicator status={session.status} />
+          <StatusIndicator status={session.status} adHoc={session.capabilities?.includes('ad-hoc')} />
           {ps?.icon && (
             <span style={displayColor && !isSelected ? { color: displayColor } : undefined}>
               {renderProjectIcon(ps.icon)}
@@ -309,7 +327,7 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
       )}
       {compact && (
         <div className="flex items-center gap-1.5">
-          <StatusIndicator status={session.status} />
+          <StatusIndicator status={session.status} adHoc={session.capabilities?.includes('ad-hoc')} />
           {isRenaming ? (
             <div className="flex-1 min-w-0">
               <InlineRename session={session} />

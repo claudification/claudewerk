@@ -102,6 +102,16 @@ fi
 if [[ -n "${RCLAUDE_AUTOCOMPACT_PCT:-}" ]]; then
   CMD_PREFIX+="CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=${RCLAUDE_AUTOCOMPACT_PCT} "
 fi
+# Ad-hoc task runner env vars
+if [[ "${RCLAUDE_ADHOC:-}" == "1" ]]; then
+  CMD_PREFIX+="RCLAUDE_ADHOC=1 "
+fi
+if [[ -n "${RCLAUDE_ADHOC_TASK_ID:-}" ]]; then
+  CMD_PREFIX+="RCLAUDE_ADHOC_TASK_ID=${RCLAUDE_ADHOC_TASK_ID} "
+fi
+if [[ -n "${RCLAUDE_INITIAL_PROMPT_FILE:-}" ]]; then
+  CMD_PREFIX+="RCLAUDE_INITIAL_PROMPT_FILE=${RCLAUDE_INITIAL_PROMPT_FILE} "
+fi
 
 # Append --effort flag if set (passed through to claude CLI)
 EFFORT_FLAG=""
@@ -115,7 +125,13 @@ if [[ -n "${RCLAUDE_MODEL:-}" ]]; then
   MODEL_FLAG=" --model $RCLAUDE_MODEL"
 fi
 
-SPAWN_CMD="${CMD_PREFIX}${BASE_CMD}${EFFORT_FLAG}${MODEL_FLAG}"
+# Append --worktree flag if set (passed through to claude CLI for ad-hoc isolation)
+WORKTREE_FLAG=""
+if [[ -n "${RCLAUDE_WORKTREE:-}" ]]; then
+  WORKTREE_FLAG=" --worktree $RCLAUDE_WORKTREE"
+fi
+
+SPAWN_CMD="${CMD_PREFIX}${BASE_CMD}${EFFORT_FLAG}${MODEL_FLAG}${WORKTREE_FLAG}"
 
 # Debug log for launch diagnostics
 echo "$(date '+%Y-%m-%d %H:%M:%S') CWD=$CWD CMD=$SPAWN_CMD" >> /tmp/concentrator-launch-log.log 2>/dev/null || true

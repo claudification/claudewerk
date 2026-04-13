@@ -294,6 +294,10 @@ async function spawnSession(
   sessionName?: string,
   permissionMode?: string,
   autocompactPct?: number,
+  prompt?: string,
+  adHoc = false,
+  adHocTaskId?: string,
+  worktree?: string,
 ): Promise<{ success: boolean; error?: string; tmuxSession?: string }> {
   // Diagnostic dump
   const whichRclaude = Bun.spawnSync(['which', 'rclaude'])
@@ -326,6 +330,19 @@ async function spawnSession(
     return { success: false, error: `Spawn not allowed: no .rclaude-spawn marker at or above ${cwd}` }
   }
 
+  // Write ad-hoc prompt to file (shell escaping is hell for markdown content)
+  let promptFile: string | undefined
+  if (prompt) {
+    promptFile = `/tmp/rclaude-adhoc-${wrapperId}`
+    try {
+      await Bun.write(promptFile, prompt)
+      diag('spawn', 'Wrote prompt file', { path: promptFile, length: prompt.length })
+    } catch (e: unknown) {
+      diag('spawn', 'Failed to write prompt file', { error: (e as Error).message })
+      promptFile = undefined
+    }
+  }
+
   // Use "spawn-<timestamp>" as synthetic sessionId (revive-session.sh uses it for tmux window naming)
   const syntheticId = `spawn-${Date.now()}`
   const scriptArgs = [reviveScript, syntheticId, cwd]
@@ -342,6 +359,10 @@ async function spawnSession(
     ...(sessionName ? { RCLAUDE_SESSION_NAME: sessionName } : {}),
     ...(permissionMode ? { RCLAUDE_PERMISSION_MODE: permissionMode } : {}),
     ...(autocompactPct ? { RCLAUDE_AUTOCOMPACT_PCT: String(autocompactPct) } : {}),
+    ...(adHoc ? { RCLAUDE_ADHOC: '1' } : {}),
+    ...(adHocTaskId ? { RCLAUDE_ADHOC_TASK_ID: adHocTaskId } : {}),
+    ...(promptFile ? { RCLAUDE_INITIAL_PROMPT_FILE: promptFile } : {}),
+    ...(worktree ? { RCLAUDE_WORKTREE: worktree } : {}),
   }
 
   diag('spawn', 'Running revive script', { args: scriptArgs })
@@ -680,6 +701,10 @@ function connect(
             sessionName?: string
             permissionMode?: string
             autocompactPct?: number
+            prompt?: string
+            adHoc?: boolean
+            adHocTaskId?: string
+            worktree?: string
           }
           if (noSpawn) {
             ws.send(
@@ -718,6 +743,10 @@ function connect(
             spawnMsg.sessionName,
             spawnMsg.permissionMode,
             spawnMsg.autocompactPct,
+            spawnMsg.prompt,
+            spawnMsg.adHoc || false,
+            spawnMsg.adHocTaskId,
+            spawnMsg.worktree,
           )
           const response: SpawnResult = {
             type: 'spawn_result',

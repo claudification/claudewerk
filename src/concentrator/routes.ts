@@ -740,6 +740,11 @@ export function createRouter(options: RouteOptions): Hono {
       effort?: string
       permissionMode?: string
       autocompactPct?: number
+      // Ad-hoc task runner fields
+      prompt?: string
+      adHoc?: boolean
+      adHocTaskId?: string
+      worktree?: string
     }>()
     if (!body.cwd || typeof body.cwd !== 'string') return c.json({ error: 'Missing cwd field' }, 400)
     if (body.mode === 'resume' && !body.resumeId) return c.json({ error: 'resumeId required for resume mode' }, 400)
@@ -768,10 +773,12 @@ export function createRouter(options: RouteOptions): Hono {
         resolve(msg as SpawnResult)
       })
 
-      // Resolve headless: explicit override > project default > global setting
+      // Resolve headless: ad-hoc always headless > explicit override > project default > global setting
       const projSettings = getProjectSettings(body.cwd)
       const globalSettings = getGlobalSettings()
-      const headless = body.headless ?? (projSettings?.defaultLaunchMode || globalSettings.defaultLaunchMode) !== 'pty'
+      const headless = body.adHoc
+        ? true
+        : (body.headless ?? (projSettings?.defaultLaunchMode || globalSettings.defaultLaunchMode) !== 'pty')
 
       // Resolve effort + model: explicit body override > project default > global default > undefined
       const effortRaw = body.effort || projSettings?.defaultEffort || globalSettings.defaultEffort
@@ -786,15 +793,20 @@ export function createRouter(options: RouteOptions): Hono {
           cwd: body.cwd,
           wrapperId,
           mkdir: body.mkdir || false,
-          mode: body.mode || 'fresh',
+          mode: body.adHoc ? 'fresh' : body.mode || 'fresh',
           resumeId: body.resumeId,
           headless,
           effort,
           model,
           bare: body.bare || false,
           sessionName: body.name?.trim() || undefined,
-          permissionMode: body.permissionMode || undefined,
+          permissionMode: body.adHoc ? 'bypassPermissions' : body.permissionMode || undefined,
           autocompactPct: body.autocompactPct || undefined,
+          // Ad-hoc fields
+          prompt: body.prompt || undefined,
+          adHoc: body.adHoc || undefined,
+          adHocTaskId: body.adHocTaskId || undefined,
+          worktree: body.worktree || undefined,
         }),
       )
     })

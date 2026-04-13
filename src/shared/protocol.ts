@@ -13,7 +13,7 @@ export interface HookEvent {
 }
 
 // Capabilities that rclaude declares on connect
-export type WrapperCapability = 'terminal' | 'channel' | 'headless'
+export type WrapperCapability = 'terminal' | 'channel' | 'headless' | 'ad-hoc'
 
 export interface SessionMeta {
   type: 'meta'
@@ -35,6 +35,7 @@ export interface SessionMeta {
   }
   spinnerVerbs?: string[]
   autocompactPct?: number // CLAUDE_AUTOCOMPACT_PCT_OVERRIDE value if set
+  adHocTaskId?: string // project board task slug that spawned this ad-hoc session
 }
 
 export interface SessionEnd {
@@ -898,6 +899,9 @@ export interface Session {
   gitBranch?: string
   spinnerVerbs?: string[] // custom spinner verbs from ~/.claude/settings.json
   autocompactPct?: number // CLAUDE_AUTOCOMPACT_PCT_OVERRIDE value if set
+  adHocTaskId?: string // project board task slug that spawned this ad-hoc session
+  adHocWorktree?: string // worktree branch name for ad-hoc sessions
+  resultText?: string // final result text from headless session (captured from stream-json result message)
 }
 
 // Agent -> Concentrator messages
@@ -971,6 +975,11 @@ export interface SpawnSession {
   requestId: string
   cwd: string
   wrapperId: string
+  // Ad-hoc task runner fields
+  prompt?: string // initial prompt to send after session starts
+  adHoc?: boolean // fire-and-forget headless session
+  adHocTaskId?: string // project board task slug for deep linking
+  worktree?: string // git worktree branch name (passed as --worktree to claude CLI)
 }
 
 export interface ListDirs {
@@ -1065,6 +1074,9 @@ export interface SessionSummary {
   gitBranch?: string
   spinnerVerbs?: string[]
   autocompactPct?: number
+  adHocTaskId?: string
+  adHocWorktree?: string
+  resultText?: string
 }
 
 // Subscription channels (dashboard <-> concentrator pub/sub)

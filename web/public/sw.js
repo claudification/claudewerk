@@ -159,6 +159,10 @@ self.addEventListener('push', event => {
   }
 
   const title = payload.title || 'rclaude'
+  // Determine URL: task deep link takes priority over session
+  const taskId = payload.data?.taskId
+  const defaultUrl = taskId ? `/#task/${taskId}` : payload.sessionId ? `/#session/${payload.sessionId}` : '/'
+
   const options = {
     body: payload.body || '',
     icon: '/icon-192.png',
@@ -166,7 +170,8 @@ self.addEventListener('push', event => {
     tag: payload.tag || `rclaude-${Date.now()}`,
     data: {
       sessionId: payload.sessionId,
-      url: payload.sessionId ? `/#session/${payload.sessionId}` : '/',
+      taskId,
+      url: defaultUrl,
       ...payload.data,
     },
     vibrate: [200, 100, 200],
@@ -180,13 +185,16 @@ self.addEventListener('notificationclick', event => {
 
   const url = event.notification.data?.url || '/'
   const sessionId = event.notification.data?.sessionId
+  const taskId = event.notification.data?.taskId
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
       for (const client of clientList) {
         if (client.url.includes(self.location.origin)) {
           client.focus()
-          if (sessionId) {
+          if (taskId) {
+            client.postMessage({ type: 'navigate-task', taskId })
+          } else if (sessionId) {
             client.postMessage({ type: 'navigate-session', sessionId })
           }
           return

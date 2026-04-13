@@ -218,6 +218,16 @@ const sessionName: MessageHandler = (ctx, data) => {
   }
 }
 
+// Store the final result text from headless sessions (used for ad-hoc task completion display)
+const resultText: MessageHandler = (ctx, data) => {
+  const sessionId = data.sessionId as string
+  const text = data.text as string
+  const session = ctx.sessions.getSession(sessionId)
+  if (session && text) {
+    session.resultText = text
+  }
+}
+
 export function registerTranscriptHandlers(): void {
   registerHandlers({
     session_name: sessionName,
@@ -232,5 +242,6 @@ export function registerTranscriptHandlers(): void {
     stream_delta: streamDelta,
     rate_limit: rateLimitHandler,
     session_info: sessionInfo,
+    result_text: resultText,
   })
 }

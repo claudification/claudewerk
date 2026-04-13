@@ -24,6 +24,7 @@ const meta: MessageHandler = (ctx, data) => {
     if (data.claudeAuth) existingSession.claudeAuth = data.claudeAuth as Record<string, unknown>
     if (data.spinnerVerbs) existingSession.spinnerVerbs = data.spinnerVerbs as string[]
     if (data.autocompactPct) existingSession.autocompactPct = data.autocompactPct as number
+    if (data.adHocTaskId) existingSession.adHocTaskId = data.adHocTaskId as string
     ctx.log.debug(
       `Session resumed: ${sessionId.slice(0, 8)}... wrapper=${wrapperId.slice(0, 8)} (${data.cwd}) [${ctx.sessions.getActiveWrapperCount(sessionId) + 1} wrapper(s)]${data.version ? ` [${data.version}]` : ''}`,
     )
@@ -40,6 +41,7 @@ const meta: MessageHandler = (ctx, data) => {
     if (data.claudeVersion) newSession.claudeVersion = data.claudeVersion as string
     if (data.spinnerVerbs) newSession.spinnerVerbs = data.spinnerVerbs as string[]
     if (data.autocompactPct) newSession.autocompactPct = data.autocompactPct as number
+    if (data.adHocTaskId) newSession.adHocTaskId = data.adHocTaskId as string
     ctx.log.debug(
       `Session started: ${sessionId.slice(0, 8)}... wrapper=${wrapperId.slice(0, 8)} (${data.cwd})${data.version ? ` [${data.version}]` : ''}`,
     )
@@ -155,11 +157,42 @@ const end: MessageHandler = (ctx, data) => {
   const endWrapperId = ctx.ws.data.wrapperId as string
   if (!sessionId || !endWrapperId) return
 
+  // Capture session before ending (for ad-hoc notification)
+  const session = ctx.sessions.getSession(sessionId)
+
   ctx.sessions.removeSessionSocket(sessionId, endWrapperId)
   const remaining = ctx.sessions.getActiveWrapperCount(sessionId)
   if (remaining === 0) {
     ctx.sessions.endSession(sessionId, (data.reason as string) || '')
     ctx.log.debug(`Session ended: ${sessionId.slice(0, 8)}... (${data.reason})`)
+
+    // Ad-hoc session completion notification
+    if (session?.capabilities?.includes('ad-hoc') && session.adHocTaskId) {
+      const elapsed = Math.round((Date.now() - session.startedAt) / 1000)
+      const elapsedStr = elapsed >= 60 ? `${Math.floor(elapsed / 60)}m ${elapsed % 60}s` : `${elapsed}s`
+      const title = session.title || session.adHocTaskId
+      const costStr = session.stats?.totalCostUsd ? ` ($${session.stats.totalCostUsd.toFixed(2)})` : ''
+
+      const toastMsg = {
+        type: 'toast' as const,
+        title: 'Task completed',
+        message: `${title} (${elapsedStr}${costStr})`,
+        variant: 'success' as const,
+        taskId: session.adHocTaskId,
+        sessionId,
+      }
+      if (session.cwd) ctx.broadcastScoped(toastMsg, session.cwd)
+      else ctx.broadcast(toastMsg)
+
+      ctx.push.sendToAll({
+        title: 'Task completed',
+        body: `${title} - completed in ${elapsedStr}${costStr}`,
+        data: { taskId: session.adHocTaskId, url: `/#task/${session.adHocTaskId}` },
+        tag: `adhoc-${sessionId}`,
+      })
+
+      ctx.log.info(`[ad-hoc] Task completed: ${session.adHocTaskId} (${elapsedStr}${costStr})`)
+    }
   } else {
     ctx.log.debug(
       `Wrapper ${endWrapperId.slice(0, 8)} ended for session ${sessionId.slice(0, 8)}... (${remaining} wrapper(s) remaining)`,

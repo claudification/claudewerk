@@ -532,6 +532,9 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       stats: session.stats,
       costTimeline: session.costTimeline,
       gitBranch: session.gitBranch,
+      adHocTaskId: session.adHocTaskId,
+      adHocWorktree: session.adHocWorktree,
+      resultText: session.resultText,
     }
   }
 
@@ -788,6 +791,9 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         },
         costTimeline: s.costTimeline,
         gitBranch: s.gitBranch,
+        adHocTaskId: s.adHocTaskId,
+        adHocWorktree: s.adHocWorktree,
+        resultText: s.resultText,
       }))
 
       const state: PersistedState = {

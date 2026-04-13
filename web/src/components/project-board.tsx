@@ -27,11 +27,12 @@ import {
   Search,
   Trash2,
   X,
+  Zap,
 } from 'lucide-react'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ProjectTask } from '@/hooks/use-project'
 import { type ProjectTaskMeta, type TaskStatus, useProject } from '@/hooks/use-project'
-import { sendInput } from '@/hooks/use-sessions'
+import { sendInput, useSessionsStore } from '@/hooks/use-sessions'
 import { useKeyLayer } from '@/lib/key-layers'
 import { cn, haptic } from '@/lib/utils'
 import { Markdown } from './markdown'
@@ -138,6 +139,7 @@ export function TaskEditor({
   const [tagInput, setTagInput] = useState('')
   const [saving, setSaving] = useState(false)
   const [editing, setEditing] = useState(!body.trim())
+  const [showRunDialog, setShowRunDialog] = useState(false)
   useKeyLayer({ Escape: () => onClose() }, { id: 'task-editor' })
 
   function addTag() {
@@ -307,8 +309,17 @@ export function TaskEditor({
             <button
               type="button"
               onClick={() => {
-                const taskPath = `.rclaude/project/${status}/${task.slug}.md`
-                const prompt = `Work on this task: ${taskPath}\nSet status to in-progress when you start, done when complete. Use mcp__rclaude__project_set_status with id="${task.slug}".`
+                const tagAttrs = [
+                  `id="${task.slug}"`,
+                  `title="${title.replace(/"/g, '&quot;')}"`,
+                  priority !== 'medium' ? `priority="${priority}"` : '',
+                  `status="${status}"`,
+                  tags.length ? `tags="${tags.join(',')}"` : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')
+                const instructions = `Set status to in-progress when you start, done when complete. Use mcp__rclaude__project_set_status with id="${task.slug}".`
+                const prompt = `<project-task ${tagAttrs}>\n${body.trim() || title}\n\n${instructions}\n</project-task>`
                 sendInput(sessionId, prompt)
                 haptic('success')
                 onClose()
@@ -316,6 +327,17 @@ export function TaskEditor({
               className="px-2 py-0.5 text-[10px] font-bold font-mono bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 transition-colors"
             >
               Work on this
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                haptic('tap')
+                setShowRunDialog(true)
+              }}
+              className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold font-mono bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 transition-colors"
+            >
+              <Zap className="w-2.5 h-2.5" />
+              Run
             </button>
           </div>
           <div className="flex items-center gap-2">
@@ -335,6 +357,219 @@ export function TaskEditor({
               {saving ? '...' : 'Save'}
             </button>
           </div>
+        </div>
+      </div>
+      {showRunDialog && (
+        <RunTaskDialog
+          task={{ ...task, title, body, status, priority, tags }}
+          sessionId={sessionId}
+          onClose={() => setShowRunDialog(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+function RunTaskDialog({ task, sessionId, onClose }: { task: ProjectTask; sessionId: string; onClose: () => void }) {
+  const cwd = useSessionsStore(state => state.sessions.find(s => s.id === sessionId)?.cwd || '')
+  const projectSettings = useSessionsStore(state => state.projectSettings[cwd])
+  const [model, setModel] = useState(projectSettings?.defaultModel || '')
+  const [effort, setEffort] = useState<string>(projectSettings?.defaultEffort || 'default')
+  const [useWorktree, setUseWorktree] = useState(true)
+  const [branchName, setBranchName] = useState(`adhoc/${task.slug}`)
+  const [autoCommit, setAutoCommit] = useState(false)
+  const [timeout, setTimeout_] = useState('10')
+  const [spawning, setSpawning] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useKeyLayer({ Escape: onClose })
+
+  async function handleRun() {
+    if (spawning || !cwd) return
+    setSpawning(true)
+    setError(null)
+    haptic('tap')
+
+    // Build the prompt from the task
+    const tagAttrs = [
+      `id="${task.slug}"`,
+      `title="${task.title.replace(/"/g, '&quot;')}"`,
+      task.priority !== 'medium' ? `priority="${task.priority}"` : '',
+      `status="${task.status}"`,
+      task.tags.length ? `tags="${task.tags.join(',')}"` : '',
+    ]
+      .filter(Boolean)
+      .join(' ')
+    const instructions = `Set status to in-progress when you start, done when complete. Use mcp__rclaude__project_set_status with id="${task.slug}".`
+    let prompt = `<project-task ${tagAttrs}>\n${task.body.trim() || task.title}\n\n${instructions}\n</project-task>`
+
+    if (autoCommit) {
+      prompt += '\n\nWhen you are done, commit all changes with a descriptive commit message.'
+    }
+
+    try {
+      const res = await fetch('/api/spawn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cwd,
+          adHoc: true,
+          adHocTaskId: task.slug,
+          prompt,
+          headless: true,
+          model: model || undefined,
+          effort: effort !== 'default' ? effort : undefined,
+          worktree: useWorktree ? branchName : undefined,
+          name: task.title.slice(0, 60),
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        haptic('success')
+        onClose()
+      } else {
+        setError(data.error || 'Spawn failed')
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Network error')
+    } finally {
+      setSpawning(false)
+    }
+  }
+
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: backdrop
+    <div role="presentation" className="fixed inset-0 z-[110] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div
+        role="dialog"
+        className="relative w-full max-w-md bg-[#1a1b26] border border-amber-500/30 shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-amber-500/20">
+          <Zap className="w-4 h-4 text-amber-400" />
+          <span className="text-sm font-mono font-bold text-amber-400">Run Task</span>
+          <button type="button" onClick={onClose} className="ml-auto text-muted-foreground hover:text-foreground">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Task title */}
+        <div className="px-4 py-3 border-b border-[#33467c]/30">
+          <div className="text-xs font-mono text-foreground truncate">{task.title}</div>
+          {task.body && (
+            <div className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{task.body.slice(0, 200)}</div>
+          )}
+        </div>
+
+        {/* Options */}
+        <div className="px-4 py-3 space-y-3">
+          {/* Model */}
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] font-mono text-muted-foreground">Model</label>
+            <select
+              value={model}
+              onChange={e => setModel(e.target.value)}
+              className="text-[10px] font-mono bg-[#1a1b26] border border-[#33467c]/50 text-foreground px-2 py-1 outline-none"
+            >
+              <option value="">default</option>
+              <option value="opus">opus</option>
+              <option value="sonnet">sonnet</option>
+              <option value="haiku">haiku</option>
+            </select>
+          </div>
+
+          {/* Effort */}
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] font-mono text-muted-foreground">Effort</label>
+            <select
+              value={effort}
+              onChange={e => setEffort(e.target.value)}
+              className="text-[10px] font-mono bg-[#1a1b26] border border-[#33467c]/50 text-foreground px-2 py-1 outline-none"
+            >
+              <option value="default">default</option>
+              <option value="low">low</option>
+              <option value="medium">medium</option>
+              <option value="high">high</option>
+            </select>
+          </div>
+
+          {/* Worktree */}
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={useWorktree}
+                onChange={e => setUseWorktree(e.target.checked)}
+                className="accent-amber-400"
+              />
+              <span className="text-[10px] font-mono text-muted-foreground">Use git worktree (isolated branch)</span>
+            </label>
+            {useWorktree && (
+              <input
+                type="text"
+                value={branchName}
+                onChange={e => setBranchName(e.target.value)}
+                className="w-full text-[10px] font-mono bg-[#1a1b26] border border-[#33467c]/50 text-foreground px-2 py-1 outline-none"
+                placeholder="Branch name..."
+              />
+            )}
+          </div>
+
+          {/* Auto-commit */}
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={autoCommit}
+              onChange={e => setAutoCommit(e.target.checked)}
+              className="accent-amber-400"
+            />
+            <span className="text-[10px] font-mono text-muted-foreground">Auto-commit changes on completion</span>
+          </label>
+
+          {/* Timeout */}
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] font-mono text-muted-foreground">Timeout</label>
+            <select
+              value={timeout}
+              onChange={e => setTimeout_(e.target.value)}
+              className="text-[10px] font-mono bg-[#1a1b26] border border-[#33467c]/50 text-foreground px-2 py-1 outline-none"
+            >
+              <option value="5">5 min</option>
+              <option value="10">10 min</option>
+              <option value="15">15 min</option>
+              <option value="30">30 min</option>
+              <option value="0">unlimited</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Error */}
+        {error && (
+          <div className="px-4 py-2 text-[10px] font-mono text-red-400 border-t border-red-500/20 bg-red-500/5">
+            {error}
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-[#33467c]/30">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1 text-xs font-mono text-muted-foreground hover:text-foreground"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={spawning || !cwd}
+            className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold font-mono bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 transition-colors disabled:opacity-50"
+          >
+            <Zap className="w-3 h-3" />
+            {spawning ? 'Spawning...' : 'Run'}
+          </button>
         </div>
       </div>
     </div>
@@ -571,6 +806,23 @@ export const ProjectBoard = memo(function ProjectBoard({ sessionId }: { sessionI
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set())
   const [selectedPriority, setSelectedPriority] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
+
+  // Deep link: listen for open-project-task events (from push notifications / hash routes)
+  useEffect(() => {
+    function handleOpenTask(e: Event) {
+      const taskId = (e as CustomEvent<{ taskId: string }>).detail?.taskId
+      if (!taskId) return
+      // Find the task by slug and open its editor
+      const meta = tasks.find(t => t.slug === taskId)
+      if (meta) {
+        readTask(meta.slug, meta.status).then(full => {
+          if (full) setEditingTask(full)
+        })
+      }
+    }
+    window.addEventListener('open-project-task', handleOpenTask)
+    return () => window.removeEventListener('open-project-task', handleOpenTask)
+  }, [tasks, readTask])
 
   const tagFreqs = useMemo(() => getTagFrequencies(tasks), [tasks])
   const hasActiveFilters = searchQuery.trim() || selectedTags.size > 0 || selectedPriority

@@ -313,6 +313,9 @@ async function main() {
   let noTerminal = false
   let headless = process.env.RCLAUDE_HEADLESS === '1' // opt-in until input routing is solid
   let channelEnabled = process.env.RCLAUDE_CHANNELS !== '0'
+  const isAdHoc = process.env.RCLAUDE_ADHOC === '1'
+  const adHocTaskId = process.env.RCLAUDE_ADHOC_TASK_ID
+  const initialPromptFile = process.env.RCLAUDE_INITIAL_PROMPT_FILE
   const claudeArgs: string[] = []
 
   debug(`Concentrator URL: ${concentratorUrl} (source: ${process.env.RCLAUDE_CONCENTRATOR ? 'env' : 'default'})`)
@@ -629,6 +632,7 @@ async function main() {
       ...(!noTerminal ? ['terminal' as const] : []),
       ...(channelEnabled ? ['channel' as const] : []),
       ...(headless ? ['headless' as const] : []),
+      ...(isAdHoc ? ['ad-hoc' as const] : []),
     ]
 
     ctx.wsClient = createWsClient({
@@ -644,6 +648,7 @@ async function main() {
       autocompactPct: process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE
         ? Number(process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE)
         : undefined,
+      adHocTaskId,
       capabilities,
       onConnected() {
         diag('ws', 'Connected to concentrator', { sessionId })

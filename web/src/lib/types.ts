@@ -106,6 +106,9 @@ export interface Session {
   gitBranch?: string
   spinnerVerbs?: string[]
   autocompactPct?: number
+  adHocTaskId?: string
+  adHocWorktree?: string
+  resultText?: string
   lastEvent?: {
     hookEvent: string
     timestamp: number
