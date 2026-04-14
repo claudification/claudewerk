@@ -10,6 +10,7 @@ import type { WrapperMessage } from '../shared/protocol'
 import { debug as _debug } from './debug'
 import { hasPendingAskRequests } from './local-server'
 import { hasPendingDialogs } from './mcp-channel'
+import { writeMergedSettings } from './settings-merge'
 import type { StreamBackendOptions, StreamProcess } from './stream-backend'
 import { sendTranscriptEntriesChunked, startSubagentWatcher } from './transcript-manager'
 import type { WrapperContext } from './wrapper-context'
@@ -25,6 +26,9 @@ export interface HeadlessCallbackDeps {
   finalClaudeArgs: string[]
   settingsPath: string
   localServerPort: number
+  rclaudeDir: string
+  claudeVersion?: string
+  mcpConfigPath: string
   concentratorUrl?: string
   concentratorSecret?: string
   spawnStreamClaude: (opts: StreamBackendOptions) => StreamProcess
@@ -530,8 +534,30 @@ export function sendAdHocPrompt(ctx: WrapperContext): void {
 /**
  * Respawn the headless CC process (used by /clear handler).
  * Reuses all callbacks since they reference the outer WrapperContext.
+ * Re-generates the settings file and MCP config to guarantee hooks + MCP
+ * survive across the /clear boundary (CC or its SIGTERM cleanup may have
+ * deleted the original files).
  */
-function respawnHeadless(deps: HeadlessCallbackDeps, args: string[]) {
+async function respawnHeadless(deps: HeadlessCallbackDeps, args: string[]) {
+  // Re-write settings file (hooks) and MCP config -- they may have been
+  // deleted by CC's exit cleanup or a race with the stale reaper.
+  const { ctx, rclaudeDir, localServerPort, claudeVersion, mcpConfigPath } = deps
+  try {
+    deps.settingsPath = await writeMergedSettings(ctx.internalId, localServerPort, claudeVersion, rclaudeDir)
+    ctx.diag('headless', `Regenerated settings: ${deps.settingsPath}`)
+  } catch (e) {
+    debug(`[respawn] Failed to regenerate settings: ${e}`)
+  }
+  try {
+    await Bun.write(
+      mcpConfigPath,
+      JSON.stringify({ mcpServers: { rclaude: { type: 'http', url: `http://localhost:${localServerPort}/mcp` } } }),
+    )
+    ctx.diag('headless', `Regenerated MCP config: ${mcpConfigPath}`)
+  } catch (e) {
+    debug(`[respawn] Failed to regenerate MCP config: ${e}`)
+  }
+
   const opts = buildHeadlessSpawnOptions(deps)
   // Override args for the fresh spawn
   opts.args = args
