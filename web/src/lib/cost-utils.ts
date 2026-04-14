@@ -178,7 +178,7 @@ export function getCacheTimerInfo(
   if (!lastTurnEndedAt || !tokenUsage) return null
 
   const contextTokens = tokenUsage.input + tokenUsage.cacheCreation + tokenUsage.cacheRead
-  if (contextTokens < 50_000) return null // not worth showing timer for tiny contexts
+  if (contextTokens < 40_000) return null // not worth showing timer for tiny contexts
 
   const ttlMs = resolveCacheTtlMs(cacheTtl)
   const elapsed = Date.now() - lastTurnEndedAt
@@ -187,7 +187,7 @@ export function getCacheTimerInfo(
   const p = getPricing(model)
   const reCacheCost = (contextTokens * (p.cacheWrite5m - p.cacheRead)) / 1_000_000
 
-  if (reCacheCost < 0.05) return null // too small to care
+  if (reCacheCost < 0.75) return null // not worth warning for cheap re-caches
 
   let state: CacheTimerState
   if (remainingMs <= 0) {
