@@ -310,6 +310,7 @@ export type WrapperMessage =
   | WrapperRateLimit
   | SessionInfoUpdate
   | SessionNameUpdate
+  | SpawnFailed
 
 export interface SessionNameUpdate {
   type: 'session_name'
@@ -972,7 +973,7 @@ export interface ListDirsResult {
   error?: string
 }
 
-/** Agent reports a directly-spawned headless child exited unexpectedly (after initial spawn_result success) */
+/** Agent or wrapper reports a spawn failure (headless child exit, PTY crash, or early exit) */
 export interface SpawnFailed {
   type: 'spawn_failed'
   wrapperId: string

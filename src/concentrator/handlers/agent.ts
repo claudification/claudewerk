@@ -90,32 +90,29 @@ const spawnFailed: MessageHandler = (ctx, data) => {
   const elapsedMs = data.elapsedMs as number | undefined
   const cwd = data.cwd as string | undefined
   const earlyFailure = typeof elapsedMs === 'number' && elapsedMs < 5000
+  const errorMsg =
+    (data.error as string) ||
+    (earlyFailure
+      ? `Process exited in ${elapsedMs}ms (exit ${exitCode}) - likely hook or config failure`
+      : `Spawn failed (exit ${exitCode})`)
   ctx.log.info(
     `Spawn FAILED: wrapper=${wrapperId?.slice(0, 8)} exit=${exitCode} elapsed=${elapsedMs}ms${earlyFailure ? ' (early failure - likely hook/config issue)' : ''}`,
   )
 
-  // Broadcast to dashboard so the launch monitor / session detail can show the failure
+  // Route through the job system so the launch monitor gets an immediate job_failed
+  // instead of timing out after 30s with a generic error
+  if (wrapperId) {
+    const jobId = ctx.sessions.getJobByWrapper(wrapperId)
+    if (jobId) {
+      ctx.sessions.failJob(jobId, errorMsg)
+    }
+  }
+
+  // Also broadcast for any non-job listeners (session detail, diag, etc.)
   if (cwd) {
-    ctx.broadcastScoped(
-      {
-        type: 'spawn_failed',
-        wrapperId,
-        exitCode,
-        elapsedMs,
-        error: data.error,
-        pid: data.pid,
-      },
-      cwd,
-    )
+    ctx.broadcastScoped({ type: 'spawn_failed', wrapperId, exitCode, elapsedMs, error: errorMsg, pid: data.pid }, cwd)
   } else {
-    ctx.broadcast({
-      type: 'spawn_failed',
-      wrapperId,
-      exitCode,
-      elapsedMs,
-      error: data.error,
-      pid: data.pid,
-    })
+    ctx.broadcast({ type: 'spawn_failed', wrapperId, exitCode, elapsedMs, error: errorMsg, pid: data.pid })
   }
 }
 

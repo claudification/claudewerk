@@ -1505,60 +1505,92 @@ async function main() {
     sendAdHocPrompt(ctx)
   } else {
     // --- PTY MODE: existing behavior ---
-    ctx.ptyProcess = spawnClaude({
-      args: finalClaudeArgs,
-      settingsPath,
-      sessionId: internalId,
-      localServerPort,
-      concentratorUrl: concentratorHttpUrl,
-      concentratorSecret,
-      onData(data) {
-        // Auto-confirm dev channel warning prompt (fires once on startup)
-        if (channelEnabled && !devChannelConfirmed) {
-          const plain = data.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b[=>?][0-9]*[a-zA-Z]/g, '')
-          if (plain.includes('Entertoconfirm')) {
-            devChannelConfirmed = true
-            setTimeout(() => {
-              debug('[channel] Sending Enter to confirm dev channel warning')
-              ctx.ptyProcess?.write('\r')
-            }, 300)
-            diag('channel', 'Auto-confirmed dev channel warning')
+    const ptySpawnedAt = Date.now()
+    try {
+      ctx.ptyProcess = spawnClaude({
+        args: finalClaudeArgs,
+        settingsPath,
+        sessionId: internalId,
+        localServerPort,
+        concentratorUrl: concentratorHttpUrl,
+        concentratorSecret,
+        onData(data) {
+          // Auto-confirm dev channel warning prompt (fires once on startup)
+          if (channelEnabled && !devChannelConfirmed) {
+            const plain = data.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b[=>?][0-9]*[a-zA-Z]/g, '')
+            if (plain.includes('Entertoconfirm')) {
+              devChannelConfirmed = true
+              setTimeout(() => {
+                debug('[channel] Sending Enter to confirm dev channel warning')
+                ctx.ptyProcess?.write('\r')
+              }, 300)
+              diag('channel', 'Auto-confirmed dev channel warning')
+            }
           }
-        }
 
-        // Scan for OSC 52 clipboard sequences and forward captures to concentrator
-        const cleaned = osc52Parser.write(data, capture => {
-          if (ctx.wsClient?.isConnected()) {
-            const sid = ctx.claudeSessionId || internalId
-            ctx.wsClient.send({
-              type: 'clipboard_capture',
-              sessionId: sid,
-              contentType: capture.contentType,
-              text: capture.text,
-              base64: capture.contentType === 'image' ? capture.base64 : undefined,
-              mimeType: capture.mimeType,
-              timestamp: Date.now(),
+          // Scan for OSC 52 clipboard sequences and forward captures to concentrator
+          const cleaned = osc52Parser.write(data, capture => {
+            if (ctx.wsClient?.isConnected()) {
+              const sid = ctx.claudeSessionId || internalId
+              ctx.wsClient.send({
+                type: 'clipboard_capture',
+                sessionId: sid,
+                contentType: capture.contentType,
+                text: capture.text,
+                base64: capture.contentType === 'image' ? capture.base64 : undefined,
+                mimeType: capture.mimeType,
+                timestamp: Date.now(),
+              })
+              diag(
+                'clipboard',
+                `${capture.contentType}${capture.mimeType ? ` (${capture.mimeType})` : ''} ${capture.text ? `${capture.text.length} chars` : `${capture.base64.length} b64 bytes`}`,
+              )
+            }
+          })
+
+          // Forward PTY output to remote terminal viewer when attached (OSC 52 stripped)
+          if (ctx.terminalAttached && ctx.claudeSessionId && ctx.wsClient?.isConnected()) {
+            ctx.wsClient.sendTerminalData(cleaned)
+          }
+        },
+        onExit(code) {
+          // Detect early exit (within 10s) - likely hook/config/binary failure
+          const elapsedMs = Date.now() - ptySpawnedAt
+          if (elapsedMs < 10_000 && code !== 0) {
+            debug(`PTY early exit: code=${code} elapsed=${elapsedMs}ms - reporting spawn_failed`)
+            ctx.wsClient?.send({
+              type: 'spawn_failed',
+              wrapperId: internalId,
+              cwd,
+              exitCode: code,
+              elapsedMs,
+              error: `Claude process exited in ${elapsedMs}ms (exit ${code}) - likely hook, config, or binary failure`,
             })
-            diag(
-              'clipboard',
-              `${capture.contentType}${capture.mimeType ? ` (${capture.mimeType})` : ''} ${capture.text ? `${capture.text.length} chars` : `${capture.base64.length} b64 bytes`}`,
-            )
           }
-        })
 
-        // Forward PTY output to remote terminal viewer when attached (OSC 52 stripped)
-        if (ctx.terminalAttached && ctx.claudeSessionId && ctx.wsClient?.isConnected()) {
-          ctx.wsClient.sendTerminalData(cleaned)
-        }
-      },
-      onExit(code) {
-        if (ctx.claudeSessionId) {
-          ctx.wsClient?.sendSessionEnd(code === 0 ? 'normal' : `exit_code_${code}`)
-        }
+          if (ctx.claudeSessionId) {
+            ctx.wsClient?.sendSessionEnd(code === 0 ? 'normal' : `exit_code_${code}`)
+          }
+          cleanup()
+          process.exit(code ?? 0)
+        },
+      })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      debug(`PTY spawn failed: ${msg}`)
+      ctx.wsClient?.send({
+        type: 'spawn_failed',
+        wrapperId: internalId,
+        cwd,
+        error: `PTY spawn failed: ${msg}`,
+      })
+      // Give WS a moment to flush the message before exiting
+      setTimeout(() => {
         cleanup()
-        process.exit(code ?? 0)
-      },
-    })
+        process.exit(1)
+      }, 500)
+      return
+    }
 
     // Setup terminal passthrough (PTY mode only)
     cleanupTerminal = setupTerminalPassthrough(ctx.ptyProcess as PtyProcess)
