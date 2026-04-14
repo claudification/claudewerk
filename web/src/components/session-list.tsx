@@ -107,6 +107,9 @@ function SessionHoverTooltip({
 }) {
   const [open, setOpen] = useState(false)
   const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isTouchDevice = useRef(
+    typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0),
+  )
 
   function handleMouseEnter() {
     hoverTimeout.current = setTimeout(() => setOpen(true), 400)
@@ -115,6 +118,9 @@ function SessionHoverTooltip({
     if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
     hoverTimeout.current = setTimeout(() => setOpen(false), 150)
   }
+
+  // No hover tooltip on touch devices - it opens on tap and blocks session selection
+  if (isTouchDevice.current) return <>{children}</>
 
   const resolvedModel = model || session.model
   const effort = formatEffort(session.effortLevel)

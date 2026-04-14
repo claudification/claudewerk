@@ -100,7 +100,7 @@ export function ShareBanner({ sessionCwd }: SharePanelProps) {
   // No shares and not expanded: show a subtle "Share" button as entry point
   if (shares.length === 0 && !expanded) {
     return (
-      <div className="border-b border-border/50">
+      <div className="shrink-0 border-b border-border/50">
         <button
           type="button"
           onClick={() => {
@@ -117,7 +117,7 @@ export function ShareBanner({ sessionCwd }: SharePanelProps) {
   }
 
   return (
-    <div className="border-b border-teal-500/30 bg-teal-500/5">
+    <div className="shrink-0 border-b border-teal-500/30 bg-teal-500/5">
       {/* Collapsed: just the indicator bar */}
       <button
         type="button"
