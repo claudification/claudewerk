@@ -568,7 +568,7 @@ export function RunTaskDialog({
   const projectSettings = useSessionsStore(state => state.projectSettings[cwd])
   const [model, setModel] = useState(projectSettings?.defaultModel || '')
   const [effort, setEffort] = useState<string>(projectSettings?.defaultEffort || 'default')
-  const [useWorktree, setUseWorktree] = useState(true)
+  const [useWorktree, setUseWorktree] = useState(false)
   const [branchName, setBranchName] = useState(task.slug)
   const [autoCommit, setAutoCommit] = useState(true)
   const [maxBudgetUsd, setMaxBudgetUsd] = useState('')
