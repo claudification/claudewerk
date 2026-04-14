@@ -127,7 +127,7 @@ function TrafficTab({ serverStats, fetchError }: { serverStats: ServerStats | nu
 
 function CacheTab() {
   const mru = useSessionsStore(s => s.sessionMru)
-  const sessions = useSessionsStore(s => s.sessions)
+  const sessionsById = useSessionsStore(s => s.sessionsById)
   const transcripts = useSessionsStore(s => s.transcripts)
   const events = useSessionsStore(s => s.events)
   const selected = useSessionsStore(s => s.selectedSessionId)
@@ -163,7 +163,7 @@ function CacheTab() {
           {mru
             .filter(id => cachedIds.includes(id))
             .map(id => {
-              const session = sessions.find(s => s.id === id)
+              const session = sessionsById[id]
               const name = session?.title || session?.cwd.split('/').pop() || id.slice(0, 8)
               const entryCount = transcripts[id]?.length ?? 0
               const isSelected = id === selected
@@ -186,7 +186,7 @@ function CacheTab() {
         <div className="text-[10px] uppercase tracking-wider text-[#565f89] mb-2">WS Subscriptions</div>
         <div className="max-h-32 overflow-y-auto space-y-0.5">
           {cachedIds.map(id => {
-            const session = sessions.find(s => s.id === id)
+            const session = sessionsById[id]
             const name = session?.title || session?.cwd.split('/').pop() || id.slice(0, 8)
             return (
               <div key={id} className="text-[10px] text-[#a9b1d6] font-mono">

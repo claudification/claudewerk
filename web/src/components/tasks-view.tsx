@@ -70,9 +70,7 @@ function TaskRow({ task, onToggleDesc, expanded }: { task: TaskInfo; onToggleDes
 
 export function TasksView({ sessionId, pendingCount }: TasksViewProps) {
   const storeTasks = useSessionsStore(state => state.tasks[sessionId])
-  const archivedTaskCount = useSessionsStore(
-    state => state.sessions.find(s => s.id === sessionId)?.archivedTaskCount ?? 0,
-  )
+  const archivedTaskCount = useSessionsStore(state => state.sessionsById[sessionId]?.archivedTaskCount ?? 0)
   const [initialTasks, setInitialTasks] = useState<TaskInfo[] | null>(null)
   const [expandedDescs, setExpandedDescs] = useState<Set<string>>(new Set())
   const [showArchived, setShowArchived] = useState(false)

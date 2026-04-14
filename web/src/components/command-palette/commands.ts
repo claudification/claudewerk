@@ -4,7 +4,7 @@ import type { PaletteCommand } from './types'
 
 export function getPaletteCommands(onClose: () => void): PaletteCommand[] {
   const store = useSessionsStore.getState()
-  const session = store.sessions.find(s => s.id === store.selectedSessionId)
+  const session = store.selectedSessionId ? store.sessionsById[store.selectedSessionId] : undefined
   const { canEditUsers } = store.permissions
   return [
     ...(canEditUsers

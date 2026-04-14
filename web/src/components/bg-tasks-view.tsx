@@ -43,7 +43,7 @@ function BgTaskOutputView({ taskId }: { taskId: string }) {
 const EMPTY_BG_TASKS: BgTaskSummary[] = []
 
 export function BgTasksView({ sessionId }: { sessionId: string }) {
-  const bgTasks = useSessionsStore(state => state.sessions.find(s => s.id === sessionId)?.bgTasks || EMPTY_BG_TASKS)
+  const bgTasks = useSessionsStore(state => state.sessionsById[sessionId]?.bgTasks || EMPTY_BG_TASKS)
 
   if (bgTasks.length === 0) {
     return <div className="text-muted-foreground text-center py-10 text-xs">No background tasks</div>

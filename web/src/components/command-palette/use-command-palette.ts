@@ -11,6 +11,7 @@ import type { PaletteMode } from './types'
 
 export function useCommandPalette(onClose: () => void) {
   const sessions = useSessionsStore(state => state.sessions)
+  const sessionsById = useSessionsStore(state => state.sessionsById)
   const selectedSessionId = useSessionsStore(state => state.selectedSessionId)
   const sessionMru = useSessionsStore(state => state.sessionMru)
   const projectSettings = useSessionsStore(state => state.projectSettings)
@@ -146,7 +147,7 @@ export function useCommandPalette(onClose: () => void) {
   useEffect(() => {
     if (!isFileMode || filesFetched.current) return
     if (!selectedSessionId) return
-    const session = sessions.find(s => s.id === selectedSessionId)
+    const session = selectedSessionId ? sessionsById[selectedSessionId] : undefined
     if (!session || (session.status !== 'active' && session.status !== 'idle')) return
 
     filesFetched.current = true

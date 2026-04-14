@@ -131,13 +131,13 @@ const VERBS = [
 
 /** Shows a fun random verb spinner while the session is active (between UserPromptSubmit and Stop) */
 const ThinkingSpinner = memo(function ThinkingSpinner({ sessionId }: { sessionId: string | null }) {
-  const isActive = useSessionsStore(state => state.sessions.find(s => s.id === sessionId)?.status === 'active')
-  const totalOutput = useSessionsStore(
-    state => state.sessions.find(s => s.id === sessionId)?.stats?.totalOutputTokens ?? 0,
+  const isActive = useSessionsStore(state => (sessionId ? state.sessionsById[sessionId]?.status === 'active' : false))
+  const totalOutput = useSessionsStore(state =>
+    sessionId ? (state.sessionsById[sessionId]?.stats?.totalOutputTokens ?? 0) : 0,
   )
   // Custom verbs: project settings override > session verbs (from CC settings) > defaults
   const customVerbs = useSessionsStore(state => {
-    const session = state.sessions.find(s => s.id === sessionId)
+    const session = sessionId ? state.sessionsById[sessionId] : undefined
     const projectVerbs = session?.cwd ? state.projectSettings[session.cwd]?.verbs : undefined
     return projectVerbs?.length ? projectVerbs : session?.spinnerVerbs
   })
@@ -287,14 +287,14 @@ export function TranscriptView({
   // Return a primitive string so Zustand's Object.is check works - avoids re-renders
   // from session_update creating new array references with identical content
   const subagentsSummary = useSessionsStore(state => {
-    const session = state.sessions.find(s => s.id === state.selectedSessionId)
+    const session = state.selectedSessionId ? state.sessionsById[state.selectedSessionId] : undefined
     if (!session?.subagents?.length) return ''
     return session.subagents.map(a => `${a.agentId}:${a.status}:${a.description || ''}`).join('|')
   })
   // biome-ignore lint/correctness/useExhaustiveDependencies: subagentsSummary is a serialized primitive dep key that triggers recompute when subagent state changes
   const subagents = useMemo(() => {
-    return useSessionsStore.getState().sessions.find(s => s.id === useSessionsStore.getState().selectedSessionId)
-      ?.subagents
+    const state = useSessionsStore.getState()
+    return state.selectedSessionId ? state.sessionsById[state.selectedSessionId]?.subagents : undefined
   }, [subagentsSummary])
 
   const selectedSessionId = useSessionsStore(state => state.selectedSessionId)

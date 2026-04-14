@@ -633,7 +633,7 @@ export function GroupView({
                 const iStyle = intentStyles[item.intent || ''] || intentStyles.notify
                 // Resolve sender slug to display name via project settings
                 const senderSession = item.sessionId
-                  ? useSessionsStore.getState().sessions.find(s => s.id === item.sessionId)
+                  ? useSessionsStore.getState().sessionsById[item.sessionId]
                   : undefined
                 const senderLabel = senderSession?.cwd
                   ? useSessionsStore.getState().projectSettings[senderSession.cwd]?.label
@@ -651,7 +651,7 @@ export function GroupView({
                           // Find and select the sender session
                           if (item.sessionId) {
                             const store = useSessionsStore.getState()
-                            const target = store.sessions.find(s => s.id === item.sessionId)
+                            const target = store.sessionsById[item.sessionId]
                             if (target) {
                               haptic('tap')
                               store.selectSession(item.sessionId)

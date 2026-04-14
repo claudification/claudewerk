@@ -18,6 +18,7 @@ import { buildWsUrl } from '@/lib/share-mode'
 import type { HookEvent, Session, SessionOrderV2, TaskInfo, TranscriptEntry } from '@/lib/types'
 import {
   applyHashRoute,
+  buildSessionsById,
   fetchTranscript,
   handleBgTaskOutputMessage,
   type ProjectSettingsMap,
@@ -220,10 +221,13 @@ function processMessage(msg: DashboardMessage) {
       if (msg.session) {
         const newSession = toSession(msg.session)
         useSessionsStore.setState(state => {
+          let sessions: Session[]
           if (state.sessions.some(s => s.id === newSession.id)) {
-            return { sessions: state.sessions.map(s => (s.id === newSession.id ? { ...s, ...newSession } : s)) }
+            sessions = state.sessions.map(s => (s.id === newSession.id ? { ...s, ...newSession } : s))
+          } else {
+            sessions = [...state.sessions, newSession]
           }
-          return { sessions: [...state.sessions, newSession] }
+          return { sessions, sessionsById: buildSessionsById(sessions) }
         })
       }
       break
@@ -237,8 +241,10 @@ function processMessage(msg: DashboardMessage) {
         const matchId = prevId || sessionId
         useSessionsStore.setState(state => {
           const updated = toSession(session)
+          const sessions = state.sessions.map(s => (s.id === matchId ? { ...s, ...updated } : s))
           const newState: Partial<typeof state> = {
-            sessions: state.sessions.map(s => (s.id === matchId ? { ...s, ...updated } : s)),
+            sessions,
+            sessionsById: buildSessionsById(sessions),
           }
           // Clear stale streaming text when session goes idle or ends
           if ((updated.status === 'idle' || updated.status === 'ended') && state.streamingText[sessionId]) {
@@ -706,10 +712,14 @@ function processMessage(msg: DashboardMessage) {
     }
     case 'session_dismissed': {
       if (msg.sessionId) {
-        useSessionsStore.setState(state => ({
-          sessions: state.sessions.filter(s => s.id !== msg.sessionId),
-          selectedSessionId: state.selectedSessionId === msg.sessionId ? null : state.selectedSessionId,
-        }))
+        useSessionsStore.setState(state => {
+          const sessions = state.sessions.filter(s => s.id !== msg.sessionId)
+          return {
+            sessions,
+            sessionsById: buildSessionsById(sessions),
+            selectedSessionId: state.selectedSessionId === msg.sessionId ? null : state.selectedSessionId,
+          }
+        })
       }
       break
     }
@@ -961,9 +971,18 @@ export function useWebSocket() {
 
     // Watch for session selection changes and manage channel subscriptions
     // Diff-based: keep subscriptions alive for LIFO-cached sessions
+    // Uses selector-based subscribe to only fire when selectedSessionId or transcript keys change
     _subscribedSessions = new Set<string>()
+    let _lastSelectedId: string | null = null
+    let _lastTranscriptKeys: string = ''
     const unsubSessionion = useSessionsStore.subscribe(state => {
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+
+      // Quick check: bail if nothing subscription-relevant changed
+      const transcriptKeys = Object.keys(state.transcripts).sort().join(',')
+      if (state.selectedSessionId === _lastSelectedId && transcriptKeys === _lastTranscriptKeys) return
+      _lastSelectedId = state.selectedSessionId
+      _lastTranscriptKeys = transcriptKeys
 
       // Desired subscriptions: selected + all sessions with cached transcripts
       const desired = new Set<string>()

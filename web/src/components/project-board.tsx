@@ -509,7 +509,7 @@ type LaunchStep = {
 }
 
 function RunTaskDialog({ task, sessionId, onClose }: { task: ProjectTask; sessionId: string; onClose: () => void }) {
-  const cwd = useSessionsStore(state => state.sessions.find(s => s.id === sessionId)?.cwd || '')
+  const cwd = useSessionsStore(state => state.sessionsById[sessionId]?.cwd || '')
   const projectSettings = useSessionsStore(state => state.projectSettings[cwd])
   const [model, setModel] = useState(projectSettings?.defaultModel || '')
   const [effort, setEffort] = useState<string>(projectSettings?.defaultEffort || 'default')

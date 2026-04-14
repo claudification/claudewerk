@@ -68,6 +68,8 @@ export interface TerminalMessage {
 
 interface SessionsState {
   sessions: Session[]
+  /** O(1) lookup index maintained alongside sessions[] */
+  sessionsById: Record<string, Session>
   selectedSessionId: string | null
   selectedSubagentId: string | null
   sessionMru: string[]
@@ -334,8 +336,16 @@ function processHash() {
   }
 }
 
+/** Build an O(1) lookup index from a sessions array */
+export function buildSessionsById(sessions: Session[]): Record<string, Session> {
+  const map: Record<string, Session> = {}
+  for (const s of sessions) map[s.id] = s
+  return map
+}
+
 export const useSessionsStore = create<SessionsState>((set, get) => ({
   sessions: [],
+  sessionsById: {},
   selectedSessionId: null,
   selectedSubagentId: null,
   sessionMru: [],
@@ -484,10 +494,10 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   setRenamingSessionId: sessionId => set({ renamingSessionId: sessionId }),
   renameSession: (sessionId, name) => {
     wsSend('rename_session', { sessionId, name })
-    set(state => ({
-      renamingSessionId: null,
-      sessions: state.sessions.map(s => (s.id === sessionId ? { ...s, title: name || undefined } : s)),
-    }))
+    set(state => {
+      const sessions = state.sessions.map(s => (s.id === sessionId ? { ...s, title: name || undefined } : s))
+      return { renamingSessionId: null, sessions, sessionsById: buildSessionsById(sessions) }
+    })
   },
   inputDrafts: {},
   setInputDraft: (sessionId, text) => set(state => ({ inputDrafts: { ...state.inputDrafts, [sessionId]: text } })),
@@ -518,7 +528,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     }),
   resolveToolDisplay: (tool: ToolDisplayKey) => resolveToolDisplay(get().dashboardPrefs, tool),
 
-  setSessions: sessions => set({ sessions }),
+  setSessions: sessions => set({ sessions, sessionsById: buildSessionsById(sessions) }),
   selectSession: id => {
     clearExpandedState()
     const defaultView = get().dashboardPrefs.defaultView
@@ -527,19 +537,46 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       const { sessionCacheSize } = state.dashboardPrefs
 
       // LIFO cache: keep data for the N most recently viewed sessions
-      // Sessions beyond the cache limit get their data evicted
       const cachedIds = new Set(mru.slice(0, Math.max(1, sessionCacheSize)))
       if (id) cachedIds.add(id)
 
-      const events: Record<string, HookEvent[]> = {}
-      const transcripts: Record<string, TranscriptEntry[]> = {}
-      const subagentTranscripts: Record<string, TranscriptEntry[]> = {}
-      for (const sid of cachedIds) {
-        if (state.events[sid]) events[sid] = state.events[sid]
-        if (state.transcripts[sid]) transcripts[sid] = state.transcripts[sid]
-        for (const key of Object.keys(state.subagentTranscripts)) {
-          if (key.startsWith(`${sid}:`)) subagentTranscripts[key] = state.subagentTranscripts[key]
+      // Only rebuild dicts if we actually need to evict sessions.
+      // Check if any currently cached keys are NOT in the new cachedIds set.
+      let needsEviction = false
+      for (const sid of Object.keys(state.events)) {
+        if (!cachedIds.has(sid)) {
+          needsEviction = true
+          break
         }
+      }
+      if (!needsEviction) {
+        for (const sid of Object.keys(state.transcripts)) {
+          if (!cachedIds.has(sid)) {
+            needsEviction = true
+            break
+          }
+        }
+      }
+
+      let evictedData: {
+        events: Record<string, HookEvent[]>
+        transcripts: Record<string, TranscriptEntry[]>
+        subagentTranscripts: Record<string, TranscriptEntry[]>
+      } | null = null
+
+      if (needsEviction) {
+        const events: Record<string, HookEvent[]> = {}
+        const transcripts: Record<string, TranscriptEntry[]> = {}
+        const subagentTranscripts: Record<string, TranscriptEntry[]> = {}
+        for (const sid of cachedIds) {
+          if (state.events[sid]) events[sid] = state.events[sid]
+          if (state.transcripts[sid]) transcripts[sid] = state.transcripts[sid]
+        }
+        for (const key of Object.keys(state.subagentTranscripts)) {
+          const sid = key.split(':')[0]
+          if (cachedIds.has(sid)) subagentTranscripts[key] = state.subagentTranscripts[key]
+        }
+        evictedData = { events, transcripts, subagentTranscripts }
       }
 
       // Close terminal on session switch - PTY is tied to a wrapperId,
@@ -551,16 +588,14 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
         requestedTab: defaultView === 'tty' ? 'tty' : 'transcript',
         requestedTabSeq: state.requestedTabSeq + 1,
         sessionMru: mru,
-        events,
-        transcripts,
-        subagentTranscripts,
+        ...evictedData,
         ...closeTerminal,
       }
     })
     updateHash(id ? `session/${id}` : '')
     // Clear notification badge when viewing a session
     if (id) {
-      const session = get().sessions.find(s => s.id === id)
+      const session = get().sessionsById[id]
       if (session?.hasNotification) {
         get().sendWsMessage({ type: 'session_viewed', sessionId: id })
       }
@@ -590,8 +625,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   toggleDebugConsole: () => set(state => ({ showDebugConsole: !state.showDebugConsole })),
   openTerminal: wrapperId => {
     // Find the session that owns this wrapper so we can select it in the main panel too
-    const { sessions } = get()
-    const ownerSession = sessions.find(s => s.wrapperIds?.includes(wrapperId))
+    const ownerSession = get().sessions.find(s => s.wrapperIds?.includes(wrapperId))
     set({
       selectedSessionId: ownerSession?.id ?? null,
       terminalWrapperId: wrapperId,
@@ -659,18 +693,22 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   },
   dismissSession: sessionId => {
     wsSend('dismiss_session', { sessionId })
-    set(state => ({
-      sessions: state.sessions.filter(s => s.id !== sessionId),
-      selectedSessionId: state.selectedSessionId === sessionId ? null : state.selectedSessionId,
-    }))
+    set(state => {
+      const sessions = state.sessions.filter(s => s.id !== sessionId)
+      return {
+        sessions,
+        sessionsById: buildSessionsById(sessions),
+        selectedSessionId: state.selectedSessionId === sessionId ? null : state.selectedSessionId,
+      }
+    })
   },
   terminateSession: sessionId => {
     wsSend('terminate_session', { sessionId })
   },
 
   getSelectedSession: () => {
-    const { sessions, selectedSessionId } = get()
-    return sessions.find(s => s.id === selectedSessionId)
+    const { sessionsById, selectedSessionId } = get()
+    return selectedSessionId ? sessionsById[selectedSessionId] : undefined
   },
   getSelectedEvents: () => {
     const { events, selectedSessionId } = get()
@@ -739,7 +777,7 @@ export function sendInput(sessionId: string, input: string): boolean {
   // Headless sessions: inject optimistic user entry so text appears immediately
   // (PTY sessions get this from the UserPromptSubmit hook echo instead)
   if (ok) {
-    const sess = useSessionsStore.getState().sessions.find(s => s.id === sessionId)
+    const sess = useSessionsStore.getState().sessionsById[sessionId]
     if (sess && !sess.capabilities?.includes('terminal')) {
       useSessionsStore.setState(state => {
         const existing = state.transcripts[sessionId] || []

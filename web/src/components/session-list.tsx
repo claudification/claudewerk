@@ -12,7 +12,7 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-
 import { CSS } from '@dnd-kit/utilities'
 import type { HookEvent } from '@shared/protocol'
 import { ContextMenu, Popover } from 'radix-ui'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { reviveSession, saveSessionOrder, useSessionsStore } from '@/hooks/use-sessions'
 import {
   formatCost,
@@ -470,9 +470,17 @@ function DismissAllEndedButton({ sessions }: { sessions: Session[] }) {
 
 // ─── Session card content (variable height, shows tasks/agents) ────
 
-function SessionItemContent({ session, compact }: { session: Session; compact?: boolean }) {
-  const selectedSessionId = useSessionsStore(s => s.selectedSessionId)
-  const selectedSubagentId = useSessionsStore(s => s.selectedSubagentId)
+const SessionItemContent = memo(function SessionItemContent({
+  session,
+  compact,
+}: {
+  session: Session
+  compact?: boolean
+}) {
+  // Derived boolean selectors: only re-render when THIS card's state changes
+  const isSelected = useSessionsStore(s => s.selectedSessionId === session.id)
+  // Only resolve subagent selection for the selected session (others get stable null)
+  const selectedSubagentId = useSessionsStore(s => (s.selectedSessionId === session.id ? s.selectedSubagentId : null))
   const selectSession = useSessionsStore(s => s.selectSession)
   const selectSubagent = useSessionsStore(s => s.selectSubagent)
   const openTab = useSessionsStore(s => s.openTab)
@@ -481,7 +489,6 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
   const showContextBar = useSessionsStore(s => s.dashboardPrefs.showContextInList)
   const showCost = useSessionsStore(s => s.dashboardPrefs.showCostInList)
   const isRenaming = useSessionsStore(s => s.renamingSessionId === session.id)
-  const isSelected = selectedSessionId === session.id
   const sessionStartEvent = cachedEvents.find(e => e.hookEvent === 'SessionStart')
   const model = (sessionStartEvent?.data as { model?: string } | undefined)?.model
 
@@ -848,7 +855,7 @@ function SessionItemContent({ session, compact }: { session: Session; compact?: 
       {card}
     </SessionHoverTooltip>
   )
-}
+})
 
 // ─── Inline rename input ─────────────────────────────────────────────
 
@@ -1341,6 +1348,7 @@ export function SessionList() {
       return perms ? perms.canReadChat : false
     })
   }, [allSessions, canAdmin, sessionPermissions])
+  const sessionsById = useSessionsStore(s => s.sessionsById)
   const selectedSessionId = useSessionsStore(s => s.selectedSessionId)
   const rawSessionOrder = useSessionsStore(s => s.sessionOrder)
   const sessionOrder = rawSessionOrder?.tree ? rawSessionOrder : { version: 2 as const, tree: [] }
@@ -1687,7 +1695,7 @@ export function SessionList() {
                     (() => {
                       // Peek: show selected session even when group is collapsed
                       if (!selectedSessionId) return null
-                      const selectedSession = sessions.find(s => s.id === selectedSessionId)
+                      const selectedSession = sessionsById[selectedSessionId]
                       if (!selectedSession) return null
                       const selectedCwdKey = `cwd:${selectedSession.cwd}`
                       if (!node.children.some(c => c.id === selectedCwdKey)) return null

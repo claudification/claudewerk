@@ -37,7 +37,7 @@ export class ErrorBoundary extends Component<Props, State> {
   reportCrash(error: Error, errorInfo: ErrorInfo) {
     try {
       const store = useSessionsStore.getState()
-      const session = store.sessions.find(s => s.id === store.selectedSessionId)
+      const session = store.selectedSessionId ? store.sessionsById[store.selectedSessionId] : undefined
       fetch('/api/crash', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -76,7 +76,7 @@ export class ErrorBoundary extends Component<Props, State> {
   getAppState(): string {
     try {
       const store = useSessionsStore.getState()
-      const session = store.sessions.find(s => s.id === store.selectedSessionId)
+      const session = store.selectedSessionId ? store.sessionsById[store.selectedSessionId] : undefined
       const transcriptEntries = store.selectedSessionId ? store.transcripts[store.selectedSessionId] : undefined
       const lines = [
         `  selectedSession: ${store.selectedSessionId?.slice(0, 8) || '(none)'}`,

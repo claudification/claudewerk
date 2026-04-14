@@ -130,7 +130,7 @@ function lookupTaskSubject(taskId: string | undefined): string {
   const state = useSessionsStore.getState()
   const sid = state.selectedSessionId
   if (!sid) return ''
-  const session = state.sessions.find(s => s.id === sid)
+  const session = sid ? state.sessionsById[sid] : undefined
   if (!session) return ''
   return (
     session.activeTasks?.find(t => t.id === taskId)?.subject ||
@@ -601,7 +601,7 @@ export function ToolLine({
       const sessionId = (input.session_id as string) || ''
       const action = name.includes('revive') ? 'revive' : 'terminate'
       const actionColor = action === 'revive' ? 'text-green-400' : 'text-red-400'
-      const sess = useSessionsStore.getState().sessions.find(s => s.id === sessionId)
+      const sess = useSessionsStore.getState().sessionsById[sessionId]
       const sessName = sess?.title || sess?.cwd?.split('/').pop() || sessionId.slice(0, 8)
       summary = (
         <span className="flex items-center gap-1.5">

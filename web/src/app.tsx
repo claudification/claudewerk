@@ -435,7 +435,7 @@ function Dashboard() {
         store.setShowTerminal(false)
         if (store.selectedSessionId) store.openTab(store.selectedSessionId, 'transcript')
       } else {
-        const session = store.sessions.find(s => s.id === store.selectedSessionId)
+        const session = store.selectedSessionId ? store.sessionsById[store.selectedSessionId] : undefined
         if (session && canTerminal(session) && session.wrapperIds?.[0]) {
           store.openTerminal(session.wrapperIds[0])
         }
@@ -484,7 +484,7 @@ function Dashboard() {
       const store = useSessionsStore.getState()
       const sid = store.selectedSessionId
       if (!sid) return
-      const session = store.sessions.find(s => s.id === sid)
+      const session = store.sessionsById[sid]
       if (session && session.status !== 'ended') {
         wsSend('send_interrupt', { sessionId: sid })
       }

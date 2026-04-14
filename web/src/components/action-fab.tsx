@@ -111,7 +111,9 @@ export function ActionFab() {
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const lastTapRef = useRef(0)
   const selectedSessionId = useSessionsStore(state => state.selectedSessionId)
-  const session = useSessionsStore(state => state.sessions.find(s => s.id === state.selectedSessionId))
+  const session = useSessionsStore(state =>
+    state.selectedSessionId ? state.sessionsById[state.selectedSessionId] : undefined,
+  )
 
   const actions = buildActions(session, selectedSessionId)
 

@@ -1,6 +1,6 @@
 import type { HookEvent } from '@shared/protocol'
 import { ArrowLeft, ChevronDown, ChevronRight, ChevronUp, Copy, Terminal } from 'lucide-react'
-import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -177,7 +177,7 @@ function PermissionBanners() {
   const respond = useSessionsStore(s => s.respondToPermission)
   const sendRule = useSessionsStore(s => s.sendPermissionRule)
   const selectedSession = useSessionsStore(s => s.selectedSessionId)
-  const sessionCwd = useSessionsStore(s => s.sessions.find(sess => sess.id === s.selectedSessionId)?.cwd)
+  const sessionCwd = useSessionsStore(s => (s.selectedSessionId ? s.sessionsById[s.selectedSessionId]?.cwd : undefined))
   const relevant = permissions.filter(p => p.sessionId === selectedSession)
   if (relevant.length === 0) return null
   return (
@@ -515,9 +515,9 @@ const InputBar = memo(function InputBar({ sessionId }: { sessionId: string }) {
   const sessionRef = useRef(sessionId)
 
   // Track pendingAttention with 15s delay before showing (PTY only - headless uses PermissionBanners)
-  const pendingAttention = useSessionsStore(s => s.sessions.find(sess => sess.id === sessionId)?.pendingAttention)
+  const pendingAttention = useSessionsStore(s => s.sessionsById[sessionId]?.pendingAttention)
   const sessionHasTerminal = useSessionsStore(s => {
-    const sess = s.sessions.find(se => se.id === sessionId)
+    const sess = s.sessionsById[sessionId]
     return sess ? canTerminal(sess) : false
   })
   useEffect(() => {
@@ -737,7 +737,9 @@ export const SessionDetail = memo(function SessionDetail() {
     }
   }, [requestedTab, requestedTabSeq])
 
-  const session = useSessionsStore(state => state.sessions.find(s => s.id === state.selectedSessionId))
+  const session = useSessionsStore(state =>
+    state.selectedSessionId ? state.sessionsById[state.selectedSessionId] : undefined,
+  )
 
   // Fall back to transcript if current tab is hidden for ended sessions
   useEffect(() => {
@@ -821,25 +823,9 @@ export const SessionDetail = memo(function SessionDetail() {
 
   // HOOKS MUST BE BEFORE EARLY RETURNS - React rules!
 
-  // Plan mode: prefer concentrator state, fall back to transcript scan.
-  // MUST be above the `if (!session)` early return -- hooks can't be after conditional returns.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: transcript.length used as dep key to avoid deep array comparison; transcript ref is accessed in body intentionally
-  const inPlanMode = useMemo(() => {
-    if (session?.planMode) return true
-    let pm = false
-    for (const e of transcript) {
-      const blocks = (e as Record<string, unknown>).message
-        ? ((e as Record<string, unknown>).message as Record<string, unknown>)?.content
-        : undefined
-      if (!Array.isArray(blocks)) continue
-      for (const b of blocks) {
-        if (b.type === 'tool_use' && b.name === 'EnterPlanMode') pm = true
-        if (b.type === 'tool_use' && b.name === 'ExitPlanMode') pm = false
-      }
-    }
-    return pm
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.planMode, transcript.length])
+  // Plan mode: trust concentrator state (set by session_update from wrapper).
+  // Previous implementation scanned the entire transcript on every length change -- expensive for large transcripts.
+  const inPlanMode = session?.planMode ?? false
 
   if (!session) {
     return (

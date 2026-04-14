@@ -18,7 +18,9 @@ export function QuickTaskModal() {
   const [flash, setFlash] = useState(false)
 
   const selectedSessionId = useSessionsStore(state => state.selectedSessionId)
-  const session = useSessionsStore(state => state.sessions.find(s => s.id === state.selectedSessionId))
+  const session = useSessionsStore(state =>
+    state.selectedSessionId ? state.sessionsById[state.selectedSessionId] : undefined,
+  )
   const isActive = session != null && session.status !== 'ended'
   const hasWrapper = (session?.wrapperIds?.length ?? 0) > 0
 
