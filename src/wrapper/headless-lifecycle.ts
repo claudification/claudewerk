@@ -104,25 +104,9 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
         )
       }
 
-      // Ad-hoc initial prompt: read from file and send as first user message
-      const promptFile = process.env.RCLAUDE_INITIAL_PROMPT_FILE
-      if (promptFile) {
-        try {
-          const prompt = readFileSync(promptFile, 'utf-8').trim()
-          if (prompt) {
-            debug(`[ad-hoc] Sending initial prompt (${prompt.length} chars) from ${promptFile}`)
-            // Small delay to let CC finish init before sending
-            setTimeout(() => {
-              ctx.streamProc?.sendUserMessage(prompt)
-              ctx.diag('ad-hoc', `Sent initial prompt (${prompt.length} chars)`)
-            }, 500)
-          }
-          // Clean up the prompt file
-          unlinkSync(promptFile)
-        } catch (e) {
-          debug(`[ad-hoc] Failed to read prompt file ${promptFile}: ${e}`)
-        }
-      }
+      // NOTE: Ad-hoc initial prompt is NOT sent here. CC's init message only fires
+      // AFTER the first user message in --print mode. The prompt is sent from
+      // sendAdHocPrompt() called after spawnStreamClaude() returns.
     },
 
     onResult(result) {
@@ -344,6 +328,52 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
   }
 
   return opts
+}
+
+/**
+ * Send the ad-hoc initial prompt from a file.
+ * Called AFTER spawnStreamClaude() returns, NOT from onInit.
+ *
+ * Why: CC's init message only fires AFTER the first user message in --print mode.
+ * If we wait for onInit, the prompt never gets sent (chicken-and-egg).
+ * Instead, we send the prompt shortly after the process spawns. CC queues
+ * stdin and processes it once ready -- the user message triggers init.
+ */
+export function sendAdHocPrompt(ctx: WrapperContext): void {
+  const promptFile = process.env.RCLAUDE_INITIAL_PROMPT_FILE
+  if (!promptFile) return
+
+  debug(`[ad-hoc] Prompt file: ${promptFile}`)
+  try {
+    const prompt = readFileSync(promptFile, 'utf-8').trim()
+    if (!prompt) {
+      debug('[ad-hoc] WARNING: Prompt file was empty')
+      ctx.diag('ad-hoc', 'WARNING: prompt file empty')
+      unlinkSync(promptFile)
+      return
+    }
+    debug(`[ad-hoc] Read prompt (${prompt.length} chars), scheduling send in 1s`)
+    ctx.diag('ad-hoc', `Read prompt file (${prompt.length} chars)`)
+
+    // 1s delay to let CC process spawn and set up stdin pipe
+    setTimeout(() => {
+      if (ctx.streamProc) {
+        ctx.streamProc.sendUserMessage(prompt)
+        debug(`[ad-hoc] Initial prompt sent (${prompt.length} chars)`)
+        ctx.diag('ad-hoc', `Sent initial prompt (${prompt.length} chars)`)
+      } else {
+        debug('[ad-hoc] ERROR: streamProc not available when sending prompt')
+        ctx.diag('ad-hoc', 'ERROR: streamProc not available')
+      }
+    }, 1000)
+
+    // Clean up the prompt file
+    unlinkSync(promptFile)
+    debug('[ad-hoc] Cleaned up prompt file')
+  } catch (e) {
+    debug(`[ad-hoc] FAILED to read prompt file ${promptFile}: ${e}`)
+    ctx.diag('ad-hoc', `FAILED to read prompt file: ${e}`)
+  }
 }
 
 /**

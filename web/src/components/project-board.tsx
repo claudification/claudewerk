@@ -433,7 +433,7 @@ function RunTaskDialog({ task, sessionId, onClose }: { task: ProjectTask; sessio
           model: model || undefined,
           effort: effort !== 'default' ? effort : undefined,
           worktree: useWorktree ? branchName : undefined,
-          name: task.title.slice(0, 60),
+          name: task.title.replace(/['"]/g, '').slice(0, 60),
         }),
       })
       const data = await res.json()
@@ -1171,12 +1171,12 @@ export const ProjectBoard = memo(function ProjectBoard({ sessionId }: { sessionI
             await updateTask(slug, status, patch)
           }}
           onMove={async (slug, from, to) => {
-            const ok = await moveTask(slug, from, to)
-            if (ok) {
-              // Update the editing task's status so subsequent saves use the correct path
-              setEditingTask(prev => (prev && prev.slug === slug ? { ...prev, status: to } : prev))
+            const result = await moveTask(slug, from, to)
+            if (result) {
+              // Update the editing task's slug + status so subsequent saves use the correct path
+              setEditingTask(prev => (prev && prev.slug === slug ? { ...prev, slug: result, status: to } : prev))
             }
-            return ok
+            return !!result
           }}
           onClose={() => setEditingTask(null)}
         />

@@ -52,6 +52,9 @@ export interface WrapperContext {
   // Event queue
   readonly eventQueue: HookEvent[]
 
+  // Pending session name (sent when WS connects)
+  pendingSessionName?: { name: string; userSet: boolean }
+
   // Diagnostics
   readonly diagBuffer: Array<{ t: number; type: string; msg: string; args?: unknown }>
   diagFlushTimer: ReturnType<typeof setTimeout> | null

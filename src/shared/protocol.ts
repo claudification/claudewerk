@@ -36,6 +36,7 @@ export interface SessionMeta {
   spinnerVerbs?: string[]
   autocompactPct?: number // CLAUDE_AUTOCOMPACT_PCT_OVERRIDE value if set
   adHocTaskId?: string // project board task slug that spawned this ad-hoc session
+  adHocWorktree?: string // worktree branch name for ad-hoc sessions
 }
 
 export interface SessionEnd {

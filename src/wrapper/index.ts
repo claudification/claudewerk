@@ -31,7 +31,7 @@ import { TASK_STATUS_PATTERN } from '../shared/task-statuses'
 import { checkForUpdate, formatUpdateResult, formatVersion } from '../shared/update-check'
 import { debug, setDebugStderr } from './debug'
 import { handleFileEditorMessage } from './file-editor-handler'
-import { buildHeadlessSpawnOptions } from './headless-lifecycle'
+import { buildHeadlessSpawnOptions, sendAdHocPrompt } from './headless-lifecycle'
 import { processHookEvent } from './hook-processor'
 import { resolveAskRequest, setLocalServerDebug, startLocalServer, stopLocalServer } from './local-server'
 import {
@@ -316,10 +316,16 @@ async function main() {
   let channelEnabled = process.env.RCLAUDE_CHANNELS !== '0'
   const isAdHoc = process.env.RCLAUDE_ADHOC === '1'
   const adHocTaskId = process.env.RCLAUDE_ADHOC_TASK_ID
+  const adHocWorktree = process.env.RCLAUDE_WORKTREE
   const claudeArgs: string[] = []
 
   debug(`Concentrator URL: ${concentratorUrl} (source: ${process.env.RCLAUDE_CONCENTRATOR ? 'env' : 'default'})`)
   debug(`Concentrator secret: ${concentratorSecret ? 'set' : 'NOT SET'}`)
+  if (isAdHoc) {
+    debug(
+      `[ad-hoc] Mode: taskId=${adHocTaskId || 'none'} worktree=${adHocWorktree || 'none'} promptFile=${process.env.RCLAUDE_INITIAL_PROMPT_FILE || 'none'} channels=${channelEnabled}`,
+    )
+  }
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]
@@ -655,6 +661,7 @@ async function main() {
         ? Number(process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE)
         : undefined,
       adHocTaskId,
+      adHocWorktree,
       capabilities,
       onConnected() {
         diag('ws', 'Connected to concentrator', { sessionId })
@@ -665,6 +672,16 @@ async function main() {
           ctx.wsClient?.sendHookEvent({ ...event, sessionId })
         }
         ctx.eventQueue.length = 0
+        // Flush pending session name (queued before WS connected)
+        if (ctx.pendingSessionName && ctx.wsClient) {
+          ctx.wsClient.send({
+            type: 'session_name',
+            sessionId: ctx.claudeSessionId || internalId,
+            name: ctx.pendingSessionName.name,
+            userSet: ctx.pendingSessionName.userSet,
+          } as WrapperMessage)
+          ctx.pendingSessionName = undefined
+        }
         // Re-send transcript from JSONL file (repopulates concentrator cache after restart)
         if (headless) resendTranscriptFromFile(ctx)
         // Start polling task files + watching task notes
@@ -1435,7 +1452,14 @@ async function main() {
   const resolvedSessionName = process.env.RCLAUDE_SESSION_NAME || sessionName
   debug(`Session name: ${resolvedSessionName || '(none)'} (user=${!!process.env.RCLAUDE_SESSION_NAME})`)
 
-  // Send session name to concentrator immediately (don't rely on CC transcript for this)
+  // Send session name to concentrator (immediately if connected, or deferred to onConnected)
+  // Store on context so onConnected can send it after WS connects
+  ctx.pendingSessionName = resolvedSessionName
+    ? {
+        name: resolvedSessionName,
+        userSet: !!process.env.RCLAUDE_SESSION_NAME,
+      }
+    : undefined
   if (resolvedSessionName && ctx.wsClient?.isConnected()) {
     ctx.wsClient.send({
       type: 'session_name',
@@ -1443,6 +1467,7 @@ async function main() {
       name: resolvedSessionName,
       userSet: !!process.env.RCLAUDE_SESSION_NAME,
     } as WrapperMessage)
+    ctx.pendingSessionName = undefined
   }
 
   const finalClaudeArgs = [
@@ -1474,6 +1499,9 @@ async function main() {
 
     ctx.streamProc = spawnStreamClaude(headlessSpawnOptions)
     ctx.streamProc.forwardStdin()
+
+    // Send ad-hoc initial prompt (if RCLAUDE_INITIAL_PROMPT_FILE is set)
+    sendAdHocPrompt(ctx)
   } else {
     // --- PTY MODE: existing behavior ---
     ctx.ptyProcess = spawnClaude({

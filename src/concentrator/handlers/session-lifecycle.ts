@@ -25,6 +25,7 @@ const meta: MessageHandler = (ctx, data) => {
     if (data.spinnerVerbs) existingSession.spinnerVerbs = data.spinnerVerbs as string[]
     if (data.autocompactPct) existingSession.autocompactPct = data.autocompactPct as number
     if (data.adHocTaskId) existingSession.adHocTaskId = data.adHocTaskId as string
+    if (data.adHocWorktree) existingSession.adHocWorktree = data.adHocWorktree as string
     ctx.log.debug(
       `Session resumed: ${sessionId.slice(0, 8)}... wrapper=${wrapperId.slice(0, 8)} (${data.cwd}) [${ctx.sessions.getActiveWrapperCount(sessionId) + 1} wrapper(s)]${data.version ? ` [${data.version}]` : ''}`,
     )
@@ -42,9 +43,16 @@ const meta: MessageHandler = (ctx, data) => {
     if (data.spinnerVerbs) newSession.spinnerVerbs = data.spinnerVerbs as string[]
     if (data.autocompactPct) newSession.autocompactPct = data.autocompactPct as number
     if (data.adHocTaskId) newSession.adHocTaskId = data.adHocTaskId as string
+    if (data.adHocWorktree) newSession.adHocWorktree = data.adHocWorktree as string
+    const isAdHoc = (data.capabilities as string[] | undefined)?.includes('ad-hoc')
     ctx.log.debug(
       `Session started: ${sessionId.slice(0, 8)}... wrapper=${wrapperId.slice(0, 8)} (${data.cwd})${data.version ? ` [${data.version}]` : ''}`,
     )
+    if (isAdHoc) {
+      ctx.log.info(
+        `[ad-hoc] Session connected: ${sessionId.slice(0, 8)} task=${data.adHocTaskId || 'none'} worktree=${data.adHocWorktree || 'none'} caps=[${(data.capabilities as string[])?.join(',') || ''}]`,
+      )
+    }
   }
 
   ctx.sessions.setSessionSocket(sessionId, wrapperId, ctx.ws)

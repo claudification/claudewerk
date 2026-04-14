@@ -41,6 +41,7 @@ export interface WsClientOptions {
   spinnerVerbs?: string[]
   autocompactPct?: number
   adHocTaskId?: string
+  adHocWorktree?: string
   onConnected?: () => void
   onDisconnected?: () => void
   onError?: (error: Error) => void
@@ -124,6 +125,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
     spinnerVerbs,
     autocompactPct,
     adHocTaskId,
+    adHocWorktree,
     onConnected,
     onDisconnected,
     onError,
@@ -199,6 +201,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
             spinnerVerbs,
             autocompactPct,
             adHocTaskId,
+            adHocWorktree,
           }
           ws?.send(JSON.stringify(meta))
 

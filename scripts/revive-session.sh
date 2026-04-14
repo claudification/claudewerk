@@ -91,8 +91,10 @@ if [[ "${RCLAUDE_BARE:-}" == "1" ]]; then
   CMD_PREFIX+="RCLAUDE_BARE=1 "
 fi
 # Session name passed as env var (not CLI flag) to avoid quoting hell in tmux -c "..."
+# Strip quotes and backslashes to prevent shell injection in nested tmux command chains
 if [[ -n "${RCLAUDE_SESSION_NAME:-}" ]]; then
-  CMD_PREFIX+="RCLAUDE_SESSION_NAME='${RCLAUDE_SESSION_NAME}' "
+  SAFE_SESSION_NAME="${RCLAUDE_SESSION_NAME//[\"\'\`\\]/}"
+  CMD_PREFIX+="RCLAUDE_SESSION_NAME='${SAFE_SESSION_NAME}' "
 fi
 # Permission mode passed as env var for the same reason
 if [[ -n "${RCLAUDE_PERMISSION_MODE:-}" ]]; then
@@ -134,7 +136,11 @@ fi
 SPAWN_CMD="${CMD_PREFIX}${BASE_CMD}${EFFORT_FLAG}${MODEL_FLAG}${WORKTREE_FLAG}"
 
 # Debug log for launch diagnostics
-echo "$(date '+%Y-%m-%d %H:%M:%S') CWD=$CWD CMD=$SPAWN_CMD" >> /tmp/concentrator-launch-log.log 2>/dev/null || true
+if [[ "${RCLAUDE_ADHOC:-}" == "1" ]]; then
+  echo "$(date '+%Y-%m-%d %H:%M:%S') [AD-HOC] CWD=$CWD TASK=${RCLAUDE_ADHOC_TASK_ID:-none} PROMPT_FILE=${RCLAUDE_INITIAL_PROMPT_FILE:-none} WORKTREE=${RCLAUDE_WORKTREE:-none} CMD=$SPAWN_CMD" >> /tmp/concentrator-launch-log.log 2>/dev/null || true
+else
+  echo "$(date '+%Y-%m-%d %H:%M:%S') CWD=$CWD CMD=$SPAWN_CMD" >> /tmp/concentrator-launch-log.log 2>/dev/null || true
+fi
 
 # Launch a command in tmux via a login shell so .zshrc/.zprofile are sourced.
 # Without this, the tmux pane runs the command directly (no shell init),

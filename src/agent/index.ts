@@ -331,6 +331,14 @@ async function spawnSession(
   }
 
   // Write ad-hoc prompt to file (shell escaping is hell for markdown content)
+  if (adHoc) {
+    diag('spawn', '[ad-hoc] Starting ad-hoc spawn', {
+      taskId: adHocTaskId,
+      worktree,
+      promptLength: prompt?.length || 0,
+      sessionName,
+    })
+  }
   let promptFile: string | undefined
   if (prompt) {
     promptFile = `/tmp/rclaude-adhoc-${wrapperId}`
@@ -342,6 +350,12 @@ async function spawnSession(
       promptFile = undefined
     }
   }
+
+  // Sanitize strings that will be embedded in shell commands by revive-session.sh.
+  // The env vars are safe in Bun.spawnSync, but the shell script injects them into
+  // CMD_PREFIX which gets nested through tmux -> /bin/sh -> /bin/zsh. Quotes,
+  // backticks, backslashes, and dollar signs break the quoting chain.
+  const shellSafe = (s: string) => s.replace(/['"\\`$]/g, '')
 
   // Use "spawn-<timestamp>" as synthetic sessionId (revive-session.sh uses it for tmux window naming)
   const syntheticId = `spawn-${Date.now()}`
@@ -356,13 +370,13 @@ async function spawnSession(
     ...(effort ? { RCLAUDE_EFFORT: effort } : {}),
     ...(model ? { RCLAUDE_MODEL: model } : {}),
     ...(bare ? { RCLAUDE_BARE: '1' } : {}),
-    ...(sessionName ? { RCLAUDE_SESSION_NAME: sessionName } : {}),
+    ...(sessionName ? { RCLAUDE_SESSION_NAME: shellSafe(sessionName) } : {}),
     ...(permissionMode ? { RCLAUDE_PERMISSION_MODE: permissionMode } : {}),
     ...(autocompactPct ? { RCLAUDE_AUTOCOMPACT_PCT: String(autocompactPct) } : {}),
-    ...(adHoc ? { RCLAUDE_ADHOC: '1' } : {}),
+    ...(adHoc ? { RCLAUDE_ADHOC: '1', RCLAUDE_CHANNELS: '0' } : {}),
     ...(adHocTaskId ? { RCLAUDE_ADHOC_TASK_ID: adHocTaskId } : {}),
     ...(promptFile ? { RCLAUDE_INITIAL_PROMPT_FILE: promptFile } : {}),
-    ...(worktree ? { RCLAUDE_WORKTREE: worktree } : {}),
+    ...(worktree ? { RCLAUDE_WORKTREE: shellSafe(worktree) } : {}),
   }
 
   diag('spawn', 'Running revive script', { args: scriptArgs })

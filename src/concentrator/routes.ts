@@ -762,6 +762,13 @@ export function createRouter(options: RouteOptions): Hono {
     const requestId = randomUUID()
     const wrapperId = randomUUID()
 
+    const cwdLabel = body.cwd.split('/').pop() || body.cwd
+    if (body.adHoc) {
+      console.log(
+        `[ad-hoc] Spawn request: ${cwdLabel} task=${body.adHocTaskId || 'none'} wrapper=${wrapperId.slice(0, 8)} prompt=${body.prompt?.length || 0}chars worktree=${body.worktree || 'none'}`,
+      )
+    }
+
     const result = await new Promise<SpawnResult>((resolve, reject) => {
       const timeout = setTimeout(() => {
         sessionStore.removeSpawnListener(requestId)
@@ -812,8 +819,10 @@ export function createRouter(options: RouteOptions): Hono {
     })
 
     if (!result.success) {
+      if (body.adHoc) console.log(`[ad-hoc] Spawn FAILED: ${result.error || 'unknown'} (${cwdLabel})`)
       return c.json({ error: result.error || 'Spawn failed' }, 500)
     }
+    if (body.adHoc) console.log(`[ad-hoc] Spawn OK: wrapper=${wrapperId.slice(0, 8)} tmux=${result.tmuxSession}`)
 
     // Register rendezvous: wait for the spawned wrapper to connect (up to 2 min)
     if (callerSessionId) {
