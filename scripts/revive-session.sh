@@ -167,11 +167,15 @@ tmux_launch() {
   #      ZPFX, API keys are typically set via plugins/zinit/etc)
   local shell_path="${SHELL:-/bin/zsh}"
   local wrapped="${shell_path} -li -c \"${cmd}\""
+  # -P -F '#{pane_id}' outputs the globally-unique pane ID (%NNN) for health checking.
+  # Pane IDs are stable regardless of session/window renames.
+  local pane_id
   if tmux has-session -t "$TMUX_NAME" 2>/dev/null; then
-    tmux new-window "${TMUX_ENV[@]}" -t "$TMUX_NAME" -c "$CWD" "$wrapped"
+    pane_id=$(tmux new-window -P -F '#{pane_id}' "${TMUX_ENV[@]}" -t "$TMUX_NAME" -c "$CWD" "$wrapped")
   else
-    tmux new-session -d "${TMUX_ENV[@]}" -s "$TMUX_NAME" -c "$CWD" "$wrapped"
+    pane_id=$(tmux new-session -d -P -F '#{pane_id}' "${TMUX_ENV[@]}" -s "$TMUX_NAME" -c "$CWD" "$wrapped")
   fi
+  echo "PANE_ID=$pane_id"
 }
 
 # Always spawn fresh - the --continue path had a race condition where both

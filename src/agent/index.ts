@@ -489,7 +489,7 @@ async function reviveSession(
   autocompactPct?: number,
   maxBudgetUsd?: number,
   jobId?: string,
-): Promise<ReviveResult> {
+): Promise<ReviveResult & { tmuxPaneId?: string }> {
   const result: ReviveResult = {
     type: 'revive_result',
     sessionId,
@@ -565,10 +565,12 @@ async function reviveSession(
   if (verbose && stdout) debug(`Script stdout: ${stdout}`, verbose)
   if (stderr) debug(`Script stderr: ${stderr}`, verbose)
 
-  // Parse output lines for TMUX_SESSION= and CONTINUED=
+  // Parse output lines for TMUX_SESSION=, PANE_ID=, CONTINUED=
+  let tmuxPaneId: string | undefined
   for (const line of stdout.split('\n')) {
     const [key, value] = line.split('=', 2)
     if (key === 'TMUX_SESSION') result.tmuxSession = value
+    if (key === 'PANE_ID') tmuxPaneId = value
     if (key === 'CONTINUED') result.continued = value === 'true'
   }
 
@@ -596,7 +598,7 @@ async function reviveSession(
       launchLog(jobId, 'Script failed', 'error', result.error)
   }
 
-  return result
+  return Object.assign(result, { tmuxPaneId })
 }
 
 /**
@@ -652,7 +654,7 @@ async function spawnSession(
   adHocTaskId?: string,
   worktree?: string,
   jobId?: string,
-): Promise<{ success: boolean; error?: string; tmuxSession?: string }> {
+): Promise<{ success: boolean; error?: string; tmuxSession?: string; tmuxPaneId?: string }> {
   launchLog(jobId, 'Validating directory', 'info', cwd)
 
   // Diagnostic dump
@@ -807,14 +809,16 @@ async function spawnSession(
   })
 
   let tmuxSession: string | undefined
+  let tmuxPaneId: string | undefined
   for (const line of stdout.split('\n')) {
     const [key, value] = line.split('=', 2)
     if (key === 'TMUX_SESSION') tmuxSession = value
+    if (key === 'PANE_ID') tmuxPaneId = value
   }
 
   if (exitCode === 0) {
-    launchLog(jobId, 'tmux session created', 'ok', `tmux=${tmuxSession}`)
-    return { success: true, tmuxSession }
+    launchLog(jobId, 'tmux session created', 'ok', `tmux=${tmuxSession} pane=${tmuxPaneId || 'n/a'}`)
+    return { success: true, tmuxSession, tmuxPaneId }
   }
   const err = stderr || `Script exited with code ${exitCode}`
   launchLog(jobId, 'tmux spawn failed', 'error', err)
@@ -1106,13 +1110,49 @@ function connect(
             reviveMsg.maxBudgetUsd,
             reviveMsg.jobId,
           )
-          ws.send(JSON.stringify(result))
+          // Strip agent-internal tmuxPaneId before sending over WS
+          const { tmuxPaneId, ...reviveResult } = result
+          ws.send(JSON.stringify(reviveResult))
           if (result.success) {
             launchLog(reviveMsg.jobId, 'Waiting for session to connect', 'info')
             if (result.tmuxSession) {
-              log(`Revived in tmux session "${result.tmuxSession}" (continued: ${result.continued})`)
+              log(
+                `Revived in tmux session "${result.tmuxSession}" pane=${tmuxPaneId || 'n/a'} (continued: ${result.continued})`,
+              )
             } else {
               log(`Revived headless (continued: ${result.continued})`)
+            }
+
+            // Async tmux health check: verify the pane is still alive after 5s.
+            // Catches cases where rclaude crashes before it can connect WS
+            // (binary not found, shell PATH broken, early bootstrap failure).
+            // Pane IDs (%NNN) are globally unique and stable regardless of
+            // session/window renames.
+            if (tmuxPaneId) {
+              const paneId = tmuxPaneId
+              const wid = reviveMsg.wrapperId
+              const jid = reviveMsg.jobId
+              setTimeout(() => {
+                const check = Bun.spawnSync(['tmux', 'list-panes', '-t', paneId], {
+                  stdout: 'pipe',
+                  stderr: 'pipe',
+                })
+                if (check.exitCode !== 0) {
+                  log(`tmux pane ${paneId} died within 5s of spawn (wrapper=${wid.slice(0, 8)})`)
+                  launchLog(jid, 'tmux pane died', 'error', 'rclaude crashed during startup')
+                  const msg: SpawnFailed = {
+                    type: 'spawn_failed',
+                    wrapperId: wid,
+                    cwd: reviveMsg.cwd,
+                    error: 'rclaude process died within 5s of tmux launch - check shell environment, PATH, and hooks',
+                  }
+                  try {
+                    ws.send(JSON.stringify(msg))
+                  } catch {}
+                } else {
+                  debug(`tmux health check OK: pane ${paneId} alive (wrapper=${wid.slice(0, 8)})`, verbose)
+                }
+              }, 5000)
             }
           } else {
             log(`Revive failed: ${result.error}`)
@@ -1201,9 +1241,39 @@ function connect(
           ws.send(JSON.stringify(response))
           if (spawnRes.success) {
             launchLog(spawnMsg.jobId, 'Waiting for session to connect', 'info')
+
+            // Async tmux pane health check (same as revive path)
+            if (spawnRes.tmuxPaneId) {
+              const paneId = spawnRes.tmuxPaneId
+              const wid = spawnMsg.wrapperId
+              const jid = spawnMsg.jobId
+              const spawnCwd = expandedCwd
+              setTimeout(() => {
+                const check = Bun.spawnSync(['tmux', 'list-panes', '-t', paneId], {
+                  stdout: 'pipe',
+                  stderr: 'pipe',
+                })
+                if (check.exitCode !== 0) {
+                  log(`tmux pane ${paneId} died within 5s of spawn (wrapper=${wid.slice(0, 8)})`)
+                  launchLog(jid, 'tmux pane died', 'error', 'rclaude crashed during startup')
+                  const failMsg: SpawnFailed = {
+                    type: 'spawn_failed',
+                    wrapperId: wid,
+                    cwd: spawnCwd,
+                    error: 'rclaude process died within 5s of tmux launch - check shell environment, PATH, and hooks',
+                  }
+                  try {
+                    ws.send(JSON.stringify(failMsg))
+                  } catch {}
+                } else {
+                  debug(`tmux health check OK: pane ${paneId} alive (wrapper=${wid.slice(0, 8)})`, verbose)
+                }
+              }, 5000)
+            }
           }
           diag('spawn', spawnRes.success ? 'Spawn OK' : 'Spawn FAILED', {
             tmuxSession: spawnRes.tmuxSession,
+            tmuxPaneId: spawnRes.tmuxPaneId,
             error: spawnRes.error,
           })
           break
