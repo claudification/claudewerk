@@ -132,6 +132,74 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
       // For fire-and-forget tasks, we exit after the task completes.
       const isAdHoc = process.env.RCLAUDE_ADHOC === '1'
       if (isAdHoc) {
+        // Worktree merge-back and cleanup.
+        // CC won't get a chance to fire WorktreeRemove (we kill it on exit),
+        // so rclaude handles merge + cleanup directly.
+        const adHocWorktree = process.env.RCLAUDE_WORKTREE
+        if (adHocWorktree) {
+          try {
+            const branchResult = Bun.spawnSync(['git', 'branch', '--show-current'], { cwd: ctx.cwd })
+            const branch = branchResult.stdout.toString().trim()
+            if (branch.startsWith('worktree-')) {
+              const mainBranch =
+                Bun.spawnSync(['git', 'rev-parse', '--verify', 'main'], { cwd: ctx.cwd }).exitCode === 0
+                  ? 'main'
+                  : 'master'
+              const aheadResult = Bun.spawnSync(['git', 'rev-list', '--count', `${mainBranch}..HEAD`], { cwd: ctx.cwd })
+              const ahead = parseInt(aheadResult.stdout.toString().trim(), 10)
+
+              let merged = ahead === 0 // already merged if nothing ahead
+              if (ahead > 0) {
+                const ff = Bun.spawnSync(['git', 'fetch', '.', `HEAD:${mainBranch}`], { cwd: ctx.cwd })
+                if (ff.exitCode === 0) {
+                  debug(`[ad-hoc] Merged ${ahead} commits from ${branch} to ${mainBranch}`)
+                  ctx.diag('ad-hoc', `Merged ${ahead} commits from ${branch} to ${mainBranch}`)
+                  merged = true
+                } else {
+                  debug(`[ad-hoc] Cannot fast-forward ${mainBranch} (${ahead} unmerged commits on ${branch})`)
+                  ctx.diag('ad-hoc', `WARNING: ${ahead} unmerged commits on ${branch} - worktree preserved`)
+                }
+              }
+
+              // Clean up worktree + branch ONLY if fully merged
+              if (merged) {
+                // Find the worktree path (cwd IS the worktree for ad-hoc sessions)
+                const wtPath = ctx.cwd
+                // Step out of worktree to remove it (git needs us outside)
+                const parentCwd = join(ctx.cwd, '..', '..', '..') // .claude/worktrees/<name> -> project root
+                const resolvedParent =
+                  Bun.spawnSync(['git', 'rev-parse', '--show-toplevel'], {
+                    cwd: parentCwd,
+                  })
+                    .stdout.toString()
+                    .trim() || parentCwd
+
+                const removeResult = Bun.spawnSync(['git', 'worktree', 'remove', wtPath], { cwd: resolvedParent })
+                if (removeResult.exitCode === 0) {
+                  debug(`[ad-hoc] Removed worktree: ${wtPath}`)
+                  ctx.diag('ad-hoc', `Worktree removed: ${adHocWorktree}`)
+                  // Delete the branch
+                  const branchDel = Bun.spawnSync(['git', 'branch', '-d', branch], { cwd: resolvedParent })
+                  if (branchDel.exitCode === 0) {
+                    debug(`[ad-hoc] Deleted branch: ${branch}`)
+                  } else {
+                    debug(`[ad-hoc] Branch delete failed (may already be gone): ${branchDel.stderr.toString().trim()}`)
+                  }
+                } else {
+                  const err = removeResult.stderr.toString().trim()
+                  debug(`[ad-hoc] Worktree remove failed: ${err}`)
+                  ctx.diag('ad-hoc', `Worktree remove failed: ${err} - leaving in place`)
+                }
+              } else {
+                ctx.diag('ad-hoc', `Worktree NOT removed (unmerged work on ${branch}). NO CODE LOST.`)
+              }
+            }
+          } catch (e) {
+            debug(`[ad-hoc] Worktree cleanup failed: ${e}`)
+            ctx.diag('ad-hoc', `Worktree cleanup error: ${e} - worktree preserved`)
+          }
+        }
+
         debug(`[ad-hoc] Result received, scheduling graceful exit in 2s`)
         ctx.diag('ad-hoc', `Task complete (${result.subtype}), exiting`)
         setTimeout(() => {
