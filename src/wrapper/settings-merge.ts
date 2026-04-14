@@ -236,7 +236,10 @@ export async function generateMergedSettings(
       hooks: [
         {
           type: 'command',
-          command: `echo '{"decision":"block","reason":"BLOCKED: Do NOT use the built-in SendMessage tool. Use mcp__rclaude__send_message instead -- it routes through the concentrator where messages are actually delivered to the target session. SendMessage writes to a local file inbox that is invisible to users and other sessions."}'`,
+          // Read stdin (CC passes event data), check tool_name, only block SendMessage.
+          // The `if` field SHOULD filter this but is broken (fires for all tools).
+          // Belt-and-suspenders: command itself validates tool_name via jq.
+          command: `read -r data; tool=$(echo "$data" | jq -r '.tool_name // empty' 2>/dev/null); if [ "$tool" = "SendMessage" ]; then echo '{"decision":"block","reason":"BLOCKED: Do NOT use the built-in SendMessage tool. Use mcp__rclaude__send_message instead -- it routes through the concentrator where messages are actually delivered to the target session."}'; fi`,
         },
       ],
     }

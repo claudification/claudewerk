@@ -197,16 +197,21 @@ export function updateProjectTask(
   return getProjectTask(cwd, status, slug)
 }
 
-export function moveProjectTask(cwd: string, slug: string, fromStatus: TaskStatus, toStatus: TaskStatus): boolean {
+/** Move a task between status folders. Returns the (possibly deduplicated) slug, or null on failure. */
+export function moveProjectTask(
+  cwd: string,
+  slug: string,
+  fromStatus: TaskStatus,
+  toStatus: TaskStatus,
+): string | null {
   const fromDir = statusDir(cwd, fromStatus)
   const toDir = statusDir(cwd, toStatus)
-  const filename = `${slug}.md`
-  const fromPath = join(fromDir, filename)
-  const toPath = join(toDir, filename)
+  const fromPath = join(fromDir, `${slug}.md`)
 
-  if (!existsSync(fromPath)) return false
-  renameSync(fromPath, toPath)
-  return true
+  if (!existsSync(fromPath)) return null
+  const newSlug = dedupSlug(toDir, slug)
+  renameSync(fromPath, join(toDir, `${newSlug}.md`))
+  return newSlug
 }
 
 export function deleteProjectTask(cwd: string, status: TaskStatus, slug: string): boolean {

@@ -950,9 +950,10 @@ export const SessionDetail = memo(function SessionDetail() {
             await updateTask(slug, status, patch)
           }}
           onMove={async (slug, from, to) => {
-            const ok = await moveTask(slug, from, to)
-            if (ok) setTaskEditorTask(prev => (prev && prev.slug === slug ? { ...prev, status: to } : prev))
-            return ok
+            const result = await moveTask(slug, from, to)
+            if (result)
+              setTaskEditorTask(prev => (prev && prev.slug === slug ? { ...prev, slug: result, status: to } : prev))
+            return !!result
           }}
           onClose={() => setTaskEditorTask(null)}
         />

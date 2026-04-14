@@ -591,10 +591,13 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
           if (fromStatus === targetStatus)
             return { content: [{ type: 'text', text: `Task already in ${targetStatus}` }] }
 
-          const moved = moveProjectTask(dialogCwd, taskId, fromStatus, targetStatus)
-          if (!moved) return { content: [{ type: 'text', text: `Failed to move task` }], isError: true }
-          debug(`[channel] set_task_status: ${taskId} ${fromStatus} -> ${targetStatus}`)
-          return { content: [{ type: 'text', text: `Moved "${taskId}" from ${fromStatus} to ${targetStatus}` }] }
+          const newSlug = moveProjectTask(dialogCwd, taskId, fromStatus, targetStatus)
+          if (!newSlug) return { content: [{ type: 'text', text: 'Failed to move task' }], isError: true }
+          debug(`[channel] set_task_status: ${taskId} ${fromStatus} -> ${targetStatus} (slug: ${newSlug})`)
+          const renamed = newSlug !== taskId ? ` (renamed to "${newSlug}" to avoid overwrite)` : ''
+          return {
+            content: [{ type: 'text', text: `Moved "${taskId}" from ${fromStatus} to ${targetStatus}${renamed}` }],
+          }
         }
         case 'share_file': {
           const filePath = params.file_path

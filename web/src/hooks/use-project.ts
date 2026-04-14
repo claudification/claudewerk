@@ -117,15 +117,18 @@ export function useProject(sessionId: string | null) {
     [sessionId],
   )
 
+  /** Returns the (possibly renamed) slug on success, or false on failure. */
   // biome-ignore lint/correctness/useExhaustiveDependencies: sendRequest is recreated each render but intentionally omitted - sessionId is the real trigger
   const moveTask = useCallback(
-    async (slug: string, from: TaskStatus, to: TaskStatus) => {
+    async (slug: string, from: TaskStatus, to: TaskStatus): Promise<string | false> => {
       if (!sessionId) return false
       const resp = await sendRequest({ type: 'project_move', slug, from, to })
       if (resp.ok) {
-        setTasks(prev => prev.map(n => (n.slug === slug ? { ...n, status: to } : n)))
+        const newSlug = (resp.slug as string) || slug
+        setTasks(prev => prev.map(n => (n.slug === slug ? { ...n, slug: newSlug, status: to } : n)))
+        return newSlug
       }
-      return !!resp.ok
+      return false
     },
     [sessionId],
   )

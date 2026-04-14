@@ -125,8 +125,8 @@ export function handleFileEditorMessage(ctx: WrapperContext, msg: Record<string,
       break
     case 'project_move':
       try {
-        const ok = moveProjectTask(ctx.cwd, msg.slug as string, msg.from as TaskStatus, msg.to as TaskStatus)
-        respond('project_move_response', { ok })
+        const newSlug = moveProjectTask(ctx.cwd, msg.slug as string, msg.from as TaskStatus, msg.to as TaskStatus)
+        respond('project_move_response', { ok: !!newSlug, slug: newSlug })
       } catch (err) {
         respondError('project_move_response', err)
       }
