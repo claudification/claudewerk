@@ -2,7 +2,9 @@ import { Mic, Paperclip } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { VoiceOverlay } from '@/components/voice-overlay'
+import { useProject } from '@/hooks/use-project'
 import { useSessionsStore } from '@/hooks/use-sessions'
+import { scoreAndSortTasks } from '@/lib/task-scoring'
 import { uploadFileWithPlaceholder } from '@/lib/upload'
 import { cn, haptic, isMobileViewport } from '@/lib/utils'
 
@@ -13,7 +15,7 @@ const EMPTY_INFO: { slashCommands: string[]; skills: string[]; agents: string[] 
 }
 
 // Built-in headless commands (always available, shown first with distinct color)
-const BUILTIN_COMMANDS = ['model', 'clear', 'exit', 'compact', 'settings', 'config']
+const BUILTIN_COMMANDS = ['model', 'clear', 'exit', 'compact', 'settings', 'config', 'workon']
 const KNOWN_MODELS = ['opus', 'sonnet', 'haiku', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001']
 
 function fuzzyScore(query: string, candidate: string): number {
@@ -153,7 +155,12 @@ export function MarkdownInput({
     return (sid ? state.sessionInfo[sid] : null) || EMPTY_INFO
   })
 
-  const acItems = useMemo((): Array<{ item: string; builtin: boolean }> => {
+  // Task data for /workon autocomplete - only load when user types /workon
+  const isWorkonInput = enableAutocomplete && /^\/workon\s/i.test(value)
+  const workonSessionId = useSessionsStore(state => state.selectedSessionId)
+  const { tasks: workonTasks } = useProject(isWorkonInput ? workonSessionId : null)
+
+  const acItems = useMemo((): Array<{ item: string; label?: string; builtin: boolean }> => {
     if (!maybeAutocomplete) return []
 
     // Special case: /model {query} -> model autocomplete
@@ -161,6 +168,18 @@ export function MarkdownInput({
     if (modelMatch) {
       const q = modelMatch[1].toLowerCase()
       return KNOWN_MODELS.filter(m => !q || m.toLowerCase().includes(q)).map(m => ({ item: m, builtin: true }))
+    }
+
+    // Special case: /workon {query} -> project task autocomplete
+    const workonMatch = value.match(/^\/workon\s+(.*)/i)
+    if (workonMatch) {
+      const q = workonMatch[1].trim()
+      const matched = scoreAndSortTasks(workonTasks, q)
+      return matched.slice(0, 12).map(t => ({
+        item: t.slug,
+        label: `[${t.status}] ${t.title}${t.priority ? ` (${t.priority})` : ''}`,
+        builtin: false,
+      }))
     }
 
     // Detect trigger at cursor position
@@ -207,7 +226,7 @@ export function MarkdownInput({
 
     scored.sort((a, b) => b.score - a.score)
     return scored.slice(0, 12).map(x => ({ item: x.item, builtin: x.builtin }))
-  }, [maybeAutocomplete, value, sessionInfoData])
+  }, [maybeAutocomplete, value, sessionInfoData, workonTasks])
 
   // Resolve trigger char for the dropdown display
   const acTrigger = useMemo(() => {
@@ -372,6 +391,23 @@ export function MarkdownInput({
       return
     }
 
+    // Special case: /workon {task} - replace with task prompt
+    if (value.match(/^\/workon\s+/i)) {
+      const task = workonTasks.find(t => t.slug === item)
+      if (task) {
+        const parts = [`/workon: ${task.title}`]
+        const meta = [task.status, task.priority].filter(Boolean).join(', ')
+        if (meta) parts[0] += ` (${meta})`
+        if (task.bodyPreview) parts.push('', task.bodyPreview)
+        const replacement = parts.join('\n')
+        onChange(replacement)
+        requestAnimationFrame(() => {
+          if (ta) ta.selectionStart = ta.selectionEnd = replacement.length
+        })
+      }
+      return
+    }
+
     const pos = ta?.selectionStart ?? value.length
     let start = pos - 1
     while (start >= 0 && /[a-zA-Z0-9_:-]/.test(value[start])) start--
@@ -430,6 +466,11 @@ export function MarkdownInput({
           } else {
             selectAutocomplete(selected.item)
           }
+          return
+        }
+        // /workon X: always select (fills task prompt), never direct-submit from autocomplete
+        if (value.match(/^\/workon\s+/i)) {
+          selectAutocomplete(selected.item)
           return
         }
         // If the input already matches the selected item exactly, submit it
@@ -930,9 +971,15 @@ export function MarkdownInput({
                 }}
                 onMouseEnter={() => setAcIndex(i)}
               >
-                <span className={entry.builtin ? 'text-amber-500/60' : 'text-muted-foreground'}>{trigger}</span>
-                {entry.item}
-                {entry.builtin && <span className="text-amber-500/40 ml-2 text-[10px]">built-in</span>}
+                {entry.label ? (
+                  <span className="truncate">{entry.label}</span>
+                ) : (
+                  <>
+                    <span className={entry.builtin ? 'text-amber-500/60' : 'text-muted-foreground'}>{trigger}</span>
+                    {entry.item}
+                    {entry.builtin && <span className="text-amber-500/40 ml-2 text-[10px]">built-in</span>}
+                  </>
+                )}
               </div>
             )
           })}
