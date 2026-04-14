@@ -489,6 +489,11 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
               type: 'boolean',
               description: 'Include archived tasks when status is "all" (default: false)',
             },
+            filter: {
+              type: 'string',
+              description:
+                'Filter tasks by glob pattern (matched against title, filename, and tags). Case-insensitive. Examples: "bug*", "*refactor*", "*sqlite*". Wrap in /slashes/ for regex.',
+            },
           },
         },
       },
@@ -545,6 +550,21 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
           } else {
             statuses = [statusFilter]
           }
+
+          // Build filter matcher: /regex/ or glob pattern (* wildcards)
+          let filterRe: RegExp | null = null
+          if (params.filter) {
+            const f = params.filter
+            const regexMatch = f.match(/^\/(.+)\/([gimsuy]*)$/)
+            if (regexMatch) {
+              filterRe = new RegExp(regexMatch[1], regexMatch[2] || 'i')
+            } else {
+              // Convert glob to regex: * -> .*, escape the rest
+              const escaped = f.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')
+              filterRe = new RegExp(escaped, 'i')
+            }
+          }
+
           const projectDir = join(dialogCwd, '.rclaude', 'project')
           const results: string[] = []
           for (const status of statuses) {
@@ -559,6 +579,17 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
                   const content = readFileSync(join(dir, file), 'utf-8')
                   const fmMatch = content.match(/^---\n([\s\S]*?)\n---/)
                   const fm = fmMatch ? fmMatch[1] : ''
+
+                  // Apply filter against title, filename, and tags
+                  if (filterRe) {
+                    const titleMatch = fm.match(/title:\s*["']?(.+?)["']?\s*$/m)
+                    const title = titleMatch ? titleMatch[1] : ''
+                    const tagsMatch = fm.match(/tags:\s*\[([^\]]*)\]/m)
+                    const tags = tagsMatch ? tagsMatch[1] : ''
+                    const searchable = `${file} ${title} ${tags}`
+                    if (!filterRe.test(searchable)) continue
+                  }
+
                   const relPath = `.rclaude/project/${status}/${file}`
                   results.push(`## ${relPath}\n${fm}`)
                 } catch {
@@ -572,8 +603,12 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
           const output =
             results.length > 0
               ? results.join('\n\n')
-              : 'No tasks found. Create one with: Write .rclaude/project/open/my-task.md'
-          debug(`[channel] project_list: ${results.length} tasks (filter=${statusFilter})`)
+              : params.filter
+                ? `No tasks matching "${params.filter}". Try a broader pattern.`
+                : 'No tasks found. Create one with: Write .rclaude/project/open/my-task.md'
+          debug(
+            `[channel] project_list: ${results.length} tasks (filter=${statusFilter}${params.filter ? `, pattern=${params.filter}` : ''})`,
+          )
           return { content: [{ type: 'text', text: output }] }
         }
         case 'project_set_status': {
