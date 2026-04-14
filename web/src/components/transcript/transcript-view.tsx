@@ -210,7 +210,7 @@ interface TranscriptViewProps {
   onReachedBottom?: () => void
 }
 
-export function TranscriptView({
+export const TranscriptView = memo(function TranscriptView({
   entries,
   follow = false,
   showThinking = false,
@@ -519,4 +519,4 @@ export function TranscriptView({
       )}
     </div>
   )
-}
+})
