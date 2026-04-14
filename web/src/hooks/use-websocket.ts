@@ -358,6 +358,7 @@ function processMessage(msg: DashboardMessage) {
               [sid]: result,
             },
             streamingText,
+            newDataSeq: state.newDataSeq + 1,
           }
         })
       }

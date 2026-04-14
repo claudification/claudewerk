@@ -228,24 +228,26 @@ export function ToolLine({
     case 'Edit': {
       const path = input.file_path as string
       summary = shortPath(path) || path
-      const patches = (toolUseResult as { structuredPatch?: Array<{ oldStart: number; lines: string[] }> })
-        ?.structuredPatch
-      if (patches?.length) {
-        details = <DiffView patches={patches} filePath={path} />
-      } else if (input.old_string && input.new_string) {
-        // Compute diff with proper line numbers using originalFile when available
-        const oldStr = input.old_string as string
-        const newStr = input.new_string as string
-        const originalFile = (toolUseResult as { originalFile?: string })?.originalFile
-        let patch: ReturnType<typeof structuredPatch>
-        if (originalFile) {
-          const modifiedFile = originalFile.replace(oldStr, newStr)
-          patch = structuredPatch('file', 'file', originalFile, modifiedFile, '', '', { context: 3 })
-        } else {
-          patch = structuredPatch('file', 'file', oldStr, newStr, '', '', { context: 3 })
-        }
-        if (patch.hunks.length > 0) {
-          details = <DiffView patches={patch.hunks} filePath={path} />
+      if (!isError) {
+        const patches = (toolUseResult as { structuredPatch?: Array<{ oldStart: number; lines: string[] }> })
+          ?.structuredPatch
+        if (patches?.length) {
+          details = <DiffView patches={patches} filePath={path} />
+        } else if (input.old_string && input.new_string) {
+          // Compute diff with proper line numbers using originalFile when available
+          const oldStr = input.old_string as string
+          const newStr = input.new_string as string
+          const originalFile = (toolUseResult as { originalFile?: string })?.originalFile
+          let patch: ReturnType<typeof structuredPatch>
+          if (originalFile) {
+            const modifiedFile = originalFile.replace(oldStr, newStr)
+            patch = structuredPatch('file', 'file', originalFile, modifiedFile, '', '', { context: 3 })
+          } else {
+            patch = structuredPatch('file', 'file', oldStr, newStr, '', '', { context: 3 })
+          }
+          if (patch.hunks.length > 0) {
+            details = <DiffView patches={patch.hunks} filePath={path} />
+          }
         }
       }
       break

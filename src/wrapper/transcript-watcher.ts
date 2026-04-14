@@ -172,7 +172,7 @@ export function createTranscriptWatcher(options: TranscriptWatcherOptions): Tran
     watcher = chokidarWatch(dir, {
       ignoreInitial: true,
       depth: 0,
-      awaitWriteFinish: { stabilityThreshold: 50, pollInterval: 25 },
+      awaitWriteFinish: false,
     })
     watcher.on('change', changedPath => {
       if (resolve(changedPath) === absPath) {

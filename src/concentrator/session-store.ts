@@ -42,6 +42,20 @@ function detectClipboardMime(base64: string): string | null {
   return null
 }
 
+/** Check if decoded text is mostly printable (not garbled binary) */
+function isReadableText(text: string): boolean {
+  if (text.length === 0) return false
+  let printable = 0
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i)
+    // Printable ASCII, common Unicode, newlines, tabs
+    if ((code >= 0x20 && code < 0x7f) || code === 0x0a || code === 0x0d || code === 0x09 || code >= 0xa0) {
+      printable++
+    }
+  }
+  return printable / text.length > 0.8
+}
+
 // Dashboard broadcast message (concentrator -> browser)
 export interface DashboardMessage {
   type:
@@ -808,6 +822,11 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         adHocTaskId: s.adHocTaskId,
         adHocWorktree: s.adHocWorktree,
         resultText: s.resultText,
+        title: s.title,
+        titleUserSet: s.titleUserSet,
+        summary: s.summary,
+        agentName: s.agentName,
+        prLinks: s.prLinks?.length ? s.prLinks : undefined,
       }))
 
       const state: PersistedState = {
@@ -2425,10 +2444,15 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
               const osc52Match =
                 block.content.match(/(?:\x1bPtmux;\x1b)?(?:\x1b)?\]52;[a-z]*;([A-Za-z0-9+/=]+)/) ||
                 block.content.match(/Ptmux;[^\]]*\]52;[a-z]*;([A-Za-z0-9+/=]+)/)
-              if (osc52Match?.[1] && osc52Match[1].length > 4) {
+              if (osc52Match?.[1] && osc52Match[1].length > 8) {
                 const base64 = osc52Match[1]
                 const mime = detectClipboardMime(base64)
                 const decodedText = mime ? undefined : Buffer.from(base64, 'base64').toString('utf-8')
+                // Skip garbled/binary content that isn't readable text
+                if (!mime && (!decodedText || !isReadableText(decodedText))) {
+                  if (toolUseId) processedClipboardIds.add(toolUseId)
+                  continue
+                }
                 const capture = {
                   type: 'clipboard_capture' as const,
                   sessionId,
