@@ -897,6 +897,13 @@ function InlineRename({ session }: { session: Session }) {
       }}
       onClick={e => e.stopPropagation()}
       onBlur={submit}
+      autoComplete="off"
+      autoCorrect="off"
+      autoCapitalize="off"
+      spellCheck={false}
+      data-1p-ignore
+      data-lpignore="true"
+      data-form-type="other"
       className="w-full bg-background/80 border border-accent text-[10px] font-mono px-1 py-0.5 outline-none text-foreground"
       placeholder="session name"
     />
@@ -1248,6 +1255,12 @@ function GroupNode({
             ref={inputRef}
             type="text"
             defaultValue={group.name}
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            data-1p-ignore
+            data-lpignore="true"
+            data-form-type="other"
             className="bg-transparent border-b border-primary text-primary text-[10px] font-bold uppercase outline-none flex-1"
             onBlur={e => {
               const v = e.currentTarget.value.trim()
