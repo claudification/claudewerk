@@ -1,9 +1,10 @@
 #!/usr/bin/env bun
 /**
- * rclaude-agent - Host-side agent for session revival
+ * rclaude-agent - Host-side agent for session revival and spawning
  *
- * Connects to concentrator via WebSocket, listens for revive commands,
- * and spawns tmux + rclaude sessions on the host machine.
+ * Connects to concentrator via WebSocket, listens for revive/spawn commands.
+ * Headless sessions are spawned directly via Bun.spawn() with PID tracking.
+ * PTY/interactive sessions still use tmux via revive-session.sh.
  *
  * Only one agent can be connected at a time. If another agent is already
  * connected, this process exits immediately.
@@ -14,14 +15,16 @@ import { checkBunVersion } from '../shared/bun-version'
 checkBunVersion()
 
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { hostname as osHostname } from 'node:os'
-import { dirname, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
+import type { Subprocess } from 'bun'
 import type {
   ConcentratorAgentMessage,
   ExtraUsage,
   ListDirsResult,
   ReviveResult,
+  SpawnFailed,
   SpawnResult,
   UsageUpdate,
   UsageWindow,
@@ -61,6 +64,292 @@ function getMachineId(): string {
 }
 
 const RECONNECT_DELAY_MS = 5000
+
+// ─── PID Registry (headless child process tracking) ─────────────────
+const PID_REGISTRY_DIR = join(process.env.HOME || '/root', '.rclaude')
+const PID_REGISTRY_PATH = join(PID_REGISTRY_DIR, 'agent-sessions.json')
+
+interface PidRegistryEntry {
+  wrapperId: string
+  pid: number
+  cwd: string
+  startedAt: string
+}
+
+interface TrackedChild {
+  proc: Subprocess
+  wrapperId: string
+  pid: number
+  cwd: string
+  startedAt: string
+}
+
+/** Live headless children spawned by this agent instance */
+const trackedChildren = new Map<string, TrackedChild>()
+
+/** Dead PIDs discovered from registry on startup (reported once WS connects) */
+const deadPidsToReport: PidRegistryEntry[] = []
+
+function writePidRegistry() {
+  const entries: PidRegistryEntry[] = [...trackedChildren.values()].map(c => ({
+    wrapperId: c.wrapperId,
+    pid: c.pid,
+    cwd: c.cwd,
+    startedAt: c.startedAt,
+  }))
+  try {
+    mkdirSync(PID_REGISTRY_DIR, { recursive: true })
+    writeFileSync(PID_REGISTRY_PATH, JSON.stringify(entries, null, 2))
+  } catch (e) {
+    log(`Failed to write PID registry: ${e}`)
+  }
+}
+
+function loadAndCheckPidRegistry() {
+  if (!existsSync(PID_REGISTRY_PATH)) return
+  try {
+    const entries: PidRegistryEntry[] = JSON.parse(readFileSync(PID_REGISTRY_PATH, 'utf8'))
+    for (const entry of entries) {
+      try {
+        process.kill(entry.pid, 0) // check if alive (signal 0 = no-op)
+        log(`PID ${entry.pid} still alive (wrapper ${entry.wrapperId.slice(0, 8)}, cwd=${entry.cwd})`)
+        // Can't re-attach Bun.spawn to existing PID - just note it's alive.
+        // The rclaude process manages its own WS connection to the concentrator.
+      } catch {
+        log(`PID ${entry.pid} dead (wrapper ${entry.wrapperId.slice(0, 8)})`)
+        deadPidsToReport.push(entry)
+      }
+    }
+    unlinkSync(PID_REGISTRY_PATH)
+  } catch (e) {
+    log(`Failed to read PID registry: ${e}`)
+  }
+}
+
+/** Report dead PIDs from a previous agent run (called after WS connects) */
+function reportDeadPids(ws: WebSocket) {
+  for (const entry of deadPidsToReport) {
+    const msg: SpawnFailed = {
+      type: 'spawn_failed',
+      wrapperId: entry.wrapperId,
+      cwd: entry.cwd,
+      pid: entry.pid,
+      error: 'Process died during agent restart (discovered from PID registry)',
+    }
+    try {
+      ws.send(JSON.stringify(msg))
+    } catch {}
+  }
+  if (deadPidsToReport.length > 0) {
+    log(`Reported ${deadPidsToReport.length} dead PIDs from previous run`)
+  }
+  deadPidsToReport.length = 0
+}
+
+// ─── rclaude Binary Discovery ────────────────────────────────────────
+
+function findRclaudeBinary(): string | null {
+  // Bun.which checks PATH
+  const fromPath = Bun.which('rclaude')
+  if (fromPath) return fromPath
+  // Fallback: same dir as agent binary, or ~/.local/bin
+  const binDir = dirname(resolve(process.argv[0]))
+  const homeLocalBin = join(process.env.HOME || '/root', '.local', 'bin')
+  const candidates = [resolve(binDir, 'rclaude'), resolve(homeLocalBin, 'rclaude')]
+  for (const path of candidates) {
+    if (existsSync(path)) return path
+  }
+  return null
+}
+
+// ─── Direct Headless Spawn ──────────────────────────────────────────
+
+/**
+ * Build the env object for a directly-spawned headless rclaude process.
+ * Replicates what revive-session.sh sets up, minus the shell quoting dance.
+ */
+function buildHeadlessEnv(opts: {
+  secret: string
+  wrapperId: string
+  sessionId?: string
+  sessionName?: string
+  permissionMode?: string
+  autocompactPct?: number
+  maxBudgetUsd?: number
+  adHoc?: boolean
+  adHocTaskId?: string
+  promptFile?: string
+  worktree?: string
+  effort?: string
+  model?: string
+  bare?: boolean
+}): Record<string, string | undefined> {
+  // Start from agent's env (inherits PATH, API keys, etc.)
+  const env: Record<string, string | undefined> = { ...process.env }
+
+  // Unset Claude Code env vars that prevent nested sessions
+  for (const key of Object.keys(env)) {
+    if (key === 'CLAUDECODE' || key.startsWith('CLAUDE_CODE_')) {
+      delete env[key]
+    }
+  }
+
+  // Required
+  env.RCLAUDE_SECRET = opts.secret
+  env.RCLAUDE_WRAPPER_ID = opts.wrapperId
+  env.RCLAUDE_HEADLESS = '1'
+
+  // Optional
+  if (opts.sessionId) env.RCLAUDE_SESSION_ID = opts.sessionId
+  if (opts.sessionName) env.RCLAUDE_SESSION_NAME = opts.sessionName
+  if (opts.permissionMode) env.RCLAUDE_PERMISSION_MODE = opts.permissionMode
+  if (opts.autocompactPct) env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = String(opts.autocompactPct)
+  if (opts.bare) env.RCLAUDE_BARE = '1'
+  if (opts.adHoc) {
+    env.RCLAUDE_ADHOC = '1'
+    env.RCLAUDE_CHANNELS = '0'
+  }
+  if (opts.adHocTaskId) env.RCLAUDE_ADHOC_TASK_ID = opts.adHocTaskId
+  if (opts.promptFile) env.RCLAUDE_INITIAL_PROMPT_FILE = opts.promptFile
+  if (opts.worktree) env.RCLAUDE_WORKTREE = opts.worktree
+
+  return env
+}
+
+/**
+ * Build CLI args for a directly-spawned headless rclaude process.
+ */
+function buildHeadlessArgs(opts: {
+  mode?: 'fresh' | 'continue' | 'resume'
+  resumeId?: string
+  effort?: string
+  model?: string
+  worktree?: string
+  maxBudgetUsd?: number
+}): string[] {
+  const args = ['--dangerously-skip-permissions']
+  if (opts.mode === 'continue') args.push('--continue')
+  else if (opts.mode === 'resume' && opts.resumeId) args.push('--resume', opts.resumeId)
+  if (opts.effort) args.push('--effort', opts.effort)
+  if (opts.model) args.push('--model', opts.model)
+  if (opts.worktree) args.push('--worktree', opts.worktree)
+  if (opts.maxBudgetUsd) args.push('--max-budget-usd', String(opts.maxBudgetUsd))
+  return args
+}
+
+/**
+ * Spawn a headless rclaude session directly via Bun.spawn().
+ * Returns immediately after process starts. Monitors exit asynchronously.
+ */
+function spawnHeadlessDirect(
+  rclaudeBin: string,
+  cwd: string,
+  wrapperId: string,
+  args: string[],
+  env: Record<string, string | undefined>,
+  jobId?: string,
+): { success: boolean; error?: string; pid?: number } {
+  const startTime = Date.now()
+
+  launchLog(jobId, 'Spawning headless (direct)', 'info', `${rclaudeBin} ${args.join(' ')}`)
+
+  let proc: Subprocess
+  try {
+    proc = Bun.spawn([rclaudeBin, ...args], {
+      cwd,
+      env,
+      stdout: 'ignore', // headless rclaude communicates via WS, not stdout
+      stderr: 'pipe', // capture for diagnostics
+    })
+  } catch (e: unknown) {
+    const err = `Bun.spawn failed: ${(e as Error).message}`
+    launchLog(jobId, 'Spawn failed', 'error', err)
+    return { success: false, error: err }
+  }
+
+  const pid = proc.pid
+  log(`Headless spawn: PID ${pid} wrapper=${wrapperId.slice(0, 8)} cwd=${cwd}`)
+
+  // Track the child
+  const child: TrackedChild = { proc, wrapperId, pid, cwd, startedAt: new Date().toISOString() }
+  trackedChildren.set(wrapperId, child)
+  writePidRegistry()
+
+  // Capture stderr for diagnostics
+  captureChildStderr(proc, wrapperId)
+
+  // Monitor for exit
+  proc.exited.then(exitCode => {
+    const elapsedMs = Date.now() - startTime
+    trackedChildren.delete(wrapperId)
+    writePidRegistry()
+
+    if (exitCode === 0) {
+      log(`Headless child exited normally: PID ${pid} wrapper=${wrapperId.slice(0, 8)} (${elapsedMs}ms)`)
+      diag('spawn', `Child exited OK (${elapsedMs}ms)`, { wrapperId: wrapperId.slice(0, 8), pid })
+    } else {
+      const earlyFailure = elapsedMs < 5000
+      log(
+        `Headless child FAILED: PID ${pid} exit=${exitCode} elapsed=${elapsedMs}ms wrapper=${wrapperId.slice(0, 8)}${earlyFailure ? ' (EARLY - likely hook/config failure)' : ''}`,
+      )
+      diag('spawn', `Child FAILED exit=${exitCode} elapsed=${elapsedMs}ms`, {
+        wrapperId: wrapperId.slice(0, 8),
+        pid,
+        earlyFailure,
+      })
+
+      // Report to concentrator
+      if (activeWs?.readyState === WebSocket.OPEN) {
+        const msg: SpawnFailed = {
+          type: 'spawn_failed',
+          wrapperId,
+          cwd,
+          pid,
+          exitCode,
+          elapsedMs,
+          error: earlyFailure
+            ? `Process exited in ${elapsedMs}ms (exit ${exitCode}) - likely hook or config failure`
+            : `Process exited with code ${exitCode} after ${Math.round(elapsedMs / 1000)}s`,
+        }
+        try {
+          activeWs.send(JSON.stringify(msg))
+        } catch {}
+      }
+    }
+  })
+
+  launchLog(jobId, 'Headless process started', 'ok', `PID ${pid}`)
+  return { success: true, pid }
+}
+
+/** Read stderr from a child process and forward lines as diag entries */
+async function captureChildStderr(proc: Subprocess, wrapperId: string) {
+  const stderr = proc.stderr
+  if (!stderr) return
+  const reader = (stderr as ReadableStream<Uint8Array>).getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  try {
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+      for (const line of lines) {
+        if (line.trim()) {
+          diag('child-stderr', line.trim(), { wrapper: wrapperId.slice(0, 8) })
+        }
+      }
+    }
+    // Flush remaining
+    if (buffer.trim()) {
+      diag('child-stderr', buffer.trim(), { wrapper: wrapperId.slice(0, 8) })
+    }
+  } catch {
+    // Stream closed, normal on exit
+  }
+}
 
 // Find revive-session.sh in common locations
 function findReviveScript(): string {
@@ -118,7 +407,8 @@ function printHelp() {
 rclaude-agent - Host-side agent for session revival and spawning
 
 Connects to concentrator and listens for revive/spawn commands.
-Spawns tmux + rclaude sessions on the host machine.
+Headless sessions are spawned directly (Bun.spawn + PID tracking).
+PTY/interactive sessions use tmux via revive-session.sh.
 
 USAGE:
   rclaude-agent [OPTIONS]
@@ -161,9 +451,20 @@ function diag(type: string, msg: string, args?: unknown) {
   }
 }
 
+/** Send a launch_log event tagged with jobId for request-scoped progress tracking */
+function launchLog(jobId: string | undefined, step: string, status: 'info' | 'ok' | 'error', detail?: string) {
+  if (!jobId) return
+  log(`[job:${jobId.slice(0, 8)}] ${status}: ${step}${detail ? ` -- ${detail}` : ''}`)
+  if (activeWs?.readyState === WebSocket.OPEN) {
+    try {
+      activeWs.send(JSON.stringify({ type: 'launch_log', jobId, step, status, detail, t: Date.now() }))
+    } catch {}
+  }
+}
+
 /**
- * Revive a session by calling the external revive-session.sh script.
- * The script handles all tmux logic and can be customized without restarting the agent.
+ * Revive a session. Headless sessions are spawned directly via Bun.spawn(),
+ * PTY sessions use the external revive-session.sh script for tmux.
  *
  * Script exit codes: 0=continued, 1=fresh session, 2=dir not found, 3=tmux failed
  * Script stdout: TMUX_SESSION=<name> and CONTINUED=<true|false>
@@ -181,18 +482,53 @@ async function reviveSession(
   model?: string,
   sessionName?: string,
   autocompactPct?: number,
+  maxBudgetUsd?: number,
+  jobId?: string,
 ): Promise<ReviveResult> {
   const result: ReviveResult = {
     type: 'revive_result',
     sessionId,
     wrapperId,
+    cwd,
+    jobId,
     success: false,
     continued: false,
   }
 
+  // ─── Direct spawn for headless ─────────────────────────────
+  if (headless) {
+    const rclaudeBin = findRclaudeBinary()
+    if (!rclaudeBin) {
+      result.error = 'rclaude binary not found in PATH or known locations'
+      launchLog(jobId, 'rclaude not found', 'error', result.error)
+      return result
+    }
+
+    const args = buildHeadlessArgs({ mode: mode as 'fresh' | 'continue' | 'resume', effort, model, maxBudgetUsd })
+    const env = buildHeadlessEnv({
+      secret,
+      wrapperId,
+      sessionId,
+      sessionName,
+      autocompactPct,
+      maxBudgetUsd,
+      effort,
+      model,
+    })
+
+    launchLog(jobId, 'Reviving headless (direct spawn)', 'info', `mode=${mode || 'default'}`)
+    const spawnRes = spawnHeadlessDirect(rclaudeBin, cwd, wrapperId, args, env, jobId)
+    result.success = spawnRes.success
+    result.error = spawnRes.error
+    result.continued = mode === 'continue'
+    return result
+  }
+
+  // ─── tmux path for PTY sessions ────────────────────────────
   const scriptArgs = [reviveScript, sessionId, cwd]
   if (mode) scriptArgs.push('--mode', mode)
 
+  launchLog(jobId, 'Running revive script (tmux)', 'info', `mode=${mode || 'default'}`)
   debug(`Running: ${scriptArgs.join(' ')}`, verbose)
 
   const proc = Bun.spawnSync(scriptArgs, {
@@ -203,11 +539,11 @@ async function reviveSession(
       RCLAUDE_SECRET: secret,
       RCLAUDE_WRAPPER_ID: wrapperId,
       RCLAUDE_SESSION_ID: sessionId,
-      ...(headless ? { RCLAUDE_HEADLESS: '1' } : {}),
       ...(effort ? { RCLAUDE_EFFORT: effort } : {}),
       ...(model ? { RCLAUDE_MODEL: model } : {}),
       ...(sessionName ? { RCLAUDE_SESSION_NAME: sessionName } : {}),
       ...(autocompactPct ? { RCLAUDE_AUTOCOMPACT_PCT: String(autocompactPct) } : {}),
+      ...(maxBudgetUsd ? { RCLAUDE_MAX_BUDGET_USD: String(maxBudgetUsd) } : {}),
     },
   })
 
@@ -229,19 +565,24 @@ async function reviveSession(
     case 0: // success, continued existing session
       result.success = true
       result.continued = true
+      launchLog(jobId, 'Session revived', 'ok', `continued=true tmux=${result.tmuxSession}`)
       break
     case 1: // success, fresh session (--continue failed)
       result.success = true
       result.continued = false
+      launchLog(jobId, 'Fresh session started', 'ok', `tmux=${result.tmuxSession}`)
       break
     case 2: // directory not found
       result.error = stderr || `Directory not found: ${cwd}`
+      launchLog(jobId, 'Directory not found', 'error', result.error)
       break
     case 3: // tmux spawn failed
       result.error = stderr || 'Failed to create tmux session'
+      launchLog(jobId, 'tmux spawn failed', 'error', result.error)
       break
     default:
       result.error = stderr || `Script exited with code ${exitCode}`
+      launchLog(jobId, 'Script failed', 'error', result.error)
   }
 
   return result
@@ -276,7 +617,7 @@ function isSpawnApproved(cwd: string): boolean {
 
 /**
  * Spawn a new rclaude session at the given cwd.
- * Reuses revive-session.sh with a synthetic sessionId.
+ * Headless sessions use direct Bun.spawn(), PTY sessions use tmux via revive-session.sh.
  */
 async function spawnSession(
   cwd: string,
@@ -294,22 +635,27 @@ async function spawnSession(
   sessionName?: string,
   permissionMode?: string,
   autocompactPct?: number,
+  maxBudgetUsd?: number,
   prompt?: string,
   adHoc = false,
   adHocTaskId?: string,
   worktree?: string,
+  jobId?: string,
 ): Promise<{ success: boolean; error?: string; tmuxSession?: string }> {
+  launchLog(jobId, 'Validating directory', 'info', cwd)
+
   // Diagnostic dump
-  const whichRclaude = Bun.spawnSync(['which', 'rclaude'])
+  const rclaudeBin = findRclaudeBinary()
   diag('spawn', 'Starting spawn', {
     cwd,
     wrapperId,
     mkdir,
+    headless,
     reviveScript,
     reviveScriptExists: existsSync(reviveScript),
     secretSet: !!secret,
     concentratorUrl: process.env.RCLAUDE_CONCENTRATOR || 'UNSET',
-    rclaude: whichRclaude.stdout.toString().trim() || 'NOT FOUND',
+    rclaude: rclaudeBin || 'NOT FOUND',
     PATH: process.env.PATH,
   })
 
@@ -317,20 +663,29 @@ async function spawnSession(
     if (mkdir) {
       try {
         mkdirSync(cwd, { recursive: true })
+        launchLog(jobId, 'Created directory', 'ok', cwd)
         diag('spawn', 'Created directory', { cwd })
       } catch (e: unknown) {
-        return { success: false, error: `Failed to create directory: ${(e as Error).message}` }
+        const err = `Failed to create directory: ${(e as Error).message}`
+        launchLog(jobId, 'Directory creation failed', 'error', err)
+        return { success: false, error: err }
       }
     } else {
+      launchLog(jobId, 'Directory not found', 'error', cwd)
       return { success: false, error: `Directory not found: ${cwd}` }
     }
+  } else {
+    launchLog(jobId, 'Directory validated', 'ok')
   }
 
   if (!isSpawnApproved(cwd)) {
-    return { success: false, error: `Spawn not allowed: no .rclaude-spawn marker at or above ${cwd}` }
+    const err = `Spawn not allowed: no .rclaude-spawn marker at or above ${cwd}`
+    launchLog(jobId, 'Spawn not approved', 'error', err)
+    return { success: false, error: err }
   }
+  launchLog(jobId, 'Spawn approved', 'ok')
 
-  // Write ad-hoc prompt to file (shell escaping is hell for markdown content)
+  // Write ad-hoc prompt to file (prompt content can contain anything, files avoid shell escaping issues)
   if (adHoc) {
     diag('spawn', '[ad-hoc] Starting ad-hoc spawn', {
       taskId: adHocTaskId,
@@ -344,12 +699,48 @@ async function spawnSession(
     promptFile = `/tmp/rclaude-adhoc-${wrapperId}`
     try {
       await Bun.write(promptFile, prompt)
+      launchLog(jobId, 'Prompt file written', 'ok', `${prompt.length} chars`)
       diag('spawn', 'Wrote prompt file', { path: promptFile, length: prompt.length })
     } catch (e: unknown) {
       diag('spawn', 'Failed to write prompt file', { error: (e as Error).message })
+      launchLog(jobId, 'Prompt file failed', 'error', (e as Error).message)
       promptFile = undefined
     }
   }
+
+  // ─── Direct spawn for headless ─────────────────────────────
+  if (headless) {
+    if (!rclaudeBin) {
+      const err = 'rclaude binary not found in PATH or known locations'
+      launchLog(jobId, 'rclaude not found', 'error', err)
+      return { success: false, error: err }
+    }
+
+    const args = buildHeadlessArgs({ mode, resumeId, effort, model, worktree, maxBudgetUsd })
+    const env = buildHeadlessEnv({
+      secret,
+      wrapperId,
+      sessionName,
+      permissionMode,
+      autocompactPct,
+      maxBudgetUsd,
+      adHoc,
+      adHocTaskId,
+      promptFile,
+      worktree,
+      effort,
+      model,
+      bare,
+    })
+
+    const spawnRes = spawnHeadlessDirect(rclaudeBin, cwd, wrapperId, args, env, jobId)
+    if (spawnRes.success) {
+      launchLog(jobId, 'Waiting for session to connect', 'info')
+    }
+    return { success: spawnRes.success, error: spawnRes.error }
+  }
+
+  // ─── tmux path for PTY sessions ────────────────────────────
 
   // Sanitize strings that will be embedded in shell commands by revive-session.sh.
   // The env vars are safe in Bun.spawnSync, but the shell script injects them into
@@ -366,19 +757,20 @@ async function spawnSession(
     ...process.env,
     RCLAUDE_SECRET: secret,
     RCLAUDE_WRAPPER_ID: wrapperId,
-    ...(headless ? { RCLAUDE_HEADLESS: '1' } : {}),
     ...(effort ? { RCLAUDE_EFFORT: effort } : {}),
     ...(model ? { RCLAUDE_MODEL: model } : {}),
     ...(bare ? { RCLAUDE_BARE: '1' } : {}),
     ...(sessionName ? { RCLAUDE_SESSION_NAME: shellSafe(sessionName) } : {}),
     ...(permissionMode ? { RCLAUDE_PERMISSION_MODE: permissionMode } : {}),
     ...(autocompactPct ? { RCLAUDE_AUTOCOMPACT_PCT: String(autocompactPct) } : {}),
+    ...(maxBudgetUsd ? { RCLAUDE_MAX_BUDGET_USD: String(maxBudgetUsd) } : {}),
     ...(adHoc ? { RCLAUDE_ADHOC: '1', RCLAUDE_CHANNELS: '0' } : {}),
     ...(adHocTaskId ? { RCLAUDE_ADHOC_TASK_ID: adHocTaskId } : {}),
     ...(promptFile ? { RCLAUDE_INITIAL_PROMPT_FILE: promptFile } : {}),
     ...(worktree ? { RCLAUDE_WORKTREE: shellSafe(worktree) } : {}),
   }
 
+  launchLog(jobId, 'Starting tmux session', 'info')
   diag('spawn', 'Running revive script', { args: scriptArgs })
 
   const proc = Bun.spawnSync(scriptArgs, {
@@ -409,9 +801,12 @@ async function spawnSession(
   }
 
   if (exitCode === 0) {
+    launchLog(jobId, 'tmux session created', 'ok', `tmux=${tmuxSession}`)
     return { success: true, tmuxSession }
   }
-  return { success: false, error: stderr || `Script exited with code ${exitCode}` }
+  const err = stderr || `Script exited with code ${exitCode}`
+  launchLog(jobId, 'tmux spawn failed', 'error', err)
+  return { success: false, error: err }
 }
 
 /**
@@ -628,6 +1023,9 @@ function connect(
     // Identify as agent with machine fingerprint
     ws.send(JSON.stringify({ type: 'agent_identify', machineId: getMachineId(), hostname: osHostname() }))
 
+    // Report any dead PIDs from previous agent run
+    reportDeadPids(ws)
+
     // Start usage polling
     startUsagePolling(ws, verbose)
 
@@ -673,10 +1071,13 @@ function connect(
             model?: string
             sessionName?: string
             autocompactPct?: number
+            maxBudgetUsd?: number
+            jobId?: string
           }
           log(
-            `Reviving session ${reviveMsg.sessionId.slice(0, 8)}... wrapper=${reviveMsg.wrapperId.slice(0, 8)} mode=${reviveMsg.mode || 'default'} headless=${reviveMsg.headless !== false}${reviveMsg.effort ? ` effort=${reviveMsg.effort}` : ''}${reviveMsg.model ? ` model=${reviveMsg.model}` : ''} (${reviveMsg.cwd})`,
+            `Reviving session ${reviveMsg.sessionId.slice(0, 8)}... wrapper=${reviveMsg.wrapperId.slice(0, 8)} mode=${reviveMsg.mode || 'default'} headless=${reviveMsg.headless !== false}${reviveMsg.effort ? ` effort=${reviveMsg.effort}` : ''}${reviveMsg.model ? ` model=${reviveMsg.model}` : ''}${reviveMsg.maxBudgetUsd ? ` maxBudget=$${reviveMsg.maxBudgetUsd}` : ''}${reviveMsg.jobId ? ` job=${reviveMsg.jobId.slice(0, 8)}` : ''} (${reviveMsg.cwd})`,
           )
+          launchLog(reviveMsg.jobId, 'Agent received revive request', 'ok')
           const result = await reviveSession(
             reviveMsg.sessionId,
             reviveMsg.cwd,
@@ -690,10 +1091,17 @@ function connect(
             reviveMsg.model,
             reviveMsg.sessionName,
             reviveMsg.autocompactPct,
+            reviveMsg.maxBudgetUsd,
+            reviveMsg.jobId,
           )
           ws.send(JSON.stringify(result))
           if (result.success) {
-            log(`Revived in tmux session "${result.tmuxSession}" (continued: ${result.continued})`)
+            launchLog(reviveMsg.jobId, 'Waiting for session to connect', 'info')
+            if (result.tmuxSession) {
+              log(`Revived in tmux session "${result.tmuxSession}" (continued: ${result.continued})`)
+            } else {
+              log(`Revived headless (continued: ${result.continued})`)
+            }
           } else {
             log(`Revive failed: ${result.error}`)
           }
@@ -715,16 +1123,20 @@ function connect(
             sessionName?: string
             permissionMode?: string
             autocompactPct?: number
+            maxBudgetUsd?: number
             prompt?: string
             adHoc?: boolean
             adHocTaskId?: string
             worktree?: string
+            jobId?: string
           }
           if (noSpawn) {
+            launchLog(spawnMsg.jobId, 'Spawning disabled', 'error', '--no-spawn flag is set')
             ws.send(
               JSON.stringify({
                 type: 'spawn_result',
                 requestId: spawnMsg.requestId,
+                jobId: spawnMsg.jobId,
                 success: false,
                 error: 'Spawning disabled (--no-spawn)',
               }),
@@ -732,6 +1144,7 @@ function connect(
             break
           }
           const expandedCwd = expandPath(spawnMsg.cwd, spawnRoot)
+          launchLog(spawnMsg.jobId, 'Agent received spawn request', 'ok', expandedCwd.split('/').pop())
           diag('spawn', 'Spawn request received', {
             requestId: spawnMsg.requestId,
             rawCwd: spawnMsg.cwd,
@@ -757,20 +1170,26 @@ function connect(
             spawnMsg.sessionName,
             spawnMsg.permissionMode,
             spawnMsg.autocompactPct,
+            spawnMsg.maxBudgetUsd,
             spawnMsg.prompt,
             spawnMsg.adHoc || false,
             spawnMsg.adHocTaskId,
             spawnMsg.worktree,
+            spawnMsg.jobId,
           )
           const response: SpawnResult = {
             type: 'spawn_result',
             requestId: spawnMsg.requestId,
+            jobId: spawnMsg.jobId,
             success: spawnRes.success,
             error: spawnRes.error,
             tmuxSession: spawnRes.tmuxSession,
             wrapperId: spawnMsg.wrapperId,
           }
           ws.send(JSON.stringify(response))
+          if (spawnRes.success) {
+            launchLog(spawnMsg.jobId, 'Waiting for session to connect', 'info')
+          }
           diag('spawn', spawnRes.success ? 'Spawn OK' : 'Spawn FAILED', {
             tmuxSession: spawnRes.tmuxSession,
             error: spawnRes.error,
@@ -822,18 +1241,55 @@ if (!secret) {
   process.exit(1)
 }
 
-// Verify revive script exists
+// Verify revive script exists (still needed for PTY sessions)
 try {
   const stat = Bun.spawnSync(['test', '-x', reviveScript])
   if (!stat.success) {
-    console.error(`ERROR: Revive script not found or not executable: ${reviveScript}`)
-    console.error('Make sure revive-session.sh exists and has +x permission.')
-    process.exit(1)
+    log(`WARNING: Revive script not found or not executable: ${reviveScript}`)
+    log('PTY sessions will fail. Headless direct-spawn still works.')
   }
 } catch {
-  console.error(`ERROR: Cannot check revive script: ${reviveScript}`)
-  process.exit(1)
+  log(`WARNING: Cannot check revive script: ${reviveScript}`)
 }
+
+// Check for rclaude binary (needed for headless direct spawn)
+const rclaudeBinCheck = findRclaudeBinary()
+if (rclaudeBinCheck) {
+  log(`rclaude binary: ${rclaudeBinCheck}`)
+} else {
+  log('WARNING: rclaude binary not found - headless direct spawn will fail')
+}
+
+// Load PID registry from previous run and check for dead children
+loadAndCheckPidRegistry()
+
+// SIGTERM handler: unref all children so they survive agent restart, write PID registry
+process.on('SIGTERM', () => {
+  log(`SIGTERM received. ${trackedChildren.size} tracked children.`)
+  for (const child of trackedChildren.values()) {
+    try {
+      child.proc.unref()
+      log(`Unrefed PID ${child.pid} (wrapper ${child.wrapperId.slice(0, 8)})`)
+    } catch (e) {
+      log(`Failed to unref PID ${child.pid}: ${e}`)
+    }
+  }
+  writePidRegistry()
+  log('PID registry written. Exiting.')
+  process.exit(0)
+})
+
+// Also handle SIGINT for graceful Ctrl-C shutdown
+process.on('SIGINT', () => {
+  log(`SIGINT received. ${trackedChildren.size} tracked children.`)
+  for (const child of trackedChildren.values()) {
+    try {
+      child.proc.unref()
+    } catch {}
+  }
+  writePidRegistry()
+  process.exit(0)
+})
 
 log('Starting host agent (single instance)')
 log(`Revive script: ${reviveScript}`)

@@ -909,6 +909,33 @@ export interface Session {
   resultText?: string // final result text from headless session (captured from stream-json result message)
 }
 
+// ─── Launch Jobs (request-scoped event channels for spawn/revive) ────
+
+/** Agent -> Concentrator: progress event during spawn/revive, tagged with jobId */
+export interface LaunchLog {
+  type: 'launch_log'
+  jobId: string
+  step: string
+  status: 'info' | 'ok' | 'error'
+  detail?: string
+  t: number
+}
+
+/** Concentrator -> Dashboard: launch job completed (session connected) */
+export interface JobComplete {
+  type: 'job_complete'
+  jobId: string
+  sessionId: string
+  wrapperId: string
+}
+
+/** Concentrator -> Dashboard: launch job failed */
+export interface JobFailed {
+  type: 'job_failed'
+  jobId: string
+  error: string
+}
+
 // Agent -> Concentrator messages
 export interface AgentIdentify {
   type: 'agent_identify'
@@ -921,6 +948,7 @@ export interface ReviveResult {
   sessionId: string
   wrapperId?: string // echoes the pre-assigned wrapperId
   cwd?: string // echoed back for scoped broadcast when session is evicted
+  jobId?: string // launch job correlation ID
   success: boolean
   error?: string
   tmuxSession?: string
@@ -930,6 +958,7 @@ export interface ReviveResult {
 export interface SpawnResult {
   type: 'spawn_result'
   requestId: string
+  jobId?: string // launch job correlation ID
   success: boolean
   error?: string
   tmuxSession?: string
@@ -941,6 +970,17 @@ export interface ListDirsResult {
   requestId: string
   dirs: string[]
   error?: string
+}
+
+/** Agent reports a directly-spawned headless child exited unexpectedly (after initial spawn_result success) */
+export interface SpawnFailed {
+  type: 'spawn_failed'
+  wrapperId: string
+  cwd?: string
+  pid?: number
+  exitCode?: number | null
+  error?: string
+  elapsedMs?: number // time from spawn to exit (< 5000 = likely hook/config failure)
 }
 
 // Usage API data (agent polls api.anthropic.com/api/oauth/usage)
@@ -966,7 +1006,14 @@ export interface UsageUpdate {
   polledAt: number // timestamp of last poll
 }
 
-export type AgentMessage = AgentIdentify | ReviveResult | SpawnResult | ListDirsResult | UsageUpdate
+export type AgentMessage =
+  | AgentIdentify
+  | ReviveResult
+  | SpawnResult
+  | SpawnFailed
+  | ListDirsResult
+  | UsageUpdate
+  | LaunchLog
 
 // Concentrator -> Agent messages
 export interface ReviveSession {
@@ -974,6 +1021,7 @@ export interface ReviveSession {
   sessionId: string
   cwd: string
   wrapperId: string // pre-assigned wrapperId so concentrator can correlate the incoming connection
+  jobId?: string // launch job correlation ID for progress events
 }
 
 export interface SpawnSession {
@@ -981,6 +1029,7 @@ export interface SpawnSession {
   requestId: string
   cwd: string
   wrapperId: string
+  jobId?: string // launch job correlation ID for progress events
   // Ad-hoc task runner fields
   prompt?: string // initial prompt to send after session starts
   adHoc?: boolean // fire-and-forget headless session
