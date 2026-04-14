@@ -28,10 +28,19 @@ function usageBorderColor(pct: number): string {
 function formatReset(resetAt: string): string {
   const ms = new Date(resetAt).getTime() - Date.now()
   if (ms <= 0) return 'now'
-  const h = Math.floor(ms / 3_600_000)
+  const d = Math.floor(ms / 86_400_000)
+  const h = Math.floor((ms % 86_400_000) / 3_600_000)
   const m = Math.floor((ms % 3_600_000) / 60_000)
-  if (h > 0) return `${h}h${m > 0 ? `${m}m` : ''}`
+  if (d > 0) return h > 0 ? `${d}d ${h}h` : `${d}d`
+  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`
   return `${m}m`
+}
+
+function formatResetAbsolute(resetAt: string): string {
+  const dt = new Date(resetAt)
+  const day = dt.toLocaleDateString(undefined, { weekday: 'short' })
+  const time = dt.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  return `${day} ${time}`
 }
 
 function DetailBar({ window: w, label }: { window: UsageWindow; label: string }) {
@@ -46,9 +55,16 @@ function DetailBar({ window: w, label }: { window: UsageWindow; label: string })
         />
       </div>
       <span className={`text-[11px] tabular-nums font-medium w-8 ${usageTextColor(pct)}`}>{Math.round(pct)}%</span>
-      <span className="text-[10px] text-muted-foreground/50 w-10 tabular-nums">{formatReset(w.resetAt)}</span>
+      <span className="text-[10px] text-muted-foreground/50 w-12 tabular-nums" title={formatResetAbsolute(w.resetAt)}>
+        {formatReset(w.resetAt)}
+      </span>
     </div>
   )
+}
+
+function getMonthlyResetDate(): Date {
+  const now = new Date()
+  return new Date(now.getFullYear(), now.getMonth() + 1, 1)
 }
 
 function ExtraUsageRow({ extra }: { extra: ExtraUsage }) {
@@ -56,6 +72,8 @@ function ExtraUsageRow({ extra }: { extra: ExtraUsage }) {
   const pct = extra.utilization != null ? Math.min(extra.utilization * 100, 100) : 0
   const used = extra.usedCredits.toFixed(2)
   const limit = extra.monthlyLimit.toFixed(2)
+  const resetDate = getMonthlyResetDate()
+  const resetIso = resetDate.toISOString()
   return (
     <div className="flex items-center gap-2">
       <span className="text-[10px] text-muted-foreground w-10 text-right shrink-0">extra</span>
@@ -67,6 +85,9 @@ function ExtraUsageRow({ extra }: { extra: ExtraUsage }) {
       </div>
       <span className={`text-[11px] tabular-nums font-medium ${usageTextColor(pct)}`}>
         ${used}/${limit}
+      </span>
+      <span className="text-[10px] text-muted-foreground/50 w-12 tabular-nums" title={formatResetAbsolute(resetIso)}>
+        {formatReset(resetIso)}
       </span>
     </div>
   )
@@ -116,7 +137,7 @@ export function UsageBar() {
 
       <Popover.Portal>
         <Popover.Content
-          className={`z-50 w-64 rounded border ${usageBorderColor(pct)} bg-background/95 backdrop-blur-sm shadow-lg p-3 font-mono`}
+          className={`z-50 w-72 rounded border ${usageBorderColor(pct)} bg-background/95 backdrop-blur-sm shadow-lg p-3 font-mono`}
           sideOffset={8}
           align="start"
           onMouseEnter={() => {
