@@ -123,7 +123,7 @@ function SessionInfoDialog({
             <span className="text-[10px] text-muted-foreground/50 font-normal">{session.id.slice(0, 12)}</span>
           </div>
         </DialogTitle>
-        <div className="space-y-2 text-[11px]">
+        <div className="space-y-2 text-[11px] px-2 pb-2">
           {/* Model + effort */}
           <div className="flex items-center gap-2">
             <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Model</span>
