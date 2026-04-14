@@ -624,6 +624,19 @@ const SessionItemContent = memo(function SessionItemContent({
           {isRenaming ? <InlineRename session={session} /> : sessionName}
         </div>
       )}
+      {!compact && session.gitBranch && session.gitBranch !== 'main' && session.gitBranch !== 'master' && (
+        <div className="mt-0.5 pl-1 flex items-center gap-1">
+          <span
+            className={cn(
+              'text-[9px] font-mono truncate',
+              session.adHocWorktree ? 'text-orange-400/70' : 'text-purple-400/60',
+            )}
+          >
+            {session.adHocWorktree ? '\u2387 ' : '\u2325 '}
+            {session.gitBranch}
+          </span>
+        </div>
+      )}
       {compact && (
         <div className="flex items-center gap-1.5">
           <StatusIndicator status={session.status} adHoc={session.capabilities?.includes('ad-hoc')} />
@@ -677,6 +690,7 @@ const SessionItemContent = memo(function SessionItemContent({
                 </span>
               )
             })()}
+          {session.adHocWorktree && <span className="text-[9px] text-orange-400 font-bold">WT</span>}
           {session.pendingAttention && (
             <span className="text-[9px] text-amber-400 font-bold animate-pulse">WAITING</span>
           )}
