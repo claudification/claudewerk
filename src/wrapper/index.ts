@@ -463,6 +463,8 @@ async function main() {
     readTasks: null!,
     // biome-ignore lint/style/noNonNullAssertion: deferred init, assigned immediately after ctx is created
     startProjectWatching: null!,
+    // biome-ignore lint/style/noNonNullAssertion: deferred init, assigned immediately after ctx is created
+    sendProjectChanged: null!,
     startTranscriptWatcher: (path: string) => startTranscriptWatcher(ctx, path),
     startSubagentWatcher: (agentId: string, path: string, live: boolean) =>
       startSubagentWatcher(ctx, agentId, path, live),
@@ -596,6 +598,21 @@ async function main() {
   ctx.readTasks = readAndSendTasks
 
   /**
+   * Send project_changed to concentrator with full task list.
+   * Called by chokidar watcher (debounced) and directly by MCP tool callbacks.
+   */
+  function sendProjectChanged() {
+    if (!ctx.wsClient?.isConnected() || !ctx.claudeSessionId) return
+    const tasks = listProjectTasks(cwd)
+    ctx.wsClient.send({
+      type: 'project_changed',
+      sessionId: ctx.claudeSessionId,
+      notes: tasks,
+    } as unknown as WrapperMessage)
+    debug(`Project tasks changed: ${tasks.length} tasks`)
+  }
+
+  /**
    * Watch .rclaude/project/ for task changes (created by dashboard, Claude, or manually).
    * Debounces and sends project_changed to concentrator so dashboard can refresh.
    */
@@ -616,25 +633,32 @@ async function main() {
       if (projectDebounce) clearTimeout(projectDebounce)
       projectDebounce = setTimeout(() => {
         projectDebounce = null
-        if (!ctx.wsClient?.isConnected() || !ctx.claudeSessionId) return
-        const tasks = listProjectTasks(cwd)
-        ctx.wsClient.send({
-          type: 'project_changed',
-          sessionId: ctx.claudeSessionId,
-          notes: tasks,
-        } as unknown as WrapperMessage)
-        debug(`Project tasks changed: ${tasks.length} tasks`)
+        sendProjectChanged()
       }, 300)
     }
 
     ctx.projectWatcher.on('add', onProjectTaskChange)
     ctx.projectWatcher.on('change', onProjectTaskChange)
     ctx.projectWatcher.on('unlink', onProjectTaskChange)
+    // Poll fallback in case chokidar misses events (e.g. dir created after watcher, Bun quirks)
+    let lastProjectHash = ''
+    const projectPollInterval = setInterval(() => {
+      try {
+        const tasks = listProjectTasks(cwd)
+        const hash = tasks.map(t => `${t.slug}:${t.status}`).join('|')
+        if (lastProjectHash && hash !== lastProjectHash) {
+          sendProjectChanged()
+        }
+        lastProjectHash = hash
+      } catch {}
+    }, 5000)
+    ctx.projectWatcher.on('close', () => clearInterval(projectPollInterval))
     debug('Project watcher started')
   }
 
   // Wire up project watching
   ctx.startProjectWatching = startProjectWatching
+  ctx.sendProjectChanged = sendProjectChanged
 
   function connectToConcentrator(sessionId: string) {
     if (noConcentrator || ctx.wsClient) return
@@ -1371,6 +1395,9 @@ async function main() {
           keyterms,
         } as unknown as WrapperMessage)
       })
+    },
+    onProjectChanged() {
+      sendProjectChanged()
     },
   })
 

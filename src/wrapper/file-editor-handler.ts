@@ -119,6 +119,7 @@ export function handleFileEditorMessage(ctx: WrapperContext, msg: Record<string,
           refs: msg.refs as string[] | undefined,
         })
         respond('project_create_response', { note })
+        ctx.sendProjectChanged()
       } catch (err) {
         respondError('project_create_response', err)
       }
@@ -127,6 +128,7 @@ export function handleFileEditorMessage(ctx: WrapperContext, msg: Record<string,
       try {
         const newSlug = moveProjectTask(ctx.cwd, msg.slug as string, msg.from as TaskStatus, msg.to as TaskStatus)
         respond('project_move_response', { ok: !!newSlug, slug: newSlug })
+        if (newSlug) ctx.sendProjectChanged()
       } catch (err) {
         respondError('project_move_response', err)
       }
@@ -135,6 +137,7 @@ export function handleFileEditorMessage(ctx: WrapperContext, msg: Record<string,
       try {
         const ok = deleteProjectTask(ctx.cwd, msg.status as TaskStatus, msg.slug as string)
         respond('project_delete_response', { ok })
+        if (ok) ctx.sendProjectChanged()
       } catch (err) {
         respondError('project_delete_response', err)
       }
@@ -157,6 +160,7 @@ export function handleFileEditorMessage(ctx: WrapperContext, msg: Record<string,
           refs: msg.refs as string[] | undefined,
         })
         respond('project_update_response', { note })
+        ctx.sendProjectChanged()
       } catch (err) {
         respondError('project_update_response', err)
       }

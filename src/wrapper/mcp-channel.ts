@@ -107,6 +107,8 @@ export interface McpChannelCallbacks {
   onDialogDismiss?: (dialogId: string) => void
   /** Deliver a message to Claude (channel notification in PTY, stdin user message in headless) */
   onDeliverMessage?: (content: string, meta: Record<string, string>) => void
+  /** Notify that project tasks changed (triggers project_changed broadcast to dashboard) */
+  onProjectChanged?: () => void
 }
 
 interface McpChannelState {
@@ -369,7 +371,10 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
         inputSchema: {
           type: 'object' as const,
           properties: {
-            to: { type: 'string', description: 'Target ID from list_sessions (bare or compound "project:session-name")' },
+            to: {
+              type: 'string',
+              description: 'Target ID from list_sessions (bare or compound "project:session-name")',
+            },
             intent: {
               type: 'string',
               enum: ['request', 'response', 'notify', 'progress'],
@@ -645,6 +650,7 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
 
           const newSlug = moveProjectTask(dialogCwd, taskId, fromStatus, targetStatus)
           if (!newSlug) return { content: [{ type: 'text', text: 'Failed to move task' }], isError: true }
+          callbacks.onProjectChanged?.()
           debug(`[channel] set_task_status: ${taskId} ${fromStatus} -> ${targetStatus} (slug: ${newSlug})`)
           const newPath = `.rclaude/project/${targetStatus}/${newSlug}.md`
           const renamed = newSlug !== taskId ? ` (renamed to "${newSlug}")` : ''

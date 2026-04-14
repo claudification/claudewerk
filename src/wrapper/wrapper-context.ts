@@ -67,6 +67,7 @@ export interface WrapperContext {
   startTaskWatching: () => void
   readTasks: () => void
   startProjectWatching: () => void
+  sendProjectChanged: () => void
   startTranscriptWatcher: (transcriptPath: string) => void
   startSubagentWatcher: (agentId: string, transcriptPath: string, live: boolean) => void
   stopSubagentWatcher: (agentId: string) => void

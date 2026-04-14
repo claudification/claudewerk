@@ -811,7 +811,7 @@ export const SessionDetail = memo(function SessionDetail() {
 
   // T: command palette -> task editor overlay (no tab switch, transcript stays mounted)
   const pendingTaskEdit = useSessionsStore(s => s.pendingTaskEdit)
-  const { readTask, updateTask, moveTask } = useProject(selectedSessionId ?? null)
+  const { tasks: projectTasks, readTask, updateTask, moveTask } = useProject(selectedSessionId ?? null)
   const [taskEditorTask, setTaskEditorTask] = useState<import('@/hooks/use-project').ProjectTask | null>(null)
   const [runTaskFromEditor, setRunTaskFromEditor] = useState<import('@/hooks/use-project').ProjectTask | null>(null)
   useEffect(() => {
@@ -821,6 +821,16 @@ export const SessionDetail = memo(function SessionDetail() {
       if (full) setTaskEditorTask(full)
     })
   }, [pendingTaskEdit, readTask])
+  // Sync taskEditorTask metadata when project tasks update (e.g. project_changed)
+  useEffect(() => {
+    if (!taskEditorTask) return
+    const updated = projectTasks.find(t => t.slug === taskEditorTask.slug)
+    if (updated && (updated.status !== taskEditorTask.status || updated.priority !== taskEditorTask.priority)) {
+      setTaskEditorTask(prev =>
+        prev ? { ...prev, status: updated.status, priority: updated.priority, tags: updated.tags } : prev,
+      )
+    }
+  }, [projectTasks, taskEditorTask])
 
   // HOOKS MUST BE BEFORE EARLY RETURNS - React rules!
 

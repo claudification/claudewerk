@@ -36,6 +36,7 @@ import type { ProjectTask } from '@/hooks/use-project'
 import { type ProjectTaskMeta, type TaskStatus, useProject } from '@/hooks/use-project'
 import { sendInput, useSessionsStore } from '@/hooks/use-sessions'
 import { useKeyLayer } from '@/lib/key-layers'
+import { uploadFileWithPlaceholder } from '@/lib/upload'
 import { cn, haptic } from '@/lib/utils'
 import { Markdown } from './markdown'
 import { MarkdownInput } from './markdown-input'
@@ -116,6 +117,90 @@ function getTagFrequencies(tasks: ProjectTaskMeta[]): Array<{ tag: string; count
   return [...counts.entries()].map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count)
 }
 
+// Lazy-load CodeMirror (shared with file-editor)
+let cmPromise: Promise<typeof import('./codemirror-setup')> | null = null
+function loadCodeMirror() {
+  if (!cmPromise) cmPromise = import('./codemirror-setup')
+  return cmPromise
+}
+
+/** CodeMirror-based markdown editor with syntax highlighting, paste/drop upload */
+function MarkdownEditorPane({
+  initialContent,
+  onChange,
+  onUpload,
+  editorViewRef,
+}: {
+  initialContent: string
+  onChange: (value: string) => void
+  onUpload: (file: File) => void
+  // biome-ignore lint/suspicious/noExplicitAny: EditorView type from lazy-loaded codemirror
+  editorViewRef: React.RefObject<any>
+}) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [dragOver, setDragOver] = useState(false)
+  const onChangeRef = useRef(onChange)
+  const onUploadRef = useRef(onUpload)
+  onChangeRef.current = onChange
+  onUploadRef.current = onUpload
+
+  useEffect(() => {
+    if (!containerRef.current) return
+    let destroyed = false
+    loadCodeMirror().then(cm => {
+      if (destroyed || !containerRef.current) return
+      const view = cm.createMarkdownEditor(containerRef.current, initialContent, (v: string) => onChangeRef.current(v))
+      editorViewRef.current = view
+      // Intercept image paste before CM processes it as text
+      view.contentDOM.addEventListener('paste', (e: ClipboardEvent) => {
+        const items = e.clipboardData?.items
+        if (!items) return
+        for (const item of items) {
+          if (item.type.startsWith('image/')) {
+            e.preventDefault()
+            const file = item.getAsFile()
+            if (file) onUploadRef.current(file)
+            return
+          }
+        }
+      })
+      view.focus()
+    })
+    return () => {
+      destroyed = true
+      if (editorViewRef.current) {
+        editorViewRef.current.destroy()
+        editorViewRef.current = null
+      }
+    }
+  }, [editorViewRef])
+
+  return (
+    <div
+      className="relative w-full"
+      onDragOver={e => {
+        e.preventDefault()
+        setDragOver(true)
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={e => {
+        e.preventDefault()
+        setDragOver(false)
+        const files = e.dataTransfer?.files
+        if (!files?.length) return
+        for (const file of files) onUploadRef.current(file)
+      }}
+    >
+      <div ref={containerRef} />
+      {dragOver && (
+        <div className="absolute inset-0 border-2 border-dashed border-accent/60 bg-accent/5 pointer-events-none flex items-center justify-center">
+          <span className="text-xs font-mono text-accent/80">Drop file here</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function TaskEditor({
   task,
   sessionId,
@@ -143,50 +228,32 @@ export function TaskEditor({
   const [tagInput, setTagInput] = useState('')
   const [saving, setSaving] = useState(false)
   const [editing, setEditing] = useState(!body.trim())
-  const [dragOver, setDragOver] = useState(false)
-  const bodyRef = useRef<HTMLTextAreaElement>(null)
+  // biome-ignore lint/suspicious/noExplicitAny: EditorView from lazy-loaded codemirror
+  const editorViewRef = useRef<any>(null)
   useKeyLayer({ Escape: () => onClose() }, { id: 'task-editor' })
 
-  async function uploadFile(file: File) {
-    const ta = bodyRef.current
-    const pos = ta?.selectionStart ?? body.length
-    const placeholder = `![uploading ${file.name || 'file'}...]`
-    const before = body.slice(0, pos)
-    const after = body.slice(pos)
-    setBody(before + placeholder + after)
-    try {
-      const formData = new FormData()
-      formData.append('file', file, file.name || 'paste.png')
-      const res = await fetch('/api/files', { method: 'POST', body: formData })
-      if (!res.ok) throw new Error(`Upload failed: ${res.status}`)
-      const { url, filename } = await res.json()
-      const current = bodyRef.current?.value ?? ''
-      setBody(current.replace(placeholder, `![${filename}](${url})`))
-    } catch {
-      const current = bodyRef.current?.value ?? ''
-      setBody(current.replace(placeholder, '![upload failed]'))
-    }
-  }
+  // Sync non-editing fields from prop when task is updated externally (e.g. project_changed)
+  // Intentionally does NOT sync title/body to avoid overwriting user edits
+  useEffect(() => {
+    setStatus(task.status)
+    setPriority(task.priority || 'medium')
+    setTags(task.tags || [])
+  }, [task.status, task.priority, task.tags])
 
-  function handleBodyPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
-    const items = e.clipboardData?.items
-    if (!items) return
-    for (const item of items) {
-      if (item.type.startsWith('image/')) {
-        e.preventDefault()
-        const file = item.getAsFile()
-        if (file) uploadFile(file)
-        return
-      }
-    }
-  }
-
-  function handleBodyDrop(e: React.DragEvent<HTMLTextAreaElement>) {
-    e.preventDefault()
-    setDragOver(false)
-    const files = e.dataTransfer?.files
-    if (!files?.length) return
-    for (const file of files) uploadFile(file)
+  function uploadFile(file: File) {
+    const view = editorViewRef.current
+    if (!view) return
+    uploadFileWithPlaceholder(
+      file,
+      placeholder => {
+        view.dispatch({ changes: { from: view.state.selection.main.head, insert: placeholder } })
+      },
+      (search: string, replacement: string) => {
+        const content = view.state.doc.toString()
+        const idx = content.indexOf(search)
+        if (idx >= 0) view.dispatch({ changes: { from: idx, to: idx + search.length, insert: replacement } })
+      },
+    )
   }
 
   function addTag() {
@@ -325,27 +392,12 @@ export function TaskEditor({
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto p-4">
           {editing ? (
-            <div className="relative w-full h-full min-h-[200px]">
-              <textarea
-                ref={bodyRef}
-                value={body}
-                onChange={e => setBody(e.target.value)}
-                onPaste={handleBodyPaste}
-                onDrop={handleBodyDrop}
-                onDragOver={e => {
-                  e.preventDefault()
-                  setDragOver(true)
-                }}
-                onDragLeave={() => setDragOver(false)}
-                className="w-full h-full min-h-[200px] bg-transparent text-sm font-mono text-foreground outline-none resize-none placeholder:text-muted-foreground/30 leading-relaxed"
-                placeholder="Task body (markdown)... Paste images or drop files"
-              />
-              {dragOver && (
-                <div className="absolute inset-0 border-2 border-dashed border-accent/60 bg-accent/5 pointer-events-none flex items-center justify-center">
-                  <span className="text-xs font-mono text-accent/80">Drop file here</span>
-                </div>
-              )}
-            </div>
+            <MarkdownEditorPane
+              initialContent={body}
+              onChange={setBody}
+              onUpload={uploadFile}
+              editorViewRef={editorViewRef}
+            />
           ) : body.trim() ? (
             <div
               role="button"
@@ -1283,6 +1335,18 @@ export const ProjectBoard = memo(function ProjectBoard({ sessionId }: { sessionI
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set())
   const [selectedPriority, setSelectedPriority] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
+
+  // Sync editingTask metadata when tasks list updates (e.g. project_changed from another session)
+  // Preserves body text to avoid overwriting user edits
+  useEffect(() => {
+    if (!editingTask) return
+    const updated = tasks.find(t => t.slug === editingTask.slug)
+    if (updated && (updated.status !== editingTask.status || updated.priority !== editingTask.priority)) {
+      setEditingTask(prev =>
+        prev ? { ...prev, status: updated.status, priority: updated.priority, tags: updated.tags } : prev,
+      )
+    }
+  }, [tasks, editingTask])
 
   // Deep link: listen for open-project-task events (from push notifications / hash routes)
   useEffect(() => {
