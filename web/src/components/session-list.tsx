@@ -11,7 +11,7 @@ import {
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { HookEvent } from '@shared/protocol'
-import { ContextMenu, Popover } from 'radix-ui'
+import { ContextMenu } from 'radix-ui'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { reviveSession, saveSessionOrder, useSessionsStore } from '@/hooks/use-sessions'
 import {
@@ -94,34 +94,19 @@ function formatTokenCount(n: number): string {
   return `${(n / 1_000_000).toFixed(2)}M`
 }
 
-// ─── Session hover tooltip (Popover on hover) ─────────────────────
+// ─── Session info dialog (replaces hover tooltip) ────────────────
 
-function SessionHoverTooltip({
+function SessionInfoDialog({
   session,
   model,
-  children,
+  open,
+  onOpenChange,
 }: {
   session: Session
   model: string | undefined
-  children: React.ReactNode
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }) {
-  const [open, setOpen] = useState(false)
-  const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const isTouchDevice = useRef(
-    typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0),
-  )
-
-  function handleMouseEnter() {
-    hoverTimeout.current = setTimeout(() => setOpen(true), 5000)
-  }
-  function handleMouseLeave() {
-    if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
-    hoverTimeout.current = setTimeout(() => setOpen(false), 150)
-  }
-
-  // No hover tooltip on touch devices - it opens on tap and blocks session selection
-  if (isTouchDevice.current) return <>{children}</>
-
   const resolvedModel = model || session.model
   const effort = formatEffort(session.effortLevel)
   const cost = session.stats ? getSessionCost(session.stats, resolvedModel) : null
@@ -129,145 +114,189 @@ function SessionHoverTooltip({
   const isAdHoc = session.capabilities?.includes('ad-hoc')
 
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Anchor asChild>
-        <div onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
-          {children}
-        </div>
-      </Popover.Anchor>
-
-      <Popover.Portal>
-        <Popover.Content
-          className="z-50 w-72 border border-border/80 bg-card shadow-xl p-3 font-mono text-[11px]"
-          sideOffset={8}
-          side="right"
-          align="start"
-          onMouseEnter={() => {
-            if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
-          }}
-          onMouseLeave={handleMouseLeave}
-          onOpenAutoFocus={e => e.preventDefault()}
-        >
-          <div className="space-y-2">
-            {/* Model + effort */}
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Model</span>
-              <span className="ml-auto text-primary">{formatModel(resolvedModel)}</span>
-              {effort && (
-                <span className="text-foreground/60" title={`effort: ${effort.label}`}>
-                  {effort.symbol} {effort.label}
-                </span>
-              )}
-            </div>
-
-            <div className="border-t border-border" />
-
-            {/* Cost */}
-            {cost && cost.cost > 0 && (
-              <div className="flex items-center gap-2">
-                <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Cost</span>
-                <span className={cn('ml-auto font-bold', getCostColor(cost.cost))}>
-                  {formatCost(cost.cost, cost.exact)}
-                </span>
-              </div>
-            )}
-
-            {/* Duration */}
-            {duration > 0 && (
-              <div className="flex items-center gap-2">
-                <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Duration</span>
-                <span className="ml-auto text-foreground/80">{formatDurationMs(duration)}</span>
-              </div>
-            )}
-
-            {/* Turn count */}
-            {session.stats && session.stats.turnCount > 0 && (
-              <div className="flex items-center gap-2">
-                <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Turns</span>
-                <span className="ml-auto text-foreground/80">{session.stats.turnCount}</span>
-              </div>
-            )}
-
-            {/* Token usage */}
-            {session.stats && (session.stats.totalInputTokens > 0 || session.stats.totalOutputTokens > 0) && (
-              <>
-                <div className="border-t border-border" />
-                <div className="space-y-1">
-                  <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Tokens</span>
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px]">
-                    <span className="text-muted-foreground">input</span>
-                    <span className="text-right tabular-nums text-foreground/80">
-                      {formatTokenCount(session.stats.totalInputTokens)}
-                    </span>
-                    <span className="text-muted-foreground">output</span>
-                    <span className="text-right tabular-nums text-foreground/80">
-                      {formatTokenCount(session.stats.totalOutputTokens)}
-                    </span>
-                    {session.stats.totalCacheRead > 0 && (
-                      <>
-                        <span className="text-muted-foreground">cache read</span>
-                        <span className="text-right tabular-nums text-emerald-400">
-                          {formatTokenCount(session.stats.totalCacheRead)}
-                        </span>
-                      </>
-                    )}
-                    {session.stats.totalCacheCreation > 0 && (
-                      <>
-                        <span className="text-muted-foreground">cache write</span>
-                        <span className="text-right tabular-nums text-amber-400">
-                          {formatTokenCount(session.stats.totalCacheCreation)}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* Git branch */}
-            {session.gitBranch && (
-              <>
-                <div className="border-t border-border" />
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Branch</span>
-                  <span className="ml-auto text-sky-400 truncate max-w-[160px]">{session.gitBranch}</span>
-                </div>
-              </>
-            )}
-
-            {/* Identity */}
-            {session.claudeAuth?.email && (
-              <div className="flex items-center gap-2">
-                <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Auth</span>
-                <span className="ml-auto text-foreground/80 truncate max-w-[160px]">
-                  {session.claudeAuth.email}
-                  {session.claudeAuth.orgName && (
-                    <span className="text-muted-foreground"> ({session.claudeAuth.orgName})</span>
-                  )}
-                </span>
-              </div>
-            )}
-
-            {/* Ad-hoc result preview */}
-            {isAdHoc && session.resultText && (
-              <>
-                <div className="border-t border-border" />
-                <div className="space-y-1">
-                  <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Result</span>
-                  <div className="text-[10px] text-foreground/70 line-clamp-4 break-words">
-                    {truncate(session.resultText, 200)}
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* Session ID */}
-            <div className="border-t border-border/50" />
-            <div className="text-[9px] text-muted-foreground/50 truncate">{session.id}</div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="font-mono max-w-sm">
+        <DialogTitle className="pr-8 pb-2 border-b border-border">
+          <div className="flex items-center gap-2">
+            <span className="text-accent">{'\u24D8'}</span>
+            <span>Session Info</span>
+            <span className="text-[10px] text-muted-foreground/50 font-normal">{session.id.slice(0, 12)}</span>
           </div>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+        </DialogTitle>
+        <div className="space-y-2 text-[11px]">
+          {/* Model + effort */}
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Model</span>
+            <span className="ml-auto text-primary">{formatModel(resolvedModel)}</span>
+            {effort && (
+              <span className="text-foreground/60">
+                {effort.symbol} {effort.label}
+              </span>
+            )}
+          </div>
+
+          <div className="border-t border-border" />
+
+          {/* Cost */}
+          {cost && cost.cost > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Cost</span>
+              <span className={cn('ml-auto font-bold', getCostColor(cost.cost))}>
+                {formatCost(cost.cost, cost.exact)}
+              </span>
+            </div>
+          )}
+
+          {/* Duration */}
+          {duration > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Duration</span>
+              <span className="ml-auto text-foreground/80">{formatDurationMs(duration)}</span>
+            </div>
+          )}
+
+          {/* Turn count */}
+          {session.stats && session.stats.turnCount > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Turns</span>
+              <span className="ml-auto text-foreground/80">{session.stats.turnCount}</span>
+            </div>
+          )}
+
+          {/* Token usage */}
+          {session.stats && (session.stats.totalInputTokens > 0 || session.stats.totalOutputTokens > 0) && (
+            <>
+              <div className="border-t border-border" />
+              <div className="space-y-1">
+                <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Tokens</span>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px]">
+                  <span className="text-muted-foreground">input</span>
+                  <span className="text-right tabular-nums text-foreground/80">
+                    {formatTokenCount(session.stats.totalInputTokens)}
+                  </span>
+                  <span className="text-muted-foreground">output</span>
+                  <span className="text-right tabular-nums text-foreground/80">
+                    {formatTokenCount(session.stats.totalOutputTokens)}
+                  </span>
+                  {session.stats.totalCacheRead > 0 && (
+                    <>
+                      <span className="text-muted-foreground">cache read</span>
+                      <span className="text-right tabular-nums text-emerald-400">
+                        {formatTokenCount(session.stats.totalCacheRead)}
+                      </span>
+                    </>
+                  )}
+                  {session.stats.totalCacheCreation > 0 && (
+                    <>
+                      <span className="text-muted-foreground">cache write</span>
+                      <span className="text-right tabular-nums text-amber-400">
+                        {formatTokenCount(session.stats.totalCacheCreation)}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Context window */}
+          {session.stats && session.stats.totalInputTokens > 0 && (
+            <>
+              <div className="border-t border-border" />
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Context</span>
+                <span className="ml-auto text-foreground/80">
+                  {formatTokenCount(session.stats.totalInputTokens)} /{' '}
+                  {formatTokenCount(contextWindowSize(resolvedModel))}
+                </span>
+              </div>
+            </>
+          )}
+
+          {/* Git branch */}
+          {session.gitBranch && (
+            <>
+              <div className="border-t border-border" />
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Branch</span>
+                <span className="ml-auto text-sky-400 truncate max-w-[200px]">{session.gitBranch}</span>
+              </div>
+            </>
+          )}
+
+          {/* Identity */}
+          {session.claudeAuth?.email && (
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Auth</span>
+              <span className="ml-auto text-foreground/80 truncate max-w-[200px]">
+                {session.claudeAuth.email}
+                {session.claudeAuth.orgName && (
+                  <span className="text-muted-foreground"> ({session.claudeAuth.orgName})</span>
+                )}
+              </span>
+            </div>
+          )}
+
+          {/* Ad-hoc result preview */}
+          {isAdHoc && session.resultText && (
+            <>
+              <div className="border-t border-border" />
+              <div className="space-y-1">
+                <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Result</span>
+                <div className="text-[10px] text-foreground/70 line-clamp-6 break-words">
+                  {truncate(session.resultText, 400)}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Session ID */}
+          <div className="border-t border-border/50" />
+          <div className="text-[9px] text-muted-foreground/50 select-all">{session.id}</div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function SessionInfoButton({
+  session,
+  model,
+  visible,
+}: {
+  session: Session
+  model: string | undefined
+  visible: boolean
+}) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <>
+      <span
+        role="button"
+        tabIndex={0}
+        className={cn(
+          'text-[10px] text-muted-foreground/50 hover:text-accent cursor-pointer transition-all shrink-0',
+          visible ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+        )}
+        title="Session info"
+        onClick={e => {
+          e.stopPropagation()
+          haptic('tap')
+          setOpen(true)
+        }}
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.stopPropagation()
+            haptic('tap')
+            setOpen(true)
+          }
+        }}
+      >
+        {'\u24D8'}
+      </span>
+      <SessionInfoDialog session={session} model={model} open={open} onOpenChange={setOpen} />
+    </>
   )
 }
 
@@ -566,6 +595,7 @@ const SessionItemContent = memo(function SessionItemContent({
               throttled
             </span>
           )}
+          <SessionInfoButton session={session} model={model} visible={isSelected} />
           <ShareIndicator sessionCwd={session.cwd} />
           {session.resultText && session.capabilities?.includes('ad-hoc') && <ResultTextModal session={session} />}
           {session.status === 'ended' && <DismissButton sessionId={session.id} />}
@@ -651,6 +681,7 @@ const SessionItemContent = memo(function SessionItemContent({
             <span className="text-[9px] text-amber-400 font-bold animate-pulse">WAITING</span>
           )}
           {session.hasNotification && <span className="text-[9px] text-teal-400 font-bold">NOTIFY</span>}
+          <SessionInfoButton session={session} model={model} visible={isSelected} />
           {session.status === 'ended' && <DismissButton sessionId={session.id} />}
         </div>
       )}
@@ -856,11 +887,7 @@ const SessionItemContent = memo(function SessionItemContent({
     </div>
   )
 
-  return (
-    <SessionHoverTooltip session={session} model={model}>
-      {card}
-    </SessionHoverTooltip>
-  )
+  return card
 })
 
 // ─── Inline rename input ─────────────────────────────────────────────
