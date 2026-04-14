@@ -5,7 +5,7 @@
 # Called by rclaude-agent when the dashboard requests a session revival or spawn.
 # Customize this script to change tmux behavior, rclaude flags, etc.
 #
-# Usage: revive-session.sh <session-id> <cwd> [--mode fresh|continue|resume] [--resume-id <claude-session-id>]
+# Usage: revive-session.sh <session-id> <cwd> [--mode fresh|continue|resume] [--resume-id <claude-session-id>] [--resume-name <session-name>]
 #
 # Modes:
 #   fresh    - Start a new session (default for spawn, uses --session-id for deterministic ID)
@@ -22,6 +22,7 @@ set -euo pipefail
 CWD="$2"
 SPAWN_MODE=""
 RESUME_ID=""
+RESUME_NAME=""
 
 # Parse optional flags after positional args
 shift 2
@@ -29,6 +30,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --mode) SPAWN_MODE="$2"; shift 2 ;;
     --resume-id) RESUME_ID="$2"; shift 2 ;;
+    --resume-name) RESUME_NAME="$2"; shift 2 ;;
     *) shift ;;
   esac
 done
@@ -45,8 +47,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Build the launch command based on spawn mode
 case "$SPAWN_MODE" in
   resume)
-    # Resume a specific Claude session by ID - direct rclaude, no boot script
-    BASE_CMD="rclaude --dangerously-skip-permissions --resume $RESUME_ID"
+    # Resume a specific Claude session - prefer name over ID, fallback to ID
+    RESUME_KEY="${RESUME_NAME:-$RESUME_ID}"
+    BASE_CMD="rclaude --dangerously-skip-permissions --resume $RESUME_KEY"
     ;;
   continue)
     # Resume the most recent session in this CWD - direct rclaude, no boot script

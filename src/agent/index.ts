@@ -222,6 +222,7 @@ function buildHeadlessEnv(opts: {
 function buildHeadlessArgs(opts: {
   mode?: 'fresh' | 'continue' | 'resume'
   resumeId?: string
+  resumeName?: string
   effort?: string
   model?: string
   worktree?: string
@@ -229,7 +230,11 @@ function buildHeadlessArgs(opts: {
 }): string[] {
   const args = ['--dangerously-skip-permissions']
   if (opts.mode === 'continue') args.push('--continue')
-  else if (opts.mode === 'resume' && opts.resumeId) args.push('--resume', opts.resumeId)
+  else if (opts.mode === 'resume') {
+    // Prefer session name over ID for --resume (more readable, survives fork)
+    const resumeKey = opts.resumeName || opts.resumeId
+    if (resumeKey) args.push('--resume', resumeKey)
+  }
   if (opts.effort) args.push('--effort', opts.effort)
   if (opts.model) args.push('--model', opts.model)
   if (opts.worktree) args.push('--worktree', opts.worktree)
@@ -504,7 +509,7 @@ async function reviveSession(
       return result
     }
 
-    const args = buildHeadlessArgs({ mode: mode as 'fresh' | 'continue' | 'resume', effort, model, maxBudgetUsd })
+    const args = buildHeadlessArgs({ mode: mode as 'fresh' | 'continue' | 'resume', resumeName: sessionName, effort, model, maxBudgetUsd })
     const env = buildHeadlessEnv({
       secret,
       wrapperId,
@@ -716,7 +721,7 @@ async function spawnSession(
       return { success: false, error: err }
     }
 
-    const args = buildHeadlessArgs({ mode, resumeId, effort, model, worktree, maxBudgetUsd })
+    const args = buildHeadlessArgs({ mode, resumeId, resumeName: sessionName, effort, model, worktree, maxBudgetUsd })
     const env = buildHeadlessEnv({
       secret,
       wrapperId,
@@ -753,6 +758,7 @@ async function spawnSession(
   const scriptArgs = [reviveScript, syntheticId, cwd]
   if (mode) scriptArgs.push('--mode', mode)
   if (mode === 'resume' && resumeId) scriptArgs.push('--resume-id', resumeId)
+  if (mode === 'resume' && sessionName) scriptArgs.push('--resume-name', sessionName)
   const scriptEnv = {
     ...process.env,
     RCLAUDE_SECRET: secret,
