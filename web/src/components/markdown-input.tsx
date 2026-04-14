@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { VoiceOverlay } from '@/components/voice-overlay'
 import { useSessionsStore } from '@/hooks/use-sessions'
+import { uploadFileWithPlaceholder } from '@/lib/upload'
 import { cn, haptic, isMobileViewport } from '@/lib/utils'
 
 const EMPTY_INFO: { slashCommands: string[]; skills: string[]; agents: string[] } = {
@@ -519,30 +520,18 @@ export function MarkdownInput({
     requestAnimationFrame(syncScroll)
   }
 
-  async function uploadFile(file: File) {
-    const ta = textareaRef.current
-    const pos = ta?.selectionStart ?? value.length
-
-    const placeholder = `![uploading ${file.name || 'file'}...]`
-    const before = value.slice(0, pos)
-    const after = value.slice(pos)
-    onChange(before + placeholder + after)
-
-    try {
-      const formData = new FormData()
-      formData.append('file', file, file.name || 'paste.png')
-      const res = await fetch('/api/files', { method: 'POST', body: formData })
-      if (!res.ok) throw new Error(`Upload failed: ${res.status}`)
-      const { url, filename } = await res.json()
-
-      const mdLink = `![${filename}](${url})`
-      // Read current value from textarea (onChange is not a state setter)
-      const current = textareaRef.current?.value ?? ''
-      onChange(current.replace(placeholder, mdLink))
-    } catch {
-      const current = textareaRef.current?.value ?? ''
-      onChange(current.replace(placeholder, `![upload failed]`))
-    }
+  function uploadFile(file: File) {
+    uploadFileWithPlaceholder(
+      file,
+      placeholder => {
+        const pos = textareaRef.current?.selectionStart ?? value.length
+        onChange(value.slice(0, pos) + placeholder + value.slice(pos))
+      },
+      (search, replacement) => {
+        const current = textareaRef.current?.value ?? ''
+        onChange(current.replace(search, replacement))
+      },
+    )
   }
 
   async function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {

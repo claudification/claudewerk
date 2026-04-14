@@ -131,6 +131,107 @@ function langFromPath(filePath: string | undefined): LanguageSupport | Extension
   }
 }
 
+// Minimal theme for inline markdown editing (no gutters, auto-height)
+const markdownEditorTheme = EditorView.theme(
+  {
+    '&': {
+      fontSize: '13px',
+      fontFamily: '"Geist Mono", "JetBrains Mono", monospace',
+      backgroundColor: 'transparent',
+    },
+    '&.cm-focused': {
+      outline: 'none',
+    },
+    '.cm-content': {
+      padding: '0',
+      caretColor: '#7aa2f7',
+      color: '#a9b1d6',
+      minHeight: '200px',
+    },
+    '.cm-cursor': {
+      borderLeftColor: '#7aa2f7',
+    },
+    '.cm-selectionBackground': {
+      backgroundColor: 'rgba(122, 162, 247, 0.2) !important',
+    },
+    '&.cm-focused .cm-selectionBackground': {
+      backgroundColor: 'rgba(122, 162, 247, 0.3) !important',
+    },
+    '.cm-scroller': {
+      overflow: 'visible',
+      lineHeight: '1.625',
+    },
+  },
+  { dark: true },
+)
+
+/**
+ * Lightweight markdown editor for task bodies etc.
+ * No line numbers, no gutters, auto-height (grows with content).
+ */
+export function createMarkdownEditor(
+  parent: HTMLElement,
+  initialContent: string,
+  onChange: (value: string) => void,
+): EditorView {
+  const updateListener = EditorView.updateListener.of(update => {
+    if (update.docChanged) {
+      onChange(update.state.doc.toString())
+    }
+  })
+
+  const markCache: Record<string, Decoration> = Object.create(null)
+  const directHighlightPlugin = ViewPlugin.fromClass(
+    class {
+      decorations: DecorationSet
+      constructor(view: EditorView) {
+        this.decorations = this.build(view)
+      }
+      build(view: EditorView) {
+        const builder = new RangeSetBuilder<Decoration>()
+        const tree = syntaxTree(view.state)
+        for (const { from, to } of view.visibleRanges) {
+          highlightTree(
+            tree,
+            tokyoNightHighlight,
+            (hFrom, hTo, cls) => {
+              if (!markCache[cls]) markCache[cls] = Decoration.mark({ class: cls })
+              builder.add(hFrom, hTo, markCache[cls])
+            },
+            from,
+            to,
+          )
+        }
+        return builder.finish()
+      }
+      update(update: ViewUpdate) {
+        if (update.docChanged || update.viewportChanged || syntaxTree(update.state) !== syntaxTree(update.startState)) {
+          this.decorations = this.build(update.view)
+        }
+      }
+    },
+    { decorations: v => v.decorations },
+  )
+
+  const state = EditorState.create({
+    doc: initialContent,
+    extensions: [
+      drawSelection(),
+      history(),
+      keymap.of([...defaultKeymap, ...historyKeymap]),
+      markdown(),
+      markdownEditorTheme,
+      directHighlightPlugin,
+      // biome-ignore lint/style/noNonNullAssertion: module always defined
+      EditorView.styleModule.of(tokyoNightHighlight.module!),
+      updateListener,
+      EditorView.lineWrapping,
+    ],
+  })
+
+  return new EditorView({ state, parent })
+}
+
 export function createEditorView(
   parent: HTMLElement,
   initialContent: string,
