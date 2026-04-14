@@ -317,6 +317,24 @@ export function TranscriptView({
     estimateSize: index => estimateGroupSize(mainGroups[index], measuredSizesRef.current, getItemKey(index)),
     overscan: 5,
     getItemKey,
+    // Safari fix: ResizeObserver can fire mid-layout before paint completes,
+    // causing the virtualizer to read intermediate/partial element heights and
+    // clip content. Deferring to rAF ensures measurements happen after layout.
+    useAnimationFrameWithResizeObserver: true,
+    observeElementRect: (instance, cb) => {
+      const el = instance.scrollElement
+      if (!el) return
+      const observer = new ResizeObserver(entries => {
+        const entry = entries[0]
+        if (entry) {
+          requestAnimationFrame(() => {
+            cb({ width: entry.contentRect.width, height: entry.contentRect.height })
+          })
+        }
+      })
+      observer.observe(el)
+      return () => observer.disconnect()
+    },
   })
 
   // Track measured sizes: visible items have real DOM measurements from ResizeObserver.
@@ -418,7 +436,7 @@ export function TranscriptView({
     <div
       ref={parentRef}
       className="h-full overflow-y-auto p-3 sm:p-4"
-      style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
+      style={{ overscrollBehavior: 'contain', touchAction: 'pan-y' }}
       onWheel={killFollow}
       onTouchStart={killFollow}
     >
