@@ -509,7 +509,13 @@ async function reviveSession(
       return result
     }
 
-    const args = buildHeadlessArgs({ mode: mode as 'fresh' | 'continue' | 'resume', resumeName: sessionName, effort, model, maxBudgetUsd })
+    const args = buildHeadlessArgs({
+      mode: mode as 'fresh' | 'continue' | 'resume',
+      resumeName: sessionName,
+      effort,
+      model,
+      maxBudgetUsd,
+    })
     const env = buildHeadlessEnv({
       secret,
       wrapperId,
@@ -932,8 +938,8 @@ function parseUsageResponse(raw: RawUsageResponse): UsageUpdate | null {
   if (raw.extra_usage) {
     update.extraUsage = {
       isEnabled: raw.extra_usage.is_enabled,
-      monthlyLimit: raw.extra_usage.monthly_limit,
-      usedCredits: raw.extra_usage.used_credits,
+      monthlyLimit: raw.extra_usage.monthly_limit / 100, // API returns cents
+      usedCredits: raw.extra_usage.used_credits / 100, // API returns cents
       utilization: raw.extra_usage.utilization,
     } satisfies ExtraUsage
   }
