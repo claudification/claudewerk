@@ -297,7 +297,7 @@ export type WrapperMessage =
   | BgTaskOutput
   | WrapperNotify
   | InterSessionMessage
-  | InterSessionLinkResponse
+  | ProjectLinkResponse
   | InterSessionListRequest
   | PermissionRequest
   | AskQuestionRequest
@@ -440,13 +440,13 @@ export interface InterSessionDelivery {
   conversationId?: string
 }
 
-export interface InterSessionLinkRequest {
+export interface ProjectLinkRequest {
   type: 'channel_link_request'
   fromSession: string
   fromProject: string
 }
 
-export interface InterSessionLinkResponse {
+export interface ProjectLinkResponse {
   type: 'channel_link_response'
   sessionId: string
   action: 'approve' | 'block'
@@ -582,7 +582,7 @@ export type ConcentratorMessage =
   | FileRequest
   | TranscriptKick
   | InterSessionDelivery
-  | InterSessionLinkRequest
+  | ProjectLinkRequest
   | InterSessionListResponse
   | SendInterrupt
   | PermissionResponse
@@ -1023,6 +1023,7 @@ export interface ReviveSession {
   cwd: string
   wrapperId: string // pre-assigned wrapperId so concentrator can correlate the incoming connection
   jobId?: string // launch job correlation ID for progress events
+  adHocWorktree?: string // restore worktree context on revive (RCLAUDE_WORKTREE env)
 }
 
 export interface SpawnSession {
@@ -1123,7 +1124,7 @@ export interface SessionSummary {
   title?: string
   agentName?: string
   prLinks?: Session['prLinks']
-  linkedSessions?: Array<{ id: string; name: string; cwd: string }>
+  linkedProjects?: Array<{ cwd: string; name: string }>
   tokenUsage?: { input: number; cacheCreation: number; cacheRead: number; output: number }
   cacheTtl?: '5m' | '1h'
   lastTurnEndedAt?: number

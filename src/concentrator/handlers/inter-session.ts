@@ -81,6 +81,7 @@ const handleChannelRevive: MessageHandler = (ctx, data) => {
       mode: 'resume',
       effort: resolveEffort(target.cwd, ctx.getProjectSettings),
       sessionName: target.title || undefined,
+      adHocWorktree: target.adHocWorktree || undefined,
     }),
   )
 

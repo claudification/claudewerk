@@ -227,14 +227,16 @@ export interface SessionStore {
   // Pending session names (set at spawn, consumed on connect)
   setPendingSessionName: (wrapperId: string, name: string) => void
   consumePendingSessionName: (wrapperId: string) => string | undefined
-  // Inter-session messaging
-  checkSessionLink: (from: string, to: string) => 'linked' | 'blocked' | 'unknown'
-  getLinkedSessions: (sessionId: string) => string[]
-  linkSessions: (a: string, b: string) => void
-  unlinkSessions: (a: string, b: string) => void
-  blockSession: (blocker: string, blocked: string) => void
-  queueInterSessionMessage: (from: string, to: string, message: Record<string, unknown>) => void
-  drainQueuedMessages: (from: string, to: string) => Array<Record<string, unknown>>
+  // Inter-project link management
+  checkProjectLink: (from: string, to: string) => 'linked' | 'blocked' | 'unknown'
+  getLinkedProjects: (sessionId: string) => Array<{ cwd: string; name: string }>
+  linkProjects: (a: string, b: string) => void
+  unlinkProjects: (a: string, b: string) => void
+  unlinkProjectsByCwd: (cwdA: string, cwdB: string) => void
+  blockProject: (blocker: string, blocked: string) => void
+  queueProjectMessage: (from: string, to: string, message: Record<string, unknown>) => void
+  drainProjectMessages: (from: string, to: string) => Array<Record<string, unknown>>
+  broadcastForProjectCwd: (cwd: string) => void
   broadcastSessionScoped: (message: Record<string, unknown>, cwd: string) => void
   broadcastSharesUpdate: () => void
   recordTraffic: (direction: 'in' | 'out', bytes: number) => void
@@ -541,17 +543,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       title: session.title,
       agentName: session.agentName,
       prLinks: session.prLinks,
-      linkedSessions: getLinkedSessions(session.id)
-        .map(id => {
-          const s = sessions.get(id)
-          if (!s) return null // session evicted, stale link
-          return {
-            id,
-            name: s.title || getProjectSettings(s.cwd)?.label || s.cwd.split('/').pop() || id.slice(0, 8),
-            cwd: s.cwd,
-          }
-        })
-        .filter(Boolean) as Array<{ id: string; name: string; cwd: string }>,
+      linkedProjects: getLinkedProjects(session.id),
       tokenUsage: session.tokenUsage,
       cacheTtl: session.cacheTtl,
       lastTurnEndedAt: session.lastTurnEndedAt,
@@ -1177,7 +1169,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       channelSubscribers.delete(oldKey)
     }
 
-    // Session links are CWD-based, no migration needed on rekey.
+    // Project links are CWD-based, no migration needed on rekey.
 
     // Clear subagent transcript subscriptions (subagents are reset on rekey)
     for (const key of channelSubscribers.keys()) {
@@ -3039,13 +3031,13 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     scheduleSessionUpdate(sessionId)
   }
 
-  // ─── Inter-session link registry ──────────────────────────────────────
+  // ─── Inter-project link registry ────────────────────────────────────
   // Links are bidirectional. If A->B is approved, B->A is also approved.
-  // Links are stored by CWD pair (not session ID) so they survive rekey/restart.
-  // All public functions accept session IDs and resolve to CWDs internally.
+  // Links are stored by CWD pair (project identity), not session ID.
+  // Public functions accept session IDs and resolve to CWDs internally.
   const cwdLinks = new Set<string>() // "cwdA:cwdB" format (sorted)
   const cwdBlocks = new Map<string, number>() // "cwdA:cwdB" -> block timestamp
-  const messageQueue = new Map<string, Array<Record<string, unknown>>>() // "from:to" -> queued messages (session IDs for queue key)
+  const messageQueue = new Map<string, Array<Record<string, unknown>>>() // "cwdA:cwdB" -> queued messages
 
   function cwdLinkKey(cwdA: string, cwdB: string): string {
     return [cwdA, cwdB].sort().join(':')
@@ -3055,31 +3047,31 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     return sessions.get(sessionId)?.cwd
   }
 
-  function getLinkedSessions(sessionId: string): string[] {
+  function getLinkedProjects(sessionId: string): Array<{ cwd: string; name: string }> {
     const cwd = sessionToCwd(sessionId)
     if (!cwd) return []
-    const linked: string[] = []
+    const result: Array<{ cwd: string; name: string }> = []
     for (const key of cwdLinks) {
       const [a, b] = key.split(':')
       const otherCwd = a === cwd ? b : b === cwd ? a : null
       if (!otherCwd) continue
-      // Find active sessions with that CWD (excluding self)
-      for (const [id, s] of sessions) {
-        if (s.cwd === otherCwd && id !== sessionId) {
-          linked.push(id)
-        }
-      }
+      const name = getProjectSettings(otherCwd)?.label || otherCwd.split('/').pop() || otherCwd.slice(0, 8)
+      result.push({ cwd: otherCwd, name })
     }
-    return linked
+    return result
   }
 
-  function unlinkSessions(a: string, b: string): void {
+  function unlinkProjects(a: string, b: string): void {
     const cwdA = sessionToCwd(a)
     const cwdB = sessionToCwd(b)
     if (cwdA && cwdB) cwdLinks.delete(cwdLinkKey(cwdA, cwdB))
   }
 
-  function checkSessionLink(from: string, to: string): 'linked' | 'blocked' | 'unknown' {
+  function unlinkProjectsByCwd(cwdA: string, cwdB: string): void {
+    cwdLinks.delete(cwdLinkKey(cwdA, cwdB))
+  }
+
+  function checkProjectLink(from: string, to: string): 'linked' | 'blocked' | 'unknown' {
     const cwdFrom = sessionToCwd(from)
     const cwdTo = sessionToCwd(to)
     if (!cwdFrom || !cwdTo) return 'unknown'
@@ -3091,7 +3083,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     return 'unknown'
   }
 
-  function linkSessions(a: string, b: string): void {
+  function linkProjects(a: string, b: string): void {
     const cwdA = sessionToCwd(a)
     const cwdB = sessionToCwd(b)
     if (!cwdA || !cwdB) return
@@ -3099,7 +3091,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     cwdBlocks.delete(cwdLinkKey(cwdA, cwdB))
   }
 
-  function blockSession(blocker: string, blocked: string): void {
+  function blockProject(blocker: string, blocked: string): void {
     const cwdA = sessionToCwd(blocker)
     const cwdB = sessionToCwd(blocked)
     if (!cwdA || !cwdB) return
@@ -3108,18 +3100,30 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     cwdBlocks.set(key, Date.now())
   }
 
-  function queueInterSessionMessage(from: string, to: string, message: Record<string, unknown>): void {
-    const key = `${from}:${to}`
+  function queueProjectMessage(from: string, to: string, message: Record<string, unknown>): void {
+    const cwdFrom = sessionToCwd(from)
+    const cwdTo = sessionToCwd(to)
+    if (!cwdFrom || !cwdTo) return
+    const key = cwdLinkKey(cwdFrom, cwdTo)
     const queue = messageQueue.get(key) || []
     queue.push(message)
     messageQueue.set(key, queue)
   }
 
-  function drainQueuedMessages(from: string, to: string): Array<Record<string, unknown>> {
-    const key = `${from}:${to}`
+  function drainProjectMessages(from: string, to: string): Array<Record<string, unknown>> {
+    const cwdFrom = sessionToCwd(from)
+    const cwdTo = sessionToCwd(to)
+    if (!cwdFrom || !cwdTo) return []
+    const key = cwdLinkKey(cwdFrom, cwdTo)
     const msgs = messageQueue.get(key) || []
     messageQueue.delete(key)
     return msgs
+  }
+
+  function broadcastForProjectCwd(cwd: string): void {
+    for (const [id, s] of sessions) {
+      if (s.cwd === cwd) scheduleSessionUpdate(id)
+    }
   }
 
   return {
@@ -3200,13 +3204,15 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     addFileListener,
     removeFileListener,
     resolveFile,
-    checkSessionLink,
-    getLinkedSessions,
-    linkSessions,
-    unlinkSessions,
-    blockSession,
-    queueInterSessionMessage,
-    drainQueuedMessages,
+    checkProjectLink,
+    getLinkedProjects,
+    linkProjects,
+    unlinkProjects,
+    unlinkProjectsByCwd,
+    blockProject,
+    queueProjectMessage,
+    drainProjectMessages,
+    broadcastForProjectCwd,
     addPendingRestart,
     consumePendingRestart,
     addRendezvous,

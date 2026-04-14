@@ -86,7 +86,7 @@ export interface Session {
   title?: string
   agentName?: string
   prLinks?: Array<{ prNumber: number; prUrl: string; prRepository: string; timestamp: string }>
-  linkedSessions?: Array<{ id: string; name: string; cwd: string }>
+  linkedProjects?: Array<{ cwd: string; name: string }>
   stats?: {
     totalInputTokens: number
     totalOutputTokens: number

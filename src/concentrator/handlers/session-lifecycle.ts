@@ -68,7 +68,7 @@ const meta: MessageHandler = (ctx, data) => {
       const otherCwd = pl.cwdA === sessionCwd ? pl.cwdB : pl.cwdA
       for (const s of ctx.sessions.getActiveSessions()) {
         if (s.cwd === otherCwd && s.id !== sessionId) {
-          ctx.sessions.linkSessions(sessionId, s.id)
+          ctx.sessions.linkProjects(sessionId, s.id)
           ctx.log.debug(
             `[links] Auto-restored: ${sessionId.slice(0, 8)} (${sessionCwd.split('/').pop()}) <-> ${s.id.slice(0, 8)} (${otherCwd.split('/').pop()})`,
           )

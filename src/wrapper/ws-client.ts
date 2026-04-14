@@ -10,8 +10,8 @@ import type {
   Heartbeat,
   HookEvent,
   InterSessionDelivery,
-  InterSessionLinkRequest,
   InterSessionListResponse,
+  ProjectLinkRequest,
   SessionClear,
   SessionEnd,
   SessionMeta,
@@ -61,7 +61,7 @@ export interface WsClientOptions {
   onChannelSessionsList?: (sessions: InterSessionListResponse['sessions']) => void
   onChannelSendResult?: (result: unknown) => void
   onChannelDeliver?: (delivery: InterSessionDelivery) => void
-  onChannelLinkRequest?: (request: InterSessionLinkRequest) => void
+  onChannelLinkRequest?: (request: ProjectLinkRequest) => void
   onPermissionResponse?: (requestId: string, behavior: 'allow' | 'deny', toolUseId?: string) => void
   onPermissionRule?: (toolName: string, behavior: 'allow' | 'deny') => void
   onRendezvousResult?: (message: Record<string, unknown>) => void

@@ -993,11 +993,11 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             </div>
           )}
 
-          {/* Inter-Session Links */}
-          {(!lowerFilter || 'links inter-session session connect persist'.includes(lowerFilter)) && (
+          {/* Project Links */}
+          {(!lowerFilter || 'links project connect persist'.includes(lowerFilter)) && (
             <div>
-              <GroupHeader label="Inter-Session Links" />
-              <SessionLinksSection />
+              <GroupHeader label="Project Links" />
+              <ProjectLinksSection />
             </div>
           )}
 
@@ -1245,7 +1245,7 @@ function KeyCapture({ value, onChange }: { value: string | null; onChange: (code
   )
 }
 
-// --- Session Links Management ---
+// --- Project Links Management ---
 
 const LINKS_API = `${window.location.protocol}//${window.location.host}/api/links`
 
@@ -1261,7 +1261,7 @@ interface LinkItem {
   sessionIdB?: string
 }
 
-function SessionLinksSection() {
+function ProjectLinksSection() {
   const [links, setLinks] = useState<LinkItem[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -1304,7 +1304,7 @@ function SessionLinksSection() {
   if (links.length === 0) {
     return (
       <div className="text-xs text-muted-foreground font-mono py-2">
-        No persisted links. Links are created when you approve inter-session messaging.
+        No project links. Links are created when you approve inter-project messaging.
       </div>
     )
   }

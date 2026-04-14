@@ -59,6 +59,8 @@ export function SpawnDialog() {
   const [model, setModel] = useState('')
   const [effort, setEffort] = useState('')
   const [bare, setBare] = useState(false)
+  const [useWorktree, setUseWorktree] = useState(false)
+  const [worktreeName, setWorktreeName] = useState('')
   const [name, setName] = useState('')
   const [permissionMode, setPermissionMode] = useState('')
   const [autocompactPct, setAutocompactPct] = useState<number | ''>('')
@@ -109,6 +111,8 @@ export function SpawnDialog() {
       setModel('')
       setEffort('')
       setBare(false)
+      setUseWorktree(false)
+      setWorktreeName('')
       setName('')
       setPermissionMode('')
       setAutocompactPct('')
@@ -184,6 +188,7 @@ export function SpawnDialog() {
           permissionMode: permissionMode || undefined,
           autocompactPct: autocompactPct || undefined,
           maxBudgetUsd: maxBudgetUsd ? Number(maxBudgetUsd) : undefined,
+          worktree: useWorktree && worktreeName.trim() ? worktreeName.trim() : undefined,
           jobId: newJobId,
         }),
       })
@@ -199,7 +204,20 @@ export function SpawnDialog() {
       setError(err instanceof Error ? err.message : 'Network error')
       haptic('error')
     }
-  }, [state.options, phase, headless, bare, name, model, effort, permissionMode, autocompactPct, maxBudgetUsd])
+  }, [
+    state.options,
+    phase,
+    headless,
+    bare,
+    name,
+    model,
+    effort,
+    permissionMode,
+    autocompactPct,
+    maxBudgetUsd,
+    useWorktree,
+    worktreeName,
+  ])
 
   // Handle Enter key to submit
   const handleKeyDown = useCallback(
@@ -472,6 +490,48 @@ export function SpawnDialog() {
                       </div>
                     </div>
                   )}
+
+                  {/* Worktree toggle */}
+                  <div className="space-y-1.5 pl-3">
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      className="flex items-center justify-between py-1.5 cursor-pointer select-none"
+                      onClick={() => {
+                        const next = !useWorktree
+                        setUseWorktree(next)
+                        if (next && !worktreeName) setWorktreeName(name.trim() || '')
+                        haptic('tap')
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          const next = !useWorktree
+                          setUseWorktree(next)
+                          if (next && !worktreeName) setWorktreeName(name.trim() || '')
+                          haptic('tap')
+                        }
+                      }}
+                    >
+                      <div>
+                        <div className="text-sm font-mono">Git worktree</div>
+                        <div className="text-[10px] text-[#565f89]">Isolated branch, auto-merges on completion</div>
+                      </div>
+                      <ToggleSwitch on={useWorktree} />
+                    </div>
+                    {useWorktree && (
+                      <input
+                        type="text"
+                        value={worktreeName}
+                        onChange={e => setWorktreeName(e.target.value)}
+                        placeholder="Branch name..."
+                        className={cn(
+                          'w-full bg-[#1a1b26] border border-border rounded px-3 py-1.5',
+                          'text-sm font-mono text-foreground placeholder:text-[#565f89]',
+                          'focus:outline-none focus:border-[#7aa2f7]/50',
+                        )}
+                      />
+                    )}
+                  </div>
 
                   {/* Bare toggle */}
                   <div

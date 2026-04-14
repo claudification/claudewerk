@@ -522,6 +522,7 @@ async function reviveSession(
   autocompactPct?: number,
   maxBudgetUsd?: number,
   jobId?: string,
+  adHocWorktree?: string,
 ): Promise<ReviveResult & { tmuxPaneId?: string }> {
   const result: ReviveResult = {
     type: 'revive_result',
@@ -559,6 +560,7 @@ async function reviveSession(
       maxBudgetUsd,
       effort,
       model,
+      worktree: adHocWorktree,
     })
 
     launchLog(jobId, 'Reviving headless (direct spawn)', 'info', `mode=${mode || 'default'}`)
@@ -590,6 +592,7 @@ async function reviveSession(
       ...(sessionName ? { RCLAUDE_SESSION_NAME: sessionName } : {}),
       ...(autocompactPct ? { RCLAUDE_AUTOCOMPACT_PCT: String(autocompactPct) } : {}),
       ...(maxBudgetUsd ? { RCLAUDE_MAX_BUDGET_USD: String(maxBudgetUsd) } : {}),
+      ...(adHocWorktree ? { RCLAUDE_WORKTREE: adHocWorktree } : {}),
     },
   })
 
@@ -1124,6 +1127,7 @@ function connect(
             autocompactPct?: number
             maxBudgetUsd?: number
             jobId?: string
+            adHocWorktree?: string
           }
           log(
             `Reviving session ${reviveMsg.sessionId.slice(0, 8)}... wrapper=${reviveMsg.wrapperId.slice(0, 8)} mode=${reviveMsg.mode || 'default'} headless=${reviveMsg.headless !== false}${reviveMsg.effort ? ` effort=${reviveMsg.effort}` : ''}${reviveMsg.model ? ` model=${reviveMsg.model}` : ''}${reviveMsg.maxBudgetUsd ? ` maxBudget=$${reviveMsg.maxBudgetUsd}` : ''}${reviveMsg.jobId ? ` job=${reviveMsg.jobId.slice(0, 8)}` : ''} (${reviveMsg.cwd})`,
@@ -1144,6 +1148,7 @@ function connect(
             reviveMsg.autocompactPct,
             reviveMsg.maxBudgetUsd,
             reviveMsg.jobId,
+            reviveMsg.adHocWorktree,
           )
           // Strip agent-internal tmuxPaneId before sending over WS
           const { tmuxPaneId, ...reviveResult } = result

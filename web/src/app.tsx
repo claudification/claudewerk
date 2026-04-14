@@ -453,6 +453,14 @@ function Dashboard() {
   )
 
   useCommand(
+    'search-tasks',
+    () => {
+      useSessionsStore.getState().openSwitcherWithFilter('T: ')
+    },
+    { label: 'Search tasks', shortcut: 'ctrl+shift+t', group: 'Navigation' },
+  )
+
+  useCommand(
     'open-notes',
     () => {
       const store = useSessionsStore.getState()
@@ -462,6 +470,20 @@ function Dashboard() {
       }
     },
     { label: 'Open NOTES.md', shortcut: 'mod+shift+alt+n', group: 'Navigation' },
+  )
+
+  useCommand(
+    'open-project',
+    () => {
+      const store = useSessionsStore.getState()
+      const sid = store.selectedSessionId
+      if (!sid) return
+      const session = store.sessionsById[sid]
+      if (session && session.status !== 'ended') {
+        store.openTab(sid, 'project')
+      }
+    },
+    { label: 'Open project board', shortcut: 'ctrl+shift+p', group: 'Navigation' },
   )
 
   useCommand(

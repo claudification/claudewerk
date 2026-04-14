@@ -1,5 +1,5 @@
 /**
- * ConversationView - Timeline of inter-session messages between two projects.
+ * ConversationView - Timeline of inter-project messages between two projects.
  * Chat bubble layout: left = project A, right = project B.
  */
 

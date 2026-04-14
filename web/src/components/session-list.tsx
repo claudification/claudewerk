@@ -826,9 +826,9 @@ const SessionItemContent = memo(function SessionItemContent({
           ))}
         </div>
       )}
-      {!compact && session.linkedSessions && session.linkedSessions.length > 0 && (
+      {!compact && session.linkedProjects && session.linkedProjects.length > 0 && (
         <div className="mt-1 text-[10px] text-teal-400/50 font-mono truncate">
-          {'\u2194'} {session.linkedSessions.map(s => s.name).join(', ')}
+          {'\u2194'} {session.linkedProjects.map(p => p.name).join(', ')}
         </div>
       )}
       {!compact &&
@@ -1175,13 +1175,32 @@ function CwdSessionGroup({ sessions, cwd }: { sessions: Session[]; cwd: string }
           />
         </div>
         <div className="space-y-0.5 pb-1">
-          {sessions.map(session => (
-            <SessionContextMenu key={session.id} session={session}>
-              <div>
-                <SessionItemContent session={session} compact />
+          {sessions
+            .filter(s => !s.capabilities?.includes('ad-hoc'))
+            .map(session => (
+              <SessionContextMenu key={session.id} session={session}>
+                <div>
+                  <SessionItemContent session={session} compact />
+                </div>
+              </SessionContextMenu>
+            ))}
+          {sessions.some(s => s.capabilities?.includes('ad-hoc')) &&
+            sessions.some(s => !s.capabilities?.includes('ad-hoc')) && (
+              <div className="flex items-center gap-2 px-3 py-1">
+                <span className="flex-1 h-px bg-border" />
+                <span className="text-[9px] text-muted-foreground/40 uppercase tracking-wider">ad-hoc</span>
+                <span className="flex-1 h-px bg-border" />
               </div>
-            </SessionContextMenu>
-          ))}
+            )}
+          {sessions
+            .filter(s => s.capabilities?.includes('ad-hoc'))
+            .map(session => (
+              <SessionContextMenu key={session.id} session={session}>
+                <div>
+                  <SessionItemContent session={session} compact />
+                </div>
+              </SessionContextMenu>
+            ))}
         </div>
       </div>
       {showSettings && <ProjectSettingsEditor cwd={cwd} onClose={() => setShowSettings(false)} />}
@@ -1456,6 +1475,11 @@ export function SessionList() {
       }
     }
     result.sort((a, b) => {
+      // Ad-hoc-only groups sort below regular groups
+      const aAllAdHoc = a.sessions.every(s => s.capabilities?.includes('ad-hoc'))
+      const bAllAdHoc = b.sessions.every(s => s.capabilities?.includes('ad-hoc'))
+      if (aAllAdHoc !== bAllAdHoc) return aAllAdHoc ? 1 : -1
+      // Within same tier, sort by most recent
       const aMax = Math.max(...a.sessions.map(s => s.startedAt))
       const bMax = Math.max(...b.sessions.map(s => s.startedAt))
       return bMax - aMax
@@ -1786,11 +1810,27 @@ export function SessionList() {
                 </div>
               )}
               <div className="space-y-1">
-                {unorganized.map(({ cwd, sessions: cwdSessions }) => (
-                  <SortableNode key={`cwd:${cwd}`} id={`cwd:${cwd}`}>
-                    <CwdNode cwd={cwd} sessions={cwdSessions} />
-                  </SortableNode>
-                ))}
+                {unorganized.map(({ cwd, sessions: cwdSessions }, i) => {
+                  // Insert separator before first ad-hoc-only group
+                  const isAllAdHoc = cwdSessions.every(s => s.capabilities?.includes('ad-hoc'))
+                  const prevIsRegular =
+                    i > 0 && !unorganized[i - 1].sessions.every(s => s.capabilities?.includes('ad-hoc'))
+                  const showAdHocSeparator = isAllAdHoc && (i === 0 || prevIsRegular)
+                  return (
+                    <div key={`cwd:${cwd}`}>
+                      {showAdHocSeparator && (
+                        <div className="flex items-center gap-2 px-1 pt-2 pb-1">
+                          <span className="flex-1 h-px bg-border" />
+                          <span className="text-[9px] text-muted-foreground/40 uppercase tracking-wider">ad-hoc</span>
+                          <span className="flex-1 h-px bg-border" />
+                        </div>
+                      )}
+                      <SortableNode id={`cwd:${cwd}`}>
+                        <CwdNode cwd={cwd} sessions={cwdSessions} />
+                      </SortableNode>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}

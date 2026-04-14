@@ -102,7 +102,7 @@ function toSession(summary: SessionSummary): Session {
     title: summary.title,
     agentName: summary.agentName,
     prLinks: summary.prLinks,
-    linkedSessions: summary.linkedSessions,
+    linkedProjects: summary.linkedProjects,
     tokenUsage: summary.tokenUsage,
     cacheTtl: summary.cacheTtl,
     lastTurnEndedAt: summary.lastTurnEndedAt,
@@ -506,12 +506,12 @@ function processMessage(msg: DashboardMessage) {
       if (fromSession && toSession) {
         useSessionsStore.setState(state => {
           // Deduplicate
-          if (state.pendingLinkRequests.some(r => r.fromSession === fromSession && r.toSession === toSession)) {
+          if (state.pendingProjectLinks.some(r => r.fromSession === fromSession && r.toSession === toSession)) {
             return state
           }
           return {
-            pendingLinkRequests: [
-              ...state.pendingLinkRequests,
+            pendingProjectLinks: [
+              ...state.pendingProjectLinks,
               {
                 fromSession,
                 fromProject: req.fromProject || fromSession.slice(0, 8),

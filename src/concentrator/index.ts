@@ -25,17 +25,17 @@ import { routeMessage } from './message-router'
 import { initModelPricing } from './model-pricing'
 import { addAllowedRoot, addPathMapping, getAllowedRoots } from './path-jail'
 import { allGrantsExpired } from './permissions'
-import { getAllProjectSettings, getProjectSettings, initProjectSettings, setProjectSettings } from './project-settings'
-import { initPush, isPushConfigured, sendPushToAll } from './push'
-import { createRouter } from './routes'
 import {
   addPersistedLink,
   findLink,
   getLinksForCwd,
-  initSessionLinks,
+  initProjectLinks,
   removePersistedLink,
   touchLink,
-} from './session-links'
+} from './project-links'
+import { getAllProjectSettings, getProjectSettings, initProjectSettings, setProjectSettings } from './project-settings'
+import { initPush, isPushConfigured, sendPushToAll } from './push'
+import { createRouter } from './routes'
 import { initSessionOrder } from './session-order'
 import { createSessionStore } from './session-store'
 import {
@@ -262,7 +262,7 @@ async function main() {
   initProjectSettings(authCacheDir)
   initGlobalSettings(authCacheDir)
   initSessionOrder(authCacheDir)
-  initSessionLinks(authCacheDir)
+  initProjectLinks(authCacheDir)
   initInterSessionLog(authCacheDir)
   initAddressBook(authCacheDir)
   initMessageQueue(authCacheDir)

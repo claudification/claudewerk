@@ -1,10 +1,10 @@
 /**
- * Session Links - persistent CWD-pair links for inter-session communication.
+ * Project Links - persistent CWD-pair links for inter-project communication.
  * Links are keyed by project CWD (stable across restarts/rekeys).
- * Storage: {cacheDir}/session-links.json
+ * Storage: {cacheDir}/project-links.json
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
 export interface PersistedLink {
@@ -44,9 +44,23 @@ function save(): void {
   writeFileSync(linksPath, JSON.stringify(data, null, 2))
 }
 
-export function initSessionLinks(cacheDir: string): void {
-  linksPath = join(cacheDir, 'session-links.json')
+export function initProjectLinks(cacheDir: string): void {
+  linksPath = join(cacheDir, 'project-links.json')
   mkdirSync(dirname(linksPath), { recursive: true })
+
+  // Migrate from legacy session-links.json if needed
+  const legacyPath = join(cacheDir, 'session-links.json')
+  if (!existsSync(linksPath) && existsSync(legacyPath)) {
+    try {
+      const raw = JSON.parse(readFileSync(legacyPath, 'utf-8')) as LinksFile
+      links = raw.links || []
+      save() // write as project-links.json
+      unlinkSync(legacyPath)
+      console.log(`[links] Migrated ${links.length} links from session-links.json -> project-links.json`)
+    } catch {
+      links = []
+    }
+  }
 
   if (existsSync(linksPath)) {
     try {
@@ -57,7 +71,7 @@ export function initSessionLinks(cacheDir: string): void {
       const before = links.length
       links = links.filter(l => l.lastUsed > cutoff)
       if (links.length < before) save()
-      console.log(`[links] Loaded ${links.length} persisted links (evicted ${before - links.length} stale)`)
+      console.log(`[links] Loaded ${links.length} persisted project links (evicted ${before - links.length} stale)`)
     } catch {
       links = []
     }

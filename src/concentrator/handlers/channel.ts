@@ -136,7 +136,7 @@ const channelListSessions: MessageHandler = (ctx, data) => {
       const isAdHoc = s.capabilities?.includes('ad-hoc')
       if (!isAdHoc) return true
       if (!callerSession) return false
-      const linkStatus = ctx.sessions.checkSessionLink(callerSession, s.id)
+      const linkStatus = ctx.sessions.checkProjectLink(callerSession, s.id)
       return linkStatus === 'linked'
     })
 
@@ -149,7 +149,7 @@ const channelListSessions: MessageHandler = (ctx, data) => {
   }
 
   const result = filtered.map(s => {
-    const linkStatus = callerSession ? ctx.sessions.checkSessionLink(callerSession, s.id) : 'unknown'
+    const linkStatus = callerSession ? ctx.sessions.checkProjectLink(callerSession, s.id) : 'unknown'
     const isLinked = linkStatus === 'linked'
     const showFull = isBenevolent || isLinked
     const shortCwd = s.cwd.split('/').slice(-2).join('/')
@@ -258,10 +258,7 @@ const channelSend: MessageHandler = (ctx, data) => {
   // If we resolved a CWD but no active session, queue for offline delivery
   if (targetCwd && !toSess) {
     const fromProject =
-      fromSess?.title ||
-      ctx.getProjectSettings(callerCwd || '')?.label ||
-      callerCwd?.split('/').pop() ||
-      fromSession.slice(0, 8)
+      ctx.getProjectSettings(callerCwd || '')?.label || callerCwd?.split('/').pop() || fromSession.slice(0, 8)
     // Resolve sender slug from receiver's address book (works even when target is offline)
     const fromSlug = callerCwd ? ctx.addressBook.getOrAssign(targetCwd, callerCwd, fromProject) : fromSession
     const conversationId = (data.conversationId as string) || `conv_${Date.now().toString(36)}`
@@ -307,12 +304,9 @@ const channelSend: MessageHandler = (ctx, data) => {
   }
 
   const fromProject =
-    fromSess?.title ||
-    ctx.getProjectSettings(fromSess?.cwd || '')?.label ||
-    fromSess?.cwd?.split('/').pop() ||
-    fromSession.slice(0, 8)
+    ctx.getProjectSettings(fromSess?.cwd || '')?.label || fromSess?.cwd?.split('/').pop() || fromSession.slice(0, 8)
 
-  const linkStatus = ctx.sessions.checkSessionLink(fromSession, toSession)
+  const linkStatus = ctx.sessions.checkProjectLink(fromSession, toSession)
   if (linkStatus === 'blocked') {
     ctx.reply({ type: 'channel_send_result', ok: false, error: 'Session has blocked your messages' })
     return
@@ -347,7 +341,7 @@ const channelSend: MessageHandler = (ctx, data) => {
 
   if (effectiveLinkStatus === 'linked' || effectiveLinkStatus === 'persisted' || effectiveLinkStatus === 'trusted') {
     if (effectiveLinkStatus !== 'linked') {
-      ctx.sessions.linkSessions(fromSession, toSession)
+      ctx.sessions.linkProjects(fromSession, toSession)
       ctx.log.debug(
         `[links] Auto-linked (${effectiveLinkStatus}): ${fromSession.slice(0, 8)} <-> ${toSession.slice(0, 8)}`,
       )
@@ -359,10 +353,7 @@ const channelSend: MessageHandler = (ctx, data) => {
       ctx.reply({ type: 'channel_send_result', ok: true, conversationId, status: 'delivered' })
 
       const toProject =
-        toSess.title ||
-        ctx.getProjectSettings(toSess.cwd)?.label ||
-        toSess.cwd.split('/').pop() ||
-        toSession.slice(0, 8)
+        ctx.getProjectSettings(toSess.cwd)?.label || toSess.cwd.split('/').pop() || toSession.slice(0, 8)
       if (fromSess?.cwd && toSess.cwd) {
         ctx.links.touch(fromSess.cwd, toSess.cwd)
         ctx.logMessage({
@@ -383,9 +374,8 @@ const channelSend: MessageHandler = (ctx, data) => {
       })
     }
   } else {
-    ctx.sessions.queueInterSessionMessage(fromSession, toSession, delivery)
-    const toProject =
-      toSess.title || ctx.getProjectSettings(toSess.cwd)?.label || toSess.cwd.split('/').pop() || toSession.slice(0, 8)
+    ctx.sessions.queueProjectMessage(fromSession, toSession, delivery)
+    const toProject = ctx.getProjectSettings(toSess.cwd)?.label || toSess.cwd.split('/').pop() || toSession.slice(0, 8)
     ctx.broadcast({
       type: 'channel_link_request',
       fromSession,
@@ -433,44 +423,65 @@ const channelLinkResponse: MessageHandler = (ctx, data) => {
   const toSession = data.toSession as string
   if (!fromSession || !toSession) return
 
+  // Link approval creates persistent project-level trust -- require settings on BOTH projects
   const fromSess = ctx.sessions.getSession(fromSession)
-  if (fromSess) ctx.requirePermission('chat', fromSess.cwd)
   const toSess = ctx.sessions.getSession(toSession)
-  if (toSess) ctx.requirePermission('chat', toSess.cwd)
+  if (!fromSess || !toSess) {
+    ctx.reply({ type: 'error', error: 'Both sessions must exist to approve/block a link' })
+    return
+  }
+  ctx.requirePermission('settings', fromSess.cwd)
+  ctx.requirePermission('settings', toSess.cwd)
 
   if (data.action === 'approve') {
-    ctx.sessions.linkSessions(fromSession, toSession)
+    ctx.sessions.linkProjects(fromSession, toSession)
     const fromSess = ctx.sessions.getSession(fromSession)
     const toSess = ctx.sessions.getSession(toSession)
     if (fromSess?.cwd && toSess?.cwd) ctx.links.add(fromSess.cwd, toSess.cwd)
-    const queued = ctx.sessions.drainQueuedMessages(fromSession, toSession)
+    const queued = ctx.sessions.drainProjectMessages(fromSession, toSession)
     const targetWs = ctx.sessions.getSessionSocket(toSession)
     if (targetWs) {
       for (const msg of queued) targetWs.send(JSON.stringify(msg))
     }
     ctx.log.debug(`Link approved + persisted: ${fromSession.slice(0, 8)} <-> ${toSession.slice(0, 8)}`)
   } else {
-    ctx.sessions.blockSession(fromSession, toSession)
+    ctx.sessions.blockProject(fromSession, toSession)
     const fromSess = ctx.sessions.getSession(fromSession)
     const toSess = ctx.sessions.getSession(toSession)
     if (fromSess?.cwd && toSess?.cwd) ctx.links.remove(fromSess.cwd, toSess.cwd)
-    ctx.sessions.drainQueuedMessages(fromSession, toSession) // discard
+    ctx.sessions.drainProjectMessages(fromSession, toSession) // discard
     ctx.log.debug(`Link blocked: ${fromSession.slice(0, 8)} X ${toSession.slice(0, 8)}`)
   }
 }
 
 const channelUnlink: MessageHandler = (ctx, data) => {
+  // CWD-based path (preferred -- projects are the linked entity)
+  const cwdA = data.cwdA as string | undefined
+  const cwdB = data.cwdB as string | undefined
+  if (cwdA && cwdB) {
+    ctx.requirePermission('settings', cwdA)
+    ctx.requirePermission('settings', cwdB)
+    ctx.sessions.unlinkProjectsByCwd(cwdA, cwdB)
+    ctx.links.remove(cwdA, cwdB)
+    ctx.sessions.broadcastForProjectCwd(cwdA)
+    ctx.sessions.broadcastForProjectCwd(cwdB)
+    ctx.log.debug(`Link severed (CWD): ${cwdA.split('/').pop()} X ${cwdB.split('/').pop()}`)
+    return
+  }
+  // Legacy session-ID path
   const sessionA = data.sessionA as string
   const sessionB = data.sessionB as string
   if (!sessionA || !sessionB) return
-  const sessACheck = ctx.sessions.getSession(sessionA)
-  if (sessACheck) ctx.requirePermission('chat', sessACheck.cwd)
-  const sessBCheck = ctx.sessions.getSession(sessionB)
-  if (sessBCheck) ctx.requirePermission('chat', sessBCheck.cwd)
-  ctx.sessions.unlinkSessions(sessionA, sessionB)
   const sessA = ctx.sessions.getSession(sessionA)
   const sessB = ctx.sessions.getSession(sessionB)
-  if (sessA?.cwd && sessB?.cwd) ctx.links.remove(sessA.cwd, sessB.cwd)
+  if (!sessA || !sessB) {
+    ctx.reply({ type: 'error', error: 'Both sessions must exist to sever a link' })
+    return
+  }
+  ctx.requirePermission('settings', sessA.cwd)
+  ctx.requirePermission('settings', sessB.cwd)
+  ctx.sessions.unlinkProjects(sessionA, sessionB)
+  if (sessA.cwd && sessB.cwd) ctx.links.remove(sessA.cwd, sessB.cwd)
   ctx.sessions.broadcastSessionUpdate(sessionA)
   ctx.sessions.broadcastSessionUpdate(sessionB)
   ctx.log.debug(`Link severed: ${sessionA.slice(0, 8)} X ${sessionB.slice(0, 8)}`)

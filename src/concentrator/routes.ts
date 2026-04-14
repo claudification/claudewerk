@@ -29,6 +29,7 @@ import { purgeMessages, queryMessages } from './inter-session-log'
 import { getModels, getModelsFetchedAt } from './model-pricing'
 import { resolveInJail } from './path-jail'
 import { type Permission, resolvePermissionFlags, resolvePermissions, type UserGrant } from './permissions'
+import { addPersistedLink, getPersistedLinks, removePersistedLink } from './project-links'
 import {
   deleteProjectSettings,
   getAllProjectSettings,
@@ -36,7 +37,6 @@ import {
   setProjectSettings,
 } from './project-settings'
 import { addSubscription, getSubscriptionCount, isPushConfigured, removeSubscription, sendPushToAll } from './push'
-import { addPersistedLink, getPersistedLinks, removePersistedLink } from './session-links'
 import { getSessionOrder, type SessionOrderV2, setSessionOrder } from './session-order'
 import type { SessionStore } from './session-store'
 import {
@@ -1811,7 +1811,7 @@ Output a JSON array of strings. Each string should be the correct spelling of on
   // ─── CORS preflight ────────────────────────────────────────────────
   app.options('*', _c => new Response(null, { status: 204 }))
 
-  // ─── Inter-session links ─────────────────────────────────────────
+  // ─── Project links ──────────────────────────────────────────────
   app.get('/api/links', c => {
     if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
     const persisted = getPersistedLinks()
@@ -1845,15 +1845,11 @@ Output a JSON array of strings. Each string should be the correct spelling of on
 
     const link = addPersistedLink(body.cwdA, body.cwdB)
 
-    // Auto-link any active sessions for these CWDs
+    // Activate the in-memory project link
     const active = sessionStore.getActiveSessions()
-    const sessionsA = active.filter(s => s.cwd === link.cwdA)
-    const sessionsB = active.filter(s => s.cwd === link.cwdB)
-    for (const a of sessionsA) {
-      for (const b of sessionsB) {
-        sessionStore.linkSessions(a.id, b.id)
-      }
-    }
+    const anyA = active.find(s => s.cwd === link.cwdA)
+    const anyB = active.find(s => s.cwd === link.cwdB)
+    if (anyA && anyB) sessionStore.linkProjects(anyA.id, anyB.id)
 
     return c.json({ ok: true, link })
   })
@@ -1865,15 +1861,8 @@ Output a JSON array of strings. Each string should be the correct spelling of on
 
     const removed = removePersistedLink(body.cwdA, body.cwdB)
 
-    // Also sever active session-ID links
-    const active = sessionStore.getActiveSessions()
-    const sessionsA = active.filter(s => s.cwd === body.cwdA)
-    const sessionsB = active.filter(s => s.cwd === body.cwdB)
-    for (const a of sessionsA) {
-      for (const b of sessionsB) {
-        sessionStore.unlinkSessions(a.id, b.id)
-      }
-    }
+    // Sever the in-memory project link
+    sessionStore.unlinkProjectsByCwd(body.cwdA, body.cwdB)
 
     let purged = 0
     if (body.purgeHistory) {

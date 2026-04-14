@@ -31,6 +31,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Kbd } from '@/components/ui/kbd'
 import { useLaunchChannel } from '@/hooks/use-launch-channel'
 import type { ProjectTask } from '@/hooks/use-project'
 import { type ProjectTaskMeta, type TaskStatus, useProject } from '@/hooks/use-project'
@@ -231,7 +232,54 @@ export function TaskEditor({
   const [editing, setEditing] = useState(!body.trim())
   // biome-ignore lint/suspicious/noExplicitAny: EditorView from lazy-loaded codemirror
   const editorViewRef = useRef<any>(null)
-  useKeyLayer({ Escape: () => onClose() }, { id: 'task-editor' })
+  const canWork = status === 'inbox' || status === 'open' || status === 'in-progress' || status === 'in-review'
+
+  useKeyLayer(
+    {
+      Escape: () => onClose(),
+      // Bare keys -- auto-blocked when a text input / CodeMirror is focused
+      w: () => {
+        if (!canWork) return
+        sendInput(sessionId, buildTaskPrompt({ ...task, title, body, status, priority, tags }))
+        haptic('success')
+        onClose()
+      },
+      l: () => {
+        if (!canWork) return
+        haptic('tap')
+        onRun({ ...task, title, body, status, priority, tags })
+      },
+      a: () => {
+        if (status === 'archived') return
+        setStatus('archived')
+        onMove(task.slug, status, 'archived')
+        haptic('tap')
+      },
+      // Modifier keys -- fire even in text inputs
+      'mod+s': () => handleSave(),
+      'mod+Enter': () => handleSave(),
+      // Ctrl+Shift+Arrow: move task status (safe on Mac -- not a standard text editing combo)
+      'ctrl+shift+ArrowRight': () => {
+        const next = NEXT_STATUS[status]
+        if (next) {
+          const old = status
+          setStatus(next)
+          onMove(task.slug, old, next)
+          haptic('tap')
+        }
+      },
+      'ctrl+shift+ArrowLeft': () => {
+        const prev = PREV_STATUS[status]
+        if (prev) {
+          const old = status
+          setStatus(prev)
+          onMove(task.slug, old, prev)
+          haptic('tap')
+        }
+      },
+    },
+    { id: 'task-editor' },
+  )
 
   // Sync non-editing fields from prop when task is updated externally (e.g. project_changed)
   // Intentionally does NOT sync title/body to avoid overwriting user edits
@@ -431,7 +479,7 @@ export function TaskEditor({
           <div className="flex items-center justify-between px-4 py-2">
             <div className="flex items-center gap-3">
               {/* Context-aware actions based on task status */}
-              {(status === 'inbox' || status === 'open' || status === 'in-progress' || status === 'in-review') && (
+              {canWork && (
                 <>
                   <button
                     type="button"
@@ -442,7 +490,7 @@ export function TaskEditor({
                     }}
                     className="whitespace-nowrap px-3 py-1 text-[11px] font-bold font-mono bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 transition-colors"
                   >
-                    Work on this
+                    Work on this <Kbd className="ml-1.5 opacity-60">W</Kbd>
                   </button>
                   <button
                     type="button"
@@ -453,7 +501,7 @@ export function TaskEditor({
                     className="flex items-center gap-1 whitespace-nowrap px-3 py-1 text-[11px] font-bold font-mono bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 transition-colors"
                   >
                     <Zap className="w-3 h-3" />
-                    Run
+                    Launch <Kbd className="ml-1 opacity-60">L</Kbd>
                   </button>
                 </>
               )}
@@ -493,7 +541,7 @@ export function TaskEditor({
                     className="flex items-center gap-1 whitespace-nowrap px-3 py-1 text-[11px] font-bold font-mono bg-[#33467c]/30 text-muted-foreground border border-[#33467c]/50 hover:bg-[#33467c]/50 transition-colors"
                   >
                     <Archive className="w-3 h-3" />
-                    Archive
+                    Archive <Kbd className="ml-1.5 opacity-60">A</Kbd>
                   </button>
                 </>
               )}
@@ -525,12 +573,32 @@ export function TaskEditor({
                 disabled={saving}
                 className="px-3 py-1 text-xs font-bold font-mono bg-accent/20 text-accent hover:bg-accent/30 transition-colors disabled:opacity-50"
               >
-                {saving ? '...' : 'Save'}
+                {saving ? '...' : 'Save'} <Kbd className="ml-1.5 opacity-60">^S</Kbd>
               </button>
             </div>
           </div>
-          <div className="px-4 pb-1.5">
+          <div className="flex items-center justify-between px-4 pb-1.5">
             <span className="text-[10px] text-muted-foreground/30 font-mono">{task.slug}.md</span>
+            <div className="flex items-center gap-3 text-[9px] text-[#565f89] font-mono">
+              {PREV_STATUS[status] && (
+                <span>
+                  <Kbd>^⇧←</Kbd> {PREV_STATUS[status]}
+                </span>
+              )}
+              {NEXT_STATUS[status] && (
+                <span>
+                  <Kbd>^⇧→</Kbd> {NEXT_STATUS[status]}
+                </span>
+              )}
+              {status !== 'archived' && (
+                <span>
+                  <Kbd>A</Kbd> archive
+                </span>
+              )}
+              <span>
+                <Kbd>esc</Kbd> close
+              </span>
+            </div>
           </div>
         </div>
       </div>

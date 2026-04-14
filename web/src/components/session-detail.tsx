@@ -38,8 +38,8 @@ const EMPTY_EVENTS: HookEvent[] = []
 const EMPTY_TRANSCRIPT: TranscriptEntry[] = []
 
 function LinkRequestBanners() {
-  const requests = useSessionsStore(s => s.pendingLinkRequests)
-  const respond = useSessionsStore(s => s.respondToLinkRequest)
+  const requests = useSessionsStore(s => s.pendingProjectLinks)
+  const respond = useSessionsStore(s => s.respondToProjectLink)
   if (requests.length === 0) return null
   return (
     <div className="shrink-0 space-y-1 p-2">
@@ -1370,40 +1370,37 @@ export const SessionDetail = memo(function SessionDetail() {
                     </span>
                   </div>
                 )}
-                {session.linkedSessions && session.linkedSessions.length > 0 && (
+                {session.linkedProjects && session.linkedProjects.length > 0 && (
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
-                    <span className="text-[10px] text-teal-400/60">linked:</span>
-                    {session.linkedSessions.map(ls => (
-                      <span key={ls.id} className="inline-flex items-center gap-1 text-[10px] font-mono">
+                    <span className="text-[10px] text-teal-400/60">projects:</span>
+                    {session.linkedProjects.map(lp => (
+                      <span key={lp.cwd} className="inline-flex items-center gap-1 text-[10px] font-mono">
                         <button
                           type="button"
                           className="text-teal-400 hover:text-teal-300 hover:underline cursor-pointer"
                           onClick={() => {
                             haptic('tap')
                             const myName =
-                              session.title ||
-                              projectSettings?.label ||
-                              session.cwd.split('/').pop() ||
-                              session.id.slice(0, 8)
+                              projectSettings?.label || session.cwd.split('/').pop() || session.id.slice(0, 8)
                             setConversationTarget({
                               cwdA: session.cwd,
-                              cwdB: ls.cwd,
+                              cwdB: lp.cwd,
                               nameA: myName,
-                              nameB: ls.name,
+                              nameB: lp.name,
                             })
                           }}
-                          title={`View conversation with ${ls.name}`}
+                          title={`View conversation with ${lp.name}`}
                         >
-                          {ls.name}
+                          {lp.name}
                         </button>
                         <button
                           type="button"
                           onClick={() => {
                             haptic('error')
-                            wsSend('channel_unlink', { sessionA: session.id, sessionB: ls.id })
+                            wsSend('channel_unlink', { cwdA: session.cwd, cwdB: lp.cwd })
                           }}
                           className="text-red-400/40 hover:text-red-400 transition-colors"
-                          title={`Sever link to ${ls.name}`}
+                          title={`Sever link to ${lp.name}`}
                         >
                           x
                         </button>

@@ -114,8 +114,8 @@ interface SessionsState {
   showSwitcher: boolean
   switcherInitialFilter: string
   showDebugConsole: boolean
-  pendingLinkRequests: Array<{ fromSession: string; fromProject: string; toSession: string; toProject: string }>
-  respondToLinkRequest: (fromSession: string, toSession: string, action: 'approve' | 'block') => void
+  pendingProjectLinks: Array<{ fromSession: string; fromProject: string; toSession: string; toProject: string }>
+  respondToProjectLink: (fromSession: string, toSession: string, action: 'approve' | 'block') => void
   pendingPermissions: Array<{
     sessionId: string
     requestId: string
@@ -379,11 +379,11 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   showSwitcher: false,
   switcherInitialFilter: '',
   showDebugConsole: false,
-  pendingLinkRequests: [],
-  respondToLinkRequest: (fromSession, toSession, action) => {
+  pendingProjectLinks: [],
+  respondToProjectLink: (fromSession, toSession, action) => {
     wsSend('channel_link_response', { fromSession, toSession, action })
     useSessionsStore.setState(state => ({
-      pendingLinkRequests: state.pendingLinkRequests.filter(
+      pendingProjectLinks: state.pendingProjectLinks.filter(
         r => !(r.fromSession === fromSession && r.toSession === toSession),
       ),
     }))
