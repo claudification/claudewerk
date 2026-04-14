@@ -119,11 +119,20 @@ ok "Revive script: $REVIVE_SCRIPT"
 
 # --- Clean environment ---
 # Agent may be launched from within a Claude Code session (e.g. user runs
-# start-agent.sh from Claude). Claude sets CLAUDECODE env var which prevents
-# nested sessions. Unset all Claude-inherited vars so spawned sessions work.
+# start-agent.sh from Claude). Unset all Claude-inherited and session-scoped
+# RCLAUDE_* vars so they don't leak into spawned sessions.
+# Keep: RCLAUDE_SECRET, RCLAUDE_CONCENTRATOR, RCLAUDE_SPAWN_ROOT (config vars)
 while IFS='=' read -r name _; do
   [[ "$name" == CLAUDECODE || "$name" == CLAUDE_CODE_* ]] && unset "$name"
 done < <(env)
+for _var in RCLAUDE_HEADLESS RCLAUDE_WRAPPER_ID RCLAUDE_SESSION_ID \
+            RCLAUDE_SESSION_NAME RCLAUDE_BARE RCLAUDE_ADHOC \
+            RCLAUDE_ADHOC_TASK_ID RCLAUDE_CHANNELS RCLAUDE_INITIAL_PROMPT_FILE \
+            RCLAUDE_WORKTREE RCLAUDE_EFFORT RCLAUDE_MODEL RCLAUDE_PORT \
+            RCLAUDE_AUTOCOMPACT_PCT RCLAUDE_MAX_BUDGET_USD \
+            RCLAUDE_PERMISSION_MODE; do
+  unset "$_var"
+done
 
 # --- Start ---
 

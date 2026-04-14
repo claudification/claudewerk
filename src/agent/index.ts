@@ -162,6 +162,46 @@ function findRclaudeBinary(): string | null {
   return null
 }
 
+// ─── Env Sanitization ──────────────────────────────────────────────
+
+/** Session-scoped RCLAUDE_* vars that must NOT leak from the agent's own
+ *  environment into spawned child sessions. The agent may have inherited
+ *  these from the rclaude process that launched it. Each spawned session
+ *  gets its own values set explicitly. */
+const RCLAUDE_SESSION_VARS = new Set([
+  'RCLAUDE_HEADLESS',
+  'RCLAUDE_WRAPPER_ID',
+  'RCLAUDE_SESSION_ID',
+  'RCLAUDE_SESSION_NAME',
+  'RCLAUDE_SECRET',
+  'RCLAUDE_PERMISSION_MODE',
+  'RCLAUDE_BARE',
+  'RCLAUDE_ADHOC',
+  'RCLAUDE_ADHOC_TASK_ID',
+  'RCLAUDE_CHANNELS',
+  'RCLAUDE_INITIAL_PROMPT_FILE',
+  'RCLAUDE_WORKTREE',
+  'RCLAUDE_EFFORT',
+  'RCLAUDE_MODEL',
+  'RCLAUDE_AUTOCOMPACT_PCT',
+  'RCLAUDE_MAX_BUDGET_USD',
+  'RCLAUDE_PORT',
+])
+
+/**
+ * Return a copy of process.env with session-scoped RCLAUDE_* and
+ * CLAUDE_CODE_* vars stripped. Safe base for building child env.
+ */
+function cleanAgentEnv(): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = { ...process.env }
+  for (const key of Object.keys(env)) {
+    if (key === 'CLAUDECODE' || key.startsWith('CLAUDE_CODE_') || RCLAUDE_SESSION_VARS.has(key)) {
+      delete env[key]
+    }
+  }
+  return env
+}
+
 // ─── Direct Headless Spawn ──────────────────────────────────────────
 
 /**
@@ -184,15 +224,8 @@ function buildHeadlessEnv(opts: {
   model?: string
   bare?: boolean
 }): Record<string, string | undefined> {
-  // Start from agent's env (inherits PATH, API keys, etc.)
-  const env: Record<string, string | undefined> = { ...process.env }
-
-  // Unset Claude Code env vars that prevent nested sessions
-  for (const key of Object.keys(env)) {
-    if (key === 'CLAUDECODE' || key.startsWith('CLAUDE_CODE_')) {
-      delete env[key]
-    }
-  }
+  // Start from sanitized agent env (PATH, API keys, etc. but no session-scoped vars)
+  const env = cleanAgentEnv()
 
   // Required
   env.RCLAUDE_SECRET = opts.secret
@@ -547,7 +580,7 @@ async function reviveSession(
     stdout: 'pipe',
     stderr: 'pipe',
     env: {
-      ...process.env,
+      ...cleanAgentEnv(),
       RCLAUDE_SECRET: secret,
       RCLAUDE_WRAPPER_ID: wrapperId,
       RCLAUDE_SESSION_ID: sessionId,
@@ -769,7 +802,7 @@ async function spawnSession(
   if (mode === 'resume' && resumeId) scriptArgs.push('--resume-id', resumeId)
   if (mode === 'resume' && sessionName) scriptArgs.push('--resume-name', sessionName)
   const scriptEnv = {
-    ...process.env,
+    ...cleanAgentEnv(),
     RCLAUDE_SECRET: secret,
     RCLAUDE_WRAPPER_ID: wrapperId,
     ...(effort ? { RCLAUDE_EFFORT: effort } : {}),
@@ -1205,6 +1238,7 @@ function connect(
             wrapperId: spawnMsg.wrapperId,
             mkdir: spawnMsg.mkdir,
             mode: spawnMsg.mode,
+            headless: spawnMsg.headless,
             resumeId: spawnMsg.resumeId,
           })
           const spawnRes = await spawnSession(
