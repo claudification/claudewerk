@@ -1,5 +1,5 @@
 import { Mic, Paperclip } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { VoiceOverlay } from '@/components/voice-overlay'
 import type { ProjectTaskMeta } from '@/hooks/use-project'
@@ -363,9 +363,12 @@ export function MarkdownInput({
     requestAnimationFrame(syncScroll)
   }, [expanded, syncScroll])
 
-  // Resize on value change
+  // Resize on value change -- useLayoutEffect so the height: auto -> measure -> height: Npx
+  // cycle completes BEFORE paint/ResizeObserver. With useEffect, the transient height: auto
+  // state triggers ResizeObserver on the transcript's scroll container, causing the virtualizer
+  // to recalculate on every keystroke (bypassing TranscriptView's memo via hook-triggered re-render).
   // biome-ignore lint/correctness/useExhaustiveDependencies: value used as dep key to trigger resize when content changes; autoResize handles the actual reading
-  useEffect(() => {
+  useLayoutEffect(() => {
     autoResize()
   }, [value, autoResize])
 
