@@ -11,6 +11,7 @@ import { useCommand } from '@/lib/commands'
 import { useKeyLayer } from '@/lib/key-layers'
 import { haptic } from '@/lib/utils'
 import { MarkdownInput } from './markdown-input'
+import { Kbd, KbdGroup } from './ui/kbd'
 
 export function QuickTaskModal() {
   const [open, setOpen] = useState(false)
@@ -145,16 +146,25 @@ export function QuickTaskModal() {
           />
         </div>
         <div className="flex items-center justify-between px-3 py-2 border-t border-border shrink-0">
-          <span className="text-[10px] text-muted-foreground">
-            Enter to add, Shift+Enter for new line, Esc to close
+          <span className="text-[10px] text-muted-foreground flex items-center gap-1.5">
+            <Kbd>↵</Kbd> add
+            <span className="text-muted-foreground/40">·</span>
+            <KbdGroup>
+              <Kbd>⇧</Kbd>
+              <Kbd>↵</Kbd>
+            </KbdGroup>{' '}
+            newline
+            <span className="text-muted-foreground/40">·</span>
+            <Kbd>Esc</Kbd> close
           </span>
           <button
             type="button"
             onClick={handleSubmit}
             disabled={!text.trim() || !hasWrapper}
-            className="px-3 py-1 text-xs font-bold bg-accent/20 text-accent hover:bg-accent/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold bg-accent/20 text-accent hover:bg-accent/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Add
+            <Kbd className="bg-accent/20 text-accent/70">↵</Kbd>
           </button>
         </div>
       </div>

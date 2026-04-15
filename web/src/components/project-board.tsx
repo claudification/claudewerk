@@ -564,9 +564,9 @@ export function TaskEditor({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-3 py-1 text-xs font-mono text-muted-foreground hover:text-foreground transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1 text-xs font-mono text-muted-foreground hover:text-foreground transition-colors"
               >
-                Cancel
+                Cancel <Kbd className="opacity-60">Esc</Kbd>
               </button>
               <button
                 type="button"
@@ -647,7 +647,13 @@ export function RunTaskDialog({
   // Launch channel - request-scoped events from agent
   const launch = useLaunchChannel(jobId)
 
-  useKeyLayer({ Escape: onClose })
+  useKeyLayer({
+    Escape: onClose,
+    Enter: () => {
+      if (phase === 'config') handleRun()
+      else handleViewSession()
+    },
+  })
 
   // Watch for the spawned session appearing in the sessions store
   const spawnedSession = useSessionsStore(
@@ -1096,9 +1102,10 @@ export function RunTaskDialog({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-3 py-1 text-xs font-mono text-muted-foreground hover:text-foreground"
+                className="flex items-center gap-1.5 px-3 py-1 text-xs font-mono text-muted-foreground hover:text-foreground"
               >
                 Cancel
+                <Kbd className="opacity-60">Esc</Kbd>
               </button>
               <button
                 type="button"
@@ -1108,6 +1115,7 @@ export function RunTaskDialog({
               >
                 <Zap className="w-3 h-3" />
                 Run
+                <Kbd className="bg-amber-500/20 text-amber-400/70">↵</Kbd>
               </button>
             </div>
           </>
@@ -1164,6 +1172,7 @@ export function RunTaskDialog({
                   className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold font-mono bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 transition-colors"
                 >
                   View Session{viewCountdown != null && viewCountdown > 0 ? ` (${viewCountdown}s)` : ''}
+                  <Kbd className="bg-emerald-500/20 text-emerald-400/70">↵</Kbd>
                 </button>
               )}
               {isComplete && (
@@ -1173,14 +1182,16 @@ export function RunTaskDialog({
                   className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold font-mono bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 transition-colors"
                 >
                   View Result
+                  <Kbd className="bg-emerald-500/20 text-emerald-400/70">↵</Kbd>
                 </button>
               )}
               <button
                 type="button"
                 onClick={onClose}
-                className="px-3 py-1 text-xs font-mono text-muted-foreground hover:text-foreground"
+                className="flex items-center gap-1.5 px-3 py-1 text-xs font-mono text-muted-foreground hover:text-foreground"
               >
                 {isComplete || error ? 'Close' : 'Background'}
+                <Kbd className="opacity-60">Esc</Kbd>
               </button>
             </div>
           </>
