@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "PORT=${PORT:-3456} bunx vite --port ${PORT:-3456}",
     "build": "bunx vite build",
+    "build:debug": "bunx vite build --mode development",
     "start": "bunx vite preview",
     "lint": "bunx biome lint .",
     "format": "bunx biome format --write .",

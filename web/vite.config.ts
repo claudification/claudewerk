@@ -56,55 +56,66 @@ function assetManifestPlugin(): Plugin {
   }
 }
 
-export default defineConfig({
-  plugins: [react(), tailwindcss(), assetManifestPlugin()],
-  resolve: {
-    tsconfigPaths: true,
-    alias: {
-      // Enable React Profiler in production builds (for perf monitoring)
-      'react-dom/client': 'react-dom/profiling',
+export default defineConfig(({ mode }) => {
+  // REACT_DEV=1 or --mode development: full React dev bundles with readable error messages
+  const reactDev = mode === 'development'
+
+  return {
+    plugins: [react(), tailwindcss(), assetManifestPlugin()],
+    resolve: {
+      tsconfigPaths: true,
+      conditions: reactDev ? ['development'] : [],
+      alias: {
+        // Enable React Profiler in production builds (for perf monitoring).
+        // Skipped in dev mode -- profiling is a production variant, we want the full dev bundle.
+        ...(reactDev ? {} : { 'react-dom/client': 'react-dom/profiling' }),
+      },
     },
-  },
-  build: {
-    outDir: 'dist',
-    sourcemap: true,
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/')) {
-            return 'react-vendor'
-          }
-          if (
-            id.includes('date-fns') ||
-            id.includes('clsx') ||
-            id.includes('tailwind-merge') ||
-            id.includes('class-variance-authority')
-          ) {
-            return 'utils-vendor'
-          }
+    // Force process.env.NODE_ENV replacement in debug builds so React's
+    // index.js conditional require resolves to the development bundle.
+    ...(reactDev ? { define: { 'process.env.NODE_ENV': '"development"' } } : {}),
+    build: {
+      outDir: 'dist',
+      sourcemap: true,
+      minify: reactDev ? false : undefined,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/')) {
+              return 'react-vendor'
+            }
+            if (
+              id.includes('date-fns') ||
+              id.includes('clsx') ||
+              id.includes('tailwind-merge') ||
+              id.includes('class-variance-authority')
+            ) {
+              return 'utils-vendor'
+            }
+          },
         },
       },
     },
-  },
-  server: {
-    port: parseInt(process.env.PORT || '3456', 10),
-    proxy: {
-      '/sessions': {
-        target: 'http://localhost:9999',
-        changeOrigin: true,
-      },
-      '/health': {
-        target: 'http://localhost:9999',
-        changeOrigin: true,
-      },
-      '/file': {
-        target: 'http://localhost:9999',
-        changeOrigin: true,
-      },
-      '/ws': {
-        target: 'ws://localhost:9999',
-        ws: true,
+    server: {
+      port: parseInt(process.env.PORT || '3456', 10),
+      proxy: {
+        '/sessions': {
+          target: 'http://localhost:9999',
+          changeOrigin: true,
+        },
+        '/health': {
+          target: 'http://localhost:9999',
+          changeOrigin: true,
+        },
+        '/file': {
+          target: 'http://localhost:9999',
+          changeOrigin: true,
+        },
+        '/ws': {
+          target: 'ws://localhost:9999',
+          ws: true,
+        },
       },
     },
-  },
+  }
 })
