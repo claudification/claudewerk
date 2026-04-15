@@ -1441,8 +1441,8 @@ export function SessionList() {
   const selectedSessionId = useSessionsStore(s => s.selectedSessionId)
   const rawSessionOrder = useSessionsStore(s => s.sessionOrder)
   const sessionOrder = rawSessionOrder?.tree ? rawSessionOrder : { version: 2 as const, tree: [] }
-  const dashPrefs = useSessionsStore(s => s.dashboardPrefs)
-  const [showInactive, setShowInactive] = useState(dashPrefs.showInactiveByDefault)
+  const showInactive = useSessionsStore(s => s.dashboardPrefs.showInactiveByDefault)
+  const updatePrefs = useSessionsStore(s => s.updateDashboardPrefs)
   const [_pulseSessionId, setPulseSessionId] = useState<string | null>(null)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
     try {
@@ -1867,7 +1867,7 @@ export function SessionList() {
           <input
             type="checkbox"
             checked={showInactive}
-            onChange={e => setShowInactive(e.target.checked)}
+            onChange={e => updatePrefs({ showInactiveByDefault: e.target.checked })}
             className="accent-primary"
           />
           show inactive ({inactive.length})

@@ -21,6 +21,7 @@ import type {
   TranscriptEntry,
   UsageUpdate,
 } from '@/lib/types'
+import { getLastSessionId, getSessionTab, initUIState, setLastSessionId } from '@/lib/ui-state'
 import { recordOut } from './ws-stats'
 
 export type { ProjectSettingsMap }
@@ -263,6 +264,7 @@ export function applyHashRoute() {
   if (hashApplied) return
   hashApplied = true
 
+  initUIState()
   processHash()
 
   // Auto-select default session if no hash route matched
@@ -309,6 +311,13 @@ function applyDefaultSession() {
       store.selectSession(best.id)
       return
     }
+  }
+
+  // Try last-viewed session from localStorage
+  const lastId = getLastSessionId()
+  if (lastId && store.sessionsById[lastId]) {
+    store.selectSession(lastId)
+    return
   }
 
   // Auto-select if only one non-ended session visible (common for restricted users)
@@ -532,6 +541,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   selectSession: id => {
     clearExpandedState()
     const defaultView = get().dashboardPrefs.defaultView
+    const rememberedTab = id ? getSessionTab(id) : null
     set(state => {
       const mru = id ? [id, ...state.sessionMru.filter(s => s !== id)] : state.sessionMru
       const { sessionCacheSize } = state.dashboardPrefs
@@ -585,7 +595,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       return {
         selectedSessionId: id,
         selectedSubagentId: null,
-        requestedTab: defaultView === 'tty' ? 'tty' : 'transcript',
+        requestedTab: rememberedTab || (defaultView === 'tty' ? 'tty' : 'transcript'),
         requestedTabSeq: state.requestedTabSeq + 1,
         sessionMru: mru,
         ...evictedData,
@@ -593,6 +603,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       }
     })
     updateHash(id ? `session/${id}` : '')
+    setLastSessionId(id)
     // Clear notification badge when viewing a session
     if (id) {
       const session = get().sessionsById[id]

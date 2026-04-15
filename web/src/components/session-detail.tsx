@@ -8,6 +8,7 @@ import { type TaskStatus, useProject } from '@/hooks/use-project'
 import { fetchSubagentTranscript, sendInput, useSessionsStore, wsSend } from '@/hooks/use-sessions'
 import { formatCost, getBurnRate, getCacheEfficiency, getCostColor, getSessionCost } from '@/lib/cost-utils'
 import { canTerminal, type TranscriptEntry } from '@/lib/types'
+import { setSessionTab } from '@/lib/ui-state'
 import { cn, contextWindowSize, formatAge, formatEffort, formatModel, haptic, isMobileViewport } from '@/lib/utils'
 import { BgTasksView } from './bg-tasks-view'
 import { CacheExpiredBanner, CacheTimer } from './cache-timer'
@@ -747,6 +748,11 @@ export const SessionDetail = memo(function SessionDetail() {
       setActiveTab('transcript')
     }
   }, [session?.status, activeTab])
+
+  // Persist active tab to localStorage (batched) so it survives reloads
+  useEffect(() => {
+    if (selectedSessionId) setSessionTab(selectedSessionId, activeTab)
+  }, [selectedSessionId, activeTab])
   const { canAdmin, canChat, canReadTerminal, canReadFiles, canSpawn } = useSessionsStore(
     useShallow(s => {
       const p = (s.selectedSessionId && s.sessionPermissions[s.selectedSessionId]) || s.permissions
