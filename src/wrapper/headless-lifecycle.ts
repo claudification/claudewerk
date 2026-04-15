@@ -221,6 +221,36 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
       }
     },
 
+    onMonitorUpdate(monitor) {
+      const sessionId = ctx.claudeSessionId || ctx.internalId
+      if (ctx.wsClient?.isConnected()) {
+        ctx.wsClient.send({
+          type: 'monitor_update',
+          sessionId,
+          monitor: {
+            ...monitor,
+            startedAt: monitor.status === 'running' ? Date.now() : 0,
+          },
+        } as unknown as WrapperMessage)
+      }
+      ctx.diag(
+        'headless',
+        `Monitor ${monitor.status}: ${monitor.taskId.slice(0, 8)} "${monitor.description.slice(0, 40)}" (${monitor.eventCount} events)`,
+      )
+    },
+
+    onScheduledTaskFire(content) {
+      const sessionId = ctx.claudeSessionId || ctx.internalId
+      if (ctx.wsClient?.isConnected()) {
+        ctx.wsClient.send({
+          type: 'scheduled_task_fire',
+          sessionId,
+          content,
+          timestamp: Date.now(),
+        } as unknown as WrapperMessage)
+      }
+    },
+
     onPlanModeChanged(planMode) {
       const sessionId = ctx.claudeSessionId || ctx.internalId
       ctx.diag('headless', `Plan mode: ${planMode ? 'ON' : 'OFF'} (from status message)`)

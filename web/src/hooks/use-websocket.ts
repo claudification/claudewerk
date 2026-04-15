@@ -90,6 +90,8 @@ function toSession(summary: SessionSummary): Session {
     archivedTasks: summary.archivedTasks ?? [],
     runningBgTaskCount: summary.runningBgTaskCount ?? 0,
     bgTasks: summary.bgTasks ?? [],
+    monitors: summary.monitors ?? [],
+    runningMonitorCount: summary.runningMonitorCount ?? 0,
     teammates: summary.teammates ?? [],
     team: summary.team,
     effortLevel: summary.effortLevel,

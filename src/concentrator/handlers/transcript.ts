@@ -222,6 +222,74 @@ const sessionName: MessageHandler = (ctx, data) => {
   }
 }
 
+// Monitor lifecycle events - update session monitor state and broadcast
+const monitorUpdate: MessageHandler = (ctx, data) => {
+  const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
+  if (!sessionId) return
+  const session = ctx.sessions.getSession(sessionId)
+  if (!session) return
+  const monitor = data.monitor as Record<string, unknown>
+  if (!monitor?.taskId) return
+
+  const taskId = monitor.taskId as string
+  const existing = session.monitors.findIndex(m => m.taskId === taskId)
+
+  if (existing >= 0) {
+    // Update existing monitor
+    const prev = session.monitors[existing]
+    session.monitors[existing] = {
+      ...prev,
+      status: (monitor.status as 'running' | 'completed' | 'timed_out' | 'failed') || prev.status,
+      eventCount: (monitor.eventCount as number) ?? prev.eventCount,
+      stoppedAt: monitor.status !== 'running' ? Date.now() : undefined,
+    }
+  } else {
+    // Add new monitor
+    session.monitors.push({
+      taskId,
+      toolUseId: (monitor.toolUseId as string) || '',
+      description: (monitor.description as string) || '',
+      command: monitor.command as string | undefined,
+      persistent: monitor.persistent as boolean | undefined,
+      timeoutMs: monitor.timeoutMs as number | undefined,
+      startedAt: (monitor.startedAt as number) || Date.now(),
+      status: (monitor.status as 'running' | 'completed' | 'timed_out' | 'failed') || 'running',
+      eventCount: (monitor.eventCount as number) || 0,
+    })
+  }
+
+  // Cap stored monitors (keep last 50)
+  if (session.monitors.length > 50) {
+    session.monitors = session.monitors.slice(-50)
+  }
+
+  ctx.sessions.broadcastSessionUpdate(sessionId)
+  ctx.log.debug(
+    `monitor ${monitor.status}: ${taskId.toString().slice(0, 8)} "${(monitor.description as string)?.slice(0, 40)}"`,
+  )
+}
+
+// Scheduled task fire - broadcast to dashboard subscribers
+const scheduledTaskFire: MessageHandler = (ctx, data) => {
+  const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
+  if (!sessionId) return
+  const session = ctx.sessions.getSession(sessionId)
+  if (!session) return
+  // Broadcast as a distinct event for dashboard to handle
+  if (session.cwd) {
+    ctx.broadcastScoped(
+      {
+        type: 'scheduled_task_fire',
+        sessionId,
+        content: data.content,
+        timestamp: data.timestamp || Date.now(),
+      },
+      session.cwd,
+    )
+  }
+  ctx.log.debug(`scheduled_task_fire: "${(data.content as string)?.slice(0, 60)}"`)
+}
+
 // Store the final result text from headless sessions (used for ad-hoc task completion display)
 const resultText: MessageHandler = (ctx, data) => {
   const sessionId = data.sessionId as string
@@ -247,5 +315,7 @@ export function registerTranscriptHandlers(): void {
     rate_limit: rateLimitHandler,
     session_info: sessionInfo,
     result_text: resultText,
+    monitor_update: monitorUpdate,
+    scheduled_task_fire: scheduledTaskFire,
   })
 }

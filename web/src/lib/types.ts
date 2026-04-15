@@ -5,6 +5,7 @@ export type {
   ExtraUsage,
   FileInfo,
   HookEventType,
+  MonitorInfo,
   ProjectSettings,
   SubagentInfo,
   TaskInfo,
@@ -60,6 +61,8 @@ export interface Session {
   archivedTasks?: Array<{ id: string; subject: string }>
   runningBgTaskCount: number
   bgTasks: BgTaskSummary[]
+  monitors?: import('@shared/protocol').MonitorInfo[]
+  runningMonitorCount?: number
   teammates: Array<{
     name: string
     status: 'idle' | 'working' | 'stopped'

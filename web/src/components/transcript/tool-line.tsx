@@ -542,6 +542,31 @@ export function ToolLine({
       }
       break
     }
+    case 'Monitor': {
+      const monDesc = (input.description as string) || ''
+      const monCmd = (input.command as string) || ''
+      const monTimeout = input.timeout_ms as number | undefined
+      const monPersistent = input.persistent as boolean | undefined
+      const monExtra = toolUseResult as Record<string, unknown> | undefined
+      const monTaskId = (monExtra?.taskId as string) || ''
+      const timeoutLabel = monTimeout ? `${Math.round(monTimeout / 1000)}s` : ''
+      summary = (
+        <span className="flex items-center gap-1.5">
+          <span className="truncate">{monDesc || 'monitor'}</span>
+          {timeoutLabel && <span className="text-violet-400/60">{timeoutLabel}</span>}
+          {monPersistent && <span className="text-violet-400/50 text-[9px]">persistent</span>}
+          {monTaskId && <span className="text-muted-foreground font-mono text-[9px]">{monTaskId.slice(0, 8)}</span>}
+        </span>
+      )
+      if (monCmd) {
+        details = (
+          <pre className="text-[10px] font-mono text-muted-foreground overflow-x-auto whitespace-pre-wrap">
+            <span className="text-violet-400/70">$</span> {truncate(monCmd, 500)}
+          </pre>
+        )
+      }
+      break
+    }
     // rclaude inter-session tools - rich display
     case 'mcp__rclaude__send_message': {
       const to = (input.to as string) || ''

@@ -527,6 +527,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         completedAt: t.completedAt,
         status: t.status,
       })),
+      monitors: session.monitors,
+      runningMonitorCount: session.monitors.filter(m => m.status === 'running').length,
       teammates: session.teammates.map(t => ({
         name: t.name,
         status: t.status,
@@ -751,6 +753,12 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
             status: t.status === 'running' ? ('completed' as const) : t.status,
             completedAt: t.completedAt || t.startedAt,
           })),
+          monitors: (sessionData.monitors || []).map(m => ({
+            ...m,
+            // Restored sessions are ended - all monitors must be stopped
+            status: m.status === 'running' ? ('completed' as const) : m.status,
+            stoppedAt: m.stoppedAt || m.startedAt,
+          })),
           teammates: sessionData.teammates || [],
           team: sessionData.team,
           diagLog: sessionData.diagLog || [],
@@ -791,6 +799,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         tasks: s.tasks,
         archivedTasks: s.archivedTasks,
         bgTasks: s.bgTasks,
+        monitors: s.monitors,
         teammates: s.teammates,
         team: s.team,
         diagLog: [],
@@ -984,6 +993,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       tasks: [],
       archivedTasks: [],
       bgTasks: [],
+      monitors: [],
       diagLog: [],
       teammates: [],
       stats: {

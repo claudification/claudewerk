@@ -131,8 +131,10 @@ function SystemLine({ group, time }: { group: DisplayGroup; time: string }) {
       break
     }
     case 'scheduled_task_fire':
-      text = content || 'Scheduled task fired'
-      color = 'text-muted-foreground'
+      text = content
+        ? `Scheduled: ${content.length > 80 ? `${content.slice(0, 80)}...` : content}`
+        : 'Scheduled task fired'
+      color = 'text-amber-400/70'
       break
     default:
       text = content || `[${sub}]`

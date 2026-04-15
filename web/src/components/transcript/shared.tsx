@@ -19,6 +19,7 @@ import {
   FilePlus,
   FileSearch,
   FolderSearch,
+  Gauge,
   Globe,
   ListTodo,
   Notebook,
@@ -138,6 +139,7 @@ const TOOL_STYLES: Record<string, { color: string; Icon: LucideIcon }> = {
   CronList: { color: 'text-sky-400', Icon: Clock },
   CronDelete: { color: 'text-red-400', Icon: Clock },
   ScheduleWakeup: { color: 'text-amber-400', Icon: Timer },
+  Monitor: { color: 'text-violet-400', Icon: Gauge },
 }
 
 const DEFAULT_TOOL_STYLE = { color: 'text-event-tool', Icon: Play }

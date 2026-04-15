@@ -77,6 +77,17 @@ export interface StreamBackendOptions {
   onRateLimit?: (retryAfterMs: number, message: string) => void
   onTaskStarted?: (task: { taskId: string; toolUseId: string; taskType: string; description: string }) => void
   onSubagentEntry?: (toolUseId: string, entry: TranscriptEntry) => void
+  onMonitorUpdate?: (monitor: {
+    taskId: string
+    toolUseId: string
+    description: string
+    command?: string
+    persistent?: boolean
+    timeoutMs?: number
+    status: 'running' | 'completed' | 'timed_out' | 'failed'
+    eventCount: number
+  }) => void
+  onScheduledTaskFire?: (content: string) => void
   onPlanModeChanged?: (planMode: boolean) => void
   onExit?: (code: number | null) => void
 }
@@ -148,6 +159,8 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
     onRateLimit,
     onTaskStarted,
     onSubagentEntry,
+    onMonitorUpdate,
+    onScheduledTaskFire,
     onPlanModeChanged,
     onExit,
   } = options
@@ -223,6 +236,27 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
   // Maps taskId -> toolUseId (reverse of what onTaskStarted builds externally)
   const agentTaskToToolUse = new Map<string, string>()
 
+  // Track monitor tasks (non-agent background tasks like Monitor tool)
+  // Maps taskId -> { toolUseId, description, command?, persistent?, timeoutMs?, eventCount }
+  const monitorTasks = new Map<
+    string,
+    {
+      toolUseId: string
+      description: string
+      command?: string
+      persistent?: boolean
+      timeoutMs?: number
+      eventCount: number
+    }
+  >()
+
+  // Cache Monitor tool_use inputs from assistant messages for correlation with task_started
+  // Maps toolUseId -> { command, persistent, timeoutMs, description }
+  const pendingMonitorInputs = new Map<
+    string,
+    { command?: string; persistent?: boolean; timeoutMs?: number; description?: string }
+  >()
+
   // Replay buffer: accumulate replayed entries from --resume, flush as isInitial=true
   const MAX_INITIAL_ENTRIES = 500
   const METADATA_TYPES = new Set(['summary', 'custom-title', 'agent-name', 'pr-link'])
@@ -294,6 +328,26 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
           // Track agent tasks so task_progress/task_notification can be routed to subagent
           if (taskType === 'local_agent' && taskId && toolUseId) {
             agentTaskToToolUse.set(taskId, toolUseId)
+          } else if (taskId && toolUseId) {
+            // Track non-agent tasks (monitors, background processes)
+            // Correlate with cached Monitor tool inputs if available
+            const cached = pendingMonitorInputs.get(toolUseId)
+            const monitorInfo = {
+              toolUseId,
+              description: cached?.description || description,
+              command: cached?.command,
+              persistent: cached?.persistent,
+              timeoutMs: cached?.timeoutMs,
+              eventCount: 0,
+            }
+            monitorTasks.set(taskId, monitorInfo)
+            pendingMonitorInputs.delete(toolUseId)
+            debug(`monitor_started: ${taskId.slice(0, 8)} "${monitorInfo.description.slice(0, 40)}"`)
+            onMonitorUpdate?.({
+              taskId,
+              ...monitorInfo,
+              status: 'running',
+            })
           }
           onTaskStarted?.({ taskId, toolUseId, taskType, description })
           break
@@ -342,22 +396,53 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
             debug(`session_state_changed: ${msg.state}`)
             break
           case 'task_notification': {
-            debug(`task_notification: task=${msg.task_id} status=${msg.status}`)
+            const notifTaskId = msg.task_id as string
+            const notifStatus = msg.status as string
+            debug(`task_notification: task=${notifTaskId} status=${notifStatus}`)
             // Route to subagent transcript if this task belongs to an agent
-            const notifToolUseId = agentTaskToToolUse.get(msg.task_id as string)
+            const notifToolUseId = agentTaskToToolUse.get(notifTaskId)
             if (notifToolUseId && onSubagentEntry) {
               onSubagentEntry(notifToolUseId, systemEntry)
               routedToSubagent = true
             }
+            // Track monitor task events and completion
+            const notifMonitor = monitorTasks.get(notifTaskId)
+            if (notifMonitor) {
+              notifMonitor.eventCount++
+              const terminalStatus =
+                notifStatus === 'completed'
+                  ? 'completed'
+                  : notifStatus === 'failed'
+                    ? 'failed'
+                    : notifStatus === 'timed_out'
+                      ? 'timed_out'
+                      : null
+              if (terminalStatus) {
+                monitorTasks.delete(notifTaskId)
+              }
+              onMonitorUpdate?.({
+                taskId: notifTaskId,
+                ...notifMonitor,
+                status: (terminalStatus as 'completed' | 'failed' | 'timed_out') || 'running',
+              })
+            }
             break
           }
           case 'task_progress': {
-            debug(`task_progress: task=${msg.task_id} tokens=${(msg.usage as Record<string, unknown>)?.total_tokens}`)
+            const progressTaskId = msg.task_id as string
+            debug(
+              `task_progress: task=${progressTaskId} tokens=${(msg.usage as Record<string, unknown>)?.total_tokens}`,
+            )
             // Route to subagent transcript if this task belongs to an agent
-            const progressToolUseId = agentTaskToToolUse.get(msg.task_id as string)
+            const progressToolUseId = agentTaskToToolUse.get(progressTaskId)
             if (progressToolUseId && onSubagentEntry) {
               onSubagentEntry(progressToolUseId, systemEntry)
               routedToSubagent = true
+            }
+            // Increment monitor event count (progress counts as activity)
+            const progressMonitor = monitorTasks.get(progressTaskId)
+            if (progressMonitor) {
+              progressMonitor.eventCount++
             }
             break
           }
@@ -378,6 +463,7 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
             break
           case 'scheduled_task_fire':
             debug(`scheduled_task_fire: ${msg.content}`)
+            onScheduledTaskFire?.((msg.content as string) || '')
             break
           case 'status': {
             const permMode = msg.permissionMode as string | undefined
@@ -400,6 +486,23 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
 
       case 'assistant': {
         const parentToolUseId = msg.parent_tool_use_id as string | null
+        // Cache Monitor tool_use inputs for correlation with task_started
+        const assistantMsg = msg.message as { content?: Array<Record<string, unknown>> } | undefined
+        if (assistantMsg?.content) {
+          for (const block of assistantMsg.content) {
+            if (block.type === 'tool_use' && block.name === 'Monitor' && block.id) {
+              const inp = block.input as Record<string, unknown> | undefined
+              if (inp) {
+                pendingMonitorInputs.set(block.id as string, {
+                  command: inp.command as string | undefined,
+                  persistent: inp.persistent as boolean | undefined,
+                  timeoutMs: (inp.timeout_ms as number | undefined) ?? (inp.timeoutMs as number | undefined),
+                  description: inp.description as string | undefined,
+                })
+              }
+            }
+          }
+        }
         const entry: TranscriptEntry = {
           type: 'assistant',
           timestamp: new Date().toISOString(),
@@ -418,6 +521,72 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
 
       case 'user': {
         const parentToolUseId = msg.parent_tool_use_id as string | null
+        // Extract Monitor taskId from tool_result content (CC doesn't emit task_started for monitors)
+        // Format: "Monitor started (task bax7qc9od, timeout 20000ms)..."
+        const userMsg = msg.message as { content?: string | Array<Record<string, unknown>> } | undefined
+        if (userMsg?.content && Array.isArray(userMsg.content)) {
+          for (const block of userMsg.content) {
+            if (block.type === 'tool_result' && typeof block.content === 'string') {
+              const toolUseId = block.tool_use_id as string
+              const monitorMatch = (block.content as string).match(/^Monitor started \(task (\w+), timeout (\d+)ms\)/)
+              if (monitorMatch && toolUseId) {
+                const taskId = monitorMatch[1]
+                const cached = pendingMonitorInputs.get(toolUseId)
+                monitorTasks.set(taskId, {
+                  toolUseId,
+                  description: cached?.description || '',
+                  command: cached?.command,
+                  persistent: cached?.persistent,
+                  timeoutMs: cached?.timeoutMs ?? Number.parseInt(monitorMatch[2], 10),
+                  eventCount: 0,
+                })
+                pendingMonitorInputs.delete(toolUseId)
+                debug(
+                  `monitor_started (from result): ${taskId.slice(0, 8)} "${cached?.description?.slice(0, 40) || ''}"`,
+                )
+                onMonitorUpdate?.({
+                  taskId,
+                  toolUseId,
+                  description: cached?.description || '',
+                  command: cached?.command,
+                  persistent: cached?.persistent,
+                  timeoutMs: cached?.timeoutMs ?? Number.parseInt(monitorMatch[2], 10),
+                  status: 'running',
+                  eventCount: 0,
+                })
+              }
+            }
+          }
+        }
+        // Detect monitor events from <task-notification> XML in user content
+        const userContent =
+          typeof userMsg?.content === 'string'
+            ? userMsg.content
+            : Array.isArray(userMsg?.content)
+              ? userMsg.content
+                  .filter((b): b is { text: string } => typeof (b as Record<string, unknown>).text === 'string')
+                  .map(b => b.text)
+                  .join('')
+              : ''
+        if (userContent.includes('<task-notification>')) {
+          const taskIdMatch = userContent.match(/<task-id>(\w+)<\/task-id>/)
+          const eventMatch = userContent.match(/<event>([\s\S]*?)<\/event>/)
+          if (taskIdMatch) {
+            const notifTaskId = taskIdMatch[1]
+            const monitor = monitorTasks.get(notifTaskId)
+            if (monitor) {
+              monitor.eventCount++
+              const isTimeout = eventMatch?.[1]?.includes('timed out')
+              if (isTimeout) {
+                monitorTasks.delete(notifTaskId)
+                onMonitorUpdate?.({ taskId: notifTaskId, ...monitor, status: 'timed_out' })
+                debug(`monitor_timed_out: ${notifTaskId.slice(0, 8)}`)
+              } else {
+                onMonitorUpdate?.({ taskId: notifTaskId, ...monitor, status: 'running' })
+              }
+            }
+          }
+        }
         // Tool results echoed back, or replayed user messages
         const entry: TranscriptEntry = {
           type: 'user',

@@ -311,6 +311,8 @@ export type WrapperMessage =
   | SessionInfoUpdate
   | SessionNameUpdate
   | SpawnFailed
+  | MonitorUpdate
+  | ScheduledTaskFire
 
 export interface SessionNameUpdate {
   type: 'session_name'
@@ -790,6 +792,35 @@ export interface BgTaskInfo {
   status: 'running' | 'completed' | 'killed'
 }
 
+// Monitor (background watch) tracking
+export interface MonitorInfo {
+  taskId: string
+  toolUseId: string
+  description: string
+  command?: string
+  persistent?: boolean
+  timeoutMs?: number
+  startedAt: number
+  stoppedAt?: number
+  status: 'running' | 'completed' | 'timed_out' | 'failed'
+  eventCount: number
+}
+
+// Monitor lifecycle events (wrapper -> concentrator)
+export interface MonitorUpdate {
+  type: 'monitor_update'
+  sessionId: string
+  monitor: MonitorInfo
+}
+
+// Scheduled task fire event (wrapper -> concentrator, distinct from transcript entry)
+export interface ScheduledTaskFire {
+  type: 'scheduled_task_fire'
+  sessionId: string
+  content: string
+  timestamp: number
+}
+
 // Per-project customization settings (label, icon, color, keyterms)
 export interface ProjectSettings {
   label?: string
@@ -852,6 +883,7 @@ export interface Session {
   tasks: TaskInfo[]
   archivedTasks: ArchivedTaskGroup[]
   bgTasks: BgTaskInfo[]
+  monitors: MonitorInfo[]
   teammates: TeammateInfo[]
   team?: TeamInfo
   diagLog: Array<{ t: number; type: string; msg: string; args?: unknown }>
@@ -1107,6 +1139,8 @@ export interface SessionSummary {
     completedAt?: number
     status: 'running' | 'completed' | 'killed'
   }>
+  monitors: MonitorInfo[]
+  runningMonitorCount: number
   teammates: Array<{
     name: string
     status: TeammateInfo['status']
