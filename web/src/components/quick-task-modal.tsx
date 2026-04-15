@@ -39,6 +39,18 @@ export function QuickTaskModal() {
     { label: 'Quick task', shortcut: 'mod+g n', group: 'Navigation' },
   )
 
+  // Also register direct Ctrl+Shift+N shortcut
+  useCommand(
+    'quick-task-direct',
+    () => {
+      if (selectedSessionId && isActive) {
+        haptic('tap')
+        setOpen(true)
+      }
+    },
+    { label: 'Quick task', shortcut: 'ctrl+shift+n', group: 'Navigation' },
+  )
+
   // Also listen for window event (from action FAB + command palette)
   useEffect(() => {
     function handleOpen() {
