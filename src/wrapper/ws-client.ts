@@ -75,6 +75,7 @@ export interface WsClientOptions {
   }) => void
   onChannelSpawnResult?: (result: { ok: boolean; error?: string; wrapperId?: string }) => void
   onChannelConfigureResult?: (result: { ok: boolean; error?: string }) => void
+  onChannelRenameResult?: (result: { ok: boolean; error?: string }) => void
   onAskAnswer?: (
     toolUseId: string,
     answers?: Record<string, string>,
@@ -154,6 +155,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
     onChannelRestartResult,
     onChannelSpawnResult,
     onChannelConfigureResult,
+    onChannelRenameResult,
     onAskAnswer,
     onDialogResult,
     onDialogKeepalive,
@@ -387,6 +389,10 @@ export function createWsClient(options: WsClientOptions): WsClient {
               }
               if (msgType === 'channel_configure_result') {
                 onChannelConfigureResult?.(message as unknown as { ok: boolean; error?: string })
+                break
+              }
+              if (msgType === 'rename_session_result') {
+                onChannelRenameResult?.(message as unknown as { ok: boolean; error?: string })
                 break
               }
               if (

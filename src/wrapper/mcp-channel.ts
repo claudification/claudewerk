@@ -107,6 +107,8 @@ export interface McpChannelCallbacks {
   onDialogDismiss?: (dialogId: string) => void
   /** Deliver a message to Claude (channel notification in PTY, stdin user message in headless) */
   onDeliverMessage?: (content: string, meta: Record<string, string>) => void
+  /** Rename the current session */
+  onRenameSession?: (name: string) => Promise<{ ok: boolean; error?: string }>
   /** Notify that project tasks changed (triggers project_changed broadcast to dashboard) */
   onProjectChanged?: () => void
 }
@@ -470,6 +472,21 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
         },
       },
       {
+        name: 'rename_session',
+        description:
+          'Rename the current session. Sets the session title visible in the dashboard sidebar. Use slug-formatted names for consistency (e.g. "refactor-auth-middleware"). Pass empty string to clear and revert to auto-generated name.',
+        inputSchema: {
+          type: 'object' as const,
+          properties: {
+            name: {
+              type: 'string',
+              description: 'New session name/title. Empty string clears user-set name.',
+            },
+          },
+          required: ['name'],
+        },
+      },
+      {
         name: 'check_update',
         description:
           'Check if a newer version of rclaude is available. Queries the GitHub API to compare the installed build against the latest commit on the branch it was built from. No arguments needed.',
@@ -757,6 +774,20 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
           }
           debug(`[channel] configure_session: ${sessionId.slice(0, 8)} ${Object.keys(update).join(',')}`)
           return { content: [{ type: 'text', text: `Session configured: ${Object.keys(update).join(', ')} updated` }] }
+        }
+        case 'rename_session': {
+          const newName = typeof params.name === 'string' ? params.name : ''
+          const result = await callbacks.onRenameSession?.(newName)
+          if (!result?.ok) {
+            debug(`[channel] rename_session failed: ${result?.error}`)
+            return {
+              content: [{ type: 'text', text: result?.error || 'Failed to rename session' }],
+              isError: true,
+            }
+          }
+          const label = newName || '(auto)'
+          debug(`[channel] rename_session: "${label}"`)
+          return { content: [{ type: 'text', text: `Session renamed to "${label}"` }] }
         }
         case 'terminate_session':
         case 'quit_session': {

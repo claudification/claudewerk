@@ -932,6 +932,9 @@ async function main() {
       onChannelConfigureResult(result) {
         pendingConfigureResult?.(result)
       },
+      onChannelRenameResult(result) {
+        pendingRenameResult?.(result)
+      },
       onChannelDeliver(delivery) {
         if (headless && ctx.streamProc) {
           // Headless mode: deliver inter-session messages via stdin as <channel> tags (no conduit wrapper)
@@ -1415,6 +1418,23 @@ async function main() {
         } as unknown as WrapperMessage)
       })
     },
+    async onRenameSession(name) {
+      if (!ctx.wsClient?.isConnected()) return { ok: false, error: 'Not connected to concentrator' }
+      const sessionId = ctx.claudeSessionId || ctx.internalId
+      return new Promise(resolve => {
+        const timeout = setTimeout(() => resolve({ ok: false, error: 'Timeout' }), 10000)
+        pendingRenameResult = result => {
+          clearTimeout(timeout)
+          pendingRenameResult = null
+          resolve(result)
+        }
+        ctx.wsClient?.send({
+          type: 'rename_session',
+          sessionId,
+          name,
+        } as unknown as WrapperMessage)
+      })
+    },
     onProjectChanged() {
       sendProjectChanged()
     },
@@ -1429,6 +1449,7 @@ async function main() {
     | null = null
   let pendingSpawnResult: ((result: { ok: boolean; error?: string; wrapperId?: string }) => void) | null = null
   let pendingConfigureResult: ((result: { ok: boolean; error?: string }) => void) | null = null
+  let pendingRenameResult: ((result: { ok: boolean; error?: string }) => void) | null = null
   const pendingRendezvous = new Map<
     string,
     { resolve: (msg: Record<string, unknown>) => void; reject: (error: string) => void }
