@@ -14,9 +14,11 @@
 import { Fzf } from 'fzf'
 import { CheckSquare, Copy, ListChecks, Search, Send, X } from 'lucide-react'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Kbd } from '@/components/ui/kbd'
 import type { ProjectTaskMeta, TaskStatus } from '@/hooks/use-project'
 import { useProject } from '@/hooks/use-project'
 import { sendInput, useSessionsStore } from '@/hooks/use-sessions'
+import { useKeyLayer } from '@/lib/key-layers'
 import { cn, haptic } from '@/lib/utils'
 
 // --- Constants ---
@@ -339,18 +341,14 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
     setOpen(false)
   }
 
-  // ESC to close
-  useEffect(() => {
-    if (!open) return
-    function handleKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        handleClose()
-      }
-    }
-    window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
-  }, [open])
+  // Keyboard layer: ESC to close, Enter to submit (when not in textarea)
+  useKeyLayer(
+    {
+      Escape: handleClose,
+      'mod+Enter': () => handleSubmit(),
+    },
+    { id: 'batch-selector', enabled: open },
+  )
 
   if (!open) return null
 
@@ -369,13 +367,16 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
             <ListChecks className="w-4 h-4 text-accent" />
             <span className="text-sm font-bold font-mono text-foreground">Select Tasks</span>
           </div>
-          <button
-            type="button"
-            onClick={handleClose}
-            className="p-1 text-muted-foreground/60 hover:text-foreground transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <Kbd className="text-[9px]">Esc</Kbd>
+            <button
+              type="button"
+              onClick={handleClose}
+              className="p-1 text-muted-foreground/60 hover:text-foreground transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Search + status chips */}
@@ -592,6 +593,7 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
             >
               <Send className="w-3.5 h-3.5" />
               Submit to session
+              <Kbd className="ml-1 text-[9px]">⌘↵</Kbd>
             </button>
             <button
               type="button"
