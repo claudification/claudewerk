@@ -136,8 +136,10 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
       // Ad-hoc sessions: auto-terminate after the first result.
       // CC in stream-json mode stays alive waiting for more stdin input.
       // For fire-and-forget tasks, we exit after the task completes.
+      // RCLAUDE_LEAVE_RUNNING=1 skips shutdown, keeping the session alive for follow-up work.
       const isAdHoc = process.env.RCLAUDE_ADHOC === '1'
-      if (isAdHoc) {
+      const leaveRunning = process.env.RCLAUDE_LEAVE_RUNNING === '1'
+      if (isAdHoc && !leaveRunning) {
         // Check for pending user interactions (dialogs, AskUserQuestion, plan approvals).
         // If any are pending, CC is waiting for user input and will continue processing
         // after they resolve -- shutting down now would kill the session prematurely.

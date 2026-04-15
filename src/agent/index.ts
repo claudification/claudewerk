@@ -230,6 +230,7 @@ function buildHeadlessEnv(opts: {
   maxBudgetUsd?: number
   adHoc?: boolean
   adHocTaskId?: string
+  leaveRunning?: boolean
   promptFile?: string
   worktree?: string
   effort?: string
@@ -255,6 +256,7 @@ function buildHeadlessEnv(opts: {
     env.RCLAUDE_CHANNELS = '0'
   }
   if (opts.adHocTaskId) env.RCLAUDE_ADHOC_TASK_ID = opts.adHocTaskId
+  if (opts.leaveRunning) env.RCLAUDE_LEAVE_RUNNING = '1'
   if (opts.promptFile) env.RCLAUDE_INITIAL_PROMPT_FILE = opts.promptFile
   if (opts.worktree) env.RCLAUDE_WORKTREE = opts.worktree
 
@@ -731,6 +733,7 @@ async function spawnSession(
   adHocTaskId?: string,
   worktree?: string,
   jobId?: string,
+  leaveRunning = false,
 ): Promise<{ success: boolean; error?: string; tmuxSession?: string; tmuxPaneId?: string }> {
   launchLog(jobId, 'Validating directory', 'info', cwd)
 
@@ -816,6 +819,7 @@ async function spawnSession(
       maxBudgetUsd,
       adHoc,
       adHocTaskId,
+      leaveRunning,
       promptFile,
       worktree,
       effort,
@@ -857,6 +861,7 @@ async function spawnSession(
     ...(maxBudgetUsd ? { RCLAUDE_MAX_BUDGET_USD: String(maxBudgetUsd) } : {}),
     ...(adHoc ? { RCLAUDE_ADHOC: '1', RCLAUDE_CHANNELS: '0' } : {}),
     ...(adHocTaskId ? { RCLAUDE_ADHOC_TASK_ID: adHocTaskId } : {}),
+    ...(leaveRunning ? { RCLAUDE_LEAVE_RUNNING: '1' } : {}),
     ...(promptFile ? { RCLAUDE_INITIAL_PROMPT_FILE: promptFile } : {}),
     ...(worktree ? { RCLAUDE_WORKTREE: shellSafe(worktree) } : {}),
   }
@@ -1258,6 +1263,7 @@ function connect(
             prompt?: string
             adHoc?: boolean
             adHocTaskId?: string
+            leaveRunning?: boolean
             worktree?: string
             jobId?: string
           }
@@ -1308,6 +1314,7 @@ function connect(
             spawnMsg.adHocTaskId,
             spawnMsg.worktree,
             spawnMsg.jobId,
+            spawnMsg.leaveRunning || false,
           )
           const response: SpawnResult = {
             type: 'spawn_result',

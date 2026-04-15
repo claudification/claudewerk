@@ -630,6 +630,7 @@ export function RunTaskDialog({
   const [useWorktree, setUseWorktree] = useState(false)
   const [branchName, setBranchName] = useState(task.slug)
   const [autoCommit, setAutoCommit] = useState(true)
+  const [leaveRunning, setLeaveRunning] = useState(false)
   const [maxBudgetUsd, setMaxBudgetUsd] = useState('')
   const [timeout, setTimeout_] = useState('30')
   const [error, setError] = useState<string | null>(null)
@@ -786,7 +787,8 @@ export function RunTaskDialog({
     setSteps([{ label: 'Sending spawn request...', status: 'active', ts: Date.now() }])
 
     // Build the prompt from the task
-    const commitLine = autoCommit ? '\n\nWhen you are done, commit all changes with a descriptive commit message.' : ''
+    const commitLine =
+      autoCommit && !leaveRunning ? '\n\nWhen you are done, commit all changes with a descriptive commit message.' : ''
     const worktreeMerge = useWorktree
       ? '\n\nIMPORTANT - WORKTREE MERGE-BACK:\nYou are working in a git worktree (isolated branch). Before finishing:\n1. Commit all changes\n2. Merge back to main: run `git rebase main && git fetch . HEAD:main`\n3. If rebase conflicts occur, resolve them and run `git rebase --continue`, then `git fetch . HEAD:main`\n4. Verify: `git log --oneline main -5`\nThis merges your work back to main so it is not stranded on a dead branch.'
       : ''
@@ -805,6 +807,7 @@ export function RunTaskDialog({
           model: model || undefined,
           effort: effort !== 'default' ? effort : undefined,
           worktree: useWorktree ? branchName : undefined,
+          leaveRunning: leaveRunning || undefined,
           name: task.title.replace(/['"]/g, '').slice(0, 60),
           maxBudgetUsd: maxBudgetUsd ? Number(maxBudgetUsd) : undefined,
           jobId: newJobId,
@@ -858,6 +861,7 @@ export function RunTaskDialog({
         effort,
         worktree: useWorktree ? branchName : null,
         autoCommit,
+        leaveRunning,
         maxBudgetUsd: maxBudgetUsd || null,
         timeout,
       },
@@ -1004,15 +1008,37 @@ export function RunTaskDialog({
                   />
                 )}
               </div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={autoCommit}
-                  onChange={e => setAutoCommit(e.target.checked)}
-                  className="accent-amber-400"
-                />
-                <span className="text-[10px] font-mono text-muted-foreground">Auto-commit changes on completion</span>
-              </label>
+              <div className="space-y-0.5">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={autoCommit && !leaveRunning}
+                    disabled={leaveRunning}
+                    onChange={e => setAutoCommit(e.target.checked)}
+                    className="accent-amber-400 disabled:opacity-30"
+                  />
+                  <span className={cn('text-[10px] font-mono text-muted-foreground', leaveRunning && 'opacity-40')}>
+                    Auto-commit on completion
+                  </span>
+                </label>
+                <div className="text-[9px] text-[#565f89] pl-5">
+                  Adds a prompt instruction to commit when the task finishes
+                </div>
+              </div>
+              <div className="space-y-0.5">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={leaveRunning}
+                    onChange={e => setLeaveRunning(e.target.checked)}
+                    className="accent-amber-400"
+                  />
+                  <span className="text-[10px] font-mono text-muted-foreground">Leave session running when done</span>
+                </label>
+                <div className="text-[9px] text-[#565f89] pl-5">
+                  Keep session alive after the task completes for follow-up work
+                </div>
+              </div>
               <div className="flex items-center justify-between">
                 <label htmlFor="run-task-budget" className="text-[10px] font-mono text-muted-foreground">
                   Max budget
