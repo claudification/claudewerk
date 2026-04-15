@@ -504,19 +504,27 @@ function Dashboard() {
     { label: 'Open project board', shortcut: 'mod+g p', group: 'Navigation' },
   )
 
-  useCommand(
-    'go-home',
-    () => {
-      if (isMobileViewport()) return
-      const store = useSessionsStore.getState()
-      if (store.showSwitcher || store.showDebugConsole || store.showTerminal) return
-      if (!store.selectedSessionId) return
-      store.selectSubagent(null)
-      store.openTab(store.selectedSessionId, 'transcript')
-      requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('textarea')?.focus())
-    },
-    { label: 'Go to transcript + focus input', shortcut: 'Escape', group: 'Navigation' },
-  )
+  const goHome = useCallback(() => {
+    if (isMobileViewport()) return
+    const store = useSessionsStore.getState()
+    if (store.showSwitcher || store.showDebugConsole || store.showTerminal) return
+    if (!store.selectedSessionId) return
+    store.selectSubagent(null)
+    store.openTab(store.selectedSessionId, 'transcript')
+    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('textarea')?.focus())
+  }, [])
+
+  useCommand('go-home', goHome, {
+    label: 'Go to transcript + focus input',
+    shortcut: 'Escape',
+    group: 'Navigation',
+  })
+
+  useCommand('go-home-chord', goHome, {
+    label: 'Go to transcript',
+    shortcut: 'mod+g Space',
+    group: 'Navigation',
+  })
 
   useCommand(
     'interrupt',

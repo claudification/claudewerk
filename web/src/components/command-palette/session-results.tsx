@@ -70,6 +70,12 @@ export function SessionResults({
               >
                 {projectSettings[session.cwd]?.label || lastPathSegments(session.cwd, 3)}
               </span>
+              {(session.title || session.agentName) && (
+                <>
+                  <span className="text-[#3b4261]">·</span>
+                  <span className="text-[#7aa2f7] truncate">{session.title || session.agentName}</span>
+                </>
+              )}
             </div>
             <div className="text-[10px] text-[#565f89] flex items-center gap-2">
               <span>{session.id.slice(0, 8)}</span>

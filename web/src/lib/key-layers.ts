@@ -113,7 +113,8 @@ function normalizeEvent(e: KeyboardEvent): string {
   if (!ignoreKeys.has(e.key)) {
     // Normalize single letter keys to lowercase so bindings are case-insensitive
     // (Shift+D produces e.key='D', but we want 'shift+d' to match)
-    const key = e.key.length === 1 ? e.key.toLowerCase() : e.key
+    // Spacebar normalizes to 'Space' so chord bindings like 'mod+g Space' parse cleanly
+    const key = e.key === ' ' ? 'Space' : e.key.length === 1 ? e.key.toLowerCase() : e.key
     parts.push(key)
   }
 
