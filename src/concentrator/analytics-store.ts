@@ -13,22 +13,7 @@
 
 import { Database, type Statement } from 'bun:sqlite'
 import { resolve } from 'node:path'
-
-// ─── Project ID ─────────────────────────────────────────────────────
-
-/**
- * Derive a stable project_id from a cwd path.
- * Uses last path segment by default. Caller can override with project-settings label.
- * This is the forward-compatible identity key -- when we move to URIs
- * (claude://{host}/{cwd}), we just change this function.
- */
-export function deriveProjectId(cwd: string, label?: string): string {
-  if (label) return label.toLowerCase().replace(/\s+/g, '-')
-  if (!cwd) return 'unknown'
-  // Strip trailing slash, take last segment
-  const segments = cwd.replace(/\/+$/, '').split('/')
-  return segments[segments.length - 1] || 'unknown'
-}
+import { getOrCreateProject, getProjectById, getProjectBySlug } from './project-store'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -62,7 +47,8 @@ export interface TurnAnalytics {
   sessionId: string
   timestamp: number
   cwd: string
-  projectId: string
+  /** Integer FK to projects.id (from project-store) */
+  projectId: number
   model: string
   account: string
   /** Ordered tool names used this turn (compact: "Edit,Bash,Edit") */
@@ -230,24 +216,50 @@ const turnAccumulators = new Map<string, TurnAccumulator>()
 const RETENTION_MS = 90 * 24 * 60 * 60 * 1000 // 90 days (longer than cost-store)
 const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000
 
-/** Add project_id column to existing DB (no-op if already present) */
+/**
+ * Migrate analytics schema:
+ * - v1: add project_id TEXT column (no longer created)
+ * - v2: project_id becomes INTEGER (FK to projects.id)
+ *
+ * For existing TEXT project_id data, we recreate the column as INTEGER.
+ * Backfill resolves cwd -> project-store -> integer id.
+ */
 function migrate(d: Database): void {
   try {
-    const cols = d.query("PRAGMA table_info('turns')").all() as Array<{ name: string }>
-    if (!cols.some(c => c.name === 'project_id')) {
-      d.run("ALTER TABLE turns ADD COLUMN project_id TEXT NOT NULL DEFAULT ''")
-      // Backfill from cwd: extract last path segment
-      d.run(`
-        UPDATE turns SET project_id = CASE
-          WHEN cwd = '' THEN 'unknown'
-          ELSE replace(cwd, rtrim(cwd, replace(cwd, '/', '')), '')
-        END
-        WHERE project_id = ''
-      `)
-      console.log('[analytics] Migrated: added project_id column and backfilled from cwd')
+    const cols = d.query("PRAGMA table_info('turns')").all() as Array<{ name: string; type: string }>
+    const projectCol = cols.find(c => c.name === 'project_id')
+
+    if (!projectCol) {
+      // Fresh DB or pre-project_id: add INTEGER column
+      d.run('ALTER TABLE turns ADD COLUMN project_id INTEGER NOT NULL DEFAULT 0')
+      backfillProjectIds(d)
+      console.log('[analytics] Migrated: added project_id INTEGER column')
+    } else if (projectCol.type === 'TEXT') {
+      // v1 -> v2: TEXT to INTEGER migration
+      // SQLite can't ALTER column type, so we add a new column and copy
+      d.run('ALTER TABLE turns ADD COLUMN project_id_int INTEGER NOT NULL DEFAULT 0')
+      backfillProjectIds(d, 'project_id_int')
+      // Swap columns: drop old index, rename
+      d.run('DROP INDEX IF EXISTS idx_analytics_project')
+      d.run('ALTER TABLE turns DROP COLUMN project_id')
+      d.run('ALTER TABLE turns RENAME COLUMN project_id_int TO project_id')
+      d.run('CREATE INDEX IF NOT EXISTS idx_analytics_project ON turns(project_id)')
+      console.log('[analytics] Migrated: project_id TEXT -> INTEGER')
     }
   } catch (err) {
     console.error('[analytics] Migration failed:', err)
+  }
+}
+
+/** Backfill project_id from cwd via project-store */
+function backfillProjectIds(d: Database, column = 'project_id'): void {
+  const cwds = d.query("SELECT DISTINCT cwd FROM turns WHERE cwd != ''").all() as Array<{ cwd: string }>
+  for (const { cwd } of cwds) {
+    const project = getOrCreateProject(cwd)
+    d.prepare(`UPDATE turns SET ${column} = $pid WHERE cwd = $cwd`).run({ pid: project.id, cwd })
+  }
+  if (cwds.length > 0) {
+    console.log(`[analytics] Backfilled project_id for ${cwds.length} distinct cwds`)
   }
 }
 
@@ -268,7 +280,7 @@ export function initAnalyticsStore(cacheDir: string): void {
         timestamp INTEGER NOT NULL,
         session_id TEXT NOT NULL,
         cwd TEXT NOT NULL DEFAULT '',
-        project_id TEXT NOT NULL DEFAULT '',
+        project_id INTEGER NOT NULL DEFAULT 0,
         model TEXT NOT NULL DEFAULT '',
         account TEXT NOT NULL DEFAULT '',
         tool_sequence TEXT NOT NULL DEFAULT '',
@@ -406,7 +418,7 @@ export function recordHookEvent(
         sessionId,
         timestamp: Date.now(),
         cwd: sessionMeta.cwd,
-        projectId: deriveProjectId(sessionMeta.cwd, sessionMeta.projectLabel),
+        projectId: getOrCreateProject(sessionMeta.cwd, sessionMeta.projectLabel).id,
         model: sessionMeta.model,
         account: sessionMeta.account,
         toolSequence: acc.tools.map(t => t.toolName).join(','),
@@ -458,7 +470,7 @@ export interface AnalyticsSummary {
   avgRetries: number
   taskBreakdown: Array<{ category: TaskCategory; count: number; oneShotRate: number }>
   topTools: Array<{ toolName: string; count: number }>
-  topProjects: Array<{ projectId: string; turns: number; oneShotRate: number }>
+  topProjects: Array<{ projectId: number; slug: string; label: string | null; turns: number; oneShotRate: number }>
 }
 
 export function querySummary(period: '24h' | '7d' | '30d' | '90d', project?: string): AnalyticsSummary {
@@ -501,7 +513,7 @@ export function querySummary(period: '24h' | '7d' | '30d' | '90d', project?: str
     FROM turns ${where}
     GROUP BY project_id ORDER BY turns DESC LIMIT 10`,
     binds,
-  ) as Array<{ project_id: string; turns: number; one_shot_rate: number }>
+  ) as Array<{ project_id: number; turns: number; one_shot_rate: number }>
 
   return {
     period,
@@ -515,11 +527,16 @@ export function querySummary(period: '24h' | '7d' | '30d' | '90d', project?: str
       oneShotRate: r.one_shot_rate,
     })),
     topTools,
-    topProjects: topProjects.map(r => ({
-      projectId: r.project_id,
-      turns: r.turns,
-      oneShotRate: r.one_shot_rate,
-    })),
+    topProjects: topProjects.map(r => {
+      const p = getProjectById(r.project_id)
+      return {
+        projectId: r.project_id,
+        slug: p?.slug || 'unknown',
+        label: p?.label || null,
+        turns: r.turns,
+        oneShotRate: r.one_shot_rate,
+      }
+    }),
   }
 }
 
@@ -620,12 +637,25 @@ export function flush(): void {
 
 // ─── Query helpers ──────────────────────────────────────────────────
 
-/** Build WHERE clause with optional project filter */
+/**
+ * Build WHERE clause with optional project filter.
+ * Accepts project as integer ID or slug string -- resolves via project-store.
+ */
 function buildFilter(cutoff: number, project?: string): { where: string; binds: Binds } {
   if (project) {
+    // Resolve slug to integer ID if not already a number
+    let projectId: number
+    const parsed = Number(project)
+    if (!Number.isNaN(parsed)) {
+      projectId = parsed
+    } else {
+      const p = getProjectBySlug(project)
+      if (!p) return { where: 'WHERE timestamp >= $cutoff AND 0', binds: { cutoff } } // no match
+      projectId = p.id
+    }
     return {
-      where: 'WHERE timestamp >= $cutoff AND project_id = $project',
-      binds: { cutoff, project },
+      where: 'WHERE timestamp >= $cutoff AND project_id = $projectId',
+      binds: { cutoff, projectId },
     }
   }
   return {

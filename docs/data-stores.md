@@ -1,5 +1,68 @@
 # Data Stores
 
+## Project Registry (SQLite)
+
+Stable integer IDs for projects. The authoritative source of project identity --
+all other stores reference `projects.id` instead of repeating CWD strings.
+
+**Storage:** `{cacheDir}/projects.db` (separate from analytics/cost -- this is
+authoritative config, not disposable time-series data)
+
+**Table:** `projects` (id INTEGER PK, cwd TEXT UNIQUE, scope TEXT UNIQUE, slug TEXT, label TEXT)
+
+**Scope URI scheme** (future-facing):
+```
+{provider}://{address}#{session}
+claude://my-machine/Users/jonas/projects/remote-claude#a1b2c3d4
+claude:///Users/jonas/projects/remote-claude          (local, no host)
+fabric://pipeline/data-etl-nightly
+agent://openai/asst_abc123
+```
+
+**API:**
+- `GET /api/projects` -- list all projects (admin only)
+
+**Usage:** `getOrCreateProject(cwd, label?)` returns `Project` with integer `.id`.
+Hot path uses in-memory cache (cwd -> Project). Cache miss falls through to DB.
+
+Files: `project-store.ts`
+
+## Analytics (SQLite)
+
+Per-turn tool-use analytics. Task classification, one-shot success rate tracking,
+retry cycle detection. Non-critical -- errors are logged and swallowed.
+
+**Storage:** `{cacheDir}/analytics.db`
+
+**Tables:**
+- `turns` -- per-turn (timestamp, session_id, cwd, project_id INTEGER, model,
+  tool_sequence, task_category, retry_count, one_shot, had_error, prompt_snippet)
+- `tool_uses` -- per-tool-call (timestamp, session_id, tool_name)
+
+**Task categories:** coding, debugging, refactoring, testing, exploration, git,
+build, conversation, delegation, unknown. Classified deterministically from tool
+use patterns + user prompt keywords.
+
+**One-shot detection:** Counts edit-bash-edit retry cycles. `one_shot = 1` when
+edits present, zero retries, and no error.
+
+**Pipeline:** Hook events queue in memory per-session. On `Stop`/`StopFailure`,
+the turn is classified and pushed to a batch queue. Flushed every 5s or 50 records.
+
+**90-day retention.** Daily cleanup.
+
+**API** (admin auth required):
+- `GET /api/analytics/summary?period=7d&project=remote-claude`
+- `GET /api/analytics/timeseries?period=7d&granularity=hour&project=remote-claude`
+- `GET /api/analytics/models?period=7d&project=remote-claude`
+
+All endpoints accept `?project=` (slug or integer ID) for per-project filtering.
+
+**Mass import:** `bun scripts/import-analytics.ts` parses historical JSONL
+transcripts from `~/.claude/projects/`. Idempotent (skips already-imported sessions).
+
+Files: `analytics-store.ts`, `scripts/import-analytics.ts`
+
 ## Cost Reporting (SQLite)
 
 Per-turn cost and token storage. `bun:sqlite` WAL mode. 30-day retention.

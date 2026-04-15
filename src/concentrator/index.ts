@@ -35,6 +35,7 @@ import {
   touchLink,
 } from './project-links'
 import { getAllProjectSettings, getProjectSettings, initProjectSettings, setProjectSettings } from './project-settings'
+import { closeProjectStore, initProjectStore } from './project-store'
 import { initPush, isPushConfigured, sendPushToAll } from './push'
 import { createRouter } from './routes'
 import { initSessionOrder } from './session-order'
@@ -256,6 +257,9 @@ async function main() {
   // Initialize model pricing (LiteLLM database)
   initModelPricing(authCacheDir)
 
+  // Initialize project registry (must be before analytics -- migration depends on it)
+  initProjectStore(authCacheDir)
+
   // Initialize cost reporting store (SQLite)
   initCostStore(authCacheDir)
 
@@ -302,12 +306,14 @@ async function main() {
     console.log('\n[shutdown] Saving state...')
     closeAnalyticsStore()
     closeCostStore()
+    closeProjectStore()
     await Promise.all([sessionStore.saveState(), sessionStore.flushTranscripts()])
     process.exit(0)
   })
   process.on('SIGTERM', async () => {
     closeAnalyticsStore()
     closeCostStore()
+    closeProjectStore()
     await Promise.all([sessionStore.saveState(), sessionStore.flushTranscripts()])
     process.exit(0)
   })

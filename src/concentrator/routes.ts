@@ -41,6 +41,7 @@ import {
   getProjectSettings,
   setProjectSettings,
 } from './project-settings'
+import { listProjects } from './project-store'
 import { addSubscription, getSubscriptionCount, isPushConfigured, removeSubscription, sendPushToAll } from './push'
 import { getSessionOrder, type SessionOrderV2, setSessionOrder } from './session-order'
 import type { SessionStore } from './session-store'
@@ -1715,6 +1716,13 @@ Output a JSON array of strings. Each string should be the correct spelling of on
       return c.json({ error: 'Invalid period. Use 24h, 7d, or 30d' }, 400)
     }
     return c.json(querySummary(period))
+  })
+
+  // ─── Projects ──────────────────────────────────────────────────────
+
+  app.get('/api/projects', c => {
+    if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
+    return c.json({ projects: listProjects() })
   })
 
   // ─── Analytics ─────────────────────────────────────────────────────

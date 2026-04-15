@@ -19,6 +19,7 @@ import { Database } from 'bun:sqlite'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { closeProjectStore, getOrCreateProject, initProjectStore } from '../src/concentrator/project-store'
 
 // ─── Classification (duplicated from analytics-store to keep script standalone) ──
 
@@ -73,12 +74,6 @@ function classifyTurn(toolNames: string[], promptSnippet: string): TaskCategory 
   if (hasReads && !hasEdits && !hasBash) return 'exploration'
 
   return 'unknown'
-}
-
-function deriveProjectId(cwd: string): string {
-  if (!cwd) return 'unknown'
-  const segments = cwd.replace(/\/+$/, '').split('/')
-  return segments[segments.length - 1] || 'unknown'
 }
 
 function countRetries(toolNames: string[]): number {
@@ -276,6 +271,10 @@ function main() {
     process.exit(1)
   }
 
+  // Initialize project store (needed to resolve cwd -> project_id)
+  const cacheDir = dbIdx >= 0 ? resolve(args[dbIdx + 1], '..') : join(homedir(), '.cache', 'concentrator')
+  initProjectStore(cacheDir)
+
   // Find all JSONL files
   console.log('Discovering transcript files...')
   const files = findJsonlFiles(scanDir)
@@ -296,7 +295,7 @@ function main() {
         timestamp INTEGER NOT NULL,
         session_id TEXT NOT NULL,
         cwd TEXT NOT NULL DEFAULT '',
-        project_id TEXT NOT NULL DEFAULT '',
+        project_id INTEGER NOT NULL DEFAULT 0,
         model TEXT NOT NULL DEFAULT '',
         account TEXT NOT NULL DEFAULT '',
         tool_sequence TEXT NOT NULL DEFAULT '',
@@ -371,7 +370,7 @@ function main() {
         timestamp: turn.timestamp,
         sessionId: turn.sessionId,
         cwd: turn.cwd,
-        projectId: deriveProjectId(turn.cwd),
+        projectId: getOrCreateProject(turn.cwd).id,
         model: turn.model,
         account: '',
         toolSequence: turn.toolNames.join(','),
@@ -444,6 +443,7 @@ function main() {
     db.run('PRAGMA wal_checkpoint(TRUNCATE)')
     db.close()
   }
+  closeProjectStore()
 
   console.log()
   console.log(`Done!`)
