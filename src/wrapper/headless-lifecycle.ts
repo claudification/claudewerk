@@ -12,7 +12,7 @@ import { hasPendingAskRequests } from './local-server'
 import { hasPendingDialogs, resetMcpChannel } from './mcp-channel'
 import { writeMergedSettings } from './settings-merge'
 import type { StreamBackendOptions, StreamProcess } from './stream-backend'
-import { sendTranscriptEntriesChunked, startSubagentWatcher } from './transcript-manager'
+import { sendTranscriptEntriesChunked, startBgTaskOutputWatcher, startSubagentWatcher } from './transcript-manager'
 import type { WrapperContext } from './wrapper-context'
 
 const debug = (msg: string) => _debug(msg)
@@ -223,6 +223,11 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
 
     onMonitorUpdate(monitor) {
       const sessionId = ctx.claudeSessionId || ctx.internalId
+      // Start streaming the monitor's .output file when it becomes active
+      if (monitor.status === 'running' && monitor.outputPath) {
+        debug(`[headless] Monitor output: ${monitor.taskId.slice(0, 8)} -> ${monitor.outputPath}`)
+        startBgTaskOutputWatcher(ctx, monitor.taskId, monitor.outputPath)
+      }
       if (ctx.wsClient?.isConnected()) {
         ctx.wsClient.send({
           type: 'monitor_update',

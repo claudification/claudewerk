@@ -86,6 +86,7 @@ export interface StreamBackendOptions {
     timeoutMs?: number
     status: 'running' | 'completed' | 'timed_out' | 'failed'
     eventCount: number
+    outputPath?: string // .output file path if derivable from command
   }) => void
   onScheduledTaskFire?: (content: string) => void
   onPlanModeChanged?: (planMode: boolean) => void
@@ -257,6 +258,20 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
     { command?: string; persistent?: boolean; timeoutMs?: number; description?: string }
   >()
 
+  /**
+   * Derive the monitor's .output file path from its command.
+   * Monitor commands often tail another task's .output file in the same tasks dir.
+   * Example: "tail -f /tmp/claude-501/-Users-.../tasks/berphqd4r.output | grep ..."
+   * -> tasks dir: /tmp/claude-501/-Users-.../tasks/
+   * -> monitor output: /tmp/claude-501/-Users-.../tasks/{monitorTaskId}.output
+   */
+  function deriveMonitorOutputPath(command: string | undefined, monitorTaskId: string): string | undefined {
+    if (!command) return undefined
+    const match = command.match(/(\S+\/tasks\/)[\w-]+\.output/)
+    if (match) return `${match[1]}${monitorTaskId}.output`
+    return undefined
+  }
+
   // Replay buffer: accumulate replayed entries from --resume, flush as isInitial=true
   const MAX_INITIAL_ENTRIES = 500
   const METADATA_TYPES = new Set(['summary', 'custom-title', 'agent-name', 'pr-link'])
@@ -347,6 +362,7 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
               taskId,
               ...monitorInfo,
               status: 'running',
+              outputPath: deriveMonitorOutputPath(monitorInfo.command, taskId),
             })
           }
           onTaskStarted?.({ taskId, toolUseId, taskType, description })
@@ -553,6 +569,7 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
                   timeoutMs: cached?.timeoutMs ?? Number.parseInt(monitorMatch[2], 10),
                   status: 'running',
                   eventCount: 0,
+                  outputPath: deriveMonitorOutputPath(cached?.command, taskId),
                 })
               }
             }
