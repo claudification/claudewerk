@@ -632,8 +632,14 @@ export function ToolLine({
       const sessionId = (input.session_id as string) || ''
       const action = name.includes('revive') ? 'revive' : 'terminate'
       const actionColor = action === 'revive' ? 'text-green-400' : 'text-red-400'
-      const sess = useSessionsStore.getState().sessionsById[sessionId]
-      const sessName = sess?.title || sess?.cwd?.split('/').pop() || sessionId.slice(0, 8)
+      const { sessionsById, projectSettings: projSettings } = useSessionsStore.getState()
+      const sess = sessionsById[sessionId]
+      const sessProjLabel = sess?.cwd ? projSettings[sess.cwd]?.label : undefined
+      const sessTitle = sess?.title
+      const sessName =
+        sessProjLabel && sessTitle
+          ? `${sessProjLabel} :: ${sessTitle}`
+          : sessTitle || sessProjLabel || sess?.cwd?.split('/').pop() || sessionId.slice(0, 8)
       summary = (
         <span className="flex items-center gap-1.5">
           <span className={actionColor}>{action}</span>
@@ -652,22 +658,37 @@ export function ToolLine({
           if (Array.isArray(parsed) && parsed[0]?.type === 'text' && typeof parsed[0].text === 'string') {
             parsed = JSON.parse(parsed[0].text)
           }
-          const sessions = parsed as Array<{ id: string; name: string; cwd: string; status: string }>
+          const sessions = parsed as Array<{
+            id: string
+            name: string
+            title?: string
+            cwd: string
+            status: string
+            metadata?: { label?: string }
+          }>
           summary = `${sessions.length} sessions`
           details = (
             <div className="text-[10px] font-mono space-y-0.5 mt-1">
-              {sessions.map(s => (
-                <div key={s.id} className="flex items-center gap-2">
-                  <span
-                    className={cn(
-                      'w-1.5 h-1.5 rounded-full shrink-0',
-                      s.status === 'live' ? 'bg-green-400' : 'bg-zinc-600',
-                    )}
-                  />
-                  <span className="text-teal-400">{s.name}</span>
-                  <span className="text-muted-foreground/40 truncate">{s.cwd}</span>
-                </div>
-              ))}
+              {sessions.map(s => {
+                const sessionTitle = s.title
+                const projLabel = s.metadata?.label
+                const displayName =
+                  projLabel && sessionTitle && projLabel !== sessionTitle
+                    ? `${projLabel} :: ${sessionTitle}`
+                    : projLabel || sessionTitle || s.name
+                return (
+                  <div key={s.id} className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        'w-1.5 h-1.5 rounded-full shrink-0',
+                        s.status === 'live' ? 'bg-green-400' : 'bg-zinc-600',
+                      )}
+                    />
+                    <span className="text-teal-400">{displayName}</span>
+                    <span className="text-muted-foreground/40 truncate">{s.cwd}</span>
+                  </div>
+                )
+              })}
             </div>
           )
         } catch {
