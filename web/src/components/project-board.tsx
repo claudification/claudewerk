@@ -913,6 +913,27 @@ export function RunTaskDialog({
   const isComplete = spawnedSession?.status === 'ended'
   const isRunning = spawnedSession && !isComplete
 
+  // Auto-redirect countdown: 3s after session is running, auto-navigate
+  const [viewCountdown, setViewCountdown] = useState<number | null>(null)
+  useEffect(() => {
+    if (isRunning && viewCountdown === null) {
+      setViewCountdown(3)
+    }
+  }, [isRunning, viewCountdown])
+
+  useEffect(() => {
+    if (viewCountdown === null || viewCountdown <= 0) return
+    const timer = setTimeout(() => setViewCountdown(prev => (prev !== null ? prev - 1 : null)), 1000)
+    return () => clearTimeout(timer)
+  }, [viewCountdown])
+
+  useEffect(() => {
+    if (viewCountdown === 0 && launchSessionId) {
+      useSessionsStore.getState().selectSession(launchSessionId)
+      onClose()
+    }
+  }, [viewCountdown, launchSessionId, onClose])
+
   return (
     <div
       role="button"
@@ -1146,7 +1167,7 @@ export function RunTaskDialog({
                   onClick={handleViewSession}
                   className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold font-mono bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 transition-colors"
                 >
-                  View Session
+                  View Session{viewCountdown != null && viewCountdown > 0 ? ` (${viewCountdown}s)` : ''}
                 </button>
               )}
               {isComplete && (

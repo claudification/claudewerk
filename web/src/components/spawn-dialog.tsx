@@ -124,6 +124,7 @@ export function SpawnDialog() {
       setWrapperId(null)
       setElapsed(0)
       setCopied(false)
+      setViewCountdown(null)
       setState({ open: true, options })
     }
     return () => {
@@ -270,6 +271,28 @@ export function SpawnDialog() {
 
   const isSessionConnected = launch.completed || (spawnedSession && spawnedSession.status !== 'ended')
   const hasError = error || launch.failed
+
+  // Auto-redirect countdown: 3s after session connects, auto-navigate
+  const [viewCountdown, setViewCountdown] = useState<number | null>(null)
+  useEffect(() => {
+    if (isSessionConnected && viewCountdown === null) {
+      setViewCountdown(3)
+    }
+  }, [isSessionConnected, viewCountdown])
+
+  useEffect(() => {
+    if (viewCountdown === null || viewCountdown <= 0) return
+    const timer = setTimeout(() => setViewCountdown(prev => (prev !== null ? prev - 1 : null)), 1000)
+    return () => clearTimeout(timer)
+  }, [viewCountdown])
+
+  useEffect(() => {
+    if (viewCountdown === 0) {
+      const sid = launch.sessionId || spawnedSession?.id
+      if (sid) useSessionsStore.getState().selectSession(sid)
+      handleClose()
+    }
+  }, [viewCountdown, launch.sessionId, spawnedSession, handleClose])
 
   return (
     <Dialog open={state.open} onOpenChange={open => !open && handleClose()}>
@@ -652,6 +675,7 @@ export function SpawnDialog() {
                   <button
                     type="button"
                     onClick={() => {
+                      setViewCountdown(null)
                       const sid = launch.sessionId || spawnedSession?.id
                       if (sid) useSessionsStore.getState().selectSession(sid)
                       handleClose()
@@ -662,7 +686,7 @@ export function SpawnDialog() {
                       'hover:bg-emerald-500/25 transition-colors',
                     )}
                   >
-                    View Session
+                    View Session{viewCountdown != null && viewCountdown > 0 ? ` (${viewCountdown}s)` : ''}
                   </button>
                 )}
                 <button
