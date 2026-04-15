@@ -787,8 +787,7 @@ export function RunTaskDialog({
     setSteps([{ label: 'Sending spawn request...', status: 'active', ts: Date.now() }])
 
     // Build the prompt from the task
-    const commitLine =
-      autoCommit && !leaveRunning ? '\n\nWhen you are done, commit all changes with a descriptive commit message.' : ''
+    const commitLine = autoCommit ? '\n\nWhen you are done, commit all changes with a descriptive commit message.' : ''
     const worktreeMerge = useWorktree
       ? '\n\nIMPORTANT - WORKTREE MERGE-BACK:\nYou are working in a git worktree (isolated branch). Before finishing:\n1. Commit all changes\n2. Merge back to main: run `git rebase main && git fetch . HEAD:main`\n3. If rebase conflicts occur, resolve them and run `git rebase --continue`, then `git fetch . HEAD:main`\n4. Verify: `git log --oneline main -5`\nThis merges your work back to main so it is not stranded on a dead branch.'
       : ''
@@ -1033,14 +1032,11 @@ export function RunTaskDialog({
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={autoCommit && !leaveRunning}
-                    disabled={leaveRunning}
+                    checked={autoCommit}
                     onChange={e => setAutoCommit(e.target.checked)}
-                    className="accent-amber-400 disabled:opacity-30"
+                    className="accent-amber-400"
                   />
-                  <span className={cn('text-[10px] font-mono text-muted-foreground', leaveRunning && 'opacity-40')}>
-                    Auto-commit on completion
-                  </span>
+                  <span className="text-[10px] font-mono text-muted-foreground">Auto-commit on completion</span>
                 </label>
                 <div className="text-[9px] text-[#565f89] pl-5">
                   Adds a prompt instruction to commit when the task finishes
