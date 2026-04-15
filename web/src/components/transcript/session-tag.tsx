@@ -81,10 +81,12 @@ export function SessionTag({ idOrSlug, className }: SessionTagProps) {
         )}
       >
         {cwd && <span className="text-zinc-300">{cwd}</span>}
-        <span className="text-zinc-500">
-          {status ?? 'unknown'}
-          {session?.id ? ` · ${session.id}` : idOrSlug !== displayName ? ` · ${idOrSlug}` : ''}
-        </span>
+        <span className="text-zinc-500">{status ?? 'unknown'}</span>
+        {(session?.id ?? idOrSlug) && (
+          <span className="text-zinc-600">
+            <span className="text-zinc-700">@</span> {session?.id ?? idOrSlug}
+          </span>
+        )}
       </span>
     </span>
   )
