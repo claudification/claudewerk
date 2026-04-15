@@ -4,7 +4,6 @@
  */
 
 import { memo, useState } from 'react'
-import { useSessionsStore } from '@/hooks/use-sessions'
 import type { TranscriptContentBlock, TranscriptImage, TranscriptToolUseResult } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
 import { JsonInspector } from '../json-inspector'
@@ -36,6 +35,7 @@ import { CopyMenu } from '../copy-menu'
 import { Markdown } from '../markdown'
 import { AgentTranscriptInline } from './agent-views'
 import type { DisplayGroup, TaskNotification } from './grouping'
+import { SessionTag } from './session-tag'
 import { MemoizedToolLine } from './tool-line'
 import { BashOutput } from './tool-renderers'
 
@@ -633,40 +633,12 @@ export function GroupView({
                   progress: 'bg-zinc-400/15 text-zinc-400 border-zinc-400/30',
                 }
                 const iStyle = intentStyles[item.intent || ''] || intentStyles.notify
-                // Resolve sender slug to display name via project settings
-                const senderSession = item.sessionId
-                  ? useSessionsStore.getState().sessionsById[item.sessionId]
-                  : undefined
-                const senderLabel = senderSession?.cwd
-                  ? useSessionsStore.getState().projectSettings[senderSession.cwd]?.label
-                  : undefined
-                const senderTitle = senderSession?.title
-                const senderDisplayName =
-                  senderLabel && senderTitle
-                    ? `${senderLabel} :: ${senderTitle}`
-                    : senderTitle || senderLabel || item.source
                 return (
                   // biome-ignore lint/suspicious/noArrayIndexKey: content blocks without stable IDs
                   <div key={i} className="rounded-lg border border-teal-500/30 bg-teal-500/5 px-3 py-2.5 my-1">
                     <div className="flex items-center gap-2 mb-1.5">
                       <span className="text-[10px] font-mono text-teal-400/60">from</span>
-                      <button
-                        type="button"
-                        className="text-xs font-bold text-teal-400 hover:text-teal-300 hover:underline"
-                        onClick={() => {
-                          // Find and select the sender session
-                          if (item.sessionId) {
-                            const store = useSessionsStore.getState()
-                            const target = store.sessionsById[item.sessionId]
-                            if (target) {
-                              haptic('tap')
-                              store.selectSession(item.sessionId)
-                            }
-                          }
-                        }}
-                      >
-                        {senderDisplayName}
-                      </button>
+                      <SessionTag idOrSlug={item.sessionId || item.source || ''} className="text-xs" />
                       {item.intent && (
                         <span
                           className={cn(

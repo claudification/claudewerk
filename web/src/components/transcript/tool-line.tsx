@@ -9,8 +9,9 @@ import { Markdown } from '@/components/markdown'
 import { useSessionsStore } from '@/hooks/use-sessions'
 import { resolveToolDisplay, type ToolDisplayKey } from '@/lib/dashboard-prefs'
 import type { TranscriptContentBlock } from '@/lib/types'
-import { cn, haptic, truncate } from '@/lib/utils'
+import { cn, truncate } from '@/lib/utils'
 import { JsonInspector } from '../json-inspector'
+import { SessionTag } from './session-tag'
 import { Collapsible, getToolStyle, shortPath, TruncatedPre } from './shared'
 import { BashOutput, DiffView, ShellCommand, WritePreview } from './tool-renderers'
 
@@ -48,33 +49,6 @@ function extractMcpResultText(result: string): string | null {
   }
 }
 
-/** Slugify a name the same way the concentrator address-book does. */
-function slugify(name: string): string {
-  return (
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '')
-      .slice(0, 24) || 'project'
-  )
-}
-
-/** Find a session matching an address book slug (best-effort client-side match). */
-function findSessionBySlug(slug: string) {
-  const { sessions, projectSettings } = useSessionsStore.getState()
-  const normalizedSlug = slug.toLowerCase()
-  for (const s of sessions) {
-    // Check project label from settings
-    const ps = projectSettings[s.cwd]
-    if (ps?.label && slugify(ps.label) === normalizedSlug) return s
-    // Check session title
-    if (s.title && slugify(s.title) === normalizedSlug) return s
-    // Check dirname
-    const dirname = s.cwd?.split('/').pop() || ''
-    if (dirname && slugify(dirname) === normalizedSlug) return s
-  }
-  return undefined
-}
 
 function formatTokenCount(tokens: number): string {
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M tok`
@@ -572,15 +546,6 @@ export function ToolLine({
       const to = (input.to as string) || ''
       const intent = (input.intent as string) || ''
       const msg = (input.message as string) || ''
-      // Find target session: try direct ID match first, then slug match
-      const { sessions: allSessions, projectSettings: allProjSettings } = useSessionsStore.getState()
-      const targetSession = allSessions.find(s => s.id === to) || findSessionBySlug(to)
-      const targetProjLabel = targetSession?.cwd ? allProjSettings[targetSession.cwd]?.label : undefined
-      const sessionTitle = targetSession?.title
-      const targetName =
-        targetProjLabel && sessionTitle
-          ? `${targetProjLabel} :: ${sessionTitle}`
-          : sessionTitle || targetProjLabel || targetSession?.cwd?.split('/').pop() || to
       const intentStyles: Record<string, string> = {
         request: 'bg-yellow-400/15 text-yellow-400 border-yellow-400/30',
         response: 'bg-green-400/15 text-green-400 border-green-400/30',
@@ -590,18 +555,7 @@ export function ToolLine({
       summary = (
         <span className="flex items-center gap-1.5">
           <span className="text-teal-400/60">to</span>
-          <button
-            type="button"
-            className="text-teal-400 font-bold hover:text-teal-300 hover:underline"
-            onClick={() => {
-              if (targetSession) {
-                haptic('tap')
-                useSessionsStore.getState().selectSession(targetSession.id)
-              }
-            }}
-          >
-            {targetName}
-          </button>
+          <SessionTag idOrSlug={to} />
           {intent && (
             <span
               className={cn(
@@ -632,18 +586,10 @@ export function ToolLine({
       const sessionId = (input.session_id as string) || ''
       const action = name.includes('revive') ? 'revive' : 'terminate'
       const actionColor = action === 'revive' ? 'text-green-400' : 'text-red-400'
-      const { sessionsById, projectSettings: projSettings } = useSessionsStore.getState()
-      const sess = sessionsById[sessionId]
-      const sessProjLabel = sess?.cwd ? projSettings[sess.cwd]?.label : undefined
-      const sessTitle = sess?.title
-      const sessName =
-        sessProjLabel && sessTitle
-          ? `${sessProjLabel} :: ${sessTitle}`
-          : sessTitle || sessProjLabel || sess?.cwd?.split('/').pop() || sessionId.slice(0, 8)
       summary = (
         <span className="flex items-center gap-1.5">
           <span className={actionColor}>{action}</span>
-          <span className="text-teal-400 font-bold">{sessName}</span>
+          <SessionTag idOrSlug={sessionId} />
         </span>
       )
       if (result) details = <TruncatedPre text={result} tool="MCP" />
@@ -658,37 +604,21 @@ export function ToolLine({
           if (Array.isArray(parsed) && parsed[0]?.type === 'text' && typeof parsed[0].text === 'string') {
             parsed = JSON.parse(parsed[0].text)
           }
-          const sessions = parsed as Array<{
-            id: string
-            name: string
-            title?: string
-            cwd: string
-            status: string
-            metadata?: { label?: string }
-          }>
+          const sessions = parsed as Array<{ id: string; status: string }>
           summary = `${sessions.length} sessions`
           details = (
             <div className="text-[10px] font-mono space-y-0.5 mt-1">
-              {sessions.map(s => {
-                const sessionTitle = s.title
-                const projLabel = s.metadata?.label
-                const displayName =
-                  projLabel && sessionTitle && projLabel !== sessionTitle
-                    ? `${projLabel} :: ${sessionTitle}`
-                    : projLabel || sessionTitle || s.name
-                return (
-                  <div key={s.id} className="flex items-center gap-2">
-                    <span
-                      className={cn(
-                        'w-1.5 h-1.5 rounded-full shrink-0',
-                        s.status === 'live' ? 'bg-green-400' : 'bg-zinc-600',
-                      )}
-                    />
-                    <span className="text-teal-400">{displayName}</span>
-                    <span className="text-muted-foreground/40 truncate">{s.cwd}</span>
-                  </div>
-                )
-              })}
+              {sessions.map(s => (
+                <div key={s.id} className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      'w-1.5 h-1.5 rounded-full shrink-0',
+                      s.status === 'live' ? 'bg-green-400' : 'bg-zinc-600',
+                    )}
+                  />
+                  <SessionTag idOrSlug={s.id} />
+                </div>
+              ))}
             </div>
           )
         } catch {
