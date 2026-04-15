@@ -26,7 +26,12 @@ interface DoubleTapState {
 
 // ── Chord mode ──────────────────────────────────────────────────────────────
 
-const CHORD_TIMEOUT = 3000
+// Configurable via setChordTimeout() -- synced from dashboard prefs
+let chordTimeoutMs = 3000
+
+export function setChordTimeout(ms: number) {
+  chordTimeoutMs = ms
+}
 
 interface ChordState {
   prefix: string
@@ -58,7 +63,7 @@ function enterChordMode(prefix: string) {
   const timeoutId = setTimeout(() => {
     activeChord = null
     notifyChordListeners(null)
-  }, CHORD_TIMEOUT)
+  }, chordTimeoutMs)
   activeChord = { prefix, timeoutId }
   notifyChordListeners(prefix)
 }
@@ -236,7 +241,8 @@ function dispatch(e: KeyboardEvent) {
   const isModified = hasModifier(normalized)
   const isNonPrintable = e.key.length > 1
 
-  if (isModified && !inTerminal && isChordPrefix(normalized)) {
+  // Modifier shortcuts (CMD+K, CMD+G…) are intercepted even inside the terminal
+  if (isModified && isChordPrefix(normalized)) {
     e.preventDefault()
     e.stopPropagation()
     e.stopImmediatePropagation()
@@ -250,7 +256,8 @@ function dispatch(e: KeyboardEvent) {
   for (let i = layers.length - 1; i >= 0; i--) {
     const layer = layers[i]
     if (layer.options.enabled === false) continue
-    if (inTerminal && !layer.options.captureTerminal) continue
+    // Modifier shortcuts fire even inside the terminal (CMD+K etc. are dashboard-level)
+    if (inTerminal && !layer.options.captureTerminal && !isModified) continue
 
     // Skip double-tap bindings in single-key dispatch
     const handler = !isDoubleTapBinding(normalized) ? findBinding(layer.bindings, normalized) : undefined

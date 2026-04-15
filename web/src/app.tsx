@@ -38,6 +38,7 @@ import {
 } from '@/hooks/use-sessions'
 import { useWebSocket } from '@/hooks/use-websocket'
 import { executeCommand, useCommand } from '@/lib/commands'
+import { setChordTimeout } from '@/lib/key-layers'
 import { canTerminal } from '@/lib/types'
 import { clearCacheAndReload, isMobileViewport, isTouchDevice, PRE_RELOAD_KEY } from '@/lib/utils'
 import { BUILD_VERSION } from '../../src/shared/version'
@@ -378,17 +379,32 @@ function Dashboard() {
     }
   }, [selectedSessionId])
 
+  // ── Sync chord timeout from prefs ────────────────────────────────────────
+  const chordTimeoutMs = useSessionsStore(s => s.dashboardPrefs.chordTimeoutMs)
+  useEffect(() => {
+    setChordTimeout(chordTimeoutMs)
+  }, [chordTimeoutMs])
+
   // ── Global commands (registered via key-layers, show in palette + help) ──
 
-  useCommand(
-    'open-switcher',
-    () => {
-      const store = useSessionsStore.getState()
-      if (store.showTerminal) store.setShowTerminal(false)
-      store.toggleSwitcher()
-    },
-    { label: 'Session switcher', shortcut: 'mod+g k', group: 'Navigation' },
-  )
+  const openSwitcher = useCallback(() => {
+    const store = useSessionsStore.getState()
+    if (store.showTerminal) store.setShowTerminal(false)
+    store.toggleSwitcher()
+  }, [])
+
+  useCommand('open-switcher', openSwitcher, {
+    label: 'Session switcher',
+    shortcut: 'mod+k',
+    group: 'Navigation',
+  })
+
+  // Also reachable via CMD+G chord
+  useCommand('go-switcher', openSwitcher, {
+    label: 'Session switcher',
+    shortcut: 'mod+g k',
+    group: 'Navigation',
+  })
 
   useCommand(
     'toggle-verbose',

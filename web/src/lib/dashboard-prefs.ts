@@ -51,6 +51,7 @@ export interface DashboardPrefs {
   showStreaming: boolean
   showPerfMonitor: boolean
   toolDisplay: Partial<Record<ToolDisplayKey, Partial<ToolDisplayPrefs>>>
+  chordTimeoutMs: number // how long to wait for second chord key before dismissing (ms)
 }
 
 export const defaultPrefs: DashboardPrefs = {
@@ -73,6 +74,7 @@ export const defaultPrefs: DashboardPrefs = {
   showPerfMonitor: false,
   defaultSessionCwd: '',
   toolDisplay: {},
+  chordTimeoutMs: 3000,
 }
 
 export function loadPrefs(): DashboardPrefs {

@@ -623,6 +623,25 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    group: 'Keyboard',
+    label: 'Chord timeout (s)',
+    description: 'How long to wait for second chord key (⌘G …) before dismissing',
+    keywords: 'chord shortcut keyboard timeout cmd+g',
+    render: ctx => (
+      <input
+        type="number"
+        min={0.5}
+        max={10}
+        step={0.5}
+        value={(ctx.prefs.chordTimeoutMs ?? 3000) / 1000}
+        onChange={e =>
+          ctx.updatePrefs({ chordTimeoutMs: Math.max(500, Math.min(10000, Math.round(Number(e.target.value) * 1000))) })
+        }
+        className="w-16 bg-muted border border-border rounded px-2 py-1 text-xs"
+      />
+    ),
+  },
+  {
     group: 'Display',
     label: 'Chat bubbles',
     description: 'iMessage-style bubbles for user messages',
