@@ -2598,9 +2598,12 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
           }
         }
 
-        // Extract token usage (latest = context window, cumulative = totals)
+        // Extract token usage (latest = context window, cumulative = totals).
+        // Skip `<synthetic>` assistant blocks (auto-compact summaries, recap,
+        // hook-injected messages). They aren't real API turns and carry zeroed
+        // usage that would clobber the last real context-window snapshot.
         const usage = assistantEntry.message?.usage
-        if (usage && typeof usage.input_tokens === 'number') {
+        if (usage && typeof usage.input_tokens === 'number' && assistantModel !== '<synthetic>') {
           // Extract effort level from API 'speed' field
           if (usage.speed && typeof usage.speed === 'string') {
             session.effortLevel = usage.speed
