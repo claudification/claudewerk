@@ -9,6 +9,8 @@
 import { DEFAULT_SENTINEL, EFFORT_OPTIONS, MODEL_OPTIONS, PERMISSION_MODE_OPTIONS } from '@shared/spawn-schema'
 import type React from 'react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { TileToggleRow } from '@/components/ui/tile-toggle-row'
+import { TogglePill } from '@/components/ui/toggle-pill'
 
 export type LaunchFieldKey =
   | 'model'
@@ -112,26 +114,24 @@ export function LaunchConfigFields({ value, onChange, show = {}, disabled = {} }
         </Row>
       )}
       {show.permissionMode && (
-        <Row label="Permissions" htmlFor="lcf-permission">
-          <div className="flex-1 max-w-[220px]">
-            <Select
-              value={value.permissionMode ? value.permissionMode : DEFAULT_SENTINEL}
-              onValueChange={v => onChange({ permissionMode: v === DEFAULT_SENTINEL ? '' : v })}
-              disabled={disabled.permissionMode}
-            >
-              <SelectTrigger id="lcf-permission" size="sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PERMISSION_MODE_OPTIONS.map(opt => (
-                  <SelectItem key={opt.value} value={opt.value} info={opt.info}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        <div className="space-y-1.5">
+          <div className="text-[10px] font-mono text-muted-foreground">Permissions</div>
+          <div className="flex flex-wrap gap-1.5">
+            {PERMISSION_MODE_OPTIONS.map(opt => {
+              const current = value.permissionMode ? value.permissionMode : DEFAULT_SENTINEL
+              return (
+                <TogglePill
+                  key={opt.value}
+                  small
+                  label={opt.label}
+                  title={opt.info}
+                  active={current === opt.value}
+                  onClick={() => onChange({ permissionMode: opt.value === DEFAULT_SENTINEL ? '' : opt.value })}
+                />
+              )
+            })}
           </div>
-        </Row>
+        </div>
       )}
       {show.autocompactPct && (
         <Row label="Auto-compact %" htmlFor="lcf-compact">
@@ -193,16 +193,13 @@ export function LaunchConfigFields({ value, onChange, show = {}, disabled = {} }
       )}
       {show.worktree && (
         <div className="space-y-1.5">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={value.useWorktree ?? false}
-              onChange={e => onChange({ useWorktree: e.target.checked })}
-              disabled={disabled.worktree}
-              className="accent-amber-400"
-            />
-            <span className="text-[10px] font-mono text-muted-foreground">Use git worktree (isolated branch)</span>
-          </label>
+          <TileToggleRow
+            title="Git worktree"
+            subtitle="Isolated branch, auto-merges on completion"
+            checked={value.useWorktree ?? false}
+            onToggle={() => onChange({ useWorktree: !(value.useWorktree ?? false) })}
+            disabled={disabled.worktree}
+          />
           {value.useWorktree && (
             <input
               type="text"
@@ -216,38 +213,22 @@ export function LaunchConfigFields({ value, onChange, show = {}, disabled = {} }
         </div>
       )}
       {show.autoCommit && (
-        <div className="space-y-0.5">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={value.autoCommit ?? false}
-              onChange={e => onChange({ autoCommit: e.target.checked })}
-              disabled={disabled.autoCommit}
-              className="accent-amber-400"
-            />
-            <span className="text-[10px] font-mono text-muted-foreground">Auto-commit on completion</span>
-          </label>
-          <div className="text-[9px] text-[#565f89] pl-5">
-            Adds a prompt instruction to commit when the task finishes
-          </div>
-        </div>
+        <TileToggleRow
+          title="Auto-commit"
+          subtitle="Adds a prompt instruction to commit when the task finishes"
+          checked={value.autoCommit ?? false}
+          onToggle={() => onChange({ autoCommit: !(value.autoCommit ?? false) })}
+          disabled={disabled.autoCommit}
+        />
       )}
       {show.leaveRunning && (
-        <div className="space-y-0.5">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={value.leaveRunning ?? false}
-              onChange={e => onChange({ leaveRunning: e.target.checked })}
-              disabled={disabled.leaveRunning}
-              className="accent-amber-400"
-            />
-            <span className="text-[10px] font-mono text-muted-foreground">Leave session running when done</span>
-          </label>
-          <div className="text-[9px] text-[#565f89] pl-5">
-            Keep session alive after the task completes for follow-up work
-          </div>
-        </div>
+        <TileToggleRow
+          title="Leave session running"
+          subtitle="Keep session alive after the task completes for follow-up work"
+          checked={value.leaveRunning ?? false}
+          onToggle={() => onChange({ leaveRunning: !(value.leaveRunning ?? false) })}
+          disabled={disabled.leaveRunning}
+        />
       )}
       {show.env && (
         <div className="space-y-1">

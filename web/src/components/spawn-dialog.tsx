@@ -11,6 +11,8 @@ import { Zap } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
+import { TileToggleRow } from '@/components/ui/tile-toggle-row'
+import { TogglePill } from '@/components/ui/toggle-pill'
 import { useLaunchProgress } from '@/hooks/use-launch-progress'
 import { updateProjectSettings, useSessionsStore, wsSend } from '@/hooks/use-sessions'
 import { sendSpawnRequest } from '@/hooks/use-spawn'
@@ -520,52 +522,20 @@ export function SpawnDialog() {
                     />
 
                     {/* REPL tool toggle (dialog-specific) */}
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      className="flex items-center justify-between py-1.5 cursor-pointer select-none"
-                      onClick={() => {
-                        setRepl(!repl)
-                        haptic('tap')
-                      }}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          setRepl(!repl)
-                          haptic('tap')
-                        }
-                      }}
-                    >
-                      <div>
-                        <div className="text-sm font-mono">REPL tool</div>
-                        <div className="text-[10px] text-[#565f89]">
-                          JS sandbox for batched tool calls (CLAUDE_CODE_REPL)
-                        </div>
-                      </div>
-                      <ToggleSwitch on={repl} />
-                    </div>
+                    <TileToggleRow
+                      title="REPL tool"
+                      subtitle="JS sandbox for batched tool calls (CLAUDE_CODE_REPL)"
+                      checked={repl}
+                      onToggle={() => setRepl(!repl)}
+                    />
 
                     {/* Bare toggle (dialog-specific) */}
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      className="flex items-center justify-between py-1.5 cursor-pointer select-none"
-                      onClick={() => {
-                        setBare(!bare)
-                        haptic('tap')
-                      }}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          setBare(!bare)
-                          haptic('tap')
-                        }
-                      }}
-                    >
-                      <div>
-                        <div className="text-sm font-mono">Bare session</div>
-                        <div className="text-[10px] text-[#565f89]">Skip hooks, plugins, CLAUDE.md, auto-memory</div>
-                      </div>
-                      <ToggleSwitch on={bare} />
-                    </div>
+                    <TileToggleRow
+                      title="Bare session"
+                      subtitle="Skip hooks, plugins, CLAUDE.md, auto-memory"
+                      checked={bare}
+                      onToggle={() => setBare(!bare)}
+                    />
 
                     {/* Env vars (LaunchConfigFields renders textarea, errors below) */}
                     <LaunchConfigFields value={fieldsValue} onChange={applyFieldsPatch} show={{ env: true }} />
@@ -677,56 +647,5 @@ export function SpawnDialog() {
         </div>
       </DialogContent>
     </Dialog>
-  )
-}
-
-// ─── Sub-components ──────────────────────────────────────────────
-
-function TogglePill({
-  active,
-  onClick,
-  label,
-  small,
-  shortcut,
-}: {
-  active: boolean
-  onClick: () => void
-  label: string
-  small?: boolean
-  shortcut?: string
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'rounded font-mono transition-all duration-150 inline-flex items-center gap-1.5',
-        small ? 'px-2.5 py-1 text-[11px]' : 'px-4 py-1.5 text-sm',
-        active
-          ? 'bg-[#7aa2f7]/20 text-[#7aa2f7] border border-[#7aa2f7]/40'
-          : 'bg-transparent text-[#565f89] border border-border hover:text-foreground hover:border-foreground/30',
-      )}
-    >
-      {label}
-      {shortcut && <Kbd className="text-[10px]">{shortcut}</Kbd>}
-    </button>
-  )
-}
-
-function ToggleSwitch({ on }: { on: boolean }) {
-  return (
-    <div
-      className={cn(
-        'w-9 h-5 rounded-full transition-colors duration-150 relative shrink-0',
-        on ? 'bg-[#7aa2f7]' : 'bg-[#1a1b26] border border-border',
-      )}
-    >
-      <div
-        className={cn(
-          'absolute top-0.5 w-4 h-4 rounded-full transition-transform duration-150',
-          on ? 'translate-x-4 bg-white' : 'translate-x-0.5 bg-[#565f89]',
-        )}
-      />
-    </div>
   )
 }
