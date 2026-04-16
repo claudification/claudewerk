@@ -1550,7 +1550,9 @@ async function main() {
   const finalClaudeArgs = [
     '--mcp-config',
     mcpConfigPath,
-    ...(channelEnabled ? ['--dangerously-load-development-channels', 'server:rclaude'] : []),
+    ...(channelEnabled
+      ? ['--dangerously-load-development-channels', 'server:rclaude', '--disallowed-tools', 'SendMessage']
+      : []),
     ...(sessionName ? ['--name', sessionName] : []),
     ...claudeArgs,
   ]

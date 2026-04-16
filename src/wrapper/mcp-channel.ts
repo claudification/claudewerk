@@ -53,6 +53,7 @@ export interface SessionInfo {
   cwd: string
   status: 'live' | 'inactive'
   wrapperIds?: string[] // only present when multiple wrappers share a session
+  label?: string
   description?: string
   title?: string
   summary?: string
@@ -703,7 +704,9 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
                 '$',
               'i',
             )
-            sessions = sessions.filter(s => regex.test(s.name) || (s.title && regex.test(s.title)))
+            sessions = sessions.filter(
+              s => regex.test(s.name) || (s.title && regex.test(s.title)) || (s.label && regex.test(s.label)),
+            )
           }
           debug(
             `[channel] list_sessions: ${sessions.length} results (metadata=${showMeta}, filter=${params.filter ?? 'none'})`,

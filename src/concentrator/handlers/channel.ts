@@ -63,6 +63,25 @@ const subscribe: MessageHandler = (ctx, data) => {
         allowedPrompts: s.pendingPlanApproval.allowedPrompts,
       })
     }
+    if (s.pendingPermission) {
+      ctx.reply({
+        type: 'permission_request',
+        sessionId: s.id,
+        requestId: s.pendingPermission.requestId,
+        toolName: s.pendingPermission.toolName,
+        description: s.pendingPermission.description,
+        inputPreview: s.pendingPermission.inputPreview,
+        toolUseId: s.pendingPermission.toolUseId,
+      })
+    }
+    if (s.pendingAskQuestion) {
+      ctx.reply({
+        type: 'ask_question',
+        sessionId: s.id,
+        toolUseId: s.pendingAskQuestion.toolUseId,
+        questions: s.pendingAskQuestion.questions,
+      })
+    }
   }
 
   ctx.log.debug(`Subscriber connected (v${pv}, total: ${ctx.sessions.getSubscriberCount()})`)
@@ -187,6 +206,7 @@ const channelListSessions: MessageHandler = (ctx, data) => {
       cwd: showFull ? s.cwd : shortCwd,
       status: (isLive ? 'live' : 'inactive') as 'live' | 'inactive',
       capabilities: s.capabilities,
+      ...(projSettings?.label && projSettings.label !== sessionName ? { label: projSettings.label } : {}),
       ...(projSettings?.description ? { description: projSettings.description } : {}),
       link: isLinked ? 'connected' : linkStatus === 'blocked' ? 'blocked' : undefined,
       title: s.title,
