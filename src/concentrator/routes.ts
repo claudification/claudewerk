@@ -739,15 +739,16 @@ export function createRouter(options: RouteOptions): Hono {
     if (!agent) return c.json({ error: 'No host agent connected' }, 503)
 
     const wrapperId = randomUUID()
+    const lc = session.launchConfig // stored launch config from original spawn
     const name =
       session.title || getProjectSettings(session.cwd)?.label || session.cwd.split('/').pop() || sessionId.slice(0, 8)
-    // Resolve effort + model: project default > global default > undefined
+    // Resolve effort + model: launch config > project default > global default > undefined
     const projSettings = getProjectSettings(session.cwd)
     const globalSettings = getGlobalSettings()
-    const effortRaw = projSettings?.defaultEffort || globalSettings.defaultEffort
+    const effortRaw = lc?.effort || projSettings?.defaultEffort || globalSettings.defaultEffort
     const effort = effortRaw && effortRaw !== 'default' ? effortRaw : undefined
-    const modelRaw = projSettings?.defaultModel || globalSettings.defaultModel
-    const model = modelRaw || undefined
+    const model = lc?.model || projSettings?.defaultModel || globalSettings.defaultModel || undefined
+    const headless = lc?.headless ?? (projSettings?.defaultLaunchMode || globalSettings.defaultLaunchMode) !== 'pty'
 
     agent.send(
       JSON.stringify({
@@ -756,9 +757,17 @@ export function createRouter(options: RouteOptions): Hono {
         cwd: session.cwd,
         wrapperId,
         mode: 'resume',
+        headless,
         effort,
         model,
         sessionName: session.title || undefined,
+        bare: lc?.bare || undefined,
+        repl: lc?.repl || undefined,
+        permissionMode: lc?.permissionMode || undefined,
+        autocompactPct: lc?.autocompactPct || session.autocompactPct,
+        maxBudgetUsd: lc?.maxBudgetUsd || session.maxBudgetUsd,
+        adHocWorktree: session.adHocWorktree || undefined,
+        env: lc?.env || undefined,
       }),
     )
 
@@ -919,6 +928,19 @@ export function createRouter(options: RouteOptions): Hono {
       const effort = effortRaw && effortRaw !== 'default' ? effortRaw : undefined
       const modelRaw = body.model || projSettings?.defaultModel || globalSettings.defaultModel
       const model = modelRaw || undefined
+
+      // Store launch config so it can be reused on revive
+      sessionStore.setPendingLaunchConfig(wrapperId, {
+        headless,
+        model,
+        effort,
+        bare: body.bare || false,
+        repl: body.repl || false,
+        permissionMode: body.adHoc ? 'bypassPermissions' : body.permissionMode || undefined,
+        autocompactPct: body.autocompactPct || undefined,
+        maxBudgetUsd: body.maxBudgetUsd || undefined,
+        env: body.env || undefined,
+      })
 
       agent.send(
         JSON.stringify({

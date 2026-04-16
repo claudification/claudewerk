@@ -10,6 +10,7 @@ import type { ServerWebSocket } from 'bun'
 import type {
   ChannelStats,
   HookEvent,
+  LaunchConfig,
   Session,
   SessionSummary,
   SubscriberDiag,
@@ -225,6 +226,9 @@ export interface SessionStore {
   ) => { callerSessionId: string; targetSessionId: string; cwd: string; isSelfRestart: boolean } | undefined
   resolveRendezvous: (wrapperId: string, sessionId: string) => boolean
   getRendezvousInfo: (wrapperId: string) => { callerSessionId: string; action: string } | undefined
+  // Pending launch configs (set at spawn, consumed on connect to restore on revive)
+  setPendingLaunchConfig: (wrapperId: string, config: LaunchConfig) => void
+  consumePendingLaunchConfig: (wrapperId: string) => LaunchConfig | undefined
   // Pending session names (set at spawn, consumed on connect)
   setPendingSessionName: (wrapperId: string, name: string) => void
   consumePendingSessionName: (wrapperId: string) => string | undefined
@@ -822,6 +826,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         gitBranch: s.gitBranch,
         adHocTaskId: s.adHocTaskId,
         adHocWorktree: s.adHocWorktree,
+        launchConfig: s.launchConfig,
         resultText: s.resultText,
         recap: s.recap,
         title: s.title,
@@ -1464,9 +1469,12 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       // PermissionDenied - Claude was denied permission (tool blocked by user rules)
       if (event.hookEvent === 'PermissionDenied' && event.data) {
         const data = event.data as Record<string, unknown>
-        // Clear any pending permission attention since it's now resolved (denied)
+        // Clear any pending permission state since it's now resolved (denied)
         if (session.pendingAttention?.type === 'permission') {
           session.pendingAttention = undefined
+        }
+        if (session.pendingPermission) {
+          session.pendingPermission = undefined
         }
         const toolName = data.tool_name as string | undefined
         const projectName = getProjectSettings(session.cwd)?.label || session.cwd.split('/').pop() || session.cwd
@@ -1491,7 +1499,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         }
       }
 
-      // Clear pendingAttention on resolution events
+      // Clear pendingAttention + stored request payloads on resolution events
       if (
         event.hookEvent === 'PostToolUse' ||
         event.hookEvent === 'PostToolUseFailure' ||
@@ -1499,6 +1507,12 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       ) {
         if (session.pendingAttention) {
           session.pendingAttention = undefined
+        }
+        if (session.pendingPermission) {
+          session.pendingPermission = undefined
+        }
+        if (session.pendingAskQuestion) {
+          session.pendingAskQuestion = undefined
         }
       }
 
@@ -2573,10 +2587,15 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
           session.stats.toolCallCount += content.filter(c => c.type === 'tool_use').length
         }
 
-        // Extract model + effort from assistant messages (more reliable than SessionStart)
+        // Extract model + effort from assistant messages (more reliable than SessionStart).
+        // CC writes `model: "<synthetic>"` on locally-generated assistant blocks
+        // (auto-compact summaries, recap, hook-injected messages). Only accept it as
+        // a fallback when we have nothing else -- never let it clobber a real model.
         const assistantModel = assistantEntry.message?.model
         if (assistantModel && typeof assistantModel === 'string') {
-          session.model = assistantModel
+          if (assistantModel !== '<synthetic>' || !session.model) {
+            session.model = assistantModel
+          }
         }
 
         // Extract token usage (latest = context window, cumulative = totals)
@@ -2853,6 +2872,22 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       dirListeners.delete(requestId)
       cb(result)
     }
+  }
+
+  // ─── Pending Launch Configs (wrapperId -> LaunchConfig) ─────────────
+  // Stored at spawn time, consumed when the session connects (meta handler).
+  const pendingLaunchConfigs = new Map<string, LaunchConfig>()
+
+  function setPendingLaunchConfig(wrapperId: string, config: LaunchConfig) {
+    pendingLaunchConfigs.set(wrapperId, config)
+    // Auto-cleanup after 5 min in case session never connects
+    setTimeout(() => pendingLaunchConfigs.delete(wrapperId), 5 * 60 * 1000)
+  }
+
+  function consumePendingLaunchConfig(wrapperId: string): LaunchConfig | undefined {
+    const config = pendingLaunchConfigs.get(wrapperId)
+    if (config) pendingLaunchConfigs.delete(wrapperId)
+    return config
   }
 
   // ─── Launch Jobs (request-scoped event channels) ────────────────────
@@ -3277,6 +3312,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     addRendezvous,
     resolveRendezvous,
     getRendezvousInfo,
+    setPendingLaunchConfig,
+    consumePendingLaunchConfig,
     setPendingSessionName,
     consumePendingSessionName,
     recordTraffic,

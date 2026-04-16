@@ -313,6 +313,7 @@ export type WrapperMessage =
   | SpawnFailed
   | MonitorUpdate
   | ScheduledTaskFire
+  | SessionStatusSignal
 
 export interface SessionNameUpdate {
   type: 'session_name'
@@ -334,6 +335,15 @@ export interface SessionInfoUpdate {
   permissionMode: string
   claudeCodeVersion: string
   fastModeState: string
+}
+
+// Backend-agnostic session status signal (wrapper -> concentrator)
+// Works for any backend (headless stream-json, PTY, future transports).
+// Fired when the wrapper detects work starting/stopping, independent of CC hooks.
+export interface SessionStatusSignal {
+  type: 'session_status'
+  sessionId: string
+  status: 'active' | 'idle'
 }
 
 // Headless streaming deltas (token-by-token from --include-partial-messages)
@@ -915,6 +925,19 @@ export interface Session {
     allowedPrompts?: unknown[]
     timestamp: number
   }
+  pendingPermission?: {
+    requestId: string
+    toolName: string
+    description: string
+    inputPreview: string
+    toolUseId?: string
+    timestamp: number
+  }
+  pendingAskQuestion?: {
+    toolUseId: string
+    questions: unknown[]
+    timestamp: number
+  }
   tokenUsage?: { input: number; cacheCreation: number; cacheRead: number; output: number }
   cacheTtl?: '5m' | '1h' // dominant cache TTL tier from last turn
   lastTurnEndedAt?: number // timestamp when last turn completed (Stop hook)
@@ -946,8 +969,22 @@ export interface Session {
   maxBudgetUsd?: number // --max-budget-usd value if set (headless only)
   adHocTaskId?: string // project board task slug that spawned this ad-hoc session
   adHocWorktree?: string // worktree branch name for ad-hoc sessions
+  launchConfig?: LaunchConfig // resolved launch configuration -- reused on revive
   resultText?: string // final result text from headless session (captured from stream-json result message)
   recap?: { content: string; timestamp: number } // away_summary from CC recaps
+}
+
+/** Resolved launch configuration -- stored on session at spawn time, reused on revive */
+export interface LaunchConfig {
+  headless: boolean
+  model?: string
+  effort?: string
+  bare?: boolean
+  repl?: boolean
+  permissionMode?: string
+  autocompactPct?: number
+  maxBudgetUsd?: number
+  env?: Record<string, string>
 }
 
 // ─── Launch Jobs (request-scoped event channels for spawn/revive) ────

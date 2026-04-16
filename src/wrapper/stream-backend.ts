@@ -90,6 +90,7 @@ export interface StreamBackendOptions {
   }) => void
   onScheduledTaskFire?: (content: string) => void
   onPlanModeChanged?: (planMode: boolean) => void
+  onApiStatus?: (status: string) => void
   onExit?: (code: number | null) => void
 }
 
@@ -163,6 +164,7 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
     onMonitorUpdate,
     onScheduledTaskFire,
     onPlanModeChanged,
+    onApiStatus,
     onExit,
   } = options
 
@@ -482,8 +484,10 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
             onScheduledTaskFire?.((msg.content as string) || '')
             break
           case 'status': {
+            const apiStatus = msg.status as string | undefined
             const permMode = msg.permissionMode as string | undefined
-            debug(`status: permissionMode=${permMode}`)
+            debug(`status: ${apiStatus || 'unknown'} permissionMode=${permMode}`)
+            if (apiStatus) onApiStatus?.(apiStatus)
             if (permMode && onPlanModeChanged) {
               onPlanModeChanged(permMode === 'plan')
             }

@@ -5,6 +5,7 @@ export type {
   ExtraUsage,
   FileInfo,
   HookEventType,
+  LaunchConfig,
   MonitorInfo,
   ProjectSettings,
   SubagentInfo,
@@ -113,6 +114,7 @@ export interface Session {
   autocompactPct?: number
   adHocTaskId?: string
   adHocWorktree?: string
+  launchConfig?: import('@shared/protocol').LaunchConfig
   resultText?: string
   recap?: { content: string; timestamp: number }
   lastEvent?: {

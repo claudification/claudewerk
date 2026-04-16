@@ -228,6 +228,7 @@ const reviveSession: MessageHandler = (ctx, data) => {
   const wrapperId = crypto.randomUUID()
   const jobId = data.jobId as string | undefined
   const projSettings = getProjectSettings(session.cwd)
+  const lc = session.launchConfig // stored launch config from original spawn
 
   // Generate a funny session name for revived sessions that don't have one
   const usedNames = new Set(
@@ -239,15 +240,16 @@ const reviveSession: MessageHandler = (ctx, data) => {
   const sessionName = session.title || generateSessionName(usedNames)
   const name = sessionName || projSettings?.label || session.cwd.split('/').pop() || sessionId.slice(0, 8)
 
-  // Resolve headless: explicit override > project default > global setting
+  // Resolve headless: explicit override > launch config > project default > global setting
   const headlessParam = data.headless as boolean | undefined
   const globalSettings = getGlobalSettings()
-  const headless = headlessParam ?? (projSettings?.defaultLaunchMode || globalSettings.defaultLaunchMode) !== 'pty'
+  const headless =
+    headlessParam ?? lc?.headless ?? (projSettings?.defaultLaunchMode || globalSettings.defaultLaunchMode) !== 'pty'
 
-  // Resolve effort + model from project/global defaults
-  const effortRaw = projSettings?.defaultEffort || globalSettings.defaultEffort
+  // Resolve effort + model: launch config > project/global defaults
+  const effortRaw = lc?.effort || projSettings?.defaultEffort || globalSettings.defaultEffort
   const effort = effortRaw && effortRaw !== 'default' ? effortRaw : undefined
-  const model = projSettings?.defaultModel || globalSettings.defaultModel || undefined
+  const model = lc?.model || projSettings?.defaultModel || globalSettings.defaultModel || undefined
 
   // Register launch job if dashboard provided a jobId
   if (jobId) {
@@ -266,15 +268,18 @@ const reviveSession: MessageHandler = (ctx, data) => {
       effort,
       model,
       sessionName,
-      autocompactPct: data.autocompactPct as number | undefined,
-      maxBudgetUsd: data.maxBudgetUsd as number | undefined,
+      bare: lc?.bare || undefined,
+      repl: lc?.repl || undefined,
+      permissionMode: lc?.permissionMode || undefined,
+      autocompactPct: (data.autocompactPct as number | undefined) || lc?.autocompactPct || session.autocompactPct,
+      maxBudgetUsd: (data.maxBudgetUsd as number | undefined) || lc?.maxBudgetUsd || session.maxBudgetUsd,
       adHocWorktree: session.adHocWorktree || undefined,
-      env: (data.env as Record<string, string>) || undefined,
+      env: (data.env as Record<string, string>) || lc?.env || undefined,
     }),
   )
 
   ctx.log.info(
-    `[revive] ${name} (${sessionId.slice(0, 8)}) via WS, wrapperId=${wrapperId.slice(0, 8)} headless=${headless}${jobId ? ` job=${jobId.slice(0, 8)}` : ''}${data.maxBudgetUsd ? ` maxBudget=$${data.maxBudgetUsd}` : ''}`,
+    `[revive] ${name} (${sessionId.slice(0, 8)}) via WS, wrapperId=${wrapperId.slice(0, 8)} headless=${headless}${jobId ? ` job=${jobId.slice(0, 8)}` : ''}${lc ? ' (launch config restored)' : ''}`,
   )
   ctx.reply({
     type: 'revive_session_result',

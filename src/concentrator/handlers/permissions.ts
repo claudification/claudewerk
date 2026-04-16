@@ -10,11 +10,30 @@
 import type { MessageHandler } from '../handler-context'
 import { registerHandlers } from '../message-router'
 
-// Permission relay: wrapper -> dashboard (broadcast)
+// Permission relay: wrapper -> dashboard (broadcast + store for reconnect recovery)
 const permissionRequest: MessageHandler = (ctx, data) => {
   const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
   if (!sessionId) return
   const session = ctx.sessions.getSession(sessionId)
+
+  // Store for reconnect recovery (same pattern as pendingDialog/pendingPlanApproval)
+  if (session) {
+    session.pendingPermission = {
+      requestId: data.requestId as string,
+      toolName: data.toolName as string,
+      description: data.description as string,
+      inputPreview: data.inputPreview as string,
+      toolUseId: data.toolUseId as string | undefined,
+      timestamp: Date.now(),
+    }
+    session.pendingAttention = {
+      type: 'permission',
+      toolName: data.toolName as string,
+      timestamp: Date.now(),
+    }
+    ctx.sessions.broadcastSessionUpdate(sessionId)
+  }
+
   const msg = {
     type: 'permission_request',
     sessionId,
@@ -29,7 +48,7 @@ const permissionRequest: MessageHandler = (ctx, data) => {
   ctx.log.debug(`[permission] Request: ${data.requestId} ${data.toolName}`)
 }
 
-// Permission relay: dashboard -> wrapper (forward)
+// Permission relay: dashboard -> wrapper (forward + clear stored state)
 const permissionResponse: MessageHandler = (ctx, data) => {
   const sessionId = data.sessionId as string
   const sess = sessionId ? ctx.sessions.getSession(sessionId) : undefined
@@ -45,6 +64,14 @@ const permissionResponse: MessageHandler = (ctx, data) => {
         toolUseId: data.toolUseId,
       }),
     )
+    // Clear pending permission state (resolved by user)
+    if (sess) {
+      delete sess.pendingPermission
+      if (sess.pendingAttention?.type === 'permission') {
+        delete sess.pendingAttention
+      }
+      ctx.sessions.broadcastSessionUpdate(sessionId)
+    }
     ctx.log.debug(`[permission] Response: ${data.requestId} -> ${data.behavior}`)
   }
 }
@@ -102,11 +129,27 @@ const clipboardCapture: MessageHandler = (ctx, data) => {
   ctx.log.debug(`[clipboard] ${data.contentType}${data.mimeType ? ` (${data.mimeType})` : ''}`)
 }
 
-// AskUserQuestion relay: wrapper -> dashboard (broadcast)
+// AskUserQuestion relay: wrapper -> dashboard (broadcast + store for reconnect recovery)
 const askQuestion: MessageHandler = (ctx, data) => {
   const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
   if (!sessionId) return
   const session = ctx.sessions.getSession(sessionId)
+
+  // Store for reconnect recovery (same pattern as pendingPermission)
+  if (session) {
+    session.pendingAskQuestion = {
+      toolUseId: data.toolUseId as string,
+      questions: data.questions as unknown[],
+      timestamp: Date.now(),
+    }
+    session.pendingAttention = {
+      type: 'ask',
+      toolName: 'AskUserQuestion',
+      timestamp: Date.now(),
+    }
+    ctx.sessions.broadcastSessionUpdate(sessionId)
+  }
+
   const msg = {
     type: 'ask_question',
     sessionId,
@@ -120,7 +163,7 @@ const askQuestion: MessageHandler = (ctx, data) => {
   )
 }
 
-// AskUserQuestion relay: dashboard -> wrapper (forward)
+// AskUserQuestion relay: dashboard -> wrapper (forward + clear stored state)
 const askAnswer: MessageHandler = (ctx, data) => {
   const sessionId = data.sessionId as string
   const sess = sessionId ? ctx.sessions.getSession(sessionId) : undefined
@@ -137,6 +180,14 @@ const askAnswer: MessageHandler = (ctx, data) => {
         skip: data.skip,
       }),
     )
+    // Clear pending ask state (resolved by user)
+    if (sess) {
+      delete sess.pendingAskQuestion
+      if (sess.pendingAttention?.type === 'ask') {
+        delete sess.pendingAttention
+      }
+      ctx.sessions.broadcastSessionUpdate(sessionId)
+    }
     ctx.log.debug(`[ask] Answer: ${(data.toolUseId as string)?.slice(0, 12)} ${data.skip ? 'SKIP' : 'answered'}`)
   }
 }
