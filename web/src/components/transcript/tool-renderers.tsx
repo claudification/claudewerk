@@ -303,7 +303,11 @@ export function BashOutput({
   result,
   command,
   extra,
-}: { result: string; command?: string; extra?: Record<string, unknown> }) {
+}: {
+  result: string
+  command?: string
+  extra?: Record<string, unknown>
+}) {
   const parts = parseBashTags(result)
 
   // Fallback: CC may put stdout/stderr in toolUseResult instead of XML tags
