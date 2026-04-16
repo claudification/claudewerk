@@ -37,6 +37,7 @@ const EFFORT_OPTIONS = [
   { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Med' },
   { value: 'high', label: 'High' },
+  { value: 'xhigh', label: 'XHigh' },
   { value: 'max', label: 'Max' },
 ]
 

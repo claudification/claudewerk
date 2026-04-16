@@ -783,7 +783,7 @@ const SETTINGS: SettingItem[] = [
     group: 'Sessions',
     label: 'Default effort',
     description: 'Default --effort level for new sessions (per-project overrides this)',
-    keywords: 'effort thinking budget low medium high max',
+    keywords: 'effort thinking budget low medium high xhigh max',
     render: ctx => (
       <select
         value={(ctx.server.defaultEffort as string) || 'default'}
@@ -794,6 +794,7 @@ const SETTINGS: SettingItem[] = [
         <option value="low">Low</option>
         <option value="medium">Medium</option>
         <option value="high">High</option>
+        <option value="xhigh">XHigh (Opus 4.7)</option>
         <option value="max">Max</option>
       </select>
     ),

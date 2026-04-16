@@ -618,7 +618,7 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
       keyterms: keyterms.length ? keyterms : [],
       trustLevel: trustLevel === 'default' ? undefined : (trustLevel as 'open' | 'benevolent'),
       defaultLaunchMode: launchMode === 'headless' ? undefined : (launchMode as 'pty'),
-      defaultEffort: effort === 'default' ? undefined : (effort as 'low' | 'medium' | 'high' | 'max'),
+      defaultEffort: effort === 'default' ? undefined : (effort as 'low' | 'medium' | 'high' | 'xhigh' | 'max'),
       defaultModel: model.trim() || undefined,
     }
 
@@ -950,6 +950,7 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
                 { value: 'low', label: 'Low', desc: 'Minimal thinking' },
                 { value: 'medium', label: 'Medium', desc: 'Standard thinking' },
                 { value: 'high', label: 'High', desc: 'Extended thinking' },
+                { value: 'xhigh', label: 'XHigh', desc: 'Opus 4.7 only, between high and max' },
                 { value: 'max', label: 'Max', desc: 'Maximum thinking budget' },
               ].map(opt => (
                 <button

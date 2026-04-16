@@ -36,7 +36,15 @@ interface SubCommandDef {
   enterBehavior?: 'select' | 'select-or-submit'
 }
 
-const KNOWN_MODELS = ['opus', 'sonnet', 'haiku', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001']
+const KNOWN_MODELS = [
+  'opus',
+  'sonnet',
+  'haiku',
+  'claude-opus-4-7',
+  'claude-opus-4-6',
+  'claude-sonnet-4-6',
+  'claude-haiku-4-5-20251001',
+]
 
 const SUB_COMMANDS: SubCommandDef[] = [
   {

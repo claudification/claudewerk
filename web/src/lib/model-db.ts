@@ -66,6 +66,14 @@ export function contextWindowFromDb(model: string | undefined): number {
   // Hardcoded fallback when DB not loaded
   if (!model) return 200_000
   const m = model.toLowerCase()
-  if (m.includes('opus-4-6') || m.includes('opus-4.6') || m.includes('sonnet-4-6')) return 1_000_000
+  if (
+    m.includes('opus-4-6') ||
+    m.includes('opus-4.6') ||
+    m.includes('opus-4-7') ||
+    m.includes('opus-4.7') ||
+    m.includes('sonnet-4-6') ||
+    m.includes('sonnet-4-7')
+  )
+    return 1_000_000
   return 200_000
 }

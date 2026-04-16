@@ -830,8 +830,8 @@ export interface ProjectSettings {
   keyterms?: string[]
   trustLevel?: 'default' | 'open' | 'benevolent' // open = accepts from anyone, benevolent = can message anyone
   defaultLaunchMode?: 'headless' | 'pty'
-  defaultEffort?: 'default' | 'low' | 'medium' | 'high' | 'max' // 'default' = don't pass --effort flag
-  defaultModel?: string // model alias or full name (e.g. 'sonnet', 'opus', 'claude-sonnet-4-6')
+  defaultEffort?: 'default' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' // 'default' = don't pass --effort flag
+  defaultModel?: string // model alias or full name (e.g. 'sonnet', 'opus', 'claude-sonnet-4-7')
   // Spawn dialog defaults (override global)
   defaultBare?: boolean
   defaultRepl?: boolean
