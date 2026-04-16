@@ -20,8 +20,14 @@ export function CommandResults({ commands, activeIndex, setActiveIndex }: Comman
           )}
         >
           <span className="text-xs text-[#a9b1d6]">{cmd.label}</span>
-          {cmd.shortcut && (
-            <kbd className="px-1.5 py-0.5 bg-[#33467c]/30 text-[10px] text-[#565f89]">{cmd.shortcut}</kbd>
+          {(cmd.shortcuts || (cmd.shortcut ? [cmd.shortcut] : [])).length > 0 && (
+            <span className="flex items-center gap-1.5">
+              {(cmd.shortcuts || [cmd.shortcut!]).map(s => (
+                <kbd key={s} className="px-1.5 py-0.5 bg-[#33467c]/30 text-[10px] text-[#565f89]">
+                  {s}
+                </kbd>
+              ))}
+            </span>
           )}
         </button>
       ))}

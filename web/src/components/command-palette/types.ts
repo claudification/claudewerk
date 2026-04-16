@@ -5,6 +5,7 @@ export interface PaletteCommand {
   id: string
   label: string
   shortcut?: string
+  shortcuts?: string[]
   action: () => void
 }
 

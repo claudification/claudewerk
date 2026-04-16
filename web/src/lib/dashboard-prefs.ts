@@ -14,6 +14,7 @@ export const TOOL_DISPLAY_KEYS = [
   'WebSearch',
   'WebFetch',
   'Agent',
+  'REPL',
   'MCP',
 ] as const
 export type ToolDisplayKey = (typeof TOOL_DISPLAY_KEYS)[number]
@@ -28,6 +29,7 @@ export const DEFAULT_TOOL_DISPLAY: Record<ToolDisplayKey, ToolDisplayPrefs> = {
   WebSearch: { defaultOpen: false, lineLimit: 15 },
   WebFetch: { defaultOpen: false, lineLimit: 15 },
   Agent: { defaultOpen: false, lineLimit: 0 },
+  REPL: { defaultOpen: false, lineLimit: 20 },
   MCP: { defaultOpen: false, lineLimit: 15 },
 }
 

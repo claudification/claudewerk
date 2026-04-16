@@ -185,7 +185,8 @@ interface SessionsState {
   resolveToolDisplay: (tool: ToolDisplayKey) => ToolDisplayPrefs
 
   setSessions: (sessions: Session[]) => void
-  selectSession: (id: string | null) => void
+  /** Select a session. Optional `reason` is logged to console for debugging navigation bugs. */
+  selectSession: (id: string | null, reason?: string) => void
   selectSubagent: (agentId: string | null) => void
   openTab: (sessionId: string, tab: string) => void
   setShowTerminal: (show: boolean) => void
@@ -276,7 +277,7 @@ export function applyHashRoute() {
   // Listen for postMessage from service worker (notification click deep links)
   navigator.serviceWorker?.addEventListener('message', event => {
     if (event.data?.type === 'navigate-session' && event.data.sessionId) {
-      useSessionsStore.getState().selectSession(event.data.sessionId)
+      useSessionsStore.getState().selectSession(event.data.sessionId, 'sw-navigate-session')
     }
     if (event.data?.type === 'navigate-task' && event.data.taskId) {
       window.dispatchEvent(new CustomEvent('open-project-task', { detail: { taskId: event.data.taskId } }))
@@ -308,7 +309,7 @@ function applyDefaultSession() {
   if (cwd) {
     const best = findBestSessionForCwd(store.sessions, cwd)
     if (best) {
-      store.selectSession(best.id)
+      store.selectSession(best.id, 'default-session-cwd')
       return
     }
   }
@@ -316,14 +317,14 @@ function applyDefaultSession() {
   // Try last-viewed session from localStorage
   const lastId = getLastSessionId()
   if (lastId && store.sessionsById[lastId]) {
-    store.selectSession(lastId)
+    store.selectSession(lastId, 'default-session-last-viewed')
     return
   }
 
   // Auto-select if only one non-ended session visible (common for restricted users)
   const activeSessions = store.sessions.filter(s => s.status !== 'ended')
   if (activeSessions.length === 1) {
-    store.selectSession(activeSessions[0].id)
+    store.selectSession(activeSessions[0].id, 'default-session-only-active')
   }
 }
 
@@ -338,7 +339,7 @@ function processHash() {
   if (mode === 'terminal') {
     store.openTerminal(id) // id is wrapperId
   } else if (mode === 'session') {
-    store.selectSession(id)
+    store.selectSession(id, 'hash-route')
   } else if (mode === 'task') {
     // Dispatch event for project board to open the task modal
     window.dispatchEvent(new CustomEvent('open-project-task', { detail: { taskId: id } }))
@@ -538,7 +539,13 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   resolveToolDisplay: (tool: ToolDisplayKey) => resolveToolDisplay(get().dashboardPrefs, tool),
 
   setSessions: sessions => set({ sessions, sessionsById: buildSessionsById(sessions) }),
-  selectSession: id => {
+  selectSession: (id: string | null, reason?: string) => {
+    const prev = get().selectedSessionId
+    if (id !== prev) {
+      console.log(
+        `[nav] selectSession: ${prev?.slice(0, 8) || 'none'} -> ${id?.slice(0, 8) || 'none'}${reason ? ` (${reason})` : ''}`,
+      )
+    }
     clearExpandedState()
     const defaultView = get().dashboardPrefs.defaultView
     const rememberedTab = id ? getSessionTab(id) : null
@@ -616,6 +623,10 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     set({ selectedSubagentId: agentId })
   },
   openTab: (sessionId, tab) => {
+    const prev = get().selectedSessionId
+    if (sessionId !== prev) {
+      console.log(`[nav] openTab: ${prev?.slice(0, 8) || 'none'} -> ${sessionId.slice(0, 8)} tab=${tab}`)
+    }
     set(state => ({
       selectedSessionId: sessionId,
       requestedTab: tab,
@@ -637,8 +648,15 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   openTerminal: wrapperId => {
     // Find the session that owns this wrapper so we can select it in the main panel too
     const ownerSession = get().sessions.find(s => s.wrapperIds?.includes(wrapperId))
+    const prev = get().selectedSessionId
+    const next = ownerSession?.id ?? null
+    if (next !== prev) {
+      console.log(
+        `[nav] openTerminal: ${prev?.slice(0, 8) || 'none'} -> ${next?.slice(0, 8) || 'none'} wrapper=${wrapperId.slice(0, 8)}`,
+      )
+    }
     set({
-      selectedSessionId: ownerSession?.id ?? null,
+      selectedSessionId: next,
       terminalWrapperId: wrapperId,
       showTerminal: true,
       showSwitcher: false,
@@ -706,6 +724,9 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     wsSend('dismiss_session', { sessionId })
     set(state => {
       const sessions = state.sessions.filter(s => s.id !== sessionId)
+      if (state.selectedSessionId === sessionId) {
+        console.log(`[nav] dismissSession: clearing selection (dismissed ${sessionId.slice(0, 8)})`)
+      }
       return {
         sessions,
         sessionsById: buildSessionsById(sessions),

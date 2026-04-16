@@ -13,7 +13,7 @@ import { cn, truncate } from '@/lib/utils'
 import { JsonInspector } from '../json-inspector'
 import { SessionTag } from './session-tag'
 import { Collapsible, getToolStyle, shortPath, TruncatedPre } from './shared'
-import { BashOutput, DiffView, ShellCommand, WritePreview } from './tool-renderers'
+import { BashOutput, DiffView, ReplResult, ReplView, ShellCommand, WritePreview } from './tool-renderers'
 
 /**
  * Try to extract readable text from an MCP tool result.
@@ -48,7 +48,6 @@ function extractMcpResultText(result: string): string | null {
     return null
   }
 }
-
 
 function formatTokenCount(tokens: number): string {
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M tok`
@@ -176,6 +175,7 @@ export function ToolLine({
 
   let summary: React.ReactNode = ''
   let details: React.ReactNode = null
+  let inlineContent: React.ReactNode = null // always-visible content below header (not inside Collapsible)
   let agentBadge: React.ReactNode = null
   let matchedAgentId: string | null = null
 
@@ -188,6 +188,22 @@ export function ToolLine({
         details = <BashOutput result={result} command={cmd} />
       } else if (cmd) {
         details = <ShellCommand command={cmd} />
+      }
+      break
+    }
+    case 'REPL': {
+      const replDesc = input.description as string | undefined
+      const replCode = input.code as string
+      summary = replDesc || (replCode?.length > 80 ? `${replCode.slice(0, 80)}...` : replCode)
+      if (replCode) {
+        inlineContent = <ReplView code={replCode} isError={isError} />
+        // Result/stdout/stderr go into the collapsible
+        const hasResult = result || toolUseResult?.result
+        const hasStdout = toolUseResult?.stdout && (toolUseResult.stdout as string).trim()
+        const hasStderr = toolUseResult?.stderr && (toolUseResult.stderr as string).trim()
+        if (hasResult || hasStdout || hasStderr) {
+          details = <ReplResult result={result} extra={toolUseResult} isError={isError} />
+        }
       }
       break
     }
@@ -596,7 +612,10 @@ export function ToolLine({
       break
     }
     case 'mcp__rclaude__list_sessions': {
-      summary = input.status ? `status=${input.status}` : 'all'
+      const parts: string[] = []
+      if (input.filter) parts.push(`glob=${input.filter}`)
+      if (input.status) parts.push(`status=${input.status}`)
+      summary = parts.length ? parts.join(' ') : 'all'
       if (result) {
         try {
           let parsed = JSON.parse(result)
@@ -605,7 +624,7 @@ export function ToolLine({
             parsed = JSON.parse(parsed[0].text)
           }
           const sessions = parsed as Array<{ id: string; status: string }>
-          summary = `${sessions.length} sessions`
+          summary = `${sessions.length} sessions` + (parts.length ? ` (${parts.join(', ')})` : '')
           details = (
             <div className="text-[10px] font-mono space-y-0.5 mt-1">
               {sessions.map(s => (
@@ -842,6 +861,7 @@ export function ToolLine({
         {agentBadge}
         <JsonInspector title={name} data={input} result={result} extra={toolUseResult} />
       </div>
+      {inlineContent}
       {details && (
         <Collapsible
           id={tool.id ? `tool-${tool.id}` : undefined}

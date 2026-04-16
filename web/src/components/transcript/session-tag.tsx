@@ -37,9 +37,7 @@ export function resolveSessionDisplay(idOrSlug: string) {
   const projLabel = session?.cwd ? projectSettings[session.cwd]?.label : undefined
   const title = session?.title
   const displayName =
-    projLabel && title
-      ? `${projLabel} :: ${title}`
-      : title || projLabel || session?.cwd?.split('/').pop() || idOrSlug
+    projLabel && title ? `${projLabel} :: ${title}` : title || projLabel || session?.cwd?.split('/').pop() || idOrSlug
   return { session, projLabel, title, displayName }
 }
 

@@ -55,19 +55,30 @@ export function useCommandPalette(onClose: () => void) {
   const commandSearch = commandRaw.toLowerCase()
   const _gen = getCommandGeneration()
   // biome-ignore lint/correctness/useExhaustiveDependencies: _gen is a generation counter dep key that invalidates memoized command list when registry changes
-  const registryCommands = useMemo(
-    () =>
-      getCommands().map(c => ({
-        id: c.id,
-        label: c.label,
-        shortcut: c.shortcut ? formatShortcut(c.shortcut) : undefined,
-        action: (...args: string[]) => {
-          c.action(...args)
-          onClose()
-        },
-      })),
-    [_gen, onClose],
-  )
+  const registryCommands = useMemo(() => {
+    const raw = getCommands().map(c => ({
+      id: c.id,
+      label: c.label,
+      shortcut: c.shortcut ? formatShortcut(c.shortcut) : undefined,
+      action: (...args: string[]) => {
+        c.action(...args)
+        onClose()
+      },
+    }))
+    // Deduplicate by label, merging shortcuts into a list
+    const byLabel = new Map<string, (typeof raw)[0] & { shortcuts?: string[] }>()
+    for (const cmd of raw) {
+      const existing = byLabel.get(cmd.label)
+      if (existing) {
+        const shortcuts = existing.shortcuts ?? (existing.shortcut ? [existing.shortcut] : [])
+        if (cmd.shortcut) shortcuts.push(cmd.shortcut)
+        existing.shortcuts = shortcuts
+      } else {
+        byLabel.set(cmd.label, cmd)
+      }
+    }
+    return Array.from(byLabel.values())
+  }, [_gen, onClose])
   // Match by label or id, parse args from remainder
   const filteredCommands = isCommandMode
     ? registryCommands.filter(c => {

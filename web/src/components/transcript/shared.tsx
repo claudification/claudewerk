@@ -8,6 +8,7 @@ import type { LucideIcon } from 'lucide-react'
 import {
   Bookmark,
   Bot,
+  Braces,
   ChevronDown,
   ChevronRight,
   CircleCheck,
@@ -140,6 +141,7 @@ const TOOL_STYLES: Record<string, { color: string; Icon: LucideIcon }> = {
   CronDelete: { color: 'text-red-400', Icon: Clock },
   ScheduleWakeup: { color: 'text-amber-400', Icon: Timer },
   Monitor: { color: 'text-violet-400', Icon: Gauge },
+  REPL: { color: 'text-indigo-400', Icon: Braces },
 }
 
 const DEFAULT_TOOL_STYLE = { color: 'text-event-tool', Icon: Play }

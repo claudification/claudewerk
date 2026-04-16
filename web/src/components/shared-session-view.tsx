@@ -24,7 +24,7 @@ export function SharedSessionView({ token: _token }: { token: string }) {
   // Auto-select the first (and only) session when it arrives
   useEffect(() => {
     if (sessions.length > 0 && !selectedSessionId) {
-      useSessionsStore.getState().selectSession(sessions[0].id)
+      useSessionsStore.getState().selectSession(sessions[0].id, 'shared-view-auto')
     }
   }, [sessions, selectedSessionId])
 

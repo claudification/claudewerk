@@ -4,10 +4,11 @@
  */
 
 import { useEffect, useState } from 'react'
+import JsonHighlight from '@/components/json-highlight'
 import { useSessionsStore } from '@/hooks/use-sessions'
-import { resolveToolDisplay } from '@/lib/dashboard-prefs'
+import { resolveToolDisplay, type ToolDisplayKey } from '@/lib/dashboard-prefs'
 import { cn } from '@/lib/utils'
-import { escapeHtml, TruncatedPre } from './shared'
+import { AnsiText, escapeHtml, TruncatedPre } from './shared'
 import { ensureLang, getHighlighter, langFromPath } from './syntax'
 
 // Syntax-highlighted diff view for Edit operations
@@ -312,6 +313,138 @@ export function BashOutput({ result, command }: { result: string; command?: stri
       )}
       {!hasStdout && !hasStderr && !displayCommand && (
         <pre className="text-[10px] bg-black/30 p-2 font-mono text-muted-foreground">(no output)</pre>
+      )}
+    </div>
+  )
+}
+
+// REPL code block - always visible, JS syntax highlighted
+export function ReplView({ code, isError }: { code: string; isError?: boolean }) {
+  const [codeHtml, setCodeHtml] = useState<string | null>(null)
+  const replPrefs = useSessionsStore(s => s.dashboardPrefs)
+  const replDisplay = resolveToolDisplay(replPrefs, 'REPL' as ToolDisplayKey)
+  const lineLimit = replDisplay.lineLimit
+  const [revealed, setRevealed] = useState(false)
+
+  useEffect(() => {
+    getHighlighter()
+      .then(highlighter => {
+        const tokens = highlighter.codeToTokens(code, { lang: 'javascript', theme: 'tokyo-night' })
+        const highlighted = tokens.tokens
+          .map((lineTokens: Array<{ color?: string; content: string }>) =>
+            lineTokens.map(t => `<span style="color:${t.color}">${escapeHtml(t.content)}</span>`).join(''),
+          )
+          .join('\n')
+        setCodeHtml(highlighted)
+      })
+      .catch(() => {})
+  }, [code])
+
+  const codeLines = code.split('\n')
+  const codeTruncate = lineLimit > 0 && codeLines.length > lineLimit && !revealed
+  const visibleCodeLines = codeTruncate ? lineLimit : codeLines.length
+  const htmlLines = codeHtml ? codeHtml.split('\n') : null
+
+  return (
+    <div className="mt-1">
+      <pre
+        className={cn(
+          'text-[10px] font-mono overflow-x-auto rounded px-2.5 py-1.5',
+          isError ? 'bg-red-500/5' : 'bg-indigo-500/5',
+        )}
+      >
+        {htmlLines ? (
+          <code>
+            {htmlLines.slice(0, visibleCodeLines).map((lineHtml, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: code lines are positional
+              <div key={i} className="hover:bg-muted/20" dangerouslySetInnerHTML={{ __html: lineHtml }} />
+            ))}
+          </code>
+        ) : (
+          <code className="text-foreground/70">
+            {codeLines.slice(0, visibleCodeLines).map((line, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: code lines are positional
+              <div key={i} className="hover:bg-muted/20">
+                {line}
+              </div>
+            ))}
+          </code>
+        )}
+      </pre>
+      {codeTruncate && (
+        <button
+          type="button"
+          onClick={() => setRevealed(true)}
+          className="text-[10px] text-accent hover:text-accent/80 font-mono mt-0.5 px-2"
+        >
+          +{codeLines.length - lineLimit} more lines
+        </button>
+      )}
+    </div>
+  )
+}
+
+// REPL result/stdout/stderr - shown inside Collapsible (hidden by default)
+export function ReplResult({
+  result,
+  extra,
+  isError,
+}: {
+  result?: string
+  extra?: Record<string, unknown>
+  isError?: boolean
+}) {
+  const structuredResult = extra?.result
+  const stdout = extra?.stdout as string | undefined
+  const stderr = extra?.stderr as string | undefined
+  const hasStdout = stdout && stdout.trim().length > 0
+  const hasStderr = stderr && stderr.trim().length > 0
+
+  let resultContent: React.ReactNode = null
+  if (structuredResult && typeof structuredResult === 'object') {
+    resultContent = (
+      <div className="text-[10px] font-mono bg-black/30 rounded px-2.5 py-2 overflow-x-auto">
+        <pre className="whitespace-pre-wrap">
+          <JsonHighlight data={structuredResult} />
+        </pre>
+      </div>
+    )
+  } else if (result) {
+    let parsed: unknown = null
+    try {
+      parsed = JSON.parse(result)
+    } catch {}
+    if (parsed && typeof parsed === 'object') {
+      resultContent = (
+        <div className="text-[10px] font-mono bg-black/30 rounded px-2.5 py-2 overflow-x-auto">
+          <pre className="whitespace-pre-wrap">
+            <JsonHighlight data={parsed} />
+          </pre>
+        </div>
+      )
+    } else {
+      resultContent = <TruncatedPre text={result} tool={'REPL' as ToolDisplayKey} />
+    }
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {resultContent}
+      {hasStdout && (
+        <div>
+          <div className="text-[9px] font-mono text-muted-foreground/50 uppercase tracking-wider mb-0.5">stdout</div>
+          <pre className="text-[10px] font-mono bg-black/20 rounded px-2.5 py-1.5 overflow-x-auto whitespace-pre-wrap text-foreground/70">
+            <AnsiText text={stdout} />
+          </pre>
+        </div>
+      )}
+      {hasStderr && (
+        <div>
+          <div className="text-[9px] font-mono text-red-400/50 uppercase tracking-wider mb-0.5">stderr</div>
+          <pre className="text-[10px] font-mono bg-red-500/5 border-l-2 border-red-500/40 rounded px-2.5 py-1.5 overflow-x-auto whitespace-pre-wrap text-red-400/80">
+            <AnsiText text={stderr} />
+          </pre>
+        </div>
       )}
     </div>
   )

@@ -254,6 +254,9 @@ function processMessage(msg: DashboardMessage) {
             newState.streamingText = rest
           }
           if (prevId && state.selectedSessionId === prevId) {
+            console.log(
+              `[nav] session rekey: ${prevId.slice(0, 8)} -> ${sessionId.slice(0, 8)} (selected session rekeyed)`,
+            )
             newState.selectedSessionId = sessionId
             const oldEvents = state.events[prevId]
             const oldTranscripts = state.transcripts[prevId]
@@ -717,6 +720,9 @@ function processMessage(msg: DashboardMessage) {
       if (msg.sessionId) {
         useSessionsStore.setState(state => {
           const sessions = state.sessions.filter(s => s.id !== msg.sessionId)
+          if (state.selectedSessionId === msg.sessionId) {
+            console.log(`[nav] session_dismissed: clearing selection (WS dismissed ${msg.sessionId.slice(0, 8)})`)
+          }
           return {
             sessions,
             sessionsById: buildSessionsById(sessions),

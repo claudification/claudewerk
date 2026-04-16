@@ -236,6 +236,7 @@ function buildHeadlessEnv(opts: {
   effort?: string
   model?: string
   bare?: boolean
+  repl?: boolean
 }): Record<string, string | undefined> {
   // Start from sanitized agent env (PATH, API keys, etc. but no session-scoped vars)
   const env = cleanAgentEnv()
@@ -251,6 +252,7 @@ function buildHeadlessEnv(opts: {
   if (opts.permissionMode) env.RCLAUDE_PERMISSION_MODE = opts.permissionMode
   if (opts.autocompactPct) env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = String(opts.autocompactPct)
   if (opts.bare) env.RCLAUDE_BARE = '1'
+  if (opts.repl) env.CLAUDE_CODE_REPL = 'true'
   if (opts.adHoc) {
     env.RCLAUDE_ADHOC = '1'
     env.RCLAUDE_CHANNELS = '0'
@@ -724,6 +726,7 @@ async function spawnSession(
   effort?: string,
   model?: string,
   bare = false,
+  repl = false,
   sessionName?: string,
   permissionMode?: string,
   autocompactPct?: number,
@@ -825,6 +828,7 @@ async function spawnSession(
       effort,
       model,
       bare,
+      repl,
     })
 
     const spawnRes = spawnHeadlessDirect(rclaudeBin, cwd, wrapperId, args, env, jobId)
@@ -855,6 +859,7 @@ async function spawnSession(
     ...(effort ? { RCLAUDE_EFFORT: effort } : {}),
     ...(model ? { RCLAUDE_MODEL: model } : {}),
     ...(bare ? { RCLAUDE_BARE: '1' } : {}),
+    ...(repl ? { CLAUDE_CODE_REPL: 'true' } : {}),
     ...(sessionName ? { RCLAUDE_SESSION_NAME: shellSafe(sessionName) } : {}),
     ...(permissionMode ? { RCLAUDE_PERMISSION_MODE: permissionMode } : {}),
     ...(autocompactPct ? { RCLAUDE_AUTOCOMPACT_PCT: String(autocompactPct) } : {}),
@@ -1256,6 +1261,7 @@ function connect(
             effort?: string
             model?: string
             bare?: boolean
+            repl?: boolean
             sessionName?: string
             permissionMode?: string
             autocompactPct?: number
@@ -1305,6 +1311,7 @@ function connect(
             spawnMsg.effort,
             spawnMsg.model,
             spawnMsg.bare || false,
+            spawnMsg.repl || false,
             spawnMsg.sessionName,
             spawnMsg.permissionMode,
             spawnMsg.autocompactPct,
