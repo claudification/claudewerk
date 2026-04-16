@@ -5,9 +5,12 @@
 
 import { randomUUID } from 'node:crypto'
 import { resolveSpawnConfig } from '../../shared/spawn-defaults'
+import type { SpawnRequest } from '../../shared/spawn-schema'
 import { getGlobalSettings } from '../global-settings'
 import type { MessageHandler } from '../handler-context'
 import { registerHandlers } from '../message-router'
+import { getProjectSettings } from '../project-settings'
+import { dispatchSpawn } from '../spawn-dispatch'
 
 /** Resolve effective effort level from project + global settings */
 function resolveEffort(
@@ -125,87 +128,40 @@ const handleChannelSpawn: MessageHandler = (ctx, data) => {
   if (!callerSession) return
 
   ctx.requireBenevolent()
-  const agent = ctx.requireAgent()
+  ctx.requireAgent()
 
   const cwd = data.cwd as string
   if (!cwd || typeof cwd !== 'string') {
     ctx.reply({ type: 'channel_spawn_result', ok: false, error: 'Missing cwd' })
     return
   }
-  if (data.mode === 'resume' && !data.resumeId) {
-    ctx.reply({ type: 'channel_spawn_result', ok: false, error: 'resumeId required for resume mode' })
-    return
+
+  // Build a SpawnRequest from the narrower channel_spawn payload.
+  // Inter-session callers today only pass cwd/mkdir/mode/resumeId/headless.
+  // `effort` is resolved from project/global settings inside dispatchSpawn.
+  const req: SpawnRequest = {
+    cwd,
+    mkdir: !!data.mkdir,
+    mode: (data.mode as SpawnRequest['mode']) || 'fresh',
+    resumeId: typeof data.resumeId === 'string' ? data.resumeId : undefined,
+    headless: data.headless !== false,
   }
 
-  const requestId = randomUUID()
-  const wrapperId = randomUUID()
-
-  const spawnPromise = new Promise<{ success?: boolean; error?: string; tmuxSession?: string }>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      ctx.sessions.removeSpawnListener(requestId)
-      reject(new Error('Spawn timed out (15s)'))
-    }, 15000)
-    ctx.sessions.addSpawnListener(requestId, msg => {
-      clearTimeout(timeout)
-      resolve(msg as { success?: boolean; error?: string; tmuxSession?: string })
-    })
-    agent.send(
-      JSON.stringify({
-        type: 'spawn',
-        requestId,
-        cwd,
-        wrapperId,
-        mkdir: !!data.mkdir,
-        mode: data.mode || 'fresh',
-        resumeId: data.resumeId,
-        headless: data.headless !== false, // default true
-        effort: resolveEffort(cwd, ctx.getProjectSettings),
-      }),
-    )
+  dispatchSpawn(req, {
+    sessions: ctx.sessions,
+    getProjectSettings,
+    getGlobalSettings,
+    rendezvousCallerSessionId: callerSession,
   })
-
-  spawnPromise
     .then(result => {
-      if (!result.success) {
-        ctx.reply({ type: 'channel_spawn_result', ok: false, error: result.error || 'Spawn failed' })
-        return
+      if (result.ok) {
+        ctx.reply({ type: 'channel_spawn_result', ok: true, wrapperId: result.wrapperId })
+        ctx.log.debug(`Benevolent spawn: -> ${cwd}`)
+      } else {
+        ctx.reply({ type: 'channel_spawn_result', ok: false, error: result.error })
       }
-
-      // Register rendezvous
-      ctx.sessions
-        .addRendezvous(wrapperId, callerSession, cwd, 'spawn')
-        .then(session => {
-          const callerWs = ctx.sessions.getSessionSocket(callerSession)
-          if (callerWs) {
-            callerWs.send(
-              JSON.stringify({
-                type: 'spawn_ready',
-                sessionId: session.id,
-                cwd: session.cwd,
-                wrapperId,
-                session,
-              }),
-            )
-          }
-        })
-        .catch(err => {
-          const callerWs = ctx.sessions.getSessionSocket(callerSession)
-          if (callerWs) {
-            callerWs.send(
-              JSON.stringify({
-                type: 'spawn_timeout',
-                wrapperId,
-                cwd,
-                error: typeof err === 'string' ? err : 'Spawn rendezvous timed out',
-              }),
-            )
-          }
-        })
-
-      ctx.reply({ type: 'channel_spawn_result', ok: true, wrapperId })
-      ctx.log.debug(`Benevolent spawn: -> ${cwd}`)
     })
-    .catch(err => {
+    .catch((err: unknown) => {
       ctx.reply({
         type: 'channel_spawn_result',
         ok: false,

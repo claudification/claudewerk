@@ -16,7 +16,7 @@ import {
   useSensors,
 } from '@dnd-kit/core'
 import { composeSpawnPrompt } from '@shared/spawn-prompt'
-import { DEFAULT_SENTINEL, EFFORT_OPTIONS, MODEL_OPTIONS } from '@shared/spawn-schema'
+import { DEFAULT_SENTINEL, EFFORT_OPTIONS, MODEL_OPTIONS, type SpawnRequest } from '@shared/spawn-schema'
 import {
   Archive,
   ArrowLeft,
@@ -39,6 +39,7 @@ import { useLaunchProgress } from '@/hooks/use-launch-progress'
 import type { ProjectTask } from '@/hooks/use-project'
 import { type ProjectTaskMeta, type TaskStatus, useProject } from '@/hooks/use-project'
 import { sendInput, useSessionsStore } from '@/hooks/use-sessions'
+import { sendSpawnRequest } from '@/hooks/use-spawn'
 import { useKeyLayer } from '@/lib/key-layers'
 import { buildTaskPrompt } from '@/lib/task-scoring'
 import { uploadFileWithPlaceholder } from '@/lib/upload'
@@ -751,41 +752,33 @@ export function RunTaskDialog({
       worktreeMergeBack: useWorktree,
     })
 
-    try {
-      const res = await fetch('/api/spawn', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cwd,
-          adHoc: true,
-          adHocTaskId: task.slug,
-          prompt,
-          headless: true,
-          model: model || undefined,
-          effort: effort !== 'default' ? effort : undefined,
-          worktree: useWorktree ? branchName : undefined,
-          leaveRunning: leaveRunning || undefined,
-          name: task.title.replace(/['"]/g, '').slice(0, 60),
-          maxBudgetUsd: maxBudgetUsd ? Number(maxBudgetUsd) : undefined,
-          jobId: newJobId,
-        }),
-      })
-      const data = await res.json()
-      if (data.success) {
-        haptic('success')
-        const wid = data.wrapperId as string
-        setWrapperId(wid)
-        progress.setSteps(prev => [
-          ...prev.map(s =>
-            s.status === 'active' ? { ...s, status: 'done' as const, detail: `wrapper=${wid.slice(0, 8)}` } : s,
-          ),
-          { label: 'Waiting for session...', status: 'active' as const, ts: Date.now() },
-        ])
-      } else {
-        progress.setError(data.error || 'Spawn failed')
-      }
-    } catch (err: unknown) {
-      progress.setError(err instanceof Error ? err.message : 'Network error')
+    const spawnReq: SpawnRequest = {
+      cwd,
+      adHoc: true,
+      adHocTaskId: task.slug,
+      prompt,
+      headless: true,
+      model: (model || undefined) as SpawnRequest['model'],
+      effort: (effort !== 'default' ? effort : undefined) as SpawnRequest['effort'],
+      worktree: useWorktree ? branchName : undefined,
+      leaveRunning: leaveRunning || undefined,
+      name: task.title.replace(/['"]/g, '').slice(0, 60),
+      maxBudgetUsd: maxBudgetUsd ? Number(maxBudgetUsd) : undefined,
+      jobId: newJobId,
+    }
+    const result = await sendSpawnRequest(spawnReq)
+    if (result.ok) {
+      haptic('success')
+      const wid = result.wrapperId
+      setWrapperId(wid)
+      progress.setSteps(prev => [
+        ...prev.map(s =>
+          s.status === 'active' ? { ...s, status: 'done' as const, detail: `wrapper=${wid.slice(0, 8)}` } : s,
+        ),
+        { label: 'Waiting for session...', status: 'active' as const, ts: Date.now() },
+      ])
+    } else {
+      progress.setError(result.error)
     }
   }
 

@@ -17,7 +17,6 @@ import {
 import { join } from 'node:path'
 import { Hono } from 'hono'
 import type { ListDirsResult, SendInput, Session, SpawnResult, TeamInfo } from '../shared/protocol'
-import { generateSessionName } from '../shared/session-names'
 import { resolveSpawnConfig } from '../shared/spawn-defaults'
 import { type SpawnRequest, spawnRequestSchema } from '../shared/spawn-schema'
 import {
@@ -70,6 +69,7 @@ import {
   shareToGrants,
   validateShare,
 } from './shares'
+import { dispatchSpawn } from './spawn-dispatch'
 import { UI_HTML } from './ui'
 
 // ─── Image/Blob Store (disk-only, survives restarts) ────────────────────
@@ -863,17 +863,15 @@ export function createRouter(options: RouteOptions): Hono {
   app.post('/api/spawn', async c => {
     if (!httpHasPermission(c.req.raw, 'spawn', '*'))
       return c.json({ error: 'Forbidden: spawn permission required' }, 403)
-    const agent = sessionStore.getAgent()
-    if (!agent) return c.json({ error: 'No host agent connected' }, 503)
 
     const parsed = spawnRequestSchema.safeParse(await c.req.json())
     if (!parsed.success) {
       return c.json({ error: parsed.error.message, issues: parsed.error.issues }, 400)
     }
     const body = parsed.data
-    if (body.mode === 'resume' && !body.resumeId) return c.json({ error: 'resumeId required for resume mode' }, 400)
 
-    // Benevolent trust check for MCP callers (X-Caller-Session header)
+    // Benevolent trust check for MCP callers (X-Caller-Session header).
+    // HTTP-specific: WS handlers identify the caller from ws.data.sessionId instead.
     const callerSessionId = c.req.header('X-Caller-Session')
     if (callerSessionId) {
       const callerSess = sessionStore.getSession(callerSessionId)
@@ -883,134 +881,18 @@ export function createRouter(options: RouteOptions): Hono {
       }
     }
 
-    const requestId = randomUUID()
-    const wrapperId = randomUUID()
-    const jobId = body.jobId
-
-    // Register launch job if dashboard provided a jobId
-    if (jobId) {
-      sessionStore.createJob(jobId, wrapperId)
-    }
-
-    const cwdLabel = body.cwd.split('/').pop() || body.cwd
-    if (body.adHoc) {
-      console.log(
-        `[ad-hoc] Spawn request: ${cwdLabel} task=${body.adHocTaskId || 'none'} wrapper=${wrapperId.slice(0, 8)} prompt=${body.prompt?.length || 0}chars worktree=${body.worktree || 'none'}`,
-      )
-    }
-
-    const result = await new Promise<SpawnResult>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        sessionStore.removeSpawnListener(requestId)
-        reject(new Error('Spawn timed out (15s)'))
-      }, 15000)
-
-      sessionStore.addSpawnListener(requestId, msg => {
-        clearTimeout(timeout)
-        resolve(msg as SpawnResult)
-      })
-
-      // Resolve defaults (explicit > project > global > undefined)
-      const projSettings = getProjectSettings(body.cwd)
-      const globalSettings = getGlobalSettings()
-      const resolved = resolveSpawnConfig(body, projSettings, globalSettings)
-      const { headless, model, effort, permissionMode, autocompactPct, maxBudgetUsd, bare, repl } = resolved
-
-      // Store launch config so it can be reused on revive
-      sessionStore.setPendingLaunchConfig(wrapperId, {
-        headless,
-        model,
-        effort,
-        bare: bare || false,
-        repl: repl || false,
-        permissionMode,
-        autocompactPct,
-        maxBudgetUsd,
-        env: body.env || undefined,
-      })
-
-      agent.send(
-        JSON.stringify({
-          type: 'spawn',
-          requestId,
-          cwd: body.cwd,
-          wrapperId,
-          jobId,
-          mkdir: body.mkdir || false,
-          mode: body.adHoc ? 'fresh' : body.mode || 'fresh',
-          resumeId: body.resumeId,
-          headless,
-          effort,
-          model,
-          bare: bare || false,
-          repl: repl || false,
-          sessionName:
-            body.name?.trim() ||
-            generateSessionName(
-              new Set(
-                sessionStore
-                  .getAllSessions()
-                  .map((s: Session) => s.title)
-                  .filter(Boolean) as string[],
-              ),
-            ),
-          permissionMode,
-          autocompactPct,
-          maxBudgetUsd,
-          // Ad-hoc fields
-          prompt: body.prompt || undefined,
-          adHoc: body.adHoc || undefined,
-          adHocTaskId: body.adHocTaskId || undefined,
-          leaveRunning: body.leaveRunning || undefined,
-          worktree: body.worktree || undefined,
-          env: body.env || undefined,
-        }),
-      )
+    const result = await dispatchSpawn(body, {
+      sessions: sessionStore,
+      getProjectSettings,
+      getGlobalSettings,
+      rendezvousCallerSessionId: callerSessionId ?? null,
     })
 
-    if (!result.success) {
-      if (body.adHoc) console.log(`[ad-hoc] Spawn FAILED: ${result.error || 'unknown'} (${cwdLabel})`)
-      return c.json({ error: result.error || 'Spawn failed' }, 500)
+    if (!result.ok) {
+      const status = (result.statusCode ?? 500) as 400 | 403 | 500 | 503
+      return c.json({ error: result.error }, status)
     }
-    if (body.adHoc) console.log(`[ad-hoc] Spawn OK: wrapper=${wrapperId.slice(0, 8)} tmux=${result.tmuxSession}`)
-
-    // Register rendezvous: wait for the spawned wrapper to connect (up to 2 min)
-    if (callerSessionId) {
-      // Don't block the HTTP response - caller gets immediate success + wrapperId.
-      // Rendezvous resolves async and delivers to caller via inter-session channel.
-      sessionStore
-        .addRendezvous(wrapperId, callerSessionId, body.cwd, 'spawn')
-        .then(session => {
-          // Deliver session metadata to caller via their WS connection
-          const callerWs = sessionStore.getSessionSocket(callerSessionId)
-          if (callerWs) {
-            callerWs.send(
-              JSON.stringify({
-                type: 'spawn_ready',
-                sessionId: session.id,
-                cwd: session.cwd,
-                wrapperId,
-                session,
-              }),
-            )
-          }
-        })
-        .catch(err => {
-          const callerWs = sessionStore.getSessionSocket(callerSessionId)
-          if (callerWs) {
-            callerWs.send(
-              JSON.stringify({
-                type: 'spawn_timeout',
-                wrapperId,
-                cwd: body.cwd,
-                error: typeof err === 'string' ? err : 'Spawn rendezvous timed out',
-              }),
-            )
-          }
-        })
-    }
-
-    return c.json({ success: true, wrapperId, jobId, tmuxSession: result.tmuxSession })
+    return c.json({ success: true, wrapperId: result.wrapperId, jobId: result.jobId, tmuxSession: result.tmuxSession })
   })
 
   // ─── Directory listing (agent relay) ───────────────────────────────

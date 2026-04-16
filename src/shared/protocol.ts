@@ -3,6 +3,21 @@
  * Defines the message format between wrapper and concentrator
  */
 
+import type { SpawnRequest } from './spawn-schema'
+
+// Dashboard -> Concentrator: spawn request (WS equivalent of POST /api/spawn)
+export type SpawnRequestMessage = { type: 'spawn_request' } & SpawnRequest
+
+// Concentrator -> Dashboard: ack for spawn_request (correlated by jobId)
+export interface SpawnRequestAck {
+  type: 'spawn_request_ack'
+  ok: boolean
+  jobId?: string
+  wrapperId?: string
+  tmuxSession?: string
+  error?: string
+}
+
 // Wrapper -> Concentrator messages
 export interface HookEvent {
   type: 'hook'

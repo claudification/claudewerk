@@ -5,7 +5,13 @@
  * Phase 2 (launching): Step-by-step progress via shared LaunchMonitor.
  */
 
-import { DEFAULT_SENTINEL, EFFORT_OPTIONS, MODEL_OPTIONS, PERMISSION_MODE_OPTIONS } from '@shared/spawn-schema'
+import {
+  DEFAULT_SENTINEL,
+  EFFORT_OPTIONS,
+  MODEL_OPTIONS,
+  PERMISSION_MODE_OPTIONS,
+  type SpawnRequest,
+} from '@shared/spawn-schema'
 import { Zap } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
@@ -13,6 +19,7 @@ import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useLaunchProgress } from '@/hooks/use-launch-progress'
 import { updateProjectSettings, useSessionsStore, wsSend } from '@/hooks/use-sessions'
+import { sendSpawnRequest } from '@/hooks/use-spawn'
 import { useKeyLayer } from '@/lib/key-layers'
 import { cn, haptic } from '@/lib/utils'
 import { LaunchErrorBanner, LaunchFooterActions, LaunchStepList } from './launch-monitor'
@@ -213,45 +220,36 @@ export function SpawnDialog() {
     setJobId(newJobId)
     progress.start([{ label: 'Sending spawn request', status: 'active', ts: Date.now() }])
 
-    try {
-      const res = await fetch('/api/spawn', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cwd: state.options.cwd,
-          mkdir: state.options.mkdir || false,
-          headless,
-          bare: bare || undefined,
-          repl: repl || undefined,
-          name: name.trim() || undefined,
-          model: model || undefined,
-          effort: effort || undefined,
-          permissionMode: permissionMode || undefined,
-          autocompactPct: autocompactPct || undefined,
-          maxBudgetUsd: maxBudgetUsd ? Number(maxBudgetUsd) : undefined,
-          worktree: useWorktree && worktreeName.trim() ? worktreeName.trim() : undefined,
-          env: parsedEnv || undefined,
-          jobId: newJobId,
-        }),
-      })
-      const data = await res.json()
-      if (data.success) {
-        haptic('success')
-        setWrapperId(data.wrapperId)
-        progress.setSteps(prev => [
-          ...prev.map(s =>
-            s.status === 'active'
-              ? { ...s, status: 'done' as const, detail: `wrapper=${data.wrapperId.slice(0, 8)}` }
-              : s,
-          ),
-          { label: 'Waiting for session...', status: 'active' as const, ts: Date.now() },
-        ])
-      } else {
-        progress.setError(data.error || 'Spawn failed')
-        haptic('error')
-      }
-    } catch (err: unknown) {
-      progress.setError(err instanceof Error ? err.message : 'Network error')
+    const spawnReq: SpawnRequest = {
+      cwd: state.options.cwd,
+      mkdir: state.options.mkdir || false,
+      headless,
+      bare: bare || undefined,
+      repl: repl || undefined,
+      name: name.trim() || undefined,
+      model: (model || undefined) as SpawnRequest['model'],
+      effort: (effort || undefined) as SpawnRequest['effort'],
+      permissionMode: (permissionMode || undefined) as SpawnRequest['permissionMode'],
+      autocompactPct: autocompactPct === '' ? undefined : autocompactPct,
+      maxBudgetUsd: maxBudgetUsd ? Number(maxBudgetUsd) : undefined,
+      worktree: useWorktree && worktreeName.trim() ? worktreeName.trim() : undefined,
+      env: parsedEnv || undefined,
+      jobId: newJobId,
+    }
+    const result = await sendSpawnRequest(spawnReq)
+    if (result.ok) {
+      haptic('success')
+      setWrapperId(result.wrapperId)
+      progress.setSteps(prev => [
+        ...prev.map(s =>
+          s.status === 'active'
+            ? { ...s, status: 'done' as const, detail: `wrapper=${result.wrapperId.slice(0, 8)}` }
+            : s,
+        ),
+        { label: 'Waiting for session...', status: 'active' as const, ts: Date.now() },
+      ])
+    } else {
+      progress.setError(result.error)
       haptic('error')
     }
   }, [
