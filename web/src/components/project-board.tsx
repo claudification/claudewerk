@@ -15,6 +15,7 @@ import {
   useSensor,
   useSensors,
 } from '@dnd-kit/core'
+import { DEFAULT_SENTINEL, EFFORT_OPTIONS, MODEL_OPTIONS } from '@shared/spawn-schema'
 import {
   Archive,
   ArrowLeft,
@@ -32,6 +33,7 @@ import {
 } from 'lucide-react'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Kbd } from '@/components/ui/kbd'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useLaunchProgress } from '@/hooks/use-launch-progress'
 import type { ProjectTask } from '@/hooks/use-project'
 import { type ProjectTaskMeta, type TaskStatus, useProject } from '@/hooks/use-project'
@@ -887,39 +889,49 @@ export function RunTaskDialog({
         {phase === 'config' && (
           <>
             <div className="px-4 py-3 space-y-3">
-              <div className="flex items-center justify-between">
-                <label htmlFor="run-task-model" className="text-[10px] font-mono text-muted-foreground">
+              <div className="flex items-center justify-between gap-3">
+                <label htmlFor="run-task-model" className="text-[10px] font-mono text-muted-foreground shrink-0">
                   Model
                 </label>
-                <select
-                  id="run-task-model"
-                  value={model}
-                  onChange={e => setModel(e.target.value)}
-                  className="text-[10px] font-mono bg-[#1a1b26] border border-[#33467c]/50 text-foreground px-2 py-1 outline-none"
-                >
-                  <option value="">default</option>
-                  <option value="opus">opus</option>
-                  <option value="sonnet">sonnet</option>
-                  <option value="haiku">haiku</option>
-                </select>
+                <div className="flex-1 max-w-[220px]">
+                  <Select
+                    value={model === '' ? DEFAULT_SENTINEL : model}
+                    onValueChange={v => setModel(v === DEFAULT_SENTINEL ? '' : v)}
+                  >
+                    <SelectTrigger id="run-task-model" size="sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MODEL_OPTIONS.map(opt => (
+                        <SelectItem key={opt.value} value={opt.value} info={opt.info}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div className="flex items-center justify-between">
-                <label htmlFor="run-task-effort" className="text-[10px] font-mono text-muted-foreground">
+              <div className="flex items-center justify-between gap-3">
+                <label htmlFor="run-task-effort" className="text-[10px] font-mono text-muted-foreground shrink-0">
                   Effort
                 </label>
-                <select
-                  id="run-task-effort"
-                  value={effort}
-                  onChange={e => setEffort(e.target.value)}
-                  className="text-[10px] font-mono bg-[#1a1b26] border border-[#33467c]/50 text-foreground px-2 py-1 outline-none"
-                >
-                  <option value="default">default</option>
-                  <option value="low">low</option>
-                  <option value="medium">medium</option>
-                  <option value="high">high</option>
-                  <option value="xhigh">xhigh</option>
-                  <option value="max">max</option>
-                </select>
+                <div className="flex-1 max-w-[220px]">
+                  <Select
+                    value={effort === '' || effort === 'default' ? DEFAULT_SENTINEL : effort}
+                    onValueChange={v => setEffort(v === DEFAULT_SENTINEL ? 'default' : v)}
+                  >
+                    <SelectTrigger id="run-task-effort" size="sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {EFFORT_OPTIONS.map(opt => (
+                        <SelectItem key={opt.value} value={opt.value} info={opt.info}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div className="space-y-1.5">
                 <label className="flex items-center gap-2 cursor-pointer">

@@ -5,6 +5,7 @@
  * Phase 2 (launching): Step-by-step progress via shared LaunchMonitor.
  */
 
+import { DEFAULT_SENTINEL, EFFORT_OPTIONS, MODEL_OPTIONS, PERMISSION_MODE_OPTIONS } from '@shared/spawn-schema'
 import { Zap } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
@@ -25,35 +26,6 @@ interface SpawnDialogState {
   open: boolean
   options: SpawnDialogOptions | null
 }
-
-// Radix Select requires non-empty string values; map '' <-> DEFAULT_SENTINEL
-const DEFAULT_SENTINEL = '__default__'
-
-const MODEL_OPTIONS: Array<{ value: string; label: string; info: string }> = [
-  { value: DEFAULT_SENTINEL, label: 'Default', info: 'Use project / global default' },
-  { value: 'opus', label: 'Opus (latest)', info: 'Most capable, best for complex reasoning' },
-  { value: 'claude-opus-4-7', label: 'Opus 4.7', info: 'Opus 4.7 pinned (1M context)' },
-  { value: 'claude-opus-4-6', label: 'Opus 4.6', info: 'Opus 4.6 pinned (1M context)' },
-  { value: 'sonnet', label: 'Sonnet (latest)', info: 'Balanced speed and capability' },
-  { value: 'haiku', label: 'Haiku (latest)', info: 'Fastest, lowest cost' },
-]
-
-const EFFORT_OPTIONS: Array<{ value: string; label: string; info: string }> = [
-  { value: DEFAULT_SENTINEL, label: 'Default', info: 'Use project / global default' },
-  { value: 'low', label: 'Low', info: 'Minimal thinking budget' },
-  { value: 'medium', label: 'Medium', info: 'Moderate thinking' },
-  { value: 'high', label: 'High', info: 'Deep thinking (slower)' },
-  { value: 'xhigh', label: 'XHigh', info: 'Extended deep thinking' },
-  { value: 'max', label: 'Max', info: 'Maximum thinking budget' },
-]
-
-const PERMISSION_MODES = [
-  { value: '', label: 'Default' },
-  { value: 'plan', label: 'Plan' },
-  { value: 'acceptEdits', label: 'Accept Edits' },
-  { value: 'auto', label: 'Auto' },
-  { value: 'bypassPermissions', label: 'Bypass' },
-]
 
 /** Parse KEY=value lines into env record. Returns [env, errors]. */
 function parseEnvText(text: string): [Record<string, string> | null, string[]] {
@@ -599,18 +571,21 @@ export function SpawnDialog() {
                         Permission mode
                       </div>
                       <div className="flex gap-1.5 flex-wrap">
-                        {PERMISSION_MODES.map(opt => (
-                          <TogglePill
-                            key={opt.value}
-                            active={permissionMode === opt.value}
-                            onClick={() => {
-                              setPermissionMode(opt.value)
-                              haptic('tap')
-                            }}
-                            label={opt.label}
-                            small
-                          />
-                        ))}
+                        {PERMISSION_MODE_OPTIONS.map(opt => {
+                          const stored = opt.value === DEFAULT_SENTINEL ? '' : opt.value
+                          return (
+                            <TogglePill
+                              key={opt.value}
+                              active={permissionMode === stored}
+                              onClick={() => {
+                                setPermissionMode(stored)
+                                haptic('tap')
+                              }}
+                              label={opt.label}
+                              small
+                            />
+                          )
+                        })}
                       </div>
                     </div>
 

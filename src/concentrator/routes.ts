@@ -18,6 +18,7 @@ import { join } from 'node:path'
 import { Hono } from 'hono'
 import type { ListDirsResult, SendInput, Session, SpawnResult, TeamInfo } from '../shared/protocol'
 import { generateSessionName } from '../shared/session-names'
+import { spawnRequestSchema } from '../shared/spawn-schema'
 import {
   queryModelComparison as queryAnalyticsModels,
   querySummary as queryAnalyticsSummary,
@@ -852,31 +853,11 @@ export function createRouter(options: RouteOptions): Hono {
     const agent = sessionStore.getAgent()
     if (!agent) return c.json({ error: 'No host agent connected' }, 503)
 
-    const body = await c.req.json<{
-      cwd: string
-      mkdir?: boolean
-      mode?: 'fresh' | 'resume'
-      resumeId?: string
-      headless?: boolean
-      bare?: boolean
-      repl?: boolean
-      name?: string
-      model?: string
-      effort?: string
-      permissionMode?: string
-      autocompactPct?: number
-      maxBudgetUsd?: number
-      // Ad-hoc task runner fields
-      prompt?: string
-      adHoc?: boolean
-      adHocTaskId?: string
-      leaveRunning?: boolean
-      worktree?: string
-      env?: Record<string, string>
-      // Launch job correlation
-      jobId?: string
-    }>()
-    if (!body.cwd || typeof body.cwd !== 'string') return c.json({ error: 'Missing cwd field' }, 400)
+    const parsed = spawnRequestSchema.safeParse(await c.req.json())
+    if (!parsed.success) {
+      return c.json({ error: parsed.error.message, issues: parsed.error.issues }, 400)
+    }
+    const body = parsed.data
     if (body.mode === 'resume' && !body.resumeId) return c.json({ error: 'resumeId required for resume mode' }, 400)
 
     // Benevolent trust check for MCP callers (X-Caller-Session header)

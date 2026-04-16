@@ -18,9 +18,11 @@ import { join, resolve as resolvePath } from 'node:path'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
+import { z } from 'zod'
 import type { DialogLayout, DialogResult } from '../shared/dialog-schema'
 import { dialogToolInputSchema, validateDialogLayout } from '../shared/dialog-schema'
 import { isPathWithinCwd } from '../shared/path-guard'
+import { spawnRequestSchema } from '../shared/spawn-schema'
 import { DEFAULT_VISIBLE_STATUSES, TASK_STATUSES, type TaskStatus } from '../shared/task-statuses'
 import { checkForUpdate, formatUpdateResult } from '../shared/update-check'
 import { debug } from './debug'
@@ -314,6 +316,29 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
   )
   const server = mcpServer.server // low-level access for custom handlers
 
+  // spawn_session input schema: shared spawn fields + MCP-specific (action, session_id, resume_id alias).
+  // cwd is only required for action=spawn; make it optional at schema level and validate in handler.
+  const spawnToolSchema = spawnRequestSchema
+    .extend({
+      action: z
+        .enum(['spawn', 'revive', 'restart'])
+        .optional()
+        .describe(
+          'Action to perform. "spawn" = new session at cwd, "revive" = bring back an ended session, "restart" = terminate + auto-revive. Default: spawn.',
+        ),
+      session_id: z
+        .string()
+        .optional()
+        .describe('Target session ID from list_sessions. Required for revive and restart actions.'),
+      resume_id: z.string().optional().describe('Claude Code session ID to resume (alias for resumeId).'),
+    })
+    .partial({ cwd: true })
+  const spawnToolInputSchema = z.toJSONSchema(spawnToolSchema) as {
+    type: 'object'
+    properties?: Record<string, unknown>
+    required?: string[]
+  }
+
   // Register MCP tools
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
@@ -412,44 +437,7 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
         name: 'spawn_session',
         description:
           'Unified session lifecycle tool. Spawn new sessions, revive ended ones, or restart active sessions (terminate + auto-revive). Requires benevolent trust level. Sessions boot in tmux on the host - takes 10-30 seconds. Use list_sessions to poll for status.\n\nActions:\n- spawn (default): Start a new session at a directory\n- revive: Bring back an ended/inactive session\n- restart: Terminate an active session and automatically revive it. For self-restart, the MCP response may not arrive (your process dies and reboots).',
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            action: {
-              type: 'string',
-              enum: ['spawn', 'revive', 'restart'],
-              description:
-                'Action to perform. "spawn" = new session at cwd, "revive" = bring back an ended session, "restart" = terminate + auto-revive. Default: spawn.',
-            },
-            session_id: {
-              type: 'string',
-              description: 'Target session ID from list_sessions. Required for revive and restart actions.',
-            },
-            cwd: {
-              type: 'string',
-              description: 'Working directory for new session (absolute path, ~ supported). Required for spawn action.',
-            },
-            mode: {
-              type: 'string',
-              enum: ['fresh', 'resume'],
-              description:
-                'Spawn mode (only for action=spawn): "fresh" = new session, "resume" = resume specific session by ID. Default: fresh.',
-            },
-            resume_id: {
-              type: 'string',
-              description: 'Claude Code session ID to resume (required when mode is "resume")',
-            },
-            mkdir: {
-              type: 'boolean',
-              description: 'Create the directory if it does not exist (default: false, only for action=spawn)',
-            },
-            headless: {
-              type: 'boolean',
-              description:
-                'Spawn in headless mode (stream-json, no terminal). Default: true. Set false for interactive PTY mode.',
-            },
-          },
-        },
+        inputSchema: spawnToolInputSchema,
       },
       {
         name: 'configure_session',
