@@ -736,7 +736,10 @@ function processMessage(msg: DashboardMessage) {
     case 'permissions': {
       const update: Record<string, unknown> = {}
       if (msg.global) update.permissions = msg.global
-      if (msg.sessions) update.sessionPermissions = msg.sessions
+      if (msg.sessions) {
+        // Merge into existing sessionPermissions (incremental updates for new sessions)
+        update.sessionPermissions = { ...useSessionsStore.getState().sessionPermissions, ...msg.sessions }
+      }
       if (Object.keys(update).length > 0) useSessionsStore.setState(update)
       break
     }

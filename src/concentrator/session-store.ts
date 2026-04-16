@@ -27,7 +27,7 @@ import { clearSession as clearAnalyticsSession, recordHookEvent } from './analyt
 import { recordTurnFromCumulatives } from './cost-store'
 import { getModelInfo } from './model-pricing'
 import type { UserGrant } from './permissions'
-import { resolvePermissions } from './permissions'
+import { resolvePermissionFlags, resolvePermissions } from './permissions'
 import { getProjectSettings } from './project-settings'
 import { appendSharedFile } from './routes'
 import { listShares } from './shares'
@@ -1025,6 +1025,23 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       },
       session.cwd,
     )
+
+    // Push per-session permissions to scoped subscribers so the client can
+    // immediately include the new session in its filtered list.
+    for (const ws of dashboardSubscribers) {
+      try {
+        const grants = (ws.data as { grants?: UserGrant[] }).grants
+        if (!grants) continue // admins don't use sessionPermissions
+        const { permissions } = resolvePermissions(grants, session.cwd)
+        if (!permissions.has('chat:read')) continue
+        ws.send(
+          JSON.stringify({
+            type: 'permissions',
+            sessions: { [id]: resolvePermissionFlags(grants, session.cwd) },
+          }),
+        )
+      } catch {}
+    }
 
     return session
   }

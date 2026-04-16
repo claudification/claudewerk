@@ -42,7 +42,13 @@ import { getGlobalSettings, updateGlobalSettings } from './global-settings'
 import { purgeMessages, queryMessages } from './inter-session-log'
 import { getModels, getModelsFetchedAt } from './model-pricing'
 import { resolveInJail } from './path-jail'
-import { type Permission, resolvePermissionFlags, resolvePermissions, type UserGrant } from './permissions'
+import {
+  hasPermissionAnyCwd,
+  type Permission,
+  resolvePermissionFlags,
+  resolvePermissions,
+  type UserGrant,
+} from './permissions'
 import { addPersistedLink, getPersistedLinks, removePersistedLink } from './project-links'
 import {
   deleteProjectSettings,
@@ -1289,11 +1295,17 @@ Output a JSON array of strings. Each string should be the correct spelling of on
   app.post('/api/files', async c => {
     if (!blobDir) return c.json({ error: 'Blob store not configured' }, 503)
 
-    // Require files permission (check against session CWD if available, else global)
+    // Require files permission -- check session CWD if available, else any grant
     const uploadSessionId = c.req.header('x-session-id') || c.req.query('sessionId') || undefined
     const uploadCwd = uploadSessionId ? sessionStore.getSession(uploadSessionId)?.cwd : undefined
-    if (!httpHasPermission(c.req.raw, 'files', uploadCwd || '*'))
-      return c.json({ error: 'Forbidden: files permission required' }, 403)
+    if (uploadCwd) {
+      if (!httpHasPermission(c.req.raw, 'files', uploadCwd))
+        return c.json({ error: 'Forbidden: files permission required' }, 403)
+    } else {
+      const grants = resolveHttpGrants(c.req.raw)
+      if (grants !== null && !hasPermissionAnyCwd(grants, 'files'))
+        return c.json({ error: 'Forbidden: files permission required' }, 403)
+    }
 
     const contentType = c.req.header('content-type') || ''
     let hash: string

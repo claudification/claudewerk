@@ -303,6 +303,7 @@ export function TaskEditor({
         const idx = content.indexOf(search)
         if (idx >= 0) view.dispatch({ changes: { from: idx, to: idx + search.length, insert: replacement } })
       },
+      sessionId,
     )
   }
 

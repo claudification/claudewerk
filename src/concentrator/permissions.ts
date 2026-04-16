@@ -151,6 +151,31 @@ export function resolvePermissionFlags(grants: UserGrant[], cwd = '*', serverRol
 
 // ─── Grant queries ────────────────────────────────────────────────
 
+/**
+ * Check if any active grant provides a permission, regardless of CWD.
+ * Used for CWD-agnostic actions (e.g. file upload to global blob store).
+ */
+export function hasPermissionAnyCwd(grants: UserGrant[], permission: Permission): boolean {
+  const now = Date.now()
+  // Also check hierarchical parents (files:read -> files, etc.)
+  const toCheck = [permission]
+  if (permission === 'chat:read') toCheck.push('chat')
+  if (permission === 'terminal:read') toCheck.push('terminal')
+  if (permission === 'files:read') toCheck.push('files')
+
+  for (const grant of grants) {
+    if (!isGrantActive(grant, now)) continue
+    if (grant.roles) {
+      for (const role of grant.roles) {
+        const expanded = ROLE_PERMISSIONS[role]
+        if (expanded && toCheck.some(p => expanded.includes(p))) return true
+      }
+    }
+    if (grant.permissions && toCheck.some(p => grant.permissions?.includes(p))) return true
+  }
+  return false
+}
+
 export function hasAnyCwdAccess(grants: UserGrant[], cwd: string): boolean {
   const now = Date.now()
   return grants.some(g => isGrantActive(g, now) && matchCwdGlob(g.cwd, cwd))

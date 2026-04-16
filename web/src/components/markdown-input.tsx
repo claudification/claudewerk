@@ -631,6 +631,7 @@ export function MarkdownInput({
         const current = textareaRef.current?.value ?? ''
         onChange(current.replace(search, replacement))
       },
+      selectedSessionId ?? undefined,
     )
   }
 
