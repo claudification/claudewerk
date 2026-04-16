@@ -626,6 +626,16 @@ export function MarkdownInput({
     )
   }
 
+  // Listen for external file upload requests (e.g. drag-and-drop on transcript area)
+  useEffect(() => {
+    function handleExternalUpload(e: Event) {
+      const file = (e as CustomEvent<File>).detail
+      if (file) uploadFile(file)
+    }
+    window.addEventListener('file-upload-request', handleExternalUpload)
+    return () => window.removeEventListener('file-upload-request', handleExternalUpload)
+  })
+
   async function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
     const items = e.clipboardData?.items
     if (!items) return

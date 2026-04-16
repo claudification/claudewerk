@@ -27,7 +27,7 @@ import { ShareBanner } from './share-panel'
 import { SharedView } from './shared-view'
 import { SubagentView } from './subagent-view'
 import { TasksView } from './tasks-view'
-import { TranscriptView } from './transcript'
+import { TranscriptDropZone, TranscriptView } from './transcript'
 
 const WebTerminal = lazy(() => import('./web-terminal').then(m => ({ default: m.WebTerminal })))
 
@@ -753,7 +753,7 @@ export const SessionDetail = memo(function SessionDetail() {
   useEffect(() => {
     if (selectedSessionId) setSessionTab(selectedSessionId, activeTab)
   }, [selectedSessionId, activeTab])
-  const { canAdmin, canChat, canReadTerminal, canReadFiles, canSpawn } = useSessionsStore(
+  const { canAdmin, canChat, canReadTerminal, canReadFiles, canFiles, canSpawn } = useSessionsStore(
     useShallow(s => {
       const p = (s.selectedSessionId && s.sessionPermissions[s.selectedSessionId]) || s.permissions
       return {
@@ -761,6 +761,7 @@ export const SessionDetail = memo(function SessionDetail() {
         canChat: p.canChat,
         canReadTerminal: p.canReadTerminal,
         canReadFiles: p.canReadFiles,
+        canFiles: p.canFiles,
         canSpawn: p.canSpawn,
       }
     }),
@@ -1685,9 +1686,10 @@ export const SessionDetail = memo(function SessionDetail() {
           )}
 
           {!conversationTarget && (activeTab === 'transcript' || (activeTab === 'tty' && !hasTerminal)) && (
-            <div
+            <TranscriptDropZone
+              enabled={canSendInput && canFiles}
               className={cn(
-                'flex-1 min-h-0 overflow-hidden relative flex flex-col transition-colors duration-300',
+                'flex-1 min-h-0 overflow-hidden flex flex-col transition-colors duration-300',
                 inPlanMode && 'bg-blue-950/20',
               )}
             >
@@ -1705,7 +1707,7 @@ export const SessionDetail = memo(function SessionDetail() {
                 onReachedBottom={enableFollow}
               />
               {!follow && transcript.length > 0 && <ScrollToBottomButton onClick={enableFollow} direction="down" />}
-            </div>
+            </TranscriptDropZone>
           )}
           {activeTab === 'tty' && hasTerminal && !showTerminal && session.wrapperIds?.[0] && (
             <div className="flex-1 min-h-0 overflow-hidden">
