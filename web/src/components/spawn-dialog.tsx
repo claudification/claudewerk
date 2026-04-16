@@ -5,6 +5,7 @@
  * Phase 2 (launching): Step-by-step progress via shared LaunchMonitor.
  */
 
+import { buildSpawnDiagnostics } from '@shared/spawn-diagnostics'
 import {
   DEFAULT_SENTINEL,
   EFFORT_OPTIONS,
@@ -353,32 +354,39 @@ export function SpawnDialog() {
   }
 
   function handleCopyLog() {
-    const log = {
-      type: 'spawn_log',
-      time: new Date().toISOString(),
-      cwd: state.options?.cwd,
+    const [parsedEnv] = parseEnvText(envText)
+    const diag = buildSpawnDiagnostics({
+      source: 'spawn-dialog',
       jobId,
       wrapperId: wrapperId || progress.launch.wrapperId || null,
-      sessionId: progress.launch.sessionId || null,
-      elapsed: `${progress.elapsed}s`,
+      sessionId: progress.launch.sessionId ?? null,
+      elapsedSec: progress.elapsed,
       error: progress.error || progress.launch.error || null,
-      events: progress.launch.events.map(e => ({
-        status: e.status,
-        step: e.step,
-        detail: e.detail || null,
-        t: e.t,
-      })),
       config: {
+        cwd: state.options?.cwd,
         headless,
         bare,
-        name: name || null,
-        model: model || null,
-        effort: effort || null,
-        permissionMode: permissionMode || null,
-        env: envText.trim() || null,
+        name: name || undefined,
+        model: (model || undefined) as SpawnRequest['model'],
+        effort: (effort || undefined) as SpawnRequest['effort'],
+        permissionMode: (permissionMode || undefined) as SpawnRequest['permissionMode'],
+        env: parsedEnv ?? undefined,
       },
-    }
-    progress.copyToClipboard(JSON.stringify(log, null, 2))
+      steps: progress.steps.map(s => ({
+        label: s.label,
+        status: s.status,
+        detail: s.detail ?? null,
+        ts: s.ts ?? null,
+      })),
+      launchEvents: progress.launch.events.map(e => ({
+        step: e.step,
+        status: e.status,
+        detail: e.detail ?? null,
+        t: e.t,
+      })),
+      launchState: { completed: progress.launch.completed, failed: progress.launch.failed },
+    })
+    progress.copyToClipboard(JSON.stringify(diag, null, 2))
   }
 
   const shortPath = state.options?.cwd?.replace(/^\/Users\/[^/]+/, '~') || ''

@@ -18,6 +18,7 @@ import { join } from 'node:path'
 import { Hono } from 'hono'
 import type { ListDirsResult, SendInput, Session, SpawnResult, TeamInfo } from '../shared/protocol'
 import { resolveSpawnConfig } from '../shared/spawn-defaults'
+import { mapProjectTrust, type SpawnCallerContext } from '../shared/spawn-permissions'
 import { type SpawnRequest, spawnRequestSchema } from '../shared/spawn-schema'
 import {
   queryModelComparison as queryAnalyticsModels,
@@ -870,21 +871,24 @@ export function createRouter(options: RouteOptions): Hono {
     }
     const body = parsed.data
 
-    // Benevolent trust check for MCP callers (X-Caller-Session header).
-    // HTTP-specific: WS handlers identify the caller from ws.data.sessionId instead.
+    // Build caller context for the unified permission gate. MCP callers
+    // identify themselves via X-Caller-Session; everything else is dashboard HTTP.
     const callerSessionId = c.req.header('X-Caller-Session')
-    if (callerSessionId) {
-      const callerSess = sessionStore.getSession(callerSessionId)
-      const callerTrust = callerSess?.cwd ? getProjectSettings(callerSess.cwd)?.trustLevel : undefined
-      if (callerTrust !== 'benevolent') {
-        return c.json({ error: 'Spawn requires benevolent trust level' }, 403)
-      }
+    const callerSess = callerSessionId ? sessionStore.getSession(callerSessionId) : null
+    const callerCwd = callerSess?.cwd ?? null
+    const callerTrust = callerCwd ? mapProjectTrust(getProjectSettings(callerCwd)?.trustLevel) : 'trusted'
+    const callerContext: SpawnCallerContext = {
+      kind: callerSessionId ? 'mcp' : 'http',
+      hasSpawnPermission: true, // already validated by httpHasPermission above
+      trustLevel: callerTrust,
+      cwd: callerCwd,
     }
 
     const result = await dispatchSpawn(body, {
       sessions: sessionStore,
       getProjectSettings,
       getGlobalSettings,
+      callerContext,
       rendezvousCallerSessionId: callerSessionId ?? null,
     })
 

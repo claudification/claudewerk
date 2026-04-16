@@ -5,6 +5,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { resolveSpawnConfig } from '../../shared/spawn-defaults'
+import { mapProjectTrust, type SpawnCallerContext } from '../../shared/spawn-permissions'
 import type { SpawnRequest } from '../../shared/spawn-schema'
 import { getGlobalSettings } from '../global-settings'
 import type { MessageHandler } from '../handler-context'
@@ -147,10 +148,23 @@ const handleChannelSpawn: MessageHandler = (ctx, data) => {
     headless: data.headless !== false,
   }
 
+  // Inter-session callers are always another session acting MCP-style --
+  // `requireBenevolent()` above already enforces the trust floor, but
+  // dispatchSpawn re-validates via assertSpawnAllowed for belt-and-braces.
+  const callerCwd = ctx.caller?.cwd ?? null
+  const callerTrust = callerCwd ? mapProjectTrust(getProjectSettings(callerCwd)?.trustLevel) : 'trusted'
+  const callerContext: SpawnCallerContext = {
+    kind: 'mcp',
+    hasSpawnPermission: true,
+    trustLevel: callerTrust,
+    cwd: callerCwd,
+  }
+
   dispatchSpawn(req, {
     sessions: ctx.sessions,
     getProjectSettings,
     getGlobalSettings,
+    callerContext,
     rendezvousCallerSessionId: callerSession,
   })
     .then(result => {

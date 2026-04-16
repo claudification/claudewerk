@@ -15,6 +15,8 @@ import {
   useSensor,
   useSensors,
 } from '@dnd-kit/core'
+import { buildSpawnDiagnostics } from '@shared/spawn-diagnostics'
+import { deriveSessionName } from '@shared/spawn-naming'
 import { composeSpawnPrompt } from '@shared/spawn-prompt'
 import { DEFAULT_SENTINEL, EFFORT_OPTIONS, MODEL_OPTIONS, type SpawnRequest } from '@shared/spawn-schema'
 import {
@@ -762,7 +764,11 @@ export function RunTaskDialog({
       effort: (effort !== 'default' ? effort : undefined) as SpawnRequest['effort'],
       worktree: useWorktree ? branchName : undefined,
       leaveRunning: leaveRunning || undefined,
-      name: task.title.replace(/['"]/g, '').slice(0, 60),
+      name:
+        deriveSessionName(
+          {},
+          { slug: task.slug, title: task.title, status: task.status, priority: task.priority, tags: task.tags },
+        ) ?? undefined,
       maxBudgetUsd: maxBudgetUsd ? Number(maxBudgetUsd) : undefined,
       jobId: newJobId,
     }
@@ -792,39 +798,36 @@ export function RunTaskDialog({
   }
 
   function handleCopyDiagnostics() {
-    const diag = {
-      type: 'run_task_diagnostics',
-      time: new Date().toISOString(),
-      task: { slug: task.slug, title: task.title, status: task.status, priority: task.priority, tags: task.tags },
-      cwd,
+    const diag = buildSpawnDiagnostics({
+      source: 'run-task-dialog',
       jobId,
       wrapperId: wrapperId || progress.launch.wrapperId || null,
-      sessionId: progress.launch.sessionId || null,
-      elapsed: `${progress.elapsed}s`,
+      sessionId: progress.launch.sessionId ?? null,
+      elapsedSec: progress.elapsed,
       error: progress.error || progress.launch.error || null,
       config: {
-        model: model || null,
-        effort,
-        worktree: useWorktree ? branchName : null,
-        autoCommit,
-        leaveRunning,
-        maxBudgetUsd: maxBudgetUsd || null,
-        timeout,
+        cwd: cwd || undefined,
+        model: (model || undefined) as SpawnRequest['model'],
+        effort: (effort !== 'default' ? effort : undefined) as SpawnRequest['effort'],
+        worktree: useWorktree ? branchName : undefined,
+        leaveRunning: leaveRunning || undefined,
+        maxBudgetUsd: maxBudgetUsd ? Number(maxBudgetUsd) : undefined,
       },
       steps: progress.steps.map(s => ({
         label: s.label,
         status: s.status,
-        detail: s.detail || null,
-        ts: s.ts || null,
+        detail: s.detail ?? null,
+        ts: s.ts ?? null,
       })),
       launchEvents: progress.launch.events.map(e => ({
         step: e.step,
         status: e.status,
-        detail: e.detail || null,
+        detail: e.detail ?? null,
         t: e.t,
       })),
       launchState: { completed: progress.launch.completed, failed: progress.launch.failed },
-    }
+      task: { slug: task.slug, title: task.title, status: task.status, priority: task.priority, tags: task.tags },
+    })
     progress.copyToClipboard(JSON.stringify(diag, null, 2))
   }
 

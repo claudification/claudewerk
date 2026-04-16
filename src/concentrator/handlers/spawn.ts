@@ -8,6 +8,7 @@
  * -- caller correlates by jobId.
  */
 
+import { mapProjectTrust, type SpawnCallerContext } from '../../shared/spawn-permissions'
 import { spawnRequestSchema } from '../../shared/spawn-schema'
 import { getGlobalSettings } from '../global-settings'
 import type { MessageHandler } from '../handler-context'
@@ -34,12 +35,22 @@ const handleSpawnRequest: MessageHandler = (ctx, data) => {
   }
   const req = parsed.data
 
+  const callerCwd = ctx.caller?.cwd ?? null
+  const trustLevel = callerCwd ? mapProjectTrust(ctx.getProjectSettings(callerCwd)?.trustLevel) : 'trusted'
+  const callerContext: SpawnCallerContext = {
+    kind: 'ws',
+    hasSpawnPermission: true, // already validated by ctx.requirePermission above
+    trustLevel,
+    cwd: callerCwd,
+  }
+
   // Fire-and-track: dispatchSpawn is async but the router doesn't await handlers.
   // We catch promise rejections to ensure the caller always gets an ack.
   dispatchSpawn(req, {
     sessions: ctx.sessions,
     getProjectSettings,
     getGlobalSettings,
+    callerContext,
     // Dashboard-initiated spawns do not participate in the inter-session
     // rendezvous channel -- the dashboard already gets launch events via jobId.
     rendezvousCallerSessionId: null,

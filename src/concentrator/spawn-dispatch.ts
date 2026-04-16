@@ -18,6 +18,8 @@ import { randomUUID } from 'node:crypto'
 import type { ProjectSettings, Session, SpawnResult } from '../shared/protocol'
 import { generateSessionName } from '../shared/session-names'
 import { resolveSpawnConfig } from '../shared/spawn-defaults'
+import { deriveSessionName } from '../shared/spawn-naming'
+import { assertSpawnAllowed, type SpawnCallerContext, SpawnPermissionError } from '../shared/spawn-permissions'
 import type { SpawnRequest } from '../shared/spawn-schema'
 import type { GlobalSettings } from './global-settings'
 import type { SessionStore } from './session-store'
@@ -26,6 +28,8 @@ export type SpawnDispatchDeps = {
   sessions: SessionStore
   getProjectSettings: (cwd: string) => ProjectSettings | null
   getGlobalSettings: () => GlobalSettings
+  /** Caller context for the unified permission gate. */
+  callerContext: SpawnCallerContext
   /** If set, register a rendezvous so the caller session is notified when the spawned wrapper connects. */
   rendezvousCallerSessionId?: string | null
 }
@@ -41,6 +45,15 @@ export type SpawnDispatchResult =
  * SpawnRequest - callers should have parsed it via spawnRequestSchema already.
  */
 export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): Promise<SpawnDispatchResult> {
+  try {
+    assertSpawnAllowed(deps.callerContext, req)
+  } catch (err) {
+    if (err instanceof SpawnPermissionError) {
+      return { ok: false, error: err.message, statusCode: 403 }
+    }
+    throw err
+  }
+
   const agent = deps.sessions.getAgent()
   if (!agent) return { ok: false, error: 'No host agent connected', statusCode: 503 }
 
@@ -107,7 +120,7 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
         bare: bare || false,
         repl: repl || false,
         sessionName:
-          req.name?.trim() ||
+          deriveSessionName(req) ??
           generateSessionName(
             new Set(
               deps.sessions
