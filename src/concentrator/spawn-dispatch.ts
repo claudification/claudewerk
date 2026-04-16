@@ -15,7 +15,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import type { ProjectSettings, Session, SpawnResult } from '../shared/protocol'
+import type { LaunchProgressEvent, LaunchStep, ProjectSettings, Session, SpawnResult } from '../shared/protocol'
 import { generateSessionName } from '../shared/session-names'
 import { resolveSpawnConfig } from '../shared/spawn-defaults'
 import { deriveSessionName } from '../shared/spawn-naming'
@@ -23,6 +23,28 @@ import { assertSpawnAllowed, type SpawnCallerContext, SpawnPermissionError } fro
 import type { SpawnRequest } from '../shared/spawn-schema'
 import type { GlobalSettings } from './global-settings'
 import type { SessionStore } from './session-store'
+
+/**
+ * Emit a first-class launch_progress event to all subscribers of the job.
+ * No-op if jobId is undefined (callers that dispatch without tracking a job).
+ */
+function emitProgress(
+  sessions: SessionStore,
+  jobId: string | undefined,
+  step: LaunchStep,
+  status: LaunchProgressEvent['status'],
+  extra?: Partial<LaunchProgressEvent>,
+): void {
+  if (!jobId) return
+  sessions.forwardJobEvent(jobId, {
+    type: 'launch_progress',
+    jobId,
+    step,
+    status,
+    t: Date.now(),
+    ...extra,
+  })
+}
 
 export type SpawnDispatchDeps = {
   sessions: SessionStore
@@ -67,6 +89,7 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
 
   if (jobId) {
     deps.sessions.createJob(jobId, wrapperId)
+    emitProgress(deps.sessions, jobId, 'job_created', 'done', { wrapperId })
   }
 
   const cwdLabel = req.cwd.split('/').pop() || req.cwd
@@ -86,6 +109,8 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
       clearTimeout(timeout)
       resolve(msg as SpawnResult)
     })
+
+    emitProgress(deps.sessions, jobId, 'spawn_sent', 'active')
 
     const projSettings = deps.getProjectSettings(req.cwd)
     const globalSettings = deps.getGlobalSettings()
@@ -151,8 +176,10 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
 
   if (!result.success) {
     if (req.adHoc) console.log(`[ad-hoc] Spawn FAILED: ${result.error || 'unknown'} (${cwdLabel})`)
+    emitProgress(deps.sessions, jobId, 'failed', 'error', { error: result.error || 'Spawn failed' })
     return { ok: false, error: result.error || 'Spawn failed', statusCode: 500 }
   }
+  emitProgress(deps.sessions, jobId, 'agent_acked', 'done', { detail: result.tmuxSession })
   if (req.adHoc) console.log(`[ad-hoc] Spawn OK: wrapper=${wrapperId.slice(0, 8)} tmux=${result.tmuxSession}`)
 
   const callerSessionId = deps.rendezvousCallerSessionId
@@ -162,6 +189,10 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
     deps.sessions
       .addRendezvous(wrapperId, callerSessionId, req.cwd, 'spawn')
       .then(session => {
+        emitProgress(deps.sessions, jobId, 'session_connected', 'done', {
+          sessionId: session.id,
+          wrapperId,
+        })
         const callerWs = deps.sessions.getSessionSocket(callerSessionId)
         callerWs?.send(
           JSON.stringify({
@@ -174,13 +205,15 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
         )
       })
       .catch(err => {
+        const errMsg = typeof err === 'string' ? err : 'Spawn rendezvous timed out'
+        emitProgress(deps.sessions, jobId, 'failed', 'error', { error: errMsg })
         const callerWs = deps.sessions.getSessionSocket(callerSessionId)
         callerWs?.send(
           JSON.stringify({
             type: 'spawn_timeout',
             wrapperId,
             cwd: req.cwd,
-            error: typeof err === 'string' ? err : 'Spawn rendezvous timed out',
+            error: errMsg,
           }),
         )
       })

@@ -777,6 +777,7 @@ function processMessage(msg: DashboardMessage) {
 
     // ─── Launch Job Events ──────────────────────────────────────────
     case 'launch_log':
+    case 'launch_progress':
     case 'job_complete':
     case 'job_failed': {
       window.dispatchEvent(new CustomEvent('launch-job-event', { detail: msg }))

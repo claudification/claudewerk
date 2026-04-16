@@ -1014,6 +1014,36 @@ export interface LaunchLog {
   t: number
 }
 
+/** Structured launch lifecycle step (concentrator -> dashboard, first-class) */
+export type LaunchStep =
+  | 'job_created'
+  | 'spawn_sent'
+  | 'agent_acked'
+  | 'wrapper_booted'
+  | 'session_connected'
+  | 'prompt_submitted'
+  | 'running'
+  | 'completed'
+  | 'failed'
+
+/**
+ * Concentrator -> Dashboard: first-class launch progress event.
+ * Emitted at each lifecycle step of a spawn/revive job so clients (dashboard,
+ * MCP callers) see real progress instead of silence.
+ */
+export interface LaunchProgressEvent {
+  type: 'launch_progress'
+  jobId: string
+  step: LaunchStep
+  status: 'active' | 'done' | 'error'
+  detail?: string
+  t: number
+  wrapperId?: string
+  sessionId?: string
+  elapsed?: number
+  error?: string
+}
+
 /** Concentrator -> Dashboard: launch job completed (session connected) */
 export interface JobComplete {
   type: 'job_complete'
