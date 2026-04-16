@@ -8,8 +8,18 @@ import JsonHighlight from '@/components/json-highlight'
 import { useSessionsStore } from '@/hooks/use-sessions'
 import { resolveToolDisplay, type ToolDisplayKey } from '@/lib/dashboard-prefs'
 import { cn } from '@/lib/utils'
-import { AnsiText, escapeHtml, TruncatedPre } from './shared'
+import { AnsiText, cleanCdPrefix, cleanReplShCalls, escapeHtml, TruncatedPre } from './shared'
 import { ensureLang, getHighlighter, langFromPath } from './syntax'
+
+// Single selector: returns CWD if sanitizePaths is enabled, undefined otherwise.
+// Returns a primitive (string|undefined) so Zustand skips re-renders when the value is stable.
+function useSessionCwd(): string | undefined {
+  return useSessionsStore(s => {
+    if (s.dashboardPrefs.sanitizePaths === false) return undefined
+    const sid = s.selectedSessionId
+    return sid ? s.sessionsById[sid]?.cwd : undefined
+  })
+}
 
 // Syntax-highlighted diff view for Edit operations
 export function DiffView({
@@ -136,7 +146,9 @@ function stripLeadingComment(cmd: string): string {
 // Syntax-highlighted shell command block (max 10 lines by default)
 export function ShellCommand({ command, maxLines = 10 }: { command: string; maxLines?: number }) {
   const [html, setHtml] = useState<string | null>(null)
-  const cleaned = stripLeadingComment(command)
+  const cwd = useSessionCwd()
+  const stripped = stripLeadingComment(command)
+  const cleaned = cwd ? cleanCdPrefix(stripped, cwd) : stripped
   const lines = cleaned.split('\n')
   const truncated = lines.length > maxLines
   const display = truncated ? lines.slice(0, maxLines).join('\n') : cleaned
@@ -325,11 +337,13 @@ export function ReplView({ code, isError }: { code: string; isError?: boolean })
   const replDisplay = resolveToolDisplay(replPrefs, 'REPL' as ToolDisplayKey)
   const lineLimit = replDisplay.lineLimit
   const [revealed, setRevealed] = useState(false)
+  const cwd = useSessionCwd()
+  const displayCode = cwd ? cleanReplShCalls(code, cwd) : code
 
   useEffect(() => {
     getHighlighter()
       .then(highlighter => {
-        const tokens = highlighter.codeToTokens(code, { lang: 'javascript', theme: 'tokyo-night' })
+        const tokens = highlighter.codeToTokens(displayCode, { lang: 'javascript', theme: 'tokyo-night' })
         const highlighted = tokens.tokens
           .map((lineTokens: Array<{ color?: string; content: string }>) =>
             lineTokens.map(t => `<span style="color:${t.color}">${escapeHtml(t.content)}</span>`).join(''),
@@ -338,9 +352,9 @@ export function ReplView({ code, isError }: { code: string; isError?: boolean })
         setCodeHtml(highlighted)
       })
       .catch(() => {})
-  }, [code])
+  }, [displayCode])
 
-  const codeLines = code.split('\n')
+  const codeLines = displayCode.split('\n')
   const codeTruncate = lineLimit > 0 && codeLines.length > lineLimit && !revealed
   const visibleCodeLines = codeTruncate ? lineLimit : codeLines.length
   const htmlLines = codeHtml ? codeHtml.split('\n') : null

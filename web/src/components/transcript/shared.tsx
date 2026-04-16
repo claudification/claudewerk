@@ -107,6 +107,46 @@ export function shortPath(fullPath: string): string {
   return stripped
 }
 
+// Compute relative path from `from` to `to` (pure string, no fs)
+function relativePath(from: string, to: string): string {
+  const fromParts = from.replace(/\/$/, '').split('/')
+  const toParts = to.replace(/\/$/, '').split('/')
+  let common = 0
+  while (common < fromParts.length && common < toParts.length && fromParts[common] === toParts[common]) common++
+  const ups = fromParts.length - common
+  const rest = toParts.slice(common)
+  return [...Array(ups).fill('..'), ...rest].join('/')
+}
+
+// Strip or shorten `cd <path> && ` prefix from a shell command for display.
+// - Exact CWD match: strip entirely (it's a no-op)
+// - Child/parent of CWD: replace with relative path
+// - Unrelated: leave as-is
+const CD_PREFIX_RE = /^cd\s+(?:(['"])(.+?)\1|(\S+))\s*(?:&&|;)\s*/
+export function cleanCdPrefix(text: string, cwd: string): string {
+  const m = text.match(CD_PREFIX_RE)
+  if (!m) return text
+  const cdPath = (m[2] || m[3]).replace(/\/$/, '')
+  const normCwd = cwd.replace(/\/$/, '')
+  const rest = text.slice(m[0].length)
+  if (cdPath === normCwd) return rest
+  const rel = relativePath(normCwd, cdPath)
+  if (rel && !rel.startsWith('/') && rel.length < cdPath.length) {
+    return `cd ${rel} && ${rest}`
+  }
+  return text
+}
+
+// Clean `sh('cd <path> && ...')` inside REPL JavaScript code
+const SH_CD_RE = /sh\((['"`])(cd\s+(?:['"]?.+?['"]?\s*(?:&&|;)\s*))/g
+export function cleanReplShCalls(code: string, cwd: string): string {
+  return code.replace(SH_CD_RE, (full, quote, cdPart) => {
+    const cleaned = cleanCdPrefix(cdPart, cwd)
+    if (cleaned !== cdPart) return `sh(${quote}${cleaned}`
+    return full
+  })
+}
+
 // Tool-specific styling - terminal aesthetic with Lucide icons
 const TOOL_STYLES: Record<string, { color: string; Icon: LucideIcon }> = {
   Bash: { color: 'text-orange-400', Icon: Terminal },

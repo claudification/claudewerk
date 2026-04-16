@@ -827,6 +827,20 @@ const SETTINGS: SettingItem[] = [
       />
     ),
   },
+  {
+    group: 'Display',
+    label: 'Sanitize paths',
+    description: 'Strip redundant cd <cwd> prefixes from displayed commands',
+    keywords: 'sanitize paths cd cwd clean strip',
+    render: ctx => (
+      <input
+        type="checkbox"
+        checked={ctx.prefs.sanitizePaths !== false}
+        onChange={e => ctx.updatePrefs({ sanitizePaths: e.target.checked })}
+        className="accent-primary w-4 h-4"
+      />
+    ),
+  },
 ]
 
 export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {

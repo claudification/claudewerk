@@ -19,7 +19,7 @@ export function buildSystemPrompt(opts: PromptOptions): string {
     'When the user sends a message containing markdown image or file links like `![filename](https://...)` or `[filename](https://...)`,',
     'these are files attached via the remote dashboard. Handle them based on file type:',
     '',
-    '- **Images** (.png, .jpg, .jpeg, .gif, .webp, .svg): Download with `curl -sL "<url>" -o /tmp/<filename>`, then use the Read tool to view the downloaded file.',
+    '- **Images** (.png, .jpg, .jpeg, .gif, .webp, .svg): Download with `curl -sL "<url>" -o /tmp/<filename>`, then use the Read tool to view the downloaded file. Do NOT use the REPL `cat()` for images -- it cannot render them. Always use the Read tool.',
     '- **Text/code files** (.txt, .md, .json, .csv, .xml, .yaml, .yml, .toml, .ts, .js, .py, etc.): Use `curl -sL "<url>"` to fetch and read the content directly.',
     '- **PDFs** (.pdf): Download with `curl -sL "<url>" -o /tmp/<filename>`, then use the Read tool with the pages parameter.',
     '',

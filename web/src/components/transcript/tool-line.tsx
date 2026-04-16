@@ -12,7 +12,7 @@ import type { TranscriptContentBlock } from '@/lib/types'
 import { cn, truncate } from '@/lib/utils'
 import { JsonInspector } from '../json-inspector'
 import { SessionTag } from './session-tag'
-import { Collapsible, getToolStyle, shortPath, TruncatedPre } from './shared'
+import { Collapsible, cleanCdPrefix, getToolStyle, shortPath, TruncatedPre } from './shared'
 import { BashOutput, DiffView, ReplResult, ReplView, ShellCommand, WritePreview } from './tool-renderers'
 
 /**
@@ -172,6 +172,12 @@ export function ToolLine({
   const toolDefaultOpen = useSessionsStore(
     state => resolveToolDisplay(state.dashboardPrefs, displayKey as ToolDisplayKey).defaultOpen,
   )
+  // CWD-aware path sanitization for command display
+  const sessionCwd = useSessionsStore(s => {
+    if (s.dashboardPrefs.sanitizePaths === false) return undefined
+    const sid = s.selectedSessionId
+    return sid ? s.sessionsById[sid]?.cwd : undefined
+  })
 
   let summary: React.ReactNode = ''
   let details: React.ReactNode = null
@@ -183,7 +189,8 @@ export function ToolLine({
     case 'Bash': {
       const cmd = input.command as string
       const bashDesc = input.description as string | undefined
-      summary = bashDesc || (cmd?.length > 80 && !expandAll ? `${cmd.slice(0, 80)}...` : cmd)
+      const displayCmd = sessionCwd && cmd ? cleanCdPrefix(cmd, sessionCwd) : cmd
+      summary = bashDesc || (displayCmd?.length > 80 && !expandAll ? `${displayCmd.slice(0, 80)}...` : displayCmd)
       if (result) {
         details = <BashOutput result={result} command={cmd} />
       } else if (cmd) {
