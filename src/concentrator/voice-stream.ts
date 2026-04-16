@@ -11,7 +11,7 @@ import { getProjectSettings } from './project-settings'
 import type { SessionStore } from './session-store'
 
 const DEEPGRAM_LIVE_URL = 'wss://api.deepgram.com/v1/listen'
-const VOICE_TIMEOUT_MS = 60_000 // Max 60s recording session
+const VOICE_TIMEOUT_MS = 120_000 // Max 120s recording session
 const KEEPALIVE_INTERVAL_MS = 5_000 // Deepgram kills connection after 10s of no audio
 
 interface VoiceSession {
@@ -85,7 +85,7 @@ export function handleVoiceStart(
     audioBuffer: [],
     closed: false,
     timeoutTimer: setTimeout(() => {
-      console.log('[voice-stream] Session timed out (60s)')
+      console.log(`[voice-stream] Session timed out (${VOICE_TIMEOUT_MS / 1000}s)`)
       stopVoiceSession(ws, 'timeout')
     }, VOICE_TIMEOUT_MS),
     // KeepAlive prevents Deepgram from killing the connection during silence
