@@ -10,7 +10,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { useLaunchProgress } from '@/hooks/use-launch-progress'
-import { useSessionsStore } from '@/hooks/use-sessions'
+import { updateProjectSettings, useSessionsStore, wsSend } from '@/hooks/use-sessions'
 import { useKeyLayer } from '@/lib/key-layers'
 import { cn, haptic } from '@/lib/utils'
 import { LaunchErrorBanner, LaunchFooterActions, LaunchStepList } from './launch-monitor'
@@ -101,6 +101,7 @@ export function SpawnDialog() {
   const [envText, setEnvText] = useState('')
   const [envErrors, setEnvErrors] = useState<string[]>([])
   const [phase, setPhase] = useState<'config' | 'launching'>('config')
+  const [savedFeedback, setSavedFeedback] = useState<string | null>(null)
   const [jobId, setJobId] = useState<string | null>(null)
   const [wrapperId, setWrapperId] = useState<string | null>(null)
   const nameRef = useRef<HTMLInputElement>(null)
@@ -122,22 +123,37 @@ export function SpawnDialog() {
   // Register the open callback
   useEffect(() => {
     _openDialog = (options: SpawnDialogOptions) => {
-      const projSettings = projectSettings[options.cwd]
-      const defaultMode = projSettings?.defaultLaunchMode || (globalSettings.defaultLaunchMode as string) || 'headless'
+      const ps = projectSettings[options.cwd]
+      const gs = globalSettings as Record<string, unknown>
+      // Resolve defaults: project > global > hardcoded
+      const defaultMode = ps?.defaultLaunchMode || (gs.defaultLaunchMode as string) || 'headless'
       setHeadless(defaultMode !== 'pty')
       setModel('')
       setEffort('')
-      setBare(false)
-      setRepl(false)
+      setBare(ps?.defaultBare ?? (gs.defaultBare as boolean) ?? false)
+      setRepl(ps?.defaultRepl ?? (gs.defaultRepl as boolean) ?? false)
       setUseWorktree(false)
       setWorktreeName('')
       setName('')
-      setPermissionMode('')
-      setAutocompactPct('')
-      setMaxBudgetUsd('')
-      setShowAdvanced(false)
-      setEnvText('')
+      const pm = ps?.defaultPermissionMode || (gs.defaultPermissionMode as string) || 'default'
+      setPermissionMode(pm === 'default' ? '' : pm)
+      const acp = ps?.defaultAutocompactPct ?? (gs.defaultAutocompactPct as number) ?? 0
+      setAutocompactPct(acp > 0 ? acp : '')
+      const budget = ps?.defaultMaxBudgetUsd ?? (gs.defaultMaxBudgetUsd as number) ?? 0
+      setMaxBudgetUsd(budget > 0 ? String(budget) : '')
+      const envDefault = ps?.defaultEnvText || (gs.defaultEnvText as string) || ''
+      setEnvText(envDefault)
+      // Auto-expand Advanced if any defaults are non-trivial
+      const hasAdvancedDefaults =
+        (ps?.defaultBare ?? (gs.defaultBare as boolean)) ||
+        (ps?.defaultRepl ?? (gs.defaultRepl as boolean)) ||
+        pm !== 'default' ||
+        acp > 0 ||
+        budget > 0 ||
+        envDefault.trim().length > 0
+      setShowAdvanced(!!hasAdvancedDefaults)
       setEnvErrors([])
+      setSavedFeedback(null)
       setPhase('config')
       setJobId(null)
       setWrapperId(null)
@@ -296,6 +312,53 @@ export function SpawnDialog() {
     },
     { id: 'spawn-dialog', enabled: state.open },
   )
+
+  function buildSpawnDefaults() {
+    return {
+      defaultLaunchMode: headless ? ('headless' as const) : ('pty' as const),
+      defaultEffort: effort ? (effort as 'low' | 'medium' | 'high' | 'max') : ('default' as const),
+      defaultModel: model || '',
+      defaultBare: bare,
+      defaultRepl: repl,
+      defaultPermissionMode: permissionMode
+        ? (permissionMode as 'plan' | 'acceptEdits' | 'auto' | 'bypassPermissions')
+        : ('default' as const),
+      defaultAutocompactPct: autocompactPct ? Number(autocompactPct) : 0,
+      defaultMaxBudgetUsd: maxBudgetUsd ? Number(maxBudgetUsd) : 0,
+      defaultEnvText: envText.trim(),
+    }
+  }
+
+  function handleSaveProjectDefaults() {
+    if (!state.options) return
+    const defaults = buildSpawnDefaults()
+    updateProjectSettings(state.options.cwd, defaults)
+    setSavedFeedback('project')
+    haptic('success')
+    setTimeout(() => setSavedFeedback(null), 2000)
+  }
+
+  function handleSaveGlobalDefaults() {
+    const defaults = buildSpawnDefaults()
+    wsSend('update_settings', { settings: defaults })
+    setSavedFeedback('global')
+    haptic('success')
+    setTimeout(() => setSavedFeedback(null), 2000)
+  }
+
+  function handleResetDefaults() {
+    setHeadless(true)
+    setModel('')
+    setEffort('')
+    setBare(false)
+    setRepl(false)
+    setPermissionMode('')
+    setAutocompactPct('')
+    setMaxBudgetUsd('')
+    setEnvText('')
+    setEnvErrors([])
+    haptic('tap')
+  }
 
   function handleCopyLog() {
     const log = {
@@ -675,6 +738,33 @@ export function SpawnDialog() {
                     <div className="text-[9px] text-[#565f89]">
                       KEY=value per line, set before executing claude. # comments ok.
                     </div>
+                  </div>
+
+                  {/* Save / Reset defaults */}
+                  <div className="flex items-center gap-3 pl-3 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleSaveProjectDefaults}
+                      className="text-[10px] font-mono text-[#7aa2f7]/70 hover:text-[#7aa2f7] transition-colors"
+                    >
+                      {savedFeedback === 'project' ? 'Saved!' : 'Save for project'}
+                    </button>
+                    <span className="text-[#292e42]">|</span>
+                    <button
+                      type="button"
+                      onClick={handleSaveGlobalDefaults}
+                      className="text-[10px] font-mono text-[#565f89] hover:text-muted-foreground transition-colors"
+                    >
+                      {savedFeedback === 'global' ? 'Saved!' : 'Save globally'}
+                    </button>
+                    <span className="text-[#292e42]">|</span>
+                    <button
+                      type="button"
+                      onClick={handleResetDefaults}
+                      className="text-[10px] font-mono text-[#565f89] hover:text-red-400 transition-colors"
+                    >
+                      Reset
+                    </button>
                   </div>
                 </div>
               )}

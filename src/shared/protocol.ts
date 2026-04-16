@@ -832,6 +832,13 @@ export interface ProjectSettings {
   defaultLaunchMode?: 'headless' | 'pty'
   defaultEffort?: 'default' | 'low' | 'medium' | 'high' | 'max' // 'default' = don't pass --effort flag
   defaultModel?: string // model alias or full name (e.g. 'sonnet', 'opus', 'claude-sonnet-4-6')
+  // Spawn dialog defaults (override global)
+  defaultBare?: boolean
+  defaultRepl?: boolean
+  defaultPermissionMode?: 'default' | 'plan' | 'acceptEdits' | 'auto' | 'bypassPermissions'
+  defaultAutocompactPct?: number // 0 = use CC default
+  defaultMaxBudgetUsd?: number // 0 = no limit
+  defaultEnvText?: string
   allowPlanMode?: boolean // default: true. Set false to auto-deny EnterPlanMode
   verbs?: string[] // custom spinner verbs (merged with defaults)
 }

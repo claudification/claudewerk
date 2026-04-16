@@ -21,6 +21,13 @@ export const GlobalSettingsSchema = z.object({
   defaultLaunchMode: z.enum(['headless', 'pty']).default('headless'),
   defaultEffort: z.enum(['default', 'low', 'medium', 'high', 'max']).default('default'),
   defaultModel: z.string().max(50).default(''),
+  // Spawn dialog defaults
+  defaultBare: z.boolean().default(false),
+  defaultRepl: z.boolean().default(false),
+  defaultPermissionMode: z.enum(['default', 'plan', 'acceptEdits', 'auto', 'bypassPermissions']).default('default'),
+  defaultAutocompactPct: z.number().min(0).max(99).default(0), // 0 = use CC default
+  defaultMaxBudgetUsd: z.number().min(0).default(0), // 0 = no limit
+  defaultEnvText: z.string().max(5000).default(''),
 })
 
 export type GlobalSettings = z.infer<typeof GlobalSettingsSchema>
