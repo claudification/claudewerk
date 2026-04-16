@@ -191,8 +191,8 @@ export function ToolLine({
       const bashDesc = input.description as string | undefined
       const displayCmd = sessionCwd && cmd ? cleanCdPrefix(cmd, sessionCwd) : cmd
       summary = bashDesc || (displayCmd?.length > 80 && !expandAll ? `${displayCmd.slice(0, 80)}...` : displayCmd)
-      if (result) {
-        details = <BashOutput result={result} command={cmd} />
+      if (result || toolUseResult?.stdout) {
+        details = <BashOutput result={result || ''} command={cmd} extra={toolUseResult} />
       } else if (cmd) {
         details = <ShellCommand command={cmd} />
       }

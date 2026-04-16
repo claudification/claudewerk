@@ -298,14 +298,37 @@ function parseBashTags(result: string): BashParts | null {
 }
 
 // Structured bash output renderer - separates input/stdout/stderr
-export function BashOutput({ result, command }: { result: string; command?: string }) {
+// Checks XML tags in result string first, falls back to extra.stdout/stderr
+export function BashOutput({
+  result,
+  command,
+  extra,
+}: { result: string; command?: string; extra?: Record<string, unknown> }) {
   const parts = parseBashTags(result)
 
+  // Fallback: CC may put stdout/stderr in toolUseResult instead of XML tags
+  const extraStdout = extra?.stdout as string | undefined
+  const extraStderr = extra?.stderr as string | undefined
+
   if (!parts) {
+    const hasExtra = (extraStdout && extraStdout.trim()) || (extraStderr && extraStderr.trim())
+    if (hasExtra) {
+      return (
+        <div className="space-y-1">
+          {command && <ShellCommand command={command.trim()} />}
+          {extraStdout && extraStdout.trim() && <TruncatedPre text={extraStdout.trim()} tool="Bash" />}
+          {extraStderr && extraStderr.trim() && (
+            <div className="border-l-2 border-red-500/40">
+              <TruncatedPre text={extraStderr.trim()} tool="Bash" />
+            </div>
+          )}
+        </div>
+      )
+    }
     return (
       <div className="space-y-1">
         {command && <ShellCommand command={command.trim()} />}
-        <TruncatedPre text={result} tool="Bash" />
+        {result && <TruncatedPre text={result} tool="Bash" />}
       </div>
     )
   }
