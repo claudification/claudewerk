@@ -216,9 +216,40 @@ export function ToolLine({
     }
     case 'Read': {
       const path = input.file_path as string
-      summary = shortPath(path) || path
-      if (expandAll && result && typeof result === 'string') {
-        details = <TruncatedPre text={result} tool="Read" />
+      // Headless mode puts file content in toolUseResult.file
+      const readFile = toolUseResult?.file as
+        | { content?: string; filePath?: string; numLines?: number; startLine?: number; totalLines?: number }
+        | undefined
+      const readContent = result || readFile?.content
+      const startLine = readFile?.startLine ?? (input.offset as number | undefined)
+      const numLines = readFile?.numLines
+      const totalLines = readFile?.totalLines
+      const readPath = shortPath(path) || path
+      // Partial read: show "lines X-Y of Z" with colored segments
+      // Full read: show just total count
+      const endLine = startLine && numLines ? startLine + numLines - 1 : undefined
+      const isPartial = Boolean(startLine && totalLines && (startLine > 1 || (numLines && numLines < totalLines)))
+      summary = (
+        <span className="flex items-center gap-1.5 min-w-0">
+          <span className="truncate text-foreground/90">{readPath}</span>
+          {isPartial && startLine && endLine && totalLines ? (
+            <span className="text-muted-foreground/70 shrink-0">
+              lines <span className="text-sky-400">{startLine}</span>
+              <span className="text-muted-foreground/50">-</span>
+              <span className="text-sky-400">{endLine}</span>
+              <span className="text-muted-foreground/50"> of </span>
+              <span className="text-foreground/70">{totalLines.toLocaleString()}</span>
+            </span>
+          ) : totalLines ? (
+            <span className="text-muted-foreground/70 shrink-0">
+              <span className="text-foreground/70">{totalLines.toLocaleString()}</span>{' '}
+              <span className="text-muted-foreground/50">lines</span>
+            </span>
+          ) : null}
+        </span>
+      )
+      if (readContent) {
+        details = <WritePreview content={readContent} filePath={path} />
       }
       break
     }
