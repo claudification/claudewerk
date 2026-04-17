@@ -13,7 +13,7 @@ import { saveSessionOrder, useSessionsStore } from '@/hooks/use-sessions'
 import type { Session, SessionOrderGroup, SessionOrderNode, SessionOrderV2 } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
 import { CwdNode } from './session-list/cwd-group'
-import { InactiveProjectItem, SessionItemContent } from './session-list/session-item'
+import { InactiveProjectItem, SessionItemCompact } from './session-list/session-item'
 import { GroupNode, NewGroupDropTarget, SortableNode } from './session-list/session-sorting'
 
 // ─── Main SessionList ──────────────────────────────────────────────
@@ -400,7 +400,7 @@ export function SessionList() {
                       if (!node.children.some(c => c.id === selectedCwdKey)) return null
                       return (
                         <div className="opacity-80">
-                          <SessionItemContent session={selectedSession} compact />
+                          <SessionItemCompact session={selectedSession} />
                         </div>
                       )
                     })()

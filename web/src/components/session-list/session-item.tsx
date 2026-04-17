@@ -583,48 +583,35 @@ function InlineRename({ session }: { session: Session }) {
   )
 }
 
-// ─── Session card content (variable height, shows tasks/agents) ────
+// ─── Session card outer wrapper (shared by Full + Compact) ────────
 
-export const SessionItemContent = memo(function SessionItemContent({
+function SessionItemShell({
   session,
-  compact,
+  isSelected,
+  displayColor,
+  variant,
+  onClick,
+  children,
 }: {
   session: Session
-  compact?: boolean
+  isSelected: boolean
+  displayColor: string | undefined
+  variant: 'full' | 'compact'
+  onClick: () => void
+  children: ReactNode
 }) {
-  // Derived boolean selectors: only re-render when THIS card's state changes
-  const isSelected = useSessionsStore(s => s.selectedSessionId === session.id)
-  // Only resolve subagent selection for the selected session (others get stable null)
-  const selectedSubagentId = useSessionsStore(s => (s.selectedSessionId === session.id ? s.selectedSubagentId : null))
-  const selectSession = useSessionsStore(s => s.selectSession)
-  const selectSubagent = useSessionsStore(s => s.selectSubagent)
-  const openTab = useSessionsStore(s => s.openTab)
-  const ps = useSessionsStore(s => s.projectSettings[session.cwd])
-  const showContextBar = useSessionsStore(s => s.dashboardPrefs.showContextInList)
-  const showCost = useSessionsStore(s => s.dashboardPrefs.showCostInList)
-  const isRenaming = useSessionsStore(s => s.renamingSessionId === session.id)
-
-  function handleClick() {
-    haptic('tap')
-    selectSession(session.id)
-  }
-
-  const projectName = ps?.label || lastPathSegments(session.cwd)
-  const sessionName = session.title || session.agentName
-  const displayColor = ps?.color
-
-  const card = (
+  return (
     <div
       data-session-id={session.id}
       role="button"
       tabIndex={0}
-      onClick={handleClick}
+      onClick={onClick}
       onKeyDown={e => {
-        if (e.key === 'Enter' || e.key === ' ') handleClick()
+        if (e.key === 'Enter' || e.key === ' ') onClick()
       }}
       className={cn(
         'w-full text-left border transition-colors group cursor-pointer',
-        compact ? 'p-2 pl-4 text-[11px]' : 'p-3',
+        variant === 'compact' ? 'p-2 pl-4 text-[11px]' : 'p-3',
         isSelected
           ? 'border-accent bg-accent/15 ring-1 ring-accent/50 shadow-[0_0_8px_rgba(122,162,247,0.15)]'
           : displayColor
@@ -637,71 +624,210 @@ export const SessionItemContent = memo(function SessionItemContent({
           : undefined
       }
     >
-      {!compact && (
-        <div className="flex items-center gap-1.5">
-          <StatusIndicator status={session.status} adHoc={session.capabilities?.includes('ad-hoc')} />
-          {ps?.icon && (
-            <span style={displayColor && !isSelected ? { color: displayColor } : undefined}>
-              {renderProjectIcon(ps.icon)}
-            </span>
-          )}
-          <span
-            className={cn('font-bold text-sm flex-1 truncate', isSelected ? 'text-accent' : 'text-primary')}
-            style={displayColor && !isSelected ? { color: displayColor } : undefined}
-          >
-            {projectName}
-          </span>
-          {session.compacting && (
-            <span className="px-1.5 py-0.5 text-[10px] uppercase font-bold bg-amber-400/20 text-amber-400 border border-amber-400/50 animate-pulse">
-              compacting
-            </span>
-          )}
-          {session.lastError && (
-            <span
-              className="px-1.5 py-0.5 text-[10px] uppercase font-bold bg-destructive/20 text-destructive border border-destructive/50"
-              title={session.lastError.errorMessage || session.lastError.errorType || 'API error'}
-            >
-              error
-            </span>
-          )}
-          {session.rateLimit && !session.lastError && (
-            <span
-              className="px-1.5 py-0.5 text-[10px] uppercase font-bold bg-amber-500/20 text-amber-400 border border-amber-500/40"
-              title={session.rateLimit.message}
-            >
-              throttled
-            </span>
-          )}
-          <SessionInfoButton session={session} visible={isSelected} />
-          <ShareIndicator sessionCwd={session.cwd} />
-          {session.resultText && session.capabilities?.includes('ad-hoc') && <ResultTextModal session={session} />}
-          {session.status === 'ended' && <DismissButton sessionId={session.id} />}
-          {showCost &&
-            session.stats &&
-            (() => {
-              const { cost, exact } = getSessionCost(session.stats, session.model)
-              if (cost < 0.01) return null
-              const level = getCostLevel(cost)
-              return (
-                <span
-                  className={cn(
-                    'text-[9px] font-mono ml-auto shrink-0',
-                    level === 'low' ? 'text-emerald-400/40' : cn('px-1 py-0.5 font-bold border', getCostBgColor(cost)),
-                  )}
-                  title={`Session cost: ${formatCost(cost, exact)}`}
-                >
-                  {formatCost(cost, exact)}
-                </span>
-              )
-            })()}
+      {children}
+    </div>
+  )
+}
+
+// ─── Running tasks / subagents / teammates block (shared) ─────────
+
+function SessionItemTasksBlock({
+  session,
+  selectedSubagentId,
+  onSelectSubagent,
+}: {
+  session: Session
+  selectedSubagentId: string | null
+  onSelectSubagent: (sessionId: string, agentId: string) => void
+}) {
+  const hasContent =
+    session.activeTasks.length > 0 ||
+    session.pendingTasks.length > 0 ||
+    session.subagents.length > 0 ||
+    session.teammates.some(t => t.status === 'working')
+  if (!hasContent) return null
+
+  const overflow = session.activeTasks.length + session.pendingTasks.length - 5
+  const now = Date.now()
+
+  return (
+    <div className="mt-1 space-y-0.5">
+      {session.activeTasks.slice(0, 5).map(task => (
+        <div key={task.id} className="text-[11px] text-active/80 font-mono truncate pl-1">
+          <span className="text-active mr-1">{'\u25B8'}</span>
+          {task.subject}
         </div>
-      )}
-      {!compact && (isRenaming || sessionName) && (
+      ))}
+      {session.pendingTasks.slice(0, Math.max(0, 5 - session.activeTasks.length)).map(task => (
+        <div key={task.id} className="text-[11px] text-amber-400/50 font-mono truncate pl-1">
+          <span className="text-amber-400/40 mr-1">{'\u25CB'}</span>
+          {task.subject}
+        </div>
+      ))}
+      {overflow > 0 && <div className="text-[10px] text-muted-foreground pl-1 font-mono">..{overflow} more</div>}
+      {session.subagents
+        .filter(a => a.status === 'running')
+        .map(a => (
+          <div
+            key={a.agentId}
+            role="button"
+            tabIndex={0}
+            className={cn(
+              'text-[11px] text-pink-400/80 font-mono truncate pl-1 cursor-pointer hover:text-pink-300',
+              selectedSubagentId === a.agentId && 'text-pink-300 font-bold',
+            )}
+            onClick={e => {
+              e.stopPropagation()
+              onSelectSubagent(session.id, a.agentId)
+            }}
+            onKeyDown={e => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.stopPropagation()
+                onSelectSubagent(session.id, a.agentId)
+              }
+            }}
+          >
+            <span className="text-pink-400 mr-1">{'\u25CF'}</span>
+            {a.description || a.agentType} <span className="text-pink-400/50">{a.agentId.slice(0, 6)}</span>
+          </div>
+        ))}
+      {session.subagents
+        .filter(a => a.status === 'stopped' && a.stoppedAt && now - a.stoppedAt < 30 * 60 * 1000)
+        .map(a => (
+          <div
+            key={a.agentId}
+            role="button"
+            tabIndex={0}
+            className={cn(
+              'text-[11px] text-pink-400/40 font-mono truncate pl-1 cursor-pointer hover:text-pink-400/70',
+              selectedSubagentId === a.agentId && 'text-pink-400/80 font-bold',
+            )}
+            onClick={e => {
+              e.stopPropagation()
+              onSelectSubagent(session.id, a.agentId)
+            }}
+            onKeyDown={e => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.stopPropagation()
+                onSelectSubagent(session.id, a.agentId)
+              }
+            }}
+          >
+            <span className="mr-1">{'\u25CB'}</span>
+            {a.description || a.agentType} <span className="text-pink-400/30">{a.agentId.slice(0, 6)}</span>
+          </div>
+        ))}
+      {session.teammates
+        .filter(t => t.status === 'working')
+        .map(t => (
+          <div key={t.name} className="text-[11px] text-purple-400/80 font-mono truncate pl-1">
+            <span className="text-purple-400 mr-1">{'\u2691'}</span>
+            {t.name}
+            {t.currentTaskSubject ? `: ${t.currentTaskSubject}` : ''}
+          </div>
+        ))}
+    </div>
+  )
+}
+
+// ─── Full-size session card ───────────────────────────────────────
+
+export const SessionItemFull = memo(function SessionItemFull({ session }: { session: Session }) {
+  const isSelected = useSessionsStore(s => s.selectedSessionId === session.id)
+  const selectedSubagentId = useSessionsStore(s => (s.selectedSessionId === session.id ? s.selectedSubagentId : null))
+  const selectSession = useSessionsStore(s => s.selectSession)
+  const selectSubagent = useSessionsStore(s => s.selectSubagent)
+  const openTab = useSessionsStore(s => s.openTab)
+  const ps = useSessionsStore(s => s.projectSettings[session.cwd])
+  const showContextBar = useSessionsStore(s => s.dashboardPrefs.showContextInList)
+  const showCost = useSessionsStore(s => s.dashboardPrefs.showCostInList)
+  const isRenaming = useSessionsStore(s => s.renamingSessionId === session.id)
+
+  const projectName = ps?.label || lastPathSegments(session.cwd)
+  const sessionName = session.title || session.agentName
+  const displayColor = ps?.color
+
+  function handleClick() {
+    haptic('tap')
+    selectSession(session.id)
+  }
+
+  function handleSubagentSelect(sessionId: string, agentId: string) {
+    selectSession(sessionId)
+    selectSubagent(agentId)
+  }
+
+  return (
+    <SessionItemShell
+      session={session}
+      isSelected={isSelected}
+      displayColor={displayColor}
+      variant="full"
+      onClick={handleClick}
+    >
+      <div className="flex items-center gap-1.5">
+        <StatusIndicator status={session.status} adHoc={session.capabilities?.includes('ad-hoc')} />
+        {ps?.icon && (
+          <span style={displayColor && !isSelected ? { color: displayColor } : undefined}>
+            {renderProjectIcon(ps.icon)}
+          </span>
+        )}
+        <span
+          className={cn('font-bold text-sm flex-1 truncate', isSelected ? 'text-accent' : 'text-primary')}
+          style={displayColor && !isSelected ? { color: displayColor } : undefined}
+        >
+          {projectName}
+        </span>
+        {session.compacting && (
+          <span className="px-1.5 py-0.5 text-[10px] uppercase font-bold bg-amber-400/20 text-amber-400 border border-amber-400/50 animate-pulse">
+            compacting
+          </span>
+        )}
+        {session.lastError && (
+          <span
+            className="px-1.5 py-0.5 text-[10px] uppercase font-bold bg-destructive/20 text-destructive border border-destructive/50"
+            title={session.lastError.errorMessage || session.lastError.errorType || 'API error'}
+          >
+            error
+          </span>
+        )}
+        {session.rateLimit && !session.lastError && (
+          <span
+            className="px-1.5 py-0.5 text-[10px] uppercase font-bold bg-amber-500/20 text-amber-400 border border-amber-500/40"
+            title={session.rateLimit.message}
+          >
+            throttled
+          </span>
+        )}
+        <SessionInfoButton session={session} visible={isSelected} />
+        <ShareIndicator sessionCwd={session.cwd} />
+        {session.resultText && session.capabilities?.includes('ad-hoc') && <ResultTextModal session={session} />}
+        {session.status === 'ended' && <DismissButton sessionId={session.id} />}
+        {showCost &&
+          session.stats &&
+          (() => {
+            const { cost, exact } = getSessionCost(session.stats, session.model)
+            if (cost < 0.01) return null
+            const level = getCostLevel(cost)
+            return (
+              <span
+                className={cn(
+                  'text-[9px] font-mono ml-auto shrink-0',
+                  level === 'low' ? 'text-emerald-400/40' : cn('px-1 py-0.5 font-bold border', getCostBgColor(cost)),
+                )}
+                title={`Session cost: ${formatCost(cost, exact)}`}
+              >
+                {formatCost(cost, exact)}
+              </span>
+            )
+          })()}
+      </div>
+      {(isRenaming || sessionName) && (
         <div className="mt-0.5 text-[10px] text-muted-foreground font-mono truncate pl-1">
           {isRenaming ? <InlineRename session={session} /> : sessionName}
         </div>
       )}
-      {!compact && session.gitBranch && session.gitBranch !== 'main' && session.gitBranch !== 'master' && (
+      {session.gitBranch && session.gitBranch !== 'main' && session.gitBranch !== 'master' && (
         <div className="mt-0.5 pl-1 flex items-center gap-1">
           <span
             className={cn(
@@ -714,153 +840,12 @@ export const SessionItemContent = memo(function SessionItemContent({
           </span>
         </div>
       )}
-      {compact && (
-        <div className="flex items-center gap-1.5">
-          <StatusIndicator status={session.status} adHoc={session.capabilities?.includes('ad-hoc')} />
-          {isRenaming ? (
-            <div className="flex-1 min-w-0">
-              <InlineRename session={session} />
-            </div>
-          ) : (
-            <span
-              className={cn(
-                'font-mono text-[11px] flex-1 truncate',
-                isSelected ? 'text-accent' : 'text-muted-foreground',
-              )}
-            >
-              {session.title || session.agentName
-                ? `${((session.title || session.agentName) ?? '').slice(0, 20)} [${session.id.slice(0, 6)}]`
-                : session.id.slice(0, 8)}
-            </span>
-          )}
-          {session.compacting && <span className="text-[9px] text-amber-400 font-bold animate-pulse">COMPACT</span>}
-          {session.lastError && <span className="text-[9px] text-destructive font-bold">ERROR</span>}
-          {session.rateLimit && !session.lastError && (
-            <span className="text-[9px] text-amber-400 font-bold">THROTTLED</span>
-          )}
-          {session.planMode && <span className="text-[9px] text-blue-400 font-bold">PLAN</span>}
-          {session.status === 'idle' &&
-            (() => {
-              const ci = getCacheTimerInfo(session.lastTurnEndedAt, session.tokenUsage, session.model, session.cacheTtl)
-              if (!ci) return null
-              return ci.state === 'expired' ? (
-                <span className="text-[9px] text-red-400/70 font-bold">EXPIRED</span>
-              ) : ci.state === 'critical' ? (
-                <span className="text-[9px] text-red-400 font-bold animate-pulse">CACHE</span>
-              ) : ci.state === 'warning' ? (
-                <span className="text-[9px] text-amber-400 font-bold">CACHE</span>
-              ) : null
-            })()}
-          {showCost &&
-            session.stats &&
-            (() => {
-              const { cost, exact } = getSessionCost(session.stats, session.model)
-              if (cost < 0.5) return null
-              return (
-                <span className={cn('text-[9px] font-bold font-mono', getCostBgColor(cost).split(' ')[1])}>
-                  {formatCost(cost, exact)}
-                </span>
-              )
-            })()}
-          {session.adHocWorktree && <span className="text-[9px] text-orange-400 font-bold">WT</span>}
-          {session.pendingAttention && (
-            <span className="text-[9px] text-amber-400 font-bold animate-pulse">WAITING</span>
-          )}
-          {session.hasNotification && <span className="text-[9px] text-teal-400 font-bold">NOTIFY</span>}
-          <SessionInfoButton session={session} visible={isSelected} />
-          {session.status === 'ended' && <DismissButton sessionId={session.id} />}
-        </div>
-      )}
-      {(session.activeTasks.length > 0 ||
-        session.pendingTasks.length > 0 ||
-        session.subagents.length > 0 ||
-        session.teammates.some(t => t.status === 'working')) && (
-        <div className="mt-1 space-y-0.5">
-          {session.activeTasks.slice(0, 5).map(task => (
-            <div key={task.id} className="text-[11px] text-active/80 font-mono truncate pl-1">
-              <span className="text-active mr-1">{'\u25B8'}</span>
-              {task.subject}
-            </div>
-          ))}
-          {session.pendingTasks.slice(0, Math.max(0, 5 - session.activeTasks.length)).map(task => (
-            <div key={task.id} className="text-[11px] text-amber-400/50 font-mono truncate pl-1">
-              <span className="text-amber-400/40 mr-1">{'\u25CB'}</span>
-              {task.subject}
-            </div>
-          ))}
-          {session.activeTasks.length + session.pendingTasks.length > 5 && (
-            <div className="text-[10px] text-muted-foreground pl-1 font-mono">
-              ..{session.activeTasks.length + session.pendingTasks.length - 5} more
-            </div>
-          )}
-          {session.subagents
-            .filter(a => a.status === 'running')
-            .map(a => (
-              <div
-                key={a.agentId}
-                role="button"
-                tabIndex={0}
-                className={cn(
-                  'text-[11px] text-pink-400/80 font-mono truncate pl-1 cursor-pointer hover:text-pink-300',
-                  selectedSubagentId === a.agentId && 'text-pink-300 font-bold',
-                )}
-                onClick={e => {
-                  e.stopPropagation()
-                  selectSession(session.id)
-                  selectSubagent(a.agentId)
-                }}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.stopPropagation()
-                    selectSession(session.id)
-                    selectSubagent(a.agentId)
-                  }
-                }}
-              >
-                <span className="text-pink-400 mr-1">{'\u25CF'}</span>
-                {a.description || a.agentType} <span className="text-pink-400/50">{a.agentId.slice(0, 6)}</span>
-              </div>
-            ))}
-          {session.subagents
-            .filter(a => a.status === 'stopped' && a.stoppedAt && Date.now() - a.stoppedAt < 30 * 60 * 1000)
-            .map(a => (
-              <div
-                key={a.agentId}
-                role="button"
-                tabIndex={0}
-                className={cn(
-                  'text-[11px] text-pink-400/40 font-mono truncate pl-1 cursor-pointer hover:text-pink-400/70',
-                  selectedSubagentId === a.agentId && 'text-pink-400/80 font-bold',
-                )}
-                onClick={e => {
-                  e.stopPropagation()
-                  selectSession(session.id)
-                  selectSubagent(a.agentId)
-                }}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.stopPropagation()
-                    selectSession(session.id)
-                    selectSubagent(a.agentId)
-                  }
-                }}
-              >
-                <span className="mr-1">{'\u25CB'}</span>
-                {a.description || a.agentType} <span className="text-pink-400/30">{a.agentId.slice(0, 6)}</span>
-              </div>
-            ))}
-          {session.teammates
-            .filter(t => t.status === 'working')
-            .map(t => (
-              <div key={t.name} className="text-[11px] text-purple-400/80 font-mono truncate pl-1">
-                <span className="text-purple-400 mr-1">{'\u2691'}</span>
-                {t.name}
-                {t.currentTaskSubject ? `: ${t.currentTaskSubject}` : ''}
-              </div>
-            ))}
-        </div>
-      )}
-      {!compact && (session.runningBgTaskCount > 0 || session.team) && (
+      <SessionItemTasksBlock
+        session={session}
+        selectedSubagentId={selectedSubagentId}
+        onSelectSubagent={handleSubagentSelect}
+      />
+      {(session.runningBgTaskCount > 0 || session.team) && (
         <div className="flex items-center gap-2 mt-2 text-xs flex-wrap">
           {session.runningBgTaskCount > 0 && (
             <span
@@ -890,17 +875,17 @@ export const SessionItemContent = memo(function SessionItemContent({
           )}
         </div>
       )}
-      {!compact && session.summary && (
+      {session.summary && (
         <div className="mt-1 text-[10px] text-muted-foreground truncate" title={session.summary}>
           {session.summary}
         </div>
       )}
-      {!compact && !session.summary && session.recap && (
+      {!session.summary && session.recap && (
         <div className="mt-1 text-[10px] text-muted-foreground/50 italic truncate" title={session.recap.content}>
           {session.recap.content}
         </div>
       )}
-      {!compact && session.prLinks && session.prLinks.length > 0 && (
+      {session.prLinks && session.prLinks.length > 0 && (
         <div className="mt-1 flex items-center gap-1.5 flex-wrap">
           {session.prLinks.map(pr => (
             <a
@@ -917,13 +902,12 @@ export const SessionItemContent = memo(function SessionItemContent({
           ))}
         </div>
       )}
-      {!compact && session.linkedProjects && session.linkedProjects.length > 0 && (
+      {session.linkedProjects && session.linkedProjects.length > 0 && (
         <div className="mt-1 text-[10px] text-teal-400/50 font-mono truncate">
           {'\u2194'} {session.linkedProjects.map(p => p.name).join(', ')}
         </div>
       )}
-      {!compact &&
-        showContextBar &&
+      {showContextBar &&
         session.tokenUsage &&
         (() => {
           const { input, cacheCreation, cacheRead } = session.tokenUsage
@@ -955,8 +939,7 @@ export const SessionItemContent = memo(function SessionItemContent({
             </div>
           )
         })()}
-      {!compact &&
-        session.status === 'idle' &&
+      {session.status === 'idle' &&
         (() => {
           const ci = getCacheTimerInfo(session.lastTurnEndedAt, session.tokenUsage, session.model, session.cacheTtl)
           if (!ci || ci.state === 'hot') return null
@@ -970,10 +953,101 @@ export const SessionItemContent = memo(function SessionItemContent({
           }
           return null
         })()}
-    </div>
+    </SessionItemShell>
   )
+})
 
-  return card
+// ─── Compact session card (used inside CWD groups) ───────────────
+
+export const SessionItemCompact = memo(function SessionItemCompact({ session }: { session: Session }) {
+  const isSelected = useSessionsStore(s => s.selectedSessionId === session.id)
+  const selectedSubagentId = useSessionsStore(s => (s.selectedSessionId === session.id ? s.selectedSubagentId : null))
+  const selectSession = useSessionsStore(s => s.selectSession)
+  const selectSubagent = useSessionsStore(s => s.selectSubagent)
+  const ps = useSessionsStore(s => s.projectSettings[session.cwd])
+  const showCost = useSessionsStore(s => s.dashboardPrefs.showCostInList)
+  const isRenaming = useSessionsStore(s => s.renamingSessionId === session.id)
+
+  const displayColor = ps?.color
+
+  function handleClick() {
+    haptic('tap')
+    selectSession(session.id)
+  }
+
+  function handleSubagentSelect(sessionId: string, agentId: string) {
+    selectSession(sessionId)
+    selectSubagent(agentId)
+  }
+
+  return (
+    <SessionItemShell
+      session={session}
+      isSelected={isSelected}
+      displayColor={displayColor}
+      variant="compact"
+      onClick={handleClick}
+    >
+      <div className="flex items-center gap-1.5">
+        <StatusIndicator status={session.status} adHoc={session.capabilities?.includes('ad-hoc')} />
+        {isRenaming ? (
+          <div className="flex-1 min-w-0">
+            <InlineRename session={session} />
+          </div>
+        ) : (
+          <span
+            className={cn(
+              'font-mono text-[11px] flex-1 truncate',
+              isSelected ? 'text-accent' : 'text-muted-foreground',
+            )}
+          >
+            {session.title || session.agentName
+              ? `${((session.title || session.agentName) ?? '').slice(0, 20)} [${session.id.slice(0, 6)}]`
+              : session.id.slice(0, 8)}
+          </span>
+        )}
+        {session.compacting && <span className="text-[9px] text-amber-400 font-bold animate-pulse">COMPACT</span>}
+        {session.lastError && <span className="text-[9px] text-destructive font-bold">ERROR</span>}
+        {session.rateLimit && !session.lastError && (
+          <span className="text-[9px] text-amber-400 font-bold">THROTTLED</span>
+        )}
+        {session.planMode && <span className="text-[9px] text-blue-400 font-bold">PLAN</span>}
+        {session.status === 'idle' &&
+          (() => {
+            const ci = getCacheTimerInfo(session.lastTurnEndedAt, session.tokenUsage, session.model, session.cacheTtl)
+            if (!ci) return null
+            return ci.state === 'expired' ? (
+              <span className="text-[9px] text-red-400/70 font-bold">EXPIRED</span>
+            ) : ci.state === 'critical' ? (
+              <span className="text-[9px] text-red-400 font-bold animate-pulse">CACHE</span>
+            ) : ci.state === 'warning' ? (
+              <span className="text-[9px] text-amber-400 font-bold">CACHE</span>
+            ) : null
+          })()}
+        {showCost &&
+          session.stats &&
+          (() => {
+            const { cost, exact } = getSessionCost(session.stats, session.model)
+            if (cost < 0.5) return null
+            return (
+              <span className={cn('text-[9px] font-bold font-mono', getCostBgColor(cost).split(' ')[1])}>
+                {formatCost(cost, exact)}
+              </span>
+            )
+          })()}
+        {session.adHocWorktree && <span className="text-[9px] text-orange-400 font-bold">WT</span>}
+        {session.pendingAttention && <span className="text-[9px] text-amber-400 font-bold animate-pulse">WAITING</span>}
+        {session.hasNotification && <span className="text-[9px] text-teal-400 font-bold">NOTIFY</span>}
+        <SessionInfoButton session={session} visible={isSelected} />
+        {session.status === 'ended' && <DismissButton sessionId={session.id} />}
+      </div>
+      <SessionItemTasksBlock
+        session={session}
+        selectedSubagentId={selectedSubagentId}
+        onSelectSubagent={handleSubagentSelect}
+      />
+    </SessionItemShell>
+  )
 })
 
 // ─── Session card with settings button ─────────────────────────────
@@ -985,7 +1059,7 @@ export function SessionCard({ session }: { session: Session }) {
     <SessionContextMenu session={session}>
       <div>
         <div className="relative group/card">
-          <SessionItemContent session={session} />
+          <SessionItemFull session={session} />
           <div
             className={cn(
               'absolute top-2 right-2 transition-opacity',

@@ -4,7 +4,7 @@ import type { Session } from '@/lib/types'
 import { haptic, lastPathSegments } from '@/lib/utils'
 import { ProjectSettingsButton, ProjectSettingsEditor, renderProjectIcon } from '../project-settings-editor'
 import { ProjectContextMenu, SessionContextMenu } from './session-context-menu'
-import { SessionCard, SessionItemContent } from './session-item'
+import { SessionCard, SessionItemCompact } from './session-item'
 
 // ─── Dismiss all ended sessions button ────────────────────────────
 
@@ -132,7 +132,7 @@ function CwdSessionGroup({ sessions, cwd }: { sessions: Session[]; cwd: string }
           {normal.map(session => (
             <SessionContextMenu key={session.id} session={session}>
               <div>
-                <SessionItemContent session={session} compact />
+                <SessionItemCompact session={session} />
               </div>
             </SessionContextMenu>
           ))}
@@ -146,7 +146,7 @@ function CwdSessionGroup({ sessions, cwd }: { sessions: Session[]; cwd: string }
           {adhoc.map(session => (
             <SessionContextMenu key={session.id} session={session}>
               <div>
-                <SessionItemContent session={session} compact />
+                <SessionItemCompact session={session} />
               </div>
             </SessionContextMenu>
           ))}
