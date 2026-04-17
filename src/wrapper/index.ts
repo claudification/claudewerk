@@ -1543,21 +1543,6 @@ async function main() {
         } as unknown as WrapperMessage)
       })
     },
-    async onQuitSession(sessionId) {
-      if (!ctx.wsClient?.isConnected()) return { ok: false, error: 'Not connected to concentrator' }
-      return new Promise(resolve => {
-        const timeout = setTimeout(() => resolve({ ok: false, error: 'Timeout waiting for quit confirmation' }), 10000)
-        // Send quit request via WS - concentrator routes to target wrapper
-        ctx.wsClient?.send({
-          type: 'quit_remote_session',
-          targetSession: sessionId,
-          fromSession: ctx.claudeSessionId || internalId,
-        } as unknown as WrapperMessage)
-        // For now, assume success since the concentrator doesn't ack quit
-        clearTimeout(timeout)
-        resolve({ ok: true })
-      })
-    },
     async onControlSession({ sessionId, action, model }) {
       if (!ctx.wsClient?.isConnected()) return { ok: false, error: 'Not connected to concentrator' }
       return new Promise(resolve => {

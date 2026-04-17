@@ -21,34 +21,6 @@ function resolveEffort(
   return resolveSpawnConfig({}, getProjectSettings(cwd), getGlobalSettings()).effort
 }
 
-const handleQuitRemoteSession: MessageHandler = (ctx, data) => {
-  const targetId = data.targetSession as string
-  const fromSession = (data.fromSession as string) || ctx.ws.data.sessionId
-  if (!targetId) return
-
-  ctx.requireBenevolent()
-
-  // Resolve target: wrapper ID first, then session ID
-  const targetSess = ctx.sessions.getSessionByWrapper(targetId) || ctx.sessions.getSession(targetId)
-  const targetWs = ctx.sessions.getSessionSocketByWrapper(targetId) || ctx.sessions.getSessionSocket(targetId)
-  if (!targetWs || !targetSess) {
-    ctx.reply({
-      type: 'quit_remote_result',
-      ok: false,
-      error: 'Target not connected. Use list_sessions to find current sessions.',
-    })
-    return
-  }
-
-  targetWs.send(JSON.stringify({ type: 'terminate_session', sessionId: targetSess.id }))
-  ctx.reply({
-    type: 'quit_remote_result',
-    ok: true,
-    name: targetSess.title || targetSess.cwd?.split('/').pop(),
-  })
-  ctx.log.debug(`Benevolent quit: ${fromSession?.slice(0, 8)} -> ${targetSess.id.slice(0, 8)}`)
-}
-
 const handleChannelRevive: MessageHandler = (ctx, data) => {
   const targetSessionId = data.sessionId as string
   const callerSession = ctx.ws.data.sessionId
@@ -395,7 +367,6 @@ const handleSessionControl: MessageHandler = (ctx, data) => {
 
 export function registerInterSessionHandlers(): void {
   registerHandlers({
-    quit_remote_session: handleQuitRemoteSession,
     channel_revive: handleChannelRevive,
     channel_spawn: handleChannelSpawn,
     channel_restart: handleChannelRestart,

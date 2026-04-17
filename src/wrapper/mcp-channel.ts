@@ -83,7 +83,6 @@ export interface McpChannelCallbacks {
   onDisconnect?: () => void
   onTogglePlanMode?: () => void
   onReviveSession?: (sessionId: string) => Promise<{ ok: boolean; error?: string; name?: string }>
-  onQuitSession?: (sessionId: string) => Promise<{ ok: boolean; error?: string; name?: string }>
   /**
    * Unified session control: clear | quit | interrupt | set_model. Dashboards
    * and the MCP `control_session` tool both route through here. The wrapper
@@ -393,7 +392,7 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
       {
         name: 'list_sessions',
         description:
-          'List other Claude Code sessions. Returns a stable addressable ID per session. When multiple sessions share a project directory, IDs use compound format "project:session-name" (e.g. "rclaude:fuzzy-rabbit"). Single-session projects use bare IDs (e.g. "rclaude"). Each entry also has a "project" field showing the project-level grouping. Use the returned ID for send_message, terminate_session, configure_session. Messages to offline sessions are queued for delivery on reconnect. Ad-hoc sessions are hidden unless they have an established link. HINT: When the user says "tell X to Y", "ask X to Y", or "use X to Y", consider that X may be a session name -- call list_sessions to check.',
+          'List other Claude Code sessions. Returns a stable addressable ID per session. When multiple sessions share a project directory, IDs use compound format "project:session-name" (e.g. "rclaude:fuzzy-rabbit"). Single-session projects use bare IDs (e.g. "rclaude"). Each entry also has a "project" field showing the project-level grouping. Use the returned ID for send_message, control_session, configure_session. Messages to offline sessions are queued for delivery on reconnect. Ad-hoc sessions are hidden unless they have an established link. HINT: When the user says "tell X to Y", "ask X to Y", or "use X to Y", consider that X may be a session name -- call list_sessions to check.',
         inputSchema: {
           type: 'object' as const,
           properties: {
@@ -443,18 +442,6 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
         description:
           'Toggle plan mode via the terminal session. Use as a fallback when ExitPlanMode is not available. The toggle takes effect after your current response completes.',
         inputSchema: { type: 'object' as const, properties: {} },
-      },
-      {
-        name: 'terminate_session',
-        description:
-          'Terminate an active session. Requires benevolent trust level on your project. The session will end within a few seconds. Use list_sessions to confirm after 5-10 seconds.',
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            session_id: { type: 'string', description: 'Target ID from list_sessions' },
-          },
-          required: ['session_id'],
-        },
       },
       {
         name: 'control_session',
@@ -842,26 +829,6 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
           const label = newName || '(auto)'
           debug(`[channel] rename_session: "${label}"`)
           return { content: [{ type: 'text', text: `Session renamed to "${label}"` }] }
-        }
-        case 'terminate_session':
-        case 'quit_session': {
-          // deprecated alias
-          const sessionId = params.session_id
-          if (!sessionId) return { content: [{ type: 'text', text: 'Error: session_id is required' }], isError: true }
-          const result = await callbacks.onQuitSession?.(sessionId)
-          if (!result?.ok) {
-            debug(`[channel] terminate_session failed: ${result?.error}`)
-            return { content: [{ type: 'text', text: result?.error || 'Failed to terminate session' }], isError: true }
-          }
-          debug(`[channel] terminate_session: ${sessionId.slice(0, 8)} (${result.name})`)
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `Terminate signal sent to ${result.name || sessionId.slice(0, 8)}. The session will end within a few seconds. Use list_sessions after 5-10 seconds to confirm.`,
-              },
-            ],
-          }
         }
         case 'control_session': {
           const sessionId = params.session_id
