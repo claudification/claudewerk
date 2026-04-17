@@ -25,6 +25,7 @@ import { reviveSession, useSessionsStore } from '@/hooks/use-sessions'
 import type { Session } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
 import { openSpawnDialog } from './spawn-dialog'
+import { openTerminateConfirm } from './terminate-confirm'
 
 interface FanAction {
   id: string
@@ -90,11 +91,13 @@ function buildActions(session: Session | undefined, selectedSessionId: string | 
         icon: <Power className="w-4 h-4" />,
         label: 'Terminate',
         action: () => {
-          haptic('error')
-          useSessionsStore.getState().terminateSession(session.id)
+          // Open the proper modal -- inline two-tap confirm was easy to miss on
+          // mobile and left the action looking unresponsive. This matches the
+          // ⌘G X command palette path.
+          const name = session.title || session.agentName || null
+          openTerminateConfirm(session.id, name)
         },
         color: 'bg-red-500',
-        dangerous: true,
       })
     } else {
       // Ended session actions
