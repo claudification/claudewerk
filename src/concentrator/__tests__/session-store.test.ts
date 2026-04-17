@@ -11,8 +11,8 @@
 import type { ServerWebSocket } from 'bun'
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { HookEvent, TaskInfo, TranscriptEntry } from '../../shared/protocol'
-import { createSessionStore } from '../session-store'
 import type { SessionStore } from '../session-store'
+import { createSessionStore } from '../session-store'
 
 // Minimal mock socket -- used only for identity / set membership.
 // No actual send() calls reach these in non-persistence, no-subscriber mode
@@ -468,5 +468,89 @@ describe('wrapper socket tracking', () => {
     store.removeSessionSocket('sock-remove', 'wrapper-x')
     expect(store.getActiveWrapperCount('sock-remove')).toBe(0)
     expect(store.getSessionSocket('sock-remove')).toBeUndefined()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// session.model invariant (guards commit 83a4ce7: dashboard reads session.model
+// instead of scanning cached SessionStart events per render)
+// ---------------------------------------------------------------------------
+
+describe('session.model derivation', () => {
+  it('SessionStart with data.model sets session.model on first arrival', () => {
+    store.createSession('model-1', '/cwd')
+    expect(store.getSession('model-1')!.model).toBeUndefined()
+
+    store.addEvent(
+      'model-1',
+      makeHookEvent('model-1', 'SessionStart', { data: { session_id: 'model-1', model: 'claude-opus-4-7' } }),
+    )
+
+    expect(store.getSession('model-1')!.model).toBe('claude-opus-4-7')
+  })
+
+  it('second SessionStart does NOT overwrite an already-set model', () => {
+    store.createSession('model-2', '/cwd')
+    store.addEvent(
+      'model-2',
+      makeHookEvent('model-2', 'SessionStart', { data: { session_id: 'model-2', model: 'claude-opus-4-7' } }),
+    )
+    expect(store.getSession('model-2')!.model).toBe('claude-opus-4-7')
+
+    // Re-emission (e.g. post /clear) arrives with a different model -- must not clobber
+    store.addEvent(
+      'model-2',
+      makeHookEvent('model-2', 'SessionStart', { data: { session_id: 'model-2', model: 'claude-sonnet-4-6' } }),
+    )
+    expect(store.getSession('model-2')!.model).toBe('claude-opus-4-7')
+  })
+
+  it('assistant transcript entry sets session.model when absent', () => {
+    store.createSession('model-3', '/cwd')
+    store.addTranscriptEntries(
+      'model-3',
+      [{ type: 'assistant', message: { model: 'claude-opus-4-7' } } as TranscriptEntry],
+      true,
+    )
+    expect(store.getSession('model-3')!.model).toBe('claude-opus-4-7')
+  })
+
+  it('assistant transcript entry updates session.model to a newer real model', () => {
+    store.createSession('model-4', '/cwd')
+    store.addEvent(
+      'model-4',
+      makeHookEvent('model-4', 'SessionStart', { data: { session_id: 'model-4', model: 'claude-opus-4-7' } }),
+    )
+    store.addTranscriptEntries(
+      'model-4',
+      [{ type: 'assistant', message: { model: 'claude-sonnet-4-6' } } as TranscriptEntry],
+      true,
+    )
+    // Assistant messages are the authoritative source -- newer wins
+    expect(store.getSession('model-4')!.model).toBe('claude-sonnet-4-6')
+  })
+
+  it('<synthetic> assistant entry does NOT clobber a real model', () => {
+    store.createSession('model-5', '/cwd')
+    store.addEvent(
+      'model-5',
+      makeHookEvent('model-5', 'SessionStart', { data: { session_id: 'model-5', model: 'claude-opus-4-7' } }),
+    )
+    store.addTranscriptEntries(
+      'model-5',
+      [{ type: 'assistant', message: { model: '<synthetic>' } } as TranscriptEntry],
+      true,
+    )
+    expect(store.getSession('model-5')!.model).toBe('claude-opus-4-7')
+  })
+
+  it('<synthetic> assistant entry sets session.model when no real model exists yet', () => {
+    store.createSession('model-6', '/cwd')
+    store.addTranscriptEntries(
+      'model-6',
+      [{ type: 'assistant', message: { model: '<synthetic>' } } as TranscriptEntry],
+      true,
+    )
+    expect(store.getSession('model-6')!.model).toBe('<synthetic>')
   })
 })

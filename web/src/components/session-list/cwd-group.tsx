@@ -3,6 +3,7 @@ import { useSessionsStore } from '@/hooks/use-sessions'
 import type { Session } from '@/lib/types'
 import { haptic, lastPathSegments } from '@/lib/utils'
 import { ProjectSettingsButton, ProjectSettingsEditor, renderProjectIcon } from '../project-settings-editor'
+import { partitionSessions } from './partition'
 import { ProjectContextMenu, SessionContextMenu } from './session-context-menu'
 import { SessionCard, SessionItemCompact } from './session-item'
 
@@ -81,18 +82,6 @@ function DismissAllEndedButton({ ended }: { ended: Session[] }) {
 }
 
 // ─── Multi-session CWD card ────────────────────────────────────────
-
-function partitionSessions(sessions: Session[]) {
-  const adhoc: Session[] = []
-  const normal: Session[] = []
-  const ended: Session[] = []
-  for (const s of sessions) {
-    if (s.status === 'ended') ended.push(s)
-    if (s.capabilities?.includes('ad-hoc')) adhoc.push(s)
-    else normal.push(s)
-  }
-  return { adhoc, normal, ended }
-}
 
 function CwdSessionGroup({ sessions, cwd }: { sessions: Session[]; cwd: string }) {
   const [showSettings, setShowSettings] = useState(false)
