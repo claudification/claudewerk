@@ -130,7 +130,7 @@ function readTask(dir: string, filename: string, status: TaskStatus): ProjectTas
       created: String(meta.created || ''),
       mtime,
       body,
-      bodyPreview: body.split('\n').slice(0, 2).join(' ').slice(0, 120),
+      bodyPreview: body.split('\n').filter(Boolean).join(' ').slice(0, 600),
     }
   } catch {
     return null
@@ -182,7 +182,7 @@ export function createProjectTask(cwd: string, input: ProjectTaskInput): Project
     refs: input.refs || [],
     created: new Date().toISOString(),
     mtime: Date.now(),
-    bodyPreview: input.body.split('\n').slice(0, 2).join(' ').slice(0, 120),
+    bodyPreview: input.body.split('\n').filter(Boolean).join(' ').slice(0, 600),
   }
 }
 

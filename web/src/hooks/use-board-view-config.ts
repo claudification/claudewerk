@@ -11,13 +11,13 @@ export type BoardViewConfig = {
 }
 
 export const BOARD_VIEW_DEFAULTS: BoardViewConfig = {
-  columnWidth: 220,
-  bodyLines: 2,
-  density: 'normal',
-  titleSize: 'xs',
+  columnWidth: 400,
+  bodyLines: 6,
+  density: 'roomy',
+  titleSize: 'sm',
 }
 
-const STORAGE_KEY = 'rclaude.project-board-view.v1'
+const STORAGE_KEY = 'rclaude.project-board-view.v2'
 
 function load(): BoardViewConfig {
   if (typeof localStorage === 'undefined') return BOARD_VIEW_DEFAULTS
