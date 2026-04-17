@@ -1,16 +1,22 @@
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { memo, useEffect, useRef, useState } from 'react'
-import { useSessionsStore, sendInput } from '@/hooks/use-sessions'
-import { canTerminal } from '@/lib/types'
-import { cn, haptic, isMobileViewport } from '@/lib/utils'
 import { DialogModal } from '@/components/dialog'
 import { MarkdownInput } from '@/components/markdown-input'
+import { sendInput, useSessionsStore } from '@/hooks/use-sessions'
+import { canTerminal } from '@/lib/types'
+import { cn, haptic, isMobileViewport } from '@/lib/utils'
 
 // ---------------------------------------------------------------------------
 // ScrollToBottomButton
 // ---------------------------------------------------------------------------
 
-export function ScrollToBottomButton({ onClick, direction = 'down' }: { onClick: () => void; direction?: 'down' | 'up' }) {
+export function ScrollToBottomButton({
+  onClick,
+  direction = 'down',
+}: {
+  onClick: () => void
+  direction?: 'down' | 'up'
+}) {
   const Icon = direction === 'up' ? ChevronUp : ChevronDown
   return (
     <button

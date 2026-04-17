@@ -1,8 +1,8 @@
 import { Terminal } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useSessionsStore } from '@/hooks/use-sessions'
-import { cn, haptic } from '@/lib/utils'
 import type { Session } from '@/lib/types'
+import { cn, haptic } from '@/lib/utils'
 
 export type Tab = 'transcript' | 'tty' | 'events' | 'agents' | 'tasks' | 'files' | 'shared' | 'project' | 'diag'
 
@@ -52,8 +52,7 @@ export function SessionTabs({
           onClick={e => {
             if (e.shiftKey) {
               const wid = session?.wrapperIds?.[0]
-              if (wid)
-                window.open(`/#popout-terminal/${wid}`, '_blank', 'width=900,height=600,menubar=no,toolbar=no')
+              if (wid) window.open(`/#popout-terminal/${wid}`, '_blank', 'width=900,height=600,menubar=no,toolbar=no')
             } else {
               haptic('tick')
               onSetActiveTab(activeTab === 'tty' ? 'transcript' : 'tty')

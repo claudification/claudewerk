@@ -16,15 +16,20 @@ import { FileEditor } from './file-editor'
 import { InlineTerminal } from './inline-terminal'
 import { ProjectBoard, RunTaskDialog, TaskEditor } from './project-board'
 import { ReviveMonitor } from './revive-monitor'
+import {
+  AskQuestionBanners,
+  ClipboardBanners,
+  LinkRequestBanners,
+  PermissionBanners,
+} from './session-detail/session-banners'
+import { SessionHeader } from './session-detail/session-header'
+import { DialogOverlay, InputBar, ScrollToBottomButton } from './session-detail/session-input'
+import { SessionTabs, type Tab } from './session-detail/session-tabs'
 import { ShareBanner } from './share-panel'
 import { SharedView } from './shared-view'
 import { SubagentView } from './subagent-view'
 import { TasksView } from './tasks-view'
 import { TranscriptDropZone, TranscriptView } from './transcript'
-import { AskQuestionBanners, ClipboardBanners, LinkRequestBanners, PermissionBanners } from './session-detail/session-banners'
-import { SessionHeader } from './session-detail/session-header'
-import { SessionTabs, type Tab } from './session-detail/session-tabs'
-import { DialogOverlay, InputBar, ScrollToBottomButton } from './session-detail/session-input'
 
 const WebTerminal = lazy(() => import('./web-terminal').then(m => ({ default: m.WebTerminal })))
 

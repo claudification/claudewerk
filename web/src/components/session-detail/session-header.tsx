@@ -1,12 +1,12 @@
-import { ChevronDown, ChevronRight, Copy } from 'lucide-react'
 import type { ProjectSettings } from '@shared/protocol'
-import { formatCost, getBurnRate, getCacheEfficiency, getCostColor, getSessionCost } from '@/lib/cost-utils'
-import { cn, contextWindowSize, formatAge, formatEffort, formatModel, haptic } from '@/lib/utils'
+import { ChevronDown, ChevronRight, Copy } from 'lucide-react'
 import { CacheExpiredBanner, CacheTimer } from '@/components/cache-timer'
 import { CostSparkline } from '@/components/cost-sparkline'
 import { renderProjectIcon } from '@/components/project-settings-editor'
 import { wsSend } from '@/hooks/use-sessions'
+import { formatCost, getBurnRate, getCacheEfficiency, getCostColor, getSessionCost } from '@/lib/cost-utils'
 import type { Session } from '@/lib/types'
+import { cn, contextWindowSize, formatAge, formatEffort, formatModel, haptic } from '@/lib/utils'
 
 interface ConversationTarget {
   cwdA: string
@@ -328,17 +328,13 @@ export function SessionHeader({
                   </div>
                   <div>
                     <span className="text-muted-foreground">out </span>
-                    <span className="text-orange-400">
-                      {Math.round(s.totalOutputTokens / 1000).toLocaleString()}K
-                    </span>
+                    <span className="text-orange-400">{Math.round(s.totalOutputTokens / 1000).toLocaleString()}K</span>
                   </div>
                   <div>
                     <span className="text-muted-foreground">cache r/w </span>
                     <span className="text-blue-400">{Math.round(s.totalCacheRead / 1000).toLocaleString()}K</span>
                     <span className="text-muted-foreground"> / </span>
-                    <span className="text-purple-400">
-                      {Math.round(s.totalCacheCreation / 1000).toLocaleString()}K
-                    </span>
+                    <span className="text-purple-400">{Math.round(s.totalCacheCreation / 1000).toLocaleString()}K</span>
                     {cacheEff && (
                       <>
                         <br />
