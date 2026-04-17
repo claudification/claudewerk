@@ -472,8 +472,11 @@ export function SpawnDialog() {
                 </button>
               </div>
 
-              {/* Scrollable content area */}
-              <div className="overflow-y-auto flex-1 min-h-0 space-y-4 px-0.5">
+              {/* Scrollable content area.
+                  Inner padding gives focus rings (ring-[3px]) room; without
+                  this, overflow-y:auto implicitly clips overflow-x and the
+                  blue focus ring on inputs/selects gets sliced off. */}
+              <div className="overflow-y-auto flex-1 min-h-0 space-y-4 px-1.5 py-1">
                 {configTab === 'basic' && (
                   <div className="space-y-3">
                     {/* Mode toggle (dialog-specific: drives headless + keyboard shortcut) */}
