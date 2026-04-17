@@ -97,7 +97,16 @@ export interface McpChannelCallbacks {
     resumeId?: string
     mkdir?: boolean
     headless?: boolean
-  }) => Promise<{ ok: boolean; error?: string; wrapperId?: string }>
+    /**
+     * If set, the callback should create a tracked job with this ID and call
+     * onProgress on each launch_progress event so the MCP tool can forward
+     * them as notifications/progress. Implementation detail: the wrapper
+     * subscribes on this WS before dispatching channel_spawn so no events are
+     * missed.
+     */
+    jobId?: string
+    onProgress?: (event: Record<string, unknown>) => void
+  }) => Promise<{ ok: boolean; error?: string; wrapperId?: string; jobId?: string }>
   onGetSpawnDiagnostics?: (
     jobId: string,
   ) => Promise<{ ok: boolean; error?: string; diagnostics?: Record<string, unknown> }>
@@ -556,10 +565,14 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
     ],
   }))
 
-  server.setRequestHandler(CallToolRequestSchema, async request => {
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     try {
       const { name, arguments: args } = request.params
       const params = (args || {}) as Record<string, string>
+      // MCP clients opt into streaming progress by supplying a progressToken
+      // in the request _meta. If present, we push notifications/progress
+      // during long-running tools (currently spawn_session).
+      const progressToken = (request.params._meta as { progressToken?: string | number } | undefined)?.progressToken
 
       switch (name) {
         case 'notify': {
@@ -898,8 +911,76 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
           }
           const mkdir = String(params.mkdir) === 'true'
           const spawnHeadless = params.headless !== undefined ? String(params.headless) !== 'false' : true
-          const result = (await callbacks.onSpawnSession?.({ cwd, mode, resumeId, mkdir, headless: spawnHeadless })) as
-            | { ok: boolean; error?: string; wrapperId?: string; session?: Record<string, unknown>; timedOut?: boolean }
+
+          // Wire progress streaming if the caller supplied a progressToken.
+          // We build a local jobId and a pump that forwards launch_progress
+          // events as notifications/progress with a rough phase -> percent
+          // mapping so MCP clients can render a progress bar instead of
+          // staring at silence while tmux spins up.
+          let jobId: string | undefined
+          let onProgress: ((event: Record<string, unknown>) => void) | undefined
+          if (progressToken !== undefined) {
+            jobId = randomUUID()
+            const stepToPercent: Record<string, number> = {
+              job_created: 5,
+              spawn_sent: 15,
+              agent_acked: 30,
+              wrapper_booted: 60,
+              session_connected: 95,
+              completed: 100,
+            }
+            onProgress = event => {
+              const type = event.type as string
+              const step = typeof event.step === 'string' ? event.step : undefined
+              const status = typeof event.status === 'string' ? event.status : undefined
+              const detail = typeof event.detail === 'string' ? event.detail : undefined
+              let progress = 0
+              let message = step || type
+              if (type === 'job_complete') {
+                progress = 100
+                message = 'Session connected'
+              } else if (type === 'job_failed') {
+                progress = 100
+                message = `Failed: ${typeof event.error === 'string' ? event.error : 'unknown'}`
+              } else if (step && step in stepToPercent) {
+                progress = stepToPercent[step]
+                if (detail) message = `${step}: ${detail}`
+                else message = step
+                if (status === 'error') message = `Failed at ${step}`
+              }
+              extra
+                .sendNotification?.({
+                  method: 'notifications/progress',
+                  params: {
+                    progressToken,
+                    progress,
+                    total: 100,
+                    message,
+                  },
+                })
+                .catch(() => {
+                  // Notifications are best-effort -- swallow to avoid killing the spawn if the transport hiccups
+                })
+            }
+          }
+
+          const result = (await callbacks.onSpawnSession?.({
+            cwd,
+            mode,
+            resumeId,
+            mkdir,
+            headless: spawnHeadless,
+            jobId,
+            onProgress,
+          })) as
+            | {
+                ok: boolean
+                error?: string
+                wrapperId?: string
+                jobId?: string
+                session?: Record<string, unknown>
+                timedOut?: boolean
+              }
             | undefined
           if (!result?.ok) {
             debug(`[channel] spawn_session failed: ${result?.error}`)
@@ -908,6 +989,7 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
           const modeDesc = mode === 'resume' ? `resuming ${resumeId}` : 'fresh start'
           debug(`[channel] spawn_session: ${cwd} (${modeDesc}) session=${result.session ? 'ready' : 'pending'}`)
 
+          const responseJobId = result.jobId ?? jobId
           if (result.session) {
             return {
               content: [
@@ -918,6 +1000,8 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
                       status: 'ready',
                       message: `Session spawned and connected at ${cwd} (${modeDesc})`,
                       session: result.session,
+                      jobId: responseJobId,
+                      wrapperId: result.wrapperId,
                     },
                     null,
                     2,
@@ -932,8 +1016,8 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
               {
                 type: 'text',
                 text: result.timedOut
-                  ? `Session spawn sent to ${cwd} (${modeDesc}) but session did not connect within 2 minutes. It may still be booting - use list_sessions to check.`
-                  : `Session spawning at ${cwd} (${modeDesc}). Use list_sessions to check when ready.`,
+                  ? `Session spawn sent to ${cwd} (${modeDesc}) but session did not connect within 2 minutes. It may still be booting - use list_sessions to check.${responseJobId ? ` jobId=${responseJobId}` : ''}`
+                  : `Session spawning at ${cwd} (${modeDesc}). Use list_sessions to check when ready.${responseJobId ? ` jobId=${responseJobId}` : ''}`,
               },
             ],
           }
