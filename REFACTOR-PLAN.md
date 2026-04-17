@@ -3,7 +3,7 @@
 Living document. Aggregates status across every refactor initiative touching this repo --
 mega-file splits, shared-primitive extraction, architectural moves, naming cleanup.
 
-**Last updated:** 2026-04-17 (branch `refactor/mega-file-splits`, PR #46, 17 commits)
+**Last updated:** 2026-04-17 (branch `refactor/mega-file-splits`, PR #46, 18 commits)
 
 ## Currently in flight
 
