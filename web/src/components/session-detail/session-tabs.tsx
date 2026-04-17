@@ -1,4 +1,5 @@
 import { Terminal } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useSessionsStore } from '@/hooks/use-sessions'
 import type { Session } from '@/lib/types'
@@ -18,6 +19,40 @@ export interface SessionTabsProps {
   expandAll: boolean
 }
 
+interface TabButtonProps {
+  active: boolean
+  onClick: (event: React.MouseEvent) => void
+  children: ReactNode
+  title?: string
+  /** Extra classes for the button (beyond the shared tab shape). */
+  className?: string
+}
+
+function TabButton({ active, onClick, children, title, className }: TabButtonProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className={cn(
+        'px-3 sm:px-4 py-2 text-xs border-b-2 transition-colors',
+        active ? 'border-accent text-accent' : 'border-transparent text-muted-foreground hover:text-foreground',
+        className,
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
+/** Tap-to-switch handler factory with haptic feedback. Not a hook -- plain function. */
+function tabClickHandler(target: Tab, onSetActiveTab: (tab: Tab) => void) {
+  return () => {
+    haptic('tick')
+    onSetActiveTab(target)
+  }
+}
+
 export function SessionTabs({
   session,
   activeTab,
@@ -31,24 +66,15 @@ export function SessionTabs({
 }: SessionTabsProps) {
   return (
     <div className="shrink-0 flex items-center border-b border-border overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-      <button
-        type="button"
-        onClick={() => {
-          haptic('tick')
-          onSetActiveTab('transcript')
-        }}
-        className={cn(
-          'px-3 sm:px-4 py-2 text-xs border-b-2 transition-colors',
-          activeTab === 'transcript'
-            ? 'border-accent text-accent'
-            : 'border-transparent text-muted-foreground hover:text-foreground',
-        )}
-      >
+      <TabButton active={activeTab === 'transcript'} onClick={tabClickHandler('transcript', onSetActiveTab)}>
         Transcript
-      </button>
+      </TabButton>
+
       {hasTerminal && canReadTerminal && (
-        <button
-          type="button"
+        <TabButton
+          active={activeTab === 'tty'}
+          className="flex items-center gap-1"
+          title="Terminal (Shift+click to pop out)"
           onClick={e => {
             if (e.shiftKey) {
               const wid = session?.wrapperIds?.[0]
@@ -58,146 +84,63 @@ export function SessionTabs({
               onSetActiveTab(activeTab === 'tty' ? 'transcript' : 'tty')
             }
           }}
-          className={cn(
-            'px-3 sm:px-4 py-2 text-xs border-b-2 transition-colors flex items-center gap-1',
-            activeTab === 'tty'
-              ? 'border-accent text-accent'
-              : 'border-transparent text-muted-foreground hover:text-foreground',
-          )}
-          title="Terminal (Shift+click to pop out)"
         >
           <Terminal className="w-3 h-3" />
           TTY
-        </button>
+        </TabButton>
       )}
+
       {canAdmin && (
-        <button
-          type="button"
-          onClick={() => {
-            haptic('tick')
-            onSetActiveTab('events')
-          }}
-          className={cn(
-            'px-3 sm:px-4 py-2 text-xs border-b-2 transition-colors',
-            activeTab === 'events'
-              ? 'border-accent text-accent'
-              : 'border-transparent text-muted-foreground hover:text-foreground',
-          )}
-        >
+        <TabButton active={activeTab === 'events'} onClick={tabClickHandler('events', onSetActiveTab)}>
           Events
-        </button>
+        </TabButton>
       )}
+
       {canAdmin &&
         (session.totalSubagentCount > 0 || session.activeSubagentCount > 0 || session.bgTasks.length > 0) && (
-          <button
-            type="button"
-            onClick={() => {
-              haptic('tick')
-              onSetActiveTab('agents')
-            }}
-            className={cn(
-              'px-3 sm:px-4 py-2 text-xs border-b-2 transition-colors',
-              activeTab === 'agents'
-                ? 'border-accent text-accent'
-                : 'border-transparent text-muted-foreground hover:text-foreground',
-            )}
-          >
+          <TabButton active={activeTab === 'agents'} onClick={tabClickHandler('agents', onSetActiveTab)}>
             Agents
             {(session.activeSubagentCount > 0 || session.runningBgTaskCount > 0) && (
               <span className="ml-1.5 px-1.5 py-0.5 bg-active/20 text-active text-[10px] font-bold">
                 {session.activeSubagentCount + session.runningBgTaskCount}
               </span>
             )}
-          </button>
+          </TabButton>
         )}
+
       {(session.taskCount > 0 || (session.archivedTaskCount ?? 0) > 0) && (
-        <button
-          type="button"
-          onClick={() => {
-            haptic('tick')
-            onSetActiveTab('tasks')
-          }}
-          className={cn(
-            'px-3 sm:px-4 py-2 text-xs border-b-2 transition-colors',
-            activeTab === 'tasks'
-              ? 'border-accent text-accent'
-              : 'border-transparent text-muted-foreground hover:text-foreground',
-          )}
-        >
+        <TabButton active={activeTab === 'tasks'} onClick={tabClickHandler('tasks', onSetActiveTab)}>
           Tasks
           {session.pendingTaskCount > 0 && (
             <span className="ml-1.5 px-1.5 py-0.5 bg-amber-500/20 text-amber-400 text-[10px] font-bold">
               {session.pendingTaskCount}
             </span>
           )}
-        </button>
+        </TabButton>
       )}
+
       {canReadFiles && session.status !== 'ended' && (
-        <button
-          type="button"
-          onClick={() => {
-            haptic('tick')
-            onSetActiveTab('files')
-          }}
-          className={cn(
-            'px-3 sm:px-4 py-2 text-xs border-b-2 transition-colors',
-            activeTab === 'files'
-              ? 'border-accent text-accent'
-              : 'border-transparent text-muted-foreground hover:text-foreground',
-          )}
-        >
+        <TabButton active={activeTab === 'files'} onClick={tabClickHandler('files', onSetActiveTab)}>
           Files
-        </button>
+        </TabButton>
       )}
+
       {session.status !== 'ended' && (
-        <button
-          type="button"
-          onClick={() => {
-            haptic('tick')
-            onSetActiveTab('project')
-          }}
-          className={cn(
-            'px-3 sm:px-4 py-2 text-xs border-b-2 transition-colors',
-            activeTab === 'project'
-              ? 'border-accent text-accent'
-              : 'border-transparent text-muted-foreground hover:text-foreground',
-          )}
-        >
+        <TabButton active={activeTab === 'project'} onClick={tabClickHandler('project', onSetActiveTab)}>
           Project
-        </button>
+        </TabButton>
       )}
-      <button
-        type="button"
-        onClick={() => {
-          haptic('tick')
-          onSetActiveTab('shared')
-        }}
-        className={cn(
-          'px-3 sm:px-4 py-2 text-xs border-b-2 transition-colors',
-          activeTab === 'shared'
-            ? 'border-accent text-accent'
-            : 'border-transparent text-muted-foreground hover:text-foreground',
-        )}
-      >
+
+      <TabButton active={activeTab === 'shared'} onClick={tabClickHandler('shared', onSetActiveTab)}>
         Shared
-      </button>
+      </TabButton>
+
       {canAdmin && showDiag && (
-        <button
-          type="button"
-          onClick={() => {
-            haptic('tick')
-            onSetActiveTab('diag')
-          }}
-          className={cn(
-            'px-3 sm:px-4 py-2 text-xs border-b-2 transition-colors',
-            activeTab === 'diag'
-              ? 'border-accent text-accent'
-              : 'border-transparent text-muted-foreground hover:text-foreground',
-          )}
-        >
+        <TabButton active={activeTab === 'diag'} onClick={tabClickHandler('diag', onSetActiveTab)}>
           Diag
-        </button>
+        </TabButton>
       )}
+
       {/* Follow/verbose - pushed to right */}
       <div className="ml-auto pr-3 flex items-center gap-2">
         <div className="w-px h-4 bg-border" />
