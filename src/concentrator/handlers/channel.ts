@@ -177,10 +177,12 @@ const channelListSessions: MessageHandler = (ctx, data) => {
     const isLive = ctx.sessions.getActiveWrapperCount(s.id) > 0
     const queueSize = ctx.messageQueue.getQueueSize(s.cwd)
 
-    // Assign a stable project-level slug via the caller's address book
-    const projectSlug = callerCwd
-      ? ctx.addressBook.getOrAssign(callerCwd, s.cwd, sessionName)
-      : s.cwd.split('/').pop() || s.id
+    // Assign a stable project-level slug via the caller's address book.
+    // Slug is derived from the PROJECT (label or dirname), never the session title --
+    // multiple sessions can share a CWD; the project identity must not depend on
+    // whichever session happened to register first.
+    const projectName = projSettings?.label || s.cwd.split('/').pop() || s.cwd
+    const projectSlug = callerCwd ? ctx.addressBook.getOrAssign(callerCwd, s.cwd, projectName) : slugify(projectName)
 
     // Compound addressing: if multiple sessions share this CWD, append :session-slug
     const cwdGroup = cwdGroups.get(s.cwd) || []
@@ -256,18 +258,31 @@ const channelSend: MessageHandler = (ctx, data) => {
         toSess = sessionsAtCwd.find(s => slugify(s.title || s.id.slice(0, 8)).startsWith(sessionSlug))
       }
     } else {
-      // Bare project slug: single session -> route, multiple live -> error
-      const liveSessions = sessionsAtCwd.filter(s => ctx.sessions.getActiveWrapperCount(s.id) > 0)
-      if (liveSessions.length > 1) {
-        const names = liveSessions.map(s => `${projectSlug}:${slugify(s.title || s.id.slice(0, 8))}`).join(', ')
-        ctx.reply({
-          type: 'channel_send_result',
-          ok: false,
-          error: `Ambiguous target: ${liveSessions.length} live sessions at "${projectSlug}". Use compound address: ${names}`,
-        })
-        return
+      // Bare target: prefer an exact session-title match within the CWD before
+      // treating this as a project-level address. Sessions are addressable by
+      // their own name; only fall back to project-scoped dispatch when no
+      // session owns the slug.
+      const titleMatch = sessionsAtCwd.find(s => slugify(s.title || s.id.slice(0, 8)) === projectSlug)
+      if (titleMatch) {
+        toSess = titleMatch
+      } else {
+        const liveSessions = sessionsAtCwd.filter(s => ctx.sessions.getActiveWrapperCount(s.id) > 0)
+        if (liveSessions.length > 1) {
+          // Ambiguity error must use the CANONICAL project slug (project label or
+          // dirname), not whatever alias the caller happened to type -- otherwise
+          // the suggested compound IDs won't round-trip with list_sessions.
+          const projSettings = ctx.getProjectSettings(targetCwd)
+          const canonicalProject = slugify(projSettings?.label || targetCwd.split('/').pop() || projectSlug)
+          const names = liveSessions.map(s => `${canonicalProject}:${slugify(s.title || s.id.slice(0, 8))}`).join(', ')
+          ctx.reply({
+            type: 'channel_send_result',
+            ok: false,
+            error: `Ambiguous target: ${liveSessions.length} live sessions at "${canonicalProject}". Use compound address: ${names}`,
+          })
+          return
+        }
+        toSess = liveSessions[0] || sessionsAtCwd[0]
       }
-      toSess = liveSessions[0] || sessionsAtCwd[0]
     }
   } else {
     toSess = ctx.sessions.getSessionByWrapper(toTarget) || ctx.sessions.getSession(toTarget)

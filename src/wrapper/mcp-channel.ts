@@ -473,13 +473,14 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
 
     send_message: {
       description:
-        'Send a message to another Claude Code session. Use the exact ID from list_sessions (bare "project" or compound "project:session-name"). For projects with multiple live sessions, you must use the compound format -- bare IDs are rejected as ambiguous. Messages to offline sessions are queued and delivered on reconnect. Returns status: "delivered" or "queued". First contact triggers approval prompt. Include conversation_id in replies to maintain thread context.',
+        'Send a message to another Claude Code session. The `to` parameter MUST be the exact `id` field returned by `list_sessions` -- do not invent, abbreviate, or guess. Valid IDs are either bare project slugs (e.g. "arr") or compound "project:session-name" (e.g. "arr:blazing-igloo"). When multiple live sessions share a project, you MUST use the compound form; bare project IDs are rejected as ambiguous. Always call `list_sessions` first if you are not certain of the exact ID. Messages to offline sessions are queued and delivered on reconnect. Returns status: "delivered" or "queued". First contact triggers an approval prompt. Include conversation_id in replies to maintain thread context.',
       inputSchema: {
         type: 'object' as const,
         properties: {
           to: {
             type: 'string',
-            description: 'Target ID from list_sessions (bare or compound "project:session-name")',
+            description:
+              'Target session ID. MUST be the exact `id` field from `list_sessions` output (e.g. "arr" or "arr:blazing-igloo"). Do not pass the `name`, `title`, `label`, or any other field -- only `id`. When in doubt, call list_sessions first.',
           },
           intent: {
             type: 'string',

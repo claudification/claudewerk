@@ -13,6 +13,12 @@ import { dirname, join } from 'node:path'
 // callerCwd -> { localId -> targetCwd }
 type BookMap = Record<string, Record<string, string>>
 
+// Bump when the slug-generation rules change and existing books must be rebuilt.
+// v2: project slugs are derived from project label/dirname, not session titles.
+const CURRENT_VERSION = 2
+
+type BookFile = { _version: number; books: BookMap }
+
 let filePath = ''
 let books: BookMap = {}
 let dirty = false
@@ -23,7 +29,16 @@ export function initAddressBook(cacheDir: string): void {
   mkdirSync(dirname(filePath), { recursive: true })
   if (existsSync(filePath)) {
     try {
-      books = JSON.parse(readFileSync(filePath, 'utf-8'))
+      const parsed = JSON.parse(readFileSync(filePath, 'utf-8'))
+      if (parsed && typeof parsed === 'object' && parsed._version === CURRENT_VERSION) {
+        books = (parsed as BookFile).books || {}
+      } else {
+        // Legacy (unversioned) or older-version file: slugs may be poisoned by the
+        // pre-v2 rule that used session titles as project slugs. Rebuilds lazily
+        // on next list_sessions / send_message.
+        books = {}
+        dirty = true
+      }
     } catch {
       books = {}
     }
@@ -36,7 +51,8 @@ function scheduleSave(): void {
   saveTimer = setTimeout(() => {
     saveTimer = null
     if (dirty && filePath) {
-      writeFileSync(filePath, JSON.stringify(books, null, 2))
+      const payload: BookFile = { _version: CURRENT_VERSION, books }
+      writeFileSync(filePath, JSON.stringify(payload, null, 2))
       dirty = false
     }
   }, 1000) // debounce 1s
