@@ -485,18 +485,24 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
           intent: {
             type: 'string',
             enum: ['request', 'response', 'notify', 'progress'],
-            description: 'Message intent',
+            description:
+              'Message intent. Optional -- defaults to "response" when `conversation_id` is set (i.e. a reply), otherwise "request".',
           },
           message: { type: 'string', description: 'Message content' },
           context: { type: 'string', description: 'Brief context about what this relates to' },
           conversation_id: { type: 'string', description: 'Thread ID for multi-turn exchanges' },
         },
-        required: ['to', 'intent', 'message'],
+        required: ['to', 'message'],
       },
       async handle(params) {
-        const { to, intent, message, context, conversation_id } = params
-        if (!to || !intent || !message) {
-          return { content: [{ type: 'text', text: 'Error: to, intent, and message are required' }], isError: true }
+        const { to, message, context, conversation_id } = params
+        let { intent } = params
+        if (!to || !message) {
+          return { content: [{ type: 'text', text: 'Error: to and message are required' }], isError: true }
+        }
+        if (!intent) {
+          intent = conversation_id ? 'response' : 'request'
+          debug(`[channel] send_message: intent omitted, defaulted to "${intent}"`)
         }
         const result = await callbacks.onSendMessage?.(to, intent, message, context, conversation_id)
         if (!result?.ok) {
