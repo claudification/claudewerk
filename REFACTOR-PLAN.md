@@ -3,15 +3,17 @@
 Living document. Aggregates status across every refactor initiative touching this repo --
 mega-file splits, shared-primitive extraction, architectural moves, naming cleanup.
 
-**Last updated:** 2026-04-17 (branch `refactor/mega-file-splits`, PR #46)
+**Last updated:** 2026-04-17 (branch `refactor/mega-file-splits`, PR #46, 12 commits)
 
 ## Currently in flight
 
 ### PR #46 -- `refactor/mega-file-splits` (draft, ready for smoke test)
 
-Execution log: [.claude/docs/plan-mega-file-splits.md](./.claude/docs/plan-mega-file-splits.md)
+- **Execution log:** [.claude/docs/plan-mega-file-splits.md](./.claude/docs/plan-mega-file-splits.md)
+- **Duplication / reuse backlog:** [.claude/docs/duplication-candidates.md](./.claude/docs/duplication-candidates.md) (has both pre-split targets AND the deferred /simplify review findings)
+- **Built + deployed locally:** concentrator Docker rebuilt + restarted 2026-04-17 (port 9999 healthy)
 
-**Shipped in this PR (11 commits, 303/304 tests green):**
+**Shipped in this PR (12 commits, 303/304 tests green):**
 
 - `src/concentrator/routes.ts` 1964 -> 331 (-83%) + 7 route modules under `routes/`
 - `web/src/components/session-list.tsx` 2097 -> 484 + 4 sub-components under `session-list/`
@@ -23,8 +25,28 @@ Execution log: [.claude/docs/plan-mega-file-splits.md](./.claude/docs/plan-mega-
 - `TabButton` extracted in `session-tabs.tsx` (8x duplication collapsed)
 - `filterSessionOrderTree` dedup in `routes/api.ts`
 - MCP tool registry: schemas + handlers colocated in a single map inside `initMcpChannel`
+- `/simplify` 3-agent review + 5 safe fixes applied (commit `a938cec`)
 - Skipped flaky `transcript-watcher > handles multiple rapid appends` test
 - Docs: README tree + `data-stores.md` updated
+
+### /simplify review findings -- DEFERRED (11 items)
+
+Ran `/simplify` after the extractions. 3 parallel review agents (reuse, quality, efficiency)
+surfaced 18 findings; 5 safe mechanical ones fixed inline (`formatTime` adoption,
+`relativize` hoist, `EMPTY_SUBSCRIBER_SET` constant, `childCount` conditional, JSDoc cleanup).
+
+The remaining **11 findings are persisted in `.claude/docs/duplication-candidates.md`**
+under "Deferred from /simplify review (2026-04-17)". Each has file paths, the issue,
+a proposed shape, and a reason for deferring. Examples:
+
+- `AskQuestionCard` -> `SessionBanner` migration (redesign, not drop-in)
+- `SessionItemContent` boolean `compact` prop should be 2 components
+- `SessionTabs` 9-prop interface, 6 booleans -- collapse into permissions object
+- Zustand selector filter pushdown (risky without stable-reference design)
+- `SessionItemContent` O(n) scan for `SessionStart` event per render
+- `cwd-group.tsx` 5-pass partition
+- `channelTypes` hardcoded array (should derive from type)
+- ...and 4 more -- full list in the duplication-candidates doc.
 
 ## Status: refactor board tasks
 
