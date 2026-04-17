@@ -291,7 +291,7 @@ export function GroupView({
 
   type RenderItem =
     | { kind: 'text'; text: string }
-    | { kind: 'thinking'; text: string }
+    | { kind: 'thinking'; text: string; encryptedBytes?: number; rawBlock?: TranscriptContentBlock }
     | {
         kind: 'project-task'
         id: string
@@ -399,10 +399,18 @@ export function GroupView({
             const hasBashTags = /<bash-(input|stdout|stderr)>/.test(text)
             items.push(hasBashTags ? { kind: 'bash', text } : { kind: 'text', text })
           }
-        } else if (block.type === 'thinking' && (block.thinking || block.text)) {
+        } else if (block.type === 'thinking') {
           const raw = block.thinking || block.text
-          const text = typeof raw === 'string' ? raw : JSON.stringify(raw)
-          if (text.trim()) items.push({ kind: 'thinking', text })
+          const text = typeof raw === 'string' ? raw : typeof raw === 'undefined' ? '' : JSON.stringify(raw)
+          if (text.trim()) {
+            items.push({ kind: 'thinking', text })
+          } else if (block.signature) {
+            // Claude 4.7+ encrypted thinking: the plaintext field is empty,
+            // the signature blob carries the reasoning (AES-GCM, Anthropic key).
+            // Show a placeholder so the user knows the model reasoned here,
+            // with (i) to inspect the raw block.
+            items.push({ kind: 'thinking', text: '', encryptedBytes: block.signature.length, rawBlock: block })
+          }
         } else if (block.type === 'tool_use') {
           const id = block.id
           const res = id ? getResult(id) : undefined
@@ -516,17 +524,49 @@ export function GroupView({
       <div className={cn('pl-4 space-y-2', group.queued && 'opacity-50')}>
         {items.map((item, i) => {
           switch (item.kind) {
-            case 'thinking':
+            case 'thinking': {
               if (!showThinking && !expandAll) return null
+              const isEncrypted = !item.text && typeof item.encryptedBytes === 'number'
+              // Rough plaintext-equivalent estimate: base64 signature overhead ~1.33x.
+              // Actual ciphertext is smaller than the signature blob since the blob
+              // also contains envelope metadata (model, nonce, tag), but this gives
+              // a reasonable "how much thinking" hint.
+              const estBytes = isEncrypted ? Math.round((item.encryptedBytes as number) * 0.75) : 0
               return (
-                // biome-ignore lint/suspicious/noArrayIndexKey: content blocks without stable IDs
-                <div key={i} className="border-l-2 border-purple-400/40 pl-3 py-1">
-                  <div className="text-[10px] text-purple-400/70 uppercase font-bold tracking-wider mb-1">thinking</div>
-                  <div className="text-sm opacity-75">
-                    <Markdown>{item.text}</Markdown>
+                <div
+                  // biome-ignore lint/suspicious/noArrayIndexKey: content blocks without stable IDs
+                  key={i}
+                  className="border-l-2 border-purple-400/40 pl-3 py-1"
+                >
+                  <div className="text-[10px] text-purple-400/70 uppercase font-bold tracking-wider mb-1 flex items-center gap-1.5">
+                    <span>thinking</span>
+                    {isEncrypted && (
+                      <>
+                        <span className="text-purple-400/40 normal-case font-normal tracking-normal">
+                          encrypted, ~{estBytes}b
+                        </span>
+                        {item.rawBlock && (
+                          <JsonInspector
+                            title="encrypted thinking block"
+                            data={item.rawBlock as unknown as Record<string, unknown>}
+                          />
+                        )}
+                      </>
+                    )}
                   </div>
+                  {isEncrypted ? (
+                    <div className="text-[11px] text-muted-foreground/50 italic font-mono">
+                      Anthropic ships Claude 4.7 thinking as a signed/encrypted blob. Plaintext is not available to the
+                      client.
+                    </div>
+                  ) : (
+                    <div className="text-sm opacity-75">
+                      <Markdown>{item.text}</Markdown>
+                    </div>
+                  )}
                 </div>
               )
+            }
             case 'project-task': {
               const prioColors: Record<string, string> = {
                 high: 'border-l-red-500',

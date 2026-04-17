@@ -346,7 +346,7 @@ export function groupEntries(entries: TranscriptEntry[]): DisplayGroup[] {
       const hasContent = content.some(
         c =>
           (c.type === 'text' && c.text?.trim()) ||
-          (c.type === 'thinking' && (c.thinking?.trim() || c.text?.trim())) ||
+          (c.type === 'thinking' && (c.thinking?.trim() || c.text?.trim() || c.signature)) ||
           c.type === 'tool_use',
       )
       if (!hasContent) continue
@@ -640,7 +640,7 @@ export function useIncrementalGroups(entries: TranscriptEntry[]) {
         const hasContent = content.some(
           c =>
             (c.type === 'text' && c.text?.trim()) ||
-            (c.type === 'thinking' && (c.thinking?.trim() || c.text?.trim())) ||
+            (c.type === 'thinking' && (c.thinking?.trim() || c.text?.trim() || c.signature)) ||
             c.type === 'tool_use',
         )
         if (!hasContent) continue

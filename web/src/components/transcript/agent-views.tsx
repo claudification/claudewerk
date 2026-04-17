@@ -7,6 +7,7 @@ import { useMemo, useState } from 'react'
 import { fetchSubagentTranscript, useSessionsStore } from '@/hooks/use-sessions'
 import type { TranscriptContentBlock, TranscriptEntry } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { JsonInspector } from '../json-inspector'
 import { Markdown } from '../markdown'
 import { buildResultMap, type DisplayGroup, groupEntries } from './grouping'
 import { Collapsible } from './shared'
@@ -89,7 +90,7 @@ function AgentGroupView({
 
   type AgentItem =
     | { kind: 'text'; text: string }
-    | { kind: 'thinking'; text: string }
+    | { kind: 'thinking'; text: string; encryptedBytes?: number; rawBlock?: TranscriptContentBlock }
     | { kind: 'tool'; tool: TranscriptContentBlock; result?: string; extra?: Record<string, unknown> }
 
   const content: AgentItem[] = []
@@ -101,8 +102,19 @@ function AgentGroupView({
       for (const block of c) {
         if (block.type === 'text' && block.text?.trim()) {
           content.push({ kind: 'text', text: block.text })
-        } else if (block.type === 'thinking' && (block.thinking || block.text)) {
-          content.push({ kind: 'thinking', text: block.thinking || block.text || '' })
+        } else if (block.type === 'thinking') {
+          const raw = block.thinking || block.text
+          const text = typeof raw === 'string' ? raw : ''
+          if (text.trim()) {
+            content.push({ kind: 'thinking', text })
+          } else if (block.signature) {
+            content.push({
+              kind: 'thinking',
+              text: '',
+              encryptedBytes: block.signature.length,
+              rawBlock: block,
+            })
+          }
         } else if (block.type === 'tool_use') {
           const res = block.id ? resultMap.get(block.id) : undefined
           content.push({ kind: 'tool', tool: block, result: res?.result, extra: res?.extra })
@@ -137,13 +149,36 @@ function AgentGroupView({
         {content.map((item, i) => {
           if (item.kind === 'thinking') {
             if (!showThinking && !expandAll) return null
+            const isEncrypted = !item.text && typeof item.encryptedBytes === 'number'
+            const estBytes = isEncrypted ? Math.round((item.encryptedBytes as number) * 0.75) : 0
             return (
               // biome-ignore lint/suspicious/noArrayIndexKey: content blocks without stable IDs
               <div key={i} className="border-l-2 border-purple-400/40 pl-2 py-1">
-                <div className="text-[10px] text-purple-400/70 uppercase font-bold tracking-wider mb-1">thinking</div>
-                <div className="text-[11px] opacity-75">
-                  <Markdown>{item.text}</Markdown>
+                <div className="text-[10px] text-purple-400/70 uppercase font-bold tracking-wider mb-1 flex items-center gap-1.5">
+                  <span>thinking</span>
+                  {isEncrypted && (
+                    <>
+                      <span className="text-purple-400/40 normal-case font-normal tracking-normal">
+                        encrypted, ~{estBytes}b
+                      </span>
+                      {item.rawBlock && (
+                        <JsonInspector
+                          title="encrypted thinking block"
+                          data={item.rawBlock as unknown as Record<string, unknown>}
+                        />
+                      )}
+                    </>
+                  )}
                 </div>
+                {isEncrypted ? (
+                  <div className="text-[10px] text-muted-foreground/50 italic font-mono">
+                    Claude 4.7 ships thinking encrypted. Plaintext unavailable to client.
+                  </div>
+                ) : (
+                  <div className="text-[11px] opacity-75">
+                    <Markdown>{item.text}</Markdown>
+                  </div>
+                )}
               </div>
             )
           }
