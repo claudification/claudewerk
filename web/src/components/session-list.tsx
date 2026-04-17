@@ -116,38 +116,51 @@ function LaunchParamsSection({ session }: { session: Session }) {
   const lc = session.launchConfig
   const [revealEnv, setRevealEnv] = useState(false)
   const envEntries = lc?.env ? Object.entries(lc.env) : []
-  const hasAnyCore =
-    !!lc &&
-    (lc.headless !== undefined ||
-      !!lc.permissionMode ||
-      lc.bare ||
-      lc.repl ||
-      lc.autocompactPct !== undefined ||
-      lc.maxBudgetUsd !== undefined)
 
-  if (!lc || (!hasAnyCore && envEntries.length === 0)) return null
+  // Fallbacks so legacy sessions (no launchConfig captured) still show something
+  const headless: boolean | undefined = lc?.headless ?? (session.capabilities?.includes('headless') || undefined)
+  const autocompactPct = lc?.autocompactPct ?? session.autocompactPct
+  const permissionMode = lc?.permissionMode
+  const bare = lc?.bare
+  const repl = lc?.repl
+  const maxBudgetUsd = lc?.maxBudgetUsd
+
+  const hasAnyCore =
+    headless !== undefined ||
+    !!permissionMode ||
+    bare ||
+    repl ||
+    autocompactPct !== undefined ||
+    maxBudgetUsd !== undefined
+
+  if (!hasAnyCore && envEntries.length === 0) return null
 
   return (
     <>
       <div className="border-t border-border" />
       <div className="space-y-1">
-        <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Launch</span>
+        <div className="flex items-center gap-2">
+          <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Launch</span>
+          {!lc && (
+            <span className="text-[9px] text-muted-foreground/50" title="launch config not captured at spawn time">
+              (partial)
+            </span>
+          )}
+        </div>
         <div className="space-y-1 pl-1">
-          {lc.headless !== undefined && (
+          {headless !== undefined && (
             <LaunchParamRow
               label="mode"
               value={
-                <span className={lc.headless ? 'text-sky-400' : 'text-amber-400'}>
-                  {lc.headless ? 'headless' : 'PTY'}
-                </span>
+                <span className={headless ? 'text-sky-400' : 'text-amber-400'}>{headless ? 'headless' : 'PTY'}</span>
               }
             />
           )}
-          {lc.permissionMode && <LaunchParamRow label="perms" value={lc.permissionMode} />}
-          {lc.bare && <LaunchParamRow label="bare" value="yes" />}
-          {lc.repl && <LaunchParamRow label="repl" value="yes" />}
-          {lc.autocompactPct !== undefined && <LaunchParamRow label="autocompact" value={`${lc.autocompactPct}%`} />}
-          {lc.maxBudgetUsd !== undefined && <LaunchParamRow label="budget" value={`$${lc.maxBudgetUsd.toFixed(2)}`} />}
+          {permissionMode && <LaunchParamRow label="perms" value={permissionMode} />}
+          {bare && <LaunchParamRow label="bare" value="yes" />}
+          {repl && <LaunchParamRow label="repl" value="yes" />}
+          {autocompactPct !== undefined && <LaunchParamRow label="autocompact" value={`${autocompactPct}%`} />}
+          {maxBudgetUsd !== undefined && <LaunchParamRow label="budget" value={`$${maxBudgetUsd.toFixed(2)}`} />}
         </div>
 
         {envEntries.length > 0 && (
