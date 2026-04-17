@@ -968,6 +968,13 @@ async function main() {
       onChannelSpawnResult(result) {
         pendingSpawnResult?.(result)
       },
+      onSpawnDiagnosticsResult(result) {
+        if (!result.jobId) return
+        const resolver = pendingSpawnDiagnostics.get(result.jobId)
+        if (!resolver) return
+        pendingSpawnDiagnostics.delete(result.jobId)
+        resolver(result)
+      },
       onChannelConfigureResult(result) {
         pendingConfigureResult?.(result)
       },
@@ -1400,6 +1407,23 @@ async function main() {
 
       return { ok: true, wrapperId: spawnResult.wrapperId }
     },
+    async onGetSpawnDiagnostics(jobId) {
+      if (!ctx.wsClient?.isConnected()) return { ok: false, error: 'Not connected to concentrator' }
+      return new Promise(resolve => {
+        const timeout = setTimeout(() => {
+          pendingSpawnDiagnostics.delete(jobId)
+          resolve({ ok: false, error: 'Timeout waiting for diagnostics' })
+        }, 10_000)
+        pendingSpawnDiagnostics.set(jobId, result => {
+          clearTimeout(timeout)
+          resolve(result)
+        })
+        ctx.wsClient?.send({
+          type: 'get_spawn_diagnostics',
+          jobId,
+        } as unknown as WrapperMessage)
+      })
+    },
     async onRestartSession(sessionId) {
       if (!ctx.wsClient?.isConnected()) return { ok: false, error: 'Not connected to concentrator' }
       return new Promise(resolve => {
@@ -1483,6 +1507,12 @@ async function main() {
     | ((result: { ok: boolean; error?: string; name?: string; selfRestart?: boolean; alreadyEnded?: boolean }) => void)
     | null = null
   let pendingSpawnResult: ((result: { ok: boolean; error?: string; wrapperId?: string }) => void) | null = null
+  // Keyed by jobId so concurrent get_spawn_diagnostics calls don't trample each
+  // other. Concentrator replies include the jobId so we can route back.
+  const pendingSpawnDiagnostics = new Map<
+    string,
+    (result: { ok: boolean; jobId?: string; error?: string; diagnostics?: Record<string, unknown> }) => void
+  >()
   let pendingConfigureResult: ((result: { ok: boolean; error?: string }) => void) | null = null
   let pendingRenameResult: ((result: { ok: boolean; error?: string }) => void) | null = null
   const pendingRendezvous = new Map<

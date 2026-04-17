@@ -117,6 +117,31 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
     const resolved = resolveSpawnConfig(req, projSettings, globalSettings)
     const { headless, model, effort, permissionMode, autocompactPct, maxBudgetUsd, bare, repl } = resolved
 
+    // Record the resolved config on the job so MCP get_spawn_diagnostics can
+    // return it later -- we intentionally drop the prompt (can be large / PII)
+    // and the env map (sensitive values live there; diagnostics builder
+    // redacts known-secret keys).
+    if (jobId) {
+      deps.sessions.recordJobConfig(jobId, {
+        cwd: req.cwd,
+        adHoc: req.adHoc,
+        adHocTaskId: req.adHocTaskId,
+        worktree: req.worktree,
+        mkdir: req.mkdir,
+        mode: req.adHoc ? 'fresh' : req.mode || 'fresh',
+        headless,
+        model,
+        effort,
+        bare,
+        repl,
+        permissionMode,
+        autocompactPct,
+        maxBudgetUsd,
+        leaveRunning: req.leaveRunning,
+        name: req.name,
+      })
+    }
+
     deps.sessions.setPendingLaunchConfig(wrapperId, {
       headless,
       model,

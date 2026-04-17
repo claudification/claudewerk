@@ -74,6 +74,12 @@ export interface WsClientOptions {
     alreadyEnded?: boolean
   }) => void
   onChannelSpawnResult?: (result: { ok: boolean; error?: string; wrapperId?: string }) => void
+  onSpawnDiagnosticsResult?: (result: {
+    ok: boolean
+    jobId?: string
+    error?: string
+    diagnostics?: Record<string, unknown>
+  }) => void
   onChannelConfigureResult?: (result: { ok: boolean; error?: string }) => void
   onChannelRenameResult?: (result: { ok: boolean; error?: string }) => void
   onAskAnswer?: (
@@ -155,6 +161,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
     onChannelReviveResult,
     onChannelRestartResult,
     onChannelSpawnResult,
+    onSpawnDiagnosticsResult,
     onChannelConfigureResult,
     onChannelRenameResult,
     onAskAnswer,
@@ -386,6 +393,17 @@ export function createWsClient(options: WsClientOptions): WsClient {
               }
               if (msgType === 'channel_spawn_result') {
                 onChannelSpawnResult?.(message as unknown as { ok: boolean; error?: string; wrapperId?: string })
+                break
+              }
+              if (msgType === 'spawn_diagnostics_result') {
+                onSpawnDiagnosticsResult?.(
+                  message as unknown as {
+                    ok: boolean
+                    jobId?: string
+                    error?: string
+                    diagnostics?: Record<string, unknown>
+                  },
+                )
                 break
               }
               if (msgType === 'channel_configure_result') {

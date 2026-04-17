@@ -98,6 +98,9 @@ export interface McpChannelCallbacks {
     mkdir?: boolean
     headless?: boolean
   }) => Promise<{ ok: boolean; error?: string; wrapperId?: string }>
+  onGetSpawnDiagnostics?: (
+    jobId: string,
+  ) => Promise<{ ok: boolean; error?: string; diagnostics?: Record<string, unknown> }>
   onConfigureSession?: (params: {
     sessionId: string
     label?: string
@@ -438,6 +441,21 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
         description:
           'Unified session lifecycle tool. Spawn new sessions, revive ended ones, or restart active sessions (terminate + auto-revive). Requires benevolent trust level. Sessions boot in tmux on the host - takes 10-30 seconds. Use list_sessions to poll for status.\n\nActions:\n- spawn (default): Start a new session at a directory\n- revive: Bring back an ended/inactive session\n- restart: Terminate an active session and automatically revive it. For self-restart, the MCP response may not arrive (your process dies and reboots).',
         inputSchema: spawnToolInputSchema,
+      },
+      {
+        name: 'get_spawn_diagnostics',
+        description:
+          'Fetch a diagnostic snapshot for a spawn job by jobId. Returns the resolved config, the full event timeline (job_created, spawn_sent, agent_acked, wrapper_booted, session_connected, job_complete/job_failed), and any error. Use this to debug spawn failures after spawn_session returned a wrapperId but the session never connected. Jobs expire ~5 minutes after creation. The jobId comes from the spawn_session response (pass `jobId` to spawn_session to track it).',
+        inputSchema: {
+          type: 'object' as const,
+          properties: {
+            job_id: {
+              type: 'string',
+              description: 'The jobId returned by a prior spawn_session call (or any spawn dispatch).',
+            },
+          },
+          required: ['job_id'],
+        },
       },
       {
         name: 'configure_session',
@@ -916,6 +934,38 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
                 text: result.timedOut
                   ? `Session spawn sent to ${cwd} (${modeDesc}) but session did not connect within 2 minutes. It may still be booting - use list_sessions to check.`
                   : `Session spawning at ${cwd} (${modeDesc}). Use list_sessions to check when ready.`,
+              },
+            ],
+          }
+        }
+        case 'get_spawn_diagnostics': {
+          const jobId = typeof params.job_id === 'string' ? params.job_id.trim() : ''
+          if (!jobId) {
+            return {
+              content: [{ type: 'text', text: 'Error: job_id is required' }],
+              isError: true,
+            }
+          }
+          if (!callbacks.onGetSpawnDiagnostics) {
+            return {
+              content: [{ type: 'text', text: 'Error: diagnostics channel not available' }],
+              isError: true,
+            }
+          }
+          const result = await callbacks.onGetSpawnDiagnostics(jobId)
+          if (!result.ok) {
+            debug(`[channel] get_spawn_diagnostics(${jobId.slice(0, 8)}) failed: ${result.error}`)
+            return {
+              content: [{ type: 'text', text: result.error || 'Diagnostics unavailable' }],
+              isError: true,
+            }
+          }
+          debug(`[channel] get_spawn_diagnostics(${jobId.slice(0, 8)}): ok`)
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(result.diagnostics, null, 2),
               },
             ],
           }

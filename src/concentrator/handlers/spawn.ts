@@ -84,6 +84,49 @@ const handleSpawnRequest: MessageHandler = (ctx, data) => {
     })
 }
 
+/**
+ * Fetch a diagnostic snapshot for a job by ID. Mirrors what the dashboard's
+ * "Copy diagnostics" button builds client-side, but driven from concentrator
+ * state so MCP / other back-end callers can retrieve it after the fact.
+ *
+ * Permission: `spawn` -- same gate as actually spawning. Anyone who could
+ * have initiated the spawn can read its trail.
+ */
+const handleGetSpawnDiagnostics: MessageHandler = (ctx, data) => {
+  ctx.requirePermission('spawn', '*')
+
+  const jobId = typeof data.jobId === 'string' ? data.jobId : null
+  if (!jobId) {
+    ctx.reply({
+      type: 'spawn_diagnostics_result',
+      ok: false,
+      error: 'jobId required',
+    })
+    return
+  }
+
+  const diag = ctx.sessions.getJobDiagnostics(jobId)
+  if (!diag) {
+    ctx.reply({
+      type: 'spawn_diagnostics_result',
+      ok: false,
+      jobId,
+      error: 'Job not found (may have expired after 5 minutes)',
+    })
+    return
+  }
+
+  ctx.reply({
+    type: 'spawn_diagnostics_result',
+    ok: true,
+    jobId,
+    diagnostics: diag,
+  })
+}
+
 export function registerSpawnHandlers(): void {
-  registerHandlers({ spawn_request: handleSpawnRequest })
+  registerHandlers({
+    spawn_request: handleSpawnRequest,
+    get_spawn_diagnostics: handleGetSpawnDiagnostics,
+  })
 }
