@@ -511,6 +511,12 @@ export function SpawnDialog() {
                       checked={bare}
                       onToggle={() => setBare(!bare)}
                     />
+                    {bare && (
+                      <div className="text-[10px] font-mono text-amber-400/80 bg-amber-950/20 border border-amber-400/30 rounded px-2 py-1.5 leading-snug">
+                        <span className="font-bold">warning:</span> --bare uses a separate Claude auth cache and may
+                        force a fresh login the first time. Plugins, CLAUDE.md and auto-memory are also disabled.
+                      </div>
+                    )}
 
                     {/* Env vars (LaunchConfigFields renders textarea + inline errors) */}
                     <LaunchConfigFields value={fieldsValue} onChange={applyFieldsPatch} show={{ env: true }} />
