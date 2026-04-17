@@ -14,7 +14,7 @@ import typescript from 'highlight.js/lib/languages/typescript'
 import xml from 'highlight.js/lib/languages/xml'
 import yaml from 'highlight.js/lib/languages/yaml'
 import { Marked } from 'marked'
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef } from 'react'
 
 // Register languages
 hljs.registerLanguage('javascript', javascript)
@@ -99,16 +99,11 @@ renderer.code = ({ text, lang }) => {
     return `<pre class="mermaid" data-mermaid-source="${encodeURIComponent(text)}">${escaped}</pre>`
   }
   const langClass = lang ? ` class="hljs language-${lang}"` : ' class="hljs"'
-  let highlighted: string | undefined
-  if (lang && hljs.getLanguage(lang)) {
-    try {
-      highlighted = hljs.highlight(text, { language: lang }).value
-    } catch {}
-  }
-  // hljs.highlight escapes <> internally, but the fallback path (no lang match)
-  // must escape manually or raw <tag> in code blocks becomes invisible HTML elements
-  const safe = highlighted ?? text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  return `<div class="code-block-wrap"><pre><code${langClass}>${safe}</code></pre><button class="code-copy-btn" title="Copy">⧉</button></div>`
+  // Always emit escaped raw text; highlighting happens post-mount (see highlightPendingBlocks).
+  // Keeps marked.parse off the synchronous highlight path so large streaming updates stay responsive.
+  const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const pending = lang && hljs.getLanguage(lang) ? ` data-hljs-pending="${lang}"` : ''
+  return `<div class="code-block-wrap"><pre><code${langClass}${pending}>${escaped}</code></pre><button class="code-copy-btn" title="Copy">⧉</button></div>`
 }
 
 // Configure marked options
@@ -242,22 +237,88 @@ function renderMermaidBlocks(container: HTMLElement) {
   }
 }
 
+// LRU cache for highlighted code fragments, keyed by `${lang}\n${text}`.
+// Survives component mount/unmount so scrolling back to an earlier group
+// (or remounting after a Zustand update) skips re-highlighting identical code.
+const HL_CACHE_MAX = 200
+const hlCache = new Map<string, string>()
+
+function hlCacheGet(key: string): string | undefined {
+  const v = hlCache.get(key)
+  if (v !== undefined) {
+    hlCache.delete(key)
+    hlCache.set(key, v)
+  }
+  return v
+}
+
+function hlCacheSet(key: string, value: string) {
+  if (hlCache.size >= HL_CACHE_MAX) {
+    const oldest = hlCache.keys().next().value
+    if (oldest !== undefined) hlCache.delete(oldest)
+  }
+  hlCache.set(key, value)
+}
+
+function highlightPendingBlocks(container: HTMLElement) {
+  const pending = container.querySelectorAll<HTMLElement>('code[data-hljs-pending]')
+  for (const el of pending) {
+    const lang = el.getAttribute('data-hljs-pending') || ''
+    el.removeAttribute('data-hljs-pending')
+    if (!lang || !hljs.getLanguage(lang)) continue
+    // textContent decodes HTML entities, giving us the original source text.
+    const text = el.textContent || ''
+    const key = `${lang}\n${text}`
+    let html = hlCacheGet(key)
+    if (html === undefined) {
+      try {
+        html = hljs.highlight(text, { language: lang }).value
+      } catch {
+        html = ''
+      }
+      if (html) hlCacheSet(key, html)
+    }
+    if (html) el.innerHTML = html
+  }
+}
+
+// Run a function at the next idle moment so it doesn't block the render commit.
+const runIdle: (fn: () => void) => void =
+  typeof (globalThis as { requestIdleCallback?: unknown }).requestIdleCallback === 'function'
+    ? fn =>
+        (globalThis as { requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => void }).requestIdleCallback(
+          fn,
+          { timeout: 200 },
+        )
+    : fn => setTimeout(fn, 0)
+
 interface MarkdownProps {
   children: string
   inline?: boolean
 }
 
 export function Markdown({ children, inline }: MarkdownProps) {
+  // Defer the content used for parsing so rapid stream-delta updates (headless
+  // streaming text, long assistant turns) can be coalesced by React. During the
+  // stall window the previous HTML stays mounted -- no main-thread parse work.
+  const deferred = useDeferredValue(children)
   const html = useMemo(() => {
-    return inline ? (marked.parseInline(children) as string) : (marked.parse(children) as string)
-  }, [children, inline])
+    return inline ? (marked.parseInline(deferred) as string) : (marked.parse(deferred) as string)
+  }, [deferred, inline])
 
   const ref = useRef<HTMLDivElement>(null)
 
-  // Post-mount: render mermaid blocks into SVG
-  // biome-ignore lint/correctness/useExhaustiveDependencies: html used as dep key to re-render mermaid after content changes; ref is stable
+  // Post-mount: syntax highlight code blocks at idle time (off the commit path)
+  // and kick off mermaid rendering. Highlighted results are LRU-cached, so
+  // identical code blocks only pay the hljs cost once across the whole app.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: html is the dep key; ref is stable
   useEffect(() => {
-    if (ref.current) renderMermaidBlocks(ref.current)
+    const el = ref.current
+    if (!el) return
+    runIdle(() => {
+      if (ref.current) highlightPendingBlocks(ref.current)
+    })
+    renderMermaidBlocks(el)
   }, [html])
 
   const handleClick = useCallback((e: React.MouseEvent) => {

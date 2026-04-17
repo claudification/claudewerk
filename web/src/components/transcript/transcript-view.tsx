@@ -4,7 +4,18 @@
  */
 
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { memo, Profiler, type ProfilerOnRenderCallback, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Fragment,
+  memo,
+  Profiler,
+  type ProfilerOnRenderCallback,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { useSessionsStore } from '@/hooks/use-sessions'
 import { record } from '@/lib/perf-metrics'
 import type { TranscriptEntry } from '@/lib/types'
@@ -202,6 +213,18 @@ const onRenderProfile: ProfilerOnRenderCallback = (id, phase, actualDuration, ba
   )
 }
 
+/** Profiler wraps its children in an extra fiber and runs React's measurement code
+ *  on every commit -- meaningful overhead if left on for every user. Only enable it
+ *  when the perf monitor is toggled on (dashboardPrefs.showPerfMonitor). */
+function MaybeProfiler({ enabled, id, children }: { enabled: boolean; id: string; children: ReactNode }) {
+  if (!enabled) return <Fragment>{children}</Fragment>
+  return (
+    <Profiler id={id} onRender={onRenderProfile}>
+      {children}
+    </Profiler>
+  )
+}
+
 interface TranscriptViewProps {
   entries: TranscriptEntry[]
   follow?: boolean
@@ -298,6 +321,7 @@ export const TranscriptView = memo(function TranscriptView({
   }, [subagentsSummary])
 
   const selectedSessionId = useSessionsStore(state => state.selectedSessionId)
+  const perfEnabled = useSessionsStore(state => state.dashboardPrefs.showPerfMonitor)
 
   // Cache measured sizes so estimateSize can use real heights for groups
   // that have been rendered before (survives virtualizer cache invalidation)
@@ -456,7 +480,7 @@ export const TranscriptView = memo(function TranscriptView({
           position: 'relative',
         }}
       >
-        <Profiler id="TranscriptGroups" onRender={onRenderProfile}>
+        <MaybeProfiler enabled={perfEnabled} id="TranscriptGroups">
           {(() => {
             lastVirtualItemCount = virtualItems.length
             lastTotalGroupCount = mainGroups.length
@@ -503,29 +527,34 @@ export const TranscriptView = memo(function TranscriptView({
               })()}
             </div>
           ))}
-        </Profiler>
+        </MaybeProfiler>
       </div>
-      {/* Headless streaming text - isolated component so token updates don't re-render the virtualizer */}
-      <StreamingBlock sessionId={selectedSessionId} />
-      {/* Fun verb spinner while session is working */}
-      <ThinkingSpinner sessionId={selectedSessionId} />
-      {/* Queued messages: rendered inline at the bottom of the transcript */}
-      {queuedGroups.length > 0 && (
-        <div className="mt-2 border-t border-dashed border-amber-500/30 pt-2">
-          <div className="text-[10px] font-mono text-amber-500/60 px-1 mb-1">QUEUED</div>
-          {queuedGroups.map((group, i) => (
-            <MemoizedGroupView
-              // biome-ignore lint/suspicious/noArrayIndexKey: queued groups may share timestamp, index disambiguates
-              key={`queued-${group.timestamp}-${i}`}
-              group={group}
-              getResult={getResult}
-              settings={transcriptSettings}
-              showThinking={showThinking}
-              subagents={subagents}
-            />
-          ))}
-        </div>
-      )}
+      {/* Streaming/queued region: wrapped in its own Profiler so perf reports
+          attribute stream-delta re-renders correctly (they used to fall outside
+          TranscriptGroups and silently cost frames). */}
+      <MaybeProfiler enabled={perfEnabled} id="TranscriptStreaming">
+        {/* Headless streaming text - isolated component so token updates don't re-render the virtualizer */}
+        <StreamingBlock sessionId={selectedSessionId} />
+        {/* Fun verb spinner while session is working */}
+        <ThinkingSpinner sessionId={selectedSessionId} />
+        {/* Queued messages: rendered inline at the bottom of the transcript */}
+        {queuedGroups.length > 0 && (
+          <div className="mt-2 border-t border-dashed border-amber-500/30 pt-2">
+            <div className="text-[10px] font-mono text-amber-500/60 px-1 mb-1">QUEUED</div>
+            {queuedGroups.map((group, i) => (
+              <MemoizedGroupView
+                // biome-ignore lint/suspicious/noArrayIndexKey: queued groups may share timestamp, index disambiguates
+                key={`queued-${group.timestamp}-${i}`}
+                group={group}
+                getResult={getResult}
+                settings={transcriptSettings}
+                showThinking={showThinking}
+                subagents={subagents}
+              />
+            ))}
+          </div>
+        )}
+      </MaybeProfiler>
     </div>
   )
 })
