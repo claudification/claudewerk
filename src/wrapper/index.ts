@@ -1245,6 +1245,9 @@ async function main() {
         const ok = executeControl(action, { model: args.model, source })
         if (!ok) diag('session', `Control ignored: ${action} (backend not ready or missing args)`)
       },
+      onDiag(type, msg, args) {
+        diag(type, msg, args)
+      },
     })
   }
 

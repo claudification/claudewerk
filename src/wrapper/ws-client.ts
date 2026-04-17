@@ -127,6 +127,10 @@ export interface WsClientOptions {
     action: 'clear' | 'quit' | 'interrupt' | 'set_model',
     args: { model?: string; fromSession?: string },
   ) => void
+  /** Optional sink for structured diagnostics from inside the ws client.
+   *  Wired to ctx.diag by index.ts so the dashboard's diag endpoint can
+   *  surface warnings (e.g. suppressed same-id session_clear). */
+  onDiag?: (type: string, msg: string, args?: unknown) => void
 }
 
 export interface WsClient {
@@ -208,6 +212,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
     onQuitSession,
     onInterrupt,
     onControl,
+    onDiag,
   } = options
 
   let sessionId: string | null = initialSessionId
@@ -579,9 +584,16 @@ export function createWsClient(options: WsClientOptions): WsClient {
 
   function sendSessionClear(newSessionId: string, newCwd: string, newModel?: string) {
     const prev = routeId()
-    // Skip same-ID rekey -- causes channel subscriber destruction on concentrator
+    // Same-id short-circuit. With session-transition.ts as the single source
+    // of truth this should NEVER fire in normal operation -- if it does, an
+    // observer raced around observeClaudeSessionId and advanced wsClient's
+    // internal id before the real rekey landed. Log loudly so the regression
+    // is obvious in diag. Still short-circuit: emitting session_clear with
+    // oldId === newId destroys channel subscribers on the concentrator.
     if (sessionId === newSessionId) {
-      debug?.(`Skipping same-ID session_clear (${prev.slice(0, 8)})`)
+      const warn = `WARN: same-id session_clear suppressed (${prev.slice(0, 8)}) -- observer race?`
+      debug(warn)
+      onDiag?.('session', warn, { wrapperId, sessionId })
       return
     }
     const msg: SessionClear = {

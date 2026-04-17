@@ -11,6 +11,7 @@ import { debug as _debug } from './debug'
 import { hasPendingAskRequests } from './local-server'
 import { hasPendingDialogs, resetMcpChannel } from './mcp-channel'
 import { countInteractions, sendInteraction } from './pending-interactions'
+import { observeClaudeSessionId } from './session-transition'
 import { writeMergedSettings } from './settings-merge'
 import type { StreamBackendOptions, StreamProcess } from './stream-backend'
 import { sendTranscriptEntriesChunked, startBgTaskOutputWatcher, startSubagentWatcher } from './transcript-manager'
@@ -66,43 +67,12 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
     onInit(init) {
       debug(`[headless] init: session=${init.session_id?.slice(0, 8)} model=${init.model}`)
       if (init.session_id) {
-        const prevId = ctx.claudeSessionId
-        ctx.claudeSessionId = init.session_id
-        // Handle deferred /clear rekey -- now we have the REAL session ID
-        if (ctx.pendingClearFromId && ctx.wsClient?.isConnected()) {
-          ctx.diag(
-            'headless',
-            `Deferred rekey: ${ctx.pendingClearFromId.slice(0, 8)} -> ${init.session_id.slice(0, 8)}`,
-          )
-          ctx.wsClient.sendSessionClear(init.session_id, ctx.cwd)
-          ctx.pendingClearFromId = null
-        } else if (prevId && prevId !== init.session_id && ctx.wsClient?.isConnected()) {
-          // Session ID changed outside /clear (e.g., revive with different session)
-          ctx.diag('headless', `Session ID changed: ${prevId.slice(0, 8)} -> ${init.session_id.slice(0, 8)}`)
-          ctx.wsClient.sendSessionClear(init.session_id, ctx.cwd)
-        } else if (!prevId) {
-          ctx.diag('headless', `CC session ID from init: ${init.session_id.slice(0, 8)}`)
-        }
-        // In --bare mode hooks are disabled, so SessionStart never fires.
-        // Stream-json init is the equivalent trigger.
-        //   - No wsClient yet (concentrator unreachable at start, now back?):
-        //     open a fresh connection with the real session id.
-        //   - wsClient in booting state (just early-connected, no session id
-        //     yet): promote it via setSessionId().
-        //   - wsClient already has a session id: nothing to do.
-        if (!ctx.wsClient) {
-          ctx.diag('headless', `No wsClient -- connecting to concentrator from stream-json init`)
-          ctx.connectToConcentrator(init.session_id)
-        } else if (!prevId) {
-          ctx.diag('headless', `Promoting booting session: -> ${init.session_id.slice(0, 8)}`)
-          ctx.wsClient.setSessionId(init.session_id, 'stream_json')
-          ctx.wsClient.sendBootEvent('init_received', `session=${init.session_id.slice(0, 8)} (stream)`, {
-            model: init.model,
-            tools: (init.tools as Array<{ name: string } | string> | undefined)?.length ?? 0,
-            mcp_servers: (init.mcp_servers as Array<unknown> | undefined)?.length ?? 0,
-          })
-          ctx.wsClient.sendBootEvent('session_ready')
-        }
+        const newModel = typeof init.model === 'string' ? init.model : undefined
+        // Single entry point: observeClaudeSessionId classifies this as
+        // boot / rekey / confirm and performs the right concentrator action.
+        // Safe to call redundantly -- the SessionStart hook calls it too in
+        // non-bare headless mode; whoever fires first does the work.
+        observeClaudeSessionId(ctx, init.session_id, 'stream_json', newModel)
       }
       // Derive transcript path from init if not yet set by SessionStart hook
       if (init.session_id && !ctx.parentTranscriptPath) {
@@ -429,20 +399,22 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
             a !== '--session-id' &&
             !(i > 0 && arr[i - 1] === '--session-id'),
         )
-        const oldSessionId = ctx.claudeSessionId
-        ctx.claudeSessionId = null
+        // Stash the old session id as a rekey hint. Do NOT null claudeSessionId --
+        // observeClaudeSessionId needs to see the old id (or pendingClearFromId)
+        // to classify the next observed id as a post-clear rekey rather than a
+        // boot. Nulling here caused the 2026-04-17 regression where the
+        // SessionStart hook promoted the respawn as a boot and onInit's rekey
+        // was then eaten by the same-id guard.
+        ctx.pendingClearFromId = ctx.claudeSessionId
         ctx.parentTranscriptPath = ''
         ctx.pendingEditInputs.clear()
         ctx.pendingReadPaths.clear()
         ctx.agentToolUseMap.clear()
         ctx.pendingAskRequests.clear()
         transcriptSendChain = Promise.resolve()
-        // Don't rekey yet -- wait for the new CC's real session ID from onInit.
-        // Sending randomUUID() here caused double-rekey and transcript loss.
-        ctx.pendingClearFromId = oldSessionId
         ctx.diag(
           'headless',
-          `Respawning CC fresh after /clear (old: ${oldSessionId?.slice(0, 8) || 'none'}, rekey deferred)`,
+          `Respawning CC fresh after /clear (old: ${ctx.pendingClearFromId?.slice(0, 8) || 'none'}, rekey deferred)`,
         )
         respawnHeadless(deps, freshArgs)
         return
