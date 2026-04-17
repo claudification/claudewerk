@@ -244,8 +244,8 @@ export function TaskEditor({
 
   useKeyLayer(
     {
-      Escape: () => onClose(),
-      // Bare keys -- auto-blocked when a text input / CodeMirror is focused
+      // Bare keys -- auto-blocked when a text input / CodeMirror is focused.
+      // Radix Dialog handles Escape itself via onOpenChange.
       w: () => {
         if (!canWork) return
         sendInput(sessionId, buildTaskPrompt({ ...task, title, body, status, priority, tags }))
@@ -331,15 +331,9 @@ export function TaskEditor({
   }
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: backdrop
-    <div role="presentation" className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-      <div
-        role="dialog"
-        className="relative w-full max-w-2xl bg-[#1a1b26] border border-[#33467c] shadow-2xl flex flex-col max-h-[80vh]"
-        onClick={e => e.stopPropagation()}
-        onKeyDown={e => e.stopPropagation()}
-      >
+    <Dialog open={true} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col p-0">
+        <DialogTitle className="sr-only">Edit task: {title}</DialogTitle>
         {/* Header */}
         <div className="flex items-center gap-2 px-4 py-3 border-b border-[#33467c]/50 shrink-0">
           <input
@@ -610,8 +604,8 @@ export function TaskEditor({
             </div>
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
