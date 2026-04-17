@@ -4,6 +4,7 @@
  */
 
 import { registerAgentHandlers } from './agent'
+import { registerBootLifecycleHandlers } from './boot-lifecycle'
 import { registerChannelHandlers } from './channel'
 import { registerDashboardActionHandlers } from './dashboard-actions'
 import { registerDialogHandlers } from './dialog'
@@ -19,6 +20,7 @@ import { registerVoiceHandlers } from './voice'
 
 export function registerAllHandlers(): void {
   registerAgentHandlers()
+  registerBootLifecycleHandlers()
   registerChannelHandlers()
   registerDashboardActionHandlers()
   registerDialogHandlers()

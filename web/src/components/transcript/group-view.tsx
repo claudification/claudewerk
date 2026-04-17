@@ -34,6 +34,7 @@ interface RenderableTranscriptEntry {
 import { CopyMenu } from '../copy-menu'
 import { Markdown } from '../markdown'
 import { AgentTranscriptInline } from './agent-views'
+import { BootTimeline } from './boot-timeline'
 import type { DisplayGroup, TaskNotification } from './grouping'
 import { SessionTag } from './session-tag'
 import { MemoizedToolLine } from './tool-line'
@@ -239,6 +240,10 @@ export function GroupView({
 }) {
   const { expandAll, userLabel, agentLabel, userColor, agentColor, userSize, agentSize } = settings
   const time = group.timestamp ? new Date(group.timestamp).toLocaleTimeString('en-US', { hour12: false }) : ''
+
+  if (group.type === 'boot') {
+    return <BootTimeline group={group} />
+  }
 
   if (group.type === 'system' && group.notifications?.length) {
     return (

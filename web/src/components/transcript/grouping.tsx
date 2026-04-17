@@ -26,7 +26,7 @@ export interface TaskNotification {
 }
 
 export interface DisplayGroup {
-  type: 'user' | 'assistant' | 'system' | 'compacting' | 'compacted' | 'skill'
+  type: 'user' | 'assistant' | 'system' | 'compacting' | 'compacted' | 'skill' | 'boot'
   timestamp: string
   entries: TranscriptEntry[]
   notifications?: TaskNotification[]
@@ -128,6 +128,22 @@ export function groupEntries(entries: TranscriptEntry[]): DisplayGroup[] {
   let pendingSkillName: string | undefined
 
   for (const entry of entries) {
+    if (entry.type === 'boot') {
+      // Collect consecutive boot entries into a single timeline group.
+      const lastGroup = groups[groups.length - 1]
+      if (lastGroup?.type === 'boot') {
+        lastGroup.entries.push(entry)
+      } else {
+        current = null
+        groups.push({
+          type: 'boot',
+          timestamp: entry.timestamp || '',
+          entries: [entry],
+        })
+      }
+      continue
+    }
+
     if (entry.type === 'compacting' || entry.type === 'compacted') {
       current = null
       // When compacted arrives, replace the preceding compacting group

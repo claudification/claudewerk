@@ -381,9 +381,7 @@ function PerfTab() {
   const enabled = isPerfEnabled()
   const [significantOnly, setSignificantOnly] = useState(false)
 
-  const visibleEntries = significantOnly
-    ? entries.filter(e => e.durationMs >= SIGNIFICANT_THRESHOLD_MS)
-    : entries
+  const visibleEntries = significantOnly ? entries.filter(e => e.durationMs >= SIGNIFICANT_THRESHOLD_MS) : entries
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: entries.length is a dep key to trigger scroll on new entries; scrollRef is a stable ref
   useEffect(() => {

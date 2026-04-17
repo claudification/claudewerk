@@ -36,7 +36,7 @@ export interface Session {
   version?: string
   buildTime?: string
   wrapperIds?: string[]
-  status: 'active' | 'idle' | 'ended' | 'starting'
+  status: 'active' | 'idle' | 'ended' | 'starting' | 'booting'
   compacting?: boolean
   compactedAt?: number
   startedAt: number

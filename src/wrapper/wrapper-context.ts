@@ -83,7 +83,7 @@ export interface WrapperContext {
   diag: (type: string, msg: string, args?: unknown) => void
   flushDiag: () => void
   debug: (msg: string) => void
-  connectToConcentrator: (sessionId: string) => void
+  connectToConcentrator: (sessionId: string | null) => void
   startTaskWatching: () => void
   readTasks: () => void
   startProjectWatching: () => void

@@ -5,20 +5,25 @@
 
 import type {
   BgTaskOutput,
+  BootEvent,
+  BootStep,
   ConcentratorMessage,
   FileResponse,
   Heartbeat,
   HookEvent,
   InterSessionDelivery,
   InterSessionListResponse,
+  LaunchConfig,
   ProjectLinkRequest,
   SessionClear,
   SessionEnd,
   SessionMeta,
+  SessionPromote,
   SubagentTranscript,
   TerminalData,
   TranscriptEntries,
   TranscriptEntry,
+  WrapperBoot,
   WrapperCapability,
   WrapperMessage,
 } from '../shared/protocol'
@@ -31,7 +36,10 @@ const debug = (msg: string) => _debug(`[ws] ${msg}`)
 export interface WsClientOptions {
   concentratorUrl?: string
   concentratorSecret?: string
-  sessionId: string
+  /** null means we don't have a CC session id yet -- the client will send
+   *  `wrapper_boot` on connect instead of `meta` and must have `initialBoot`
+   *  populated. Once the session id arrives, call `setSessionId()`. */
+  sessionId: string | null
   wrapperId: string
   cwd: string
   model?: string
@@ -43,6 +51,12 @@ export interface WsClientOptions {
   maxBudgetUsd?: number
   adHocTaskId?: string
   adHocWorktree?: string
+  /** Passed through to `wrapper_boot` when connecting before session id. */
+  initialBoot?: {
+    claudeArgs: string[]
+    title?: string
+    launchConfig?: LaunchConfig
+  }
   onConnected?: () => void
   onDisconnected?: () => void
   onError?: (error: Error) => void
@@ -119,6 +133,12 @@ export interface WsClient {
   sendStreamDelta: (event: Record<string, unknown>) => void
   sendRateLimit: (retryAfterMs: number, message: string) => void
   sendSessionStatus: (status: 'active' | 'idle') => void
+  /** Emit a structured boot-phase event. Queued if not yet connected. */
+  sendBootEvent: (step: BootStep, detail?: string, raw?: unknown) => void
+  /** Called once the real CC session id is known. Sends `meta` (so the
+   *  concentrator can resume/create the real session) and `session_promote`
+   *  so the booting entry gets merged into the real session. */
+  setSessionId: (sessionId: string, source: 'stream_json' | 'hook') => void
   close: () => void
   isConnected: () => boolean
 }
@@ -179,7 +199,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
     onInterrupt,
   } = options
 
-  let sessionId = initialSessionId
+  let sessionId: string | null = initialSessionId
   let ws: WebSocket | null = null
   let connected = false
   let shouldReconnect = true
@@ -188,6 +208,14 @@ export function createWsClient(options: WsClientOptions): WsClient {
   const messageQueue: WrapperMessage[] = []
   const MAX_QUEUE_SIZE = 500
   let heartbeatInterval: Timer | null = null
+
+  /** Identifier used for messages that require a session id. During the
+   *  boot phase (before CC produces a session id) we fall back to the
+   *  wrapper id so the concentrator can route messages to the booting
+   *  session. Once setSessionId() is called, real session id takes over. */
+  function routeId(): string {
+    return sessionId ?? wrapperId
+  }
 
   function connect() {
     try {
@@ -203,27 +231,46 @@ export function createWsClient(options: WsClientOptions): WsClient {
           reconnectAttempts = 0
           debug('WebSocket connected')
 
-          // Send session metadata with capabilities + version
-          const meta: SessionMeta = {
-            type: 'meta',
-            sessionId,
-            wrapperId,
-            cwd,
-            startedAt: Date.now(),
-            model,
-            capabilities,
-            args,
-            version: `rclaude/${BUILD_VERSION.gitHashShort}`,
-            buildTime: BUILD_VERSION.buildTime,
-            claudeVersion,
-            claudeAuth,
-            spinnerVerbs,
-            autocompactPct,
-            maxBudgetUsd,
-            adHocTaskId,
-            adHocWorktree,
+          if (sessionId) {
+            // Normal flow: CC session id already known -> `meta` creates/resumes
+            // the real session on the concentrator.
+            const meta: SessionMeta = {
+              type: 'meta',
+              sessionId,
+              wrapperId,
+              cwd,
+              startedAt: Date.now(),
+              model,
+              capabilities,
+              args,
+              version: `rclaude/${BUILD_VERSION.gitHashShort}`,
+              buildTime: BUILD_VERSION.buildTime,
+              claudeVersion,
+              claudeAuth,
+              spinnerVerbs,
+              autocompactPct,
+              maxBudgetUsd,
+              adHocTaskId,
+              adHocWorktree,
+            }
+            ws?.send(JSON.stringify(meta))
+          } else {
+            // Early-connect: no CC session id yet. Tell the concentrator we're
+            // booting so a placeholder session shows up in the dashboard.
+            const boot: WrapperBoot = {
+              type: 'wrapper_boot',
+              wrapperId,
+              cwd,
+              capabilities: capabilities || [],
+              claudeArgs: options.initialBoot?.claudeArgs || args || [],
+              claudeVersion,
+              claudeAuth,
+              launchConfig: options.initialBoot?.launchConfig,
+              title: options.initialBoot?.title,
+              startedAt: Date.now(),
+            }
+            ws?.send(JSON.stringify(boot))
           }
-          ws?.send(JSON.stringify(meta))
 
           // Flush queued messages
           while (messageQueue.length > 0) {
@@ -237,13 +284,13 @@ export function createWsClient(options: WsClientOptions): WsClient {
             }
           }
 
-          // Start heartbeat
+          // Start heartbeat (uses wrapperId as route key during boot phase)
           heartbeatInterval = setInterval(() => {
             if (connected) {
               try {
                 const heartbeat: Heartbeat = {
                   type: 'heartbeat',
-                  sessionId,
+                  sessionId: routeId(),
                   timestamp: Date.now(),
                 }
                 ws?.send(JSON.stringify(heartbeat))
@@ -494,7 +541,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
   function sendSessionEnd(reason: string) {
     const endMsg: SessionEnd = {
       type: 'end',
-      sessionId,
+      sessionId: routeId(),
       reason,
       endedAt: Date.now(),
     }
@@ -502,14 +549,15 @@ export function createWsClient(options: WsClientOptions): WsClient {
   }
 
   function sendSessionClear(newSessionId: string, newCwd: string, newModel?: string) {
+    const prev = routeId()
     // Skip same-ID rekey -- causes channel subscriber destruction on concentrator
     if (sessionId === newSessionId) {
-      debug?.(`Skipping same-ID session_clear (${sessionId.slice(0, 8)})`)
+      debug?.(`Skipping same-ID session_clear (${prev.slice(0, 8)})`)
       return
     }
     const msg: SessionClear = {
       type: 'session_clear',
-      oldSessionId: sessionId,
+      oldSessionId: prev,
       newSessionId,
       wrapperId,
       cwd: newCwd,
@@ -532,7 +580,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
   function sendTranscriptEntries(entries: TranscriptEntry[], isInitial: boolean) {
     const msg: TranscriptEntries = {
       type: 'transcript_entries',
-      sessionId,
+      sessionId: routeId(),
       entries,
       isInitial,
     }
@@ -542,7 +590,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
   function sendSubagentTranscript(agentId: string, entries: TranscriptEntry[], isInitial: boolean) {
     const msg: SubagentTranscript = {
       type: 'subagent_transcript',
-      sessionId,
+      sessionId: routeId(),
       agentId,
       entries,
       isInitial,
@@ -564,12 +612,60 @@ export function createWsClient(options: WsClientOptions): WsClient {
   function sendBgTaskOutput(taskId: string, data: string, done: boolean) {
     const msg: BgTaskOutput = {
       type: 'bg_task_output',
-      sessionId,
+      sessionId: routeId(),
       taskId,
       data,
       done,
     }
     send(msg)
+  }
+
+  function sendBootEvent(step: BootStep, detail?: string, raw?: unknown) {
+    const msg: BootEvent = {
+      type: 'boot_event',
+      wrapperId,
+      step,
+      detail,
+      raw,
+      t: Date.now(),
+    }
+    send(msg)
+  }
+
+  function setSessionId(newSessionId: string, source: 'stream_json' | 'hook') {
+    const wasBoot = !sessionId
+    sessionId = newSessionId
+    if (!wasBoot) return // already had a session id, nothing to promote
+    // Tell the concentrator to migrate the booting session to the real one.
+    const promote: SessionPromote = {
+      type: 'session_promote',
+      wrapperId,
+      sessionId: newSessionId,
+      source,
+    }
+    send(promote)
+    // Then send meta so the concentrator resumes/creates the real session with
+    // full metadata (the boot payload only had a subset of fields).
+    const meta: SessionMeta = {
+      type: 'meta',
+      sessionId: newSessionId,
+      wrapperId,
+      cwd,
+      startedAt: Date.now(),
+      model,
+      capabilities,
+      args,
+      version: `rclaude/${BUILD_VERSION.gitHashShort}`,
+      buildTime: BUILD_VERSION.buildTime,
+      claudeVersion,
+      claudeAuth,
+      spinnerVerbs,
+      autocompactPct,
+      maxBudgetUsd,
+      adHocTaskId,
+      adHocWorktree,
+    }
+    send(meta)
   }
 
   function close() {
@@ -603,14 +699,16 @@ export function createWsClient(options: WsClientOptions): WsClient {
     sendFileResponse,
     sendBgTaskOutput,
     sendStreamDelta(event: Record<string, unknown>) {
-      send({ type: 'stream_delta', sessionId, event } as WrapperMessage)
+      send({ type: 'stream_delta', sessionId: routeId(), event } as WrapperMessage)
     },
     sendRateLimit(retryAfterMs: number, message: string) {
-      send({ type: 'rate_limit', sessionId, retryAfterMs, message } as WrapperMessage)
+      send({ type: 'rate_limit', sessionId: routeId(), retryAfterMs, message } as WrapperMessage)
     },
     sendSessionStatus(status: 'active' | 'idle') {
-      send({ type: 'session_status', sessionId, status } as WrapperMessage)
+      send({ type: 'session_status', sessionId: routeId(), status } as WrapperMessage)
     },
+    sendBootEvent,
+    setSessionId,
     close,
     isConnected,
   }

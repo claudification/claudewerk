@@ -83,12 +83,25 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
         } else if (!prevId) {
           ctx.diag('headless', `CC session ID from init: ${init.session_id.slice(0, 8)}`)
         }
-        // In --bare mode hooks are disabled, so SessionStart never fires and
-        // the WS connection would never open. Treat stream-json init as an
-        // equivalent trigger: if no wsClient yet, connect now.
+        // In --bare mode hooks are disabled, so SessionStart never fires.
+        // Stream-json init is the equivalent trigger.
+        //   - No wsClient yet (concentrator unreachable at start, now back?):
+        //     open a fresh connection with the real session id.
+        //   - wsClient in booting state (just early-connected, no session id
+        //     yet): promote it via setSessionId().
+        //   - wsClient already has a session id: nothing to do.
         if (!ctx.wsClient) {
           ctx.diag('headless', `No wsClient -- connecting to concentrator from stream-json init`)
           ctx.connectToConcentrator(init.session_id)
+        } else if (!prevId) {
+          ctx.diag('headless', `Promoting booting session: -> ${init.session_id.slice(0, 8)}`)
+          ctx.wsClient.setSessionId(init.session_id, 'stream_json')
+          ctx.wsClient.sendBootEvent('init_received', `session=${init.session_id.slice(0, 8)} (stream)`, {
+            model: init.model,
+            tools: (init.tools as Array<{ name: string } | string> | undefined)?.length ?? 0,
+            mcp_servers: (init.mcp_servers as Array<unknown> | undefined)?.length ?? 0,
+          })
+          ctx.wsClient.sendBootEvent('session_ready')
         }
       }
       // Derive transcript path from init if not yet set by SessionStart hook

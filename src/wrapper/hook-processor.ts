@@ -45,6 +45,12 @@ export function processHookEvent(ctx: WrapperContext, event: HookEvent) {
       // Connect (or re-key) to concentrator with the correct session ID
       if (!ctx.wsClient) {
         ctx.connectToConcentrator(ctx.claudeSessionId)
+      } else if (!prevSessionId) {
+        // WS already open from early-connect -- promote the booting session
+        // to the real one by attaching the session id.
+        ctx.wsClient.setSessionId(ctx.claudeSessionId, 'hook')
+        ctx.wsClient.sendBootEvent('init_received', `session=${ctx.claudeSessionId.slice(0, 8)} (hook)`)
+        ctx.wsClient.sendBootEvent('session_ready')
       } else if (sessionChanged) {
         // Session ID changed (e.g. /clear, /resume) - re-key on same connection
         debug('Session ID changed, sending session_clear to concentrator')

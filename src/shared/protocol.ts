@@ -28,7 +28,22 @@ export interface HookEvent {
 }
 
 // Capabilities that rclaude declares on connect
-export type WrapperCapability = 'terminal' | 'channel' | 'headless' | 'ad-hoc'
+export type WrapperCapability = 'terminal' | 'channel' | 'headless' | 'ad-hoc' | 'boot_stream'
+
+/** Discrete lifecycle steps the wrapper reports while booting, before CC
+ *  has a real session id. Rendered inline in the transcript as BootEntry. */
+export type BootStep =
+  | 'wrapper_started'
+  | 'settings_merged'
+  | 'mcp_prepared'
+  | 'concentrator_connected'
+  | 'claude_spawning'
+  | 'claude_started'
+  | 'awaiting_init'
+  | 'init_received'
+  | 'session_ready'
+  | 'claude_exited'
+  | 'boot_error'
 
 export interface SessionMeta {
   type: 'meta'
@@ -231,6 +246,16 @@ export interface TranscriptProgressEntry extends TranscriptEntryBase {
   parentToolUseID?: string
 }
 
+/** Wrapper-generated boot timeline entry. Rendered above real CC messages
+ *  during the pre-session-id phase. `raw` holds the full underlying payload
+ *  (init message, exit info, etc.) for click-to-expand in the UI. */
+export interface TranscriptBootEntry extends TranscriptEntryBase {
+  type: 'boot'
+  step: BootStep
+  detail?: string
+  raw?: unknown
+}
+
 export interface TranscriptSystemEntry extends TranscriptEntryBase {
   type: 'system'
   subtype?: 'stop_hook_summary' | 'turn_duration' | 'compact_boundary' | 'local_command' | string
@@ -279,6 +304,7 @@ export type TranscriptEntry =
   | TranscriptCompactingEntry
   | TranscriptLastPromptEntry
   | TranscriptPrLinkEntry
+  | TranscriptBootEntry
   | (TranscriptEntryBase & Record<string, unknown>) // fallback for unknown types
 
 // Streaming output from background bash tasks (.output file watching)
@@ -297,11 +323,53 @@ export interface WrapperNotify {
   title?: string
 }
 
+/** First frame from the wrapper after the WS handshake, sent BEFORE CC has
+ *  produced a session id. Gives the concentrator enough to create a
+ *  placeholder "booting" session so the dashboard shows progress from t=0. */
+export interface WrapperBoot {
+  type: 'wrapper_boot'
+  wrapperId: string
+  cwd: string
+  capabilities: WrapperCapability[]
+  claudeArgs: string[]
+  claudeVersion?: string
+  claudeAuth?: { email?: string; orgId?: string; orgName?: string; subscriptionType?: string }
+  launchConfig?: LaunchConfig
+  title?: string
+  startedAt: number
+}
+
+/** Structured wrapper-side boot progress. Concentrator appends each one as a
+ *  TranscriptBootEntry and broadcasts it as a transcript update, so the user
+ *  sees the boot timeline live. `raw` is optional -- present for events with
+ *  a rich payload (init message, exit info). */
+export interface BootEvent {
+  type: 'boot_event'
+  wrapperId: string
+  step: BootStep
+  detail?: string
+  raw?: unknown
+  t: number
+}
+
+/** Tells the concentrator to promote the boot session to a real session once
+ *  CC has produced a session id. Source indicates which channel won the race
+ *  (stream-json init in headless, SessionStart hook in PTY). */
+export interface SessionPromote {
+  type: 'session_promote'
+  wrapperId: string
+  sessionId: string
+  source: 'stream_json' | 'hook'
+}
+
 export type WrapperMessage =
   | HookEvent
   | SessionMeta
   | SessionEnd
   | SessionClear
+  | WrapperBoot
+  | BootEvent
+  | SessionPromote
   | Heartbeat
   | TerminalData
   | TerminalError
@@ -907,7 +975,7 @@ export interface Session {
   claudeAuth?: { email?: string; orgId?: string; orgName?: string; subscriptionType?: string }
   startedAt: number
   lastActivity: number
-  status: 'active' | 'idle' | 'ended' | 'starting'
+  status: 'active' | 'idle' | 'ended' | 'starting' | 'booting'
   compacting?: boolean
   compactedAt?: number
   events: HookEvent[]

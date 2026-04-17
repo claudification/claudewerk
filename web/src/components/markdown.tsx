@@ -286,10 +286,9 @@ function highlightPendingBlocks(container: HTMLElement) {
 const runIdle: (fn: () => void) => void =
   typeof (globalThis as { requestIdleCallback?: unknown }).requestIdleCallback === 'function'
     ? fn =>
-        (globalThis as { requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => void }).requestIdleCallback(
-          fn,
-          { timeout: 200 },
-        )
+        (
+          globalThis as { requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => void }
+        ).requestIdleCallback(fn, { timeout: 200 })
     : fn => setTimeout(fn, 0)
 
 interface MarkdownProps {

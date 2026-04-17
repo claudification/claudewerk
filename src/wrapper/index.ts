@@ -695,15 +695,17 @@ async function main() {
   ctx.startProjectWatching = startProjectWatching
   ctx.sendProjectChanged = sendProjectChanged
 
-  function connectToConcentrator(sessionId: string) {
+  function connectToConcentrator(sessionId: string | null) {
     if (noConcentrator || ctx.wsClient) return
 
-    // Build capabilities list
+    // Build capabilities list -- boot_stream advertises that we send early
+    // boot events before the CC session id is known.
     const capabilities = [
       ...(!noTerminal ? ['terminal' as const] : []),
       ...(channelEnabled ? ['channel' as const] : []),
       ...(headless ? ['headless' as const] : []),
       ...(isAdHoc ? ['ad-hoc' as const] : []),
+      'boot_stream' as const,
     ]
 
     ctx.wsClient = createWsClient({
@@ -723,15 +725,27 @@ async function main() {
       adHocTaskId,
       adHocWorktree,
       capabilities,
+      initialBoot: sessionId
+        ? undefined
+        : {
+            claudeArgs,
+            title: process.env.RCLAUDE_SESSION_NAME || undefined,
+            // launchConfig is stored on the concentrator at spawn time (keyed
+            // by wrapperId) -- the concentrator merges it into the session on
+            // promote, so we don't need to duplicate it here.
+          },
       onConnected() {
-        diag('ws', 'Connected to concentrator', { sessionId })
+        diag('ws', 'Connected to concentrator', { sessionId: sessionId ?? 'boot' })
         // Flush buffered diag entries
         flushDiag()
-        // Flush queued events
-        for (const event of ctx.eventQueue) {
-          ctx.wsClient?.sendHookEvent({ ...event, sessionId })
+        // Flush queued events (drop if still no session id -- hooks don't fire
+        // during boot phase, but defensive)
+        if (sessionId) {
+          for (const event of ctx.eventQueue) {
+            ctx.wsClient?.sendHookEvent({ ...event, sessionId })
+          }
+          ctx.eventQueue.length = 0
         }
-        ctx.eventQueue.length = 0
         // Flush pending session name (queued before WS connected)
         if (ctx.pendingSessionName && ctx.wsClient) {
           ctx.wsClient.send({
@@ -1589,6 +1603,19 @@ async function main() {
   // Generate merged settings with hook injection (version-aware to avoid invalid keys)
   const settingsPath = await writeMergedSettings(internalId, localServerPort, claudeVersion, rclaudeDir)
 
+  // Connect to the concentrator NOW, before CC is spawned, so the dashboard
+  // sees a "booting" session immediately and receives live boot events. The
+  // real CC session id (from SessionStart hook or stream-json init) is
+  // attached later via ctx.wsClient.setSessionId(). Launched under a
+  // try/catch so a flaky WS never blocks the CC spawn.
+  try {
+    ctx.connectToConcentrator(null)
+    ctx.wsClient?.sendBootEvent('wrapper_started', `cwd=${cwd} headless=${headless}`)
+    ctx.wsClient?.sendBootEvent('settings_merged', settingsPath)
+  } catch (err) {
+    debug(`early connect failed: ${err instanceof Error ? err.message : err}`)
+  }
+
   // Set terminal title to last 2 path segments (shows in tmux)
   setTerminalTitle(cwd)
 
@@ -1610,6 +1637,7 @@ async function main() {
       mcpServers: { rclaude: { type: 'http', url: `http://localhost:${localServerPort}/mcp` } },
     }),
   )
+  ctx.wsClient?.sendBootEvent('mcp_prepared', mcpConfigPath)
   // Auto-generate a funny session name unless user already specified --name/-n
   const hasUserName = claudeArgs.includes('--name') || claudeArgs.includes('-n')
   const isResuming = claudeArgs.includes('--resume') || claudeArgs.includes('-c')
@@ -1674,13 +1702,19 @@ async function main() {
       env: Object.keys(customEnv).length ? customEnv : undefined,
     })
 
+    ctx.wsClient?.sendBootEvent('claude_spawning', `headless ${finalClaudeArgs.length} args`)
     ctx.streamProc = spawnStreamClaude(headlessSpawnOptions)
     ctx.streamProc.forwardStdin()
+    ctx.wsClient?.sendBootEvent('claude_started', `pid=${ctx.streamProc.proc.pid}`, {
+      pid: ctx.streamProc.proc.pid,
+    })
+    ctx.wsClient?.sendBootEvent('awaiting_init', 'Waiting for stream-json system:init')
 
     // Send ad-hoc initial prompt (if RCLAUDE_INITIAL_PROMPT_FILE is set)
     sendAdHocPrompt(ctx)
   } else {
     // --- PTY MODE: existing behavior ---
+    ctx.wsClient?.sendBootEvent('claude_spawning', `pty ${finalClaudeArgs.length} args`)
     const ptySpawnedAt = Date.now()
     try {
       ctx.ptyProcess = spawnClaude({
@@ -1768,6 +1802,11 @@ async function main() {
       }, 500)
       return
     }
+
+    ctx.wsClient?.sendBootEvent('claude_started', `pid=${ctx.ptyProcess?.proc.pid ?? 'unknown'}`, {
+      pid: ctx.ptyProcess?.proc.pid,
+    })
+    ctx.wsClient?.sendBootEvent('awaiting_init', 'Waiting for SessionStart hook')
 
     // Setup terminal passthrough (PTY mode only)
     cleanupTerminal = setupTerminalPassthrough(ctx.ptyProcess as PtyProcess)

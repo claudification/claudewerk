@@ -83,6 +83,16 @@ function StatusIndicator({ status, adHoc }: { status: Session['status']; adHoc?:
       />
     )
   }
+  if (status === 'booting') {
+    return (
+      <span className="w-3 h-3 shrink-0 flex items-center justify-center" title="booting">
+        <span
+          className="w-2.5 h-2.5 rounded-full animate-spin"
+          style={{ border: '2px solid rgb(56 189 248)', borderTopColor: 'transparent' }}
+        />
+      </span>
+    )
+  }
   return <span className="w-2 h-2 rounded-full shrink-0 bg-idle" title={status} />
 }
 
