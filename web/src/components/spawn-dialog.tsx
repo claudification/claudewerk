@@ -103,6 +103,7 @@ export function SpawnDialog() {
   })
 
   // Register the open callback
+  const progressReset = progress.reset
   useEffect(() => {
     _openDialog = (options: SpawnDialogOptions) => {
       const ps = projectSettings[options.cwd]
@@ -131,12 +132,15 @@ export function SpawnDialog() {
       setPhase('config')
       setJobId(null)
       setWrapperId(null)
+      // Drop any stale error/steps from a prior failed launch so reopening
+      // the dialog doesn't show the old "Session failed to connect" banner.
+      progressReset()
       setState({ open: true, options })
     }
     return () => {
       _openDialog = null
     }
-  }, [projectSettings, globalSettings])
+  }, [projectSettings, globalSettings, progressReset])
 
   // Add "Session connected" step when session connects
   const addedConnectedStepRef = useRef(false)
