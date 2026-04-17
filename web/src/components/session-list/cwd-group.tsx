@@ -8,9 +8,8 @@ import { SessionCard, SessionItemContent } from './session-item'
 
 // ─── Dismiss all ended sessions button ────────────────────────────
 
-function DismissAllEndedButton({ sessions }: { sessions: Session[] }) {
+function DismissAllEndedButton({ ended }: { ended: Session[] }) {
   const dismissSession = useSessionsStore(s => s.dismissSession)
-  const ended = sessions.filter(s => s.status === 'ended')
   const [confirming, setConfirming] = useState(false)
   if (ended.length === 0) return null
 
@@ -83,11 +82,24 @@ function DismissAllEndedButton({ sessions }: { sessions: Session[] }) {
 
 // ─── Multi-session CWD card ────────────────────────────────────────
 
+function partitionSessions(sessions: Session[]) {
+  const adhoc: Session[] = []
+  const normal: Session[] = []
+  const ended: Session[] = []
+  for (const s of sessions) {
+    if (s.status === 'ended') ended.push(s)
+    if (s.capabilities?.includes('ad-hoc')) adhoc.push(s)
+    else normal.push(s)
+  }
+  return { adhoc, normal, ended }
+}
+
 function CwdSessionGroup({ sessions, cwd }: { sessions: Session[]; cwd: string }) {
   const [showSettings, setShowSettings] = useState(false)
   const ps = useSessionsStore(s => s.projectSettings[cwd])
   const displayName = ps?.label || lastPathSegments(cwd)
   const displayColor = ps?.color
+  const { adhoc, normal, ended } = partitionSessions(sessions)
 
   return (
     <div>
@@ -107,7 +119,7 @@ function CwdSessionGroup({ sessions, cwd }: { sessions: Session[]; cwd: string }
               {displayName}
             </span>
             <span className="text-[10px] text-muted-foreground font-mono">{sessions.length} sessions</span>
-            {sessions.some(s => s.status === 'ended') && <DismissAllEndedButton sessions={sessions} />}
+            {ended.length > 0 && <DismissAllEndedButton ended={ended} />}
             <ProjectSettingsButton
               onClick={e => {
                 e.stopPropagation()
@@ -117,32 +129,27 @@ function CwdSessionGroup({ sessions, cwd }: { sessions: Session[]; cwd: string }
           </div>
         </ProjectContextMenu>
         <div className="space-y-0.5 pb-1">
-          {sessions
-            .filter(s => !s.capabilities?.includes('ad-hoc'))
-            .map(session => (
-              <SessionContextMenu key={session.id} session={session}>
-                <div>
-                  <SessionItemContent session={session} compact />
-                </div>
-              </SessionContextMenu>
-            ))}
-          {sessions.some(s => s.capabilities?.includes('ad-hoc')) &&
-            sessions.some(s => !s.capabilities?.includes('ad-hoc')) && (
-              <div className="flex items-center gap-2 px-3 py-1">
-                <span className="flex-1 h-px bg-border" />
-                <span className="text-[9px] text-muted-foreground/40 uppercase tracking-wider">ad-hoc</span>
-                <span className="flex-1 h-px bg-border" />
+          {normal.map(session => (
+            <SessionContextMenu key={session.id} session={session}>
+              <div>
+                <SessionItemContent session={session} compact />
               </div>
-            )}
-          {sessions
-            .filter(s => s.capabilities?.includes('ad-hoc'))
-            .map(session => (
-              <SessionContextMenu key={session.id} session={session}>
-                <div>
-                  <SessionItemContent session={session} compact />
-                </div>
-              </SessionContextMenu>
-            ))}
+            </SessionContextMenu>
+          ))}
+          {adhoc.length > 0 && normal.length > 0 && (
+            <div className="flex items-center gap-2 px-3 py-1">
+              <span className="flex-1 h-px bg-border" />
+              <span className="text-[9px] text-muted-foreground/40 uppercase tracking-wider">ad-hoc</span>
+              <span className="flex-1 h-px bg-border" />
+            </div>
+          )}
+          {adhoc.map(session => (
+            <SessionContextMenu key={session.id} session={session}>
+              <div>
+                <SessionItemContent session={session} compact />
+              </div>
+            </SessionContextMenu>
+          ))}
         </div>
       </div>
       {showSettings && <ProjectSettingsEditor cwd={cwd} onClose={() => setShowSettings(false)} />}
