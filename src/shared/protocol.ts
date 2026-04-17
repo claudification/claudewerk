@@ -378,7 +378,7 @@ export interface BootEvent {
  *     was it launched?". The full args/env/init payloads go in `raw` for the
  *     (i) JSON inspector.
  */
-export type WrapperLaunchPhase = 'initial' | 'reboot'
+export type WrapperLaunchPhase = 'initial' | 'reboot' | 'live'
 
 export type WrapperLaunchStep =
   | 'launch_started' // process about to be spawned. raw: { args, env, cwd, headless, channelEnabled, mcpConfigPath, settingsPath }
@@ -389,6 +389,18 @@ export type WrapperLaunchStep =
   | 'init_received' // CC reported a session id. raw: { session_id, model, tools, slash_commands, skills, agents, mcp_servers, plugins, ... }
   | 'rekeyed' // observeClaudeSessionId completed the rekey. detail: from -> to
   | 'ready' // launch settled; session usable
+  // Mid-session state changes -- concentrator emits these by diffing session_info
+  // across turns. Phase is 'live' (not initial/reboot). Each gets its own launchId
+  // so they render as separate cards in the transcript.
+  | 'model_changed' // detail: "old -> new". raw: { from, to }
+  | 'permission_mode_changed' // detail: "old -> new". raw: { from, to }
+  | 'fast_mode_changed' // detail: "on/off". raw: { from, to }
+  | 'mcp_servers_changed' // detail: "+1 / -2". raw: { added, removed, current }
+  | 'tools_changed' // detail: "+N / -N". raw: { added, removed, count }
+  | 'slash_commands_changed' // detail: "+N / -N". raw: { added, removed, count }
+  | 'skills_changed' // detail: "+N / -N". raw: { added, removed, count }
+  | 'agents_changed' // detail: "+N / -N". raw: { added, removed, count }
+  | 'plugins_changed' // detail: "+N / -N". raw: { added, removed, count }
 
 /**
  * Wrapper -> concentrator -> dashboard: CC process launch lifecycle event.

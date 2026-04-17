@@ -4,9 +4,114 @@
  * and diagnostic entries from rclaude -> concentrator cache -> dashboard.
  */
 
+import { randomUUID } from 'node:crypto'
+import type { TranscriptLaunchEntry, WrapperLaunchStep } from '../../shared/protocol'
 import { recordTurnFromCumulatives } from '../cost-store'
 import type { MessageHandler } from '../handler-context'
 import { registerHandlers } from '../message-router'
+
+/** Stored session_info snapshot shape used for cross-turn diffing. */
+interface SessionInfoSnapshot {
+  tools?: unknown[]
+  slashCommands?: unknown[]
+  skills?: unknown[]
+  agents?: unknown[]
+  mcpServers?: Array<{ name: string; status?: string }>
+  plugins?: unknown[]
+  model?: string
+  permissionMode?: string
+  claudeCodeVersion?: string
+  fastModeState?: string
+}
+
+function nameOf(x: unknown): string | undefined {
+  if (typeof x === 'string') return x
+  if (x && typeof x === 'object' && typeof (x as { name?: unknown }).name === 'string') {
+    return (x as { name: string }).name
+  }
+  return undefined
+}
+
+function arrNames(arr?: unknown[]): string[] {
+  if (!Array.isArray(arr)) return []
+  const names = arr.map(nameOf).filter((n): n is string => !!n)
+  return names
+}
+
+function setDiff(prev: string[], next: string[]): { added: string[]; removed: string[] } {
+  const prevSet = new Set(prev)
+  const nextSet = new Set(next)
+  return {
+    added: next.filter(n => !prevSet.has(n)),
+    removed: prev.filter(n => !nextSet.has(n)),
+  }
+}
+
+/**
+ * Compare two session_info snapshots and return structured launch entries for
+ * every meaningful change. The wrapper sends raw session_info every turn; the
+ * concentrator is the single brain that decides "something changed, notify
+ * the user." Each change becomes its own TranscriptLaunchEntry (phase: 'live',
+ * fresh launchId) so they render as separate cards.
+ */
+function diffSessionInfo(prev: SessionInfoSnapshot, next: SessionInfoSnapshot): TranscriptLaunchEntry[] {
+  const out: TranscriptLaunchEntry[] = []
+  const ts = () => new Date().toISOString()
+  const mkEntry = (step: WrapperLaunchStep, detail: string, raw: Record<string, unknown>): TranscriptLaunchEntry => ({
+    type: 'launch',
+    launchId: randomUUID(),
+    phase: 'live',
+    step,
+    detail,
+    raw,
+    timestamp: ts(),
+  })
+
+  if (prev.model !== next.model && next.model) {
+    out.push(mkEntry('model_changed', `${prev.model || '?'} -> ${next.model}`, { from: prev.model, to: next.model }))
+  }
+  if (prev.permissionMode !== next.permissionMode && next.permissionMode) {
+    out.push(
+      mkEntry(
+        'permission_mode_changed',
+        `${prev.permissionMode || '?'} -> ${next.permissionMode}`,
+        { from: prev.permissionMode, to: next.permissionMode },
+      ),
+    )
+  }
+  if (prev.fastModeState !== next.fastModeState) {
+    out.push(
+      mkEntry('fast_mode_changed', `${prev.fastModeState || 'off'} -> ${next.fastModeState || 'off'}`, {
+        from: prev.fastModeState,
+        to: next.fastModeState,
+      }),
+    )
+  }
+
+  // Collection diffs (names/identities, not identity-by-reference).
+  const cases: Array<{ key: keyof SessionInfoSnapshot; step: WrapperLaunchStep }> = [
+    { key: 'mcpServers', step: 'mcp_servers_changed' },
+    { key: 'tools', step: 'tools_changed' },
+    { key: 'slashCommands', step: 'slash_commands_changed' },
+    { key: 'skills', step: 'skills_changed' },
+    { key: 'agents', step: 'agents_changed' },
+    { key: 'plugins', step: 'plugins_changed' },
+  ]
+  for (const { key, step } of cases) {
+    const prevNames = arrNames(prev[key] as unknown[] | undefined)
+    const nextNames = arrNames(next[key] as unknown[] | undefined)
+    const { added, removed } = setDiff(prevNames, nextNames)
+    if (added.length === 0 && removed.length === 0) continue
+    const parts: string[] = []
+    if (added.length > 0) parts.push(`+${added.length}`)
+    if (removed.length > 0) parts.push(`-${removed.length}`)
+    out.push(
+      mkEntry(step, parts.join(' / '), { added, removed, count: nextNames.length }),
+    )
+  }
+
+  return out
+}
 
 const tasksUpdate: MessageHandler = (ctx, data) => {
   const sessionId = ctx.ws.data.sessionId || data.sessionId
@@ -110,18 +215,41 @@ const sessionInfo: MessageHandler = (ctx, data) => {
     return
   }
   const sessionId = session.id
-  ;(session as unknown as Record<string, unknown>).sessionInfo = {
-    tools: data.tools,
-    slashCommands: data.slashCommands,
-    skills: data.skills,
-    agents: data.agents,
-    mcpServers: data.mcpServers,
-    plugins: data.plugins,
-    model: data.model,
-    permissionMode: data.permissionMode,
-    claudeCodeVersion: data.claudeCodeVersion,
-    fastModeState: data.fastModeState,
+  const prevSnapshot =
+    ((session as unknown as Record<string, unknown>).sessionInfo as SessionInfoSnapshot | undefined) || {}
+  const nextSnapshot: SessionInfoSnapshot = {
+    tools: data.tools as unknown[] | undefined,
+    slashCommands: data.slashCommands as unknown[] | undefined,
+    skills: data.skills as unknown[] | undefined,
+    agents: data.agents as unknown[] | undefined,
+    mcpServers: data.mcpServers as Array<{ name: string; status?: string }> | undefined,
+    plugins: data.plugins as unknown[] | undefined,
+    model: data.model as string | undefined,
+    permissionMode: data.permissionMode as string | undefined,
+    claudeCodeVersion: data.claudeCodeVersion as string | undefined,
+    fastModeState: data.fastModeState as string | undefined,
   }
+  ;(session as unknown as Record<string, unknown>).sessionInfo = nextSnapshot
+
+  // Diff against the previous snapshot (if any) and emit one transcript entry
+  // per meaningful change. Only on subsequent snapshots -- the first
+  // session_info is the initial state captured already by launch_event init_received,
+  // so we skip it (prev is empty object => all fields look "new" which is noise).
+  const hadPrevious = Object.keys(prevSnapshot).length > 0
+  if (hadPrevious) {
+    const changes = diffSessionInfo(prevSnapshot, nextSnapshot)
+    if (changes.length > 0) {
+      ctx.sessions.addTranscriptEntries(sessionId, changes, false)
+      ctx.sessions.broadcastToChannel('session:transcript', sessionId, {
+        type: 'transcript_entries',
+        sessionId,
+        entries: changes,
+        isInitial: false,
+      })
+      ctx.log.info(`session_info diff: ${changes.map(c => c.step).join(', ')} (${sessionId.slice(0, 8)})`)
+    }
+  }
+
   // Broadcast with canonical session ID (not whatever the wrapper sent)
   if (session.cwd) {
     ctx.broadcastScoped({ ...data, type: 'session_info', sessionId }, session.cwd)

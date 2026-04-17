@@ -23,13 +23,35 @@ const STEP_LABEL: Record<WrapperLaunchStep, string> = {
   init_received: 'init received',
   rekeyed: 'rekeyed',
   ready: 'ready',
+  model_changed: 'model changed',
+  permission_mode_changed: 'permission mode changed',
+  fast_mode_changed: 'fast mode changed',
+  mcp_servers_changed: 'mcp servers changed',
+  tools_changed: 'tools changed',
+  slash_commands_changed: 'slash commands changed',
+  skills_changed: 'skills changed',
+  agents_changed: 'agents changed',
+  plugins_changed: 'plugins changed',
 }
+
+const LIVE_STEPS = new Set<WrapperLaunchStep>([
+  'model_changed',
+  'permission_mode_changed',
+  'fast_mode_changed',
+  'mcp_servers_changed',
+  'tools_changed',
+  'slash_commands_changed',
+  'skills_changed',
+  'agents_changed',
+  'plugins_changed',
+])
 
 function stepColor(step: WrapperLaunchStep): string {
   if (step === 'clear_requested') return 'text-amber-400'
   if (step === 'process_killed') return 'text-red-400'
   if (step === 'init_received' || step === 'ready') return 'text-emerald-400'
   if (step === 'rekeyed') return 'text-violet-400'
+  if (LIVE_STEPS.has(step)) return 'text-cyan-400'
   return 'text-sky-400'
 }
 
@@ -60,9 +82,15 @@ export function LaunchTimeline({ group }: { group: DisplayGroup }) {
   if (entries.length === 0) return null
   const phase = entries[0].phase
   const startTs = entries[0].timestamp ? new Date(entries[0].timestamp).getTime() : 0
-  const borderClass = phase === 'reboot' ? 'border-amber-500/30 bg-amber-950/10' : 'border-sky-500/30 bg-sky-950/10'
-  const labelClass = phase === 'reboot' ? 'text-amber-400/80' : 'text-sky-400/70'
-  const label = phase === 'reboot' ? 'relaunch (/clear)' : 'launch'
+  const borderClass =
+    phase === 'reboot'
+      ? 'border-amber-500/30 bg-amber-950/10'
+      : phase === 'live'
+        ? 'border-cyan-500/30 bg-cyan-950/10'
+        : 'border-sky-500/30 bg-sky-950/10'
+  const labelClass =
+    phase === 'reboot' ? 'text-amber-400/80' : phase === 'live' ? 'text-cyan-400/80' : 'text-sky-400/70'
+  const label = phase === 'reboot' ? 'relaunch (/clear)' : phase === 'live' ? 'session changed' : 'launch'
 
   return (
     <div className={cn('mb-3 border-l-2 pl-3 py-1.5 rounded-r', borderClass)}>

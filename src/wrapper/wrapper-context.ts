@@ -43,8 +43,11 @@ export interface WrapperContext {
    *  the dashboard can group launch events into their own timeline. */
   currentLaunchId: string
   /** Phase of the current launch. 'initial' on first spawn, flips to 'reboot'
-   *  when a /clear starts a new launch. */
-  currentLaunchPhase: 'initial' | 'reboot'
+   *  when a /clear starts a new launch. The 'live' phase is never used by
+   *  the wrapper itself -- it's reserved for concentrator-synthesized
+   *  change events (model_changed, mcp_servers_changed, etc.) that are
+   *  appended directly to the transcript server-side. */
+  currentLaunchPhase: import('../shared/protocol').WrapperLaunchPhase
   /** Persistent, append-only log of every launch event emitted so far.
    *  Re-sent on WS reconnect so the dashboard catches up. */
   readonly launchEvents: Array<import('../shared/protocol').WrapperLaunchEvent>
