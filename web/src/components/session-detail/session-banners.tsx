@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useState } from 'react'
+import { BannerButton, BannerStack, SessionBanner } from '@/components/ui/session-banner'
 import { useSessionsStore } from '@/hooks/use-sessions'
 import { cn, haptic } from '@/lib/utils'
 
@@ -9,43 +10,47 @@ import { cn, haptic } from '@/lib/utils'
 export function LinkRequestBanners() {
   const requests = useSessionsStore(s => s.pendingProjectLinks)
   const respond = useSessionsStore(s => s.respondToProjectLink)
-  if (requests.length === 0) return null
   return (
-    <div className="shrink-0 space-y-1 p-2">
-      {requests.map(req => (
-        <div
+    <BannerStack
+      items={requests}
+      render={req => (
+        <SessionBanner
           key={`${req.fromSession}:${req.toSession}`}
-          className="flex items-center gap-2 px-3 py-2 bg-teal-500/10 border border-teal-500/30 rounded font-mono text-xs"
-        >
-          <span className="text-teal-400 font-bold shrink-0">LINK</span>
-          <span className="text-foreground/80 flex-1 truncate">
-            <span className="text-teal-300">{req.fromProject}</span>
-            {' -> '}
-            <span className="text-teal-300">{req.toProject}</span>
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              haptic('success')
-              respond(req.fromSession, req.toSession, 'approve')
-            }}
-            className="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/30 transition-colors"
-          >
-            ALLOW
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              haptic('error')
-              respond(req.fromSession, req.toSession, 'block')
-            }}
-            className="px-2 py-0.5 text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/40 hover:bg-red-500/30 transition-colors"
-          >
-            BLOCK
-          </button>
-        </div>
-      ))}
-    </div>
+          accent="teal"
+          label="LINK"
+          layout="row"
+          title={
+            <>
+              <span className="text-teal-300">{req.fromProject}</span>
+              {' -> '}
+              <span className="text-teal-300">{req.toProject}</span>
+            </>
+          }
+          actions={
+            <>
+              <BannerButton
+                accent="emerald"
+                label="ALLOW"
+                size="sm"
+                onClick={() => {
+                  haptic('success')
+                  respond(req.fromSession, req.toSession, 'approve')
+                }}
+              />
+              <BannerButton
+                accent="red"
+                label="BLOCK"
+                size="sm"
+                onClick={() => {
+                  haptic('error')
+                  respond(req.fromSession, req.toSession, 'block')
+                }}
+              />
+            </>
+          }
+        />
+      )}
+    />
   )
 }
 
@@ -156,57 +161,51 @@ export function PermissionBanners() {
   const selectedSession = useSessionsStore(s => s.selectedSessionId)
   const sessionCwd = useSessionsStore(s => (s.selectedSessionId ? s.sessionsById[s.selectedSessionId]?.cwd : undefined))
   const relevant = permissions.filter(p => p.sessionId === selectedSession)
-  if (relevant.length === 0) return null
   return (
-    <div className="shrink-0 space-y-1 p-2">
-      {relevant.map(perm => (
-        <div
+    <BannerStack
+      items={relevant}
+      render={perm => (
+        <SessionBanner
           key={perm.requestId}
-          className="flex flex-col gap-1.5 px-3 py-2 bg-amber-500/10 border border-amber-500/30 rounded font-mono text-xs"
+          accent="amber"
+          label="PERMISSION"
+          title={<span className="font-bold">{perm.toolName}</span>}
+          meta={perm.requestId}
+          actions={
+            <>
+              <BannerButton
+                accent="emerald"
+                label="ALLOW"
+                onClick={() => {
+                  haptic('success')
+                  respond(perm.sessionId, perm.requestId, 'allow')
+                }}
+              />
+              <BannerButton
+                accent="blue"
+                label="ALWAYS"
+                onClick={() => {
+                  haptic('double')
+                  respond(perm.sessionId, perm.requestId, 'allow')
+                  sendRule(perm.sessionId, perm.toolName, 'allow')
+                }}
+              />
+              <BannerButton
+                accent="red"
+                label="DENY"
+                onClick={() => {
+                  haptic('error')
+                  respond(perm.sessionId, perm.requestId, 'deny')
+                }}
+              />
+            </>
+          }
         >
-          <div className="flex items-center gap-2">
-            <span className="text-amber-400 font-bold shrink-0">PERMISSION</span>
-            <span className="text-foreground font-bold truncate">{perm.toolName}</span>
-            <span className="text-muted-foreground text-[10px] ml-auto">{perm.requestId}</span>
-          </div>
           {perm.description && <div className="text-foreground/70 text-[11px]">{perm.description}</div>}
           {perm.inputPreview && formatPermissionInput(perm.toolName, perm.inputPreview, sessionCwd)}
-          <div className="flex items-center gap-2 mt-0.5">
-            <button
-              type="button"
-              onClick={() => {
-                haptic('success')
-                respond(perm.sessionId, perm.requestId, 'allow')
-              }}
-              className="px-3 py-1 text-[11px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/30 transition-colors"
-            >
-              ALLOW
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                haptic('double')
-                respond(perm.sessionId, perm.requestId, 'allow')
-                sendRule(perm.sessionId, perm.toolName, 'allow')
-              }}
-              className="px-3 py-1 text-[11px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/40 hover:bg-blue-500/30 transition-colors"
-            >
-              ALWAYS
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                haptic('error')
-                respond(perm.sessionId, perm.requestId, 'deny')
-              }}
-              className="px-3 py-1 text-[11px] font-bold bg-red-500/20 text-red-400 border border-red-500/40 hover:bg-red-500/30 transition-colors"
-            >
-              DENY
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
+        </SessionBanner>
+      )}
+    />
   )
 }
 
@@ -219,22 +218,52 @@ export function ClipboardBanners() {
   const dismiss = useSessionsStore(s => s.dismissClipboard)
   const selectedSession = useSessionsStore(s => s.selectedSessionId)
   const relevant = captures.filter(c => c.sessionId === selectedSession)
-  if (relevant.length === 0) return null
 
   return (
-    <div className="shrink-0 space-y-1 p-2">
-      {relevant.map(cap => (
-        <div
+    <BannerStack
+      items={relevant}
+      render={cap => (
+        <SessionBanner
           key={cap.id}
-          className="flex flex-col gap-1.5 px-3 py-2 bg-cyan-500/10 border border-cyan-500/30 rounded font-mono text-xs"
+          accent="cyan"
+          label="CLIPBOARD"
+          title={<span className="text-muted-foreground text-[10px]">{cap.contentType}</span>}
+          meta={new Date(cap.timestamp).toLocaleTimeString()}
+          actions={
+            <div className="flex items-center gap-2 relative z-10">
+              <BannerButton
+                accent="cyan"
+                label="COPY"
+                size="lg"
+                onClick={() => {
+                  // Synchronous textarea copy -- works on iOS Safari without async gesture chain issues
+                  const text = cap.text || (cap.base64 ? atob(cap.base64) : '')
+                  if (text) {
+                    const ta = document.createElement('textarea')
+                    ta.value = text
+                    ta.style.cssText = 'position:fixed;left:-9999px;top:0'
+                    document.body.appendChild(ta)
+                    ta.focus()
+                    ta.select()
+                    document.execCommand('copy')
+                    document.body.removeChild(ta)
+                    haptic('success')
+                    dismiss(cap.id)
+                  }
+                }}
+              />
+              <BannerButton
+                accent="muted"
+                label="DISMISS"
+                size="lg"
+                onClick={() => {
+                  haptic('tick')
+                  dismiss(cap.id)
+                }}
+              />
+            </div>
+          }
         >
-          <div className="flex items-center gap-2">
-            <span className="text-cyan-400 font-bold shrink-0">CLIPBOARD</span>
-            <span className="text-muted-foreground text-[10px]">{cap.contentType}</span>
-            <span className="text-muted-foreground text-[10px] ml-auto">
-              {new Date(cap.timestamp).toLocaleTimeString()}
-            </span>
-          </div>
           {cap.contentType === 'text' && cap.text && (
             <pre className="text-foreground/80 text-[10px] bg-background/50 px-2 py-1 rounded max-h-20 overflow-hidden whitespace-pre-wrap">
               {cap.text.length > 500 ? `${cap.text.slice(0, 500)}...` : cap.text}
@@ -247,43 +276,9 @@ export function ClipboardBanners() {
               className="max-h-32 max-w-full rounded border border-border/30 object-contain"
             />
           )}
-          <div className="flex items-center gap-2 relative z-10">
-            <button
-              type="button"
-              onClick={() => {
-                // Synchronous textarea copy -- works on iOS Safari without async gesture chain issues
-                const text = cap.text || (cap.base64 ? atob(cap.base64) : '')
-                if (text) {
-                  const ta = document.createElement('textarea')
-                  ta.value = text
-                  ta.style.cssText = 'position:fixed;left:-9999px;top:0'
-                  document.body.appendChild(ta)
-                  ta.focus()
-                  ta.select()
-                  document.execCommand('copy')
-                  document.body.removeChild(ta)
-                  haptic('success')
-                  dismiss(cap.id)
-                }
-              }}
-              className="px-3 py-2 text-[11px] font-bold bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 hover:bg-cyan-500/30 active:bg-cyan-500/40 transition-colors cursor-pointer touch-manipulation"
-            >
-              COPY
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                haptic('tick')
-                dismiss(cap.id)
-              }}
-              className="px-3 py-2 text-[11px] font-bold bg-muted/20 text-muted-foreground border border-border/30 hover:bg-muted/30 active:bg-muted/40 transition-colors cursor-pointer touch-manipulation"
-            >
-              DISMISS
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
+        </SessionBanner>
+      )}
+    />
   )
 }
 
@@ -297,14 +292,12 @@ export function AskQuestionBanners() {
   const selectedSession = useSessionsStore(s => s.selectedSessionId)
   const relevant = questions.filter(q => q.sessionId === selectedSession)
 
-  if (relevant.length === 0) return null
-
   return (
-    <div className="shrink-0 space-y-2 p-2">
-      {relevant.map(askReq => (
-        <AskQuestionCard key={askReq.toolUseId} request={askReq} onRespond={respond} />
-      ))}
-    </div>
+    <BannerStack
+      items={relevant}
+      gap="loose"
+      render={askReq => <AskQuestionCard key={askReq.toolUseId} request={askReq} onRespond={respond} />}
+    />
   )
 }
 
@@ -451,26 +444,14 @@ export function AskQuestionCard({
       ))}
 
       <div className="flex items-center gap-2 mt-1">
-        <button
-          type="button"
+        <BannerButton
+          accent="violet"
+          label="SUBMIT"
           onClick={handleSubmit}
           disabled={!allAnswered}
-          className={cn(
-            'px-4 py-1.5 text-[11px] font-bold border transition-colors',
-            allAnswered
-              ? 'bg-violet-500/20 text-violet-400 border-violet-500/40 hover:bg-violet-500/30'
-              : 'bg-muted/20 text-muted-foreground border-border/30 cursor-not-allowed',
-          )}
-        >
-          SUBMIT
-        </button>
-        <button
-          type="button"
-          onClick={handleSkip}
-          className="px-3 py-1.5 text-[11px] font-bold bg-muted/20 text-muted-foreground border border-border/30 hover:bg-muted/30 transition-colors"
-        >
-          SKIP TO TERMINAL
-        </button>
+          className="px-4 py-1.5"
+        />
+        <BannerButton accent="muted" label="SKIP TO TERMINAL" onClick={handleSkip} className="px-3 py-1.5" />
       </div>
     </div>
   )
