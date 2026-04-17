@@ -245,7 +245,20 @@ function processMessage(msg: DashboardMessage) {
         const matchId = prevId || sessionId
         useSessionsStore.setState(state => {
           const updated = toSession(session)
-          const sessions = state.sessions.map(s => (s.id === matchId ? { ...s, ...updated } : s))
+          // Rekey collision: if two booting placeholders (different wrapperIds)
+          // both get rekeyed to the same real session id, the map-replace leaves
+          // two entries in the array with identical `updated.id`. Dedupe by id
+          // (merge any duplicates into the first occurrence) so the sidebar
+          // doesn't render ghost rows. Without dedupe, a double-spawn shows as
+          // two identical session rows sharing a short-id.
+          const replaced = state.sessions.map(s => (s.id === matchId ? { ...s, ...updated } : s))
+          const seen = new Set<string>()
+          const sessions: Session[] = []
+          for (const s of replaced) {
+            if (seen.has(s.id)) continue
+            seen.add(s.id)
+            sessions.push(s)
+          }
           const newState: Partial<typeof state> = {
             sessions,
             sessionsById: buildSessionsById(sessions),
