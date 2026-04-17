@@ -83,6 +83,13 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
         } else if (!prevId) {
           ctx.diag('headless', `CC session ID from init: ${init.session_id.slice(0, 8)}`)
         }
+        // In --bare mode hooks are disabled, so SessionStart never fires and
+        // the WS connection would never open. Treat stream-json init as an
+        // equivalent trigger: if no wsClient yet, connect now.
+        if (!ctx.wsClient) {
+          ctx.diag('headless', `No wsClient -- connecting to concentrator from stream-json init`)
+          ctx.connectToConcentrator(init.session_id)
+        }
       }
       // Derive transcript path from init if not yet set by SessionStart hook
       if (init.session_id && !ctx.parentTranscriptPath) {

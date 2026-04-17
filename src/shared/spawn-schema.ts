@@ -53,7 +53,12 @@ export const permissionModeEnum = z.enum(['plan', 'acceptEdits', 'auto', 'bypass
 export const spawnModeEnum = z.enum(['fresh', 'resume'])
 
 export const spawnRequestSchema = z.object({
-  cwd: z.string().describe('Working directory (absolute path, ~ supported)'),
+  cwd: z
+    .string()
+    .refine(s => s.startsWith('/') || s === '~' || s.startsWith('~/'), {
+      message: 'cwd must be an absolute path (starting with /) or a ~-relative path',
+    })
+    .describe('Working directory (absolute path, ~ supported)'),
   mkdir: z.boolean().optional().describe('Create cwd if it does not exist'),
   mode: spawnModeEnum.optional().describe('"fresh" (default) or "resume" to resume a specific CC session'),
   resumeId: z.string().optional().describe('Claude Code session ID to resume when mode=resume'),
