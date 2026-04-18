@@ -1,4 +1,5 @@
 import { sendInput, useSessionsStore } from '@/hooks/use-sessions'
+import { focusInputEditor } from '@/lib/focus-input'
 import { canTerminal } from '@/lib/types'
 import type { PaletteCommand } from './types'
 
@@ -29,7 +30,7 @@ export function getPaletteCommands(onClose: () => void): PaletteCommand[] {
               store.selectSubagent(null)
               if (store.selectedSessionId) store.openTab(store.selectedSessionId, 'transcript')
               onClose()
-              requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('textarea')?.focus())
+              requestAnimationFrame(() => focusInputEditor())
             },
           },
         ]

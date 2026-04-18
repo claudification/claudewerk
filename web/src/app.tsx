@@ -40,6 +40,7 @@ import {
 } from '@/hooks/use-sessions'
 import { useWebSocket } from '@/hooks/use-websocket'
 import { executeCommand, formatShortcut, useCommand, validateChordBindings } from '@/lib/commands'
+import { focusInputEditor } from '@/lib/focus-input'
 import { setChordTimeout } from '@/lib/key-layers'
 import { canTerminal } from '@/lib/types'
 import { clearCacheAndReload, isMobileViewport, isTouchDevice, PRE_RELOAD_KEY } from '@/lib/utils'
@@ -539,7 +540,7 @@ function Dashboard() {
     if (!store.selectedSessionId) return
     store.selectSubagent(null)
     store.openTab(store.selectedSessionId, 'transcript')
-    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('textarea')?.focus())
+    requestAnimationFrame(() => focusInputEditor())
   }, [])
 
   useCommand('go-home', goHome, {
@@ -629,7 +630,7 @@ function Dashboard() {
     store.setShowSwitcher(false)
     // Auto-focus input on desktop after session switch
     if (!isMobileViewport()) {
-      requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('textarea')?.focus())
+      requestAnimationFrame(() => focusInputEditor())
     }
   }
 

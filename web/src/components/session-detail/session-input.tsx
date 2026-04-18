@@ -3,6 +3,7 @@ import { memo, useEffect, useRef, useState } from 'react'
 import { DialogModal } from '@/components/dialog'
 import { InputEditor } from '@/components/input-editor'
 import { sendInput, useSessionsStore } from '@/hooks/use-sessions'
+import { focusInputEditor } from '@/lib/focus-input'
 import { canTerminal } from '@/lib/types'
 import { cn, haptic, isMobileViewport } from '@/lib/utils'
 
@@ -114,7 +115,7 @@ export const InputBar = memo(function InputBar({ sessionId }: { sessionId: strin
       useSessionsStore.getState().setInputDraft(sessionId, '')
     }
     if (!isMobileViewport()) {
-      requestAnimationFrame(() => containerRef.current?.querySelector('textarea')?.focus())
+      requestAnimationFrame(() => containerRef.current && focusInputEditor(containerRef.current))
     }
   }
 
@@ -187,8 +188,8 @@ export const InputBar = memo(function InputBar({ sessionId }: { sessionId: strin
             if (inputValue.trim() && !isSending) {
               handleSend()
             } else {
-              // No input - focus the textarea instead (useful on mobile to avoid Siri zone)
-              containerRef.current?.querySelector('textarea')?.focus()
+              // No input - focus the editor instead (useful on mobile to avoid Siri zone)
+              if (containerRef.current) focusInputEditor(containerRef.current)
             }
           }}
           disabled={isSending}
