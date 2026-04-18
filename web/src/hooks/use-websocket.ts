@@ -777,7 +777,7 @@ function processMessage(msg: DashboardMessage) {
     case 'update_settings_result':
     case 'update_project_settings_result':
     case 'delete_project_settings_result':
-    case 'update_session_order_result':
+    case 'update_project_order_result':
     case 'revive_session_result': {
       if (msg.ok === false) {
         console.error(`[ws] ${msg.type}: ${msg.error}`)
