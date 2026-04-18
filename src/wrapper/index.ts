@@ -704,11 +704,13 @@ async function main() {
 
     // Build capabilities list -- boot_stream advertises that we send early
     // boot events before the CC session id is known.
+    const replEnabled = process.env.CLAUDE_CODE_REPL === 'true'
     const capabilities = [
       ...(!noTerminal ? ['terminal' as const] : []),
       ...(channelEnabled ? ['channel' as const] : []),
       ...(headless ? ['headless' as const] : []),
       ...(isAdHoc ? ['ad-hoc' as const] : []),
+      ...(replEnabled ? ['repl' as const] : []),
       'boot_stream' as const,
     ]
 

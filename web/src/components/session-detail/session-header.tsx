@@ -264,7 +264,11 @@ export function SessionHeader({
                       key={cap}
                       className={cn(
                         'px-1.5 py-0.5 text-[9px] uppercase font-bold',
-                        cap === 'channel' ? 'bg-teal-400/20 text-teal-400' : 'bg-sky-400/20 text-sky-400',
+                        cap === 'channel'
+                          ? 'bg-teal-400/20 text-teal-400'
+                          : cap === 'repl'
+                            ? 'bg-violet-400/20 text-violet-400'
+                            : 'bg-sky-400/20 text-sky-400',
                       )}
                     >
                       {cap}
