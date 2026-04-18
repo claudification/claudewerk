@@ -484,7 +484,7 @@ function Dashboard() {
   useChordCommand(
     'spawn-session',
     () => {
-      useSessionsStore.getState().openSwitcherWithFilter('S:./')
+      useSessionsStore.getState().openSwitcherWithFilter('S:~/')
     },
     { label: 'Spawn new session', key: 's', group: 'Session' },
   )
@@ -496,7 +496,7 @@ function Dashboard() {
       const cwd = store.selectedSessionId
         ? (store.sessionsById[store.selectedSessionId]?.cwd ?? store.dashboardPrefs.defaultSessionCwd)
         : store.dashboardPrefs.defaultSessionCwd
-      openSpawnDialog({ cwd: cwd || './' })
+      openSpawnDialog({ cwd: cwd || '~' })
     },
     { label: 'Launch session', key: 'l', group: 'Session' },
   )

@@ -54,14 +54,14 @@ function buildActions(session: Session | undefined, selectedSessionId: string | 
       id: 'launch',
       icon: <Rocket className="w-4 h-4" />,
       label: 'Launch',
-      action: () => openSpawnDialog({ cwd: session?.cwd || '.' }),
+      action: () => openSpawnDialog({ cwd: session?.cwd || '~' }),
       color: 'bg-[#ff9e64]',
     },
     {
       id: 'spawn',
       icon: <MessageSquarePlus className="w-4 h-4" />,
       label: 'Spawn',
-      action: () => useSessionsStore.getState().openSwitcherWithFilter('S:./'),
+      action: () => useSessionsStore.getState().openSwitcherWithFilter('S:~/'),
       color: 'bg-[#e0af68]',
     },
   ]
