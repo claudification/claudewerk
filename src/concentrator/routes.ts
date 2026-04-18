@@ -17,7 +17,6 @@ import { createRouteHelpers } from './routes/shared'
 import { createSpawnRouter } from './routes/spawn'
 import { createStatsRouter } from './routes/stats'
 import type { SessionStore } from './session-store'
-import { UI_HTML } from './ui'
 
 // Re-export blob/file helpers for external consumers (session-store, handlers, etc.)
 export {
@@ -307,12 +306,6 @@ export function createRouter(options: RouteOptions): Hono {
 
       return next()
     })
-  }
-
-  // Fallback inline HTML UI (no embedded web or webDir)
-  if (!hasEmbeddedWeb && !webDir) {
-    app.get('/', c => c.html(UI_HTML))
-    app.get('/ui', c => c.html(UI_HTML))
   }
 
   // ─── CORS preflight ────────────────────────────────────────────────
