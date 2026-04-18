@@ -967,6 +967,7 @@ export const SessionItemCompact = memo(function SessionItemCompact({ session }: 
   const ps = useSessionsStore(s => s.projectSettings[session.cwd])
   const showCost = useSessionsStore(s => s.dashboardPrefs.showCostInList)
   const isRenaming = useSessionsStore(s => s.renamingSessionId === session.id)
+  const hasPendingPermission = useSessionsStore(s => s.pendingPermissions.some(p => p.sessionId === session.id))
 
   const displayColor = ps?.color
 
@@ -1036,6 +1037,7 @@ export const SessionItemCompact = memo(function SessionItemCompact({ session }: 
             )
           })()}
         {session.adHocWorktree && <span className="text-[9px] text-orange-400 font-bold">WT</span>}
+        {hasPendingPermission && <span className="text-[9px] text-amber-400 font-bold animate-pulse">PERM</span>}
         {session.pendingAttention && <span className="text-[9px] text-amber-400 font-bold animate-pulse">WAITING</span>}
         {session.hasNotification && <span className="text-[9px] text-teal-400 font-bold">NOTIFY</span>}
         <SessionInfoButton session={session} visible={isSelected} />

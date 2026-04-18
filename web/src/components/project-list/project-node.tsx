@@ -89,6 +89,11 @@ function CwdSessionGroup({ sessions, cwd }: { sessions: Session[]; cwd: string }
   const displayName = ps?.label || lastPathSegments(cwd)
   const displayColor = ps?.color
   const { adhoc, normal, ended } = partitionSessions(sessions)
+  // Project-level rollup: any session in this CWD with a pending permission?
+  const hasPendingPermission = useSessionsStore(s => {
+    const ids = new Set(sessions.map(x => x.id))
+    return s.pendingPermissions.some(p => ids.has(p.sessionId))
+  })
 
   return (
     <div>
@@ -108,6 +113,14 @@ function CwdSessionGroup({ sessions, cwd }: { sessions: Session[]; cwd: string }
               {displayName}
             </span>
             <span className="text-[10px] text-muted-foreground font-mono">{sessions.length} sessions</span>
+            {hasPendingPermission && (
+              <span
+                className="text-[9px] text-amber-400 font-bold animate-pulse"
+                title="A session in this project has a pending permission request"
+              >
+                PERM
+              </span>
+            )}
             {ended.length > 0 && <DismissAllEndedButton ended={ended} />}
             <ProjectSettingsButton
               onClick={e => {

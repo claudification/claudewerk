@@ -20,6 +20,7 @@ import { useSessionsStore } from '@/hooks/use-sessions'
 import { record } from '@/lib/perf-metrics'
 import type { TranscriptEntry } from '@/lib/types'
 import { Markdown } from '../markdown'
+import { PermissionBanners } from '../session-detail/session-banners'
 import { CompactedDivider, CompactingBanner, MemoizedGroupView, SkillDivider } from './group-view'
 import { type DisplayGroup, useIncrementalGroups } from './grouping'
 
@@ -329,6 +330,12 @@ export const TranscriptView = memo(function TranscriptView({
   const selectedSessionId = useSessionsStore(state => state.selectedSessionId)
   const perfEnabled = useSessionsStore(state => state.dashboardPrefs.showPerfMonitor)
 
+  // Count pending permissions for the selected session. Used as a scroll-to-bottom
+  // trigger so a newly-arrived permission pins into view when follow is active.
+  const pendingPermissionCount = useSessionsStore(state =>
+    state.selectedSessionId ? state.pendingPermissions.filter(p => p.sessionId === state.selectedSessionId).length : 0,
+  )
+
   // Cache measured sizes so estimateSize can use real heights for groups
   // that have been rendered before (survives virtualizer cache invalidation)
   const measuredSizesRef = useRef(new Map<string, number>())
@@ -456,6 +463,16 @@ export const TranscriptView = memo(function TranscriptView({
     return () => clearTimeout(timer)
   }, [follow, entries.length, scrollToBottom])
 
+  // Also scroll to bottom when a new pending permission arrives -- permissions
+  // render after the virtualized content as a blocking UI gate, so the user
+  // needs to see them immediately when follow is active.
+  useEffect(() => {
+    if (!follow) return
+    if (pendingPermissionCount === 0) return
+    const timer = setTimeout(scrollToBottom, 50)
+    return () => clearTimeout(timer)
+  }, [follow, pendingPermissionCount, scrollToBottom])
+
   if (mainGroups.length === 0 && queuedGroups.length === 0) {
     return (
       <div className="text-muted-foreground text-center py-10 font-mono">
@@ -543,6 +560,10 @@ export const TranscriptView = memo(function TranscriptView({
         <StreamingBlock sessionId={selectedSessionId} />
         {/* Fun verb spinner while session is working */}
         <ThinkingSpinner sessionId={selectedSessionId} />
+        {/* Pending permission requests: rendered inline at the bottom as a blocking UI gate */}
+        <div className="mt-2">
+          <PermissionBanners />
+        </div>
         {/* Queued messages: rendered inline at the bottom of the transcript */}
         {queuedGroups.length > 0 && (
           <div className="mt-2 border-t border-dashed border-amber-500/30 pt-2">

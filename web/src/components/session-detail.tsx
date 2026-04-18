@@ -16,12 +16,7 @@ import { FileEditor } from './file-editor'
 import { InlineTerminal } from './inline-terminal'
 import { ProjectBoard, RunTaskDialog, TaskEditor } from './project-board'
 import { openReviveDialog } from './revive-dialog'
-import {
-  AskQuestionBanners,
-  ClipboardBanners,
-  LinkRequestBanners,
-  PermissionBanners,
-} from './session-detail/session-banners'
+import { AskQuestionBanners, ClipboardBanners, LinkRequestBanners } from './session-detail/session-banners'
 import { SessionHeader } from './session-detail/session-header'
 import { DialogOverlay, InputBar, ScrollToBottomButton } from './session-detail/session-input'
 import { SessionTabs, type Tab } from './session-detail/session-tabs'
@@ -218,8 +213,8 @@ export const SessionDetail = memo(function SessionDetail() {
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
       {/* Link Request Banners */}
       <LinkRequestBanners />
-      {/* Permission Relay Banners */}
-      <PermissionBanners />
+      {/* Permission Relay Banners are rendered inline at the transcript bottom
+          (see TranscriptView) as a blocking UI gate, not here in the header. */}
       {/* AskUserQuestion Banners */}
       <AskQuestionBanners />
       {/* Clipboard Capture Banners */}
