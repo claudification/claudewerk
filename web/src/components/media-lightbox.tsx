@@ -43,7 +43,7 @@ export function openMediaLightbox(src: string, kind: MediaKind, alt?: string) {
   useMediaLightbox.getState().show(src, kind, alt)
 }
 
-function filenameFromUrl(url: string): string {
+export function filenameFromUrl(url: string): string {
   try {
     const u = new URL(url, 'https://x.invalid')
     const parts = u.pathname.split('/')
@@ -90,6 +90,10 @@ export function MediaLightbox() {
   }
 
   const filename = filenameFromUrl(src)
+  // Display label: markdown-provided alt wins, URL filename is the fallback.
+  // Keeps the real filename visible via `title` so the user can still see it
+  // on hover when a custom alt is shown.
+  const displayLabel = alt && alt !== filename ? alt : filename
 
   return (
     <DialogPrimitive.Root
@@ -119,7 +123,7 @@ export function MediaLightbox() {
             if (e.target === e.currentTarget) close()
           }}
         >
-          <DialogPrimitive.Title className="sr-only">{alt || filename}</DialogPrimitive.Title>
+          <DialogPrimitive.Title className="sr-only">{displayLabel}</DialogPrimitive.Title>
 
           {/* Media display. Bounded to viewport so it never overflows.
               No stopPropagation needed: the Content-level onClick uses
@@ -129,7 +133,7 @@ export function MediaLightbox() {
             {open && kind === 'image' && (
               <img
                 src={src}
-                alt={alt || filename}
+                alt={displayLabel}
                 className="max-w-[92vw] max-h-[calc(100vh-7rem)] object-contain rounded border border-border/30 shadow-2xl"
               />
             )}
@@ -153,8 +157,8 @@ export function MediaLightbox() {
               'font-mono text-[11px]',
             )}
           >
-            <span className="text-muted-foreground truncate max-w-[40vw]" title={src}>
-              {filename}
+            <span className="text-muted-foreground truncate max-w-[40vw]" title={`${filename}\n${src}`}>
+              {displayLabel}
             </span>
             <div className="h-4 w-px bg-border/60" />
             <button

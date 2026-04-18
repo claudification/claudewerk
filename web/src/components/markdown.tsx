@@ -15,7 +15,7 @@ import xml from 'highlight.js/lib/languages/xml'
 import yaml from 'highlight.js/lib/languages/yaml'
 import { Marked } from 'marked'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef } from 'react'
-import { type MediaKind, openMediaLightbox } from './media-lightbox'
+import { filenameFromUrl, type MediaKind, openMediaLightbox } from './media-lightbox'
 
 // Register languages
 hljs.registerLanguage('javascript', javascript)
@@ -70,30 +70,34 @@ function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-// Image chip: bounded thumbnail that opens the full asset in the lightbox.
-// `max-h-32` caps the inline footprint at 128px so virtualizer row estimates
-// stay stable -- no "huge screenshot blows up the transcript" surprise.
+// Resolve the display label for a media chip: markdown-provided text wins,
+// URL filename is the fallback. Marked sets `text === href` when the user
+// writes a bare URL (no `[label](url)`); treat that as "no label given".
+function resolveMediaLabel(href: string, markdownText: string): string {
+  const given = markdownText && markdownText !== href ? markdownText : ''
+  return given || filenameFromUrl(href)
+}
+
+// Image chip: bounded thumbnail + caption that opens the full asset in the
+// lightbox. `max-h-32` caps the inline footprint at 128px so virtualizer row
+// estimates stay stable -- no "huge screenshot blows up the transcript"
+// surprise. Caption below the thumbnail shows the markdown alt, or the URL
+// filename when alt is empty (CC's attached-file syntax uses the filename
+// anyway, so either way you get something human-readable).
 function renderImageChip(href: string, alt: string): string {
   const safeHref = escapeAttr(href)
-  const safeAlt = escapeAttr(alt || '')
-  return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" class="lightbox-chip lightbox-chip-image" data-lightbox-src="${safeHref}" data-lightbox-kind="image" data-lightbox-alt="${safeAlt}"><img src="${safeHref}" alt="${safeAlt}" loading="lazy" class="max-h-32 max-w-full object-contain rounded border border-border/40 cursor-zoom-in hover:border-accent/60 transition-colors" /></a>`
+  const name = resolveMediaLabel(href, alt)
+  const safeAlt = escapeAttr(alt || name)
+  const safeName = escapeAttr(name)
+  return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" class="lightbox-chip lightbox-chip-image inline-block align-middle max-w-full" data-lightbox-src="${safeHref}" data-lightbox-kind="image" data-lightbox-alt="${safeAlt}"><span class="inline-flex flex-col items-start gap-1 max-w-full"><img src="${safeHref}" alt="${safeAlt}" loading="lazy" class="max-h-32 max-w-full object-contain rounded border border-border/40 cursor-zoom-in hover:border-accent/60 transition-colors" /><span class="text-[10px] text-muted-foreground font-mono truncate max-w-full" title="${safeName}">${safeName}</span></span></a>`
 }
 
 // Video chip: no inline <video> (that would autoplay + explode layout); a
-// small play-icon pill with the filename. Click pops the lightbox.
+// small play-icon pill with the markdown label (or filename fallback).
+// Click pops the lightbox.
 function renderVideoChip(href: string, label: string): string {
   const safeHref = escapeAttr(href)
-  let name = label
-  if (!name || name === href) {
-    try {
-      const u = new URL(href, 'https://x.invalid')
-      const parts = u.pathname.split('/')
-      name = parts[parts.length - 1] || href
-    } catch {
-      name = href
-    }
-  }
-  const safeName = escapeAttr(name)
+  const safeName = escapeAttr(resolveMediaLabel(href, label))
   return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" class="lightbox-chip lightbox-chip-video" data-lightbox-src="${safeHref}" data-lightbox-kind="video"><span class="inline-flex items-center gap-1.5 px-2 py-1 bg-muted/40 border border-border/50 rounded text-xs text-foreground/90 hover:bg-muted/60 hover:border-accent/60 transition-colors cursor-pointer align-middle"><svg viewBox="0 0 16 16" aria-hidden="true" class="h-3 w-3 text-accent fill-current"><path d="M4 2.5v11l10-5.5-10-5.5z"/></svg><span class="font-mono">${safeName}</span></span></a>`
 }
 
