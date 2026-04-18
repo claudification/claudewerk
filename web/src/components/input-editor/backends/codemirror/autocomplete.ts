@@ -99,6 +99,18 @@ function completionSource(context: CompletionContext): CompletionResult | null {
   const trigger = ch as '/' | '@'
   const atDocStart = start === 0
   const info = readSourceInfo()
+
+  // Exact-match short-circuit: if the query already is a full command name,
+  // accepting would be a no-op (CM backend doesn't do arg completers, per
+  // Phase 2b scope). Suppressing the popup lets Enter fall through to our
+  // submit keymap so `/exit`, `/clear`, `/model` etc. submit as typed.
+  if (trigger === '/' && query.length > 0) {
+    const q = query.toLowerCase()
+    const builtinMatch = atDocStart && BUILTIN_COMMAND_NAMES.some(n => n === q)
+    const ccMatch = info.slashCommands.some(n => n.toLowerCase() === q)
+    if (builtinMatch || ccMatch) return null
+  }
+
   const options = buildCompletions(trigger, query, atDocStart, info)
 
   if (options.length === 0) return null

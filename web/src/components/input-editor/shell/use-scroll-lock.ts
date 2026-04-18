@@ -7,7 +7,7 @@
  * factored as a hook so any backend can use it.
  */
 
-import { useEffect, useState } from 'react'
+import { useLayoutEffect, useState } from 'react'
 
 interface ScrollLockResult {
   /** Visible viewport height (excludes on-screen keyboard area), or null if unlocked. */
@@ -17,7 +17,14 @@ interface ScrollLockResult {
 export function useScrollLock(active: boolean): ScrollLockResult {
   const [visibleHeight, setVisibleHeight] = useState<number | null>(null)
 
-  useEffect(() => {
+  // useLayoutEffect (not useEffect): body.style.position='fixed' must be
+  // applied/restored BEFORE the browser paints. With useEffect, the wrapper's
+  // className change commits to the DOM, browser paints, THEN cleanup runs --
+  // leaving one frame where the wrapper is `position: relative` while body is
+  // still `position: fixed; top: -scrollY`. That frame is visible on iOS as
+  // a ghost CM editor at the top of the viewport, and the composite layer
+  // can persist across subsequent paints.
+  useLayoutEffect(() => {
     if (!active) {
       setVisibleHeight(null)
       return

@@ -184,6 +184,13 @@ export interface InputExtensionOptions {
   maxHeight?: string
   enableEffortKeywords?: boolean
   enableAutocomplete?: boolean
+  /**
+   * Return false to make Enter fall through (insert newline) instead of
+   * submitting. Called at keypress time, so callers can back it with a ref
+   * to toggle behavior without rebuilding extensions. Defaults to always
+   * submit when omitted.
+   */
+  shouldEnterSubmit?: () => boolean
 }
 
 export function buildInputExtensions(opts: InputExtensionOptions): Extension[] {
@@ -205,6 +212,10 @@ export function buildInputExtensions(opts: InputExtensionOptions): Extension[] {
     {
       key: 'Enter',
       run: view => {
+        // Caller can suppress submit (e.g. mobile compose panel where there's
+        // no Shift-Enter on a phone keyboard, so Enter must insert a newline
+        // and submit happens via the Send button).
+        if (opts.shouldEnterSubmit && !opts.shouldEnterSubmit()) return false
         const len = view.state.doc.length
         if (len > 0) {
           view.dispatch({ changes: { from: 0, to: len, insert: '' } })
