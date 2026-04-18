@@ -15,6 +15,7 @@ import xml from 'highlight.js/lib/languages/xml'
 import yaml from 'highlight.js/lib/languages/yaml'
 import { Marked } from 'marked'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef } from 'react'
+import { type MediaKind, openMediaLightbox } from './media-lightbox'
 
 // Register languages
 hljs.registerLanguage('javascript', javascript)
@@ -43,9 +44,76 @@ hljs.registerLanguage('yml', yaml)
 
 const marked = new Marked()
 
+// Extension-based media detection for `![x](url.png)` (images) and
+// `[clip](url.mp4)` style links. Matches against the URL's path only so
+// querystrings / fragments don't trip us up.
+const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp', 'heic'])
+const VIDEO_EXT = new Set(['mp4', 'webm', 'mov', 'mkv', 'm4v', 'ogv'])
+
+function detectMediaKind(href: string): MediaKind | null {
+  if (!href) return null
+  try {
+    // Use a dummy base so protocol-relative + relative URLs still parse.
+    const u = new URL(href, 'https://x.invalid')
+    const m = u.pathname.toLowerCase().match(/\.([a-z0-9]+)$/)
+    if (!m) return null
+    const ext = m[1]
+    if (IMAGE_EXT.has(ext)) return 'image'
+    if (VIDEO_EXT.has(ext)) return 'video'
+    return null
+  } catch {
+    return null
+  }
+}
+
+function escapeAttr(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+// Image chip: bounded thumbnail that opens the full asset in the lightbox.
+// `max-h-32` caps the inline footprint at 128px so virtualizer row estimates
+// stay stable -- no "huge screenshot blows up the transcript" surprise.
+function renderImageChip(href: string, alt: string): string {
+  const safeHref = escapeAttr(href)
+  const safeAlt = escapeAttr(alt || '')
+  return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" class="lightbox-chip lightbox-chip-image" data-lightbox-src="${safeHref}" data-lightbox-kind="image" data-lightbox-alt="${safeAlt}"><img src="${safeHref}" alt="${safeAlt}" loading="lazy" class="max-h-32 max-w-full object-contain rounded border border-border/40 cursor-zoom-in hover:border-accent/60 transition-colors" /></a>`
+}
+
+// Video chip: no inline <video> (that would autoplay + explode layout); a
+// small play-icon pill with the filename. Click pops the lightbox.
+function renderVideoChip(href: string, label: string): string {
+  const safeHref = escapeAttr(href)
+  let name = label
+  if (!name || name === href) {
+    try {
+      const u = new URL(href, 'https://x.invalid')
+      const parts = u.pathname.split('/')
+      name = parts[parts.length - 1] || href
+    } catch {
+      name = href
+    }
+  }
+  const safeName = escapeAttr(name)
+  return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" class="lightbox-chip lightbox-chip-video" data-lightbox-src="${safeHref}" data-lightbox-kind="video"><span class="inline-flex items-center gap-1.5 px-2 py-1 bg-muted/40 border border-border/50 rounded text-xs text-foreground/90 hover:bg-muted/60 hover:border-accent/60 transition-colors cursor-pointer align-middle"><svg viewBox="0 0 16 16" aria-hidden="true" class="h-3 w-3 text-accent fill-current"><path d="M4 2.5v11l10-5.5-10-5.5z"/></svg><span class="font-mono">${safeName}</span></span></a>`
+}
+
 // Custom renderer
 const renderer = new marked.Renderer()
-renderer.link = ({ href, text }) => `<a href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`
+renderer.link = ({ href, text }) => {
+  // `[clip](url.mp4)` / `[pic](url.png)` -> media chip. The chip is an
+  // anchor with data-lightbox-* attrs; Markdown's onClick delegate (below)
+  // preventDefaults and opens the lightbox. Fall through to a plain link
+  // for non-media URLs so nothing else changes.
+  const kind = detectMediaKind(href)
+  if (kind === 'image') return renderImageChip(href, text)
+  if (kind === 'video') return renderVideoChip(href, text)
+  return `<a href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`
+}
+renderer.image = ({ href, text, title }) => {
+  const kind = detectMediaKind(href) || 'image'
+  if (kind === 'video') return renderVideoChip(href, text || title || '')
+  return renderImageChip(href, text || title || '')
+}
 renderer.table = ({ header, rows, raw }) => {
   // Store raw GFM source in a hidden div for markdown copy
   const escapedRaw = raw.replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -326,7 +394,25 @@ export function Markdown({ children, inline }: MarkdownProps) {
   }, [html])
 
   const handleClick = useCallback((e: React.MouseEvent) => {
-    const btn = (e.target as HTMLElement).closest('.code-copy-btn') as HTMLButtonElement | null
+    const target = e.target as HTMLElement
+
+    // Lightbox chip: open the media overlay instead of navigating. Respect
+    // modifier-clicks so cmd/ctrl/middle-click still opens in a new tab.
+    const chip = target.closest('.lightbox-chip') as HTMLAnchorElement | null
+    if (chip) {
+      const me = e as unknown as MouseEvent
+      if (me.metaKey || me.ctrlKey || me.shiftKey || me.button === 1) return
+      const src = chip.getAttribute('data-lightbox-src') || chip.href
+      const kind = (chip.getAttribute('data-lightbox-kind') as MediaKind) || 'image'
+      const alt = chip.getAttribute('data-lightbox-alt') || undefined
+      if (src) {
+        e.preventDefault()
+        openMediaLightbox(src, kind, alt)
+      }
+      return
+    }
+
+    const btn = target.closest('.code-copy-btn') as HTMLButtonElement | null
     if (!btn) return
     const wrap = btn.closest('.code-block-wrap')
     const code = wrap?.querySelector('code')

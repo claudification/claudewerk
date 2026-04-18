@@ -7,6 +7,7 @@ import { CommandPalette } from '@/components/command-palette'
 import { DebugConsole } from '@/components/debug-console'
 import { Header } from '@/components/header'
 import { JsonInspectorDialog } from '@/components/json-inspector'
+import { MediaLightbox } from '@/components/media-lightbox'
 import { ProjectList } from '@/components/project-list'
 import { QuickTaskModal } from '@/components/quick-task-modal'
 import { ReviveDialog } from '@/components/revive-dialog'
@@ -789,6 +790,8 @@ function Dashboard() {
 
       {/* Global JSON inspector dialog (survives virtualizer remounts) */}
       <JsonInspectorDialog />
+      {/* Global media lightbox (images / videos from markdown) */}
+      <MediaLightbox />
       {/* Ctrl+Shift+N quick note modal - admin only */}
       {canAdmin && <QuickTaskModal />}
       {canAdmin && <TaskBatchSelector />}
