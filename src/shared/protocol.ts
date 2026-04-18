@@ -775,7 +775,7 @@ export interface QuitSession {
  *   - dashboard input: when user types a bare `/clear`, `/quit`, `:q`, etc.
  *   - inter-session MCP `control_session` tool
  */
-export type SessionControlAction = 'clear' | 'quit' | 'interrupt' | 'set_model'
+export type SessionControlAction = 'clear' | 'quit' | 'interrupt' | 'set_model' | 'set_effort'
 
 export interface SessionControl {
   type: 'session_control'
@@ -783,6 +783,7 @@ export interface SessionControl {
   action: SessionControlAction
   fromSession?: string
   model?: string // required when action === 'set_model'
+  effort?: string // required when action === 'set_effort' (low|medium|high|xhigh|max|auto)
 }
 
 export interface SessionControlResult {
@@ -798,6 +799,7 @@ export interface ControlDeliver {
   type: 'control'
   action: SessionControlAction
   model?: string
+  effort?: string
   fromSession?: string
 }
 

@@ -724,8 +724,8 @@ async function main() {
      * closeStdin), PTY writes the raw slash command into CC's CLI input layer.
      */
     function executeControl(
-      action: 'clear' | 'quit' | 'interrupt' | 'set_model',
-      args: { model?: string; source?: string } = {},
+      action: 'clear' | 'quit' | 'interrupt' | 'set_model' | 'set_effort',
+      args: { model?: string; effort?: string; source?: string } = {},
     ): boolean {
       const source = args.source || 'unknown'
       if (headless) {
@@ -768,8 +768,12 @@ async function main() {
             diag('session', `Set model requested (${source}): ${args.model}`)
             ctx.streamProc.sendSetModel(args.model)
             return true
+          case 'set_effort':
+            if (!args.effort) return false
+            diag('session', `Set effort requested (${source}): ${args.effort}`)
+            ctx.streamProc.sendSetEffort(args.effort)
+            return true
         }
-        return false
       }
 
       // PTY mode
@@ -798,8 +802,12 @@ async function main() {
           diag('session', `Set model requested (${source}): ${args.model}`)
           ctx.ptyProcess.write(`/model ${args.model}\r`)
           return true
+        case 'set_effort':
+          if (!args.effort) return false
+          diag('session', `Set effort requested (${source}): ${args.effort}`)
+          ctx.ptyProcess.write(`/effort ${args.effort}\r`)
+          return true
       }
-      return false
     }
 
     ctx.wsClient = createWsClient({
@@ -884,6 +892,9 @@ async function main() {
           } else if (trimmed.startsWith('/model ')) {
             const model = trimmed.slice(7).trim()
             if (model) executeControl('set_model', { model, source: 'headless-input' })
+          } else if (trimmed.startsWith('/effort ')) {
+            const effort = trimmed.slice(8).trim()
+            if (effort) executeControl('set_effort', { effort, source: 'headless-input' })
           } else {
             ctx.streamProc.sendUserMessage(input)
           }
@@ -1565,7 +1576,7 @@ async function main() {
         } as unknown as WrapperMessage)
       })
     },
-    async onControlSession({ sessionId, action, model }) {
+    async onControlSession({ sessionId, action, model, effort }) {
       if (!ctx.wsClient?.isConnected()) return { ok: false, error: 'Not connected to concentrator' }
       return new Promise(resolve => {
         const timeout = setTimeout(
@@ -1582,6 +1593,7 @@ async function main() {
           targetSession: sessionId,
           action,
           ...(model && { model }),
+          ...(effort && { effort }),
           fromSession: ctx.claudeSessionId || internalId,
         } as unknown as WrapperMessage)
       })

@@ -84,15 +84,16 @@ export interface McpChannelCallbacks {
   onTogglePlanMode?: () => void
   onReviveSession?: (sessionId: string) => Promise<{ ok: boolean; error?: string; name?: string }>
   /**
-   * Unified session control: clear | quit | interrupt | set_model. Dashboards
-   * and the MCP `control_session` tool both route through here. The wrapper
-   * forwards to the target via WS `session_control` and the concentrator
+   * Unified session control: clear | quit | interrupt | set_model | set_effort.
+   * Dashboards and the MCP `control_session` tool both route through here. The
+   * wrapper forwards to the target via WS `session_control` and the concentrator
    * routes to the target's wrapper for backend-specific dispatch.
    */
   onControlSession?: (params: {
     sessionId: string
-    action: 'clear' | 'quit' | 'interrupt' | 'set_model'
+    action: 'clear' | 'quit' | 'interrupt' | 'set_model' | 'set_effort'
     model?: string
+    effort?: string
   }) => Promise<{ ok: boolean; error?: string; name?: string }>
   onRestartSession?: (sessionId: string) => Promise<{
     ok: boolean
@@ -531,31 +532,39 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
 
     control_session: {
       description:
-        "Send a high-level control verb to another session's wrapper. Unlike send_message (which delivers text to the model's context), control_session bypasses the model and tells the wrapper itself what to do. Requires benevolent trust. Actions:\n- clear: reset context (headless respawns CC fresh; PTY runs /clear in CC's CLI)\n- quit: graceful shutdown (headless closes stdin; PTY sends SIGTERM)\n- interrupt: cancel the current turn (Ctrl+C equivalent)\n- set_model: switch model (requires `model`, e.g. 'sonnet', 'opus')",
+        "Send a high-level control verb to another session's wrapper. Unlike send_message (which delivers text to the model's context), control_session bypasses the model and tells the wrapper itself what to do. Requires benevolent trust. Actions:\n- clear: reset context (headless respawns CC fresh; PTY runs /clear in CC's CLI)\n- quit: graceful shutdown (headless closes stdin; PTY sends SIGTERM)\n- interrupt: cancel the current turn (Ctrl+C equivalent)\n- set_model: switch model (requires `model`, e.g. 'sonnet', 'opus')\n- set_effort: switch thinking-effort level (requires `effort`: low | medium | high | xhigh | max | auto). Headless mutates CLAUDE_CODE_EFFORT_LEVEL via update_environment_variables so the next turn picks it up without respawn; PTY runs /effort in CC's CLI.",
       inputSchema: {
         type: 'object' as const,
         properties: {
           session_id: { type: 'string', description: 'Target ID from list_sessions' },
           action: {
             type: 'string',
-            enum: ['clear', 'quit', 'interrupt', 'set_model'],
+            enum: ['clear', 'quit', 'interrupt', 'set_model', 'set_effort'],
             description: 'Control verb to execute on the target session',
           },
           model: {
             type: 'string',
             description: 'Model name/alias (e.g. "sonnet", "opus"). Required when action is "set_model".',
           },
+          effort: {
+            type: 'string',
+            enum: ['low', 'medium', 'high', 'xhigh', 'max', 'auto'],
+            description: 'Effort level. Required when action is "set_effort". `auto` resets to model default.',
+          },
         },
         required: ['session_id', 'action'],
       },
       async handle(params) {
         const sessionId = params.session_id
-        const action = params.action as 'clear' | 'quit' | 'interrupt' | 'set_model'
+        const action = params.action as 'clear' | 'quit' | 'interrupt' | 'set_model' | 'set_effort'
         const model = typeof params.model === 'string' ? params.model : undefined
+        const effort = typeof params.effort === 'string' ? params.effort : undefined
         if (!sessionId) return { content: [{ type: 'text', text: 'Error: session_id is required' }], isError: true }
-        if (!action || !['clear', 'quit', 'interrupt', 'set_model'].includes(action)) {
+        if (!action || !['clear', 'quit', 'interrupt', 'set_model', 'set_effort'].includes(action)) {
           return {
-            content: [{ type: 'text', text: 'Error: action must be one of clear | quit | interrupt | set_model' }],
+            content: [
+              { type: 'text', text: 'Error: action must be one of clear | quit | interrupt | set_model | set_effort' },
+            ],
             isError: true,
           }
         }
@@ -565,7 +574,13 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
             isError: true,
           }
         }
-        const result = await callbacks.onControlSession?.({ sessionId, action, model })
+        if (action === 'set_effort' && !effort) {
+          return {
+            content: [{ type: 'text', text: 'Error: effort is required when action is "set_effort"' }],
+            isError: true,
+          }
+        }
+        const result = await callbacks.onControlSession?.({ sessionId, action, model, effort })
         if (!result?.ok) {
           debug(`[channel] control_session(${action}) failed: ${result?.error}`)
           return {
@@ -573,7 +588,9 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
             isError: true,
           }
         }
-        debug(`[channel] control_session(${action}): ${sessionId.slice(0, 8)}${model ? ` model=${model}` : ''}`)
+        debug(
+          `[channel] control_session(${action}): ${sessionId.slice(0, 8)}${model ? ` model=${model}` : ''}${effort ? ` effort=${effort}` : ''}`,
+        )
         const label = result.name || sessionId.slice(0, 8)
         const verbText =
           action === 'clear'
@@ -582,7 +599,9 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
               ? `Quit signal sent to ${label}. The session will end within a few seconds.`
               : action === 'interrupt'
                 ? `Interrupt sent to ${label}. Current turn will stop.`
-                : `Model switch requested on ${label} -> ${model}.`
+                : action === 'set_model'
+                  ? `Model switch requested on ${label} -> ${model}.`
+                  : `Effort level switch requested on ${label} -> ${effort}.`
         return { content: [{ type: 'text', text: verbText }] }
       },
     },

@@ -132,6 +132,8 @@ export interface StreamProcess {
     toolUseId?: string,
   ) => void
   sendSetModel: (model: string) => void
+  sendUpdateEnv: (variables: Record<string, string>) => void
+  sendSetEffort: (level: string) => void
   sendInterrupt: () => void
   forwardStdin: () => void
   kill: (signal?: NodeJS.Signals) => void
@@ -780,6 +782,34 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
       writeStdin({
         type: 'control_request',
         request: { subtype: 'set_model', model },
+      })
+    },
+
+    /**
+     * Mutate env vars on the running CC process. CC's `update_environment_variables`
+     * handler literally does `process.env[K] = V` inside its own process, so any
+     * env var read lazily per-request (not cached at startup) takes effect on the
+     * next turn without a respawn. Verified against Claude Code 2.1.114 binary.
+     */
+    sendUpdateEnv(variables: Record<string, string>) {
+      const keys = Object.keys(variables)
+      if (keys.length === 0) return
+      debug(`Updating env: ${keys.join(', ')}`)
+      writeStdin({ type: 'update_environment_variables', variables })
+    },
+
+    /**
+     * Change effort level at runtime. Works by mutating CLAUDE_CODE_EFFORT_LEVEL
+     * on the CC process - CC reads it lazily via `process.env.CLAUDE_CODE_EFFORT_LEVEL`
+     * inside the effort resolver and the value flows onto the next request as
+     * `output_config.effort` on the Anthropic API call. Accepts the five levels
+     * plus `auto` / `unset` to fall back to the model default.
+     */
+    sendSetEffort(level: string) {
+      debug(`Setting effort: ${level}`)
+      writeStdin({
+        type: 'update_environment_variables',
+        variables: { CLAUDE_CODE_EFFORT_LEVEL: level },
       })
     },
 

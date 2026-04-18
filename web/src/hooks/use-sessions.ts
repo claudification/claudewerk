@@ -820,8 +820,9 @@ export function reviveSession(sessionId: string, options: ReviveSessionOptions =
  * text reach the model. Returns the verb + args when matched, null otherwise.
  */
 function detectControlCommand(input: string): {
-  action: 'clear' | 'quit' | 'interrupt' | 'set_model'
+  action: 'clear' | 'quit' | 'interrupt' | 'set_model' | 'set_effort'
   model?: string
+  effort?: string
 } | null {
   const trimmed = input.trim()
   if (!trimmed || trimmed.includes('\n')) return null
@@ -829,28 +830,31 @@ function detectControlCommand(input: string): {
   if (trimmed === '/quit' || trimmed === '/exit' || trimmed === ':q' || trimmed === ':q!') return { action: 'quit' }
   const modelMatch = trimmed.match(/^\/model\s+(\S+)$/)
   if (modelMatch) return { action: 'set_model', model: modelMatch[1] }
+  const effortMatch = trimmed.match(/^\/effort\s+(\S+)$/)
+  if (effortMatch) return { action: 'set_effort', effort: effortMatch[1] }
   return null
 }
 
 export function sendSessionControl(
   sessionId: string,
-  action: 'clear' | 'quit' | 'interrupt' | 'set_model',
-  opts: { model?: string } = {},
+  action: 'clear' | 'quit' | 'interrupt' | 'set_model' | 'set_effort',
+  opts: { model?: string; effort?: string } = {},
 ): boolean {
   return wsSend('session_control', {
     targetSession: sessionId,
     action,
     ...(opts.model && { model: opts.model }),
+    ...(opts.effort && { effort: opts.effort }),
   })
 }
 
 export function sendInput(sessionId: string, input: string): boolean {
-  // Bare control commands (/clear, /quit, :q, /model X) bypass the model and
-  // go straight to the wrapper's control channel. Everything else flows
-  // through send_input as before.
+  // Bare control commands (/clear, /quit, :q, /model X, /effort X) bypass the
+  // model and go straight to the wrapper's control channel. Everything else
+  // flows through send_input as before.
   const control = detectControlCommand(input)
   if (control) {
-    return sendSessionControl(sessionId, control.action, { model: control.model })
+    return sendSessionControl(sessionId, control.action, { model: control.model, effort: control.effort })
   }
   const crDelay = (useSessionsStore.getState().globalSettings.carriageReturnDelay as number) || 0
   const ok = wsSend('send_input', { sessionId, input, ...(crDelay > 0 && { crDelay }) })

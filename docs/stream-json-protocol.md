@@ -408,6 +408,45 @@ Heartbeat message. Silently consumed by CC - returns nothing.
 No other fields. Used by both directions (stdin heartbeat to keep pipe alive,
 stdout heartbeat from WebSocket transport).
 
+#### `update_environment_variables`
+
+Mutate `process.env` inside the running CC process. **Top-level type** - NOT
+wrapped in `control_request`, no `request_id`, no response. Fire-and-forget.
+
+```json
+{"type": "update_environment_variables", "variables": {"KEY": "value"}}
+```
+
+CC's handler (verified in 2.1.114 binary):
+
+```js
+if (_.type === "update_environment_variables") {
+  for (let [K, O] of Object.entries(_.variables)) process.env[K] = O
+}
+```
+
+Any env var read lazily per-request (not cached at startup) picks up the new
+value on the next turn. Known lazy reads include:
+
+| Env var | What it controls | Effect |
+|---------|------------------|--------|
+| `CLAUDE_CODE_EFFORT_LEVEL` | Effort preset (`low`\|`medium`\|`high`\|`xhigh`\|`max`\|`auto`) | Next request sends `output_config.effort`. Use `auto` / `unset` to fall back to model default. |
+| `MAX_THINKING_TOKENS` | Raw thinking-token budget (deprecated) | Next request sends `thinking.budget_tokens`. Returns HTTP 400 on Opus 4.7+. |
+| `CLAUDE_CODE_SESSION_ACCESS_TOKEN` | OAuth token for Anthropic API | Token rotation without respawn. |
+
+**Note:** Claude Code has NO `set_effort` control_request subtype -- the only
+runtime setters are `set_model`, `set_permission_mode`, `set_max_thinking_tokens`.
+`update_environment_variables` + `CLAUDE_CODE_EFFORT_LEVEL` is the documented
+workaround for runtime effort switching in headless mode.
+
+**Effort vs budget_tokens** (from Anthropic's migration docs embedded in cli.js):
+
+> `budget_tokens` controlled how much to *think*; `effort` controls how much
+> to think *and* act, so there is no exact 1:1 mapping.
+
+On Opus 4.7+, `budget_tokens` is a 400 error. Use
+`thinking: {type: "adaptive"}` + `output_config.effort` instead.
+
 ---
 
 ### Error Handling (Input)
@@ -861,6 +900,7 @@ tool_use/tool_result lifecycle is visible in the stream.
 | `user` | - | Yes (bad role) | Send user prompt |
 | `control_request` | `initialize`, `interrupt`, `set_permission_mode`, `set_model`, `set_max_thinking_tokens`, `mcp_status`, `mcp_message`, `mcp_set_servers`, `rewind_files` | Yes (missing `request`) | SDK control commands |
 | `control_response` | `can_use_tool`, `hook_callback`, `error` | No (unmatched = callback) | Answer CC's control requests |
+| `update_environment_variables` | - | No (silently consumed) | Mutate `process.env` on CC process. Use for runtime effort switching via `CLAUDE_CODE_EFFORT_LEVEL` (no `set_effort` subtype exists). |
 | `keep_alive` | - | No (silently consumed) | Heartbeat |
 | Any other type | - | **YES - process.exit(1)** | - |
 | Malformed JSON | - | **YES - process.exit(1)** | - |

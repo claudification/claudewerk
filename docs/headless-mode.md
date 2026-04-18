@@ -23,6 +23,7 @@ rclaude --headless
 | Exact cost per turn (`total_cost_usd`) | Clipboard capture (OSC 52) |
 | Rate limit status and reset times | |
 | Dynamic model switching (`set_model`) | |
+| Dynamic effort switching (`update_environment_variables`) | |
 | Turn interruption (`interrupt`) | |
 | Full session metadata in init | |
 | Slash command autocomplete data | |
@@ -57,6 +58,69 @@ wrapper intercepts -> `ask_question` WS -> dashboard shows banners -> user answe
 - `RCLAUDE_SHOW_TRANSCRIPT=1` - dump raw NDJSON to stderr
 - `RCLAUDE_SHOW_TRANSCRIPT_PRETTY=1` - colorized indented JSON to stderr
 - `RCLAUDE_SHOW_WEBSOCKET_MESSAGES=1` - log all WS traffic
+
+## Runtime Effort Switching (`set_effort`)
+
+Claude Code's CLI does NOT expose a `set_effort` control request subtype (the
+only setters in the 2.1.114 binary are `set_model`, `set_permission_mode`,
+`set_max_thinking_tokens`). The `/effort` slash command works interactively
+but is NOT reachable through `control_request` in stream-json mode.
+
+**But** CC does expose `update_environment_variables` as a top-level message
+type. The handler mutates `process.env[K] = V` on the CC process itself (not
+just child processes):
+
+```js
+if (_.type === "update_environment_variables") {
+  for (let [K, O] of Object.entries(_.variables)) process.env[K] = O
+}
+```
+
+And CC reads `process.env.CLAUDE_CODE_EFFORT_LEVEL` **lazily per-turn** (not
+cached at startup):
+
+```js
+function MYH() {  // effort resolver
+  let H = process.env.CLAUDE_CODE_EFFORT_LEVEL
+  return H?.toLowerCase() === "unset" || H?.toLowerCase() === "auto" ? null : rc(H)
+}
+```
+
+So to change effort level at runtime without respawning CC:
+
+```json
+{"type": "update_environment_variables", "variables": {"CLAUDE_CODE_EFFORT_LEVEL": "max"}}
+```
+
+Write that to CC's stdin (followed by `\n`), and the next turn's request to
+Anthropic picks up `output_config.effort = "max"`. Setting the value to
+`auto` or `unset` falls back to model default.
+
+Exposed in rclaude as:
+- `StreamProcess.sendSetEffort(level)` in `src/wrapper/stream-backend.ts`
+- `StreamProcess.sendUpdateEnv(variables)` for arbitrary env mutations
+- `executeControl('set_effort', { effort })` in `src/wrapper/index.ts` (PTY falls back to writing `/effort <level>\r`)
+- `session_control` WS message with `action: 'set_effort', effort: string`
+- `/effort <level>` slash command typed into the dashboard input
+- MCP `control_session` tool with `action: 'set_effort'`
+
+### Effort vs `MAX_THINKING_TOKENS` (NOT the same thing)
+
+Anthropic's API has two distinct parameters that both affect reasoning:
+
+| Parameter | Wire field | Env var | Controls |
+|---|---|---|---|
+| Thinking budget | `thinking.budget_tokens` | `MAX_THINKING_TOKENS` | Thinking depth only. Returns HTTP 400 on Opus 4.7+. |
+| Effort preset | `output_config.effort` | `CLAUDE_CODE_EFFORT_LEVEL` | Thinking + tool call appetite + response length + agentic persistence. |
+
+From Anthropic's migration docs (embedded in cli.js):
+
+> `budget_tokens` controlled how much to *think*; `effort` controls how much
+> to think *and act*, so there is no exact 1:1 mapping. Use `xhigh` for best
+> results in coding and agentic use cases.
+
+On Opus 4.7+, `thinking: {type: "enabled", budget_tokens: N}` is a 400 error.
+Use `thinking: {type: "adaptive"}` + `output_config.effort` instead.
 
 **Files:** `src/wrapper/stream-backend.ts`, `docs/stream-json-protocol.md`
 

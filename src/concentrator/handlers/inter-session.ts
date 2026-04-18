@@ -289,14 +289,15 @@ const handleChannelConfigure: MessageHandler = (ctx, data) => {
   ctx.log.debug(`Configure: -> ${target.id.slice(0, 8)} ${Object.keys(update).join(',')}`)
 }
 
-// ─── Unified session control (clear / quit / interrupt / set_model) ───
+// ─── Unified session control (clear / quit / interrupt / set_model / set_effort) ───
 
-const VALID_CONTROL_ACTIONS = new Set(['clear', 'quit', 'interrupt', 'set_model'])
+const VALID_CONTROL_ACTIONS = new Set(['clear', 'quit', 'interrupt', 'set_model', 'set_effort'])
 
 const handleSessionControl: MessageHandler = (ctx, data) => {
   const targetId = data.targetSession as string
   const action = data.action as string
   const model = typeof data.model === 'string' ? data.model : undefined
+  const effort = typeof data.effort === 'string' ? data.effort : undefined
   const fromSession = (data.fromSession as string) || ctx.ws.data.sessionId
 
   if (!targetId) {
@@ -309,6 +310,10 @@ const handleSessionControl: MessageHandler = (ctx, data) => {
   }
   if (action === 'set_model' && !model) {
     ctx.reply({ type: 'session_control_result', ok: false, action, error: 'model is required for set_model' })
+    return
+  }
+  if (action === 'set_effort' && !effort) {
+    ctx.reply({ type: 'session_control_result', ok: false, action, error: 'effort is required for set_effort' })
     return
   }
 
@@ -344,6 +349,7 @@ const handleSessionControl: MessageHandler = (ctx, data) => {
       type: 'control',
       action,
       ...(model && { model }),
+      ...(effort && { effort }),
       ...(fromSession && { fromSession }),
     }),
   )
@@ -357,11 +363,11 @@ const handleSessionControl: MessageHandler = (ctx, data) => {
   ctx.reply({
     type: 'session_control_result',
     ok: true,
-    action: action as 'clear' | 'quit' | 'interrupt' | 'set_model',
+    action: action as 'clear' | 'quit' | 'interrupt' | 'set_model' | 'set_effort',
     name: targetSess.title || targetSess.cwd?.split('/').pop(),
   })
   ctx.log.debug(
-    `session_control: ${fromSession?.slice(0, 8) ?? 'dashboard'} -> ${targetSess.id.slice(0, 8)} action=${action}${model ? ` model=${model}` : ''}`,
+    `session_control: ${fromSession?.slice(0, 8) ?? 'dashboard'} -> ${targetSess.id.slice(0, 8)} action=${action}${model ? ` model=${model}` : ''}${effort ? ` effort=${effort}` : ''}`,
   )
 }
 
