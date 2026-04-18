@@ -36,7 +36,9 @@ marked.use({
       return parts
         .map((part, i) => {
           if (i % 2 === 1) return part
-          return part.replace(/<(\/?[a-zA-Z][a-zA-Z0-9_-]*(?:\s[^>]*)?)>/g, '&lt;$1&gt;')
+          let out = part.replace(/<(\/?[a-zA-Z][a-zA-Z0-9_-]*(?:\s[^>]*)?)>/g, '&lt;$1&gt;')
+          out = out.replace(/\\\n/g, '\n')
+          return out
         })
         .join('')
     },
@@ -379,6 +381,38 @@ describe('table cell content', () => {
   test('backticks in table cells', () => {
     const html = render('| Col |\n|---|\n| `code` |')
     expect(html).toContain('<code>code</code>')
+  })
+})
+
+describe('trailing backslash before newline', () => {
+  test('trailing backslash before list: marker is stripped, not rendered', () => {
+    const html = render('Brain links\\\n- https://a.example/x\\\n- https://a.example/y')
+    expect(textContent(html)).not.toContain('\\')
+    expect(html).toContain('<ul>')
+    expect(html).toContain('https://a.example/x')
+    expect(html).toContain('https://a.example/y')
+  })
+
+  test('trailing backslash inside paragraph still produces hard break', () => {
+    const html = render('foo\\\nbar')
+    expect(html).toContain('<br')
+    expect(textContent(html)).not.toContain('\\')
+  })
+
+  test('trailing backslash inside list item is stripped', () => {
+    const html = render('- foo\\\n- bar')
+    expect(html).toContain('<li>foo</li>')
+    expect(html).toContain('<li>bar</li>')
+  })
+
+  test('backslash inside inline code is preserved', () => {
+    const html = render('use `path\\to\\file` in config')
+    expect(html).toContain('path\\to\\file')
+  })
+
+  test('backslash inside fenced code is preserved', () => {
+    const html = render('```\nline1\\\nline2\n```')
+    expect(html).toContain('line1\\')
   })
 })
 

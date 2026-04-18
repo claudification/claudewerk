@@ -135,7 +135,12 @@ marked.use({
           // Odd indices are code blocks/inline code - leave them alone
           if (i % 2 === 1) return part
           // Escape ALL angle brackets that look like HTML tags
-          return part.replace(/<(\/?[a-zA-Z][a-zA-Z0-9_-]*(?:\s[^>]*)?)>/g, '&lt;$1&gt;')
+          let out = part.replace(/<(\/?[a-zA-Z][a-zA-Z0-9_-]*(?:\s[^>]*)?)>/g, '&lt;$1&gt;')
+          // Strip trailing backslash before newline. With `breaks: true`, every `\n`
+          // already produces a hard break, so `\\\n` is redundant -- and marked leaks
+          // the `\` literally when the next line starts a list or other block.
+          out = out.replace(/\\\n/g, '\n')
+          return out
         })
         .join('')
     },
