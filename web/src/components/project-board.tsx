@@ -36,7 +36,7 @@ import {
   X,
   Zap,
 } from 'lucide-react'
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Kbd } from '@/components/ui/kbd'
 import {
@@ -137,87 +137,19 @@ function getTagFrequencies(tasks: ProjectTaskMeta[]): Array<{ tag: string; count
   return [...counts.entries()].map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count)
 }
 
-// Lazy-load CodeMirror (shared with file-editor)
-let cmPromise: Promise<typeof import('./codemirror-setup')> | null = null
-function loadCodeMirror() {
-  if (!cmPromise) cmPromise = import('./codemirror-setup')
-  return cmPromise
-}
+// CodeMirror markdown editor for task bodies, lazy-loaded.
+const MarkdownBodyPane = lazy(() => import('./markdown-body-pane'))
 
-/** CodeMirror-based markdown editor with syntax highlighting, paste/drop upload */
-function MarkdownEditorPane({
-  initialContent,
-  onChange,
-  onUpload,
-  editorViewRef,
-}: {
+function MarkdownEditorPane(props: {
   initialContent: string
   onChange: (value: string) => void
   onUpload: (file: File) => void
-  // biome-ignore lint/suspicious/noExplicitAny: EditorView type from lazy-loaded codemirror
-  editorViewRef: React.RefObject<any>
+  editorViewRef: React.RefObject<import('@codemirror/view').EditorView | null>
 }) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [dragOver, setDragOver] = useState(false)
-  const onChangeRef = useRef(onChange)
-  const onUploadRef = useRef(onUpload)
-  onChangeRef.current = onChange
-  onUploadRef.current = onUpload
-
-  useEffect(() => {
-    if (!containerRef.current) return
-    let destroyed = false
-    loadCodeMirror().then(cm => {
-      if (destroyed || !containerRef.current) return
-      const view = cm.createMarkdownEditor(containerRef.current, initialContent, (v: string) => onChangeRef.current(v))
-      editorViewRef.current = view
-      // Intercept image paste before CM processes it as text
-      view.contentDOM.addEventListener('paste', (e: ClipboardEvent) => {
-        const items = e.clipboardData?.items
-        if (!items) return
-        for (const item of items) {
-          if (item.type.startsWith('image/')) {
-            e.preventDefault()
-            const file = item.getAsFile()
-            if (file) onUploadRef.current(file)
-            return
-          }
-        }
-      })
-      view.focus()
-    })
-    return () => {
-      destroyed = true
-      if (editorViewRef.current) {
-        editorViewRef.current.destroy()
-        editorViewRef.current = null
-      }
-    }
-  }, [editorViewRef])
-
   return (
-    <div
-      className="relative w-full"
-      onDragOver={e => {
-        e.preventDefault()
-        setDragOver(true)
-      }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={e => {
-        e.preventDefault()
-        setDragOver(false)
-        const files = e.dataTransfer?.files
-        if (!files?.length) return
-        for (const file of files) onUploadRef.current(file)
-      }}
-    >
-      <div ref={containerRef} />
-      {dragOver && (
-        <div className="absolute inset-0 border-2 border-dashed border-accent/60 bg-accent/5 pointer-events-none flex items-center justify-center">
-          <span className="text-xs font-mono text-accent/80">Drop file here</span>
-        </div>
-      )}
-    </div>
+    <Suspense fallback={<div className="relative w-full min-h-[200px]" />}>
+      <MarkdownBodyPane {...props} />
+    </Suspense>
   )
 }
 
@@ -248,8 +180,7 @@ export function TaskEditor({
   const [tagInput, setTagInput] = useState('')
   const [saving, setSaving] = useState(false)
   const [editing, setEditing] = useState(!body.trim())
-  // biome-ignore lint/suspicious/noExplicitAny: EditorView from lazy-loaded codemirror
-  const editorViewRef = useRef<any>(null)
+  const editorViewRef = useRef<import('@codemirror/view').EditorView | null>(null)
   const canWork = status === 'inbox' || status === 'open' || status === 'in-progress' || status === 'in-review'
 
   useKeyLayer(

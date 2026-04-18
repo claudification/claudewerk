@@ -16,21 +16,15 @@ import {
   RefreshCw,
   Save,
 } from 'lucide-react'
-import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { type FileInfo, useFileEditor } from '@/hooks/use-file-editor'
 import { useSessionsStore } from '@/hooks/use-sessions'
 import { useKeyLayer } from '@/lib/key-layers'
 import { cn, haptic } from '@/lib/utils'
 import { Markdown } from './markdown'
 
-// Lazy-load CodeMirror (heavy dependency)
-let cmPromise: Promise<typeof import('./codemirror-setup')> | null = null
-function loadCodeMirror() {
-  if (!cmPromise) {
-    cmPromise = import('./codemirror-setup')
-  }
-  return cmPromise
-}
+// CodeMirror + language packs are heavy -- lazy chunk, shown under Suspense.
+const FileEditorPane = lazy(() => import('./file-editor-pane'))
 
 function FileList({
   files,
@@ -143,54 +137,11 @@ function EditorPane({
   onChange: (value: string) => void
   filePath?: string
 }) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  // biome-ignore lint/suspicious/noExplicitAny: EditorView type from lazy-loaded codemirror
-  const viewRef = useRef<any>(null)
-  const onChangeRef = useRef(onChange)
-  const contentRef = useRef(content)
-  onChangeRef.current = onChange
-  contentRef.current = content
-
-  useEffect(() => {
-    if (!containerRef.current) return
-
-    let destroyed = false
-    loadCodeMirror().then(cm => {
-      if (destroyed || !containerRef.current) return
-      // Use contentRef to get latest content (avoids stale closure if content arrived while CM was loading)
-      const view = cm.createEditorView(
-        containerRef.current,
-        contentRef.current,
-        (value: string) => {
-          onChangeRef.current(value)
-        },
-        filePath,
-      )
-      viewRef.current = view
-    })
-
-    return () => {
-      destroyed = true
-      if (viewRef.current) {
-        viewRef.current.destroy()
-        viewRef.current = null
-      }
-    }
-  }, [filePath]) // Remount on file change (different language)
-
-  // Update content from external changes (disk change, file switch)
-  useEffect(() => {
-    if (viewRef.current) {
-      const currentContent = viewRef.current.state.doc.toString()
-      if (currentContent !== content) {
-        viewRef.current.dispatch({
-          changes: { from: 0, to: viewRef.current.state.doc.length, insert: content },
-        })
-      }
-    }
-  }, [content])
-
-  return <div ref={containerRef} className="flex-1 min-h-0 overflow-hidden" />
+  return (
+    <Suspense fallback={<div className="flex-1 min-h-0 bg-[#1a1b26]" />}>
+      <FileEditorPane content={content} onChange={onChange} filePath={filePath} />
+    </Suspense>
+  )
 }
 
 export const FileEditor = memo(function FileEditor({ sessionId }: { sessionId: string }) {

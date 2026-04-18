@@ -1,29 +1,21 @@
 /**
- * CodeMirror 6 input editor factory.
+ * Composable CM6 extensions for the InputEditor.
  *
- * Builds on the existing createMarkdownEditor() from codemirror-setup.ts but
- * adds the bits an *input* needs that a *task body editor* doesn't:
- *   - Enter = submit, Shift+Enter = newline
- *   - Placeholder text
- *   - Disabled state (read-only)
- *   - Auto-grow with min/max height caps
- *   - Effort-keyword highlight (ultrathink)
- *
- * The factory returns a controller so React can imperatively focus / set value
- * / dispatch changes from outside.
+ * Returned as a flat Extension[] so they can be passed straight to
+ * @uiw/react-codemirror's `extensions` prop. The React component handles
+ * mount/unmount, value sync, focus, and StrictMode.
  */
 
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { markdown } from '@codemirror/lang-markdown'
 import { bracketMatching, HighlightStyle, syntaxTree } from '@codemirror/language'
-import { Compartment, EditorState, type Extension, RangeSetBuilder } from '@codemirror/state'
+import { type Extension, RangeSetBuilder } from '@codemirror/state'
 import {
   Decoration,
   type DecorationSet,
   drawSelection,
   EditorView,
   keymap,
-  placeholder as placeholderExt,
   ViewPlugin,
   type ViewUpdate,
 } from '@codemirror/view'
@@ -31,8 +23,7 @@ import { highlightTree, tags } from '@lezer/highlight'
 import { autocompleteExtension } from './autocomplete'
 
 // ---------------------------------------------------------------------------
-// Tokyo Night highlight (subset, reused from codemirror-setup.ts)
-// Kept local so input theming can diverge from file-editor theming.
+// Tokyo Night highlight (markdown subset)
 // ---------------------------------------------------------------------------
 
 const tokyoNightHighlight = HighlightStyle.define([
@@ -52,46 +43,7 @@ const tokyoNightHighlight = HighlightStyle.define([
 ])
 
 // ---------------------------------------------------------------------------
-// Effort keyword highlighter (ultrathink etc.)
-// ---------------------------------------------------------------------------
-
-const effortMark = Decoration.mark({
-  class: 'cm-effort-keyword',
-})
-
-function buildEffortDecorations(view: EditorView): DecorationSet {
-  const builder = new RangeSetBuilder<Decoration>()
-  const re = /\bultrathink\b/gi
-  for (const { from, to } of view.visibleRanges) {
-    const text = view.state.doc.sliceString(from, to)
-    let m: RegExpExecArray | null
-    re.lastIndex = 0
-    // biome-ignore lint/suspicious/noAssignInExpressions: idiomatic regex iteration
-    while ((m = re.exec(text))) {
-      builder.add(from + m.index, from + m.index + m[0].length, effortMark)
-    }
-  }
-  return builder.finish()
-}
-
-const effortKeywordPlugin = ViewPlugin.fromClass(
-  class {
-    decorations: DecorationSet
-    constructor(view: EditorView) {
-      this.decorations = buildEffortDecorations(view)
-    }
-    update(u: ViewUpdate) {
-      if (u.docChanged || u.viewportChanged) {
-        this.decorations = buildEffortDecorations(u.view)
-      }
-    }
-  },
-  { decorations: v => v.decorations },
-)
-
-// ---------------------------------------------------------------------------
-// Direct syntax highlighter (reused pattern from codemirror-setup.ts)
-// CM6's syntaxHighlighting facet has been buggy here -- we paint decorations directly.
+// Direct highlight plugin (bypasses CM6's syntaxHighlighting facet quirks)
 // ---------------------------------------------------------------------------
 
 function makeDirectHighlightPlugin() {
@@ -130,7 +82,41 @@ function makeDirectHighlightPlugin() {
 }
 
 // ---------------------------------------------------------------------------
-// Theme
+// Effort keyword highlighter (ultrathink)
+// ---------------------------------------------------------------------------
+
+const effortMark = Decoration.mark({ class: 'cm-effort-keyword' })
+
+function buildEffortDecorations(view: EditorView): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>()
+  const re = /\bultrathink\b/gi
+  for (const { from, to } of view.visibleRanges) {
+    const text = view.state.doc.sliceString(from, to)
+    re.lastIndex = 0
+    let m: RegExpExecArray | null
+    // biome-ignore lint/suspicious/noAssignInExpressions: idiomatic regex iteration
+    while ((m = re.exec(text))) {
+      builder.add(from + m.index, from + m.index + m[0].length, effortMark)
+    }
+  }
+  return builder.finish()
+}
+
+const effortKeywordPlugin = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet
+    constructor(view: EditorView) {
+      this.decorations = buildEffortDecorations(view)
+    }
+    update(u: ViewUpdate) {
+      if (u.docChanged || u.viewportChanged) this.decorations = buildEffortDecorations(u.view)
+    }
+  },
+  { decorations: v => v.decorations },
+)
+
+// ---------------------------------------------------------------------------
+// Theme (Tokyo Night, no border, transparent bg)
 // ---------------------------------------------------------------------------
 
 function inputTheme(fontSize: number, minHeight: string, maxHeight: string): Extension {
@@ -149,27 +135,16 @@ function inputTheme(fontSize: number, minHeight: string, maxHeight: string): Ext
         minHeight,
       },
       '.cm-cursor': { borderLeftColor: '#7aa2f7' },
-      '.cm-selectionBackground': {
-        backgroundColor: 'rgba(122, 162, 247, 0.2) !important',
-      },
-      '&.cm-focused .cm-selectionBackground': {
-        backgroundColor: 'rgba(122, 162, 247, 0.3) !important',
-      },
-      '.cm-scroller': {
-        overflow: 'auto',
-        maxHeight,
-        lineHeight: '1.5',
-      },
-      '.cm-placeholder': {
-        color: 'rgba(169, 177, 214, 0.35)',
-      },
+      '.cm-selectionBackground': { backgroundColor: 'rgba(122, 162, 247, 0.2) !important' },
+      '&.cm-focused .cm-selectionBackground': { backgroundColor: 'rgba(122, 162, 247, 0.3) !important' },
+      '.cm-scroller': { overflow: 'auto', maxHeight, lineHeight: '1.5' },
+      '.cm-placeholder': { color: 'rgba(169, 177, 214, 0.35)' },
       '.cm-effort-keyword': {
         color: '#ff9e64',
         textDecoration: 'underline',
         textDecorationColor: 'rgba(255, 158, 100, 0.4)',
         textUnderlineOffset: '2px',
       },
-      // Autocomplete popup
       '.cm-tooltip.cm-tooltip-autocomplete': {
         backgroundColor: '#1a1b26',
         border: '1px solid #33467c',
@@ -178,47 +153,31 @@ function inputTheme(fontSize: number, minHeight: string, maxHeight: string): Ext
         fontSize: '12px',
         boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
       },
-      '.cm-tooltip.cm-tooltip-autocomplete > ul': {
-        maxHeight: '14em',
-        fontFamily: 'inherit',
-      },
-      '.cm-tooltip.cm-tooltip-autocomplete > ul > li': {
-        padding: '2px 8px',
-        color: '#a9b1d6',
-      },
+      '.cm-tooltip.cm-tooltip-autocomplete > ul': { maxHeight: '14em', fontFamily: 'inherit' },
+      '.cm-tooltip.cm-tooltip-autocomplete > ul > li': { padding: '2px 8px', color: '#a9b1d6' },
       '.cm-tooltip-autocomplete ul li[aria-selected]': {
         backgroundColor: 'rgba(122, 162, 247, 0.2)',
         color: '#c0caf5',
       },
-      '.cm-completionLabel': {
-        color: 'inherit',
-      },
+      '.cm-completionLabel': { color: 'inherit' },
       '.cm-completionDetail': {
         marginLeft: '8px',
         color: '#565f89',
         fontStyle: 'normal',
         fontSize: '11px',
       },
-      '.cm-completionMatchedText': {
-        color: '#7aa2f7',
-        textDecoration: 'none',
-        fontWeight: 'bold',
-      },
+      '.cm-completionMatchedText': { color: '#7aa2f7', textDecoration: 'none', fontWeight: 'bold' },
     },
     { dark: true },
   )
 }
 
 // ---------------------------------------------------------------------------
-// Public API
+// Public composer
 // ---------------------------------------------------------------------------
 
-export interface InputEditorOptions {
-  initialValue: string
-  onChange: (value: string) => void
+export interface InputExtensionOptions {
   onSubmit: () => void
-  placeholder?: string
-  disabled?: boolean
   fontSize?: number
   minHeight?: string
   maxHeight?: string
@@ -226,23 +185,10 @@ export interface InputEditorOptions {
   enableAutocomplete?: boolean
 }
 
-export interface InputEditorController {
-  view: EditorView
-  destroy(): void
-  focus(): void
-  setValue(value: string): void
-  setDisabled(disabled: boolean): void
-  insertAtCursor(text: string): void
-}
-
-export function createInputEditor(parent: HTMLElement, opts: InputEditorOptions): InputEditorController {
+export function buildInputExtensions(opts: InputExtensionOptions): Extension[] {
   const fontSize = opts.fontSize ?? 14
   const minHeight = opts.minHeight ?? '1.5em'
   const maxHeight = opts.maxHeight ?? '12em'
-
-  const updateListener = EditorView.updateListener.of(u => {
-    if (u.docChanged) opts.onChange(u.state.doc.toString())
-  })
 
   // Submit on Enter, newline on Shift-Enter (default Enter behavior).
   const submitKeymap = keymap.of([
@@ -252,7 +198,7 @@ export function createInputEditor(parent: HTMLElement, opts: InputEditorOptions)
         opts.onSubmit()
         return true
       },
-      shift: () => false, // let default newline insertion run
+      shift: () => false,
     },
   ])
 
@@ -260,44 +206,18 @@ export function createInputEditor(parent: HTMLElement, opts: InputEditorOptions)
     drawSelection(),
     bracketMatching(),
     history(),
-    submitKeymap, // before defaultKeymap so our Enter wins
+    submitKeymap, // before defaultKeymap so our Enter wins (autocomplete still wins over us when popup is open)
     keymap.of([...defaultKeymap, ...historyKeymap]),
     markdown(),
     inputTheme(fontSize, minHeight, maxHeight),
     makeDirectHighlightPlugin(),
     // biome-ignore lint/style/noNonNullAssertion: HighlightStyle.module is always defined after define()
     EditorView.styleModule.of(tokyoNightHighlight.module!),
-    updateListener,
     EditorView.lineWrapping,
-    EditorState.readOnly.of(!!opts.disabled),
   ]
 
-  if (opts.placeholder) extensions.push(placeholderExt(opts.placeholder))
   if (opts.enableEffortKeywords) extensions.push(effortKeywordPlugin)
   if (opts.enableAutocomplete) extensions.push(autocompleteExtension())
 
-  // Compartment lets us swap readOnly later via setDisabled() without rebuilding state.
-  const readOnlyCompartment = new Compartment()
-  extensions.push(readOnlyCompartment.of(EditorState.readOnly.of(!!opts.disabled)))
-
-  const state = EditorState.create({ doc: opts.initialValue, extensions })
-  const view = new EditorView({ state, parent })
-
-  return {
-    view,
-    destroy: () => view.destroy(),
-    focus: () => view.focus(),
-    setValue: (value: string) => {
-      const current = view.state.doc.toString()
-      if (current === value) return
-      view.dispatch({ changes: { from: 0, to: current.length, insert: value } })
-    },
-    setDisabled: (disabled: boolean) => {
-      view.dispatch({ effects: readOnlyCompartment.reconfigure(EditorState.readOnly.of(disabled)) })
-    },
-    insertAtCursor: (text: string) => {
-      const head = view.state.selection.main.head
-      view.dispatch({ changes: { from: head, insert: text }, selection: { anchor: head + text.length } })
-    },
-  }
+  return extensions
 }

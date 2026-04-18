@@ -1,6 +1,11 @@
 /**
- * CodeMirror 6 setup - lazy loaded by file-editor.tsx
- * Keeps the heavy deps out of the main bundle until needed
+ * CM6 extension factories shared between the file editor and the project
+ * board's task-body markdown editor. Lazy-loaded by each consumer so the
+ * language packs and themes only ship when someone actually opens an editor.
+ *
+ * The InputEditor has its own extensions in
+ * `input-editor/backends/codemirror/extensions.ts` because its theming and
+ * keymap differ (compact, submit-on-Enter, autocomplete).
  */
 
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
@@ -11,7 +16,7 @@ import { json } from '@codemirror/lang-json'
 import { markdown } from '@codemirror/lang-markdown'
 import { python } from '@codemirror/lang-python'
 import { bracketMatching, HighlightStyle, type LanguageSupport, syntaxTree } from '@codemirror/language'
-import { EditorState, type Extension, RangeSetBuilder } from '@codemirror/state'
+import { type Extension, RangeSetBuilder } from '@codemirror/state'
 import {
   Decoration,
   type DecorationSet,
@@ -25,7 +30,10 @@ import {
 } from '@codemirror/view'
 import { highlightTree, tags } from '@lezer/highlight'
 
-// Tokyo Night colors
+// ---------------------------------------------------------------------------
+// Tokyo Night highlight (full set)
+// ---------------------------------------------------------------------------
+
 const tokyoNightHighlight = HighlightStyle.define([
   { tag: tags.heading1, color: '#7aa2f7', fontWeight: 'bold', fontSize: '1.3em' },
   { tag: tags.heading2, color: '#7aa2f7', fontWeight: 'bold', fontSize: '1.2em' },
@@ -56,8 +64,51 @@ const tokyoNightHighlight = HighlightStyle.define([
   { tag: tags.contentSeparator, color: '#565f89' },
 ])
 
-// Editor theme (non-highlighting)
-const editorTheme = EditorView.theme(
+/**
+ * Direct highlight plugin -- paints Tokyo Night decorations via highlightTree().
+ * Bypasses CM6's syntaxHighlighting facet, which had stale-style bugs in our
+ * original integration.
+ */
+function makeDirectHighlightPlugin() {
+  const markCache: Record<string, Decoration> = Object.create(null)
+  return ViewPlugin.fromClass(
+    class {
+      decorations: DecorationSet
+      constructor(view: EditorView) {
+        this.decorations = this.build(view)
+      }
+      build(view: EditorView): DecorationSet {
+        const builder = new RangeSetBuilder<Decoration>()
+        const tree = syntaxTree(view.state)
+        for (const { from, to } of view.visibleRanges) {
+          highlightTree(
+            tree,
+            tokyoNightHighlight,
+            (hFrom, hTo, cls) => {
+              if (!markCache[cls]) markCache[cls] = Decoration.mark({ class: cls })
+              builder.add(hFrom, hTo, markCache[cls])
+            },
+            from,
+            to,
+          )
+        }
+        return builder.finish()
+      }
+      update(u: ViewUpdate) {
+        if (u.docChanged || u.viewportChanged || syntaxTree(u.state) !== syntaxTree(u.startState)) {
+          this.decorations = this.build(u.view)
+        }
+      }
+    },
+    { decorations: v => v.decorations },
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Themes
+// ---------------------------------------------------------------------------
+
+const fileEditorTheme = EditorView.theme(
   {
     '&': {
       fontSize: '13px',
@@ -65,38 +116,42 @@ const editorTheme = EditorView.theme(
       height: '100%',
       backgroundColor: '#1a1b26',
     },
-    '.cm-content': {
-      padding: '8px 0',
-      caretColor: '#7aa2f7',
-      color: '#a9b1d6',
-    },
-    '.cm-cursor': {
-      borderLeftColor: '#7aa2f7',
-    },
+    '.cm-content': { padding: '8px 0', caretColor: '#7aa2f7', color: '#a9b1d6' },
+    '.cm-cursor': { borderLeftColor: '#7aa2f7' },
     '.cm-gutters': {
       backgroundColor: 'transparent',
       color: '#3b4261',
       borderRight: '1px solid rgba(122, 162, 247, 0.1)',
     },
-    '.cm-activeLineGutter': {
-      backgroundColor: 'rgba(122, 162, 247, 0.05)',
-      color: '#737aa2',
-    },
-    '.cm-activeLine': {
-      backgroundColor: 'rgba(122, 162, 247, 0.05)',
-    },
-    '.cm-selectionBackground': {
-      backgroundColor: 'rgba(122, 162, 247, 0.2) !important',
-    },
-    '&.cm-focused .cm-selectionBackground': {
-      backgroundColor: 'rgba(122, 162, 247, 0.3) !important',
-    },
-    '.cm-scroller': {
-      overflow: 'auto',
-    },
+    '.cm-activeLineGutter': { backgroundColor: 'rgba(122, 162, 247, 0.05)', color: '#737aa2' },
+    '.cm-activeLine': { backgroundColor: 'rgba(122, 162, 247, 0.05)' },
+    '.cm-selectionBackground': { backgroundColor: 'rgba(122, 162, 247, 0.2) !important' },
+    '&.cm-focused .cm-selectionBackground': { backgroundColor: 'rgba(122, 162, 247, 0.3) !important' },
+    '.cm-scroller': { overflow: 'auto' },
   },
   { dark: true },
 )
+
+const markdownEditorTheme = EditorView.theme(
+  {
+    '&': {
+      fontSize: '13px',
+      fontFamily: '"Geist Mono", "JetBrains Mono", monospace',
+      backgroundColor: 'transparent',
+    },
+    '&.cm-focused': { outline: 'none' },
+    '.cm-content': { padding: '0', caretColor: '#7aa2f7', color: '#a9b1d6', minHeight: '200px' },
+    '.cm-cursor': { borderLeftColor: '#7aa2f7' },
+    '.cm-selectionBackground': { backgroundColor: 'rgba(122, 162, 247, 0.2) !important' },
+    '&.cm-focused .cm-selectionBackground': { backgroundColor: 'rgba(122, 162, 247, 0.3) !important' },
+    '.cm-scroller': { overflow: 'visible', lineHeight: '1.625' },
+  },
+  { dark: true },
+)
+
+// ---------------------------------------------------------------------------
+// Language resolution
+// ---------------------------------------------------------------------------
 
 function langFromPath(filePath: string | undefined): LanguageSupport | Extension {
   if (!filePath) return markdown()
@@ -122,193 +177,44 @@ function langFromPath(filePath: string | undefined): LanguageSupport | Extension
       return html()
     case 'py':
       return python()
-    case 'md':
-    case 'mdx':
-    case 'markdown':
-      return markdown()
     default:
       return markdown()
   }
 }
 
-// Minimal theme for inline markdown editing (no gutters, auto-height)
-const markdownEditorTheme = EditorView.theme(
-  {
-    '&': {
-      fontSize: '13px',
-      fontFamily: '"Geist Mono", "JetBrains Mono", monospace',
-      backgroundColor: 'transparent',
-    },
-    '&.cm-focused': {
-      outline: 'none',
-    },
-    '.cm-content': {
-      padding: '0',
-      caretColor: '#7aa2f7',
-      color: '#a9b1d6',
-      minHeight: '200px',
-    },
-    '.cm-cursor': {
-      borderLeftColor: '#7aa2f7',
-    },
-    '.cm-selectionBackground': {
-      backgroundColor: 'rgba(122, 162, 247, 0.2) !important',
-    },
-    '&.cm-focused .cm-selectionBackground': {
-      backgroundColor: 'rgba(122, 162, 247, 0.3) !important',
-    },
-    '.cm-scroller': {
-      overflow: 'visible',
-      lineHeight: '1.625',
-    },
-  },
-  { dark: true },
-)
+// ---------------------------------------------------------------------------
+// Public: extension array factories (use with <CodeMirror extensions={...} />)
+// ---------------------------------------------------------------------------
 
-/**
- * Lightweight markdown editor for task bodies etc.
- * No line numbers, no gutters, auto-height (grows with content).
- */
-export function createMarkdownEditor(
-  parent: HTMLElement,
-  initialContent: string,
-  onChange: (value: string) => void,
-): EditorView {
-  const updateListener = EditorView.updateListener.of(update => {
-    if (update.docChanged) {
-      onChange(update.state.doc.toString())
-    }
-  })
-
-  const markCache: Record<string, Decoration> = Object.create(null)
-  const directHighlightPlugin = ViewPlugin.fromClass(
-    class {
-      decorations: DecorationSet
-      constructor(view: EditorView) {
-        this.decorations = this.build(view)
-      }
-      build(view: EditorView) {
-        const builder = new RangeSetBuilder<Decoration>()
-        const tree = syntaxTree(view.state)
-        for (const { from, to } of view.visibleRanges) {
-          highlightTree(
-            tree,
-            tokyoNightHighlight,
-            (hFrom, hTo, cls) => {
-              if (!markCache[cls]) markCache[cls] = Decoration.mark({ class: cls })
-              builder.add(hFrom, hTo, markCache[cls])
-            },
-            from,
-            to,
-          )
-        }
-        return builder.finish()
-      }
-      update(update: ViewUpdate) {
-        if (update.docChanged || update.viewportChanged || syntaxTree(update.state) !== syntaxTree(update.startState)) {
-          this.decorations = this.build(update.view)
-        }
-      }
-    },
-    { decorations: v => v.decorations },
-  )
-
-  const state = EditorState.create({
-    doc: initialContent,
-    extensions: [
-      drawSelection(),
-      history(),
-      keymap.of([...defaultKeymap, ...historyKeymap]),
-      markdown(),
-      markdownEditorTheme,
-      directHighlightPlugin,
-      // biome-ignore lint/style/noNonNullAssertion: module always defined
-      EditorView.styleModule.of(tokyoNightHighlight.module!),
-      updateListener,
-      EditorView.lineWrapping,
-    ],
-  })
-
-  return new EditorView({ state, parent })
+/** Extensions for the full file editor: line numbers, active-line, language-aware. */
+export function buildFileEditorExtensions(filePath?: string): Extension[] {
+  return [
+    lineNumbers(),
+    highlightActiveLine(),
+    drawSelection(),
+    bracketMatching(),
+    history(),
+    keymap.of([...defaultKeymap, ...historyKeymap]),
+    langFromPath(filePath),
+    fileEditorTheme,
+    makeDirectHighlightPlugin(),
+    // biome-ignore lint/style/noNonNullAssertion: module is always defined after HighlightStyle.define
+    EditorView.styleModule.of(tokyoNightHighlight.module!),
+    EditorView.lineWrapping,
+  ]
 }
 
-export function createEditorView(
-  parent: HTMLElement,
-  initialContent: string,
-  onChange: (value: string) => void,
-  filePath?: string,
-): EditorView {
-  const updateListener = EditorView.updateListener.of(update => {
-    if (update.docChanged) {
-      onChange(update.state.doc.toString())
-    }
-  })
-
-  const lang = langFromPath(filePath)
-
-  // Direct highlight plugin - bypasses CM6's broken syntaxHighlighting facet pipeline
-  // Uses the same highlightTree() that our diagnostics confirmed produces 101+ matches
-  const markCache: Record<string, Decoration> = Object.create(null)
-  const directHighlightPlugin = ViewPlugin.fromClass(
-    class {
-      decorations: DecorationSet
-      constructor(view: EditorView) {
-        this.decorations = this.build(view)
-      }
-      build(view: EditorView) {
-        const builder = new RangeSetBuilder<Decoration>()
-        const tree = syntaxTree(view.state)
-        for (const { from, to } of view.visibleRanges) {
-          highlightTree(
-            tree,
-            tokyoNightHighlight,
-            (hFrom, hTo, cls) => {
-              if (!markCache[cls]) markCache[cls] = Decoration.mark({ class: cls })
-              const mark = markCache[cls]
-              builder.add(hFrom, hTo, mark)
-            },
-            from,
-            to,
-          )
-        }
-        return builder.finish()
-      }
-      update(update: ViewUpdate) {
-        if (update.docChanged || update.viewportChanged || syntaxTree(update.state) !== syntaxTree(update.startState)) {
-          this.decorations = this.build(update.view)
-        }
-      }
-    },
-    { decorations: v => v.decorations },
-  )
-
-  const state = EditorState.create({
-    doc: initialContent,
-    extensions: [
-      lineNumbers(),
-      highlightActiveLine(),
-      drawSelection(),
-      bracketMatching(),
-      history(),
-      keymap.of([...defaultKeymap, ...historyKeymap]),
-      lang,
-      editorTheme,
-      directHighlightPlugin,
-      // Mount the HighlightStyle's CSS (syntaxHighlighting() normally does this)
-      // biome-ignore lint/style/noNonNullAssertion: module is always defined after HighlightStyle.define
-      EditorView.styleModule.of(tokyoNightHighlight.module!),
-      updateListener,
-      EditorView.lineWrapping,
-    ],
-  })
-
-  const view = new EditorView({ state, parent })
-
-  // Verify highlighting after initial render
-  requestAnimationFrame(() => {
-    const spans = parent.querySelectorAll('.cm-line span')
-    console.log(`[cm] ${filePath}: ${spans.length} highlighted spans`)
-  })
-
-  return view
+/** Extensions for the markdown-only task-body editor: no gutters, auto-height. */
+export function buildMarkdownBodyExtensions(): Extension[] {
+  return [
+    drawSelection(),
+    history(),
+    keymap.of([...defaultKeymap, ...historyKeymap]),
+    markdown(),
+    markdownEditorTheme,
+    makeDirectHighlightPlugin(),
+    // biome-ignore lint/style/noNonNullAssertion: module is always defined after HighlightStyle.define
+    EditorView.styleModule.of(tokyoNightHighlight.module!),
+    EditorView.lineWrapping,
+  ]
 }
