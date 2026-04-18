@@ -84,6 +84,39 @@ export function useCommand(id: string, action: CommandAction, options: UseComman
   )
 }
 
+// ── useChordCommand helper ──────────────────────────────────────────────
+
+interface UseChordCommandOptions {
+  label: string
+  /** Chord key after the prefix, e.g. "t" for ⌘K T / ⌘G T. May include spaces for multi-key chords. */
+  key: string
+  when?: () => boolean
+  group?: string
+}
+
+/**
+ * Register a chord command under BOTH ⌘K and ⌘G prefixes. ⌘K is the
+ * primary chord (VSCode-style), ⌘G is a transitional alias so existing
+ * muscle memory keeps working during the migration.
+ *
+ * The palette dedupes commands by label and merges shortcuts into one
+ * entry, so users see both bindings next to a single action.
+ */
+export function useChordCommand(id: string, action: CommandAction, options: UseChordCommandOptions) {
+  useCommand(id, action, {
+    label: options.label,
+    shortcut: `mod+k ${options.key}`,
+    when: options.when,
+    group: options.group,
+  })
+  useCommand(`${id}-legacy`, action, {
+    label: options.label,
+    shortcut: `mod+g ${options.key}`,
+    when: options.when,
+    group: options.group,
+  })
+}
+
 // ── Chord validation ───────────────────────────────────────────────────
 
 export interface ChordConflict {

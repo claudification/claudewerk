@@ -88,10 +88,10 @@ export function FooterHints({ mode, agentConnected, onPrefixTap }: FooterHintsPr
             </span>
           )}
           {onPrefixTap ? (
-            <PrefixChip prefix="T:" label="tasks" onTap={onPrefixTap} />
+            <PrefixChip prefix="@" label="tasks" onTap={onPrefixTap} />
           ) : (
             <span>
-              <Kbd>T:</Kbd> tasks
+              <Kbd>@</Kbd> tasks
             </span>
           )}
           {agentConnected &&

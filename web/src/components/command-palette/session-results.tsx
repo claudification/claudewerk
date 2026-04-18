@@ -26,6 +26,70 @@ function actionLabel(s: Session, selectedSessionId: string | null) {
   return ''
 }
 
+interface SessionRowProps {
+  session: Session
+  selectedSessionId: string | null
+  projectSettings: SessionResultsProps['projectSettings']
+  active: boolean
+  onSelect: () => void
+  onMouseEnter: () => void
+}
+
+export function SessionRow({
+  session,
+  selectedSessionId,
+  projectSettings,
+  active,
+  onSelect,
+  onMouseEnter,
+}: SessionRowProps) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      onMouseEnter={onMouseEnter}
+      className={cn(
+        'w-full px-3 py-2 flex items-center gap-3 text-left transition-colors',
+        active ? 'bg-[#33467c]/50' : 'hover:bg-[#33467c]/25',
+      )}
+    >
+      <span className={cn('text-sm', statusColor(session, selectedSessionId))}>
+        {statusIndicator(session, selectedSessionId)}
+      </span>
+      <div className="flex-1 min-w-0">
+        <div className="text-xs text-[#a9b1d6] truncate flex items-center gap-1.5">
+          {projectSettings[session.cwd]?.icon && (
+            <span
+              style={projectSettings[session.cwd]?.color ? { color: projectSettings[session.cwd].color } : undefined}
+            >
+              {renderProjectIcon(projectSettings[session.cwd]?.icon || '', 'w-3 h-3 inline')}
+            </span>
+          )}
+          <span style={projectSettings[session.cwd]?.color ? { color: projectSettings[session.cwd].color } : undefined}>
+            {projectSettings[session.cwd]?.label || lastPathSegments(session.cwd, 3)}
+          </span>
+          {(session.title || session.agentName) && (
+            <>
+              <span className="text-[#3b4261]">·</span>
+              <span className="text-[#7aa2f7] truncate">{session.title || session.agentName}</span>
+            </>
+          )}
+        </div>
+        <div className="text-[10px] text-[#565f89] flex items-center gap-2">
+          <span>{session.id.slice(0, 8)}</span>
+          <span>{formatAge(session.lastActivity)}</span>
+          {session.model && <span>{formatModel(session.model)}</span>}
+        </div>
+      </div>
+      {actionLabel(session, selectedSessionId) && (
+        <span className={cn('text-[10px]', canTerminal(session) ? 'text-[#9ece6a]' : 'text-[#565f89]')}>
+          {actionLabel(session, selectedSessionId)}
+        </span>
+      )}
+    </button>
+  )
+}
+
 export function SessionResults({
   sessions,
   selectedSessionId,
@@ -41,54 +105,15 @@ export function SessionResults({
   return (
     <>
       {sessions.map((session, i) => (
-        <button
+        <SessionRow
           key={session.id}
-          type="button"
-          onClick={() => onSelect(session.id)}
+          session={session}
+          selectedSessionId={selectedSessionId}
+          projectSettings={projectSettings}
+          active={i === activeIndex}
+          onSelect={() => onSelect(session.id)}
           onMouseEnter={() => setActiveIndex(i)}
-          className={cn(
-            'w-full px-3 py-2 flex items-center gap-3 text-left transition-colors',
-            i === activeIndex ? 'bg-[#33467c]/50' : 'hover:bg-[#33467c]/25',
-          )}
-        >
-          <span className={cn('text-sm', statusColor(session, selectedSessionId))}>
-            {statusIndicator(session, selectedSessionId)}
-          </span>
-          <div className="flex-1 min-w-0">
-            <div className="text-xs text-[#a9b1d6] truncate flex items-center gap-1.5">
-              {projectSettings[session.cwd]?.icon && (
-                <span
-                  style={
-                    projectSettings[session.cwd]?.color ? { color: projectSettings[session.cwd].color } : undefined
-                  }
-                >
-                  {renderProjectIcon(projectSettings[session.cwd]?.icon || '', 'w-3 h-3 inline')}
-                </span>
-              )}
-              <span
-                style={projectSettings[session.cwd]?.color ? { color: projectSettings[session.cwd].color } : undefined}
-              >
-                {projectSettings[session.cwd]?.label || lastPathSegments(session.cwd, 3)}
-              </span>
-              {(session.title || session.agentName) && (
-                <>
-                  <span className="text-[#3b4261]">·</span>
-                  <span className="text-[#7aa2f7] truncate">{session.title || session.agentName}</span>
-                </>
-              )}
-            </div>
-            <div className="text-[10px] text-[#565f89] flex items-center gap-2">
-              <span>{session.id.slice(0, 8)}</span>
-              <span>{formatAge(session.lastActivity)}</span>
-              {session.model && <span>{formatModel(session.model)}</span>}
-            </div>
-          </div>
-          {actionLabel(session, selectedSessionId) && (
-            <span className={cn('text-[10px]', canTerminal(session) ? 'text-[#9ece6a]' : 'text-[#565f89]')}>
-              {actionLabel(session, selectedSessionId)}
-            </span>
-          )}
-        </button>
+        />
       ))}
     </>
   )

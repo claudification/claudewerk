@@ -397,8 +397,8 @@ const SETTINGS: SettingItem[] = [
   {
     group: 'Keyboard',
     label: 'Chord timeout (s)',
-    description: 'How long to wait for second chord key (⌘G …) before dismissing',
-    keywords: 'chord shortcut keyboard timeout cmd+g',
+    description: 'How long to wait for second chord key (⌘K … / ⌘G …) before dismissing',
+    keywords: 'chord shortcut keyboard timeout cmd+k cmd+g',
     render: ctx => (
       <input
         type="number"

@@ -7,7 +7,7 @@ import { AlertTriangle, FileText } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useProject } from '@/hooks/use-project'
 import { useSessionsStore } from '@/hooks/use-sessions'
-import { useCommand } from '@/lib/commands'
+import { useChordCommand, useCommand } from '@/lib/commands'
 import { haptic } from '@/lib/utils'
 import { InputEditor } from './input-editor'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
@@ -28,7 +28,7 @@ export function QuickTaskModal() {
   const { createTask } = useProject(selectedSessionId && isActive ? selectedSessionId : null)
 
   // Open via command (registered here so it has access to selectedSessionId/isActive)
-  useCommand(
+  useChordCommand(
     'quick-task',
     () => {
       if (selectedSessionId && isActive) {
@@ -36,7 +36,7 @@ export function QuickTaskModal() {
         setOpen(true)
       }
     },
-    { label: 'Quick task', shortcut: 'mod+g n', group: 'Navigation' },
+    { label: 'Quick task', key: 'n', group: 'Navigation' },
   )
 
   // Also register direct Ctrl+Shift+N shortcut

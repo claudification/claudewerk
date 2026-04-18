@@ -1,5 +1,5 @@
 /**
- * ChordOverlay - Shows available chord completions after a chord prefix is pressed (e.g. ⌘G)
+ * ChordOverlay - Shows available chord completions after a chord prefix is pressed (⌘K, or legacy ⌘G)
  */
 
 import { useEffect, useState } from 'react'

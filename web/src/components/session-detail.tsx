@@ -149,7 +149,7 @@ export const SessionDetail = memo(function SessionDetail() {
     }
   }, [selectedSessionId, selectedSubagentId])
 
-  // T: command palette -> task editor overlay (no tab switch, transcript stays mounted)
+  // @ / t: command palette -> task editor overlay (no tab switch, transcript stays mounted)
   const pendingTaskEdit = useSessionsStore(s => s.pendingTaskEdit)
   const { tasks: projectTasks, readTask, updateTask, moveTask } = useProject(selectedSessionId ?? null)
   const [taskEditorTask, setTaskEditorTask] = useState<import('@/hooks/use-project').ProjectTask | null>(null)
@@ -223,7 +223,7 @@ export const SessionDetail = memo(function SessionDetail() {
       {canAdmin && session && <ShareBanner sessionCwd={session.cwd} />}
       {/* Dialog Modal */}
       {selectedSessionId && <DialogOverlay sessionId={selectedSessionId} />}
-      {/* Task Editor Modal (from T: command palette, renders over any tab) */}
+      {/* Task Editor Modal (from @ / t: command palette, renders over any tab) */}
       {taskEditorTask && selectedSessionId && (
         <TaskEditor
           task={taskEditorTask}

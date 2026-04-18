@@ -39,7 +39,7 @@ import {
   wsSend,
 } from '@/hooks/use-sessions'
 import { useWebSocket } from '@/hooks/use-websocket'
-import { executeCommand, formatShortcut, useCommand, validateChordBindings } from '@/lib/commands'
+import { executeCommand, formatShortcut, useChordCommand, useCommand, validateChordBindings } from '@/lib/commands'
 import { focusInputEditor } from '@/lib/focus-input'
 import { setChordTimeout } from '@/lib/key-layers'
 import { canTerminal } from '@/lib/types'
@@ -396,16 +396,31 @@ function Dashboard() {
     store.toggleSwitcher()
   }, [])
 
+  const openCommandMode = useCallback(() => {
+    const store = useSessionsStore.getState()
+    if (store.showTerminal) store.setShowTerminal(false)
+    store.openSwitcherWithFilter('>')
+  }, [])
+
+  // ⌘P -- VSCode-parity quick open (sessions + commands fuzzy-merged)
   useCommand('open-switcher', openSwitcher, {
-    label: 'Session switcher',
-    shortcut: 'mod+k',
+    label: 'Command palette',
+    shortcut: 'mod+p',
     group: 'Navigation',
   })
 
-  // Also reachable via CMD+G chord
-  useCommand('go-switcher', openSwitcher, {
-    label: 'Session switcher',
-    shortcut: 'mod+g k',
+  // ⌘⇧P -- VSCode-parity command mode (opens palette pre-filled with ">")
+  useCommand('open-command-mode', openCommandMode, {
+    label: 'Command palette (commands)',
+    shortcut: 'mod+shift+p',
+    group: 'Navigation',
+  })
+
+  // Chord aliases so ⌘K K and ⌘G K both surface it in the chord overlay.
+  // Chord key = "K" for palette because "P" already belongs to the project board chord.
+  useChordCommand('palette-via-chord', openSwitcher, {
+    label: 'Command palette',
+    key: 'k',
     group: 'Navigation',
   })
 
@@ -425,15 +440,15 @@ function Dashboard() {
     { label: 'Toggle sidebar', shortcut: 'mod+b', group: 'View' },
   )
 
-  useCommand(
+  useChordCommand(
     'toggle-debug',
     () => {
       useSessionsStore.getState().toggleDebugConsole()
     },
-    { label: 'Toggle debug console', shortcut: 'mod+g d', group: 'View' },
+    { label: 'Toggle debug console', key: 'd', group: 'View' },
   )
 
-  useCommand(
+  useChordCommand(
     'toggle-tty',
     () => {
       const store = useSessionsStore.getState()
@@ -445,10 +460,10 @@ function Dashboard() {
         store.openTab(store.selectedSessionId, currentTab === 'tty' ? 'transcript' : 'tty')
       }
     },
-    { label: 'Toggle terminal tab', shortcut: 'mod+g t', group: 'Navigation' },
+    { label: 'Toggle terminal tab', key: 't', group: 'Navigation' },
   )
 
-  useCommand(
+  useChordCommand(
     'fullscreen-terminal',
     () => {
       const store = useSessionsStore.getState()
@@ -462,18 +477,18 @@ function Dashboard() {
         }
       }
     },
-    { label: 'Toggle fullscreen terminal', shortcut: 'mod+g f', group: 'Navigation' },
+    { label: 'Toggle fullscreen terminal', key: 'f', group: 'Navigation' },
   )
 
-  useCommand(
+  useChordCommand(
     'spawn-session',
     () => {
       useSessionsStore.getState().openSwitcherWithFilter('S:./')
     },
-    { label: 'Spawn new session', shortcut: 'mod+g s', group: 'Session' },
+    { label: 'Spawn new session', key: 's', group: 'Session' },
   )
 
-  useCommand(
+  useChordCommand(
     'launch-session',
     () => {
       const store = useSessionsStore.getState()
@@ -482,10 +497,10 @@ function Dashboard() {
         : store.dashboardPrefs.defaultSessionCwd
       openSpawnDialog({ cwd: cwd || './' })
     },
-    { label: 'Launch session', shortcut: 'mod+g l', group: 'Session' },
+    { label: 'Launch session', key: 'l', group: 'Session' },
   )
 
-  useCommand(
+  useChordCommand(
     'terminate-session',
     () => {
       const store = useSessionsStore.getState()
@@ -496,18 +511,18 @@ function Dashboard() {
       const name = session.title || session.agentName || null
       openTerminateConfirm(sid, name)
     },
-    { label: 'Terminate session', shortcut: 'mod+g x', group: 'Session' },
+    { label: 'Terminate session', key: 'x', group: 'Session' },
   )
 
-  useCommand(
+  useChordCommand(
     'search-tasks',
     () => {
-      useSessionsStore.getState().openSwitcherWithFilter('T: ')
+      useSessionsStore.getState().openSwitcherWithFilter('@')
     },
-    { label: 'Search tasks', shortcut: 'mod+g /', group: 'Navigation' },
+    { label: 'Search tasks', key: '/', group: 'Navigation' },
   )
 
-  useCommand(
+  useChordCommand(
     'open-notes',
     () => {
       const store = useSessionsStore.getState()
@@ -516,10 +531,10 @@ function Dashboard() {
         store.setPendingFilePath('NOTES.md')
       }
     },
-    { label: 'Open NOTES.md', shortcut: 'mod+g o', group: 'Navigation' },
+    { label: 'Open NOTES.md', key: 'o', group: 'Navigation' },
   )
 
-  useCommand(
+  useChordCommand(
     'open-project',
     () => {
       const store = useSessionsStore.getState()
@@ -530,7 +545,7 @@ function Dashboard() {
         store.openTab(sid, 'project')
       }
     },
-    { label: 'Open project board', shortcut: 'mod+g p', group: 'Navigation' },
+    { label: 'Open project board', key: 'p', group: 'Navigation' },
   )
 
   const goHome = useCallback(() => {
@@ -549,19 +564,19 @@ function Dashboard() {
     group: 'Navigation',
   })
 
-  useCommand('go-home-chord', goHome, {
+  useChordCommand('go-home-chord', goHome, {
     label: 'Go to transcript',
-    shortcut: 'mod+g Space',
+    key: 'Space',
     group: 'Navigation',
   })
 
-  useCommand(
+  useChordCommand(
     'toggle-ended-sessions',
     () => {
       const store = useSessionsStore.getState()
       store.updateDashboardPrefs({ showEndedSessions: !store.dashboardPrefs.showEndedSessions })
     },
-    { label: 'Toggle show ended sessions', shortcut: 'mod+g e', group: 'View' },
+    { label: 'Toggle show ended sessions', key: 'e', group: 'View' },
   )
 
   useCommand(
@@ -795,7 +810,7 @@ function Dashboard() {
       {/* Auth expired modal */}
       <AuthExpiredModal />
 
-      {/* Chord mode overlay (⌘G prefix) */}
+      {/* Chord mode overlay (⌘K prefix; ⌘G alias) */}
       <ChordOverlay />
 
       {/* Spawn dialog */}
@@ -804,7 +819,7 @@ function Dashboard() {
       {/* Revive dialog */}
       <ReviveDialog />
 
-      {/* Terminate confirmation (mod+g x) */}
+      {/* Terminate confirmation (⌘K X / ⌘G X) */}
       <TerminateConfirmDialog />
 
       {/* Toast notifications */}

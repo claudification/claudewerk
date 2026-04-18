@@ -11,6 +11,11 @@ export interface PaletteCommand {
 
 export type PaletteMode = 'session' | 'command' | 'file' | 'spawn' | 'task'
 
+/** Merged result item for the no-prefix palette: sessions + commands fuzzy-matched together. */
+export type MergedItem =
+  | { kind: 'session'; session: Session; score: number; live: boolean }
+  | { kind: 'command'; command: PaletteCommand; score: number; live: boolean }
+
 export interface CommandPaletteProps {
   onSelect: (sessionId: string) => void
   onFileSelect: (sessionId: string, path: string) => void

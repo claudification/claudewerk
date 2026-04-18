@@ -37,7 +37,8 @@ export function useCommandPalette(onClose: () => void) {
   const isCommandMode = filter.startsWith('>')
   const isFileMode = !isCommandMode && filter.toLowerCase().startsWith('f:') && !filter.toLowerCase().startsWith('f:/')
   const isSpawnMode = !isCommandMode && filter.toLowerCase().startsWith('s:')
-  const isTaskMode = !isCommandMode && filter.toLowerCase().startsWith('t:')
+  // Tasks: "@" (VSCode-style) or legacy "t:"
+  const isTaskMode = !isCommandMode && (filter.startsWith('@') || filter.toLowerCase().startsWith('t:'))
 
   const mode: PaletteMode = isCommandMode
     ? 'command'
@@ -131,17 +132,65 @@ export function useCommandPalette(onClose: () => void) {
       }),
     [allSessions, projectSettings],
   )
-  const filteredSessions =
-    filter && !isFileMode && !isSpawnMode && !isCommandMode
-      ? sessionFzf
-          .find(filter)
-          .sort((a, b) => {
-            const aLive = a.item.status !== 'ended' ? 1 : 0
-            const bLive = b.item.status !== 'ended' ? 1 : 0
-            return bLive - aLive // active/idle first, fzf order preserved within tier
-          })
-          .map(r => r.item)
-      : allSessions.filter(s => s.status !== 'ended' && s.id !== selectedSessionId)
+  // Fzf over commands for the merged-into-sessions result list (no prefix).
+  const paletteCommandFzf = useMemo(
+    () => new Fzf(registryCommands, { selector: c => `${c.label} ${c.id}`, casing: 'case-insensitive' }),
+    [registryCommands],
+  )
+  const isSessionMode = !isFileMode && !isSpawnMode && !isCommandMode && !isTaskMode
+
+  // Unified fuzzy results for session mode: sessions + commands-at-low-score.
+  // Sessions are the primary surface, commands appear below for matching filter text.
+  const sessionSearchResults = useMemo(() => {
+    if (!isSessionMode || !filter) return []
+    return sessionFzf.find(filter).map(r => ({
+      kind: 'session' as const,
+      session: r.item,
+      score: r.score,
+      live: r.item.status !== 'ended',
+    }))
+  }, [isSessionMode, filter, sessionFzf])
+
+  const commandSearchResults = useMemo(() => {
+    if (!isSessionMode || !filter) return []
+    // Penalty keeps commands below equally-scored sessions ("low score")
+    const COMMAND_SCORE_PENALTY = 0.5
+    return paletteCommandFzf.find(filter).map(r => ({
+      kind: 'command' as const,
+      command: r.item,
+      score: r.score * COMMAND_SCORE_PENALTY,
+      live: false,
+    }))
+  }, [isSessionMode, filter, paletteCommandFzf])
+
+  type MergedItem =
+    | { kind: 'session'; session: Session; score: number; live: boolean }
+    | { kind: 'command'; command: (typeof registryCommands)[0]; score: number; live: boolean }
+
+  const mergedItems: MergedItem[] = useMemo(() => {
+    if (!isSessionMode) return []
+    if (!filter) {
+      return allSessions
+        .filter(s => s.status !== 'ended' && s.id !== selectedSessionId)
+        .map(s => ({ kind: 'session' as const, session: s, score: 0, live: true }))
+    }
+    const merged: MergedItem[] = [...sessionSearchResults, ...commandSearchResults]
+    merged.sort((a, b) => {
+      // Live sessions always above everything else (ended sessions + commands)
+      if (a.live !== b.live) return a.live ? -1 : 1
+      return b.score - a.score
+    })
+    return merged
+  }, [isSessionMode, filter, allSessions, selectedSessionId, sessionSearchResults, commandSearchResults])
+
+  // Preserved for consumers that only want the session subset (footer hints etc.)
+  const filteredSessions = useMemo(
+    () =>
+      mergedItems
+        .filter((i): i is Extract<MergedItem, { kind: 'session' }> => i.kind === 'session')
+        .map(i => i.session),
+    [mergedItems],
+  )
 
   // --- File mode ---
   const fileFilter = isFileMode ? filter.slice(2).trim().toLowerCase() : ''
@@ -257,7 +306,12 @@ export function useCommandPalette(onClose: () => void) {
   }
 
   // --- Task mode ---
-  const taskFilter = isTaskMode ? filter.slice(2).trim().toLowerCase() : ''
+  // Strip either "@" (1 char) or "t:" / "T:" (2 chars)
+  const taskFilter = isTaskMode
+    ? filter.startsWith('@')
+      ? filter.slice(1).trim().toLowerCase()
+      : filter.slice(2).trim().toLowerCase()
+    : ''
   const { tasks: projectTasks, loading: tasksLoading } = useProject(isTaskMode ? selectedSessionId : null)
 
   const filteredTasks = useMemo(() => scoreAndSortTasks(projectTasks, taskFilter), [projectTasks, taskFilter])
@@ -271,7 +325,7 @@ export function useCommandPalette(onClose: () => void) {
         ? filteredFiles.length
         : isTaskMode
           ? filteredTasks.length
-          : filteredSessions.length
+          : mergedItems.length
 
   useEffect(() => {
     if (activeIndex >= itemCount) {
@@ -344,8 +398,13 @@ export function useCommandPalette(onClose: () => void) {
             useSessionsStore.getState().setPendingTaskEdit({ slug: task.slug, status: task.status })
             onClose()
           }
-        } else if (filteredSessions[activeIndex]) {
-          selectSessionWithTracking(filteredSessions[activeIndex], callbacks.onSelectSession)
+        } else {
+          const item = mergedItems[activeIndex]
+          if (item?.kind === 'session') {
+            selectSessionWithTracking(item.session, callbacks.onSelectSession)
+          } else if (item?.kind === 'command') {
+            item.command.action()
+          }
         }
         break
     }
@@ -368,6 +427,7 @@ export function useCommandPalette(onClose: () => void) {
 
     // Store data
     sessions: filteredSessions,
+    mergedItems,
     allSessions,
     selectedSessionId,
     projectSettings,

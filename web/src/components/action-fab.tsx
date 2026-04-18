@@ -83,7 +83,7 @@ function buildActions(session: Session | undefined, selectedSessionId: string | 
         action: () => {
           // Open the proper modal -- inline two-tap confirm was easy to miss on
           // mobile and left the action looking unresponsive. This matches the
-          // ⌘G X command palette path.
+          // ⌘K X / ⌘G X command palette path.
           const name = session.title || session.agentName || null
           openTerminateConfirm(session.id, name)
         },

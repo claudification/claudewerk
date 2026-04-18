@@ -1,10 +1,10 @@
 import { FileText, FolderPlus } from 'lucide-react'
 import { useSessionsStore } from '@/hooks/use-sessions'
 import { useKeyLayer } from '@/lib/key-layers'
-import { CommandResults } from './command-results'
+import { CommandResults, CommandRow } from './command-results'
 import { FileResults } from './file-results'
 import { FooterHints } from './footer-hints'
-import { SessionResults } from './session-results'
+import { SessionRow } from './session-results'
 import { SpawnResults } from './spawn-results'
 import type { CommandPaletteProps } from './types'
 import { useCommandPalette } from './use-command-palette'
@@ -49,7 +49,7 @@ export function CommandPalette({ onSelect, onFileSelect, onClose }: CommandPalet
                     ? 'Search files...'
                     : palette.mode === 'task'
                       ? 'Search project tasks...'
-                      : 'Switch session... (>cmd  F:files  S:spawn  T:tasks)'
+                      : 'Search sessions + commands... (>cmd  @tasks  F:files  S:spawn)'
             }
             className="w-full bg-transparent text-[19px] sm:text-sm text-[#a9b1d6] placeholder:text-[#565f89] outline-none"
             autoComplete="off"
@@ -125,19 +125,34 @@ export function CommandPalette({ onSelect, onFileSelect, onClose }: CommandPalet
               setActiveIndex={palette.setActiveIndex}
               onFileSelect={onFileSelect}
             />
+          ) : palette.mergedItems.length === 0 ? (
+            <div className="px-3 py-4 text-center text-[10px] text-[#565f89]">No matches</div>
           ) : (
-            <SessionResults
-              sessions={palette.sessions}
-              selectedSessionId={palette.selectedSessionId}
-              projectSettings={palette.projectSettings}
-              activeIndex={palette.activeIndex}
-              setActiveIndex={palette.setActiveIndex}
-              onSelect={id => {
-                const session = useSessionsStore.getState().sessionsById[id]
-                if (session) palette.selectSessionWithTracking(session, onSelect)
-                else onSelect(id)
-              }}
-            />
+            palette.mergedItems.map((item, i) =>
+              item.kind === 'session' ? (
+                <SessionRow
+                  key={`s:${item.session.id}`}
+                  session={item.session}
+                  selectedSessionId={palette.selectedSessionId}
+                  projectSettings={palette.projectSettings}
+                  active={i === palette.activeIndex}
+                  onSelect={() => {
+                    const sess = useSessionsStore.getState().sessionsById[item.session.id]
+                    if (sess) palette.selectSessionWithTracking(sess, onSelect)
+                    else onSelect(item.session.id)
+                  }}
+                  onMouseEnter={() => palette.setActiveIndex(i)}
+                />
+              ) : (
+                <CommandRow
+                  key={`c:${item.command.id}`}
+                  command={item.command}
+                  active={i === palette.activeIndex}
+                  onMouseEnter={() => palette.setActiveIndex(i)}
+                  dim
+                />
+              ),
+            )
           )}
         </div>
 
