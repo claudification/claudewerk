@@ -929,7 +929,7 @@ export function MarkdownInput({
             spellCheck={true}
             data-form-type="other"
             className={cn(
-              'absolute inset-0 w-full h-full bg-transparent px-3 py-3 resize-none overflow-y-auto overflow-x-hidden mi-stable-gutter',
+              'absolute inset-0 w-full h-full bg-transparent px-3 py-3 resize-none overflow-y-auto overflow-x-hidden mi-invisible-scrollbar',
               textClasses,
               'text-transparent caret-foreground selection:bg-accent/30 selection:text-foreground',
               'focus:outline-none',
@@ -1133,7 +1133,7 @@ export function MarkdownInput({
         spellCheck={false}
         data-form-type="other"
         className={cn(
-          'relative w-full bg-transparent border border-border rounded pl-3 pr-14 py-2 resize-none overflow-y-auto overflow-x-hidden mi-stable-gutter',
+          'relative w-full bg-transparent border border-border rounded pl-3 pr-14 py-2 resize-none overflow-y-auto overflow-x-hidden mi-invisible-scrollbar',
           textClasses,
           'text-transparent caret-foreground selection:bg-accent/30 selection:text-foreground',
           'focus:outline-none focus:border-ring',
