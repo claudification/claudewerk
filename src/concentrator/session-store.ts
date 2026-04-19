@@ -2266,15 +2266,13 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
           session.stats.toolCallCount += content.filter(c => c.type === 'tool_use').length
         }
 
-        // Extract model + effort from assistant messages (more reliable than SessionStart).
-        // CC writes `model: "<synthetic>"` on locally-generated assistant blocks
-        // (auto-compact summaries, recap, hook-injected messages). Only accept it as
-        // a fallback when we have nothing else -- never let it clobber a real model.
+        // Extract model from assistant messages as a fallback only.
+        // configuredModel (from stream-json init / wrapper --model arg) is the
+        // authoritative source. Assistant messages strip context-window suffixes
+        // like [1m], so only use them when we have nothing better.
         const assistantModel = assistantEntry.message?.model
-        if (assistantModel && typeof assistantModel === 'string') {
-          if (assistantModel !== '<synthetic>' || !session.model) {
-            session.model = assistantModel
-          }
+        if (assistantModel && typeof assistantModel === 'string' && assistantModel !== '<synthetic>' && !session.model) {
+          session.model = assistantModel
         }
 
         // Extract token usage (latest = context window, cumulative = totals).
