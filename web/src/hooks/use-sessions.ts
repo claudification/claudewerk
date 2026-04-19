@@ -171,6 +171,15 @@ interface SessionsState {
     timestamp: number
   }>
   dismissClipboard: (id: string) => void
+  notifications: Array<{
+    id: string
+    sessionId: string
+    title: string
+    message: string
+    timestamp: number
+  }>
+  dismissNotification: (id: string) => void
+  clearSessionNotifications: (sessionId: string) => void
   requestedTab: string | null
   requestedTabSeq: number
   pendingFilePath: string | null
@@ -496,6 +505,15 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     useSessionsStore.setState(state => ({
       clipboardCaptures: state.clipboardCaptures.filter(c => c.id !== id),
     })),
+  notifications: [],
+  dismissNotification: id =>
+    useSessionsStore.setState(state => ({
+      notifications: state.notifications.filter(n => n.id !== id),
+    })),
+  clearSessionNotifications: sessionId =>
+    useSessionsStore.setState(state => ({
+      notifications: state.notifications.filter(n => n.sessionId !== sessionId),
+    })),
   requestedTab: null,
   requestedTabSeq: 0,
   pendingFilePath: null,
@@ -612,12 +630,13 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     })
     updateHash(id ? `session/${id}` : '')
     setLastSessionId(id)
-    // Clear notification badge when viewing a session
+    // Clear notification badge + bell notifications when viewing a session
     if (id) {
       const session = get().sessionsById[id]
       if (session?.hasNotification) {
         get().sendWsMessage({ type: 'session_viewed', sessionId: id })
       }
+      get().clearSessionNotifications(id)
     }
   },
   selectSubagent: agentId => {

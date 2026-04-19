@@ -2,6 +2,7 @@ import { Settings } from 'lucide-react'
 import { Popover } from 'radix-ui'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { NerdModal } from '@/components/nerd-modal'
+import { NotificationBell } from '@/components/notification-bell'
 import { ProjectSettingsEditor } from '@/components/project-settings-editor'
 import { SettingsDialog } from '@/components/settings-page'
 import { UsageBar } from '@/components/usage-bar'
@@ -169,6 +170,8 @@ export function Header() {
         >
           <Settings className="w-3.5 h-3.5" />
         </button>
+
+        <NotificationBell />
       </div>
 
       <SettingsDialog open={showSettings} onOpenChange={setShowSettings} />

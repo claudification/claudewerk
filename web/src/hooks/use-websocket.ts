@@ -996,7 +996,7 @@ export function useWebSocket() {
             return
           }
 
-          // Toast notifications -> direct DOM event
+          // Toast notifications -> direct DOM event + bell accumulation
           if (msg.type === 'toast') {
             const title = (msg.title as string) || 'Notification'
             const body = (msg.message as string) || ''
@@ -1011,6 +1011,25 @@ export function useWebSocket() {
                 },
               }),
             )
+            // Accumulate non-transient toasts into bell notifications
+            if (msg.sessionId && !msg.variant) {
+              const store = useSessionsStore.getState()
+              const isViewing = store.selectedSessionId === msg.sessionId
+              if (!isViewing) {
+                useSessionsStore.setState(state => ({
+                  notifications: [
+                    ...state.notifications,
+                    {
+                      id: `toast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                      sessionId: msg.sessionId as string,
+                      title,
+                      message: body,
+                      timestamp: Date.now(),
+                    },
+                  ],
+                }))
+              }
+            }
             return
           }
 
