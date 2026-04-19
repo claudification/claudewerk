@@ -1,8 +1,9 @@
 import { Save } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useSessionsStore, wsSend } from '@/hooks/use-sessions'
-import { resolveToolDisplay, TOOL_DISPLAY_KEYS } from '@/lib/dashboard-prefs'
+import { resolveToolDisplay, type SettingsTab, TOOL_DISPLAY_KEYS } from '@/lib/dashboard-prefs'
 import { clearCacheAndReload } from '@/lib/utils'
 import { BUILD_VERSION } from '../../../src/shared/version'
 import { KeyCapture } from './settings/key-capture'
@@ -64,12 +65,22 @@ const SHORTCUTS = [
 // --- Main settings content ---
 
 interface SettingItem {
+  tab: SettingsTab
   group: string
   label: string
   description: string
   server?: boolean
   keywords?: string // extra search terms
   render: (ctx: SettingsContext) => React.ReactNode
+}
+
+const TAB_ORDER: SettingsTab[] = ['general', 'display', 'input', 'sessions', 'system']
+const TAB_LABELS: Record<SettingsTab, string> = {
+  general: 'General',
+  display: 'Display',
+  input: 'Input',
+  sessions: 'Sessions',
+  system: 'System',
 }
 
 interface SettingsContext {
@@ -84,6 +95,7 @@ interface SettingsContext {
 const SETTINGS: SettingItem[] = [
   // --- General ---
   {
+    tab: 'general',
     group: 'General',
     label: 'User label',
     description: 'Tag shown next to user messages',
@@ -101,6 +113,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'general',
     group: 'General',
     label: 'User tag size',
     description: 'Size of the user label badge',
@@ -110,6 +123,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'general',
     group: 'General',
     label: 'User tag color',
     description: 'Background color for user label',
@@ -126,6 +140,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'general',
     group: 'General',
     label: 'Agent label',
     description: 'Tag shown next to agent messages',
@@ -143,6 +158,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'general',
     group: 'General',
     label: 'Agent tag size',
     description: 'Size of the agent label badge',
@@ -152,6 +168,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'general',
     group: 'General',
     label: 'Agent tag color',
     description: 'Background color for agent label',
@@ -168,6 +185,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'general',
     group: 'General',
     label: 'Default session',
     description: 'Auto-select this project when opening the dashboard (per-device)',
@@ -181,7 +199,8 @@ const SETTINGS: SettingItem[] = [
   },
   // --- Display ---
   {
-    group: 'Display',
+    tab: 'general',
+    group: 'General',
     label: 'Default view',
     description: 'What to show when selecting a session (per-device)',
     keywords: 'terminal tty transcript',
@@ -198,6 +217,7 @@ const SETTINGS: SettingItem[] = [
   },
   // --- Input ---
   {
+    tab: 'input',
     group: 'Input',
     label: 'Editor backend',
     description: 'Legacy textarea (default) or CodeMirror (experimental, better markdown rendering)',
@@ -214,6 +234,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'input',
     group: 'Input',
     label: 'CR delay',
     description: 'Delay (ms) before carriage return after paste (0 = auto)',
@@ -232,6 +253,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'input',
     group: 'Input',
     label: 'Voice input',
     description: 'Show microphone button in input bar',
@@ -246,6 +268,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'input',
     group: 'Input',
     label: 'Voice FAB (touch)',
     description: 'Floating hold-to-record button on touch devices',
@@ -260,6 +283,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'input',
     group: 'Input',
     label: 'Push-to-talk key',
     description: 'Hold a key to record voice input (desktop)',
@@ -270,6 +294,7 @@ const SETTINGS: SettingItem[] = [
   },
   // --- Voice ---
   {
+    tab: 'input',
     group: 'Voice',
     label: 'LLM refinement',
     description: 'Post-process voice transcripts with Haiku to fix ASR errors',
@@ -285,6 +310,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'input',
     group: 'Voice',
     label: 'Refinement prompt',
     description: 'Custom system prompt for voice refinement (leave empty for default)',
@@ -307,6 +333,7 @@ const SETTINGS: SettingItem[] = [
   },
   // --- Display ---
   {
+    tab: 'display',
     group: 'Display',
     label: 'Show ended sessions',
     description: 'Show [ENDED] sessions within CWD groups in sidebar',
@@ -321,6 +348,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'display',
     group: 'Display',
     label: 'Show inactive projects',
     description: 'Show projects with only ended sessions at bottom of sidebar',
@@ -335,6 +363,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'display',
     group: 'Display',
     label: 'Compact mode',
     description: 'Reduce spacing in session list',
@@ -349,6 +378,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'display',
     group: 'Display',
     label: 'Show thinking',
     description: 'Display model thinking blocks in transcript',
@@ -363,6 +393,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'system',
     group: 'Performance',
     label: 'Session cache size',
     description: 'Keep N recent sessions in memory for instant switching (0 = disabled)',
@@ -379,6 +410,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'system',
     group: 'Performance',
     label: 'Cache timeout (min)',
     description: 'Evict cached non-selected sessions after N minutes (0 = never)',
@@ -395,6 +427,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'system',
     group: 'Keyboard',
     label: 'Chord timeout (s)',
     description: 'How long to wait for second chord key (⌘K … / ⌘G …) before dismissing',
@@ -414,6 +447,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'display',
     group: 'Display',
     label: 'Chat bubbles',
     description: 'iMessage-style bubbles for user messages',
@@ -428,6 +462,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'display',
     group: 'Display',
     label: 'Bubble color',
     description: 'Color for user chat bubbles',
@@ -437,6 +472,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'display',
     group: 'Display',
     label: 'Context bar in sidebar',
     description: 'Show context window usage on session cards',
@@ -451,6 +487,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'display',
     group: 'Display',
     label: 'Cost in sidebar',
     description: 'Show session cost badges on session cards',
@@ -465,6 +502,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'display',
     group: 'Display',
     label: 'WS traffic stats',
     description: 'Show msg/s and KB/s in header bar',
@@ -479,6 +517,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'system',
     group: 'Performance',
     label: 'Clear cache & reload',
     description: 'Wipe service worker cache and reload the dashboard',
@@ -494,6 +533,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'system',
     group: 'Debug',
     label: 'Show Diag tab',
     description: 'Show the Diag tab in session detail (debug info)',
@@ -508,6 +548,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'system',
     group: 'Developer',
     label: 'Performance monitor',
     description: 'Track render times, grouping cost, WS processing. View in nerd modal Perf tab',
@@ -522,6 +563,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'sessions',
     group: 'Sessions',
     label: 'Default launch mode',
     description: 'Default mode when spawning/reviving sessions (per-project overrides this)',
@@ -538,6 +580,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'sessions',
     group: 'Sessions',
     label: 'Default effort',
     description: 'Default --effort level for new sessions (per-project overrides this)',
@@ -558,6 +601,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'sessions',
     group: 'Sessions',
     label: 'Default model',
     description: 'Default --model for new sessions (per-project overrides this)',
@@ -573,6 +617,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'display',
     group: 'Display',
     label: 'Show streaming',
     description: 'Show token-by-token streaming block for headless sessions',
@@ -587,6 +632,7 @@ const SETTINGS: SettingItem[] = [
     ),
   },
   {
+    tab: 'display',
     group: 'Display',
     label: 'Sanitize paths',
     description: 'Strip redundant cd <cwd> prefixes from displayed commands',
@@ -639,8 +685,9 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
     updatePrefs,
   }
 
-  // Filter settings
+  // Filter settings (flat view; tabs hidden when filter is active)
   const lowerFilter = filter.toLowerCase()
+  const isFiltering = lowerFilter.length > 0
   const filtered = useMemo(() => {
     if (!lowerFilter) return SETTINGS
     return SETTINGS.filter(
@@ -652,16 +699,19 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
     )
   }, [lowerFilter])
 
-  // Group filtered settings
+  const activeTab: SettingsTab = (prefs.settingsTab ?? 'general') as SettingsTab
+  const visibleItems = isFiltering ? filtered : SETTINGS.filter(s => s.tab === activeTab)
+
+  // Group visible settings for rendering (preserves in-tab sub-group headers)
   const groups = useMemo(() => {
     const map = new Map<string, SettingItem[]>()
-    for (const item of filtered) {
+    for (const item of visibleItems) {
       const existing = map.get(item.group)
       if (existing) existing.push(item)
       else map.set(item.group, [item])
     }
     return map
-  }, [filtered])
+  }, [visibleItems])
 
   // Focus filter on open
   useEffect(() => {
@@ -678,7 +728,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md p-0 gap-0 max-h-[85vh] overflow-hidden flex flex-col">
+      <DialogContent className="max-w-lg p-0 gap-0 max-h-[85vh] overflow-hidden flex flex-col">
         <DialogTitle className="uppercase tracking-wider px-6 pt-6 pb-0">Settings</DialogTitle>
 
         {/* Filter input */}
@@ -692,6 +742,36 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             className="w-full px-3 py-1.5 text-xs font-mono bg-muted border border-border text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-ring"
           />
         </div>
+
+        {/* Tabs bar -- hidden when filtering (filter flattens view) */}
+        {!isFiltering && (
+          <div className="px-6 pb-2">
+            <Tabs
+              value={activeTab}
+              onValueChange={v => updatePrefs({ settingsTab: v as SettingsTab })}
+              className="gap-0"
+            >
+              <TabsList
+                variant="line"
+                className="h-8 w-full gap-0 justify-start border-b border-border rounded-none px-0"
+              >
+                {TAB_ORDER.map(t => (
+                  <TabsTrigger
+                    key={t}
+                    value={t}
+                    className="text-[11px] font-mono uppercase tracking-wider px-3 py-1 flex-none"
+                  >
+                    {TAB_LABELS[t]}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              {/* Radix requires at least one TabsContent; we render the list manually below */}
+              {TAB_ORDER.map(t => (
+                <TabsContent key={t} value={t} className="hidden" />
+              ))}
+            </Tabs>
+          </div>
+        )}
 
         {/* Scrollable settings list */}
         <div className="flex-1 overflow-y-auto px-6 pb-4 space-y-3">
@@ -728,10 +808,11 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             </div>
           ))}
 
-          {/* Tool output -- only show when not filtered or filter matches */}
-          {(!lowerFilter ||
-            'tool output verbose'.includes(lowerFilter) ||
-            TOOL_DISPLAY_KEYS.some(t => t.toLowerCase().includes(lowerFilter))) && (
+          {/* Tool output -- pinned to Sessions tab; filter-matches override */}
+          {(isFiltering
+            ? 'tool output verbose'.includes(lowerFilter) ||
+              TOOL_DISPLAY_KEYS.some(t => t.toLowerCase().includes(lowerFilter))
+            : activeTab === 'sessions') && (
             <div>
               <GroupHeader label="Tool output" />
               <div className="space-y-1">
@@ -799,28 +880,27 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             </div>
           )}
 
-          {/* Project Links */}
-          {(!lowerFilter || 'links project connect persist'.includes(lowerFilter)) && (
+          {/* Project Links -- pinned to System tab */}
+          {(isFiltering ? 'links project connect persist'.includes(lowerFilter) : activeTab === 'system') && (
             <div>
               <GroupHeader label="Project Links" />
               <ProjectLinksSection />
             </div>
           )}
 
-          {/* Notifications */}
-          {(!lowerFilter || 'notifications push notify bell'.includes(lowerFilter)) && (
+          {/* Notifications -- pinned to System tab */}
+          {(isFiltering ? 'notifications push notify bell'.includes(lowerFilter) : activeTab === 'system') && (
             <div>
               <GroupHeader label="Notifications" />
               <NotificationsSection />
             </div>
           )}
 
-          {/* Shortcuts */}
-          {(!lowerFilter ||
-            'shortcuts keyboard keys hotkey'.includes(lowerFilter) ||
-            SHORTCUTS.some(
-              ([n, k]) => n.toLowerCase().includes(lowerFilter) || k.toLowerCase().includes(lowerFilter),
-            )) && (
+          {/* Shortcuts -- pinned to System tab */}
+          {(isFiltering
+            ? 'shortcuts keyboard keys hotkey'.includes(lowerFilter) ||
+              SHORTCUTS.some(([n, k]) => n.toLowerCase().includes(lowerFilter) || k.toLowerCase().includes(lowerFilter))
+            : activeTab === 'system') && (
             <div>
               <GroupHeader label="Shortcuts" />
               <div className="space-y-1.5">
@@ -842,8 +922,8 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             </div>
           )}
 
-          {/* Version */}
-          {(!lowerFilter || 'version build commit'.includes(lowerFilter)) && (
+          {/* Version -- pinned to System tab */}
+          {(isFiltering ? 'version build commit'.includes(lowerFilter) : activeTab === 'system') && (
             <div>
               <GroupHeader label="Version" />
               <div className="space-y-2 font-mono text-xs">

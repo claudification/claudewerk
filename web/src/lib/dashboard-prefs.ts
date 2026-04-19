@@ -57,7 +57,10 @@ export interface DashboardPrefs {
   chordTimeoutMs: number // how long to wait for second chord key before dismissing (ms)
   sanitizePaths: boolean // strip redundant `cd <cwd> &&` prefixes from displayed commands
   inputBackend: 'legacy' | 'codemirror' // editor backend for InputEditor (default legacy)
+  settingsTab: SettingsTab // last active settings tab (per-device)
 }
+
+export type SettingsTab = 'general' | 'display' | 'input' | 'sessions' | 'system'
 
 export const defaultPrefs: DashboardPrefs = {
   showEndedSessions: true,
@@ -83,6 +86,7 @@ export const defaultPrefs: DashboardPrefs = {
   chordTimeoutMs: 3000,
   sanitizePaths: true,
   inputBackend: 'legacy',
+  settingsTab: 'general',
 }
 
 export function loadPrefs(): DashboardPrefs {
