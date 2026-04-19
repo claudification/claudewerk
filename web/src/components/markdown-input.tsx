@@ -2,89 +2,17 @@ import { Mic, Paperclip } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { VoiceOverlay } from '@/components/voice-overlay'
-import type { ProjectTaskMeta } from '@/hooks/use-project'
 import { useProject } from '@/hooks/use-project'
-import { sendInput, useSessionsStore } from '@/hooks/use-sessions'
-import { buildTaskPrompt, scoreAndSortTasks } from '@/lib/task-scoring'
+import { useSessionsStore } from '@/hooks/use-sessions'
 import { uploadFileWithPlaceholder } from '@/lib/upload'
 import { cn, haptic, isMobileViewport } from '@/lib/utils'
-import { completeModelArg, fuzzyScore } from './input-editor/autocomplete-shared'
+import { fuzzyScore } from './input-editor/autocomplete-shared'
+import { BUILTIN_NAMES, matchSubCommand, NO_ARG_COMMANDS, type SubCommandContext } from './input-editor/sub-commands'
 
 const EMPTY_INFO: { slashCommands: string[]; skills: string[]; agents: string[] } = {
   slashCommands: [],
   skills: [],
   agents: [],
-}
-
-// --- Sub-command registry: declarative argument completers for builtin commands ---
-
-interface SubCommandItem {
-  value: string
-  label?: string
-  builtin?: boolean
-}
-
-interface SubCommandContext {
-  tasks: ProjectTaskMeta[]
-  sessionId: string | null
-}
-
-interface SubCommandDef {
-  name: string
-  noArg?: boolean
-  completer?: (query: string, ctx: SubCommandContext) => SubCommandItem[]
-  onSelect?: (value: string, ctx: SubCommandContext) => string | null
-  enterBehavior?: 'select' | 'select-or-submit'
-}
-
-const SUB_COMMANDS: SubCommandDef[] = [
-  {
-    name: 'model',
-    enterBehavior: 'select-or-submit',
-    completer: q => completeModelArg(q).map(m => ({ value: m, builtin: true })),
-  },
-  {
-    name: 'workon',
-    enterBehavior: 'select',
-    completer: (q, ctx) =>
-      scoreAndSortTasks(ctx.tasks, q)
-        .slice(0, 12)
-        .map(t => ({
-          value: t.slug,
-          label: `[${t.status}] ${t.title}${t.priority ? ` (${t.priority})` : ''}`,
-        })),
-    onSelect: (slug, ctx) => {
-      const task = ctx.tasks.find(t => t.slug === slug)
-      if (!task || !ctx.sessionId) return null
-      sendInput(ctx.sessionId, buildTaskPrompt(task))
-      haptic('success')
-      return '' // clear input
-    },
-  },
-  { name: 'clear', noArg: true },
-  { name: 'exit', noArg: true },
-  { name: 'compact', noArg: true },
-  // Client-side commands — intercepted by InputEditor.wrap (see client-commands.ts).
-  { name: 'settings', noArg: true },
-  { name: 'config', noArg: true },
-  { name: 'project', noArg: true },
-  { name: 'session', noArg: true },
-]
-
-const BUILTIN_NAMES = SUB_COMMANDS.map(c => c.name)
-const NO_ARG_COMMANDS = new Set([
-  ...SUB_COMMANDS.filter(c => c.noArg).map(c => c.name),
-  'context', // CC-reported commands that take no args
-  'quit',
-])
-const SUB_COMMAND_MAP = new Map(SUB_COMMANDS.filter(c => c.completer).map(c => [c.name, c]))
-
-/** Match `/command args...` at start of input. Returns [def, argsRest] or null. */
-function matchSubCommand(input: string): [SubCommandDef, string] | null {
-  const m = input.match(/^\/(\S+)\s+([\s\S]*)/)
-  if (!m) return null
-  const cmd = SUB_COMMAND_MAP.get(m[1].toLowerCase())
-  return cmd ? [cmd, m[2]] : null
 }
 
 interface MarkdownInputProps {

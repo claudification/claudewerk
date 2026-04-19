@@ -21,6 +21,7 @@ import {
   type ViewUpdate,
 } from '@codemirror/view'
 import { highlightTree, tags } from '@lezer/highlight'
+import type { SubCommandContext } from '../../sub-commands'
 import { autocompleteExtension } from './autocomplete'
 
 // ---------------------------------------------------------------------------
@@ -191,6 +192,12 @@ export interface InputExtensionOptions {
    * submit when omitted.
    */
   shouldEnterSubmit?: () => boolean
+  /**
+   * Sub-command context provider for `/workon`-style completers that need
+   * access to React state (project tasks, selected session). Required when
+   * enableAutocomplete is true.
+   */
+  getSubCommandContext?: () => SubCommandContext
 }
 
 /**
@@ -272,7 +279,10 @@ export function buildInputExtensions(opts: InputExtensionOptions): Extension[] {
   ]
 
   if (opts.enableEffortKeywords) extensions.push(effortKeywordPlugin)
-  if (opts.enableAutocomplete) extensions.push(autocompleteExtension())
+  if (opts.enableAutocomplete) {
+    const getCtx = opts.getSubCommandContext ?? (() => ({ tasks: [], sessionId: null }))
+    extensions.push(autocompleteExtension({ getSubCommandContext: getCtx }))
+  }
 
   return extensions
 }

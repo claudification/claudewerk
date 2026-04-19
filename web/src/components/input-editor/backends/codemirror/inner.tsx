@@ -20,10 +20,12 @@ import type { EditorView } from '@codemirror/view'
 import CodeMirror from '@uiw/react-codemirror'
 import { Send } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useProject } from '@/hooks/use-project'
 import { useSessionsStore } from '@/hooks/use-sessions'
 import { cn, haptic } from '@/lib/utils'
 import { useIsMobile } from '../../shell/use-is-mobile'
 import { useScrollLock } from '../../shell/use-scroll-lock'
+import type { SubCommandContext } from '../../sub-commands'
 import type { InputEditorProps } from '../../types'
 import { buildInputExtensions, submitFromEditor } from './extensions'
 import { attachPasteUpload, uploadDroppedFile } from './paste-drop'
@@ -38,6 +40,14 @@ export default function CodeMirrorBackendInner(props: InputEditorProps) {
   const sessionIdRef = useRef(sessionId)
   sessionIdRef.current = sessionId
   const viewRef = useRef<EditorView | null>(null)
+
+  // Sub-command context (e.g. /workon needs project tasks). Loaded lazily --
+  // useProject(null) is a no-op so we only pay for fetch when the user is
+  // actually composing a /workon command.
+  const wantsTasks = props.enableAutocomplete && /^\/workon\s/i.test(props.value)
+  const { tasks: projectTasks } = useProject(wantsTasks ? sessionId : null)
+  const subCmdCtxRef = useRef<SubCommandContext>({ tasks: projectTasks, sessionId })
+  subCmdCtxRef.current = { tasks: projectTasks, sessionId }
 
   const onSubmitRef = useRef(props.onSubmit)
   onSubmitRef.current = props.onSubmit
@@ -64,6 +74,9 @@ export default function CodeMirrorBackendInner(props: InputEditorProps) {
         enableEffortKeywords: props.enableEffortKeywords,
         enableAutocomplete: props.enableAutocomplete,
         shouldEnterSubmit: () => enterSubmitsRef.current,
+        // Read sub-command context lazily so /workon picks up the latest
+        // project tasks + session id without rebuilding extensions.
+        getSubCommandContext: () => subCmdCtxRef.current,
       }),
     [],
   )
