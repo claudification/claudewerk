@@ -32,7 +32,10 @@ const meta: MessageHandler = (ctx, data) => {
     if (data.adHocTaskId) existingSession.adHocTaskId = data.adHocTaskId as string
     if (data.adHocWorktree) existingSession.adHocWorktree = data.adHocWorktree as string
     // Only set launchConfig on first connect (spawn), don't overwrite on revive
-    if (pendingLaunchConfig && !existingSession.launchConfig) existingSession.launchConfig = pendingLaunchConfig
+    if (pendingLaunchConfig && !existingSession.launchConfig) {
+      existingSession.launchConfig = pendingLaunchConfig
+      if (pendingLaunchConfig.effort) existingSession.effortLevel = pendingLaunchConfig.effort
+    }
     ctx.log.debug(
       `Session resumed: ${sessionId.slice(0, 8)}... wrapper=${wrapperId.slice(0, 8)} (${data.cwd}) [${ctx.sessions.getActiveWrapperCount(sessionId) + 1} wrapper(s)]${data.version ? ` [${data.version}]` : ''}`,
     )
@@ -52,7 +55,10 @@ const meta: MessageHandler = (ctx, data) => {
     if (data.maxBudgetUsd) newSession.maxBudgetUsd = data.maxBudgetUsd as number
     if (data.adHocTaskId) newSession.adHocTaskId = data.adHocTaskId as string
     if (data.adHocWorktree) newSession.adHocWorktree = data.adHocWorktree as string
-    if (pendingLaunchConfig) newSession.launchConfig = pendingLaunchConfig
+    if (pendingLaunchConfig) {
+      newSession.launchConfig = pendingLaunchConfig
+      if (pendingLaunchConfig.effort) newSession.effortLevel = pendingLaunchConfig.effort
+    }
     const isAdHoc = (data.capabilities as string[] | undefined)?.includes('ad-hoc')
     ctx.log.debug(
       `Session started: ${sessionId.slice(0, 8)}... wrapper=${wrapperId.slice(0, 8)} (${data.cwd})${data.version ? ` [${data.version}]` : ''}`,

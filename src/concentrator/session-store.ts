@@ -2287,10 +2287,6 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         // usage that would clobber the last real context-window snapshot.
         const usage = assistantEntry.message?.usage
         if (usage && typeof usage.input_tokens === 'number' && assistantModel !== '<synthetic>') {
-          // Extract effort level from API 'speed' field
-          if (usage.speed && typeof usage.speed === 'string') {
-            session.effortLevel = usage.speed
-          }
           session.tokenUsage = {
             input: usage.input_tokens || 0,
             cacheCreation: usage.cache_creation_input_tokens || 0,

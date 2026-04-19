@@ -123,18 +123,20 @@ export function formatModel(model: string | undefined): string {
 /** Context window size for a given model string. Uses LiteLLM DB with hardcoded fallback. */
 export { contextWindowFromDb as contextWindowSize } from './model-db'
 
-/** Format effort level from API 'speed' field to human-readable label + symbol */
-export function formatEffort(speed: string | undefined): { label: string; symbol: string } | null {
-  if (!speed) return null
-  switch (speed) {
-    case 'fast':
+/** Format effort level to human-readable label + symbol */
+export function formatEffort(effort: string | undefined): { label: string; symbol: string } | null {
+  if (!effort) return null
+  switch (effort) {
+    case 'low':
       return { label: 'low', symbol: '\u25CB' } // ○
-    case 'standard':
+    case 'medium':
       return { label: 'medium', symbol: '\u25D0' } // ◐
-    case 'extended':
+    case 'high':
       return { label: 'high', symbol: '\u25CF' } // ●
+    case 'max':
+      return { label: 'max', symbol: '\u25C9' } // ◉
     default:
-      return { label: speed, symbol: '\u25D0' }
+      return { label: effort, symbol: '\u25D0' }
   }
 }
 
