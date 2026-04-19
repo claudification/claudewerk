@@ -725,6 +725,7 @@ async function main() {
       ...(isAdHoc ? ['ad-hoc' as const] : []),
       ...(replEnabled ? ['repl' as const] : []),
       'boot_stream' as const,
+      'config_rw' as const,
     ]
 
     /**

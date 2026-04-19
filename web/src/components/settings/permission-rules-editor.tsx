@@ -60,7 +60,9 @@ interface PermissionRulesEditorProps {
 }
 
 export function PermissionRulesEditor({ cwd }: PermissionRulesEditorProps) {
-  const hasConfigRw = useSessionsStore(s => s.agentCapabilities.includes('config_rw'))
+  const hasConfigRw = useSessionsStore(
+    s => s.agentConnected && s.sessions.some(sess => sess.cwd === cwd && sess.capabilities?.includes('config_rw')),
+  )
   const [rules, setRules] = useState<Record<Tool, string[]>>({ Write: [], Edit: [], Read: [] })
   const [allowPlanMode, setAllowPlanMode] = useState(true)
   const [linked, setLinked] = useState(true)
