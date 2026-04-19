@@ -2,6 +2,7 @@ import { Settings } from 'lucide-react'
 import { Popover } from 'radix-ui'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { NerdModal } from '@/components/nerd-modal'
+import { ProjectSettingsEditor } from '@/components/project-settings-editor'
 import { SettingsDialog } from '@/components/settings-page'
 import { UsageBar } from '@/components/usage-bar'
 import { useSessionsStore } from '@/hooks/use-sessions'
@@ -117,6 +118,7 @@ function StatusIndicator() {
 export function Header() {
   const [showSettings, setShowSettings] = useState(false)
   const [showStatsModal, setShowStatsModal] = useState(false)
+  const [projectSettingsCwd, setProjectSettingsCwd] = useState<string | null>(null)
 
   useEffect(() => {
     function handleOpen() {
@@ -124,6 +126,15 @@ export function Header() {
     }
     window.addEventListener('open-settings', handleOpen)
     return () => window.removeEventListener('open-settings', handleOpen)
+  }, [])
+
+  useEffect(() => {
+    function handleOpenProject(e: Event) {
+      const detail = (e as CustomEvent<{ cwd?: string }>).detail
+      if (detail?.cwd) setProjectSettingsCwd(detail.cwd)
+    }
+    window.addEventListener('open-project-settings', handleOpenProject)
+    return () => window.removeEventListener('open-project-settings', handleOpenProject)
   }, [])
   const showStats = useSessionsStore(s => s.dashboardPrefs.showWsStats)
 
@@ -162,6 +173,9 @@ export function Header() {
 
       <SettingsDialog open={showSettings} onOpenChange={setShowSettings} />
       <NerdModal open={showStatsModal} onClose={() => setShowStatsModal(false)} />
+      {projectSettingsCwd && (
+        <ProjectSettingsEditor cwd={projectSettingsCwd} onClose={() => setProjectSettingsCwd(null)} />
+      )}
     </header>
   )
 }

@@ -64,8 +64,11 @@ const SUB_COMMANDS: SubCommandDef[] = [
   { name: 'clear', noArg: true },
   { name: 'exit', noArg: true },
   { name: 'compact', noArg: true },
-  { name: 'settings' },
-  { name: 'config' },
+  // Client-side commands — intercepted by InputEditor.wrap (see client-commands.ts).
+  { name: 'settings', noArg: true },
+  { name: 'config', noArg: true },
+  { name: 'project', noArg: true },
+  { name: 'session', noArg: true },
 ]
 
 const BUILTIN_NAMES = SUB_COMMANDS.map(c => c.name)

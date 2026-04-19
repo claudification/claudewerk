@@ -71,4 +71,14 @@ export const BUILTIN_SCORE_BOOST = 1.3
  * keep these in sync. Only the names are shared; the per-command logic
  * (completers, onSelect callbacks) stays in legacy until Phase 2c.
  */
-export const BUILTIN_COMMAND_NAMES = ['model', 'workon', 'clear', 'exit', 'compact', 'settings', 'config'] as const
+export const BUILTIN_COMMAND_NAMES = [
+  'model',
+  'workon',
+  'clear',
+  'exit',
+  'compact',
+  'settings',
+  'config',
+  'project',
+  'session',
+] as const

@@ -1,9 +1,10 @@
 /**
- * CM6 autocomplete for slash commands and @ mentions.
+ * CM6 autocomplete for slash commands, @ mentions, and : session refs.
  *
  * Triggers:
  *   - `/` at start of doc OR after whitespace -> builtin commands + CC's slashCommands
  *   - `@` at start of doc OR after whitespace -> skills + agents
+ *   - `:` at start of doc OR after whitespace -> session slugs (live sessions)
  *
  * Source data is read live from the sessions store at completion time, so the
  * extension doesn't need rebuilding when sessionInfo changes.
@@ -12,6 +13,13 @@
  * Other sub-command arg completers (e.g. /workon <task>) stay legacy-only
  * for now — they require React-scoped context (project tasks, selected
  * session) and side-effecting onSelect callbacks.
+ *
+ * Colon trigger rules (parity with `text: prose` natural usage):
+ *   - `:` + slug-chars -> popup active, narrows as you type
+ *   - `: ` (space after) -> dismisses, natural "foo: bar" prose works
+ *   - `::` (double colon) -> dismisses, "::" would never be a session ref
+ *   - Accepting a session replaces the whole `:query` with just the slug
+ *     (e.g. typing `:arr<Tab>` yields `arr`, not `:arr`).
  */
 
 import {
@@ -24,6 +32,7 @@ import {
 import { type Extension, Prec } from '@codemirror/state'
 import { keymap } from '@codemirror/view'
 import { useSessionsStore } from '@/hooks/use-sessions'
+import { lastPathSegments } from '@/lib/utils'
 import { BUILTIN_COMMAND_NAMES, BUILTIN_SCORE_BOOST, completeModelArg, fuzzyScore } from '../../autocomplete-shared'
 
 interface SourceInfo {
@@ -104,6 +113,74 @@ function subCommandArgCompletion(text: string, docLength: number): CompletionRes
   }
 }
 
+/**
+ * Scan backwards for a `:` session trigger. Uses a stricter char class than
+ * the /-and-@ scanner (no `:`, no `.`) so that `::` and `foo:bar` don't
+ * accidentally activate the session popup — only `:slug` does.
+ */
+function scanColonTrigger(text: string, pos: number): { start: number; query: string } | null {
+  let start = pos - 1
+  while (start >= 0 && /[a-zA-Z0-9_-]/.test(text[start])) start--
+  if (start < 0) return null
+  if (text[start] !== ':') return null
+  // Must be at doc start or preceded by whitespace (prose like "note: foo" stays inert).
+  if (start > 0 && !/\s/.test(text[start - 1])) return null
+  const query = text.slice(start + 1, pos)
+  if (query.includes(' ') || query.includes('\n')) return null
+  return { start, query }
+}
+
+interface SessionCompletion {
+  label: string // what gets inserted (the session id)
+  displayLabel: string // what the user sees (project label or id)
+  detail: string // right-aligned: session name + status
+  info: string // hover tooltip: full cwd
+}
+
+function sessionCompletions(query: string): SessionCompletion[] {
+  const state = useSessionsStore.getState()
+  const { sessions, projectSettings } = state
+  const q = query.toLowerCase()
+  const scored: Array<{ opt: SessionCompletion; score: number }> = []
+
+  for (const session of sessions) {
+    if (session.status === 'ended') continue
+    const projectLabel = projectSettings[session.cwd]?.label
+    const displayLabel = projectLabel || session.id
+    const name = session.title || session.agentName || ''
+    // Match against id, project label, and agent/title name so both "arr",
+    // "Arr", and "viral" find the same session.
+    const haystack = `${session.id} ${displayLabel} ${name}`
+    const score = fuzzyScore(q, haystack)
+    if (score <= 0) continue
+    scored.push({
+      opt: {
+        label: session.id,
+        displayLabel,
+        detail: name ? `${name} · ${session.status}` : session.status,
+        info: lastPathSegments(session.cwd, 3),
+      },
+      score,
+    })
+  }
+  scored.sort((a, b) => b.score - a.score)
+  return scored.slice(0, 12).map(s => s.opt)
+}
+
+function sessionArgCompletion(text: string, pos: number): CompletionResult | null {
+  const hit = scanColonTrigger(text, pos)
+  if (!hit) return null
+  if (isInsideCodeFence(text.slice(0, hit.start))) return null
+  const options = sessionCompletions(hit.query)
+  if (options.length === 0) return null
+  return {
+    from: hit.start, // replace the leading `:` too — inserted text is the bare slug
+    to: pos,
+    options,
+    filter: false,
+  }
+}
+
 function completionSource(context: CompletionContext): CompletionResult | null {
   const pos = context.pos
   const doc = context.state.doc
@@ -112,6 +189,10 @@ function completionSource(context: CompletionContext): CompletionResult | null {
   // Sub-command arg completion takes precedence when the doc is `/cmd <args>`.
   const subResult = subCommandArgCompletion(text, doc.length)
   if (subResult) return subResult
+
+  // `:` session trigger — independent scan (different char class).
+  const sessionResult = sessionArgCompletion(text, pos)
+  if (sessionResult) return sessionResult
 
   // Scan backwards from cursor to find a word starting with / or @
   let start = pos - 1
