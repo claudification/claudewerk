@@ -74,6 +74,7 @@ export const BUILTIN_SCORE_BOOST = 1.3
 export const BUILTIN_COMMAND_NAMES = [
   'model',
   'workon',
+  'effort',
   'clear',
   'exit',
   'compact',

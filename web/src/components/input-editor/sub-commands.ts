@@ -77,6 +77,15 @@ export const SUB_COMMANDS: SubCommandDef[] = [
       return '' // clear input
     },
   },
+  {
+    name: 'effort',
+    enterBehavior: 'select-or-submit',
+    completer: q => {
+      const levels = ['low', 'medium', 'high', 'max']
+      const ql = q.toLowerCase()
+      return levels.filter(l => !ql || l.includes(ql)).map(l => ({ value: l, builtin: true }))
+    },
+  },
   { name: 'clear', noArg: true },
   { name: 'exit', noArg: true },
   { name: 'compact', noArg: true },
