@@ -32,7 +32,7 @@ import {
 import { type Extension, Prec } from '@codemirror/state'
 import { keymap } from '@codemirror/view'
 import { useSessionsStore } from '@/hooks/use-sessions'
-import { lastPathSegments } from '@/lib/utils'
+import { lastPathSegments, projectDisplayName, sessionAddressableSlug } from '@/lib/utils'
 import { BUILTIN_COMMAND_NAMES, BUILTIN_SCORE_BOOST, completeModelArg, fuzzyScore } from '../../autocomplete-shared'
 
 interface SourceInfo {
@@ -143,19 +143,30 @@ function sessionCompletions(query: string): SessionCompletion[] {
   const q = query.toLowerCase()
   const scored: Array<{ opt: SessionCompletion; score: number }> = []
 
+  // Pre-count sessions per cwd so the addressable-slug helper knows when to
+  // use the bare project slug vs the compound `project:name` form.
+  const cwdCounts: Record<string, number> = {}
+  for (const s of sessions) if (s.status !== 'ended') cwdCounts[s.cwd] = (cwdCounts[s.cwd] || 0) + 1
+
   for (const session of sessions) {
     if (session.status === 'ended') continue
-    const projectLabel = projectSettings[session.cwd]?.label
-    const displayLabel = projectLabel || session.id
+    // For un-labelled projects, fall back to the cwd tail (same convention
+    // the sidebar + command-palette session rows use). session.id is a UUID,
+    // so never display it as a name.
+    const displayLabel = projectDisplayName(session.cwd, projectSettings[session.cwd]?.label)
     const name = session.title || session.agentName || ''
-    // Match against id, project label, and agent/title name so both "arr",
-    // "Arr", and "viral" find the same session.
-    const haystack = `${session.id} ${displayLabel} ${name}`
+    // The insertable slug — approximates list_sessions' addressable ID,
+    // e.g. `arr` (bare) or `arr:viral-zebra` (compound) when the project
+    // hosts multiple live sessions.
+    const slug = sessionAddressableSlug(session, projectSettings, cwdCounts[session.cwd] || 1)
+    // Match against display name, the slug, and agent/title so "ola",
+    // "OLA", "raccoon", and "arr:viral" all find the expected session.
+    const haystack = `${displayLabel} ${slug} ${name}`
     const score = fuzzyScore(q, haystack)
     if (score <= 0) continue
     scored.push({
       opt: {
-        label: session.id,
+        label: slug,
         displayLabel,
         detail: name ? `${name} · ${session.status}` : session.status,
         info: lastPathSegments(session.cwd, 3),

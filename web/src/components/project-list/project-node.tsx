@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useSessionsStore } from '@/hooks/use-sessions'
 import type { Session } from '@/lib/types'
-import { haptic, lastPathSegments } from '@/lib/utils'
+import { haptic, projectDisplayName } from '@/lib/utils'
 import { ProjectSettingsButton, ProjectSettingsEditor, renderProjectIcon } from '../project-settings-editor'
 import { partitionSessions } from './partition'
 import { ProjectContextMenu, SessionContextMenu } from './session-context-menu'
@@ -86,7 +86,7 @@ function DismissAllEndedButton({ ended }: { ended: Session[] }) {
 function CwdSessionGroup({ sessions, cwd }: { sessions: Session[]; cwd: string }) {
   const [showSettings, setShowSettings] = useState(false)
   const ps = useSessionsStore(s => s.projectSettings[cwd])
-  const displayName = ps?.label || lastPathSegments(cwd)
+  const displayName = projectDisplayName(cwd, ps?.label)
   const displayColor = ps?.color
   const { adhoc, normal, ended } = partitionSessions(sessions)
   // Project-level rollup: any session in this CWD with a pending permission?

@@ -18,7 +18,7 @@ import {
   formatEffort,
   formatModel,
   haptic,
-  lastPathSegments,
+  projectDisplayName,
   truncate,
 } from '@/lib/utils'
 import { Markdown } from '../markdown'
@@ -743,7 +743,7 @@ export const SessionItemFull = memo(function SessionItemFull({ session }: { sess
   const showCost = useSessionsStore(s => s.dashboardPrefs.showCostInList)
   const isRenaming = useSessionsStore(s => s.renamingSessionId === session.id)
 
-  const projectName = ps?.label || lastPathSegments(session.cwd)
+  const projectName = projectDisplayName(session.cwd, ps?.label)
   const sessionName = session.title || session.agentName
   const displayColor = ps?.color
 
@@ -1089,7 +1089,7 @@ export function InactiveProjectItem({ sessions }: { sessions: Session[] }) {
   const projectSettings = useSessionsStore(s => s.projectSettings)
   const latest = sessions.reduce((a, b) => (a.lastActivity > b.lastActivity ? a : b))
   const ps = projectSettings[latest.cwd]
-  const displayName = ps?.label || lastPathSegments(latest.cwd)
+  const displayName = projectDisplayName(latest.cwd, ps?.label)
   const displayColor = ps?.color
 
   return (

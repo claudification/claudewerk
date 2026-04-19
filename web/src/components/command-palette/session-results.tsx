@@ -1,5 +1,5 @@
 import { canTerminal, type Session } from '@/lib/types'
-import { cn, formatAge, formatModel, lastPathSegments } from '@/lib/utils'
+import { cn, formatAge, formatModel, projectDisplayName } from '@/lib/utils'
 import { renderProjectIcon } from '../project-settings-editor'
 import type { SessionResultsProps } from './types'
 
@@ -66,7 +66,7 @@ export function SessionRow({
             </span>
           )}
           <span style={projectSettings[session.cwd]?.color ? { color: projectSettings[session.cwd].color } : undefined}>
-            {projectSettings[session.cwd]?.label || lastPathSegments(session.cwd, 3)}
+            {projectDisplayName(session.cwd, projectSettings[session.cwd]?.label)}
           </span>
           {(session.title || session.agentName) && (
             <>

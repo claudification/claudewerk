@@ -57,6 +57,54 @@ export function lastPathSegments(path: string, n = 3): string {
   return segments.slice(-n).join('/')
 }
 
+/**
+ * Display name for a project rooted at `cwd`. Uses the user-provided label
+ * when present, otherwise falls back to the last 3 path segments. Same
+ * convention the project list + session switcher use — keep all name
+ * rendering going through this so un-labelled projects look consistent
+ * everywhere. Pass `projectSettings[cwd]?.label` (or `undefined`) as the
+ * label; caller handles the lookup so the helper stays map-shape-agnostic.
+ */
+export function projectDisplayName(cwd: string, label?: string): string {
+  return label || lastPathSegments(cwd)
+}
+
+/**
+ * Slug from an arbitrary display name. Lowercase, alphanumeric + hyphens,
+ * capped at 24 chars. Mirrors `src/concentrator/address-book.ts` (server
+ * side) and `components/transcript/session-tag.tsx` (client) so slugs
+ * round-trip across the wire.
+ */
+export function slugify(name: string): string {
+  return (
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 24) || 'project'
+  )
+}
+
+/**
+ * Approximation of the addressable ID produced by list_sessions. Single-
+ * session projects resolve to a bare `projectSlug`; multi-session projects
+ * use `projectSlug:titleSlug`. Server logic lives in
+ * `src/concentrator/handlers/channel.ts` (uses the caller-scoped address
+ * book for cross-caller stability); this client-side version is close
+ * enough for UI display + insertion.
+ */
+export function sessionAddressableSlug(
+  session: { id: string; cwd: string; title?: string; agentName?: string },
+  projectSettings: { [cwd: string]: { label?: string } },
+  siblingsAtCwd: number,
+): string {
+  const projectName = projectSettings[session.cwd]?.label || session.cwd.split('/').filter(Boolean).pop() || 'project'
+  const projectSlug = slugify(projectName)
+  if (siblingsAtCwd <= 1) return projectSlug
+  const nameSlug = slugify(session.title || session.agentName || session.id.slice(0, 8))
+  return `${projectSlug}:${nameSlug}`
+}
+
 export function truncate(text: string, maxLen: number): string {
   if (!text) return ''
   if (text.length <= maxLen) return text
