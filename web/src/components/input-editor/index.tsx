@@ -15,6 +15,7 @@
 import { useSessionsStore } from '@/hooks/use-sessions'
 import { tryRunClientCommand } from '@/lib/client-commands'
 import { MarkdownInput } from '../markdown-input'
+import { MaybeProfiler } from '../perf-profiler'
 import { CodeMirrorBackend } from './backends/codemirror'
 import type { InputEditorProps } from './types'
 
@@ -32,10 +33,11 @@ export function InputEditor(props: InputEditorProps) {
   }
 
   const wrapped: InputEditorProps = { ...props, onSubmit }
+  const profilerId = backend === 'codemirror' ? 'InputEditor.CM' : 'InputEditor.Legacy'
 
-  if (backend === 'codemirror') {
-    return <CodeMirrorBackend {...wrapped} />
-  }
-
-  return <MarkdownInput {...wrapped} />
+  return (
+    <MaybeProfiler id={profilerId}>
+      {backend === 'codemirror' ? <CodeMirrorBackend {...wrapped} /> : <MarkdownInput {...wrapped} />}
+    </MaybeProfiler>
+  )
 }

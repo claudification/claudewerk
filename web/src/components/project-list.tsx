@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { saveProjectOrder, useSessionsStore } from '@/hooks/use-sessions'
 import type { ProjectOrder, ProjectOrderGroup, ProjectOrderNode, Session } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
+import { MaybeProfiler } from './perf-profiler'
 import { ProjectNode } from './project-list/project-node'
 import { InactiveProjectItem, SessionItemCompact } from './project-list/session-item'
 import { GroupNode, NewGroupDropTarget, SortableNode } from './project-list/session-sorting'
@@ -354,131 +355,133 @@ export function ProjectList() {
   const hasOrganized = projectOrder.tree.length > 0
 
   return (
-    <div className="space-y-2 overflow-y-auto">
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={() => setIsDragging(true)}
-        onDragEnd={handleDragEnd}
-        onDragCancel={() => setIsDragging(false)}
-      >
-        <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
-          {/* Organized tree */}
-          {projectOrder.tree.map(node => {
-            if (node.type === 'group') {
-              const isCollapsed = collapsedGroups.has(node.id)
+    <MaybeProfiler id="ProjectList">
+      <div className="space-y-2 overflow-y-auto">
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={() => setIsDragging(true)}
+          onDragEnd={handleDragEnd}
+          onDragCancel={() => setIsDragging(false)}
+        >
+          <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
+            {/* Organized tree */}
+            {projectOrder.tree.map(node => {
+              if (node.type === 'group') {
+                const isCollapsed = collapsedGroups.has(node.id)
+                return (
+                  <SortableNode key={node.id} id={node.id}>
+                    <GroupNode
+                      group={node}
+                      sessionsByCwd={visibleSessionsByCwd}
+                      collapsed={isCollapsed}
+                      onToggle={() => toggleGroup(node.id)}
+                      onRename={name => handleRename(node.id, name)}
+                    />
+                    {!isCollapsed ? (
+                      <div className="space-y-1">
+                        {node.children.map(child => {
+                          if (child.type === 'group') return null
+                          const childCwd = child.id.startsWith('cwd:') ? child.id.slice(4) : child.id
+                          const childSessions = visibleSessionsByCwd.get(childCwd)
+                          if (!childSessions || childSessions.length === 0) return null
+                          return (
+                            <SortableNode key={child.id} id={child.id}>
+                              <ProjectNode cwd={childCwd} sessions={childSessions} />
+                            </SortableNode>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      (() => {
+                        // Peek: show selected session even when group is collapsed
+                        if (!selectedSessionId) return null
+                        const selectedSession = sessionsById[selectedSessionId]
+                        if (!selectedSession) return null
+                        const selectedCwdKey = `cwd:${selectedSession.cwd}`
+                        if (!node.children.some(c => c.id === selectedCwdKey)) return null
+                        return (
+                          <div className="opacity-80">
+                            <SessionItemCompact session={selectedSession} />
+                          </div>
+                        )
+                      })()
+                    )}
+                  </SortableNode>
+                )
+              }
+              // Root-level session node
+              const cwd = node.id.startsWith('cwd:') ? node.id.slice(4) : node.id
+              const cwdSessions = visibleSessionsByCwd.get(cwd)
+              if (!cwdSessions || cwdSessions.length === 0) return null
               return (
                 <SortableNode key={node.id} id={node.id}>
-                  <GroupNode
-                    group={node}
-                    sessionsByCwd={visibleSessionsByCwd}
-                    collapsed={isCollapsed}
-                    onToggle={() => toggleGroup(node.id)}
-                    onRename={name => handleRename(node.id, name)}
-                  />
-                  {!isCollapsed ? (
-                    <div className="space-y-1">
-                      {node.children.map(child => {
-                        if (child.type === 'group') return null
-                        const childCwd = child.id.startsWith('cwd:') ? child.id.slice(4) : child.id
-                        const childSessions = visibleSessionsByCwd.get(childCwd)
-                        if (!childSessions || childSessions.length === 0) return null
-                        return (
-                          <SortableNode key={child.id} id={child.id}>
-                            <ProjectNode cwd={childCwd} sessions={childSessions} />
-                          </SortableNode>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    (() => {
-                      // Peek: show selected session even when group is collapsed
-                      if (!selectedSessionId) return null
-                      const selectedSession = sessionsById[selectedSessionId]
-                      if (!selectedSession) return null
-                      const selectedCwdKey = `cwd:${selectedSession.cwd}`
-                      if (!node.children.some(c => c.id === selectedCwdKey)) return null
-                      return (
-                        <div className="opacity-80">
-                          <SessionItemCompact session={selectedSession} />
-                        </div>
-                      )
-                    })()
-                  )}
+                  <ProjectNode cwd={cwd} sessions={cwdSessions} />
                 </SortableNode>
               )
-            }
-            // Root-level session node
-            const cwd = node.id.startsWith('cwd:') ? node.id.slice(4) : node.id
-            const cwdSessions = visibleSessionsByCwd.get(cwd)
-            if (!cwdSessions || cwdSessions.length === 0) return null
-            return (
-              <SortableNode key={node.id} id={node.id}>
-                <ProjectNode cwd={cwd} sessions={cwdSessions} />
-              </SortableNode>
-            )
-          })}
+            })}
 
-          {/* Drop target for new group */}
-          <div
-            className={cn(
-              'mt-2 transition-all',
-              isDragging ? 'opacity-100 max-h-16' : 'opacity-0 max-h-0 overflow-hidden',
-            )}
-          >
-            <NewGroupDropTarget />
-          </div>
-
-          {/* Unorganized section */}
-          {unorganized.length > 0 && (
-            <div>
-              {hasOrganized && (
-                <div className="text-[10px] text-muted-foreground/50 font-bold uppercase tracking-wider px-1 mb-1 flex items-center gap-2">
-                  <span>Unorganized</span>
-                  <span className="flex-1 h-px bg-border" />
-                </div>
+            {/* Drop target for new group */}
+            <div
+              className={cn(
+                'mt-2 transition-all',
+                isDragging ? 'opacity-100 max-h-16' : 'opacity-0 max-h-0 overflow-hidden',
               )}
-              <div className="space-y-1">
-                {unorganized.map(({ cwd, sessions: cwdSessions }, i) => {
-                  // Insert separator before first ad-hoc-only group
-                  const isAllAdHoc = cwdSessions.every(s => s.capabilities?.includes('ad-hoc'))
-                  const prevIsRegular =
-                    i > 0 && !unorganized[i - 1].sessions.every(s => s.capabilities?.includes('ad-hoc'))
-                  const showAdHocSeparator = isAllAdHoc && (i === 0 || prevIsRegular)
-                  return (
-                    <div key={`cwd:${cwd}`}>
-                      {showAdHocSeparator && (
-                        <div className="flex items-center gap-2 px-1 pt-2 pb-1">
-                          <span className="flex-1 h-px bg-border" />
-                          <span className="text-[9px] text-muted-foreground/40 uppercase tracking-wider">ad-hoc</span>
-                          <span className="flex-1 h-px bg-border" />
-                        </div>
-                      )}
-                      <SortableNode id={`cwd:${cwd}`}>
-                        <ProjectNode cwd={cwd} sessions={cwdSessions} />
-                      </SortableNode>
-                    </div>
-                  )
-                })}
-              </div>
+            >
+              <NewGroupDropTarget />
             </div>
-          )}
-        </SortableContext>
-      </DndContext>
 
-      {/* Inactive section */}
-      {inactive.length > 0 && (
-        <label className="flex items-center gap-2 px-2 py-1.5 text-muted-foreground text-xs cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={showInactive}
-            onChange={e => updatePrefs({ showInactiveByDefault: e.target.checked })}
-            className="accent-primary"
-          />
-          show inactive ({inactive.length})
-        </label>
-      )}
-      {showInactive && inactive.map(group => <InactiveProjectItem key={group[0].cwd} sessions={group} />)}
-    </div>
+            {/* Unorganized section */}
+            {unorganized.length > 0 && (
+              <div>
+                {hasOrganized && (
+                  <div className="text-[10px] text-muted-foreground/50 font-bold uppercase tracking-wider px-1 mb-1 flex items-center gap-2">
+                    <span>Unorganized</span>
+                    <span className="flex-1 h-px bg-border" />
+                  </div>
+                )}
+                <div className="space-y-1">
+                  {unorganized.map(({ cwd, sessions: cwdSessions }, i) => {
+                    // Insert separator before first ad-hoc-only group
+                    const isAllAdHoc = cwdSessions.every(s => s.capabilities?.includes('ad-hoc'))
+                    const prevIsRegular =
+                      i > 0 && !unorganized[i - 1].sessions.every(s => s.capabilities?.includes('ad-hoc'))
+                    const showAdHocSeparator = isAllAdHoc && (i === 0 || prevIsRegular)
+                    return (
+                      <div key={`cwd:${cwd}`}>
+                        {showAdHocSeparator && (
+                          <div className="flex items-center gap-2 px-1 pt-2 pb-1">
+                            <span className="flex-1 h-px bg-border" />
+                            <span className="text-[9px] text-muted-foreground/40 uppercase tracking-wider">ad-hoc</span>
+                            <span className="flex-1 h-px bg-border" />
+                          </div>
+                        )}
+                        <SortableNode id={`cwd:${cwd}`}>
+                          <ProjectNode cwd={cwd} sessions={cwdSessions} />
+                        </SortableNode>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </SortableContext>
+        </DndContext>
+
+        {/* Inactive section */}
+        {inactive.length > 0 && (
+          <label className="flex items-center gap-2 px-2 py-1.5 text-muted-foreground text-xs cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={showInactive}
+              onChange={e => updatePrefs({ showInactiveByDefault: e.target.checked })}
+              className="accent-primary"
+            />
+            show inactive ({inactive.length})
+          </label>
+        )}
+        {showInactive && inactive.map(group => <InactiveProjectItem key={group[0].cwd} sessions={group} />)}
+      </div>
+    </MaybeProfiler>
   )
 }
