@@ -18,7 +18,8 @@ export function resolveContextWindow(model: string | undefined, contextMode?: '1
 
 /** Models whose 1M context window is the DEFAULT, not an opt-in variant. */
 function isDefault1MModel(model: string): boolean {
-  // Opus 4.7 ships with 1M context by default. Older Opus/Sonnet/Haiku 4.x
-  // still default to 200K and require an explicit `[1m]` / `-1m` opt-in.
-  return /^claude-opus-4-7(\b|[^0-9])/i.test(model)
+  // Opus 4.6+ ships with 1M context by default. The [1m] suffix is unreliable
+  // -- CC strips it from assistant messages, hook data, and sometimes the init.
+  // Don't rely on the suffix surviving the pipeline; just match the model family.
+  return /^claude-opus-4-([6-9]|\d{2})/i.test(model) || /^opus$/i.test(model)
 }

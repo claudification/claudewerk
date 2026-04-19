@@ -141,7 +141,7 @@ export interface HandlerContext {
 // biome-ignore lint/suspicious/noExplicitAny: WS JSON data is untyped at the parse boundary
 export type MessageData = Record<string, any>
 
-export type MessageHandler = (ctx: HandlerContext, data: MessageData) => void
+export type MessageHandler = (ctx: HandlerContext, data: MessageData) => void | Promise<void>
 
 /** Create a log prefix from WS connection data */
 export function logPrefix(ws: { data: WsData }): string {

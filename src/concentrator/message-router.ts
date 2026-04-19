@@ -26,7 +26,13 @@ export function routeMessage(ctx: HandlerContext, type: string, data: MessageDat
   if (!handler) return false
 
   try {
-    handler(ctx, data)
+    const result = handler(ctx, data)
+    if (result instanceof Promise) {
+      result.catch(err => {
+        console.error(`[router] Async handler error for ${type}:`, err)
+        ctx.reply({ type: `${type}_result`, ok: false, error: err instanceof Error ? err.message : 'Internal error' })
+      })
+    }
   } catch (err) {
     if (err instanceof GuardError) {
       // Guard failures: send error reply with the conventional _result suffix
