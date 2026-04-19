@@ -6,7 +6,7 @@
  * mount/unmount, value sync, focus, and StrictMode.
  */
 
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
+import { defaultKeymap, deleteToLineStart, emacsStyleKeymap, history, historyKeymap } from '@codemirror/commands'
 import { type Extension, RangeSetBuilder } from '@codemirror/state'
 import {
   Decoration,
@@ -309,11 +309,20 @@ export function buildInputExtensions(opts: InputExtensionOptions): Extension[] {
     },
   ])
 
+  // Emacs / readline motions: Ctrl-A line start, Ctrl-E line end, Ctrl-K kill
+  // to end, Ctrl-U kill to start, Ctrl-D forward delete, Ctrl-B/F char move,
+  // Ctrl-P/N line move, Ctrl-H backspace, Ctrl-T transpose, Ctrl-V page down.
+  // CM6 ships emacsStyleKeymap but defaultKeymap only enables it on macOS via
+  // the `mac:` field. We register it cross-platform for parity with terminals
+  // and shells. Ctrl-U is NOT in emacsStyleKeymap, so we add it manually.
+  const emacsKeymap = keymap.of([...emacsStyleKeymap, { key: 'Ctrl-u', run: deleteToLineStart, preventDefault: true }])
+
   const extensions: Extension[] = [
     drawSelection(),
     history(),
     submitKeymap, // before defaultKeymap so our Enter wins (autocomplete still wins over us when popup is open)
     escapeBlurKeymap,
+    emacsKeymap, // before defaultKeymap so our Ctrl-* bindings take priority
     keymap.of([...defaultKeymap, ...historyKeymap]),
     // Portal tooltips (autocomplete popup, etc.) to <body> so the input
     // wrapper's overflow:hidden / rounded corners don't clip them.
