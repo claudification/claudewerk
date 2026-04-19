@@ -63,9 +63,11 @@ export function createWsServer(options: WsServerOptions): WsServer {
               if (existingSession) {
                 // Resume existing session
                 sessionStore.resumeSession(meta.sessionId)
+                if (meta.configuredModel) existingSession.configuredModel = meta.configuredModel
               } else {
                 // Create new session
-                sessionStore.createSession(meta.sessionId, meta.cwd, meta.model, meta.args)
+                const session = sessionStore.createSession(meta.sessionId, meta.cwd, meta.model, meta.args)
+                if (meta.configuredModel) session.configuredModel = meta.configuredModel
               }
 
               // Track socket for this session (for sending input)

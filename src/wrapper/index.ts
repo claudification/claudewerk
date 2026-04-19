@@ -330,6 +330,7 @@ async function main() {
       })()
     : {}
   const claudeArgs: string[] = []
+  let configuredModel: string | undefined
 
   debug(`Concentrator URL: ${concentratorUrl} (source: ${process.env.RCLAUDE_CONCENTRATOR ? 'env' : 'default'})`)
   debug(`Concentrator secret: ${concentratorSecret ? 'set' : 'NOT SET'}`)
@@ -371,6 +372,18 @@ async function main() {
     } else {
       claudeArgs.push(arg)
     }
+  }
+
+  // Capture --model from claudeArgs (CC strips [1m] suffix from API responses,
+  // so we need the original value for accurate context-window detection)
+  for (let i = 0; i < claudeArgs.length; i++) {
+    if (claudeArgs[i] === '--model' && i + 1 < claudeArgs.length) {
+      configuredModel = claudeArgs[i + 1]
+      break
+    }
+  }
+  if (!configuredModel && process.env.RCLAUDE_MODEL) {
+    configuredModel = process.env.RCLAUDE_MODEL
   }
 
   // Bare mode: pass --bare to Claude CLI (skips hooks, LSP, plugins, CLAUDE.md)
@@ -816,6 +829,7 @@ async function main() {
       sessionId,
       wrapperId: internalId,
       cwd,
+      configuredModel,
       args: claudeArgs,
       claudeVersion,
       claudeAuth,
@@ -1770,9 +1784,9 @@ async function main() {
   const finalClaudeArgs = [
     '--mcp-config',
     mcpConfigPath,
-    ...(channelEnabled
-      ? ['--dangerously-load-development-channels', 'server:rclaude', '--disallowed-tools', 'SendMessage']
-      : []),
+    '--disallowed-tools',
+    'SendMessage',
+    ...(channelEnabled ? ['--dangerously-load-development-channels', 'server:rclaude'] : []),
     ...(sessionName ? ['--name', sessionName] : []),
     ...claudeArgs,
   ]

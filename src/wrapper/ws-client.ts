@@ -43,6 +43,7 @@ export interface WsClientOptions {
   wrapperId: string
   cwd: string
   model?: string
+  configuredModel?: string
   args?: string[]
   claudeVersion?: string
   claudeAuth?: { email?: string; orgId?: string; orgName?: string; subscriptionType?: string }
@@ -167,6 +168,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
     wrapperId,
     cwd,
     model,
+    configuredModel,
     args,
     claudeVersion,
     claudeAuth,
@@ -257,6 +259,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
               cwd,
               startedAt: Date.now(),
               model,
+              configuredModel,
               capabilities,
               args,
               version: `rclaude/${BUILD_VERSION.gitHashShort}`,
@@ -284,6 +287,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
               launchConfig: options.initialBoot?.launchConfig,
               title: options.initialBoot?.title,
               startedAt: Date.now(),
+              configuredModel,
             }
             ws?.send(JSON.stringify(boot))
           }

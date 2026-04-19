@@ -471,7 +471,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     return {
       id: session.id,
       cwd: session.cwd,
-      model: session.model,
+      model: session.configuredModel || session.model,
       capabilities: session.capabilities,
       version: session.version,
       buildTime: session.buildTime,
@@ -541,7 +541,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       prLinks: session.prLinks,
       linkedProjects: getLinkedProjects(session.id),
       tokenUsage: session.tokenUsage,
-      contextWindow: resolveContextWindow(session.model, session.contextMode),
+      contextWindow: resolveContextWindow(session.configuredModel || session.model, session.contextMode),
       cacheTtl: session.cacheTtl,
       lastTurnEndedAt: session.lastTurnEndedAt,
       stats: session.stats,

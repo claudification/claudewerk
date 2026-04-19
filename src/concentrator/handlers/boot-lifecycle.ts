@@ -38,10 +38,13 @@ const wrapperBoot: MessageHandler = (ctx, data) => {
   const capabilities = (data.capabilities as WrapperCapability[] | undefined) || []
   const claudeArgs = (data.claudeArgs as string[] | undefined) || []
 
+  const bootConfiguredModel = data.configuredModel as string | undefined
+
   if (existing) {
     existing.status = 'booting'
     existing.lastActivity = Date.now()
     if (pendingLaunchConfig && !existing.launchConfig) existing.launchConfig = pendingLaunchConfig
+    if (bootConfiguredModel) existing.configuredModel = bootConfiguredModel
   } else {
     // Create a placeholder session keyed by wrapperId -- the real sessionId
     // replaces this once session_promote arrives.
@@ -51,6 +54,7 @@ const wrapperBoot: MessageHandler = (ctx, data) => {
     if (data.claudeVersion) placeholder.claudeVersion = data.claudeVersion as string
     if (data.claudeAuth) placeholder.claudeAuth = data.claudeAuth as Record<string, unknown>
     if (data.title) placeholder.title = data.title as string
+    if (bootConfiguredModel) placeholder.configuredModel = bootConfiguredModel
   }
 
   // Register the WS as this session's socket so messages (including boot

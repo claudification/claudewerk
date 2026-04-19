@@ -52,6 +52,7 @@ export interface SessionMeta {
   cwd: string
   startedAt: number
   model?: string
+  configuredModel?: string // the --model value passed to CC (CC strips [1m] from API responses)
   args?: string[]
   capabilities?: WrapperCapability[]
   version?: string
@@ -350,6 +351,7 @@ export interface WrapperBoot {
   launchConfig?: LaunchConfig
   title?: string
   startedAt: number
+  configuredModel?: string // the --model value passed to CC (CC strips [1m] from API responses)
 }
 
 /** Structured wrapper-side boot progress. Concentrator appends each one as a
@@ -1073,6 +1075,7 @@ export interface Session {
   cwd: string // project root (where rclaude launched -- session identity)
   currentCwd?: string // where Claude is currently working (CwdChanged hook)
   model?: string
+  configuredModel?: string // the --model value passed to CC (preserves [1m] suffix that CC strips)
   args?: string[]
   capabilities?: WrapperCapability[]
   transcriptPath?: string
