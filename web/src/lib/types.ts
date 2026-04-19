@@ -145,6 +145,38 @@ export interface ProjectOrder {
   tree: ProjectOrderNode[]
 }
 
+// Nested groups aren't supported by the renderer. Flatten any group nested inside
+// another group by hoisting it to root and promoting its own children. Idempotent.
+export function flattenProjectOrderTree(tree: ProjectOrderNode[]): ProjectOrderNode[] {
+  const roots: ProjectOrderNode[] = []
+  const nestedGroups: ProjectOrderGroup[] = []
+  for (const node of tree) {
+    if (node.type === 'group') {
+      const leaves: ProjectOrderNode[] = []
+      for (const child of node.children) {
+        if (child.type === 'group') nestedGroups.push(child)
+        else leaves.push(child)
+      }
+      roots.push({ ...node, children: leaves })
+    } else {
+      roots.push(node)
+    }
+  }
+  for (const g of nestedGroups) {
+    const leaves: ProjectOrderNode[] = []
+    for (const child of g.children) {
+      if (child.type === 'group') nestedGroups.push(child)
+      else leaves.push(child)
+    }
+    roots.push({ ...g, children: leaves })
+  }
+  return roots
+}
+
+export function projectOrderTreesEqual(a: ProjectOrderNode[], b: ProjectOrderNode[]): boolean {
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
 export interface TranscriptImage {
   hash: string
   ext: string

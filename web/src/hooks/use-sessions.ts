@@ -10,16 +10,17 @@ import { clearExpandedState } from '@/lib/expanded-state'
 import { setPerfEnabled } from '@/lib/perf-metrics'
 import { DEFAULT_PERMISSIONS, type ResolvedPermissions } from '@/lib/permissions'
 import { appendShareParam } from '@/lib/share-mode'
-import type {
-  HookEvent,
-  ProjectOrder,
-  ProjectSettings,
-  ProjectSettingsMap,
-  Session,
-  SubagentInfo,
-  TaskInfo,
-  TranscriptEntry,
-  UsageUpdate,
+import {
+  flattenProjectOrderTree,
+  type HookEvent,
+  type ProjectOrder,
+  type ProjectSettings,
+  type ProjectSettingsMap,
+  type Session,
+  type SubagentInfo,
+  type TaskInfo,
+  type TranscriptEntry,
+  type UsageUpdate,
 } from '@/lib/types'
 import { getLastSessionId, getSessionTab, initUIState, setLastSessionId } from '@/lib/ui-state'
 import { recordOut } from './ws-stats'
@@ -698,7 +699,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     }),
   setTasks: (sessionId, tasks) => set(state => ({ tasks: { ...state.tasks, [sessionId]: tasks } })),
   setProjectSettings: settings => set({ projectSettings: settings }),
-  setProjectOrder: order => set({ projectOrder: order }),
+  setProjectOrder: order => set({ projectOrder: { ...order, tree: flattenProjectOrderTree(order.tree) } }),
   setConnected: connected =>
     set(state => ({
       isConnected: connected,
@@ -1035,7 +1036,8 @@ export async function fetchProjectOrder(): Promise<ProjectOrder> {
 }
 
 export function saveProjectOrder(order: ProjectOrder): void {
-  wsSend('update_project_order', { order })
+  const flat: ProjectOrder = { ...order, tree: flattenProjectOrderTree(order.tree) }
+  wsSend('update_project_order', { order: flat })
 }
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {

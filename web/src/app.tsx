@@ -35,6 +35,7 @@ import {
   fetchServerCapabilities,
   fetchSessionEvents,
   fetchTranscript,
+  saveProjectOrder,
   sendInput,
   useSessionsStore,
   wsSend,
@@ -43,7 +44,7 @@ import { useWebSocket } from '@/hooks/use-websocket'
 import { executeCommand, formatShortcut, useChordCommand, useCommand, validateChordBindings } from '@/lib/commands'
 import { focusInputEditor } from '@/lib/focus-input'
 import { setChordTimeout } from '@/lib/key-layers'
-import { canTerminal } from '@/lib/types'
+import { canTerminal, flattenProjectOrderTree, projectOrderTreesEqual } from '@/lib/types'
 import { clearCacheAndReload, isMobileViewport, isTouchDevice, PRE_RELOAD_KEY } from '@/lib/utils'
 import { BUILD_VERSION } from '../../src/shared/version'
 
@@ -185,12 +186,16 @@ function Dashboard() {
       fetchProjectOrder(),
       fetchModelDb(), // LiteLLM pricing + context windows (fire-and-forget)
     ])
+    const flatTree = flattenProjectOrderTree(order.tree)
+    const flatOrder = { ...order, tree: flatTree }
     useSessionsStore.setState({
       projectSettings: settings,
       serverCapabilities: capabilities,
       globalSettings,
-      projectOrder: order,
+      projectOrder: flatOrder,
     })
+    // Repair legacy nested-group data by persisting the flattened version back.
+    if (!projectOrderTreesEqual(order.tree, flatTree)) saveProjectOrder(flatOrder)
   }, [])
 
   useEffect(() => {
