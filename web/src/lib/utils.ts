@@ -86,23 +86,29 @@ export function slugify(name: string): string {
 }
 
 /**
- * Approximation of the addressable ID produced by list_sessions. Single-
- * session projects resolve to a bare `projectSlug`; multi-session projects
- * use `projectSlug:titleSlug`. Server logic lives in
- * `src/concentrator/handlers/channel.ts` (uses the caller-scoped address
- * book for cross-caller stability); this client-side version is close
- * enough for UI display + insertion.
+ * Mirror of the addressable ID produced by list_sessions. ALWAYS compound
+ * `project:session-slug` so the inserted id stays stable when a second
+ * session spawns at the same cwd later. Server logic + rationale live in
+ * `src/concentrator/handlers/channel-id.ts` (the canonical implementation
+ * that round-trips through send_message).
+ *
+ * `siblingSessions` is the list of sessions at the same cwd (including this
+ * one) -- used purely to disambiguate identical title slugs with a 6-char
+ * id suffix.
  */
 export function sessionAddressableSlug(
   session: { id: string; cwd: string; title?: string; agentName?: string },
   projectSettings: { [cwd: string]: { label?: string } },
-  siblingsAtCwd: number,
+  siblingSessions: ReadonlyArray<{ id: string; title?: string; agentName?: string }>,
 ): string {
   const projectName = projectSettings[session.cwd]?.label || session.cwd.split('/').filter(Boolean).pop() || 'project'
   const projectSlug = slugify(projectName)
-  if (siblingsAtCwd <= 1) return projectSlug
-  const nameSlug = slugify(session.title || session.agentName || session.id.slice(0, 8))
-  return `${projectSlug}:${nameSlug}`
+  const titleFor = (s: { id: string; title?: string; agentName?: string }) =>
+    slugify(s.title || s.agentName || s.id.slice(0, 8))
+  const baseSlug = titleFor(session)
+  const collides = siblingSessions.some(other => other.id !== session.id && titleFor(other) === baseSlug)
+  const sessionSlug = collides ? `${baseSlug}-${session.id.slice(0, 6)}` : baseSlug
+  return `${projectSlug}:${sessionSlug}`
 }
 
 export function truncate(text: string, maxLen: number): string {

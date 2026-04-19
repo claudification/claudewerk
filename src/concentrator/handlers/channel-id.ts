@@ -1,0 +1,120 @@
+/**
+ * Pure ID-formatting + send-resolver helpers for channel.ts.
+ *
+ * Extracted so they can be unit-tested without spinning up the full handler
+ * context (sessions store, address book, sockets, etc).
+ *
+ * Stable-ID rule (the whole point of this file):
+ *   - `list_sessions` ALWAYS returns compound `project:session-slug` ids.
+ *   - The bare `project` form is NEVER produced. This guarantees the id a
+ *     caller sees today does not silently change shape tomorrow when a
+ *     second session spawns at the same cwd.
+ *
+ * Resolver rule (what `send_message` accepts as `to`):
+ *   - Compound `project:session-slug` -> resolves directly inside the cwd
+ *   - Bare `project`                  -> accepted ONLY when exactly one
+ *                                        candidate session exists at the cwd;
+ *                                        rejected as ambiguous when 2+.
+ */
+
+import { slugify } from '../address-book'
+
+export interface SessionLike {
+  id: string
+  cwd: string
+  title?: string
+}
+
+/**
+ * Compute the per-session slug suffix used inside compound ids.
+ * Falls back to a 6-char id slice when two sessions in the same cwd would
+ * slug to the same value (so siblings stay disambiguable).
+ */
+export function computeSessionSlug(target: SessionLike, siblingSessions: SessionLike[]): string {
+  const sessionSlug = slugify(target.title || target.id.slice(0, 8))
+  const collides = siblingSessions.some(
+    other => other.id !== target.id && slugify(other.title || other.id.slice(0, 8)) === sessionSlug,
+  )
+  return collides ? `${sessionSlug}-${target.id.slice(0, 6)}` : sessionSlug
+}
+
+/**
+ * Always-compound local id: `project:session-slug`.
+ *
+ * Use for both `list_sessions` output and the from-id stamped on outgoing
+ * messages so a recipient can replay it verbatim as `to`.
+ */
+export function computeLocalId(target: SessionLike, projectSlug: string, siblingSessions: SessionLike[]): string {
+  return `${projectSlug}:${computeSessionSlug(target, siblingSessions)}`
+}
+
+// ─── Send target resolution ─────────────────────────────────────────
+
+export type ResolveSendTarget =
+  | { kind: 'resolved'; session: SessionLike }
+  | { kind: 'not_found' }
+  | { kind: 'ambiguous'; canonicalProject: string; candidates: SessionLike[] }
+
+export interface ResolveSendInput {
+  /** The slug to the LEFT of `:` in the wire `to` -- a project slug. */
+  projectSlug: string
+  /** The slug to the RIGHT of `:`, or undefined for bare addressing. */
+  sessionSlug: string | undefined
+  /** All sessions registered at the resolved target cwd (live + inactive). */
+  sessionsAtCwd: SessionLike[]
+  /** The canonical project slug (label or dirname) to surface in error messages. */
+  canonicalProject: string
+  /** Predicate -- "is this session currently online?". Live count drives ambiguity. */
+  isLive: (s: SessionLike) => boolean
+}
+
+/**
+ * Resolve a parsed `(projectSlug, sessionSlug?)` target against the sessions
+ * registered at a given cwd. Returns the chosen session, a not-found marker,
+ * or an ambiguous-bare error with the candidate compound ids the caller
+ * should use instead.
+ *
+ * Bare-acceptance rule: a bare project address is allowed ONLY when there is
+ * a unique candidate (preferring live over inactive). Multiple live sessions
+ * = ambiguous. No live + multiple inactive = also ambiguous (caller must
+ * pick one explicitly with the compound form).
+ */
+export function resolveSendTarget(input: ResolveSendInput): ResolveSendTarget {
+  const { projectSlug, sessionSlug, sessionsAtCwd, isLive } = input
+
+  if (sessionSlug !== undefined) {
+    const exact = sessionsAtCwd.find(s => slugify(s.title || s.id.slice(0, 8)) === sessionSlug)
+    if (exact) return { kind: 'resolved', session: exact }
+    const prefix = sessionsAtCwd.find(s => slugify(s.title || s.id.slice(0, 8)).startsWith(sessionSlug))
+    if (prefix) return { kind: 'resolved', session: prefix }
+    return { kind: 'not_found' }
+  }
+
+  // Bare addressing.
+  // First: exact session-title match (a session named "arr" beats project-level dispatch).
+  const titleMatch = sessionsAtCwd.find(s => slugify(s.title || s.id.slice(0, 8)) === projectSlug)
+  if (titleMatch) return { kind: 'resolved', session: titleMatch }
+
+  const live = sessionsAtCwd.filter(isLive)
+  if (live.length === 1) return { kind: 'resolved', session: live[0] }
+  if (live.length > 1) {
+    return { kind: 'ambiguous', canonicalProject: input.canonicalProject, candidates: live }
+  }
+  // No live -- fall back to inactive, but only if unambiguous.
+  if (sessionsAtCwd.length === 1) return { kind: 'resolved', session: sessionsAtCwd[0] }
+  if (sessionsAtCwd.length > 1) {
+    return { kind: 'ambiguous', canonicalProject: input.canonicalProject, candidates: sessionsAtCwd }
+  }
+  return { kind: 'not_found' }
+}
+
+/**
+ * Format the user-facing ambiguity error with the compound ids the caller
+ * should retry with. Lives here (not in the handler) so it stays in sync
+ * with the resolver and is testable without a context.
+ */
+export function formatAmbiguityError(canonicalProject: string, candidates: SessionLike[]): string {
+  const siblingSessions = candidates
+  const ids = candidates.map(s => `${canonicalProject}:${computeSessionSlug(s, siblingSessions)}`).join(', ')
+  return `Ambiguous target: ${candidates.length} sessions at "${canonicalProject}". Use compound address: ${ids}`
+}

@@ -143,10 +143,14 @@ function sessionCompletions(query: string): SessionCompletion[] {
   const q = query.toLowerCase()
   const scored: Array<{ opt: SessionCompletion; score: number }> = []
 
-  // Pre-count sessions per cwd so the addressable-slug helper knows when to
-  // use the bare project slug vs the compound `project:name` form.
-  const cwdCounts: Record<string, number> = {}
-  for (const s of sessions) if (s.status !== 'ended') cwdCounts[s.cwd] = (cwdCounts[s.cwd] || 0) + 1
+  // Group sessions by cwd so the addressable-slug helper can disambiguate
+  // siblings with identical title slugs.
+  const cwdGroups: Record<string, typeof sessions> = {}
+  for (const s of sessions) {
+    if (s.status === 'ended') continue
+    if (!cwdGroups[s.cwd]) cwdGroups[s.cwd] = []
+    cwdGroups[s.cwd].push(s)
+  }
 
   for (const session of sessions) {
     if (session.status === 'ended') continue
@@ -155,10 +159,9 @@ function sessionCompletions(query: string): SessionCompletion[] {
     // so never display it as a name.
     const displayLabel = projectDisplayName(session.cwd, projectSettings[session.cwd]?.label)
     const name = session.title || session.agentName || ''
-    // The insertable slug — approximates list_sessions' addressable ID,
-    // e.g. `arr` (bare) or `arr:viral-zebra` (compound) when the project
-    // hosts multiple live sessions.
-    const slug = sessionAddressableSlug(session, projectSettings, cwdCounts[session.cwd] || 1)
+    // The insertable slug — always compound `project:session-slug` to mirror
+    // list_sessions and stay stable across spawn/end churn at the cwd.
+    const slug = sessionAddressableSlug(session, projectSettings, cwdGroups[session.cwd] || [session])
     // Match against display name, the slug, and agent/title so "ola",
     // "OLA", "raccoon", and "arr:viral" all find the expected session.
     const haystack = `${displayLabel} ${slug} ${name}`

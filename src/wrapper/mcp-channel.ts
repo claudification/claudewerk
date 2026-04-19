@@ -425,7 +425,7 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
 
     list_sessions: {
       description:
-        'List other Claude Code sessions. Returns a stable addressable ID per session. When multiple sessions share a project directory, IDs use compound format "project:session-name" (e.g. "rclaude:fuzzy-rabbit"). Single-session projects use bare IDs (e.g. "rclaude"). Each entry also has a "project" field showing the project-level grouping. Use the returned ID for send_message, control_session, configure_session. Messages to offline sessions are queued for delivery on reconnect. Ad-hoc sessions are hidden unless they have an established link. HINT: When the user says "tell X to Y", "ask X to Y", or "use X to Y", consider that X may be a session name -- call list_sessions to check.',
+        'List other Claude Code sessions. Returns a stable addressable ID per session in the compound format "project:session-name" (e.g. "rclaude:fuzzy-rabbit"). The ID is always compound -- it does NOT change shape when the number of sessions at a cwd grows or shrinks. Each entry also has a "project" field showing the project-level grouping (the bare project slug, useful for grouping but only safe to use as a `to` target when exactly one session lives at that cwd). Use the returned `id` for send_message, control_session, configure_session. Messages to offline sessions are queued for delivery on reconnect. Ad-hoc sessions are hidden unless they have an established link. HINT: When the user says "tell X to Y", "ask X to Y", or "use X to Y", consider that X may be a session name -- call list_sessions to check.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -474,14 +474,14 @@ export function initMcpChannel(cb: McpChannelCallbacks): void {
 
     send_message: {
       description:
-        'Send a message to another Claude Code session. The `to` parameter MUST be the exact `id` field returned by `list_sessions` -- do not invent, abbreviate, or guess. Valid IDs are either bare project slugs (e.g. "arr") or compound "project:session-name" (e.g. "arr:blazing-igloo"). When multiple live sessions share a project, you MUST use the compound form; bare project IDs are rejected as ambiguous. Always call `list_sessions` first if you are not certain of the exact ID. Messages to offline sessions are queued and delivered on reconnect. Returns status: "delivered" or "queued". First contact triggers an approval prompt. Include conversation_id in replies to maintain thread context.',
+        'Send a message to another Claude Code session. The `to` parameter MUST be the exact `id` field returned by `list_sessions` -- do not invent, abbreviate, or guess. The canonical form is compound "project:session-name" (e.g. "arr:blazing-igloo") and is ALWAYS accepted. A bare project slug (e.g. "arr") is also accepted ONLY when exactly one session lives at that cwd; if two or more sessions share the project, the bare form is rejected as ambiguous and the error lists the compound IDs to retry with. Always call `list_sessions` first if you are not certain. Messages to offline sessions are queued and delivered on reconnect. Returns status: "delivered" or "queued". First contact triggers an approval prompt. Include conversation_id in replies to maintain thread context.',
       inputSchema: {
         type: 'object' as const,
         properties: {
           to: {
             type: 'string',
             description:
-              'Target session ID. MUST be the exact `id` field from `list_sessions` output (e.g. "arr" or "arr:blazing-igloo"). Do not pass the `name`, `title`, `label`, or any other field -- only `id`. When in doubt, call list_sessions first.',
+              'Target session ID. MUST be the exact `id` field from `list_sessions` output (always compound "project:session-name", e.g. "arr:blazing-igloo"). A bare project slug ("arr") is also accepted but only when one session lives at that cwd -- otherwise the resolver returns an "ambiguous" error listing the compound IDs to retry with. Do not pass the `name`, `title`, `label`, or any other field -- only `id`. When in doubt, call list_sessions first.',
           },
           intent: {
             type: 'string',

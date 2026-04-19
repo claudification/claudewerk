@@ -9,6 +9,7 @@ import { getUser } from '../auth'
 import type { MessageHandler } from '../handler-context'
 import { registerHandlers } from '../message-router'
 import { resolvePermissionFlags } from '../permissions'
+import { computeLocalId, formatAmbiguityError, resolveSendTarget } from './channel-id'
 
 // ─── Dashboard subscription ────────────────────────────────────────
 
@@ -184,21 +185,10 @@ const channelListSessions: MessageHandler = (ctx, data) => {
     const projectName = projSettings?.label || s.cwd.split('/').pop() || s.cwd
     const projectSlug = callerCwd ? ctx.addressBook.getOrAssign(callerCwd, s.cwd, projectName) : slugify(projectName)
 
-    // Compound addressing: if multiple sessions share this CWD, append :session-slug
-    const cwdGroup = cwdGroups.get(s.cwd) || []
-    let localId: string
-    if (cwdGroup.length > 1) {
-      // Generate unique session slugs within this CWD group
-      const sessionSlug = slugify(s.title || s.id.slice(0, 8))
-      // Check for collisions within the group
-      const sameSlug = cwdGroup.filter(
-        other => other.id !== s.id && slugify(other.title || other.id.slice(0, 8)) === sessionSlug,
-      )
-      const finalSessionSlug = sameSlug.length > 0 ? `${sessionSlug}-${s.id.slice(0, 6)}` : sessionSlug
-      localId = `${projectSlug}:${finalSessionSlug}`
-    } else {
-      localId = projectSlug
-    }
+    // ALWAYS compound `project:session-slug` -- bare ids would silently flip
+    // shape when a second session spawns at the same cwd. See channel-id.ts.
+    const cwdGroup = cwdGroups.get(s.cwd) || [s]
+    const localId = computeLocalId(s, projectSlug, cwdGroup)
 
     return {
       id: localId, // stable local address (use for send_message, etc.)
@@ -252,14 +242,9 @@ function computeSenderRoutableId(
   }
   const projectSlug = ctx.addressBook.getOrAssign(toCwd, fromSess.cwd, fromProject)
   const sessionsAtCwd = Array.from(ctx.sessions.getAllSessions()).filter(s => s.cwd === fromSess.cwd)
-  if (sessionsAtCwd.length <= 1) return { routable: projectSlug, project: projectSlug }
-
-  const sessionSlug = slugify(fromSess.title || fromSess.id.slice(0, 8))
-  const collides = sessionsAtCwd.some(
-    other => other.id !== fromSess.id && slugify(other.title || other.id.slice(0, 8)) === sessionSlug,
-  )
-  const finalSessionSlug = collides ? `${sessionSlug}-${fromSess.id.slice(0, 6)}` : sessionSlug
-  return { routable: `${projectSlug}:${finalSessionSlug}`, project: projectSlug }
+  // Always compound -- list_sessions must be able to round-trip the from-id.
+  const cwdGroup = sessionsAtCwd.length > 0 ? sessionsAtCwd : [fromSess]
+  return { routable: computeLocalId(fromSess, projectSlug, cwdGroup), project: projectSlug }
 }
 
 const channelSend: MessageHandler = (ctx, data) => {
@@ -281,39 +266,25 @@ const channelSend: MessageHandler = (ctx, data) => {
   let toSess: ReturnType<typeof ctx.sessions.getSession> | undefined
   if (targetCwd) {
     const sessionsAtCwd = Array.from(ctx.sessions.getAllSessions()).filter(s => s.cwd === targetCwd)
-    if (sessionSlug) {
-      // Compound address: match by slugified session title within this CWD
-      toSess = sessionsAtCwd.find(s => slugify(s.title || s.id.slice(0, 8)) === sessionSlug)
-      if (!toSess) {
-        // Fuzzy: try prefix match for partial session slugs
-        toSess = sessionsAtCwd.find(s => slugify(s.title || s.id.slice(0, 8)).startsWith(sessionSlug))
-      }
-    } else {
-      // Bare target: prefer an exact session-title match within the CWD before
-      // treating this as a project-level address. Sessions are addressable by
-      // their own name; only fall back to project-scoped dispatch when no
-      // session owns the slug.
-      const titleMatch = sessionsAtCwd.find(s => slugify(s.title || s.id.slice(0, 8)) === projectSlug)
-      if (titleMatch) {
-        toSess = titleMatch
-      } else {
-        const liveSessions = sessionsAtCwd.filter(s => ctx.sessions.getActiveWrapperCount(s.id) > 0)
-        if (liveSessions.length > 1) {
-          // Ambiguity error must use the CANONICAL project slug (project label or
-          // dirname), not whatever alias the caller happened to type -- otherwise
-          // the suggested compound IDs won't round-trip with list_sessions.
-          const projSettings = ctx.getProjectSettings(targetCwd)
-          const canonicalProject = slugify(projSettings?.label || targetCwd.split('/').pop() || projectSlug)
-          const names = liveSessions.map(s => `${canonicalProject}:${slugify(s.title || s.id.slice(0, 8))}`).join(', ')
-          ctx.reply({
-            type: 'channel_send_result',
-            ok: false,
-            error: `Ambiguous target: ${liveSessions.length} live sessions at "${canonicalProject}". Use compound address: ${names}`,
-          })
-          return
-        }
-        toSess = liveSessions[0] || sessionsAtCwd[0]
-      }
+    const projSettings = ctx.getProjectSettings(targetCwd)
+    const canonicalProject = slugify(projSettings?.label || targetCwd.split('/').pop() || projectSlug)
+    const resolved = resolveSendTarget({
+      projectSlug,
+      sessionSlug,
+      sessionsAtCwd,
+      canonicalProject,
+      isLive: s => ctx.sessions.getActiveWrapperCount(s.id) > 0,
+    })
+    if (resolved.kind === 'ambiguous') {
+      ctx.reply({
+        type: 'channel_send_result',
+        ok: false,
+        error: formatAmbiguityError(resolved.canonicalProject, resolved.candidates),
+      })
+      return
+    }
+    if (resolved.kind === 'resolved') {
+      toSess = ctx.sessions.getSession(resolved.session.id)
     }
   } else {
     toSess = ctx.sessions.getSessionByWrapper(toTarget) || ctx.sessions.getSession(toTarget)
