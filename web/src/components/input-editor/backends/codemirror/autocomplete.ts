@@ -8,8 +8,10 @@
  * Source data is read live from the sessions store at completion time, so the
  * extension doesn't need rebuilding when sessionInfo changes.
  *
- * Phase 2b scope: name-only completion. Sub-command argument completers
- * (e.g. /workon <task>, /model <variant>) stay legacy-only for now.
+ * Also handles `/model <variant>` argument completion via a shared helper.
+ * Other sub-command arg completers (e.g. /workon <task>) stay legacy-only
+ * for now — they require React-scoped context (project tasks, selected
+ * session) and side-effecting onSelect callbacks.
  */
 
 import {
@@ -22,7 +24,7 @@ import {
 import { type Extension, Prec } from '@codemirror/state'
 import { keymap } from '@codemirror/view'
 import { useSessionsStore } from '@/hooks/use-sessions'
-import { BUILTIN_COMMAND_NAMES, BUILTIN_SCORE_BOOST, fuzzyScore } from '../../autocomplete-shared'
+import { BUILTIN_COMMAND_NAMES, BUILTIN_SCORE_BOOST, completeModelArg, fuzzyScore } from '../../autocomplete-shared'
 
 interface SourceInfo {
   slashCommands: string[]
@@ -71,10 +73,45 @@ function buildCompletions(trigger: '/' | '@', query: string, atDocStart: boolean
   return scored.slice(0, 12).map(x => ({ label: x.label, detail: x.detail }))
 }
 
+/**
+ * Sub-command argument completion: `/model <variant>` at start of doc.
+ *
+ * Matches legacy semantics (markdown-input.tsx SUB_COMMANDS['model']):
+ * - query is everything after `/model\s+` up to end of doc
+ * - selecting a value replaces the whole arg region with the chosen id
+ * - exact match suppresses the popup so Enter submits `/model <id>` as-is
+ */
+function subCommandArgCompletion(text: string, docLength: number): CompletionResult | null {
+  const m = text.match(/^\/(\S+)(\s+)/)
+  if (!m) return null
+  if (m[1].toLowerCase() !== 'model') return null // only /model for now
+  const prefixLen = m[0].length
+  const rest = text.slice(prefixLen)
+  if (rest.includes('\n')) return null
+
+  const query = rest.trim()
+  const options = completeModelArg(query)
+  if (options.length === 0) return null
+
+  // Exact match: drop popup so Enter submits `/model <id>` verbatim.
+  if (options.some(o => o.toLowerCase() === query.toLowerCase())) return null
+
+  return {
+    from: prefixLen,
+    to: docLength,
+    options: options.map(label => ({ label, detail: 'model' })),
+    filter: false,
+  }
+}
+
 function completionSource(context: CompletionContext): CompletionResult | null {
   const pos = context.pos
   const doc = context.state.doc
   const text = doc.toString()
+
+  // Sub-command arg completion takes precedence when the doc is `/cmd <args>`.
+  const subResult = subCommandArgCompletion(text, doc.length)
+  if (subResult) return subResult
 
   // Scan backwards from cursor to find a word starting with / or @
   let start = pos - 1

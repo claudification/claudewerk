@@ -1,4 +1,3 @@
-import { COMPLETER_MODEL_IDS } from '@shared/models'
 import { Mic, Paperclip } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -9,7 +8,7 @@ import { sendInput, useSessionsStore } from '@/hooks/use-sessions'
 import { buildTaskPrompt, scoreAndSortTasks } from '@/lib/task-scoring'
 import { uploadFileWithPlaceholder } from '@/lib/upload'
 import { cn, haptic, isMobileViewport } from '@/lib/utils'
-import { fuzzyScore } from './input-editor/autocomplete-shared'
+import { completeModelArg, fuzzyScore } from './input-editor/autocomplete-shared'
 
 const EMPTY_INFO: { slashCommands: string[]; skills: string[]; agents: string[] } = {
   slashCommands: [],
@@ -42,11 +41,7 @@ const SUB_COMMANDS: SubCommandDef[] = [
   {
     name: 'model',
     enterBehavior: 'select-or-submit',
-    completer: q =>
-      COMPLETER_MODEL_IDS.filter(m => !q || m.toLowerCase().includes(q.toLowerCase())).map(m => ({
-        value: m,
-        builtin: true,
-      })),
+    completer: q => completeModelArg(q).map(m => ({ value: m, builtin: true })),
   },
   {
     name: 'workon',

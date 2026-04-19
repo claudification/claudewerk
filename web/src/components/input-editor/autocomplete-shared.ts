@@ -6,6 +6,14 @@
  * dispatch) lives in that backend.
  */
 
+import { COMPLETER_MODEL_IDS } from '@shared/models'
+
+/** Substring-match completer for `/model <query>` — shared by both backends. */
+export function completeModelArg(query: string): string[] {
+  const q = query.toLowerCase()
+  return COMPLETER_MODEL_IDS.filter(m => !q || m.toLowerCase().includes(q))
+}
+
 /**
  * fzf-inspired fuzzy scorer. Returns 0 if `candidate` doesn't contain
  * all of `query`'s chars in order; otherwise a positive score (higher =
