@@ -27,9 +27,9 @@ export function canTerminal(s: Session): boolean {
   return s.status !== 'ended' && !!s.capabilities?.includes('terminal')
 }
 
-/** Check if a session supports raw JSON stream viewing. Headless sessions only. */
+/** Check if a session supports raw JSON stream viewing. */
 export function canJsonStream(s: Session): boolean {
-  return s.status !== 'ended' && !!s.capabilities?.includes('headless')
+  return s.status !== 'ended' && !!s.capabilities?.includes('json_stream')
 }
 
 // Client-side session model (derived from SessionSummary wire format with defaults applied)

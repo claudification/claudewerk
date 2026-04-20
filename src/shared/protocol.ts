@@ -28,7 +28,15 @@ export interface HookEvent {
 }
 
 // Capabilities that rclaude declares on connect
-export type WrapperCapability = 'terminal' | 'channel' | 'headless' | 'ad-hoc' | 'boot_stream' | 'repl' | 'config_rw'
+export type WrapperCapability =
+  | 'terminal'
+  | 'channel'
+  | 'headless'
+  | 'json_stream'
+  | 'ad-hoc'
+  | 'boot_stream'
+  | 'repl'
+  | 'config_rw'
 
 /** Discrete lifecycle steps the wrapper reports while booting, before CC
  *  has a real session id. Rendered inline in the transcript as BootEntry. */

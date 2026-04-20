@@ -723,7 +723,7 @@ async function main() {
     const capabilities = [
       ...(!noTerminal ? ['terminal' as const] : []),
       ...(channelEnabled ? ['channel' as const] : []),
-      ...(headless ? ['headless' as const] : []),
+      ...(headless ? (['headless', 'json_stream'] as const) : []),
       ...(isAdHoc ? ['ad-hoc' as const] : []),
       ...(replEnabled ? ['repl' as const] : []),
       'boot_stream' as const,
