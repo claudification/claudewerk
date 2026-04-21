@@ -28,6 +28,7 @@ import {
 import { record } from '@/lib/perf-metrics'
 import type { SubCommandContext } from '../../sub-commands'
 import { autocompleteExtension } from './autocomplete'
+import { composingField, composingTracker } from './composition'
 
 // ---------------------------------------------------------------------------
 // Lightweight markdown decorator
@@ -284,19 +285,20 @@ export function buildInputExtensions(opts: InputExtensionOptions): Extension[] {
   const minHeight = opts.minHeight ?? '1.5em'
   const maxHeight = opts.maxHeight ?? '12em'
 
-  // Submit on Enter, newline on Shift-Enter (default Enter behavior).
+  // Shift-Enter -> newline is handled by a capture-phase listener on
+  // contentDOM (see inner.tsx onCreateEditor) to bypass CM6's composition
+  // gate on iOS. The keymap below only handles unmodified Enter.
+
+  // Submit on Enter (unmodified).
   const submitKeymap = keymap.of([
     {
       key: 'Enter',
       run: view => {
-        // Caller can suppress submit (e.g. mobile compose panel where there's
-        // no Shift-Enter on a phone keyboard, so Enter must insert a newline
-        // and submit happens via the Send button).
+        if (view.composing) return false
         if (opts.shouldEnterSubmit && !opts.shouldEnterSubmit()) return false
         submitFromEditor(view, opts.onSubmit)
         return true
       },
-      shift: () => false,
     },
   ])
 
@@ -329,6 +331,8 @@ export function buildInputExtensions(opts: InputExtensionOptions): Extension[] {
   ])
 
   const extensions: Extension[] = [
+    composingField,
+    composingTracker,
     drawSelection(),
     history(),
     submitKeymap, // before defaultKeymap so our Enter wins (autocomplete still wins over us when popup is open)

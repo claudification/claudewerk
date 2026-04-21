@@ -17,12 +17,12 @@
  */
 
 import type { EditorView } from '@codemirror/view'
+import CodeMirror from '@uiw/react-codemirror'
 import { Send } from 'lucide-react'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useProject } from '@/hooks/use-project'
 import { useSessionsStore } from '@/hooks/use-sessions'
 import { cn, haptic } from '@/lib/utils'
-import { SafeCodeMirror } from '../../../codemirror/safe-codemirror'
 import { useIsMobile } from '../../shell/use-is-mobile'
 import { useScrollLock } from '../../shell/use-scroll-lock'
 import type { SubCommandContext } from '../../sub-commands'
@@ -52,9 +52,11 @@ export default function CodeMirrorBackendInner(props: InputEditorProps) {
   const onSubmitRef = useRef(props.onSubmit)
   onSubmitRef.current = props.onSubmit
 
-  // SafeCodeMirror pins onChange identity internally, so we can pass
-  // props.onChange through even though it's a fresh function identity every
-  // parent render.
+  const onChangeRef = useRef(props.onChange)
+  onChangeRef.current = props.onChange
+  const stableOnChange = useCallback((value: string) => {
+    onChangeRef.current(value)
+  }, [])
 
   // Enter=submit only when NOT in the mobile compose panel. On a phone there's
   // no Shift-Enter, so Enter must insert a newline and the Send button is the
@@ -88,6 +90,28 @@ export default function CodeMirrorBackendInner(props: InputEditorProps) {
   function onCreateEditor(view: EditorView) {
     viewRef.current = view
     attachPasteUpload(view, () => sessionIdRef.current)
+
+    // Shift+Enter -> newline, registered directly on contentDOM in capture
+    // phase. CM6's InputState.handleEvent blocks ALL keydown events during
+    // active composition (ignoreDuringComposition). On iOS, predictive text
+    // keeps composition alive across modifier keys -- so Shift+Enter arrives
+    // while composing and CM6 silently drops it before any keymap or
+    // domEventHandler fires. This capture-phase listener runs before CM6's
+    // own bubble-phase handler, sidestepping the composition gate entirely.
+    view.contentDOM.addEventListener(
+      'keydown',
+      (e: KeyboardEvent) => {
+        if (e.key === 'Enter' && e.shiftKey) {
+          e.preventDefault()
+          e.stopPropagation()
+          view.dispatch(view.state.replaceSelection(view.state.lineBreak), {
+            scrollIntoView: true,
+            userEvent: 'input',
+          })
+        }
+      },
+      { capture: true },
+    )
   }
 
   function onDrop(e: React.DragEvent) {
@@ -207,9 +231,9 @@ export default function CodeMirrorBackendInner(props: InputEditorProps) {
   }, [expanded])
 
   const editor = (
-    <SafeCodeMirror
+    <CodeMirror
       value={props.value}
-      onChange={props.onChange}
+      onChange={stableOnChange}
       extensions={extensions}
       placeholder={props.placeholder}
       editable={!props.disabled}
