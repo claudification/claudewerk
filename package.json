@@ -2,6 +2,10 @@
   "name": "remote-claude",
   "version": "0.1.0",
   "type": "module",
+  "packageManager": "bun@1.3.13",
+  "engines": {
+    "bun": ">=1.3.13"
+  },
   "scripts": {
     "dev:wrapper": "bun run src/wrapper/index.ts",
     "dev:concentrator": "bun run src/concentrator/index.ts",
