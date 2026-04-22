@@ -797,10 +797,8 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* Debug console (Ctrl+Shift+D) - admin only */}
-      {canAdmin && showDebugConsole && (
-        <DebugConsole onClose={() => useSessionsStore.getState().toggleDebugConsole()} />
-      )}
+      {/* Debug console (Ctrl+Shift+D) */}
+      {showDebugConsole && <DebugConsole onClose={() => useSessionsStore.getState().toggleDebugConsole()} />}
 
       {/* Global session switcher (Ctrl+K from anywhere) - admin only */}
       {canAdmin && showSwitcher && (
