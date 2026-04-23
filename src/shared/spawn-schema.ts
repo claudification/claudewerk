@@ -9,7 +9,7 @@
  */
 
 import { z } from 'zod'
-import { DROPDOWN_MODEL_ENTRIES, KNOWN_MODEL_IDS } from './models'
+import { ALL_CC_SLUGS, DROPDOWN_MODEL_ENTRIES } from './models'
 
 export const DEFAULT_SENTINEL = '__default__'
 
@@ -44,10 +44,9 @@ export const TIMEOUT_OPTIONS = [
   { value: '0', label: 'No timeout' },
 ] as const
 
-// Accept anything in the catalog; `KNOWN_MODEL_IDS` is the single source of truth
-// (see `src/shared/models.ts`). When Anthropic ships a new pinned id, add it
-// to the catalog and validation picks it up for free.
-export const modelEnum = z.enum(KNOWN_MODEL_IDS as unknown as [string, ...string[]])
+// Accept any slug CC recognizes. The full list lives in CC_MODELS (models.ts).
+// dispatchSpawn does the real validation with a helpful error listing valid models.
+export const modelEnum = z.enum(ALL_CC_SLUGS as unknown as [string, ...string[]])
 export const effortEnum = z.enum(['low', 'medium', 'high', 'xhigh', 'max'])
 export const permissionModeEnum = z.enum(['plan', 'acceptEdits', 'auto', 'bypassPermissions'])
 export const spawnModeEnum = z.enum(['fresh', 'resume'])

@@ -15,6 +15,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { validateModel } from '../shared/models'
 import type { LaunchProgressEvent, LaunchStep, ProjectSettings, Session, SpawnResult } from '../shared/protocol'
 import { generateSessionName } from '../shared/session-names'
 import { resolveSpawnConfig } from '../shared/spawn-defaults'
@@ -99,6 +100,19 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
     )
   }
 
+  const projSettings = deps.getProjectSettings(req.cwd)
+  const globalSettings = deps.getGlobalSettings()
+  const resolved = resolveSpawnConfig(req, projSettings, globalSettings)
+  const { headless, model, effort, permissionMode, autocompactPct, maxBudgetUsd, bare, repl } = resolved
+
+  if (model) {
+    const validation = validateModel(model)
+    if (!validation.valid) {
+      emitProgress(deps.sessions, jobId, 'failed', 'error', { error: validation.warning })
+      return { ok: false, error: validation.warning || `Unknown model: ${model}`, statusCode: 400 }
+    }
+  }
+
   const result = await new Promise<SpawnResult>((resolve, reject) => {
     const timeout = setTimeout(() => {
       deps.sessions.removeSpawnListener(requestId)
@@ -111,11 +125,6 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
     })
 
     emitProgress(deps.sessions, jobId, 'spawn_sent', 'active')
-
-    const projSettings = deps.getProjectSettings(req.cwd)
-    const globalSettings = deps.getGlobalSettings()
-    const resolved = resolveSpawnConfig(req, projSettings, globalSettings)
-    const { headless, model, effort, permissionMode, autocompactPct, maxBudgetUsd, bare, repl } = resolved
 
     // Record the resolved config on the job so MCP get_spawn_diagnostics can
     // return it later -- we intentionally drop the prompt (can be large / PII)
