@@ -10,6 +10,7 @@ import {
 } from '@/lib/cost-utils'
 import { useKeyLayer } from '@/lib/key-layers'
 import type { Session } from '@/lib/types'
+import { projectPath } from '@/lib/types'
 import {
   cn,
   contextWindowSize,
@@ -739,13 +740,13 @@ const SessionItemFull = memo(function SessionItemFull({ session }: { session: Se
   const selectSession = useSessionsStore(s => s.selectSession)
   const selectSubagent = useSessionsStore(s => s.selectSubagent)
   const openTab = useSessionsStore(s => s.openTab)
-  const ps = useSessionsStore(s => s.projectSettings[session.cwd])
+  const ps = useSessionsStore(s => s.projectSettings[session.project])
   const showContextBar = useSessionsStore(s => s.dashboardPrefs.showContextInList)
   const showCost = useSessionsStore(s => s.dashboardPrefs.showCostInList)
   const isRenaming = useSessionsStore(s => s.renamingSessionId === session.id)
   const hasPendingPermission = useSessionsStore(s => s.pendingPermissions.some(p => p.sessionId === session.id))
 
-  const projectName = projectDisplayName(session.cwd, ps?.label)
+  const projectName = projectDisplayName(projectPath(session.project), ps?.label)
   const sessionName = session.title || session.agentName
   const displayColor = ps?.color
 
@@ -805,7 +806,7 @@ const SessionItemFull = memo(function SessionItemFull({ session }: { session: Se
         {session.pendingAttention && <span className="text-[9px] text-amber-400 font-bold animate-pulse">WAITING</span>}
         {session.hasNotification && <span className="text-[9px] text-teal-400 font-bold">NOTIFY</span>}
         <SessionInfoButton session={session} visible={isSelected} />
-        <ShareIndicator sessionCwd={session.cwd} />
+        <ShareIndicator sessionCwd={projectPath(session.project)} />
         {session.resultText && session.capabilities?.includes('ad-hoc') && <ResultTextModal session={session} />}
         {session.status === 'ended' && <DismissButton sessionId={session.id} />}
         {showCost &&
@@ -974,7 +975,7 @@ export const SessionItemCompact = memo(function SessionItemCompact({ session }: 
   const selectedSubagentId = useSessionsStore(s => (s.selectedSessionId === session.id ? s.selectedSubagentId : null))
   const selectSession = useSessionsStore(s => s.selectSession)
   const selectSubagent = useSessionsStore(s => s.selectSubagent)
-  const ps = useSessionsStore(s => s.projectSettings[session.cwd])
+  const ps = useSessionsStore(s => s.projectSettings[session.project])
   const showCost = useSessionsStore(s => s.dashboardPrefs.showCostInList)
   const showContextBar = useSessionsStore(s => s.dashboardPrefs.showContextInList)
   const isRenaming = useSessionsStore(s => s.renamingSessionId === session.id)
@@ -1135,7 +1136,7 @@ export function SessionCard({ session }: { session: Session }) {
             />
           </div>
         </div>
-        {showSettings && <ProjectSettingsEditor cwd={session.cwd} onClose={() => setShowSettings(false)} />}
+        {showSettings && <ProjectSettingsEditor project={session.project} onClose={() => setShowSettings(false)} />}
       </div>
     </SessionContextMenu>
   )
@@ -1148,8 +1149,8 @@ export function InactiveProjectItem({ sessions }: { sessions: Session[] }) {
   const selectSession = useSessionsStore(s => s.selectSession)
   const projectSettings = useSessionsStore(s => s.projectSettings)
   const latest = sessions.reduce((a, b) => (a.lastActivity > b.lastActivity ? a : b))
-  const ps = projectSettings[latest.cwd]
-  const displayName = projectDisplayName(latest.cwd, ps?.label)
+  const ps = projectSettings[latest.project]
+  const displayName = projectDisplayName(projectPath(latest.project), ps?.label)
   const displayColor = ps?.color
 
   return (
@@ -1171,7 +1172,7 @@ export function InactiveProjectItem({ sessions }: { sessions: Session[] }) {
           }}
           className="w-full text-left border border-border hover:border-primary p-2 pl-3 transition-colors cursor-pointer"
           style={displayColor ? { borderLeftColor: displayColor, borderLeftWidth: '3px' } : undefined}
-          title={`${sessions.length} session${sessions.length > 1 ? 's' : ''}\n${latest.cwd}`}
+          title={`${sessions.length} session${sessions.length > 1 ? 's' : ''}\n${projectPath(latest.project)}`}
         >
           <div className="flex items-center gap-1.5">
             {ps?.icon && (
@@ -1190,7 +1191,7 @@ export function InactiveProjectItem({ sessions }: { sessions: Session[] }) {
             </span>
           </div>
         </div>
-        {showSettings && <ProjectSettingsEditor cwd={latest.cwd} onClose={() => setShowSettings(false)} />}
+        {showSettings && <ProjectSettingsEditor project={latest.project} onClose={() => setShowSettings(false)} />}
       </div>
     </SessionContextMenu>
   )

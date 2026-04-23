@@ -63,8 +63,7 @@ export function GroupNode({
   const childCount = collapsed
     ? group.children.filter(c => {
         if (c.type === 'project') {
-          const cwd = c.id.startsWith('cwd:') ? c.id.slice(4) : c.id
-          return sessionsByCwd.has(cwd)
+          return sessionsByCwd.has(c.id)
         }
         return true
       }).length

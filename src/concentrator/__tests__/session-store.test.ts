@@ -75,7 +75,7 @@ describe('session lifecycle', () => {
     const session = store.getSession('sess-1')
     expect(session).toBeDefined()
     expect(session!.id).toBe('sess-1')
-    expect(session!.cwd).toBe('/home/user/project')
+    expect(session!.project).toBe('claude:///home/user/project')
   })
 
   it('createSession makes session appear in getAllSessions', () => {
@@ -579,7 +579,6 @@ describe('project URI field', () => {
     store.rekeySession('proj-old', 'proj-new', 'w1', '/new/path')
     const session = store.getSession('proj-new')!
     expect(session.project).toBe('claude:///new/path')
-    expect(session.cwd).toBe('/new/path')
   })
 
   it('same-ID rekey updates project from new cwd', () => {
@@ -664,7 +663,7 @@ describe('project link management (project URI)', () => {
 
     const linked = store.getLinkedProjects('gp-a')
     expect(linked).toHaveLength(1)
-    expect(linked[0].cwd).toBe('/projects/bar')
+    expect(linked[0].project).toBe('claude:///projects/bar')
   })
 
   it('getLinkedProjects returns empty for session with no links', () => {

@@ -8,7 +8,7 @@
  * real one.
  */
 
-import { cwdToProjectUri } from '../../shared/project-uri'
+import { cwdToProjectUri, parseProjectUri } from '../../shared/project-uri'
 import type {
   BootStep,
   TranscriptBootEntry,
@@ -163,7 +163,13 @@ const sessionPromote: MessageHandler = (ctx, data) => {
   // Re-key the booting session to the real session id. This moves the
   // transcript (including boot entries), sockets, subscriptions, etc.
   const bootProject = bootSession.project
-  const rekeyed = ctx.sessions.rekeySession(wrapperId, newSessionId, wrapperId, bootSession.cwd, undefined)
+  const rekeyed = ctx.sessions.rekeySession(
+    wrapperId,
+    newSessionId,
+    wrapperId,
+    parseProjectUri(bootSession.project).path,
+    undefined,
+  )
   if (!rekeyed) {
     ctx.log.debug(`[boot] rekey failed for ${wrapperId.slice(0, 8)} -> ${newSessionId.slice(0, 8)}`)
     return

@@ -4,6 +4,7 @@
  */
 
 import type { Server, ServerWebSocket } from 'bun'
+import { parseProjectUri } from '../shared/project-uri'
 import type { Ack, ConcentratorError, HookEvent, SessionEnd, SessionMeta, WrapperMessage } from '../shared/protocol'
 import type { SessionStore } from './session-store'
 
@@ -66,7 +67,12 @@ export function createWsServer(options: WsServerOptions): WsServer {
                 if (meta.configuredModel) existingSession.configuredModel = meta.configuredModel
               } else {
                 // Create new session
-                const session = sessionStore.createSession(meta.sessionId, meta.cwd, meta.model, meta.args)
+                const session = sessionStore.createSession(
+                  meta.sessionId,
+                  parseProjectUri(meta.project).path,
+                  meta.model,
+                  meta.args,
+                )
                 if (meta.configuredModel) session.configuredModel = meta.configuredModel
               }
 

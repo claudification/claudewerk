@@ -71,7 +71,6 @@ function clearSubscribedSessions() {
 function toSession(summary: SessionSummary): Session {
   return {
     id: summary.id,
-    cwd: summary.cwd,
     project: summary.project,
     model: summary.model,
     capabilities: summary.capabilities,

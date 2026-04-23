@@ -3,7 +3,7 @@
  * heartbeat, session clear (re-key), notify, and end.
  */
 
-import { cwdToProjectUri } from '../../shared/project-uri'
+import { cwdToProjectUri, extractProjectLabel } from '../../shared/project-uri'
 import { slugify } from '../address-book'
 import type { MessageHandler } from '../handler-context'
 import { registerHandlers } from '../message-router'
@@ -76,17 +76,17 @@ const meta: MessageHandler = (ctx, data) => {
 
   ctx.sessions.setSessionSocket(sessionId, wrapperId, ctx.ws)
 
-  // Auto-restore persisted links for this session's CWD
-  const sessionCwd = (existingSession || ctx.sessions.getSession(sessionId))?.cwd
-  if (sessionCwd) {
-    const persistedLinks = ctx.getLinksForCwd(sessionCwd)
+  // Auto-restore persisted links for this session's project
+  const sessionProject = (existingSession || ctx.sessions.getSession(sessionId))?.project
+  if (sessionProject) {
+    const persistedLinks = ctx.getLinksForCwd(sessionProject)
     for (const pl of persistedLinks) {
-      const otherCwd = pl.cwdA === sessionCwd ? pl.cwdB : pl.cwdA
+      const otherProject = pl.cwdA === sessionProject ? pl.cwdB : pl.cwdA
       for (const s of ctx.sessions.getActiveSessions()) {
-        if (s.cwd === otherCwd && s.id !== sessionId) {
+        if (s.project === otherProject && s.id !== sessionId) {
           ctx.sessions.linkProjects(sessionId, s.id)
           ctx.log.debug(
-            `[links] Auto-restored: ${sessionId.slice(0, 8)} (${sessionCwd.split('/').pop()}) <-> ${s.id.slice(0, 8)} (${otherCwd.split('/').pop()})`,
+            `[links] Auto-restored: ${sessionId.slice(0, 8)} (${extractProjectLabel(sessionProject)}) <-> ${s.id.slice(0, 8)} (${extractProjectLabel(otherProject)})`,
           )
         }
       }
@@ -112,10 +112,10 @@ const meta: MessageHandler = (ctx, data) => {
   // (or CWD-level messages with no target) are drained. Messages for other
   // sessions at the same CWD stay queued.
   const drainSession = existingSession || ctx.sessions.getSession(sessionId)
-  const drainCwd = drainSession?.cwd
-  if (drainCwd) {
+  const drainProject = drainSession?.project
+  if (drainProject) {
     const sessionNameSlug = drainSession?.title ? slugify(drainSession.title) : undefined
-    const queued = ctx.messageQueue.drain(drainCwd, sessionNameSlug)
+    const queued = ctx.messageQueue.drain(drainProject, sessionNameSlug)
     if (queued.length > 0) {
       const targetWs = ctx.sessions.getSessionSocket(sessionId)
       if (targetWs) {
@@ -123,7 +123,7 @@ const meta: MessageHandler = (ctx, data) => {
           targetWs.send(JSON.stringify(item.message))
         }
         ctx.log.info(
-          `Drained ${queued.length} queued message(s) for ${drainCwd.split('/').pop()}${sessionNameSlug ? `:${sessionNameSlug}` : ''}`,
+          `Drained ${queued.length} queued message(s) for ${extractProjectLabel(drainProject)}${sessionNameSlug ? `:${sessionNameSlug}` : ''}`,
         )
       }
     }
@@ -177,7 +177,7 @@ const sessionClear: MessageHandler = (ctx, data) => {
 const notify: MessageHandler = (ctx, data) => {
   const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
   const session = sessionId ? ctx.sessions.getSession(sessionId) : undefined
-  const cwd = session?.cwd?.split('/').slice(-2).join('/') || sessionId?.slice(0, 8) || 'rclaude'
+  const cwd = (session?.project ? extractProjectLabel(session.project) : null) || sessionId?.slice(0, 8) || 'rclaude'
   const message = (data.message as string) || 'Notification'
   const title = (data.title as string) || cwd
   console.log(`[notify] ${title}: ${message}`)
@@ -187,7 +187,7 @@ const notify: MessageHandler = (ctx, data) => {
   }
 
   const toastMsg = { type: 'toast', title, message, sessionId }
-  if (session?.cwd) ctx.broadcastScoped(toastMsg, session.cwd)
+  if (session?.project) ctx.broadcastScoped(toastMsg, session.project)
   else ctx.broadcast(toastMsg)
 }
 
@@ -222,7 +222,7 @@ const end: MessageHandler = (ctx, data) => {
         taskId: session.adHocTaskId,
         sessionId,
       }
-      if (session.cwd) ctx.broadcastScoped(toastMsg, session.cwd)
+      if (session.project) ctx.broadcastScoped(toastMsg, session.project)
       else ctx.broadcast(toastMsg)
 
       ctx.push.sendToAll({

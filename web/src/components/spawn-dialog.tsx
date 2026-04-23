@@ -18,6 +18,7 @@ import { updateProjectSettings, useSessionsStore, wsSend } from '@/hooks/use-ses
 import { sendSpawnRequest } from '@/hooks/use-spawn'
 import { parseEnvText } from '@/lib/env-parse'
 import { useKeyLayer } from '@/lib/key-layers'
+import { cwdToProjectUri } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
 import { LaunchConfigFields, type LaunchFieldsValue } from './launch-config-fields'
 import { LaunchErrorBanner, LaunchFooterActions, LaunchStepList } from './launch-monitor'
@@ -79,7 +80,7 @@ export function SpawnDialog() {
   const progressReset = progress.reset
   useEffect(() => {
     _openDialog = (options: SpawnDialogOptions) => {
-      const ps = projectSettings[options.cwd]
+      const ps = projectSettings[cwdToProjectUri(options.cwd)]
       const gs = globalSettings as Record<string, unknown>
       // Resolve defaults: project > global > hardcoded
       const defaultMode = ps?.defaultLaunchMode || (gs.defaultLaunchMode as string) || 'headless'
@@ -296,7 +297,7 @@ export function SpawnDialog() {
   function handleSaveProjectDefaults() {
     if (!state.options) return
     const defaults = buildSpawnDefaults()
-    updateProjectSettings(state.options.cwd, defaults)
+    updateProjectSettings(cwdToProjectUri(state.options.cwd), defaults)
     setSavedFeedback('project')
     haptic('success')
     setTimeout(() => setSavedFeedback(null), 2000)

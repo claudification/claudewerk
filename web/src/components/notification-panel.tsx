@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { renderProjectIcon } from '@/components/project-settings-editor'
 import { BannerButton, SessionBanner } from '@/components/ui/session-banner'
 import { useSessionsStore } from '@/hooks/use-sessions'
+import { projectPath } from '@/lib/types'
 import { haptic, projectDisplayName } from '@/lib/utils'
 
 interface NotificationPanelProps {
@@ -238,10 +239,10 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
     <div className="divide-y divide-border/50">
       {sessionGroups.map(([sessionId, groupItems]) => {
         const session = sessions[sessionId]
-        const ps = session ? projectSettings[session.cwd] : undefined
+        const ps = session ? projectSettings[session.project] : undefined
         const displayColor = ps?.color
         const sessionName = session?.title || session?.agentName || sessionId.slice(0, 8)
-        const projectName = session ? projectDisplayName(session.cwd, ps?.label) : ''
+        const projectName = session ? projectDisplayName(projectPath(session.project), ps?.label) : ''
 
         return (
           <div key={sessionId} className="p-2 space-y-1.5">

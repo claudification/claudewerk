@@ -131,8 +131,8 @@ export function Header() {
 
   useEffect(() => {
     function handleOpenProject(e: Event) {
-      const detail = (e as CustomEvent<{ cwd?: string }>).detail
-      if (detail?.cwd) setProjectSettingsCwd(detail.cwd)
+      const detail = (e as CustomEvent<{ project?: string }>).detail
+      if (detail?.project) setProjectSettingsCwd(detail.project)
     }
     window.addEventListener('open-project-settings', handleOpenProject)
     return () => window.removeEventListener('open-project-settings', handleOpenProject)
@@ -177,7 +177,7 @@ export function Header() {
       <SettingsDialog open={showSettings} onOpenChange={setShowSettings} />
       <NerdModal open={showStatsModal} onClose={() => setShowStatsModal(false)} />
       {projectSettingsCwd && (
-        <ProjectSettingsEditor cwd={projectSettingsCwd} onClose={() => setProjectSettingsCwd(null)} />
+        <ProjectSettingsEditor project={projectSettingsCwd} onClose={() => setProjectSettingsCwd(null)} />
       )}
     </header>
   )

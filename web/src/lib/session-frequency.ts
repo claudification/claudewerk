@@ -1,7 +1,7 @@
 /**
  * Session frequency tracker - persisted in localStorage.
  *
- * Tracks how often each project (by CWD) is switched to via the command palette.
+ * Tracks how often each project (by project URI) is switched to via the command palette.
  * Used to sort the switcher list by frequency + recency (alt-tab style).
  */
 
@@ -36,13 +36,13 @@ function save(map: FrequencyMap) {
   }
 }
 
-/** Record a switch to a session (by CWD). Call when user selects via switcher. */
-export function recordSwitch(cwd: string) {
+/** Record a switch to a session (by project URI). Call when user selects via switcher. */
+export function recordSwitch(project: string) {
   const map = load()
-  const entry = map[cwd] || { count: 0, lastUsed: 0 }
+  const entry = map[project] || { count: 0, lastUsed: 0 }
   entry.count++
   entry.lastUsed = Date.now()
-  map[cwd] = entry
+  map[project] = entry
   save(map)
 }
 

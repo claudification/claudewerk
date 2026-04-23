@@ -26,9 +26,9 @@ export function tryRunClientCommand(input: string): boolean {
     case 'session': {
       const state = useSessionsStore.getState()
       const sid = state.selectedSessionId
-      const cwd = sid ? state.sessionsById[sid]?.cwd : null
-      if (!cwd) return false
-      window.dispatchEvent(new CustomEvent('open-project-settings', { detail: { cwd } }))
+      const project = sid ? state.sessionsById[sid]?.project : null
+      if (!project) return false
+      window.dispatchEvent(new CustomEvent('open-project-settings', { detail: { project } }))
       return true
     }
     default:

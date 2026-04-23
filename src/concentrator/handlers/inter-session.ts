@@ -4,6 +4,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { extractProjectLabel, parseProjectUri } from '../../shared/project-uri'
 import type { SessionControlAction } from '../../shared/protocol'
 import { resolveSpawnConfig } from '../../shared/spawn-defaults'
 import { mapProjectTrust, type SpawnCallerContext } from '../../shared/spawn-permissions'
@@ -16,10 +17,10 @@ import { dispatchSpawn } from '../spawn-dispatch'
 
 /** Resolve effective effort level from project + global settings */
 function resolveEffort(
-  cwd: string,
-  getProjectSettings: (cwd: string) => { defaultEffort?: string } | null,
+  project: string,
+  getProjectSettings: (project: string) => { defaultEffort?: string } | null,
 ): string | undefined {
-  return resolveSpawnConfig({}, getProjectSettings(cwd), getGlobalSettings()).effort
+  return resolveSpawnConfig({}, getProjectSettings(project), getGlobalSettings()).effort
 }
 
 const handleChannelRevive: MessageHandler = (ctx, data) => {
@@ -45,17 +46,17 @@ const handleChannelRevive: MessageHandler = (ctx, data) => {
   }
 
   const wrapperId = randomUUID()
-  const projSettings = ctx.getProjectSettings(target.cwd)
-  const name = target.title || projSettings?.label || target.cwd.split('/').pop() || targetSessionId.slice(0, 8)
+  const projSettings = ctx.getProjectSettings(target.project)
+  const name = target.title || projSettings?.label || extractProjectLabel(target.project)
 
   agent.send(
     JSON.stringify({
       type: 'revive',
       sessionId: targetSessionId,
-      cwd: target.cwd,
+      cwd: parseProjectUri(target.project).path,
       wrapperId,
       mode: 'resume',
-      effort: resolveEffort(target.cwd, ctx.getProjectSettings),
+      effort: resolveEffort(target.project, ctx.getProjectSettings),
       sessionName: target.title || undefined,
       adHocWorktree: target.adHocWorktree || undefined,
     }),
@@ -63,7 +64,7 @@ const handleChannelRevive: MessageHandler = (ctx, data) => {
 
   // Register rendezvous
   ctx.sessions
-    .addRendezvous(wrapperId, callerSession, target.cwd, 'revive')
+    .addRendezvous(wrapperId, callerSession, target.project, 'revive')
     .then(revived => {
       const callerWs = ctx.sessions.getSessionSocket(callerSession)
       if (callerWs) {
@@ -71,7 +72,7 @@ const handleChannelRevive: MessageHandler = (ctx, data) => {
           JSON.stringify({
             type: 'revive_ready',
             sessionId: revived.id,
-            cwd: revived.cwd,
+            project: revived.project,
             wrapperId,
             session: revived,
           }),
@@ -86,7 +87,7 @@ const handleChannelRevive: MessageHandler = (ctx, data) => {
             type: 'revive_timeout',
             wrapperId,
             sessionId: targetSessionId,
-            cwd: target.cwd,
+            project: target.project,
             error: typeof err === 'string' ? err : 'Revive rendezvous timed out',
           }),
         )
@@ -119,13 +120,13 @@ const handleChannelSpawn: MessageHandler = (ctx, data) => {
   }
   const req: SpawnRequest = { ...parsed.data, headless: parsed.data.headless !== false }
 
-  const callerCwd = ctx.caller?.cwd ?? null
-  const callerTrust = callerCwd ? mapProjectTrust(getProjectSettings(callerCwd)?.trustLevel) : 'trusted'
+  const callerProject = ctx.caller?.project ?? null
+  const callerTrust = callerProject ? mapProjectTrust(getProjectSettings(callerProject)?.trustLevel) : 'trusted'
   const callerContext: SpawnCallerContext = {
     kind: 'mcp',
     hasSpawnPermission: true,
     trustLevel: callerTrust,
-    cwd: callerCwd,
+    cwd: callerProject,
   }
 
   dispatchSpawn(req, {
@@ -173,30 +174,30 @@ const handleChannelRestart: MessageHandler = (ctx, data) => {
   if (!targetWs || target.status === 'ended') {
     const agent = ctx.requireAgent()
     const wrapperId = randomUUID()
-    const projSettings = ctx.getProjectSettings(target.cwd)
-    const name = target.title || projSettings?.label || target.cwd.split('/').pop() || targetId.slice(0, 8)
+    const projSettings = ctx.getProjectSettings(target.project)
+    const name = target.title || projSettings?.label || extractProjectLabel(target.project)
 
     agent.send(
       JSON.stringify({
         type: 'revive',
         sessionId: target.id,
-        cwd: target.cwd,
+        cwd: parseProjectUri(target.project).path,
         wrapperId,
         mode: 'resume',
-        effort: resolveEffort(target.cwd, ctx.getProjectSettings),
+        effort: resolveEffort(target.project, ctx.getProjectSettings),
         sessionName: target.title || undefined,
       }),
     )
 
     ctx.sessions
-      .addRendezvous(wrapperId, callerSession, target.cwd, 'restart')
+      .addRendezvous(wrapperId, callerSession, target.project, 'restart')
       .then(revived => {
         const callerWs = ctx.sessions.getSessionSocket(callerSession)
         callerWs?.send(
           JSON.stringify({
             type: 'restart_ready',
             sessionId: revived.id,
-            cwd: revived.cwd,
+            project: revived.project,
             wrapperId,
             session: revived,
           }),
@@ -208,7 +209,7 @@ const handleChannelRestart: MessageHandler = (ctx, data) => {
           JSON.stringify({
             type: 'restart_timeout',
             wrapperId,
-            cwd: target.cwd,
+            project: target.project,
             error: typeof err === 'string' ? err : 'Restart rendezvous timed out',
           }),
         )
@@ -229,15 +230,15 @@ const handleChannelRestart: MessageHandler = (ctx, data) => {
   ctx.sessions.addPendingRestart(targetWrapper, {
     callerSessionId: callerSession,
     targetSessionId: target.id,
-    cwd: target.cwd,
+    project: target.project,
     isSelfRestart,
   })
 
   // Terminate the target
   targetWs.send(JSON.stringify({ type: 'terminate_session', sessionId: target.id }))
 
-  const projSettings = ctx.getProjectSettings(target.cwd)
-  const name = target.title || projSettings?.label || target.cwd.split('/').pop() || targetId.slice(0, 8)
+  const projSettings = ctx.getProjectSettings(target.project)
+  const name = target.title || projSettings?.label || extractProjectLabel(target.project)
   ctx.reply({ type: 'channel_restart_result', ok: true, name, selfRestart: isSelfRestart })
   ctx.log.debug(`Benevolent restart: -> ${target.id.slice(0, 8)} (${isSelfRestart ? 'self' : 'remote'})`)
 }
@@ -275,7 +276,7 @@ const handleChannelConfigure: MessageHandler = (ctx, data) => {
     return
   }
 
-  ctx.setProjectSettings(target.cwd, update as Record<string, string>)
+  ctx.setProjectSettings(target.project, update as Record<string, string>)
   ctx.broadcast({ type: 'project_settings_updated', settings: ctx.getAllProjectSettings() })
   ctx.reply({ type: 'channel_configure_result', ok: true })
   ctx.log.debug(`Configure: -> ${target.id.slice(0, 8)} ${Object.keys(update).join(',')}`)
@@ -336,9 +337,9 @@ const handleSessionControl: MessageHandler = (ctx, data) => {
     return
   }
 
-  // Auth: dashboard needs chat permission on target cwd; inter-session needs benevolent.
+  // Auth: dashboard needs chat permission on target project; inter-session needs benevolent.
   if (ctx.ws.data.isDashboard) {
-    ctx.requirePermission('chat', targetSess.cwd)
+    ctx.requirePermission('chat', targetSess.project)
   } else if (ctx.ws.data.sessionId) {
     ctx.requireBenevolent()
   } else {
@@ -367,7 +368,7 @@ const handleSessionControl: MessageHandler = (ctx, data) => {
     type: 'session_control_result',
     ok: true,
     action: action as SessionControlAction,
-    name: targetSess.title || targetSess.cwd?.split('/').pop(),
+    name: targetSess.title || extractProjectLabel(targetSess.project),
   })
   ctx.log.debug(
     `session_control: ${fromSession?.slice(0, 8) ?? 'dashboard'} -> ${targetSess.id.slice(0, 8)} action=${action}${model ? ` model=${model}` : ''}${effort ? ` effort=${effort}` : ''}${permissionMode ? ` mode=${permissionMode}` : ''}`,

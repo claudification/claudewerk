@@ -18,6 +18,7 @@ import {
   type PerfEntry,
   subscribe as subscribePerfMetrics,
 } from '@/lib/perf-metrics'
+import { extractProjectLabel } from '@/lib/types'
 import { clearCacheAndReload, cn } from '@/lib/utils'
 
 interface ServerStats {
@@ -164,7 +165,7 @@ function CacheTab() {
             .filter(id => cachedIds.includes(id))
             .map(id => {
               const session = sessionsById[id]
-              const name = session?.title || session?.cwd.split('/').pop() || id.slice(0, 8)
+              const name = session?.title || (session ? extractProjectLabel(session.project) : '') || id.slice(0, 8)
               const entryCount = transcripts[id]?.length ?? 0
               const isSelected = id === selected
               return (
@@ -187,7 +188,7 @@ function CacheTab() {
         <div className="max-h-32 overflow-y-auto space-y-0.5">
           {cachedIds.map(id => {
             const session = sessionsById[id]
-            const name = session?.title || session?.cwd.split('/').pop() || id.slice(0, 8)
+            const name = session?.title || (session ? extractProjectLabel(session.project) : '') || id.slice(0, 8)
             return (
               <div key={id} className="text-[10px] text-[#a9b1d6] font-mono">
                 <span className="text-[#9ece6a]">SUB</span> {name}

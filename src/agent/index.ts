@@ -19,6 +19,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync,
 import { hostname as osHostname } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { Subprocess } from 'bun'
+import { cwdToProjectUri, parseProjectUri } from '../shared/project-uri'
 import type {
   ConcentratorAgentMessage,
   ExtraUsage,
@@ -577,7 +578,7 @@ async function reviveSession(
     type: 'revive_result',
     sessionId,
     wrapperId,
-    cwd,
+    project: cwdToProjectUri(cwd),
     jobId,
     success: false,
     continued: false,
@@ -1207,7 +1208,7 @@ function connect(
         case 'revive': {
           const reviveMsg = msg as {
             sessionId: string
-            cwd: string
+            project: string
             wrapperId: string
             mode?: 'fresh' | 'resume'
             headless?: boolean
@@ -1220,13 +1221,14 @@ function connect(
             adHocWorktree?: string
             env?: Record<string, string>
           }
+          const reviveCwd = parseProjectUri(reviveMsg.project).path
           log(
-            `Reviving session ${reviveMsg.sessionId.slice(0, 8)}... wrapper=${reviveMsg.wrapperId.slice(0, 8)} mode=${reviveMsg.mode || 'default'} headless=${reviveMsg.headless !== false}${reviveMsg.effort ? ` effort=${reviveMsg.effort}` : ''}${reviveMsg.model ? ` model=${reviveMsg.model}` : ''}${reviveMsg.maxBudgetUsd ? ` maxBudget=$${reviveMsg.maxBudgetUsd}` : ''}${reviveMsg.jobId ? ` job=${reviveMsg.jobId.slice(0, 8)}` : ''} (${reviveMsg.cwd})`,
+            `Reviving session ${reviveMsg.sessionId.slice(0, 8)}... wrapper=${reviveMsg.wrapperId.slice(0, 8)} mode=${reviveMsg.mode || 'default'} headless=${reviveMsg.headless !== false}${reviveMsg.effort ? ` effort=${reviveMsg.effort}` : ''}${reviveMsg.model ? ` model=${reviveMsg.model}` : ''}${reviveMsg.maxBudgetUsd ? ` maxBudget=$${reviveMsg.maxBudgetUsd}` : ''}${reviveMsg.jobId ? ` job=${reviveMsg.jobId.slice(0, 8)}` : ''} (${reviveCwd})`,
           )
           launchLog(reviveMsg.jobId, 'Agent received revive request', 'ok')
           const result = await reviveSession(
             reviveMsg.sessionId,
-            reviveMsg.cwd,
+            reviveCwd,
             reviveMsg.wrapperId,
             reviveScript,
             secret,
@@ -1275,7 +1277,7 @@ function connect(
                   const msg: SpawnFailed = {
                     type: 'spawn_failed',
                     wrapperId: wid,
-                    cwd: reviveMsg.cwd,
+                    cwd: reviveCwd,
                     error: 'rclaude process died within 5s of tmux launch - check shell environment, PATH, and hooks',
                   }
                   try {

@@ -42,7 +42,7 @@ const dialogShow: MessageHandler = (ctx, data) => {
     dialogId,
     layout,
   }
-  if (session?.cwd) ctx.broadcastScoped(dialogMsg, session.cwd)
+  if (session?.project) ctx.broadcastScoped(dialogMsg, session.project)
   else ctx.broadcast(dialogMsg)
 
   ctx.log.info(`[dialog] Show: "${layout.title}" (${dialogId.toString().slice(0, 8)}) session=${sessionId.slice(0, 8)}`)
@@ -58,7 +58,7 @@ const dialogResult: MessageHandler = (ctx, data) => {
 
   // Permission check: user must have chat permission for this session
   const sess = sessionId ? ctx.sessions.getSession(sessionId) : undefined
-  if (sess) ctx.requirePermission('chat', sess.cwd)
+  if (sess) ctx.requirePermission('chat', sess.project)
 
   // Clear pending dialog + attention from session
   if (sess) {
@@ -87,7 +87,7 @@ const dialogResult: MessageHandler = (ctx, data) => {
 
   // Broadcast dismiss to other dashboard subscribers (clean up UI)
   const dismissMsg = { type: 'dialog_dismiss', sessionId, dialogId }
-  if (sess?.cwd) ctx.broadcastScoped(dismissMsg, sess.cwd)
+  if (sess?.project) ctx.broadcastScoped(dismissMsg, sess.project)
   else ctx.broadcast(dismissMsg)
 }
 
@@ -109,7 +109,7 @@ const dialogDismiss: MessageHandler = (ctx, data) => {
   }
 
   const dismissMsg2 = { type: 'dialog_dismiss', sessionId, dialogId }
-  if (session?.cwd) ctx.broadcastScoped(dismissMsg2, session.cwd)
+  if (session?.project) ctx.broadcastScoped(dismissMsg2, session.project)
   else ctx.broadcast(dismissMsg2)
 
   ctx.log.debug(`[dialog] Dismiss: ${dialogId.slice(0, 8)} session=${sessionId.slice(0, 8)}`)

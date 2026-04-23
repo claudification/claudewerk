@@ -2,6 +2,7 @@ import { Save } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSessionsStore, wsSend } from '@/hooks/use-sessions'
 import { resolveToolDisplay, type SettingsTab, TOOL_DISPLAY_KEYS } from '@/lib/dashboard-prefs'
+import { extractProjectLabel } from '@/lib/types'
 import { clearCacheAndReload } from '@/lib/utils'
 import { BUILD_VERSION } from '../../../src/shared/version'
 import { KeyCapture } from './settings/key-capture'
@@ -21,12 +22,12 @@ import { SettingsShell, type SettingsShellTab } from './settings/settings-shell'
 function DefaultSessionPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const sessions = useSessionsStore(s => s.sessions)
   const projectSettings = useSessionsStore(s => s.projectSettings)
-  // Unique projects by CWD
+  // Unique projects by project URI
   const options = useMemo(() => {
     const seen = new Map<string, string>()
     for (const s of sessions) {
-      if (s.cwd && !seen.has(s.cwd)) {
-        seen.set(s.cwd, projectSettings[s.cwd]?.label || s.cwd.split('/').pop() || s.cwd)
+      if (s.project && !seen.has(s.project)) {
+        seen.set(s.project, projectSettings[s.project]?.label || extractProjectLabel(s.project) || s.project)
       }
     }
     return Array.from(seen.entries()).sort((a, b) => a[1].localeCompare(b[1]))

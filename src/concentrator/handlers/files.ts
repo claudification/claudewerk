@@ -15,7 +15,7 @@ const fileResponse: MessageHandler = (ctx, data) => {
   }
   const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
   const session = sessionId ? ctx.sessions.getSession(sessionId) : undefined
-  if (session?.cwd) ctx.broadcastScoped(data, session.cwd)
+  if (session?.project) ctx.broadcastScoped(data, session.project)
   else ctx.broadcast(data)
 }
 
@@ -33,7 +33,7 @@ const fileEditorRequest: MessageHandler = (ctx, data) => {
     msgType === 'project_delete' ||
     msgType === 'project_update'
   const sess = ctx.sessions.getSession(data.sessionId as string)
-  if (sess) ctx.requirePermission(isWrite ? 'files' : 'files:read', sess.cwd)
+  if (sess) ctx.requirePermission(isWrite ? 'files' : 'files:read', sess.project)
   const targetSocket = ctx.sessions.getSessionSocket(data.sessionId as string)
   if (targetSocket) {
     targetSocket.send(JSON.stringify(data))
@@ -50,7 +50,7 @@ const fileEditorRequest: MessageHandler = (ctx, data) => {
 const fileEditorResponse: MessageHandler = (ctx, data) => {
   const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
   const session = sessionId ? ctx.sessions.getSession(sessionId) : undefined
-  if (session?.cwd) ctx.broadcastScoped(data, session.cwd)
+  if (session?.project) ctx.broadcastScoped(data, session.project)
   else ctx.broadcast(data)
 }
 
@@ -59,7 +59,7 @@ const fileRequest: MessageHandler = (ctx, data) => {
   const sessionId = data.sessionId as string
   if (!sessionId) return
   const sess = ctx.sessions.getSession(sessionId)
-  if (sess) ctx.requirePermission('files:read', sess.cwd)
+  if (sess) ctx.requirePermission('files:read', sess.project)
   const sessionSocket = ctx.sessions.getSessionSocket(sessionId)
   if (sessionSocket) {
     sessionSocket.send(JSON.stringify(data))

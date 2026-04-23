@@ -11,6 +11,7 @@ import { MediaLightbox } from '@/components/media-lightbox'
 import { SessionDetail } from '@/components/session-detail'
 import { fetchSessionEvents, fetchTranscript, useSessionsStore } from '@/hooks/use-sessions'
 import { useWebSocket } from '@/hooks/use-websocket'
+import { extractProjectLabel } from '@/lib/types'
 
 export function SharedSessionView({ token: _token }: { token: string }) {
   const sessions = useSessionsStore(s => s.sessions)
@@ -139,7 +140,7 @@ export function SharedSessionView({ token: _token }: { token: string }) {
           Shared
         </span>
         <span className="text-sm text-foreground font-mono truncate flex-1">
-          {sessions[0]?.cwd?.split('/').pop() || 'Session'}
+          {(sessions[0]?.project ? extractProjectLabel(sessions[0].project) : '') || 'Session'}
         </span>
         {timeLeft && (
           <span className="flex items-center gap-1 text-[10px] text-muted-foreground font-mono">

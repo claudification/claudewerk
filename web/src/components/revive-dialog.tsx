@@ -17,6 +17,7 @@ import { TogglePill } from '@/components/ui/toggle-pill'
 import { useLaunchProgress } from '@/hooks/use-launch-progress'
 import { reviveSession, useSessionsStore } from '@/hooks/use-sessions'
 import { useKeyLayer } from '@/lib/key-layers'
+import { projectPath } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
 import { LaunchConfigFields, type LaunchFieldsValue } from './launch-config-fields'
 import { LaunchErrorBanner, LaunchFooterActions, LaunchStepList } from './launch-monitor'
@@ -69,7 +70,7 @@ export function ReviveDialog() {
   useEffect(() => {
     _openDialog = (options: ReviveDialogOptions) => {
       const sess = useSessionsStore.getState().sessionsById[options.sessionId]
-      const ps = sess ? projectSettings[sess.cwd] : undefined
+      const ps = sess ? projectSettings[sess.project] : undefined
       const gs = globalSettings as Record<string, unknown>
       const lc = sess?.launchConfig
 
@@ -227,7 +228,7 @@ export function ReviveDialog() {
       '=== rclaude revive log ===',
       `Time: ${new Date().toISOString()}`,
       `Session: ${state.options?.sessionId ?? 'n/a'}${session?.title ? ` (${session.title})` : ''}`,
-      `CWD: ${session?.cwd ?? 'n/a'}`,
+      `Project: ${session?.project ?? 'n/a'}`,
       `Wrapper: ${wrapperId || 'n/a'}`,
       `Job: ${jobId || 'n/a'}`,
       `Headless: ${headless}`,
@@ -247,7 +248,7 @@ export function ReviveDialog() {
     progress.copyToClipboard(log)
   }
 
-  const shortPath = session?.cwd?.replace(/^\/Users\/[^/]+/, '~') || ''
+  const shortPath = (session ? projectPath(session.project) : '').replace(/^\/Users\/[^/]+/, '~')
   const displayError = progress.error || progress.launch.error
   const titleLabel = session?.title || session?.agentName || shortPath
 

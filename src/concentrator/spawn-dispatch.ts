@@ -249,7 +249,7 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
           JSON.stringify({
             type: 'spawn_ready',
             sessionId: session.id,
-            cwd: session.cwd,
+            project: session.project,
             wrapperId,
             session,
           }),

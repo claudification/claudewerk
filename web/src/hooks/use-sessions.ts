@@ -323,9 +323,9 @@ let defaultApplied = false
 
 const STATUS_PRIORITY: Record<string, number> = { active: 0, idle: 1, starting: 2, ended: 3 }
 
-function findBestSessionForCwd(sessions: Session[], cwdOrUri: string): Session | undefined {
+function findBestSessionForProject(sessions: Session[], projectUri: string): Session | undefined {
   return sessions
-    .filter(s => s.cwd === cwdOrUri || s.project === cwdOrUri)
+    .filter(s => s.project === projectUri)
     .sort(
       (a, b) => (STATUS_PRIORITY[a.status] ?? 9) - (STATUS_PRIORITY[b.status] ?? 9) || b.lastActivity - a.lastActivity,
     )[0]
@@ -338,10 +338,10 @@ function applyDefaultSession() {
   // Don't override if a session was already selected (hash route, deep link, etc.)
   if (store.selectedSessionId) return
 
-  // Try configured default session CWD
-  const cwd = store.dashboardPrefs.defaultSessionCwd
-  if (cwd) {
-    const best = findBestSessionForCwd(store.sessions, cwd)
+  // Try configured default session project
+  const defaultProject = store.dashboardPrefs.defaultSessionCwd
+  if (defaultProject) {
+    const best = findBestSessionForProject(store.sessions, defaultProject)
     if (best) {
       store.selectSession(best.id, 'default-session-cwd')
       return
@@ -1141,7 +1141,7 @@ export function resolveConfigResponse(data: Record<string, unknown>): void {
   }
 }
 
-export function requestRclaudeConfig(cwd: string): Promise<ConfigDataResponse> {
+export function requestRclaudeConfig(project: string): Promise<ConfigDataResponse> {
   const requestId = crypto.randomUUID()
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
@@ -1154,11 +1154,11 @@ export function requestRclaudeConfig(cwd: string): Promise<ConfigDataResponse> {
       resolve(data as ConfigDataResponse)
     })
 
-    wsSend('rclaude_config_get', { cwd, requestId })
+    wsSend('rclaude_config_get', { project, requestId })
   })
 }
 
-export function saveRclaudeConfig(cwd: string, config: RclaudePermissionConfig): Promise<ConfigOkResponse> {
+export function saveRclaudeConfig(project: string, config: RclaudePermissionConfig): Promise<ConfigOkResponse> {
   const requestId = crypto.randomUUID()
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
@@ -1171,7 +1171,7 @@ export function saveRclaudeConfig(cwd: string, config: RclaudePermissionConfig):
       resolve(data as ConfigOkResponse)
     })
 
-    wsSend('rclaude_config_set', { cwd, config, requestId })
+    wsSend('rclaude_config_set', { project, config, requestId })
   })
 }
 

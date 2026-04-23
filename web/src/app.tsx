@@ -44,7 +44,7 @@ import { useWebSocket } from '@/hooks/use-websocket'
 import { executeCommand, formatShortcut, useChordCommand, useCommand, validateChordBindings } from '@/lib/commands'
 import { focusInputEditor } from '@/lib/focus-input'
 import { setChordTimeout } from '@/lib/key-layers'
-import { canTerminal, flattenProjectOrderTree, projectOrderTreesEqual } from '@/lib/types'
+import { canTerminal, flattenProjectOrderTree, projectOrderTreesEqual, projectPath } from '@/lib/types'
 import { clearCacheAndReload, isMobileViewport, isTouchDevice, PRE_RELOAD_KEY } from '@/lib/utils'
 import { BUILD_VERSION } from '../../src/shared/version'
 
@@ -505,8 +505,9 @@ function Dashboard() {
     'launch-session',
     () => {
       const store = useSessionsStore.getState()
-      const cwd = store.selectedSessionId
-        ? (store.sessionsById[store.selectedSessionId]?.cwd ?? store.dashboardPrefs.defaultSessionCwd)
+      const session = store.selectedSessionId ? store.sessionsById[store.selectedSessionId] : undefined
+      const cwd = session
+        ? projectPath(session.project) || store.dashboardPrefs.defaultSessionCwd
         : store.dashboardPrefs.defaultSessionCwd
       openSpawnDialog({ cwd: cwd || '~' })
     },

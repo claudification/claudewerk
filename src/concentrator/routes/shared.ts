@@ -16,7 +16,7 @@ export interface RouteHelpers {
   resolveHttpGrants(req: Request): UserGrant[] | null
   httpHasPermission(req: Request, permission: Permission, cwd: string): boolean
   httpIsAdmin(req: Request, cwd?: string): boolean
-  filterSessionsByHttpGrants<T extends { cwd: string }>(req: Request, sessions: T[]): T[]
+  filterSessionsByHttpGrants<T extends { project: string }>(req: Request, sessions: T[]): T[]
 }
 
 export function createRouteHelpers(rclaudeSecret: string | undefined): RouteHelpers {
@@ -58,11 +58,11 @@ export function createRouteHelpers(rclaudeSecret: string | undefined): RouteHelp
     return isAdmin
   }
 
-  function filterSessionsByHttpGrants<T extends { cwd: string }>(req: Request, sessions: T[]): T[] {
+  function filterSessionsByHttpGrants<T extends { project: string }>(req: Request, sessions: T[]): T[] {
     const grants = resolveHttpGrants(req)
     if (grants === null) return sessions // admin sees all
     return sessions.filter(s => {
-      const { permissions } = resolvePermissions(grants, s.cwd)
+      const { permissions } = resolvePermissions(grants, s.project)
       return permissions.has('chat:read')
     })
   }
@@ -74,7 +74,7 @@ export function createRouteHelpers(rclaudeSecret: string | undefined): RouteHelp
 
 export interface SessionOverview {
   id: string
-  cwd: string
+  project: string
   model?: string
   status: Session['status']
   wrapperIds: string[]
@@ -95,7 +95,7 @@ export function sessionToOverview(session: Session, sessionStore: SessionStore):
   const lastEvent = session.events[session.events.length - 1]
   return {
     id: session.id,
-    cwd: session.cwd,
+    project: session.project,
     model: session.model,
     status: session.status,
     wrapperIds: sessionStore.getWrapperIds(session.id),

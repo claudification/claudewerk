@@ -567,7 +567,7 @@ const COLOR_OPTIONS = [
 ]
 
 interface ProjectSettingsEditorProps {
-  cwd: string
+  project: string
   onClose: () => void
 }
 
@@ -577,10 +577,10 @@ const PROJECT_TABS: SettingsShellTab[] = [
   { id: 'security', label: 'Security' },
 ]
 
-export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorProps) {
+export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEditorProps) {
   const projectSettings = useSessionsStore(s => s.projectSettings)
   const setProjectSettings = useSessionsStore(s => s.setProjectSettings)
-  const current = projectSettings[cwd] || {}
+  const current = projectSettings[project] || {}
 
   const [activeTab, setActiveTab] = useState('general')
   const [label, setLabel] = useState(current.label || '')
@@ -599,7 +599,7 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
   const [generateError, setGenerateError] = useState<string | null>(null)
 
   useEffect(() => {
-    const c = projectSettings[cwd] || {}
+    const c = projectSettings[project] || {}
     setLabel(c.label || '')
     setIcon(c.icon || '')
     setColor(c.color || '')
@@ -608,7 +608,7 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
     setTrustLevel(c.trustLevel || 'default')
     setLaunchMode(c.defaultLaunchMode || 'headless')
     setEffort(c.defaultEffort || 'default')
-  }, [projectSettings, cwd])
+  }, [projectSettings, project])
 
   const filteredIcons = useMemo(() => {
     if (!iconSearch.trim()) return ICONS
@@ -629,7 +629,7 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
       defaultEffort: effort === 'default' ? undefined : (effort as 'low' | 'medium' | 'high' | 'xhigh' | 'max'),
       defaultModel: model.trim() || undefined,
     }
-    updateProjectSettings(cwd, settings)
+    updateProjectSettings(project, settings)
     setSaving(false)
     onClose()
   }
@@ -638,7 +638,7 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
     setGenerating(true)
     setGenerateError(null)
     try {
-      const result = await generateProjectKeyterms(cwd)
+      const result = await generateProjectKeyterms(project)
       if (result) {
         setKeyterms(result.keyterms)
         setProjectSettings(result.settings)
@@ -663,7 +663,7 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
 
   function handleClear() {
     setSaving(true)
-    deleteProjectSettings(cwd)
+    deleteProjectSettings(project)
     setSaving(false)
     onClose()
   }
@@ -732,8 +732,8 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
         {/* ── General tab ──────────────────────────────────────────── */}
         {activeTab === 'general' && (
           <>
-            <div className="text-[10px] text-muted-foreground/60 font-mono truncate mb-2" title={cwd}>
-              {cwd}
+            <div className="text-[10px] text-muted-foreground/60 font-mono truncate mb-2" title={project}>
+              {project}
             </div>
             <GroupHeader label="Identity" />
             <SettingRow label="Label" description="Display name for this project">
@@ -741,7 +741,7 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
                 type="text"
                 value={label}
                 onChange={e => setLabel(e.target.value)}
-                placeholder={extractProjectLabel(cwd) || 'project name'}
+                placeholder={extractProjectLabel(project) || 'project name'}
                 className="w-40 bg-background border border-border px-2 py-1.5 text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-muted-foreground/50"
                 style={{ fontSize: '16px' }}
               />
@@ -1023,7 +1023,7 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
               Auto-approve permission requests. Use Allow All for full trust, or fine-tune per tool. Stored in
               .rclaude/rclaude.json.
             </div>
-            <PermissionRulesEditor cwd={cwd} />
+            <PermissionRulesEditor project={project} />
           </>
         )}
       </div>

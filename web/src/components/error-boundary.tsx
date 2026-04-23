@@ -53,7 +53,7 @@ export class ErrorBoundary extends Component<Props, State> {
           touch: navigator.maxTouchPoints > 0,
           sessionId: store.selectedSessionId,
           sessionStatus: session?.status,
-          sessionCwd: session?.cwd,
+          sessionProject: session?.project,
         }),
       }).catch(() => {})
     } catch {}
@@ -90,7 +90,7 @@ export class ErrorBoundary extends Component<Props, State> {
       if (session) {
         lines.push(
           `  session.status: ${session.status}`,
-          `  session.cwd: ${session.cwd}`,
+          `  session.project: ${session.project}`,
           `  session.eventCount: ${session.eventCount}`,
           `  session.wrapperIds: [${(session.wrapperIds || []).map(w => w.slice(0, 8)).join(', ')}]`,
           `  transcriptEntries: ${transcriptEntries?.length ?? 0}`,

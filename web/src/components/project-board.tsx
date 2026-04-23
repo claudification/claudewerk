@@ -54,6 +54,7 @@ import { sendSpawnRequest } from '@/hooks/use-spawn'
 import { useKeyLayer } from '@/lib/key-layers'
 import { loadRunTaskDefaults, saveRunTaskDefaults } from '@/lib/run-task-defaults'
 import { buildTaskPrompt } from '@/lib/task-scoring'
+import { projectPath } from '@/lib/types'
 import { uploadFileWithPlaceholder } from '@/lib/upload'
 import { cn, haptic } from '@/lib/utils'
 import { InputEditor } from './input-editor'
@@ -559,7 +560,10 @@ export function RunTaskDialog({
   sessionId: string
   onClose: () => void
 }) {
-  const cwd = useSessionsStore(state => state.sessionsById[sessionId]?.cwd || '')
+  const cwd = useSessionsStore(state => {
+    const s = state.sessionsById[sessionId]
+    return s ? projectPath(s.project) : ''
+  })
   const savedDefaults = useMemo(() => loadRunTaskDefaults(), [])
   const [model, setModel] = useState(savedDefaults.model)
   const [effort, setEffort] = useState<string>(savedDefaults.effort)

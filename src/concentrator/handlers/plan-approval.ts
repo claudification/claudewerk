@@ -40,7 +40,7 @@ const planApproval: MessageHandler = (ctx, data) => {
     planFilePath: data.planFilePath,
     allowedPrompts: data.allowedPrompts,
   }
-  if (session?.cwd) ctx.broadcastScoped(msg, session.cwd)
+  if (session?.project) ctx.broadcastScoped(msg, session.project)
   else ctx.broadcast(msg)
 
   ctx.log.info(`[plan] Approval request: ${(data.requestId as string)?.slice(0, 8)} session=${sessionId.slice(0, 8)}`)
@@ -52,7 +52,7 @@ const planApprovalResponse: MessageHandler = (ctx, data) => {
   if (!sessionId) return
 
   const sess = ctx.sessions.getSession(sessionId)
-  if (sess) ctx.requirePermission('chat', sess.cwd)
+  if (sess) ctx.requirePermission('chat', sess.project)
 
   // Clear pending state + dismiss dialog on ALL subscribers
   if (sess) {
@@ -63,7 +63,7 @@ const planApprovalResponse: MessageHandler = (ctx, data) => {
     ctx.sessions.broadcastSessionUpdate(sessionId)
     // Dismiss the dialog on all dashboard clients (not just the one that responded)
     const dismissMsg = { type: 'plan_approval_dismissed', sessionId }
-    if (sess.cwd) ctx.broadcastScoped(dismissMsg, sess.cwd)
+    if (sess.project) ctx.broadcastScoped(dismissMsg, sess.project)
     else ctx.broadcast(dismissMsg)
   }
 
@@ -98,7 +98,7 @@ const planModeChanged: MessageHandler = (ctx, data) => {
       if (session.pendingPlanApproval) delete session.pendingPlanApproval
       if (session.pendingAttention?.type === 'plan_approval') delete session.pendingAttention
       const dismissMsg = { type: 'plan_approval_dismissed', sessionId }
-      if (session.cwd) ctx.broadcastScoped(dismissMsg, session.cwd)
+      if (session.project) ctx.broadcastScoped(dismissMsg, session.project)
       else ctx.broadcast(dismissMsg)
     }
     ctx.sessions.broadcastSessionUpdate(sessionId)

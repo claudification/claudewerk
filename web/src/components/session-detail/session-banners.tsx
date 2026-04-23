@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useState } from 'react'
 import { BannerButton, BannerStack, SessionBanner } from '@/components/ui/session-banner'
 import { useSessionsStore } from '@/hooks/use-sessions'
+import { projectPath } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
 
 // ---------------------------------------------------------------------------
@@ -164,7 +165,9 @@ export function PermissionBanners() {
   const respond = useSessionsStore(s => s.respondToPermission)
   const sendRule = useSessionsStore(s => s.sendPermissionRule)
   const selectedSession = useSessionsStore(s => s.selectedSessionId)
-  const sessionCwd = useSessionsStore(s => (s.selectedSessionId ? s.sessionsById[s.selectedSessionId]?.cwd : undefined))
+  const sessionCwd = useSessionsStore(s =>
+    s.selectedSessionId ? projectPath(s.sessionsById[s.selectedSessionId]?.project ?? '') : undefined,
+  )
   const relevant = permissions.filter(p => p.sessionId === selectedSession)
   return (
     <BannerStack

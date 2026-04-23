@@ -9,8 +9,8 @@ import { cn, formatTime } from '@/lib/utils'
 
 interface MessageEntry {
   ts: number
-  from: { sessionId: string; wrapperId?: string; cwd: string; name: string }
-  to: { sessionId: string; wrapperId?: string; cwd: string; name: string }
+  from: { sessionId: string; wrapperId?: string; project: string; name: string }
+  to: { sessionId: string; wrapperId?: string; project: string; name: string }
   intent: string
   conversationId: string
   preview: string
@@ -122,7 +122,7 @@ export function ConversationView({
         )}
 
         {messages.map((msg, i) => {
-          const isFromA = msg.from.cwd === cwdA
+          const isFromA = msg.from.project === cwdA
           const bubbleColor = isFromA ? 'bg-teal-600/20 border-teal-600/30' : 'bg-sky-600/20 border-sky-600/30'
           const align = isFromA ? 'items-start' : 'items-end'
           const intentStyle = INTENT_STYLES[msg.intent] || INTENT_STYLES.notify

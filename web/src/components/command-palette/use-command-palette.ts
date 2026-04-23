@@ -7,7 +7,7 @@ import { useSessionsStore } from '@/hooks/use-sessions'
 import { formatShortcut, getCommandGeneration, getCommands } from '@/lib/commands'
 import { getFrequencyMap, recordSwitch } from '@/lib/session-frequency'
 import { scoreAndSortTasks } from '@/lib/task-scoring'
-import type { Session } from '@/lib/types'
+import { projectPath, type Session } from '@/lib/types'
 import type { PaletteMode } from './types'
 
 export function useCommandPalette(onClose: () => void) {
@@ -102,8 +102,8 @@ export function useCommandPalette(onClose: () => void) {
 
   // --- Session mode ---
   // Sort by: MRU top 2 (alt-tab), then frequency-weighted for the rest
-  const activeCwds = new Set(sessions.filter(s => s.status !== 'ended').map(s => s.cwd))
-  const deduplicated = sessions.filter(s => s.status !== 'ended' || !activeCwds.has(s.cwd))
+  const activeProjects = new Set(sessions.filter(s => s.status !== 'ended').map(s => s.project))
+  const deduplicated = sessions.filter(s => s.status !== 'ended' || !activeProjects.has(s.project))
   const mruIndex = new Map(sessionMru.map((id, i) => [id, i]))
   const freqMap = useMemo(() => getFrequencyMap(), [])
   const allSessions = [...deduplicated].sort((a, b) => {
@@ -115,8 +115,8 @@ export function useCommandPalette(onClose: () => void) {
     if (aTop !== bTop) return aTop ? -1 : 1
     if (aTop && bTop) return ai - bi
     // Rest sorted by frequency (descending), then recency as tiebreaker
-    const af = freqMap[a.cwd]?.count || 0
-    const bf = freqMap[b.cwd]?.count || 0
+    const af = freqMap[a.project]?.count || 0
+    const bf = freqMap[b.project]?.count || 0
     if (af !== bf) return bf - af
     return b.lastActivity - a.lastActivity
   })
@@ -125,8 +125,8 @@ export function useCommandPalette(onClose: () => void) {
     () =>
       new Fzf(allSessions, {
         selector: (s: Session) => {
-          const ps = projectSettings[s.cwd]
-          return `${s.cwd} ${ps?.label || ''} ${s.title || ''} ${s.agentName || ''} ${s.id} ${s.model || ''} ${s.status}`
+          const ps = projectSettings[s.project]
+          return `${projectPath(s.project)} ${ps?.label || ''} ${s.title || ''} ${s.agentName || ''} ${s.id} ${s.model || ''} ${s.status}`
         },
         casing: 'case-insensitive',
       }),
@@ -340,7 +340,7 @@ export function useCommandPalette(onClose: () => void) {
 
   // Track frequency when selecting via switcher (keyboard or click)
   function selectSessionWithTracking(session: Session, onSelectSession: (id: string) => void) {
-    recordSwitch(session.cwd)
+    recordSwitch(session.project)
     onSelectSession(session.id)
   }
 

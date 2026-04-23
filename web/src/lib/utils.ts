@@ -1,6 +1,7 @@
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { BUILD_VERSION } from '../../../src/shared/version'
+import { extractProjectLabel, projectPath } from './types'
 
 /** Key used to detect post-reload outcome and surface a feedback toast. */
 export const PRE_RELOAD_KEY = 'rclaude-pre-reload'
@@ -53,15 +54,17 @@ export function lastPathSegments(path: string, n = 3): string {
 }
 
 /**
- * Display name for a project rooted at `cwd`. Uses the user-provided label
- * when present, otherwise falls back to the last 3 path segments. Same
- * convention the project list + session switcher use — keep all name
+ * Display name for a project identified by URI or path. Uses the user-provided
+ * label when present, otherwise falls back to the last 3 path segments. Same
+ * convention the project list + session switcher use -- keep all name
  * rendering going through this so un-labelled projects look consistent
- * everywhere. Pass `projectSettings[cwd]?.label` (or `undefined`) as the
+ * everywhere. Pass `projectSettings[project]?.label` (or `undefined`) as the
  * label; caller handles the lookup so the helper stays map-shape-agnostic.
+ *
+ * Accepts both project URIs ("claude:///Users/jonas/foo") and raw paths.
  */
-export function projectDisplayName(cwd: string, label?: string): string {
-  return label || lastPathSegments(cwd)
+export function projectDisplayName(projectOrPath: string, label?: string): string {
+  return label || lastPathSegments(projectPath(projectOrPath))
 }
 
 /**
@@ -83,20 +86,20 @@ export function slugify(name: string): string {
 /**
  * Mirror of the addressable ID produced by list_sessions. ALWAYS compound
  * `project:session-slug` so the inserted id stays stable when a second
- * session spawns at the same cwd later. Server logic + rationale live in
+ * session spawns at the same project later. Server logic + rationale live in
  * `src/concentrator/handlers/channel-id.ts` (the canonical implementation
  * that round-trips through send_message).
  *
- * `siblingSessions` is the list of sessions at the same cwd (including this
- * one) -- used purely to disambiguate identical title slugs with a 6-char
- * id suffix.
+ * `siblingSessions` is the list of sessions at the same project (including
+ * this one) -- used purely to disambiguate identical title slugs with a
+ * 6-char id suffix.
  */
 export function sessionAddressableSlug(
-  session: { id: string; cwd: string; title?: string; agentName?: string },
-  projectSettings: { [cwd: string]: { label?: string } },
+  session: { id: string; project: string; title?: string; agentName?: string },
+  projectSettings: { [project: string]: { label?: string } },
   siblingSessions: ReadonlyArray<{ id: string; title?: string; agentName?: string }>,
 ): string {
-  const projectName = projectSettings[session.cwd]?.label || session.cwd.split('/').filter(Boolean).pop() || 'project'
+  const projectName = projectSettings[session.project]?.label || extractProjectLabel(session.project) || 'project'
   const projectSlug = slugify(projectName)
   const titleFor = (s: { id: string; title?: string; agentName?: string }) =>
     slugify(s.title || s.agentName || s.id.slice(0, 8))

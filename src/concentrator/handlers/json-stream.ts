@@ -9,7 +9,7 @@ import { registerHandlers } from '../message-router'
 const jsonStreamAttach: MessageHandler = (ctx, data) => {
   const wid = data.wrapperId as string
   const sess = ctx.sessions.getSessionByWrapper(wid)
-  if (sess) ctx.requirePermission('chat:read', sess.cwd)
+  if (sess) ctx.requirePermission('chat:read', sess.project)
   const targetSocket = ctx.sessions.getSessionSocketByWrapper(wid)
   if (targetSocket) {
     const isFirstViewer = !ctx.sessions.hasJsonStreamViewers(wid)

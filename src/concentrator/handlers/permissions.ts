@@ -43,7 +43,7 @@ const permissionRequest: MessageHandler = (ctx, data) => {
     inputPreview: data.inputPreview,
     toolUseId: data.toolUseId,
   }
-  if (session?.cwd) ctx.broadcastScoped(msg, session.cwd)
+  if (session?.project) ctx.broadcastScoped(msg, session.project)
   else ctx.broadcast(msg)
   ctx.log.debug(`[permission] Request: ${data.requestId} ${data.toolName}`)
 }
@@ -52,7 +52,7 @@ const permissionRequest: MessageHandler = (ctx, data) => {
 const permissionResponse: MessageHandler = (ctx, data) => {
   const sessionId = data.sessionId as string
   const sess = sessionId ? ctx.sessions.getSession(sessionId) : undefined
-  if (sess) ctx.requirePermission('chat', sess.cwd)
+  if (sess) ctx.requirePermission('chat', sess.project)
   const targetWs = sessionId ? ctx.sessions.getSessionSocket(sessionId) : null
   if (targetWs) {
     targetWs.send(
@@ -80,7 +80,7 @@ const permissionResponse: MessageHandler = (ctx, data) => {
 const permissionRule: MessageHandler = (ctx, data) => {
   const sessionId = data.sessionId as string
   const sess = sessionId ? ctx.sessions.getSession(sessionId) : undefined
-  if (sess) ctx.requirePermission('chat', sess.cwd)
+  if (sess) ctx.requirePermission('chat', sess.project)
   const targetWs = sessionId ? ctx.sessions.getSessionSocket(sessionId) : null
   if (targetWs) {
     targetWs.send(
@@ -106,7 +106,7 @@ const permissionAutoApproved: MessageHandler = (ctx, data) => {
     toolName: data.toolName,
     description: data.description,
   }
-  if (session?.cwd) ctx.broadcastScoped(msg, session.cwd)
+  if (session?.project) ctx.broadcastScoped(msg, session.project)
   else ctx.broadcast(msg)
 }
 
@@ -124,7 +124,7 @@ const clipboardCapture: MessageHandler = (ctx, data) => {
     mimeType: data.mimeType,
     timestamp: data.timestamp || Date.now(),
   }
-  if (session?.cwd) ctx.broadcastScoped(msg, session.cwd)
+  if (session?.project) ctx.broadcastScoped(msg, session.project)
   else ctx.broadcast(msg)
   ctx.log.debug(`[clipboard] ${data.contentType}${data.mimeType ? ` (${data.mimeType})` : ''}`)
 }
@@ -156,7 +156,7 @@ const askQuestion: MessageHandler = (ctx, data) => {
     toolUseId: data.toolUseId,
     questions: data.questions,
   }
-  if (session?.cwd) ctx.broadcastScoped(msg, session.cwd)
+  if (session?.project) ctx.broadcastScoped(msg, session.project)
   else ctx.broadcast(msg)
   ctx.log.debug(
     `[ask] Question: ${(data.toolUseId as string)?.slice(0, 12)} ${(data.questions as unknown[])?.length || 0}q`,
@@ -167,7 +167,7 @@ const askQuestion: MessageHandler = (ctx, data) => {
 const askAnswer: MessageHandler = (ctx, data) => {
   const sessionId = data.sessionId as string
   const sess = sessionId ? ctx.sessions.getSession(sessionId) : undefined
-  if (sess) ctx.requirePermission('chat', sess.cwd)
+  if (sess) ctx.requirePermission('chat', sess.project)
   const targetWs = sessionId ? ctx.sessions.getSessionSocket(sessionId) : null
   if (targetWs) {
     targetWs.send(

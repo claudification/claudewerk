@@ -3,6 +3,7 @@
  */
 
 import { Hono } from 'hono'
+import { parseProjectUri } from '../../shared/project-uri'
 import {
   createAuthToken,
   createInvite,
@@ -76,7 +77,7 @@ export function createAdminRouter(
         const global = resolvePermissionFlags(user.grants, '*', serverRoles)
         const perSessionPerms: Record<string, ReturnType<typeof resolvePermissionFlags>> = {}
         for (const s of sessionStore.getActiveSessions()) {
-          perSessionPerms[s.id] = resolvePermissionFlags(user.grants, s.cwd, serverRoles)
+          perSessionPerms[s.id] = resolvePermissionFlags(user.grants, s.project, serverRoles)
         }
         try {
           ws.send(JSON.stringify({ type: 'permissions', global, sessions: perSessionPerms }))
@@ -305,8 +306,8 @@ export function createAdminRouter(
     const activeSessions = sessionStore.getActiveSessions()
 
     const links = persisted.map(pl => {
-      const sessA = activeSessions.find(s => s.cwd === pl.cwdA)
-      const sessB = activeSessions.find(s => s.cwd === pl.cwdB)
+      const sessA = activeSessions.find(s => parseProjectUri(s.project).path === pl.cwdA)
+      const sessB = activeSessions.find(s => parseProjectUri(s.project).path === pl.cwdB)
       const nameA = getProjectSettings(pl.cwdA)?.label || pl.cwdA.split('/').pop() || pl.cwdA
       const nameB = getProjectSettings(pl.cwdB)?.label || pl.cwdB.split('/').pop() || pl.cwdB
       return {
@@ -334,8 +335,8 @@ export function createAdminRouter(
 
     // Activate the in-memory project link
     const active = sessionStore.getActiveSessions()
-    const anyA = active.find(s => s.cwd === link.cwdA)
-    const anyB = active.find(s => s.cwd === link.cwdB)
+    const anyA = active.find(s => parseProjectUri(s.project).path === link.cwdA)
+    const anyB = active.find(s => parseProjectUri(s.project).path === link.cwdB)
     if (anyA && anyB) sessionStore.linkProjects(anyA.id, anyB.id)
 
     return c.json({ ok: true, link })

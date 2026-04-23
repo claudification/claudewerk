@@ -1,10 +1,11 @@
 /**
- * SessionTag - Clickable session name badge with hover tooltip showing cwd/status.
+ * SessionTag - Clickable session name badge with hover tooltip showing project/status.
  * Shared by send_message (tool-line) and received inter-session messages (group-view).
  */
 
 import { buildSessionsById, useSessionsStore } from '@/hooks/use-sessions'
 import type { Session } from '@/lib/types'
+import { extractProjectLabel, projectPath } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
 
 function slugify(s: string) {
@@ -28,10 +29,10 @@ function findSessionBySlug(slug: string) {
   const { sessions, projectSettings } = useSessionsStore.getState()
   const normalizedSlug = slug.toLowerCase()
   for (const s of sessions) {
-    const ps = projectSettings[s.cwd]
+    const ps = projectSettings[s.project]
     if (ps?.label && slugify(ps.label) === normalizedSlug) return s
     if (s.title && slugify(s.title) === normalizedSlug) return s
-    const dirname = s.cwd?.split('/').pop() || ''
+    const dirname = extractProjectLabel(s.project)
     if (dirname && slugify(dirname) === normalizedSlug) return s
   }
   return undefined
@@ -47,10 +48,12 @@ function resolveSessionDisplay(idOrSlug: string, fallbackId?: string) {
     (fallbackId ? sessionsById[fallbackId] : undefined) ||
     findSessionBySlug(bare) ||
     findSessionBySlug(idOrSlug)
-  const projLabel = session?.cwd ? projectSettings[session.cwd]?.label : undefined
+  const projLabel = session?.project ? projectSettings[session.project]?.label : undefined
   const title = session?.title
   const displayName =
-    projLabel && title ? `${projLabel} :: ${title}` : title || projLabel || session?.cwd?.split('/').pop() || bare
+    projLabel && title
+      ? `${projLabel} :: ${title}`
+      : title || projLabel || (session?.project ? extractProjectLabel(session.project) : '') || bare
   return { session, projLabel, title, displayName }
 }
 
@@ -62,10 +65,10 @@ function showToast(title: string, body: string, variant = 'warning') {
 function injectSession(overview: Record<string, unknown>) {
   const partial: Session = {
     id: overview.id as string,
-    cwd: overview.cwd as string,
+    project: overview.project as string,
     model: overview.model as string,
     status: (overview.status as Session['status']) || 'ended',
-    wrapperIds: (overview.wrapperIds as string[]) || [],
+    conversationIds: (overview.conversationIds as string[]) || [],
     startedAt: overview.startedAt as number,
     lastActivity: overview.lastActivity as number,
     eventCount: (overview.eventCount as number) || 0,
@@ -125,7 +128,7 @@ interface SessionTagProps {
 
 export function SessionTag({ idOrSlug, resolvedId, className }: SessionTagProps) {
   const { session, displayName } = resolveSessionDisplay(idOrSlug, resolvedId)
-  const cwd = session?.cwd
+  const resolvedPath = session?.project ? projectPath(session.project) : undefined
   const status = session?.status
   const isEnded = status === 'ended'
 
@@ -172,7 +175,7 @@ export function SessionTag({ idOrSlug, resolvedId, className }: SessionTagProps)
           'text-[10px] font-mono whitespace-nowrap',
         )}
       >
-        {cwd && <span className="text-zinc-300">{cwd}</span>}
+        {resolvedPath && <span className="text-zinc-300">{resolvedPath}</span>}
         <span className={cn('text-zinc-500', isEnded && 'text-zinc-600')}>{status ?? 'unknown'}</span>
         {(session?.id ?? idOrSlug) && (
           <span className="text-zinc-600">

@@ -11,7 +11,7 @@
 import { Command, ListChecks, MessageSquarePlus, PenLine, Power, RefreshCw, Rocket, Share2, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSessionsStore } from '@/hooks/use-sessions'
-import type { Session } from '@/lib/types'
+import { projectPath, type Session } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
 import { openReviveDialog } from './revive-dialog'
 import { openSpawnDialog } from './spawn-dialog'
@@ -54,7 +54,7 @@ function buildActions(session: Session | undefined, selectedSessionId: string | 
       id: 'launch',
       icon: <Rocket className="w-4 h-4" />,
       label: 'Launch',
-      action: () => openSpawnDialog({ cwd: session?.cwd || '.' }),
+      action: () => openSpawnDialog({ cwd: session ? projectPath(session.project) : '.' }),
       color: 'bg-[#ff9e64]',
     },
     {

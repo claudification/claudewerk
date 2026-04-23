@@ -35,7 +35,6 @@ export function canJsonStream(s: Session): boolean {
 // Client-side session model (derived from SessionSummary wire format with defaults applied)
 export interface Session {
   id: string
-  cwd: string
   project: string
   model?: string
   capabilities?: WrapperCapability[]
@@ -98,7 +97,7 @@ export interface Session {
   title?: string
   agentName?: string
   prLinks?: Array<{ prNumber: number; prUrl: string; prRepository: string; timestamp: string }>
-  linkedProjects?: Array<{ cwd: string; name: string }>
+  linkedProjects?: Array<{ project: string; name: string }>
   stats?: {
     totalInputTokens: number
     totalOutputTokens: number
@@ -217,6 +216,30 @@ export interface TranscriptToolUseResult {
 
 /** Project settings keyed by project URI (e.g. "claude:///Users/jonas/projects/foo") */
 export type ProjectSettingsMap = Record<string, ProjectSettings>
+
+/**
+ * Extract the filesystem path from a project URI.
+ * e.g. "claude:///Users/jonas/foo" -> "/Users/jonas/foo"
+ * Duplicated from src/shared/project-uri.ts since web bundle can't import from src/shared/.
+ */
+export function projectPath(uri: string): string {
+  if (!uri) return ''
+  try {
+    const url = new URL(uri)
+    return decodeURIComponent(url.pathname) || '/'
+  } catch {
+    return uri
+  }
+}
+
+/**
+ * Convert a filesystem path to a project URI.
+ * e.g. "/Users/jonas/foo" -> "claude:///Users/jonas/foo"
+ * Duplicated from src/shared/project-uri.ts since web bundle can't import from src/shared/.
+ */
+export function cwdToProjectUri(cwd: string): string {
+  return `claude://${cwd}`
+}
 
 /**
  * Extract a human-readable label from a project URI.

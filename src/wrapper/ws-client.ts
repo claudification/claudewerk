@@ -147,7 +147,7 @@ export interface WsClient {
   send: (message: WrapperMessage) => void
   sendHookEvent: (event: HookEvent) => void
   sendSessionEnd: (reason: string) => void
-  sendSessionClear: (newSessionId: string, cwd: string, model?: string) => void
+  sendSessionClear: (newSessionId: string, project: string, model?: string) => void
   sendTerminalData: (data: string) => void
   sendTranscriptEntries: (entries: TranscriptEntry[], isInitial: boolean) => void
   sendSubagentTranscript: (agentId: string, entries: TranscriptEntry[], isInitial: boolean) => void
@@ -273,7 +273,6 @@ export function createWsClient(options: WsClientOptions): WsClient {
               type: 'meta',
               sessionId,
               wrapperId,
-              cwd,
               project,
               startedAt: Date.now(),
               model,
@@ -297,7 +296,6 @@ export function createWsClient(options: WsClientOptions): WsClient {
             const boot: WrapperBoot = {
               type: 'wrapper_boot',
               wrapperId,
-              cwd,
               project,
               capabilities: capabilities || [],
               claudeArgs: options.initialBoot?.claudeArgs || args || [],
@@ -629,7 +627,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
     send(endMsg)
   }
 
-  function sendSessionClear(newSessionId: string, newCwd: string, newModel?: string) {
+  function sendSessionClear(newSessionId: string, newProject: string, newModel?: string) {
     const prev = routeId()
     // Same-id short-circuit. With session-transition.ts as the single source
     // of truth this should NEVER fire in normal operation -- if it does, an
@@ -648,8 +646,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
       oldSessionId: prev,
       newSessionId,
       wrapperId,
-      cwd: newCwd,
-      project: cwdToProjectUri(newCwd),
+      project: newProject,
       model: newModel,
     }
     send(msg)
@@ -739,7 +736,6 @@ export function createWsClient(options: WsClientOptions): WsClient {
       type: 'meta',
       sessionId: newSessionId,
       wrapperId,
-      cwd,
       project,
       startedAt: Date.now(),
       model,

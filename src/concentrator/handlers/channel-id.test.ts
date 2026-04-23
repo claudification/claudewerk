@@ -7,8 +7,8 @@ import {
   type SessionLike,
 } from './channel-id'
 
-function s(id: string, title?: string, cwd = '/projects/arr'): SessionLike {
-  return { id, title, cwd }
+function s(id: string, title?: string, project = 'claude:///projects/arr'): SessionLike {
+  return { id, title, project }
 }
 
 describe('computeSessionSlug', () => {
@@ -43,7 +43,7 @@ describe('computeLocalId', () => {
     expect(computeLocalId(a, 'arr', [a])).toBe('arr:viral-zebra')
   })
 
-  it('appends disambiguated session slug when multiple share the cwd', () => {
+  it('appends disambiguated session slug when multiple share the project', () => {
     const a = s('aaaaaa1111', 'rebel')
     const b = s('bbbbbb2222', 'rebel')
     expect(computeLocalId(a, 'arr', [a, b])).toBe('arr:rebel-aaaaaa')
@@ -63,7 +63,7 @@ describe('resolveSendTarget', () => {
       const r = resolveSendTarget({
         projectSlug: 'arr',
         sessionSlug: 'punk-jackal',
-        sessionsAtCwd: [a, b],
+        sessionsAtProject: [a, b],
         canonicalProject: 'arr',
         isLive: allLive,
       })
@@ -76,7 +76,7 @@ describe('resolveSendTarget', () => {
       const r = resolveSendTarget({
         projectSlug: 'arr',
         sessionSlug: 'viral',
-        sessionsAtCwd: [a],
+        sessionsAtProject: [a],
         canonicalProject: 'arr',
         isLive: allLive,
       })
@@ -89,7 +89,7 @@ describe('resolveSendTarget', () => {
       const r = resolveSendTarget({
         projectSlug: 'arr',
         sessionSlug: 'nope',
-        sessionsAtCwd: [a],
+        sessionsAtProject: [a],
         canonicalProject: 'arr',
         isLive: allLive,
       })
@@ -103,7 +103,7 @@ describe('resolveSendTarget', () => {
       const r = resolveSendTarget({
         projectSlug: 'arr',
         sessionSlug: undefined,
-        sessionsAtCwd: [a],
+        sessionsAtProject: [a],
         canonicalProject: 'arr',
         isLive: allLive,
       })
@@ -111,13 +111,13 @@ describe('resolveSendTarget', () => {
       if (r.kind === 'resolved') expect(r.session.id).toBe('a')
     })
 
-    it('FAILS as ambiguous when multiple LIVE sessions share the cwd', () => {
+    it('FAILS as ambiguous when multiple LIVE sessions share the project', () => {
       const a = s('a', 'viral-zebra')
       const b = s('b', 'punk-jackal')
       const r = resolveSendTarget({
         projectSlug: 'arr',
         sessionSlug: undefined,
-        sessionsAtCwd: [a, b],
+        sessionsAtProject: [a, b],
         canonicalProject: 'arr',
         isLive: allLive,
       })
@@ -134,7 +134,7 @@ describe('resolveSendTarget', () => {
       const r = resolveSendTarget({
         projectSlug: 'arr',
         sessionSlug: undefined,
-        sessionsAtCwd: [live, dead],
+        sessionsAtProject: [live, dead],
         canonicalProject: 'arr',
         isLive: x => x.id === 'live',
       })
@@ -148,7 +148,7 @@ describe('resolveSendTarget', () => {
       const r = resolveSendTarget({
         projectSlug: 'arr',
         sessionSlug: undefined,
-        sessionsAtCwd: [a, b],
+        sessionsAtProject: [a, b],
         canonicalProject: 'arr',
         isLive: noneLive,
       })
@@ -160,7 +160,7 @@ describe('resolveSendTarget', () => {
       const r = resolveSendTarget({
         projectSlug: 'arr',
         sessionSlug: undefined,
-        sessionsAtCwd: [a],
+        sessionsAtProject: [a],
         canonicalProject: 'arr',
         isLive: noneLive,
       })
@@ -176,7 +176,7 @@ describe('resolveSendTarget', () => {
       const r = resolveSendTarget({
         projectSlug: 'arr',
         sessionSlug: undefined,
-        sessionsAtCwd: [namedArr, other],
+        sessionsAtProject: [namedArr, other],
         canonicalProject: 'arr',
         isLive: allLive,
       })
@@ -184,11 +184,11 @@ describe('resolveSendTarget', () => {
       if (r.kind === 'resolved') expect(r.session.id).toBe('named')
     })
 
-    it('returns not_found when the cwd has no sessions at all', () => {
+    it('returns not_found when the project has no sessions at all', () => {
       const r = resolveSendTarget({
         projectSlug: 'arr',
         sessionSlug: undefined,
-        sessionsAtCwd: [],
+        sessionsAtProject: [],
         canonicalProject: 'arr',
         isLive: allLive,
       })

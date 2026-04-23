@@ -165,7 +165,7 @@ const bgTaskOutput: MessageHandler = (ctx, data) => {
 const transcriptRequest: MessageHandler = (ctx, data) => {
   if (!data.sessionId) return
   const sess = ctx.sessions.getSession(data.sessionId as string)
-  if (sess) ctx.requirePermission('chat:read', sess.cwd)
+  if (sess) ctx.requirePermission('chat:read', sess.project)
   if (ctx.sessions.hasTranscriptCache(data.sessionId)) {
     let entries =
       data.filter === 'display'
@@ -185,7 +185,7 @@ const transcriptRequest: MessageHandler = (ctx, data) => {
 const subagentTranscriptRequest: MessageHandler = (ctx, data) => {
   if (!data.sessionId || !data.agentId) return
   const sess = ctx.sessions.getSession(data.sessionId as string)
-  if (sess) ctx.requirePermission('chat:read', sess.cwd)
+  if (sess) ctx.requirePermission('chat:read', sess.project)
   if (ctx.sessions.hasSubagentTranscriptCache(data.sessionId, data.agentId)) {
     const entries = ctx.sessions.getSubagentTranscriptEntries(data.sessionId, data.agentId, data.limit)
     ctx.reply({
@@ -286,8 +286,8 @@ const sessionInfo: MessageHandler = (ctx, data) => {
   }
 
   // Broadcast with canonical session ID (not whatever the wrapper sent)
-  if (session.cwd) {
-    ctx.broadcastScoped({ ...data, type: 'session_info', sessionId }, session.cwd)
+  if (session.project) {
+    ctx.broadcastScoped({ ...data, type: 'session_info', sessionId }, session.project)
   }
   ctx.log.debug(
     `session_info: ${(data.tools as unknown[])?.length} tools, ${(data.skills as unknown[])?.length} skills, ${(data.agents as unknown[])?.length} agents`,
@@ -299,8 +299,8 @@ const streamDelta: MessageHandler = (ctx, data) => {
   const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
   if (!sessionId) return
   const session = ctx.sessions.getSession(sessionId)
-  if (session?.cwd) {
-    ctx.broadcastScoped({ type: 'stream_delta', sessionId, event: data.event }, session.cwd)
+  if (session?.project) {
+    ctx.broadcastScoped({ type: 'stream_delta', sessionId, event: data.event }, session.project)
   }
 }
 
@@ -338,7 +338,7 @@ const turnCost: MessageHandler = (ctx, data) => {
     recordTurnFromCumulatives({
       timestamp: now,
       sessionId,
-      cwd: session.cwd,
+      cwd: session.project,
       account: session.claudeAuth?.email || '',
       orgId: session.claudeAuth?.orgId || '',
       model: session.model || '',
@@ -354,7 +354,7 @@ const turnCost: MessageHandler = (ctx, data) => {
     ctx.broadcast({
       type: 'turn_recorded',
       sessionId,
-      cwd: session.cwd,
+      cwd: session.project,
       account: session.claudeAuth?.email || '',
       model: session.model || '',
       costUsd,
@@ -439,7 +439,7 @@ const scheduledTaskFire: MessageHandler = (ctx, data) => {
   const session = ctx.sessions.getSession(sessionId)
   if (!session) return
   // Broadcast as a distinct event for dashboard to handle
-  if (session.cwd) {
+  if (session.project) {
     ctx.broadcastScoped(
       {
         type: 'scheduled_task_fire',
@@ -447,7 +447,7 @@ const scheduledTaskFire: MessageHandler = (ctx, data) => {
         content: data.content,
         timestamp: data.timestamp || Date.now(),
       },
-      session.cwd,
+      session.project,
     )
   }
   ctx.log.debug(`scheduled_task_fire: "${(data.content as string)?.slice(0, 60)}"`)

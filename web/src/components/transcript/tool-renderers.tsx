@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react'
 import JsonHighlight from '@/components/json-highlight'
 import { useSessionsStore } from '@/hooks/use-sessions'
 import { resolveToolDisplay, type ToolDisplayKey } from '@/lib/dashboard-prefs'
+import { projectPath } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { AnsiText, cleanCdPrefix, cleanReplShCalls, escapeHtml, TruncatedPre } from './shared'
 import { ensureLang, getHighlighter, langFromPath } from './syntax'
@@ -17,7 +18,8 @@ function useSessionCwd(): string | undefined {
   return useSessionsStore(s => {
     if (s.dashboardPrefs.sanitizePaths === false) return undefined
     const sid = s.selectedSessionId
-    return sid ? s.sessionsById[sid]?.cwd : undefined
+    const session = sid ? s.sessionsById[sid] : undefined
+    return session ? projectPath(session.project) : undefined
   })
 }
 

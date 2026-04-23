@@ -54,7 +54,7 @@ export interface ContextDeps {
 export function createContext(ws: ServerWebSocket<WsData>, deps: ContextDeps): HandlerContext {
   const sessionId = ws.data.sessionId
   const caller = sessionId ? deps.sessions.getSession(sessionId) : undefined
-  const callerSettings = caller?.cwd ? deps.getProjectSettings(caller.cwd) : null
+  const callerSettings = caller?.project ? deps.getProjectSettings(caller.project) : null
   const prefix = logPrefix(ws)
 
   return {
@@ -141,7 +141,7 @@ export function createContext(ws: ServerWebSocket<WsData>, deps: ContextDeps): H
       const grants = ws.data.grants
       if (!grants) return
       // Use provided CWD, fall back to caller session CWD, then '*' for global checks
-      const targetCwd = cwd || caller?.cwd || '*'
+      const targetCwd = cwd || caller?.project || '*'
       const { permissions: perms, isAdmin } = resolvePermissions(grants, targetCwd)
       if (!isAdmin && !perms.has(permission)) {
         throw new GuardError(`Permission denied: ${permission} required`)

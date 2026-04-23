@@ -8,7 +8,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ServerWebSocket } from 'bun'
 import { resolveContextWindow } from '../shared/context-window'
-import { cwdToProjectUri, normalizeProjectUri } from '../shared/project-uri'
+import { cwdToProjectUri, extractProjectLabel, normalizeProjectUri, parseProjectUri } from '../shared/project-uri'
 import type {
   HookEvent,
   LaunchConfig,
@@ -77,13 +77,19 @@ export interface SessionStoreOptions {
 export interface SessionStore {
   createSession: (
     id: string,
-    cwd: string,
+    project: string,
     model?: string,
     args?: string[],
     capabilities?: WrapperCapability[],
   ) => Session
   resumeSession: (id: string) => void
-  rekeySession: (oldId: string, newId: string, wrapperId: string, cwd: string, model?: string) => Session | undefined
+  rekeySession: (
+    oldId: string,
+    newId: string,
+    wrapperId: string,
+    newProject: string,
+    model?: string,
+  ) => Session | undefined
   getSession: (id: string) => Session | undefined
   getAllSessions: () => Session[]
   getActiveSessions: () => Session[]
@@ -185,7 +191,7 @@ export interface SessionStore {
   removeDirListener: (requestId: string) => void
   resolveDir: (requestId: string, result: unknown) => void
   broadcastToWrappersForProject: (project: string, message: Record<string, unknown>) => number
-  broadcastToWrappersAtCwd: (cwd: string, message: Record<string, unknown>) => number
+  broadcastToWrappersAtCwd: (project: string, message: Record<string, unknown>) => number
   addFileListener: (requestId: string, cb: (result: unknown) => void) => void
   removeFileListener: (requestId: string) => void
   resolveFile: (requestId: string, result: unknown) => boolean
@@ -222,17 +228,17 @@ export interface SessionStore {
   addRendezvous: (
     wrapperId: string,
     callerSessionId: string,
-    cwd: string,
+    project: string,
     action: 'spawn' | 'revive' | 'restart',
   ) => Promise<SessionSummary>
   // Pending restart (terminate + auto-revive on disconnect)
   addPendingRestart: (
     wrapperId: string,
-    info: { callerSessionId: string; targetSessionId: string; cwd: string; isSelfRestart: boolean },
+    info: { callerSessionId: string; targetSessionId: string; project: string; isSelfRestart: boolean },
   ) => void
   consumePendingRestart: (
     wrapperId: string,
-  ) => { callerSessionId: string; targetSessionId: string; cwd: string; isSelfRestart: boolean } | undefined
+  ) => { callerSessionId: string; targetSessionId: string; project: string; isSelfRestart: boolean } | undefined
   resolveRendezvous: (wrapperId: string, sessionId: string) => boolean
   getRendezvousInfo: (wrapperId: string) => { callerSessionId: string; action: string } | undefined
   // Pending launch configs (set at spawn, consumed on connect to restore on revive)
@@ -243,16 +249,16 @@ export interface SessionStore {
   consumePendingSessionName: (wrapperId: string) => string | undefined
   // Inter-project link management
   checkProjectLink: (from: string, to: string) => 'linked' | 'blocked' | 'unknown'
-  getLinkedProjects: (sessionId: string) => Array<{ cwd: string; name: string }>
+  getLinkedProjects: (sessionId: string) => Array<{ project: string; name: string }>
   linkProjects: (a: string, b: string) => void
   unlinkProjects: (a: string, b: string) => void
-  unlinkProjectsByCwd: (cwdA: string, cwdB: string) => void
+  unlinkProjectsByCwd: (projectA: string, projectB: string) => void
   blockProject: (blocker: string, blocked: string) => void
   queueProjectMessage: (from: string, to: string, message: Record<string, unknown>) => void
   drainProjectMessages: (from: string, to: string) => Array<Record<string, unknown>>
   broadcastForProject: (project: string) => void
-  broadcastForProjectCwd: (cwd: string) => void
-  broadcastSessionScoped: (message: Record<string, unknown>, cwd: string) => void
+  broadcastForProjectCwd: (project: string) => void
+  broadcastSessionScoped: (message: Record<string, unknown>, project: string) => void
   broadcastSharesUpdate: () => void
   recordTraffic: (direction: 'in' | 'out', bytes: number) => void
   getTrafficStats: () => {
@@ -540,7 +546,6 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     const wrappers = sessionSockets.get(session.id)
     return {
       id: session.id,
-      cwd: session.cwd,
       project: session.project,
       model: session.configuredModel || session.model,
       capabilities: session.capabilities,
@@ -644,14 +649,14 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     }
   }
 
-  /** Broadcast a session message only to subscribers who have chat:read for that CWD */
-  function broadcastSessionScoped(message: DashboardMessage, cwd: string): void {
+  /** Broadcast a session message only to subscribers who have chat:read for that project */
+  function broadcastSessionScoped(message: DashboardMessage, project: string): void {
     const json = stampAndBuffer(message)
     for (const ws of dashboardSubscribers) {
       try {
         const grants = (ws.data as { grants?: UserGrant[] }).grants
         if (grants) {
-          const { permissions } = resolvePermissions(grants, cwd)
+          const { permissions } = resolvePermissions(grants, project)
           if (!permissions.has('chat:read')) continue
         }
         ws.send(json)
@@ -689,7 +694,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
             sessionId: id,
             session: toSessionSummary(session),
           },
-          session.cwd,
+          session.project,
         )
       }
     }
@@ -832,7 +837,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
           diagLog: sessionData.diagLog || [],
           // Mark restored sessions as ended unless they reconnect
           status: 'ended',
-          project: sessionData.project || cwdToProjectUri(sessionData.cwd),
+          project: sessionData.project || cwdToProjectUri((sessionData as unknown as { cwd?: string }).cwd || '/'),
         }
         sessions.set(session.id, session)
       }
@@ -855,7 +860,6 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       // Persist sessions without events (to keep file size small)
       const sessionsToSave = Array.from(sessions.values()).map(s => ({
         id: s.id,
-        cwd: s.cwd,
         project: s.project,
         model: s.model,
         configuredModel: s.configuredModel,
@@ -1061,15 +1065,15 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
 
   function createSession(
     id: string,
-    cwd: string,
+    projectOrCwd: string,
     model?: string,
     args?: string[],
     capabilities?: WrapperCapability[],
   ): Session {
+    const project = projectOrCwd.includes('://') ? projectOrCwd : cwdToProjectUri(projectOrCwd)
     const session: Session = {
       id,
-      cwd,
-      project: cwdToProjectUri(cwd),
+      project,
       model,
       args,
       capabilities,
@@ -1109,7 +1113,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         sessionId: id,
         session: toSessionSummary(session),
       },
-      session.cwd,
+      session.project,
     )
 
     // Push per-session permissions to scoped subscribers so the client can
@@ -1118,12 +1122,12 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       try {
         const grants = (ws.data as { grants?: UserGrant[] }).grants
         if (!grants) continue // admins don't use sessionPermissions
-        const { permissions } = resolvePermissions(grants, session.cwd)
+        const { permissions } = resolvePermissions(grants, session.project)
         if (!permissions.has('chat:read')) continue
         ws.send(
           JSON.stringify({
             type: 'permissions',
-            sessions: { [id]: resolvePermissionFlags(grants, session.cwd) },
+            sessions: { [id]: resolvePermissionFlags(grants, session.project) },
           }),
         )
       } catch {}
@@ -1158,7 +1162,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
           sessionId: id,
           session: toSessionSummary(session),
         },
-        session.cwd,
+        session.project,
       )
     }
   }
@@ -1169,21 +1173,21 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     oldId: string,
     newId: string,
     _wrapperId: string,
-    newCwd: string,
+    newProjectOrCwd: string,
     newModel?: string,
   ): Session | undefined {
+    const newProject = newProjectOrCwd.includes('://') ? newProjectOrCwd : cwdToProjectUri(newProjectOrCwd)
     const session = sessions.get(oldId)
     if (!session) return undefined
 
     // Same-ID rekey: just update metadata, skip the destructive migration
     if (oldId === newId) {
-      session.cwd = newCwd
-      session.project = cwdToProjectUri(newCwd)
+      session.project = newProject
       if (newModel) session.model = newModel
       session.lastActivity = Date.now()
       broadcastSessionScoped(
         { type: 'session_update', sessionId: newId, session: toSessionSummary(session) },
-        session.cwd,
+        session.project,
       )
       return session
     }
@@ -1191,8 +1195,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     // Re-key in sessions map
     sessions.delete(oldId)
     session.id = newId
-    session.cwd = newCwd
-    session.project = cwdToProjectUri(newCwd)
+    session.project = newProject
     if (newModel) session.model = newModel
     session.status = 'idle'
     session.lastActivity = Date.now()
@@ -1242,7 +1245,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     // Migrate channel subscriptions from oldId to newId
     migrateChannels(oldId, newId)
 
-    // Project links are CWD-based, no migration needed on rekey.
+    // Project links are URI-based, no migration needed on rekey.
 
     // Clear subagent transcript subscriptions (subagents are reset on rekey)
     clearSubagentChannels(oldId)
@@ -1255,7 +1258,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         previousSessionId: oldId,
         session: toSessionSummary(session),
       },
-      session.cwd,
+      session.project,
     )
 
     // If compaction was in progress, re-inject the compacting marker into the new transcript.
@@ -1297,11 +1300,12 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       session.lastActivity = Date.now()
 
       // Feed analytics store (non-blocking, fire-and-forget)
+      const projectPath = parseProjectUri(session.project).path
       recordHookEvent(sessionId, event.hookEvent, (event.data || {}) as Record<string, unknown>, {
-        cwd: session.cwd,
+        cwd: projectPath,
         model: session.model || '',
         account: (session.claudeAuth?.email as string) || '',
-        projectLabel: getProjectSettings(session.cwd)?.label,
+        projectLabel: getProjectSettings(session.project)?.label,
       })
 
       // Correlate hook events to subagents: if the hook's session_id differs
@@ -1377,7 +1381,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
               recordTurnFromCumulatives({
                 timestamp: event.timestamp,
                 sessionId,
-                cwd: session.cwd,
+                cwd: projectPath,
                 account: session.claudeAuth?.email || '',
                 orgId: session.claudeAuth?.orgId || '',
                 model: session.model || '',
@@ -1412,7 +1416,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       }
 
       // Track current working directory (NOT the session's project root).
-      // session.cwd stays as the launch directory (project identity).
+      // session.project stays as the launch project URI (project identity).
       // session.currentCwd tracks where Claude is working right now.
       if (event.hookEvent === 'CwdChanged' && event.data) {
         const data = event.data as Record<string, unknown>
@@ -1504,7 +1508,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
           session.pendingPermission = undefined
         }
         const toolName = data.tool_name as string | undefined
-        const projectName = getProjectSettings(session.cwd)?.label || session.cwd.split('/').pop() || session.cwd
+        const projectName = getProjectSettings(session.project)?.label || extractProjectLabel(session.project)
         broadcastSessionScoped(
           {
             type: 'toast',
@@ -1512,7 +1516,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
             title: projectName,
             message: `Permission denied: ${toolName || 'unknown tool'}`,
           },
-          session.cwd,
+          session.project,
         )
       }
 
@@ -1711,7 +1715,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         session.hasNotification = true
         const data = event.data as Record<string, unknown>
         const message = typeof data.message === 'string' ? data.message : 'Needs attention'
-        const projectName = getProjectSettings(session.cwd)?.label || session.cwd.split('/').pop() || session.cwd
+        const projectName = getProjectSettings(session.project)?.label || extractProjectLabel(session.project)
         broadcastSessionScoped(
           {
             type: 'toast',
@@ -1719,7 +1723,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
             title: projectName,
             message,
           },
-          session.cwd,
+          session.project,
         )
       }
 
@@ -1808,7 +1812,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
           sessionId,
           session: toSessionSummary(session),
         },
-        session.cwd,
+        session.project,
       )
 
       // Persist immediately so ended sessions survive restarts
@@ -1953,7 +1957,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   function filterSessionsByGrants(allSessions: SessionSummary[], grants?: UserGrant[]): SessionSummary[] {
     if (!grants) return allSessions // no grants = admin/secret auth = see everything
     return allSessions.filter(s => {
-      const { permissions } = resolvePermissions(grants, s.cwd)
+      const { permissions } = resolvePermissions(grants, s.project)
       return permissions.has('chat:read')
     })
   }
@@ -2332,16 +2336,16 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
                   ...(mime ? { base64, mimeType: mime } : { text: decodedText }),
                   timestamp: Date.now(),
                 }
-                broadcastSessionScoped(capture, session.cwd)
+                broadcastSessionScoped(capture, session.project)
                 if (toolUseId) processedClipboardIds.add(toolUseId)
-                // Persist to shared files log (per-CWD, survives restarts)
+                // Persist to shared files log (per-project, survives restarts)
                 const clipHash = `clip_${Date.now().toString(36)}_${base64.slice(0, 8)}`
                 appendSharedFile({
                   type: 'clipboard',
                   hash: clipHash,
                   filename: mime ? `clipboard.${mime.split('/')[1]}` : 'clipboard.txt',
                   mediaType: mime || 'text/plain',
-                  cwd: session.cwd,
+                  cwd: parseProjectUri(session.project).path,
                   sessionId,
                   size: base64.length,
                   url: '',
@@ -2936,7 +2940,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   interface SessionRendezvous {
     callerSessionId: string
     wrapperId: string
-    cwd: string
+    project: string
     action: 'spawn' | 'revive' | 'restart'
     resolve: (session: SessionSummary) => void
     reject: (error: string) => void
@@ -2950,7 +2954,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   interface PendingRestart {
     callerSessionId: string
     targetSessionId: string
-    cwd: string
+    project: string
     isSelfRestart: boolean
   }
   const pendingRestarts = new Map<string, PendingRestart>() // keyed by target wrapperId
@@ -2958,7 +2962,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   function addPendingRestart(wrapperId: string, info: PendingRestart): void {
     pendingRestarts.set(wrapperId, info)
     console.log(
-      `[restart] PENDING: target=${wrapperId.slice(0, 8)} cwd=${info.cwd.split('/').pop()} self=${info.isSelfRestart}`,
+      `[restart] PENDING: target=${wrapperId.slice(0, 8)} project=${extractProjectLabel(info.project)} self=${info.isSelfRestart}`,
     )
   }
 
@@ -2966,7 +2970,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     const info = pendingRestarts.get(wrapperId)
     if (info) {
       pendingRestarts.delete(wrapperId)
-      console.log(`[restart] CONSUMED: target=${wrapperId.slice(0, 8)} cwd=${info.cwd.split('/').pop()}`)
+      console.log(`[restart] CONSUMED: target=${wrapperId.slice(0, 8)} project=${extractProjectLabel(info.project)}`)
     }
     return info
   }
@@ -2974,7 +2978,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   function addRendezvous(
     wrapperId: string,
     callerSessionId: string,
-    cwd: string,
+    project: string,
     action: 'spawn' | 'revive' | 'restart',
   ): Promise<SessionSummary> {
     return new Promise((resolve, reject) => {
@@ -2982,14 +2986,14 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         sessionRendezvous.delete(wrapperId)
         reject(`Session did not connect within ${RENDEZVOUS_TIMEOUT_MS / 1000}s`)
         console.log(
-          `[rendezvous] TIMEOUT: ${action} wrapperId=${wrapperId.slice(0, 8)} cwd=${cwd.split('/').pop()} caller=${callerSessionId.slice(0, 8)}`,
+          `[rendezvous] TIMEOUT: ${action} wrapperId=${wrapperId.slice(0, 8)} project=${extractProjectLabel(project)} caller=${callerSessionId.slice(0, 8)}`,
         )
       }, RENDEZVOUS_TIMEOUT_MS)
 
       sessionRendezvous.set(wrapperId, {
         callerSessionId,
         wrapperId,
-        cwd,
+        project,
         action,
         resolve,
         reject,
@@ -2997,7 +3001,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         registeredAt: Date.now(),
       })
       console.log(
-        `[rendezvous] REGISTERED: ${action} wrapperId=${wrapperId.slice(0, 8)} cwd=${cwd.split('/').pop()} caller=${callerSessionId.slice(0, 8)}`,
+        `[rendezvous] REGISTERED: ${action} wrapperId=${wrapperId.slice(0, 8)} project=${extractProjectLabel(project)} caller=${callerSessionId.slice(0, 8)}`,
       )
     })
   }
@@ -3085,18 +3089,18 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     return sessions.get(sessionId)?.project
   }
 
-  function getLinkedProjects(sessionId: string): Array<{ cwd: string; name: string }> {
-    const project = sessionToProject(sessionId)
-    if (!project) return []
-    const result: Array<{ cwd: string; name: string }> = []
+  function getLinkedProjects(sessionId: string): Array<{ project: string; name: string }> {
+    const thisProject = sessionToProject(sessionId)
+    if (!thisProject) return []
+    const result: Array<{ project: string; name: string }> = []
     for (const key of projectLinks) {
       const [a, b] = key.split('|')
-      const other = a === normalizeProjectUri(project) ? b : b === normalizeProjectUri(project) ? a : null
+      const other = a === normalizeProjectUri(thisProject) ? b : b === normalizeProjectUri(thisProject) ? a : null
       if (!other) continue
       const session = Array.from(sessions.values()).find(s => normalizeProjectUri(s.project) === other)
-      const cwd = session?.cwd || other
-      const name = getProjectSettings(cwd)?.label || cwd.split('/').pop() || other.slice(0, 8)
-      result.push({ cwd, name })
+      const otherProject = session?.project || other
+      const name = getProjectSettings(otherProject)?.label || extractProjectLabel(otherProject)
+      result.push({ project: otherProject, name })
     }
     return result
   }
@@ -3107,8 +3111,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     if (projA && projB) projectLinks.delete(projectLinkKey(projA, projB))
   }
 
-  function unlinkProjectsByCwd(cwdA: string, cwdB: string): void {
-    projectLinks.delete(projectLinkKey(toProjectUri(cwdA), toProjectUri(cwdB)))
+  function unlinkProjectsByCwd(projectA: string, projectB: string): void {
+    projectLinks.delete(projectLinkKey(toProjectUri(projectA), toProjectUri(projectB)))
   }
 
   function checkProjectLink(from: string, to: string): 'linked' | 'blocked' | 'unknown' {
@@ -3206,8 +3210,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     getSubscriberCount,
     getSubscribers,
     getShareViewerCount,
-    broadcastSessionScoped: (message: Record<string, unknown>, cwd: string) =>
-      broadcastSessionScoped(message as unknown as DashboardMessage, cwd),
+    broadcastSessionScoped: (message: Record<string, unknown>, project: string) =>
+      broadcastSessionScoped(message as unknown as DashboardMessage, project),
     broadcastSharesUpdate,
     subscribeChannel,
     unsubscribeChannel,

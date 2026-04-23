@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import '@xterm/xterm/css/xterm.css'
 import { Settings, WifiOff, X } from 'lucide-react'
 import { type TerminalMessage, useSessionsStore } from '@/hooks/use-sessions'
+import { extractProjectLabel, projectPath } from '@/lib/types'
 import { lastPathSegments } from '@/lib/utils'
 import {
   getFont,
@@ -69,8 +70,8 @@ export function WebTerminal({ wrapperId, onClose, popout }: WebTerminalProps) {
   useEffect(() => {
     if (!popout) return
     if (ownerSession) {
-      const ps = projectSettings[ownerSession.cwd]
-      const name = ps?.label || ownerSession.cwd.split('/').pop() || wrapperId.slice(0, 8)
+      const ps = projectSettings[ownerSession.project]
+      const name = ps?.label || extractProjectLabel(ownerSession.project) || wrapperId.slice(0, 8)
       document.title = `TTY: ${name}`
     } else {
       document.title = `TTY: ${wrapperId.slice(0, 8)}`
@@ -327,7 +328,9 @@ export function WebTerminal({ wrapperId, onClose, popout }: WebTerminalProps) {
       >
         <span className="px-3 py-1.5 text-[10px] font-mono flex-1" style={{ color: currentTheme.brightBlack }}>
           {showDisconnected && <WifiOff className="w-3 h-3 inline mr-1.5" />}
-          {ownerSession ? lastPathSegments(ownerSession.cwd, 2) : `TERMINAL - ${wrapperId.slice(0, 8)}`}
+          {ownerSession
+            ? lastPathSegments(projectPath(ownerSession.project), 2)
+            : `TERMINAL - ${wrapperId.slice(0, 8)}`}
         </span>
         <div className="flex items-center gap-1 px-2 shrink-0">
           <span className="text-[10px] font-mono mr-1 hidden sm:inline" style={{ color: currentTheme.brightBlack }}>

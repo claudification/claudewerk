@@ -6,6 +6,7 @@ import {
   saveRclaudeConfig,
   useSessionsStore,
 } from '@/hooks/use-sessions'
+import { projectPath } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 const BUILTINS = ['.rclaude/project/**', '.rclaude/docs/**']
@@ -56,7 +57,7 @@ type Tool = 'Write' | 'Edit' | 'Read'
 const TOOLS: Tool[] = ['Write', 'Edit', 'Read']
 
 interface PermissionRulesEditorProps {
-  cwd: string
+  project: string
 }
 
 function AllowAllBanner({
@@ -219,9 +220,9 @@ function ToolSection({
   )
 }
 
-export function PermissionRulesEditor({ cwd }: PermissionRulesEditorProps) {
+export function PermissionRulesEditor({ project }: PermissionRulesEditorProps) {
   const hasConfigRw = useSessionsStore(s =>
-    s.sessions.some(sess => (sess.cwd === cwd || sess.project === cwd) && sess.capabilities?.includes('config_rw')),
+    s.sessions.some(sess => sess.project === project && sess.capabilities?.includes('config_rw')),
   )
   const [rules, setRules] = useState<Record<Tool, string[]>>({ Write: [], Edit: [], Read: [] })
   const [allowAll, setAllowAll] = useState(false)
@@ -235,13 +236,14 @@ export function PermissionRulesEditor({ cwd }: PermissionRulesEditorProps) {
   const [dirty, setDirty] = useState(false)
   const [inputValues, setInputValues] = useState<Record<Tool, string>>({ Write: '', Edit: '', Read: '' })
 
-  const cwdInsideDotClaude = /[/\\]\.claude([/\\]|$)/.test(cwd)
+  const resolvedPath = projectPath(project)
+  const cwdInsideDotClaude = /[/\\]\.claude([/\\]|$)/.test(resolvedPath)
 
   const loadConfig = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const data = await requestRclaudeConfig(cwd)
+      const data = await requestRclaudeConfig(project)
       const perms = data.config?.permissions
       setRules({
         Write: perms?.Write?.allow ? [...perms.Write.allow] : [],
@@ -262,7 +264,7 @@ export function PermissionRulesEditor({ cwd }: PermissionRulesEditorProps) {
       setError(err instanceof Error ? err.message : 'Failed to load config')
     }
     setLoading(false)
-  }, [cwd, cwdInsideDotClaude])
+  }, [project, cwdInsideDotClaude])
 
   useEffect(() => {
     if (hasConfigRw) loadConfig()
@@ -336,7 +338,7 @@ export function PermissionRulesEditor({ cwd }: PermissionRulesEditorProps) {
       if (allowAll) config.allowAll = true
       if (!allowPlanMode) config.allowPlanMode = false
 
-      const result = await saveRclaudeConfig(cwd, config)
+      const result = await saveRclaudeConfig(project, config)
       if (!result.ok) throw new Error(result.error || 'Save failed')
 
       setDirty(false)

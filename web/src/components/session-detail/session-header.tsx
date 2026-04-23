@@ -6,6 +6,7 @@ import { renderProjectIcon } from '@/components/project-settings-editor'
 import { wsSend } from '@/hooks/use-sessions'
 import { formatCost, getBurnRate, getCacheEfficiency, getCostColor, getSessionCost } from '@/lib/cost-utils'
 import type { Session } from '@/lib/types'
+import { projectPath } from '@/lib/types'
 import {
   cn,
   contextWindowSize,
@@ -69,7 +70,7 @@ export function SessionHeader({
                   </span>
                 )}
                 <span className="text-sm font-bold truncate" style={ps?.color ? { color: ps.color } : undefined}>
-                  {ps?.label || session.cwd.split('/').slice(-2).join('/')}
+                  {ps?.label || projectPath(session.project).split('/').slice(-2).join('/')}
                 </span>
                 <span>
                   {' · '}
@@ -482,11 +483,11 @@ export function SessionHeader({
 
               {/* CWD */}
               <div className="flex items-center gap-1 group/cwd">
-                <span className="text-[10px] text-muted-foreground truncate">{session.cwd}</span>
+                <span className="text-[10px] text-muted-foreground truncate">{projectPath(session.project)}</span>
                 <button
                   type="button"
                   onClick={() => {
-                    navigator.clipboard.writeText(session.cwd)
+                    navigator.clipboard.writeText(projectPath(session.project))
                     haptic('tap')
                   }}
                   className="shrink-0 text-muted-foreground/30 hover:text-muted-foreground [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/cwd:opacity-100 transition-opacity"
@@ -543,17 +544,19 @@ export function SessionHeader({
                 <div className="flex items-center gap-2 mt-1 flex-wrap">
                   <span className="text-[10px] text-teal-400/60">projects:</span>
                   {session.linkedProjects.map(lp => (
-                    <span key={lp.cwd} className="inline-flex items-center gap-1 text-[10px] font-mono">
+                    <span key={lp.project} className="inline-flex items-center gap-1 text-[10px] font-mono">
                       <button
                         type="button"
                         className="text-teal-400 hover:text-teal-300 hover:underline cursor-pointer"
                         onClick={() => {
                           haptic('tap')
                           const myName =
-                            projectSettings?.label || session.cwd.split('/').pop() || session.id.slice(0, 8)
+                            projectSettings?.label ||
+                            projectPath(session.project).split('/').pop() ||
+                            session.id.slice(0, 8)
                           onSetConversationTarget({
-                            cwdA: session.cwd,
-                            cwdB: lp.cwd,
+                            cwdA: session.project,
+                            cwdB: lp.project,
                             nameA: myName,
                             nameB: lp.name,
                           })
@@ -566,7 +569,7 @@ export function SessionHeader({
                         type="button"
                         onClick={() => {
                           haptic('error')
-                          wsSend('channel_unlink', { cwdA: session.cwd, cwdB: lp.cwd })
+                          wsSend('channel_unlink', { cwdA: session.project, cwdB: lp.project })
                         }}
                         className="text-red-400/40 hover:text-red-400 transition-colors"
                         title={`Sever link to ${lp.name}`}

@@ -50,10 +50,9 @@ function elog(msg: string): void {
 
 export interface SessionInfo {
   id: string // addressable ID: bare project slug or compound "project:session-name"
-  project?: string // project-level grouping slug (same CWD = same project)
+  project: string // project URI (e.g. "claude:///Users/jonas/projects/foo")
   session_id?: string // CC session ID (for transcript/task context)
   name: string
-  cwd: string
   status: 'live' | 'inactive'
   wrapperIds?: string[] // only present when multiple wrappers share a session
   label?: string

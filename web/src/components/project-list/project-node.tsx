@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useSessionsStore } from '@/hooks/use-sessions'
 import type { Session } from '@/lib/types'
-import { extractProjectLabel } from '@/lib/types'
+import { extractProjectLabel, projectPath } from '@/lib/types'
 import { haptic, projectDisplayName } from '@/lib/utils'
 import { ProjectSettingsButton, ProjectSettingsEditor, renderProjectIcon } from '../project-settings-editor'
 import { partitionSessions } from './partition'
@@ -84,12 +84,10 @@ function DismissAllEndedButton({ ended }: { ended: Session[] }) {
 
 // ─── Multi-session CWD card ────────────────────────────────────────
 
-function CwdSessionGroup({ sessions, cwd }: { sessions: Session[]; cwd: string }) {
+function CwdSessionGroup({ sessions, project }: { sessions: Session[]; project: string }) {
   const [showSettings, setShowSettings] = useState(false)
-  const projectUri = sessions[0]?.project || ''
-  const settingsKey = projectUri || cwd
-  const ps = useSessionsStore(s => s.projectSettings[settingsKey] || s.projectSettings[cwd])
-  const displayName = ps?.label || (projectUri ? extractProjectLabel(projectUri) : projectDisplayName(cwd))
+  const ps = useSessionsStore(s => s.projectSettings[project])
+  const displayName = ps?.label || extractProjectLabel(project)
   const displayColor = ps?.color
   const { adhoc, normal, ended } = partitionSessions(sessions)
   // Project-level rollups: any session in this CWD needing attention?
@@ -106,7 +104,7 @@ function CwdSessionGroup({ sessions, cwd }: { sessions: Session[]; cwd: string }
         className="border border-border"
         style={displayColor ? { borderLeftColor: displayColor, borderLeftWidth: '3px' } : undefined}
       >
-        <ProjectContextMenu cwd={cwd} sessions={sessions} onOpenSettings={() => setShowSettings(true)}>
+        <ProjectContextMenu cwd={project} sessions={sessions} onOpenSettings={() => setShowSettings(true)}>
           <div className="flex items-center gap-1.5 p-3 pb-1">
             {ps?.icon && (
               <span style={displayColor ? { color: displayColor } : undefined}>{renderProjectIcon(ps.icon)}</span>
@@ -114,7 +112,7 @@ function CwdSessionGroup({ sessions, cwd }: { sessions: Session[]; cwd: string }
             <span
               className="font-bold text-sm flex-1 truncate text-primary"
               style={displayColor ? { color: displayColor } : undefined}
-              title={projectUri || cwd}
+              title={projectPath(project)}
             >
               {displayName}
             </span>
@@ -164,14 +162,14 @@ function CwdSessionGroup({ sessions, cwd }: { sessions: Session[]; cwd: string }
           ))}
         </div>
       </div>
-      {showSettings && <ProjectSettingsEditor cwd={settingsKey} onClose={() => setShowSettings(false)} />}
+      {showSettings && <ProjectSettingsEditor project={project} onClose={() => setShowSettings(false)} />}
     </div>
   )
 }
 
 // ─── CWD node renderer (single or multi-session) ──────────────────
 
-export function ProjectNode({ cwd, sessions }: { cwd: string; sessions: Session[] }) {
+export function ProjectNode({ project, sessions }: { project: string; sessions: Session[] }) {
   if (sessions.length === 1) return <SessionCard session={sessions[0]} />
-  return <CwdSessionGroup sessions={sessions} cwd={cwd} />
+  return <CwdSessionGroup sessions={sessions} project={project} />
 }

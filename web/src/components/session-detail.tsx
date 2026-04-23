@@ -5,7 +5,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { Button } from '@/components/ui/button'
 import { type TaskStatus, useProject } from '@/hooks/use-project'
 import { fetchSubagentTranscript, useSessionsStore } from '@/hooks/use-sessions'
-import { canJsonStream, canTerminal, type TranscriptEntry } from '@/lib/types'
+import { canJsonStream, canTerminal, projectPath, type TranscriptEntry } from '@/lib/types'
 import { setSessionTab } from '@/lib/ui-state'
 import { cn, haptic } from '@/lib/utils'
 import { BgTasksView } from './bg-tasks-view'
@@ -117,7 +117,9 @@ export const SessionDetail = memo(function SessionDetail() {
     return selectedSessionId ? state.transcripts[selectedSessionId] || EMPTY_TRANSCRIPT : EMPTY_TRANSCRIPT
   })
   const agentConnected = useSessionsStore(state => state.agentConnected)
-  const projectSettings = useSessionsStore(state => (session?.cwd ? state.projectSettings[session.cwd] : undefined))
+  const projectSettings = useSessionsStore(state =>
+    session?.project ? state.projectSettings[session.project] : undefined,
+  )
   const selectedSubagentId = useSessionsStore(state => state.selectedSubagentId)
   const selectSubagent = useSessionsStore(state => state.selectSubagent)
 
@@ -220,7 +222,7 @@ export const SessionDetail = memo(function SessionDetail() {
       {/* Clipboard Capture Banners */}
       <ClipboardBanners />
       {/* Share banner - always visible when shares active (admin only) */}
-      {canAdmin && session && <ShareBanner sessionCwd={session.cwd} />}
+      {canAdmin && session && <ShareBanner sessionCwd={projectPath(session.project)} />}
       {/* Dialog Modal */}
       {selectedSessionId && <DialogOverlay sessionId={selectedSessionId} />}
       {/* Task Editor Modal (from @ / t: command palette, renders over any tab) */}
@@ -424,7 +426,9 @@ export const SessionDetail = memo(function SessionDetail() {
               <ProjectBoard sessionId={selectedSessionId} />
             </div>
           )}
-          {!conversationTarget && activeTab === 'shared' && session && <SharedView cwd={session.cwd} />}
+          {!conversationTarget && activeTab === 'shared' && session && (
+            <SharedView cwd={projectPath(session.project)} />
+          )}
           {!conversationTarget && activeTab === 'diag' && selectedSessionId && (
             <DiagView sessionId={selectedSessionId} />
           )}
@@ -471,7 +475,7 @@ export const SessionDetail = memo(function SessionDetail() {
                 Revive Session
               </Button>
               <p className="text-[10px] text-muted-foreground mt-1">
-                Spawns new rclaude in tmux at {session.cwd.split('/').slice(-2).join('/')}
+                Spawns new rclaude in tmux at {projectPath(session.project).split('/').slice(-2).join('/')}
               </p>
             </div>
           ) : (

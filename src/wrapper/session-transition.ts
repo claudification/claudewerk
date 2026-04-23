@@ -24,6 +24,7 @@
  * and no-op. One diag line per transition for easy debugging.
  */
 
+import { cwdToProjectUri } from '../shared/project-uri'
 import { emitLaunchEvent } from './launch-events'
 import type { WrapperContext } from './wrapper-context'
 
@@ -145,7 +146,7 @@ function handleRekey(ctx: WrapperContext, fromId: string, newId: string, model?:
   // If wsClient is disconnected, the message drops on the floor -- acceptable
   // since a reconnect will send fresh meta with the new id anyway.
   if (ctx.wsClient?.isConnected()) {
-    ctx.wsClient.sendSessionClear(newId, ctx.cwd, model)
+    ctx.wsClient.sendSessionClear(newId, cwdToProjectUri(ctx.cwd), model)
   }
 
   // Stop all subagent watchers -- they reference the old session's transcript dir.

@@ -35,7 +35,7 @@ const handleSpawnRequest: MessageHandler = (ctx, data) => {
   }
   const req = parsed.data
 
-  const callerCwd = ctx.caller?.cwd ?? null
+  const callerCwd = ctx.caller?.project ?? null
   const trustLevel = callerCwd ? mapProjectTrust(ctx.getProjectSettings(callerCwd)?.trustLevel) : 'trusted'
   const callerContext: SpawnCallerContext = {
     kind: 'ws',

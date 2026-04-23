@@ -11,6 +11,7 @@ import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { saveProjectOrder, useSessionsStore } from '@/hooks/use-sessions'
 import type { ProjectOrder, ProjectOrderGroup, ProjectOrderNode, Session } from '@/lib/types'
+import { projectPath } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
 import { MaybeProfiler } from './perf-profiler'
 import { ProjectNode } from './project-list/project-node'
@@ -21,7 +22,7 @@ import { GroupNode, NewGroupDropTarget, SortableNode } from './project-list/sess
 
 export function ProjectList() {
   // Server already filters sessions_list by grants (filterSessionsByGrants) --
-  // if a session made it here, the user has chat:read for its cwd.
+  // if a session made it here, the user has chat:read for its project.
   const sessions = useSessionsStore(s => s.sessions)
   const sessionsById = useSessionsStore(s => s.sessionsById)
   const selectedSessionId = useSessionsStore(s => s.selectedSessionId)
@@ -47,53 +48,53 @@ export function ProjectList() {
     return () => clearInterval(t)
   }, [])
 
-  // Group all sessions by CWD
+  // Group all sessions by project URI
   const sessionsByCwd = useMemo(() => {
     const map = new Map<string, Session[]>()
     for (const s of sessions) {
-      const group = map.get(s.cwd) || []
+      const group = map.get(s.project) || []
       group.push(s)
-      map.set(s.cwd, group)
+      map.set(s.project, group)
     }
     return map
   }, [sessions])
 
-  // Filtered view: hide ended sessions from CWD groups when toggle is off
+  // Filtered view: hide ended sessions from project groups when toggle is off
   const visibleSessionsByCwd = useMemo(() => {
     if (showEnded) return sessionsByCwd
     const map = new Map<string, Session[]>()
-    for (const [cwd, group] of sessionsByCwd) {
+    for (const [project, group] of sessionsByCwd) {
       const filtered = group.filter(s => s.status !== 'ended')
-      if (filtered.length > 0) map.set(cwd, filtered)
+      if (filtered.length > 0) map.set(project, filtered)
     }
     return map
   }, [sessionsByCwd, showEnded])
 
-  // Track which CWDs are in the organized tree
-  const treeCwds = useMemo(() => {
-    const cwds = new Set<string>()
+  // Track which projects are in the organized tree (by project URI).
+  const treeProjects = useMemo(() => {
+    const projects = new Set<string>()
     function walk(nodes: ProjectOrderNode[]) {
       for (const n of nodes) {
         if (n.type === 'project') {
-          cwds.add(n.id.startsWith('cwd:') ? n.id.slice(4) : n.id)
+          projects.add(n.id)
         } else if (n.type === 'group') {
           walk(n.children)
         }
       }
     }
     walk(projectOrder.tree)
-    return cwds
+    return projects
   }, [projectOrder])
 
   // Unorganized active sessions (uses visibleSessionsByCwd to respect showEnded filter)
   const unorganized = useMemo(() => {
     const seen = new Set<string>()
-    const result: Array<{ cwd: string; sessions: Session[] }> = []
+    const result: Array<{ project: string; sessions: Session[] }> = []
     for (const s of sessions) {
-      if (s.status !== 'ended' && !treeCwds.has(s.cwd) && !seen.has(s.cwd)) {
-        seen.add(s.cwd)
-        const cwdSessions = visibleSessionsByCwd.get(s.cwd) || []
-        if (cwdSessions.length > 0) result.push({ cwd: s.cwd, sessions: cwdSessions })
+      if (s.status !== 'ended' && !treeProjects.has(s.project) && !seen.has(s.project)) {
+        seen.add(s.project)
+        const projectSessions = visibleSessionsByCwd.get(s.project) || []
+        if (projectSessions.length > 0) result.push({ project: s.project, sessions: projectSessions })
       }
     }
     result.sort((a, b) => {
@@ -107,25 +108,25 @@ export function ProjectList() {
       return bMax - aMax
     })
     return result
-  }, [sessions, treeCwds, visibleSessionsByCwd])
+  }, [sessions, treeProjects, visibleSessionsByCwd])
 
   // Inactive sessions (ended, not in tree, not in unorganized)
   const inactive = useMemo(() => {
-    const activeCwds = new Set(sessions.filter(s => s.status !== 'ended').map(s => s.cwd))
-    const byCwd = new Map<string, Session[]>()
+    const activeProjects = new Set(sessions.filter(s => s.status !== 'ended').map(s => s.project))
+    const byProject = new Map<string, Session[]>()
     for (const s of sessions) {
-      if (s.status === 'ended' && !treeCwds.has(s.cwd) && !activeCwds.has(s.cwd)) {
-        const group = byCwd.get(s.cwd) || []
+      if (s.status === 'ended' && !treeProjects.has(s.project) && !activeProjects.has(s.project)) {
+        const group = byProject.get(s.project) || []
         group.push(s)
-        byCwd.set(s.cwd, group)
+        byProject.set(s.project, group)
       }
     }
-    return Array.from(byCwd.values()).sort((a, b) => {
+    return Array.from(byProject.values()).sort((a, b) => {
       const aMax = Math.max(...a.map(s => s.lastActivity))
       const bMax = Math.max(...b.map(s => s.lastActivity))
       return bMax - aMax
     })
-  }, [sessions, treeCwds])
+  }, [sessions, treeProjects])
 
   // Toggle group collapse
   function toggleGroup(groupId: string) {
@@ -181,7 +182,7 @@ export function ProjectList() {
         for (const child of node.children) ids.push(child.id)
       }
     }
-    for (const { cwd } of unorganized) ids.push(`cwd:${cwd}`)
+    for (const { project } of unorganized) ids.push(project)
     return ids
   }, [projectOrder, unorganized, collapsedGroups])
 
@@ -255,7 +256,7 @@ export function ProjectList() {
       const targetGroup = newTree.find(n => n.id === overId && n.type === 'group') as ProjectOrderGroup | undefined
       if (targetGroup) {
         targetGroup.children.push({
-          id: draggedId.startsWith('cwd:') ? draggedId : `cwd:${draggedId}`,
+          id: draggedId,
           type: 'project',
         })
       }
@@ -264,7 +265,7 @@ export function ProjectList() {
       // Drag unorganized onto organized -> pin it (insert near target)
       const overParent = findParentGroup(overId)
       const newTree = [...projectOrder.tree]
-      const sessionId = draggedId.startsWith('cwd:') ? draggedId : `cwd:${draggedId}`
+      const sessionId = draggedId
       if (overParent) {
         const group = newTree.find(n => n.id === overParent && n.type === 'group') as ProjectOrderGroup | undefined
         if (group) {
@@ -374,12 +375,12 @@ export function ProjectList() {
                       <div className="space-y-1">
                         {node.children.map(child => {
                           if (child.type === 'group') return null
-                          const childCwd = child.id.startsWith('cwd:') ? child.id.slice(4) : child.id
-                          const childSessions = visibleSessionsByCwd.get(childCwd)
+                          const childProject = child.id
+                          const childSessions = visibleSessionsByCwd.get(childProject)
                           if (!childSessions || childSessions.length === 0) return null
                           return (
                             <SortableNode key={child.id} id={child.id}>
-                              <ProjectNode cwd={childCwd} sessions={childSessions} />
+                              <ProjectNode project={childProject} sessions={childSessions} />
                             </SortableNode>
                           )
                         })}
@@ -390,8 +391,7 @@ export function ProjectList() {
                         if (!selectedSessionId) return null
                         const selectedSession = sessionsById[selectedSessionId]
                         if (!selectedSession) return null
-                        const selectedCwdKey = `cwd:${selectedSession.cwd}`
-                        if (!node.children.some(c => c.id === selectedCwdKey)) return null
+                        if (!node.children.some(c => c.id === selectedSession.project)) return null
                         return (
                           <div className="opacity-80">
                             <SessionItemCompact session={selectedSession} />
@@ -403,12 +403,12 @@ export function ProjectList() {
                 )
               }
               // Root-level session node
-              const cwd = node.id.startsWith('cwd:') ? node.id.slice(4) : node.id
-              const cwdSessions = visibleSessionsByCwd.get(cwd)
-              if (!cwdSessions || cwdSessions.length === 0) return null
+              const nodeProject = node.id
+              const nodeSessions = visibleSessionsByCwd.get(nodeProject)
+              if (!nodeSessions || nodeSessions.length === 0) return null
               return (
                 <SortableNode key={node.id} id={node.id}>
-                  <ProjectNode cwd={cwd} sessions={cwdSessions} />
+                  <ProjectNode project={nodeProject} sessions={nodeSessions} />
                 </SortableNode>
               )
             })}
@@ -433,14 +433,14 @@ export function ProjectList() {
                   </div>
                 )}
                 <div className="space-y-1">
-                  {unorganized.map(({ cwd, sessions: cwdSessions }, i) => {
+                  {unorganized.map(({ project, sessions: projectSessions }, i) => {
                     // Insert separator before first ad-hoc-only group
-                    const isAllAdHoc = cwdSessions.every(s => s.capabilities?.includes('ad-hoc'))
+                    const isAllAdHoc = projectSessions.every(s => s.capabilities?.includes('ad-hoc'))
                     const prevIsRegular =
                       i > 0 && !unorganized[i - 1].sessions.every(s => s.capabilities?.includes('ad-hoc'))
                     const showAdHocSeparator = isAllAdHoc && (i === 0 || prevIsRegular)
                     return (
-                      <div key={`cwd:${cwd}`}>
+                      <div key={project}>
                         {showAdHocSeparator && (
                           <div className="flex items-center gap-2 px-1 pt-2 pb-1">
                             <span className="flex-1 h-px bg-border" />
@@ -448,8 +448,8 @@ export function ProjectList() {
                             <span className="flex-1 h-px bg-border" />
                           </div>
                         )}
-                        <SortableNode id={`cwd:${cwd}`}>
-                          <ProjectNode cwd={cwd} sessions={cwdSessions} />
+                        <SortableNode id={project}>
+                          <ProjectNode project={project} sessions={projectSessions} />
                         </SortableNode>
                       </div>
                     )
@@ -472,7 +472,7 @@ export function ProjectList() {
             show inactive ({inactive.length})
           </label>
         )}
-        {showInactive && inactive.map(group => <InactiveProjectItem key={group[0].cwd} sessions={group} />)}
+        {showInactive && inactive.map(group => <InactiveProjectItem key={group[0].project} sessions={group} />)}
       </div>
     </MaybeProfiler>
   )

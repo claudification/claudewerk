@@ -32,7 +32,7 @@ export function createSpawnRouter(sessionStore: SessionStore, helpers: RouteHelp
     // identify themselves via X-Caller-Session; everything else is dashboard HTTP.
     const callerSessionId = c.req.header('X-Caller-Session')
     const callerSess = callerSessionId ? sessionStore.getSession(callerSessionId) : null
-    const callerCwd = callerSess?.cwd ?? null
+    const callerCwd = callerSess?.project ?? null
     const callerTrust = callerCwd ? mapProjectTrust(getProjectSettings(callerCwd)?.trustLevel) : 'trusted'
     const callerContext: SpawnCallerContext = {
       kind: callerSessionId ? 'mcp' : 'http',

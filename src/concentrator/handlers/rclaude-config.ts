@@ -2,19 +2,19 @@
  * Handlers for .rclaude/rclaude.json config read/write via the wrapper.
  *
  * Follows the same pattern as file_request/file_save:
- *   dashboard -> concentrator -> wrapper (by CWD) -> filesystem
+ *   dashboard -> concentrator -> wrapper (by project) -> filesystem
  *   wrapper response -> concentrator -> broadcastScoped to dashboard
  *
  * After a successful save, broadcasts notify_config_updated to all
- * wrappers at the target CWD so they hot-reload permission rules.
+ * wrappers at the target project so they hot-reload permission rules.
  */
 
 import type { MessageHandler } from '../handler-context'
 import { registerHandlers } from '../message-router'
 
-function findWrapperSocketByCwd(ctx: Parameters<MessageHandler>[0], cwd: string) {
+function findWrapperSocketByProject(ctx: Parameters<MessageHandler>[0], project: string) {
   for (const session of ctx.sessions.getAllSessions()) {
-    if (session.cwd !== cwd) continue
+    if (session.project !== project) continue
     const socket = ctx.sessions.getSessionSocket(session.id)
     if (socket) return { socket, session }
   }
@@ -22,11 +22,11 @@ function findWrapperSocketByCwd(ctx: Parameters<MessageHandler>[0], cwd: string)
 }
 
 const rclaudeConfigGet: MessageHandler = (ctx, data) => {
-  const cwd = data.cwd as string
-  if (!cwd) return
-  ctx.requirePermission('settings', cwd)
+  const project = data.project as string
+  if (!project) return
+  ctx.requirePermission('settings', project)
 
-  const target = findWrapperSocketByCwd(ctx, cwd)
+  const target = findWrapperSocketByProject(ctx, project)
   if (target) {
     target.socket.send(JSON.stringify(data))
   } else {
@@ -34,18 +34,18 @@ const rclaudeConfigGet: MessageHandler = (ctx, data) => {
       type: 'rclaude_config_data',
       requestId: data.requestId,
       config: null,
-      cwd,
-      error: 'No session connected at this CWD',
+      project,
+      error: 'No session connected at this project',
     })
   }
 }
 
 const rclaudeConfigSet: MessageHandler = (ctx, data) => {
-  const cwd = data.cwd as string
-  if (!cwd) return
-  ctx.requirePermission('settings', cwd)
+  const project = data.project as string
+  if (!project) return
+  ctx.requirePermission('settings', project)
 
-  const target = findWrapperSocketByCwd(ctx, cwd)
+  const target = findWrapperSocketByProject(ctx, project)
   if (target) {
     target.socket.send(JSON.stringify(data))
   } else {
@@ -53,7 +53,7 @@ const rclaudeConfigSet: MessageHandler = (ctx, data) => {
       type: 'rclaude_config_ok',
       requestId: data.requestId,
       ok: false,
-      error: 'No session connected at this CWD',
+      error: 'No session connected at this project',
     })
   }
 }
@@ -61,20 +61,20 @@ const rclaudeConfigSet: MessageHandler = (ctx, data) => {
 const rclaudeConfigData: MessageHandler = (ctx, data) => {
   const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
   const session = sessionId ? ctx.sessions.getSession(sessionId) : undefined
-  if (session?.cwd) ctx.broadcastScoped(data, session.cwd)
+  if (session?.project) ctx.broadcastScoped(data, session.project)
   else ctx.broadcast(data)
 }
 
 const rclaudeConfigOk: MessageHandler = (ctx, data) => {
   const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
   const session = sessionId ? ctx.sessions.getSession(sessionId) : undefined
-  const cwd = session?.cwd
+  const project = session?.project
 
-  if (cwd) {
-    ctx.broadcastScoped(data, cwd)
+  if (project) {
+    ctx.broadcastScoped(data, project)
     if (data.ok) {
-      const notified = ctx.sessions.broadcastToWrappersAtCwd(cwd, { type: 'notify_config_updated' })
-      ctx.log.info(`Config saved for ${cwd} -- notified ${notified} wrapper(s)`)
+      const notified = ctx.sessions.broadcastToWrappersAtCwd(project, { type: 'notify_config_updated' })
+      ctx.log.info(`Config saved for ${project} -- notified ${notified} wrapper(s)`)
     }
   } else {
     ctx.broadcast(data)

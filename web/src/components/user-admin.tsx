@@ -7,6 +7,7 @@ import { Copy, KeyRound, Plus, Shield, ShieldOff, Trash2, UserPlus, X } from 'lu
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { extractProjectLabel } from '@/lib/types'
 import { haptic } from '@/lib/utils'
 
 const API = ''
@@ -17,7 +18,7 @@ interface UserSummary {
   lastUsedAt?: number
   revoked: boolean
   grants: Array<{
-    cwd: string
+    project: string
     roles?: string[]
     permissions?: string[]
     notBefore?: number
@@ -112,7 +113,7 @@ function GrantEditor({ grants, onChange }: GrantEditorProps) {
     onChange([
       ...grants,
       {
-        cwd: newCwd.trim(),
+        project: newCwd.trim(),
         ...(newRoles.length > 0 && { roles: newRoles }),
         ...(newPerms.length > 0 && { permissions: newPerms }),
       },
@@ -151,7 +152,7 @@ function GrantEditor({ grants, onChange }: GrantEditorProps) {
       {/* Existing grants - click to edit */}
       {grants.map((g, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: grants may share cwd, positional index needed for disambiguation
-        <div key={`${g.cwd}-${i}`} className="bg-secondary/50 rounded text-xs">
+        <div key={`${g.project}-${i}`} className="bg-secondary/50 rounded text-xs">
           <div
             role="button"
             tabIndex={0}
@@ -168,7 +169,7 @@ function GrantEditor({ grants, onChange }: GrantEditorProps) {
             }}
           >
             <div className="flex-1 min-w-0">
-              <div className="font-mono text-foreground truncate">{g.cwd}</div>
+              <div className="font-mono text-foreground truncate">{g.project}</div>
               <div className="text-muted-foreground mt-0.5">
                 {[
                   ...(g.roles || []).map(r => (
@@ -208,8 +209,8 @@ function GrantEditor({ grants, onChange }: GrantEditorProps) {
             <div className="px-3 pb-3 pt-1 border-t border-border/50 space-y-2">
               <input
                 type="text"
-                value={g.cwd}
-                onChange={e => updateGrant(i, { cwd: e.target.value })}
+                value={g.project}
+                onChange={e => updateGrant(i, { project: e.target.value })}
                 className="w-full bg-background border border-border rounded px-2 py-1.5 text-xs font-mono focus:outline-none focus:border-accent"
               />
               <PermissionToggles
@@ -665,7 +666,7 @@ export function UserAdminDialog({ open, onOpenChange }: { open: boolean; onOpenC
                         {user.grants
                           .map(g => {
                             const parts = [...(g.roles || []), ...(g.permissions || [])]
-                            const cwdLabel = g.cwd === '*' ? 'all' : g.cwd.split('/').pop()
+                            const cwdLabel = g.project === '*' ? 'all' : extractProjectLabel(g.project)
                             return `${cwdLabel}: ${parts.join(', ')}`
                           })
                           .join(' / ')}

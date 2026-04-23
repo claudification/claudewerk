@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Hono } from 'hono'
+import { parseProjectUri } from '../../shared/project-uri'
 import { getAuthenticatedUser } from '../auth-routes'
 import { getGlobalSettings, updateGlobalSettings } from '../global-settings'
 import { getModels, getModelsFetchedAt } from '../model-pricing'
@@ -198,7 +199,7 @@ export function createApiRouter(
     if (!body.cwd) return c.json({ error: 'Missing cwd' }, 400)
 
     const allSessions = sessionStore.getAllSessions()
-    const sessionForCwd = allSessions.find(s => s.cwd === body.cwd && s.status === 'active')
+    const sessionForCwd = allSessions.find(s => parseProjectUri(s.project).path === body.cwd && s.status === 'active')
     const wrapperSocket = sessionForCwd ? sessionStore.getSessionSocket(sessionForCwd.id) : null
     if (!wrapperSocket) {
       return c.json({ error: 'No active session connected for this project' }, 503)
@@ -306,7 +307,7 @@ Output a JSON array of strings. Each string should be the correct spelling of on
 
     // Require files permission -- check session CWD if available, else any grant
     const uploadSessionId = c.req.header('x-session-id') || c.req.query('sessionId') || undefined
-    const uploadCwd = uploadSessionId ? sessionStore.getSession(uploadSessionId)?.cwd : undefined
+    const uploadCwd = uploadSessionId ? sessionStore.getSession(uploadSessionId)?.project : undefined
     if (uploadCwd) {
       if (!httpHasPermission(c.req.raw, 'files', uploadCwd))
         return c.json({ error: 'Forbidden: files permission required' }, 403)
@@ -352,7 +353,7 @@ Output a JSON array of strings. Each string should be the correct spelling of on
 
     // Log to shared files index (keyed by CWD for per-project queries)
     const sessionId = c.req.header('x-session-id') || c.req.query('sessionId') || undefined
-    const sessionCwd = sessionId ? sessionStore.getSession(sessionId)?.cwd : undefined
+    const sessionCwd = sessionId ? sessionStore.getSession(sessionId)?.project : undefined
     appendSharedFile({
       type: 'file',
       hash,
@@ -463,11 +464,11 @@ Output a JSON array of strings. Each string should be the correct spelling of on
     const keyterms: string[] = []
     if (body.sessionId) {
       const session = sessionStore.getSession(body.sessionId)
-      if (session?.cwd) {
-        const projSettings = getProjectSettings(session.cwd)
+      if (session?.project) {
+        const projSettings = getProjectSettings(session.project)
         if (projSettings?.keyterms?.length) {
           keyterms.push(...projSettings.keyterms)
-          console.log(`[transcribe] Project keyterms for ${session.cwd}: ${projSettings.keyterms.join(', ')}`)
+          console.log(`[transcribe] Project keyterms for ${session.project}: ${projSettings.keyterms.join(', ')}`)
         }
       }
     }

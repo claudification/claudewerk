@@ -8,12 +8,12 @@
  *   - `list_sessions` ALWAYS returns compound `project:session-slug` ids.
  *   - The bare `project` form is NEVER produced. This guarantees the id a
  *     caller sees today does not silently change shape tomorrow when a
- *     second session spawns at the same cwd.
+ *     second session spawns at the same project.
  *
  * Resolver rule (what `send_message` accepts as `to`):
- *   - Compound `project:session-slug` -> resolves directly inside the cwd
+ *   - Compound `project:session-slug` -> resolves directly inside the project
  *   - Bare `project`                  -> accepted ONLY when exactly one
- *                                        candidate session exists at the cwd;
+ *                                        candidate session exists in the project;
  *                                        rejected as ambiguous when 2+.
  */
 
@@ -21,13 +21,13 @@ import { slugify } from '../address-book'
 
 export interface SessionLike {
   id: string
-  cwd: string
+  project: string
   title?: string
 }
 
 /**
  * Compute the per-session slug suffix used inside compound ids.
- * Falls back to a 6-char id slice when two sessions in the same cwd would
+ * Falls back to a 6-char id slice when two sessions in the same project would
  * slug to the same value (so siblings stay disambiguable).
  */
 export function computeSessionSlug(target: SessionLike, siblingSessions: SessionLike[]): string {
@@ -60,8 +60,8 @@ export interface ResolveSendInput {
   projectSlug: string
   /** The slug to the RIGHT of `:`, or undefined for bare addressing. */
   sessionSlug: string | undefined
-  /** All sessions registered at the resolved target cwd (live + inactive). */
-  sessionsAtCwd: SessionLike[]
+  /** All sessions registered at the resolved target project (live + inactive). */
+  sessionsAtProject: SessionLike[]
   /** The canonical project slug (label or dirname) to surface in error messages. */
   canonicalProject: string
   /** Predicate -- "is this session currently online?". Live count drives ambiguity. */
@@ -70,7 +70,7 @@ export interface ResolveSendInput {
 
 /**
  * Resolve a parsed `(projectSlug, sessionSlug?)` target against the sessions
- * registered at a given cwd. Returns the chosen session, a not-found marker,
+ * registered at a given project. Returns the chosen session, a not-found marker,
  * or an ambiguous-bare error with the candidate compound ids the caller
  * should use instead.
  *
@@ -80,30 +80,30 @@ export interface ResolveSendInput {
  * pick one explicitly with the compound form).
  */
 export function resolveSendTarget(input: ResolveSendInput): ResolveSendTarget {
-  const { projectSlug, sessionSlug, sessionsAtCwd, isLive } = input
+  const { projectSlug, sessionSlug, sessionsAtProject, isLive } = input
 
   if (sessionSlug !== undefined) {
-    const exact = sessionsAtCwd.find(s => slugify(s.title || s.id.slice(0, 8)) === sessionSlug)
+    const exact = sessionsAtProject.find(s => slugify(s.title || s.id.slice(0, 8)) === sessionSlug)
     if (exact) return { kind: 'resolved', session: exact }
-    const prefix = sessionsAtCwd.find(s => slugify(s.title || s.id.slice(0, 8)).startsWith(sessionSlug))
+    const prefix = sessionsAtProject.find(s => slugify(s.title || s.id.slice(0, 8)).startsWith(sessionSlug))
     if (prefix) return { kind: 'resolved', session: prefix }
     return { kind: 'not_found' }
   }
 
   // Bare addressing.
   // First: exact session-title match (a session named "arr" beats project-level dispatch).
-  const titleMatch = sessionsAtCwd.find(s => slugify(s.title || s.id.slice(0, 8)) === projectSlug)
+  const titleMatch = sessionsAtProject.find(s => slugify(s.title || s.id.slice(0, 8)) === projectSlug)
   if (titleMatch) return { kind: 'resolved', session: titleMatch }
 
-  const live = sessionsAtCwd.filter(isLive)
+  const live = sessionsAtProject.filter(isLive)
   if (live.length === 1) return { kind: 'resolved', session: live[0] }
   if (live.length > 1) {
     return { kind: 'ambiguous', canonicalProject: input.canonicalProject, candidates: live }
   }
   // No live -- fall back to inactive, but only if unambiguous.
-  if (sessionsAtCwd.length === 1) return { kind: 'resolved', session: sessionsAtCwd[0] }
-  if (sessionsAtCwd.length > 1) {
-    return { kind: 'ambiguous', canonicalProject: input.canonicalProject, candidates: sessionsAtCwd }
+  if (sessionsAtProject.length === 1) return { kind: 'resolved', session: sessionsAtProject[0] }
+  if (sessionsAtProject.length > 1) {
+    return { kind: 'ambiguous', canonicalProject: input.canonicalProject, candidates: sessionsAtProject }
   }
   return { kind: 'not_found' }
 }

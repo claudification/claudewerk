@@ -156,7 +156,7 @@ const ThinkingSpinner = memo(function ThinkingSpinner({ sessionId }: { sessionId
   // Custom verbs: project settings override > session verbs (from CC settings) > defaults
   const customVerbs = useSessionsStore(state => {
     const session = sessionId ? state.sessionsById[sessionId] : undefined
-    const projectVerbs = session?.cwd ? state.projectSettings[session.cwd]?.verbs : undefined
+    const projectVerbs = session?.project ? state.projectSettings[session.project]?.verbs : undefined
     return projectVerbs?.length ? projectVerbs : session?.spinnerVerbs
   })
   const verbList = customVerbs?.length ? customVerbs : VERBS

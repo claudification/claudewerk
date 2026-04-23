@@ -33,7 +33,7 @@ const reviveResult: MessageHandler = (ctx, data) => {
   // Forward to dashboard so the launch monitor can show step-by-step progress.
   // Resolve CWD from the session store for scoped broadcast.
   const session = sessionId ? ctx.sessions.getSession(sessionId) : null
-  const cwd = session?.cwd || (data.cwd as string)
+  const cwd = session?.project || (data.project as string)
   if (cwd) {
     ctx.broadcastScoped(
       {

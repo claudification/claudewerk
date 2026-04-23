@@ -12,6 +12,7 @@
 import { useMemo, useState } from 'react'
 import { useSessionsStore } from '@/hooks/use-sessions'
 import { resolveToolDisplay } from '@/lib/dashboard-prefs'
+import { projectPath } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { escapeHtml } from './shared'
 
@@ -23,7 +24,8 @@ function useSessionCwd(): string | undefined {
   return useSessionsStore(s => {
     if (s.dashboardPrefs.sanitizePaths === false) return undefined
     const sid = s.selectedSessionId
-    return sid ? s.sessionsById[sid]?.cwd : undefined
+    const session = sid ? s.sessionsById[sid] : undefined
+    return session ? projectPath(session.project) : undefined
   })
 }
 

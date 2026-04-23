@@ -3,6 +3,7 @@
  * channel subscriptions, dashboard subscriptions, and session quit relay.
  */
 
+import { extractProjectLabel, isSameProject, parseProjectUri } from '../../shared/project-uri'
 import type { SubscriptionChannel } from '../../shared/protocol'
 import { slugify } from '../address-book'
 import { getUser } from '../auth'
@@ -30,12 +31,12 @@ const subscribe: MessageHandler = (ctx, data) => {
   if (grants) {
     const user = ctx.ws.data.userName ? getUser(ctx.ws.data.userName) : undefined
     const serverRoles = user?.serverRoles
-    // Global permissions (cwd='*')
+    // Global permissions (project='*')
     const global = resolvePermissionFlags(grants, '*', serverRoles)
-    // Per-session permissions (resolved against each session's CWD)
+    // Per-session permissions (resolved against each session's project)
     const sessions: Record<string, ReturnType<typeof resolvePermissionFlags>> = {}
     for (const s of ctx.sessions.getActiveSessions()) {
-      sessions[s.id] = resolvePermissionFlags(grants, s.cwd, serverRoles)
+      sessions[s.id] = resolvePermissionFlags(grants, s.project, serverRoles)
     }
     ctx.reply({ type: 'permissions', global, sessions })
   }
@@ -110,7 +111,7 @@ const channelSubscribe: MessageHandler = (ctx, data) => {
   const agentId = data.agentId as string | undefined
   if (!channel || !sessionId) return
   const sess = ctx.sessions.getSession(sessionId)
-  if (sess) ctx.requirePermission('chat:read', sess.cwd)
+  if (sess) ctx.requirePermission('chat:read', sess.project)
   ctx.sessions.subscribeChannel(ctx.ws, channel, sessionId, agentId)
   ctx.reply({ type: 'channel_ack', channel, sessionId, agentId, status: 'subscribed' })
   ctx.log.debug(`[channel] ${channel}:${sessionId.slice(0, 8)}${agentId ? `:${agentId.slice(0, 8)}` : ''} +sub`)
@@ -137,7 +138,7 @@ const channelListSessions: MessageHandler = (ctx, data) => {
   const status = (data.status as string) || 'live'
   const showMetadata = !!data.show_metadata
   const callerSession = ctx.ws.data.sessionId
-  const callerCwd = ctx.caller?.cwd
+  const callerProject = ctx.caller?.project
   const isBenevolent = ctx.callerSettings?.trustLevel === 'benevolent'
   const all = Array.from(ctx.sessions.getAllSessions())
 
@@ -158,42 +159,44 @@ const channelListSessions: MessageHandler = (ctx, data) => {
       return linkStatus === 'linked'
     })
 
-  // Group sessions by CWD to detect multi-session projects
-  const cwdGroups = new Map<string, typeof filtered>()
+  // Group sessions by project to detect multi-session projects
+  const projectGroups = new Map<string, typeof filtered>()
   for (const s of filtered) {
-    const group = cwdGroups.get(s.cwd) || []
+    const group = projectGroups.get(s.project) || []
     group.push(s)
-    cwdGroups.set(s.cwd, group)
+    projectGroups.set(s.project, group)
   }
 
   const result = filtered.map(s => {
     const linkStatus = callerSession ? ctx.sessions.checkProjectLink(callerSession, s.id) : 'unknown'
     const isLinked = linkStatus === 'linked'
     const showFull = isBenevolent || isLinked
-    const shortCwd = s.cwd.split('/').slice(-2).join('/')
-    const projSettings = ctx.getProjectSettings(s.cwd)
-    const sessionName = s.title || projSettings?.label || s.cwd.split('/').pop() || s.cwd
+    const shortProject = extractProjectLabel(s.project)
+    const projSettings = ctx.getProjectSettings(s.project)
+    const sessionName = s.title || projSettings?.label || extractProjectLabel(s.project)
     const isLive = ctx.sessions.getActiveWrapperCount(s.id) > 0
-    const queueSize = ctx.messageQueue.getQueueSize(s.cwd)
+    const queueSize = ctx.messageQueue.getQueueSize(s.project)
 
     // Assign a stable project-level slug via the caller's address book.
     // Slug is derived from the PROJECT (label or dirname), never the session title --
-    // multiple sessions can share a CWD; the project identity must not depend on
+    // multiple sessions can share a project; the project identity must not depend on
     // whichever session happened to register first.
-    const projectName = projSettings?.label || s.cwd.split('/').pop() || s.cwd
-    const projectSlug = callerCwd ? ctx.addressBook.getOrAssign(callerCwd, s.cwd, projectName) : slugify(projectName)
+    const projectName = projSettings?.label || extractProjectLabel(s.project)
+    const projectSlug = callerProject
+      ? ctx.addressBook.getOrAssign(callerProject, s.project, projectName)
+      : slugify(projectName)
 
     // ALWAYS compound `project:session-slug` -- bare ids would silently flip
-    // shape when a second session spawns at the same cwd. See channel-id.ts.
-    const cwdGroup = cwdGroups.get(s.cwd) || [s]
-    const localId = computeLocalId(s, projectSlug, cwdGroup)
+    // shape when a second session spawns at the same project. See channel-id.ts.
+    const projGroup = projectGroups.get(s.project) || [s]
+    const localId = computeLocalId(s, projectSlug, projGroup)
 
     return {
       id: localId, // stable local address (use for send_message, etc.)
       project: projectSlug, // project-level grouping ID
       session_id: s.id,
       name: sessionName,
-      cwd: showFull ? s.cwd : shortCwd,
+      cwd: showFull ? parseProjectUri(s.project).path : shortProject,
       status: (isLive ? 'live' : 'inactive') as 'live' | 'inactive',
       capabilities: s.capabilities,
       ...(projSettings?.label && projSettings.label !== sessionName ? { label: projSettings.label } : {}),
@@ -219,17 +222,19 @@ const channelListSessions: MessageHandler = (ctx, data) => {
   if (callerSession) {
     const s = ctx.sessions.getSession(callerSession)
     if (s) {
-      const projSettings = ctx.getProjectSettings(s.cwd)
-      const projectName = projSettings?.label || s.cwd.split('/').pop() || s.cwd
-      const projectSlug = callerCwd ? ctx.addressBook.getOrAssign(callerCwd, s.cwd, projectName) : slugify(projectName)
-      const allAtCwd = all.filter(x => x.cwd === s.cwd)
-      const localId = computeLocalId(s, projectSlug, allAtCwd)
+      const projSettings = ctx.getProjectSettings(s.project)
+      const projectName = projSettings?.label || extractProjectLabel(s.project)
+      const projectSlug = callerProject
+        ? ctx.addressBook.getOrAssign(callerProject, s.project, projectName)
+        : slugify(projectName)
+      const allAtProject = all.filter(x => isSameProject(x.project, s.project))
+      const localId = computeLocalId(s, projectSlug, allAtProject)
       self = {
         id: localId,
         project: projectSlug,
         session_id: s.id,
-        name: s.title || projSettings?.label || s.cwd.split('/').pop() || s.cwd,
-        cwd: s.cwd,
+        name: s.title || projSettings?.label || extractProjectLabel(s.project),
+        cwd: parseProjectUri(s.project).path,
         model: s.configuredModel || s.model,
         permissionMode: s.permissionMode,
         effortLevel: s.effortLevel,
@@ -248,25 +253,27 @@ const channelListSessions: MessageHandler = (ctx, data) => {
  *
  * Must match the ID shape produced by `list_sessions` so a recipient can
  * pass `from_session` straight back as `to` without a round-trip through
- * list_sessions. When the sender's CWD hosts multiple sessions, the ID
+ * list_sessions. When the sender's project hosts multiple sessions, the ID
  * is compounded `project:session-slug` -- bare project slugs would be
  * ambiguous and rejected by the send resolver.
  */
 function computeSenderRoutableId(
   ctx: Parameters<MessageHandler>[0],
-  fromSess: { id: string; cwd: string; title?: string } | undefined,
-  toCwd: string | undefined,
-  fromProject: string,
+  fromSess: { id: string; project: string; title?: string } | undefined,
+  toProject: string | undefined,
+  fromProjectName: string,
 ): { routable: string; project: string } {
-  if (!fromSess?.cwd || !toCwd) {
-    const fallback = fromSess?.id || slugify(fromProject)
+  if (!fromSess?.project || !toProject) {
+    const fallback = fromSess?.id || slugify(fromProjectName)
     return { routable: fallback, project: fallback }
   }
-  const projectSlug = ctx.addressBook.getOrAssign(toCwd, fromSess.cwd, fromProject)
-  const sessionsAtCwd = Array.from(ctx.sessions.getAllSessions()).filter(s => s.cwd === fromSess.cwd)
+  const projectSlug = ctx.addressBook.getOrAssign(toProject, fromSess.project, fromProjectName)
+  const sessionsAtProject = Array.from(ctx.sessions.getAllSessions()).filter(s =>
+    isSameProject(s.project, fromSess.project),
+  )
   // Always compound -- list_sessions must be able to round-trip the from-id.
-  const cwdGroup = sessionsAtCwd.length > 0 ? sessionsAtCwd : [fromSess]
-  return { routable: computeLocalId(fromSess, projectSlug, cwdGroup), project: projectSlug }
+  const projGroup = sessionsAtProject.length > 0 ? sessionsAtProject : [fromSess]
+  return { routable: computeLocalId(fromSess, projectSlug, projGroup), project: projectSlug }
 }
 
 const channelSend: MessageHandler = (ctx, data) => {
@@ -275,7 +282,7 @@ const channelSend: MessageHandler = (ctx, data) => {
   if (!fromSession || !toTarget) return
 
   const fromSess = ctx.sessions.getSession(fromSession)
-  const callerCwd = fromSess?.cwd
+  const callerProject = fromSess?.project
 
   // Parse compound target: "project:session-name" or bare "project"
   const colonIdx = toTarget.indexOf(':')
@@ -283,29 +290,31 @@ const channelSend: MessageHandler = (ctx, data) => {
   const sessionSlug = colonIdx >= 0 ? toTarget.slice(colonIdx + 1) : undefined
 
   // Resolve target: address book first, auto-populate on miss, then raw ID fallback
-  let targetCwd = callerCwd ? ctx.addressBook.resolve(callerCwd, projectSlug) : undefined
+  let targetProject = callerProject ? ctx.addressBook.resolve(callerProject, projectSlug) : undefined
 
   // Address book miss -- populate from all known sessions (same as list_sessions),
   // then retry. This makes send_message work on first call without a prior list_sessions.
-  if (!targetCwd && callerCwd) {
+  if (!targetProject && callerProject) {
     for (const s of ctx.sessions.getAllSessions()) {
       if (s.id === fromSession) continue
-      const projSettings = ctx.getProjectSettings(s.cwd)
-      const projectName = projSettings?.label || s.cwd.split('/').pop() || s.cwd
-      ctx.addressBook.getOrAssign(callerCwd, s.cwd, projectName)
+      const projSettings = ctx.getProjectSettings(s.project)
+      const projectName = projSettings?.label || extractProjectLabel(s.project)
+      ctx.addressBook.getOrAssign(callerProject, s.project, projectName)
     }
-    targetCwd = ctx.addressBook.resolve(callerCwd, projectSlug)
+    targetProject = ctx.addressBook.resolve(callerProject, projectSlug)
   }
 
   let toSess: ReturnType<typeof ctx.sessions.getSession> | undefined
-  if (targetCwd) {
-    const sessionsAtCwd = Array.from(ctx.sessions.getAllSessions()).filter(s => s.cwd === targetCwd)
-    const projSettings = ctx.getProjectSettings(targetCwd)
-    const canonicalProject = slugify(projSettings?.label || targetCwd.split('/').pop() || projectSlug)
+  if (targetProject) {
+    const sessionsAtProject = Array.from(ctx.sessions.getAllSessions()).filter(s =>
+      isSameProject(s.project, targetProject),
+    )
+    const projSettings = ctx.getProjectSettings(targetProject)
+    const canonicalProject = slugify(projSettings?.label || extractProjectLabel(targetProject))
     const resolved = resolveSendTarget({
       projectSlug,
       sessionSlug,
-      sessionsAtCwd,
+      sessionsAtProject,
       canonicalProject,
       isLive: s => ctx.sessions.getActiveWrapperCount(s.id) > 0,
     })
@@ -326,18 +335,19 @@ const channelSend: MessageHandler = (ctx, data) => {
 
   const toSession = toSess?.id
 
-  // If we resolved a CWD but no active session, queue for offline delivery
-  if (targetCwd && !toSess) {
-    const fromProject =
-      ctx.getProjectSettings(callerCwd || '')?.label || callerCwd?.split('/').pop() || fromSession.slice(0, 8)
+  // If we resolved a project but no active session, queue for offline delivery
+  if (targetProject && !toSess) {
+    const fromProjectName =
+      ctx.getProjectSettings(callerProject || '')?.label ||
+      (callerProject ? extractProjectLabel(callerProject) : fromSession.slice(0, 8))
     // Resolve sender ID from receiver's address book perspective (works even when target is offline).
     // `routable` is a list_sessions-compatible ID the recipient can pass straight back as `to`;
     // `project` is the bare project slug for grouping/context.
     const { routable: fromSlug, project: fromProjectSlug } = computeSenderRoutableId(
       ctx,
-      fromSess && { id: fromSess.id, cwd: fromSess.cwd, title: fromSess.title },
-      targetCwd,
-      fromProject,
+      fromSess && { id: fromSess.id, project: fromSess.project, title: fromSess.title },
+      targetProject,
+      fromProjectName,
     )
     const conversationId = (data.conversationId as string) || `conv_${Date.now().toString(36)}`
     const delivery = {
@@ -349,15 +359,15 @@ const channelSend: MessageHandler = (ctx, data) => {
       context: data.context,
       conversationId,
     }
-    ctx.messageQueue.enqueue(targetCwd, callerCwd || '', fromProject, delivery, sessionSlug)
+    ctx.messageQueue.enqueue(targetProject, callerProject || '', fromProjectName, delivery, sessionSlug)
 
     // Brief wait: if target reconnects within 1s, the queue drains automatically
     // and we can report 'delivered' instead of 'queued'
     async function checkDelivered() {
       for (let i = 0; i < 4; i++) {
         await new Promise(r => setTimeout(r, 250))
-        // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by enclosing if (targetCwd) block
-        if (ctx.messageQueue.getQueueSize(targetCwd!) === 0) {
+        // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by enclosing if (targetProject) block
+        if (ctx.messageQueue.getQueueSize(targetProject!) === 0) {
           ctx.reply({ type: 'channel_send_result', ok: true, conversationId, status: 'delivered' })
           ctx.log.debug(`[inter-session] ${fromSession.slice(0, 8)} -> ${toTarget} (queued then delivered)`)
           return
@@ -381,8 +391,9 @@ const channelSend: MessageHandler = (ctx, data) => {
     return
   }
 
-  const fromProject =
-    ctx.getProjectSettings(fromSess?.cwd || '')?.label || fromSess?.cwd?.split('/').pop() || fromSession.slice(0, 8)
+  const fromProjectName =
+    ctx.getProjectSettings(fromSess?.project || '')?.label ||
+    (fromSess?.project ? extractProjectLabel(fromSess.project) : fromSession.slice(0, 8))
 
   const linkStatus = ctx.sessions.checkProjectLink(fromSession, toSession)
   if (linkStatus === 'blocked') {
@@ -397,9 +408,9 @@ const channelSend: MessageHandler = (ctx, data) => {
   // so the recipient can pass `from_session` straight back as `to`.
   const { routable: fromSlug, project: fromProjectSlug } = computeSenderRoutableId(
     ctx,
-    fromSess && { id: fromSess.id, cwd: fromSess.cwd, title: fromSess.title },
-    toSess.cwd,
-    fromProject,
+    fromSess && { id: fromSess.id, project: fromSess.project, title: fromSess.title },
+    toSess.project,
+    fromProjectName,
   )
 
   const delivery = {
@@ -412,18 +423,21 @@ const channelSend: MessageHandler = (ctx, data) => {
     conversationId,
   }
 
-  const targetTrust = toSess.cwd ? ctx.getProjectSettings(toSess.cwd)?.trustLevel : undefined
-  const fromTrust = fromSess?.cwd ? ctx.getProjectSettings(fromSess.cwd)?.trustLevel : undefined
-  // Sister sessions = same CWD, different session IDs (worktrees, parallel headless runs, a PTY
+  const targetTrust = toSess.project ? ctx.getProjectSettings(toSess.project)?.trustLevel : undefined
+  const fromTrust = fromSess?.project ? ctx.getProjectSettings(fromSess.project)?.trustLevel : undefined
+  // Sister sessions = same project, different session IDs (worktrees, parallel headless runs, a PTY
   // and its spawned helper). Cross-project stays on the link-approval path so unexpected A<->B
   // chatter is surfaced to the user instead of being silently auto-linked.
-  const isSisterSession = !!fromSess?.cwd && !!toSess.cwd && fromSess.cwd === toSess.cwd
+  const isSisterSession = !!fromSess?.project && !!toSess.project && isSameProject(fromSess.project, toSess.project)
   const isTrusted = isSisterSession || targetTrust === 'open' || fromTrust === 'benevolent'
 
   const effectiveLinkStatus =
     linkStatus === 'unknown' && isTrusted
       ? 'trusted'
-      : linkStatus === 'unknown' && fromSess?.cwd && toSess.cwd && ctx.links.find(fromSess.cwd, toSess.cwd)
+      : linkStatus === 'unknown' &&
+          fromSess?.project &&
+          toSess.project &&
+          ctx.links.find(fromSess.project, toSess.project)
         ? 'persisted'
         : linkStatus
 
@@ -446,14 +460,18 @@ const channelSend: MessageHandler = (ctx, data) => {
         targetSessionId: toSession,
       })
 
-      const toProject =
-        ctx.getProjectSettings(toSess.cwd)?.label || toSess.cwd.split('/').pop() || toSession.slice(0, 8)
-      if (fromSess?.cwd && toSess.cwd) {
-        ctx.links.touch(fromSess.cwd, toSess.cwd)
+      const toProjectName = ctx.getProjectSettings(toSess.project)?.label || extractProjectLabel(toSess.project)
+      if (fromSess?.project && toSess.project) {
+        ctx.links.touch(fromSess.project, toSess.project)
         ctx.logMessage({
           ts: Date.now(),
-          from: { sessionId: fromSession, wrapperId: ctx.ws.data.wrapperId, cwd: fromSess.cwd, name: fromProject },
-          to: { sessionId: toSession, cwd: toSess.cwd, name: toProject },
+          from: {
+            sessionId: fromSession,
+            wrapperId: ctx.ws.data.wrapperId,
+            cwd: fromSess.project,
+            name: fromProjectName,
+          },
+          to: { sessionId: toSession, cwd: toSess.project, name: toProjectName },
           intent: (data.intent as string) || 'notify',
           conversationId,
           preview: ((data.message as string) || '').slice(0, 200),
@@ -469,13 +487,13 @@ const channelSend: MessageHandler = (ctx, data) => {
     }
   } else {
     ctx.sessions.queueProjectMessage(fromSession, toSession, delivery)
-    const toProject = ctx.getProjectSettings(toSess.cwd)?.label || toSess.cwd.split('/').pop() || toSession.slice(0, 8)
+    const toProjectName = ctx.getProjectSettings(toSess.project)?.label || extractProjectLabel(toSess.project)
     ctx.broadcast({
       type: 'channel_link_request',
       fromSession,
-      fromProject,
+      fromProject: fromProjectName,
       toSession,
-      toProject,
+      toProject: toProjectName,
     })
     ctx.reply({ type: 'channel_send_result', ok: true, conversationId, status: 'queued', targetSessionId: toSession })
   }
@@ -489,7 +507,7 @@ const channelSend: MessageHandler = (ctx, data) => {
 const quitSession: MessageHandler = (ctx, data) => {
   const sessionId = data.sessionId as string
   const session = sessionId ? ctx.sessions.getSession(sessionId) : undefined
-  if (session) ctx.requirePermission('chat', session.cwd)
+  if (session) ctx.requirePermission('chat', session.project)
   const targetWs = sessionId ? ctx.sessions.getSessionSocket(sessionId) : null
   if (targetWs) {
     targetWs.send(JSON.stringify({ type: 'terminate_session', sessionId }))
@@ -503,7 +521,7 @@ const sessionViewed: MessageHandler = (ctx, data) => {
   const sessionId = data.sessionId as string
   if (!sessionId) return
   const session = ctx.sessions.getSession(sessionId)
-  if (session) ctx.requirePermission('chat:read', session.cwd)
+  if (session) ctx.requirePermission('chat:read', session.project)
   if (session?.hasNotification) {
     session.hasNotification = false
     ctx.sessions.broadcastSessionUpdate(sessionId)
@@ -524,14 +542,14 @@ const channelLinkResponse: MessageHandler = (ctx, data) => {
     ctx.reply({ type: 'error', error: 'Both sessions must exist to approve/block a link' })
     return
   }
-  ctx.requirePermission('settings', fromSess.cwd)
-  ctx.requirePermission('settings', toSess.cwd)
+  ctx.requirePermission('settings', fromSess.project)
+  ctx.requirePermission('settings', toSess.project)
 
   if (data.action === 'approve') {
     ctx.sessions.linkProjects(fromSession, toSession)
     const fromSess = ctx.sessions.getSession(fromSession)
     const toSess = ctx.sessions.getSession(toSession)
-    if (fromSess?.cwd && toSess?.cwd) ctx.links.add(fromSess.cwd, toSess.cwd)
+    if (fromSess?.project && toSess?.project) ctx.links.add(fromSess.project, toSess.project)
     const queued = ctx.sessions.drainProjectMessages(fromSession, toSession)
     const targetWs = ctx.sessions.getSessionSocket(toSession)
     if (targetWs) {
@@ -542,24 +560,24 @@ const channelLinkResponse: MessageHandler = (ctx, data) => {
     ctx.sessions.blockProject(fromSession, toSession)
     const fromSess = ctx.sessions.getSession(fromSession)
     const toSess = ctx.sessions.getSession(toSession)
-    if (fromSess?.cwd && toSess?.cwd) ctx.links.remove(fromSess.cwd, toSess.cwd)
+    if (fromSess?.project && toSess?.project) ctx.links.remove(fromSess.project, toSess.project)
     ctx.sessions.drainProjectMessages(fromSession, toSession) // discard
     ctx.log.debug(`Link blocked: ${fromSession.slice(0, 8)} X ${toSession.slice(0, 8)}`)
   }
 }
 
 const channelUnlink: MessageHandler = (ctx, data) => {
-  // CWD-based path (preferred -- projects are the linked entity)
-  const cwdA = data.cwdA as string | undefined
-  const cwdB = data.cwdB as string | undefined
-  if (cwdA && cwdB) {
-    ctx.requirePermission('settings', cwdA)
-    ctx.requirePermission('settings', cwdB)
-    ctx.sessions.unlinkProjectsByCwd(cwdA, cwdB)
-    ctx.links.remove(cwdA, cwdB)
-    ctx.sessions.broadcastForProjectCwd(cwdA)
-    ctx.sessions.broadcastForProjectCwd(cwdB)
-    ctx.log.debug(`Link severed (CWD): ${cwdA.split('/').pop()} X ${cwdB.split('/').pop()}`)
+  // Project-based path (preferred -- projects are the linked entity)
+  const projectA = data.cwdA as string | undefined
+  const projectB = data.cwdB as string | undefined
+  if (projectA && projectB) {
+    ctx.requirePermission('settings', projectA)
+    ctx.requirePermission('settings', projectB)
+    ctx.sessions.unlinkProjectsByCwd(projectA, projectB)
+    ctx.links.remove(projectA, projectB)
+    ctx.sessions.broadcastForProjectCwd(projectA)
+    ctx.sessions.broadcastForProjectCwd(projectB)
+    ctx.log.debug(`Link severed: ${extractProjectLabel(projectA)} X ${extractProjectLabel(projectB)}`)
     return
   }
   // Legacy session-ID path
@@ -572,10 +590,10 @@ const channelUnlink: MessageHandler = (ctx, data) => {
     ctx.reply({ type: 'error', error: 'Both sessions must exist to sever a link' })
     return
   }
-  ctx.requirePermission('settings', sessA.cwd)
-  ctx.requirePermission('settings', sessB.cwd)
+  ctx.requirePermission('settings', sessA.project)
+  ctx.requirePermission('settings', sessB.project)
   ctx.sessions.unlinkProjects(sessionA, sessionB)
-  if (sessA.cwd && sessB.cwd) ctx.links.remove(sessA.cwd, sessB.cwd)
+  if (sessA.project && sessB.project) ctx.links.remove(sessA.project, sessB.project)
   ctx.sessions.broadcastSessionUpdate(sessionA)
   ctx.sessions.broadcastSessionUpdate(sessionB)
   ctx.log.debug(`Link severed: ${sessionA.slice(0, 8)} X ${sessionB.slice(0, 8)}`)

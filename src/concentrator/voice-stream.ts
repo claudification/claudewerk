@@ -45,7 +45,7 @@ export function handleVoiceStart(
 
   // Build keyterms from project settings
   const keyterms: string[] = []
-  const cwd = data.cwd || (data.sessionId ? sessionStore.getSession(data.sessionId)?.cwd : null)
+  const cwd = data.cwd || (data.sessionId ? sessionStore.getSession(data.sessionId)?.project : null)
   if (cwd) {
     const projSettings = getProjectSettings(cwd)
     if (projSettings?.keyterms?.length) {

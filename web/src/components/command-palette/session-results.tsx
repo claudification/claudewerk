@@ -1,4 +1,4 @@
-import { canTerminal, type Session } from '@/lib/types'
+import { canTerminal, projectPath, type Session } from '@/lib/types'
 import { cn, formatAge, formatModel, projectDisplayName } from '@/lib/utils'
 import { renderProjectIcon } from '../project-settings-editor'
 import type { SessionResultsProps } from './types'
@@ -58,15 +58,21 @@ export function SessionRow({
       </span>
       <div className="flex-1 min-w-0">
         <div className="text-xs text-[#a9b1d6] truncate flex items-center gap-1.5">
-          {projectSettings[session.cwd]?.icon && (
+          {projectSettings[session.project]?.icon && (
             <span
-              style={projectSettings[session.cwd]?.color ? { color: projectSettings[session.cwd].color } : undefined}
+              style={
+                projectSettings[session.project]?.color ? { color: projectSettings[session.project].color } : undefined
+              }
             >
-              {renderProjectIcon(projectSettings[session.cwd]?.icon || '', 'w-3 h-3 inline')}
+              {renderProjectIcon(projectSettings[session.project]?.icon || '', 'w-3 h-3 inline')}
             </span>
           )}
-          <span style={projectSettings[session.cwd]?.color ? { color: projectSettings[session.cwd].color } : undefined}>
-            {projectDisplayName(session.cwd, projectSettings[session.cwd]?.label)}
+          <span
+            style={
+              projectSettings[session.project]?.color ? { color: projectSettings[session.project].color } : undefined
+            }
+          >
+            {projectDisplayName(projectPath(session.project), projectSettings[session.project]?.label)}
           </span>
           {(session.title || session.agentName) && (
             <>

@@ -57,8 +57,7 @@ export interface SessionMeta {
   type: 'meta'
   sessionId: string
   wrapperId: string // unique per rclaude instance (multiple wrappers can share a sessionId via --resume)
-  cwd: string
-  project?: string
+  project: string
   startedAt: number
   model?: string
   configuredModel?: string // the --model value passed to CC (CC strips [1m] from API responses)
@@ -94,8 +93,7 @@ export interface SessionClear {
   oldSessionId: string
   newSessionId: string
   wrapperId: string
-  cwd: string
-  project?: string
+  project: string
   model?: string
 }
 
@@ -360,8 +358,7 @@ export interface WrapperNotify {
 export interface WrapperBoot {
   type: 'wrapper_boot'
   wrapperId: string
-  cwd: string
-  project?: string
+  project: string
   capabilities: WrapperCapability[]
   claudeArgs: string[]
   claudeVersion?: string
@@ -610,12 +607,10 @@ export interface TranscriptKick {
   sessionId: string
 }
 
-// Persistent inter-session link (CWD-pair based, survives restarts)
+// Persistent inter-session link (project-pair based, survives restarts)
 export interface LinkSummary {
-  cwdA: string
-  cwdB: string
-  projectA?: string
-  projectB?: string
+  projectA: string
+  projectB: string
   nameA: string
   nameB: string
   createdAt: number
@@ -670,7 +665,7 @@ export interface InterSessionListResponse {
   sessions: Array<{
     id: string
     name: string
-    cwd: string
+    project: string
     status: 'live' | 'inactive'
     title?: string
     summary?: string
@@ -680,7 +675,6 @@ export interface InterSessionListResponse {
     project: string
     session_id: string
     name: string
-    cwd: string
     model?: string
     permissionMode?: string
     effortLevel?: string
@@ -1136,7 +1130,6 @@ export interface ArchivedTaskGroup {
 
 export interface Session {
   id: string
-  cwd: string // project root (where rclaude launched -- session identity)
   project: string // project URI identity (e.g. "claude:///Users/jonas/projects/foo")
   currentCwd?: string // where Claude is currently working (CwdChanged hook)
   model?: string
@@ -1317,7 +1310,7 @@ export interface ReviveResult {
   type: 'revive_result'
   sessionId: string
   wrapperId?: string // echoes the pre-assigned wrapperId
-  cwd?: string // echoed back for scoped broadcast when session is evicted
+  project?: string // echoed back for scoped broadcast when session is evicted
   jobId?: string // launch job correlation ID
   success: boolean
   error?: string
@@ -1389,7 +1382,7 @@ export type AgentMessage =
 export interface ReviveSession {
   type: 'revive'
   sessionId: string
-  cwd: string
+  project: string
   wrapperId: string // pre-assigned wrapperId so concentrator can correlate the incoming connection
   jobId?: string // launch job correlation ID for progress events
   adHocWorktree?: string // restore worktree context on revive (RCLAUDE_WORKTREE env)
@@ -1400,6 +1393,7 @@ export interface SpawnSession {
   type: 'spawn'
   requestId: string
   cwd: string
+  project?: string
   wrapperId: string
   jobId?: string // launch job correlation ID for progress events
   // Ad-hoc task runner fields
@@ -1419,13 +1413,13 @@ export interface ListDirs {
 export interface RclaudeConfigGet {
   type: 'rclaude_config_get'
   requestId: string
-  cwd: string
+  project: string
 }
 
 export interface RclaudeConfigSet {
   type: 'rclaude_config_set'
   requestId: string
-  cwd: string
+  project: string
   config: RclaudePermissionConfig
 }
 
@@ -1444,7 +1438,7 @@ export interface RclaudeConfigData {
   requestId: string
   config: RclaudePermissionConfig | null
   path: string
-  cwd: string
+  project: string
 }
 
 export interface RclaudeConfigOk {
@@ -1475,7 +1469,6 @@ export interface AgentStatus {
 // Session summary: concentrator -> dashboard wire format
 export interface SessionSummary {
   id: string
-  cwd: string
   project: string
   model?: string
   capabilities?: WrapperCapability[]
@@ -1537,7 +1530,7 @@ export interface SessionSummary {
   title?: string
   agentName?: string
   prLinks?: Session['prLinks']
-  linkedProjects?: Array<{ cwd: string; name: string }>
+  linkedProjects?: Array<{ project: string; name: string }>
   tokenUsage?: { input: number; cacheCreation: number; cacheRead: number; output: number }
   contextWindow?: number // effective window (200K or 1M) matching Claude Code's current selection
   cacheTtl?: '5m' | '1h'

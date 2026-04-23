@@ -6,6 +6,7 @@
  * Handler replies { type: 'action_name_result', ok: true/false, ... }
  */
 
+import { extractProjectLabel, parseProjectUri } from '../../shared/project-uri'
 import type { SendInput } from '../../shared/protocol'
 import { generateSessionName } from '../../shared/session-names'
 import { getGlobalSettings, updateGlobalSettings } from '../global-settings'
@@ -32,7 +33,7 @@ const sendInput: MessageHandler = (ctx, data) => {
   const session = ctx.sessions.getSession(sessionId)
   if (!session) throw new GuardError('Session not found')
   if (session.status === 'ended') throw new GuardError('Session has ended')
-  ctx.requirePermission('chat', session.cwd)
+  ctx.requirePermission('chat', session.project)
 
   // Try by session ID first, then by wrapper IDs (handles ID changes from SessionStart)
   let ws = ctx.sessions.getSessionSocket(sessionId)
@@ -90,11 +91,11 @@ const dismissSession: MessageHandler = (ctx, data) => {
   const session = ctx.sessions.getSession(sessionId)
   if (!session) throw new GuardError('Session not found')
   if (session.status !== 'ended') throw new GuardError('Only ended sessions can be dismissed')
-  ctx.requirePermission('settings', session.cwd)
+  ctx.requirePermission('settings', session.project)
 
-  const cwd = session.cwd
+  const project = session.project
   ctx.sessions.removeSession(sessionId)
-  ctx.broadcastScoped({ type: 'session_dismissed', sessionId }, cwd)
+  ctx.broadcastScoped({ type: 'session_dismissed', sessionId }, project)
   ctx.reply({ type: 'dismiss_session_result', ok: true })
 }
 
@@ -191,7 +192,7 @@ const sendInterrupt: MessageHandler = (ctx, data) => {
   const session = ctx.sessions.getSession(sessionId)
   if (!session) throw new GuardError('Session not found')
   if (session.status === 'ended') throw new GuardError('Session has ended')
-  ctx.requirePermission('chat', session.cwd)
+  ctx.requirePermission('chat', session.project)
 
   let ws = ctx.sessions.getSessionSocket(sessionId)
   if (!ws) {
@@ -220,14 +221,14 @@ const reviveSession: MessageHandler = (ctx, data) => {
   const session = ctx.sessions.getSession(sessionId)
   if (!session) throw new GuardError('Session not found')
   if (session.status === 'active') throw new GuardError('Session is already active')
-  ctx.requirePermission('spawn', session.cwd)
+  ctx.requirePermission('spawn', session.project)
 
   const agent = ctx.getAgent()
   if (!agent) throw new GuardError('No host agent connected')
 
   const wrapperId = crypto.randomUUID()
   const jobId = data.jobId as string | undefined
-  const projSettings = getProjectSettings(session.cwd)
+  const projSettings = getProjectSettings(session.project)
   const lc = session.launchConfig // stored launch config from original spawn
 
   // Generate a funny session name for revived sessions that don't have one
@@ -238,7 +239,7 @@ const reviveSession: MessageHandler = (ctx, data) => {
       .filter(Boolean) as string[],
   )
   const sessionName = session.title || generateSessionName(usedNames)
-  const name = sessionName || projSettings?.label || session.cwd.split('/').pop() || sessionId.slice(0, 8)
+  const name = sessionName || projSettings?.label || extractProjectLabel(session.project) || sessionId.slice(0, 8)
 
   // Resolve headless: explicit override > launch config > project default > global setting
   const headlessParam = data.headless as boolean | undefined
@@ -262,7 +263,7 @@ const reviveSession: MessageHandler = (ctx, data) => {
     JSON.stringify({
       type: 'revive',
       sessionId,
-      cwd: session.cwd,
+      cwd: parseProjectUri(session.project).path,
       wrapperId,
       jobId,
       mode: 'resume',
@@ -319,7 +320,7 @@ const renameSession: MessageHandler = (ctx, data) => {
 
   const session = ctx.sessions.getSession(sessionId)
   if (!session) throw new GuardError('Session not found')
-  ctx.requirePermission('chat', session.cwd)
+  ctx.requirePermission('chat', session.project)
 
   if (name) {
     session.title = name

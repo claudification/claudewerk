@@ -8,7 +8,7 @@ import { memo, type ReactNode } from 'react'
 import { Markdown } from '@/components/markdown'
 import { useSessionsStore } from '@/hooks/use-sessions'
 import { resolveToolDisplay, type ToolDisplayKey } from '@/lib/dashboard-prefs'
-import type { TranscriptContentBlock } from '@/lib/types'
+import { projectPath, type TranscriptContentBlock } from '@/lib/types'
 import { cn, truncate } from '@/lib/utils'
 import { JsonInspector } from '../json-inspector'
 import { FileListResults, GlobSummary, GrepContentResults, GrepCountResults, GrepSummary } from './grep-results'
@@ -177,7 +177,8 @@ export function ToolLine({
   const sessionCwd = useSessionsStore(s => {
     if (s.dashboardPrefs.sanitizePaths === false) return undefined
     const sid = s.selectedSessionId
-    return sid ? s.sessionsById[sid]?.cwd : undefined
+    const session = sid ? s.sessionsById[sid] : undefined
+    return session ? projectPath(session.project) : undefined
   })
 
   let summary: React.ReactNode = ''

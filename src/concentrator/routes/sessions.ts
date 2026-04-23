@@ -4,6 +4,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { Hono } from 'hono'
+import { extractProjectLabel, parseProjectUri } from '../../shared/project-uri'
 import type { SendInput } from '../../shared/protocol'
 import { resolveSpawnConfig } from '../../shared/spawn-defaults'
 import type { SpawnRequest } from '../../shared/spawn-schema'
@@ -31,7 +32,7 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
   app.get('/sessions/:id', c => {
     const session = sessionStore.getSession(c.req.param('id'))
     if (!session) return c.json({ error: 'Session not found' }, 404)
-    if (!httpHasPermission(c.req.raw, 'chat:read', session.cwd)) return c.json({ error: 'Forbidden' }, 403)
+    if (!httpHasPermission(c.req.raw, 'chat:read', session.project)) return c.json({ error: 'Forbidden' }, 403)
     return c.json(sessionToOverview(session, sessionStore))
   })
 
@@ -39,7 +40,7 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
     const sessionId = c.req.param('id')
     const session = sessionStore.getSession(sessionId)
     if (!session) return c.json({ error: 'Session not found' }, 404)
-    if (!httpHasPermission(c.req.raw, 'chat:read', session.cwd)) return c.json({ error: 'Forbidden' }, 403)
+    if (!httpHasPermission(c.req.raw, 'chat:read', session.project)) return c.json({ error: 'Forbidden' }, 403)
     const limit = parseInt(c.req.query('limit') || '0', 10)
     const since = parseInt(c.req.query('since') || '0', 10)
     const events = sessionStore.getSessionEvents(sessionId, limit || undefined, since || undefined)
@@ -49,7 +50,7 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
   app.get('/sessions/:id/subagents', c => {
     const session = sessionStore.getSession(c.req.param('id'))
     if (!session) return c.json({ error: 'Session not found' }, 404)
-    if (!httpHasPermission(c.req.raw, 'chat:read', session.cwd)) return c.json({ error: 'Forbidden' }, 403)
+    if (!httpHasPermission(c.req.raw, 'chat:read', session.project)) return c.json({ error: 'Forbidden' }, 403)
     return c.json(session.subagents)
   })
 
@@ -73,7 +74,7 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
     const sessionId = c.req.param('id')
     const session = sessionStore.getSession(sessionId)
     if (!session) return c.json({ error: 'Session not found' }, 404)
-    if (!httpHasPermission(c.req.raw, 'chat:read', session.cwd)) return c.json({ error: 'Forbidden' }, 403)
+    if (!httpHasPermission(c.req.raw, 'chat:read', session.project)) return c.json({ error: 'Forbidden' }, 403)
     const limit = parseInt(c.req.query('limit') || '20', 10)
     const filter = c.req.query('filter')
     const sinceSeqRaw = c.req.query('sinceSeq')
@@ -129,7 +130,7 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
     const agentId = c.req.param('agentId')
     const session = sessionStore.getSession(sessionId)
     if (!session) return c.json({ error: 'Session not found' }, 404)
-    if (!httpHasPermission(c.req.raw, 'chat:read', session.cwd)) return c.json({ error: 'Forbidden' }, 403)
+    if (!httpHasPermission(c.req.raw, 'chat:read', session.project)) return c.json({ error: 'Forbidden' }, 403)
     const limit = parseInt(c.req.query('limit') || '100', 10)
     if (!sessionStore.hasSubagentTranscriptCache(sessionId, agentId)) {
       return c.json({ error: 'No subagent transcript in cache' }, 404)
@@ -145,7 +146,7 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
     if (!session) return c.json({ error: 'Session not found' }, 404)
     return c.json({
       id: sessionId,
-      cwd: session.cwd,
+      project: session.project,
       model: session.model,
       status: session.status,
       wrapperIds: sessionStore.getWrapperIds(sessionId),
@@ -172,7 +173,7 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
   app.get('/sessions/:id/tasks', c => {
     const session = sessionStore.getSession(c.req.param('id'))
     if (!session) return c.json({ error: 'Session not found' }, 404)
-    if (!httpHasPermission(c.req.raw, 'chat:read', session.cwd)) return c.json({ error: 'Forbidden' }, 403)
+    if (!httpHasPermission(c.req.raw, 'chat:read', session.project)) return c.json({ error: 'Forbidden' }, 403)
     return c.json({ tasks: session.tasks, archivedTasks: session.archivedTasks })
   })
 
@@ -180,7 +181,7 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
     const sessionId = c.req.param('id')
     const session = sessionStore.getSession(sessionId)
     if (!session) return c.json({ error: 'Session not found' }, 404)
-    if (!httpHasPermission(c.req.raw, 'chat', session.cwd)) return c.json({ error: 'Forbidden' }, 403)
+    if (!httpHasPermission(c.req.raw, 'chat', session.project)) return c.json({ error: 'Forbidden' }, 403)
     if (session.status === 'ended') return c.json({ error: 'Session has ended' }, 400)
 
     const ws = sessionStore.getSessionSocket(sessionId)
@@ -211,7 +212,7 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
     const callerSessionId = c.req.header('X-Caller-Session')
     if (callerSessionId) {
       const callerSess = sessionStore.getSession(callerSessionId)
-      const callerTrust = callerSess?.cwd ? getProjectSettings(callerSess.cwd)?.trustLevel : undefined
+      const callerTrust = callerSess?.project ? getProjectSettings(callerSess.project)?.trustLevel : undefined
       if (callerTrust !== 'benevolent') {
         return c.json({ error: 'Requires benevolent trust level' }, 403)
       }
@@ -223,13 +224,17 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
     const wrapperId = randomUUID()
     const lc = session.launchConfig // stored launch config from original spawn
     const name =
-      session.title || getProjectSettings(session.cwd)?.label || session.cwd.split('/').pop() || sessionId.slice(0, 8)
+      session.title ||
+      getProjectSettings(session.project)?.label ||
+      extractProjectLabel(session.project) ||
+      sessionId.slice(0, 8)
     // Resolve defaults: launch config > project > global > undefined
-    const projSettings = getProjectSettings(session.cwd)
+    const projSettings = getProjectSettings(session.project)
     const globalSettings = getGlobalSettings()
+    const sessionPath = parseProjectUri(session.project).path
     const resolved = resolveSpawnConfig(
       {
-        cwd: session.cwd,
+        cwd: sessionPath,
         headless: lc?.headless,
         model: lc?.model as SpawnRequest['model'] | undefined,
         effort: lc?.effort as SpawnRequest['effort'] | undefined,
@@ -248,7 +253,7 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
       JSON.stringify({
         type: 'revive',
         sessionId,
-        cwd: session.cwd,
+        cwd: sessionPath,
         wrapperId,
         mode: 'resume',
         headless,
@@ -268,7 +273,7 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
     // Register rendezvous for MCP callers
     if (callerSessionId) {
       sessionStore
-        .addRendezvous(wrapperId, callerSessionId, session.cwd, 'revive')
+        .addRendezvous(wrapperId, callerSessionId, session.project, 'revive')
         .then(revived => {
           const callerWs = sessionStore.getSessionSocket(callerSessionId)
           if (callerWs) {
@@ -276,7 +281,7 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
               JSON.stringify({
                 type: 'revive_ready',
                 sessionId: revived.id,
-                cwd: revived.cwd,
+                project: revived.project,
                 wrapperId,
                 session: revived,
               }),
@@ -291,7 +296,7 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
                 type: 'revive_timeout',
                 wrapperId,
                 sessionId,
-                cwd: session.cwd,
+                project: session.project,
                 error: typeof err === 'string' ? err : 'Revive rendezvous timed out',
               }),
             )

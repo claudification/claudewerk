@@ -2,6 +2,7 @@ import { ContextMenu } from 'radix-ui'
 import type { ReactNode } from 'react'
 import { saveProjectOrder, useSessionsStore } from '@/hooks/use-sessions'
 import type { ProjectOrder, ProjectOrderGroup, Session } from '@/lib/types'
+import { projectPath } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
 import { openReviveDialog } from '../revive-dialog'
 import { openSpawnDialog } from '../spawn-dialog'
@@ -11,26 +12,25 @@ import { openSpawnDialog } from '../spawn-dialog'
 const menuItemClass =
   'flex items-center px-3 py-1.5 text-[11px] font-mono cursor-pointer outline-none data-[highlighted]:bg-accent/20 data-[highlighted]:text-accent'
 
-// Grouping actions that operate on a cwd key (shared by session + project menus).
-function useCwdGroupingActions(cwd: string) {
+// Grouping actions that operate on a project key (shared by session + project menus).
+function useProjectGroupingActions(project: string) {
   const rawProjectOrder = useSessionsStore(s => s.projectOrder) as ProjectOrder | null
   const projectOrder = rawProjectOrder?.tree ? rawProjectOrder : { tree: [] }
   const groups = projectOrder.tree.filter((n): n is ProjectOrderGroup => n.type === 'group')
-  const cwdKey = `cwd:${cwd}`
 
   function moveToGroup(groupId: string) {
     haptic('tap')
     const newTree = projectOrder.tree.map(node => {
       if (node.type === 'group') {
-        const filtered = { ...node, children: node.children.filter(c => c.id !== cwdKey) }
+        const filtered = { ...node, children: node.children.filter(c => c.id !== project) }
         if (node.id === groupId) {
-          return { ...filtered, children: [...filtered.children, { id: cwdKey, type: 'project' as const }] }
+          return { ...filtered, children: [...filtered.children, { id: project, type: 'project' as const }] }
         }
         return filtered
       }
       return node
     })
-    const rootFiltered = newTree.filter(n => n.id !== cwdKey)
+    const rootFiltered = newTree.filter(n => n.id !== project)
     saveProjectOrder({ tree: rootFiltered })
   }
 
@@ -38,12 +38,12 @@ function useCwdGroupingActions(cwd: string) {
     haptic('tap')
     const newTree = projectOrder.tree.map(node => {
       if (node.type === 'group') {
-        return { ...node, children: node.children.filter(c => c.id !== cwdKey) }
+        return { ...node, children: node.children.filter(c => c.id !== project) }
       }
       return node
     })
-    if (!newTree.some(n => n.id === cwdKey)) {
-      newTree.push({ id: cwdKey, type: 'project' as const })
+    if (!newTree.some(n => n.id === project)) {
+      newTree.push({ id: project, type: 'project' as const })
     }
     saveProjectOrder({ tree: newTree })
   }
@@ -54,10 +54,10 @@ function useCwdGroupingActions(cwd: string) {
     haptic('tap')
     const groupId = `group-${name.trim().toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`
     let newTree = projectOrder.tree
-      .filter(n => n.id !== cwdKey)
+      .filter(n => n.id !== project)
       .map(node => {
         if (node.type === 'group') {
-          return { ...node, children: node.children.filter(c => c.id !== cwdKey) }
+          return { ...node, children: node.children.filter(c => c.id !== project) }
         }
         return node
       })
@@ -66,7 +66,7 @@ function useCwdGroupingActions(cwd: string) {
         id: groupId,
         type: 'group' as const,
         name: name.trim(),
-        children: [{ id: cwdKey, type: 'project' as const }],
+        children: [{ id: project, type: 'project' as const }],
       },
       ...newTree,
     ]
@@ -77,7 +77,7 @@ function useCwdGroupingActions(cwd: string) {
 }
 
 function GroupingMenuItems({ cwd }: { cwd: string }) {
-  const { groups, moveToGroup, removeFromGroups, createGroupAndMove } = useCwdGroupingActions(cwd)
+  const { groups, moveToGroup, removeFromGroups, createGroupAndMove } = useProjectGroupingActions(cwd)
   return (
     <>
       {groups.length > 0 && (
@@ -124,7 +124,7 @@ export function SessionContextMenu({
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content className="min-w-[180px] bg-popover border border-border rounded-md shadow-lg py-1 z-50">
-          <GroupingMenuItems cwd={session.cwd} />
+          <GroupingMenuItems cwd={session.project} />
           <ContextMenu.Item
             className={menuItemClass}
             onSelect={() => {
@@ -149,7 +149,7 @@ export function SessionContextMenu({
             className={cn(menuItemClass, 'text-cyan-400')}
             onSelect={() => {
               haptic('tap')
-              openSpawnDialog({ cwd: session.cwd })
+              openSpawnDialog({ cwd: projectPath(session.project) })
             }}
           >
             Launch new...
@@ -230,7 +230,7 @@ export function ProjectContextMenu({
             className={cn(menuItemClass, 'text-cyan-400')}
             onSelect={() => {
               haptic('tap')
-              openSpawnDialog({ cwd })
+              openSpawnDialog({ cwd: projectPath(cwd) })
             }}
           >
             Launch new...

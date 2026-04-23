@@ -33,6 +33,7 @@ import {
 import { type Extension, Prec } from '@codemirror/state'
 import { type EditorView, keymap, ViewPlugin, type ViewUpdate } from '@codemirror/view'
 import { useSessionsStore } from '@/hooks/use-sessions'
+import { projectPath } from '@/lib/types'
 import { lastPathSegments, projectDisplayName, sessionAddressableSlug } from '@/lib/utils'
 import { BUILTIN_COMMAND_NAMES, BUILTIN_SCORE_BOOST, fuzzyScore } from '../../autocomplete-shared'
 import { getSubCommand, type SubCommandContext, type SubCommandDef } from '../../sub-commands'
@@ -222,7 +223,7 @@ interface SessionCompletion {
   label: string // what gets inserted (the session id)
   displayLabel: string // what the user sees (project label or id)
   detail: string // right-aligned: session name + status
-  info: string // hover tooltip: full cwd
+  info: string // hover tooltip: filesystem path
 }
 
 function sessionCompletions(query: string): SessionCompletion[] {
@@ -231,25 +232,25 @@ function sessionCompletions(query: string): SessionCompletion[] {
   const q = query.toLowerCase()
   const scored: Array<{ opt: SessionCompletion; score: number }> = []
 
-  // Group sessions by cwd so the addressable-slug helper can disambiguate
+  // Group sessions by project so the addressable-slug helper can disambiguate
   // siblings with identical title slugs.
-  const cwdGroups: Record<string, typeof sessions> = {}
+  const projectGroups: Record<string, typeof sessions> = {}
   for (const s of sessions) {
     if (s.status === 'ended') continue
-    if (!cwdGroups[s.cwd]) cwdGroups[s.cwd] = []
-    cwdGroups[s.cwd].push(s)
+    if (!projectGroups[s.project]) projectGroups[s.project] = []
+    projectGroups[s.project].push(s)
   }
 
   for (const session of sessions) {
     if (session.status === 'ended') continue
-    // For un-labelled projects, fall back to the cwd tail (same convention
+    // For un-labelled projects, fall back to the project label (same convention
     // the sidebar + command-palette session rows use). session.id is a UUID,
     // so never display it as a name.
-    const displayLabel = projectDisplayName(session.cwd, projectSettings[session.cwd]?.label)
+    const displayLabel = projectDisplayName(session.project, projectSettings[session.project]?.label)
     const name = session.title || session.agentName || ''
-    // The insertable slug — always compound `project:session-slug` to mirror
-    // list_sessions and stay stable across spawn/end churn at the cwd.
-    const slug = sessionAddressableSlug(session, projectSettings, cwdGroups[session.cwd] || [session])
+    // The insertable slug -- always compound `project:session-slug` to mirror
+    // list_sessions and stay stable across spawn/end churn at the project.
+    const slug = sessionAddressableSlug(session, projectSettings, projectGroups[session.project] || [session])
     // Match against display name, the slug, and agent/title so "ola",
     // "OLA", "raccoon", and "arr:viral" all find the expected session.
     const haystack = `${displayLabel} ${slug} ${name}`
@@ -260,7 +261,7 @@ function sessionCompletions(query: string): SessionCompletion[] {
         label: slug,
         displayLabel,
         detail: name ? `${name} · ${session.status}` : session.status,
-        info: lastPathSegments(session.cwd, 3),
+        info: lastPathSegments(projectPath(session.project), 3),
       },
       score,
     })

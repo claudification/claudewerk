@@ -10,6 +10,7 @@ checkBunVersion()
 
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { extractProjectLabel } from '../shared/project-uri'
 import { DEFAULT_CONCENTRATOR_PORT } from '../shared/protocol'
 import { getOrAssign, initAddressBook, resolve } from './address-book'
 import { closeAnalyticsStore, initAnalyticsStore } from './analytics-store'
@@ -411,7 +412,7 @@ async function main() {
     sessionStore,
     onSessionStart(sessionId, meta) {
       if (verbose) {
-        console.log(`[+] Session started: ${sessionId.slice(0, 8)}... (${meta.cwd})`)
+        console.log(`[+] Session started: ${sessionId.slice(0, 8)}... (${meta.project})`)
       }
     },
     onSessionEnd(sessionId, reason) {
@@ -429,7 +430,7 @@ async function main() {
       // Auto-send push notification on Notification hook events
       if (event.hookEvent === 'Notification' && isPushConfigured()) {
         const session = sessionStore.getSession(sessionId)
-        const cwd = session?.cwd?.split('/').slice(-2).join('/') || sessionId.slice(0, 8)
+        const cwd = session?.project ? extractProjectLabel(session.project) : sessionId.slice(0, 8)
         const d = event.data as Record<string, unknown>
         const message = (d?.message as string) || 'Awaiting input...'
         const notifType = (d?.notification_type as string) || 'Notification'
@@ -444,7 +445,7 @@ async function main() {
       // Auto-send push on session Stop (Claude finished working)
       if (event.hookEvent === 'Stop' && isPushConfigured()) {
         const session = sessionStore.getSession(sessionId)
-        const cwd = session?.cwd?.split('/').slice(-2).join('/') || sessionId.slice(0, 8)
+        const cwd = session?.project ? extractProjectLabel(session.project) : sessionId.slice(0, 8)
         const d = event.data as Record<string, unknown>
         const reason = (d?.stop_hook_reason as string) || 'completed'
         sendPushToAll({
@@ -670,13 +671,13 @@ async function main() {
                 if (agent) {
                   const wrapperId = crypto.randomUUID()
                   console.log(
-                    `[restart] Reviving after disconnect: ${pendingRestart.cwd.split('/').pop()} wrapperId=${wrapperId.slice(0, 8)}`,
+                    `[restart] Reviving after disconnect: ${extractProjectLabel(pendingRestart.project)} wrapperId=${wrapperId.slice(0, 8)}`,
                   )
                   agent.send(
                     JSON.stringify({
                       type: 'revive',
                       sessionId: session.id,
-                      cwd: pendingRestart.cwd,
+                      project: pendingRestart.project,
                       wrapperId,
                       mode: 'resume',
                     }),
@@ -685,14 +686,14 @@ async function main() {
                   // Register rendezvous for caller (if not self-restart)
                   if (!pendingRestart.isSelfRestart) {
                     sessionStore
-                      .addRendezvous(wrapperId, pendingRestart.callerSessionId, pendingRestart.cwd, 'restart')
+                      .addRendezvous(wrapperId, pendingRestart.callerSessionId, pendingRestart.project, 'restart')
                       .then(revived => {
                         const callerWs = sessionStore.getSessionSocket(pendingRestart.callerSessionId)
                         callerWs?.send(
                           JSON.stringify({
                             type: 'restart_ready',
                             sessionId: revived.id,
-                            cwd: revived.cwd,
+                            project: revived.project,
                             wrapperId,
                             session: revived,
                           }),
@@ -704,7 +705,7 @@ async function main() {
                           JSON.stringify({
                             type: 'restart_timeout',
                             wrapperId,
-                            cwd: pendingRestart.cwd,
+                            project: pendingRestart.project,
                             error: typeof err === 'string' ? err : 'Restart rendezvous timed out',
                           }),
                         )
