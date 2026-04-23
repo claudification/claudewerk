@@ -888,96 +888,79 @@ export function ToolLine({
       const mode = input.mode as string | undefined
       const shortCwd = shortPath(inputCwd) || inputCwd
       const modeLabel = mode === 'resume' ? 'resume' : 'fresh'
-      // Parse result for session metadata
-      let spawnedSession: Record<string, unknown> | undefined
-      if (result) {
-        try {
-          let parsed = JSON.parse(result)
-          if (Array.isArray(parsed) && parsed[0]?.type === 'text') parsed = JSON.parse(parsed[0].text)
-          if (parsed.session) spawnedSession = parsed.session as Record<string, unknown>
-        } catch {}
-      }
+      const spawnName = input.name as string | undefined
+      const spawnModel = input.model as string | undefined
+      const spawnWorktree = input.worktree as string | undefined
+      const spawnHeadless = input.headless as boolean | undefined
+      const spawnPermMode = input.permissionMode as string | undefined
+      const spawnPrompt = input.prompt as string | undefined
+      const spawnEffort = input.effort as string | undefined
+      const spawnAdHoc = input.adHoc as boolean | undefined
+
+      const resultText = result ? extractMcpResultText(result) || result : undefined
+
       summary = (
-        <span className="flex items-center gap-1.5">
+        <span className="flex items-center gap-1.5 flex-wrap">
           <span className="text-green-400">spawn</span>
-          <span className="text-foreground font-bold">{shortCwd}</span>
+          {spawnName ? (
+            <>
+              <span className="text-foreground font-bold">{spawnName}</span>
+              <span className="text-muted-foreground">{shortCwd}</span>
+            </>
+          ) : (
+            <span className="text-foreground font-bold">{shortCwd}</span>
+          )}
           <span className="text-muted-foreground text-[10px]">[{modeLabel}]</span>
+          {spawnModel && (
+            <span className="px-1 py-0.5 bg-violet-500/20 text-violet-400 border border-violet-500/30 rounded text-[9px] font-bold">
+              {spawnModel}
+            </span>
+          )}
+          {spawnWorktree && (
+            <span className="px-1 py-0.5 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded text-[9px]">
+              {spawnWorktree}
+            </span>
+          )}
+          {spawnHeadless && <span className="text-muted-foreground text-[10px]">headless</span>}
         </span>
       )
+
       if (isError) {
         details = <pre className="text-[10px] text-red-400 bg-red-400/10 p-2 rounded whitespace-pre-wrap">{result}</pre>
-      } else if (spawnedSession) {
-        const sid = (spawnedSession.id as string) || ''
-        const ver = spawnedSession.claudeVersion as string
-        const model = spawnedSession.model as string
-        const rcVer = spawnedSession.version as string
-        const caps = spawnedSession.capabilities as string[] | undefined
-        const auth = spawnedSession.claudeAuth as { email?: string; subscriptionType?: string } | undefined
-        const status = spawnedSession.status as string
-        const capColors: Record<string, string> = {
-          terminal: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
-          channel: 'bg-violet-500/20 text-violet-400 border-violet-500/30',
-        }
-        const subColors: Record<string, string> = {
-          max: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
-          pro: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-          team: 'bg-teal-500/20 text-teal-400 border-teal-500/30',
-        }
+      } else {
+        const badges: Array<{ label: string; value: string; cls: string }> = []
+        if (spawnPermMode)
+          badges.push({
+            label: 'perms',
+            value: spawnPermMode,
+            cls:
+              spawnPermMode === 'bypassPermissions'
+                ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                : 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
+          })
+        if (spawnEffort)
+          badges.push({
+            label: 'effort',
+            value: spawnEffort,
+            cls: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+          })
+        if (spawnAdHoc)
+          badges.push({ label: '', value: 'ad-hoc', cls: 'bg-orange-500/20 text-orange-400 border-orange-500/30' })
+
         details = (
           <div className="text-[10px] font-mono bg-green-400/5 border border-green-500/20 rounded p-2.5 space-y-2">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-green-400 font-bold">{sid.slice(0, 12)}</span>
-              {status && (
-                <span className="px-1.5 py-0.5 bg-green-500/20 text-green-400 border border-green-500/30 rounded text-[9px] font-bold uppercase">
-                  {status}
-                </span>
-              )}
-              {auth?.subscriptionType && (
-                <span
-                  className={cn(
-                    'px-1.5 py-0.5 border rounded text-[9px] font-bold uppercase',
-                    subColors[auth.subscriptionType] || 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
-                  )}
-                >
-                  {auth.subscriptionType}
-                </span>
-              )}
-              {caps?.map(c => (
-                <span
-                  key={c}
-                  className={cn(
-                    'px-1.5 py-0.5 border rounded text-[9px] font-bold',
-                    capColors[c] || 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
-                  )}
-                >
-                  {c}
-                </span>
-              ))}
-            </div>
-            <div className="flex items-center gap-3 text-muted-foreground flex-wrap">
-              {model && (
-                <span>
-                  <span className="text-muted-foreground/50">model</span>{' '}
-                  <span className="text-foreground/70">{model}</span>
-                </span>
-              )}
-              {ver && (
-                <span>
-                  <span className="text-muted-foreground/50">cc</span> <span className="text-foreground/70">{ver}</span>
-                </span>
-              )}
-              {rcVer && (
-                <span>
-                  <span className="text-muted-foreground/50">rclaude</span>{' '}
-                  <span className="text-foreground/70">{rcVer}</span>
-                </span>
-              )}
-            </div>
-            {auth?.email && (
-              <div className="text-muted-foreground/60">
-                <span className="text-foreground/50">{auth.email}</span>
+            {badges.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {badges.map(b => (
+                  <span key={b.value} className={cn('px-1.5 py-0.5 border rounded text-[9px] font-bold', b.cls)}>
+                    {b.label ? `${b.label}: ` : ''}
+                    {b.value}
+                  </span>
+                ))}
               </div>
             )}
+            {spawnPrompt && <TruncatedPre text={spawnPrompt} />}
+            {resultText && <div className="text-green-400/80 pt-1 border-t border-green-500/10">{resultText}</div>}
           </div>
         )
       }
