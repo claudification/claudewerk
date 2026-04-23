@@ -17,6 +17,7 @@
  *                                        rejected as ambiguous when 2+.
  */
 
+import { extractProjectLabel, isSameProject } from '../../shared/project-uri'
 import { slugify } from '../address-book'
 
 export interface SessionLike {
@@ -117,4 +118,77 @@ export function formatAmbiguityError(canonicalProject: string, candidates: Sessi
   const siblingSessions = candidates
   const ids = candidates.map(s => `${canonicalProject}:${computeSessionSlug(s, siblingSessions)}`).join(', ')
   return `Ambiguous target: ${candidates.length} sessions at "${canonicalProject}". Use compound address: ${ids}`
+}
+
+// ─── Shared target resolution ──────────────────────────────────────
+
+export type ResolveSessionResult =
+  | { kind: 'resolved'; session: SessionLike }
+  | { kind: 'not_found'; error: string }
+  | { kind: 'ambiguous'; error: string }
+
+export interface ResolveSessionDeps {
+  callerSessionId: string | undefined
+  getAllSessions: () => SessionLike[]
+  getSession: (id: string) => SessionLike | undefined
+  getSessionByConversation: (id: string) => SessionLike | undefined
+  getActiveConversationCount: (id: string) => number
+  getProjectSettings: (project: string) => { label?: string } | null
+  addressBook: {
+    resolve: (fromProject: string, slug: string) => string | undefined
+    getOrAssign: (fromProject: string, toProject: string, name: string) => string
+  }
+  callerProject: string | undefined
+}
+
+/**
+ * Resolve a target ID (compound "project:session-slug", bare project slug,
+ * or raw internal session/conversation ID) to a session.
+ *
+ * Used by session_control, channel_restart, channel_configure, and
+ * channel_send to consistently handle the compound ID format returned
+ * by list_sessions.
+ */
+export function resolveSessionTarget(targetId: string, deps: ResolveSessionDeps): ResolveSessionResult {
+  const colonIdx = targetId.indexOf(':')
+  const hasCompound = colonIdx >= 0
+  const projectSlug = hasCompound ? targetId.slice(0, colonIdx) : targetId
+  const sessionSlug = hasCompound ? targetId.slice(colonIdx + 1) : undefined
+
+  let targetProject = deps.callerProject ? deps.addressBook.resolve(deps.callerProject, projectSlug) : undefined
+
+  if (!targetProject && deps.callerProject) {
+    for (const s of deps.getAllSessions()) {
+      if (s.id === deps.callerSessionId) continue
+      const projSettings = deps.getProjectSettings(s.project)
+      const projectName = projSettings?.label || extractProjectLabel(s.project)
+      deps.addressBook.getOrAssign(deps.callerProject, s.project, projectName)
+    }
+    targetProject = deps.addressBook.resolve(deps.callerProject, projectSlug)
+  }
+
+  if (targetProject) {
+    const sessionsAtProject = deps.getAllSessions().filter(s => isSameProject(s.project, targetProject))
+    const projSettings = deps.getProjectSettings(targetProject)
+    const canonicalProject = slugify(projSettings?.label || extractProjectLabel(targetProject))
+    const resolved = resolveSendTarget({
+      projectSlug,
+      sessionSlug,
+      sessionsAtProject,
+      canonicalProject,
+      isLive: s => deps.getActiveConversationCount(s.id) > 0,
+    })
+    if (resolved.kind === 'ambiguous') {
+      return { kind: 'ambiguous', error: formatAmbiguityError(resolved.canonicalProject, resolved.candidates) }
+    }
+    if (resolved.kind === 'resolved') {
+      return { kind: 'resolved', session: resolved.session }
+    }
+    return { kind: 'not_found', error: `Session not found at project "${canonicalProject}"` }
+  }
+
+  // Fallback: try raw internal ID / conversation ID
+  const fallback = deps.getSessionByConversation(targetId) || deps.getSession(targetId)
+  if (fallback) return { kind: 'resolved', session: fallback }
+  return { kind: 'not_found', error: 'Target not connected. Use list_sessions to find current sessions.' }
 }

@@ -5,6 +5,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { resolveModelFamily } from '../../shared/models'
 import type { TranscriptLaunchEntry, WrapperLaunchStep } from '../../shared/protocol'
 import { filterDisplayEntries } from '../../shared/transcript-filter'
 import { recordTurnFromCumulatives } from '../cost-store'
@@ -240,7 +241,9 @@ const sessionInfo: MessageHandler = (ctx, data) => {
     session.configuredModel = initModel
 
     const requestedModel = session.launchConfig?.model
-    if (requestedModel && requestedModel !== initModel) {
+    const requestedFamily = requestedModel ? resolveModelFamily(requestedModel)?.familyId : undefined
+    const actualFamily = resolveModelFamily(initModel)?.familyId
+    if (requestedModel && requestedModel !== initModel && requestedFamily !== actualFamily) {
       session.modelMismatch = { requested: requestedModel, actual: initModel, detectedAt: Date.now() }
       ctx.log.info(`Model mismatch: requested=${requestedModel} actual=${initModel} session=${sessionId.slice(0, 8)}`)
       const warningEntry: import('../../shared/protocol').TranscriptSystemEntry = {

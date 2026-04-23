@@ -4,7 +4,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { extractProjectLabel, parseProjectUri } from '../../shared/project-uri'
+import { extractProjectLabel } from '../../shared/project-uri'
 import type { SessionControlAction } from '../../shared/protocol'
 import { resolveSpawnConfig } from '../../shared/spawn-defaults'
 import { mapProjectTrust, type SpawnCallerContext } from '../../shared/spawn-permissions'
@@ -14,6 +14,7 @@ import type { MessageHandler } from '../handler-context'
 import { registerHandlers } from '../message-router'
 import { getProjectSettings, setProjectSettings } from '../project-settings'
 import { dispatchSpawn } from '../spawn-dispatch'
+import { resolveSessionTarget } from './channel-id'
 
 /** Resolve effective effort level from project + global settings */
 function resolveEffort(
@@ -166,12 +167,30 @@ const handleChannelRestart: MessageHandler = (ctx, data) => {
 
   ctx.requireBenevolent()
 
-  // Resolve target session and socket
-  const target = ctx.sessions.getSessionByConversation(targetId) || ctx.sessions.getSession(targetId)
-  const targetWs = ctx.sessions.getSessionSocketByConversation(targetId) || ctx.sessions.getSessionSocket(targetId)
+  const callerSess = ctx.sessions.getSession(callerSession)
+  const resolved = resolveSessionTarget(targetId, {
+    callerSessionId: callerSession,
+    getAllSessions: () => Array.from(ctx.sessions.getAllSessions()),
+    getSession: id => ctx.sessions.getSession(id),
+    getSessionByConversation: id => ctx.sessions.getSessionByConversation(id),
+    getActiveConversationCount: id => ctx.sessions.getActiveConversationCount(id),
+    getProjectSettings: p => ctx.getProjectSettings(p),
+    addressBook: ctx.addressBook,
+    callerProject: callerSess?.project,
+  })
+  const target = resolved.kind === 'resolved' ? ctx.sessions.getSession(resolved.session.id) : undefined
+  const targetWs =
+    resolved.kind === 'resolved'
+      ? ctx.sessions.getSessionSocketByConversation(resolved.session.id) ||
+        ctx.sessions.getSessionSocket(resolved.session.id)
+      : undefined
 
   if (!target) {
-    ctx.reply({ type: 'channel_restart_result', ok: false, error: 'Session not found' })
+    ctx.reply({
+      type: 'channel_restart_result',
+      ok: false,
+      error: resolved.kind !== 'resolved' ? resolved.error : 'Session not found',
+    })
     return
   }
 
@@ -257,13 +276,24 @@ const handleChannelConfigure: MessageHandler = (ctx, data) => {
 
   ctx.requireBenevolent()
 
-  // Resolve target: wrapper ID first, then session ID
-  const target = ctx.sessions.getSessionByConversation(targetId) || ctx.sessions.getSession(targetId)
+  const callerSession = ctx.ws.data.sessionId
+  const callerSess = callerSession ? ctx.sessions.getSession(callerSession) : undefined
+  const resolved = resolveSessionTarget(targetId, {
+    callerSessionId: callerSession,
+    getAllSessions: () => Array.from(ctx.sessions.getAllSessions()),
+    getSession: id => ctx.sessions.getSession(id),
+    getSessionByConversation: id => ctx.sessions.getSessionByConversation(id),
+    getActiveConversationCount: id => ctx.sessions.getActiveConversationCount(id),
+    getProjectSettings: p => ctx.getProjectSettings(p),
+    addressBook: ctx.addressBook,
+    callerProject: callerSess?.project,
+  })
+  const target = resolved.kind === 'resolved' ? ctx.sessions.getSession(resolved.session.id) : undefined
   if (!target) {
     ctx.reply({
       type: 'channel_configure_result',
       ok: false,
-      error: 'Session not found. Use list_sessions to discover current sessions.',
+      error: resolved.kind !== 'resolved' ? resolved.error : 'Session not found.',
     })
     return
   }
@@ -325,9 +355,27 @@ const handleSessionControl: MessageHandler = (ctx, data) => {
     return
   }
 
-  // Resolve target: wrapper ID first, then session ID
-  const targetSess = ctx.sessions.getSessionByConversation(targetId) || ctx.sessions.getSession(targetId)
-  const targetWs = ctx.sessions.getSessionSocketByConversation(targetId) || ctx.sessions.getSessionSocket(targetId)
+  // Resolve target: compound ID (project:session-slug), bare slug, or raw internal ID
+  const callerSession = ctx.ws.data.sessionId
+  const callerSess = callerSession ? ctx.sessions.getSession(callerSession) : undefined
+  const resolved = resolveSessionTarget(targetId, {
+    callerSessionId: callerSession,
+    getAllSessions: () => Array.from(ctx.sessions.getAllSessions()),
+    getSession: id => ctx.sessions.getSession(id),
+    getSessionByConversation: id => ctx.sessions.getSessionByConversation(id),
+    getActiveConversationCount: id => ctx.sessions.getActiveConversationCount(id),
+    getProjectSettings: p => ctx.getProjectSettings(p),
+    addressBook: ctx.addressBook,
+    callerProject: callerSess?.project,
+  })
+  if (resolved.kind !== 'resolved') {
+    ctx.reply({ type: 'session_control_result', ok: false, action, error: resolved.error })
+    return
+  }
+  const targetSess = ctx.sessions.getSession(resolved.session.id)
+  const targetWs =
+    ctx.sessions.getSessionSocketByConversation(resolved.session.id) ||
+    ctx.sessions.getSessionSocket(resolved.session.id)
   if (!targetSess || !targetWs) {
     ctx.reply({
       type: 'session_control_result',

@@ -971,6 +971,61 @@ export function ToolLine({
       }
       break
     }
+    case 'mcp__rclaude__control_session': {
+      const ctrlAction = input.action as string
+      const ctrlTarget = input.session_id as string
+      const ctrlModel = input.model as string | undefined
+      const ctrlEffort = input.effort as string | undefined
+      const ctrlPermMode = input.permissionMode as string | undefined
+      const resultText = result ? extractMcpResultText(result) || result : undefined
+
+      const actionColors: Record<string, string> = {
+        quit: 'text-red-400',
+        clear: 'text-amber-400',
+        interrupt: 'text-orange-400',
+        set_model: 'text-violet-400',
+        set_effort: 'text-cyan-400',
+        set_permission_mode: 'text-blue-400',
+      }
+      const actionLabel =
+        ctrlAction === 'set_model'
+          ? `model -> ${ctrlModel}`
+          : ctrlAction === 'set_effort'
+            ? `effort -> ${ctrlEffort}`
+            : ctrlAction === 'set_permission_mode'
+              ? `perms -> ${ctrlPermMode}`
+              : ctrlAction
+      summary = (
+        <span className="flex items-center gap-1.5">
+          <span className={actionColors[ctrlAction] || 'text-foreground'}>{actionLabel}</span>
+          <span className="text-muted-foreground">{ctrlTarget}</span>
+        </span>
+      )
+      if (isError) {
+        details = <pre className="text-[10px] text-red-400 bg-red-400/10 p-2 rounded whitespace-pre-wrap">{result}</pre>
+      } else if (resultText) {
+        details = (
+          <div className="text-[10px] font-mono text-muted-foreground bg-muted/30 rounded px-3 py-1.5">
+            {resultText}
+          </div>
+        )
+      }
+      break
+    }
+    case 'mcp__rclaude__configure_session': {
+      const cfgTarget = input.session_id as string
+      const cfgFields = ['label', 'icon', 'color', 'description', 'keyterms']
+        .filter(k => input[k] !== undefined)
+        .join(', ')
+      summary = (
+        <span className="flex items-center gap-1.5">
+          <span className="text-blue-400">configure</span>
+          <span className="text-muted-foreground">{cfgTarget}</span>
+          <span className="text-muted-foreground/50 text-[10px]">[{cfgFields || 'no fields'}]</span>
+        </span>
+      )
+      break
+    }
     case 'mcp__rclaude__dialog': {
       const title = (input.title as string) || 'Dialog'
       const pageCount = Array.isArray(input.pages) ? (input.pages as unknown[]).length : 0
