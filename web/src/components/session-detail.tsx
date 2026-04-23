@@ -374,14 +374,14 @@ export const SessionDetail = memo(function SessionDetail() {
               {!follow && transcript.length > 0 && <ScrollToBottomButton onClick={enableFollow} direction="down" />}
             </TranscriptDropZone>
           )}
-          {activeTab === 'tty' && hasTerminal && !showTerminal && session.wrapperIds?.[0] && (
+          {activeTab === 'tty' && hasTerminal && !showTerminal && session.conversationIds?.[0] && (
             <div className="flex-1 min-h-0 overflow-hidden">
-              <InlineTerminal wrapperId={session.wrapperIds[0]} />
+              <InlineTerminal conversationId={session.conversationIds[0]} />
             </div>
           )}
-          {activeTab === 'json_stream' && hasJsonStream && session.wrapperIds?.[0] && (
+          {activeTab === 'json_stream' && hasJsonStream && session.conversationIds?.[0] && (
             <div className="flex-1 min-h-0 overflow-hidden">
-              <JsonStreamPanel wrapperId={session.wrapperIds[0]} />
+              <JsonStreamPanel conversationId={session.conversationIds[0]} />
             </div>
           )}
           {!conversationTarget && activeTab === 'events' && (
@@ -442,7 +442,7 @@ export const SessionDetail = memo(function SessionDetail() {
         !selectedSubagentId &&
         selectedSessionId && <InputBar sessionId={selectedSessionId} />}
 
-      {/* Terminal overlay - routed by wrapperId (physical PTY) */}
+      {/* Terminal overlay - routed by conversationId (physical PTY) */}
       {showTerminal && terminalWrapperId && (
         <Suspense
           fallback={
@@ -452,7 +452,7 @@ export const SessionDetail = memo(function SessionDetail() {
           }
         >
           <WebTerminal
-            wrapperId={terminalWrapperId}
+            conversationId={terminalWrapperId}
             onClose={() => {
               setShowTerminal(false)
               const store = useSessionsStore.getState()

@@ -23,7 +23,7 @@ interface UseLaunchProgressOptions {
   /** Job ID for launch channel subscription */
   jobId: string | null
   /** Wrapper ID for session detection in store */
-  wrapperId: string | null
+  conversationId: string | null
   /** Timeout in ms (default 30000) */
   timeoutMs?: number
   /** Auto-redirect countdown seconds after connection (default 3, null to disable) */
@@ -38,7 +38,7 @@ interface UseLaunchProgressOptions {
 
 export function useLaunchProgress({
   jobId,
-  wrapperId: externalWrapperId,
+  conversationId: externalWrapperId,
   timeoutMs = 30_000,
   autoRedirectSec = 3,
   autoInsertEvents = true,
@@ -56,7 +56,7 @@ export function useLaunchProgress({
   onTimeoutRef.current = onTimeout
 
   const launch = useLaunchChannel(jobId)
-  const effectiveWrapperId = launch.wrapperId || externalWrapperId
+  const effectiveWrapperId = launch.conversationId || externalWrapperId
 
   /** Initialize monitoring. Call when launching begins. */
   function start(initialSteps?: LaunchStep[]) {
@@ -82,12 +82,12 @@ export function useLaunchProgress({
     connectedRef.current = false
   }
 
-  // Track spawned session by wrapperId
+  // Track spawned session by conversationId
   const spawnedSession: Session | null = useSessionsStore(
     useCallback(
       state => {
         if (!effectiveWrapperId) return null
-        return state.sessions.find(s => s.wrapperIds?.includes(effectiveWrapperId)) || null
+        return state.sessions.find(s => s.conversationIds?.includes(effectiveWrapperId)) || null
       },
       [effectiveWrapperId],
     ),

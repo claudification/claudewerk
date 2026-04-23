@@ -21,24 +21,24 @@ import type { MessageHandler } from '../handler-context'
 import { registerHandlers } from '../message-router'
 
 const wrapperBoot: MessageHandler = (ctx, data) => {
-  const wrapperId = data.wrapperId as string
+  const conversationId = (data.conversationId || data.wrapperId) as string
   const project = data.project as string | undefined
   const bootPath = data.cwd as string | undefined
-  if (!wrapperId || (!project && !bootPath)) {
-    ctx.log.debug(`[boot] wrapper_boot missing wrapperId or project/cwd, ignoring`)
+  if (!conversationId || (!project && !bootPath)) {
+    ctx.log.debug(`[boot] wrapper_boot missing conversationId or project/cwd, ignoring`)
     return
   }
 
   const resolvedProject = project ?? cwdToProjectUri(bootPath!)
 
   // Track the WS so subsequent messages from this wrapper are routed here.
-  ctx.ws.data.sessionId = wrapperId
-  ctx.ws.data.wrapperId = wrapperId
+  ctx.ws.data.sessionId = conversationId
+  ctx.ws.data.conversationId = conversationId
 
-  // Merge any pending launch config stored at spawn time (keyed by wrapperId).
-  const pendingLaunchConfig = ctx.sessions.consumePendingLaunchConfig(wrapperId)
+  // Merge any pending launch config stored at spawn time (keyed by conversationId).
+  const pendingLaunchConfig = ctx.sessions.consumePendingLaunchConfig(conversationId)
 
-  const existing = ctx.sessions.getSession(wrapperId)
+  const existing = ctx.sessions.getSession(conversationId)
   const capabilities = (data.capabilities as WrapperCapability[] | undefined) || []
   const claudeArgs = (data.claudeArgs as string[] | undefined) || []
 
@@ -54,9 +54,9 @@ const wrapperBoot: MessageHandler = (ctx, data) => {
     }
     if (bootConfiguredModel) existing.configuredModel = bootConfiguredModel
   } else {
-    // Create a placeholder session keyed by wrapperId -- the real sessionId
+    // Create a placeholder session keyed by conversationId -- the real sessionId
     // replaces this once session_promote arrives.
-    const placeholder = ctx.sessions.createSession(wrapperId, resolvedProject, undefined, claudeArgs, capabilities)
+    const placeholder = ctx.sessions.createSession(conversationId, resolvedProject, undefined, claudeArgs, capabilities)
     placeholder.status = 'booting'
     if (pendingLaunchConfig) {
       placeholder.launchConfig = pendingLaunchConfig
@@ -70,19 +70,19 @@ const wrapperBoot: MessageHandler = (ctx, data) => {
 
   // Register the WS as this session's socket so messages (including boot
   // events) can be tagged with it.
-  ctx.sessions.setSessionSocket(wrapperId, wrapperId, ctx.ws)
-  ctx.sessions.broadcastSessionUpdate(wrapperId)
-  ctx.log.debug(`[boot] wrapper_boot: ${wrapperId.slice(0, 8)} project=${resolvedProject}`)
+  ctx.sessions.setSessionSocket(conversationId, conversationId, ctx.ws)
+  ctx.sessions.broadcastSessionUpdate(conversationId)
+  ctx.log.debug(`[boot] wrapper_boot: ${conversationId.slice(0, 8)} project=${resolvedProject}`)
 }
 
 const bootEvent: MessageHandler = (ctx, data) => {
-  const wrapperId = data.wrapperId as string
+  const conversationId = (data.conversationId || data.wrapperId) as string
   const step = data.step as BootStep
-  if (!wrapperId || !step) return
+  if (!conversationId || !step) return
 
-  const session = ctx.sessions.getSession(wrapperId) || ctx.sessions.getSessionByWrapper(wrapperId)
+  const session = ctx.sessions.getSession(conversationId) || ctx.sessions.getSessionByConversation(conversationId)
   if (!session) {
-    ctx.log.debug(`[boot] boot_event for unknown wrapper: ${wrapperId.slice(0, 8)} step=${step}`)
+    ctx.log.debug(`[boot] boot_event for unknown wrapper: ${conversationId.slice(0, 8)} step=${step}`)
     return
   }
 
@@ -105,20 +105,20 @@ const bootEvent: MessageHandler = (ctx, data) => {
 }
 
 const launchEvent: MessageHandler = (ctx, data) => {
-  const wrapperId = data.wrapperId as string
+  const conversationId = (data.conversationId || data.wrapperId) as string
   const step = data.step as WrapperLaunchStep
   const launchId = data.launchId as string
   const phase = data.phase as WrapperLaunchPhase
-  if (!wrapperId || !step || !launchId || !phase) return
+  if (!conversationId || !step || !launchId || !phase) return
 
-  // Route via wrapperId (stable across rekeys) or the session id on the event.
+  // Route via conversationId (stable across rekeys) or the session id on the event.
   const sessionIdFromEvent = data.sessionId as string | null
   const session =
     (sessionIdFromEvent ? ctx.sessions.getSession(sessionIdFromEvent) : undefined) ||
-    ctx.sessions.getSession(wrapperId) ||
-    ctx.sessions.getSessionByWrapper(wrapperId)
+    ctx.sessions.getSession(conversationId) ||
+    ctx.sessions.getSessionByConversation(conversationId)
   if (!session) {
-    ctx.log.debug(`[launch] event for unknown wrapper: ${wrapperId.slice(0, 8)} step=${step}`)
+    ctx.log.debug(`[launch] event for unknown wrapper: ${conversationId.slice(0, 8)} step=${step}`)
     return
   }
 
@@ -142,17 +142,17 @@ const launchEvent: MessageHandler = (ctx, data) => {
 }
 
 const sessionPromote: MessageHandler = (ctx, data) => {
-  const wrapperId = data.wrapperId as string
+  const conversationId = (data.conversationId || data.wrapperId) as string
   const newSessionId = data.sessionId as string
-  if (!wrapperId || !newSessionId) return
+  if (!conversationId || !newSessionId) return
 
-  const bootSession = ctx.sessions.getSession(wrapperId)
+  const bootSession = ctx.sessions.getSession(conversationId)
   if (!bootSession) {
-    ctx.log.debug(`[boot] session_promote for unknown wrapper: ${wrapperId.slice(0, 8)}`)
+    ctx.log.debug(`[boot] session_promote for unknown wrapper: ${conversationId.slice(0, 8)}`)
     return
   }
 
-  if (wrapperId === newSessionId) {
+  if (conversationId === newSessionId) {
     // Nothing to migrate -- just flip status out of booting; meta handler
     // will take over with full metadata.
     bootSession.status = 'starting'
@@ -164,21 +164,21 @@ const sessionPromote: MessageHandler = (ctx, data) => {
   // transcript (including boot entries), sockets, subscriptions, etc.
   const bootProject = bootSession.project
   const rekeyed = ctx.sessions.rekeySession(
-    wrapperId,
+    conversationId,
     newSessionId,
-    wrapperId,
+    conversationId,
     parseProjectUri(bootSession.project).path,
     undefined,
   )
   if (!rekeyed) {
-    ctx.log.debug(`[boot] rekey failed for ${wrapperId.slice(0, 8)} -> ${newSessionId.slice(0, 8)}`)
+    ctx.log.debug(`[boot] rekey failed for ${conversationId.slice(0, 8)} -> ${newSessionId.slice(0, 8)}`)
     return
   }
   rekeyed.status = 'starting'
   rekeyed.project = bootProject
   ctx.ws.data.sessionId = newSessionId
   ctx.log.debug(
-    `[boot] promoted ${wrapperId.slice(0, 8)} -> ${newSessionId.slice(0, 8)} (source=${data.source || 'unknown'})`,
+    `[boot] promoted ${conversationId.slice(0, 8)} -> ${newSessionId.slice(0, 8)} (source=${data.source || 'unknown'})`,
   )
 }
 

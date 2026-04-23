@@ -76,7 +76,7 @@ rely on command palette (Ctrl+K).
 | Session switcher | Ctrl+K | `toggleSwitcher()` |
 | Spawn session | Ctrl+Shift+S | `openSwitcherWithFilter('S:./')` |
 | Quick note | Ctrl+Shift+N | event: `open-quick-note` |
-| Open terminal | Ctrl+Shift+T | `openTerminal(wrapperId)` |
+| Open terminal | Ctrl+Shift+T | `openTerminal(conversationId)` |
 | Toggle verbose | Ctrl+O | `toggleExpandAll()` |
 | Debug console | Ctrl+Shift+D | `toggleDebugConsole()` |
 | Shortcut help | Shift+? | local state |

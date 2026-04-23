@@ -9,8 +9,8 @@ import { dirname, join } from 'node:path'
 
 export interface InterSessionLogEntry {
   ts: number
-  from: { sessionId: string; wrapperId?: string; project: string; name: string }
-  to: { sessionId: string; wrapperId?: string; project: string; name: string }
+  from: { sessionId: string; conversationId?: string; project: string; name: string }
+  to: { sessionId: string; conversationId?: string; project: string; name: string }
   intent: string
   conversationId: string
   preview: string // first 200 chars

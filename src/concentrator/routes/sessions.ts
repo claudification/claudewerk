@@ -149,7 +149,7 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
       project: session.project,
       model: session.model,
       status: session.status,
-      wrapperIds: sessionStore.getWrapperIds(sessionId),
+      conversationIds: sessionStore.getConversationIds(sessionId),
       capabilities: session.capabilities,
       version: session.version,
       buildTime: session.buildTime,
@@ -221,7 +221,7 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
     const sentinel = sessionStore.getSentinel()
     if (!sentinel) return c.json({ error: 'No sentinel connected' }, 503)
 
-    const wrapperId = randomUUID()
+    const conversationId = randomUUID()
     const lc = session.launchConfig // stored launch config from original spawn
     const name =
       session.title ||
@@ -254,7 +254,7 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
         type: 'revive',
         sessionId,
         cwd: sessionPath,
-        wrapperId,
+        conversationId,
         mode: 'resume',
         headless,
         effort,
@@ -273,7 +273,7 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
     // Register rendezvous for MCP callers
     if (callerSessionId) {
       sessionStore
-        .addRendezvous(wrapperId, callerSessionId, session.project, 'revive')
+        .addRendezvous(conversationId, callerSessionId, session.project, 'revive')
         .then(revived => {
           const callerWs = sessionStore.getSessionSocket(callerSessionId)
           if (callerWs) {
@@ -282,7 +282,7 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
                 type: 'revive_ready',
                 sessionId: revived.id,
                 project: revived.project,
-                wrapperId,
+                conversationId,
                 session: revived,
               }),
             )
@@ -294,7 +294,7 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
             callerWs.send(
               JSON.stringify({
                 type: 'revive_timeout',
-                wrapperId,
+                conversationId,
                 sessionId,
                 project: session.project,
                 error: typeof err === 'string' ? err : 'Revive rendezvous timed out',
@@ -304,7 +304,7 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
         })
     }
 
-    return c.json({ success: true, name, message: 'Revive command sent to sentinel', wrapperId }, 202)
+    return c.json({ success: true, name, message: 'Revive command sent to sentinel', conversationId }, 202)
   })
 
   app.get('/sessions/by-slug/:slug', c => {
@@ -313,7 +313,7 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
     const filtered = filterSessionsByHttpGrants(c.req.raw, all)
     const match = filtered.find(s => {
       if (s.title && slugify(s.title) === slug) return true
-      const dirname = s.cwd?.split('/').pop() || ''
+      const dirname = extractProjectLabel(s.project)
       if (dirname && slugify(dirname) === slug) return true
       return slugify(s.id.slice(0, 8)) === slug
     })

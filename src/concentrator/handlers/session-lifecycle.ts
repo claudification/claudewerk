@@ -11,14 +11,14 @@ import { registerHandlers } from '../message-router'
 // ─── Session meta (wrapper connecting) ─────────────────────────────
 
 const meta: MessageHandler = (ctx, data) => {
-  const wrapperId = (data.wrapperId as string) || (data.sessionId as string) // backwards compat
+  const conversationId = (data.conversationId || data.wrapperId || data.sessionId) as string // wrapperId: one-release backward compat
   const sessionId = data.sessionId as string
   const project = (data.project as string) ?? cwdToProjectUri(data.cwd as string)
   ctx.ws.data.sessionId = sessionId
-  ctx.ws.data.wrapperId = wrapperId
+  ctx.ws.data.conversationId = conversationId
 
-  // Consume pending launch config (stored at spawn time, keyed by wrapperId)
-  const pendingLaunchConfig = ctx.sessions.consumePendingLaunchConfig(wrapperId)
+  // Consume pending launch config (stored at spawn time, keyed by conversationId)
+  const pendingLaunchConfig = ctx.sessions.consumePendingLaunchConfig(conversationId)
 
   const existingSession = ctx.sessions.getSession(sessionId)
   if (existingSession) {
@@ -40,7 +40,7 @@ const meta: MessageHandler = (ctx, data) => {
       if (pendingLaunchConfig.effort) existingSession.effortLevel = pendingLaunchConfig.effort
     }
     ctx.log.debug(
-      `Session resumed: ${sessionId.slice(0, 8)}... wrapper=${wrapperId.slice(0, 8)} (${data.cwd}) [${ctx.sessions.getActiveWrapperCount(sessionId) + 1} wrapper(s)]${data.version ? ` [${data.version}]` : ''}`,
+      `Session resumed: ${sessionId.slice(0, 8)}... conv=${conversationId.slice(0, 8)} (${data.cwd}) [${ctx.sessions.getActiveConversationCount(sessionId) + 1} conversation(s)]${data.version ? ` [${data.version}]` : ''}`,
     )
   } else {
     const newSession = ctx.sessions.createSession(
@@ -65,7 +65,7 @@ const meta: MessageHandler = (ctx, data) => {
     }
     const isAdHoc = (data.capabilities as string[] | undefined)?.includes('ad-hoc')
     ctx.log.debug(
-      `Session started: ${sessionId.slice(0, 8)}... wrapper=${wrapperId.slice(0, 8)} (${data.cwd})${data.version ? ` [${data.version}]` : ''}`,
+      `Session started: ${sessionId.slice(0, 8)}... conv=${conversationId.slice(0, 8)} (${data.cwd})${data.version ? ` [${data.version}]` : ''}`,
     )
     if (isAdHoc) {
       ctx.log.info(
@@ -74,7 +74,7 @@ const meta: MessageHandler = (ctx, data) => {
     }
   }
 
-  ctx.sessions.setSessionSocket(sessionId, wrapperId, ctx.ws)
+  ctx.sessions.setSessionSocket(sessionId, conversationId, ctx.ws)
 
   // Auto-restore persisted links for this session's project
   const sessionProject = (existingSession || ctx.sessions.getSession(sessionId))?.project
@@ -95,14 +95,14 @@ const meta: MessageHandler = (ctx, data) => {
 
   ctx.sessions.broadcastSessionUpdate(sessionId)
 
-  // Complete launch job if this wrapperId is tracked
-  ctx.sessions.completeJob(wrapperId, sessionId)
+  // Complete launch job if this conversationId is tracked
+  ctx.sessions.completeJob(conversationId, sessionId)
 
   // Check rendezvous: someone may be waiting for this wrapper to connect
-  const rvResolved = ctx.sessions.resolveRendezvous(wrapperId, sessionId)
+  const rvResolved = ctx.sessions.resolveRendezvous(conversationId, sessionId)
   if (!rvResolved) {
-    const rvInfo = ctx.sessions.getRendezvousInfo(wrapperId)
-    if (rvInfo) ctx.log.debug(`[rendezvous] wrapperId matched but resolve failed: ${wrapperId.slice(0, 8)}`)
+    const rvInfo = ctx.sessions.getRendezvousInfo(conversationId)
+    if (rvInfo) ctx.log.debug(`[rendezvous] conversationId matched but resolve failed: ${conversationId.slice(0, 8)}`)
   }
 
   ctx.reply({ type: 'ack', eventId: sessionId, origins: ctx.origins })
@@ -151,7 +151,7 @@ const heartbeat: MessageHandler = () => {
 const sessionClear: MessageHandler = (ctx, data) => {
   const oldId = (data.oldSessionId as string) || ctx.ws.data.sessionId
   const newId = data.newSessionId as string
-  const clearWrapperId = (data.wrapperId as string) || ctx.ws.data.wrapperId
+  const clearWrapperId = (data.conversationId as string) || ctx.ws.data.conversationId
   if (!oldId || !newId || !clearWrapperId) return
 
   const clearProject = (data.project as string) ?? cwdToProjectUri(data.cwd as string)
@@ -161,7 +161,7 @@ const sessionClear: MessageHandler = (ctx, data) => {
     session.project = clearProject
     ctx.ws.data.sessionId = newId
     ctx.log.debug(
-      `Session re-keyed: ${oldId.slice(0, 8)} -> ${newId.slice(0, 8)} wrapper=${clearWrapperId.slice(0, 8)} (${data.cwd})`,
+      `Session re-keyed: ${oldId.slice(0, 8)} -> ${newId.slice(0, 8)} conv=${clearWrapperId.slice(0, 8)} (${data.cwd})`,
     )
   } else {
     ctx.log.debug(`session_clear: old session ${oldId.slice(0, 8)} not found, creating new`)
@@ -195,14 +195,14 @@ const notify: MessageHandler = (ctx, data) => {
 
 const end: MessageHandler = (ctx, data) => {
   const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
-  const endWrapperId = ctx.ws.data.wrapperId as string
+  const endWrapperId = ctx.ws.data.conversationId as string
   if (!sessionId || !endWrapperId) return
 
   // Capture session before ending (for ad-hoc notification)
   const session = ctx.sessions.getSession(sessionId)
 
   ctx.sessions.removeSessionSocket(sessionId, endWrapperId)
-  const remaining = ctx.sessions.getActiveWrapperCount(sessionId)
+  const remaining = ctx.sessions.getActiveConversationCount(sessionId)
   if (remaining === 0) {
     ctx.sessions.endSession(sessionId, (data.reason as string) || '')
     ctx.log.debug(`Session ended: ${sessionId.slice(0, 8)}... (${data.reason})`)
@@ -236,7 +236,7 @@ const end: MessageHandler = (ctx, data) => {
     }
   } else {
     ctx.log.debug(
-      `Wrapper ${endWrapperId.slice(0, 8)} ended for session ${sessionId.slice(0, 8)}... (${remaining} wrapper(s) remaining)`,
+      `Wrapper ${endWrapperId.slice(0, 8)} ended for session ${sessionId.slice(0, 8)}... (${remaining} conversation(s) remaining)`,
     )
   }
 }

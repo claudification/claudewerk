@@ -13,7 +13,7 @@ export interface SpawnRequestAck {
   type: 'spawn_request_ack'
   ok: boolean
   jobId?: string
-  wrapperId?: string
+  conversationId?: string
   tmuxSession?: string
   error?: string
 }
@@ -56,7 +56,7 @@ export type BootStep =
 export interface SessionMeta {
   type: 'meta'
   sessionId: string
-  wrapperId: string // unique per rclaude instance (multiple wrappers can share a sessionId via --resume)
+  conversationId: string // stable identity that survives /clear, reconnect, and revival
   project: string
   startedAt: number
   model?: string
@@ -92,7 +92,7 @@ export interface SessionClear {
   type: 'session_clear'
   oldSessionId: string
   newSessionId: string
-  wrapperId: string
+  conversationId: string
   project: string
   model?: string
 }
@@ -104,35 +104,35 @@ export interface Heartbeat {
 }
 
 // Terminal streaming messages (browser <-> concentrator <-> rclaude)
-// All terminal messages route by wrapperId (physical rclaude instance + PTY)
+// All terminal messages route by conversationId (stable conversation identity)
 export interface TerminalAttach {
   type: 'terminal_attach'
-  wrapperId: string
+  conversationId: string
   cols: number
   rows: number
 }
 
 export interface TerminalDetach {
   type: 'terminal_detach'
-  wrapperId: string
+  conversationId: string
 }
 
 export interface TerminalData {
   type: 'terminal_data'
-  wrapperId: string
+  conversationId: string
   data: string
 }
 
 export interface TerminalResize {
   type: 'terminal_resize'
-  wrapperId: string
+  conversationId: string
   cols: number
   rows: number
 }
 
 export interface TerminalError {
   type: 'terminal_error'
-  wrapperId: string
+  conversationId: string
   error: string
 }
 
@@ -357,7 +357,7 @@ export interface WrapperNotify {
  *  placeholder "booting" session so the dashboard shows progress from t=0. */
 export interface WrapperBoot {
   type: 'wrapper_boot'
-  wrapperId: string
+  conversationId: string
   project: string
   capabilities: WrapperCapability[]
   claudeArgs: string[]
@@ -375,7 +375,7 @@ export interface WrapperBoot {
  *  a rich payload (init message, exit info). */
 export interface BootEvent {
   type: 'boot_event'
-  wrapperId: string
+  conversationId: string
   step: BootStep
   detail?: string
   raw?: unknown
@@ -388,9 +388,9 @@ export interface BootEvent {
  * gets a fresh `launchId` (uuid); every step in that launch carries the same
  * id so the dashboard can group them. These are distinct from boot events:
  *   - BootEvent fires only during the initial boot phase (wrapper_started
- *     through session_ready) and is keyed by wrapperId.
+ *     through session_ready) and is keyed by conversationId.
  *   - LaunchEvent covers the whole launch lifecycle including /clear reboots,
- *     is keyed by both wrapperId AND launchId, and is rendered inline in the
+ *     is keyed by both conversationId AND launchId, and is rendered inline in the
  *     transcript so the user always sees "which CC am I talking to and how
  *     was it launched?". The full args/env/init payloads go in `raw` for the
  *     (i) JSON inspector.
@@ -428,7 +428,7 @@ export type WrapperLaunchStep =
  */
 export interface WrapperLaunchEvent {
   type: 'launch_event'
-  wrapperId: string
+  conversationId: string
   launchId: string
   phase: WrapperLaunchPhase
   step: WrapperLaunchStep
@@ -444,7 +444,7 @@ export interface WrapperLaunchEvent {
  *  (stream-json init in headless, SessionStart hook in PTY). */
 export interface SessionPromote {
   type: 'session_promote'
-  wrapperId: string
+  conversationId: string
   sessionId: string
   source: 'stream_json' | 'hook'
 }
@@ -529,17 +529,17 @@ export interface StreamDelta {
 // Mirrors terminal_attach/detach pattern: wrapper only sends when viewers are attached.
 export interface JsonStreamAttach {
   type: 'json_stream_attach'
-  wrapperId: string
+  conversationId: string
 }
 
 export interface JsonStreamDetach {
   type: 'json_stream_detach'
-  wrapperId: string
+  conversationId: string
 }
 
 export interface JsonStreamData {
   type: 'json_stream_data'
-  wrapperId: string
+  conversationId: string
   lines: string[] // raw NDJSON lines from CC stdout
   isBackfill: boolean // true for initial batch on attach
 }
@@ -1278,7 +1278,7 @@ export interface LaunchProgressEvent {
   status: 'active' | 'done' | 'error'
   detail?: string
   t: number
-  wrapperId?: string
+  conversationId?: string
   sessionId?: string
   elapsed?: number
   error?: string
@@ -1289,7 +1289,7 @@ export interface JobComplete {
   type: 'job_complete'
   jobId: string
   sessionId: string
-  wrapperId: string
+  conversationId: string
 }
 
 /** Concentrator -> Dashboard: launch job failed */
@@ -1309,7 +1309,7 @@ export interface SentinelIdentify {
 export interface ReviveResult {
   type: 'revive_result'
   sessionId: string
-  wrapperId?: string // echoes the pre-assigned wrapperId
+  conversationId?: string // echoes the pre-assigned conversationId
   project?: string // echoed back for scoped broadcast when session is evicted
   jobId?: string // launch job correlation ID
   success: boolean
@@ -1325,7 +1325,7 @@ export interface SpawnResult {
   success: boolean
   error?: string
   tmuxSession?: string
-  wrapperId?: string
+  conversationId?: string
 }
 
 export interface ListDirsResult {
@@ -1338,7 +1338,7 @@ export interface ListDirsResult {
 /** Agent or wrapper reports a spawn failure (headless child exit, PTY crash, or early exit) */
 export interface SpawnFailed {
   type: 'spawn_failed'
-  wrapperId: string
+  conversationId: string
   cwd?: string
   pid?: number
   exitCode?: number | null
@@ -1383,7 +1383,7 @@ export interface ReviveSession {
   type: 'revive'
   sessionId: string
   project: string
-  wrapperId: string // pre-assigned wrapperId so concentrator can correlate the incoming connection
+  conversationId: string // pre-assigned conversationId so concentrator can correlate the incoming connection
   jobId?: string // launch job correlation ID for progress events
   adHocWorktree?: string // restore worktree context on revive (RCLAUDE_WORKTREE env)
   env?: Record<string, string> // custom env vars forwarded to claude process
@@ -1394,7 +1394,7 @@ export interface SpawnSession {
   requestId: string
   cwd: string
   project?: string
-  wrapperId: string
+  conversationId: string
   jobId?: string // launch job correlation ID for progress events
   // Ad-hoc task runner fields
   prompt?: string // initial prompt to send after session starts
@@ -1476,7 +1476,7 @@ export interface SessionSummary {
   buildTime?: string
   claudeVersion?: string
   claudeAuth?: { email?: string; orgId?: string; orgName?: string; subscriptionType?: string }
-  wrapperIds: string[]
+  conversationIds: string[]
   startedAt: number
   lastActivity: number
   status: Session['status']

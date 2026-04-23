@@ -235,7 +235,7 @@ registerCommand({
   execute: () => {
     const s = useSessionsStore.getState()
     const session = s.sessions.find(x => x.id === s.selectedSessionId)
-    if (session?.wrapperIds?.[0]) s.openTerminal(session.wrapperIds[0])
+    if (session?.conversationIds?.[0]) s.openTerminal(session.conversationIds[0])
   },
 })
 

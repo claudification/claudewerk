@@ -59,7 +59,7 @@ export type SpawnDispatchDeps = {
 }
 
 export type SpawnDispatchResult =
-  | { ok: true; wrapperId: string; jobId: string; tmuxSession?: string }
+  | { ok: true; conversationId: string; jobId: string; tmuxSession?: string }
   | { ok: false; error: string; statusCode?: number }
 
 /**
@@ -99,16 +99,16 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
   }
 
   const requestId = randomUUID()
-  const wrapperId = randomUUID()
+  const conversationId = randomUUID()
   const jobId = req.jobId ?? randomUUID()
 
-  deps.sessions.createJob(jobId, wrapperId)
-  emitProgress(deps.sessions, jobId, 'job_created', 'done', { wrapperId })
+  deps.sessions.createJob(jobId, conversationId)
+  emitProgress(deps.sessions, jobId, 'job_created', 'done', { conversationId })
 
   const projectLabel = req.cwd.split('/').pop() || req.cwd
   if (req.adHoc) {
     console.log(
-      `[ad-hoc] Spawn request: ${projectLabel} task=${req.adHocTaskId || 'none'} wrapper=${wrapperId.slice(0, 8)} prompt=${req.prompt?.length || 0}chars worktree=${req.worktree || 'none'}`,
+      `[ad-hoc] Spawn request: ${projectLabel} task=${req.adHocTaskId || 'none'} conv=${conversationId.slice(0, 8)} prompt=${req.prompt?.length || 0}chars worktree=${req.worktree || 'none'}`,
     )
   }
 
@@ -166,7 +166,7 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
       deps.setProjectSettings(req.cwd, { description: req.description })
     }
 
-    deps.sessions.setPendingLaunchConfig(wrapperId, {
+    deps.sessions.setPendingLaunchConfig(conversationId, {
       headless,
       model,
       effort,
@@ -184,7 +184,7 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
         type: 'spawn',
         requestId,
         cwd: req.cwd,
-        wrapperId,
+        conversationId,
         jobId,
         mkdir: req.mkdir || false,
         mode: req.adHoc ? 'fresh' : req.mode || 'fresh',
@@ -231,18 +231,18 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
     return { ok: false, error: result.error || 'Spawn failed', statusCode: 500 }
   }
   emitProgress(deps.sessions, jobId, 'agent_acked', 'done', { detail: result.tmuxSession })
-  if (req.adHoc) console.log(`[ad-hoc] Spawn OK: wrapper=${wrapperId.slice(0, 8)} tmux=${result.tmuxSession}`)
+  if (req.adHoc) console.log(`[ad-hoc] Spawn OK: conv=${conversationId.slice(0, 8)} tmux=${result.tmuxSession}`)
 
   const callerSessionId = deps.rendezvousCallerSessionId
   if (callerSessionId) {
-    // Don't block the response -- caller gets immediate success + wrapperId.
+    // Don't block the response -- caller gets immediate success + conversationId.
     // Rendezvous resolves async and pushes spawn_ready / spawn_timeout.
     deps.sessions
-      .addRendezvous(wrapperId, callerSessionId, req.cwd, 'spawn')
+      .addRendezvous(conversationId, callerSessionId, req.cwd, 'spawn')
       .then(session => {
         emitProgress(deps.sessions, jobId, 'session_connected', 'done', {
           sessionId: session.id,
-          wrapperId,
+          conversationId,
         })
         const callerWs = deps.sessions.getSessionSocket(callerSessionId)
         callerWs?.send(
@@ -250,7 +250,7 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
             type: 'spawn_ready',
             sessionId: session.id,
             project: session.project,
-            wrapperId,
+            conversationId,
             session,
           }),
         )
@@ -262,7 +262,7 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
         callerWs?.send(
           JSON.stringify({
             type: 'spawn_timeout',
-            wrapperId,
+            conversationId,
             cwd: req.cwd,
             error: errMsg,
           }),
@@ -270,5 +270,5 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
       })
   }
 
-  return { ok: true, wrapperId, jobId, tmuxSession: result.tmuxSession }
+  return { ok: true, conversationId, jobId, tmuxSession: result.tmuxSession }
 }

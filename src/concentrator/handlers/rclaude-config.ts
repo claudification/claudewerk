@@ -73,7 +73,7 @@ const rclaudeConfigOk: MessageHandler = (ctx, data) => {
   if (project) {
     ctx.broadcastScoped(data, project)
     if (data.ok) {
-      const notified = ctx.sessions.broadcastToWrappersAtCwd(project, { type: 'notify_config_updated' })
+      const notified = ctx.sessions.broadcastToConversationsAtCwd(project, { type: 'notify_config_updated' })
       ctx.log.info(`Config saved for ${project} -- notified ${notified} wrapper(s)`)
     }
   } else {

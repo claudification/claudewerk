@@ -45,7 +45,7 @@ export function ReviveDialog() {
   const [effort, setEffort] = useState('')
   const [phase, setPhase] = useState<'config' | 'launching'>('config')
   const [jobId, setJobId] = useState<string | null>(null)
-  const [wrapperId, setWrapperId] = useState<string | null>(null)
+  const [conversationId, setWrapperId] = useState<string | null>(null)
   const sessionAtReviveRef = useRef<string | null>(null)
 
   const sessionsById = useSessionsStore(s => s.sessionsById)
@@ -56,7 +56,7 @@ export function ReviveDialog() {
 
   const progress = useLaunchProgress({
     jobId,
-    wrapperId,
+    conversationId,
     timeoutMs: 30_000,
     enabled: phase === 'launching',
     onTimeout: () => {
@@ -131,7 +131,7 @@ export function ReviveDialog() {
         )
         return
       }
-      const wid = detail.wrapperId as string
+      const wid = detail.conversationId as string
       setWrapperId(wid)
       progress.setSteps(prev => [
         ...prev.map(s =>
@@ -229,7 +229,7 @@ export function ReviveDialog() {
       `Time: ${new Date().toISOString()}`,
       `Session: ${state.options?.sessionId ?? 'n/a'}${session?.title ? ` (${session.title})` : ''}`,
       `Project: ${session?.project ?? 'n/a'}`,
-      `Wrapper: ${wrapperId || 'n/a'}`,
+      `Wrapper: ${conversationId || 'n/a'}`,
       `Job: ${jobId || 'n/a'}`,
       `Headless: ${headless}`,
       `Model: ${model || '(inherited)'}`,

@@ -7,10 +7,10 @@ import type { MessageHandler } from '../handler-context'
 import { registerHandlers } from '../message-router'
 
 const jsonStreamAttach: MessageHandler = (ctx, data) => {
-  const wid = data.wrapperId as string
-  const sess = ctx.sessions.getSessionByWrapper(wid)
+  const wid = data.conversationId as string
+  const sess = ctx.sessions.getSessionByConversation(wid)
   if (sess) ctx.requirePermission('chat:read', sess.project)
-  const targetSocket = ctx.sessions.getSessionSocketByWrapper(wid)
+  const targetSocket = ctx.sessions.getSessionSocketByConversation(wid)
   if (targetSocket) {
     const isFirstViewer = !ctx.sessions.hasJsonStreamViewers(wid)
     ctx.sessions.addJsonStreamViewer(wid, ctx.ws)
@@ -18,29 +18,29 @@ const jsonStreamAttach: MessageHandler = (ctx, data) => {
       targetSocket.send(JSON.stringify(data))
     }
     ctx.log.debug(
-      `[json-stream] Attached to wrapper=${wid.slice(0, 8)} [${ctx.sessions.getJsonStreamViewers(wid).size} viewer(s)]`,
+      `[json-stream] Attached to conv=${wid.slice(0, 8)} [${ctx.sessions.getJsonStreamViewers(wid).size} viewer(s)]`,
     )
   } else {
-    ctx.reply({ type: 'json_stream_data', wrapperId: wid, lines: [], isBackfill: false })
+    ctx.reply({ type: 'json_stream_data', conversationId: wid, lines: [], isBackfill: false })
   }
 }
 
 const jsonStreamDetach: MessageHandler = (ctx, data) => {
-  const wid = data.wrapperId as string
+  const wid = data.conversationId as string
   ctx.sessions.removeJsonStreamViewer(wid, ctx.ws)
   if (!ctx.sessions.hasJsonStreamViewers(wid)) {
-    const targetSocket = ctx.sessions.getSessionSocketByWrapper(wid)
+    const targetSocket = ctx.sessions.getSessionSocketByConversation(wid)
     if (targetSocket) {
       targetSocket.send(JSON.stringify(data))
     }
   }
   ctx.log.debug(
-    `[json-stream] Detached from wrapper=${wid.slice(0, 8)} [${ctx.sessions.getJsonStreamViewers(wid).size} viewer(s) remaining]`,
+    `[json-stream] Detached from conv=${wid.slice(0, 8)} [${ctx.sessions.getJsonStreamViewers(wid).size} viewer(s) remaining]`,
   )
 }
 
 const jsonStreamData: MessageHandler = (ctx, data) => {
-  const wid = (data.wrapperId as string) || ctx.ws.data.wrapperId
+  const wid = (data.conversationId as string) || ctx.ws.data.conversationId
   if (!wid) return
   const viewers = ctx.sessions.getJsonStreamViewers(wid)
   const msg = JSON.stringify(data)

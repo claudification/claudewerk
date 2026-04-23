@@ -65,14 +65,14 @@ export function handleBgTaskOutputMessage(msg: { taskId: string; data: string; d
 
 export interface TerminalMessage {
   type: 'terminal_data' | 'terminal_error'
-  wrapperId: string
+  conversationId: string
   data?: string
   error?: string
 }
 
 export interface JsonStreamMessage {
   type: 'json_stream_data'
-  wrapperId: string
+  conversationId: string
   lines: string[]
   isBackfill: boolean
 }
@@ -227,7 +227,7 @@ interface SessionsState {
   toggleSwitcher: () => void
   openSwitcherWithFilter: (filter: string) => void
   toggleDebugConsole: () => void
-  openTerminal: (wrapperId: string) => void
+  openTerminal: (conversationId: string) => void
   setEvents: (sessionId: string, events: HookEvent[]) => void
   setTranscript: (sessionId: string, entries: TranscriptEntry[]) => void
   setTasks: (sessionId: string, tasks: TaskInfo[]) => void
@@ -371,7 +371,7 @@ function processHash() {
 
   const store = useSessionsStore.getState()
   if (mode === 'terminal') {
-    store.openTerminal(id) // id is wrapperId
+    store.openTerminal(id) // id is conversationId
   } else if (mode === 'session') {
     store.selectSession(id, 'hash-route')
   } else if (mode === 'task') {
@@ -641,7 +641,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
         evictedData = { events, transcripts, subagentTranscripts }
       }
 
-      // Close terminal on session switch - PTY is tied to a wrapperId,
+      // Close terminal on session switch - PTY is tied to a conversationId,
       // keeping it open would stream the old session's terminal
       const closeTerminal = state.showTerminal ? { showTerminal: false, terminalWrapperId: null } : {}
       return {
@@ -691,23 +691,23 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   toggleSwitcher: () => set(state => ({ showSwitcher: !state.showSwitcher, switcherInitialFilter: '' })),
   openSwitcherWithFilter: (filter: string) => set({ showSwitcher: true, switcherInitialFilter: filter }),
   toggleDebugConsole: () => set(state => ({ showDebugConsole: !state.showDebugConsole })),
-  openTerminal: wrapperId => {
+  openTerminal: conversationId => {
     // Find the session that owns this wrapper so we can select it in the main panel too
-    const ownerSession = get().sessions.find(s => s.wrapperIds?.includes(wrapperId))
+    const ownerSession = get().sessions.find(s => s.conversationIds?.includes(conversationId))
     const prev = get().selectedSessionId
     const next = ownerSession?.id ?? null
     if (next !== prev) {
       console.log(
-        `[nav] openTerminal: ${prev?.slice(0, 8) || 'none'} -> ${next?.slice(0, 8) || 'none'} wrapper=${wrapperId.slice(0, 8)}`,
+        `[nav] openTerminal: ${prev?.slice(0, 8) || 'none'} -> ${next?.slice(0, 8) || 'none'} wrapper=${conversationId.slice(0, 8)}`,
       )
     }
     set({
       selectedSessionId: next,
-      terminalWrapperId: wrapperId,
+      terminalWrapperId: conversationId,
       showTerminal: true,
       showSwitcher: false,
     })
-    updateHash(`terminal/${wrapperId}`)
+    updateHash(`terminal/${conversationId}`)
   },
   setEvents: (sessionId, events) =>
     set(state => {

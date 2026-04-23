@@ -14,10 +14,10 @@ import { getFont, getTheme, loadTerminalSettings } from './terminal-settings'
 import { TerminalToolbar } from './terminal-toolbar'
 
 interface InlineTerminalProps {
-  wrapperId: string
+  conversationId: string
 }
 
-export function InlineTerminal({ wrapperId }: InlineTerminalProps) {
+export function InlineTerminal({ conversationId }: InlineTerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -56,7 +56,7 @@ export function InlineTerminal({ wrapperId }: InlineTerminalProps) {
       // Block ALL event types to prevent xterm from also processing Enter
       if (e.shiftKey && e.key === 'Enter') {
         if (e.type === 'keydown') {
-          sendWsMessage({ type: 'terminal_data', wrapperId, data: '\n' })
+          sendWsMessage({ type: 'terminal_data', conversationId, data: '\n' })
         }
         return false
       }
@@ -80,11 +80,11 @@ export function InlineTerminal({ wrapperId }: InlineTerminalProps) {
     terminal.write('\x1bc\x1b[2J\x1b[H\x1b[?25l')
 
     const dataDisposable = terminal.onData(data => {
-      sendWsMessage({ type: 'terminal_data', wrapperId, data })
+      sendWsMessage({ type: 'terminal_data', conversationId, data })
     })
 
     const handler = (msg: TerminalMessage) => {
-      if (msg.wrapperId !== wrapperId) return
+      if (msg.conversationId !== conversationId) return
       if (msg.type === 'terminal_data' && msg.data) {
         terminal.write(msg.data)
       } else if (msg.type === 'terminal_error') {
@@ -96,7 +96,7 @@ export function InlineTerminal({ wrapperId }: InlineTerminalProps) {
     const resizeObserver = new ResizeObserver(() => {
       fitAddon.fit()
       const { cols, rows } = terminal
-      sendWsMessage({ type: 'terminal_resize', wrapperId, cols, rows })
+      sendWsMessage({ type: 'terminal_resize', conversationId, cols, rows })
     })
     resizeObserver.observe(terminalRef.current)
 
@@ -106,20 +106,20 @@ export function InlineTerminal({ wrapperId }: InlineTerminalProps) {
       resizeObserver.disconnect()
       dataDisposable.dispose()
       setTerminalHandler(null)
-      sendWsMessage({ type: 'terminal_detach', wrapperId })
+      sendWsMessage({ type: 'terminal_detach', conversationId })
       terminal.dispose()
       xtermRef.current = null
       fitAddonRef.current = null
     }
-  }, [wrapperId, sendWsMessage, setTerminalHandler])
+  }, [conversationId, sendWsMessage, setTerminalHandler])
 
   // Re-attach on WS reconnect
   useEffect(() => {
     if (!isConnected || !xtermRef.current) return
     setTerminalError(null)
     const { cols, rows } = xtermRef.current
-    sendWsMessage({ type: 'terminal_attach', wrapperId, cols, rows })
-  }, [isConnected, wrapperId, sendWsMessage])
+    sendWsMessage({ type: 'terminal_attach', conversationId, cols, rows })
+  }, [isConnected, conversationId, sendWsMessage])
 
   // Re-focus when switcher closes
   useEffect(() => {
@@ -150,7 +150,7 @@ export function InlineTerminal({ wrapperId }: InlineTerminalProps) {
           </span>
         </div>
       )}
-      <TerminalToolbar onSend={data => sendWsMessage({ type: 'terminal_data', wrapperId, data })} />
+      <TerminalToolbar onSend={data => sendWsMessage({ type: 'terminal_data', conversationId, data })} />
       <div ref={terminalRef} className="flex-1 min-h-0 p-1 overflow-hidden" />
     </div>
   )

@@ -27,7 +27,7 @@ export interface OutstandingInteraction {
 
 export interface WrapperContext {
   // Identity
-  readonly internalId: string
+  readonly conversationId: string
   readonly cwd: string
 
   // Mode flags (immutable after startup)

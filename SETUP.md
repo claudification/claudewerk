@@ -547,7 +547,7 @@ server {
 | `RCLAUDE_DEBUG` | no | - | Set `1` for debug logging to file |
 | `RCLAUDE_DEBUG_LOG` | no | `/tmp/rclaude-debug.log` | Debug log path |
 | `RCLAUDE_SPAWN_ROOT` | no | `$HOME` | Root for relative spawn paths |
-| `RCLAUDE_WRAPPER_ID` | no | auto UUID | Pre-assigned wrapper ID (internal) |
+| `RCLAUDE_CONVERSATION_ID` | no | auto UUID | Pre-assigned conversation ID (internal) |
 
 ---
 

@@ -38,9 +38,9 @@ const sendInput: MessageHandler = (ctx, data) => {
   // Try by session ID first, then by wrapper IDs (handles ID changes from SessionStart)
   let ws = ctx.sessions.getSessionSocket(sessionId)
   if (!ws) {
-    const wrapperIds = ctx.sessions.getWrapperIds(sessionId)
-    for (const wid of wrapperIds) {
-      ws = ctx.sessions.getSessionSocketByWrapper(wid)
+    const conversationIds = ctx.sessions.getConversationIds(sessionId)
+    for (const wid of conversationIds) {
+      ws = ctx.sessions.getSessionSocketByConversation(wid)
       if (ws) break
     }
   }
@@ -196,9 +196,9 @@ const sendInterrupt: MessageHandler = (ctx, data) => {
 
   let ws = ctx.sessions.getSessionSocket(sessionId)
   if (!ws) {
-    const wrapperIds = ctx.sessions.getWrapperIds(sessionId)
-    for (const wid of wrapperIds) {
-      ws = ctx.sessions.getSessionSocketByWrapper(wid)
+    const conversationIds = ctx.sessions.getConversationIds(sessionId)
+    for (const wid of conversationIds) {
+      ws = ctx.sessions.getSessionSocketByConversation(wid)
       if (ws) break
     }
   }
@@ -226,7 +226,7 @@ const reviveSession: MessageHandler = (ctx, data) => {
   const sentinel = ctx.getSentinel()
   if (!sentinel) throw new GuardError('No sentinel connected')
 
-  const wrapperId = crypto.randomUUID()
+  const conversationId = crypto.randomUUID()
   const jobId = data.jobId as string | undefined
   const projSettings = getProjectSettings(session.project)
   const lc = session.launchConfig // stored launch config from original spawn
@@ -256,7 +256,7 @@ const reviveSession: MessageHandler = (ctx, data) => {
 
   // Register launch job if dashboard provided a jobId
   if (jobId) {
-    ctx.sessions.createJob(jobId, wrapperId)
+    ctx.sessions.createJob(jobId, conversationId)
   }
 
   sentinel.send(
@@ -264,7 +264,7 @@ const reviveSession: MessageHandler = (ctx, data) => {
       type: 'revive',
       sessionId,
       cwd: parseProjectUri(session.project).path,
-      wrapperId,
+      conversationId,
       jobId,
       mode: 'resume',
       headless,
@@ -282,13 +282,13 @@ const reviveSession: MessageHandler = (ctx, data) => {
   )
 
   ctx.log.info(
-    `[revive] ${name} (${sessionId.slice(0, 8)}) via WS, wrapperId=${wrapperId.slice(0, 8)} headless=${headless}${jobId ? ` job=${jobId.slice(0, 8)}` : ''}${lc ? ' (launch config restored)' : ''}`,
+    `[revive] ${name} (${sessionId.slice(0, 8)}) via WS, conversationId=${conversationId.slice(0, 8)} headless=${headless}${jobId ? ` job=${jobId.slice(0, 8)}` : ''}${lc ? ' (launch config restored)' : ''}`,
   )
   ctx.reply({
     type: 'revive_session_result',
     ok: true,
     name,
-    wrapperId,
+    conversationId,
     jobId,
     message: 'Revive command sent to sentinel',
   })

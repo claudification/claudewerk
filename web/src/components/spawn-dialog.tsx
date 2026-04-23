@@ -60,7 +60,7 @@ export function SpawnDialog() {
   const [phase, setPhase] = useState<'config' | 'launching'>('config')
   const [savedFeedback, setSavedFeedback] = useState<string | null>(null)
   const [jobId, setJobId] = useState<string | null>(null)
-  const [wrapperId, setWrapperId] = useState<string | null>(null)
+  const [conversationId, setWrapperId] = useState<string | null>(null)
   // Track which session was selected when spawn started -- don't yank the user
   // back to the spawned session if they navigated away during the countdown
   const sessionAtSpawnRef = useRef<string | null>(null)
@@ -71,7 +71,7 @@ export function SpawnDialog() {
   // Shared launch progress hook
   const progress = useLaunchProgress({
     jobId,
-    wrapperId,
+    conversationId,
     timeoutMs: 60_000,
     enabled: phase === 'launching',
   })
@@ -211,11 +211,11 @@ export function SpawnDialog() {
     const result = await sendSpawnRequest(spawnReq)
     if (result.ok) {
       haptic('success')
-      setWrapperId(result.wrapperId)
+      setWrapperId(result.conversationId)
       progress.setSteps(prev => [
         ...prev.map(s =>
           s.status === 'active'
-            ? { ...s, status: 'done' as const, detail: `wrapper=${result.wrapperId.slice(0, 8)}` }
+            ? { ...s, status: 'done' as const, detail: `wrapper=${result.conversationId.slice(0, 8)}` }
             : s,
         ),
         { label: 'Waiting for session...', status: 'active' as const, ts: Date.now() },
@@ -330,7 +330,7 @@ export function SpawnDialog() {
     const diag = buildSpawnDiagnostics({
       source: 'spawn-dialog',
       jobId,
-      wrapperId: wrapperId || progress.launch.wrapperId || null,
+      conversationId: conversationId || progress.launch.conversationId || null,
       sessionId: progress.launch.sessionId ?? null,
       elapsedSec: progress.elapsed,
       error: progress.error || progress.launch.error || null,

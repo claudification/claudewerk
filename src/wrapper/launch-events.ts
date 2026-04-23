@@ -76,7 +76,7 @@ export function emitLaunchEvent(
 ): void {
   const evt: WrapperLaunchEvent = {
     type: 'launch_event',
-    wrapperId: ctx.internalId,
+    conversationId: ctx.conversationId,
     launchId: ctx.currentLaunchId,
     phase: ctx.currentLaunchPhase,
     step,

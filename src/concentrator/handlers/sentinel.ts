@@ -26,7 +26,7 @@ const sentinelIdentify: MessageHandler = (ctx, data) => {
 const reviveResult: MessageHandler = (ctx, data) => {
   const ok = data.success ? 'OK' : 'FAIL'
   const sessionId = data.sessionId as string
-  const wrapperId = data.wrapperId as string | undefined
+  const conversationId = (data.conversationId || data.wrapperId) as string | undefined
   const jobId = data.jobId as string | undefined
   ctx.log.debug(`Revive ${sessionId?.slice(0, 8)}... ${ok}${data.error ? ` (${data.error})` : ''}`)
 
@@ -39,7 +39,7 @@ const reviveResult: MessageHandler = (ctx, data) => {
       {
         type: 'revive_result',
         sessionId,
-        wrapperId,
+        conversationId,
         jobId,
         success: data.success,
         error: data.error,
@@ -97,7 +97,7 @@ const launchLog: MessageHandler = (ctx, data) => {
 }
 
 const spawnFailed: MessageHandler = (ctx, data) => {
-  const wrapperId = data.wrapperId as string
+  const conversationId = (data.conversationId || data.wrapperId) as string
   const exitCode = data.exitCode as number | null | undefined
   const elapsedMs = data.elapsedMs as number | undefined
   const projectPath = data.cwd as string | undefined
@@ -108,13 +108,13 @@ const spawnFailed: MessageHandler = (ctx, data) => {
       ? `Process exited in ${elapsedMs}ms (exit ${exitCode}) - likely hook or config failure`
       : `Spawn failed (exit ${exitCode})`)
   ctx.log.info(
-    `Spawn FAILED: wrapper=${wrapperId?.slice(0, 8)} exit=${exitCode} elapsed=${elapsedMs}ms${earlyFailure ? ' (early failure - likely hook/config issue)' : ''}`,
+    `Spawn FAILED: conv=${conversationId?.slice(0, 8)} exit=${exitCode} elapsed=${elapsedMs}ms${earlyFailure ? ' (early failure - likely hook/config issue)' : ''}`,
   )
 
   // Route through the job system so the launch monitor gets an immediate job_failed
   // instead of timing out after 30s with a generic error
-  if (wrapperId) {
-    const jobId = ctx.sessions.getJobByWrapper(wrapperId)
+  if (conversationId) {
+    const jobId = ctx.sessions.getJobByConversation(conversationId)
     if (jobId) {
       // Emit first-class progress alongside the legacy job_failed event
       ctx.sessions.forwardJobEvent(jobId, {
@@ -124,7 +124,7 @@ const spawnFailed: MessageHandler = (ctx, data) => {
         status: 'error',
         t: Date.now(),
         error: errorMsg,
-        wrapperId,
+        conversationId,
         elapsed: elapsedMs,
       })
       ctx.sessions.failJob(jobId, errorMsg)
@@ -134,11 +134,11 @@ const spawnFailed: MessageHandler = (ctx, data) => {
   // Also broadcast for any non-job listeners (session detail, diag, etc.)
   if (projectPath) {
     ctx.broadcastScoped(
-      { type: 'spawn_failed', wrapperId, exitCode, elapsedMs, error: errorMsg, pid: data.pid },
+      { type: 'spawn_failed', conversationId, exitCode, elapsedMs, error: errorMsg, pid: data.pid },
       projectPath,
     )
   } else {
-    ctx.broadcast({ type: 'spawn_failed', wrapperId, exitCode, elapsedMs, error: errorMsg, pid: data.pid })
+    ctx.broadcast({ type: 'spawn_failed', conversationId, exitCode, elapsedMs, error: errorMsg, pid: data.pid })
   }
 }
 

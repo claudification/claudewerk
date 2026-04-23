@@ -1,7 +1,7 @@
 /**
  * Generic viewer registry.
  * Tracks which dashboard WebSocket connections are viewing a named resource.
- * Keyed by an opaque string (wrapperId for terminal/json-stream).
+ * Keyed by an opaque string (conversationId for terminal/json-stream).
  * Used by both terminal PTY and raw JSON stream viewers.
  */
 

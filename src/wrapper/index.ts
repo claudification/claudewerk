@@ -417,10 +417,12 @@ async function main() {
   }
   debug(`Concentrator: ${noConcentrator ? 'DISABLED' : 'ENABLED'} (url: ${concentratorUrl})`)
 
-  // Session ID: reuse from revive flow so concentrator resumes the existing session
-  // Wrapper ID: always unique per process (for socket routing, terminal attachment)
-  const sessionId = process.env.RCLAUDE_SESSION_ID || process.env.RCLAUDE_WRAPPER_ID || randomUUID()
-  const internalId = process.env.RCLAUDE_WRAPPER_ID || sessionId
+  const sessionId =
+    process.env.RCLAUDE_SESSION_ID ||
+    process.env.RCLAUDE_CONVERSATION_ID ||
+    process.env.RCLAUDE_WRAPPER_ID ||
+    randomUUID()
+  const conversationId = process.env.RCLAUDE_CONVERSATION_ID || process.env.RCLAUDE_WRAPPER_ID || sessionId
   const cwd = process.cwd()
   const rclaudeDir = ensureRclaudeDir(cwd)
   const permissionRules = createRulesEngine(cwd)
@@ -436,7 +438,7 @@ async function main() {
 
   // Shared context object for extracted modules
   const ctx: WrapperContext = {
-    internalId,
+    conversationId,
     cwd,
     headless,
     channelEnabled,
@@ -631,7 +633,7 @@ async function main() {
     // Watch both Claude's session ID dir and our internal ID dir (they may differ)
     const candidates = new Set<string>()
     if (ctx.claudeSessionId) candidates.add(join(tasksBase, ctx.claudeSessionId))
-    candidates.add(join(tasksBase, internalId))
+    candidates.add(join(tasksBase, conversationId))
     ctx.taskCandidateDirs = Array.from(candidates)
 
     const watchPaths = ctx.taskCandidateDirs.map(d => join(d, '*.json'))
@@ -841,7 +843,7 @@ async function main() {
       concentratorUrl,
       concentratorSecret,
       sessionId,
-      wrapperId: internalId,
+      conversationId: conversationId,
       cwd,
       configuredModel,
       args: claudeArgs,
@@ -861,7 +863,7 @@ async function main() {
             claudeArgs,
             title: process.env.RCLAUDE_SESSION_NAME || undefined,
             // launchConfig is stored on the concentrator at spawn time (keyed
-            // by wrapperId) -- the concentrator merges it into the session on
+            // by conversationId) -- the concentrator merges it into the session on
             // promote, so we don't need to duplicate it here.
           },
       onConnected() {
@@ -880,7 +882,7 @@ async function main() {
         if (ctx.pendingSessionName && ctx.wsClient) {
           ctx.wsClient.send({
             type: 'session_name',
-            sessionId: ctx.claudeSessionId || internalId,
+            sessionId: ctx.claudeSessionId || conversationId,
             name: ctx.pendingSessionName.name,
             userSet: ctx.pendingSessionName.userSet,
           } as WrapperMessage)
@@ -1289,7 +1291,7 @@ async function main() {
         if (!headless || !ctx.streamProc) return
         clearInteraction(ctx, requestId)
 
-        const sessionId = ctx.claudeSessionId || ctx.internalId
+        const sessionId = ctx.claudeSessionId || ctx.conversationId
         if (action === 'approve') {
           ctx.streamProc.sendPermissionResponse(requestId, true, undefined, toolUseId)
           diag('plan', `Plan approved: ${requestId.slice(0, 8)}`)
@@ -1324,9 +1326,9 @@ async function main() {
         }
 
         // Resolve pending spawn/revive promise if one exists
-        const pending = pendingRendezvous.get(message.wrapperId as string)
+        const pending = pendingRendezvous.get(message.conversationId as string)
         if (pending) {
-          pendingRendezvous.delete(message.wrapperId as string)
+          pendingRendezvous.delete(message.conversationId as string)
           if (isReady) {
             pending.resolve(message)
           } else {
@@ -1388,7 +1390,7 @@ async function main() {
       onNotify(message, title) {
         diag('channel', `Notify: ${title ? `[${title}] ` : ''}${message.slice(0, 80)}`)
         if (ctx.wsClient?.isConnected()) {
-          ctx.wsClient.send({ type: 'notify', sessionId: ctx.claudeSessionId || internalId, message, title })
+          ctx.wsClient.send({ type: 'notify', sessionId: ctx.claudeSessionId || conversationId, message, title })
         }
       },
       async onShareFile(filePath) {
@@ -1412,7 +1414,7 @@ async function main() {
             method: 'POST',
             headers: {
               'Content-Type': contentType,
-              'X-Session-Id': ctx.claudeSessionId || internalId,
+              'X-Session-Id': ctx.claudeSessionId || conversationId,
               ...(concentratorSecret ? { Authorization: `Bearer ${concentratorSecret}` } : {}),
             },
             body: file,
@@ -1456,7 +1458,7 @@ async function main() {
           }
           ctx.wsClient?.send({
             type: 'channel_send',
-            fromSession: ctx.claudeSessionId || internalId,
+            fromSession: ctx.claudeSessionId || conversationId,
             toSession: to,
             intent,
             message,
@@ -1480,7 +1482,7 @@ async function main() {
           if (ctx.wsClient?.isConnected()) {
             ctx.wsClient.send({
               type: 'permission_auto_approved',
-              sessionId: ctx.claudeSessionId || internalId,
+              sessionId: ctx.claudeSessionId || conversationId,
               requestId: data.requestId,
               toolName: data.toolName,
               description: data.description,
@@ -1492,7 +1494,7 @@ async function main() {
         diag('channel', `Permission request: ${data.requestId} ${data.toolName}`)
         sendInteraction(ctx, 'permission_request', data.requestId, {
           type: 'permission_request',
-          sessionId: ctx.claudeSessionId || internalId,
+          sessionId: ctx.claudeSessionId || conversationId,
           requestId: data.requestId,
           toolName: data.toolName,
           description: data.description,
@@ -1503,7 +1505,7 @@ async function main() {
         diag('dialog', `Show: "${layout.title}" (${dialogId.slice(0, 8)})`)
         sendInteraction(ctx, 'dialog_show', dialogId, {
           type: 'dialog_show',
-          sessionId: ctx.claudeSessionId || internalId,
+          sessionId: ctx.claudeSessionId || conversationId,
           dialogId,
           layout,
         } as unknown as WrapperMessage)
@@ -1513,7 +1515,7 @@ async function main() {
         clearInteraction(ctx, dialogId)
         ctx.wsClient?.send({
           type: 'dialog_dismiss',
-          sessionId: ctx.claudeSessionId || internalId,
+          sessionId: ctx.claudeSessionId || conversationId,
           dialogId,
         } as unknown as WrapperMessage)
       },
@@ -1564,8 +1566,8 @@ async function main() {
       async onSpawnSession({ onProgress, ...spawnParams }) {
         if (!ctx.wsClient?.isConnected()) return { ok: false, error: 'Not connected to concentrator' }
 
-        // Step 1: Send spawn request via WS, get immediate ack with wrapperId + jobId
-        const spawnResult = await new Promise<{ ok: boolean; error?: string; wrapperId?: string; jobId?: string }>(
+        // Step 1: Send spawn request via WS, get immediate ack with conversationId + jobId
+        const spawnResult = await new Promise<{ ok: boolean; error?: string; conversationId?: string; jobId?: string }>(
           resolve => {
             const timeout = setTimeout(() => resolve({ ok: false, error: 'Timeout' }), 15000)
             pendingSpawnResult = result => {
@@ -1585,7 +1587,7 @@ async function main() {
         const jobId = spawnResult.jobId
         diag(
           'channel',
-          `spawn_session: ${spawnParams.cwd} mode=${spawnParams.mode || 'default'} wrapperId=${spawnResult.wrapperId?.slice(0, 8)} job=${jobId?.slice(0, 8)}`,
+          `spawn_session: ${spawnParams.cwd} mode=${spawnParams.mode || 'default'} conversationId=${spawnResult.conversationId?.slice(0, 8)} job=${jobId?.slice(0, 8)}`,
         )
 
         // Subscribe to job progress now that we have the server-generated jobId.
@@ -1604,9 +1606,9 @@ async function main() {
         }
 
         // Step 2: Await rendezvous (concentrator sends spawn_ready/spawn_timeout when session connects)
-        if (spawnResult.wrapperId) {
+        if (spawnResult.conversationId) {
           try {
-            const wid = spawnResult.wrapperId
+            const wid = spawnResult.conversationId
             const result = await new Promise<Record<string, unknown>>((resolve, reject) => {
               const timer = setTimeout(() => {
                 pendingRendezvous.delete(wid)
@@ -1626,16 +1628,16 @@ async function main() {
             const session = result.session as Record<string, unknown> | undefined
             diag('channel', `spawn_session: rendezvous resolved session=${(result.sessionId as string)?.slice(0, 8)}`)
             cleanupJob()
-            return { ok: true, wrapperId: spawnResult.wrapperId, jobId, session }
+            return { ok: true, conversationId: spawnResult.conversationId, jobId, session }
           } catch (err) {
             diag('channel', `spawn_session: rendezvous failed: ${err instanceof Error ? err.message : err}`)
             cleanupJob()
-            return { ok: true, wrapperId: spawnResult.wrapperId, jobId, timedOut: true }
+            return { ok: true, conversationId: spawnResult.conversationId, jobId, timedOut: true }
           }
         }
 
         cleanupJob()
-        return { ok: true, wrapperId: spawnResult.wrapperId, jobId }
+        return { ok: true, conversationId: spawnResult.conversationId, jobId }
       },
       async onGetSpawnDiagnostics(jobId) {
         if (!ctx.wsClient?.isConnected()) return { ok: false, error: 'Not connected to concentrator' }
@@ -1690,7 +1692,7 @@ async function main() {
             action,
             ...(model && { model }),
             ...(effort && { effort }),
-            fromSession: ctx.claudeSessionId || internalId,
+            fromSession: ctx.claudeSessionId || conversationId,
           } as unknown as WrapperMessage)
         })
       },
@@ -1716,7 +1718,7 @@ async function main() {
       },
       async onRenameSession(name) {
         if (!ctx.wsClient?.isConnected()) return { ok: false, error: 'Not connected to concentrator' }
-        const sessionId = ctx.claudeSessionId || ctx.internalId
+        const sessionId = ctx.claudeSessionId || ctx.conversationId
         return new Promise(resolve => {
           const timeout = setTimeout(() => resolve({ ok: false, error: 'Timeout' }), 10000)
           pendingRenameResult = result => {
@@ -1753,7 +1755,7 @@ async function main() {
     },
     {
       sessionId,
-      wrapperId: internalId,
+      conversationId: conversationId,
       cwd,
       configuredModel,
       headless,
@@ -1771,7 +1773,7 @@ async function main() {
   let pendingRestartResult:
     | ((result: { ok: boolean; error?: string; name?: string; selfRestart?: boolean; alreadyEnded?: boolean }) => void)
     | null = null
-  let pendingSpawnResult: ((result: { ok: boolean; error?: string; wrapperId?: string }) => void) | null = null
+  let pendingSpawnResult: ((result: { ok: boolean; error?: string; conversationId?: string }) => void) | null = null
   // Keyed by jobId so concurrent get_spawn_diagnostics calls don't trample each
   // other. Concentrator replies include the jobId so we can route back.
   const pendingSpawnDiagnostics = new Map<
@@ -1795,13 +1797,13 @@ async function main() {
 
   // Start local HTTP server for hook callbacks + MCP endpoint (always enabled)
   const { server: localServer, port: localServerPort } = await startLocalServer({
-    sessionId: internalId,
+    sessionId: conversationId,
     mcpEnabled: true,
     onHookEvent(event: HookEvent) {
       processHookEvent(ctx, event)
     },
     onNotify(message: string, title?: string) {
-      const sid = ctx.claudeSessionId || internalId
+      const sid = ctx.claudeSessionId || conversationId
       debug(`Notify: ${title ? `[${title}] ` : ''}${message}`)
       if (ctx.wsClient?.isConnected()) {
         ctx.wsClient.send({ type: 'notify', sessionId: sid, message, title })
@@ -1811,7 +1813,7 @@ async function main() {
       debug(`AskUserQuestion: ${request.questions.length} questions, toolUseId=${request.toolUseId.slice(0, 12)}`)
       sendInteraction(ctx, 'ask_question', request.toolUseId, {
         ...request,
-        sessionId: ctx.claudeSessionId || internalId,
+        sessionId: ctx.claudeSessionId || conversationId,
       } as unknown as WrapperMessage)
     },
     onAskTimeout(toolUseId: string) {
@@ -1823,7 +1825,7 @@ async function main() {
   })
 
   // Generate merged settings with hook injection (version-aware to avoid invalid keys)
-  const settingsPath = await writeMergedSettings(internalId, localServerPort, claudeVersion, rclaudeDir)
+  const settingsPath = await writeMergedSettings(conversationId, localServerPort, claudeVersion, rclaudeDir)
 
   // Connect to the concentrator NOW, before CC is spawned, so the dashboard
   // sees a "booting" session immediately and receives live boot events. The
@@ -1842,13 +1844,13 @@ async function main() {
   setTerminalTitle(cwd)
 
   // Write system prompt additions for rclaude-specific behavior
-  const promptFile = join(rclaudeDir, 'settings', `prompt-${internalId}.txt`)
+  const promptFile = join(rclaudeDir, 'settings', `prompt-${conversationId}.txt`)
   writeFileSync(
     promptFile,
     buildSystemPrompt({
       channelEnabled,
       headless,
-      identity: { sessionId, wrapperId: internalId, cwd, configuredModel, headless },
+      identity: { sessionId, conversationId: conversationId, cwd, configuredModel, headless },
     }),
   )
   claudeArgs.push('--append-system-prompt', readFileSync(promptFile, 'utf-8'))
@@ -1859,7 +1861,7 @@ async function main() {
 
   // Always inject MCP config (tools: notify, share_file, list_sessions, send_message, toggle_plan_mode)
   // Channel input (--dangerously-load-development-channels) only when channels enabled
-  const mcpConfigPath = join(rclaudeDir, 'settings', `mcp-${internalId}.json`)
+  const mcpConfigPath = join(rclaudeDir, 'settings', `mcp-${conversationId}.json`)
   await Bun.write(
     mcpConfigPath,
     JSON.stringify({
@@ -1873,7 +1875,7 @@ async function main() {
   // Managed sessions (spawned/revived via agent) get a funny name even when resuming,
   // unless a name was already provided via RCLAUDE_SESSION_NAME (-> hasUserName).
   // User-initiated --resume skips name generation (existing session has one).
-  const isManagedSession = !!process.env.RCLAUDE_WRAPPER_ID
+  const isManagedSession = !!(process.env.RCLAUDE_CONVERSATION_ID || process.env.RCLAUDE_WRAPPER_ID)
   const sessionName = hasUserName || (isResuming && !isManagedSession) ? undefined : generateFunnyName()
 
   // Resolve the actual name that will be sent to CC (user-provided via env, or auto-generated)
@@ -1891,7 +1893,7 @@ async function main() {
   if (resolvedSessionName && ctx.wsClient?.isConnected()) {
     ctx.wsClient.send({
       type: 'session_name',
-      sessionId: ctx.claudeSessionId || internalId,
+      sessionId: ctx.claudeSessionId || conversationId,
       name: resolvedSessionName,
       userSet: !!process.env.RCLAUDE_SESSION_NAME,
     } as WrapperMessage)
@@ -1974,7 +1976,7 @@ async function main() {
       ctx.ptyProcess = spawnClaude({
         args: finalClaudeArgs,
         settingsPath,
-        sessionId: internalId,
+        sessionId: conversationId,
         localServerPort,
         concentratorUrl: concentratorHttpUrl,
         concentratorSecret,
@@ -1996,7 +1998,7 @@ async function main() {
           // Scan for OSC 52 clipboard sequences and forward captures to concentrator
           const cleaned = osc52Parser.write(data, capture => {
             if (ctx.wsClient?.isConnected()) {
-              const sid = ctx.claudeSessionId || internalId
+              const sid = ctx.claudeSessionId || conversationId
               ctx.wsClient.send({
                 type: 'clipboard_capture',
                 sessionId: sid,
@@ -2025,7 +2027,7 @@ async function main() {
             debug(`PTY early exit: code=${code} elapsed=${elapsedMs}ms - reporting spawn_failed`)
             ctx.wsClient?.send({
               type: 'spawn_failed',
-              wrapperId: internalId,
+              conversationId: conversationId,
               cwd,
               exitCode: code,
               elapsedMs,
@@ -2045,7 +2047,7 @@ async function main() {
       debug(`PTY spawn failed: ${msg}`)
       ctx.wsClient?.send({
         type: 'spawn_failed',
-        wrapperId: internalId,
+        conversationId: conversationId,
         cwd,
         error: `PTY spawn failed: ${msg}`,
       })
@@ -2085,10 +2087,10 @@ async function main() {
     }
     ctx.diagBuffer.length = 0
     ctx.eventQueue.length = 0
-    cleanupSettings(internalId, rclaudeDir).catch(() => {})
+    cleanupSettings(conversationId, rclaudeDir).catch(() => {})
     closeMcpChannel().catch(() => {})
     // NOTE: Do NOT delete mcpConfigPath here. CC reads it asynchronously and
-    // another wrapper with the same RCLAUDE_WRAPPER_ID may still need it.
+    // another wrapper with the same RCLAUDE_CONVERSATION_ID may still need it.
     // The 25-day stale reaper handles cleanup. (77 bytes per file.)
     try {
       unlinkSync(promptFile)

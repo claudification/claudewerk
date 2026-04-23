@@ -54,7 +54,12 @@ export function createSpawnRouter(sessionStore: SessionStore, helpers: RouteHelp
       const status = (result.statusCode ?? 500) as 400 | 403 | 500 | 503
       return c.json({ error: result.error }, status)
     }
-    return c.json({ success: true, wrapperId: result.wrapperId, jobId: result.jobId, tmuxSession: result.tmuxSession })
+    return c.json({
+      success: true,
+      conversationId: result.conversationId,
+      jobId: result.jobId,
+      tmuxSession: result.tmuxSession,
+    })
   })
 
   // ─── Directory listing (sentinel relay) ───────────────────────────────

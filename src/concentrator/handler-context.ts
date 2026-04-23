@@ -10,7 +10,7 @@ import type { SessionStore } from './session-store'
 
 export interface WsData {
   sessionId?: string
-  wrapperId?: string
+  conversationId?: string
   isDashboard?: boolean
   isSentinel?: boolean
   userName?: string
@@ -90,7 +90,7 @@ export interface HandlerContext {
   /** Log an inter-session message for history */
   logMessage(entry: {
     ts: number
-    from: { sessionId: string; wrapperId?: string; project: string; name: string }
+    from: { sessionId: string; conversationId?: string; project: string; name: string }
     to: { sessionId: string; project: string; name: string }
     intent: string
     conversationId: string

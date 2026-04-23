@@ -45,7 +45,7 @@ const handleChannelRevive: MessageHandler = (ctx, data) => {
     return
   }
 
-  const wrapperId = randomUUID()
+  const conversationId = randomUUID()
   const projSettings = ctx.getProjectSettings(target.project)
   const name = target.title || projSettings?.label || extractProjectLabel(target.project)
 
@@ -54,7 +54,7 @@ const handleChannelRevive: MessageHandler = (ctx, data) => {
       type: 'revive',
       sessionId: targetSessionId,
       cwd: parseProjectUri(target.project).path,
-      wrapperId,
+      conversationId,
       mode: 'resume',
       effort: resolveEffort(target.project, ctx.getProjectSettings),
       sessionName: target.title || undefined,
@@ -64,7 +64,7 @@ const handleChannelRevive: MessageHandler = (ctx, data) => {
 
   // Register rendezvous
   ctx.sessions
-    .addRendezvous(wrapperId, callerSession, target.project, 'revive')
+    .addRendezvous(conversationId, callerSession, target.project, 'revive')
     .then(revived => {
       const callerWs = ctx.sessions.getSessionSocket(callerSession)
       if (callerWs) {
@@ -73,7 +73,7 @@ const handleChannelRevive: MessageHandler = (ctx, data) => {
             type: 'revive_ready',
             sessionId: revived.id,
             project: revived.project,
-            wrapperId,
+            conversationId,
             session: revived,
           }),
         )
@@ -85,7 +85,7 @@ const handleChannelRevive: MessageHandler = (ctx, data) => {
         callerWs.send(
           JSON.stringify({
             type: 'revive_timeout',
-            wrapperId,
+            conversationId,
             sessionId: targetSessionId,
             project: target.project,
             error: typeof err === 'string' ? err : 'Revive rendezvous timed out',
@@ -139,7 +139,12 @@ const handleChannelSpawn: MessageHandler = (ctx, data) => {
   })
     .then(result => {
       if (result.ok) {
-        ctx.reply({ type: 'channel_spawn_result', ok: true, wrapperId: result.wrapperId, jobId: result.jobId })
+        ctx.reply({
+          type: 'channel_spawn_result',
+          ok: true,
+          conversationId: result.conversationId,
+          jobId: result.jobId,
+        })
         ctx.log.debug(`Benevolent spawn: -> ${spawnPath}`)
       } else {
         ctx.reply({ type: 'channel_spawn_result', ok: false, error: result.error })
@@ -162,8 +167,8 @@ const handleChannelRestart: MessageHandler = (ctx, data) => {
   ctx.requireBenevolent()
 
   // Resolve target session and socket
-  const target = ctx.sessions.getSessionByWrapper(targetId) || ctx.sessions.getSession(targetId)
-  const targetWs = ctx.sessions.getSessionSocketByWrapper(targetId) || ctx.sessions.getSessionSocket(targetId)
+  const target = ctx.sessions.getSessionByConversation(targetId) || ctx.sessions.getSession(targetId)
+  const targetWs = ctx.sessions.getSessionSocketByConversation(targetId) || ctx.sessions.getSessionSocket(targetId)
 
   if (!target) {
     ctx.reply({ type: 'channel_restart_result', ok: false, error: 'Session not found' })
@@ -173,7 +178,7 @@ const handleChannelRestart: MessageHandler = (ctx, data) => {
   // If target is already ended, just revive it directly (no need to terminate)
   if (!targetWs || target.status === 'ended') {
     const sentinel = ctx.requireSentinel()
-    const wrapperId = randomUUID()
+    const conversationId = randomUUID()
     const projSettings = ctx.getProjectSettings(target.project)
     const name = target.title || projSettings?.label || extractProjectLabel(target.project)
 
@@ -182,7 +187,7 @@ const handleChannelRestart: MessageHandler = (ctx, data) => {
         type: 'revive',
         sessionId: target.id,
         cwd: parseProjectUri(target.project).path,
-        wrapperId,
+        conversationId,
         mode: 'resume',
         effort: resolveEffort(target.project, ctx.getProjectSettings),
         sessionName: target.title || undefined,
@@ -190,7 +195,7 @@ const handleChannelRestart: MessageHandler = (ctx, data) => {
     )
 
     ctx.sessions
-      .addRendezvous(wrapperId, callerSession, target.project, 'restart')
+      .addRendezvous(conversationId, callerSession, target.project, 'restart')
       .then(revived => {
         const callerWs = ctx.sessions.getSessionSocket(callerSession)
         callerWs?.send(
@@ -198,7 +203,7 @@ const handleChannelRestart: MessageHandler = (ctx, data) => {
             type: 'restart_ready',
             sessionId: revived.id,
             project: revived.project,
-            wrapperId,
+            conversationId,
             session: revived,
           }),
         )
@@ -208,7 +213,7 @@ const handleChannelRestart: MessageHandler = (ctx, data) => {
         callerWs?.send(
           JSON.stringify({
             type: 'restart_timeout',
-            wrapperId,
+            conversationId,
             project: target.project,
             error: typeof err === 'string' ? err : 'Restart rendezvous timed out',
           }),
@@ -221,10 +226,10 @@ const handleChannelRestart: MessageHandler = (ctx, data) => {
   }
 
   // Target is active -- determine if self-restart
-  const callerWrapper = ctx.ws.data.wrapperId as string
-  const targetWrapperIds = ctx.sessions.getWrapperIds(target.id)
-  const targetWrapper = targetWrapperIds[0] || ''
-  const isSelfRestart = targetWrapperIds.includes(callerWrapper) || target.id === callerSession
+  const callerWrapper = ctx.ws.data.conversationId as string
+  const targetConversationIds = ctx.sessions.getConversationIds(target.id)
+  const targetWrapper = targetConversationIds[0] || ''
+  const isSelfRestart = targetConversationIds.includes(callerWrapper) || target.id === callerSession
 
   // Store pending restart for the close handler to pick up
   ctx.sessions.addPendingRestart(targetWrapper, {
@@ -253,7 +258,7 @@ const handleChannelConfigure: MessageHandler = (ctx, data) => {
   ctx.requireBenevolent()
 
   // Resolve target: wrapper ID first, then session ID
-  const target = ctx.sessions.getSessionByWrapper(targetId) || ctx.sessions.getSession(targetId)
+  const target = ctx.sessions.getSessionByConversation(targetId) || ctx.sessions.getSession(targetId)
   if (!target) {
     ctx.reply({
       type: 'channel_configure_result',
@@ -321,8 +326,8 @@ const handleSessionControl: MessageHandler = (ctx, data) => {
   }
 
   // Resolve target: wrapper ID first, then session ID
-  const targetSess = ctx.sessions.getSessionByWrapper(targetId) || ctx.sessions.getSession(targetId)
-  const targetWs = ctx.sessions.getSessionSocketByWrapper(targetId) || ctx.sessions.getSessionSocket(targetId)
+  const targetSess = ctx.sessions.getSessionByConversation(targetId) || ctx.sessions.getSession(targetId)
+  const targetWs = ctx.sessions.getSessionSocketByConversation(targetId) || ctx.sessions.getSessionSocket(targetId)
   if (!targetSess || !targetWs) {
     ctx.reply({
       type: 'session_control_result',

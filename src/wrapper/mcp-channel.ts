@@ -54,7 +54,7 @@ export interface SessionInfo {
   session_id?: string // CC session ID (for transcript/task context)
   name: string
   status: 'live' | 'inactive'
-  wrapperIds?: string[] // only present when multiple wrappers share a session
+  conversationIds?: string[] // only present when multiple wrappers share a session
   label?: string
   description?: string
   title?: string
@@ -63,7 +63,7 @@ export interface SessionInfo {
 
 export interface WrapperIdentity {
   sessionId: string
-  wrapperId: string
+  conversationId: string
   cwd: string
   configuredModel?: string
   headless: boolean
@@ -120,7 +120,7 @@ export interface McpChannelCallbacks {
     params: Omit<SpawnRequest, 'jobId'> & {
       onProgress?: (event: Record<string, unknown>) => void
     },
-  ) => Promise<{ ok: boolean; error?: string; wrapperId?: string; jobId?: string }>
+  ) => Promise<{ ok: boolean; error?: string; conversationId?: string; jobId?: string }>
   onGetSpawnDiagnostics?: (
     jobId: string,
   ) => Promise<{ ok: boolean; error?: string; diagnostics?: Record<string, unknown> }>
@@ -448,7 +448,7 @@ export function initMcpChannel(cb: McpChannelCallbacks, id?: WrapperIdentity): v
 
         const info: Record<string, unknown> = {
           sessionId: identity?.sessionId,
-          wrapperId: identity?.wrapperId,
+          conversationId: identity?.conversationId,
           cwd: identity?.cwd,
           model: identity?.configuredModel,
           backend: identity?.headless ? 'headless' : 'pty',
@@ -833,7 +833,7 @@ export function initMcpChannel(cb: McpChannelCallbacks, id?: WrapperIdentity): v
           | {
               ok: boolean
               error?: string
-              wrapperId?: string
+              conversationId?: string
               jobId?: string
               session?: Record<string, unknown>
               timedOut?: boolean
@@ -857,7 +857,7 @@ export function initMcpChannel(cb: McpChannelCallbacks, id?: WrapperIdentity): v
             session_id: sessionObj.id,
             session: result.session,
             jobId: result.jobId,
-            wrapperId: result.wrapperId,
+            conversationId: result.conversationId,
           }
           if (mismatch) {
             responsePayload.modelWarning = `Requested model ${mismatch.requested} but session is running ${mismatch.actual}`
@@ -883,7 +883,7 @@ export function initMcpChannel(cb: McpChannelCallbacks, id?: WrapperIdentity): v
 
     get_spawn_diagnostics: {
       description:
-        'Fetch a diagnostic snapshot for a spawn job by jobId. Returns the resolved config, the full event timeline (job_created, spawn_sent, agent_acked, wrapper_booted, session_connected, job_complete/job_failed), and any error. Use this to debug spawn failures after spawn_session returned a wrapperId but the session never connected. Jobs expire ~5 minutes after creation. The jobId is returned in every spawn_session response.',
+        'Fetch a diagnostic snapshot for a spawn job by jobId. Returns the resolved config, the full event timeline (job_created, spawn_sent, agent_acked, wrapper_booted, session_connected, job_complete/job_failed), and any error. Use this to debug spawn failures after spawn_session returned a conversationId but the session never connected. Jobs expire ~5 minutes after creation. The jobId is returned in every spawn_session response.',
       inputSchema: {
         type: 'object' as const,
         properties: {

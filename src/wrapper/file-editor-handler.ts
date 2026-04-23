@@ -20,7 +20,7 @@ import type { WrapperContext } from './wrapper-context'
 
 export function ensureFileEditor(ctx: WrapperContext): FileEditor {
   if (!ctx.fileEditor) {
-    ctx.fileEditor = new FileEditor(ctx.cwd, ctx.claudeSessionId || ctx.internalId)
+    ctx.fileEditor = new FileEditor(ctx.cwd, ctx.claudeSessionId || ctx.conversationId)
   }
   return ctx.fileEditor
 }

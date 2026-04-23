@@ -6,7 +6,7 @@
 
 export interface PromptIdentity {
   sessionId: string
-  wrapperId: string
+  conversationId: string
   cwd: string
   configuredModel?: string
   headless: boolean
@@ -27,7 +27,7 @@ export function buildSystemPrompt(opts: PromptOptions): string {
           '# Session Identity (rclaude)',
           '',
           `- **Session ID:** \`${identity.sessionId}\``,
-          `- **Wrapper ID:** \`${identity.wrapperId}\``,
+          `- **Wrapper ID:** \`${identity.conversationId}\``,
           `- **CWD:** \`${identity.cwd}\``,
           ...(identity.configuredModel ? [`- **Model:** \`${identity.configuredModel}\``] : []),
           `- **Backend:** ${identity.headless ? 'headless' : 'PTY'}`,

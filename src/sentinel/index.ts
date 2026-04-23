@@ -97,7 +97,7 @@ const PID_REGISTRY_DIR = join(process.env.HOME || '/root', '.rclaude')
 const PID_REGISTRY_PATH = join(PID_REGISTRY_DIR, 'sentinel-sessions.json')
 
 interface PidRegistryEntry {
-  wrapperId: string
+  conversationId: string
   pid: number
   cwd: string
   startedAt: string
@@ -105,7 +105,7 @@ interface PidRegistryEntry {
 
 interface TrackedChild {
   proc: Subprocess
-  wrapperId: string
+  conversationId: string
   pid: number
   cwd: string
   startedAt: string
@@ -119,7 +119,7 @@ const deadPidsToReport: PidRegistryEntry[] = []
 
 function writePidRegistry() {
   const entries: PidRegistryEntry[] = [...trackedChildren.values()].map(c => ({
-    wrapperId: c.wrapperId,
+    conversationId: c.conversationId,
     pid: c.pid,
     cwd: c.cwd,
     startedAt: c.startedAt,
@@ -139,11 +139,11 @@ function loadAndCheckPidRegistry() {
     for (const entry of entries) {
       try {
         process.kill(entry.pid, 0) // check if alive (signal 0 = no-op)
-        log(`PID ${entry.pid} still alive (wrapper ${entry.wrapperId.slice(0, 8)}, cwd=${entry.cwd})`)
+        log(`PID ${entry.pid} still alive (wrapper ${entry.conversationId.slice(0, 8)}, cwd=${entry.cwd})`)
         // Can't re-attach Bun.spawn to existing PID - just note it's alive.
         // The rclaude process manages its own WS connection to the concentrator.
       } catch {
-        log(`PID ${entry.pid} dead (wrapper ${entry.wrapperId.slice(0, 8)})`)
+        log(`PID ${entry.pid} dead (wrapper ${entry.conversationId.slice(0, 8)})`)
         deadPidsToReport.push(entry)
       }
     }
@@ -158,7 +158,7 @@ function reportDeadPids(ws: WebSocket) {
   for (const entry of deadPidsToReport) {
     const msg: SpawnFailed = {
       type: 'spawn_failed',
-      wrapperId: entry.wrapperId,
+      conversationId: entry.conversationId,
       cwd: entry.cwd,
       pid: entry.pid,
       error: 'Process died during sentinel restart (discovered from PID registry)',
@@ -209,7 +209,7 @@ function findRclaudeBinary(): string | null {
  *  gets its own values set explicitly. */
 const RCLAUDE_SESSION_VARS = new Set([
   'RCLAUDE_HEADLESS',
-  'RCLAUDE_WRAPPER_ID',
+  'RCLAUDE_CONVERSATION_ID',
   'RCLAUDE_SESSION_ID',
   'RCLAUDE_SESSION_NAME',
   'RCLAUDE_SECRET',
@@ -251,7 +251,7 @@ function cleanSentinelEnv(): Record<string, string | undefined> {
  */
 function buildHeadlessEnv(opts: {
   secret: string
-  wrapperId: string
+  conversationId: string
   sessionId?: string
   sessionName?: string
   permissionMode?: string
@@ -274,7 +274,7 @@ function buildHeadlessEnv(opts: {
 
   // Required
   env.RCLAUDE_SECRET = opts.secret
-  env.RCLAUDE_WRAPPER_ID = opts.wrapperId
+  env.RCLAUDE_CONVERSATION_ID = opts.conversationId
   env.RCLAUDE_HEADLESS = '1'
 
   // Optional
@@ -331,7 +331,7 @@ function buildHeadlessArgs(opts: {
 function spawnHeadlessDirect(
   rclaudeBin: string,
   cwd: string,
-  wrapperId: string,
+  conversationId: string,
   args: string[],
   env: Record<string, string | undefined>,
   jobId?: string,
@@ -355,32 +355,32 @@ function spawnHeadlessDirect(
   }
 
   const pid = proc.pid
-  log(`Headless spawn: PID ${pid} wrapper=${wrapperId.slice(0, 8)} cwd=${cwd}`)
+  log(`Headless spawn: PID ${pid} conv=${conversationId.slice(0, 8)} cwd=${cwd}`)
 
   // Track the child
-  const child: TrackedChild = { proc, wrapperId, pid, cwd, startedAt: new Date().toISOString() }
-  trackedChildren.set(wrapperId, child)
+  const child: TrackedChild = { proc, conversationId, pid, cwd, startedAt: new Date().toISOString() }
+  trackedChildren.set(conversationId, child)
   writePidRegistry()
 
   // Capture stderr for diagnostics
-  captureChildStderr(proc, wrapperId)
+  captureChildStderr(proc, conversationId)
 
   // Monitor for exit
   proc.exited.then(exitCode => {
     const elapsedMs = Date.now() - startTime
-    trackedChildren.delete(wrapperId)
+    trackedChildren.delete(conversationId)
     writePidRegistry()
 
     if (exitCode === 0) {
-      log(`Headless child exited normally: PID ${pid} wrapper=${wrapperId.slice(0, 8)} (${elapsedMs}ms)`)
-      diag('spawn', `Child exited OK (${elapsedMs}ms)`, { wrapperId: wrapperId.slice(0, 8), pid })
+      log(`Headless child exited normally: PID ${pid} conv=${conversationId.slice(0, 8)} (${elapsedMs}ms)`)
+      diag('spawn', `Child exited OK (${elapsedMs}ms)`, { conversationId: conversationId.slice(0, 8), pid })
     } else {
       const earlyFailure = elapsedMs < 5000
       log(
-        `Headless child FAILED: PID ${pid} exit=${exitCode} elapsed=${elapsedMs}ms wrapper=${wrapperId.slice(0, 8)}${earlyFailure ? ' (EARLY - likely hook/config failure)' : ''}`,
+        `Headless child FAILED: PID ${pid} exit=${exitCode} elapsed=${elapsedMs}ms conv=${conversationId.slice(0, 8)}${earlyFailure ? ' (EARLY - likely hook/config failure)' : ''}`,
       )
       diag('spawn', `Child FAILED exit=${exitCode} elapsed=${elapsedMs}ms`, {
-        wrapperId: wrapperId.slice(0, 8),
+        conversationId: conversationId.slice(0, 8),
         pid,
         earlyFailure,
       })
@@ -389,7 +389,7 @@ function spawnHeadlessDirect(
       if (activeWs?.readyState === WebSocket.OPEN) {
         const msg: SpawnFailed = {
           type: 'spawn_failed',
-          wrapperId,
+          conversationId,
           cwd,
           pid,
           exitCode,
@@ -410,7 +410,7 @@ function spawnHeadlessDirect(
 }
 
 /** Read stderr from a child process and forward lines as diag entries */
-async function captureChildStderr(proc: Subprocess, wrapperId: string) {
+async function captureChildStderr(proc: Subprocess, conversationId: string) {
   const stderr = proc.stderr
   if (!stderr) return
   const reader = (stderr as ReadableStream<Uint8Array>).getReader()
@@ -425,13 +425,13 @@ async function captureChildStderr(proc: Subprocess, wrapperId: string) {
       buffer = lines.pop() || ''
       for (const line of lines) {
         if (line.trim()) {
-          diag('child-stderr', line.trim(), { wrapper: wrapperId.slice(0, 8) })
+          diag('child-stderr', line.trim(), { wrapper: conversationId.slice(0, 8) })
         }
       }
     }
     // Flush remaining
     if (buffer.trim()) {
-      diag('child-stderr', buffer.trim(), { wrapper: wrapperId.slice(0, 8) })
+      diag('child-stderr', buffer.trim(), { wrapper: conversationId.slice(0, 8) })
     }
   } catch {
     // Stream closed, normal on exit
@@ -559,7 +559,7 @@ function launchLog(jobId: string | undefined, step: string, status: 'info' | 'ok
 async function reviveSession(
   sessionId: string,
   cwd: string,
-  wrapperId: string,
+  conversationId: string,
   reviveScript: string,
   secret: string,
   verbose: boolean,
@@ -577,7 +577,7 @@ async function reviveSession(
   const result: ReviveResult = {
     type: 'revive_result',
     sessionId,
-    wrapperId,
+    conversationId,
     project: cwdToProjectUri(cwd),
     jobId,
     success: false,
@@ -617,7 +617,7 @@ async function reviveSession(
     })
     const spawnEnv = buildHeadlessEnv({
       secret,
-      wrapperId,
+      conversationId,
       sessionId,
       sessionName,
       autocompactPct,
@@ -629,7 +629,7 @@ async function reviveSession(
     })
 
     launchLog(jobId, 'Reviving headless (direct spawn)', 'info', `mode=${effectiveMode || 'default'}`)
-    const spawnRes = spawnHeadlessDirect(rclaudeBin, cwd, wrapperId, args, spawnEnv, jobId)
+    const spawnRes = spawnHeadlessDirect(rclaudeBin, cwd, conversationId, args, spawnEnv, jobId)
     result.success = spawnRes.success
     result.error = spawnRes.error
     result.continued = effectiveMode === 'resume'
@@ -663,7 +663,7 @@ async function reviveSession(
     env: {
       ...cleanSentinelEnv(),
       RCLAUDE_SECRET: secret,
-      RCLAUDE_WRAPPER_ID: wrapperId,
+      RCLAUDE_CONVERSATION_ID: conversationId,
       RCLAUDE_SESSION_ID: sessionId,
       ...(effort ? { RCLAUDE_EFFORT: effort } : {}),
       ...(model ? { RCLAUDE_MODEL: model } : {}),
@@ -751,7 +751,7 @@ function isSpawnApproved(cwd: string): boolean {
  */
 async function spawnSession(
   cwd: string,
-  wrapperId: string,
+  conversationId: string,
   reviveScript: string,
   secret: string,
   _verbose: boolean,
@@ -782,7 +782,7 @@ async function spawnSession(
   const rclaudeBin = findRclaudeBinary()
   diag('spawn', 'Starting spawn', {
     cwd,
-    wrapperId,
+    conversationId,
     mkdir,
     headless,
     reviveScript,
@@ -830,7 +830,7 @@ async function spawnSession(
   }
   let promptFile: string | undefined
   if (prompt) {
-    promptFile = `/tmp/rclaude-adhoc-${wrapperId}`
+    promptFile = `/tmp/rclaude-adhoc-${conversationId}`
     try {
       await Bun.write(promptFile, prompt)
       launchLog(jobId, 'Prompt file written', 'ok', `${prompt.length} chars`)
@@ -853,7 +853,7 @@ async function spawnSession(
     const args = buildHeadlessArgs({ mode, resumeId, resumeName: sessionName, effort, model, worktree, maxBudgetUsd })
     const spawnEnv = buildHeadlessEnv({
       secret,
-      wrapperId,
+      conversationId,
       sessionName,
       permissionMode,
       autocompactPct,
@@ -871,7 +871,7 @@ async function spawnSession(
       env,
     })
 
-    const spawnRes = spawnHeadlessDirect(rclaudeBin, cwd, wrapperId, args, spawnEnv, jobId)
+    const spawnRes = spawnHeadlessDirect(rclaudeBin, cwd, conversationId, args, spawnEnv, jobId)
     if (spawnRes.success) {
       launchLog(jobId, 'Waiting for session to connect', 'info')
     }
@@ -895,7 +895,7 @@ async function spawnSession(
   const scriptEnv = {
     ...cleanSentinelEnv(),
     RCLAUDE_SECRET: secret,
-    RCLAUDE_WRAPPER_ID: wrapperId,
+    RCLAUDE_CONVERSATION_ID: conversationId,
     ...(effort ? { RCLAUDE_EFFORT: effort } : {}),
     ...(model ? { RCLAUDE_MODEL: model } : {}),
     ...(bare ? { RCLAUDE_BARE: '1' } : {}),
@@ -1209,7 +1209,7 @@ function connect(
           const reviveMsg = msg as {
             sessionId: string
             project: string
-            wrapperId: string
+            conversationId: string
             mode?: 'fresh' | 'resume'
             headless?: boolean
             effort?: string
@@ -1223,13 +1223,13 @@ function connect(
           }
           const reviveCwd = parseProjectUri(reviveMsg.project).path
           log(
-            `Reviving session ${reviveMsg.sessionId.slice(0, 8)}... wrapper=${reviveMsg.wrapperId.slice(0, 8)} mode=${reviveMsg.mode || 'default'} headless=${reviveMsg.headless !== false}${reviveMsg.effort ? ` effort=${reviveMsg.effort}` : ''}${reviveMsg.model ? ` model=${reviveMsg.model}` : ''}${reviveMsg.maxBudgetUsd ? ` maxBudget=$${reviveMsg.maxBudgetUsd}` : ''}${reviveMsg.jobId ? ` job=${reviveMsg.jobId.slice(0, 8)}` : ''} (${reviveCwd})`,
+            `Reviving session ${reviveMsg.sessionId.slice(0, 8)}... conv=${reviveMsg.conversationId.slice(0, 8)} mode=${reviveMsg.mode || 'default'} headless=${reviveMsg.headless !== false}${reviveMsg.effort ? ` effort=${reviveMsg.effort}` : ''}${reviveMsg.model ? ` model=${reviveMsg.model}` : ''}${reviveMsg.maxBudgetUsd ? ` maxBudget=$${reviveMsg.maxBudgetUsd}` : ''}${reviveMsg.jobId ? ` job=${reviveMsg.jobId.slice(0, 8)}` : ''} (${reviveCwd})`,
           )
           launchLog(reviveMsg.jobId, 'Sentinel received revive request', 'ok')
           const result = await reviveSession(
             reviveMsg.sessionId,
             reviveCwd,
-            reviveMsg.wrapperId,
+            reviveMsg.conversationId,
             reviveScript,
             secret,
             verbose,
@@ -1264,7 +1264,7 @@ function connect(
             // session/window renames.
             if (tmuxPaneId) {
               const paneId = tmuxPaneId
-              const wid = reviveMsg.wrapperId
+              const wid = reviveMsg.conversationId
               const jid = reviveMsg.jobId
               setTimeout(() => {
                 const check = Bun.spawnSync([TMUX_BIN, 'list-panes', '-t', paneId], {
@@ -1272,11 +1272,11 @@ function connect(
                   stderr: 'pipe',
                 })
                 if (check.exitCode !== 0) {
-                  log(`tmux pane ${paneId} died within 5s of spawn (wrapper=${wid.slice(0, 8)})`)
+                  log(`tmux pane ${paneId} died within 5s of spawn (conv=${wid.slice(0, 8)})`)
                   launchLog(jid, 'tmux pane died', 'error', 'rclaude crashed during startup')
                   const msg: SpawnFailed = {
                     type: 'spawn_failed',
-                    wrapperId: wid,
+                    conversationId: wid,
                     cwd: reviveCwd,
                     error: 'rclaude process died within 5s of tmux launch - check shell environment, PATH, and hooks',
                   }
@@ -1284,7 +1284,7 @@ function connect(
                     ws.send(JSON.stringify(msg))
                   } catch {}
                 } else {
-                  debug(`tmux health check OK: pane ${paneId} alive (wrapper=${wid.slice(0, 8)})`, verbose)
+                  debug(`tmux health check OK: pane ${paneId} alive (conv=${wid.slice(0, 8)})`, verbose)
                 }
               }, 5000)
             }
@@ -1298,7 +1298,7 @@ function connect(
           const spawnMsg = msg as {
             requestId: string
             cwd: string
-            wrapperId: string
+            conversationId: string
             mkdir?: boolean
             mode?: 'fresh' | 'resume'
             resumeId?: string
@@ -1339,7 +1339,7 @@ function connect(
             requestId: spawnMsg.requestId,
             rawCwd: spawnMsg.cwd,
             expandedCwd,
-            wrapperId: spawnMsg.wrapperId,
+            conversationId: spawnMsg.conversationId,
             mkdir: spawnMsg.mkdir,
             mode: spawnMsg.mode,
             headless: spawnMsg.headless,
@@ -1347,7 +1347,7 @@ function connect(
           })
           const spawnRes = await spawnSession(
             expandedCwd,
-            spawnMsg.wrapperId,
+            spawnMsg.conversationId,
             reviveScript,
             secret,
             verbose,
@@ -1379,7 +1379,7 @@ function connect(
             success: spawnRes.success,
             error: spawnRes.error,
             tmuxSession: spawnRes.tmuxSession,
-            wrapperId: spawnMsg.wrapperId,
+            conversationId: spawnMsg.conversationId,
           }
           ws.send(JSON.stringify(response))
           if (spawnRes.success) {
@@ -1388,7 +1388,7 @@ function connect(
             // Async tmux pane health check (same as revive path)
             if (spawnRes.tmuxPaneId) {
               const paneId = spawnRes.tmuxPaneId
-              const wid = spawnMsg.wrapperId
+              const wid = spawnMsg.conversationId
               const jid = spawnMsg.jobId
               const spawnCwd = expandedCwd
               setTimeout(() => {
@@ -1397,11 +1397,11 @@ function connect(
                   stderr: 'pipe',
                 })
                 if (check.exitCode !== 0) {
-                  log(`tmux pane ${paneId} died within 5s of spawn (wrapper=${wid.slice(0, 8)})`)
+                  log(`tmux pane ${paneId} died within 5s of spawn (conv=${wid.slice(0, 8)})`)
                   launchLog(jid, 'tmux pane died', 'error', 'rclaude crashed during startup')
                   const failMsg: SpawnFailed = {
                     type: 'spawn_failed',
-                    wrapperId: wid,
+                    conversationId: wid,
                     cwd: spawnCwd,
                     error: 'rclaude process died within 5s of tmux launch - check shell environment, PATH, and hooks',
                   }
@@ -1409,7 +1409,7 @@ function connect(
                     ws.send(JSON.stringify(failMsg))
                   } catch {}
                 } else {
-                  debug(`tmux health check OK: pane ${paneId} alive (wrapper=${wid.slice(0, 8)})`, verbose)
+                  debug(`tmux health check OK: pane ${paneId} alive (conv=${wid.slice(0, 8)})`, verbose)
                 }
               }, 5000)
             }
@@ -1494,7 +1494,7 @@ process.on('SIGTERM', () => {
   for (const child of trackedChildren.values()) {
     try {
       child.proc.unref()
-      log(`Unrefed PID ${child.pid} (wrapper ${child.wrapperId.slice(0, 8)})`)
+      log(`Unrefed PID ${child.pid} (wrapper ${child.conversationId.slice(0, 8)})`)
     } catch (e) {
       log(`Failed to unref PID ${child.pid}: ${e}`)
     }

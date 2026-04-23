@@ -51,7 +51,7 @@ function makeCtx(init: { claudeSessionId?: string | null; pendingClearFromId?: s
   // touches are populated. Unused fields remain undefined and would throw if
   // accessed, which is the desired failure mode for a test.
   const ctx = {
-    internalId: 'internal-xyz',
+    conversationId: 'internal-xyz',
     cwd: '/test/cwd',
     claudeSessionId: init.claudeSessionId ?? null,
     pendingClearFromId: init.pendingClearFromId ?? null,

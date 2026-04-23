@@ -587,8 +587,8 @@
 - `dc33320` Accurate session status with liveness check + cleaner task display
 - `361b3d2` Defer virtualizer ResizeObserver to prevent React #300 errors
 - `d190904` Transcript watcher dies after /clear - switch to directory-level watching
-- `d2fd580` Transcript watcher exponential backoff + wrapperIds in REST API
-- `a1a3c3f` RCLAUDE_WRAPPER_ID leaking across tmux sessions
+- `d2fd580` Transcript watcher exponential backoff + conversationIds in REST API
+- `a1a3c3f` RCLAUDE_CONVERSATION_ID leaking across tmux sessions
 - `fbb147e` WrapperID leaking across sessions - stale socket registration
 - `13bbc1b` Infinite re-render loop from unstable Zustand selector fallbacks
 - `5b864bc` React error #310 - hooks called after early returns in GroupView

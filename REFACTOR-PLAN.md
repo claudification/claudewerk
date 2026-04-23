@@ -72,7 +72,7 @@ Project board tasks under `.rclaude/project/`. Status reflects post-PR #46 state
 | `refactor-use-sessions` | OPEN | RISKY (Zustand selector stability) -- defer unless forced |
 | `investigate-breaking-use-websocket` | OPEN | RISKY -- same reason |
 | `refactor-arrow-const-handlers` | OPEN | Project-wide style sweep, mechanical |
-| `code-hygene-...internalId` | OPEN | Pure rename `internalId` -> `wrapperId` wrapper-side |
+| `code-hygene-...internalId` | OPEN | Pure rename `internalId` -> `conversationId` wrapper-side |
 
 Master task umbrella: `.rclaude/project/inbox/master-refactor-codebase-simplification.md` (the original pre-execution plan; now partly outdated -- use this doc as the current source of truth).
 

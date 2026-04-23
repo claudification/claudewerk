@@ -577,14 +577,14 @@ export function RunTaskDialog({
 
   // Launch state
   const [phase, setPhase] = useState<'config' | 'launching'>('config')
-  const [wrapperId, setWrapperId] = useState<string | null>(null)
+  const [conversationId, setWrapperId] = useState<string | null>(null)
   const [jobId, setJobId] = useState<string | null>(null)
   const sessionAtLaunchRef = useRef<string | null>(null)
 
   // Shared launch progress hook
   const progress = useLaunchProgress({
     jobId,
-    wrapperId,
+    conversationId,
     timeoutMs: 30_000,
     enabled: phase === 'launching',
   })
@@ -726,7 +726,7 @@ export function RunTaskDialog({
     const result = await sendSpawnRequest(spawnReq)
     if (result.ok) {
       haptic('success')
-      const wid = result.wrapperId
+      const wid = result.conversationId
       setWrapperId(wid)
       progress.setSteps(prev => [
         ...prev.map(s =>
@@ -752,7 +752,7 @@ export function RunTaskDialog({
     const diag = buildSpawnDiagnostics({
       source: 'run-task-dialog',
       jobId,
-      wrapperId: wrapperId || progress.launch.wrapperId || null,
+      conversationId: conversationId || progress.launch.conversationId || null,
       sessionId: progress.launch.sessionId ?? null,
       elapsedSec: progress.elapsed,
       error: progress.error || progress.launch.error || null,

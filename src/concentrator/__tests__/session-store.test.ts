@@ -145,7 +145,7 @@ describe('session lifecycle', () => {
 
   it('rekeySession makes session accessible under new id, old id is gone', () => {
     store.createSession('old-id', '/cwd')
-    store.rekeySession('old-id', 'new-id', 'wrapper-1', '/cwd')
+    store.rekeySession('old-id', 'new-id', 'conv-1', '/cwd')
 
     expect(store.getSession('old-id')).toBeUndefined()
     const session = store.getSession('new-id')
@@ -437,36 +437,36 @@ describe('sync state', () => {
 // 6. Wrapper socket tracking
 // ---------------------------------------------------------------------------
 
-describe('wrapper socket tracking', () => {
+describe('conversation socket tracking', () => {
   it('setSessionSocket + getSessionSocket returns the registered socket', () => {
     store.createSession('sock-sess', '/cwd')
     const ws = mockSocket()
-    store.setSessionSocket('sock-sess', 'wrapper-1', ws)
+    store.setSessionSocket('sock-sess', 'conv-1', ws)
 
     const retrieved = store.getSessionSocket('sock-sess')
     expect(retrieved).toBe(ws)
   })
 
-  it('getActiveWrapperCount reflects number of registered wrappers', () => {
+  it('getActiveConversationCount reflects number of registered conversations', () => {
     store.createSession('wrap-count', '/cwd')
-    expect(store.getActiveWrapperCount('wrap-count')).toBe(0)
+    expect(store.getActiveConversationCount('wrap-count')).toBe(0)
 
     const ws1 = mockSocket('ws-1')
     const ws2 = mockSocket('ws-2')
-    store.setSessionSocket('wrap-count', 'wrapper-1', ws1)
-    store.setSessionSocket('wrap-count', 'wrapper-2', ws2)
+    store.setSessionSocket('wrap-count', 'conv-1', ws1)
+    store.setSessionSocket('wrap-count', 'conv-2', ws2)
 
-    expect(store.getActiveWrapperCount('wrap-count')).toBe(2)
+    expect(store.getActiveConversationCount('wrap-count')).toBe(2)
   })
 
-  it('removeSessionSocket decrements wrapper count', () => {
+  it('removeSessionSocket decrements conversation count', () => {
     store.createSession('sock-remove', '/cwd')
     const ws = mockSocket()
-    store.setSessionSocket('sock-remove', 'wrapper-x', ws)
-    expect(store.getActiveWrapperCount('sock-remove')).toBe(1)
+    store.setSessionSocket('sock-remove', 'conv-x', ws)
+    expect(store.getActiveConversationCount('sock-remove')).toBe(1)
 
-    store.removeSessionSocket('sock-remove', 'wrapper-x')
-    expect(store.getActiveWrapperCount('sock-remove')).toBe(0)
+    store.removeSessionSocket('sock-remove', 'conv-x')
+    expect(store.getActiveConversationCount('sock-remove')).toBe(0)
     expect(store.getSessionSocket('sock-remove')).toBeUndefined()
   })
 })
@@ -725,16 +725,16 @@ describe('broadcast scoping (project URI)', () => {
     expect(() => store.broadcastForProject('claude:///projects/target2')).not.toThrow()
   })
 
-  it('broadcastToWrappersAtCwd accepts bare CWD (backward compat)', () => {
+  it('broadcastToConversationsAtCwd accepts bare CWD (backward compat)', () => {
     store.createSession('bw-1', '/projects/wrap')
-    const count = store.broadcastToWrappersAtCwd('/projects/wrap', { type: 'test' })
+    const count = store.broadcastToConversationsAtCwd('/projects/wrap', { type: 'test' })
     // No wrappers registered, so count is 0 but shouldn't throw
     expect(count).toBe(0)
   })
 
-  it('broadcastToWrappersForProject accepts project URI', () => {
+  it('broadcastToConversationsForProject accepts project URI', () => {
     store.createSession('bw-2', '/projects/wrap2')
-    const count = store.broadcastToWrappersForProject('claude:///projects/wrap2', { type: 'test' })
+    const count = store.broadcastToConversationsForProject('claude:///projects/wrap2', { type: 'test' })
     expect(count).toBe(0)
   })
 })

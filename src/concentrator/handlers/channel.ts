@@ -146,7 +146,7 @@ const channelListSessions: MessageHandler = (ctx, data) => {
   const filtered = all
     .filter(s => {
       if (status === 'all') return true
-      const isLive = ctx.sessions.getActiveWrapperCount(s.id) > 0
+      const isLive = ctx.sessions.getActiveConversationCount(s.id) > 0
       return status === 'live' ? isLive : !isLive
     })
     .filter(s => s.id !== callerSession)
@@ -174,7 +174,7 @@ const channelListSessions: MessageHandler = (ctx, data) => {
     const shortProject = extractProjectLabel(s.project)
     const projSettings = ctx.getProjectSettings(s.project)
     const sessionName = s.title || projSettings?.label || extractProjectLabel(s.project)
-    const isLive = ctx.sessions.getActiveWrapperCount(s.id) > 0
+    const isLive = ctx.sessions.getActiveConversationCount(s.id) > 0
     const queueSize = ctx.messageQueue.getQueueSize(s.project)
 
     // Assign a stable project-level slug via the caller's address book.
@@ -318,7 +318,7 @@ const channelSend: MessageHandler = (ctx, data) => {
       sessionSlug,
       sessionsAtProject,
       canonicalProject,
-      isLive: s => ctx.sessions.getActiveWrapperCount(s.id) > 0,
+      isLive: s => ctx.sessions.getActiveConversationCount(s.id) > 0,
     })
     if (resolved.kind === 'ambiguous') {
       ctx.reply({
@@ -332,7 +332,7 @@ const channelSend: MessageHandler = (ctx, data) => {
       toSess = ctx.sessions.getSession(resolved.session.id)
     }
   } else {
-    toSess = ctx.sessions.getSessionByWrapper(toTarget) || ctx.sessions.getSession(toTarget)
+    toSess = ctx.sessions.getSessionByConversation(toTarget) || ctx.sessions.getSession(toTarget)
   }
 
   const toSession = toSess?.id
@@ -469,7 +469,7 @@ const channelSend: MessageHandler = (ctx, data) => {
           ts: Date.now(),
           from: {
             sessionId: fromSession,
-            wrapperId: ctx.ws.data.wrapperId,
+            conversationId: ctx.ws.data.conversationId,
             project: fromSess.project,
             name: fromProjectName,
           },

@@ -24,7 +24,7 @@ interface LaunchChannelState {
   failed: boolean
   error: string | null
   sessionId: string | null
-  wrapperId: string | null
+  conversationId: string | null
 }
 
 const INITIAL_STATE: LaunchChannelState = {
@@ -33,7 +33,7 @@ const INITIAL_STATE: LaunchChannelState = {
   failed: false,
   error: null,
   sessionId: null,
-  wrapperId: null,
+  conversationId: null,
 }
 
 export function useLaunchChannel(jobId: string | null): LaunchChannelState {
@@ -100,7 +100,7 @@ export function useLaunchChannel(jobId: string | null): LaunchChannelState {
                 t: detail.t || Date.now(),
               },
             ],
-            wrapperId: detail.wrapperId || prev.wrapperId,
+            conversationId: detail.conversationId || prev.conversationId,
             sessionId: detail.sessionId || prev.sessionId,
           }))
           break
@@ -111,7 +111,7 @@ export function useLaunchChannel(jobId: string | null): LaunchChannelState {
             ...prev,
             completed: true,
             sessionId: detail.sessionId,
-            wrapperId: detail.wrapperId,
+            conversationId: detail.conversationId,
           }))
           break
 

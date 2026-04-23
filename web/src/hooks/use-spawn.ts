@@ -10,7 +10,7 @@ import type { SpawnRequest } from '@shared/spawn-schema'
 import { wsSend } from './use-sessions'
 
 type SpawnAckResult =
-  | { ok: true; wrapperId: string; jobId: string; tmuxSession?: string }
+  | { ok: true; conversationId: string; jobId: string; tmuxSession?: string }
   | { ok: false; error: string }
 
 // Module-level pending ack registry (jobId -> resolver).
@@ -44,8 +44,8 @@ export function sendSpawnRequest(req: SpawnRequest, timeoutMs = 15000): Promise<
 
     pendingAcks.set(jobId, ack => {
       globalThis.clearTimeout(timer)
-      if (ack.ok && ack.wrapperId) {
-        resolve({ ok: true, wrapperId: ack.wrapperId, jobId, tmuxSession: ack.tmuxSession })
+      if (ack.ok && ack.conversationId) {
+        resolve({ ok: true, conversationId: ack.conversationId, jobId, tmuxSession: ack.tmuxSession })
       } else {
         resolve({ ok: false, error: ack.error || 'Spawn failed' })
       }

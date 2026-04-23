@@ -86,7 +86,7 @@ export interface SessionStore {
   rekeySession: (
     oldId: string,
     newId: string,
-    wrapperId: string,
+    conversationId: string,
     newProject: string,
     model?: string,
   ) => Session | undefined
@@ -99,13 +99,13 @@ export interface SessionStore {
   removeSession: (sessionId: string) => void
   getSessionEvents: (sessionId: string, limit?: number, since?: number) => HookEvent[]
   updateTasks: (sessionId: string, tasks: TaskInfo[]) => void
-  setSessionSocket: (sessionId: string, wrapperId: string, ws: ServerWebSocket<unknown>) => void
+  setSessionSocket: (sessionId: string, conversationId: string, ws: ServerWebSocket<unknown>) => void
   getSessionSocket: (sessionId: string) => ServerWebSocket<unknown> | undefined
-  getSessionSocketByWrapper: (wrapperId: string) => ServerWebSocket<unknown> | undefined
-  getSessionByWrapper: (wrapperId: string) => Session | undefined
-  removeSessionSocket: (sessionId: string, wrapperId: string) => void
-  getActiveWrapperCount: (sessionId: string) => number
-  getWrapperIds: (sessionId: string) => string[]
+  getSessionSocketByConversation: (conversationId: string) => ServerWebSocket<unknown> | undefined
+  getSessionByConversation: (conversationId: string) => Session | undefined
+  removeSessionSocket: (sessionId: string, conversationId: string) => void
+  getActiveConversationCount: (sessionId: string) => number
+  getConversationIds: (sessionId: string) => string[]
   // Transcript cache methods
   addTranscriptEntries: (sessionId: string, entries: TranscriptEntry[], isInitial: boolean) => void
   getTranscriptEntries: (sessionId: string, limit?: number) => TranscriptEntry[]
@@ -123,18 +123,18 @@ export interface SessionStore {
   getBgTaskOutput: (taskId: string) => string | undefined
   broadcastSessionUpdate: (sessionId: string) => void
   // Terminal viewer methods (multiple viewers per session)
-  // Terminal viewers keyed by wrapperId (each PTY is on a specific rclaude instance)
-  addTerminalViewer: (wrapperId: string, ws: ServerWebSocket<unknown>) => void
-  getTerminalViewers: (wrapperId: string) => Set<ServerWebSocket<unknown>>
-  removeTerminalViewer: (wrapperId: string, ws: ServerWebSocket<unknown>) => void
+  // Terminal viewers keyed by conversationId (each PTY is on a specific rclaude instance)
+  addTerminalViewer: (conversationId: string, ws: ServerWebSocket<unknown>) => void
+  getTerminalViewers: (conversationId: string) => Set<ServerWebSocket<unknown>>
+  removeTerminalViewer: (conversationId: string, ws: ServerWebSocket<unknown>) => void
   removeTerminalViewerBySocket: (ws: ServerWebSocket<unknown>) => void
-  hasTerminalViewers: (wrapperId: string) => boolean
+  hasTerminalViewers: (conversationId: string) => boolean
   // JSON stream viewer methods (raw NDJSON tail for headless sessions)
-  addJsonStreamViewer: (wrapperId: string, ws: ServerWebSocket<unknown>) => void
-  getJsonStreamViewers: (wrapperId: string) => Set<ServerWebSocket<unknown>>
-  removeJsonStreamViewer: (wrapperId: string, ws: ServerWebSocket<unknown>) => void
+  addJsonStreamViewer: (conversationId: string, ws: ServerWebSocket<unknown>) => void
+  getJsonStreamViewers: (conversationId: string) => Set<ServerWebSocket<unknown>>
+  removeJsonStreamViewer: (conversationId: string, ws: ServerWebSocket<unknown>) => void
   removeJsonStreamViewerBySocket: (ws: ServerWebSocket<unknown>) => void
-  hasJsonStreamViewers: (wrapperId: string) => boolean
+  hasJsonStreamViewers: (conversationId: string) => boolean
   // Dashboard subscriber methods
   addSubscriber: (ws: ServerWebSocket<unknown>, protocolVersion?: number) => void
   sendSessionsList: (ws: ServerWebSocket<unknown>) => void
@@ -190,23 +190,23 @@ export interface SessionStore {
   addDirListener: (requestId: string, cb: (result: unknown) => void) => void
   removeDirListener: (requestId: string) => void
   resolveDir: (requestId: string, result: unknown) => void
-  broadcastToWrappersForProject: (project: string, message: Record<string, unknown>) => number
-  broadcastToWrappersAtCwd: (project: string, message: Record<string, unknown>) => number
+  broadcastToConversationsForProject: (project: string, message: Record<string, unknown>) => number
+  broadcastToConversationsAtCwd: (project: string, message: Record<string, unknown>) => number
   addFileListener: (requestId: string, cb: (result: unknown) => void) => void
   removeFileListener: (requestId: string) => void
   resolveFile: (requestId: string, result: unknown) => boolean
   // Launch jobs (request-scoped event channels for spawn/revive progress)
-  createJob: (jobId: string, wrapperId: string) => void
+  createJob: (jobId: string, conversationId: string) => void
   recordJobConfig: (jobId: string, config: Record<string, unknown>) => void
   subscribeJob: (jobId: string, ws: ServerWebSocket<unknown>) => boolean
   unsubscribeJob: (jobId: string, ws: ServerWebSocket<unknown>) => void
   forwardJobEvent: (jobId: string, msg: Record<string, unknown>) => void
-  completeJob: (wrapperId: string, sessionId: string) => void
+  completeJob: (conversationId: string, sessionId: string) => void
   failJob: (jobId: string, error: string) => void
-  getJobByWrapper: (wrapperId: string) => string | undefined
+  getJobByConversation: (conversationId: string) => string | undefined
   getJobDiagnostics: (jobId: string) => {
     jobId: string
-    wrapperId: string
+    conversationId: string
     sessionId: string | null
     completed: boolean
     failed: boolean
@@ -226,27 +226,27 @@ export interface SessionStore {
   cleanupJobSubscriber: (ws: ServerWebSocket<unknown>) => void
   // Session rendezvous (spawn/revive callback)
   addRendezvous: (
-    wrapperId: string,
+    conversationId: string,
     callerSessionId: string,
     project: string,
     action: 'spawn' | 'revive' | 'restart',
   ) => Promise<SessionSummary>
   // Pending restart (terminate + auto-revive on disconnect)
   addPendingRestart: (
-    wrapperId: string,
+    conversationId: string,
     info: { callerSessionId: string; targetSessionId: string; project: string; isSelfRestart: boolean },
   ) => void
   consumePendingRestart: (
-    wrapperId: string,
+    conversationId: string,
   ) => { callerSessionId: string; targetSessionId: string; project: string; isSelfRestart: boolean } | undefined
-  resolveRendezvous: (wrapperId: string, sessionId: string) => boolean
-  getRendezvousInfo: (wrapperId: string) => { callerSessionId: string; action: string } | undefined
+  resolveRendezvous: (conversationId: string, sessionId: string) => boolean
+  getRendezvousInfo: (conversationId: string) => { callerSessionId: string; action: string } | undefined
   // Pending launch configs (set at spawn, consumed on connect to restore on revive)
-  setPendingLaunchConfig: (wrapperId: string, config: LaunchConfig) => void
-  consumePendingLaunchConfig: (wrapperId: string) => LaunchConfig | undefined
+  setPendingLaunchConfig: (conversationId: string, config: LaunchConfig) => void
+  consumePendingLaunchConfig: (conversationId: string) => LaunchConfig | undefined
   // Pending session names (set at spawn, consumed on connect)
-  setPendingSessionName: (wrapperId: string, name: string) => void
-  consumePendingSessionName: (wrapperId: string) => string | undefined
+  setPendingSessionName: (conversationId: string, name: string) => void
+  consumePendingSessionName: (conversationId: string) => string | undefined
   // Inter-project link management
   checkProjectLink: (from: string, to: string) => 'linked' | 'blocked' | 'unknown'
   getLinkedProjects: (sessionId: string) => Array<{ project: string; name: string }>
@@ -285,11 +285,11 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   const transcriptsDir = join(cacheDir, 'transcripts')
 
   const sessions = new Map<string, Session>()
-  // sessionId -> (wrapperId -> socket): multiple rclaude instances can share a Claude session
+  // sessionId -> (conversationId -> socket): multiple rclaude instances can share a Claude session
   const sessionSockets = new Map<string, Map<string, ServerWebSocket<unknown>>>()
-  // Terminal viewers keyed by wrapperId (each PTY is on a specific wrapper)
+  // Terminal viewers keyed by conversationId (each PTY is on a specific conversation)
   const terminalRegistry = createTerminalRegistry()
-  // JSON stream viewers keyed by wrapperId (raw NDJSON tail for headless sessions)
+  // JSON stream viewers keyed by conversationId (raw NDJSON tail for headless sessions)
   const jsonStreamRegistry = createViewerRegistry()
   const dashboardSubscribers = new Set<ServerWebSocket<unknown>>()
   let sentinelSocket: ServerWebSocket<unknown> | undefined
@@ -556,7 +556,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       spinnerVerbs: session.spinnerVerbs,
       autocompactPct: session.autocompactPct,
       maxBudgetUsd: session.maxBudgetUsd,
-      wrapperIds: wrappers ? Array.from(wrappers.keys()) : [],
+      conversationIds: wrappers ? Array.from(wrappers.keys()) : [],
       startedAt: session.startedAt,
       lastActivity: session.lastActivity,
       status: session.status,
@@ -1172,7 +1172,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   function rekeySession(
     oldId: string,
     newId: string,
-    _wrapperId: string,
+    _conversationId: string,
     newProjectOrCwd: string,
     newModel?: string,
   ): Session | undefined {
@@ -1863,13 +1863,13 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     return events
   }
 
-  function setSessionSocket(sessionId: string, wrapperId: string, ws: ServerWebSocket<unknown>): void {
-    // Remove wrapperId from any OTHER session first (wrapper reconnected to different session)
+  function setSessionSocket(sessionId: string, conversationId: string, ws: ServerWebSocket<unknown>): void {
+    // Remove conversationId from any OTHER session first (wrapper reconnected to different session)
     for (const [sid, wrappers] of sessionSockets.entries()) {
-      if (sid !== sessionId && wrappers.has(wrapperId)) {
-        wrappers.delete(wrapperId)
+      if (sid !== sessionId && wrappers.has(conversationId)) {
+        wrappers.delete(conversationId)
         if (wrappers.size === 0) sessionSockets.delete(sid)
-        // Broadcast so dashboard drops the stale wrapperId from the old session
+        // Broadcast so dashboard drops the stale conversationId from the old session
         broadcastSessionUpdate(sid)
       }
     }
@@ -1878,7 +1878,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       wrappers = new Map()
       sessionSockets.set(sessionId, wrappers)
     }
-    wrappers.set(wrapperId, ws)
+    wrappers.set(conversationId, ws)
   }
 
   function getSessionSocket(sessionId: string): ServerWebSocket<unknown> | undefined {
@@ -1890,34 +1890,34 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     return last
   }
 
-  function getSessionSocketByWrapper(wrapperId: string): ServerWebSocket<unknown> | undefined {
+  function getSessionSocketByConversation(conversationId: string): ServerWebSocket<unknown> | undefined {
     for (const wrappers of sessionSockets.values()) {
-      const ws = wrappers.get(wrapperId)
+      const ws = wrappers.get(conversationId)
       if (ws) return ws
     }
     return undefined
   }
 
-  function getSessionByWrapper(wrapperId: string): Session | undefined {
+  function getSessionByConversation(conversationId: string): Session | undefined {
     for (const [sessionId, wrappers] of sessionSockets.entries()) {
-      if (wrappers.has(wrapperId)) return sessions.get(sessionId)
+      if (wrappers.has(conversationId)) return sessions.get(sessionId)
     }
     return undefined
   }
 
-  function removeSessionSocket(sessionId: string, wrapperId: string): void {
+  function removeSessionSocket(sessionId: string, conversationId: string): void {
     const wrappers = sessionSockets.get(sessionId)
     if (wrappers) {
-      wrappers.delete(wrapperId)
+      wrappers.delete(conversationId)
       if (wrappers.size === 0) sessionSockets.delete(sessionId)
     }
   }
 
-  function getActiveWrapperCount(sessionId: string): number {
+  function getActiveConversationCount(sessionId: string): number {
     return sessionSockets.get(sessionId)?.size ?? 0
   }
 
-  function getWrapperIds(sessionId: string): string[] {
+  function getConversationIds(sessionId: string): string[] {
     const wrappers = sessionSockets.get(sessionId)
     return wrappers ? Array.from(wrappers.keys()) : []
   }
@@ -2693,7 +2693,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     }
   }
 
-  function broadcastToWrappersForProject(projectOrCwd: string, message: Record<string, unknown>): number {
+  function broadcastToConversationsForProject(projectOrCwd: string, message: Record<string, unknown>): number {
     const project = toProjectUri(projectOrCwd)
     const json = JSON.stringify(message)
     let count = 0
@@ -2711,19 +2711,19 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     return count
   }
 
-  // ─── Pending Launch Configs (wrapperId -> LaunchConfig) ─────────────
+  // ─── Pending Launch Configs (conversationId -> LaunchConfig) ─────────────
   // Stored at spawn time, consumed when the session connects (meta handler).
   const pendingLaunchConfigs = new Map<string, LaunchConfig>()
 
-  function setPendingLaunchConfig(wrapperId: string, config: LaunchConfig) {
-    pendingLaunchConfigs.set(wrapperId, config)
+  function setPendingLaunchConfig(conversationId: string, config: LaunchConfig) {
+    pendingLaunchConfigs.set(conversationId, config)
     // Auto-cleanup after 5 min in case session never connects
-    setTimeout(() => pendingLaunchConfigs.delete(wrapperId), 5 * 60 * 1000)
+    setTimeout(() => pendingLaunchConfigs.delete(conversationId), 5 * 60 * 1000)
   }
 
-  function consumePendingLaunchConfig(wrapperId: string): LaunchConfig | undefined {
-    const config = pendingLaunchConfigs.get(wrapperId)
-    if (config) pendingLaunchConfigs.delete(wrapperId)
+  function consumePendingLaunchConfig(conversationId: string): LaunchConfig | undefined {
+    const config = pendingLaunchConfigs.get(conversationId)
+    if (config) pendingLaunchConfigs.delete(conversationId)
     return config
   }
 
@@ -2744,7 +2744,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   }
   interface LaunchJob {
     jobId: string
-    wrapperId: string
+    conversationId: string
     subscribers: Set<ServerWebSocket<unknown>>
     createdAt: number
     events: LaunchJobEvent[]
@@ -2758,18 +2758,18 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     endedAt: number | null
   }
   const launchJobs = new Map<string, LaunchJob>() // jobId -> job
-  const wrapperToJob = new Map<string, string>() // wrapperId -> jobId
+  const conversationToJob = new Map<string, string>() // conversationId -> jobId
   const JOB_EXPIRY_MS = 5 * 60 * 1000 // 5 minutes
 
-  function createJob(jobId: string, wrapperId: string): void {
+  function createJob(jobId: string, conversationId: string): void {
     const existing = launchJobs.get(jobId)
     if (existing) {
-      // Dashboard pre-subscribed before spawn HTTP returned - update wrapperId
-      existing.wrapperId = wrapperId
+      // Dashboard pre-subscribed before spawn HTTP returned - update conversationId
+      existing.conversationId = conversationId
     } else {
       launchJobs.set(jobId, {
         jobId,
-        wrapperId,
+        conversationId,
         subscribers: new Set(),
         createdAt: Date.now(),
         events: [],
@@ -2781,7 +2781,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         endedAt: null,
       })
     }
-    wrapperToJob.set(wrapperId, jobId)
+    conversationToJob.set(conversationId, jobId)
   }
 
   function recordJobConfig(jobId: string, config: Record<string, unknown>): void {
@@ -2796,7 +2796,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       // Job not created yet - create a placeholder (dashboard subscribes before HTTP spawn returns)
       launchJobs.set(jobId, {
         jobId,
-        wrapperId: '',
+        conversationId: '',
         subscribers: new Set([ws]),
         createdAt: Date.now(),
         events: [],
@@ -2842,8 +2842,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     }
   }
 
-  function completeJob(wrapperId: string, sessionId: string): void {
-    const jobId = wrapperToJob.get(wrapperId)
+  function completeJob(conversationId: string, sessionId: string): void {
+    const jobId = conversationToJob.get(conversationId)
     if (!jobId) return
     const job = launchJobs.get(jobId)
     if (!job) return
@@ -2851,12 +2851,12 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     job.completed = true
     job.sessionId = sessionId
     job.endedAt = Date.now()
-    forwardJobEvent(jobId, { type: 'job_complete', jobId, sessionId, wrapperId })
+    forwardJobEvent(jobId, { type: 'job_complete', jobId, sessionId, conversationId })
 
     // Cleanup after a short delay (let dashboard process the completion)
     setTimeout(() => {
       launchJobs.delete(jobId)
-      wrapperToJob.delete(wrapperId)
+      conversationToJob.delete(conversationId)
     }, 30_000)
   }
 
@@ -2872,7 +2872,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     if (job) {
       setTimeout(() => {
         launchJobs.delete(jobId)
-        if (job.wrapperId) wrapperToJob.delete(job.wrapperId)
+        if (job.conversationId) conversationToJob.delete(job.conversationId)
       }, 30_000)
     }
   }
@@ -2884,7 +2884,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
    */
   function getJobDiagnostics(jobId: string): {
     jobId: string
-    wrapperId: string
+    conversationId: string
     sessionId: string | null
     completed: boolean
     failed: boolean
@@ -2900,7 +2900,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     const now = Date.now()
     return {
       jobId: job.jobId,
-      wrapperId: job.wrapperId,
+      conversationId: job.conversationId,
       sessionId: job.sessionId,
       completed: job.completed,
       failed: job.failed,
@@ -2913,8 +2913,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     }
   }
 
-  function getJobByWrapper(wrapperId: string): string | undefined {
-    return wrapperToJob.get(wrapperId)
+  function getJobByConversation(conversationId: string): string | undefined {
+    return conversationToJob.get(conversationId)
   }
 
   function cleanupJobSubscriber(ws: ServerWebSocket<unknown>): void {
@@ -2929,16 +2929,16 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     for (const [jobId, job] of launchJobs) {
       if (now - job.createdAt > JOB_EXPIRY_MS) {
         launchJobs.delete(jobId)
-        if (job.wrapperId) wrapperToJob.delete(job.wrapperId)
+        if (job.conversationId) conversationToJob.delete(job.conversationId)
       }
     }
   }, 60_000)
 
-  // Session rendezvous: callers waiting for a session to connect at a specific wrapperId
+  // Session rendezvous: callers waiting for a session to connect at a specific conversationId
   // Used by spawn/revive to notify the caller when the spawned session is ready
   interface SessionRendezvous {
     callerSessionId: string
-    wrapperId: string
+    conversationId: string
     project: string
     action: 'spawn' | 'revive' | 'restart'
     resolve: (session: SessionSummary) => void
@@ -2947,7 +2947,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     registeredAt: number
   }
   const RENDEZVOUS_TIMEOUT_MS = 120_000 // 2 minutes
-  const sessionRendezvous = new Map<string, SessionRendezvous>() // keyed by wrapperId
+  const sessionRendezvous = new Map<string, SessionRendezvous>() // keyed by conversationId
 
   // Pending restarts: terminate target, revive on disconnect
   interface PendingRestart {
@@ -2956,42 +2956,44 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     project: string
     isSelfRestart: boolean
   }
-  const pendingRestarts = new Map<string, PendingRestart>() // keyed by target wrapperId
+  const pendingRestarts = new Map<string, PendingRestart>() // keyed by target conversationId
 
-  function addPendingRestart(wrapperId: string, info: PendingRestart): void {
-    pendingRestarts.set(wrapperId, info)
+  function addPendingRestart(conversationId: string, info: PendingRestart): void {
+    pendingRestarts.set(conversationId, info)
     console.log(
-      `[restart] PENDING: target=${wrapperId.slice(0, 8)} project=${extractProjectLabel(info.project)} self=${info.isSelfRestart}`,
+      `[restart] PENDING: target=${conversationId.slice(0, 8)} project=${extractProjectLabel(info.project)} self=${info.isSelfRestart}`,
     )
   }
 
-  function consumePendingRestart(wrapperId: string): PendingRestart | undefined {
-    const info = pendingRestarts.get(wrapperId)
+  function consumePendingRestart(conversationId: string): PendingRestart | undefined {
+    const info = pendingRestarts.get(conversationId)
     if (info) {
-      pendingRestarts.delete(wrapperId)
-      console.log(`[restart] CONSUMED: target=${wrapperId.slice(0, 8)} project=${extractProjectLabel(info.project)}`)
+      pendingRestarts.delete(conversationId)
+      console.log(
+        `[restart] CONSUMED: target=${conversationId.slice(0, 8)} project=${extractProjectLabel(info.project)}`,
+      )
     }
     return info
   }
 
   function addRendezvous(
-    wrapperId: string,
+    conversationId: string,
     callerSessionId: string,
     project: string,
     action: 'spawn' | 'revive' | 'restart',
   ): Promise<SessionSummary> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        sessionRendezvous.delete(wrapperId)
+        sessionRendezvous.delete(conversationId)
         reject(`Session did not connect within ${RENDEZVOUS_TIMEOUT_MS / 1000}s`)
         console.log(
-          `[rendezvous] TIMEOUT: ${action} wrapperId=${wrapperId.slice(0, 8)} project=${extractProjectLabel(project)} caller=${callerSessionId.slice(0, 8)}`,
+          `[rendezvous] TIMEOUT: ${action} conversationId=${conversationId.slice(0, 8)} project=${extractProjectLabel(project)} caller=${callerSessionId.slice(0, 8)}`,
         )
       }, RENDEZVOUS_TIMEOUT_MS)
 
-      sessionRendezvous.set(wrapperId, {
+      sessionRendezvous.set(conversationId, {
         callerSessionId,
-        wrapperId,
+        conversationId,
         project,
         action,
         resolve,
@@ -3000,15 +3002,15 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         registeredAt: Date.now(),
       })
       console.log(
-        `[rendezvous] REGISTERED: ${action} wrapperId=${wrapperId.slice(0, 8)} project=${extractProjectLabel(project)} caller=${callerSessionId.slice(0, 8)}`,
+        `[rendezvous] REGISTERED: ${action} conversationId=${conversationId.slice(0, 8)} project=${extractProjectLabel(project)} caller=${callerSessionId.slice(0, 8)}`,
       )
     })
   }
 
-  function resolveRendezvous(wrapperId: string, sessionId: string): boolean {
-    const rv = sessionRendezvous.get(wrapperId)
+  function resolveRendezvous(conversationId: string, sessionId: string): boolean {
+    const rv = sessionRendezvous.get(conversationId)
     if (!rv) return false
-    sessionRendezvous.delete(wrapperId)
+    sessionRendezvous.delete(conversationId)
     clearTimeout(rv.timer)
     const session = sessions.get(sessionId)
     if (!session) {
@@ -3019,29 +3021,29 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     rv.resolve(summary)
     const elapsed = Date.now() - rv.registeredAt
     console.log(
-      `[rendezvous] RESOLVED: ${rv.action} session=${sessionId.slice(0, 8)} wrapperId=${wrapperId.slice(0, 8)} elapsed=${elapsed}ms caller=${rv.callerSessionId.slice(0, 8)}`,
+      `[rendezvous] RESOLVED: ${rv.action} session=${sessionId.slice(0, 8)} conversationId=${conversationId.slice(0, 8)} elapsed=${elapsed}ms caller=${rv.callerSessionId.slice(0, 8)}`,
     )
     return true
   }
 
-  function getRendezvousInfo(wrapperId: string): { callerSessionId: string; action: string } | undefined {
-    const rv = sessionRendezvous.get(wrapperId)
+  function getRendezvousInfo(conversationId: string): { callerSessionId: string; action: string } | undefined {
+    const rv = sessionRendezvous.get(conversationId)
     if (!rv) return undefined
     return { callerSessionId: rv.callerSessionId, action: rv.action }
   }
 
   // ─── Pending session names (set at spawn time, applied on connect) ──
-  const pendingSessionNames = new Map<string, string>() // wrapperId -> name
+  const pendingSessionNames = new Map<string, string>() // conversationId -> name
 
-  function setPendingSessionName(wrapperId: string, name: string): void {
-    pendingSessionNames.set(wrapperId, name)
+  function setPendingSessionName(conversationId: string, name: string): void {
+    pendingSessionNames.set(conversationId, name)
     // Auto-expire after 2 minutes (if wrapper never connects)
-    setTimeout(() => pendingSessionNames.delete(wrapperId), 120_000)
+    setTimeout(() => pendingSessionNames.delete(conversationId), 120_000)
   }
 
-  function consumePendingSessionName(wrapperId: string): string | undefined {
-    const name = pendingSessionNames.get(wrapperId)
-    if (name) pendingSessionNames.delete(wrapperId)
+  function consumePendingSessionName(conversationId: string): string | undefined {
+    const name = pendingSessionNames.get(conversationId)
+    if (name) pendingSessionNames.delete(conversationId)
     return name
   }
 
@@ -3186,11 +3188,11 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     getSessionEvents,
     setSessionSocket,
     getSessionSocket,
-    getSessionSocketByWrapper,
-    getSessionByWrapper,
+    getSessionSocketByConversation,
+    getSessionByConversation,
     removeSessionSocket,
-    getActiveWrapperCount,
-    getWrapperIds,
+    getActiveConversationCount,
+    getConversationIds,
     addTerminalViewer,
     getTerminalViewers,
     removeTerminalViewer,
@@ -3244,7 +3246,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     forwardJobEvent,
     completeJob,
     failJob,
-    getJobByWrapper,
+    getJobByConversation,
     getJobDiagnostics,
     cleanupJobSubscriber,
     addSpawnListener,
@@ -3253,8 +3255,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     addDirListener,
     removeDirListener,
     resolveDir,
-    broadcastToWrappersForProject,
-    broadcastToWrappersAtCwd: broadcastToWrappersForProject,
+    broadcastToConversationsForProject,
+    broadcastToConversationsAtCwd: broadcastToConversationsForProject,
     addFileListener,
     removeFileListener,
     resolveFile,

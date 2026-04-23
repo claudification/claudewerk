@@ -4,7 +4,7 @@ import { type JsonStreamMessage, useSessionsStore } from '@/hooks/use-sessions'
 import { cn } from '@/lib/utils'
 
 interface JsonStreamPanelProps {
-  wrapperId: string
+  conversationId: string
 }
 
 interface ParsedLine {
@@ -170,7 +170,7 @@ function truncate(s: string, max: number): string {
   return oneLine.length > max ? `${oneLine.slice(0, max)}...` : oneLine
 }
 
-export function JsonStreamPanel({ wrapperId }: JsonStreamPanelProps) {
+export function JsonStreamPanel({ conversationId }: JsonStreamPanelProps) {
   const sendWsMessage = useSessionsStore(state => state.sendWsMessage)
   const setJsonStreamHandler = useSessionsStore(state => state.setJsonStreamHandler)
   const isConnected = useSessionsStore(state => state.isConnected)
@@ -184,7 +184,7 @@ export function JsonStreamPanel({ wrapperId }: JsonStreamPanelProps) {
 
   const handleMessage = useCallback(
     (msg: JsonStreamMessage) => {
-      if (msg.wrapperId !== wrapperId) return
+      if (msg.conversationId !== conversationId) return
       const newLines = msg.lines.map(parseLine)
       if (newLines.length === 0) return
       setLines(prev => {
@@ -193,30 +193,30 @@ export function JsonStreamPanel({ wrapperId }: JsonStreamPanelProps) {
         return combined.length > MAX_LINES ? combined.slice(-MAX_LINES) : combined
       })
     },
-    [wrapperId],
+    [conversationId],
   )
 
   // Attach/detach lifecycle
   useEffect(() => {
     setJsonStreamHandler(handleMessage)
-    sendWsMessage({ type: 'json_stream_attach', wrapperId })
+    sendWsMessage({ type: 'json_stream_attach', conversationId })
     attachedRef.current = true
 
     return () => {
       setJsonStreamHandler(null)
       if (attachedRef.current) {
-        sendWsMessage({ type: 'json_stream_detach', wrapperId })
+        sendWsMessage({ type: 'json_stream_detach', conversationId })
         attachedRef.current = false
       }
     }
-  }, [wrapperId, sendWsMessage, setJsonStreamHandler, handleMessage])
+  }, [conversationId, sendWsMessage, setJsonStreamHandler, handleMessage])
 
   // Re-attach on WS reconnect
   useEffect(() => {
     if (!isConnected) return
-    sendWsMessage({ type: 'json_stream_attach', wrapperId })
+    sendWsMessage({ type: 'json_stream_attach', conversationId })
     attachedRef.current = true
-  }, [isConnected, wrapperId, sendWsMessage])
+  }, [isConnected, conversationId, sendWsMessage])
 
   // Auto-scroll
   useEffect(() => {

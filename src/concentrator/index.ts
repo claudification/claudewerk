@@ -613,14 +613,14 @@ async function main() {
 
           // Handle rclaude session disconnection
           const sessionId = ws.data.sessionId
-          const closeWrapperId = ws.data.wrapperId
+          const closeWrapperId = ws.data.conversationId
           if (sessionId && closeWrapperId) {
             // Notify terminal viewers attached to this wrapper's PTY
             const viewers = sessionStore.getTerminalViewers(closeWrapperId)
             if (viewers.size > 0) {
               const msg = JSON.stringify({
                 type: 'terminal_error',
-                wrapperId: closeWrapperId,
+                conversationId: closeWrapperId,
                 error: 'Wrapper disconnected',
               })
               for (const viewer of viewers) {
@@ -638,7 +638,7 @@ async function main() {
             if (jsViewers.size > 0) {
               const msg = JSON.stringify({
                 type: 'json_stream_data',
-                wrapperId: closeWrapperId,
+                conversationId: closeWrapperId,
                 lines: [],
                 isBackfill: false,
               })
@@ -654,7 +654,7 @@ async function main() {
 
             // Remove this wrapper's socket
             sessionStore.removeSessionSocket(sessionId, closeWrapperId)
-            const remaining = sessionStore.getActiveWrapperCount(sessionId)
+            const remaining = sessionStore.getActiveConversationCount(sessionId)
 
             const session = sessionStore.getSession(sessionId)
             if (session && session.status !== 'ended' && remaining === 0) {
@@ -669,16 +669,16 @@ async function main() {
               if (pendingRestart) {
                 const sentinel = sessionStore.getSentinel()
                 if (sentinel) {
-                  const wrapperId = crypto.randomUUID()
+                  const conversationId = crypto.randomUUID()
                   console.log(
-                    `[restart] Reviving after disconnect: ${extractProjectLabel(pendingRestart.project)} wrapperId=${wrapperId.slice(0, 8)}`,
+                    `[restart] Reviving after disconnect: ${extractProjectLabel(pendingRestart.project)} conversationId=${conversationId.slice(0, 8)}`,
                   )
                   sentinel.send(
                     JSON.stringify({
                       type: 'revive',
                       sessionId: session.id,
                       project: pendingRestart.project,
-                      wrapperId,
+                      conversationId,
                       mode: 'resume',
                     }),
                   )
@@ -686,7 +686,7 @@ async function main() {
                   // Register rendezvous for caller (if not self-restart)
                   if (!pendingRestart.isSelfRestart) {
                     sessionStore
-                      .addRendezvous(wrapperId, pendingRestart.callerSessionId, pendingRestart.project, 'restart')
+                      .addRendezvous(conversationId, pendingRestart.callerSessionId, pendingRestart.project, 'restart')
                       .then(revived => {
                         const callerWs = sessionStore.getSessionSocket(pendingRestart.callerSessionId)
                         callerWs?.send(
@@ -694,7 +694,7 @@ async function main() {
                             type: 'restart_ready',
                             sessionId: revived.id,
                             project: revived.project,
-                            wrapperId,
+                            conversationId,
                             session: revived,
                           }),
                         )
@@ -704,7 +704,7 @@ async function main() {
                         callerWs?.send(
                           JSON.stringify({
                             type: 'restart_timeout',
-                            wrapperId,
+                            conversationId,
                             project: pendingRestart.project,
                             error: typeof err === 'string' ? err : 'Restart rendezvous timed out',
                           }),
@@ -717,7 +717,7 @@ async function main() {
               }
             } else if (verbose && remaining > 0) {
               console.log(
-                `[~] Wrapper ${closeWrapperId.slice(0, 8)} disconnected from session ${sessionId.slice(0, 8)}... (${remaining} wrapper(s) remaining)`,
+                `[~] Wrapper ${closeWrapperId.slice(0, 8)} disconnected from session ${sessionId.slice(0, 8)}... (${remaining} conversation(s) remaining)`,
               )
             }
           }

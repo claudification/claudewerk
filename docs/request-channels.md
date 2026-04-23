@@ -62,7 +62,7 @@ Used for spawn/revive progress tracking.
 at each pipeline stage (directory validation, spawn approval, tmux launch, etc.)
 
 **Completion:** Concentrator detects session connect (meta handler matches
-wrapperId to jobId) and sends `{ type: 'job_complete', jobId, sessionId }`
+conversationId to jobId) and sends `{ type: 'job_complete', jobId, sessionId }`
 
 **Failure:** Concentrator sends `{ type: 'job_failed', jobId, error }` on
 spawn/revive failure

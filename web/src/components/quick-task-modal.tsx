@@ -23,7 +23,7 @@ export function QuickTaskModal() {
     state.selectedSessionId ? state.sessionsById[state.selectedSessionId] : undefined,
   )
   const isActive = session != null && session.status !== 'ended'
-  const hasWrapper = (session?.wrapperIds?.length ?? 0) > 0
+  const hasWrapper = (session?.conversationIds?.length ?? 0) > 0
 
   const { createTask } = useProject(selectedSessionId && isActive ? selectedSessionId : null)
 

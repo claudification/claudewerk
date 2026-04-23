@@ -31,7 +31,7 @@ export type SpawnDiagnostics = {
   time: string
   source: DiagnosticsSource
   jobId: string | null
-  wrapperId: string | null
+  conversationId: string | null
   sessionId: string | null
   elapsed: string
   error: string | null
@@ -45,7 +45,7 @@ export type SpawnDiagnostics = {
 export type BuildDiagnosticsInput = {
   source: DiagnosticsSource
   jobId?: string | null
-  wrapperId?: string | null
+  conversationId?: string | null
   sessionId?: string | null
   elapsedSec: number
   error?: string | null
@@ -85,7 +85,7 @@ export function buildSpawnDiagnostics(input: BuildDiagnosticsInput): SpawnDiagno
     time: new Date().toISOString(),
     source: input.source,
     jobId: input.jobId ?? null,
-    wrapperId: input.wrapperId ?? null,
+    conversationId: input.conversationId ?? null,
     sessionId: input.sessionId ?? null,
     elapsed: `${input.elapsedSec}s`,
     error: input.error ?? null,

@@ -485,8 +485,8 @@ function Dashboard() {
         if (store.selectedSessionId) store.openTab(store.selectedSessionId, 'transcript')
       } else {
         const session = store.selectedSessionId ? store.sessionsById[store.selectedSessionId] : undefined
-        if (session && canTerminal(session) && session.wrapperIds?.[0]) {
-          store.openTerminal(session.wrapperIds[0])
+        if (session && canTerminal(session) && session.conversationIds?.[0]) {
+          store.openTerminal(session.conversationIds[0])
         }
       }
     },
@@ -911,8 +911,8 @@ function ActionFabGate() {
   return <ActionFab />
 }
 
-// Popout terminal - rendered when URL is #popout-terminal/{wrapperId}
-function PopoutTerminal({ wrapperId }: { wrapperId: string }) {
+// Popout terminal - rendered when URL is #popout-terminal/{conversationId}
+function PopoutTerminal({ conversationId }: { conversationId: string }) {
   useWebSocket()
 
   return (
@@ -922,7 +922,7 @@ function PopoutTerminal({ wrapperId }: { wrapperId: string }) {
           <div className="flex items-center justify-center h-full text-muted-foreground">Loading terminal...</div>
         }
       >
-        <WebTerminal wrapperId={wrapperId} onClose={() => window.close()} popout />
+        <WebTerminal conversationId={conversationId} onClose={() => window.close()} popout />
       </Suspense>
     </div>
   )
@@ -939,12 +939,12 @@ export function App() {
     return <SharedSessionView token={shareMatch[1]} />
   }
 
-  // Popout terminal: #popout-terminal/{wrapperId}
+  // Popout terminal: #popout-terminal/{conversationId}
   const popoutMatch = hash.match(/^popout-terminal\/(.+)$/)
   if (popoutMatch) {
     return (
       <AuthGate>
-        <PopoutTerminal wrapperId={popoutMatch[1]} />
+        <PopoutTerminal conversationId={popoutMatch[1]} />
       </AuthGate>
     )
   }

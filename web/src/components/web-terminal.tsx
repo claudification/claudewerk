@@ -18,12 +18,12 @@ import {
 import { TerminalToolbar } from './terminal-toolbar'
 
 interface WebTerminalProps {
-  wrapperId: string
+  conversationId: string
   onClose: () => void
   popout?: boolean
 }
 
-export function WebTerminal({ wrapperId, onClose, popout }: WebTerminalProps) {
+export function WebTerminal({ conversationId, onClose, popout }: WebTerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -38,9 +38,9 @@ export function WebTerminal({ wrapperId, onClose, popout }: WebTerminalProps) {
 
   const sendData = useCallback(
     (data: string) => {
-      sendWsMessage({ type: 'terminal_data', wrapperId, data })
+      sendWsMessage({ type: 'terminal_data', conversationId, data })
     },
-    [sendWsMessage, wrapperId],
+    [sendWsMessage, conversationId],
   )
 
   function applySettings(terminal: Terminal, s: TerminalSettings) {
@@ -58,12 +58,12 @@ export function WebTerminal({ wrapperId, onClose, popout }: WebTerminalProps) {
     if (xtermRef.current) {
       applySettings(xtermRef.current, newSettings)
       const { cols, rows } = xtermRef.current
-      sendWsMessage({ type: 'terminal_resize', wrapperId, cols, rows })
+      sendWsMessage({ type: 'terminal_resize', conversationId, cols, rows })
     }
   }
 
   // Resolve the owning session for this wrapper (for display purposes)
-  const ownerSession = sessions.find(s => s.wrapperIds?.includes(wrapperId))
+  const ownerSession = sessions.find(s => s.conversationIds?.includes(conversationId))
 
   // Set window title in popout mode
   const projectSettings = useSessionsStore(state => state.projectSettings)
@@ -71,12 +71,12 @@ export function WebTerminal({ wrapperId, onClose, popout }: WebTerminalProps) {
     if (!popout) return
     if (ownerSession) {
       const ps = projectSettings[ownerSession.project]
-      const name = ps?.label || extractProjectLabel(ownerSession.project) || wrapperId.slice(0, 8)
+      const name = ps?.label || extractProjectLabel(ownerSession.project) || conversationId.slice(0, 8)
       document.title = `TTY: ${name}`
     } else {
-      document.title = `TTY: ${wrapperId.slice(0, 8)}`
+      document.title = `TTY: ${conversationId.slice(0, 8)}`
     }
-  }, [popout, wrapperId, ownerSession, projectSettings])
+  }, [popout, conversationId, ownerSession, projectSettings])
 
   // Main terminal setup
   useEffect(() => {
@@ -114,7 +114,7 @@ export function WebTerminal({ wrapperId, onClose, popout }: WebTerminalProps) {
       // Block ALL event types (keydown+keypress+keyup) to prevent xterm from also processing Enter
       if (e.shiftKey && e.key === 'Enter') {
         if (e.type === 'keydown') {
-          sendWsMessage({ type: 'terminal_data', wrapperId, data: '\x1b\r' })
+          sendWsMessage({ type: 'terminal_data', conversationId, data: '\x1b\r' })
         }
         return false
       }
@@ -148,7 +148,7 @@ export function WebTerminal({ wrapperId, onClose, popout }: WebTerminalProps) {
           preview: data.slice(0, 80),
         })
       }
-      sendWsMessage({ type: 'terminal_data', wrapperId, data })
+      sendWsMessage({ type: 'terminal_data', conversationId, data })
     })
 
     // Paste: intercept Cmd+V / Ctrl+V and preventDefault to stop native paste
@@ -167,7 +167,7 @@ export function WebTerminal({ wrapperId, onClose, popout }: WebTerminalProps) {
     terminalRef.current.addEventListener('keydown', handleKeyPaste)
 
     const handler = (msg: TerminalMessage) => {
-      if (msg.wrapperId !== wrapperId) return
+      if (msg.conversationId !== conversationId) return
       if (msg.type === 'terminal_data' && msg.data) {
         // Debug: detect characters that cause line offset issues
         const d = msg.data
@@ -205,7 +205,7 @@ export function WebTerminal({ wrapperId, onClose, popout }: WebTerminalProps) {
     const resizeObserver = new ResizeObserver(() => {
       fitAddon.fit()
       const { cols, rows } = terminal
-      sendWsMessage({ type: 'terminal_resize', wrapperId, cols, rows })
+      sendWsMessage({ type: 'terminal_resize', conversationId, cols, rows })
     })
     resizeObserver.observe(terminalRef.current)
 
@@ -217,12 +217,12 @@ export function WebTerminal({ wrapperId, onClose, popout }: WebTerminalProps) {
       dataDisposable.dispose()
       termEl?.removeEventListener('keydown', handleKeyPaste)
       setTerminalHandler(null)
-      sendWsMessage({ type: 'terminal_detach', wrapperId })
+      sendWsMessage({ type: 'terminal_detach', conversationId })
       terminal.dispose()
       xtermRef.current = null
       fitAddonRef.current = null
     }
-  }, [wrapperId, sendWsMessage, setTerminalHandler])
+  }, [conversationId, sendWsMessage, setTerminalHandler])
 
   // Re-attach when WS reconnects
   useEffect(() => {
@@ -230,8 +230,8 @@ export function WebTerminal({ wrapperId, onClose, popout }: WebTerminalProps) {
     setTerminalError(null)
     const terminal = xtermRef.current
     const { cols, rows } = terminal
-    sendWsMessage({ type: 'terminal_attach', wrapperId, cols, rows })
-  }, [isConnected, wrapperId, sendWsMessage])
+    sendWsMessage({ type: 'terminal_attach', conversationId, cols, rows })
+  }, [isConnected, conversationId, sendWsMessage])
 
   // Terminal-local shortcuts
   useEffect(() => {
@@ -330,7 +330,7 @@ export function WebTerminal({ wrapperId, onClose, popout }: WebTerminalProps) {
           {showDisconnected && <WifiOff className="w-3 h-3 inline mr-1.5" />}
           {ownerSession
             ? lastPathSegments(projectPath(ownerSession.project), 2)
-            : `TERMINAL - ${wrapperId.slice(0, 8)}`}
+            : `TERMINAL - ${conversationId.slice(0, 8)}`}
         </span>
         <div className="flex items-center gap-1 px-2 shrink-0">
           <span className="text-[10px] font-mono mr-1 hidden sm:inline" style={{ color: currentTheme.brightBlack }}>

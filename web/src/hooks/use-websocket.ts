@@ -74,7 +74,7 @@ function toSession(summary: SessionSummary): Session {
     project: summary.project,
     model: summary.model,
     capabilities: summary.capabilities,
-    wrapperIds: summary.wrapperIds,
+    conversationIds: summary.conversationIds,
     startedAt: summary.startedAt,
     lastActivity: summary.lastActivity,
     status: summary.status,
@@ -313,7 +313,7 @@ function processMessage(msg: DashboardMessage) {
         const matchId = prevId || sessionId
         useSessionsStore.setState(state => {
           const updated = toSession(session)
-          // Rekey collision: if two booting placeholders (different wrapperIds)
+          // Rekey collision: if two booting placeholders (different conversationIds)
           // both get rekeyed to the same real session id, the map-replace leaves
           // two entries in the array with identical `updated.id`. Dedupe by id
           // (merge any duplicates into the first occurrence) so the sidebar
@@ -926,7 +926,7 @@ function processMessage(msg: DashboardMessage) {
           type: 'spawn_request_ack'
           ok: boolean
           jobId?: string
-          wrapperId?: string
+          conversationId?: string
           tmuxSession?: string
           error?: string
         },
@@ -1119,7 +1119,7 @@ export function useWebSocket() {
             const handler = useSessionsStore.getState().terminalHandler
             handler?.({
               type: msg.type as 'terminal_data' | 'terminal_error',
-              wrapperId: (msg as DashboardMessage & { wrapperId?: string }).wrapperId || '',
+              conversationId: (msg as DashboardMessage & { conversationId?: string }).conversationId || '',
               data: msg.data,
               error: msg.error,
             })
@@ -1131,7 +1131,7 @@ export function useWebSocket() {
             const handler = useSessionsStore.getState().jsonStreamHandler
             handler?.({
               type: 'json_stream_data',
-              wrapperId: (msg as DashboardMessage & { wrapperId?: string }).wrapperId || '',
+              conversationId: (msg as DashboardMessage & { conversationId?: string }).conversationId || '',
               lines: (msg as DashboardMessage & { lines?: string[] }).lines || [],
               isBackfill: !!(msg as DashboardMessage & { isBackfill?: boolean }).isBackfill,
             })

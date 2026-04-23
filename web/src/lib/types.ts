@@ -40,7 +40,7 @@ export interface Session {
   capabilities?: WrapperCapability[]
   version?: string
   buildTime?: string
-  wrapperIds?: string[]
+  conversationIds?: string[]
   status: 'active' | 'idle' | 'ended' | 'starting' | 'booting'
   compacting?: boolean
   compactedAt?: number

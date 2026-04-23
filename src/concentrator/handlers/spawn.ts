@@ -4,7 +4,7 @@
  * Counterpart to the HTTP /api/spawn route -- delegates to the same
  * `dispatchSpawn` helper so behavior stays in lockstep.
  *
- * Ack shape: `{ type: 'spawn_request_ack', ok, jobId?, wrapperId?, tmuxSession?, error? }`
+ * Ack shape: `{ type: 'spawn_request_ack', ok, jobId?, conversationId?, tmuxSession?, error? }`
  * -- caller correlates by jobId.
  */
 
@@ -60,7 +60,7 @@ const handleSpawnRequest: MessageHandler = (ctx, data) => {
           type: 'spawn_request_ack',
           ok: true,
           jobId: req.jobId,
-          wrapperId: result.wrapperId,
+          conversationId: result.conversationId,
           tmuxSession: result.tmuxSession,
         })
       } else {

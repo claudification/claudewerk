@@ -70,7 +70,7 @@ while IFS='=' read -r name _; do
 done < <(env)
 
 # Build tmux env flags - pass RCLAUDE_SECRET only
-# RCLAUDE_WRAPPER_ID is passed inline to the command (not tmux env) to prevent
+# RCLAUDE_CONVERSATION_ID is passed inline to the command (not tmux env) to prevent
 # it from leaking to other tmux windows/sessions launched later
 TMUX_ENV=()
 if [[ -n "${RCLAUDE_SECRET:-}" ]]; then
@@ -79,8 +79,8 @@ fi
 # Prefix the command with env vars scoped to THIS process only
 # (not tmux -e, which leaks to other windows launched later)
 CMD_PREFIX=""
-if [[ -n "${RCLAUDE_WRAPPER_ID:-}" ]]; then
-  CMD_PREFIX+="RCLAUDE_WRAPPER_ID=$RCLAUDE_WRAPPER_ID "
+if [[ -n "${RCLAUDE_CONVERSATION_ID:-}" ]]; then
+  CMD_PREFIX+="RCLAUDE_CONVERSATION_ID=$RCLAUDE_CONVERSATION_ID "
 fi
 if [[ -n "${RCLAUDE_SESSION_ID:-}" ]]; then
   CMD_PREFIX+="RCLAUDE_SESSION_ID=$RCLAUDE_SESSION_ID "

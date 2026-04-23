@@ -132,7 +132,7 @@ interface ReviveSession {
   type: 'revive'
   sessionId: string
   cwd: string
-  wrapperId: string
+  conversationId: string
   targetSentinel?: string  // route to specific sentinel (default: origin)
 }
 
@@ -140,7 +140,7 @@ interface SpawnSession {
   type: 'spawn'
   requestId: string
   cwd: string
-  wrapperId: string
+  conversationId: string
   targetSentinel?: string  // route to specific sentinel (default: any)
 }
 ```

@@ -56,7 +56,7 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
   const opts: StreamBackendOptions = {
     args: finalClaudeArgs,
     settingsPath: deps.settingsPath,
-    sessionId: ctx.internalId,
+    sessionId: ctx.conversationId,
     localServerPort: deps.localServerPort,
     includePartialMessages: deps.includePartialMessages,
     env: deps.env,
@@ -117,7 +117,7 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
       if (ctx.wsClient?.isConnected()) {
         ctx.wsClient.send({
           type: 'session_info',
-          sessionId: ctx.claudeSessionId || ctx.internalId,
+          sessionId: ctx.claudeSessionId || ctx.conversationId,
           tools: (init.tools as Array<{ name: string } | string>)?.map(t => (typeof t === 'string' ? t : t.name)) || [],
           slashCommands: (init.slash_commands as string[]) || [],
           skills: (init.skills as string[]) || [],
@@ -155,7 +155,7 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
       if (result.result_text && typeof result.result_text === 'string' && ctx.wsClient?.isConnected()) {
         ctx.wsClient.send({
           type: 'result_text',
-          sessionId: ctx.claudeSessionId || ctx.internalId,
+          sessionId: ctx.claudeSessionId || ctx.conversationId,
           text: result.result_text,
         } as unknown as WrapperMessage)
       }
@@ -267,7 +267,7 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
     },
 
     onMonitorUpdate(monitor) {
-      const sessionId = ctx.claudeSessionId || ctx.internalId
+      const sessionId = ctx.claudeSessionId || ctx.conversationId
       // Start streaming the monitor's .output file when it becomes active
       if (monitor.status === 'running' && monitor.outputPath) {
         debug(`[headless] Monitor output: ${monitor.taskId.slice(0, 8)} -> ${monitor.outputPath}`)
@@ -290,7 +290,7 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
     },
 
     onScheduledTaskFire(content) {
-      const sessionId = ctx.claudeSessionId || ctx.internalId
+      const sessionId = ctx.claudeSessionId || ctx.conversationId
       if (ctx.wsClient?.isConnected()) {
         ctx.wsClient.send({
           type: 'scheduled_task_fire',
@@ -309,7 +309,7 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
     },
 
     onPlanModeChanged(planMode) {
-      const sessionId = ctx.claudeSessionId || ctx.internalId
+      const sessionId = ctx.claudeSessionId || ctx.conversationId
       ctx.diag('headless', `Plan mode: ${planMode ? 'ON' : 'OFF'} (from status message)`)
       if (ctx.wsClient?.isConnected()) {
         ctx.wsClient.send({
@@ -326,7 +326,7 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
 
       // EnterPlanMode: check allowPlanMode config, approve or deny
       if (request.toolName === 'EnterPlanMode') {
-        const sessionId = ctx.claudeSessionId || ctx.internalId
+        const sessionId = ctx.claudeSessionId || ctx.conversationId
         if (!permissionRules.isPlanModeAllowed()) {
           ctx.streamProc?.sendPermissionResponse(request.requestId, false, undefined, toolUseId)
           ctx.diag('headless', 'EnterPlanMode denied: allowPlanMode is false')
@@ -346,7 +346,7 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
 
       // ExitPlanMode: intercept and forward plan to dashboard for approval
       if (request.toolName === 'ExitPlanMode') {
-        const sessionId = ctx.claudeSessionId || ctx.internalId
+        const sessionId = ctx.claudeSessionId || ctx.conversationId
         ctx.diag('headless', `ExitPlanMode input keys: ${Object.keys(request.toolInput || {}).join(', ')}`)
         let plan = (request.toolInput?.plan as string) || ''
         const planFilePath = request.toolInput?.planFilePath as string | undefined
@@ -391,7 +391,7 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
         ctx.pendingAskRequests.set(toolUseId, { requestId: request.requestId, questions })
         sendInteraction(ctx, 'ask_question', toolUseId, {
           type: 'ask_question',
-          sessionId: ctx.claudeSessionId || ctx.internalId,
+          sessionId: ctx.claudeSessionId || ctx.conversationId,
           toolUseId,
           questions,
         } as unknown as WrapperMessage)
@@ -406,7 +406,7 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
         if (ctx.wsClient?.isConnected()) {
           ctx.wsClient.send({
             type: 'permission_auto_approved',
-            sessionId: ctx.claudeSessionId || ctx.internalId,
+            sessionId: ctx.claudeSessionId || ctx.conversationId,
             requestId: request.requestId,
             toolName: request.toolName,
             description: (request.decision_reason as string) || `${request.toolName}: ${inputStr.slice(0, 100)}`,
@@ -419,7 +419,7 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
       // payload so onConnected can replay after a concentrator restart.
       sendInteraction(ctx, 'permission_request', request.requestId, {
         type: 'permission_request',
-        sessionId: ctx.claudeSessionId || ctx.internalId,
+        sessionId: ctx.claudeSessionId || ctx.conversationId,
         toolName: request.toolName,
         description: (request.decision_reason as string) || `${request.toolName}: ${inputStr.slice(0, 100)}`,
         inputPreview: inputStr.slice(0, 200),
@@ -637,7 +637,7 @@ async function respawnHeadless(deps: HeadlessCallbackDeps, args: string[]) {
   // Re-write settings file (hooks) and MCP config -- they may have been
   // deleted by CC's exit cleanup or a race with the stale reaper.
   try {
-    deps.settingsPath = await writeMergedSettings(ctx.internalId, localServerPort, claudeVersion, rclaudeDir)
+    deps.settingsPath = await writeMergedSettings(ctx.conversationId, localServerPort, claudeVersion, rclaudeDir)
     ctx.diag('headless', `Regenerated settings: ${deps.settingsPath}`)
   } catch (e) {
     debug(`[respawn] Failed to regenerate settings: ${e}`)

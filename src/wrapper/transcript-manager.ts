@@ -267,7 +267,7 @@ function detectRename(ctx: WrapperContext, entries: TranscriptEntry[]): void {
       debug(`Detected /rename: "${name}"`)
       const msg: SessionNameUpdate = {
         type: 'session_name',
-        sessionId: ctx.claudeSessionId || ctx.internalId,
+        sessionId: ctx.claudeSessionId || ctx.conversationId,
         name,
       }
       ctx.wsClient?.send(msg)

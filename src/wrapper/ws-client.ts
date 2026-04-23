@@ -41,7 +41,7 @@ export interface WsClientOptions {
    *  `wrapper_boot` on connect instead of `meta` and must have `initialBoot`
    *  populated. Once the session id arrives, call `setSessionId()`. */
   sessionId: string | null
-  wrapperId: string
+  conversationId: string
   cwd: string
   model?: string
   configuredModel?: string
@@ -94,7 +94,7 @@ export interface WsClientOptions {
     selfRestart?: boolean
     alreadyEnded?: boolean
   }) => void
-  onChannelSpawnResult?: (result: { ok: boolean; error?: string; wrapperId?: string }) => void
+  onChannelSpawnResult?: (result: { ok: boolean; error?: string; conversationId?: string }) => void
   onSpawnDiagnosticsResult?: (result: {
     ok: boolean
     jobId?: string
@@ -175,7 +175,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
     concentratorUrl = DEFAULT_CONCENTRATOR_URL,
     concentratorSecret,
     sessionId: initialSessionId,
-    wrapperId,
+    conversationId,
     cwd,
     model,
     configuredModel,
@@ -249,7 +249,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
    *  wrapper id so the concentrator can route messages to the booting
    *  session. Once setSessionId() is called, real session id takes over. */
   function routeId(): string {
-    return sessionId ?? wrapperId
+    return sessionId ?? conversationId
   }
 
   function connect() {
@@ -272,7 +272,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
             const meta: SessionMeta = {
               type: 'meta',
               sessionId,
-              wrapperId,
+              conversationId,
               project,
               startedAt: Date.now(),
               model,
@@ -295,7 +295,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
             // booting so a placeholder session shows up in the dashboard.
             const boot: WrapperBoot = {
               type: 'wrapper_boot',
-              wrapperId,
+              conversationId,
               project,
               capabilities: capabilities || [],
               claudeArgs: options.initialBoot?.claudeArgs || args || [],
@@ -321,7 +321,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
             }
           }
 
-          // Start heartbeat (uses wrapperId as route key during boot phase)
+          // Start heartbeat (uses conversationId as route key during boot phase)
           heartbeatInterval = setInterval(() => {
             if (connected) {
               try {
@@ -519,7 +519,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
                 break
               }
               if (msgType === 'channel_spawn_result') {
-                onChannelSpawnResult?.(message as unknown as { ok: boolean; error?: string; wrapperId?: string })
+                onChannelSpawnResult?.(message as unknown as { ok: boolean; error?: string; conversationId?: string })
                 break
               }
               if (msgType === 'spawn_diagnostics_result') {
@@ -638,14 +638,14 @@ export function createWsClient(options: WsClientOptions): WsClient {
     if (sessionId === newSessionId) {
       const warn = `WARN: same-id session_clear suppressed (${prev.slice(0, 8)}) -- observer race?`
       debug(warn)
-      onDiag?.('session', warn, { wrapperId, sessionId })
+      onDiag?.('session', warn, { conversationId, sessionId })
       return
     }
     const msg: SessionClear = {
       type: 'session_clear',
       oldSessionId: prev,
       newSessionId,
-      wrapperId,
+      conversationId,
       project: newProject,
       model: newModel,
     }
@@ -657,7 +657,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
   function sendTerminalData(data: string) {
     const msg: TerminalData = {
       type: 'terminal_data',
-      wrapperId,
+      conversationId,
       data,
     }
     send(msg)
@@ -709,7 +709,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
   function sendBootEvent(step: BootStep, detail?: string, raw?: unknown) {
     const msg: BootEvent = {
       type: 'boot_event',
-      wrapperId,
+      conversationId,
       step,
       detail,
       raw,
@@ -725,7 +725,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
     // Tell the concentrator to migrate the booting session to the real one.
     const promote: SessionPromote = {
       type: 'session_promote',
-      wrapperId,
+      conversationId,
       sessionId: newSessionId,
       source,
     }
@@ -735,7 +735,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
     const meta: SessionMeta = {
       type: 'meta',
       sessionId: newSessionId,
-      wrapperId,
+      conversationId,
       project,
       startedAt: Date.now(),
       model,
@@ -785,7 +785,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
     sendFileResponse,
     sendBgTaskOutput,
     sendJsonStreamData(lines: string[], isBackfill: boolean) {
-      send({ type: 'json_stream_data', wrapperId, lines, isBackfill } as WrapperMessage)
+      send({ type: 'json_stream_data', conversationId, lines, isBackfill } as WrapperMessage)
     },
     sendStreamDelta(event: Record<string, unknown>) {
       send({ type: 'stream_delta', sessionId: routeId(), event } as WrapperMessage)

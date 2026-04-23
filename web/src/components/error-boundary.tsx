@@ -92,7 +92,7 @@ export class ErrorBoundary extends Component<Props, State> {
           `  session.status: ${session.status}`,
           `  session.project: ${session.project}`,
           `  session.eventCount: ${session.eventCount}`,
-          `  session.wrapperIds: [${(session.wrapperIds || []).map(w => w.slice(0, 8)).join(', ')}]`,
+          `  session.conversationIds: [${(session.conversationIds || []).map(w => w.slice(0, 8)).join(', ')}]`,
           `  transcriptEntries: ${transcriptEntries?.length ?? 0}`,
           `  subagentCount: ${session.subagents?.length ?? 0}`,
           `  taskCount: ${session.taskCount ?? 0}`,
