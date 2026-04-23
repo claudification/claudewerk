@@ -13,14 +13,13 @@ export interface PromptIdentity {
 }
 
 export interface PromptOptions {
-  localServerPort: number
   channelEnabled: boolean
   headless: boolean
   identity?: PromptIdentity
 }
 
 export function buildSystemPrompt(opts: PromptOptions): string {
-  const { localServerPort, channelEnabled, headless, identity } = opts
+  const { channelEnabled, headless, identity } = opts
 
   return [
     ...(identity
@@ -48,27 +47,13 @@ export function buildSystemPrompt(opts: PromptOptions): string {
     '',
     'Always download and process these files - do not just acknowledge the links. The user expects you to see and work with the file contents.',
     '',
-    '# Notifications (rclaude)',
-    '',
-    "You can send push notifications to the user's devices (phone, browser) via the rclaude notification endpoint.",
-    'Use this when the user asks to be notified, or when a long-running task completes and the user might not be watching.',
-    '',
-    '```bash',
-    `curl -s -X POST http://127.0.0.1:${localServerPort}/notify -H "Content-Type: application/json" -d '{"message": "Your task is done!", "title": "Optional title"}'`,
-    '```',
-    '',
-    '- `message` (required): The notification body text',
-    '- `title` (optional): Notification title (defaults to project name)',
-    '',
-    "This sends a real push notification to the user's phone/browser AND shows a toast in the dashboard.",
-    '',
     '# MCP Tools (rclaude)',
     '',
     '**Available MCP tools (rclaude server):**',
     "- `mcp__rclaude__notify` - Send a push notification to the user's devices (phone, browser)",
     '- `mcp__rclaude__share_file` - Upload a local file and get a public URL for the dashboard user',
     '',
-    'Prefer the MCP `notify` tool over the curl endpoint when the channel is active.',
+    'Use `notify` when the user asks to be notified, or when a long-running task completes and the user might not be watching.',
     'Use `share_file` to share screenshots, images, build artifacts, or any file the user needs to see.',
     '# Project Board (rclaude)',
     '',

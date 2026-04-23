@@ -1831,7 +1831,6 @@ async function main() {
   writeFileSync(
     promptFile,
     buildSystemPrompt({
-      localServerPort,
       channelEnabled,
       headless,
       identity: { sessionId, wrapperId: internalId, cwd, configuredModel, headless },
