@@ -7,6 +7,7 @@ import { Hono } from 'hono'
 import type { SendInput } from '../../shared/protocol'
 import { resolveSpawnConfig } from '../../shared/spawn-defaults'
 import type { SpawnRequest } from '../../shared/spawn-schema'
+import { filterDisplayEntries } from '../../shared/transcript-filter'
 import { getGlobalSettings } from '../global-settings'
 import { getProjectSettings } from '../project-settings'
 import type { SessionStore } from '../session-store'
@@ -57,10 +58,15 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
     if (!session) return c.json({ error: 'Session not found' }, 404)
     if (!httpHasPermission(c.req.raw, 'chat:read', session.cwd)) return c.json({ error: 'Forbidden' }, 403)
     const limit = parseInt(c.req.query('limit') || '20', 10)
+    const filter = c.req.query('filter')
     if (!sessionStore.hasTranscriptCache(sessionId)) {
       return c.json({ error: 'No transcript in cache (rclaude not streaming yet?)' }, 404)
     }
-    let entries = sessionStore.getTranscriptEntries(sessionId, limit)
+
+    let entries =
+      filter === 'display'
+        ? filterDisplayEntries(sessionStore.getTranscriptEntries(sessionId), limit)
+        : sessionStore.getTranscriptEntries(sessionId, limit)
 
     // Filter user entries for share viewers with hideUserInput
     const shareToken = new URL(c.req.raw.url).searchParams.get('share')

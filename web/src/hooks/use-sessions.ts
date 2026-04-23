@@ -806,7 +806,7 @@ export async function fetchSessionEvents(sessionId: string): Promise<HookEvent[]
 
 export async function fetchTranscript(sessionId: string): Promise<TranscriptEntry[] | null> {
   try {
-    const res = await fetch(appendShareParam(`${API_BASE}/sessions/${sessionId}/transcript?limit=500`))
+    const res = await fetch(appendShareParam(`${API_BASE}/sessions/${sessionId}/transcript?limit=200&filter=display`))
     if (!res.ok) return null // null = fetch failed, don't overwrite existing
     return res.json()
   } catch {

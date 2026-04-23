@@ -414,8 +414,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   ])
   const MAX_EVENTS = 1000
 
-  // Transcript cache: sessionId -> entries (ring buffer, max 500 per session)
-  const MAX_TRANSCRIPT_ENTRIES = 500
+  // Transcript cache: sessionId -> entries (ring buffer, max 1000 per session)
+  const MAX_TRANSCRIPT_ENTRIES = 1000
   const transcriptCache = new Map<string, TranscriptEntry[]>()
   // Dirty tracking for transcript persistence: sessions modified since last flush
   const dirtyTranscripts = new Set<string>()

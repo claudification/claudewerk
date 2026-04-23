@@ -56,36 +56,36 @@ describe('TranscriptCache', () => {
     expect(result[4]).toEqual(makeEntry(19))
   })
 
-  it('caps at max entries (500)', () => {
+  it('caps at max entries (1000)', () => {
     const store = createSessionStore({ enablePersistence: false })
     store.createSession('s1', '/tmp')
 
-    const entries = Array.from({ length: 600 }, (_, i) => makeEntry(i))
+    const entries = Array.from({ length: 1200 }, (_, i) => makeEntry(i))
     store.addTranscriptEntries('s1', entries, true)
 
     const result = store.getTranscriptEntries('s1')
-    expect(result.length).toBe(500)
-    // Should keep the last 500
-    expect(result[0]).toEqual(makeEntry(100))
-    expect(result[499]).toEqual(makeEntry(599))
+    expect(result.length).toBe(1000)
+    // Should keep the last 1000
+    expect(result[0]).toEqual(makeEntry(200))
+    expect(result[999]).toEqual(makeEntry(1199))
   })
 
   it('caps incremental appends too', () => {
     const store = createSessionStore({ enablePersistence: false })
     store.createSession('s1', '/tmp')
 
-    // Fill with 490 entries
-    const initial = Array.from({ length: 490 }, (_, i) => makeEntry(i))
+    // Fill with 990 entries
+    const initial = Array.from({ length: 990 }, (_, i) => makeEntry(i))
     store.addTranscriptEntries('s1', initial, true)
 
-    // Add 20 more (total 510, should trim to 500)
-    const more = Array.from({ length: 20 }, (_, i) => makeEntry(490 + i))
+    // Add 20 more (total 1010, should trim to 1000)
+    const more = Array.from({ length: 20 }, (_, i) => makeEntry(990 + i))
     store.addTranscriptEntries('s1', more, false)
 
     const result = store.getTranscriptEntries('s1')
-    expect(result.length).toBe(500)
+    expect(result.length).toBe(1000)
     expect(result[0]).toEqual(makeEntry(10))
-    expect(result[499]).toEqual(makeEntry(509))
+    expect(result[999]).toEqual(makeEntry(1009))
   })
 
   it('returns empty array for unknown session', () => {

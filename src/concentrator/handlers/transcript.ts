@@ -6,6 +6,7 @@
 
 import { randomUUID } from 'node:crypto'
 import type { TranscriptLaunchEntry, WrapperLaunchStep } from '../../shared/protocol'
+import { filterDisplayEntries } from '../../shared/transcript-filter'
 import { recordTurnFromCumulatives } from '../cost-store'
 import type { MessageHandler } from '../handler-context'
 import { registerHandlers } from '../message-router'
@@ -166,7 +167,10 @@ const transcriptRequest: MessageHandler = (ctx, data) => {
   const sess = ctx.sessions.getSession(data.sessionId as string)
   if (sess) ctx.requirePermission('chat:read', sess.cwd)
   if (ctx.sessions.hasTranscriptCache(data.sessionId)) {
-    let entries = ctx.sessions.getTranscriptEntries(data.sessionId, data.limit)
+    let entries =
+      data.filter === 'display'
+        ? filterDisplayEntries(ctx.sessions.getTranscriptEntries(data.sessionId), data.limit)
+        : ctx.sessions.getTranscriptEntries(data.sessionId, data.limit)
     // Filter user entries for share viewers with hideUserInput
     if (ctx.ws.data.hideUserInput) {
       entries = entries.filter(e => (e as { type?: string }).type !== 'user')
