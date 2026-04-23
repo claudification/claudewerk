@@ -99,6 +99,11 @@ export function normalizeProjectUri(uri: string): string {
   return `${parsed.scheme}://${authority}${path}${fragment}`
 }
 
+export function projectWithoutSession(uri: string): string {
+  const hashIdx = uri.indexOf('#')
+  return hashIdx >= 0 ? uri.slice(0, hashIdx) : uri
+}
+
 export function extractProjectLabel(uri: string): string {
   if (uri === '*' || /^[a-z][a-z0-9+.-]*:\*$/i.test(uri)) return uri
 
