@@ -37,8 +37,8 @@ const EMPTY_TRANSCRIPT: TranscriptEntry[] = []
 export const SessionDetail = memo(function SessionDetail() {
   const [activeTab, setActiveTab] = useState<Tab>('transcript')
   const [follow, setFollow] = useState(true)
-  const showThinking = useSessionsStore(s => s.dashboardPrefs.showThinking)
-  const showDiag = useSessionsStore(s => s.dashboardPrefs.showDiag)
+  const showThinking = useSessionsStore(s => s.controlPanelPrefs.showThinking)
+  const showDiag = useSessionsStore(s => s.controlPanelPrefs.showDiag)
   const [conversationTarget, setConversationTarget] = useState<{
     projectA: string
     projectB: string

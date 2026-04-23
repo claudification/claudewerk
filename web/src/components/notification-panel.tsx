@@ -256,15 +256,15 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
                   {renderProjectIcon(ps.icon, 'w-3 h-3')}
                 </span>
               )}
-              <span
-                className="text-[11px] font-bold truncate"
-                style={displayColor ? { color: displayColor } : undefined}
-              >
-                {sessionName}
-              </span>
               {projectName && (
-                <span className="text-[9px] text-muted-foreground/50 truncate ml-auto">{projectName}</span>
+                <span
+                  className="text-[11px] font-bold truncate"
+                  style={displayColor ? { color: displayColor } : undefined}
+                >
+                  {projectName}
+                </span>
               )}
+              <span className="text-[9px] text-muted-foreground/50 truncate ml-auto">{sessionName}</span>
             </button>
             {groupItems
               .sort((a, b) => b.timestamp - a.timestamp)

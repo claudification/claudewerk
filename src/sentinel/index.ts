@@ -2,7 +2,7 @@
 /**
  * sentinel - Host-side sentinel for session revival and spawning
  *
- * Connects to concentrator via WebSocket, listens for revive/spawn commands.
+ * Connects to broker via WebSocket, listens for revive/spawn commands.
  * Headless sessions are spawned directly via Bun.spawn() with PID tracking.
  * PTY/interactive sessions still use tmux via revive-session.sh.
  *
@@ -21,7 +21,7 @@ import { dirname, join, resolve } from 'node:path'
 import type { Subprocess } from 'bun'
 import { cwdToProjectUri, parseProjectUri } from '../shared/project-uri'
 import type {
-  ConcentratorSentinelMessage,
+  BrokerSentinelMessage,
   ExtraUsage,
   ListDirsResult,
   ReviveResult,
@@ -30,7 +30,7 @@ import type {
   UsageUpdate,
   UsageWindow,
 } from '../shared/protocol'
-import { DEFAULT_CONCENTRATOR_URL, HEARTBEAT_INTERVAL_MS } from '../shared/protocol'
+import { DEFAULT_BROKER_URL, HEARTBEAT_INTERVAL_MS } from '../shared/protocol'
 
 function getRawMachineId(): string {
   const platform = process.platform
@@ -141,7 +141,7 @@ function loadAndCheckPidRegistry() {
         process.kill(entry.pid, 0) // check if alive (signal 0 = no-op)
         log(`PID ${entry.pid} still alive (wrapper ${entry.conversationId.slice(0, 8)}, cwd=${entry.cwd})`)
         // Can't re-attach Bun.spawn to existing PID - just note it's alive.
-        // The rclaude process manages its own WS connection to the concentrator.
+        // The rclaude process manages its own WS connection to the broker.
       } catch {
         log(`PID ${entry.pid} dead (wrapper ${entry.conversationId.slice(0, 8)})`)
         deadPidsToReport.push(entry)
@@ -385,7 +385,7 @@ function spawnHeadlessDirect(
         earlyFailure,
       })
 
-      // Report to concentrator
+      // Report to broker
       if (activeWs?.readyState === WebSocket.OPEN) {
         const msg: SpawnFailed = {
           type: 'spawn_failed',
@@ -457,8 +457,9 @@ const DEFAULT_REVIVE_SCRIPT = findReviveScript()
 
 function parseArgs() {
   const args = process.argv.slice(2)
-  let concentratorUrl = process.env.RCLAUDE_CONCENTRATOR || DEFAULT_CONCENTRATOR_URL
-  let secret = process.env.RCLAUDE_SECRET
+  let brokerUrl =
+    process.env.CLAUDWERK_BROKER ?? process.env.RCLAUDE_BROKER ?? process.env.RCLAUDE_CONCENTRATOR ?? DEFAULT_BROKER_URL
+  let secret = process.env.CLAUDWERK_SECRET ?? process.env.RCLAUDE_SECRET
   let verbose = false
   let reviveScript = DEFAULT_REVIVE_SCRIPT
   let spawnRoot = process.env.HOME || '/root'
@@ -467,7 +468,7 @@ function parseArgs() {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]
     if (arg === '--concentrator') {
-      concentratorUrl = args[++i] || DEFAULT_CONCENTRATOR_URL
+      brokerUrl = args[++i] || DEFAULT_BROKER_URL
     } else if (arg === '--secret') {
       secret = args[++i]
     } else if (arg === '--revive-script') {
@@ -484,16 +485,16 @@ function parseArgs() {
     }
   }
 
-  if (!secret) secret = process.env.RCLAUDE_SECRET
+  if (!secret) secret = process.env.CLAUDWERK_SECRET ?? process.env.RCLAUDE_SECRET
 
-  return { concentratorUrl, secret, verbose, reviveScript, spawnRoot, noSpawn }
+  return { brokerUrl, secret, verbose, reviveScript, spawnRoot, noSpawn }
 }
 
 function printHelp() {
   console.log(`
 sentinel - Host-side sentinel for session revival and spawning
 
-Connects to concentrator and listens for revive/spawn commands.
+Connects to broker and listens for revive/spawn commands.
 Headless sessions are spawned directly (Bun.spawn + PID tracking).
 PTY/interactive sessions use tmux via revive-session.sh.
 
@@ -501,7 +502,7 @@ USAGE:
   sentinel [OPTIONS]
 
 OPTIONS:
-  --concentrator <url>   Concentrator WebSocket URL (default: ${DEFAULT_CONCENTRATOR_URL})
+  --concentrator <url>   Concentrator WebSocket URL (default: ${DEFAULT_BROKER_URL})
   --secret <s>           Shared secret (or RCLAUDE_SECRET env)
   --revive-script <path> Path to revive-session.sh (default: auto-detected)
   --spawn-root <path>    Root directory for relative spawn paths (default: $HOME)
@@ -788,7 +789,7 @@ async function spawnSession(
     reviveScript,
     reviveScriptExists: existsSync(reviveScript),
     secretSet: !!secret,
-    concentratorUrl: process.env.RCLAUDE_CONCENTRATOR || 'UNSET',
+    brokerUrl: process.env.RCLAUDE_BROKER || 'UNSET',
     rclaude: rclaudeBin || 'NOT FOUND',
     PATH: process.env.PATH,
   })
@@ -1163,7 +1164,7 @@ function connect(
   const ws = new WebSocket(wsUrl)
 
   ws.onopen = () => {
-    log('Connected to concentrator')
+    log('Connected to broker')
     activeWs = ws
     // Identify as sentinel with machine fingerprint
     ws.send(JSON.stringify({ type: 'sentinel_identify', machineId: getMachineId(), hostname: osHostname() }))
@@ -1184,7 +1185,7 @@ function connect(
 
   ws.onmessage = async event => {
     try {
-      const msg = JSON.parse(String(event.data)) as ConcentratorSentinelMessage | { type: string }
+      const msg = JSON.parse(String(event.data)) as BrokerSentinelMessage | { type: string }
 
       switch (msg.type) {
         case 'ack':
@@ -1459,7 +1460,7 @@ function connect(
 }
 
 // Main
-const { concentratorUrl, secret, verbose, reviveScript, spawnRoot, noSpawn } = parseArgs()
+const { brokerUrl, secret, verbose, reviveScript, spawnRoot, noSpawn } = parseArgs()
 
 if (!secret) {
   console.error('ERROR: --secret or RCLAUDE_SECRET is required')
@@ -1519,4 +1520,4 @@ process.on('SIGINT', () => {
 log('Starting sentinel (single instance)')
 log(`Revive script: ${reviveScript}`)
 log(`Spawn root: ${spawnRoot}${noSpawn ? ' (DISABLED)' : ''}`)
-connect(concentratorUrl, secret, reviveScript, verbose, spawnRoot, noSpawn)
+connect(brokerUrl, secret, reviveScript, verbose, spawnRoot, noSpawn)

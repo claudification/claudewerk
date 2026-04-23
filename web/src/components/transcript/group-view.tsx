@@ -8,7 +8,7 @@ import type { TranscriptContentBlock, TranscriptImage, TranscriptToolUseResult }
 import { cn, haptic } from '@/lib/utils'
 import { JsonInspector } from '../json-inspector'
 
-// Chat bubble color presets - keys match dashboardPrefs.chatBubbleColor
+// Chat bubble color presets - keys match controlPanelPrefs.chatBubbleColor
 const BUBBLE_COLORS: Record<string, string> = {
   blue: 'bg-[#2563eb]/90',
   teal: 'bg-teal-600/90',
@@ -22,7 +22,7 @@ const BUBBLE_COLORS: Record<string, string> = {
 // Exported for settings color picker
 export const BUBBLE_COLOR_OPTIONS = Object.keys(BUBBLE_COLORS)
 
-// Transcript entries are augmented by the concentrator API with rendering data
+// Transcript entries are augmented by the broker API with rendering data
 // (images extracted from base64, structured tool use results) before being sent
 // to the dashboard. This extends the base entry type for rendering purposes.
 interface RenderableTranscriptEntry {

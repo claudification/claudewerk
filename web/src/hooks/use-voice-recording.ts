@@ -69,7 +69,7 @@ export function dismissMicExpired() {
 }
 
 function releaseWarmStream() {
-  const wasKeepOpen = useSessionsStore.getState().dashboardPrefs.keepMicOpen
+  const wasKeepOpen = useSessionsStore.getState().controlPanelPrefs.keepMicOpen
   if (warmStream) {
     for (const t of warmStream.getTracks()) t.stop()
     warmStream = null
@@ -81,7 +81,7 @@ function releaseWarmStream() {
 
 function scheduleStreamRelease() {
   if (warmStreamTimer) clearTimeout(warmStreamTimer)
-  const keepOpen = useSessionsStore.getState().dashboardPrefs.keepMicOpen
+  const keepOpen = useSessionsStore.getState().controlPanelPrefs.keepMicOpen
   const ttl = keepOpen ? KEEP_MIC_IDLE_TTL : WARM_STREAM_TTL
   warmStreamTimer = setTimeout(releaseWarmStream, ttl)
   if (keepOpen) console.log('[voice] keepMicOpen: mic idle timer set (30min)')

@@ -1,5 +1,6 @@
 // Re-export shared types (single source of truth)
 export type {
+  AgentHostCapability,
   ArchivedTaskGroup,
   BgTaskInfo as BgTaskSummary,
   ExtraUsage,
@@ -13,10 +14,9 @@ export type {
   TeamInfo,
   UsageUpdate,
   UsageWindow,
-  WrapperCapability,
 } from '@shared/protocol'
 
-import type { BgTaskInfo as BgTaskSummary, ProjectSettings, WrapperCapability } from '@shared/protocol'
+import type { AgentHostCapability, BgTaskInfo as BgTaskSummary, ProjectSettings } from '@shared/protocol'
 
 // Re-export HookEvent but with a looser data type for generic property access
 // (dashboard does e.data?.model, e.data?.tool_name, etc.)
@@ -37,7 +37,7 @@ export interface Session {
   id: string
   project: string
   model?: string
-  capabilities?: WrapperCapability[]
+  capabilities?: AgentHostCapability[]
   version?: string
   buildTime?: string
   conversationIds?: string[]
@@ -205,7 +205,7 @@ export type {
 } from '@shared/protocol'
 
 // Frontend-specific rendering extensions on transcript entries.
-// The JSONL entries are augmented by the concentrator/dashboard with
+// The JSONL entries are augmented by the broker/dashboard with
 // images and structured tool results before rendering.
 export interface TranscriptToolUseResult {
   filePath?: string

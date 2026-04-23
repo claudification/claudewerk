@@ -28,7 +28,7 @@ export interface HookEvent {
 }
 
 // Capabilities that rclaude declares on connect
-export type WrapperCapability =
+export type AgentHostCapability =
   | 'terminal'
   | 'channel'
   | 'headless'
@@ -62,7 +62,7 @@ export interface SessionMeta {
   model?: string
   configuredModel?: string // the --model value passed to CC (CC strips [1m] from API responses)
   args?: string[]
-  capabilities?: WrapperCapability[]
+  capabilities?: AgentHostCapability[]
   version?: string
   buildTime?: string
   claudeVersion?: string
@@ -199,9 +199,9 @@ interface TranscriptEntryBase {
   gitBranch?: string
   slug?: string
   userType?: string
-  /** Per-session monotonic sequence number, stamped by the concentrator on cache
+  /** Per-session monotonic sequence number, stamped by the broker on cache
    *  insert. Starts at 1, increments by 1 per entry within a session. Scoped to
-   *  the concentrator's in-memory counter -- NOT persisted to JSONL. On restart
+   *  the broker's in-memory counter -- NOT persisted to JSONL. On restart
    *  the counter rebuilds from hydration and SYNC_EPOCH bumps, forcing clients
    *  to full-resync. Clients compare `lastAppliedSeq[sid]` to server's seq for
    *  sync integrity. Missing (undefined) only on raw JSONL read before ingest. */
@@ -353,13 +353,13 @@ export interface WrapperNotify {
 }
 
 /** First frame from the wrapper after the WS handshake, sent BEFORE CC has
- *  produced a session id. Gives the concentrator enough to create a
+ *  produced a session id. Gives the broker enough to create a
  *  placeholder "booting" session so the dashboard shows progress from t=0. */
 export interface WrapperBoot {
   type: 'wrapper_boot'
   conversationId: string
   project: string
-  capabilities: WrapperCapability[]
+  capabilities: AgentHostCapability[]
   claudeArgs: string[]
   claudeVersion?: string
   claudeAuth?: { email?: string; orgId?: string; orgName?: string; subscriptionType?: string }
@@ -439,7 +439,7 @@ export interface WrapperLaunchEvent {
   t: number
 }
 
-/** Tells the concentrator to promote the boot session to a real session once
+/** Tells the broker to promote the boot session to a real session once
  *  CC has produced a session id. Source indicates which channel won the race
  *  (stream-json init in headless, SessionStart hook in PTY). */
 export interface SessionPromote {
@@ -449,7 +449,7 @@ export interface SessionPromote {
   source: 'stream_json' | 'hook'
 }
 
-export type WrapperMessage =
+export type AgentHostMessage =
   | HookEvent
   | SessionMeta
   | SessionEnd
@@ -1135,7 +1135,7 @@ export interface Session {
   model?: string
   configuredModel?: string // the --model value passed to CC (preserves [1m] suffix that CC strips)
   args?: string[]
-  capabilities?: WrapperCapability[]
+  capabilities?: AgentHostCapability[]
   transcriptPath?: string
   version?: string
   buildTime?: string
@@ -1458,7 +1458,7 @@ export interface SentinelReject {
   reason: string
 }
 
-export type ConcentratorSentinelMessage = ReviveSession | SpawnSession | ListDirs | SentinelQuit | SentinelReject
+export type BrokerSentinelMessage = ReviveSession | SpawnSession | ListDirs | SentinelQuit | SentinelReject
 
 // Dashboard broadcast: sentinel status
 export interface SentinelStatus {
@@ -1471,7 +1471,7 @@ export interface SessionSummary {
   id: string
   project: string
   model?: string
-  capabilities?: WrapperCapability[]
+  capabilities?: AgentHostCapability[]
   version?: string
   buildTime?: string
   claudeVersion?: string
@@ -1625,7 +1625,7 @@ export interface SubscriptionsDiag {
 }
 
 // Configuration
-export const DEFAULT_CONCENTRATOR_URL = 'ws://localhost:9999'
+export const DEFAULT_BROKER_URL = 'ws://localhost:9999'
 export const DEFAULT_CONCENTRATOR_PORT = 9999
 export const HEARTBEAT_INTERVAL_MS = 30000
 // Session status is driven by hooks (active/idle/ended), no configurable timeout

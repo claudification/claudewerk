@@ -19,7 +19,7 @@ function StatusIndicator() {
   const isConnected = useSessionsStore(s => s.isConnected)
   const sentinelConnected = useSessionsStore(s => s.sentinelConnected)
   const error = useSessionsStore(s => s.error)
-  const showStats = useSessionsStore(s => s.dashboardPrefs.showWsStats)
+  const showStats = useSessionsStore(s => s.controlPanelPrefs.showWsStats)
   const rates = useSyncExternalStore(subscribeStats, getRates)
 
   const [open, setOpen] = useState(false)
@@ -141,7 +141,7 @@ export function Header() {
     window.addEventListener('open-project-settings', handleOpenProject)
     return () => window.removeEventListener('open-project-settings', handleOpenProject)
   }, [])
-  const showStats = useSessionsStore(s => s.dashboardPrefs.showWsStats)
+  const showStats = useSessionsStore(s => s.controlPanelPrefs.showWsStats)
 
   return (
     <header className="border border-border p-2 sm:p-3 font-mono select-none">

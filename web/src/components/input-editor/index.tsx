@@ -1,7 +1,7 @@
 /**
  * <InputEditor> -- shell + backend selection.
  *
- * Backend choice from dashboardPrefs.inputBackend:
+ * Backend choice from controlPanelPrefs.inputBackend:
  *   - 'legacy'      : the existing MarkdownInput (textarea + overlay)
  *   - 'codemirror'  : CM6-based, lazy-loaded (~200KB chunk, paid only on opt-in)
  *
@@ -22,7 +22,7 @@ import type { InputEditorProps } from './types'
 export type { InputEditorProps } from './types'
 
 export function InputEditor(props: InputEditorProps) {
-  const backend = useSessionsStore(s => s.dashboardPrefs.inputBackend)
+  const backend = useSessionsStore(s => s.controlPanelPrefs.inputBackend)
 
   function onSubmit() {
     if (tryRunClientCommand(props.value)) {

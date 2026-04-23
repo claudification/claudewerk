@@ -121,7 +121,7 @@ export function MarkdownInput({
     }
   }, [autoFocus, isMobile, inline])
   const voiceCapable = useSessionsStore(state => state.serverCapabilities.voice)
-  const showVoicePref = useSessionsStore(state => state.dashboardPrefs.showVoiceInput)
+  const showVoicePref = useSessionsStore(state => state.controlPanelPrefs.showVoiceInput)
   const showVoice = voiceCapable && showVoicePref
 
   const [expanded, setExpanded] = useState(false)

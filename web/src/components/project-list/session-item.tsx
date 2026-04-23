@@ -715,8 +715,8 @@ const SessionItemFull = memo(function SessionItemFull({ session }: { session: Se
 
   const openTab = useSessionsStore(s => s.openTab)
   const ps = useSessionsStore(s => s.projectSettings[session.project])
-  const showContextBar = useSessionsStore(s => s.dashboardPrefs.showContextInList)
-  const showCost = useSessionsStore(s => s.dashboardPrefs.showCostInList)
+  const showContextBar = useSessionsStore(s => s.controlPanelPrefs.showContextInList)
+  const showCost = useSessionsStore(s => s.controlPanelPrefs.showCostInList)
   const isRenaming = useSessionsStore(s => s.renamingSessionId === session.id)
   const hasPendingPermission = useSessionsStore(s => s.pendingPermissions.some(p => p.sessionId === session.id))
 
@@ -941,8 +941,8 @@ export const SessionItemCompact = memo(function SessionItemCompact({ session }: 
   const selectSession = useSessionsStore(s => s.selectSession)
 
   const ps = useSessionsStore(s => s.projectSettings[session.project])
-  const showCost = useSessionsStore(s => s.dashboardPrefs.showCostInList)
-  const showContextBar = useSessionsStore(s => s.dashboardPrefs.showContextInList)
+  const showCost = useSessionsStore(s => s.controlPanelPrefs.showCostInList)
+  const showContextBar = useSessionsStore(s => s.controlPanelPrefs.showContextInList)
   const isRenaming = useSessionsStore(s => s.renamingSessionId === session.id)
   const hasPendingPermission = useSessionsStore(s => s.pendingPermissions.some(p => p.sessionId === session.id))
 

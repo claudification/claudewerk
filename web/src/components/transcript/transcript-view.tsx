@@ -90,7 +90,7 @@ const EMPTY_STREAMING = ''
 
 /** Isolated streaming text component - subscribes to its own store slice so token updates don't re-render the virtualizer */
 const StreamingBlock = memo(function StreamingBlock({ sessionId }: { sessionId: string | null }) {
-  const showStreaming = useSessionsStore(state => state.dashboardPrefs.showStreaming !== false)
+  const showStreaming = useSessionsStore(state => state.controlPanelPrefs.showStreaming !== false)
   const streamingText = useSessionsStore(
     state => (sessionId ? state.streamingText[sessionId] : null) || EMPTY_STREAMING,
   )
@@ -222,7 +222,7 @@ const onRenderProfile: ProfilerOnRenderCallback = (id, phase, actualDuration, ba
 
 /** Profiler wraps its children in an extra fiber and runs React's measurement code
  *  on every commit -- meaningful overhead if left on for every user. Only enable it
- *  when the perf monitor is toggled on (dashboardPrefs.showPerfMonitor). */
+ *  when the perf monitor is toggled on (controlPanelPrefs.showPerfMonitor). */
 function MaybeProfiler({ enabled, id, children }: { enabled: boolean; id: string; children: ReactNode }) {
   if (!enabled) return <Fragment>{children}</Fragment>
   return (
@@ -255,8 +255,8 @@ export const TranscriptView = memo(function TranscriptView({
   // Lift settings selectors here (once) instead of per-GroupView (N times)
   const expandAll = useSessionsStore(state => state.expandAll)
   const globalSettings = useSessionsStore(state => state.globalSettings)
-  const chatBubbles = useSessionsStore(state => state.dashboardPrefs.chatBubbles)
-  const bubbleColor = useSessionsStore(state => state.dashboardPrefs.chatBubbleColor) || 'blue'
+  const chatBubbles = useSessionsStore(state => state.controlPanelPrefs.chatBubbles)
+  const bubbleColor = useSessionsStore(state => state.controlPanelPrefs.chatBubbleColor) || 'blue'
   const transcriptSettings = useMemo(
     () => ({
       expandAll,
@@ -328,7 +328,7 @@ export const TranscriptView = memo(function TranscriptView({
   }, [subagentsSummary])
 
   const selectedSessionId = useSessionsStore(state => state.selectedSessionId)
-  const perfEnabled = useSessionsStore(state => state.dashboardPrefs.showPerfMonitor)
+  const perfEnabled = useSessionsStore(state => state.controlPanelPrefs.showPerfMonitor)
 
   // Count pending permissions for the selected session. Used as a scroll-to-bottom
   // trigger so a newly-arrived permission pins into view when follow is active.

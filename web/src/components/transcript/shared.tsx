@@ -38,7 +38,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useSessionsStore } from '@/hooks/use-sessions'
-import { resolveToolDisplay, type ToolDisplayKey } from '@/lib/dashboard-prefs'
+import { resolveToolDisplay, type ToolDisplayKey } from '@/lib/control-panel-prefs'
 import { defaultOpenApplied, expandedState } from '@/lib/expanded-state'
 
 // ANSI to HTML converter - vibrant colors for dark backgrounds
@@ -270,7 +270,7 @@ function capLineLength(line: string, max: number): { text: string; truncated: bo
 
 export function TruncatedPre({ text, tool, highlight }: { text: string; tool?: ToolDisplayKey; highlight?: RegExp }) {
   const [revealed, setRevealed] = useState(false)
-  const limit = useSessionsStore(s => (tool ? resolveToolDisplay(s.dashboardPrefs, tool).lineLimit : 10))
+  const limit = useSessionsStore(s => (tool ? resolveToolDisplay(s.controlPanelPrefs, tool).lineLimit : 10))
   const safeText = typeof text === 'string' ? text : String(text ?? '')
   const lines = safeText.split('\n')
   const needsLineTruncation = limit > 0 && lines.length > limit && !revealed

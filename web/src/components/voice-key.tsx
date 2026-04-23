@@ -21,8 +21,8 @@ function useMicExpired() {
 }
 
 export function VoiceKey() {
-  const voiceHoldKey = useSessionsStore(s => s.dashboardPrefs.voiceHoldKey)
-  const keepMicOpen = useSessionsStore(s => s.dashboardPrefs.keepMicOpen)
+  const voiceHoldKey = useSessionsStore(s => s.controlPanelPrefs.voiceHoldKey)
+  const keepMicOpen = useSessionsStore(s => s.controlPanelPrefs.keepMicOpen)
   const voice = useVoiceRecording()
   const activeRef = useRef(false)
   const micExpired = useMicExpired()

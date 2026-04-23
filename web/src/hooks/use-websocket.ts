@@ -1,5 +1,5 @@
 /**
- * WebSocket hook for real-time updates from concentrator
+ * WebSocket hook for real-time updates from broker
  *
  * Uses rAF buffering + unstable_batchedUpdates to coalesce multiple WS messages
  * into a single React render per frame. Latency-sensitive handlers (terminal, file,
@@ -28,7 +28,7 @@ import {
 import { handleSpawnRequestAck } from './use-spawn'
 import { recordIn, recordOut } from './ws-stats'
 
-// Dashboard message from concentrator WS (loose type field for extensibility)
+// Dashboard message from broker WS (loose type field for extensibility)
 interface DashboardMessage {
   type: string
   sessionId?: string
@@ -782,7 +782,7 @@ function processMessage(msg: DashboardMessage) {
       const paSid = pa.sessionId
       if (paSid && pa.requestId && pa.plan) {
         const dialogId = `plan_${pa.requestId}`
-        // Dedup: wrapper replays plan_approval on reconnect so the concentrator
+        // Dedup: wrapper replays plan_approval on reconnect so the broker
         // can rebuild pending state. If we already have this exact dialog open,
         // don't overwrite -- would wipe any feedback the user has typed.
         const existing = useSessionsStore.getState().pendingDialogs[paSid]

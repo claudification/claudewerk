@@ -28,9 +28,9 @@ export function ProjectList() {
   const selectedSessionId = useSessionsStore(s => s.selectedSessionId)
   const rawProjectOrder = useSessionsStore(s => s.projectOrder)
   const projectOrder = rawProjectOrder?.tree ? rawProjectOrder : { tree: [] }
-  const showEnded = useSessionsStore(s => s.dashboardPrefs.showEndedSessions)
-  const showInactive = useSessionsStore(s => s.dashboardPrefs.showInactiveByDefault)
-  const updatePrefs = useSessionsStore(s => s.updateDashboardPrefs)
+  const showEnded = useSessionsStore(s => s.controlPanelPrefs.showEndedSessions)
+  const showInactive = useSessionsStore(s => s.controlPanelPrefs.showInactiveByDefault)
+  const updatePrefs = useSessionsStore(s => s.updateControlPanelPrefs)
   const [_pulseSessionId, setPulseSessionId] = useState<string | null>(null)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
     try {

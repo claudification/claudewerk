@@ -5,9 +5,9 @@ scanned all four components (wrapper, concentrator, agent, web dashboard).
 
 ## Completed
 
-- [x] **BUG: Previous session ID logged wrong value** - `src/wrapper/index.ts` (f86112b)
-- [x] **PERF: PASSIVE_HOOKS Set allocated per event** - `src/concentrator/session-store.ts` (f86112b)
-- [x] **PERF: getTerminalViewers allocates Set per call** - `src/concentrator/session-store.ts` (f86112b)
+- [x] **BUG: Previous session ID logged wrong value** - `src/agent-host/index.ts` (f86112b)
+- [x] **PERF: PASSIVE_HOOKS Set allocated per event** - `src/broker/session-store.ts` (f86112b)
+- [x] **PERF: getTerminalViewers allocates Set per call** - `src/broker/session-store.ts` (f86112b)
 - [x] **MEMORY: Unbounded session.events array** - capped at 1000 (f86112b)
 - [x] **REUSE: Duplicated text extraction in scanForBgTasks** - extracted `extractEntryText()` (f86112b)
 - [x] **REUSE: formatModel() not used in command palette** - was hand-inlined (f86112b)
@@ -26,7 +26,7 @@ scanned all four components (wrapper, concentrator, agent, web dashboard).
 ## Open - Medium (worth doing)
 
 - [ ] **Dead code in ws-server.ts**\
-  `src/concentrator/ws-server.ts` has unused exports.\
+  `src/broker/ws-server.ts` has unused exports.\
   Fix: Audit and remove dead code, or inline into `index.ts` if only used there.
 
 - [ ] **Duplicate symbol names across codebase**\

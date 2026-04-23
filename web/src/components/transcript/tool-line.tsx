@@ -7,7 +7,7 @@ import { structuredPatch } from 'diff'
 import { memo, type ReactNode } from 'react'
 import { Markdown } from '@/components/markdown'
 import { useSessionsStore } from '@/hooks/use-sessions'
-import { resolveToolDisplay, type ToolDisplayKey } from '@/lib/dashboard-prefs'
+import { resolveToolDisplay, type ToolDisplayKey } from '@/lib/control-panel-prefs'
 import { projectPath, type TranscriptContentBlock } from '@/lib/types'
 import { cn, truncate } from '@/lib/utils'
 import { JsonInspector } from '../json-inspector'
@@ -171,11 +171,11 @@ export function ToolLine({
   const expandAll = expandAllProp ?? expandAllStore
   const displayKey = name.startsWith('mcp__') ? 'MCP' : name
   const toolDefaultOpen = useSessionsStore(
-    state => resolveToolDisplay(state.dashboardPrefs, displayKey as ToolDisplayKey).defaultOpen,
+    state => resolveToolDisplay(state.controlPanelPrefs, displayKey as ToolDisplayKey).defaultOpen,
   )
   // Path sanitization for command display
   const sessionPath = useSessionsStore(s => {
-    if (s.dashboardPrefs.sanitizePaths === false) return undefined
+    if (s.controlPanelPrefs.sanitizePaths === false) return undefined
     const sid = s.selectedSessionId
     const session = sid ? s.sessionsById[sid] : undefined
     return session ? projectPath(session.project) : undefined

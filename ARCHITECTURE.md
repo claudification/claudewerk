@@ -111,14 +111,14 @@
 | Component | Binary | Port | Description |
 |-----------|--------|------|-------------|
 | rclaude | `bin/rclaude` | dynamic | Wrapper that spawns claude with hook injection |
-| concentrator | `bin/concentrator` | 9999 | Aggregates sessions, serves dashboard |
+| concentrator | `bin/broker` | 9999 | Aggregates sessions, serves dashboard |
 | web | `web/dist/` | embedded | React dashboard (embedded in concentrator) |
 
 ## Quick Start
 
 ```bash
 # Start concentrator (in background or separate terminal)
-./bin/concentrator --verbose
+./bin/broker --verbose
 
 # Use rclaude instead of claude
 ./bin/rclaude

@@ -1170,7 +1170,7 @@ remote-claude/
 │       └── styles/                # Tokyo Night theme
 ├── scripts/
 │   ├── gen-version.ts             # Bakes git hash, branch, GitHub repo + build time
-│   ├── build-concentrator.ts      # Concentrator build script
+│   ├── build-broker.ts      # Concentrator build script
 │   ├── rclaude-boot.sh            # Smart tmux launcher (continue/fresh)
 │   ├── revive-session.sh          # Session revival via tmux
 │   └── start-sentinel.sh             # Agent startup helper
@@ -1191,7 +1191,7 @@ bun install && cd web && bun install && cd ..
 
 # Dev mode (hot reload)
 bun run dev:wrapper              # Wrapper
-bun run dev:concentrator         # Concentrator
+bun run dev:broker         # Concentrator
 bun run dev:web                  # Web dashboard (Vite dev server)
 
 # Type check
@@ -1206,8 +1206,8 @@ bun run build
 # Build individual components
 bun run build:web                # Web -> web/dist/
 bun run build:wrapper            # rclaude -> bin/rclaude
-bun run build:concentrator       # concentrator -> bin/concentrator
-bun run build:cli                # concentrator-cli -> bin/concentrator-cli
+bun run build:broker       # concentrator -> bin/broker
+bun run build:cli                # concentrator-cli -> bin/broker-cli
 bun run build:sentinel              # sentinel -> bin/sentinel
 ```
 

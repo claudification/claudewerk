@@ -61,7 +61,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   getLocalStorageDump(): string {
     try {
-      const keys = ['dashboard-prefs', 'rclaude-terminal-settings']
+      const keys = ['control-panel-prefs', 'rclaude-terminal-settings']
       const entries: string[] = []
       for (const key of keys) {
         const val = localStorage.getItem(key)

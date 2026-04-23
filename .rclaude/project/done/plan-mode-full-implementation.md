@@ -104,11 +104,11 @@ Wrapper sends `plan_mode_changed` message on approve/exit.
 
 | File | Change |
 |------|--------|
-| `src/wrapper/headless-lifecycle.ts` | Intercept ExitPlanMode -> forward plan_approval |
-| `src/wrapper/index.ts` | Handle `plan_approval_response` from WS |
-| `src/concentrator/handlers/permissions.ts` | Add plan_approval relay |
-| `src/concentrator/session-store.ts` | Add `planMode` to Session |
-| `src/concentrator/project-settings.ts` | Add `allowPlanMode` field |
+| `src/agent-host/headless-lifecycle.ts` | Intercept ExitPlanMode -> forward plan_approval |
+| `src/agent-host/index.ts` | Handle `plan_approval_response` from WS |
+| `src/broker/handlers/permissions.ts` | Add plan_approval relay |
+| `src/broker/session-store.ts` | Add `planMode` to Session |
+| `src/broker/project-settings.ts` | Add `allowPlanMode` field |
 | `src/shared/protocol.ts` | Add plan_approval message types |
 | `web/src/hooks/use-sessions.ts` | planMode in Session type |
 | `web/src/hooks/use-websocket.ts` | Route plan_approval -> pending dialog |
@@ -168,13 +168,13 @@ Wrapper sends `plan_mode_changed` message on approve/exit.
 | File | Change |
 |------|--------|
 | `src/shared/protocol.ts` | Added `PlanApprovalRequest`, `PlanApprovalResponse`, `PlanModeChanged` types; `planMode` on Session/SessionSummary; `allowPlanMode` on ProjectSettings; `'plan_approval'` in pendingAttention union |
-| `src/wrapper/permission-rules.ts` | Added `isPlanModeAllowed()` to RulesEngine (reads `allowPlanMode` from rclaude.json + `RCLAUDE_NO_PLAN_MODE` env) |
-| `src/wrapper/headless-lifecycle.ts` | Replaced auto-approve for EnterPlanMode/ExitPlanMode with config check + plan_approval forwarding |
-| `src/wrapper/ws-client.ts` | Added `onPlanApprovalResponse` callback + dispatch |
-| `src/wrapper/index.ts` | Added `onPlanApprovalResponse` handler: routes approve/feedback/reject to CC via `sendPermissionResponse`, broadcasts `plan_mode_changed` |
-| `src/concentrator/handlers/plan-approval.ts` | NEW: relay handlers for `plan_approval`, `plan_approval_response`, `plan_mode_changed` |
-| `src/concentrator/handlers/index.ts` | Registered plan approval handlers |
-| `src/concentrator/session-store.ts` | `planMode` in session summary; clear on session end |
+| `src/agent-host/permission-rules.ts` | Added `isPlanModeAllowed()` to RulesEngine (reads `allowPlanMode` from rclaude.json + `RCLAUDE_NO_PLAN_MODE` env) |
+| `src/agent-host/headless-lifecycle.ts` | Replaced auto-approve for EnterPlanMode/ExitPlanMode with config check + plan_approval forwarding |
+| `src/agent-host/ws-client.ts` | Added `onPlanApprovalResponse` callback + dispatch |
+| `src/agent-host/index.ts` | Added `onPlanApprovalResponse` handler: routes approve/feedback/reject to CC via `sendPermissionResponse`, broadcasts `plan_mode_changed` |
+| `src/broker/handlers/plan-approval.ts` | NEW: relay handlers for `plan_approval`, `plan_approval_response`, `plan_mode_changed` |
+| `src/broker/handlers/index.ts` | Registered plan approval handlers |
+| `src/broker/session-store.ts` | `planMode` in session summary; clear on session end |
 | `web/src/lib/types.ts` | Added `planMode` + `'plan_approval'` to client Session type |
 | `web/src/hooks/use-sessions.ts` | Extended `pendingDialogs` with `source`/`meta`; submit/dismiss routing for plan_approval |
 | `web/src/hooks/use-websocket.ts` | Added `plan_approval` case: builds DialogLayout from plan content, stores with `source: 'plan_approval'`; maps `planMode` from summary |

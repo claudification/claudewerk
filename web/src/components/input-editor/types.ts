@@ -5,7 +5,7 @@
  *   - 'legacy'      : textarea + transparent overlay highlight (markdown-input.tsx)
  *   - 'codemirror'  : CodeMirror 6 with @codemirror/lang-markdown
  *
- * Backend chosen via dashboardPrefs.inputBackend. Same props for both.
+ * Backend chosen via controlPanelPrefs.inputBackend. Same props for both.
  */
 
 export interface InputEditorProps {

@@ -1,7 +1,7 @@
 import { Save } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSessionsStore, wsSend } from '@/hooks/use-sessions'
-import { resolveToolDisplay, type SettingsTab, TOOL_DISPLAY_KEYS } from '@/lib/dashboard-prefs'
+import { resolveToolDisplay, type SettingsTab, TOOL_DISPLAY_KEYS } from '@/lib/control-panel-prefs'
 import { extractProjectLabel } from '@/lib/types'
 import { clearCacheAndReload } from '@/lib/utils'
 import { BUILD_VERSION } from '../../../src/shared/version'
@@ -87,8 +87,8 @@ interface SettingsContext {
   server: Record<string, unknown>
   setServer: (key: string, value: unknown) => void
   // Client prefs
-  prefs: ReturnType<typeof useSessionsStore.getState>['dashboardPrefs']
-  updatePrefs: ReturnType<typeof useSessionsStore.getState>['updateDashboardPrefs']
+  prefs: ReturnType<typeof useSessionsStore.getState>['controlPanelPrefs']
+  updatePrefs: ReturnType<typeof useSessionsStore.getState>['updateControlPanelPrefs']
 }
 
 const SETTINGS: SettingItem[] = [
@@ -665,8 +665,8 @@ const SETTINGS: SettingItem[] = [
 export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const [filter, setFilter] = useState('')
   const globalSettings = useSessionsStore(s => s.globalSettings)
-  const prefs = useSessionsStore(s => s.dashboardPrefs)
-  const updatePrefs = useSessionsStore(s => s.updateDashboardPrefs)
+  const prefs = useSessionsStore(s => s.controlPanelPrefs)
+  const updatePrefs = useSessionsStore(s => s.updateControlPanelPrefs)
 
   // Local draft of server settings (only committed on Save)
   const [serverDraft, setServerDraft] = useState<Record<string, unknown>>({})

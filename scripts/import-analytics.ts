@@ -19,7 +19,7 @@ import { Database } from 'bun:sqlite'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { closeProjectStore, getOrCreateProject, initProjectStore } from '../src/concentrator/project-store'
+import { closeProjectStore, getOrCreateProject, initProjectStore } from '../src/broker/project-store'
 
 // ─── Classification (duplicated from analytics-store to keep script standalone) ──
 

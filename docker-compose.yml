@@ -1,7 +1,7 @@
 services:
-  concentrator:
+  broker:
     build: .
-    container_name: concentrator
+    container_name: broker
     restart: unless-stopped
     environment:
       - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
@@ -11,7 +11,7 @@ services:
     ports:
       - "${PORT:-9999}:9999"
     volumes:
-      # Session cache + auth data (read-write)
+      # Session cache + auth data (read-write) -- volume name kept for data continuity
       - concentrator-data:/data/cache
       # Frontend assets (mount over baked-in copy for hot rebuilds: bun run build:web)
       - ./web/dist:/srv/web:ro

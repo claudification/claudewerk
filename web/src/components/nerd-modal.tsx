@@ -132,7 +132,7 @@ function CacheTab() {
   const transcripts = useSessionsStore(s => s.transcripts)
   const events = useSessionsStore(s => s.events)
   const selected = useSessionsStore(s => s.selectedSessionId)
-  const prefs = useSessionsStore(s => s.dashboardPrefs)
+  const prefs = useSessionsStore(s => s.controlPanelPrefs)
 
   const cachedIds = Object.keys(transcripts).filter(id => (transcripts[id]?.length ?? 0) > 0)
   const totalEntries = cachedIds.reduce((sum, id) => sum + (transcripts[id]?.length ?? 0), 0)

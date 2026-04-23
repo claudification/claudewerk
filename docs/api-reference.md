@@ -3,7 +3,7 @@
 ## Message Router
 
 All WS messages dispatch through `message-router.ts` to handler files in
-`src/concentrator/handlers/`. No switch/case in index.ts.
+`src/broker/handlers/`. No switch/case in index.ts.
 
 **Adding a new message type:**
 1. Create handler in the appropriate handler file (or new file)
@@ -31,13 +31,13 @@ Dashboard sends `{ type, ...data }`, handler replies `{ type: '{type}_result', o
 
 | WS message | Handler | Purpose |
 |---|---|---|
-| `send_input` | `dashboard-actions.ts` | Send text to session |
-| `dismiss_session` | `dashboard-actions.ts` | Remove ended session |
-| `revive_session` | `dashboard-actions.ts` | Wake dead session via agent |
-| `update_settings` | `dashboard-actions.ts` | Save global settings |
-| `update_project_settings` | `dashboard-actions.ts` | Save per-project settings |
-| `delete_project_settings` | `dashboard-actions.ts` | Clear per-project settings |
-| `update_session_order` | `dashboard-actions.ts` | Save sidebar tree order |
+| `send_input` | `control-panel-actions.ts` | Send text to session |
+| `dismiss_session` | `control-panel-actions.ts` | Remove ended session |
+| `revive_session` | `control-panel-actions.ts` | Wake dead session via agent |
+| `update_settings` | `control-panel-actions.ts` | Save global settings |
+| `update_project_settings` | `control-panel-actions.ts` | Save per-project settings |
+| `delete_project_settings` | `control-panel-actions.ts` | Clear per-project settings |
+| `update_session_order` | `control-panel-actions.ts` | Save sidebar tree order |
 | `terminate_session` | `channel.ts` | Kill active session |
 | `subscribe` | `channel.ts` | Dashboard subscribe |
 | `channel_subscribe` | `channel.ts` | Per-session stream subscribe |
@@ -86,7 +86,7 @@ Dashboard sends `{ type, ...data }`, handler replies `{ type: '{type}_result', o
 - Fields: `idleTimeoutMinutes`, `userLabel`, `agentLabel`
 - Broadcast `settings_updated` WS on change
 
-**Client prefs** (`localStorage:dashboard-prefs`) - per-browser:
+**Client prefs** (`localStorage:control-panel-prefs`) - per-browser:
 - Fields: `showInactiveByDefault`, `compactMode`, `showVoiceInput`
 - `usePrefs()` hook, `prefs-changed` window event for sync
 

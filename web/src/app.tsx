@@ -352,7 +352,7 @@ function Dashboard() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      const { sessionCacheTimeout } = useSessionsStore.getState().dashboardPrefs
+      const { sessionCacheTimeout } = useSessionsStore.getState().controlPanelPrefs
       if (sessionCacheTimeout <= 0) return // 0 = never timeout
       const now = Date.now()
       const timeoutMs = sessionCacheTimeout * 60_000
@@ -370,7 +370,7 @@ function Dashboard() {
       if (evicted) {
         // Trigger a store update to clear evicted transcripts
         useSessionsStore.setState(state => {
-          const kept = new Set(state.sessionMru.slice(0, state.dashboardPrefs.sessionCacheSize))
+          const kept = new Set(state.sessionMru.slice(0, state.controlPanelPrefs.sessionCacheSize))
           if (state.selectedSessionId) kept.add(state.selectedSessionId)
           // Remove timed-out entries
           const events = { ...state.events }
@@ -396,7 +396,7 @@ function Dashboard() {
   }, [selectedSessionId])
 
   // ── Sync chord timeout from prefs ────────────────────────────────────────
-  const chordTimeoutMs = useSessionsStore(s => s.dashboardPrefs.chordTimeoutMs)
+  const chordTimeoutMs = useSessionsStore(s => s.controlPanelPrefs.chordTimeoutMs)
   useEffect(() => {
     setChordTimeout(chordTimeoutMs)
   }, [chordTimeoutMs])
@@ -507,8 +507,8 @@ function Dashboard() {
       const store = useSessionsStore.getState()
       const session = store.selectedSessionId ? store.sessionsById[store.selectedSessionId] : undefined
       const spawnPath = session
-        ? projectPath(session.project) || store.dashboardPrefs.defaultSessionCwd
-        : store.dashboardPrefs.defaultSessionCwd
+        ? projectPath(session.project) || store.controlPanelPrefs.defaultSessionCwd
+        : store.controlPanelPrefs.defaultSessionCwd
       openSpawnDialog({ cwd: spawnPath || '~' })
     },
     { label: 'Launch session', key: 'l', group: 'Session' },
@@ -588,7 +588,7 @@ function Dashboard() {
     'toggle-ended-sessions',
     () => {
       const store = useSessionsStore.getState()
-      store.updateDashboardPrefs({ showEndedSessions: !store.dashboardPrefs.showEndedSessions })
+      store.updateControlPanelPrefs({ showEndedSessions: !store.controlPanelPrefs.showEndedSessions })
     },
     { label: 'Toggle show ended sessions', key: 'e', group: 'View' },
   )
@@ -617,13 +617,13 @@ function Dashboard() {
     { label: 'Switch to previous session', shortcut: 'ctrl+Tab', group: 'Navigation' },
   )
 
-  const keepMicOpen = useSessionsStore(s => s.dashboardPrefs.keepMicOpen)
+  const keepMicOpen = useSessionsStore(s => s.controlPanelPrefs.keepMicOpen)
   useCommand(
     'toggle-keep-mic-open',
     () => {
       const store = useSessionsStore.getState()
-      const next = !store.dashboardPrefs.keepMicOpen
-      store.updateDashboardPrefs({ keepMicOpen: next })
+      const next = !store.controlPanelPrefs.keepMicOpen
+      store.updateControlPanelPrefs({ keepMicOpen: next })
       if (next) {
         import('@/hooks/use-voice-recording').then(m => m.prewarmMicStream())
       }
@@ -897,7 +897,7 @@ function AuthExpiredModal() {
 
 // Voice FAB gate - show on touch devices with pref enabled and active session
 function VoiceFabGate() {
-  const showVoiceFab = useSessionsStore(state => state.dashboardPrefs.showVoiceFab)
+  const showVoiceFab = useSessionsStore(state => state.controlPanelPrefs.showVoiceFab)
   const selectedSessionId = useSessionsStore(state => state.selectedSessionId)
 
   if (!isTouchDevice() || !showVoiceFab || !selectedSessionId) return null

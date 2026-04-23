@@ -11,7 +11,7 @@ RUN bun install --frozen-lockfile && cd web && bun install --frozen-lockfile
 COPY . .
 
 # Build server binaries only (web is built locally and volume-mounted)
-RUN bun run gen-version && bun run build:concentrator && bun run build:cli
+RUN bun run gen-version && bun run build:broker && bun run build:cli
 
 # Runtime stage - minimal image
 FROM debian:bookworm-slim
@@ -21,8 +21,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy compiled binaries
-COPY --from=builder /build/bin/concentrator /usr/local/bin/concentrator
-COPY --from=builder /build/bin/concentrator-cli /usr/local/bin/concentrator-cli
+COPY --from=builder /build/bin/broker /usr/local/bin/broker
+COPY --from=builder /build/bin/broker-cli /usr/local/bin/broker-cli
 
 # Copy pre-built web assets (built locally with Vite 8, volume-mounted in production)
 COPY web/dist /srv/web
@@ -35,5 +35,5 @@ EXPOSE 9999
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD curl -sf http://localhost:9999/health || exit 1
 
-ENTRYPOINT ["concentrator"]
+ENTRYPOINT ["broker"]
 CMD ["--web-dir", "/srv/web", "--cache-dir", "/data/cache", "--allow-root", "/data/transcripts"]

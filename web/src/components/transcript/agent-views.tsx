@@ -81,7 +81,7 @@ function AgentGroupView({
   resultMap: Map<string, { result: string; extra?: Record<string, unknown> }>
 }) {
   const expandAll = useSessionsStore(state => state.expandAll)
-  const showThinking = useSessionsStore(state => state.dashboardPrefs.showThinking)
+  const showThinking = useSessionsStore(state => state.controlPanelPrefs.showThinking)
   const globalSettings = useSessionsStore(state => state.globalSettings)
 
   if (group.type === 'system') return null

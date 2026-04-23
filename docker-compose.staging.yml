@@ -1,9 +1,9 @@
-name: rclaude-staging
+name: claudwerk-staging
 
 services:
-  concentrator:
+  broker:
     build: .
-    container_name: concentrator-staging
+    container_name: broker-staging
     restart: unless-stopped
     environment:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
@@ -11,7 +11,7 @@ services:
     ports:
       - "${PORT:-19999}:9999"
     volumes:
-      - concentrator-staging-data:/data/cache
+      - broker-staging-data:/data/cache
       - ./web/dist:/srv/web:ro
     command:
       - "--web-dir"
@@ -27,4 +27,4 @@ services:
       - "--verbose"
 
 volumes:
-  concentrator-staging-data:
+  broker-staging-data:

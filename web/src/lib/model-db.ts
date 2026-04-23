@@ -1,9 +1,9 @@
 /**
- * Model pricing database -- fetched from concentrator (LiteLLM data).
+ * Model pricing database -- fetched from broker (LiteLLM data).
  * Used for cost estimation. Context window sizing is NOT from this DB:
  * LiteLLM's max_input_tokens reports the beta-opt-in maximum, not Claude
  * Code's actual default. For context window, use session.contextWindow
- * (set by the concentrator based on transcript signals).
+ * (set by the broker based on transcript signals).
  */
 
 import { resolveContextWindow } from '@shared/context-window'

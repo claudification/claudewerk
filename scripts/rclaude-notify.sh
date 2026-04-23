@@ -2,7 +2,7 @@
 # rclaude-notify - Send push notifications from Claude Code sessions
 #
 # Uses env vars set by rclaude:
-#   RCLAUDE_CONCENTRATOR      - URL of concentrator
+#   RCLAUDE_BROKER      - URL of concentrator
 #   RCLAUDE_SECRET            - Auth secret
 #   RCLAUDE_SESSION_ID        - Current session ID
 #
@@ -13,12 +13,12 @@
 
 set -euo pipefail
 
-URL="${RCLAUDE_CONCENTRATOR:-}"
+URL="${RCLAUDE_BROKER:-}"
 SECRET="${RCLAUDE_SECRET:-}"
 SESSION="${RCLAUDE_SESSION_ID:-}"
 
 if [ -z "$URL" ] || [ -z "$SECRET" ]; then
-  echo "ERROR: RCLAUDE_CONCENTRATOR and RCLAUDE_SECRET must be set" >&2
+  echo "ERROR: RCLAUDE_BROKER and RCLAUDE_SECRET must be set" >&2
   echo "These are set automatically when running inside rclaude" >&2
   exit 1
 fi

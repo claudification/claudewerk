@@ -73,7 +73,7 @@ automatically, returns `{ events, completed, failed, error, sessionId }`
 ## Adding a new request channel
 
 1. Define the event types in `src/shared/protocol.ts`
-2. Add channel storage to `src/concentrator/session-store.ts` (Map + cleanup)
+2. Add channel storage to `src/broker/session-store.ts` (Map + cleanup)
 3. Add subscribe/unsubscribe WS handlers
 4. Add forwarding logic for worker events
 5. Create a React hook in `web/src/hooks/` following `use-launch-channel.ts`

@@ -6,7 +6,7 @@
  * effort) -- everything else (permissionMode, bare, repl, worktree, env,
  * autocompact, budget) is inherited from the session's stored launch config
  * and project/global defaults. See `reviveSession` handler in
- * `src/concentrator/handlers/dashboard-actions.ts` for the resolution chain.
+ * `src/broker/handlers/control-panel-actions.ts` for the resolution chain.
  */
 
 import { RefreshCw } from 'lucide-react'

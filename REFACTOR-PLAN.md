@@ -15,12 +15,12 @@ mega-file splits, shared-primitive extraction, architectural moves, naming clean
 
 **Shipped in this PR (17 commits, 303/304 tests green):**
 
-- `src/concentrator/routes.ts` 1964 -> 331 (-83%) + 7 route modules under `routes/`
+- `src/broker/routes.ts` 1964 -> 331 (-83%) + 7 route modules under `routes/`
 - `web/src/components/session-list.tsx` 2097 -> 484 + 4 sub-components under `session-list/`
 - `web/src/components/session-detail.tsx` 1841 -> 492 + 4 components under `session-detail/`
 - `web/src/components/settings-page.tsx` 1380 -> 885 + sections under `settings/` + `lib/color-utils.ts`
-- `src/concentrator/session-store.ts` 3495 -> 3108 + `parsers.ts`, `terminal-registry.ts`, `channel-registry.ts` (3 of 6 planned modules -- phase 2 deferred)
-- Behavioral test safety net: 36 black-box tests in `src/concentrator/__tests__/session-store.test.ts`
+- `src/broker/session-store.ts` 3495 -> 3108 + `parsers.ts`, `terminal-registry.ts`, `channel-registry.ts` (3 of 6 planned modules -- phase 2 deferred)
+- Behavioral test safety net: 36 black-box tests in `src/broker/__tests__/session-store.test.ts`
 - `SessionBanner` + `BannerButton` + `BannerStack` primitives (`ui/session-banner.tsx`), 5 banners migrated (`AskQuestionCard` joined on commit `7a5c917`)
 - `TabButton` extracted in `session-tabs.tsx` (8x duplication collapsed)
 - `filterSessionOrderTree` dedup in `routes/api.ts`
@@ -106,7 +106,7 @@ registry refactor (registry map by tool name). Low risk, high visibility.
 
 ### Per-tool MCP files
 
-Now that tools live in a registry inside `initMcpChannel`, each could move to `src/wrapper/mcp-tools/{name}.ts`
+Now that tools live in a registry inside `initMcpChannel`, each could move to `src/agent-host/mcp-tools/{name}.ts`
 exporting a `ToolDef`. Needs a `ToolContext` type that bundles callbacks + dialog state.
 Marginal win -- only worth it if `mcp-channel.ts` grows further.
 

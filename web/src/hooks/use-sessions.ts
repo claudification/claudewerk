@@ -1,11 +1,11 @@
 import { create } from 'zustand'
 import {
-  type DashboardPrefs,
+  type ControlPanelPrefs,
   loadPrefs,
   resolveToolDisplay,
   type ToolDisplayKey,
   type ToolDisplayPrefs,
-} from '@/lib/dashboard-prefs'
+} from '@/lib/control-panel-prefs'
 import { clearExpandedState } from '@/lib/expanded-state'
 import { setPerfEnabled } from '@/lib/perf-metrics'
 import { DEFAULT_PERMISSIONS, type ResolvedPermissions } from '@/lib/permissions'
@@ -213,8 +213,8 @@ interface SessionsState {
   toggleExpandAll: () => void
 
   // Dashboard prefs (per-device, persisted to localStorage)
-  dashboardPrefs: DashboardPrefs
-  updateDashboardPrefs: (patch: Partial<DashboardPrefs>) => void
+  controlPanelPrefs: ControlPanelPrefs
+  updateControlPanelPrefs: (patch: Partial<ControlPanelPrefs>) => void
   resolveToolDisplay: (tool: ToolDisplayKey) => ToolDisplayPrefs
 
   setSessions: (sessions: Session[]) => void
@@ -339,7 +339,7 @@ function applyDefaultSession() {
   if (store.selectedSessionId) return
 
   // Try configured default session project
-  const defaultProject = store.dashboardPrefs.defaultSessionCwd
+  const defaultProject = store.controlPanelPrefs.defaultSessionCwd
   if (defaultProject) {
     const best = findBestSessionForProject(store.sessions, defaultProject)
     if (best) {
@@ -568,20 +568,20 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       return { expandAll: next }
     }),
 
-  dashboardPrefs: (() => {
+  controlPanelPrefs: (() => {
     const prefs = loadPrefs()
     setPerfEnabled(prefs.showPerfMonitor)
     return prefs
   })(),
-  updateDashboardPrefs: patch =>
+  updateControlPanelPrefs: patch =>
     set(state => {
-      const next = { ...state.dashboardPrefs, ...patch }
-      localStorage.setItem('dashboard-prefs', JSON.stringify(next))
+      const next = { ...state.controlPanelPrefs, ...patch }
+      localStorage.setItem('control-panel-prefs', JSON.stringify(next))
       window.dispatchEvent(new Event('prefs-changed'))
       if ('showPerfMonitor' in patch) setPerfEnabled(next.showPerfMonitor)
-      return { dashboardPrefs: next }
+      return { controlPanelPrefs: next }
     }),
-  resolveToolDisplay: (tool: ToolDisplayKey) => resolveToolDisplay(get().dashboardPrefs, tool),
+  resolveToolDisplay: (tool: ToolDisplayKey) => resolveToolDisplay(get().controlPanelPrefs, tool),
 
   setSessions: sessions => set({ sessions, sessionsById: buildSessionsById(sessions) }),
   selectSession: (id: string | null, reason?: string) => {
@@ -592,11 +592,11 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       )
     }
     clearExpandedState()
-    const defaultView = get().dashboardPrefs.defaultView
+    const defaultView = get().controlPanelPrefs.defaultView
     const rememberedTab = id ? getSessionTab(id) : null
     set(state => {
       const mru = id ? [id, ...state.sessionMru.filter(s => s !== id)] : state.sessionMru
-      const { sessionCacheSize } = state.dashboardPrefs
+      const { sessionCacheSize } = state.controlPanelPrefs
 
       // LIFO cache: keep data for the N most recently viewed sessions
       const cachedIds = new Set(mru.slice(0, Math.max(1, sessionCacheSize)))

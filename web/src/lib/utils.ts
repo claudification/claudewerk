@@ -69,7 +69,7 @@ export function projectDisplayName(projectOrPath: string, label?: string): strin
 
 /**
  * Slug from an arbitrary display name. Lowercase, alphanumeric + hyphens,
- * capped at 24 chars. Mirrors `src/concentrator/address-book.ts` (server
+ * capped at 24 chars. Mirrors `src/broker/address-book.ts` (server
  * side) and `components/transcript/session-tag.tsx` (client) so slugs
  * round-trip across the wire.
  */
@@ -87,7 +87,7 @@ export function slugify(name: string): string {
  * Mirror of the addressable ID produced by list_sessions. ALWAYS compound
  * `project:session-slug` so the inserted id stays stable when a second
  * session spawns at the same project later. Server logic + rationale live in
- * `src/concentrator/handlers/channel-id.ts` (the canonical implementation
+ * `src/broker/handlers/channel-id.ts` (the canonical implementation
  * that round-trips through send_message).
  *
  * `siblingSessions` is the list of sessions at the same project (including

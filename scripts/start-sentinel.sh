@@ -121,7 +121,7 @@ ok "Revive script: $REVIVE_SCRIPT"
 # Sentinel may be launched from within a Claude Code session (e.g. user runs
 # start-sentinel.sh from Claude). Unset all Claude-inherited and session-scoped
 # RCLAUDE_* vars so they don't leak into spawned sessions.
-# Keep: RCLAUDE_SECRET, RCLAUDE_CONCENTRATOR, RCLAUDE_SPAWN_ROOT (config vars)
+# Keep: RCLAUDE_SECRET, RCLAUDE_BROKER, RCLAUDE_SPAWN_ROOT (config vars)
 while IFS='=' read -r name _; do
   [[ "$name" == CLAUDECODE || "$name" == CLAUDE_CODE_* ]] && unset "$name"
 done < <(env)

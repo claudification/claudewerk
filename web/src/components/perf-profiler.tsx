@@ -2,7 +2,7 @@
  * Shared <MaybeProfiler> wrapper.
  *
  * Wraps children in React.Profiler ONLY when the perf monitor toggle
- * (dashboardPrefs.showPerfMonitor) is on. Profiler adds an extra fiber
+ * (controlPanelPrefs.showPerfMonitor) is on. Profiler adds an extra fiber
  * + measurement on every commit, so the gate matters.
  *
  * Profile data feeds the perf-metrics ring buffer (perf-metrics.ts) under
@@ -54,7 +54,7 @@ function useCommitToPaintTimer(id: string) {
  *                           live. Equivalent to CM's `cm.update->paint`.
  */
 export function MaybeProfiler({ id, children }: { id: string; children: ReactNode }) {
-  const enabled = useSessionsStore(s => s.dashboardPrefs.showPerfMonitor)
+  const enabled = useSessionsStore(s => s.controlPanelPrefs.showPerfMonitor)
   if (!enabled) return <Fragment>{children}</Fragment>
   return (
     <Profiler id={id} onRender={onRenderProfile}>

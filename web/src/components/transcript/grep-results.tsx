@@ -11,7 +11,7 @@
 
 import { useMemo, useState } from 'react'
 import { useSessionsStore } from '@/hooks/use-sessions'
-import { resolveToolDisplay } from '@/lib/dashboard-prefs'
+import { resolveToolDisplay } from '@/lib/control-panel-prefs'
 import { projectPath } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { escapeHtml } from './shared'
@@ -22,7 +22,7 @@ const COUNT_BAR_DEFAULT_LIMIT = 25
 
 function useSessionPath(): string | undefined {
   return useSessionsStore(s => {
-    if (s.dashboardPrefs.sanitizePaths === false) return undefined
+    if (s.controlPanelPrefs.sanitizePaths === false) return undefined
     const sid = s.selectedSessionId
     const session = sid ? s.sessionsById[sid] : undefined
     return session ? projectPath(session.project) : undefined
@@ -31,7 +31,7 @@ function useSessionPath(): string | undefined {
 
 function useToolLineLimit(tool: 'Grep' | 'Glob', fallback: number): number {
   return useSessionsStore(s => {
-    const v = resolveToolDisplay(s.dashboardPrefs, tool).lineLimit
+    const v = resolveToolDisplay(s.controlPanelPrefs, tool).lineLimit
     return v > 0 ? v : fallback
   })
 }

@@ -81,7 +81,7 @@ export RCLAUDE_SECRET=$(openssl rand -hex 32)
 export RCLAUDE_CONCENTRATOR=ws://localhost:9999
 
 # 4. Start concentrator (local, no Docker)
-bun run dev:concentrator
+bun run dev:broker
 
 # 5. In another terminal, start the dashboard dev server
 bun run dev:web
@@ -190,8 +190,8 @@ This creates symlinks in `~/.local/bin/`:
 | Symlink | Binary | Purpose |
 |---------|--------|---------|
 | `rclaude` | `bin/rclaude` | Main wrapper (replaces `claude`) |
-| `concentrator` | `bin/concentrator` | Server binary |
-| `concentrator-cli` | `bin/concentrator-cli` | Auth management CLI |
+| `concentrator` | `bin/broker` | Server binary |
+| `concentrator-cli` | `bin/broker-cli` | Auth management CLI |
 | `sentinel` | `bin/sentinel` | Session revival sentinel |
 | `revive-session.sh` | `scripts/revive-session.sh` | tmux spawn script |
 
@@ -565,8 +565,8 @@ bun run build           # All binaries + frontend
 |---------|--------|-------------|
 | `bun run build:web` | `web/dist/` | Vite frontend build |
 | `bun run build:wrapper` | `bin/rclaude` | rclaude CLI wrapper |
-| `bun run build:concentrator` | `bin/concentrator` | Server binary |
-| `bun run build:cli` | `bin/concentrator-cli` | Auth CLI |
+| `bun run build:broker` | `bin/broker` | Server binary |
+| `bun run build:cli` | `bin/broker-cli` | Auth CLI |
 | `bun run build:sentinel` | `bin/sentinel` | Host sentinel |
 | `bun run gen-version` | `src/shared/version.ts` | Git hash + timestamp |
 
@@ -575,7 +575,7 @@ bun run build           # All binaries + frontend
 | Command | Port | Description |
 |---------|------|-------------|
 | `bun run dev:wrapper` | - | rclaude without compile step |
-| `bun run dev:concentrator` | 9999 | Concentrator with hot reload |
+| `bun run dev:broker` | 9999 | Concentrator with hot reload |
 | `bun run dev:web` | 3456 | Vite dev server |
 
 ### Lint + format
