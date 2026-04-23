@@ -31,6 +31,7 @@ import {
 } from './auth'
 import { addAllowedRoot, addPathMapping, resolveInJail } from './path-jail'
 import type { UserGrant } from './permissions'
+import { runMigrateCli } from './store/migrate-cli'
 
 /** Send SIGHUP to running server so it reloads auth state from disk */
 function notifyServer(cacheDir: string): void {
@@ -68,6 +69,7 @@ COMMANDS:
   remove-role --name <name> --role <role>                  Remove a server role
   list-passkeys --name <name>                               List passkeys for a user
   delete-passkey --name <name> --credential-id <id>        Delete a passkey (kills sessions)
+  migrate [--cache-dir <dir>] [--data-dir <dir>] [--dry-run]  Migrate legacy JSON to SQLite
   resolve-path <path>                                       Debug: test path jail resolution
 
 GRANT FORMAT:
@@ -103,6 +105,7 @@ function main(): void {
   }
 
   let cacheDir = DEFAULT_CACHE_DIR
+  let dataDir = ''
   let baseUrl = 'http://localhost:9999'
   let name = ''
   let command = ''
@@ -112,6 +115,7 @@ function main(): void {
   let credentialIdArg = ''
   let notBeforeArg = ''
   let notAfterArg = ''
+  let dryRun = false
   const grantArgs: string[] = []
   const allowRoots: string[] = []
   const pathMapArgs: Array<{ from: string; to: string }> = []
@@ -121,6 +125,10 @@ function main(): void {
     const arg = args[i]
     if (arg === '--cache-dir') {
       cacheDir = args[++i]
+    } else if (arg === '--data-dir') {
+      dataDir = args[++i]
+    } else if (arg === '--dry-run') {
+      dryRun = true
     } else if (arg === '--url') {
       baseUrl = args[++i]
     } else if (arg === '--name') {
@@ -181,6 +189,12 @@ function main(): void {
         ...(notAfterArg && { notAfter: new Date(notAfterArg).getTime() }),
       }
     })
+  }
+
+  // migrate doesn't need auth
+  if (command === 'migrate') {
+    runMigrateCli({ cacheDir, dataDir: dataDir || undefined, dryRun })
+    process.exit(0)
   }
 
   // resolve-path doesn't need auth
