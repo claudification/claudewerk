@@ -52,6 +52,22 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
     return c.json(session.subagents)
   })
 
+  // Transcript fetch.
+  //
+  // Two modes:
+  //   1. Full: no `sinceSeq` query param -- returns last `limit` entries.
+  //   2. Delta: `?sinceSeq=N` -- returns only entries with seq > N. Used by
+  //      the dashboard to catch up on missed entries after a sync_check
+  //      flags the session as stale, without refetching the whole transcript.
+  //
+  // Response shape (both modes): `{ entries, lastSeq, gap }`.
+  //   - `lastSeq`: the largest seq currently in cache (0 if empty). Client
+  //     stores this as its `lastAppliedSeq` after applying entries.
+  //   - `gap`: true when delta mode requested more than cache can provide
+  //     (i.e. oldest-seq-in-cache > sinceSeq+1, because MAX_TRANSCRIPT_ENTRIES
+  //     evicted older entries). Client treats gap=true as "replace, don't
+  //     append" -- otherwise the client's transcript would have a hole
+  //     between its last applied seq and the oldest returned seq.
   app.get('/sessions/:id/transcript', c => {
     const sessionId = c.req.param('id')
     const session = sessionStore.getSession(sessionId)
@@ -59,16 +75,33 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
     if (!httpHasPermission(c.req.raw, 'chat:read', session.cwd)) return c.json({ error: 'Forbidden' }, 403)
     const limit = parseInt(c.req.query('limit') || '20', 10)
     const filter = c.req.query('filter')
+    const sinceSeqRaw = c.req.query('sinceSeq')
+    const sinceSeq = sinceSeqRaw !== undefined ? parseInt(sinceSeqRaw, 10) : undefined
     if (!sessionStore.hasTranscriptCache(sessionId)) {
       console.log(`[${sessionId.slice(0, 8)}] GET transcript limit=${limit} filter=${filter || 'none'} -> 404 no-cache`)
       return c.json({ error: 'No transcript in cache (rclaude not streaming yet?)' }, 404)
     }
 
-    const cacheSize = sessionStore.getTranscriptEntries(sessionId).length
-    let entries =
-      filter === 'display'
-        ? filterDisplayEntries(sessionStore.getTranscriptEntries(sessionId), limit)
-        : sessionStore.getTranscriptEntries(sessionId, limit)
+    const allEntries = sessionStore.getTranscriptEntries(sessionId)
+    const cacheSize = allEntries.length
+    const lastSeq = allEntries.length > 0 ? (allEntries[allEntries.length - 1].seq ?? 0) : 0
+
+    let entries: typeof allEntries
+    let gap = false
+    if (sinceSeq !== undefined && !Number.isNaN(sinceSeq)) {
+      // Delta mode: entries with seq > sinceSeq.
+      // `allEntries` is seq-ordered (append-only stamping), so filter suffices.
+      entries = allEntries.filter(e => (e.seq ?? 0) > sinceSeq)
+      // Gap detection: if the client's last-seen seq is older than anything we
+      // still have in cache, they're missing entries we already evicted.
+      const oldestSeq = allEntries.length > 0 ? (allEntries[0].seq ?? 0) : 0
+      if (sinceSeq > 0 && oldestSeq > sinceSeq + 1) gap = true
+      if (filter === 'display') entries = filterDisplayEntries(entries, limit)
+      else if (limit && entries.length > limit) entries = entries.slice(-limit)
+    } else {
+      // Full mode (legacy): last N entries.
+      entries = filter === 'display' ? filterDisplayEntries(allEntries, limit) : allEntries.slice(-limit)
+    }
 
     // Filter user entries for share viewers with hideUserInput
     const shareToken = new URL(c.req.raw.url).searchParams.get('share')
@@ -79,10 +112,15 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
       }
     }
 
+    const mode = sinceSeq !== undefined ? `delta(sinceSeq=${sinceSeq}${gap ? ' GAP' : ''})` : `full(limit=${limit})`
     console.log(
-      `[${sessionId.slice(0, 8)}] GET transcript limit=${limit} filter=${filter || 'none'} -> ${entries.length}/${cacheSize} entries`,
+      `[${sessionId.slice(0, 8)}] GET transcript ${mode} filter=${filter || 'none'} -> ${entries.length}/${cacheSize} entries lastSeq=${lastSeq}`,
     )
-    return c.json(entries.map(e => processImagesInEntry(e as Record<string, unknown>)))
+    return c.json({
+      entries: entries.map(e => processImagesInEntry(e as Record<string, unknown>)),
+      lastSeq,
+      gap,
+    })
   })
 
   app.get('/sessions/:id/subagents/:agentId/transcript', c => {

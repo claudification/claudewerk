@@ -299,10 +299,10 @@ function Dashboard() {
       // Batch both fetches into a single state update to avoid useSyncExternalStore tearing (#310)
       Promise.all([fetchSessionEvents(sessionId), fetchTranscript(sessionId)]).then(([events, transcript]) => {
         console.log(
-          `[sync] GOT ${sessionId.slice(0, 8)}: events=${events.length} transcript=${transcript?.length ?? 'null'} (was ${cachedCount})`,
+          `[sync] GOT ${sessionId.slice(0, 8)}: events=${events.length} transcript=${transcript?.entries.length ?? 'null'} lastSeq=${transcript?.lastSeq ?? '-'} (was ${cachedCount})`,
         )
         setEvents(sessionId, events)
-        if (transcript) setTranscript(sessionId, transcript)
+        if (transcript) setTranscript(sessionId, transcript.entries)
       })
     },
     [setEvents, setTranscript],

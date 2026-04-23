@@ -84,6 +84,19 @@ interface SessionsState {
   sessionMru: string[]
   events: Record<string, HookEvent[]>
   transcripts: Record<string, TranscriptEntry[]>
+  /** Per-session highest transcript entry.seq we've applied to `transcripts`.
+   *  Sent back to the server in sync_check so the server can detect drift and
+   *  reply with a delta (entries with seq > lastAppliedSeq) instead of a full
+   *  refetch. Also used to dedup incremental transcript_entries broadcasts.
+   *
+   *  Reset semantics:
+   *    - `sync_stale` from server -> full clear via connectSeq bump, then the
+   *      initial transcript_entries (isInitial=true) reseeds from max(seqs).
+   *    - Server concentrator restart -> SYNC_EPOCH changes -> `sync_stale`
+   *      path above handles it.
+   *    - Rekey on server -> sessionId changes -> old lastAppliedSeq[oldId]
+   *      goes stale harmlessly (new sessionId entry in this map starts fresh). */
+  lastAppliedTranscriptSeq: Record<string, number>
   streamingText: Record<string, string> // sessionId -> accumulating text from headless stream deltas
   sessionInfo: Record<
     string,
@@ -380,6 +393,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   sessionMru: [],
   events: {},
   transcripts: {},
+  lastAppliedTranscriptSeq: {},
   streamingText: {},
   sessionInfo: {},
   subagentTranscripts: {},
@@ -724,7 +738,15 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
           return state
         }
       }
-      return { transcripts: { ...state.transcripts, [sessionId]: entries }, newDataSeq: state.newDataSeq + 1 }
+      // Derive lastAppliedSeq from the stamped entries. Entries are
+      // append-ordered, so the tail has the highest seq. Fall back to 0 for
+      // pre-seq entries (none in practice after first deploy).
+      const lastSeq = entries.length > 0 ? (entries[entries.length - 1].seq ?? 0) : 0
+      return {
+        transcripts: { ...state.transcripts, [sessionId]: entries },
+        lastAppliedTranscriptSeq: { ...state.lastAppliedTranscriptSeq, [sessionId]: lastSeq },
+        newDataSeq: state.newDataSeq + 1,
+      }
     }),
   setTasks: (sessionId, tasks) => set(state => ({ tasks: { ...state.tasks, [sessionId]: tasks } })),
   setProjectSettings: settings => set({ projectSettings: settings }),
@@ -804,13 +826,32 @@ export async function fetchSessionEvents(sessionId: string): Promise<HookEvent[]
   return res.json()
 }
 
-export async function fetchTranscript(sessionId: string): Promise<TranscriptEntry[] | null> {
+export interface TranscriptFetchResult {
+  entries: TranscriptEntry[]
+  /** Highest seq in the server's cache after this response. Client stores
+   *  this as lastAppliedTranscriptSeq[sid] after applying entries. */
+  lastSeq: number
+  /** True when delta mode was requested but the server had to truncate older
+   *  entries (client's sinceSeq is older than the oldest cache entry). Caller
+   *  should treat the response as a full replace rather than an append, since
+   *  there's a hole between client's last-known seq and the returned entries. */
+  gap: boolean
+}
+
+/** Fetch transcript entries for a session.
+ *  - No `sinceSeq`: returns the last N entries (full mode).
+ *  - With `sinceSeq`: returns entries with seq > sinceSeq (delta mode),
+ *    used after sync_check flags the session as stale. If `gap=true` in the
+ *    response, the client has evicted entries it needed -- full replace. */
+export async function fetchTranscript(sessionId: string, sinceSeq?: number): Promise<TranscriptFetchResult | null> {
   try {
-    const res = await fetch(appendShareParam(`${API_BASE}/sessions/${sessionId}/transcript?limit=500`))
-    if (!res.ok) return null // null = fetch failed, don't overwrite existing
-    return res.json()
+    const qs = sinceSeq !== undefined ? `?sinceSeq=${sinceSeq}&limit=1000` : `?limit=500`
+    const res = await fetch(appendShareParam(`${API_BASE}/sessions/${sessionId}/transcript${qs}`))
+    if (!res.ok) return null
+    const body = await res.json()
+    return body as TranscriptFetchResult
   } catch {
-    return null // network error
+    return null
   }
 }
 
