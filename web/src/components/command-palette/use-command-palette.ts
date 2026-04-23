@@ -299,10 +299,10 @@ export function useCommandPalette(onClose: () => void) {
   // Show "create & spawn" when the typed path doesn't match any existing directory
   const canCreateDir = isSpawnMode && spawnPartial.length > 0 && filteredSpawnDirs.length === 0 && !spawnLoading
 
-  function handleSpawn(cwd: string, mkdir = false) {
-    if (spawning || !cwd) return
+  function handleSpawn(path: string, mkdir = false) {
+    if (spawning || !path) return
     onClose()
-    openSpawnDialog({ cwd, mkdir })
+    openSpawnDialog({ cwd: path, mkdir })
   }
 
   // --- Task mode ---

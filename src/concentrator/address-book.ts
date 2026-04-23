@@ -1,8 +1,8 @@
 /**
  * Address Book: per-caller routing table with stable, locally-scoped IDs.
  *
- * Each caller CWD gets its own address book mapping short readable IDs
- * to target CWDs. IDs are auto-assigned from project name/label and
+ * Each caller project gets its own address book mapping short readable IDs
+ * to target projects. IDs are auto-assigned from project name/label and
  * persisted across restarts. An ID is only meaningful to its owner --
  * leaked IDs are useless to other sessions.
  */
@@ -10,7 +10,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-// callerCwd -> { localId -> targetCwd }
+// callerProject -> { localId -> targetProject }
 type BookMap = Record<string, Record<string, string>>
 
 // Bump when the slug-generation rules change and existing books must be rebuilt.
@@ -69,14 +69,14 @@ export function slugify(name: string): string {
   )
 }
 
-/** Get or assign a local ID for a target CWD, scoped to the caller. */
-export function getOrAssign(callerCwd: string, targetCwd: string, targetName: string): string {
-  if (!books[callerCwd]) books[callerCwd] = {}
-  const book = books[callerCwd]
+/** Get or assign a local ID for a target project, scoped to the caller. */
+export function getOrAssign(callerProject: string, targetProject: string, targetName: string): string {
+  if (!books[callerProject]) books[callerProject] = {}
+  const book = books[callerProject]
 
   // Check if we already have an entry for this target
-  for (const [id, cwd] of Object.entries(book)) {
-    if (cwd === targetCwd) return id
+  for (const [id, proj] of Object.entries(book)) {
+    if (proj === targetProject) return id
   }
 
   // Assign a new ID based on the target name
@@ -88,43 +88,43 @@ export function getOrAssign(callerCwd: string, targetCwd: string, targetName: st
     slug = `${slug}-${i}`
   }
 
-  book[slug] = targetCwd
+  book[slug] = targetProject
   scheduleSave()
   return slug
 }
 
-/** Resolve a local ID back to a target CWD. */
-export function resolve(callerCwd: string, localId: string): string | undefined {
-  return books[callerCwd]?.[localId]
+/** Resolve a local ID back to a target project. */
+export function resolve(callerProject: string, localId: string): string | undefined {
+  return books[callerProject]?.[localId]
 }
 
 /** Get all entries in a caller's address book. */
-export function getBook(callerCwd: string): Record<string, string> {
-  return books[callerCwd] || {}
+export function getBook(callerProject: string): Record<string, string> {
+  return books[callerProject] || {}
 }
 
 /** Remove a specific entry from a caller's address book. */
-export function removeEntry(callerCwd: string, localId: string): void {
-  if (books[callerCwd]) {
-    delete books[callerCwd][localId]
-    if (Object.keys(books[callerCwd]).length === 0) {
-      delete books[callerCwd]
+export function removeEntry(callerProject: string, localId: string): void {
+  if (books[callerProject]) {
+    delete books[callerProject][localId]
+    if (Object.keys(books[callerProject]).length === 0) {
+      delete books[callerProject]
     }
     scheduleSave()
   }
 }
 
-/** Clean up entries pointing to CWDs that no longer have any sessions. */
-export function pruneStale(activeCwds: Set<string>): number {
+/** Clean up entries pointing to projects that no longer have any sessions. */
+export function pruneStale(activeProjects: Set<string>): number {
   let removed = 0
-  for (const [callerCwd, book] of Object.entries(books)) {
-    for (const [id, targetCwd] of Object.entries(book)) {
-      if (!activeCwds.has(targetCwd)) {
+  for (const [callerProject, book] of Object.entries(books)) {
+    for (const [id, targetProject] of Object.entries(book)) {
+      if (!activeProjects.has(targetProject)) {
         delete book[id]
         removed++
       }
     }
-    if (Object.keys(book).length === 0) delete books[callerCwd]
+    if (Object.keys(book).length === 0) delete books[callerProject]
   }
   if (removed > 0) scheduleSave()
   return removed

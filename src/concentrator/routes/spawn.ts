@@ -32,13 +32,13 @@ export function createSpawnRouter(sessionStore: SessionStore, helpers: RouteHelp
     // identify themselves via X-Caller-Session; everything else is dashboard HTTP.
     const callerSessionId = c.req.header('X-Caller-Session')
     const callerSess = callerSessionId ? sessionStore.getSession(callerSessionId) : null
-    const callerCwd = callerSess?.project ?? null
-    const callerTrust = callerCwd ? mapProjectTrust(getProjectSettings(callerCwd)?.trustLevel) : 'trusted'
+    const callerProject = callerSess?.project ?? null
+    const callerTrust = callerProject ? mapProjectTrust(getProjectSettings(callerProject)?.trustLevel) : 'trusted'
     const callerContext: SpawnCallerContext = {
       kind: callerSessionId ? 'mcp' : 'http',
       hasSpawnPermission: true, // already validated by httpHasPermission above
       trustLevel: callerTrust,
-      cwd: callerCwd,
+      callerProject,
     }
 
     const result = await dispatchSpawn(body, {

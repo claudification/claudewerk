@@ -8,7 +8,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ServerWebSocket } from 'bun'
 import { resolveContextWindow } from '../shared/context-window'
-import { cwdToProjectUri, extractProjectLabel, normalizeProjectUri, parseProjectUri } from '../shared/project-uri'
+import { cwdToProjectUri, extractProjectLabel, normalizeProjectUri } from '../shared/project-uri'
 import type {
   HookEvent,
   LaunchConfig,
@@ -1300,9 +1300,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       session.lastActivity = Date.now()
 
       // Feed analytics store (non-blocking, fire-and-forget)
-      const projectPath = parseProjectUri(session.project).path
       recordHookEvent(sessionId, event.hookEvent, (event.data || {}) as Record<string, unknown>, {
-        cwd: projectPath,
+        projectUri: session.project,
         model: session.model || '',
         account: (session.claudeAuth?.email as string) || '',
         projectLabel: getProjectSettings(session.project)?.label,
@@ -1381,7 +1380,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
               recordTurnFromCumulatives({
                 timestamp: event.timestamp,
                 sessionId,
-                cwd: projectPath,
+                projectUri: session.project,
                 account: session.claudeAuth?.email || '',
                 orgId: session.claudeAuth?.orgId || '',
                 model: session.model || '',
@@ -1417,11 +1416,11 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
 
       // Track current working directory (NOT the session's project root).
       // session.project stays as the launch project URI (project identity).
-      // session.currentCwd tracks where Claude is working right now.
+      // session.currentPath tracks where Claude is working right now.
       if (event.hookEvent === 'CwdChanged' && event.data) {
         const data = event.data as Record<string, unknown>
         if (data.cwd && typeof data.cwd === 'string') {
-          session.currentCwd = data.cwd
+          session.currentPath = data.cwd
         }
       }
 
@@ -2345,7 +2344,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
                   hash: clipHash,
                   filename: mime ? `clipboard.${mime.split('/')[1]}` : 'clipboard.txt',
                   mediaType: mime || 'text/plain',
-                  cwd: parseProjectUri(session.project).path,
+                  project: session.project,
                   sessionId,
                   size: base64.length,
                   url: '',

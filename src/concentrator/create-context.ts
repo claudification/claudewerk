@@ -14,40 +14,46 @@ export interface ContextDeps {
   sessions: SessionStore
   verbose: boolean
   origins: string[]
-  getProjectSettings(cwd: string): ProjectSettings | null
-  setProjectSettings(cwd: string, update: Partial<ProjectSettings>): void
+  getProjectSettings(project: string): ProjectSettings | null
+  setProjectSettings(project: string, update: Partial<ProjectSettings>): void
   getAllProjectSettings(): Record<string, ProjectSettings>
   pushConfigured: boolean
-  pushSendToAll(payload: { title: string; body: string; sessionId?: string; sessionCwd?: string; tag?: string }): void
-  getLinksForCwd(cwd: string): Array<{ cwdA: string; cwdB: string }>
-  findLink(cwdA: string, cwdB: string): boolean
-  addLink(cwdA: string, cwdB: string): void
-  removeLink(cwdA: string, cwdB: string): void
-  touchLink(cwdA: string, cwdB: string): void
+  pushSendToAll(payload: {
+    title: string
+    body: string
+    sessionId?: string
+    sessionProject?: string
+    tag?: string
+  }): void
+  getLinksForProject(project: string): Array<{ projectA: string; projectB: string }>
+  findLink(projectA: string, projectB: string): boolean
+  addLink(projectA: string, projectB: string): void
+  removeLink(projectA: string, projectB: string): void
+  touchLink(projectA: string, projectB: string): void
   logMessage(entry: Parameters<import('./handler-context').HandlerContext['logMessage']>[0]): void
   addressBook: {
-    getOrAssign(callerCwd: string, targetCwd: string, targetName: string): string
-    resolve(callerCwd: string, localId: string): string | undefined
+    getOrAssign(callerProject: string, targetProject: string, targetName: string): string
+    resolve(callerProject: string, localId: string): string | undefined
   }
   messageQueue: {
     enqueue(
-      targetCwd: string,
-      fromCwd: string,
-      fromProject: string,
+      targetProject: string,
+      senderProject: string,
+      senderName: string,
       message: Record<string, unknown>,
       targetName?: string,
     ): void
     drain(
-      targetCwd: string,
+      targetProject: string,
       sessionName?: string,
     ): Array<{
       ts: number
-      fromCwd: string
-      fromProject: string
+      senderProject: string
+      senderName: string
       message: Record<string, unknown>
       targetName?: string
     }>
-    getQueueSize(targetCwd: string): number
+    getQueueSize(targetProject: string): number
   }
 }
 
@@ -79,8 +85,8 @@ export function createContext(ws: ServerWebSocket<WsData>, deps: ContextDeps): H
       }
     },
 
-    broadcastScoped(msg, cwd) {
-      deps.sessions.broadcastSessionScoped(msg, cwd)
+    broadcastScoped(msg, project) {
+      deps.sessions.broadcastSessionScoped(msg, project)
     },
 
     push: {
@@ -90,10 +96,10 @@ export function createContext(ws: ServerWebSocket<WsData>, deps: ContextDeps): H
 
     origins: deps.origins,
     getAgent: () => deps.sessions.getAgent(),
-    getLinksForCwd: deps.getLinksForCwd,
+    getLinksForProject: deps.getLinksForProject,
 
     links: {
-      find: (cwdA, cwdB) => deps.findLink(cwdA, cwdB),
+      find: (projectA, projectB) => deps.findLink(projectA, projectB),
       add: deps.addLink,
       remove: deps.removeLink,
       touch: deps.touchLink,
@@ -134,15 +140,15 @@ export function createContext(ws: ServerWebSocket<WsData>, deps: ContextDeps): H
       return caller
     },
 
-    requirePermission(permission: Permission, cwd?: string) {
+    requirePermission(permission: Permission, project?: string) {
       // Wrappers and agents bypass all permission checks (trusted infrastructure)
       if (!ws.data.isDashboard) return
       // No grants on WS data = legacy connection or bearer auth (treat as admin)
       const grants = ws.data.grants
       if (!grants) return
-      // Use provided CWD, fall back to caller session CWD, then '*' for global checks
-      const targetCwd = cwd || caller?.project || '*'
-      const { permissions: perms, isAdmin } = resolvePermissions(grants, targetCwd)
+      // Use provided project, fall back to caller session project, then '*' for global checks
+      const targetProject = project || caller?.project || '*'
+      const { permissions: perms, isAdmin } = resolvePermissions(grants, targetProject)
       if (!isAdmin && !perms.has(permission)) {
         throw new GuardError(`Permission denied: ${permission} required`)
       }

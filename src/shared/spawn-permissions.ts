@@ -22,8 +22,8 @@ export type SpawnCallerContext = {
   kind: SpawnCallerKind
   hasSpawnPermission: boolean
   trustLevel: TrustLevel
-  /** Caller's own cwd, for MCP cross-project trust checks. null for dashboard callers. */
-  cwd: string | null
+  /** Caller's own project URI, for MCP cross-project trust checks. null for dashboard callers. */
+  callerProject: string | null
 }
 
 /** Thrown when spawn is denied. Callers map to HTTP 403 / WS error reply. */

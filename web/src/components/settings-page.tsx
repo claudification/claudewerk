@@ -40,8 +40,8 @@ function DefaultSessionPicker({ value, onChange }: { value: string; onChange: (v
       className="w-44 px-2 py-1 text-xs font-mono bg-muted border border-border text-foreground"
     >
       <option value="">None</option>
-      {options.map(([cwd, label]) => (
-        <option key={cwd} value={cwd}>
+      {options.map(([uri, label]) => (
+        <option key={uri} value={uri}>
           {label}
         </option>
       ))}
@@ -649,8 +649,8 @@ const SETTINGS: SettingItem[] = [
     tab: 'display',
     group: 'Display',
     label: 'Sanitize paths',
-    description: 'Strip redundant cd <cwd> prefixes from displayed commands',
-    keywords: 'sanitize paths cd cwd clean strip',
+    description: 'Strip redundant cd <path> prefixes from displayed commands',
+    keywords: 'sanitize paths cd path clean strip',
     render: ctx => (
       <input
         type="checkbox"

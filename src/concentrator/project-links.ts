@@ -1,6 +1,6 @@
 /**
- * Project Links - persistent CWD-pair links for inter-project communication.
- * Links are keyed by project CWD (stable across restarts/rekeys).
+ * Project Links - persistent project-pair links for inter-project communication.
+ * Links are keyed by project path (stable across restarts/rekeys).
  * Storage: {cacheDir}/project-links.json
  */
 
@@ -8,8 +8,8 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from '
 import { dirname, join, resolve } from 'node:path'
 
 export interface PersistedLink {
-  cwdA: string // alphabetically first CWD (normalized)
-  cwdB: string // alphabetically second CWD (normalized)
+  projectA: string // alphabetically first path (normalized)
+  projectB: string // alphabetically second path (normalized)
   createdAt: number
   lastUsed: number
 }
@@ -22,19 +22,19 @@ interface LinksFile {
 let linksPath = ''
 let links: PersistedLink[] = []
 
-function normalizeCwd(cwd: string): string {
-  return resolve(cwd).replace(/\/+$/, '')
+function normalizePath(path: string): string {
+  return resolve(path).replace(/\/+$/, '')
 }
 
-function cwdKey(a: string, b: string): string {
-  const na = normalizeCwd(a)
-  const nb = normalizeCwd(b)
+function linkKey(a: string, b: string): string {
+  const na = normalizePath(a)
+  const nb = normalizePath(b)
   return na < nb ? `${na}\0${nb}` : `${nb}\0${na}`
 }
 
 function sortedPair(a: string, b: string): [string, string] {
-  const na = normalizeCwd(a)
-  const nb = normalizeCwd(b)
+  const na = normalizePath(a)
+  const nb = normalizePath(b)
   return na < nb ? [na, nb] : [nb, na]
 }
 
@@ -54,6 +54,18 @@ export function initProjectLinks(cacheDir: string): void {
     try {
       const raw = JSON.parse(readFileSync(legacyPath, 'utf-8')) as LinksFile
       links = raw.links || []
+      // Migrate legacy cwdA/cwdB -> projectA/projectB
+      for (const link of links) {
+        const legacy = link as unknown as Record<string, unknown>
+        if ('cwdA' in legacy && !('projectA' in legacy)) {
+          legacy.projectA = legacy.cwdA
+          delete legacy.cwdA
+        }
+        if ('cwdB' in legacy && !('projectB' in legacy)) {
+          legacy.projectB = legacy.cwdB
+          delete legacy.cwdB
+        }
+      }
       save() // write as project-links.json
       unlinkSync(legacyPath)
       console.log(`[links] Migrated ${links.length} links from session-links.json -> project-links.json`)
@@ -66,6 +78,18 @@ export function initProjectLinks(cacheDir: string): void {
     try {
       const raw = JSON.parse(readFileSync(linksPath, 'utf-8')) as LinksFile
       links = raw.links || []
+      // Backward compat: migrate legacy cwdA/cwdB -> projectA/projectB
+      for (const link of links) {
+        const legacy = link as unknown as Record<string, unknown>
+        if ('cwdA' in legacy && !('projectA' in legacy)) {
+          legacy.projectA = legacy.cwdA
+          delete legacy.cwdA
+        }
+        if ('cwdB' in legacy && !('projectB' in legacy)) {
+          legacy.projectB = legacy.cwdB
+          delete legacy.cwdB
+        }
+      }
       // Evict links not used in 90 days
       const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000
       const before = links.length
@@ -82,47 +106,47 @@ export function getPersistedLinks(): PersistedLink[] {
   return links
 }
 
-export function findLink(cwdA: string, cwdB: string): PersistedLink | null {
-  const key = cwdKey(cwdA, cwdB)
-  return links.find(l => cwdKey(l.cwdA, l.cwdB) === key) || null
+export function findLink(projectA: string, projectB: string): PersistedLink | null {
+  const key = linkKey(projectA, projectB)
+  return links.find(l => linkKey(l.projectA, l.projectB) === key) || null
 }
 
-export function addPersistedLink(cwdA: string, cwdB: string): PersistedLink {
-  const existing = findLink(cwdA, cwdB)
+export function addPersistedLink(projectA: string, projectB: string): PersistedLink {
+  const existing = findLink(projectA, projectB)
   if (existing) {
     existing.lastUsed = Date.now()
     save()
     return existing
   }
-  const [a, b] = sortedPair(cwdA, cwdB)
-  const link: PersistedLink = { cwdA: a, cwdB: b, createdAt: Date.now(), lastUsed: Date.now() }
+  const [a, b] = sortedPair(projectA, projectB)
+  const link: PersistedLink = { projectA: a, projectB: b, createdAt: Date.now(), lastUsed: Date.now() }
   links.push(link)
   save()
   console.log(`[links] Persisted: ${a} <-> ${b}`)
   return link
 }
 
-export function removePersistedLink(cwdA: string, cwdB: string): boolean {
-  const key = cwdKey(cwdA, cwdB)
-  const idx = links.findIndex(l => cwdKey(l.cwdA, l.cwdB) === key)
+export function removePersistedLink(projectA: string, projectB: string): boolean {
+  const key = linkKey(projectA, projectB)
+  const idx = links.findIndex(l => linkKey(l.projectA, l.projectB) === key)
   if (idx >= 0) {
     const removed = links.splice(idx, 1)[0]
     save()
-    console.log(`[links] Removed: ${removed.cwdA} <-> ${removed.cwdB}`)
+    console.log(`[links] Removed: ${removed.projectA} <-> ${removed.projectB}`)
     return true
   }
   return false
 }
 
-export function touchLink(cwdA: string, cwdB: string): void {
-  const existing = findLink(cwdA, cwdB)
+export function touchLink(projectA: string, projectB: string): void {
+  const existing = findLink(projectA, projectB)
   if (existing) {
     existing.lastUsed = Date.now()
     save()
   }
 }
 
-export function getLinksForCwd(cwd: string): PersistedLink[] {
-  const n = normalizeCwd(cwd)
-  return links.filter(l => l.cwdA === n || l.cwdB === n)
+export function getLinksForProject(project: string): PersistedLink[] {
+  const n = normalizePath(project)
+  return links.filter(l => l.projectA === n || l.projectB === n)
 }

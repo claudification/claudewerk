@@ -560,7 +560,7 @@ export function RunTaskDialog({
   sessionId: string
   onClose: () => void
 }) {
-  const cwd = useSessionsStore(state => {
+  const spawnPath = useSessionsStore(state => {
     const s = state.sessionsById[sessionId]
     return s ? projectPath(s.project) : ''
   })
@@ -679,7 +679,7 @@ export function RunTaskDialog({
   }, [progress.viewCountdown, progress.launch.sessionId, progress.spawnedSession, onClose])
 
   async function handleRun() {
-    if (phase !== 'config' || !cwd) return
+    if (phase !== 'config' || !spawnPath) return
     saveRunTaskDefaults({
       model,
       effort,
@@ -705,7 +705,7 @@ export function RunTaskDialog({
     })
 
     const spawnReq: SpawnRequest = {
-      cwd,
+      cwd: spawnPath,
       adHoc: true,
       adHocTaskId: task.slug,
       prompt,
@@ -757,7 +757,7 @@ export function RunTaskDialog({
       elapsedSec: progress.elapsed,
       error: progress.error || progress.launch.error || null,
       config: {
-        cwd: cwd || undefined,
+        cwd: spawnPath || undefined,
         model: (model || undefined) as SpawnRequest['model'],
         effort: (effort !== 'default' ? effort : undefined) as SpawnRequest['effort'],
         worktree: useWorktree ? branchName : undefined,
@@ -866,7 +866,7 @@ export function RunTaskDialog({
               <button
                 type="button"
                 onClick={handleRun}
-                disabled={!cwd}
+                disabled={!spawnPath}
                 className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold font-mono bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 transition-colors disabled:opacity-50"
               >
                 <Zap className="w-3 h-3" />

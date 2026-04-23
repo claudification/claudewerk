@@ -33,8 +33,8 @@ const reviveResult: MessageHandler = (ctx, data) => {
   // Forward to dashboard so the launch monitor can show step-by-step progress.
   // Resolve CWD from the session store for scoped broadcast.
   const session = sessionId ? ctx.sessions.getSession(sessionId) : null
-  const cwd = session?.project || (data.project as string)
-  if (cwd) {
+  const project = session?.project || (data.project as string)
+  if (project) {
     ctx.broadcastScoped(
       {
         type: 'revive_result',
@@ -46,7 +46,7 @@ const reviveResult: MessageHandler = (ctx, data) => {
         continued: data.continued,
         tmuxSession: data.tmuxSession,
       },
-      cwd,
+      project,
     )
   }
 
@@ -100,7 +100,7 @@ const spawnFailed: MessageHandler = (ctx, data) => {
   const wrapperId = data.wrapperId as string
   const exitCode = data.exitCode as number | null | undefined
   const elapsedMs = data.elapsedMs as number | undefined
-  const cwd = data.cwd as string | undefined
+  const projectPath = data.cwd as string | undefined
   const earlyFailure = typeof elapsedMs === 'number' && elapsedMs < 5000
   const errorMsg =
     (data.error as string) ||
@@ -132,8 +132,11 @@ const spawnFailed: MessageHandler = (ctx, data) => {
   }
 
   // Also broadcast for any non-job listeners (session detail, diag, etc.)
-  if (cwd) {
-    ctx.broadcastScoped({ type: 'spawn_failed', wrapperId, exitCode, elapsedMs, error: errorMsg, pid: data.pid }, cwd)
+  if (projectPath) {
+    ctx.broadcastScoped(
+      { type: 'spawn_failed', wrapperId, exitCode, elapsedMs, error: errorMsg, pid: data.pid },
+      projectPath,
+    )
   } else {
     ctx.broadcast({ type: 'spawn_failed', wrapperId, exitCode, elapsedMs, error: errorMsg, pid: data.pid })
   }

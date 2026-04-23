@@ -9,7 +9,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { AuthenticatorTransportFuture } from '@simplewebauthn/server'
-import { cwdToScope, type UserGrant } from './permissions'
+import { pathToScope, type UserGrant } from './permissions'
 
 // --- Types ---
 
@@ -108,7 +108,7 @@ export function initAuth(opts: {
       let migrated = false
       for (const user of state.users) {
         if (!user.grants) {
-          user.grants = [{ cwd: '*', scope: '*', roles: ['admin'] }]
+          user.grants = [{ legacyCwd: '*', scope: '*', roles: ['admin'] }]
           migrated = true
         } else {
           for (const grant of user.grants) {
@@ -120,9 +120,15 @@ export function initAuth(opts: {
               if ((grant.permissions ?? []).length === 0) delete grant.permissions
               migrated = true
             }
-            // Backfill scope from cwd
-            if (!grant.scope && grant.cwd) {
-              grant.scope = cwdToScope(grant.cwd)
+            // Backfill scope from legacyCwd (or legacy persisted 'cwd' key)
+            const legacyCwd = grant.legacyCwd || ((grant as Record<string, unknown>).cwd as string | undefined)
+            if (legacyCwd && !grant.legacyCwd) {
+              grant.legacyCwd = legacyCwd
+              delete (grant as Record<string, unknown>).cwd
+              migrated = true
+            }
+            if (!grant.scope && grant.legacyCwd) {
+              grant.scope = pathToScope(grant.legacyCwd)
               migrated = true
             }
           }
@@ -240,7 +246,7 @@ export function createUser(name: string, grants?: UserGrant[]): PasskeyUser {
     credentials: [],
     createdAt: Date.now(),
     revoked: false,
-    grants: grants || [{ cwd: '*', scope: '*', roles: ['admin'] }],
+    grants: grants || [{ scope: '*', roles: ['admin'] }],
   }
   state.users.push(user)
   save()
@@ -372,7 +378,7 @@ export function removeUserGrant(name: string, cwdOrScope: string): boolean {
   const user = state.users.find(u => u.name === name)
   if (!user) return false
   const before = user.grants.length
-  user.grants = user.grants.filter(g => g.cwd !== cwdOrScope && g.scope !== cwdOrScope)
+  user.grants = user.grants.filter(g => g.legacyCwd !== cwdOrScope && g.scope !== cwdOrScope)
   if (user.grants.length === before) return false
   save()
   return true

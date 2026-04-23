@@ -123,14 +123,14 @@ function relativePath(from: string, to: string): string {
 // - Child/parent of CWD: replace with relative path
 // - Unrelated: leave as-is
 const CD_PREFIX_RE = /^cd\s+(?:(['"])(.+?)\1|(\S+))\s*(?:&&|;)\s*/
-export function cleanCdPrefix(text: string, cwd: string): string {
+export function cleanCdPrefix(text: string, root: string): string {
   const m = text.match(CD_PREFIX_RE)
   if (!m) return text
   const cdPath = (m[2] || m[3]).replace(/\/$/, '')
-  const normCwd = cwd.replace(/\/$/, '')
+  const normRoot = root.replace(/\/$/, '')
   const rest = text.slice(m[0].length)
-  if (cdPath === normCwd) return rest
-  const rel = relativePath(normCwd, cdPath)
+  if (cdPath === normRoot) return rest
+  const rel = relativePath(normRoot, cdPath)
   if (rel && !rel.startsWith('/') && rel.length < cdPath.length) {
     return `cd ${rel} && ${rest}`
   }
@@ -139,15 +139,15 @@ export function cleanCdPrefix(text: string, cwd: string): string {
 
 // Clean `sh('cd <path> && ...')` inside REPL JavaScript code
 const SH_CD_RE = /sh\((['"`])(cd\s+(?:['"]?.+?['"]?\s*(?:&&|;)\s*))/g
-// Strip `chdir('<cwd>')` / `chdir("<cwd>")` / `chdir(`<cwd>`)` lines that are no-ops
+// Strip `chdir('<path>')` / `chdir("<path>")` / `chdir(`<path>`)` lines that are no-ops
 const CHDIR_LINE_RE = /^[ \t]*chdir\(\s*(['"`])(.+?)\1\s*\)\s*;?[ \t]*(\r?\n|$)/gm
-export function cleanReplShCalls(code: string, cwd: string): string {
-  const normCwd = cwd.replace(/\/$/, '')
+export function cleanReplShCalls(code: string, root: string): string {
+  const normRoot = root.replace(/\/$/, '')
   const withoutChdir = code.replace(CHDIR_LINE_RE, (full, _q, path) => {
-    return path.replace(/\/$/, '') === normCwd ? '' : full
+    return path.replace(/\/$/, '') === normRoot ? '' : full
   })
   return withoutChdir.replace(SH_CD_RE, (full, quote, cdPart) => {
-    const cleaned = cleanCdPrefix(cdPart, cwd)
+    const cleaned = cleanCdPrefix(cdPart, root)
     if (cleaned !== cdPart) return `sh(${quote}${cleaned}`
     return full
   })

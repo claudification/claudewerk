@@ -506,10 +506,10 @@ function Dashboard() {
     () => {
       const store = useSessionsStore.getState()
       const session = store.selectedSessionId ? store.sessionsById[store.selectedSessionId] : undefined
-      const cwd = session
+      const spawnPath = session
         ? projectPath(session.project) || store.dashboardPrefs.defaultSessionCwd
         : store.dashboardPrefs.defaultSessionCwd
-      openSpawnDialog({ cwd: cwd || '~' })
+      openSpawnDialog({ cwd: spawnPath || '~' })
     },
     { label: 'Launch session', key: 'l', group: 'Session' },
   )

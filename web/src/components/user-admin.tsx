@@ -151,7 +151,7 @@ function GrantEditor({ grants, onChange }: GrantEditorProps) {
     <div className="space-y-3">
       {/* Existing grants - click to edit */}
       {grants.map((g, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: grants may share cwd, positional index needed for disambiguation
+        // biome-ignore lint/suspicious/noArrayIndexKey: grants may share scope, positional index needed for disambiguation
         <div key={`${g.project}-${i}`} className="bg-secondary/50 rounded text-xs">
           <div
             role="button"

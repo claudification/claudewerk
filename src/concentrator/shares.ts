@@ -134,9 +134,9 @@ export function listShares(): SessionShare[] {
   return shares.filter(s => !s.revoked && s.expiresAt > Date.now())
 }
 
-/** List active shares for a specific CWD. */
-export function listSharesForCwd(cwd: string): SessionShare[] {
-  return shares.filter(s => !s.revoked && s.expiresAt > Date.now() && s.sessionCwd === cwd)
+/** List active shares for a specific project. */
+export function listSharesForProject(project: string): SessionShare[] {
+  return shares.filter(s => !s.revoked && s.expiresAt > Date.now() && s.sessionCwd === project)
 }
 
 /** Get a specific share by token (even if expired/revoked, for admin display). */
@@ -148,7 +148,7 @@ export function getShare(token: string): SessionShare | undefined {
 export function shareToGrants(share: SessionShare): UserGrant[] {
   return [
     {
-      cwd: share.sessionCwd,
+      legacyCwd: share.sessionCwd,
       permissions: share.permissions as UserGrant['permissions'],
     },
   ]

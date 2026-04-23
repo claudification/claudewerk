@@ -343,7 +343,7 @@ function applyDefaultSession() {
   if (defaultProject) {
     const best = findBestSessionForProject(store.sessions, defaultProject)
     if (best) {
-      store.selectSession(best.id, 'default-session-cwd')
+      store.selectSession(best.id, 'default-session-project')
       return
     }
   }
@@ -1086,7 +1086,7 @@ export async function fetchProjectSettings(): Promise<ProjectSettingsMap> {
 }
 
 export function updateProjectSettings(projectUri: string, settings: ProjectSettings): boolean {
-  return wsSend('update_project_settings', { cwd: projectUri, settings })
+  return wsSend('update_project_settings', { project: projectUri, settings })
 }
 
 export async function generateProjectKeyterms(
@@ -1095,7 +1095,7 @@ export async function generateProjectKeyterms(
   const res = await fetch(`${API_BASE}/api/settings/projects/generate-keyterms`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ cwd: projectUri }),
+    body: JSON.stringify({ project: projectUri }),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Request failed' }))
@@ -1105,7 +1105,7 @@ export async function generateProjectKeyterms(
 }
 
 export function deleteProjectSettings(projectUri: string): boolean {
-  return wsSend('delete_project_settings', { cwd: projectUri })
+  return wsSend('delete_project_settings', { project: projectUri })
 }
 
 // ─── rclaude config (permission rules) API ──────────────────────────
@@ -1122,7 +1122,7 @@ export interface RclaudePermissionConfig {
 interface ConfigDataResponse {
   config: RclaudePermissionConfig | null
   path: string
-  cwd: string
+  project: string
 }
 
 interface ConfigOkResponse {

@@ -46,8 +46,8 @@ export interface HandlerContext {
   reply(msg: Record<string, unknown>): void
   /** Broadcast a JSON message to all dashboard subscribers */
   broadcast(msg: Record<string, unknown>): void
-  /** Broadcast a JSON message only to subscribers with chat:read for the given CWD */
-  broadcastScoped(msg: Record<string, unknown>, cwd: string): void
+  /** Broadcast a JSON message only to subscribers with chat:read for the given project */
+  broadcastScoped(msg: Record<string, unknown>, project: string): void
   /** Web push notifications */
   push: {
     configured: boolean
@@ -55,7 +55,7 @@ export interface HandlerContext {
       title: string
       body: string
       sessionId?: string
-      sessionCwd?: string
+      sessionProject?: string
       tag?: string
       data?: Record<string, unknown>
     }): void
@@ -64,12 +64,12 @@ export interface HandlerContext {
   origins: string[]
   /** Get the host agent WebSocket (if connected) */
   getAgent(): ServerWebSocket<unknown> | undefined
-  /** Get persisted links for a CWD */
-  getLinksForCwd(cwd: string): Array<{ cwdA: string; cwdB: string }>
-  /** Get project settings for a CWD */
-  getProjectSettings(cwd: string): ProjectSettings | null
-  /** Set project settings for a CWD */
-  setProjectSettings(cwd: string, update: Partial<ProjectSettings>): void
+  /** Get persisted links for a project */
+  getLinksForProject(project: string): Array<{ projectA: string; projectB: string }>
+  /** Get project settings for a project */
+  getProjectSettings(project: string): ProjectSettings | null
+  /** Set project settings for a project */
+  setProjectSettings(project: string, update: Partial<ProjectSettings>): void
   /** Get all project settings */
   getAllProjectSettings(): Record<string, ProjectSettings>
 
@@ -80,18 +80,18 @@ export interface HandlerContext {
     debug(msg: string): void
   }
 
-  /** Persisted link operations (CWD-pair based, survives restarts) */
+  /** Persisted link operations (project-pair based, survives restarts) */
   links: {
-    find(cwdA: string, cwdB: string): boolean
-    add(cwdA: string, cwdB: string): void
-    remove(cwdA: string, cwdB: string): void
-    touch(cwdA: string, cwdB: string): void
+    find(projectA: string, projectB: string): boolean
+    add(projectA: string, projectB: string): void
+    remove(projectA: string, projectB: string): void
+    touch(projectA: string, projectB: string): void
   }
   /** Log an inter-session message for history */
   logMessage(entry: {
     ts: number
-    from: { sessionId: string; wrapperId?: string; cwd: string; name: string }
-    to: { sessionId: string; cwd: string; name: string }
+    from: { sessionId: string; wrapperId?: string; project: string; name: string }
+    to: { sessionId: string; project: string; name: string }
     intent: string
     conversationId: string
     preview: string
@@ -100,29 +100,29 @@ export interface HandlerContext {
 
   /** Address book: per-caller stable routing IDs */
   addressBook: {
-    getOrAssign(callerCwd: string, targetCwd: string, targetName: string): string
-    resolve(callerCwd: string, localId: string): string | undefined
+    getOrAssign(callerProject: string, targetProject: string, targetName: string): string
+    resolve(callerProject: string, localId: string): string | undefined
   }
   /** Persistent message queue for offline delivery */
   messageQueue: {
     enqueue(
-      targetCwd: string,
-      fromCwd: string,
-      fromProject: string,
+      targetProject: string,
+      senderProject: string,
+      senderName: string,
       message: Record<string, unknown>,
       targetName?: string,
     ): void
     drain(
-      targetCwd: string,
+      targetProject: string,
       sessionName?: string,
     ): Array<{
       ts: number
-      fromCwd: string
-      fromProject: string
+      senderProject: string
+      senderName: string
       message: Record<string, unknown>
       targetName?: string
     }>
-    getQueueSize(targetCwd: string): number
+    getQueueSize(targetProject: string): number
   }
 
   /** Guard: throws GuardError if caller is not benevolent */
@@ -133,9 +133,9 @@ export interface HandlerContext {
   requireSession(): NonNullable<ReturnType<SessionStore['getSession']>>
   /**
    * Guard: throws GuardError if dashboard user lacks the required permission
-   * for the given CWD. Wrappers/agents bypass all permission checks.
+   * for the given project. Wrappers/agents bypass all permission checks.
    */
-  requirePermission(permission: Permission, cwd?: string): void
+  requirePermission(permission: Permission, project?: string): void
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: WS JSON data is untyped at the parse boundary

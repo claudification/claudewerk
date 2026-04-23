@@ -116,14 +116,14 @@ export async function storeBlobStreaming(
   }
 }
 
-// ─── Shared files + clipboard log (per-CWD, server-side) ─────────────────
+// ─── Shared files + clipboard log (per-project, server-side) ─────────────
 
 export interface SharedFileEntry {
   type: 'file' | 'clipboard'
   hash: string
   filename: string
   mediaType: string
-  cwd?: string // project directory (primary query key)
+  project?: string // project URI (primary query key)
   sessionId?: string // for attribution
   size: number
   url: string
@@ -156,7 +156,12 @@ export function readSharedFiles(): SharedFileEntry[] {
       .trim()
       .split('\n')
       .filter(Boolean)
-      .map(line => JSON.parse(line) as SharedFileEntry)
+      .map(line => {
+        const parsed = JSON.parse(line) as SharedFileEntry & { cwd?: string }
+        if (parsed.cwd && !parsed.project) parsed.project = parsed.cwd
+        delete parsed.cwd
+        return parsed as SharedFileEntry
+      })
       .filter(e => e.createdAt > cutoff && !e.dismissed)
       .reverse() // newest first
   } catch {

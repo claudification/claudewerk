@@ -173,8 +173,8 @@ export function ToolLine({
   const toolDefaultOpen = useSessionsStore(
     state => resolveToolDisplay(state.dashboardPrefs, displayKey as ToolDisplayKey).defaultOpen,
   )
-  // CWD-aware path sanitization for command display
-  const sessionCwd = useSessionsStore(s => {
+  // Path sanitization for command display
+  const sessionPath = useSessionsStore(s => {
     if (s.dashboardPrefs.sanitizePaths === false) return undefined
     const sid = s.selectedSessionId
     const session = sid ? s.sessionsById[sid] : undefined
@@ -191,7 +191,7 @@ export function ToolLine({
     case 'Bash': {
       const cmd = input.command as string
       const bashDesc = input.description as string | undefined
-      const displayCmd = sessionCwd && cmd ? cleanCdPrefix(cmd, sessionCwd) : cmd
+      const displayCmd = sessionPath && cmd ? cleanCdPrefix(cmd, sessionPath) : cmd
       summary = bashDesc || (displayCmd?.length > 80 && !expandAll ? `${displayCmd.slice(0, 80)}...` : displayCmd)
       if (result || toolUseResult?.stdout) {
         details = <BashOutput result={result || ''} command={cmd} extra={toolUseResult} />
@@ -884,9 +884,9 @@ export function ToolLine({
       break
     }
     case 'mcp__rclaude__spawn_session': {
-      const cwd = input.cwd as string
+      const inputCwd = input.cwd as string
       const mode = input.mode as string | undefined
-      const shortCwd = shortPath(cwd) || cwd
+      const shortCwd = shortPath(inputCwd) || inputCwd
       const modeLabel = mode === 'resume' ? 'resume' : 'fresh'
       // Parse result for session metadata
       let spawnedSession: Record<string, unknown> | undefined

@@ -481,8 +481,8 @@ export function SessionHeader({
                 </div>
               )}
 
-              {/* CWD */}
-              <div className="flex items-center gap-1 group/cwd">
+              {/* Project path */}
+              <div className="flex items-center gap-1 group/project">
                 <span className="text-[10px] text-muted-foreground truncate">{projectPath(session.project)}</span>
                 <button
                   type="button"
@@ -490,7 +490,7 @@ export function SessionHeader({
                     navigator.clipboard.writeText(projectPath(session.project))
                     haptic('tap')
                   }}
-                  className="shrink-0 text-muted-foreground/30 hover:text-muted-foreground [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/cwd:opacity-100 transition-opacity"
+                  className="shrink-0 text-muted-foreground/30 hover:text-muted-foreground [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/project:opacity-100 transition-opacity"
                   title="Copy path"
                 >
                   <Copy className="w-3 h-3" />

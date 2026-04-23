@@ -306,13 +306,13 @@ export function createAdminRouter(
     const activeSessions = sessionStore.getActiveSessions()
 
     const links = persisted.map(pl => {
-      const sessA = activeSessions.find(s => parseProjectUri(s.project).path === pl.cwdA)
-      const sessB = activeSessions.find(s => parseProjectUri(s.project).path === pl.cwdB)
-      const nameA = getProjectSettings(pl.cwdA)?.label || pl.cwdA.split('/').pop() || pl.cwdA
-      const nameB = getProjectSettings(pl.cwdB)?.label || pl.cwdB.split('/').pop() || pl.cwdB
+      const sessA = activeSessions.find(s => parseProjectUri(s.project).path === pl.projectA)
+      const sessB = activeSessions.find(s => parseProjectUri(s.project).path === pl.projectB)
+      const nameA = getProjectSettings(pl.projectA)?.label || pl.projectA.split('/').pop() || pl.projectA
+      const nameB = getProjectSettings(pl.projectB)?.label || pl.projectB.split('/').pop() || pl.projectB
       return {
-        cwdA: pl.cwdA,
-        cwdB: pl.cwdB,
+        projectA: pl.projectA,
+        projectB: pl.projectB,
         nameA,
         nameB,
         createdAt: pl.createdAt,
@@ -327,16 +327,16 @@ export function createAdminRouter(
 
   app.post('/api/links', async c => {
     if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
-    const body = await c.req.json<{ cwdA: string; cwdB: string }>()
-    if (!body.cwdA || !body.cwdB) return c.json({ error: 'cwdA and cwdB required' }, 400)
-    if (body.cwdA === body.cwdB) return c.json({ error: 'Cannot link a project to itself' }, 400)
+    const body = await c.req.json<{ projectA: string; projectB: string }>()
+    if (!body.projectA || !body.projectB) return c.json({ error: 'projectA and projectB required' }, 400)
+    if (body.projectA === body.projectB) return c.json({ error: 'Cannot link a project to itself' }, 400)
 
-    const link = addPersistedLink(body.cwdA, body.cwdB)
+    const link = addPersistedLink(body.projectA, body.projectB)
 
     // Activate the in-memory project link
     const active = sessionStore.getActiveSessions()
-    const anyA = active.find(s => parseProjectUri(s.project).path === link.cwdA)
-    const anyB = active.find(s => parseProjectUri(s.project).path === link.cwdB)
+    const anyA = active.find(s => parseProjectUri(s.project).path === link.projectA)
+    const anyB = active.find(s => parseProjectUri(s.project).path === link.projectB)
     if (anyA && anyB) sessionStore.linkProjects(anyA.id, anyB.id)
 
     return c.json({ ok: true, link })
@@ -344,17 +344,17 @@ export function createAdminRouter(
 
   app.delete('/api/links', async c => {
     if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
-    const body = await c.req.json<{ cwdA: string; cwdB: string; purgeHistory?: boolean }>()
-    if (!body.cwdA || !body.cwdB) return c.json({ error: 'cwdA and cwdB required' }, 400)
+    const body = await c.req.json<{ projectA: string; projectB: string; purgeHistory?: boolean }>()
+    if (!body.projectA || !body.projectB) return c.json({ error: 'projectA and projectB required' }, 400)
 
-    const removed = removePersistedLink(body.cwdA, body.cwdB)
+    const removed = removePersistedLink(body.projectA, body.projectB)
 
     // Sever the in-memory project link
-    sessionStore.unlinkProjectsByCwd(body.cwdA, body.cwdB)
+    sessionStore.unlinkProjectsByCwd(body.projectA, body.projectB)
 
     let purged = 0
     if (body.purgeHistory) {
-      purged = purgeMessages(body.cwdA, body.cwdB)
+      purged = purgeMessages(body.projectA, body.projectB)
     }
 
     return c.json({ ok: true, removed, purged })
@@ -363,17 +363,17 @@ export function createAdminRouter(
   // ─── Inter-session message history ──────────────────────────────────
   app.get('/api/links/messages', c => {
     if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
-    const cwdA = c.req.query('cwdA')
-    const cwdB = c.req.query('cwdB')
-    const cwd = c.req.query('cwd')
+    const projectA = c.req.query('projectA') || c.req.query('cwdA')
+    const projectB = c.req.query('projectB') || c.req.query('cwdB')
+    const project = c.req.query('project') || c.req.query('cwd')
     const limit = Number.parseInt(c.req.query('limit') || '50', 10)
     const beforeStr = c.req.query('before')
     const before = beforeStr ? Number.parseInt(beforeStr, 10) : undefined
 
     const result = queryMessages({
-      cwdA: cwdA || undefined,
-      cwdB: cwdB || undefined,
-      cwd: cwd || undefined,
+      projectA: projectA || undefined,
+      projectB: projectB || undefined,
+      project: project || undefined,
       limit,
       before,
     })

@@ -14,7 +14,7 @@ import { useSessionsStore } from '@/hooks/use-sessions'
 import { haptic } from '@/lib/utils'
 
 interface SharePanelProps {
-  sessionCwd: string
+  sessionProject: string
 }
 
 const DURATION_OPTIONS = [
@@ -26,9 +26,9 @@ const DURATION_OPTIONS = [
 
 const EMPTY_SHARES: ReturnType<typeof useSessionsStore.getState>['shares'] = []
 
-export function ShareBanner({ sessionCwd }: SharePanelProps) {
+export function ShareBanner({ sessionProject }: SharePanelProps) {
   const allShares = useSessionsStore(s => s.shares) || EMPTY_SHARES
-  const shares = allShares.filter(s => s.sessionCwd === sessionCwd && s.expiresAt > Date.now())
+  const shares = allShares.filter(s => s.sessionCwd === sessionProject && s.expiresAt > Date.now())
 
   const [expanded, setExpanded] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -49,7 +49,7 @@ export function ShareBanner({ sessionCwd }: SharePanelProps) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sessionCwd,
+          sessionCwd: sessionProject,
           expiresIn: newDuration,
           label: newLabel || undefined,
           permissions: [
@@ -277,9 +277,9 @@ export function ShareBanner({ sessionCwd }: SharePanelProps) {
 }
 
 /** Small share indicator for the session list sidebar */
-export function ShareIndicator({ sessionCwd }: { sessionCwd: string }) {
+export function ShareIndicator({ sessionProject }: { sessionProject: string }) {
   const count = useSessionsStore(
-    s => s.shares.filter(sh => sh.sessionCwd === sessionCwd && sh.expiresAt > Date.now()).length,
+    s => s.shares.filter(sh => sh.sessionCwd === sessionProject && sh.expiresAt > Date.now()).length,
   )
 
   if (count === 0) return null

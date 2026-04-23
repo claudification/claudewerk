@@ -76,8 +76,8 @@ function useProjectGroupingActions(project: string) {
   return { groups, moveToGroup, removeFromGroups, createGroupAndMove }
 }
 
-function GroupingMenuItems({ cwd }: { cwd: string }) {
-  const { groups, moveToGroup, removeFromGroups, createGroupAndMove } = useProjectGroupingActions(cwd)
+function GroupingMenuItems({ project }: { project: string }) {
+  const { groups, moveToGroup, removeFromGroups, createGroupAndMove } = useProjectGroupingActions(project)
   return (
     <>
       {groups.length > 0 && (
@@ -124,7 +124,7 @@ export function SessionContextMenu({
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content className="min-w-[180px] bg-popover border border-border rounded-md shadow-lg py-1 z-50">
-          <GroupingMenuItems cwd={session.project} />
+          <GroupingMenuItems project={session.project} />
           <ContextMenu.Item
             className={menuItemClass}
             onSelect={() => {
@@ -206,12 +206,12 @@ export function SessionContextMenu({
 }
 
 export function ProjectContextMenu({
-  cwd,
+  project,
   sessions,
   onOpenSettings,
   children,
 }: {
-  cwd: string
+  project: string
   sessions: Session[]
   onOpenSettings: () => void
   children: ReactNode
@@ -224,13 +224,13 @@ export function ProjectContextMenu({
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content className="min-w-[180px] bg-popover border border-border rounded-md shadow-lg py-1 z-50">
-          <GroupingMenuItems cwd={cwd} />
+          <GroupingMenuItems project={project} />
           <ContextMenu.Separator className="h-px bg-border my-1" />
           <ContextMenu.Item
             className={cn(menuItemClass, 'text-cyan-400')}
             onSelect={() => {
               haptic('tap')
-              openSpawnDialog({ cwd: projectPath(cwd) })
+              openSpawnDialog({ cwd: projectPath(project) })
             }}
           >
             Launch new...

@@ -1,7 +1,7 @@
 /**
  * Persistent message queue: stores messages for offline/disconnected sessions.
  *
- * Keyed by target CWD (not session/wrapper ID) so messages survive
+ * Keyed by target project (not session/wrapper ID) so messages survive
  * session restarts. Persisted to disk. Auto-purges expired messages.
  */
 
@@ -10,13 +10,13 @@ import { dirname, join } from 'node:path'
 
 interface QueuedMessage {
   ts: number
-  fromCwd: string
-  fromProject: string
+  senderProject: string
+  senderName: string
   message: Record<string, unknown> // the delivery payload
   targetName?: string // session name slug for compound-addressed delivery
 }
 
-// targetCwd -> queued messages
+// targetProject -> queued messages
 type QueueMap = Record<string, QueuedMessage[]>
 
 const MESSAGE_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
@@ -33,6 +33,20 @@ export function initMessageQueue(cacheDir: string): void {
   if (existsSync(filePath)) {
     try {
       queues = JSON.parse(readFileSync(filePath, 'utf-8'))
+      // Backward compat: migrate legacy fromCwd/fromProject -> senderProject/senderName
+      for (const msgs of Object.values(queues)) {
+        for (const m of msgs) {
+          const legacy = m as unknown as Record<string, unknown>
+          if ('fromCwd' in legacy && !('senderProject' in legacy)) {
+            legacy.senderProject = legacy.fromCwd
+            delete legacy.fromCwd
+          }
+          if ('fromProject' in legacy && !('senderName' in legacy)) {
+            legacy.senderName = legacy.fromProject
+            delete legacy.fromProject
+          }
+        }
+      }
       // Purge expired on load
       purgeExpired()
     } catch {
@@ -56,47 +70,47 @@ function scheduleSave(): void {
 function purgeExpired(): void {
   const now = Date.now()
   let changed = false
-  for (const [cwd, messages] of Object.entries(queues)) {
+  for (const [project, messages] of Object.entries(queues)) {
     const before = messages.length
-    queues[cwd] = messages.filter(m => now - m.ts < MESSAGE_TTL_MS)
-    if (queues[cwd].length === 0) {
-      delete queues[cwd]
+    queues[project] = messages.filter(m => now - m.ts < MESSAGE_TTL_MS)
+    if (queues[project].length === 0) {
+      delete queues[project]
       changed = true
-    } else if (queues[cwd].length !== before) {
+    } else if (queues[project].length !== before) {
       changed = true
     }
   }
   if (changed) scheduleSave()
 }
 
-/** Queue a message for delivery when the target CWD's session connects. */
+/** Queue a message for delivery when the target project's session connects. */
 export function enqueue(
-  targetCwd: string,
-  fromCwd: string,
-  fromProject: string,
+  targetProject: string,
+  senderProject: string,
+  senderName: string,
   message: Record<string, unknown>,
   targetName?: string,
 ): void {
-  if (!queues[targetCwd]) queues[targetCwd] = []
-  const queue = queues[targetCwd]
+  if (!queues[targetProject]) queues[targetProject] = []
+  const queue = queues[targetProject]
 
   // Cap queue size per target
   if (queue.length >= MAX_QUEUE_PER_TARGET) {
     queue.shift() // drop oldest
   }
 
-  queue.push({ ts: Date.now(), fromCwd, fromProject, message, ...(targetName ? { targetName } : {}) })
+  queue.push({ ts: Date.now(), senderProject, senderName, message, ...(targetName ? { targetName } : {}) })
   scheduleSave()
 }
 
 /**
- * Drain pending messages for a target CWD. Purges expired. Returns messages in order.
+ * Drain pending messages for a target project. Purges expired. Returns messages in order.
  * If sessionName is provided, only drains messages targeted at that session name
- * (or messages with no targetName -- CWD-level messages). Messages targeted at
+ * (or messages with no targetName -- project-level messages). Messages targeted at
  * other session names stay in the queue.
  */
-export function drain(targetCwd: string, sessionName?: string): QueuedMessage[] {
-  const queue = queues[targetCwd]
+export function drain(targetProject: string, sessionName?: string): QueuedMessage[] {
+  const queue = queues[targetProject]
   if (!queue || queue.length === 0) return []
 
   const now = Date.now()
@@ -104,12 +118,12 @@ export function drain(targetCwd: string, sessionName?: string): QueuedMessage[] 
 
   if (!sessionName) {
     // No session name filter -- drain everything (backward compat)
-    delete queues[targetCwd]
+    delete queues[targetProject]
     scheduleSave()
     return valid
   }
 
-  // Partition: take messages for this session (or CWD-level), leave the rest
+  // Partition: take messages for this session (or project-level), leave the rest
   const forMe: QueuedMessage[] = []
   const forOthers: QueuedMessage[] = []
   for (const m of valid) {
@@ -121,17 +135,17 @@ export function drain(targetCwd: string, sessionName?: string): QueuedMessage[] 
   }
 
   if (forOthers.length === 0) {
-    delete queues[targetCwd]
+    delete queues[targetProject]
   } else {
-    queues[targetCwd] = forOthers
+    queues[targetProject] = forOthers
   }
   scheduleSave()
   return forMe
 }
 
-/** Check how many messages are queued for a target CWD. */
-export function getQueueSize(targetCwd: string): number {
-  return queues[targetCwd]?.length || 0
+/** Check how many messages are queued for a target project. */
+export function getQueueSize(targetProject: string): number {
+  return queues[targetProject]?.length || 0
 }
 
 /** Get total queue stats (for diagnostics). */

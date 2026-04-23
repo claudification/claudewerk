@@ -338,7 +338,7 @@ const turnCost: MessageHandler = (ctx, data) => {
     recordTurnFromCumulatives({
       timestamp: now,
       sessionId,
-      cwd: session.project,
+      projectUri: session.project,
       account: session.claudeAuth?.email || '',
       orgId: session.claudeAuth?.orgId || '',
       model: session.model || '',
@@ -354,7 +354,7 @@ const turnCost: MessageHandler = (ctx, data) => {
     ctx.broadcast({
       type: 'turn_recorded',
       sessionId,
-      cwd: session.project,
+      project: session.project,
       account: session.claudeAuth?.email || '',
       model: session.model || '',
       costUsd,

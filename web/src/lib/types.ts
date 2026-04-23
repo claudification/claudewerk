@@ -132,7 +132,7 @@ export interface Session {
 
 // Project order tree types -- each leaf is a project keyed by project URI
 // (e.g. "claude:///Users/jonas/projects/foo"). Legacy entries may still use
-// "cwd:<path>" format; consumers should handle both.
+// "cwd:<path>" format; consumers should handle both (legacy compat).
 export interface ProjectOrderGroup {
   id: string
   type: 'group'
@@ -142,7 +142,7 @@ export interface ProjectOrderGroup {
 }
 
 interface ProjectOrderProject {
-  id: string // project URI (e.g. "claude:///path") or legacy "cwd:<path>"
+  id: string // project URI (e.g. "claude:///path") or legacy "cwd:<path>" (compat)
   type: 'project'
 }
 

@@ -1131,7 +1131,7 @@ export interface ArchivedTaskGroup {
 export interface Session {
   id: string
   project: string // project URI identity (e.g. "claude:///Users/jonas/projects/foo")
-  currentCwd?: string // where Claude is currently working (CwdChanged hook)
+  currentPath?: string // where Claude is currently working (CwdChanged hook)
   model?: string
   configuredModel?: string // the --model value passed to CC (preserves [1m] suffix that CC strips)
   args?: string[]

@@ -70,9 +70,9 @@ function broadcastFilteredProjectSettings(
         ws.send(JSON.stringify({ type: 'project_settings_updated', settings: all }))
       } else {
         const filtered: Record<string, unknown> = {}
-        for (const [cwd, settings] of Object.entries(all)) {
-          const { permissions } = resolvePermissions(wsGrants, cwd)
-          if (permissions.has('chat:read')) filtered[cwd] = settings
+        for (const [project, settings] of Object.entries(all)) {
+          const { permissions } = resolvePermissions(wsGrants, project)
+          if (permissions.has('chat:read')) filtered[project] = settings
         }
         ws.send(JSON.stringify({ type: 'project_settings_updated', settings: filtered }))
       }
@@ -115,12 +115,12 @@ const updateSettings: MessageHandler = (ctx, data) => {
 // ─── Update project settings ──────────────────────────────────────
 
 const updateProjectSettings: MessageHandler = (ctx, data) => {
-  const cwd = data.cwd as string
+  const project = (data.project as string) ?? (data.cwd as string)
   const settings = data.settings as Record<string, unknown>
-  if (!cwd || !settings) throw new GuardError('Missing cwd or settings')
+  if (!project || !settings) throw new GuardError('Missing project or settings')
   ctx.requirePermission('settings')
 
-  setProjectSettings(cwd, settings)
+  setProjectSettings(project, settings)
   const all = getAllProjectSettings()
   broadcastFilteredProjectSettings(ctx, all)
   ctx.reply({ type: 'update_project_settings_result', ok: true, projectSettings: all })
@@ -129,11 +129,11 @@ const updateProjectSettings: MessageHandler = (ctx, data) => {
 // ─── Delete project settings ──────────────────────────────────────
 
 const deleteProjectSettingsHandler: MessageHandler = (ctx, data) => {
-  const cwd = data.cwd as string
-  if (!cwd) throw new GuardError('Missing cwd')
+  const project = (data.project as string) ?? (data.cwd as string)
+  if (!project) throw new GuardError('Missing project')
   ctx.requirePermission('settings')
 
-  deleteProjectSettings(cwd)
+  deleteProjectSettings(project)
   const all = getAllProjectSettings()
   broadcastFilteredProjectSettings(ctx, all)
   ctx.reply({ type: 'delete_project_settings_result', ok: true, projectSettings: all })
@@ -163,8 +163,8 @@ const updateProjectOrder: MessageHandler = (ctx, data) => {
           const result: ProjectOrder['tree'] = []
           for (const node of nodes) {
             if (node.type === 'project') {
-              const cwd = node.id.startsWith('cwd:') ? node.id.slice(4) : node.id
-              const { permissions } = resolvePermissions(grants, cwd)
+              const projectUri = node.id.startsWith('cwd:') ? node.id.slice(4) : node.id
+              const { permissions } = resolvePermissions(grants, projectUri)
               if (permissions.has('chat:read')) result.push(node)
             } else if (node.type === 'group') {
               const children = filterNodes(node.children)

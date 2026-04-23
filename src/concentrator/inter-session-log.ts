@@ -1,6 +1,6 @@
 /**
  * Inter-Session Message Log - JSONL append log for messages between sessions.
- * Each entry stores a 200-char preview, session IDs, wrapper IDs, and CWDs.
+ * Each entry stores a 200-char preview, session IDs, wrapper IDs, and projects.
  * Storage: {cacheDir}/inter-session-messages.jsonl
  */
 
@@ -9,8 +9,8 @@ import { dirname, join } from 'node:path'
 
 export interface InterSessionLogEntry {
   ts: number
-  from: { sessionId: string; wrapperId?: string; cwd: string; name: string }
-  to: { sessionId: string; wrapperId?: string; cwd: string; name: string }
+  from: { sessionId: string; wrapperId?: string; project: string; name: string }
+  to: { sessionId: string; wrapperId?: string; project: string; name: string }
   intent: string
   conversationId: string
   preview: string // first 200 chars
@@ -35,7 +35,13 @@ export function appendMessage(entry: InterSessionLogEntry): void {
   appendFileSync(logPath, `${line}\n`)
 }
 
-export function queryMessages(opts: { cwdA?: string; cwdB?: string; cwd?: string; limit?: number; before?: number }): {
+export function queryMessages(opts: {
+  projectA?: string
+  projectB?: string
+  project?: string
+  limit?: number
+  before?: number
+}): {
   messages: InterSessionLogEntry[]
   hasMore: boolean
 } {
@@ -43,12 +49,14 @@ export function queryMessages(opts: { cwdA?: string; cwdB?: string; cwd?: string
   const limit = Math.min(opts.limit || 50, 200)
 
   let filtered = entries
-  if (opts.cwdA && opts.cwdB) {
+  if (opts.projectA && opts.projectB) {
     filtered = entries.filter(
-      e => (e.from.cwd === opts.cwdA && e.to.cwd === opts.cwdB) || (e.from.cwd === opts.cwdB && e.to.cwd === opts.cwdA),
+      e =>
+        (e.from.project === opts.projectA && e.to.project === opts.projectB) ||
+        (e.from.project === opts.projectB && e.to.project === opts.projectA),
     )
-  } else if (opts.cwd) {
-    filtered = entries.filter(e => e.from.cwd === opts.cwd || e.to.cwd === opts.cwd)
+  } else if (opts.project) {
+    filtered = entries.filter(e => e.from.project === opts.project || e.to.project === opts.project)
   }
 
   if (opts.before) {
@@ -61,11 +69,15 @@ export function queryMessages(opts: { cwdA?: string; cwdB?: string; cwd?: string
   return { messages, hasMore }
 }
 
-export function purgeMessages(cwdA: string, cwdB: string): number {
+export function purgeMessages(projectA: string, projectB: string): number {
   const entries = readAll()
   const before = entries.length
   const kept = entries.filter(
-    e => !((e.from.cwd === cwdA && e.to.cwd === cwdB) || (e.from.cwd === cwdB && e.to.cwd === cwdA)),
+    e =>
+      !(
+        (e.from.project === projectA && e.to.project === projectB) ||
+        (e.from.project === projectB && e.to.project === projectA)
+      ),
   )
   if (kept.length < before) {
     writeEntries(kept)
@@ -81,7 +93,11 @@ function readAll(): InterSessionLogEntry[] {
     for (const line of raw.split('\n')) {
       if (!line.trim()) continue
       try {
-        entries.push(JSON.parse(line))
+        const parsed = JSON.parse(line)
+        // Backward compat: migrate legacy `cwd` field to `project`
+        if (parsed.from?.cwd && !parsed.from.project) parsed.from.project = parsed.from.cwd
+        if (parsed.to?.cwd && !parsed.to.project) parsed.to.project = parsed.to.cwd
+        entries.push(parsed)
       } catch {
         // skip unparseable lines
       }

@@ -56,7 +56,7 @@ export interface DashboardPrefs {
   showPerfMonitor: boolean
   toolDisplay: Partial<Record<ToolDisplayKey, Partial<ToolDisplayPrefs>>>
   chordTimeoutMs: number // how long to wait for second chord key before dismissing (ms)
-  sanitizePaths: boolean // strip redundant `cd <cwd> &&` prefixes from displayed commands
+  sanitizePaths: boolean // strip redundant `cd <project-path> &&` prefixes from displayed commands
   inputBackend: 'legacy' | 'codemirror' // editor backend for InputEditor (default legacy)
   settingsTab: SettingsTab // last active settings tab (per-device)
 }

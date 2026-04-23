@@ -74,12 +74,12 @@ export interface PushPayload {
   title: string
   body: string
   sessionId?: string
-  sessionCwd?: string
+  sessionProject?: string
   tag?: string
   data?: Record<string, unknown>
 }
 
-/** Send push to all users who have notifications permission for the session's CWD */
+/** Send push to all users who have notifications permission for the session's project */
 export async function sendPushToAll(payload: PushPayload): Promise<{ sent: number; failed: number }> {
   if (!vapidConfigured) return { sent: 0, failed: 0 }
 
@@ -91,9 +91,9 @@ export async function sendPushToAll(payload: PushPayload): Promise<{ sent: numbe
   for (const user of getAllUsers()) {
     if (user.revoked || !user.pushSubscriptions?.length) continue
 
-    // Check if user has notifications permission for this session's CWD
-    if (payload.sessionCwd) {
-      const { permissions } = resolvePermissions(user.grants, payload.sessionCwd)
+    // Check if user has notifications permission for this session's project
+    if (payload.sessionProject) {
+      const { permissions } = resolvePermissions(user.grants, payload.sessionProject)
       if (!permissions.has('notifications')) continue
     }
 

@@ -12,9 +12,9 @@ import { cn } from '@/lib/utils'
 import { AnsiText, cleanCdPrefix, cleanReplShCalls, escapeHtml, TruncatedPre } from './shared'
 import { ensureLang, getHighlighter, langFromPath } from './syntax'
 
-// Single selector: returns CWD if sanitizePaths is enabled, undefined otherwise.
+// Single selector: returns project path if sanitizePaths is enabled, undefined otherwise.
 // Returns a primitive (string|undefined) so Zustand skips re-renders when the value is stable.
-function useSessionCwd(): string | undefined {
+function useSessionPath(): string | undefined {
   return useSessionsStore(s => {
     if (s.dashboardPrefs.sanitizePaths === false) return undefined
     const sid = s.selectedSessionId
@@ -148,9 +148,9 @@ function stripLeadingComment(cmd: string): string {
 // Syntax-highlighted shell command block (max 10 lines by default)
 export function ShellCommand({ command, maxLines = 10 }: { command: string; maxLines?: number }) {
   const [html, setHtml] = useState<string | null>(null)
-  const cwd = useSessionCwd()
+  const root = useSessionPath()
   const stripped = stripLeadingComment(command)
-  const cleaned = cwd ? cleanCdPrefix(stripped, cwd) : stripped
+  const cleaned = root ? cleanCdPrefix(stripped, root) : stripped
   const lines = cleaned.split('\n')
   const truncated = lines.length > maxLines
   const display = truncated ? lines.slice(0, maxLines).join('\n') : cleaned
@@ -366,8 +366,8 @@ export function ReplView({ code, isError }: { code: string; isError?: boolean })
   const replDisplay = resolveToolDisplay(replPrefs, 'REPL' as ToolDisplayKey)
   const lineLimit = replDisplay.lineLimit
   const [revealed, setRevealed] = useState(false)
-  const cwd = useSessionCwd()
-  const displayCode = cwd ? cleanReplShCalls(code, cwd) : code
+  const root = useSessionPath()
+  const displayCode = root ? cleanReplShCalls(code, root) : code
 
   useEffect(() => {
     getHighlighter()

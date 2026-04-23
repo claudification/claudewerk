@@ -806,7 +806,7 @@ const SessionItemFull = memo(function SessionItemFull({ session }: { session: Se
         {session.pendingAttention && <span className="text-[9px] text-amber-400 font-bold animate-pulse">WAITING</span>}
         {session.hasNotification && <span className="text-[9px] text-teal-400 font-bold">NOTIFY</span>}
         <SessionInfoButton session={session} visible={isSelected} />
-        <ShareIndicator sessionCwd={projectPath(session.project)} />
+        <ShareIndicator sessionProject={projectPath(session.project)} />
         {session.resultText && session.capabilities?.includes('ad-hoc') && <ResultTextModal session={session} />}
         {session.status === 'ended' && <DismissButton sessionId={session.id} />}
         {showCost &&

@@ -20,7 +20,7 @@ const FILE_LIST_DEFAULT_LIMIT = 30
 const CONTENT_LINE_DEFAULT_LIMIT = 40
 const COUNT_BAR_DEFAULT_LIMIT = 25
 
-function useSessionCwd(): string | undefined {
+function useSessionPath(): string | undefined {
   return useSessionsStore(s => {
     if (s.dashboardPrefs.sanitizePaths === false) return undefined
     const sid = s.selectedSessionId
@@ -36,12 +36,12 @@ function useToolLineLimit(tool: 'Grep' | 'Glob', fallback: number): number {
   })
 }
 
-/** Make a path relative to cwd when it lives under cwd, else keep absolute. */
-function relToCwd(path: string, cwd?: string): string {
-  if (!cwd) return path
-  const normCwd = cwd.replace(/\/$/, '')
-  if (path === normCwd) return '.'
-  if (path.startsWith(`${normCwd}/`)) return path.slice(normCwd.length + 1)
+/** Make a path relative to root when it lives under root, else keep absolute. */
+function relToRoot(path: string, root?: string): string {
+  if (!root) return path
+  const normRoot = root.replace(/\/$/, '')
+  if (path === normRoot) return '.'
+  if (path.startsWith(`${normRoot}/`)) return path.slice(normRoot.length + 1)
   return path
 }
 
@@ -51,10 +51,10 @@ function splitDirAndName(path: string): { dir: string; name: string } {
   return { dir: path.slice(0, idx), name: path.slice(idx + 1) }
 }
 
-function groupByDir(filenames: string[], cwd?: string): Array<{ dir: string; files: string[] }> {
+function groupByDir(filenames: string[], root?: string): Array<{ dir: string; files: string[] }> {
   const groups = new Map<string, string[]>()
   for (const raw of filenames) {
-    const rel = relToCwd(raw, cwd)
+    const rel = relToRoot(raw, root)
     const { dir, name } = splitDirAndName(rel)
     const list = groups.get(dir) ?? []
     list.push(name)
@@ -97,11 +97,11 @@ export function FileListResults({
   truncated?: boolean
   emptyLabel?: string
 }) {
-  const cwd = useSessionCwd()
+  const root = useSessionPath()
   const limit = useToolLineLimit('Grep', FILE_LIST_DEFAULT_LIMIT)
   const [revealed, setRevealed] = useState(false)
 
-  const groups = useMemo(() => groupByDir(filenames, cwd), [filenames, cwd])
+  const groups = useMemo(() => groupByDir(filenames, root), [filenames, root])
   const total = numFiles ?? filenames.length
 
   if (total === 0) {
@@ -267,7 +267,7 @@ export function GrepContentResults({
   numFiles?: number
   highlight?: RegExp
 }) {
-  const cwd = useSessionCwd()
+  const root = useSessionPath()
   const limit = useToolLineLimit('Grep', CONTENT_LINE_DEFAULT_LIMIT)
   const [revealed, setRevealed] = useState(false)
 
@@ -295,7 +295,7 @@ export function GrepContentResults({
   return (
     <div className="text-[10px] font-mono space-y-2">
       {visibleGroups.map(g => {
-        const rel = relToCwd(g.file, cwd)
+        const rel = relToRoot(g.file, root)
         const { dir, name } = splitDirAndName(rel)
         return (
           <div key={g.file || '_unnamed'}>
@@ -373,7 +373,7 @@ export function GrepCountResults({
   numMatches?: number
   numFiles?: number
 }) {
-  const cwd = useSessionCwd()
+  const root = useSessionPath()
   const limit = useToolLineLimit('Grep', COUNT_BAR_DEFAULT_LIMIT)
   const [revealed, setRevealed] = useState(false)
 
@@ -394,7 +394,7 @@ export function GrepCountResults({
   return (
     <div className="text-[10px] font-mono space-y-0.5">
       {visible.map(r => {
-        const rel = relToCwd(r.file, cwd)
+        const rel = relToRoot(r.file, root)
         const { dir, name } = splitDirAndName(rel)
         const pct = (r.count / max) * 100
         return (
@@ -460,8 +460,8 @@ export function GrepSummary({
   mode?: string
   isError?: boolean
 }) {
-  const cwd = useSessionCwd()
-  const relPath = path ? relToCwd(path, cwd) : undefined
+  const root = useSessionPath()
+  const relPath = path ? relToRoot(path, root) : undefined
   const totalMatches = mode === 'count' ? numMatches : numLines
   return (
     <span className="flex items-center gap-1.5 min-w-0 flex-wrap">
@@ -507,8 +507,8 @@ export function GlobSummary({
   truncated?: boolean
   isError?: boolean
 }) {
-  const cwd = useSessionCwd()
-  const relPath = path ? relToCwd(path, cwd) : undefined
+  const root = useSessionPath()
+  const relPath = path ? relToRoot(path, root) : undefined
   return (
     <span className="flex items-center gap-1.5 min-w-0 flex-wrap">
       <code className="px-1 py-0 rounded bg-purple-500/10 text-purple-300/90 text-[10px] font-mono break-all">

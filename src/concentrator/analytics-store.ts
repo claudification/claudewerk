@@ -47,7 +47,6 @@ export interface ToolUseEvent {
 export interface TurnAnalytics {
   sessionId: string
   timestamp: number
-  cwd: string
   /** Canonical project identity URI (e.g. claude:///Users/jonas/projects/foo) */
   projectUri: string
   /** Integer FK to projects.id (from project-store) */
@@ -176,7 +175,6 @@ function flushBatch(): void {
         stmtInsertTurn?.run({
           timestamp: turn.timestamp,
           sessionId: turn.sessionId,
-          cwd: turn.cwd,
           projectUri: turn.projectUri,
           projectId: turn.projectId,
           model: turn.model,
@@ -270,9 +268,14 @@ function migrate(d: Database): void {
 
 /** Backfill project_id from cwd via project-store */
 function backfillProjectIds(d: Database, column = 'project_id'): void {
+  // Check if cwd column still exists (may have been dropped already)
+  const cols = d.query("PRAGMA table_info('turns')").all() as Array<{ name: string }>
+  if (!cols.some(c => c.name === 'cwd')) return
+
   const cwds = d.query("SELECT DISTINCT cwd FROM turns WHERE cwd != ''").all() as Array<{ cwd: string }>
   for (const { cwd } of cwds) {
-    const project = getOrCreateProject(cwd)
+    const projectUri = cwdToProjectUri(cwd)
+    const project = getOrCreateProject(projectUri)
     d.prepare(`UPDATE turns SET ${column} = $pid WHERE cwd = $cwd`).run({ pid: project.id, cwd })
   }
   if (cwds.length > 0) {
@@ -296,7 +299,6 @@ export function initAnalyticsStore(cacheDir: string): void {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp INTEGER NOT NULL,
         session_id TEXT NOT NULL,
-        cwd TEXT NOT NULL DEFAULT '',
         project_uri TEXT NOT NULL DEFAULT '',
         project_id INTEGER NOT NULL DEFAULT 0,
         model TEXT NOT NULL DEFAULT '',
@@ -326,18 +328,25 @@ export function initAnalyticsStore(cacheDir: string): void {
     // Indexes
     db.run('CREATE INDEX IF NOT EXISTS idx_analytics_timestamp ON turns(timestamp)')
     db.run('CREATE INDEX IF NOT EXISTS idx_analytics_session ON turns(session_id)')
-    db.run('CREATE INDEX IF NOT EXISTS idx_analytics_cwd ON turns(cwd)')
     db.run('CREATE INDEX IF NOT EXISTS idx_analytics_project_uri ON turns(project_uri)')
     db.run('CREATE INDEX IF NOT EXISTS idx_analytics_project ON turns(project_id)')
     db.run('CREATE INDEX IF NOT EXISTS idx_analytics_category ON turns(task_category)')
     db.run('CREATE INDEX IF NOT EXISTS idx_tool_uses_timestamp ON tool_uses(timestamp)')
     db.run('CREATE INDEX IF NOT EXISTS idx_tool_uses_name ON tool_uses(tool_name)')
 
+    // Migration: drop cwd column (project_uri is now the canonical identity)
+    const cwdCols = db.query("PRAGMA table_info('turns')").all() as Array<{ name: string }>
+    if (cwdCols.some(c => c.name === 'cwd')) {
+      db.run('DROP INDEX IF EXISTS idx_analytics_cwd')
+      db.run('ALTER TABLE turns DROP COLUMN cwd')
+      console.log('[analytics] Migrated turns: dropped cwd column')
+    }
+
     stmtInsertTurn = db.prepare(`
-      INSERT INTO turns (timestamp, session_id, cwd, project_uri, project_id, model, account,
+      INSERT INTO turns (timestamp, session_id, project_uri, project_id, model, account,
         tool_sequence, tool_call_count, task_category, retry_count,
         one_shot, had_error, prompt_snippet)
-      VALUES ($timestamp, $sessionId, $cwd, $projectUri, $projectId, $model, $account,
+      VALUES ($timestamp, $sessionId, $projectUri, $projectId, $model, $account,
         $toolSequence, $toolCallCount, $taskCategory, $retryCount,
         $oneShot, $hadError, $promptSnippet)
     `)
@@ -373,7 +382,7 @@ export function recordHookEvent(
   sessionId: string,
   hookEvent: string,
   data: Record<string, unknown>,
-  sessionMeta: { cwd: string; model: string; account: string; projectLabel?: string },
+  sessionMeta: { projectUri: string; model: string; account: string; projectLabel?: string },
 ): void {
   if (!db) return
 
@@ -436,9 +445,8 @@ export function recordHookEvent(
       const turn: TurnAnalytics = {
         sessionId,
         timestamp: Date.now(),
-        cwd: sessionMeta.cwd,
-        projectUri: cwdToProjectUri(sessionMeta.cwd),
-        projectId: getOrCreateProject(sessionMeta.cwd, sessionMeta.projectLabel).id,
+        projectUri: sessionMeta.projectUri,
+        projectId: getOrCreateProject(sessionMeta.projectUri, sessionMeta.projectLabel).id,
         model: sessionMeta.model,
         account: sessionMeta.account,
         toolSequence: acc.tools.map(t => t.toolName).join(','),

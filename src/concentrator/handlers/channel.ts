@@ -196,7 +196,8 @@ const channelListSessions: MessageHandler = (ctx, data) => {
       project: projectSlug, // project-level grouping ID
       session_id: s.id,
       name: sessionName,
-      cwd: showFull ? parseProjectUri(s.project).path : shortProject,
+      projectUri: s.project,
+      cwd: showFull ? parseProjectUri(s.project).path : shortProject, // backward compat for MCP consumers
       status: (isLive ? 'live' : 'inactive') as 'live' | 'inactive',
       capabilities: s.capabilities,
       ...(projSettings?.label && projSettings.label !== sessionName ? { label: projSettings.label } : {}),
@@ -234,7 +235,8 @@ const channelListSessions: MessageHandler = (ctx, data) => {
         project: projectSlug,
         session_id: s.id,
         name: s.title || projSettings?.label || extractProjectLabel(s.project),
-        cwd: parseProjectUri(s.project).path,
+        projectUri: s.project,
+        cwd: parseProjectUri(s.project).path, // backward compat for MCP consumers
         model: s.configuredModel || s.model,
         permissionMode: s.permissionMode,
         effortLevel: s.effortLevel,
@@ -468,10 +470,10 @@ const channelSend: MessageHandler = (ctx, data) => {
           from: {
             sessionId: fromSession,
             wrapperId: ctx.ws.data.wrapperId,
-            cwd: fromSess.project,
+            project: fromSess.project,
             name: fromProjectName,
           },
-          to: { sessionId: toSession, cwd: toSess.project, name: toProjectName },
+          to: { sessionId: toSession, project: toSess.project, name: toProjectName },
           intent: (data.intent as string) || 'notify',
           conversationId,
           preview: ((data.message as string) || '').slice(0, 200),
@@ -568,8 +570,8 @@ const channelLinkResponse: MessageHandler = (ctx, data) => {
 
 const channelUnlink: MessageHandler = (ctx, data) => {
   // Project-based path (preferred -- projects are the linked entity)
-  const projectA = data.cwdA as string | undefined
-  const projectB = data.cwdB as string | undefined
+  const projectA = (data.projectA as string | undefined) ?? (data.cwdA as string | undefined)
+  const projectB = (data.projectB as string | undefined) ?? (data.cwdB as string | undefined)
   if (projectA && projectB) {
     ctx.requirePermission('settings', projectA)
     ctx.requirePermission('settings', projectB)

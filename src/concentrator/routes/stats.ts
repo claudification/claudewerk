@@ -62,7 +62,7 @@ export function createStatsRouter(sessionStore: SessionStore, helpers: RouteHelp
         to: q.to ? Number(q.to) : undefined,
         account: q.account || undefined,
         model: q.model || undefined,
-        cwd: q.cwd || undefined,
+        projectUri: q.project || q.cwd || undefined,
         limit: q.limit ? Number(q.limit) : undefined,
         offset: q.offset ? Number(q.offset) : undefined,
       }),
@@ -78,7 +78,7 @@ export function createStatsRouter(sessionStore: SessionStore, helpers: RouteHelp
         to: q.to ? Number(q.to) : undefined,
         account: q.account || undefined,
         model: q.model || undefined,
-        cwd: q.cwd || undefined,
+        projectUri: q.project || q.cwd || undefined,
         groupBy: (q.groupBy as 'hour' | 'day') || undefined,
       }),
     )

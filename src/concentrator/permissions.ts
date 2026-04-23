@@ -48,8 +48,8 @@ export type Permission =
 // ─── Grants ───────────────────────────────────────────────────────
 
 export interface UserGrant {
-  /** @deprecated Use `scope` instead. Bare CWD glob pattern. */
-  cwd?: string
+  /** @deprecated Use `scope` instead. Legacy bare CWD glob pattern from persisted data. */
+  legacyCwd?: string
   /** Project URI pattern for scope matching. '*' = all projects. */
   scope?: string
   /** Roles that expand into permission sets */
@@ -65,16 +65,16 @@ export interface UserGrant {
 // ─── Internal helpers ─────────────────────────────────────────────
 
 /** Auto-upgrade a legacy CWD glob to a project URI pattern. */
-export function cwdToScope(cwd: string): string {
-  if (cwd === '*') return '*'
-  if (cwd.endsWith('/*')) return `${cwdToProjectUri(cwd.slice(0, -2))}/*`
-  return cwdToProjectUri(cwd)
+export function pathToScope(path: string): string {
+  if (path === '*') return '*'
+  if (path.endsWith('/*')) return `${cwdToProjectUri(path.slice(0, -2))}/*`
+  return cwdToProjectUri(path)
 }
 
-/** Get the effective scope for a grant (prefer scope, fall back to auto-upgraded cwd). */
+/** Get the effective scope for a grant (prefer scope, fall back to auto-upgraded legacyCwd). */
 function grantScope(grant: UserGrant): string {
   if (grant.scope) return grant.scope
-  if (grant.cwd) return cwdToScope(grant.cwd)
+  if (grant.legacyCwd) return pathToScope(grant.legacyCwd)
   return '*'
 }
 

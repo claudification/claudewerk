@@ -35,13 +35,13 @@ const handleSpawnRequest: MessageHandler = (ctx, data) => {
   }
   const req = parsed.data
 
-  const callerCwd = ctx.caller?.project ?? null
-  const trustLevel = callerCwd ? mapProjectTrust(ctx.getProjectSettings(callerCwd)?.trustLevel) : 'trusted'
+  const callerProject = ctx.caller?.project ?? null
+  const trustLevel = callerProject ? mapProjectTrust(ctx.getProjectSettings(callerProject)?.trustLevel) : 'trusted'
   const callerContext: SpawnCallerContext = {
     kind: 'ws',
     hasSpawnPermission: true, // already validated by ctx.requirePermission above
     trustLevel,
-    cwd: callerCwd,
+    callerProject,
   }
 
   // Fire-and-track: dispatchSpawn is async but the router doesn't await handlers.

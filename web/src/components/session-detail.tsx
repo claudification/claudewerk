@@ -222,7 +222,7 @@ export const SessionDetail = memo(function SessionDetail() {
       {/* Clipboard Capture Banners */}
       <ClipboardBanners />
       {/* Share banner - always visible when shares active (admin only) */}
-      {canAdmin && session && <ShareBanner sessionCwd={projectPath(session.project)} />}
+      {canAdmin && session && <ShareBanner sessionProject={projectPath(session.project)} />}
       {/* Dialog Modal */}
       {selectedSessionId && <DialogOverlay sessionId={selectedSessionId} />}
       {/* Task Editor Modal (from @ / t: command palette, renders over any tab) */}
@@ -427,7 +427,7 @@ export const SessionDetail = memo(function SessionDetail() {
             </div>
           )}
           {!conversationTarget && activeTab === 'shared' && session && (
-            <SharedView cwd={projectPath(session.project)} />
+            <SharedView projectPath={projectPath(session.project)} />
           )}
           {!conversationTarget && activeTab === 'diag' && selectedSessionId && (
             <DiagView sessionId={selectedSessionId} />

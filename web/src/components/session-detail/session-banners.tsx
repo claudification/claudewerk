@@ -65,8 +65,8 @@ export function LinkRequestBanners() {
 // formatPermissionInput (helper used only by PermissionBanners)
 // ---------------------------------------------------------------------------
 
-function formatPermissionInput(toolName: string, inputPreview: string, cwd?: string): ReactNode {
-  const relativize = (p: string) => (cwd && p.startsWith(`${cwd}/`) ? p.slice(cwd.length + 1) : p)
+function formatPermissionInput(toolName: string, inputPreview: string, root?: string): ReactNode {
+  const relativize = (p: string) => (root && p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p)
   try {
     const input = JSON.parse(inputPreview)
 
@@ -104,7 +104,7 @@ function formatPermissionInput(toolName: string, inputPreview: string, cwd?: str
       <div className="text-[10px] space-y-0.5">
         {entries.map(([k, v]) => {
           const val = typeof v === 'string' ? v : JSON.stringify(v)
-          const display = typeof v === 'string' && cwd ? relativize(val) : val
+          const display = typeof v === 'string' && root ? relativize(val) : val
           return (
             <div key={k} className="flex gap-1.5">
               <span className="text-muted-foreground shrink-0">{k}:</span>
@@ -165,7 +165,7 @@ export function PermissionBanners() {
   const respond = useSessionsStore(s => s.respondToPermission)
   const sendRule = useSessionsStore(s => s.sendPermissionRule)
   const selectedSession = useSessionsStore(s => s.selectedSessionId)
-  const sessionCwd = useSessionsStore(s =>
+  const sessionPath = useSessionsStore(s =>
     s.selectedSessionId ? projectPath(s.sessionsById[s.selectedSessionId]?.project ?? '') : undefined,
   )
   const relevant = permissions.filter(p => p.sessionId === selectedSession)
@@ -210,7 +210,7 @@ export function PermissionBanners() {
           }
         >
           {perm.description && <div className="text-foreground/70 text-[11px]">{perm.description}</div>}
-          {perm.inputPreview && formatPermissionInput(perm.toolName, perm.inputPreview, sessionCwd)}
+          {perm.inputPreview && formatPermissionInput(perm.toolName, perm.inputPreview, sessionPath)}
         </SessionBanner>
       )}
     />

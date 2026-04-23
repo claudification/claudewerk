@@ -105,15 +105,15 @@ const handleChannelSpawn: MessageHandler = (ctx, data) => {
   ctx.requireBenevolent()
   ctx.requireAgent()
 
-  const cwd = data.cwd as string
-  if (!cwd || typeof cwd !== 'string') {
+  const spawnPath = data.cwd as string
+  if (!spawnPath || typeof spawnPath !== 'string') {
     ctx.reply({ type: 'channel_spawn_result', ok: false, error: 'Missing cwd' })
     return
   }
 
   // Parse the full SpawnRequest from the channel_spawn payload.
   // jobId is always generated server-side by dispatchSpawn.
-  const parsed = spawnRequestSchema.omit({ jobId: true }).safeParse({ ...data, cwd })
+  const parsed = spawnRequestSchema.omit({ jobId: true }).safeParse({ ...data, cwd: spawnPath })
   if (!parsed.success) {
     ctx.reply({ type: 'channel_spawn_result', ok: false, error: `Invalid spawn params: ${parsed.error.message}` })
     return
@@ -126,7 +126,7 @@ const handleChannelSpawn: MessageHandler = (ctx, data) => {
     kind: 'mcp',
     hasSpawnPermission: true,
     trustLevel: callerTrust,
-    cwd: callerProject,
+    callerProject: callerProject,
   }
 
   dispatchSpawn(req, {
@@ -140,7 +140,7 @@ const handleChannelSpawn: MessageHandler = (ctx, data) => {
     .then(result => {
       if (result.ok) {
         ctx.reply({ type: 'channel_spawn_result', ok: true, wrapperId: result.wrapperId, jobId: result.jobId })
-        ctx.log.debug(`Benevolent spawn: -> ${cwd}`)
+        ctx.log.debug(`Benevolent spawn: -> ${spawnPath}`)
       } else {
         ctx.reply({ type: 'channel_spawn_result', ok: false, error: result.error })
       }

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useSessionsStore } from '@/hooks/use-sessions'
 import type { Session } from '@/lib/types'
 import { extractProjectLabel, projectPath } from '@/lib/types'
-import { haptic, projectDisplayName } from '@/lib/utils'
+import { haptic } from '@/lib/utils'
 import { ProjectSettingsButton, ProjectSettingsEditor, renderProjectIcon } from '../project-settings-editor'
 import { partitionSessions } from './partition'
 import { ProjectContextMenu, SessionContextMenu } from './session-context-menu'
@@ -104,7 +104,7 @@ function CwdSessionGroup({ sessions, project }: { sessions: Session[]; project: 
         className="border border-border"
         style={displayColor ? { borderLeftColor: displayColor, borderLeftWidth: '3px' } : undefined}
       >
-        <ProjectContextMenu cwd={project} sessions={sessions} onOpenSettings={() => setShowSettings(true)}>
+        <ProjectContextMenu project={project} sessions={sessions} onOpenSettings={() => setShowSettings(true)}>
           <div className="flex items-center gap-1.5 p-3 pb-1">
             {ps?.icon && (
               <span style={displayColor ? { color: displayColor } : undefined}>{renderProjectIcon(ps.icon)}</span>

@@ -1,26 +1,26 @@
 import { describe, expect, test } from 'bun:test'
 import {
   allGrantsExpired,
-  cwdToScope,
   hasAnyCwdAccess,
   hasAnyProjectAccess,
   hasPermissionAnyCwd,
+  pathToScope,
   resolvePermissionFlags,
   resolvePermissions,
   type UserGrant,
 } from './permissions'
 
-describe('cwdToScope', () => {
+describe('pathToScope', () => {
   test('wildcard stays wildcard', () => {
-    expect(cwdToScope('*')).toBe('*')
+    expect(pathToScope('*')).toBe('*')
   })
 
   test('bare path becomes claude:// URI', () => {
-    expect(cwdToScope('/Users/jonas/projects/foo')).toBe('claude:///Users/jonas/projects/foo')
+    expect(pathToScope('/Users/jonas/projects/foo')).toBe('claude:///Users/jonas/projects/foo')
   })
 
   test('glob path becomes claude:// URI with glob', () => {
-    expect(cwdToScope('/Users/jonas/projects/*')).toBe('claude:///Users/jonas/projects/*')
+    expect(pathToScope('/Users/jonas/projects/*')).toBe('claude:///Users/jonas/projects/*')
   })
 })
 
@@ -59,27 +59,27 @@ describe('resolvePermissions with scope-based grants', () => {
 })
 
 describe('resolvePermissions with legacy cwd grants', () => {
-  test('cwd: "*" auto-upgrades and matches all', () => {
-    const grants: UserGrant[] = [{ cwd: '*', roles: ['admin'] }]
+  test('legacyCwd: "*" auto-upgrades and matches all', () => {
+    const grants: UserGrant[] = [{ legacyCwd: '*', roles: ['admin'] }]
     const { isAdmin, permissions } = resolvePermissions(grants, '/Users/jonas/projects/foo')
     expect(isAdmin).toBe(true)
     expect(permissions.has('chat')).toBe(true)
   })
 
-  test('cwd: "/path" auto-upgrades to scope and matches bare CWD input', () => {
-    const grants: UserGrant[] = [{ cwd: '/Users/jonas/projects/foo', permissions: ['chat'] }]
+  test('legacyCwd: "/path" auto-upgrades to scope and matches bare CWD input', () => {
+    const grants: UserGrant[] = [{ legacyCwd: '/Users/jonas/projects/foo', permissions: ['chat'] }]
     const { permissions } = resolvePermissions(grants, '/Users/jonas/projects/foo')
     expect(permissions.has('chat')).toBe(true)
   })
 
-  test('cwd: "/path" auto-upgrades and matches project URI input', () => {
-    const grants: UserGrant[] = [{ cwd: '/Users/jonas/projects/foo', permissions: ['chat'] }]
+  test('legacyCwd: "/path" auto-upgrades and matches project URI input', () => {
+    const grants: UserGrant[] = [{ legacyCwd: '/Users/jonas/projects/foo', permissions: ['chat'] }]
     const { permissions } = resolvePermissions(grants, 'claude:///Users/jonas/projects/foo')
     expect(permissions.has('chat')).toBe(true)
   })
 
-  test('cwd: "/path/*" auto-upgrades glob and matches sub-paths', () => {
-    const grants: UserGrant[] = [{ cwd: '/Users/jonas/projects/*', permissions: ['files'] }]
+  test('legacyCwd: "/path/*" auto-upgrades glob and matches sub-paths', () => {
+    const grants: UserGrant[] = [{ legacyCwd: '/Users/jonas/projects/*', permissions: ['files'] }]
 
     const match = resolvePermissions(grants, '/Users/jonas/projects/bar')
     expect(match.permissions.has('files')).toBe(true)
@@ -88,8 +88,8 @@ describe('resolvePermissions with legacy cwd grants', () => {
     expect(noMatch.permissions.has('files')).toBe(false)
   })
 
-  test('no regression: admin with cwd: "*" has full access', () => {
-    const grants: UserGrant[] = [{ cwd: '*', roles: ['admin'] }]
+  test('no regression: admin with legacyCwd: "*" has full access', () => {
+    const grants: UserGrant[] = [{ legacyCwd: '*', roles: ['admin'] }]
     const { isAdmin, permissions } = resolvePermissions(grants, '/anything')
     expect(isAdmin).toBe(true)
     expect(permissions.has('chat')).toBe(true)
@@ -121,10 +121,10 @@ describe('resolvePermissions accepts both bare CWD and project URI', () => {
   })
 })
 
-describe('scope takes precedence over cwd', () => {
-  test('grant with both scope and cwd uses scope', () => {
+describe('scope takes precedence over legacyCwd', () => {
+  test('grant with both scope and legacyCwd uses scope', () => {
     const grants: UserGrant[] = [
-      { cwd: '/wrong/path', scope: 'claude:///Users/jonas/projects/foo', permissions: ['chat'] },
+      { legacyCwd: '/wrong/path', scope: 'claude:///Users/jonas/projects/foo', permissions: ['chat'] },
     ]
     const match = resolvePermissions(grants, '/Users/jonas/projects/foo')
     expect(match.permissions.has('chat')).toBe(true)
@@ -152,7 +152,7 @@ describe('hasAnyProjectAccess', () => {
   })
 
   test('backward compat alias works', () => {
-    const grants: UserGrant[] = [{ cwd: '*', roles: ['admin'] }]
+    const grants: UserGrant[] = [{ legacyCwd: '*', roles: ['admin'] }]
     expect(hasAnyCwdAccess(grants, '/anything')).toBe(true)
   })
 })

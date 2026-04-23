@@ -13,7 +13,7 @@ function makeCtx(overrides: Partial<SpawnCallerContext> = {}): SpawnCallerContex
     kind: 'http',
     hasSpawnPermission: true,
     trustLevel: 'trusted',
-    cwd: null,
+    callerProject: null,
     ...overrides,
   }
 }
@@ -37,7 +37,7 @@ describe('assertSpawnAllowed', () => {
   })
 
   it('denies MCP caller without benevolent trust', () => {
-    const ctx = makeCtx({ kind: 'mcp', trustLevel: 'trusted', cwd: '/mcp/app' })
+    const ctx = makeCtx({ kind: 'mcp', trustLevel: 'trusted', callerProject: '/mcp/app' })
     let err: unknown
     try {
       assertSpawnAllowed(ctx, baseReq)
@@ -49,7 +49,7 @@ describe('assertSpawnAllowed', () => {
   })
 
   it('passes MCP caller with benevolent trust', () => {
-    const ctx = makeCtx({ kind: 'mcp', trustLevel: 'benevolent', cwd: '/mcp/app' })
+    const ctx = makeCtx({ kind: 'mcp', trustLevel: 'benevolent', callerProject: '/mcp/app' })
     expect(() => assertSpawnAllowed(ctx, baseReq)).not.toThrow()
   })
 

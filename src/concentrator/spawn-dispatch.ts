@@ -49,7 +49,7 @@ function emitProgress(
 
 export type SpawnDispatchDeps = {
   sessions: SessionStore
-  getProjectSettings: (cwd: string) => ProjectSettings | null
+  getProjectSettings: (project: string) => ProjectSettings | null
   getGlobalSettings: () => GlobalSettings
   setProjectSettings?: (cwd: string, update: Partial<ProjectSettings>) => void
   /** Caller context for the unified permission gate. */
@@ -69,7 +69,7 @@ export type SpawnDispatchResult =
  * SpawnRequest - callers should have parsed it via spawnRequestSchema already.
  */
 export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): Promise<SpawnDispatchResult> {
-  // cwd can be absolute (/…), ~-relative (~/…), or relative (./… | ../… | bare).
+  // path can be absolute (/…), ~-relative (~/…), or relative (./… | ../… | bare).
   // Relative paths are resolved on the agent side against spawnRoot ($HOME).
   try {
     assertSpawnAllowed(deps.callerContext, req)
@@ -105,10 +105,10 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
   deps.sessions.createJob(jobId, wrapperId)
   emitProgress(deps.sessions, jobId, 'job_created', 'done', { wrapperId })
 
-  const cwdLabel = req.cwd.split('/').pop() || req.cwd
+  const projectLabel = req.cwd.split('/').pop() || req.cwd
   if (req.adHoc) {
     console.log(
-      `[ad-hoc] Spawn request: ${cwdLabel} task=${req.adHocTaskId || 'none'} wrapper=${wrapperId.slice(0, 8)} prompt=${req.prompt?.length || 0}chars worktree=${req.worktree || 'none'}`,
+      `[ad-hoc] Spawn request: ${projectLabel} task=${req.adHocTaskId || 'none'} wrapper=${wrapperId.slice(0, 8)} prompt=${req.prompt?.length || 0}chars worktree=${req.worktree || 'none'}`,
     )
   }
 
@@ -226,7 +226,7 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
   })
 
   if (!result.success) {
-    if (req.adHoc) console.log(`[ad-hoc] Spawn FAILED: ${result.error || 'unknown'} (${cwdLabel})`)
+    if (req.adHoc) console.log(`[ad-hoc] Spawn FAILED: ${result.error || 'unknown'} (${projectLabel})`)
     emitProgress(deps.sessions, jobId, 'failed', 'error', { error: result.error || 'Spawn failed' })
     return { ok: false, error: result.error || 'Spawn failed', statusCode: 500 }
   }

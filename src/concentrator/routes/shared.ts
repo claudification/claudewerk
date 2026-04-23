@@ -14,8 +14,8 @@ import { shareToGrants, validateShare } from '../shares'
 
 export interface RouteHelpers {
   resolveHttpGrants(req: Request): UserGrant[] | null
-  httpHasPermission(req: Request, permission: Permission, cwd: string): boolean
-  httpIsAdmin(req: Request, cwd?: string): boolean
+  httpHasPermission(req: Request, permission: Permission, project: string): boolean
+  httpIsAdmin(req: Request, project?: string): boolean
   filterSessionsByHttpGrants<T extends { project: string }>(req: Request, sessions: T[]): T[]
 }
 
@@ -44,17 +44,17 @@ export function createRouteHelpers(rclaudeSecret: string | undefined): RouteHelp
     return [] // no auth = no access
   }
 
-  function httpHasPermission(req: Request, permission: Permission, cwd: string): boolean {
+  function httpHasPermission(req: Request, permission: Permission, project: string): boolean {
     const grants = resolveHttpGrants(req)
     if (grants === null) return true // admin
-    const { permissions } = resolvePermissions(grants, cwd)
+    const { permissions } = resolvePermissions(grants, project)
     return permissions.has(permission)
   }
 
-  function httpIsAdmin(req: Request, cwd = '*'): boolean {
+  function httpIsAdmin(req: Request, project = '*'): boolean {
     const grants = resolveHttpGrants(req)
     if (grants === null) return true // bearer token
-    const { isAdmin } = resolvePermissions(grants, cwd)
+    const { isAdmin } = resolvePermissions(grants, project)
     return isAdmin
   }
 

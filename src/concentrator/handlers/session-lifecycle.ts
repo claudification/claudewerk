@@ -79,9 +79,9 @@ const meta: MessageHandler = (ctx, data) => {
   // Auto-restore persisted links for this session's project
   const sessionProject = (existingSession || ctx.sessions.getSession(sessionId))?.project
   if (sessionProject) {
-    const persistedLinks = ctx.getLinksForCwd(sessionProject)
+    const persistedLinks = ctx.getLinksForProject(sessionProject)
     for (const pl of persistedLinks) {
-      const otherProject = pl.cwdA === sessionProject ? pl.cwdB : pl.cwdA
+      const otherProject = pl.projectA === sessionProject ? pl.projectB : pl.projectA
       for (const s of ctx.sessions.getActiveSessions()) {
         if (s.project === otherProject && s.id !== sessionId) {
           ctx.sessions.linkProjects(sessionId, s.id)
@@ -177,9 +177,9 @@ const sessionClear: MessageHandler = (ctx, data) => {
 const notify: MessageHandler = (ctx, data) => {
   const sessionId = ctx.ws.data.sessionId || (data.sessionId as string)
   const session = sessionId ? ctx.sessions.getSession(sessionId) : undefined
-  const cwd = (session?.project ? extractProjectLabel(session.project) : null) || sessionId?.slice(0, 8) || 'rclaude'
+  const label = (session?.project ? extractProjectLabel(session.project) : null) || sessionId?.slice(0, 8) || 'rclaude'
   const message = (data.message as string) || 'Notification'
-  const title = (data.title as string) || cwd
+  const title = (data.title as string) || label
   console.log(`[notify] ${title}: ${message}`)
 
   if (ctx.push.configured) {

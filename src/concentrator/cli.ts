@@ -58,12 +58,12 @@ function printUsage(): void {
 concentrator-cli - User & passkey management for Claude Concentrator
 
 COMMANDS:
-  create-invite --name <name> [--grant "cwd:perm,perm"]   Create invite with grants
+  create-invite --name <name> [--grant "scope:perm,perm"]  Create invite with grants
   list-users                                                List all users with grants
   revoke --name <name>                                     Revoke a user's access
   unrevoke --name <name>                                   Restore a revoked user
-  grant --name <name> --cwd <path> --permissions <p,p>     Add grant to user
-  revoke-grant --name <name> --cwd <path>                  Remove grant from user
+  grant --name <name> --scope <scope> --permissions <p,p>  Add grant to user
+  revoke-grant --name <name> --scope <scope>               Remove grant from user
   set-role --name <name> --role <role>                     Add a server role
   remove-role --name <name> --role <role>                  Remove a server role
   list-passkeys --name <name>                               List passkeys for a user
@@ -71,7 +71,7 @@ COMMANDS:
   resolve-path <path>                                       Debug: test path jail resolution
 
 GRANT FORMAT:
-  --grant "cwd:permission,permission"     (repeatable)
+  --grant "scope:permission,permission"   (repeatable)
   --grant "/Users/jonas/projects/foo:chat"
   --grant "*:admin"                        (admin for all projects)
 
@@ -127,7 +127,7 @@ function main(): void {
       name = args[++i]
     } else if (arg === '--grant') {
       grantArgs.push(args[++i])
-    } else if (arg === '--cwd') {
+    } else if (arg === '--scope' || arg === '--cwd') {
       cwdArg = args[++i]
     } else if (arg === '--permissions') {
       permissionsArg = args[++i]
@@ -158,15 +158,15 @@ function main(): void {
 
   const KNOWN_ROLES = new Set(['admin'])
 
-  /** Parse --grant "cwd:role_or_perm,role_or_perm" into UserGrant[], applying time bounds if set */
+  /** Parse --grant "scope:role_or_perm,role_or_perm" into UserGrant[], applying time bounds if set */
   function parseGrants(grantStrs: string[]): UserGrant[] {
     return grantStrs.map(s => {
       const colonIdx = s.indexOf(':')
       if (colonIdx <= 0) {
-        console.error(`Invalid grant format: "${s}" (expected "cwd:permission,permission")`)
+        console.error(`Invalid grant format: "${s}" (expected "scope:permission,permission")`)
         process.exit(1)
       }
-      const cwd = s.slice(0, colonIdx)
+      const scope = s.slice(0, colonIdx)
       const items = s
         .slice(colonIdx + 1)
         .split(',')
@@ -174,7 +174,7 @@ function main(): void {
       const roles = items.filter(i => KNOWN_ROLES.has(i)) as UserGrant['roles']
       const permissions = items.filter(i => !KNOWN_ROLES.has(i)) as UserGrant['permissions']
       return {
-        cwd,
+        scope,
         ...(roles && roles.length > 0 && { roles }),
         ...(permissions && permissions.length > 0 && { permissions }),
         ...(notBeforeArg && { notBefore: new Date(notBeforeArg).getTime() }),
@@ -216,7 +216,7 @@ function main(): void {
       const grants = grantArgs.length > 0 ? parseGrants(grantArgs) : undefined
       const grantLabel = grants
         ? grants
-            .map(g => `${g.cwd}: ${[...(g.roles || []), ...(g.permissions || [])].join(', ')}`)
+            .map(g => `${g.scope || g.legacyCwd || '*'}: ${[...(g.roles || []), ...(g.permissions || [])].join(', ')}`)
             .join('\n           ')
         : '* (admin -- full access)'
 
@@ -256,7 +256,7 @@ function main(): void {
         const grants = (user.grants || [])
           .map(g => {
             const parts = [...(g.roles || []), ...(g.permissions || [])]
-            let label = `${g.cwd}: ${parts.join(', ')}`
+            let label = `${g.scope || g.legacyCwd || '*'}: ${parts.join(', ')}`
             if (g.notBefore) label += ` [from ${new Date(g.notBefore).toLocaleDateString()}]`
             if (g.notAfter) label += ` [until ${new Date(g.notAfter).toLocaleDateString()}]`
             return label
@@ -276,7 +276,7 @@ function main(): void {
         process.exit(1)
       }
       if (!cwdArg) {
-        console.error('ERROR: --cwd is required')
+        console.error('ERROR: --scope is required')
         process.exit(1)
       }
       if (!permissionsArg) {
@@ -287,7 +287,7 @@ function main(): void {
       const roles = items.filter(i => KNOWN_ROLES.has(i)) as UserGrant['roles']
       const perms = items.filter(i => !KNOWN_ROLES.has(i)) as UserGrant['permissions']
       const grant: UserGrant = {
-        cwd: cwdArg,
+        scope: cwdArg,
         ...(roles && roles.length > 0 && { roles }),
         ...(perms && perms.length > 0 && { permissions: perms }),
         ...(notBeforeArg && { notBefore: new Date(notBeforeArg).getTime() }),
@@ -309,14 +309,14 @@ function main(): void {
         process.exit(1)
       }
       if (!cwdArg) {
-        console.error('ERROR: --cwd is required')
+        console.error('ERROR: --scope is required')
         process.exit(1)
       }
       if (removeUserGrant(name, cwdArg)) {
-        console.log(`Removed grant for cwd "${cwdArg}" from "${name}"`)
+        console.log(`Removed grant for scope "${cwdArg}" from "${name}"`)
         notifyServer(cacheDir)
       } else {
-        console.error(`ERROR: User "${name}" not found or no grant for that cwd.`)
+        console.error(`ERROR: User "${name}" not found or no grant for that scope.`)
         process.exit(1)
       }
       break

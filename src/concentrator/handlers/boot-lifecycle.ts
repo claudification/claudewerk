@@ -22,13 +22,13 @@ import { registerHandlers } from '../message-router'
 
 const wrapperBoot: MessageHandler = (ctx, data) => {
   const wrapperId = data.wrapperId as string
-  const cwd = data.cwd as string
-  if (!wrapperId || !cwd) {
+  const bootPath = data.cwd as string
+  if (!wrapperId || !bootPath) {
     ctx.log.debug(`[boot] wrapper_boot missing wrapperId or cwd, ignoring`)
     return
   }
 
-  const project = (data.project as string) ?? cwdToProjectUri(cwd)
+  const project = (data.project as string) ?? cwdToProjectUri(bootPath)
 
   // Track the WS so subsequent messages from this wrapper are routed here.
   ctx.ws.data.sessionId = wrapperId
@@ -55,7 +55,7 @@ const wrapperBoot: MessageHandler = (ctx, data) => {
   } else {
     // Create a placeholder session keyed by wrapperId -- the real sessionId
     // replaces this once session_promote arrives.
-    const placeholder = ctx.sessions.createSession(wrapperId, cwd, undefined, claudeArgs, capabilities)
+    const placeholder = ctx.sessions.createSession(wrapperId, bootPath, undefined, claudeArgs, capabilities)
     placeholder.status = 'booting'
     placeholder.project = project
     if (pendingLaunchConfig) {
@@ -72,7 +72,7 @@ const wrapperBoot: MessageHandler = (ctx, data) => {
   // events) can be tagged with it.
   ctx.sessions.setSessionSocket(wrapperId, wrapperId, ctx.ws)
   ctx.sessions.broadcastSessionUpdate(wrapperId)
-  ctx.log.debug(`[boot] wrapper_boot: ${wrapperId.slice(0, 8)} cwd=${cwd}`)
+  ctx.log.debug(`[boot] wrapper_boot: ${wrapperId.slice(0, 8)} path=${bootPath}`)
 }
 
 const bootEvent: MessageHandler = (ctx, data) => {

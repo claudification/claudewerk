@@ -30,7 +30,7 @@ import { allGrantsExpired } from './permissions'
 import {
   addPersistedLink,
   findLink,
-  getLinksForCwd,
+  getLinksForProject,
   initProjectLinks,
   removePersistedLink,
   touchLink,
@@ -430,12 +430,12 @@ async function main() {
       // Auto-send push notification on Notification hook events
       if (event.hookEvent === 'Notification' && isPushConfigured()) {
         const session = sessionStore.getSession(sessionId)
-        const cwd = session?.project ? extractProjectLabel(session.project) : sessionId.slice(0, 8)
+        const label = session?.project ? extractProjectLabel(session.project) : sessionId.slice(0, 8)
         const d = event.data as Record<string, unknown>
         const message = (d?.message as string) || 'Awaiting input...'
         const notifType = (d?.notification_type as string) || 'Notification'
         sendPushToAll({
-          title: `${notifType} - ${cwd}`,
+          title: `${notifType} - ${label}`,
           body: message,
           sessionId,
           tag: `notification-${sessionId}`,
@@ -445,11 +445,11 @@ async function main() {
       // Auto-send push on session Stop (Claude finished working)
       if (event.hookEvent === 'Stop' && isPushConfigured()) {
         const session = sessionStore.getSession(sessionId)
-        const cwd = session?.project ? extractProjectLabel(session.project) : sessionId.slice(0, 8)
+        const label = session?.project ? extractProjectLabel(session.project) : sessionId.slice(0, 8)
         const d = event.data as Record<string, unknown>
         const reason = (d?.stop_hook_reason as string) || 'completed'
         sendPushToAll({
-          title: `Session stopped - ${cwd}`,
+          title: `Session stopped - ${label}`,
           body: reason,
           sessionId,
           tag: `stop-${sessionId}`,
@@ -496,8 +496,8 @@ async function main() {
       pushSendToAll: payload => {
         if (isPushConfigured()) sendPushToAll(payload)
       },
-      getLinksForCwd,
-      findLink: (cwdA: string, cwdB: string) => !!findLink(cwdA, cwdB),
+      getLinksForProject,
+      findLink: (projectA: string, projectB: string) => !!findLink(projectA, projectB),
       addLink: addPersistedLink,
       removeLink: removePersistedLink,
       touchLink,

@@ -160,9 +160,9 @@ export function createApiRouter(
     const grants = resolveHttpGrants(c.req.raw)
     if (!grants) return c.json(all) // admin sees all
     const filtered: Record<string, unknown> = {}
-    for (const [cwd, settings] of Object.entries(all)) {
-      const { permissions } = resolvePermissions(grants, cwd)
-      if (permissions.has('chat:read')) filtered[cwd] = settings
+    for (const [project, settings] of Object.entries(all)) {
+      const { permissions } = resolvePermissions(grants, project)
+      if (permissions.has('chat:read')) filtered[project] = settings
     }
     return c.json(filtered)
   })
@@ -170,9 +170,14 @@ export function createApiRouter(
   app.post('/api/settings/projects', async c => {
     if (!httpHasPermission(c.req.raw, 'settings', '*'))
       return c.json({ error: 'Forbidden: settings permission required' }, 403)
-    const body = await c.req.json<{ cwd: string; settings: { label?: string; icon?: string; color?: string } }>()
-    if (!body.cwd) return c.json({ error: 'Missing cwd' }, 400)
-    setProjectSettings(body.cwd, body.settings || {})
+    const body = await c.req.json<{
+      project?: string
+      cwd?: string
+      settings: { label?: string; icon?: string; color?: string }
+    }>()
+    const project = body.project || body.cwd
+    if (!project) return c.json({ error: 'Missing project' }, 400)
+    setProjectSettings(project, body.settings || {})
     const allSettings = getAllProjectSettings()
     broadcastToSubscribers(sessionStore, { type: 'project_settings_updated', settings: allSettings })
     return c.json({ success: true, settings: allSettings })
@@ -181,9 +186,10 @@ export function createApiRouter(
   app.delete('/api/settings/projects', async c => {
     if (!httpHasPermission(c.req.raw, 'settings', '*'))
       return c.json({ error: 'Forbidden: settings permission required' }, 403)
-    const body = await c.req.json<{ cwd: string }>()
-    if (!body.cwd) return c.json({ error: 'Missing cwd' }, 400)
-    deleteProjectSettings(body.cwd)
+    const body = await c.req.json<{ project?: string; cwd?: string }>()
+    const project = body.project || body.cwd
+    if (!project) return c.json({ error: 'Missing project' }, 400)
+    deleteProjectSettings(project)
     const allSettings = getAllProjectSettings()
     broadcastToSubscribers(sessionStore, { type: 'project_settings_updated', settings: allSettings })
     return c.json({ success: true, settings: allSettings })
@@ -195,21 +201,24 @@ export function createApiRouter(
     const openrouterKey = process.env.OPENROUTER_API_KEY
     if (!openrouterKey) return c.json({ error: 'OPENROUTER_API_KEY not configured' }, 500)
 
-    const body = await c.req.json<{ cwd: string }>()
-    if (!body.cwd) return c.json({ error: 'Missing cwd' }, 400)
+    const body = await c.req.json<{ project?: string; cwd?: string }>()
+    const projectPath = body.project || body.cwd
+    if (!projectPath) return c.json({ error: 'Missing project' }, 400)
 
     const allSessions = sessionStore.getAllSessions()
-    const sessionForCwd = allSessions.find(s => parseProjectUri(s.project).path === body.cwd && s.status === 'active')
+    const sessionForCwd = allSessions.find(
+      s => parseProjectUri(s.project).path === projectPath && s.status === 'active',
+    )
     const wrapperSocket = sessionForCwd ? sessionStore.getSessionSocket(sessionForCwd.id) : null
     if (!wrapperSocket) {
       return c.json({ error: 'No active session connected for this project' }, 503)
     }
 
     const filesToRead = [
-      `${body.cwd}/CLAUDE.md`,
-      `${body.cwd}/.claude/CLAUDE.md`,
-      `${body.cwd}/package.json`,
-      `${body.cwd}/README.md`,
+      `${projectPath}/CLAUDE.md`,
+      `${projectPath}/.claude/CLAUDE.md`,
+      `${projectPath}/package.json`,
+      `${projectPath}/README.md`,
     ]
 
     const fileContents: string[] = []
@@ -241,7 +250,7 @@ export function createApiRouter(
       return c.json({ error: 'No project files found (CLAUDE.md, package.json, README.md)' }, 404)
     }
 
-    console.log(`[keyterms] Generating keyterms for ${body.cwd} from ${fileContents.length} files`)
+    console.log(`[keyterms] Generating keyterms for ${projectPath} from ${fileContents.length} files`)
 
     const llmRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -286,7 +295,7 @@ Output a JSON array of strings. Each string should be the correct spelling of on
     }
 
     console.log(`[keyterms] Generated ${keyterms.length} keyterms: ${keyterms.join(', ')}`)
-    setProjectSettings(body.cwd, { keyterms })
+    setProjectSettings(projectPath, { keyterms })
     return c.json({ keyterms, settings: getAllProjectSettings() })
   })
 
@@ -351,15 +360,15 @@ Output a JSON array of strings. Each string should be the correct spelling of on
       ? `${publicOrigin}${filePath}`
       : `http://${c.req.header('host') || 'localhost:9999'}${filePath}`
 
-    // Log to shared files index (keyed by CWD for per-project queries)
+    // Log to shared files index (keyed by project for per-project queries)
     const sessionId = c.req.header('x-session-id') || c.req.query('sessionId') || undefined
-    const sessionCwd = sessionId ? sessionStore.getSession(sessionId)?.project : undefined
+    const sessionProject = sessionId ? sessionStore.getSession(sessionId)?.project : undefined
     appendSharedFile({
       type: 'file',
       hash,
       filename,
       mediaType,
-      cwd: sessionCwd,
+      project: sessionProject,
       sessionId,
       size,
       url,
@@ -369,19 +378,19 @@ Output a JSON array of strings. Each string should be the correct spelling of on
     return c.json({ hash, url, filename, mediaType, size })
   })
 
-  // ─── Shared files + clipboard (per-CWD) ─────────────────────────
+  // ─── Shared files + clipboard (per-project) ─────────────────────
   app.get('/api/shared-files', c => {
-    const cwd = c.req.query('cwd')
+    const projectFilter = c.req.query('project') || c.req.query('cwd')
     const sessionId = c.req.query('sessionId')
     let files = readSharedFiles()
-    if (cwd) files = files.filter(f => f.cwd === cwd)
+    if (projectFilter) files = files.filter(f => f.project === projectFilter)
     else if (sessionId) files = files.filter(f => f.sessionId === sessionId)
-    // Filter by CWDs the caller can access
+    // Filter by projects the caller can access
     const grants = resolveHttpGrants(c.req.raw)
     if (grants) {
       files = files.filter(f => {
-        if (!f.cwd) return false
-        const { permissions } = resolvePermissions(grants, f.cwd)
+        if (!f.project) return false
+        const { permissions } = resolvePermissions(grants, f.project)
         return permissions.has('chat:read')
       })
     }
@@ -400,8 +409,8 @@ Output a JSON array of strings. Each string should be the correct spelling of on
     const result: ProjectOrder['tree'] = []
     for (const node of nodes) {
       if (node.type === 'project') {
-        const cwd = node.id.startsWith('cwd:') ? node.id.slice(4) : node.id
-        const { permissions } = resolvePermissions(grants, cwd)
+        const projectUri = node.id.startsWith('cwd:') ? node.id.slice(4) : node.id
+        const { permissions } = resolvePermissions(grants, projectUri)
         if (permissions.has('chat:read')) result.push(node)
       } else if (node.type === 'group') {
         const children = filterProjectOrderTree(node.children, grants)
