@@ -560,6 +560,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       gitBranch: session.gitBranch,
       adHocTaskId: session.adHocTaskId,
       adHocWorktree: session.adHocWorktree,
+      modelMismatch: session.modelMismatch,
       resultText: session.resultText,
       recap: session.recap,
     }

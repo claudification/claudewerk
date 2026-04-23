@@ -238,6 +238,27 @@ const sessionInfo: MessageHandler = (ctx, data) => {
   const initModel = data.model as string | undefined
   if (initModel) {
     session.configuredModel = initModel
+
+    const requestedModel = session.launchConfig?.model
+    if (requestedModel && requestedModel !== initModel) {
+      session.modelMismatch = { requested: requestedModel, actual: initModel, detectedAt: Date.now() }
+      ctx.log.info(`Model mismatch: requested=${requestedModel} actual=${initModel} session=${sessionId.slice(0, 8)}`)
+      const warningEntry: import('../../shared/protocol').TranscriptSystemEntry = {
+        type: 'system',
+        subtype: 'model_mismatch',
+        content: `Model mismatch: requested ${requestedModel} but CC is using ${initModel}`,
+        level: 'warning',
+        timestamp: new Date().toISOString(),
+      }
+      ctx.sessions.addTranscriptEntries(sessionId, [warningEntry], false)
+      ctx.sessions.broadcastToChannel('session:transcript', sessionId, {
+        type: 'transcript_entries',
+        sessionId,
+        entries: [warningEntry],
+        isInitial: false,
+      })
+      ctx.sessions.broadcastSessionUpdate(sessionId)
+    }
   }
 
   const initPermMode = data.permissionMode as string | undefined

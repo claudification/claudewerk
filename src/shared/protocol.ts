@@ -1216,6 +1216,7 @@ export interface Session {
   adHocTaskId?: string // project board task slug that spawned this ad-hoc session
   adHocWorktree?: string // worktree branch name for ad-hoc sessions
   launchConfig?: LaunchConfig // resolved launch configuration -- reused on revive
+  modelMismatch?: { requested: string; actual: string; detectedAt: number }
   resultText?: string // final result text from headless session (captured from stream-json result message)
   recap?: { content: string; timestamp: number } // away_summary from CC recaps
 }
@@ -1533,6 +1534,7 @@ export interface SessionSummary {
   maxBudgetUsd?: number
   adHocTaskId?: string
   adHocWorktree?: string
+  modelMismatch?: Session['modelMismatch']
   resultText?: string
   recap?: Session['recap']
 }

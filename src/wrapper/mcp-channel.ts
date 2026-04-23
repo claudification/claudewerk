@@ -849,24 +849,24 @@ export function initMcpChannel(cb: McpChannelCallbacks, id?: WrapperIdentity): v
         debug(`[channel] spawn_session: ${cwd} (${modeDesc}) session=${result.session ? 'ready' : 'pending'}`)
 
         if (result.session) {
+          const sessionObj = result.session as Record<string, unknown>
+          const mismatch = sessionObj.modelMismatch as
+            | { requested: string; actual: string; detectedAt: number }
+            | undefined
+          const responsePayload: Record<string, unknown> = {
+            status: 'ready',
+            message: `Session spawned and connected at ${cwd} (${modeDesc})`,
+            session_id: sessionObj.id,
+            session: result.session,
+            jobId: result.jobId,
+            wrapperId: result.wrapperId,
+          }
+          if (mismatch) {
+            responsePayload.modelWarning = `Requested model ${mismatch.requested} but session is running ${mismatch.actual}`
+            responsePayload.modelMismatch = mismatch
+          }
           return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    status: 'ready',
-                    message: `Session spawned and connected at ${cwd} (${modeDesc})`,
-                    session_id: (result.session as Record<string, unknown>)?.id,
-                    session: result.session,
-                    jobId: result.jobId,
-                    wrapperId: result.wrapperId,
-                  },
-                  null,
-                  2,
-                ),
-              },
-            ],
+            content: [{ type: 'text', text: JSON.stringify(responsePayload, null, 2) }],
           }
         }
 
