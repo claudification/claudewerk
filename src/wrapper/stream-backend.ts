@@ -529,10 +529,11 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
             }
           }
         }
-        const entry: TranscriptEntry = {
-          type: 'assistant',
-          timestamp: new Date().toISOString(),
-          message: msg.message as TranscriptEntry extends { message?: infer M } ? M : never,
+        const entry = {
+          type: 'assistant' as const,
+          timestamp: (msg.timestamp as string) || new Date().toISOString(),
+          message: msg.message,
+          ...(msg.uuid ? { uuid: msg.uuid as string } : {}),
         } as TranscriptEntry
         if (parentToolUseId && onSubagentEntry) {
           onSubagentEntry(parentToolUseId, entry)
@@ -615,10 +616,11 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
           }
         }
         // Tool results echoed back, or replayed user messages
-        const entry: TranscriptEntry = {
-          type: 'user',
-          timestamp: new Date().toISOString(),
-          message: msg.message as TranscriptEntry extends { message?: infer M } ? M : never,
+        const entry = {
+          type: 'user' as const,
+          timestamp: (msg.timestamp as string) || new Date().toISOString(),
+          message: msg.message,
+          ...(msg.uuid ? { uuid: msg.uuid as string } : {}),
         } as TranscriptEntry
         // CC puts Edit diff data on tool_use_result (snake_case) - copy to toolUseResult (camelCase)
         if (msg.tool_use_result) {
@@ -676,6 +678,19 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
         const rateLimitMsg = (msg.message as string) || `Rate limited. Retrying in ${Math.ceil(retryMs / 1000)}s.`
         debug(`Rate limit: ${rateLimitMsg} (retry in ${retryMs}ms)`)
         onRateLimit?.(retryMs, rateLimitMsg)
+        break
+      }
+
+      case 'queue-operation': {
+        if (!replayDone) flushReplayBuffer()
+        const entry = {
+          type: 'queue-operation' as const,
+          timestamp: (msg.timestamp as string) || new Date().toISOString(),
+          operation: msg.operation as string,
+          ...(msg.content ? { content: msg.content as string } : {}),
+        } as TranscriptEntry
+        debug(`queue-operation: ${msg.operation}${msg.content ? ` "${(msg.content as string).slice(0, 40)}"` : ''}`)
+        onTranscriptEntries?.([entry], false)
         break
       }
 

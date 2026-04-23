@@ -407,7 +407,14 @@ export function resendTranscriptFromFile(ctx: WrapperContext) {
             entries.push(JSON.parse(line))
           } catch {}
         }
-        const parentEntries = filterParentEntries(entries)
+        let parentEntries = filterParentEntries(entries)
+        // Headless: strip queue-operation entries from JSONL resend. The dashboard
+        // already has optimistic user entries for headless input -- queue-operations
+        // from the JSONL just create duplicate "queued" groups that can get stuck
+        // if the remove entry hasn't been written yet at resend time.
+        if (ctx.headless) {
+          parentEntries = parentEntries.filter(e => (e as Record<string, unknown>).type !== 'queue-operation')
+        }
         if (parentEntries.length > 0) {
           debug(`resendTranscript: sending ${parentEntries.length}/${entries.length} entries from ${path}`)
           await sendTranscriptEntriesChunked(ctx, parentEntries, true)
