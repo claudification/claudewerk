@@ -127,7 +127,7 @@ interface SessionsState {
   connectSeq: number // increments on each WS connect, used to trigger re-fetches
   syncEpoch: string // server epoch (changes on server restart)
   syncSeq: number // last received sequence number
-  agentConnected: boolean
+  sentinelConnected: boolean
   planUsage: UsageUpdate | null
   error: string | null
   authExpired: boolean
@@ -234,7 +234,7 @@ interface SessionsState {
   setProjectSettings: (settings: ProjectSettingsMap) => void
   setProjectOrder: (order: ProjectOrder) => void
   setConnected: (connected: boolean) => void
-  setAgentConnected: (connected: boolean) => void
+  setSentinelConnected: (connected: boolean) => void
   setPlanUsage: (usage: UsageUpdate) => void
   setError: (error: string | null) => void
   setAuthExpired: (expired: boolean) => void
@@ -411,7 +411,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   connectSeq: 0,
   syncEpoch: '',
   syncSeq: 0,
-  agentConnected: false,
+  sentinelConnected: false,
   planUsage: null,
   error: null,
   authExpired: false,
@@ -758,7 +758,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       isConnected: connected,
       ...(connected && { connectSeq: state.connectSeq + 1 }),
     })),
-  setAgentConnected: connected => set({ agentConnected: connected }),
+  setSentinelConnected: connected => set({ sentinelConnected: connected }),
   setPlanUsage: usage => set({ planUsage: usage }),
   setError: error => set({ error }),
   setAuthExpired: authExpired => set({ authExpired }),

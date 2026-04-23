@@ -1,7 +1,7 @@
 /**
  * Shared spawn dispatch logic.
  *
- * Single source of truth for "send a spawn to the host agent, wait for ack,
+ * Single source of truth for "send a spawn to the sentinel, wait for ack,
  * register pending launch config, optionally register an MCP-caller rendezvous".
  *
  * Called from:
@@ -63,14 +63,14 @@ export type SpawnDispatchResult =
   | { ok: false; error: string; statusCode?: number }
 
 /**
- * Send a spawn request to the host agent, await ack, register pending launch config.
+ * Send a spawn request to the sentinel, await ack, register pending launch config.
  *
  * Does NOT enforce permissions - callers must check first. Does NOT validate the
  * SpawnRequest - callers should have parsed it via spawnRequestSchema already.
  */
 export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): Promise<SpawnDispatchResult> {
   // path can be absolute (/…), ~-relative (~/…), or relative (./… | ../… | bare).
-  // Relative paths are resolved on the agent side against spawnRoot ($HOME).
+  // Relative paths are resolved on the sentinel side against spawnRoot ($HOME).
   try {
     assertSpawnAllowed(deps.callerContext, req)
   } catch (err) {
@@ -80,8 +80,8 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
     throw err
   }
 
-  const agent = deps.sessions.getAgent()
-  if (!agent) return { ok: false, error: 'No host agent connected', statusCode: 503 }
+  const sentinel = deps.sessions.getSentinel()
+  if (!sentinel) return { ok: false, error: 'No sentinel connected', statusCode: 503 }
 
   if (req.mode === 'resume' && !req.resumeId) {
     return { ok: false, error: 'resumeId required for resume mode', statusCode: 400 }
@@ -179,7 +179,7 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
       env: req.env || undefined,
     })
 
-    agent.send(
+    sentinel.send(
       JSON.stringify({
         type: 'spawn',
         requestId,

@@ -17,7 +17,7 @@ function formatBytes(bps: number): string {
 
 function StatusIndicator() {
   const isConnected = useSessionsStore(s => s.isConnected)
-  const agentConnected = useSessionsStore(s => s.agentConnected)
+  const sentinelConnected = useSessionsStore(s => s.sentinelConnected)
   const error = useSessionsStore(s => s.error)
   const showStats = useSessionsStore(s => s.dashboardPrefs.showWsStats)
   const rates = useSyncExternalStore(subscribeStats, getRates)
@@ -25,8 +25,12 @@ function StatusIndicator() {
   const [open, setOpen] = useState(false)
   const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Dot color: green = all good, amber = WS up but agent down, red = WS down
-  const dotColor = !isConnected ? 'text-destructive animate-pulse' : agentConnected ? 'text-active' : 'text-amber-500'
+  // Dot color: green = all good, amber = WS up but sentinel down, red = WS down
+  const dotColor = !isConnected
+    ? 'text-destructive animate-pulse'
+    : sentinelConnected
+      ? 'text-active'
+      : 'text-amber-500'
 
   function handleMouseEnter() {
     hoverTimeout.current = setTimeout(() => setOpen(true), 300)
@@ -82,12 +86,12 @@ function StatusIndicator() {
             )}
 
             <div className="flex items-center gap-2">
-              <span className={`text-xs ${agentConnected ? 'text-active' : 'text-muted-foreground'}`}>
-                {agentConnected ? '●' : '○'}
+              <span className={`text-xs ${sentinelConnected ? 'text-active' : 'text-muted-foreground'}`}>
+                {sentinelConnected ? '●' : '○'}
               </span>
-              <span className="text-[11px] text-muted-foreground">Agent</span>
-              <span className={`text-[10px] ml-auto ${agentConnected ? 'text-active' : 'text-muted-foreground/50'}`}>
-                {agentConnected ? 'connected' : 'offline'}
+              <span className="text-[11px] text-muted-foreground">Sentinel</span>
+              <span className={`text-[10px] ml-auto ${sentinelConnected ? 'text-active' : 'text-muted-foreground/50'}`}>
+                {sentinelConnected ? 'connected' : 'offline'}
               </span>
             </div>
 

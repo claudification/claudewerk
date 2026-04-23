@@ -47,7 +47,7 @@ export interface DashboardMessage {
     | 'session_ended'
     | 'event'
     | 'sessions_list'
-    | 'agent_status'
+    | 'sentinel_status'
     | 'toast'
     | 'settings_updated'
     | 'project_settings_updated'
@@ -171,19 +171,19 @@ export interface SessionStore {
   broadcastToChannel: (channel: SubscriptionChannel, sessionId: string, message: unknown, agentId?: string) => void
   isV2Subscriber: (ws: ServerWebSocket<unknown>) => boolean
   getSubscriptionsDiag: () => SubscriptionsDiag
-  // Agent methods (exclusive single agent connection)
-  setAgent: (ws: ServerWebSocket<unknown>, info?: { machineId?: string; hostname?: string }) => boolean
-  getAgent: () => ServerWebSocket<unknown> | undefined
-  getAgentInfo: () => { machineId?: string; hostname?: string } | undefined
-  removeAgent: (ws: ServerWebSocket<unknown>) => void
-  hasAgent: () => boolean
-  // Agent diagnostics (structured log entries from host agent)
-  pushAgentDiag: (entry: { t: number; type: string; msg: string; args?: unknown }) => void
-  getAgentDiag: () => Array<{ t: number; type: string; msg: string; args?: unknown }>
-  // Plan usage data (from agent OAuth usage API polling)
+  // Sentinel methods (exclusive single sentinel connection)
+  setSentinel: (ws: ServerWebSocket<unknown>, info?: { machineId?: string; hostname?: string }) => boolean
+  getSentinel: () => ServerWebSocket<unknown> | undefined
+  getSentinelInfo: () => { machineId?: string; hostname?: string } | undefined
+  removeSentinel: (ws: ServerWebSocket<unknown>) => void
+  hasSentinel: () => boolean
+  // Sentinel diagnostics (structured log entries from sentinel)
+  pushSentinelDiag: (entry: { t: number; type: string; msg: string; args?: unknown }) => void
+  getSentinelDiag: () => Array<{ t: number; type: string; msg: string; args?: unknown }>
+  // Plan usage data (from sentinel OAuth usage API polling)
   setUsage: (usage: import('../shared/protocol').UsageUpdate) => void
   getUsage: () => import('../shared/protocol').UsageUpdate | undefined
-  // Request-response listeners for agent relay (spawn, dir listing)
+  // Request-response listeners for sentinel relay (spawn, dir listing)
   addSpawnListener: (requestId: string, cb: (result: unknown) => void) => void
   removeSpawnListener: (requestId: string) => void
   resolveSpawn: (requestId: string, result: unknown) => void
@@ -292,8 +292,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   // JSON stream viewers keyed by wrapperId (raw NDJSON tail for headless sessions)
   const jsonStreamRegistry = createViewerRegistry()
   const dashboardSubscribers = new Set<ServerWebSocket<unknown>>()
-  let agentSocket: ServerWebSocket<unknown> | undefined
-  let agentInfo: { machineId?: string; hostname?: string } | undefined
+  let sentinelSocket: ServerWebSocket<unknown> | undefined
+  let sentinelInfo: { machineId?: string; hostname?: string } | undefined
   let subscriberIdCounter = 0
 
   // Sync protocol: epoch + monotonic sequence for message ordering and gap detection.
@@ -2056,51 +2056,51 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     }
   }
 
-  // Agent management (exclusive single connection)
-  function setAgent(ws: ServerWebSocket<unknown>, info?: { machineId?: string; hostname?: string }): boolean {
-    if (agentSocket) return false // reject - already connected
-    agentSocket = ws
-    agentInfo = info
-    broadcast({ type: 'agent_status', connected: true, machineId: info?.machineId, hostname: info?.hostname })
+  // Sentinel management (exclusive single connection)
+  function setSentinel(ws: ServerWebSocket<unknown>, info?: { machineId?: string; hostname?: string }): boolean {
+    if (sentinelSocket) return false // reject - already connected
+    sentinelSocket = ws
+    sentinelInfo = info
+    broadcast({ type: 'sentinel_status', connected: true, machineId: info?.machineId, hostname: info?.hostname })
     return true
   }
 
-  function getAgent(): ServerWebSocket<unknown> | undefined {
-    return agentSocket
+  function getSentinel(): ServerWebSocket<unknown> | undefined {
+    return sentinelSocket
   }
 
-  function getAgentInfo(): { machineId?: string; hostname?: string } | undefined {
-    return agentInfo
+  function getSentinelInfo(): { machineId?: string; hostname?: string } | undefined {
+    return sentinelInfo
   }
 
-  function removeAgent(ws: ServerWebSocket<unknown>): void {
-    if (agentSocket === ws) {
-      agentSocket = undefined
-      agentInfo = undefined
-      broadcast({ type: 'agent_status', connected: false })
+  function removeSentinel(ws: ServerWebSocket<unknown>): void {
+    if (sentinelSocket === ws) {
+      sentinelSocket = undefined
+      sentinelInfo = undefined
+      broadcast({ type: 'sentinel_status', connected: false })
     }
   }
 
-  function hasAgent(): boolean {
-    return !!agentSocket
+  function hasSentinel(): boolean {
+    return !!sentinelSocket
   }
 
-  // Agent diagnostics - capped ring buffer
-  const agentDiagLog: Array<{ t: number; type: string; msg: string; args?: unknown }> = []
-  const AGENT_DIAG_MAX = 200
+  // Sentinel diagnostics - capped ring buffer
+  const sentinelDiagLog: Array<{ t: number; type: string; msg: string; args?: unknown }> = []
+  const SENTINEL_DIAG_MAX = 200
 
-  function pushAgentDiag(entry: { t: number; type: string; msg: string; args?: unknown }) {
-    agentDiagLog.push(entry)
-    if (agentDiagLog.length > AGENT_DIAG_MAX) {
-      agentDiagLog.splice(0, agentDiagLog.length - AGENT_DIAG_MAX)
+  function pushSentinelDiag(entry: { t: number; type: string; msg: string; args?: unknown }) {
+    sentinelDiagLog.push(entry)
+    if (sentinelDiagLog.length > SENTINEL_DIAG_MAX) {
+      sentinelDiagLog.splice(0, sentinelDiagLog.length - SENTINEL_DIAG_MAX)
     }
   }
 
-  function getAgentDiag() {
-    return [...agentDiagLog]
+  function getSentinelDiag() {
+    return [...sentinelDiagLog]
   }
 
-  // Plan usage data (from agent polling OAuth usage API)
+  // Plan usage data (from sentinel polling OAuth usage API)
   let currentUsage: import('../shared/protocol').UsageUpdate | undefined
 
   function setUsage(usage: import('../shared/protocol').UsageUpdate) {
@@ -3219,13 +3219,13 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     broadcastToChannel,
     isV2Subscriber,
     getSubscriptionsDiag,
-    setAgent,
-    getAgent,
-    getAgentInfo,
-    removeAgent,
-    hasAgent,
-    pushAgentDiag,
-    getAgentDiag,
+    setSentinel,
+    getSentinel,
+    getSentinelInfo,
+    removeSentinel,
+    hasSentinel,
+    pushSentinelDiag,
+    getSentinelDiag,
     setUsage,
     getUsage,
     addTranscriptEntries,

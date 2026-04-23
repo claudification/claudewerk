@@ -185,29 +185,29 @@ export function createRouter(options: RouteOptions): Hono {
     return new Response(file, { headers })
   })
 
-  // ─── Agent ─────────────────────────────────────────────────────────
-  app.get('/agent/status', c => {
-    const connected = sessionStore.hasAgent()
-    const info = sessionStore.getAgentInfo()
+  // ─── Sentinel ──────────────────────────────────────────────────────
+  app.get('/sentinel/status', c => {
+    const connected = sessionStore.hasSentinel()
+    const info = sessionStore.getSentinelInfo()
     return c.json({ connected, machineId: info?.machineId, hostname: info?.hostname })
   })
 
-  app.post('/agent/quit', c => {
+  app.post('/sentinel/quit', c => {
     if (!helpers.httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
-    const agent = sessionStore.getAgent()
-    if (!agent) return c.json({ error: 'No agent connected' }, 404)
-    agent.send(JSON.stringify({ type: 'quit', reason: 'Requested via API' }))
+    const sentinel = sessionStore.getSentinel()
+    if (!sentinel) return c.json({ error: 'No sentinel connected' }, 404)
+    sentinel.send(JSON.stringify({ type: 'quit', reason: 'Requested via API' }))
     return c.json({ success: true })
   })
 
-  app.get('/api/agent/diag', c => {
+  app.get('/api/sentinel/diag', c => {
     if (!helpers.httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
-    const info = sessionStore.getAgentInfo()
+    const info = sessionStore.getSentinelInfo()
     return c.json({
-      connected: sessionStore.hasAgent(),
+      connected: sessionStore.hasSentinel(),
       machineId: info?.machineId,
       hostname: info?.hostname,
-      entries: sessionStore.getAgentDiag(),
+      entries: sessionStore.getSentinelDiag(),
     })
   })
 

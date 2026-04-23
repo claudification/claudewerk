@@ -17,7 +17,7 @@ export function useCommandPalette(onClose: () => void) {
   const sessionMru = useSessionsStore(state => state.sessionMru)
   const projectSettings = useSessionsStore(state => state.projectSettings)
   const sendWsMessage = useSessionsStore(state => state.sendWsMessage)
-  const agentConnected = useSessionsStore(state => state.agentConnected)
+  const sentinelConnected = useSessionsStore(state => state.sentinelConnected)
 
   const switcherInitialFilter = useSessionsStore(state => state.switcherInitialFilter)
   const [filter, setFilter] = useState(switcherInitialFilter)
@@ -264,7 +264,7 @@ export function useCommandPalette(onClose: () => void) {
 
   const fetchDirs = useCallback(
     (dirPath: string) => {
-      if (!agentConnected) return
+      if (!sentinelConnected) return
       setSpawnLoading(true)
       setSpawnError(null)
       fetch(`/api/dirs?path=${encodeURIComponent(dirPath)}`)
@@ -279,7 +279,7 @@ export function useCommandPalette(onClose: () => void) {
           setSpawnLoading(false)
         })
     },
-    [agentConnected],
+    [sentinelConnected],
   )
 
   useEffect(() => {
@@ -431,7 +431,7 @@ export function useCommandPalette(onClose: () => void) {
     allSessions,
     selectedSessionId,
     projectSettings,
-    agentConnected,
+    sentinelConnected,
 
     // Command mode
     filteredCommands,

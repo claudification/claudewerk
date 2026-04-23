@@ -250,8 +250,8 @@ means your most-used sessions are always within easy reach.
 
 ### Session Revival
 
-Session went idle? Revive it from the dashboard or via MCP tool. The host agent
-(`rclaude-agent`) listens for revive commands and spawns a new tmux session with
+Session went idle? Revive it from the dashboard or via MCP tool. The sentinel
+(`rclaude-sentinel`) listens for revive commands and spawns a new tmux session with
 `rclaude --resume`, reconnecting your Claude session without touching the host machine.
 
 ### Inter-Session Communication
@@ -372,7 +372,7 @@ sharing between host and Docker.
 | **rclaude** | CLI wrapper. Spawns claude with PTY, injects hooks, MCP channel server, streams to concentrator |
 | **concentrator** | Central server. Hono HTTP + WS + WebAuthn + inter-session routing + voice relay. Runs in Docker |
 | **dashboard** | React SPA. Vite + Tailwind + Zustand. Voice, terminal, transcript, DnD, chat. Served by concentrator |
-| **rclaude-agent** | Host-side agent. Listens for revive/spawn commands, manages tmux sessions |
+| **rclaude-sentinel** | Host-side sentinel. Listens for revive/spawn commands, manages tmux sessions |
 | **concentrator-cli** | CLI for auth management. Create invites, list/revoke users |
 
 ---
@@ -398,7 +398,7 @@ cd remote-claude
 The installer will:
 1. Install [Bun](https://bun.sh) automatically if not found
 2. Install all dependencies (root + web frontend)
-3. Build all binaries (`rclaude`, `rclaude-agent`, `concentrator`, `concentrator-cli`)
+3. Build all binaries (`rclaude`, `rclaude-sentinel`, `concentrator`, `concentrator-cli`)
 4. Symlink them to `~/.local/bin/`
 5. Ask about concentrator setup (local Docker, remote, or skip)
 6. Configure your shell (`~/.zshrc` or `~/.bashrc`)
@@ -420,15 +420,15 @@ bun run build
 # Symlink binaries
 mkdir -p ~/.local/bin
 ln -sf "$(pwd)/bin/rclaude" ~/.local/bin/rclaude
-ln -sf "$(pwd)/bin/rclaude-agent" ~/.local/bin/rclaude-agent
+ln -sf "$(pwd)/bin/rclaude-sentinel" ~/.local/bin/rclaude-sentinel
 
 # Add to PATH (if not already)
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
 ```
 
-### Running rclaude-agent as a service (macOS)
+### Running rclaude-sentinel as a service (macOS)
 
-To keep `rclaude-agent` running in the background and auto-start on login, create a launchd plist:
+To keep `rclaude-sentinel` running in the background and auto-start on login, create a launchd plist:
 
 ```bash
 cat > ~/Library/LaunchAgents/com.rclaude.agent.plist << 'EOF'
@@ -440,16 +440,16 @@ cat > ~/Library/LaunchAgents/com.rclaude.agent.plist << 'EOF'
     <string>com.rclaude.agent</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/YOU/.local/bin/rclaude-agent</string>
+        <string>/Users/YOU/.local/bin/rclaude-sentinel</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/tmp/rclaude-agent.log</string>
+    <string>/tmp/rclaude-sentinel.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/rclaude-agent.err</string>
+    <string>/tmp/rclaude-sentinel.err</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
@@ -477,7 +477,7 @@ launchctl list | grep rclaude
 launchctl unload ~/Library/LaunchAgents/com.rclaude.agent.plist
 
 # View logs
-tail -f /tmp/rclaude-agent.log
+tail -f /tmp/rclaude-sentinel.log
 ```
 
 > **Note:** launchd does not inherit your shell environment. All required env vars must be specified in the plist's `EnvironmentVariables` dict.
@@ -814,9 +814,9 @@ DELETE /sessions/:id                      # Dismiss ended session
 
 ```bash
 POST /api/spawn                           # Spawn new session (cwd, prompt, model)
-GET  /agent/status                        # Host agent connection status
-POST /agent/quit                          # Request session quit via agent
-GET  /api/agent/diag                      # Agent diagnostic info
+GET  /sentinel/status                      # Sentinel connection status
+POST /sentinel/quit                        # Request sentinel quit
+GET  /api/sentinel/diag                    # Sentinel diagnostic info
 ```
 
 ### Settings & Organization
@@ -1043,7 +1043,7 @@ data fields, firing order, and known quirks.
 remote-claude/
 ├── bin/                          # Built binaries (gitignored)
 │   ├── rclaude                   # Wrapper CLI
-│   ├── rclaude-agent             # Host agent for session revival
+│   ├── rclaude-sentinel             # Sentinel for session revival
 │   ├── concentrator              # Aggregation server
 │   └── concentrator-cli          # Passkey management CLI
 ├── src/
@@ -1102,7 +1102,7 @@ remote-claude/
 │   │   ├── path-jail.ts          # File path traversal validation
 │   │   ├── cli.ts                # CLI tool entry point
 │   │   └── ui.ts                 # Fallback UI when no web/dist
-│   ├── agent/                    # Host agent for session revival
+│   ├── sentinel/                  # Sentinel for session revival
 │   │   └── index.ts              # tmux spawn + WS listener
 │   └── shared/
 │       ├── protocol.ts           # WebSocket protocol types
@@ -1173,7 +1173,7 @@ remote-claude/
 │   ├── build-concentrator.ts      # Concentrator build script
 │   ├── rclaude-boot.sh            # Smart tmux launcher (continue/fresh)
 │   ├── revive-session.sh          # Session revival via tmux
-│   └── start-agent.sh             # Agent startup helper
+│   └── start-sentinel.sh             # Agent startup helper
 ├── schemas/
 │   └── rclaude.schema.json        # Permission auto-approve schema
 ├── install.sh                     # Interactive installer
@@ -1208,7 +1208,7 @@ bun run build:web                # Web -> web/dist/
 bun run build:wrapper            # rclaude -> bin/rclaude
 bun run build:concentrator       # concentrator -> bin/concentrator
 bun run build:cli                # concentrator-cli -> bin/concentrator-cli
-bun run build:agent              # rclaude-agent -> bin/rclaude-agent
+bun run build:sentinel              # rclaude-sentinel -> bin/rclaude-sentinel
 ```
 
 ## Security

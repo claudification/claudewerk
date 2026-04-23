@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 #
-# start-agent.sh - Start rclaude-agent with validation
+# start-sentinel.sh - Start rclaude-sentinel with validation
 #
-# Validates config, starts agent as background process, writes PID.
+# Validates config, starts sentinel as background process, writes PID.
 #
-# Usage: start-agent.sh [--concentrator <url>] [-v|--verbose]
+# Usage: start-sentinel.sh [--concentrator <url>] [-v|--verbose]
 #
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-AGENT_BIN="$PROJECT_DIR/bin/rclaude-agent"
+SENTINEL_BIN="$PROJECT_DIR/bin/rclaude-sentinel"
 ENV_FILE="$PROJECT_DIR/.env"
-PID_FILE="$PROJECT_DIR/.agent.pid"
-LOG_FILE="$PROJECT_DIR/.agent.log"
+PID_FILE="$PROJECT_DIR/.sentinel.pid"
+LOG_FILE="$PROJECT_DIR/.sentinel.log"
 
 # Colors
 RED='\033[0;31m'
@@ -35,29 +35,29 @@ if [[ -f "$ENV_FILE" ]]; then
 fi
 
 # Collect extra args to pass through
-AGENT_ARGS=()
+SENTINEL_ARGS=()
 VERBOSE=false
 SPAWN_ROOT_SET=false
 KILL_IF_RUNNING=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --concentrator) AGENT_ARGS+=(--concentrator "$2"); shift 2 ;;
-    --spawn-root)   AGENT_ARGS+=(--spawn-root "$2"); SPAWN_ROOT_SET=true; shift 2 ;;
-    --no-spawn)     AGENT_ARGS+=(--no-spawn); shift ;;
+    --concentrator) SENTINEL_ARGS+=(--concentrator "$2"); shift 2 ;;
+    --spawn-root)   SENTINEL_ARGS+=(--spawn-root "$2"); SPAWN_ROOT_SET=true; shift 2 ;;
+    --no-spawn)     SENTINEL_ARGS+=(--no-spawn); shift ;;
     --kill-if-running) KILL_IF_RUNNING=true; shift ;;
-    -v|--verbose)   AGENT_ARGS+=(-v); VERBOSE=true; shift ;;
+    -v|--verbose)   SENTINEL_ARGS+=(-v); VERBOSE=true; shift ;;
     --help|-h)
-      echo "Usage: start-agent.sh [--concentrator <url>] [--spawn-root <path>] [--no-spawn] [--kill-if-running] [-v|--verbose]"
+      echo "Usage: start-sentinel.sh [--concentrator <url>] [--spawn-root <path>] [--no-spawn] [--kill-if-running] [-v|--verbose]"
       echo ""
-      echo "Validates config and starts rclaude-agent in the background."
+      echo "Validates config and starts rclaude-sentinel in the background."
       echo "Reads RCLAUDE_SECRET and RCLAUDE_SPAWN_ROOT from .env or environment."
       echo ""
       echo "Spawn root priority: --spawn-root flag > \$RCLAUDE_SPAWN_ROOT > \$HOME"
       echo ""
       echo "Files:"
-      echo "  .agent.pid  - PID of running agent"
-      echo "  .agent.log  - Agent stdout/stderr"
+      echo "  .sentinel.pid  - PID of running sentinel"
+      echo "  .sentinel.log  - Sentinel stdout/stderr"
       exit 0
       ;;
     *) die "Unknown argument: $1" ;;
@@ -66,13 +66,13 @@ done
 
 # Default spawn root: $RCLAUDE_SPAWN_ROOT > $HOME (--spawn-root flag overrides both)
 if [[ "$SPAWN_ROOT_SET" == false && -n "${RCLAUDE_SPAWN_ROOT:-}" ]]; then
-  AGENT_ARGS+=(--spawn-root "$RCLAUDE_SPAWN_ROOT")
+  SENTINEL_ARGS+=(--spawn-root "$RCLAUDE_SPAWN_ROOT")
 fi
 
 # --- Validation ---
 
 # Binary exists
-[[ -x "$AGENT_BIN" ]] || die "Agent binary not found: $AGENT_BIN (run: bun run build:agent)"
+[[ -x "$SENTINEL_BIN" ]] || die "Sentinel binary not found: $SENTINEL_BIN (run: bun run build:sentinel)"
 
 # Secret is set
 [[ -n "${RCLAUDE_SECRET:-}" ]] || die "RCLAUDE_SECRET not set. Set in .env or environment."
@@ -84,12 +84,12 @@ REVIVE_SCRIPT="$SCRIPT_DIR/revive-session.sh"
 # tmux available
 command -v tmux &>/dev/null || die "tmux not found. Install with: brew install tmux"
 
-# Check for already running agent
+# Check for already running sentinel
 if [[ -f "$PID_FILE" ]]; then
   OLD_PID=$(cat "$PID_FILE")
   if kill -0 "$OLD_PID" 2>/dev/null; then
     if [[ "$KILL_IF_RUNNING" == true ]]; then
-      warn "Killing existing agent (PID $OLD_PID)"
+      warn "Killing existing sentinel (PID $OLD_PID)"
       kill "$OLD_PID" 2>/dev/null || true
       # Wait up to 3s for clean exit
       for i in {1..6}; do
@@ -98,12 +98,12 @@ if [[ -f "$PID_FILE" ]]; then
       done
       # Force kill if still alive
       if kill -0 "$OLD_PID" 2>/dev/null; then
-        warn "Agent didn't exit cleanly, sending SIGKILL"
+        warn "Sentinel didn't exit cleanly, sending SIGKILL"
         kill -9 "$OLD_PID" 2>/dev/null || true
       fi
       rm -f "$PID_FILE"
     else
-      warn "Agent already running (PID $OLD_PID)"
+      warn "Sentinel already running (PID $OLD_PID)"
       echo -e "  Stop it first: ${YELLOW}kill $OLD_PID${NC}  or use --kill-if-running"
       exit 1
     fi
@@ -114,12 +114,12 @@ if [[ -f "$PID_FILE" ]]; then
 fi
 
 ok "RCLAUDE_SECRET is set"
-ok "Agent binary: $AGENT_BIN"
+ok "Sentinel binary: $SENTINEL_BIN"
 ok "Revive script: $REVIVE_SCRIPT"
 
 # --- Clean environment ---
-# Agent may be launched from within a Claude Code session (e.g. user runs
-# start-agent.sh from Claude). Unset all Claude-inherited and session-scoped
+# Sentinel may be launched from within a Claude Code session (e.g. user runs
+# start-sentinel.sh from Claude). Unset all Claude-inherited and session-scoped
 # RCLAUDE_* vars so they don't leak into spawned sessions.
 # Keep: RCLAUDE_SECRET, RCLAUDE_CONCENTRATOR, RCLAUDE_SPAWN_ROOT (config vars)
 while IFS='=' read -r name _; do
@@ -136,18 +136,18 @@ done
 
 # --- Start ---
 
-"$AGENT_BIN" ${AGENT_ARGS[@]+"${AGENT_ARGS[@]}"} >> "$LOG_FILE" 2>&1 &
-AGENT_PID=$!
+"$SENTINEL_BIN" ${SENTINEL_ARGS[@]+"${SENTINEL_ARGS[@]}"} >> "$LOG_FILE" 2>&1 &
+SENTINEL_PID=$!
 
 # Verify it didn't die immediately
 sleep 0.5
-if ! kill -0 "$AGENT_PID" 2>/dev/null; then
-  die "Agent died immediately. Check $LOG_FILE"
+if ! kill -0 "$SENTINEL_PID" 2>/dev/null; then
+  die "Sentinel died immediately. Check $LOG_FILE"
 fi
 
-echo "$AGENT_PID" > "$PID_FILE"
+echo "$SENTINEL_PID" > "$PID_FILE"
 
-ok "Agent started (PID $AGENT_PID)"
+ok "Sentinel started (PID $SENTINEL_PID)"
 echo "  Log: $LOG_FILE"
 echo "  PID: $PID_FILE"
-echo "  Stop: kill $AGENT_PID"
+echo "  Stop: kill $SENTINEL_PID"

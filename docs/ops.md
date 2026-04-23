@@ -37,7 +37,7 @@ concentrator-cli passkey list
 |---|---|---|
 | Wrapper | `debug()` | stderr (`RCLAUDE_DEBUG=1`) |
 | Wrapper | `ctx.diag(tag, msg)` | WS -> concentrator diagLog -> Diag tab |
-| Agent | `diag(tag, msg, data)` | WS -> concentrator + `.agent.log` |
+| Sentinel | `diag(tag, msg, data)` | WS -> concentrator + `.sentinel.log` |
 | Concentrator | `console.log` / `ctx.log.info` | Docker stdout |
 | Shell scripts | `echo >>` | `/tmp/concentrator-launch-log.log` |
 

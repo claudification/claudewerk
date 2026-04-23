@@ -586,11 +586,11 @@ async function main() {
             console.log(`[ws] Connection closed: ${id} code=${code} reason=${reason || 'none'}`)
           }
 
-          // Handle agent disconnection
-          if (ws.data.isAgent) {
-            sessionStore.removeAgent(ws)
+          // Handle sentinel disconnection
+          if (ws.data.isSentinel) {
+            sessionStore.removeSentinel(ws)
             if (verbose) {
-              console.log('[agent] Host agent disconnected')
+              console.log('[sentinel] Sentinel disconnected')
             }
             return
           }
@@ -667,13 +667,13 @@ async function main() {
               // Check for pending restart (terminate + auto-revive)
               const pendingRestart = sessionStore.consumePendingRestart(closeWrapperId)
               if (pendingRestart) {
-                const agent = sessionStore.getAgent()
-                if (agent) {
+                const sentinel = sessionStore.getSentinel()
+                if (sentinel) {
                   const wrapperId = crypto.randomUUID()
                   console.log(
                     `[restart] Reviving after disconnect: ${extractProjectLabel(pendingRestart.project)} wrapperId=${wrapperId.slice(0, 8)}`,
                   )
-                  agent.send(
+                  sentinel.send(
                     JSON.stringify({
                       type: 'revive',
                       sessionId: session.id,
@@ -712,7 +712,7 @@ async function main() {
                       })
                   }
                 } else {
-                  console.log('[restart] No agent connected - cannot revive after restart')
+                  console.log('[restart] No sentinel connected - cannot revive after restart')
                 }
               }
             } else if (verbose && remaining > 0) {

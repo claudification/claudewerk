@@ -223,8 +223,8 @@ const reviveSession: MessageHandler = (ctx, data) => {
   if (session.status === 'active') throw new GuardError('Session is already active')
   ctx.requirePermission('spawn', session.project)
 
-  const agent = ctx.getAgent()
-  if (!agent) throw new GuardError('No host agent connected')
+  const sentinel = ctx.getSentinel()
+  if (!sentinel) throw new GuardError('No sentinel connected')
 
   const wrapperId = crypto.randomUUID()
   const jobId = data.jobId as string | undefined
@@ -259,7 +259,7 @@ const reviveSession: MessageHandler = (ctx, data) => {
     ctx.sessions.createJob(jobId, wrapperId)
   }
 
-  agent.send(
+  sentinel.send(
     JSON.stringify({
       type: 'revive',
       sessionId,
@@ -290,7 +290,7 @@ const reviveSession: MessageHandler = (ctx, data) => {
     name,
     wrapperId,
     jobId,
-    message: 'Revive command sent to agent',
+    message: 'Revive command sent to sentinel',
   })
 }
 

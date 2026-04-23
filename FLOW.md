@@ -158,7 +158,7 @@ sequenceDiagram
 sequenceDiagram
     participant D as Dashboard
     participant C as Concentrator
-    participant A as rclaude-agent
+    participant A as rclaude-sentinel
     participant R as revive-session.sh
     participant W as New rclaude
 

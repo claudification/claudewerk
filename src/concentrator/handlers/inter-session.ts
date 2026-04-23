@@ -29,7 +29,7 @@ const handleChannelRevive: MessageHandler = (ctx, data) => {
   if (!targetSessionId || !callerSession) return
 
   ctx.requireBenevolent()
-  const agent = ctx.requireAgent()
+  const sentinel = ctx.requireSentinel()
 
   const target = ctx.sessions.getSession(targetSessionId)
   if (!target) {
@@ -49,7 +49,7 @@ const handleChannelRevive: MessageHandler = (ctx, data) => {
   const projSettings = ctx.getProjectSettings(target.project)
   const name = target.title || projSettings?.label || extractProjectLabel(target.project)
 
-  agent.send(
+  sentinel.send(
     JSON.stringify({
       type: 'revive',
       sessionId: targetSessionId,
@@ -103,7 +103,7 @@ const handleChannelSpawn: MessageHandler = (ctx, data) => {
   if (!callerSession) return
 
   ctx.requireBenevolent()
-  ctx.requireAgent()
+  ctx.requireSentinel()
 
   const spawnPath = data.cwd as string
   if (!spawnPath || typeof spawnPath !== 'string') {
@@ -172,12 +172,12 @@ const handleChannelRestart: MessageHandler = (ctx, data) => {
 
   // If target is already ended, just revive it directly (no need to terminate)
   if (!targetWs || target.status === 'ended') {
-    const agent = ctx.requireAgent()
+    const sentinel = ctx.requireSentinel()
     const wrapperId = randomUUID()
     const projSettings = ctx.getProjectSettings(target.project)
     const name = target.title || projSettings?.label || extractProjectLabel(target.project)
 
-    agent.send(
+    sentinel.send(
       JSON.stringify({
         type: 'revive',
         sessionId: target.id,

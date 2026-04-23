@@ -459,7 +459,7 @@
 - `82cdd2c` Remove Radix context menus from session list (was blocking DND)
 - `1d5ee8b` Use setActivatorNodeRef for drag handles + remove left margin
 - `30626c3` Separate drag handle from context menu trigger (fixes drag not working)
-- `9fcbeec` Forward --spawn-root and --no-spawn args in start-agent.sh
+- `9fcbeec` Forward --spawn-root and --no-spawn args in start-sentinel.sh
 - `54fed51` Show copy button on touch devices (iPad) using @media(hover:hover)
 
 ### Refactors

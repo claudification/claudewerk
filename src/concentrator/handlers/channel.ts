@@ -18,7 +18,7 @@ const subscribe: MessageHandler = (ctx, data) => {
   ctx.ws.data.isDashboard = true
   const pv = (data.protocolVersion as number) || 1
   ctx.sessions.addSubscriber(ctx.ws, pv)
-  ctx.reply({ type: 'agent_status', connected: ctx.sessions.hasAgent() })
+  ctx.reply({ type: 'sentinel_status', connected: ctx.sessions.hasSentinel() })
 
   // Push current usage data if available
   const usage = ctx.sessions.getUsage()

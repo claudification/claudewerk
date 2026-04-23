@@ -57,12 +57,12 @@ export function createSpawnRouter(sessionStore: SessionStore, helpers: RouteHelp
     return c.json({ success: true, wrapperId: result.wrapperId, jobId: result.jobId, tmuxSession: result.tmuxSession })
   })
 
-  // ─── Directory listing (agent relay) ───────────────────────────────
+  // ─── Directory listing (sentinel relay) ───────────────────────────────
   app.get('/api/dirs', async c => {
     if (!httpHasPermission(c.req.raw, 'spawn', '*'))
       return c.json({ error: 'Forbidden: spawn permission required' }, 403)
-    const agent = sessionStore.getAgent()
-    if (!agent) return c.json({ error: 'No host agent connected' }, 503)
+    const sentinel = sessionStore.getSentinel()
+    if (!sentinel) return c.json({ error: 'No sentinel connected' }, 503)
 
     const dirPath = c.req.query('path') || '/'
     const requestId = randomUUID()
@@ -78,7 +78,7 @@ export function createSpawnRouter(sessionStore: SessionStore, helpers: RouteHelp
         resolve(msg as ListDirsResult)
       })
 
-      agent.send(JSON.stringify({ type: 'list_dirs', requestId, path: dirPath }))
+      sentinel.send(JSON.stringify({ type: 'list_dirs', requestId, path: dirPath }))
     })
 
     if (result.error) return c.json({ error: result.error }, 400)

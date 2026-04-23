@@ -218,8 +218,8 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
       }
     }
 
-    const agent = sessionStore.getAgent()
-    if (!agent) return c.json({ error: 'No host agent connected' }, 503)
+    const sentinel = sessionStore.getSentinel()
+    if (!sentinel) return c.json({ error: 'No sentinel connected' }, 503)
 
     const wrapperId = randomUUID()
     const lc = session.launchConfig // stored launch config from original spawn
@@ -249,7 +249,7 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
     )
     const { headless, model, effort, bare, repl, permissionMode, autocompactPct, maxBudgetUsd } = resolved
 
-    agent.send(
+    sentinel.send(
       JSON.stringify({
         type: 'revive',
         sessionId,
@@ -304,7 +304,7 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
         })
     }
 
-    return c.json({ success: true, name, message: 'Revive command sent to agent', wrapperId }, 202)
+    return c.json({ success: true, name, message: 'Revive command sent to sentinel', wrapperId }, 202)
   })
 
   app.get('/sessions/by-slug/:slug', c => {

@@ -111,14 +111,14 @@ Files: `model-pricing.ts`, `web/src/lib/model-db.ts`, `web/src/lib/cost-utils.ts
 
 ## Plan Usage Tracking
 
-rclaude-agent polls `api.anthropic.com/api/oauth/usage` every 10 minutes using
+rclaude-sentinel polls `api.anthropic.com/api/oauth/usage` every 10 minutes using
 OAuth token from macOS Keychain or `~/.claude/.credentials.json`. Only utilization
 percentages forwarded -- credentials never leave host.
 
 Dashboard: 5h/7d utilization bars in header. Per-model on desktop.
 Green < 50%, amber < 75%, orange < 90%, red >= 90%.
 
-Files: `src/agent/index.ts`, `handlers/agent.ts`, `usage-bar.tsx`
+Files: `src/sentinel/index.ts`, `handlers/sentinel.ts`, `usage-bar.tsx`
 
 ## Context Window Detection
 

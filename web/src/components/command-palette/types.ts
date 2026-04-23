@@ -51,7 +51,7 @@ export interface SpawnResultsProps extends ResultListProps {
   error: string | null
   path: string
   spawning: boolean
-  agentConnected: boolean
+  sentinelConnected: boolean
   canCreateDir: boolean
   onDirSelect: (dir: string) => void
   onSpawn: (path: string, mkdir?: boolean) => void

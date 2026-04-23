@@ -1,25 +1,25 @@
 /**
- * Host agent (sentinel) handlers: agent identification, spawn/revive results,
+ * Sentinel handlers: identification, spawn/revive results,
  * directory listing results, diagnostic entries.
  */
 
 import type { MessageHandler } from '../handler-context'
 import { registerHandlers } from '../message-router'
 
-const agentIdentify: MessageHandler = (ctx, data) => {
-  const agentMeta = {
+const sentinelIdentify: MessageHandler = (ctx, data) => {
+  const sentinelMeta = {
     machineId: typeof data.machineId === 'string' ? data.machineId : undefined,
     hostname: typeof data.hostname === 'string' ? data.hostname : undefined,
   }
-  const accepted = ctx.sessions.setAgent(ctx.ws, agentMeta)
+  const accepted = ctx.sessions.setSentinel(ctx.ws, sentinelMeta)
   if (accepted) {
-    ctx.ws.data.isAgent = true
-    ctx.reply({ type: 'ack', eventId: 'agent' })
-    const label = agentMeta.hostname ? ` (${agentMeta.hostname} / ${agentMeta.machineId})` : ''
-    ctx.log.info(`Host agent connected${label}`)
+    ctx.ws.data.isSentinel = true
+    ctx.reply({ type: 'ack', eventId: 'sentinel' })
+    const label = sentinelMeta.hostname ? ` (${sentinelMeta.hostname} / ${sentinelMeta.machineId})` : ''
+    ctx.log.info(`Sentinel connected${label}`)
   } else {
-    ctx.reply({ type: 'agent_reject', reason: 'Another agent is already connected' })
-    ctx.ws.close(4409, 'Agent already connected')
+    ctx.reply({ type: 'sentinel_reject', reason: 'Another sentinel is already connected' })
+    ctx.ws.close(4409, 'Sentinel already connected')
   }
 }
 
@@ -63,7 +63,7 @@ const spawnResult: MessageHandler = (ctx, data) => {
   const jobId = data.jobId as string | undefined
   if (jobId) {
     if (data.success) {
-      // Agent confirmed the wrapper process has started (tmux session is up)
+      // Sentinel confirmed the wrapper process has started (tmux session is up)
       ctx.sessions.forwardJobEvent(jobId, {
         type: 'launch_progress',
         jobId,
@@ -142,10 +142,10 @@ const spawnFailed: MessageHandler = (ctx, data) => {
   }
 }
 
-const agentDiag: MessageHandler = (ctx, data) => {
+const sentinelDiag: MessageHandler = (ctx, data) => {
   if (Array.isArray(data.entries)) {
     for (const entry of data.entries) {
-      ctx.sessions.pushAgentDiag(entry)
+      ctx.sessions.pushSentinelDiag(entry)
     }
   }
 }
@@ -160,15 +160,15 @@ const usageUpdate: MessageHandler = (ctx, data) => {
   }
 }
 
-export function registerAgentHandlers(): void {
+export function registerSentinelHandlers(): void {
   registerHandlers({
-    agent_identify: agentIdentify,
+    sentinel_identify: sentinelIdentify,
     revive_result: reviveResult,
     spawn_result: spawnResult,
     spawn_failed: spawnFailed,
     list_dirs_result: listDirsResult,
     launch_log: launchLog,
-    agent_diag: agentDiag,
+    sentinel_diag: sentinelDiag,
     usage_update: usageUpdate,
   })
 }

@@ -14,7 +14,7 @@ Client-side filtering is defense-in-depth only -- the server is the authority.
 2. **WS handlers**: `ctx.requirePermission(permission, cwd)` (throws `GuardError`).
    Always resolve CWD from session store -- NEVER trust client-supplied CWD.
 3. **Broadcasts**: `broadcastSessionScoped(msg, cwd)` for ALL session-scoped data.
-   Unscoped `broadcast()` ONLY for global messages (settings_updated, agent_status).
+   Unscoped `broadcast()` ONLY for global messages (settings_updated, sentinel_status).
 4. **Share viewers**: `?share=TOKEN` -> synthetic grants scoped to one CWD.
 5. **New endpoints/handlers**: Permission check is the FIRST thing. Most restrictive if unsure.
 
@@ -39,18 +39,18 @@ Storage: `{cacheDir}/shares.json`. 30-day max, auto-expire.
 
 ## Shell Injection in Spawn Pipeline
 
-**The agent is the trust boundary.** User-controllable strings flowing through
-the spawn pipeline MUST be sanitized at the agent level.
+**The sentinel is the trust boundary.** User-controllable strings flowing through
+the spawn pipeline MUST be sanitized at the sentinel level.
 
 **Why:** `revive-session.sh` embeds env vars into `CMD_PREFIX` nested through
 `tmux -> /bin/sh -c -> /bin/zsh -li -c "..."`. Quotes/backticks/`$` break quoting.
 
-**Sanitization:** `shellSafe()` in `src/agent/index.ts` strips `'"\\`$`.
+**Sanitization:** `shellSafe()` in `src/sentinel/index.ts` strips `'"\\`$`.
 Shell script also strips as defense-in-depth.
 
 **What to sanitize:** `RCLAUDE_SESSION_NAME`, `RCLAUDE_WORKTREE` -- any string
 from dashboard input that ends up in `CMD_PREFIX`. When adding new spawn env vars
-from user input, apply `shellSafe()` in the agent.
+from user input, apply `shellSafe()` in the sentinel.
 
 ## Path Guard
 

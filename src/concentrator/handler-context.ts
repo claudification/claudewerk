@@ -12,7 +12,7 @@ export interface WsData {
   sessionId?: string
   wrapperId?: string
   isDashboard?: boolean
-  isAgent?: boolean
+  isSentinel?: boolean
   userName?: string
   authToken?: string
   grants?: UserGrant[]
@@ -62,8 +62,8 @@ export interface HandlerContext {
   }
   /** WebAuthn origins (for meta ack) */
   origins: string[]
-  /** Get the host agent WebSocket (if connected) */
-  getAgent(): ServerWebSocket<unknown> | undefined
+  /** Get the sentinel WebSocket (if connected) */
+  getSentinel(): ServerWebSocket<unknown> | undefined
   /** Get persisted links for a project */
   getLinksForProject(project: string): Array<{ projectA: string; projectB: string }>
   /** Get project settings for a project */
@@ -127,13 +127,13 @@ export interface HandlerContext {
 
   /** Guard: throws GuardError if caller is not benevolent */
   requireBenevolent(): void
-  /** Guard: throws GuardError if no host agent connected */
-  requireAgent(): ServerWebSocket<unknown>
+  /** Guard: throws GuardError if no sentinel connected */
+  requireSentinel(): ServerWebSocket<unknown>
   /** Guard: throws GuardError if caller has no session */
   requireSession(): NonNullable<ReturnType<SessionStore['getSession']>>
   /**
    * Guard: throws GuardError if dashboard user lacks the required permission
-   * for the given project. Wrappers/agents bypass all permission checks.
+   * for the given project. Wrappers/sentinels bypass all permission checks.
    */
   requirePermission(permission: Permission, project?: string): void
 }
@@ -146,7 +146,7 @@ export type MessageHandler = (ctx: HandlerContext, data: MessageData) => void | 
 /** Create a log prefix from WS connection data */
 export function logPrefix(ws: { data: WsData }): string {
   const id = ws.data.sessionId?.slice(0, 8)
-  if (ws.data.isAgent) return '[agent]'
+  if (ws.data.isSentinel) return '[sentinel]'
   if (ws.data.isDashboard) return `[dash${ws.data.userName ? `:${ws.data.userName}` : ''}]`
   return id ? `[${id}]` : '[unknown]'
 }

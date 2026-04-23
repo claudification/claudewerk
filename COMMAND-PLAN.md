@@ -214,7 +214,7 @@ export const ctx = {
   },
 
   terminalOpen: () => useSessionsStore.getState().showTerminal,
-  agentConnected: () => useSessionsStore.getState().agentConnected,
+  sentinelConnected: () => useSessionsStore.getState().sentinelConnected,
 
   notInInput: () => {
     const el = document.activeElement as HTMLElement | null

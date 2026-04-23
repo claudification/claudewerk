@@ -599,9 +599,9 @@ function processMessage(msg: DashboardMessage) {
       }
       break
     }
-    case 'agent_status': {
+    case 'sentinel_status': {
       if (msg.connected !== undefined) {
-        useSessionsStore.getState().setAgentConnected(msg.connected)
+        useSessionsStore.getState().setSentinelConnected(msg.connected)
       }
       break
     }

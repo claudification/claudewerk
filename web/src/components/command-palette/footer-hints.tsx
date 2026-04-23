@@ -28,11 +28,11 @@ function PrefixChip({ prefix, label, onTap }: { prefix: string; label: string; o
 
 interface FooterHintsProps {
   mode: PaletteMode
-  agentConnected: boolean
+  sentinelConnected: boolean
   onPrefixTap?: (prefix: string) => void
 }
 
-export function FooterHints({ mode, agentConnected, onPrefixTap }: FooterHintsProps) {
+export function FooterHints({ mode, sentinelConnected, onPrefixTap }: FooterHintsProps) {
   return (
     <div className="px-3 py-1.5 border-t border-[#33467c]/50 flex items-center gap-3 text-[10px] text-[#565f89]">
       <span>
@@ -94,7 +94,7 @@ export function FooterHints({ mode, agentConnected, onPrefixTap }: FooterHintsPr
               <Kbd>@</Kbd> tasks
             </span>
           )}
-          {agentConnected &&
+          {sentinelConnected &&
             (onPrefixTap ? (
               <PrefixChip prefix="S:" label="spawn" onTap={onPrefixTap} />
             ) : (

@@ -1299,9 +1299,9 @@ export interface JobFailed {
   error: string
 }
 
-// Agent -> Concentrator messages
-export interface AgentIdentify {
-  type: 'agent_identify'
+// Sentinel -> Concentrator messages
+export interface SentinelIdentify {
+  type: 'sentinel_identify'
   machineId?: string // short fingerprint (truncated SHA-256 of platform UUID/machine-id)
   hostname?: string
 }
@@ -1369,8 +1369,8 @@ export interface UsageUpdate {
   polledAt: number // timestamp of last poll
 }
 
-export type AgentMessage =
-  | AgentIdentify
+export type SentinelMessage =
+  | SentinelIdentify
   | ReviveResult
   | SpawnResult
   | SpawnFailed
@@ -1378,7 +1378,7 @@ export type AgentMessage =
   | UsageUpdate
   | LaunchLog
 
-// Concentrator -> Agent messages
+// Concentrator -> Sentinel messages
 export interface ReviveSession {
   type: 'revive'
   sessionId: string
@@ -1448,21 +1448,21 @@ export interface RclaudeConfigOk {
   error?: string
 }
 
-export interface AgentQuit {
+export interface SentinelQuit {
   type: 'quit'
   reason?: string
 }
 
-export interface AgentReject {
-  type: 'agent_reject'
+export interface SentinelReject {
+  type: 'sentinel_reject'
   reason: string
 }
 
-export type ConcentratorAgentMessage = ReviveSession | SpawnSession | ListDirs | AgentQuit | AgentReject
+export type ConcentratorSentinelMessage = ReviveSession | SpawnSession | ListDirs | SentinelQuit | SentinelReject
 
-// Dashboard broadcast: agent status
-export interface AgentStatus {
-  type: 'agent_status'
+// Dashboard broadcast: sentinel status
+export interface SentinelStatus {
+  type: 'sentinel_status'
   connected: boolean
 }
 

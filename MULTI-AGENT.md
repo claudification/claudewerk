@@ -1,17 +1,17 @@
 # Multi-Agent Architecture Research
 
-Research doc for supporting multiple rclaude-agent instances (one per host/machine).
+Research doc for supporting multiple rclaude-sentinel instances (one per host/machine).
 
 ## Current Architecture (Single Agent)
 
 ### How it works now
 
 - Agent connects via WS with `RCLAUDE_SECRET` as query param
-- Sends `{ type: 'agent_identify' }` - no identity fields at all
+- Sends `{ type: 'sentinel_identify' }` - no identity fields at all
 - Concentrator stores it as a single `let agentSocket` variable
-- Second agent gets `agent_reject` + close(4409), exits immediately
-- Dashboard gets `{ type: 'agent_status', connected: boolean }` - single bool
-- Revive sends to `sessionStore.getAgent()` - there's only one, no routing needed
+- Second sentinel gets `sentinel_reject` + close(4409), exits immediately
+- Dashboard gets `{ type: 'sentinel_status', connected: boolean }` - single bool
+- Revive sends to `sessionStore.getSentinel()` - there's only one, no routing needed
 
 ### What carries identity today
 
@@ -51,8 +51,8 @@ Agent sends identity on connect. Secret stays as shared auth.
 
 ```typescript
 // Agent -> Concentrator
-interface AgentIdentify {
-  type: 'agent_identify'
+interface SentinelIdentify {
+  type: 'sentinel_identify'
   hostname: string    // os.hostname() or --label flag
   machineId?: string  // optional stable ID (hardware UUID, etc.)
 }
@@ -74,15 +74,15 @@ const agentSockets = new Map<string, ServerWebSocket<unknown>>()
 ### Protocol (`protocol.ts`)
 
 ```typescript
-// Add hostname to AgentIdentify
-interface AgentIdentify {
-  type: 'agent_identify'
+// Add hostname to SentinelIdentify
+interface SentinelIdentify {
+  type: 'sentinel_identify'
   hostname: string
 }
 
-// AgentStatus broadcast -> list of agents
-interface AgentStatus {
-  type: 'agent_status'
+// SentinelStatus broadcast -> list of agents
+interface SentinelStatus {
+  type: 'sentinel_status'
   agents: Array<{ hostname: string; connected: boolean }>
 }
 
@@ -92,7 +92,7 @@ interface ReviveSession {
   sessionId: string
   cwd: string
   wrapperId: string
-  targetAgent: string  // hostname of the agent that should handle this
+  targetSentinel: string  // hostname of the sentinel that should handle this
 }
 
 // SpawnSession same
@@ -101,17 +101,17 @@ interface SpawnSession {
   requestId: string
   cwd: string
   wrapperId: string
-  targetAgent: string
+  targetSentinel: string
 }
 ```
 
 ### Session Store (`session-store.ts`)
 
 - Replace `let agentSocket` with `Map<string, ServerWebSocket<unknown>>`
-- `setAgent(hostname, ws)` - allow multiple, keyed by hostname
-- `getAgent(hostname?)` - look up by key, or return first if unspecified
-- `removeAgent(ws)` - find by socket reference, remove from map
-- `hasAgent(hostname?)` - check specific or any
+- `setSentinel(hostname, ws)` - allow multiple, keyed by hostname
+- `getSentinel(hostname?)` - look up by key, or return first if unspecified
+- `removeSentinel(ws)` - find by socket reference, remove from map
+- `hasSentinel(hostname?)` - check specific or any
 
 ### Session -> Agent Routing
 
@@ -120,7 +120,7 @@ Sessions need to know which host they originated from:
 ```typescript
 interface Session {
   // ... existing fields
-  originHost?: string  // hostname of the agent that first connected this session
+  originHost?: string  // hostname of the sentinel that first connected this session
 }
 ```
 
@@ -131,23 +131,23 @@ Revive routes to `session.originHost`. Spawn routes to user's selected target.
 
 ### Dashboard
 
-- `agentConnected: boolean` -> `agents: Array<{ hostname: string; connected: boolean }>`
+- `sentinelConnected: boolean` -> `agents: Array<{ hostname: string; connected: boolean }>`
 - Revive button: auto-selects the agent matching session's origin host
 - Spawn UI: dropdown to pick target agent (if multiple connected)
 - Agent status indicator: show count + list instead of single dot
 
-### Agent Process (`src/agent/index.ts`)
+### Agent Process (`src/sentinel/index.ts`)
 
 - Add `--hostname <label>` flag (defaults to `os.hostname()`)
-- Send hostname in `agent_identify`
+- Send hostname in `sentinel_identify`
 - Remove `process.exit(1)` on reject (no more single-agent exclusivity)
 
 ## Migration Path
 
-1. Add `hostname` to `AgentIdentify` (backward compat: concentrator treats missing as "default")
+1. Add `hostname` to `SentinelIdentify` (backward compat: concentrator treats missing as "default")
 2. Change session-store from single socket to Map
 3. Add `originHost` to Session, set it when wrapper connects
-4. Update dashboard `agentConnected` to `agents` array
+4. Update dashboard `sentinelConnected` to `agents` array
 5. Update revive/spawn routing to target specific agent
 6. Update dashboard UI for multi-agent
 

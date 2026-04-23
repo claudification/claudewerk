@@ -8,15 +8,15 @@ export function SpawnResults({
   error,
   path,
   spawning,
-  agentConnected,
+  sentinelConnected,
   canCreateDir,
   activeIndex,
   setActiveIndex,
   onDirSelect,
   onSpawn,
 }: SpawnResultsProps) {
-  if (!agentConnected) {
-    return <div className="px-3 py-4 text-center text-[10px] text-red-400">No host agent connected</div>
+  if (!sentinelConnected) {
+    return <div className="px-3 py-4 text-center text-[10px] text-red-400">No sentinel connected</div>
   }
 
   if (loading) {

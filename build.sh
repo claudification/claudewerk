@@ -15,8 +15,8 @@ bun run scripts/build-concentrator.ts
 echo "[4/5] concentrator-cli"
 bun build src/concentrator/cli.ts --compile --minify --outfile bin/concentrator-cli
 
-echo "[5/5] rclaude-agent"
-bun build src/agent/index.ts --compile --minify --outfile bin/rclaude-agent
+echo "[5/5] rclaude-sentinel"
+bun build src/sentinel/index.ts --compile --minify --outfile bin/rclaude-sentinel
 
 echo ""
 echo "[+] All binaries in bin/"

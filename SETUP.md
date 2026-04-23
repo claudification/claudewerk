@@ -12,7 +12,7 @@
 ```
 
 Full setup guide for running remote-claude: the concentrator server,
-the rclaude wrapper, the dashboard, session revival agent, and all
+the rclaude wrapper, the dashboard, session revival sentinel, and all
 supporting infrastructure.
 
 ---
@@ -24,7 +24,7 @@ supporting infrastructure.
 3. [Concentrator Server (Docker)](#concentrator-server-docker)
 4. [Host Setup (rclaude wrapper)](#host-setup-rclaude-wrapper)
 5. [Authentication (WebAuthn Passkeys)](#authentication-webauthn-passkeys)
-6. [Session Revival Agent (tmux)](#session-revival-agent-tmux)
+6. [Session Revival Sentinel (tmux)](#session-revival-agent-tmux)
 7. [MCP Channel Mode](#mcp-channel-mode)
 8. [Push Notifications](#push-notifications)
 9. [Voice Input](#voice-input)
@@ -192,7 +192,7 @@ This creates symlinks in `~/.local/bin/`:
 | `rclaude` | `bin/rclaude` | Main wrapper (replaces `claude`) |
 | `concentrator` | `bin/concentrator` | Server binary |
 | `concentrator-cli` | `bin/concentrator-cli` | Auth management CLI |
-| `rclaude-agent` | `bin/rclaude-agent` | Session revival agent |
+| `rclaude-sentinel` | `bin/rclaude-sentinel` | Session revival sentinel |
 | `revive-session.sh` | `scripts/revive-session.sh` | tmux spawn script |
 
 > **These are symlinks, not copies.** Rebuilding (`bun run build`) updates
@@ -285,9 +285,9 @@ curl -s -H "Authorization: Bearer $RCLAUDE_SECRET" \
 
 ---
 
-## Session Revival Agent (tmux)
+## Session Revival Sentinel (tmux)
 
-The agent enables "Spawn session" and "Revive session" from the dashboard.
+The sentinel enables "Spawn session" and "Revive session" from the dashboard.
 It runs on your host machine and manages tmux sessions.
 
 ### 1. Prerequisites
@@ -301,7 +301,7 @@ apt install tmux   # Linux
 ### 2. Security gate
 
 Directories must have a `.rclaude-spawn` marker file at or above the
-target path. The agent walks up the tree looking for it.
+target path. The sentinel walks up the tree looking for it.
 
 ```bash
 # Allow spawning anywhere under ~/projects
@@ -313,43 +313,43 @@ touch ~/projects/my-app/.rclaude-spawn
 
 Without the marker, spawn requests are denied.
 
-### 3. Start the agent
+### 3. Start the sentinel
 
 ```bash
 # Using the helper script (recommended - validates deps, writes PID)
-scripts/start-agent.sh \
+scripts/start-sentinel.sh \
   --concentrator wss://concentrator.example.com
 
 # Or directly
-rclaude-agent \
+rclaude-sentinel \
   --concentrator wss://concentrator.example.com
 
 # With custom spawn root (default: $HOME)
-rclaude-agent --spawn-root ~/projects
+rclaude-sentinel --spawn-root ~/projects
 ```
 
-The agent:
+The sentinel:
 - Connects to concentrator via WebSocket
 - Listens for spawn/revive commands from the dashboard
 - Creates tmux sessions/windows with full shell environment
 - Sources `$SHELL -li -c "..."` so API keys, PATH, etc. are available
 - All spawned sessions land in the `remote-claude` tmux session
 
-### 4. Run agent on boot (optional)
+### 4. Run sentinel on boot (optional)
 
 **macOS launchd:**
 ```xml
-<!-- ~/Library/LaunchAgents/com.rclaude.agent.plist -->
+<!-- ~/Library/LaunchAgents/com.rclaude.sentinel.plist -->
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.rclaude.agent</string>
+  <string>com.rclaude.sentinel</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/YOU/.local/bin/rclaude-agent</string>
+    <string>/Users/YOU/.local/bin/rclaude-sentinel</string>
     <string>--concentrator</string>
     <string>wss://concentrator.example.com</string>
   </array>
@@ -367,17 +367,17 @@ The agent:
 ```
 
 ```bash
-launchctl load ~/Library/LaunchAgents/com.rclaude.agent.plist
+launchctl load ~/Library/LaunchAgents/com.rclaude.sentinel.plist
 ```
 
 **Linux systemd:**
 ```ini
-# ~/.config/systemd/user/rclaude-agent.service
+# ~/.config/systemd/user/rclaude-sentinel.service
 [Unit]
-Description=rclaude Session Revival Agent
+Description=rclaude Session Revival Sentinel
 
 [Service]
-ExecStart=%h/.local/bin/rclaude-agent --concentrator wss://concentrator.example.com
+ExecStart=%h/.local/bin/rclaude-sentinel --concentrator wss://concentrator.example.com
 Restart=always
 RestartSec=10
 Environment=RCLAUDE_SECRET=YOUR_SECRET_HERE
@@ -387,7 +387,7 @@ WantedBy=default.target
 ```
 
 ```bash
-systemctl --user enable --now rclaude-agent
+systemctl --user enable --now rclaude-sentinel
 ```
 
 ---
@@ -567,7 +567,7 @@ bun run build           # All binaries + frontend
 | `bun run build:wrapper` | `bin/rclaude` | rclaude CLI wrapper |
 | `bun run build:concentrator` | `bin/concentrator` | Server binary |
 | `bun run build:cli` | `bin/concentrator-cli` | Auth CLI |
-| `bun run build:agent` | `bin/rclaude-agent` | Revival agent |
+| `bun run build:sentinel` | `bin/rclaude-sentinel` | Revival agent |
 | `bun run gen-version` | `src/shared/version.ts` | Git hash + timestamp |
 
 ### Dev servers
@@ -755,7 +755,7 @@ graph TB
     subgraph Host["Host Machine(s)"]
         RC[rclaude wrapper]
         CC[Claude Code CLI]
-        AG[rclaude-agent]
+        AG[rclaude-sentinel]
         TM[tmux sessions]
 
         RC -->|spawns with hooks| CC

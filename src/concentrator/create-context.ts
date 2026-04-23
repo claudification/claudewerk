@@ -95,7 +95,7 @@ export function createContext(ws: ServerWebSocket<WsData>, deps: ContextDeps): H
     },
 
     origins: deps.origins,
-    getAgent: () => deps.sessions.getAgent(),
+    getSentinel: () => deps.sessions.getSentinel(),
     getLinksForProject: deps.getLinksForProject,
 
     links: {
@@ -129,10 +129,10 @@ export function createContext(ws: ServerWebSocket<WsData>, deps: ContextDeps): H
       }
     },
 
-    requireAgent() {
-      const agent = deps.sessions.getAgent()
-      if (!agent) throw new GuardError('No host agent connected')
-      return agent
+    requireSentinel() {
+      const sentinel = deps.sessions.getSentinel()
+      if (!sentinel) throw new GuardError('No sentinel connected')
+      return sentinel
     },
 
     requireSession() {
@@ -141,7 +141,7 @@ export function createContext(ws: ServerWebSocket<WsData>, deps: ContextDeps): H
     },
 
     requirePermission(permission: Permission, project?: string) {
-      // Wrappers and agents bypass all permission checks (trusted infrastructure)
+      // Wrappers and sentinels bypass all permission checks (trusted infrastructure)
       if (!ws.data.isDashboard) return
       // No grants on WS data = legacy connection or bearer auth (treat as admin)
       const grants = ws.data.grants

@@ -1,12 +1,12 @@
 #!/usr/bin/env bun
 /**
- * rclaude-agent - Host-side agent for session revival and spawning
+ * rclaude-sentinel - Host-side sentinel for session revival and spawning
  *
  * Connects to concentrator via WebSocket, listens for revive/spawn commands.
  * Headless sessions are spawned directly via Bun.spawn() with PID tracking.
  * PTY/interactive sessions still use tmux via revive-session.sh.
  *
- * Only one agent can be connected at a time. If another agent is already
+ * Only one sentinel can be connected at a time. If another agent is already
  * connected, this process exits immediately.
  */
 
@@ -21,7 +21,7 @@ import { dirname, join, resolve } from 'node:path'
 import type { Subprocess } from 'bun'
 import { cwdToProjectUri, parseProjectUri } from '../shared/project-uri'
 import type {
-  ConcentratorAgentMessage,
+  ConcentratorSentinelMessage,
   ExtraUsage,
   ListDirsResult,
   ReviveResult,
@@ -67,7 +67,7 @@ function getMachineId(): string {
 const RECONNECT_DELAY_MS = 5000
 
 // ─── tmux binary discovery ────────────────────────────────────────────
-// When the agent runs as a launchd daemon (macOS), it inherits a minimal PATH
+// When the sentinel runs as a launchd daemon (macOS), it inherits a minimal PATH
 // (e.g. /usr/bin:/bin:/usr/sbin:/sbin) without Homebrew's /opt/homebrew/bin.
 // Resolve tmux to an absolute path at startup by checking common package manager
 // locations directly, without mutating process.env.PATH (which would widen the
@@ -94,7 +94,7 @@ const TMUX_BIN = findTmuxBinary()
 
 // ─── PID Registry (headless child process tracking) ─────────────────
 const PID_REGISTRY_DIR = join(process.env.HOME || '/root', '.rclaude')
-const PID_REGISTRY_PATH = join(PID_REGISTRY_DIR, 'agent-sessions.json')
+const PID_REGISTRY_PATH = join(PID_REGISTRY_DIR, 'sentinel-sessions.json')
 
 interface PidRegistryEntry {
   wrapperId: string
@@ -111,7 +111,7 @@ interface TrackedChild {
   startedAt: string
 }
 
-/** Live headless children spawned by this agent instance */
+/** Live headless children spawned by this sentinel instance */
 const trackedChildren = new Map<string, TrackedChild>()
 
 /** Dead PIDs discovered from registry on startup (reported once WS connects) */
@@ -153,7 +153,7 @@ function loadAndCheckPidRegistry() {
   }
 }
 
-/** Report dead PIDs from a previous agent run (called after WS connects) */
+/** Report dead PIDs from a previous sentinel run (called after WS connects) */
 function reportDeadPids(ws: WebSocket) {
   for (const entry of deadPidsToReport) {
     const msg: SpawnFailed = {
@@ -161,7 +161,7 @@ function reportDeadPids(ws: WebSocket) {
       wrapperId: entry.wrapperId,
       cwd: entry.cwd,
       pid: entry.pid,
-      error: 'Process died during agent restart (discovered from PID registry)',
+      error: 'Process died during sentinel restart (discovered from PID registry)',
     }
     try {
       ws.send(JSON.stringify(msg))
@@ -191,7 +191,7 @@ function findRclaudeBinary(): string | null {
   // Bun.which checks PATH
   const fromPath = Bun.which('rclaude')
   if (fromPath) return fromPath
-  // Fallback: same dir as agent binary, or ~/.local/bin
+  // Fallback: same dir as sentinel binary, or ~/.local/bin
   const binDir = dirname(resolve(process.argv[0]))
   const homeLocalBin = join(process.env.HOME || '/root', '.local', 'bin')
   const candidates = [resolve(binDir, 'rclaude'), resolve(homeLocalBin, 'rclaude')]
@@ -203,8 +203,8 @@ function findRclaudeBinary(): string | null {
 
 // ─── Env Sanitization ──────────────────────────────────────────────
 
-/** Session-scoped RCLAUDE_* vars that must NOT leak from the agent's own
- *  environment into spawned child sessions. The agent may have inherited
+/** Session-scoped RCLAUDE_* vars that must NOT leak from the sentinel's own
+ *  environment into spawned child sessions. The sentinel may have inherited
  *  these from the rclaude process that launched it. Each spawned session
  *  gets its own values set explicitly. */
 const RCLAUDE_SESSION_VARS = new Set([
@@ -233,7 +233,7 @@ const RCLAUDE_SESSION_VARS = new Set([
  * Return a copy of process.env with session-scoped RCLAUDE_* and
  * CLAUDE_CODE_* vars stripped. Safe base for building child env.
  */
-function cleanAgentEnv(): Record<string, string | undefined> {
+function cleanSentinelEnv(): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = { ...process.env }
   for (const key of Object.keys(env)) {
     if (key === 'CLAUDECODE' || key.startsWith('CLAUDE_CODE_') || RCLAUDE_SESSION_VARS.has(key)) {
@@ -269,8 +269,8 @@ function buildHeadlessEnv(opts: {
   includePartialMessages?: boolean
   env?: Record<string, string>
 }): Record<string, string | undefined> {
-  // Start from sanitized agent env (PATH, API keys, etc. but no session-scoped vars)
-  const env = cleanAgentEnv()
+  // Start from sanitized sentinel env (PATH, API keys, etc. but no session-scoped vars)
+  const env = cleanSentinelEnv()
 
   // Required
   env.RCLAUDE_SECRET = opts.secret
@@ -491,14 +491,14 @@ function parseArgs() {
 
 function printHelp() {
   console.log(`
-rclaude-agent - Host-side agent for session revival and spawning
+rclaude-sentinel - Host-side sentinel for session revival and spawning
 
 Connects to concentrator and listens for revive/spawn commands.
 Headless sessions are spawned directly (Bun.spawn + PID tracking).
 PTY/interactive sessions use tmux via revive-session.sh.
 
 USAGE:
-  rclaude-agent [OPTIONS]
+  rclaude-sentinel [OPTIONS]
 
 OPTIONS:
   --concentrator <url>   Concentrator WebSocket URL (default: ${DEFAULT_CONCENTRATOR_URL})
@@ -509,7 +509,7 @@ OPTIONS:
   -h, --help             Show this help
 
 Spawn security: directories need a .rclaude-spawn marker file at or above
-the target path to allow spawning. Only one agent can be connected at a time.
+the target path to allow spawning. Only one sentinel can be connected at a time.
 `)
 }
 
@@ -517,11 +517,11 @@ the target path to allow spawning. Only one agent can be connected at a time.
 let activeWs: WebSocket | null = null
 
 function log(msg: string) {
-  console.log(`[rclaude-agent] ${msg}`)
+  console.log(`[rclaude-sentinel] ${msg}`)
 }
 
 function debug(msg: string, verbose: boolean) {
-  if (verbose) console.log(`[rclaude-agent] ${msg}`)
+  if (verbose) console.log(`[rclaude-sentinel] ${msg}`)
 }
 
 function diag(type: string, msg: string, args?: unknown) {
@@ -530,7 +530,7 @@ function diag(type: string, msg: string, args?: unknown) {
     try {
       activeWs.send(
         JSON.stringify({
-          type: 'agent_diag',
+          type: 'sentinel_diag',
           entries: [{ t: Date.now(), type, msg, args }],
         }),
       )
@@ -661,7 +661,7 @@ async function reviveSession(
     stdout: 'pipe',
     stderr: 'pipe',
     env: {
-      ...cleanAgentEnv(),
+      ...cleanSentinelEnv(),
       RCLAUDE_SECRET: secret,
       RCLAUDE_WRAPPER_ID: wrapperId,
       RCLAUDE_SESSION_ID: sessionId,
@@ -893,7 +893,7 @@ async function spawnSession(
   if (mode === 'resume' && resumeId) scriptArgs.push('--resume-id', resumeId)
   if (mode === 'resume' && sessionName) scriptArgs.push('--resume-name', sessionName)
   const scriptEnv = {
-    ...cleanAgentEnv(),
+    ...cleanSentinelEnv(),
     RCLAUDE_SECRET: secret,
     RCLAUDE_WRAPPER_ID: wrapperId,
     ...(effort ? { RCLAUDE_EFFORT: effort } : {}),
@@ -1129,7 +1129,7 @@ function startUsagePolling(ws: WebSocket, verbose: boolean) {
         debug(`Usage sent: 5h=${usage.fiveHour.usedPercent}% 7d=${usage.sevenDay.usedPercent}%`, verbose)
       }
     } catch (err) {
-      // Never let a poll crash the agent
+      // Never let a poll crash the sentinel
       diag('usage', `Uncaught poll error: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
@@ -1165,10 +1165,10 @@ function connect(
   ws.onopen = () => {
     log('Connected to concentrator')
     activeWs = ws
-    // Identify as agent with machine fingerprint
-    ws.send(JSON.stringify({ type: 'agent_identify', machineId: getMachineId(), hostname: osHostname() }))
+    // Identify as sentinel with machine fingerprint
+    ws.send(JSON.stringify({ type: 'sentinel_identify', machineId: getMachineId(), hostname: osHostname() }))
 
-    // Report any dead PIDs from previous agent run
+    // Report any dead PIDs from previous sentinel run
     reportDeadPids(ws)
 
     // Start usage polling
@@ -1184,14 +1184,14 @@ function connect(
 
   ws.onmessage = async event => {
     try {
-      const msg = JSON.parse(String(event.data)) as ConcentratorAgentMessage | { type: string }
+      const msg = JSON.parse(String(event.data)) as ConcentratorSentinelMessage | { type: string }
 
       switch (msg.type) {
         case 'ack':
-          debug('Agent registered successfully', verbose)
+          debug('Sentinel registered successfully', verbose)
           break
 
-        case 'agent_reject':
+        case 'sentinel_reject':
           log(`Rejected: ${'reason' in msg ? msg.reason : 'unknown'}`)
           shouldReconnect = false
           ws.close()
@@ -1225,7 +1225,7 @@ function connect(
           log(
             `Reviving session ${reviveMsg.sessionId.slice(0, 8)}... wrapper=${reviveMsg.wrapperId.slice(0, 8)} mode=${reviveMsg.mode || 'default'} headless=${reviveMsg.headless !== false}${reviveMsg.effort ? ` effort=${reviveMsg.effort}` : ''}${reviveMsg.model ? ` model=${reviveMsg.model}` : ''}${reviveMsg.maxBudgetUsd ? ` maxBudget=$${reviveMsg.maxBudgetUsd}` : ''}${reviveMsg.jobId ? ` job=${reviveMsg.jobId.slice(0, 8)}` : ''} (${reviveCwd})`,
           )
-          launchLog(reviveMsg.jobId, 'Agent received revive request', 'ok')
+          launchLog(reviveMsg.jobId, 'Sentinel received revive request', 'ok')
           const result = await reviveSession(
             reviveMsg.sessionId,
             reviveCwd,
@@ -1244,7 +1244,7 @@ function connect(
             reviveMsg.adHocWorktree,
             reviveMsg.env,
           )
-          // Strip agent-internal tmuxPaneId before sending over WS
+          // Strip sentinel-internal tmuxPaneId before sending over WS
           const { tmuxPaneId, ...reviveResult } = result
           ws.send(JSON.stringify(reviveResult))
           if (result.success) {
@@ -1334,7 +1334,7 @@ function connect(
             break
           }
           const expandedCwd = expandPath(spawnMsg.cwd, spawnRoot)
-          launchLog(spawnMsg.jobId, 'Agent received spawn request', 'ok', expandedCwd.split('/').pop())
+          launchLog(spawnMsg.jobId, 'Sentinel received spawn request', 'ok', expandedCwd.split('/').pop())
           diag('spawn', 'Spawn request received', {
             requestId: spawnMsg.requestId,
             rawCwd: spawnMsg.cwd,
@@ -1488,7 +1488,7 @@ if (rclaudeBinCheck) {
 // Load PID registry from previous run and check for dead children
 loadAndCheckPidRegistry()
 
-// SIGTERM handler: unref all children so they survive agent restart, write PID registry
+// SIGTERM handler: unref all children so they survive sentinel restart, write PID registry
 process.on('SIGTERM', () => {
   log(`SIGTERM received. ${trackedChildren.size} tracked children.`)
   for (const child of trackedChildren.values()) {
@@ -1516,7 +1516,7 @@ process.on('SIGINT', () => {
   process.exit(0)
 })
 
-log('Starting host agent (single instance)')
+log('Starting sentinel (single instance)')
 log(`Revive script: ${reviveScript}`)
 log(`Spawn root: ${spawnRoot}${noSpawn ? ' (DISABLED)' : ''}`)
 connect(concentratorUrl, secret, reviveScript, verbose, spawnRoot, noSpawn)

@@ -72,7 +72,7 @@ export function CommandPalette({ onSelect, onFileSelect, onClose }: CommandPalet
               error={palette.spawnError}
               path={palette.spawnPath}
               spawning={palette.spawning}
-              agentConnected={palette.agentConnected}
+              sentinelConnected={palette.sentinelConnected}
               canCreateDir={palette.canCreateDir}
               activeIndex={palette.activeIndex}
               setActiveIndex={palette.setActiveIndex}
@@ -158,7 +158,7 @@ export function CommandPalette({ onSelect, onFileSelect, onClose }: CommandPalet
 
         <FooterHints
           mode={palette.mode}
-          agentConnected={palette.agentConnected}
+          sentinelConnected={palette.sentinelConnected}
           onPrefixTap={prefix => {
             palette.setFilter(prefix)
             palette.setActiveIndex(0)

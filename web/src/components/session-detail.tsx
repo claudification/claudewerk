@@ -116,7 +116,7 @@ export const SessionDetail = memo(function SessionDetail() {
     if (tab !== 'transcript' && tab !== 'tty') return EMPTY_TRANSCRIPT
     return selectedSessionId ? state.transcripts[selectedSessionId] || EMPTY_TRANSCRIPT : EMPTY_TRANSCRIPT
   })
-  const agentConnected = useSessionsStore(state => state.agentConnected)
+  const sentinelConnected = useSessionsStore(state => state.sentinelConnected)
   const projectSettings = useSessionsStore(state =>
     session?.project ? state.projectSettings[session.project] : undefined,
   )
@@ -205,7 +205,7 @@ export const SessionDetail = memo(function SessionDetail() {
   const canSendInput = session != null && session.status !== 'ended' && canChat
   const hasTerminal = session ? canTerminal(session) : false
   const hasJsonStream = session ? canJsonStream(session) : false
-  const canRevive = session?.status === 'ended' && agentConnected && canSpawn
+  const canRevive = session?.status === 'ended' && sentinelConnected && canSpawn
 
   function handleRevive() {
     if (!selectedSessionId) return
@@ -480,7 +480,7 @@ export const SessionDetail = memo(function SessionDetail() {
             </div>
           ) : (
             <p className="text-[10px] text-muted-foreground text-center">
-              {agentConnected ? 'Session ended' : 'No host agent connected -- revive unavailable'}
+              {sentinelConnected ? 'Session ended' : 'No sentinel connected -- revive unavailable'}
             </p>
           )}
         </div>
