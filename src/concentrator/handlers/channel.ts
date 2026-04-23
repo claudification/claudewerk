@@ -282,8 +282,20 @@ const channelSend: MessageHandler = (ctx, data) => {
   const projectSlug = colonIdx >= 0 ? toTarget.slice(0, colonIdx) : toTarget
   const sessionSlug = colonIdx >= 0 ? toTarget.slice(colonIdx + 1) : undefined
 
-  // Resolve target: address book first, then wrapper ID, then session ID (backwards compat)
-  const targetCwd = callerCwd ? ctx.addressBook.resolve(callerCwd, projectSlug) : undefined
+  // Resolve target: address book first, auto-populate on miss, then raw ID fallback
+  let targetCwd = callerCwd ? ctx.addressBook.resolve(callerCwd, projectSlug) : undefined
+
+  // Address book miss -- populate from all known sessions (same as list_sessions),
+  // then retry. This makes send_message work on first call without a prior list_sessions.
+  if (!targetCwd && callerCwd) {
+    for (const s of ctx.sessions.getAllSessions()) {
+      if (s.id === fromSession) continue
+      const projSettings = ctx.getProjectSettings(s.cwd)
+      const projectName = projSettings?.label || s.cwd.split('/').pop() || s.cwd
+      ctx.addressBook.getOrAssign(callerCwd, s.cwd, projectName)
+    }
+    targetCwd = ctx.addressBook.resolve(callerCwd, projectSlug)
+  }
 
   let toSess: ReturnType<typeof ctx.sessions.getSession> | undefined
   if (targetCwd) {
