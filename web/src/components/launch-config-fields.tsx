@@ -6,10 +6,19 @@
  * toggles individual fields. No project-settings fetching, no spawn logic.
  */
 
-import { DEFAULT_SENTINEL, EFFORT_OPTIONS, MODEL_OPTIONS, PERMISSION_MODE_OPTIONS } from '@shared/spawn-schema'
+import { DEFAULT_SENTINEL, EFFORT_OPTIONS, MODEL_OPTION_GROUPS, PERMISSION_MODE_OPTIONS } from '@shared/spawn-schema'
 import type React from 'react'
 import { useMemo } from 'react'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { TileToggleRow } from '@/components/ui/tile-toggle-row'
 import { TogglePill } from '@/components/ui/toggle-pill'
 import { parseEnvText } from '@/lib/env-parse'
@@ -104,10 +113,19 @@ export function LaunchConfigFields({ value, onChange, show = {}, disabled = {} }
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {MODEL_OPTIONS.map(opt => (
-                  <SelectItem key={opt.value} value={opt.value} info={opt.info}>
-                    {opt.label}
-                  </SelectItem>
+                <SelectItem value={DEFAULT_SENTINEL} info="Use project / global default">
+                  Default
+                </SelectItem>
+                {MODEL_OPTION_GROUPS.map((g, gi) => (
+                  <SelectGroup key={g.group}>
+                    {gi > 0 && <SelectSeparator />}
+                    <SelectLabel>{g.group}</SelectLabel>
+                    {g.options.map(opt => (
+                      <SelectItem key={opt.value} value={opt.value} info={opt.info}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
                 ))}
               </SelectContent>
             </Select>

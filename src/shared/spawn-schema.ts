@@ -13,6 +13,28 @@ import { ALL_CC_SLUGS, DROPDOWN_MODEL_ENTRIES } from './models'
 
 export const DEFAULT_SENTINEL = '__default__'
 
+type ModelOption = { value: string; label: string; info: string }
+export type ModelOptionGroup = { group: string; options: ModelOption[] }
+
+export const MODEL_OPTION_GROUPS: ModelOptionGroup[] = (() => {
+  const current: ModelOption[] = []
+  const previous: ModelOption[] = []
+  const legacy: ModelOption[] = []
+
+  for (const m of DROPDOWN_MODEL_ENTRIES) {
+    const opt = { value: m.id, label: m.label, info: m.info }
+    if (m.id.startsWith('claude-3-')) legacy.push(opt)
+    else if (/claude-(opus|sonnet)-4-[0-5]/.test(m.id)) previous.push(opt)
+    else current.push(opt)
+  }
+
+  const groups: ModelOptionGroup[] = [{ group: 'Current', options: current }]
+  if (previous.length > 0) groups.push({ group: 'Previous', options: previous })
+  if (legacy.length > 0) groups.push({ group: 'Legacy', options: legacy })
+  return groups
+})()
+
+/** Flat list for backwards compat -- includes Default sentinel. */
 export const MODEL_OPTIONS = [
   { value: DEFAULT_SENTINEL, label: 'Default', info: 'Use project / global default' },
   ...DROPDOWN_MODEL_ENTRIES.map(m => ({ value: m.id, label: m.label, info: m.info })),

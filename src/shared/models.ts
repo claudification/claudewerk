@@ -314,9 +314,83 @@ export const MODEL_CATALOG: readonly ModelEntry[] = [
     showInCompleter: true,
   },
 
-  // --- Bare CC aliases: kept so `/model opus` etc. still completes. ---
-  // Not in the dropdown (the "(latest, 1M)" entries above supersede them).
-  // Windows below reflect CC's current resolution, not a guarantee.
+  // --- Previous generation ---
+  {
+    id: 'claude-opus-4-5',
+    label: 'Opus 4.5',
+    info: '200K · 64K output',
+    window: 200_000,
+    showInDropdown: true,
+    showInCompleter: true,
+  },
+  {
+    id: 'claude-sonnet-4-5',
+    label: 'Sonnet 4.5',
+    info: '200K (1M via [1m]) · 64K output',
+    window: 200_000,
+    showInDropdown: true,
+    showInCompleter: true,
+  },
+  {
+    id: 'claude-sonnet-4-5-20250929[1m]',
+    label: 'Sonnet 4.5 (1M)',
+    info: '1M context · 64K output',
+    window: 1_000_000,
+    showInDropdown: true,
+    showInCompleter: true,
+  },
+  {
+    id: 'claude-sonnet-4-0',
+    label: 'Sonnet 4',
+    info: '200K · 64K output',
+    window: 200_000,
+    showInDropdown: true,
+    showInCompleter: true,
+  },
+  {
+    id: 'claude-opus-4-1',
+    label: 'Opus 4.1',
+    info: '200K · 32K output',
+    window: 200_000,
+    showInDropdown: true,
+    showInCompleter: true,
+  },
+  {
+    id: 'claude-opus-4-0',
+    label: 'Opus 4',
+    info: '200K · 32K output',
+    window: 200_000,
+    showInDropdown: true,
+    showInCompleter: true,
+  },
+
+  // --- Legacy (3.x) ---
+  {
+    id: 'claude-3-7-sonnet',
+    label: 'Sonnet 3.7',
+    info: '200K · 64K output',
+    window: 200_000,
+    showInDropdown: true,
+    showInCompleter: true,
+  },
+  {
+    id: 'claude-3-5-sonnet',
+    label: 'Sonnet 3.5',
+    info: '200K · 8K output',
+    window: 200_000,
+    showInDropdown: true,
+    showInCompleter: true,
+  },
+  {
+    id: 'claude-3-5-haiku',
+    label: 'Haiku 3.5',
+    info: '200K · 8K output',
+    window: 200_000,
+    showInDropdown: true,
+    showInCompleter: true,
+  },
+
+  // --- Bare CC aliases ---
   {
     id: 'opus',
     label: 'opus',
