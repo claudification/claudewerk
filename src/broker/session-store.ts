@@ -1,14 +1,11 @@
 /**
  * Session Store
- * In-memory session registry with event storage and optional persistence
+ * In-memory session registry with event storage, backed by StoreDriver for persistence
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import type { ServerWebSocket } from 'bun'
 import { resolveContextWindow } from '../shared/context-window'
-import { cwdToProjectUri, extractProjectLabel, normalizeProjectUri } from '../shared/project-uri'
+import { cwdToProjectUri, extractProjectLabel } from '../shared/project-uri'
 import type {
   AgentHostCapability,
   HookEvent,
@@ -32,46 +29,37 @@ import { resolvePermissionFlags, resolvePermissions } from './permissions'
 import { getProjectSettings } from './project-settings'
 import { appendSharedFile } from './routes'
 import { createChannelRegistry } from './session-store/channel-registry'
+import { createListenerRegistry } from './session-store/listeners'
 import { detectClipboardMime, detectContextModeFromStdout, isReadableText } from './session-store/parsers'
+import { createProjectLinkRegistry } from './session-store/project-links'
+import {
+  createSentinelState,
+  pushSentinelDiag as pushSentinelDiagImpl,
+  removeSentinel as removeSentinelImpl,
+  setSentinel as setSentinelImpl,
+  setUsage as setUsageImpl,
+} from './session-store/sentinel'
+import { createRendezvousRegistry, createSpawnJobRegistry } from './session-store/spawn-jobs'
+import {
+  createSyncState,
+  handleSyncCheck as handleSyncCheckImpl,
+  type SyncState,
+  stampAndBuffer as stampAndBufferImpl,
+  syncStamp as syncStampImpl,
+} from './session-store/sync-protocol'
 import { createTerminalRegistry } from './session-store/terminal-registry'
+import { createTrafficTracker } from './session-store/traffic'
+import type { DashboardMessage } from './session-store/types'
 import { createViewerRegistry } from './session-store/viewer-registry'
 import { listShares } from './shares'
+import type { StoreDriver } from './store/types'
 
-export type { SessionSummary }
-
-// Dashboard broadcast message (broker -> browser)
-export interface DashboardMessage {
-  type:
-    | 'session_update'
-    | 'session_created'
-    | 'session_ended'
-    | 'event'
-    | 'sessions_list'
-    | 'sentinel_status'
-    | 'toast'
-    | 'settings_updated'
-    | 'project_settings_updated'
-    | 'clipboard_capture'
-    | 'usage_update'
-  sessionId?: string
-  previousSessionId?: string
-  session?: SessionSummary
-  sessions?: SessionSummary[]
-  event?: HookEvent
-  connected?: boolean
-  machineId?: string
-  hostname?: string
-  title?: string
-  message?: string
-  settings?: unknown
-}
-
-const DEFAULT_CACHE_DIR = join(homedir(), '.cache', 'broker')
-const CACHE_FILENAME = 'sessions.json'
+export type { DashboardMessage, SessionSummary }
 
 export interface SessionStoreOptions {
   cacheDir?: string
   enablePersistence?: boolean
+  store?: StoreDriver
 }
 
 export interface SessionStore {
@@ -268,19 +256,11 @@ export interface SessionStore {
   flushTranscripts: () => Promise<void>
 }
 
-interface PersistedState {
-  version: number
-  savedAt: number
-  sessions: Array<Omit<Session, 'events'> & { eventCount: number }>
-}
-
 /**
  * Create a session store with optional persistence
  */
 export function createSessionStore(options: SessionStoreOptions = {}): SessionStore {
-  const { cacheDir = DEFAULT_CACHE_DIR, enablePersistence = true } = options
-  const cachePath = join(cacheDir, CACHE_FILENAME)
-  const transcriptsDir = join(cacheDir, 'transcripts')
+  const { store } = options
 
   const sessions = new Map<string, Session>()
   // sessionId -> (conversationId -> socket): multiple rclaude instances can share a Claude session
@@ -290,35 +270,20 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   // JSON stream viewers keyed by conversationId (raw NDJSON tail for headless sessions)
   const jsonStreamRegistry = createViewerRegistry()
   const dashboardSubscribers = new Set<ServerWebSocket<unknown>>()
-  let sentinelSocket: ServerWebSocket<unknown> | undefined
-  let sentinelInfo: { machineId?: string; hostname?: string } | undefined
   let subscriberIdCounter = 0
 
-  // Sync protocol: epoch + monotonic sequence for message ordering and gap detection.
-  // Epoch changes on server restart. Clients detect epoch mismatch -> full resync.
-  // Capped array holds last N broadcast messages for small-gap catchup.
-  // Only broadcast() messages (sent to ALL subscribers) are sequenced and buffered.
-  // Channel messages (per-session transcript/events) are NOT buffered - clients
-  // re-subscribe and get fresh initial pushes on reconnect.
-  const SYNC_EPOCH = Math.random().toString(36).slice(2, 10)
-  let syncSeq = 0
-  const SYNC_BUFFER_SIZE = 500
-  const syncBuffer = new Array<{ seq: number; json: string }>(SYNC_BUFFER_SIZE)
-  let syncBufferHead = 0
-  let syncBufferCount = 0
-
+  // Sync protocol: extracted to sync-protocol.ts
+  const sync: SyncState = createSyncState()
   function stampAndBuffer(message: unknown): string {
-    const seq = ++syncSeq
-    const json = JSON.stringify({ _epoch: SYNC_EPOCH, _seq: seq, ...(message as Record<string, unknown>) })
-    syncBuffer[syncBufferHead] = { seq, json }
-    syncBufferHead = (syncBufferHead + 1) % SYNC_BUFFER_SIZE
-    if (syncBufferCount < SYNC_BUFFER_SIZE) syncBufferCount++
-    return json
+    return stampAndBufferImpl(sync, message)
+  }
+  function syncStamp(message: unknown): string {
+    return syncStampImpl(sync, message)
   }
 
-  function syncStamp(message: unknown): string {
-    return JSON.stringify({ _epoch: SYNC_EPOCH, _seq: syncSeq, ...(message as Record<string, unknown>) })
-  }
+  // Traffic tracking: extracted to traffic.ts (must be before channel registry)
+  const trafficTracker = createTrafficTracker()
+  const { recordTraffic, getTrafficStats } = trafficTracker
 
   // Channel pub/sub registry -- created here so it can close over syncStamp + recordTraffic
   // which are defined in this factory. dashboardSubscribers is a shared mutable ref.
@@ -339,94 +304,13 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     clearSubagentChannels,
   } = channelRegistry
 
-  function sendSyncResponse(ws: ServerWebSocket<unknown>, type: string, extra?: Record<string, unknown>): void {
-    ws.send(JSON.stringify({ type, epoch: SYNC_EPOCH, seq: syncSeq, ...extra }))
-  }
-
   function handleSyncCheck(
     ws: ServerWebSocket<unknown>,
     clientEpoch: string,
     clientSeq: number,
     clientTranscripts?: Record<string, number>,
   ): void {
-    const wsData = ws.data as { userName?: string } | undefined
-    const who = wsData?.userName ? `dash:${wsData.userName}` : 'dash'
-    // Compare client lastAppliedSeq against server's lastAssignedSeq per session.
-    // Returns session IDs where server has higher seq than client, along with
-    // the server's seq so the client can do a `?sinceSeq=N` delta fetch instead
-    // of a full refetch.
-    //
-    // Why seqs, not counts:
-    //   - Count mismatch creates a permanent feedback loop when server cap
-    //     (MAX_TRANSCRIPT_ENTRIES=1000) and client fetch cap (limit=500)
-    //     differ -- client refetches 500, server still has 1000, next tick
-    //     "stale" again, forever.
-    //   - Seqs are monotonic per session -- compare is unambiguous and the
-    //     delta fetch is proportional to the actual gap.
-    //   - Edits/replacements of existing entries (count same, content drift)
-    //     would be invisible to a count check.
-    //
-    // The `clientTranscripts` param name is preserved but its values are
-    // now lastAppliedSeq, not length. Wire-level backwards compat is moot --
-    // same project, single deploy. Callers updated in one shot.
-    const staleTranscripts: Record<string, number> = {}
-    const staleDetails: string[] = []
-    if (clientTranscripts) {
-      for (const [sid, clientLastSeq] of Object.entries(clientTranscripts)) {
-        const serverLastSeq = transcriptSeqCounters.get(sid) ?? 0
-        if (serverLastSeq > clientLastSeq) {
-          staleTranscripts[sid] = serverLastSeq
-          staleDetails.push(`${sid.slice(0, 8)} serverSeq=${serverLastSeq} clientSeq=${clientLastSeq}`)
-        }
-      }
-    }
-    const staleCount = Object.keys(staleTranscripts).length
-    const transcriptExtra = staleCount > 0 ? { staleTranscripts } : undefined
-
-    function logResponse(responseType: string, extra?: string): void {
-      const stalePart = staleCount > 0 ? ` stale=[${staleDetails.join(' ')}]` : ''
-      const extraPart = extra ? ` ${extra}` : ''
-      console.log(
-        `[${who}] sync_check clientEpoch=${clientEpoch.slice(0, 8)} clientSeq=${clientSeq} transcripts=${clientTranscripts ? Object.keys(clientTranscripts).length : 0} -> ${responseType}${extraPart}${stalePart}`,
-      )
-    }
-
-    if (clientEpoch !== SYNC_EPOCH) {
-      sendSyncResponse(ws, 'sync_stale', { reason: 'epoch_changed', ...transcriptExtra })
-      logResponse('sync_stale', `reason=epoch_changed serverEpoch=${SYNC_EPOCH.slice(0, 8)}`)
-      return
-    }
-    if (clientSeq >= syncSeq) {
-      sendSyncResponse(ws, 'sync_ok', transcriptExtra)
-      logResponse('sync_ok')
-      return
-    }
-    // Find oldest buffered seq
-    if (syncBufferCount === 0) {
-      sendSyncResponse(ws, 'sync_ok', transcriptExtra)
-      logResponse('sync_ok', 'empty-buffer')
-      return
-    }
-    const oldestIdx = (syncBufferHead - syncBufferCount + SYNC_BUFFER_SIZE) % SYNC_BUFFER_SIZE
-    const oldestSeq = syncBuffer[oldestIdx].seq
-    if (clientSeq < oldestSeq) {
-      sendSyncResponse(ws, 'sync_stale', { reason: 'gap_too_large', missed: syncSeq - clientSeq, ...transcriptExtra })
-      logResponse('sync_stale', `reason=gap_too_large missed=${syncSeq - clientSeq}`)
-      return
-    }
-    // Direct index arithmetic: seqs are monotonic, offset = clientSeq - oldestSeq + 1
-    const startOffset = clientSeq - oldestSeq + 1
-    const count = syncBufferCount - startOffset
-    sendSyncResponse(ws, 'sync_catchup', { count, ...transcriptExtra })
-    logResponse('sync_catchup', `replaying=${count}`)
-    for (let i = 0; i < count; i++) {
-      const idx = (oldestIdx + startOffset + i) % SYNC_BUFFER_SIZE
-      try {
-        ws.send(syncBuffer[idx].json)
-      } catch {
-        break
-      }
-    }
+    handleSyncCheckImpl(sync, ws, clientEpoch, clientSeq, clientTranscripts, transcriptSeqCounters)
   }
 
   // Pending agent descriptions: PreToolUse(Agent) pushes, SubagentStart pops
@@ -469,7 +353,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
    *  server and client, or when entries are edited in place).
    *
    *  In-memory only; not persisted. Rationale:
-   *    - SYNC_EPOCH regenerates on broker restart, forcing clients to
+   *    - sync.epoch regenerates on broker restart, forcing clients to
    *      drop lastAppliedSeq and full-resync (see sync_stale path below).
    *    - Hydration from JSONL re-stamps 1..N on boot (see loadTranscripts), so
    *      seqs match cache state exactly without round-tripping through disk.
@@ -494,50 +378,6 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   const TRANSCRIPT_KICK_EVENT_THRESHOLD = 5
   // Background task output cache: taskId -> accumulated output string
   const bgTaskOutputCache = new Map<string, string>()
-
-  // Traffic tracking: rolling window for messages/bytes per second
-  const TRAFFIC_WINDOW_MS = 3000
-  const trafficSamples: Array<{ t: number; dir: 'in' | 'out'; bytes: number }> = []
-
-  function recordTraffic(direction: 'in' | 'out', bytes: number): void {
-    const now = Date.now()
-    trafficSamples.push({ t: now, dir: direction, bytes })
-    // Prune old samples
-    const cutoff = now - TRAFFIC_WINDOW_MS
-    while (trafficSamples.length > 0 && trafficSamples[0].t < cutoff) {
-      trafficSamples.shift()
-    }
-  }
-
-  function getTrafficStats(): {
-    in: { messagesPerSec: number; bytesPerSec: number }
-    out: { messagesPerSec: number; bytesPerSec: number }
-  } {
-    const now = Date.now()
-    const cutoff = now - TRAFFIC_WINDOW_MS
-    // Prune stale
-    while (trafficSamples.length > 0 && trafficSamples[0].t < cutoff) {
-      trafficSamples.shift()
-    }
-    const windowSec = TRAFFIC_WINDOW_MS / 1000
-    let inMsgs = 0
-    let inBytes = 0
-    let outMsgs = 0
-    let outBytes = 0
-    for (const s of trafficSamples) {
-      if (s.dir === 'in') {
-        inMsgs++
-        inBytes += s.bytes
-      } else {
-        outMsgs++
-        outBytes += s.bytes
-      }
-    }
-    return {
-      in: { messagesPerSec: +(inMsgs / windowSec).toFixed(1), bytesPerSec: Math.round(inBytes / windowSec) },
-      out: { messagesPerSec: +(outMsgs / windowSec).toFixed(1), bytesPerSec: Math.round(outBytes / windowSec) },
-    }
-  }
 
   // Helper to create session summary for broadcasting
   function toSessionSummary(session: Session): SessionSummary {
@@ -700,9 +540,9 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     pendingSessionUpdates.clear()
   }
 
-  // Load persisted state on startup
-  if (enablePersistence) {
-    loadStateSync()
+  // Load persisted state from StoreDriver on startup
+  if (store) {
+    loadFromStore()
   }
 
   // Periodically mark idle sessions, clean stale agents, evict old sessions, and save state
@@ -779,288 +619,178 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     }
   }, 10000)
 
-  // Debounced save - coalesces rapid mutations into a single write
-  let saveTimer: ReturnType<typeof setTimeout> | null = null
-  function scheduleSave(delayMs = 5000) {
-    if (!enablePersistence) return
-    if (saveTimer) clearTimeout(saveTimer)
-    saveTimer = setTimeout(() => {
-      saveTimer = null
-      saveState().catch(() => {})
-    }, delayMs)
-  }
+  // StoreDriver writes are immediate -- no debounced save needed
 
-  // Also save periodically as a safety net
-  if (enablePersistence) {
-    setInterval(() => {
-      saveState().catch(() => {})
-    }, 60000)
-  }
-
-  function loadStateSync(): void {
+  function loadFromStore(): void {
+    if (!store) return
     try {
-      if (!existsSync(cachePath)) return
-
-      const text = readFileSync(cachePath, 'utf-8')
-      const state = JSON.parse(text) as PersistedState
-
-      if (state.version !== 1) return
-
-      // Restore sessions (without events, mark as ended since we don't know their state)
-      for (const sessionData of state.sessions) {
+      const records = store.sessions.list()
+      for (const rec of records) {
+        const meta = (rec as unknown as { meta?: Record<string, unknown> }).meta || {}
+        // Full record for meta fields
+        const full = store.sessions.get(rec.id)
+        const fullMeta = full?.meta || meta
         const session: Session = {
-          ...sessionData,
+          id: rec.id,
+          project: rec.scope || cwdToProjectUri('/'),
+          model: rec.model,
+          startedAt: rec.createdAt,
+          lastActivity: rec.lastActivity || rec.createdAt,
+          status: 'ended',
           events: [],
-          subagents: (sessionData.subagents || []).map(a => ({
+          subagents: ((fullMeta.subagents as Session['subagents']) || []).map(a => ({
             ...a,
             events: a.events || [],
-            // Restored sessions are ended - all subagents must be stopped
             status: 'stopped' as const,
             stoppedAt: a.stoppedAt || a.startedAt,
           })),
-          tasks: sessionData.tasks || [],
-          archivedTasks: sessionData.archivedTasks || [],
-          bgTasks: (sessionData.bgTasks || []).map(t => ({
+          tasks: (fullMeta.tasks as Session['tasks']) || [],
+          archivedTasks: (fullMeta.archivedTasks as Session['archivedTasks']) || [],
+          bgTasks: ((fullMeta.bgTasks as Session['bgTasks']) || []).map(t => ({
             ...t,
             status: t.status === 'running' ? ('completed' as const) : t.status,
             completedAt: t.completedAt || t.startedAt,
           })),
-          monitors: (sessionData.monitors || []).map(m => ({
+          monitors: ((fullMeta.monitors as Session['monitors']) || []).map(m => ({
             ...m,
-            // Restored sessions are ended - all monitors must be stopped
             status: m.status === 'running' ? ('completed' as const) : m.status,
             stoppedAt: m.stoppedAt || m.startedAt,
           })),
-          teammates: sessionData.teammates || [],
-          team: sessionData.team,
-          diagLog: sessionData.diagLog || [],
-          // Mark restored sessions as ended unless they reconnect
-          status: 'ended',
-          project: sessionData.project || cwdToProjectUri((sessionData as unknown as { cwd?: string }).cwd || '/'),
+          teammates: (fullMeta.teammates as Session['teammates']) || [],
+          team: fullMeta.team as Session['team'],
+          diagLog: [],
+          configuredModel: fullMeta.configuredModel as string | undefined,
+          permissionMode: fullMeta.permissionMode as string | undefined,
+          effortLevel: fullMeta.effortLevel as string | undefined,
+          contextMode: fullMeta.contextMode as Session['contextMode'],
+          args: fullMeta.args as string[] | undefined,
+          capabilities: fullMeta.capabilities as AgentHostCapability[] | undefined,
+          version: fullMeta.version as string | undefined,
+          buildTime: fullMeta.buildTime as string | undefined,
+          claudeVersion: fullMeta.claudeVersion as string | undefined,
+          claudeAuth: fullMeta.claudeAuth as Session['claudeAuth'],
+          transcriptPath: fullMeta.transcriptPath as string | undefined,
+          compactedAt: fullMeta.compactedAt as number | undefined,
+          stats: (full?.stats as unknown as Session['stats']) || {
+            totalInputTokens: 0,
+            totalOutputTokens: 0,
+            totalCacheCreation: 0,
+            totalCacheWrite5m: 0,
+            totalCacheWrite1h: 0,
+            totalCacheRead: 0,
+            turnCount: 0,
+            toolCallCount: 0,
+            compactionCount: 0,
+            linesAdded: 0,
+            linesRemoved: 0,
+            totalApiDurationMs: 0,
+          },
+          costTimeline: (fullMeta.costTimeline as Session['costTimeline']) || [],
+          gitBranch: fullMeta.gitBranch as string | undefined,
+          adHocTaskId: fullMeta.adHocTaskId as string | undefined,
+          adHocWorktree: fullMeta.adHocWorktree as string | undefined,
+          launchConfig: fullMeta.launchConfig as LaunchConfig | undefined,
+          resultText: fullMeta.resultText as string | undefined,
+          recap: fullMeta.recap as Session['recap'],
+          title: rec.title || (fullMeta.title as string | undefined),
+          titleUserSet: fullMeta.titleUserSet as boolean | undefined,
+          description: fullMeta.description as string | undefined,
+          summary: (full as unknown as { summary?: string })?.summary || (fullMeta.summary as string | undefined),
+          agentName: fullMeta.agentName as string | undefined,
+          prLinks: fullMeta.prLinks as Session['prLinks'],
         }
         sessions.set(session.id, session)
       }
+      if (records.length > 0) {
+        console.log(`[store] Loaded ${records.length} sessions from SQLite`)
+      }
+    } catch (err) {
+      console.error(`[store] Failed to load sessions: ${err}`)
+    }
+  }
 
-      console.log(`[cache] Loaded ${state.sessions.length} sessions from cache`)
-    } catch {
-      // Ignore load errors
+  function persistSession(session: Session): void {
+    if (!store) return
+    try {
+      const existing = store.sessions.get(session.id)
+      const meta: Record<string, unknown> = {
+        subagents: session.subagents,
+        tasks: session.tasks,
+        archivedTasks: session.archivedTasks,
+        bgTasks: session.bgTasks,
+        monitors: session.monitors,
+        teammates: session.teammates,
+        team: session.team,
+        configuredModel: session.configuredModel,
+        permissionMode: session.permissionMode,
+        effortLevel: session.effortLevel,
+        contextMode: session.contextMode,
+        args: session.args,
+        capabilities: session.capabilities,
+        version: session.version,
+        buildTime: session.buildTime,
+        claudeVersion: session.claudeVersion,
+        claudeAuth: session.claudeAuth,
+        transcriptPath: session.transcriptPath,
+        compactedAt: session.compactedAt,
+        costTimeline: session.costTimeline,
+        gitBranch: session.gitBranch,
+        adHocTaskId: session.adHocTaskId,
+        adHocWorktree: session.adHocWorktree,
+        launchConfig: session.launchConfig,
+        resultText: session.resultText,
+        recap: session.recap,
+        titleUserSet: session.titleUserSet,
+        description: session.description,
+        agentName: session.agentName,
+        prLinks: session.prLinks?.length ? session.prLinks : undefined,
+      }
+      if (!existing) {
+        store.sessions.create({
+          id: session.id,
+          scope: session.project,
+          agentType: 'rclaude',
+          agentVersion: session.version,
+          title: session.title,
+          model: session.model,
+          meta,
+          createdAt: session.startedAt,
+        })
+      } else {
+        store.sessions.update(session.id, {
+          status: session.status,
+          model: session.model,
+          title: session.title,
+          summary: session.summary,
+          lastActivity: session.lastActivity,
+          endedAt: session.status === 'ended' ? session.lastActivity : undefined,
+          meta,
+          stats: session.stats as unknown as import('./store/types').SessionStats,
+        })
+      }
+    } catch (err) {
+      console.error(`[store] Failed to persist session ${session.id.slice(0, 8)}: ${err}`)
     }
   }
 
   async function saveState(): Promise<void> {
-    if (!enablePersistence) return
-
-    try {
-      // Ensure cache directory exists
-      if (!existsSync(cacheDir)) {
-        mkdirSync(cacheDir, { recursive: true })
-      }
-
-      // Persist sessions without events (to keep file size small)
-      const sessionsToSave = Array.from(sessions.values()).map(s => ({
-        id: s.id,
-        project: s.project,
-        model: s.model,
-        configuredModel: s.configuredModel,
-        permissionMode: s.permissionMode,
-        effortLevel: s.effortLevel,
-        contextMode: s.contextMode,
-        args: s.args,
-        capabilities: s.capabilities,
-        version: s.version,
-        buildTime: s.buildTime,
-        claudeVersion: s.claudeVersion,
-        claudeAuth: s.claudeAuth,
-        transcriptPath: s.transcriptPath,
-        startedAt: s.startedAt,
-        lastActivity: s.lastActivity,
-        status: s.status,
-        compactedAt: s.compactedAt,
-        eventCount: s.events.length,
-        subagents: s.subagents,
-        tasks: s.tasks,
-        archivedTasks: s.archivedTasks,
-        bgTasks: s.bgTasks,
-        monitors: s.monitors,
-        teammates: s.teammates,
-        team: s.team,
-        diagLog: [],
-        stats: s.stats || {
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
-          totalCacheCreation: 0,
-          totalCacheWrite5m: 0,
-          totalCacheWrite1h: 0,
-          totalCacheRead: 0,
-          turnCount: 0,
-          toolCallCount: 0,
-          compactionCount: 0,
-          linesAdded: 0,
-          linesRemoved: 0,
-          totalApiDurationMs: 0,
-        },
-        costTimeline: s.costTimeline,
-        gitBranch: s.gitBranch,
-        adHocTaskId: s.adHocTaskId,
-        adHocWorktree: s.adHocWorktree,
-        launchConfig: s.launchConfig,
-        resultText: s.resultText,
-        recap: s.recap,
-        title: s.title,
-        titleUserSet: s.titleUserSet,
-        description: s.description,
-        summary: s.summary,
-        agentName: s.agentName,
-        prLinks: s.prLinks?.length ? s.prLinks : undefined,
-      }))
-
-      const state: PersistedState = {
-        version: 1,
-        savedAt: Date.now(),
-        sessions: sessionsToSave,
-      }
-
-      await Bun.write(cachePath, JSON.stringify(state, null, 2))
-    } catch (error) {
-      console.error(`[cache] Failed to save state: ${error}`)
-    }
+    // StoreDriver writes are immediate -- this is now a no-op
   }
 
   async function clearState(): Promise<void> {
-    try {
-      if (existsSync(cachePath)) {
-        unlinkSync(cachePath)
-        console.log(`[cache] Cleared cache at ${cachePath}`)
+    sessions.clear()
+    if (store) {
+      const all = store.sessions.list()
+      for (const s of all) {
+        store.sessions.delete(s.id)
       }
-      sessions.clear()
-    } catch (error) {
-      console.error(`[cache] Failed to clear state: ${error}`)
     }
   }
 
-  // --- Transcript persistence ---
-
-  function transcriptPath(sessionId: string): string {
-    return join(transcriptsDir, `${sessionId}.jsonl`)
-  }
+  // Transcript persistence is handled by StoreDriver -- no JSONL files
 
   async function flushTranscripts(): Promise<void> {
-    if (!enablePersistence || dirtyTranscripts.size === 0) return
-    if (!existsSync(transcriptsDir)) {
-      mkdirSync(transcriptsDir, { recursive: true })
-    }
-    const toFlush = [...dirtyTranscripts]
-    dirtyTranscripts.clear()
-    let flushed = 0
-    for (const sessionId of toFlush) {
-      const entries = transcriptCache.get(sessionId)
-      if (!entries || entries.length === 0) continue
-      try {
-        const lines = `${entries.map(e => JSON.stringify(e)).join('\n')}\n`
-        await Bun.write(transcriptPath(sessionId), lines)
-        flushed++
-      } catch (error) {
-        console.error(`[transcript-persist] Failed to flush ${sessionId.slice(0, 8)}: ${error}`)
-        // Re-mark dirty so next checkpoint retries
-        dirtyTranscripts.add(sessionId)
-      }
-    }
-    if (flushed > 0) {
-      console.log(`[transcript-persist] Flushed ${flushed} session transcript(s) to disk`)
-    }
-  }
-
-  function deleteTranscriptFile(sessionId: string): void {
-    try {
-      const path = transcriptPath(sessionId)
-      if (existsSync(path)) {
-        unlinkSync(path)
-      }
-    } catch {
-      // Best effort
-    }
-    dirtyTranscripts.delete(sessionId)
-  }
-
-  function loadTranscripts(): void {
-    if (!enablePersistence || !existsSync(transcriptsDir)) return
-    const STALE_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
-    const now = Date.now()
-    let loaded = 0
-    let scavenged = 0
-    try {
-      const files = readdirSync(transcriptsDir)
-      for (const file of files) {
-        if (!file.endsWith('.jsonl')) continue
-        const sessionId = file.slice(0, -6) // strip .jsonl
-        const filePath = join(transcriptsDir, file)
-
-        // Scavenge: delete if session doesn't exist in store
-        const session = sessions.get(sessionId)
-        if (!session) {
-          try {
-            unlinkSync(filePath)
-            scavenged++
-          } catch {}
-          continue
-        }
-
-        // Scavenge: delete stale transcripts for ended sessions
-        if (session.status === 'ended' && now - session.lastActivity > STALE_MS) {
-          try {
-            unlinkSync(filePath)
-            scavenged++
-          } catch {}
-          continue
-        }
-
-        // Load transcript into cache (only if cache is empty -- wrapper reconnect will replace)
-        if (transcriptCache.has(sessionId)) continue
-        try {
-          const text = readFileSync(filePath, 'utf-8').trim()
-          if (!text) continue
-          const entries: TranscriptEntry[] = []
-          for (const line of text.split('\n')) {
-            if (!line.trim()) continue
-            try {
-              entries.push(JSON.parse(line))
-            } catch {
-              // Skip malformed lines
-            }
-          }
-          if (entries.length > 0) {
-            // Stamp seqs during hydration. Seqs are in-memory only, never
-            // persisted to JSONL -- on every broker boot we restamp from
-            // whatever file state survived. SYNC_EPOCH regenerates on boot,
-            // so any client that was mid-conversation will full-resync via
-            // sync_stale and adopt the new seqs.
-            assignTranscriptSeqs(transcriptSeqCounters, sessionId, entries, true)
-            transcriptCache.set(sessionId, entries.slice(-MAX_TRANSCRIPT_ENTRIES))
-            loaded++
-          }
-        } catch {
-          // Skip unreadable files
-        }
-      }
-    } catch {
-      // transcripts dir unreadable -- not fatal
-    }
-    if (loaded > 0 || scavenged > 0) {
-      console.log(`[transcript-persist] Loaded ${loaded} transcript(s), scavenged ${scavenged} orphan(s)`)
-    }
-  }
-
-  // Load transcripts on startup (after sessions are loaded)
-  loadTranscripts()
-
-  // Checkpoint timer: flush dirty transcripts every 5 minutes
-  if (enablePersistence) {
-    setInterval(
-      () => {
-        flushTranscripts().catch(() => {})
-      },
-      5 * 60 * 1000,
-    )
+    // StoreDriver writes are immediate -- this is now a no-op
   }
 
   function createSession(
@@ -1105,6 +835,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       costTimeline: [],
     }
     sessions.set(id, session)
+    persistSession(session)
 
     // Broadcast to dashboard subscribers (scoped by grants)
     broadcastSessionScoped(
@@ -1185,6 +916,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       session.project = newProject
       if (newModel) session.model = newModel
       session.lastActivity = Date.now()
+      persistSession(session)
       broadcastSessionScoped(
         { type: 'session_update', sessionId: newId, session: toSessionSummary(session) },
         session.project,
@@ -1194,12 +926,18 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
 
     // Re-key in sessions map
     sessions.delete(oldId)
+    if (store) {
+      try {
+        store.sessions.delete(oldId)
+      } catch {}
+    }
     session.id = newId
     session.project = newProject
     if (newModel) session.model = newModel
     session.status = 'idle'
     session.lastActivity = Date.now()
     sessions.set(newId, session)
+    persistSession(session)
 
     // Reset ephemeral state (preserve compacting flag - processEvent handles the transition)
     const wasCompacting = session.compacting
@@ -1226,7 +964,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     // longer compared against (sessionId is the key).
     transcriptCache.delete(oldId)
     transcriptSeqCounters.delete(oldId)
-    deleteTranscriptFile(oldId)
+    dirtyTranscripts.delete(oldId)
     // Clear subagent transcript caches (keyed as "sessionId:agentId")
     for (const key of subagentTranscriptCache.keys()) {
       if (key.startsWith(`${oldId}:`)) {
@@ -1814,11 +1552,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         session.project,
       )
 
-      // Persist immediately so ended sessions survive restarts
-      scheduleSave(1000)
-      // Flush transcript to disk so it survives broker restart
-      dirtyTranscripts.add(sessionId)
-      flushTranscripts().catch(() => {})
+      // Persist to store immediately
+      persistSession(session)
     }
   }
 
@@ -1833,16 +1568,20 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     sessionSockets.delete(sessionId)
     transcriptCache.delete(sessionId)
     transcriptSeqCounters.delete(sessionId)
+    dirtyTranscripts.delete(sessionId)
     pendingAgentDescriptions.delete(sessionId)
     lastTranscriptKick.delete(sessionId)
-    deleteTranscriptFile(sessionId)
     for (const key of subagentTranscriptCache.keys()) {
       if (key.startsWith(`${sessionId}:`)) {
         subagentTranscriptCache.delete(key)
         subagentTranscriptSeqCounters.delete(key)
       }
     }
-    scheduleSave(1000)
+    if (store) {
+      try {
+        store.sessions.delete(sessionId)
+      } catch {}
+    }
   }
 
   function getSessionEvents(sessionId: string, limit?: number, since?: number): HookEvent[] {
@@ -1967,8 +1706,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       type: 'sessions_list',
       sessions: filterSessionsByGrants(allSummaries, grants),
       serverVersion: BUILD_VERSION.gitHashShort,
-      _epoch: SYNC_EPOCH,
-      _seq: syncSeq,
+      _epoch: sync.epoch,
+      _seq: sync.seq,
     })
   }
 
@@ -2056,60 +1795,34 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     }
   }
 
-  // Sentinel management (exclusive single connection)
+  // Sentinel management: extracted to sentinel.ts
+  const sentinelState = createSentinelState()
   function setSentinel(ws: ServerWebSocket<unknown>, info?: { machineId?: string; hostname?: string }): boolean {
-    if (sentinelSocket) return false // reject - already connected
-    sentinelSocket = ws
-    sentinelInfo = info
-    broadcast({ type: 'sentinel_status', connected: true, machineId: info?.machineId, hostname: info?.hostname })
-    return true
+    return setSentinelImpl(sentinelState, ws, broadcast, info)
   }
-
   function getSentinel(): ServerWebSocket<unknown> | undefined {
-    return sentinelSocket
+    return sentinelState.socket
   }
-
   function getSentinelInfo(): { machineId?: string; hostname?: string } | undefined {
-    return sentinelInfo
+    return sentinelState.info
   }
-
   function removeSentinel(ws: ServerWebSocket<unknown>): void {
-    if (sentinelSocket === ws) {
-      sentinelSocket = undefined
-      sentinelInfo = undefined
-      broadcast({ type: 'sentinel_status', connected: false })
-    }
+    removeSentinelImpl(sentinelState, ws, broadcast)
   }
-
   function hasSentinel(): boolean {
-    return !!sentinelSocket
+    return !!sentinelState.socket
   }
-
-  // Sentinel diagnostics - capped ring buffer
-  const sentinelDiagLog: Array<{ t: number; type: string; msg: string; args?: unknown }> = []
-  const SENTINEL_DIAG_MAX = 200
-
-  function pushSentinelDiag(entry: { t: number; type: string; msg: string; args?: unknown }) {
-    sentinelDiagLog.push(entry)
-    if (sentinelDiagLog.length > SENTINEL_DIAG_MAX) {
-      sentinelDiagLog.splice(0, sentinelDiagLog.length - SENTINEL_DIAG_MAX)
-    }
+  function pushSentinelDiag(entry: { t: number; type: string; msg: string; args?: unknown }): void {
+    pushSentinelDiagImpl(sentinelState, entry)
   }
-
-  function getSentinelDiag() {
-    return [...sentinelDiagLog]
+  function getSentinelDiag(): Array<{ t: number; type: string; msg: string; args?: unknown }> {
+    return [...sentinelState.diagLog]
   }
-
-  // Plan usage data (from sentinel polling OAuth usage API)
-  let currentUsage: import('../shared/protocol').UsageUpdate | undefined
-
-  function setUsage(usage: import('../shared/protocol').UsageUpdate) {
-    currentUsage = usage
-    broadcast({ type: 'usage_update', usage } as unknown as DashboardMessage)
+  function setUsage(usage: import('../shared/protocol').UsageUpdate): void {
+    setUsageImpl(sentinelState, usage, broadcast)
   }
-
   function getUsage(): import('../shared/protocol').UsageUpdate | undefined {
-    return currentUsage
+    return sentinelState.usage
   }
 
   /** Stamp `entry.seq` on every entry in-place using the per-session counter.
@@ -2662,54 +2375,10 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     return bgTaskOutputCache.get(taskId)
   }
 
-  // Request-response listener maps for agent relay
-  const spawnListeners = new Map<string, (result: unknown) => void>()
-  const dirListeners = new Map<string, (result: unknown) => void>()
-
-  function addSpawnListener(requestId: string, cb: (result: unknown) => void) {
-    spawnListeners.set(requestId, cb)
-  }
-  function removeSpawnListener(requestId: string) {
-    spawnListeners.delete(requestId)
-  }
-  function resolveSpawn(requestId: string, result: unknown) {
-    const cb = spawnListeners.get(requestId)
-    if (cb) {
-      spawnListeners.delete(requestId)
-      cb(result)
-    }
-  }
-  function addDirListener(requestId: string, cb: (result: unknown) => void) {
-    dirListeners.set(requestId, cb)
-  }
-  function removeDirListener(requestId: string) {
-    dirListeners.delete(requestId)
-  }
-  function resolveDir(requestId: string, result: unknown) {
-    const cb = dirListeners.get(requestId)
-    if (cb) {
-      dirListeners.delete(requestId)
-      cb(result)
-    }
-  }
-
-  function broadcastToConversationsForProject(projectOrCwd: string, message: Record<string, unknown>): number {
-    const project = toProjectUri(projectOrCwd)
-    const json = JSON.stringify(message)
-    let count = 0
-    for (const [sessionId, session] of sessions) {
-      if (session.project !== project) continue
-      const wrappers = sessionSockets.get(sessionId)
-      if (!wrappers) continue
-      for (const ws of wrappers.values()) {
-        try {
-          ws.send(json)
-          count++
-        } catch {}
-      }
-    }
-    return count
-  }
+  // Request-response listeners: extracted to listeners.ts
+  const listeners = createListenerRegistry()
+  const { addSpawnListener, removeSpawnListener, resolveSpawn, addDirListener, removeDirListener, resolveDir } =
+    listeners
 
   // ─── Pending Launch Configs (conversationId -> LaunchConfig) ─────────────
   // Stored at spawn time, consumed when the session connects (meta handler).
@@ -2727,254 +2396,24 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     return config
   }
 
-  // ─── Launch Jobs (request-scoped event channels) ────────────────────
-  // Dashboard subscribes to a jobId before spawning/reviving.
-  // Agent sends launch_log events tagged with jobId.
-  // Broker forwards to subscribers. Completes when session connects.
-  //
-  // We also accumulate events/state on the job so MCP callers (or any other
-  // late subscriber) can fetch a full diagnostic snapshot via getJobDiagnostics
-  // without having to tail the websocket in real time.
-  interface LaunchJobEvent {
-    type: string
-    step?: string
-    status?: string
-    detail?: string | null
-    t: number
-  }
-  interface LaunchJob {
-    jobId: string
-    conversationId: string
-    subscribers: Set<ServerWebSocket<unknown>>
-    createdAt: number
-    events: LaunchJobEvent[]
-    completed: boolean
-    failed: boolean
-    error: string | null
-    sessionId: string | null
-    // Snapshot of the spawn request config (sans the heavy prompt). Recorded
-    // via recordJobConfig() after dispatchSpawn resolves request defaults.
-    config: Record<string, unknown> | null
-    endedAt: number | null
-  }
-  const launchJobs = new Map<string, LaunchJob>() // jobId -> job
-  const conversationToJob = new Map<string, string>() // conversationId -> jobId
-  const JOB_EXPIRY_MS = 5 * 60 * 1000 // 5 minutes
+  // Launch jobs: extracted to spawn-jobs.ts
+  const spawnJobs = createSpawnJobRegistry()
+  const {
+    createJob,
+    recordJobConfig,
+    subscribeJob,
+    unsubscribeJob,
+    forwardJobEvent,
+    completeJob,
+    failJob,
+    getJobByConversation,
+    getJobDiagnostics,
+    cleanupJobSubscriber,
+  } = spawnJobs
 
-  function createJob(jobId: string, conversationId: string): void {
-    const existing = launchJobs.get(jobId)
-    if (existing) {
-      // Dashboard pre-subscribed before spawn HTTP returned - update conversationId
-      existing.conversationId = conversationId
-    } else {
-      launchJobs.set(jobId, {
-        jobId,
-        conversationId,
-        subscribers: new Set(),
-        createdAt: Date.now(),
-        events: [],
-        completed: false,
-        failed: false,
-        error: null,
-        sessionId: null,
-        config: null,
-        endedAt: null,
-      })
-    }
-    conversationToJob.set(conversationId, jobId)
-  }
-
-  function recordJobConfig(jobId: string, config: Record<string, unknown>): void {
-    const job = launchJobs.get(jobId)
-    if (!job) return
-    job.config = config
-  }
-
-  function subscribeJob(jobId: string, ws: ServerWebSocket<unknown>): boolean {
-    const job = launchJobs.get(jobId)
-    if (!job) {
-      // Job not created yet - create a placeholder (dashboard subscribes before HTTP spawn returns)
-      launchJobs.set(jobId, {
-        jobId,
-        conversationId: '',
-        subscribers: new Set([ws]),
-        createdAt: Date.now(),
-        events: [],
-        completed: false,
-        failed: false,
-        error: null,
-        sessionId: null,
-        config: null,
-        endedAt: null,
-      })
-      return true
-    }
-    job.subscribers.add(ws)
-    return true
-  }
-
-  function unsubscribeJob(jobId: string, ws: ServerWebSocket<unknown>): void {
-    const job = launchJobs.get(jobId)
-    if (job) {
-      job.subscribers.delete(ws)
-      // Don't delete the job - other subscribers may still be watching, and agent events may still arrive
-    }
-  }
-
-  function forwardJobEvent(jobId: string, msg: Record<string, unknown>): void {
-    const job = launchJobs.get(jobId)
-    if (!job) return
-    // Persist into the job so late subscribers (MCP get_spawn_diagnostics, etc.)
-    // can fetch the full event history even after the live stream has moved on.
-    const t = typeof msg.t === 'number' ? msg.t : Date.now()
-    job.events.push({
-      type: String(msg.type ?? 'unknown'),
-      step: typeof msg.step === 'string' ? msg.step : undefined,
-      status: typeof msg.status === 'string' ? msg.status : undefined,
-      detail: typeof msg.detail === 'string' ? msg.detail : msg.detail === null ? null : undefined,
-      t,
-    })
-    const payload = JSON.stringify(msg)
-    for (const ws of job.subscribers) {
-      try {
-        ws.send(payload)
-      } catch {}
-    }
-  }
-
-  function completeJob(conversationId: string, sessionId: string): void {
-    const jobId = conversationToJob.get(conversationId)
-    if (!jobId) return
-    const job = launchJobs.get(jobId)
-    if (!job) return
-
-    job.completed = true
-    job.sessionId = sessionId
-    job.endedAt = Date.now()
-    forwardJobEvent(jobId, { type: 'job_complete', jobId, sessionId, conversationId })
-
-    // Cleanup after a short delay (let dashboard process the completion)
-    setTimeout(() => {
-      launchJobs.delete(jobId)
-      conversationToJob.delete(conversationId)
-    }, 30_000)
-  }
-
-  function failJob(jobId: string, error: string): void {
-    const job = launchJobs.get(jobId)
-    if (job) {
-      job.failed = true
-      job.error = error
-      job.endedAt = Date.now()
-    }
-    forwardJobEvent(jobId, { type: 'job_failed', jobId, error })
-    // Cleanup after delay
-    if (job) {
-      setTimeout(() => {
-        launchJobs.delete(jobId)
-        if (job.conversationId) conversationToJob.delete(job.conversationId)
-      }, 30_000)
-    }
-  }
-
-  /**
-   * Return a diagnostics snapshot for a job, or null if the job is unknown /
-   * already expired. Shape matches SpawnDiagnostics (built client-side via
-   * buildSpawnDiagnostics) but left loose here so we don't import UI types.
-   */
-  function getJobDiagnostics(jobId: string): {
-    jobId: string
-    conversationId: string
-    sessionId: string | null
-    completed: boolean
-    failed: boolean
-    error: string | null
-    createdAt: number
-    endedAt: number | null
-    elapsedMs: number
-    config: Record<string, unknown> | null
-    events: LaunchJobEvent[]
-  } | null {
-    const job = launchJobs.get(jobId)
-    if (!job) return null
-    const now = Date.now()
-    return {
-      jobId: job.jobId,
-      conversationId: job.conversationId,
-      sessionId: job.sessionId,
-      completed: job.completed,
-      failed: job.failed,
-      error: job.error,
-      createdAt: job.createdAt,
-      endedAt: job.endedAt,
-      elapsedMs: (job.endedAt ?? now) - job.createdAt,
-      config: job.config,
-      events: job.events,
-    }
-  }
-
-  function getJobByConversation(conversationId: string): string | undefined {
-    return conversationToJob.get(conversationId)
-  }
-
-  function cleanupJobSubscriber(ws: ServerWebSocket<unknown>): void {
-    for (const job of launchJobs.values()) {
-      job.subscribers.delete(ws)
-    }
-  }
-
-  // Periodic cleanup of expired jobs
-  setInterval(() => {
-    const now = Date.now()
-    for (const [jobId, job] of launchJobs) {
-      if (now - job.createdAt > JOB_EXPIRY_MS) {
-        launchJobs.delete(jobId)
-        if (job.conversationId) conversationToJob.delete(job.conversationId)
-      }
-    }
-  }, 60_000)
-
-  // Session rendezvous: callers waiting for a session to connect at a specific conversationId
-  // Used by spawn/revive to notify the caller when the spawned session is ready
-  interface SessionRendezvous {
-    callerSessionId: string
-    conversationId: string
-    project: string
-    action: 'spawn' | 'revive' | 'restart'
-    resolve: (session: SessionSummary) => void
-    reject: (error: string) => void
-    timer: ReturnType<typeof setTimeout>
-    registeredAt: number
-  }
-  const RENDEZVOUS_TIMEOUT_MS = 120_000 // 2 minutes
-  const sessionRendezvous = new Map<string, SessionRendezvous>() // keyed by conversationId
-
-  // Pending restarts: terminate target, revive on disconnect
-  interface PendingRestart {
-    callerSessionId: string
-    targetSessionId: string
-    project: string
-    isSelfRestart: boolean
-  }
-  const pendingRestarts = new Map<string, PendingRestart>() // keyed by target conversationId
-
-  function addPendingRestart(conversationId: string, info: PendingRestart): void {
-    pendingRestarts.set(conversationId, info)
-    console.log(
-      `[restart] PENDING: target=${conversationId.slice(0, 8)} project=${extractProjectLabel(info.project)} self=${info.isSelfRestart}`,
-    )
-  }
-
-  function consumePendingRestart(conversationId: string): PendingRestart | undefined {
-    const info = pendingRestarts.get(conversationId)
-    if (info) {
-      pendingRestarts.delete(conversationId)
-      console.log(
-        `[restart] CONSUMED: target=${conversationId.slice(0, 8)} project=${extractProjectLabel(info.project)}`,
-      )
-    }
-    return info
-  }
+  // Rendezvous + pending restarts: extracted to spawn-jobs.ts
+  const rendezvous = createRendezvousRegistry()
+  const { addPendingRestart, consumePendingRestart, getRendezvousInfo } = rendezvous
 
   function addRendezvous(
     conversationId: string,
@@ -2982,62 +2421,21 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     project: string,
     action: 'spawn' | 'revive' | 'restart',
   ): Promise<SessionSummary> {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        sessionRendezvous.delete(conversationId)
-        reject(`Session did not connect within ${RENDEZVOUS_TIMEOUT_MS / 1000}s`)
-        console.log(
-          `[rendezvous] TIMEOUT: ${action} conversationId=${conversationId.slice(0, 8)} project=${extractProjectLabel(project)} caller=${callerSessionId.slice(0, 8)}`,
-        )
-      }, RENDEZVOUS_TIMEOUT_MS)
-
-      sessionRendezvous.set(conversationId, {
-        callerSessionId,
-        conversationId,
-        project,
-        action,
-        resolve,
-        reject,
-        timer,
-        registeredAt: Date.now(),
-      })
-      console.log(
-        `[rendezvous] REGISTERED: ${action} conversationId=${conversationId.slice(0, 8)} project=${extractProjectLabel(project)} caller=${callerSessionId.slice(0, 8)}`,
-      )
-    })
+    return rendezvous.addRendezvous(conversationId, callerSessionId, project, action)
   }
 
   function resolveRendezvous(conversationId: string, sessionId: string): boolean {
-    const rv = sessionRendezvous.get(conversationId)
-    if (!rv) return false
-    sessionRendezvous.delete(conversationId)
-    clearTimeout(rv.timer)
-    const session = sessions.get(sessionId)
-    if (!session) {
-      rv.reject('Session created but not found in store')
-      return false
-    }
-    const summary = toSessionSummary(session)
-    rv.resolve(summary)
-    const elapsed = Date.now() - rv.registeredAt
-    console.log(
-      `[rendezvous] RESOLVED: ${rv.action} session=${sessionId.slice(0, 8)} conversationId=${conversationId.slice(0, 8)} elapsed=${elapsed}ms caller=${rv.callerSessionId.slice(0, 8)}`,
-    )
-    return true
-  }
-
-  function getRendezvousInfo(conversationId: string): { callerSessionId: string; action: string } | undefined {
-    const rv = sessionRendezvous.get(conversationId)
-    if (!rv) return undefined
-    return { callerSessionId: rv.callerSessionId, action: rv.action }
+    return rendezvous.resolveRendezvous(conversationId, sessionId, id => {
+      const session = sessions.get(id)
+      return session ? toSessionSummary(session) : undefined
+    })
   }
 
   // ─── Pending session names (set at spawn time, applied on connect) ──
-  const pendingSessionNames = new Map<string, string>() // conversationId -> name
+  const pendingSessionNames = new Map<string, string>()
 
   function setPendingSessionName(conversationId: string, name: string): void {
     pendingSessionNames.set(conversationId, name)
-    // Auto-expire after 2 minutes (if wrapper never connects)
     setTimeout(() => pendingSessionNames.delete(conversationId), 120_000)
   }
 
@@ -3047,123 +2445,31 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     return name
   }
 
-  const fileListeners = new Map<string, (result: unknown) => void>()
-  function addFileListener(requestId: string, cb: (result: unknown) => void) {
-    fileListeners.set(requestId, cb)
-  }
-  function removeFileListener(requestId: string) {
-    fileListeners.delete(requestId)
-  }
-  function resolveFile(requestId: string, result: unknown): boolean {
-    const cb = fileListeners.get(requestId)
-    if (cb) {
-      fileListeners.delete(requestId)
-      cb(result)
-      return true
-    }
-    return false
-  }
+  // File listeners: from extracted listeners module
+  const { addFileListener, removeFileListener, resolveFile } = listeners
 
   function broadcastSessionUpdate(sessionId: string): void {
     scheduleSessionUpdate(sessionId)
   }
 
-  // ─── Inter-project link registry ────────────────────────────────────
-  // Links are bidirectional. If A->B is approved, B->A is also approved.
-  // Links are stored by project URI pair, not session ID.
-  // Public functions accept session IDs and resolve to project URIs internally.
-
-  function toProjectUri(cwdOrUri: string): string {
-    if (cwdOrUri.startsWith('/')) return cwdToProjectUri(cwdOrUri)
-    return normalizeProjectUri(cwdOrUri)
-  }
-
-  const projectLinks = new Set<string>() // "uriA|uriB" format (sorted, normalized)
-  const projectBlocks = new Map<string, number>() // "uriA|uriB" -> block timestamp
-  const messageQueue = new Map<string, Array<Record<string, unknown>>>() // "uriA|uriB" -> queued messages
-
-  function projectLinkKey(a: string, b: string): string {
-    return [normalizeProjectUri(a), normalizeProjectUri(b)].sort().join('|')
-  }
-
-  function sessionToProject(sessionId: string): string | undefined {
-    return sessions.get(sessionId)?.project
-  }
+  // Inter-project link registry: extracted to project-links.ts
+  const projectLinkReg = createProjectLinkRegistry(sessions, sessionSockets)
+  const {
+    checkProjectLink,
+    linkProjects,
+    unlinkProjects,
+    blockProject,
+    queueProjectMessage,
+    drainProjectMessages,
+    broadcastToConversationsForProject,
+  } = projectLinkReg
 
   function getLinkedProjects(sessionId: string): Array<{ project: string; name: string }> {
-    const thisProject = sessionToProject(sessionId)
-    if (!thisProject) return []
-    const result: Array<{ project: string; name: string }> = []
-    for (const key of projectLinks) {
-      const [a, b] = key.split('|')
-      const other = a === normalizeProjectUri(thisProject) ? b : b === normalizeProjectUri(thisProject) ? a : null
-      if (!other) continue
-      const session = Array.from(sessions.values()).find(s => normalizeProjectUri(s.project) === other)
-      const otherProject = session?.project || other
-      const name = getProjectSettings(otherProject)?.label || extractProjectLabel(otherProject)
-      result.push({ project: otherProject, name })
-    }
-    return result
-  }
-
-  function unlinkProjects(a: string, b: string): void {
-    const projA = sessionToProject(a)
-    const projB = sessionToProject(b)
-    if (projA && projB) projectLinks.delete(projectLinkKey(projA, projB))
-  }
-
-  function checkProjectLink(from: string, to: string): 'linked' | 'blocked' | 'unknown' {
-    const projFrom = sessionToProject(from)
-    const projTo = sessionToProject(to)
-    if (!projFrom || !projTo) return 'unknown'
-    const key = projectLinkKey(projFrom, projTo)
-    if (projectLinks.has(key)) return 'linked'
-    const blockTs = projectBlocks.get(key)
-    if (blockTs && Date.now() - blockTs < 60_000) return 'blocked'
-    if (blockTs) projectBlocks.delete(key)
-    return 'unknown'
-  }
-
-  function linkProjects(a: string, b: string): void {
-    const projA = sessionToProject(a)
-    const projB = sessionToProject(b)
-    if (!projA || !projB) return
-    const key = projectLinkKey(projA, projB)
-    projectLinks.add(key)
-    projectBlocks.delete(key)
-  }
-
-  function blockProject(blocker: string, blocked: string): void {
-    const projA = sessionToProject(blocker)
-    const projB = sessionToProject(blocked)
-    if (!projA || !projB) return
-    const key = projectLinkKey(projA, projB)
-    projectLinks.delete(key)
-    projectBlocks.set(key, Date.now())
-  }
-
-  function queueProjectMessage(from: string, to: string, message: Record<string, unknown>): void {
-    const projFrom = sessionToProject(from)
-    const projTo = sessionToProject(to)
-    if (!projFrom || !projTo) return
-    const key = projectLinkKey(projFrom, projTo)
-    const queue = messageQueue.get(key) || []
-    queue.push(message)
-    messageQueue.set(key, queue)
-  }
-
-  function drainProjectMessages(from: string, to: string): Array<Record<string, unknown>> {
-    const projFrom = sessionToProject(from)
-    const projTo = sessionToProject(to)
-    if (!projFrom || !projTo) return []
-    const key = projectLinkKey(projFrom, projTo)
-    const msgs = messageQueue.get(key) || []
-    messageQueue.delete(key)
-    return msgs
+    return projectLinkReg.getLinkedProjects(sessionId)
   }
 
   function broadcastForProject(projectOrCwd: string): void {
-    const project = toProjectUri(projectOrCwd)
+    const project = projectLinkReg.toProjectUri(projectOrCwd)
     for (const [id, s] of sessions) {
       if (s.project === project) scheduleSessionUpdate(id)
     }
@@ -3202,7 +2508,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     addSubscriber,
     sendSessionsList,
     handleSyncCheck,
-    getSyncState: () => ({ epoch: SYNC_EPOCH, seq: syncSeq }),
+    getSyncState: () => ({ epoch: sync.epoch, seq: sync.seq }),
     removeSubscriber,
     getSubscriberCount,
     getSubscribers,

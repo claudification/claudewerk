@@ -298,6 +298,7 @@ async function main() {
   const sessionStore = createSessionStore({
     cacheDir,
     enablePersistence: !noPersistence,
+    store,
   })
 
   // Handle --clear-cache
@@ -307,13 +308,12 @@ async function main() {
     process.exit(0)
   }
 
-  // Save state on shutdown
+  // Shutdown: StoreDriver writes are immediate, just close handles
   process.on('SIGINT', async () => {
-    console.log('\n[shutdown] Saving state...')
+    console.log('\n[shutdown] Closing stores...')
     closeAnalyticsStore()
     closeCostStore()
     closeProjectStore()
-    await Promise.all([sessionStore.saveState(), sessionStore.flushTranscripts()])
     store.close()
     process.exit(0)
   })
@@ -321,7 +321,6 @@ async function main() {
     closeAnalyticsStore()
     closeCostStore()
     closeProjectStore()
-    await Promise.all([sessionStore.saveState(), sessionStore.flushTranscripts()])
     store.close()
     process.exit(0)
   })
