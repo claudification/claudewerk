@@ -22,7 +22,7 @@ import { z } from 'zod'
 import type { DialogLayout, DialogResult } from '../shared/dialog-schema'
 import { dialogToolInputSchema, validateDialogLayout } from '../shared/dialog-schema'
 import { isPathWithinCwd } from '../shared/path-guard'
-import { spawnRequestSchema } from '../shared/spawn-schema'
+import { type SpawnRequest, spawnRequestSchema } from '../shared/spawn-schema'
 import { DEFAULT_VISIBLE_STATUSES, TASK_STATUSES, type TaskStatus } from '../shared/task-statuses'
 import { checkForUpdate, formatUpdateResult } from '../shared/update-check'
 import { BUILD_VERSION } from '../shared/version'
@@ -117,14 +117,11 @@ export interface McpChannelCallbacks {
     selfRestart?: boolean
     alreadyEnded?: boolean
   }>
-  onSpawnSession?: (params: {
-    cwd: string
-    mode?: 'fresh' | 'resume'
-    resumeId?: string
-    mkdir?: boolean
-    headless?: boolean
-    onProgress?: (event: Record<string, unknown>) => void
-  }) => Promise<{ ok: boolean; error?: string; wrapperId?: string; jobId?: string }>
+  onSpawnSession?: (
+    params: Omit<SpawnRequest, 'jobId'> & {
+      onProgress?: (event: Record<string, unknown>) => void
+    },
+  ) => Promise<{ ok: boolean; error?: string; wrapperId?: string; jobId?: string }>
   onGetSpawnDiagnostics?: (
     jobId: string,
   ) => Promise<{ ok: boolean; error?: string; diagnostics?: Record<string, unknown> }>
@@ -824,7 +821,9 @@ export function initMcpChannel(cb: McpChannelCallbacks, id?: WrapperIdentity): v
           }
         }
 
+        const { jobId: _jobId, cwd: _cwd, ...spawnRest } = params as SpawnRequest & Record<string, unknown>
         const result = (await callbacks.onSpawnSession?.({
+          ...spawnRest,
           cwd,
           mode,
           resumeId,

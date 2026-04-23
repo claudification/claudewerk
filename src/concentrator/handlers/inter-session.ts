@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto'
 import type { SessionControlAction } from '../../shared/protocol'
 import { resolveSpawnConfig } from '../../shared/spawn-defaults'
 import { mapProjectTrust, type SpawnCallerContext } from '../../shared/spawn-permissions'
-import type { SpawnRequest } from '../../shared/spawn-schema'
+import { type SpawnRequest, spawnRequestSchema } from '../../shared/spawn-schema'
 import { getGlobalSettings } from '../global-settings'
 import type { MessageHandler } from '../handler-context'
 import { registerHandlers } from '../message-router'
@@ -110,17 +110,14 @@ const handleChannelSpawn: MessageHandler = (ctx, data) => {
     return
   }
 
-  // Build a SpawnRequest from the narrower channel_spawn payload.
-  // Inter-session callers today only pass cwd/mkdir/mode/resumeId/headless.
-  // `effort` is resolved from project/global settings inside dispatchSpawn.
+  // Parse the full SpawnRequest from the channel_spawn payload.
   // jobId is always generated server-side by dispatchSpawn.
-  const req: SpawnRequest = {
-    cwd,
-    mkdir: !!data.mkdir,
-    mode: (data.mode as SpawnRequest['mode']) || 'fresh',
-    resumeId: typeof data.resumeId === 'string' ? data.resumeId : undefined,
-    headless: data.headless !== false,
+  const parsed = spawnRequestSchema.omit({ jobId: true }).safeParse({ ...data, cwd })
+  if (!parsed.success) {
+    ctx.reply({ type: 'channel_spawn_result', ok: false, error: `Invalid spawn params: ${parsed.error.message}` })
+    return
   }
+  const req: SpawnRequest = { ...parsed.data, headless: parsed.data.headless !== false }
 
   const callerCwd = ctx.caller?.cwd ?? null
   const callerTrust = callerCwd ? mapProjectTrust(getProjectSettings(callerCwd)?.trustLevel) : 'trusted'

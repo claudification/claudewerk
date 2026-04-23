@@ -1558,7 +1558,7 @@ async function main() {
           } as unknown as WrapperMessage)
         })
       },
-      async onSpawnSession({ cwd, mode, resumeId, mkdir, headless: spawnHeadless, onProgress }) {
+      async onSpawnSession({ onProgress, ...spawnParams }) {
         if (!ctx.wsClient?.isConnected()) return { ok: false, error: 'Not connected to concentrator' }
 
         // Step 1: Send spawn request via WS, get immediate ack with wrapperId + jobId
@@ -1572,11 +1572,7 @@ async function main() {
             }
             ctx.wsClient?.send({
               type: 'channel_spawn',
-              cwd,
-              mode,
-              resumeId,
-              mkdir,
-              headless: spawnHeadless,
+              ...spawnParams,
             } as unknown as WrapperMessage)
           },
         )
@@ -1586,7 +1582,7 @@ async function main() {
         const jobId = spawnResult.jobId
         diag(
           'channel',
-          `spawn_session: ${cwd} mode=${mode || 'default'} wrapperId=${spawnResult.wrapperId?.slice(0, 8)} job=${jobId?.slice(0, 8)}`,
+          `spawn_session: ${spawnParams.cwd} mode=${spawnParams.mode || 'default'} wrapperId=${spawnResult.wrapperId?.slice(0, 8)} job=${jobId?.slice(0, 8)}`,
         )
 
         // Subscribe to job progress now that we have the server-generated jobId.
