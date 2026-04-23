@@ -316,6 +316,7 @@ const unsubscribeJob: MessageHandler = (ctx, data) => {
 const renameSession: MessageHandler = (ctx, data) => {
   const sessionId = data.sessionId as string
   const name = (data.name as string)?.trim()
+  const description = typeof data.description === 'string' ? data.description.trim() : undefined
   if (!sessionId) throw new GuardError('Missing sessionId')
 
   const session = ctx.sessions.getSession(sessionId)
@@ -326,9 +327,11 @@ const renameSession: MessageHandler = (ctx, data) => {
     session.title = name
     session.titleUserSet = true
   } else {
-    // Empty name = clear user-set title (revert to auto-name or none)
     session.title = undefined
     session.titleUserSet = false
+  }
+  if (description !== undefined) {
+    session.description = description || undefined
   }
   ctx.sessions.broadcastSessionUpdate(sessionId)
   ctx.reply({ type: 'rename_session_result', ok: true })

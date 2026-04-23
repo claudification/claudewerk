@@ -204,6 +204,7 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
                 .filter(Boolean) as string[],
             ),
           ),
+        sessionDescription: req.description || undefined,
         permissionMode,
         autocompactPct,
         maxBudgetUsd,

@@ -802,9 +802,12 @@ const SessionItemFull = memo(function SessionItemFull({ session }: { session: Se
           {isRenaming ? <InlineRename session={session} /> : sessionName}
         </div>
       )}
-      {ps?.description && (
-        <div className="mt-0.5 text-[10px] text-muted-foreground/60 truncate pl-1 italic" title={ps.description}>
-          {ps.description}
+      {(session.description || ps?.description) && (
+        <div
+          className="mt-0.5 text-[10px] text-muted-foreground/60 truncate pl-1 italic"
+          title={session.description || ps?.description}
+        >
+          {session.description || ps?.description}
         </div>
       )}
       {session.gitBranch && session.gitBranch !== 'main' && session.gitBranch !== 'master' && (
@@ -1070,7 +1073,7 @@ export const SessionItemCompact = memo(function SessionItemCompact({ session }: 
 
 // ─── Session card with settings button ─────────────────────────────
 
-export function SessionCard({ session }: { session: Session }) {
+export const SessionCard = memo(function SessionCard({ session }: { session: Session }) {
   const [showSettings, setShowSettings] = useState(false)
   const isSelected = useSessionsStore(s => s.selectedSessionId === session.id)
   return (
@@ -1096,59 +1099,67 @@ export function SessionCard({ session }: { session: Session }) {
       </div>
     </SessionContextMenu>
   )
-}
+})
 
 // ─── Inactive project item ────────────────────────────────────────
 
-export function InactiveProjectItem({ sessions }: { sessions: Session[] }) {
-  const [showSettings, setShowSettings] = useState(false)
-  const selectSession = useSessionsStore(s => s.selectSession)
-  const projectSettings = useSessionsStore(s => s.projectSettings)
-  const latest = sessions.reduce((a, b) => (a.lastActivity > b.lastActivity ? a : b))
-  const ps = projectSettings[latest.project]
-  const displayName = projectDisplayName(projectPath(latest.project), ps?.label)
-  const displayColor = ps?.color
+export const InactiveProjectItem = memo(
+  function InactiveProjectItem({ sessions }: { sessions: Session[] }) {
+    const [showSettings, setShowSettings] = useState(false)
+    const selectSession = useSessionsStore(s => s.selectSession)
+    const latest = sessions.reduce((a, b) => (a.lastActivity > b.lastActivity ? a : b))
+    const ps = useSessionsStore(s => s.projectSettings[latest.project])
+    const displayName = projectDisplayName(projectPath(latest.project), ps?.label)
+    const displayColor = ps?.color
 
-  return (
-    <SessionContextMenu session={latest} onOpenSettings={() => setShowSettings(true)}>
-      <div>
-        <div
-          data-session-id={latest.id}
-          role="button"
-          tabIndex={0}
-          onClick={() => {
-            haptic('tap')
-            selectSession(latest.id)
-          }}
-          onKeyDown={e => {
-            if (e.key === 'Enter' || e.key === ' ') {
+    return (
+      <SessionContextMenu session={latest} onOpenSettings={() => setShowSettings(true)}>
+        <div>
+          <div
+            data-session-id={latest.id}
+            role="button"
+            tabIndex={0}
+            onClick={() => {
               haptic('tap')
               selectSession(latest.id)
-            }
-          }}
-          className="w-full text-left border border-border hover:border-primary p-2 pl-3 transition-colors cursor-pointer"
-          style={displayColor ? { borderLeftColor: displayColor, borderLeftWidth: '3px' } : undefined}
-          title={`${sessions.length} session${sessions.length > 1 ? 's' : ''}\n${projectPath(latest.project)}`}
-        >
-          <div className="flex items-center gap-1.5">
-            {ps?.icon && (
-              <span className="text-muted-foreground" style={displayColor ? { color: displayColor } : undefined}>
-                {renderProjectIcon(ps.icon)}
+            }}
+            onKeyDown={e => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                haptic('tap')
+                selectSession(latest.id)
+              }
+            }}
+            className="w-full text-left border border-border hover:border-primary p-2 pl-3 transition-colors cursor-pointer"
+            style={displayColor ? { borderLeftColor: displayColor, borderLeftWidth: '3px' } : undefined}
+            title={`${sessions.length} session${sessions.length > 1 ? 's' : ''}\n${projectPath(latest.project)}`}
+          >
+            <div className="flex items-center gap-1.5">
+              {ps?.icon && (
+                <span className="text-muted-foreground" style={displayColor ? { color: displayColor } : undefined}>
+                  {renderProjectIcon(ps.icon)}
+                </span>
+              )}
+              <span
+                className="font-mono text-xs text-muted-foreground truncate flex-1"
+                style={displayColor ? { color: `${displayColor}99` } : undefined}
+              >
+                {displayName}
               </span>
-            )}
-            <span
-              className="font-mono text-xs text-muted-foreground truncate flex-1"
-              style={displayColor ? { color: `${displayColor}99` } : undefined}
-            >
-              {displayName}
-            </span>
-            <span className="text-[10px] text-muted-foreground/60 font-mono shrink-0">
-              {formatAge(latest.lastActivity)}
-            </span>
+              <span className="text-[10px] text-muted-foreground/60 font-mono shrink-0">
+                {formatAge(latest.lastActivity)}
+              </span>
+            </div>
           </div>
+          {showSettings && <ProjectSettingsEditor project={latest.project} onClose={() => setShowSettings(false)} />}
         </div>
-        {showSettings && <ProjectSettingsEditor project={latest.project} onClose={() => setShowSettings(false)} />}
-      </div>
-    </SessionContextMenu>
-  )
-}
+      </SessionContextMenu>
+    )
+  },
+  (prev, next) => {
+    if (prev.sessions.length !== next.sessions.length) return false
+    for (let i = 0; i < prev.sessions.length; i++) {
+      if (prev.sessions[i] !== next.sessions[i]) return false
+    }
+    return true
+  },
+)

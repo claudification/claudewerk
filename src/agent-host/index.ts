@@ -863,6 +863,7 @@ async function main() {
         : {
             claudeArgs,
             title: process.env.RCLAUDE_SESSION_NAME || undefined,
+            description: process.env.RCLAUDE_SESSION_DESCRIPTION || undefined,
             // launchConfig is stored on the broker at spawn time (keyed
             // by conversationId) -- the broker merges it into the session on
             // promote, so we don't need to duplicate it here.
@@ -886,6 +887,7 @@ async function main() {
             sessionId: ctx.claudeSessionId || conversationId,
             name: ctx.pendingSessionName.name,
             userSet: ctx.pendingSessionName.userSet,
+            description: ctx.pendingSessionName.description,
           } as AgentHostMessage)
           ctx.pendingSessionName = undefined
         }
@@ -1717,7 +1719,7 @@ async function main() {
           } as unknown as AgentHostMessage)
         })
       },
-      async onRenameSession(name) {
+      async onRenameSession(name, description) {
         if (!ctx.wsClient?.isConnected()) return { ok: false, error: 'Not connected to broker' }
         const sessionId = ctx.claudeSessionId || ctx.conversationId
         return new Promise(resolve => {
@@ -1731,6 +1733,7 @@ async function main() {
             type: 'rename_session',
             sessionId,
             name,
+            description,
           } as unknown as AgentHostMessage)
         })
       },
@@ -1885,10 +1888,12 @@ async function main() {
 
   // Send session name to broker (immediately if connected, or deferred to onConnected)
   // Store on context so onConnected can send it after WS connects
+  const sessionDescription = process.env.RCLAUDE_SESSION_DESCRIPTION || undefined
   ctx.pendingSessionName = resolvedSessionName
     ? {
         name: resolvedSessionName,
         userSet: !!process.env.RCLAUDE_SESSION_NAME,
+        description: sessionDescription,
       }
     : undefined
   if (resolvedSessionName && ctx.wsClient?.isConnected()) {
@@ -1897,6 +1902,7 @@ async function main() {
       sessionId: ctx.claudeSessionId || conversationId,
       name: resolvedSessionName,
       userSet: !!process.env.RCLAUDE_SESSION_NAME,
+      description: sessionDescription,
     } as AgentHostMessage)
     ctx.pendingSessionName = undefined
   }

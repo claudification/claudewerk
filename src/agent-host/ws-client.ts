@@ -57,6 +57,7 @@ export interface WsClientOptions {
   initialBoot?: {
     claudeArgs: string[]
     title?: string
+    description?: string
     launchConfig?: LaunchConfig
   }
   onConnected?: () => void
@@ -303,6 +304,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
               claudeAuth,
               launchConfig: options.initialBoot?.launchConfig,
               title: options.initialBoot?.title,
+              description: options.initialBoot?.description,
               startedAt: Date.now(),
               configuredModel,
             }

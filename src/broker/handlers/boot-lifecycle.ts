@@ -65,6 +65,7 @@ const wrapperBoot: MessageHandler = (ctx, data) => {
     if (data.claudeVersion) placeholder.claudeVersion = data.claudeVersion as string
     if (data.claudeAuth) placeholder.claudeAuth = data.claudeAuth as Record<string, unknown>
     if (data.title) placeholder.title = data.title as string
+    if (data.description) placeholder.description = data.description as string
     if (bootConfiguredModel) placeholder.configuredModel = bootConfiguredModel
   }
 

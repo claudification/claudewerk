@@ -137,7 +137,7 @@ export interface McpChannelCallbacks {
   /** Deliver a message to Claude (channel notification in PTY, stdin user message in headless) */
   onDeliverMessage?: (content: string, meta: Record<string, string>) => void
   /** Rename the current session */
-  onRenameSession?: (name: string) => Promise<{ ok: boolean; error?: string }>
+  onRenameSession?: (name: string, description?: string) => Promise<{ ok: boolean; error?: string }>
   /** Notify that project tasks changed (triggers project_changed broadcast to dashboard) */
   onProjectChanged?: () => void
   /** Self-terminate this session */
@@ -511,7 +511,11 @@ export function initMcpChannel(cb: McpChannelCallbacks, id?: AgentHostIdentity):
             'i',
           )
           sessions = sessions.filter(
-            s => regex.test(s.name) || (s.title && regex.test(s.title)) || (s.label && regex.test(s.label)),
+            s =>
+              regex.test(s.name) ||
+              (s.title && regex.test(s.title)) ||
+              (s.label && regex.test(s.label)) ||
+              (s.description && regex.test(s.description)),
           )
         }
         debug(
@@ -1003,7 +1007,7 @@ export function initMcpChannel(cb: McpChannelCallbacks, id?: AgentHostIdentity):
 
     rename_session: {
       description:
-        'Rename the current session. Sets the session title visible in the dashboard sidebar. Use slug-formatted names for consistency (e.g. "refactor-auth-middleware"). Pass empty string to clear and revert to auto-generated name.',
+        'Rename the current session and/or set its description. The title is visible in the dashboard sidebar. Use slug-formatted names for consistency (e.g. "refactor-auth-middleware"). Pass empty name to clear and revert to auto-generated name. Description is a short line shown in sidebar and list_sessions -- use it to explain what this session is working on.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -1011,12 +1015,18 @@ export function initMcpChannel(cb: McpChannelCallbacks, id?: AgentHostIdentity):
             type: 'string',
             description: 'New session name/title. Empty string clears user-set name.',
           },
+          description: {
+            type: 'string',
+            description:
+              'Short description of what this session is working on. Shown in dashboard and list_sessions. Empty string clears.',
+          },
         },
         required: ['name'],
       },
       async handle(params) {
         const newName = typeof params.name === 'string' ? params.name : ''
-        const result = await callbacks.onRenameSession?.(newName)
+        const newDesc = typeof params.description === 'string' ? params.description : undefined
+        const result = await callbacks.onRenameSession?.(newName, newDesc)
         if (!result?.ok) {
           debug(`[channel] rename_session failed: ${result?.error}`)
           return {
@@ -1025,7 +1035,7 @@ export function initMcpChannel(cb: McpChannelCallbacks, id?: AgentHostIdentity):
           }
         }
         const label = newName || '(auto)'
-        debug(`[channel] rename_session: "${label}"`)
+        debug(`[channel] rename_session: "${label}"${newDesc ? ` desc="${newDesc}"` : ''}`)
         return { content: [{ type: 'text', text: `Session renamed to "${label}"` }] }
       },
     },

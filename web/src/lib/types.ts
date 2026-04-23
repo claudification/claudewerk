@@ -95,6 +95,7 @@ export interface Session {
   lastTurnEndedAt?: number
   summary?: string
   title?: string
+  description?: string
   agentName?: string
   prLinks?: Array<{ prNumber: number; prUrl: string; prRepository: string; timestamp: string }>
   linkedProjects?: Array<{ project: string; name: string }>

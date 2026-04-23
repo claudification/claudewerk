@@ -283,6 +283,9 @@ export function SessionHeader({
                 {(session.title || session.agentName) && (
                   <span className="text-foreground text-[10px]">{session.title || session.agentName}</span>
                 )}
+                {session.description && (
+                  <span className="text-muted-foreground/70 text-[10px] italic">{session.description}</span>
+                )}
                 <span
                   className="text-muted-foreground text-[10px]"
                   title={`session: ${session.id}\nconversations: ${session.conversationIds?.join(', ') || 'none'}`}

@@ -365,6 +365,7 @@ export interface WrapperBoot {
   claudeAuth?: { email?: string; orgId?: string; orgName?: string; subscriptionType?: string }
   launchConfig?: LaunchConfig
   title?: string
+  description?: string
   startedAt: number
   configuredModel?: string // the --model value passed to CC (CC strips [1m] from API responses)
 }
@@ -491,6 +492,7 @@ export interface SessionNameUpdate {
   type: 'session_name'
   sessionId: string
   name: string
+  description?: string
 }
 
 // Session info from stream-json init (skills, tools, agents, etc.)
@@ -668,6 +670,7 @@ export interface InterSessionListResponse {
     project: string
     status: 'live' | 'inactive'
     title?: string
+    description?: string
     summary?: string
   }>
   self?: {
@@ -1198,6 +1201,7 @@ export interface Session {
   summary?: string // AI-generated session summary
   title?: string // custom session title (from /rename or auto-generated)
   titleUserSet?: boolean // true if title was explicitly set by user (spawn dialog) -- prevents auto-name overwrite
+  description?: string // short user-provided line describing what this session is working on
   agentName?: string // agent/skill name (for --agent sessions)
   prLinks?: Array<{ prNumber: number; prUrl: string; prRepository: string; timestamp: string }>
   stats: {
@@ -1528,6 +1532,7 @@ export interface SessionSummary {
   hasNotification?: boolean
   summary?: string
   title?: string
+  description?: string
   agentName?: string
   prLinks?: Session['prLinks']
   linkedProjects?: Array<{ project: string; name: string }>
