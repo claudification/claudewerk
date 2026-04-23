@@ -1,5 +1,9 @@
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createMemoryDriver } from '../memory/driver'
+import { createSqliteDriver } from '../sqlite/driver'
 import type { StoreDriver, TranscriptEntryInput } from '../types'
 
 function makeTranscriptEntry(
@@ -755,3 +759,7 @@ function runStoreTests(name: string, createDriver: () => StoreDriver) {
 // -----------------------------------------------------------------
 
 runStoreTests('MemoryDriver', () => createMemoryDriver())
+
+runStoreTests('SqliteDriver', () =>
+  createSqliteDriver({ type: 'sqlite', dataDir: mkdtempSync(join(tmpdir(), 'store-test-')) }),
+)
