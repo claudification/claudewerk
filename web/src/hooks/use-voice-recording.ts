@@ -64,6 +64,10 @@ export function getMicExpired() {
   return micExpiredFlag
 }
 
+export function dismissMicExpired() {
+  setMicExpired(false)
+}
+
 function releaseWarmStream() {
   const wasKeepOpen = useSessionsStore.getState().dashboardPrefs.keepMicOpen
   if (warmStream) {
