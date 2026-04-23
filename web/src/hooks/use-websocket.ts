@@ -158,30 +158,81 @@ function flushMessages() {
   })
 }
 
+// Server now reports staleTranscripts as { [sid]: serverLastSeq }. Compare
+// against our lastAppliedTranscriptSeq to decide what to refetch, and fetch
+// via ?sinceSeq=N delta so we only pull the gap rather than the entire tail.
+//
+// Edge case: server returns `gap: true` when its cache has evicted entries
+// older than our sinceSeq (MAX_TRANSCRIPT_ENTRIES rolled over past us). Treat
+// gap=true as "full replace with what you got", not an append -- otherwise
+// we'd have a hole between our lastAppliedSeq and the first returned seq.
 function refetchStaleTranscripts(staleTranscripts?: Record<string, number>): void {
   if (!staleTranscripts) return
-  const { transcripts, setTranscript } = useSessionsStore.getState()
+  const { lastAppliedTranscriptSeq, setTranscript } = useSessionsStore.getState()
   const sids = Object.keys(staleTranscripts)
   const actuallyStale = sids.filter(s => {
-    const local = transcripts[s]?.length ?? 0
-    const server = staleTranscripts[s]
-    return server > local
+    const localSeq = lastAppliedTranscriptSeq[s] ?? 0
+    const serverSeq = staleTranscripts[s]
+    return serverSeq > localSeq
   })
   if (actuallyStale.length === 0) {
     console.log(`[sync] staleTranscripts=${sids.length} all-in-sync (no refetch)`)
     return
   }
   console.log(
-    `[sync] STALE transcripts: ${actuallyStale.map(s => `${s.slice(0, 8)} server=${staleTranscripts[s]} local=${transcripts[s]?.length ?? 0}`).join(', ')}`,
+    `[sync] STALE transcripts: ${actuallyStale
+      .map(s => `${s.slice(0, 8)} serverSeq=${staleTranscripts[s]} localSeq=${lastAppliedTranscriptSeq[s] ?? 0}`)
+      .join(', ')}`,
   )
   for (const sid of actuallyStale) {
-    fetchTranscript(sid).then(transcript => {
-      if (transcript) {
-        console.log(`[sync] REFETCH transcript ${sid.slice(0, 8)}: ${transcript.length} entries`)
-        setTranscript(sid, transcript)
-      } else {
+    const sinceSeq = lastAppliedTranscriptSeq[sid] ?? 0
+    fetchTranscript(sid, sinceSeq).then(result => {
+      if (!result) {
         console.log(`[sync] REFETCH transcript ${sid.slice(0, 8)}: FAILED (null response)`)
+        return
       }
+      if (result.gap) {
+        // Server couldn't fulfil the delta (we were behind by more than the
+        // cache holds). Full replace from whatever server has.
+        console.log(
+          `[sync] REFETCH transcript ${sid.slice(0, 8)}: GAP delta=${result.entries.length} lastSeq=${result.lastSeq} -- full replace`,
+        )
+        setTranscript(sid, result.entries)
+        return
+      }
+      if (result.entries.length === 0) {
+        // Nothing to apply -- but bump our lastAppliedSeq to server's lastSeq
+        // so we stop asking. Happens if server advanced its counter without
+        // net-new cached entries (e.g. all new entries got evicted between
+        // sync_check and our fetch).
+        useSessionsStore.setState(state => ({
+          lastAppliedTranscriptSeq: { ...state.lastAppliedTranscriptSeq, [sid]: result.lastSeq },
+        }))
+        console.log(`[sync] REFETCH transcript ${sid.slice(0, 8)}: no new entries, bumped seq -> ${result.lastSeq}`)
+        return
+      }
+      // Normal delta: append to existing transcript.
+      useSessionsStore.setState(state => {
+        const existing = state.transcripts[sid] || []
+        // Guard: only append entries strictly newer than what we have.
+        // Handles the race where a WS transcript_entries broadcast landed
+        // between our sync_check send and this HTTP response.
+        const localMax = state.lastAppliedTranscriptSeq[sid] ?? 0
+        const fresh = result.entries.filter(e => (e.seq ?? 0) > localMax)
+        if (fresh.length === 0) {
+          return {
+            lastAppliedTranscriptSeq: { ...state.lastAppliedTranscriptSeq, [sid]: Math.max(localMax, result.lastSeq) },
+          }
+        }
+        console.log(
+          `[sync] REFETCH transcript ${sid.slice(0, 8)}: +${fresh.length} delta entries (lastSeq ${localMax} -> ${result.lastSeq})`,
+        )
+        return {
+          transcripts: { ...state.transcripts, [sid]: [...existing, ...fresh] },
+          lastAppliedTranscriptSeq: { ...state.lastAppliedTranscriptSeq, [sid]: result.lastSeq },
+          newDataSeq: state.newDataSeq + 1,
+        }
+      })
     })
   }
 }
@@ -214,11 +265,16 @@ function processMessage(msg: DashboardMessage) {
       const staleTranscripts = syncMsg.staleTranscripts
       const staleInfo = staleTranscripts ? ` staleTranscripts=${Object.keys(staleTranscripts).length}` : ''
       console.log(`[sync] <- sync_stale: ${stale.reason || 'unknown'} missed=${stale.missed || '?'}${staleInfo}`)
-      // Full resync needed - bump connectSeq (triggers LIFO eviction + re-fetch in onopen)
+      // Full resync needed - bump connectSeq (triggers LIFO eviction + re-fetch in onopen).
+      // Clear lastAppliedTranscriptSeq: epoch changed means server's per-session
+      // seq counters reset, so our stored seqs are from the previous generation
+      // and would false-negative a future sync_check. The upcoming initial
+      // transcript_entries broadcasts will reseed from fresh seqs.
       useSessionsStore.setState(s => ({
         connectSeq: s.connectSeq + 1,
         syncEpoch: stale.epoch || '',
         syncSeq: stale.seq || 0,
+        lastAppliedTranscriptSeq: {},
       }))
       break
     }
@@ -312,8 +368,10 @@ function processMessage(msg: DashboardMessage) {
           // 500ms gives the transcript watcher time to stream initial entries to the new ID.
           setTimeout(() => {
             fetchTranscript(sessionId).then(transcript => {
-              console.log(`[sync] rekey refetch ${sessionId.slice(0, 8)}: ${transcript?.length ?? 'null'} entries`)
-              if (transcript) useSessionsStore.getState().setTranscript(sessionId, transcript)
+              console.log(
+                `[sync] rekey refetch ${sessionId.slice(0, 8)}: ${transcript?.entries.length ?? 'null'} entries lastSeq=${transcript?.lastSeq ?? '-'}`,
+              )
+              if (transcript) useSessionsStore.getState().setTranscript(sessionId, transcript.entries)
             })
           }, 500)
         } else if (session.status === 'starting') {
@@ -326,8 +384,10 @@ function processMessage(msg: DashboardMessage) {
             // same-ID rekey or the session may have new data from a restart.
             setTimeout(() => {
               fetchTranscript(sessionId).then(transcript => {
-                console.log(`[sync] resume refetch ${sessionId.slice(0, 8)}: ${transcript?.length ?? 'null'} entries`)
-                if (transcript) useSessionsStore.getState().setTranscript(sessionId, transcript)
+                console.log(
+                  `[sync] resume refetch ${sessionId.slice(0, 8)}: ${transcript?.entries.length ?? 'null'} entries lastSeq=${transcript?.lastSeq ?? '-'}`,
+                )
+                if (transcript) useSessionsStore.getState().setTranscript(sessionId, transcript.entries)
               })
             }, 1000)
           }
@@ -391,8 +451,19 @@ function processMessage(msg: DashboardMessage) {
             } else {
               result = newEntries
             }
+          } else if (initial) {
+            result = newEntries
           } else {
-            result = initial ? newEntries : [...existing, ...newEntries]
+            // Incremental append -- dedup by seq against our last-applied.
+            // Guards the race where a sync_check delta fetch raced with a live
+            // WS broadcast and we applied the delta first. Without this guard,
+            // the broadcast would re-append entries we already have.
+            const localMax = state.lastAppliedTranscriptSeq[sid] ?? 0
+            const fresh = newEntries.filter(e => e.seq === undefined || e.seq > localMax)
+            if (fresh.length === 0) {
+              return {}
+            }
+            result = [...existing, ...fresh]
           }
           if (initial || newEntries.length > 2) {
             console.log(
@@ -409,11 +480,20 @@ function processMessage(msg: DashboardMessage) {
                   return rest
                 })()
               : state.streamingText
+          // Update lastAppliedTranscriptSeq to max(existing, max-in-result).
+          // Skipped initial snapshots don't move the marker (result === existing).
+          const maxSeqInResult = result.length > 0 ? (result[result.length - 1].seq ?? 0) : 0
+          const prevSeq = state.lastAppliedTranscriptSeq[sid] ?? 0
+          const newSeq = Math.max(prevSeq, maxSeqInResult)
           return {
             transcripts: {
               ...state.transcripts,
               [sid]: result,
             },
+            lastAppliedTranscriptSeq:
+              newSeq !== prevSeq
+                ? { ...state.lastAppliedTranscriptSeq, [sid]: newSeq }
+                : state.lastAppliedTranscriptSeq,
             streamingText,
             newDataSeq: state.newDataSeq + 1,
           }
@@ -940,21 +1020,24 @@ export function useWebSocket() {
         // that arrived while WS was down). Small delay lets server process the
         // channel subscriptions first so the sync_check response is accurate.
         setTimeout(() => {
-          const { syncEpoch, syncSeq, transcripts: currentTranscripts } = useSessionsStore.getState()
-          const transcriptCounts: Record<string, number> = {}
-          for (const [sid, entries] of Object.entries(currentTranscripts)) {
-            if (entries && entries.length > 0) transcriptCounts[sid] = entries.length
+          // sync_check sends the last applied transcript seq per session, not
+          // entry counts. Server compares against its own lastAssignedSeq per
+          // session and replies with a delta list if we're behind.
+          const { syncEpoch, syncSeq, lastAppliedTranscriptSeq } = useSessionsStore.getState()
+          const transcriptSeqs: Record<string, number> = {}
+          for (const [sid, seq] of Object.entries(lastAppliedTranscriptSeq)) {
+            if (seq > 0) transcriptSeqs[sid] = seq
           }
-          if (Object.keys(transcriptCounts).length > 0) {
-            const summary = Object.entries(transcriptCounts)
-              .map(([sid, n]) => `${sid.slice(0, 8)}=${n}`)
+          if (Object.keys(transcriptSeqs).length > 0) {
+            const summary = Object.entries(transcriptSeqs)
+              .map(([sid, s]) => `${sid.slice(0, 8)}@${s}`)
               .join(' ')
             console.log(
-              `[sync] -> sync_check (reconnect) epoch=${syncEpoch.slice(0, 8)} seq=${syncSeq} transcripts=[${summary}]`,
+              `[sync] -> sync_check (reconnect) epoch=${syncEpoch.slice(0, 8)} seq=${syncSeq} transcriptSeqs=[${summary}]`,
             )
-            send({ type: 'sync_check', epoch: syncEpoch, lastSeq: syncSeq, transcripts: transcriptCounts })
+            send({ type: 'sync_check', epoch: syncEpoch, lastSeq: syncSeq, transcripts: transcriptSeqs })
           } else {
-            console.log(`[sync] -> sync_check SKIP (reconnect): no cached transcripts to compare`)
+            console.log(`[sync] -> sync_check SKIP (reconnect): no tracked transcript seqs to compare`)
           }
         }, 500)
       }
@@ -1190,23 +1273,24 @@ export function useWebSocket() {
     })
 
     // Periodic sync check: detect silently dropped transcript entries.
-    // Runs every 60s while connected, compares local transcript counts
-    // with the server and triggers refetch for any stale transcripts.
+    // Runs every 60s while connected. Sends per-session lastAppliedSeq so the
+    // server can report back any sessions where its counter has advanced past
+    // what we've applied -- those get a ?sinceSeq=N delta refetch.
     const syncInterval = setInterval(() => {
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
-      const { syncEpoch, syncSeq, transcripts: currentTranscripts } = useSessionsStore.getState()
-      const transcriptCounts: Record<string, number> = {}
-      for (const [sid, entries] of Object.entries(currentTranscripts)) {
-        if (entries && entries.length > 0) transcriptCounts[sid] = entries.length
+      const { syncEpoch, syncSeq, lastAppliedTranscriptSeq } = useSessionsStore.getState()
+      const transcriptSeqs: Record<string, number> = {}
+      for (const [sid, seq] of Object.entries(lastAppliedTranscriptSeq)) {
+        if (seq > 0) transcriptSeqs[sid] = seq
       }
-      if (Object.keys(transcriptCounts).length > 0) {
-        const summary = Object.entries(transcriptCounts)
-          .map(([sid, n]) => `${sid.slice(0, 8)}=${n}`)
+      if (Object.keys(transcriptSeqs).length > 0) {
+        const summary = Object.entries(transcriptSeqs)
+          .map(([sid, s]) => `${sid.slice(0, 8)}@${s}`)
           .join(' ')
         console.log(
-          `[sync] -> sync_check (periodic) epoch=${syncEpoch.slice(0, 8)} seq=${syncSeq} transcripts=[${summary}]`,
+          `[sync] -> sync_check (periodic) epoch=${syncEpoch.slice(0, 8)} seq=${syncSeq} transcriptSeqs=[${summary}]`,
         )
-        send({ type: 'sync_check', epoch: syncEpoch, lastSeq: syncSeq, transcripts: transcriptCounts })
+        send({ type: 'sync_check', epoch: syncEpoch, lastSeq: syncSeq, transcripts: transcriptSeqs })
       }
     }, 60_000)
 

@@ -344,16 +344,32 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   ): void {
     const wsData = ws.data as { userName?: string } | undefined
     const who = wsData?.userName ? `dash:${wsData.userName}` : 'dash'
-    // Compare client transcript counts with server cache.
-    // Returns session IDs where server has more entries than client.
+    // Compare client lastAppliedSeq against server's lastAssignedSeq per session.
+    // Returns session IDs where server has higher seq than client, along with
+    // the server's seq so the client can do a `?sinceSeq=N` delta fetch instead
+    // of a full refetch.
+    //
+    // Why seqs, not counts:
+    //   - Count mismatch creates a permanent feedback loop when server cap
+    //     (MAX_TRANSCRIPT_ENTRIES=1000) and client fetch cap (limit=500)
+    //     differ -- client refetches 500, server still has 1000, next tick
+    //     "stale" again, forever.
+    //   - Seqs are monotonic per session -- compare is unambiguous and the
+    //     delta fetch is proportional to the actual gap.
+    //   - Edits/replacements of existing entries (count same, content drift)
+    //     would be invisible to a count check.
+    //
+    // The `clientTranscripts` param name is preserved but its values are
+    // now lastAppliedSeq, not length. Wire-level backwards compat is moot --
+    // same project, single deploy. Callers updated in one shot.
     const staleTranscripts: Record<string, number> = {}
     const staleDetails: string[] = []
     if (clientTranscripts) {
-      for (const [sid, clientCount] of Object.entries(clientTranscripts)) {
-        const serverCount = transcriptCache.get(sid)?.length ?? 0
-        if (serverCount > clientCount) {
-          staleTranscripts[sid] = serverCount
-          staleDetails.push(`${sid.slice(0, 8)} server=${serverCount} client=${clientCount}`)
+      for (const [sid, clientLastSeq] of Object.entries(clientTranscripts)) {
+        const serverLastSeq = transcriptSeqCounters.get(sid) ?? 0
+        if (serverLastSeq > clientLastSeq) {
+          staleTranscripts[sid] = serverLastSeq
+          staleDetails.push(`${sid.slice(0, 8)} serverSeq=${serverLastSeq} clientSeq=${clientLastSeq}`)
         }
       }
     }
@@ -440,8 +456,31 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   // Deduplicate clipboard captures by tool_use_id (prevents re-processing on transcript re-reads)
   const processedClipboardIds = new Set<string>()
 
+  /** Per-session monotonic transcript sequence counter. Stamps `entry.seq` on
+   *  every cache insert so the sync protocol can detect drift by last-seq-seen
+   *  rather than by entry count (which is unreliable when caps differ between
+   *  server and client, or when entries are edited in place).
+   *
+   *  In-memory only; not persisted. Rationale:
+   *    - SYNC_EPOCH regenerates on concentrator restart, forcing clients to
+   *      drop lastAppliedSeq and full-resync (see sync_stale path below).
+   *    - Hydration from JSONL re-stamps 1..N on boot (see loadTranscripts), so
+   *      seqs match cache state exactly without round-tripping through disk.
+   *    - No migration burden when the counter logic changes.
+   *
+   *  Reset semantics:
+   *    - `addTranscriptEntries(..., isInitial=true)` resets counter to 0 and
+   *      re-stamps the batch from 1. Mirror the cache replace.
+   *    - rekey (line 1167 area) deletes the counter alongside the cache entry.
+   *    - Session delete (line 1772 area) likewise.
+   */
+  const transcriptSeqCounters = new Map<string, number>()
+
   // Subagent transcript cache: `${sessionId}:${agentId}` -> entries
   const subagentTranscriptCache = new Map<string, TranscriptEntry[]>()
+  /** Per-subagent transcript seq counter. Same semantics as
+   *  `transcriptSeqCounters` above, but keyed by `${sessionId}:${agentId}`. */
+  const subagentTranscriptSeqCounters = new Map<string, number>()
   // Transcript kick tracking: sessionId -> last kick timestamp (debounce 60s)
   const lastTranscriptKick = new Map<string, number>()
   const TRANSCRIPT_KICK_DEBOUNCE_MS = 60_000
@@ -980,6 +1019,12 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
             }
           }
           if (entries.length > 0) {
+            // Stamp seqs during hydration. Seqs are in-memory only, never
+            // persisted to JSONL -- on every concentrator boot we restamp from
+            // whatever file state survived. SYNC_EPOCH regenerates on boot,
+            // so any client that was mid-conversation will full-resync via
+            // sync_stale and adopt the new seqs.
+            assignTranscriptSeqs(transcriptSeqCounters, sessionId, entries, true)
             transcriptCache.set(sessionId, entries.slice(-MAX_TRANSCRIPT_ENTRIES))
             loaded++
           }
@@ -1163,13 +1208,18 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       }
     }
 
-    // Clear transcript caches for old session ID
+    // Clear transcript caches + seq counters for old session ID.
+    // Rekey creates a new conversation identity; the new session gets a fresh
+    // counter starting at 0. Client's lastAppliedSeq for the old id is no
+    // longer compared against (sessionId is the key).
     transcriptCache.delete(oldId)
+    transcriptSeqCounters.delete(oldId)
     deleteTranscriptFile(oldId)
     // Clear subagent transcript caches (keyed as "sessionId:agentId")
     for (const key of subagentTranscriptCache.keys()) {
       if (key.startsWith(`${oldId}:`)) {
         subagentTranscriptCache.delete(key)
+        subagentTranscriptSeqCounters.delete(key)
       }
     }
 
@@ -1770,12 +1820,14 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     sessions.delete(sessionId)
     sessionSockets.delete(sessionId)
     transcriptCache.delete(sessionId)
+    transcriptSeqCounters.delete(sessionId)
     pendingAgentDescriptions.delete(sessionId)
     lastTranscriptKick.delete(sessionId)
     deleteTranscriptFile(sessionId)
     for (const key of subagentTranscriptCache.keys()) {
       if (key.startsWith(`${sessionId}:`)) {
         subagentTranscriptCache.delete(key)
+        subagentTranscriptSeqCounters.delete(key)
       }
     }
     scheduleSave(1000)
@@ -2048,8 +2100,31 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     return currentUsage
   }
 
+  /** Stamp `entry.seq` on every entry in-place using the per-session counter.
+   *  Mutates the array in place -- callers rely on this so subsequent
+   *  broadcasts (which share the same entry objects) carry the stamp.
+   *  If `reset` is true, the counter is reset to 0 first (isInitial path). */
+  function assignTranscriptSeqs(
+    counters: Map<string, number>,
+    key: string,
+    entries: TranscriptEntry[],
+    reset: boolean,
+  ): void {
+    if (reset) counters.set(key, 0)
+    let seq = counters.get(key) ?? 0
+    for (const e of entries) {
+      e.seq = ++seq
+    }
+    counters.set(key, seq)
+  }
+
   // Transcript cache methods
   function addTranscriptEntries(sessionId: string, entries: TranscriptEntry[], isInitial: boolean): void {
+    // Stamp seqs BEFORE cache insert and BEFORE any broadcast the caller does.
+    // All entries in `entries` are mutated in place with `entry.seq = N`.
+    // Callers (handlers/transcript.ts, handlers/boot-lifecycle.ts) then
+    // broadcast the same objects, so the wire payload carries seqs too.
+    assignTranscriptSeqs(transcriptSeqCounters, sessionId, entries, isInitial)
     if (isInitial) {
       transcriptCache.set(sessionId, entries.slice(-MAX_TRANSCRIPT_ENTRIES))
     } else {
@@ -2489,6 +2564,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   ): void {
     const key = `${sessionId}:${agentId}`
     if (isInitial) {
+      // Stamp full batch on initial load -- counter resets to 0.
+      assignTranscriptSeqs(subagentTranscriptSeqCounters, key, entries, true)
       subagentTranscriptCache.set(key, entries.slice(-MAX_TRANSCRIPT_ENTRIES))
     } else {
       const existing = subagentTranscriptCache.get(key) || []
@@ -2497,6 +2574,10 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       const seen = new Set(existing.map(e => e.uuid).filter(Boolean))
       const fresh = entries.filter(e => !e.uuid || !seen.has(e.uuid))
       if (fresh.length === 0) return
+      // Only stamp the deduped tail. Skipped duplicates already had their seq
+      // from the prior ingest; re-stamping would renumber them and break
+      // client's lastAppliedSeq comparison.
+      assignTranscriptSeqs(subagentTranscriptSeqCounters, key, fresh, false)
       existing.push(...fresh)
       if (existing.length > MAX_TRANSCRIPT_ENTRIES) {
         subagentTranscriptCache.set(key, existing.slice(-MAX_TRANSCRIPT_ENTRIES))

@@ -199,6 +199,13 @@ interface TranscriptEntryBase {
   gitBranch?: string
   slug?: string
   userType?: string
+  /** Per-session monotonic sequence number, stamped by the concentrator on cache
+   *  insert. Starts at 1, increments by 1 per entry within a session. Scoped to
+   *  the concentrator's in-memory counter -- NOT persisted to JSONL. On restart
+   *  the counter rebuilds from hydration and SYNC_EPOCH bumps, forcing clients
+   *  to full-resync. Clients compare `lastAppliedSeq[sid]` to server's seq for
+   *  sync integrity. Missing (undefined) only on raw JSONL read before ingest. */
+  seq?: number
 }
 
 export interface TranscriptAssistantMessage {

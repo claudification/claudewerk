@@ -27,10 +27,13 @@ describe('TranscriptCache', () => {
 
     const result = store.getTranscriptEntries('s1')
     expect(result.length).toBe(3)
-    expect(result[2]).toEqual(makeEntry(3))
+    // toMatchObject ignores the in-place stamped `seq` (asserted separately below)
+    expect(result[2]).toMatchObject(makeEntry(3))
+    // Monotonic seqs: initial batch got 1,2; incremental got 3.
+    expect(result.map(e => e.seq)).toEqual([1, 2, 3])
   })
 
-  it('initial batch replaces previous entries', () => {
+  it('initial batch replaces previous entries and resets seq counter', () => {
     const store = createSessionStore({ enablePersistence: false })
     store.createSession('s1', '/tmp')
 
@@ -39,7 +42,9 @@ describe('TranscriptCache', () => {
 
     const result = store.getTranscriptEntries('s1')
     expect(result.length).toBe(1)
-    expect(result[0]).toEqual(makeEntry(10))
+    expect(result[0]).toMatchObject(makeEntry(10))
+    // isInitial=true resets counter -> new single entry restarts at seq 1.
+    expect(result[0].seq).toBe(1)
   })
 
   it('respects limit parameter', () => {
@@ -52,8 +57,8 @@ describe('TranscriptCache', () => {
     const result = store.getTranscriptEntries('s1', 5)
     expect(result.length).toBe(5)
     // Should return last 5 entries
-    expect(result[0]).toEqual(makeEntry(15))
-    expect(result[4]).toEqual(makeEntry(19))
+    expect(result[0]).toMatchObject(makeEntry(15))
+    expect(result[4]).toMatchObject(makeEntry(19))
   })
 
   it('caps at max entries (1000)', () => {
@@ -66,8 +71,11 @@ describe('TranscriptCache', () => {
     const result = store.getTranscriptEntries('s1')
     expect(result.length).toBe(1000)
     // Should keep the last 1000
-    expect(result[0]).toEqual(makeEntry(200))
-    expect(result[999]).toEqual(makeEntry(1199))
+    expect(result[0]).toMatchObject(makeEntry(200))
+    expect(result[999]).toMatchObject(makeEntry(1199))
+    // Seqs 201..1200 survive (1..200 stamped then evicted by slice(-1000)).
+    expect(result[0].seq).toBe(201)
+    expect(result[999].seq).toBe(1200)
   })
 
   it('caps incremental appends too', () => {
@@ -84,8 +92,27 @@ describe('TranscriptCache', () => {
 
     const result = store.getTranscriptEntries('s1')
     expect(result.length).toBe(1000)
-    expect(result[0]).toEqual(makeEntry(10))
-    expect(result[999]).toEqual(makeEntry(1009))
+    expect(result[0]).toMatchObject(makeEntry(10))
+    expect(result[999]).toMatchObject(makeEntry(1009))
+    // Counter didn't reset on the incremental -> seqs 11..1010 survive.
+    expect(result[0].seq).toBe(11)
+    expect(result[999].seq).toBe(1010)
+  })
+
+  it('stamps per-session monotonic seq starting at 1', () => {
+    const store = createSessionStore({ enablePersistence: false })
+    store.createSession('s1', '/tmp')
+    store.createSession('s2', '/tmp')
+
+    store.addTranscriptEntries('s1', [makeEntry(1), makeEntry(2)], true)
+    store.addTranscriptEntries('s2', [makeEntry(1)], true)
+    store.addTranscriptEntries('s1', [makeEntry(3)], false)
+
+    const s1 = store.getTranscriptEntries('s1')
+    const s2 = store.getTranscriptEntries('s2')
+    // Each session has its own counter starting at 1.
+    expect(s1.map(e => e.seq)).toEqual([1, 2, 3])
+    expect(s2.map(e => e.seq)).toEqual([1])
   })
 
   it('returns empty array for unknown session', () => {
@@ -123,8 +150,15 @@ describe('SubagentTranscriptCache', () => {
     store.addSubagentTranscriptEntries('s1', 'agent-1', [makeEntry(1)], true)
     store.addSubagentTranscriptEntries('s1', 'agent-2', [makeEntry(2)], true)
 
-    expect(store.getSubagentTranscriptEntries('s1', 'agent-1')).toEqual([makeEntry(1)])
-    expect(store.getSubagentTranscriptEntries('s1', 'agent-2')).toEqual([makeEntry(2)])
+    const a1 = store.getSubagentTranscriptEntries('s1', 'agent-1')
+    const a2 = store.getSubagentTranscriptEntries('s1', 'agent-2')
+    expect(a1).toHaveLength(1)
+    expect(a1[0]).toMatchObject(makeEntry(1))
+    expect(a2).toHaveLength(1)
+    expect(a2[0]).toMatchObject(makeEntry(2))
+    // Separate counters: each agent restarts at seq 1.
+    expect(a1[0].seq).toBe(1)
+    expect(a2[0].seq).toBe(1)
   })
 
   it('isolates different sessions', () => {
@@ -135,8 +169,12 @@ describe('SubagentTranscriptCache', () => {
     store.addSubagentTranscriptEntries('s1', 'agent-1', [makeEntry(1)], true)
     store.addSubagentTranscriptEntries('s2', 'agent-1', [makeEntry(2)], true)
 
-    expect(store.getSubagentTranscriptEntries('s1', 'agent-1')).toEqual([makeEntry(1)])
-    expect(store.getSubagentTranscriptEntries('s2', 'agent-1')).toEqual([makeEntry(2)])
+    const s1 = store.getSubagentTranscriptEntries('s1', 'agent-1')
+    const s2 = store.getSubagentTranscriptEntries('s2', 'agent-1')
+    expect(s1).toHaveLength(1)
+    expect(s1[0]).toMatchObject(makeEntry(1))
+    expect(s2).toHaveLength(1)
+    expect(s2[0]).toMatchObject(makeEntry(2))
   })
 
   it('appends incremental entries', () => {
@@ -168,6 +206,6 @@ describe('SubagentTranscriptCache', () => {
 
     const result = store.getSubagentTranscriptEntries('s1', 'agent-1', 10)
     expect(result.length).toBe(10)
-    expect(result[0]).toEqual(makeEntry(40))
+    expect(result[0]).toMatchObject(makeEntry(40))
   })
 })

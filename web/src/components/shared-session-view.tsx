@@ -39,7 +39,7 @@ export function SharedSessionView({ token: _token }: { token: string }) {
     })
     fetchTranscript(selectedSessionId).then(transcript => {
       if (transcript) {
-        useSessionsStore.getState().setTranscript(selectedSessionId, transcript)
+        useSessionsStore.getState().setTranscript(selectedSessionId, transcript.entries)
         // Bump newDataSeq again after a delay to trigger scroll-to-bottom
         // after the virtualizer has measured all items
         setTimeout(() => {
