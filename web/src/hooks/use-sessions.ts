@@ -11,6 +11,7 @@ import { setPerfEnabled } from '@/lib/perf-metrics'
 import { DEFAULT_PERMISSIONS, type ResolvedPermissions } from '@/lib/permissions'
 import { appendShareParam } from '@/lib/share-mode'
 import {
+  extractProjectLabel,
   flattenProjectOrderTree,
   type HookEvent,
   type ProjectOrder,
@@ -26,6 +27,7 @@ import { getLastSessionId, getSessionTab, initUIState, setLastSessionId } from '
 import { recordOut } from './ws-stats'
 
 export type { ProjectSettingsMap }
+export { extractProjectLabel }
 
 // Background task output streaming - module-level to avoid Zustand re-renders on every chunk
 const bgTaskOutputMap = new Map<string, string>()
@@ -321,9 +323,9 @@ let defaultApplied = false
 
 const STATUS_PRIORITY: Record<string, number> = { active: 0, idle: 1, starting: 2, ended: 3 }
 
-function findBestSessionForCwd(sessions: Session[], cwd: string): Session | undefined {
+function findBestSessionForCwd(sessions: Session[], cwdOrUri: string): Session | undefined {
   return sessions
-    .filter(s => s.cwd === cwd)
+    .filter(s => s.cwd === cwdOrUri || s.project === cwdOrUri)
     .sort(
       (a, b) => (STATUS_PRIORITY[a.status] ?? 9) - (STATUS_PRIORITY[b.status] ?? 9) || b.lastActivity - a.lastActivity,
     )[0]
@@ -1083,17 +1085,17 @@ export async function fetchProjectSettings(): Promise<ProjectSettingsMap> {
   return res.json()
 }
 
-export function updateProjectSettings(cwd: string, settings: ProjectSettings): boolean {
-  return wsSend('update_project_settings', { cwd, settings })
+export function updateProjectSettings(projectUri: string, settings: ProjectSettings): boolean {
+  return wsSend('update_project_settings', { cwd: projectUri, settings })
 }
 
 export async function generateProjectKeyterms(
-  cwd: string,
+  projectUri: string,
 ): Promise<{ keyterms: string[]; settings: ProjectSettingsMap } | null> {
   const res = await fetch(`${API_BASE}/api/settings/projects/generate-keyterms`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ cwd }),
+    body: JSON.stringify({ cwd: projectUri }),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Request failed' }))
@@ -1102,8 +1104,8 @@ export async function generateProjectKeyterms(
   return res.json()
 }
 
-export function deleteProjectSettings(cwd: string): boolean {
-  return wsSend('delete_project_settings', { cwd })
+export function deleteProjectSettings(projectUri: string): boolean {
+  return wsSend('delete_project_settings', { cwd: projectUri })
 }
 
 // ─── rclaude config (permission rules) API ──────────────────────────

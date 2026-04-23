@@ -264,7 +264,7 @@ import {
   updateProjectSettings,
   useSessionsStore,
 } from '@/hooks/use-sessions'
-import type { ProjectSettings } from '@/lib/types'
+import { extractProjectLabel, type ProjectSettings } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 interface IconEntry {
@@ -732,13 +732,16 @@ export function ProjectSettingsEditor({ cwd, onClose }: ProjectSettingsEditorPro
         {/* ── General tab ──────────────────────────────────────────── */}
         {activeTab === 'general' && (
           <>
+            <div className="text-[10px] text-muted-foreground/60 font-mono truncate mb-2" title={cwd}>
+              {cwd}
+            </div>
             <GroupHeader label="Identity" />
             <SettingRow label="Label" description="Display name for this project">
               <input
                 type="text"
                 value={label}
                 onChange={e => setLabel(e.target.value)}
-                placeholder={cwd.split('/').pop() || 'project name'}
+                placeholder={extractProjectLabel(cwd) || 'project name'}
                 className="w-40 bg-background border border-border px-2 py-1.5 text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-muted-foreground/50"
                 style={{ fontSize: '16px' }}
               />

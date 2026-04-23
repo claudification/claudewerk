@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useSessionsStore } from '@/hooks/use-sessions'
 import type { Session } from '@/lib/types'
+import { extractProjectLabel } from '@/lib/types'
 import { haptic, projectDisplayName } from '@/lib/utils'
 import { ProjectSettingsButton, ProjectSettingsEditor, renderProjectIcon } from '../project-settings-editor'
 import { partitionSessions } from './partition'
@@ -85,8 +86,10 @@ function DismissAllEndedButton({ ended }: { ended: Session[] }) {
 
 function CwdSessionGroup({ sessions, cwd }: { sessions: Session[]; cwd: string }) {
   const [showSettings, setShowSettings] = useState(false)
-  const ps = useSessionsStore(s => s.projectSettings[cwd])
-  const displayName = projectDisplayName(cwd, ps?.label)
+  const projectUri = sessions[0]?.project || ''
+  const settingsKey = projectUri || cwd
+  const ps = useSessionsStore(s => s.projectSettings[settingsKey] || s.projectSettings[cwd])
+  const displayName = ps?.label || (projectUri ? extractProjectLabel(projectUri) : projectDisplayName(cwd))
   const displayColor = ps?.color
   const { adhoc, normal, ended } = partitionSessions(sessions)
   // Project-level rollups: any session in this CWD needing attention?
@@ -111,6 +114,7 @@ function CwdSessionGroup({ sessions, cwd }: { sessions: Session[]; cwd: string }
             <span
               className="font-bold text-sm flex-1 truncate text-primary"
               style={displayColor ? { color: displayColor } : undefined}
+              title={projectUri || cwd}
             >
               {displayName}
             </span>
@@ -160,7 +164,7 @@ function CwdSessionGroup({ sessions, cwd }: { sessions: Session[]; cwd: string }
           ))}
         </div>
       </div>
-      {showSettings && <ProjectSettingsEditor cwd={cwd} onClose={() => setShowSettings(false)} />}
+      {showSettings && <ProjectSettingsEditor cwd={settingsKey} onClose={() => setShowSettings(false)} />}
     </div>
   )
 }

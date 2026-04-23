@@ -36,6 +36,7 @@ export function canJsonStream(s: Session): boolean {
 export interface Session {
   id: string
   cwd: string
+  project: string
   model?: string
   capabilities?: WrapperCapability[]
   version?: string
@@ -130,8 +131,9 @@ export interface Session {
   }
 }
 
-// Project order tree types -- each leaf is a project (keyed by `cwd:<path>`
-// today, but project identity is intended to become CWD-agnostic).
+// Project order tree types -- each leaf is a project keyed by project URI
+// (e.g. "claude:///Users/jonas/projects/foo"). Legacy entries may still use
+// "cwd:<path>" format; consumers should handle both.
 export interface ProjectOrderGroup {
   id: string
   type: 'group'
@@ -141,7 +143,7 @@ export interface ProjectOrderGroup {
 }
 
 interface ProjectOrderProject {
-  id: string // "cwd:<path>" today; opaque project identity going forward
+  id: string // project URI (e.g. "claude:///path") or legacy "cwd:<path>"
   type: 'project'
 }
 
@@ -213,4 +215,24 @@ export interface TranscriptToolUseResult {
   structuredPatch?: Array<{ oldStart: number; oldLines: number; newStart: number; newLines: number; lines: string[] }>
 }
 
+/** Project settings keyed by project URI (e.g. "claude:///Users/jonas/projects/foo") */
 export type ProjectSettingsMap = Record<string, ProjectSettings>
+
+/**
+ * Extract a human-readable label from a project URI.
+ * Returns the last path segment (e.g. "claude:///Users/jonas/foo" -> "foo").
+ * Duplicated from src/shared/project-uri.ts since web bundle can't import from src/shared/.
+ */
+export function extractProjectLabel(uri: string): string {
+  if (!uri || uri === '*') return uri || ''
+  try {
+    const url = new URL(uri)
+    const segments = decodeURIComponent(url.pathname).split('/').filter(Boolean)
+    return segments.length > 0 ? segments[segments.length - 1] : uri
+  } catch {
+    // Legacy "cwd:<path>" format or plain path
+    const path = uri.startsWith('cwd:') ? uri.slice(4) : uri
+    const segments = path.split('/').filter(Boolean)
+    return segments.length > 0 ? segments[segments.length - 1] : uri
+  }
+}
