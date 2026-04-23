@@ -231,7 +231,7 @@ export async function handleAuthRoute(req: Request): Promise<Response | null> {
         authenticatorAttachment: 'platform',
         residentKey: 'required',
         requireResidentKey: true,
-        userVerification: 'preferred',
+        userVerification: 'discouraged',
       },
     })
 
@@ -260,6 +260,7 @@ export async function handleAuthRoute(req: Request): Promise<Response | null> {
         expectedChallenge,
         expectedRPID: getRpId(),
         expectedOrigin: getExpectedOrigins(),
+        requireUserVerification: false,
       })
 
       if (!verification.verified || !verification.registrationInfo) {
@@ -305,7 +306,7 @@ export async function handleAuthRoute(req: Request): Promise<Response | null> {
     const options = await generateAuthenticationOptions({
       rpID: getRpId(),
       allowCredentials: [], // Empty = discoverable credentials mode (no QR code)
-      userVerification: 'preferred',
+      userVerification: 'discouraged',
     })
 
     // Store challenge with a random key, return key to client
@@ -345,6 +346,7 @@ export async function handleAuthRoute(req: Request): Promise<Response | null> {
         expectedChallenge,
         expectedRPID: getRpId(),
         expectedOrigin: getExpectedOrigins(),
+        requireUserVerification: false,
         credential: {
           id: credentialId,
           publicKey: Buffer.from(credential.publicKey, 'base64url'),

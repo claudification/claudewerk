@@ -1,0 +1,30 @@
+name: rclaude-staging
+
+services:
+  concentrator:
+    build: .
+    container_name: concentrator-staging
+    restart: unless-stopped
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY:-}
+    ports:
+      - "${PORT:-19999}:9999"
+    volumes:
+      - concentrator-staging-data:/data/cache
+      - ./web/dist:/srv/web:ro
+    command:
+      - "--web-dir"
+      - "/srv/web"
+      - "--cache-dir"
+      - "/data/cache"
+      - "--rp-id"
+      - "localhost"
+      - "--origin"
+      - "http://localhost:19999"
+      - "--rclaude-secret"
+      - "${RCLAUDE_SECRET}"
+      - "--verbose"
+
+volumes:
+  concentrator-staging-data:
