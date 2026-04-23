@@ -438,7 +438,13 @@ const channelSend: MessageHandler = (ctx, data) => {
     const targetWs = ctx.sessions.getSessionSocket(toSession)
     if (targetWs) {
       targetWs.send(JSON.stringify(delivery))
-      ctx.reply({ type: 'channel_send_result', ok: true, conversationId, status: 'delivered' })
+      ctx.reply({
+        type: 'channel_send_result',
+        ok: true,
+        conversationId,
+        status: 'delivered',
+        targetSessionId: toSession,
+      })
 
       const toProject =
         ctx.getProjectSettings(toSess.cwd)?.label || toSess.cwd.split('/').pop() || toSession.slice(0, 8)
@@ -471,7 +477,7 @@ const channelSend: MessageHandler = (ctx, data) => {
       toSession,
       toProject,
     })
-    ctx.reply({ type: 'channel_send_result', ok: true, conversationId, status: 'queued' })
+    ctx.reply({ type: 'channel_send_result', ok: true, conversationId, status: 'queued', targetSessionId: toSession })
   }
   ctx.log.debug(
     `[inter-session] ${fromSession.slice(0, 8)} -> ${toSession.slice(0, 8)}: ${data.intent} (${linkStatus})`,

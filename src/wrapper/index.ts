@@ -1165,7 +1165,9 @@ async function main() {
         pendingListSessions?.(sessions, self)
       },
       onChannelSendResult(result) {
-        pendingSendResult?.(result as { ok: boolean; error?: string; conversationId?: string })
+        pendingSendResult?.(
+          result as { ok: boolean; error?: string; conversationId?: string; targetSessionId?: string },
+        )
       },
       onChannelReviveResult(result) {
         pendingReviveResult?.(result)
@@ -1761,7 +1763,9 @@ async function main() {
 
   // Pending callbacks for inter-session request/response
   let pendingListSessions: ((sessions: SessionInfo[], self?: Record<string, unknown>) => void) | null = null
-  let pendingSendResult: ((result: { ok: boolean; error?: string; conversationId?: string }) => void) | null = null
+  let pendingSendResult:
+    | ((result: { ok: boolean; error?: string; conversationId?: string; targetSessionId?: string }) => void)
+    | null = null
   let pendingReviveResult: ((result: { ok: boolean; error?: string; name?: string }) => void) | null = null
   let pendingRestartResult:
     | ((result: { ok: boolean; error?: string; name?: string; selfRestart?: boolean; alreadyEnded?: boolean }) => void)

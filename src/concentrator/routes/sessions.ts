@@ -8,6 +8,7 @@ import type { SendInput } from '../../shared/protocol'
 import { resolveSpawnConfig } from '../../shared/spawn-defaults'
 import type { SpawnRequest } from '../../shared/spawn-schema'
 import { filterDisplayEntries } from '../../shared/transcript-filter'
+import { slugify } from '../address-book'
 import { getGlobalSettings } from '../global-settings'
 import { getProjectSettings } from '../project-settings'
 import type { SessionStore } from '../session-store'
@@ -299,6 +300,20 @@ export function createSessionsRouter(sessionStore: SessionStore, helpers: RouteH
     }
 
     return c.json({ success: true, name, message: 'Revive command sent to agent', wrapperId }, 202)
+  })
+
+  app.get('/sessions/by-slug/:slug', c => {
+    const slug = c.req.param('slug')
+    const all = sessionStore.getAllSessions()
+    const filtered = filterSessionsByHttpGrants(c.req.raw, all)
+    const match = filtered.find(s => {
+      if (s.title && slugify(s.title) === slug) return true
+      const dirname = s.cwd?.split('/').pop() || ''
+      if (dirname && slugify(dirname) === slug) return true
+      return slugify(s.id.slice(0, 8)) === slug
+    })
+    if (!match) return c.json({ error: 'Session not found' }, 404)
+    return c.json(sessionToOverview(match, sessionStore))
   })
 
   app.delete('/sessions/:id', c => {

@@ -3,7 +3,8 @@
  * Shared by send_message (tool-line) and received inter-session messages (group-view).
  */
 
-import { useSessionsStore } from '@/hooks/use-sessions'
+import { buildSessionsById, useSessionsStore } from '@/hooks/use-sessions'
+import type { Session } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
 
 function slugify(s: string) {
@@ -37,10 +38,15 @@ function findSessionBySlug(slug: string) {
 }
 
 /** Resolve a session by ID or slug and compute the display name. */
-function resolveSessionDisplay(idOrSlug: string) {
+function resolveSessionDisplay(idOrSlug: string, fallbackId?: string) {
   const { sessionsById, projectSettings } = useSessionsStore.getState()
   const bare = stripProjectPrefix(idOrSlug)
-  const session = sessionsById[idOrSlug] || sessionsById[bare] || findSessionBySlug(bare) || findSessionBySlug(idOrSlug)
+  const session =
+    sessionsById[idOrSlug] ||
+    sessionsById[bare] ||
+    (fallbackId ? sessionsById[fallbackId] : undefined) ||
+    findSessionBySlug(bare) ||
+    findSessionBySlug(idOrSlug)
   const projLabel = session?.cwd ? projectSettings[session.cwd]?.label : undefined
   const title = session?.title
   const displayName =
@@ -48,19 +54,77 @@ function resolveSessionDisplay(idOrSlug: string) {
   return { session, projLabel, title, displayName }
 }
 
-function showToast(title: string, body: string) {
-  window.dispatchEvent(new CustomEvent('rclaude-toast', { detail: { title, body, variant: 'warning' } }))
+function showToast(title: string, body: string, variant = 'warning') {
+  window.dispatchEvent(new CustomEvent('rclaude-toast', { detail: { title, body, variant } }))
+}
+
+/** Inject a fetched session overview into the Zustand store so it becomes navigable. */
+function injectSession(overview: Record<string, unknown>) {
+  const partial: Session = {
+    id: overview.id as string,
+    cwd: overview.cwd as string,
+    model: overview.model as string,
+    status: (overview.status as Session['status']) || 'ended',
+    wrapperIds: (overview.wrapperIds as string[]) || [],
+    startedAt: overview.startedAt as number,
+    lastActivity: overview.lastActivity as number,
+    eventCount: (overview.eventCount as number) || 0,
+    activeSubagentCount: 0,
+    totalSubagentCount: 0,
+    subagents: [],
+    taskCount: 0,
+    pendingTaskCount: 0,
+    activeTasks: [],
+    pendingTasks: [],
+    archivedTaskCount: 0,
+    archivedTasks: [],
+    runningBgTaskCount: 0,
+    bgTasks: [],
+    monitors: [],
+    runningMonitorCount: 0,
+    teammates: [],
+    summary: overview.summary as string | undefined,
+    title: overview.title as string | undefined,
+    agentName: overview.agentName as string | undefined,
+  }
+  useSessionsStore.setState(state => {
+    if (state.sessionsById[partial.id]) return state
+    const sessions = [...state.sessions, partial]
+    return { sessions, sessionsById: buildSessionsById(sessions) }
+  })
+  return partial.id
+}
+
+/** Try to fetch a session from the server by UUID or slug. Returns the session ID on success. */
+async function fetchAndInjectSession(resolvedId?: string, slug?: string): Promise<string | null> {
+  const attempts: string[] = []
+  if (resolvedId) attempts.push(`/sessions/${resolvedId}`)
+  if (slug) attempts.push(`/sessions/by-slug/${slug}`)
+
+  for (const url of attempts) {
+    try {
+      const res = await fetch(url)
+      if (!res.ok) continue
+      const data = await res.json()
+      if (data?.id) return injectSession(data)
+    } catch {
+      /* network error, try next */
+    }
+  }
+  return null
 }
 
 interface SessionTagProps {
   /** Session ID or slug to resolve */
   idOrSlug: string
+  /** Resolved session UUID (from tool result) -- used as fallback when slug doesn't match */
+  resolvedId?: string
   /** Text size class, defaults to text-xs */
   className?: string
 }
 
-export function SessionTag({ idOrSlug, className }: SessionTagProps) {
-  const { session, displayName } = resolveSessionDisplay(idOrSlug)
+export function SessionTag({ idOrSlug, resolvedId, className }: SessionTagProps) {
+  const { session, displayName } = resolveSessionDisplay(idOrSlug, resolvedId)
   const cwd = session?.cwd
   const status = session?.status
   const isEnded = status === 'ended'
@@ -69,13 +133,18 @@ export function SessionTag({ idOrSlug, className }: SessionTagProps) {
     if (session) {
       haptic('tap')
       useSessionsStore.getState().selectSession(session.id)
-    } else {
-      haptic('error')
-      showToast(
-        'Session not found',
-        `Could not find session "${stripProjectPrefix(idOrSlug)}" in the current session list.`,
-      )
+      return
     }
+    haptic('tap')
+    const bare = stripProjectPrefix(idOrSlug)
+    fetchAndInjectSession(resolvedId, bare).then(id => {
+      if (id) {
+        useSessionsStore.getState().selectSession(id)
+      } else {
+        haptic('error')
+        showToast('Session not found', `Could not find session "${bare}" on the server.`)
+      }
+    })
   }
 
   return (
@@ -110,7 +179,7 @@ export function SessionTag({ idOrSlug, className }: SessionTagProps) {
             <span className="text-zinc-700">@</span> {session?.id ?? idOrSlug}
           </span>
         )}
-        {!session && <span className="text-amber-500/80">session not in current list</span>}
+        {!session && <span className="text-amber-500/80">click to search server</span>}
       </span>
     </span>
   )

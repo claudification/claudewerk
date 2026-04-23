@@ -92,7 +92,7 @@ export interface McpChannelCallbacks {
     message: string,
     context?: string,
     conversationId?: string,
-  ) => Promise<{ ok: boolean; error?: string; conversationId?: string }>
+  ) => Promise<{ ok: boolean; error?: string; conversationId?: string; targetSessionId?: string }>
   onPermissionRequest?: (data: PermissionRequestData) => void
   onDisconnect?: () => void
   onTogglePlanMode?: () => void
@@ -564,10 +564,10 @@ export function initMcpChannel(cb: McpChannelCallbacks, id?: WrapperIdentity): v
         debug(`[channel] send_message to ${to}: ${message.slice(0, 60)}`)
         const status = (result as Record<string, unknown>).status || 'delivered'
         const statusLabel = status === 'queued' ? 'Queued (target offline, will deliver on reconnect)' : 'Delivered'
-        const response = result.conversationId
-          ? `${statusLabel}. conversation_id: ${result.conversationId}`
-          : statusLabel
-        return { content: [{ type: 'text', text: response }] }
+        const parts = [statusLabel]
+        if (result.conversationId) parts.push(`conversation_id: ${result.conversationId}`)
+        if (result.targetSessionId) parts.push(`target_session_id: ${result.targetSessionId}`)
+        return { content: [{ type: 'text', text: parts.join('. ') }] }
       },
     },
 
@@ -685,7 +685,7 @@ export function initMcpChannel(cb: McpChannelCallbacks, id?: WrapperIdentity): v
 
     spawn_session: {
       description:
-        'Unified session lifecycle tool. Spawn new sessions, revive ended ones, or restart active sessions (terminate + auto-revive). Requires benevolent trust level. Sessions boot in tmux on the host - takes 10-30 seconds. Use list_sessions to poll for status.\n\nActions:\n- spawn (default): Start a new session at a directory\n- revive: Bring back an ended/inactive session\n- restart: Terminate an active session and automatically revive it. For self-restart, the MCP response may not arrive (your process dies and reboots).',
+        'Unified session lifecycle tool. Spawn new sessions, revive ended ones, or restart active sessions (terminate + auto-revive). Requires benevolent trust level. Sessions boot in tmux on the host - takes 10-30 seconds. Use list_sessions to poll for status.\n\nWhen spawning: ALWAYS provide a short `description` (1-2 sentences) explaining what the session will do. This is shown in the dashboard and helps the user understand each session at a glance. Also provide a `name` when you have a meaningful label.\n\nActions:\n- spawn (default): Start a new session at a directory\n- revive: Bring back an ended/inactive session\n- restart: Terminate an active session and automatically revive it. For self-restart, the MCP response may not arrive (your process dies and reboots).',
       inputSchema: spawnToolInputSchema,
       async handle(params, ctx) {
         const action = (params.action as 'spawn' | 'revive' | 'restart') || 'spawn'
