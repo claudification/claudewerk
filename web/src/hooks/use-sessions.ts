@@ -941,26 +941,10 @@ export function sendInput(sessionId: string, input: string): boolean {
   }
   const crDelay = (useSessionsStore.getState().globalSettings.carriageReturnDelay as number) || 0
   const ok = wsSend('send_input', { sessionId, input, ...(crDelay > 0 && { crDelay }) })
-  // Headless sessions: inject optimistic user entry so text appears immediately
-  // (PTY sessions get this from the UserPromptSubmit hook echo instead)
-  if (ok) {
-    const sess = useSessionsStore.getState().sessionsById[sessionId]
-    if (sess && !sess.capabilities?.includes('terminal')) {
-      useSessionsStore.setState(state => {
-        const existing = state.transcripts[sessionId] || []
-        return {
-          transcripts: {
-            ...state.transcripts,
-            [sessionId]: [
-              ...existing,
-              { type: 'user', timestamp: new Date().toISOString(), message: { role: 'user', content: input } },
-            ],
-          },
-          newDataSeq: state.newDataSeq + 1,
-        }
-      })
-    }
-  }
+  // User messages for headless sessions are emitted by the wrapper's
+  // sendUserMessage() directly to the broker, which persists + broadcasts.
+  // No optimistic entry needed -- the broker round-trip is fast enough,
+  // and a single source of truth avoids duplication + survives refresh.
   return ok
 }
 

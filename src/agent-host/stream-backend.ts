@@ -787,6 +787,15 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
         message: { role: 'user', content },
         parent_tool_use_id: null,
       })
+      // Emit user entry to the broker immediately. CC echoes stdin back
+      // on stdout with isReplay:true, but we intentionally drop those
+      // echoes (line ~637) to avoid duplicates in the dashboard. Without
+      // this direct emit, headless sessions lose user messages on refresh
+      // because the JSONL transcript watcher is disabled for headless.
+      onTranscriptEntries?.(
+        [{ type: 'user', timestamp: new Date().toISOString(), message: { role: 'user', content } }],
+        false,
+      )
     },
 
     sendPermissionResponse(
