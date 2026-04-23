@@ -8,8 +8,7 @@ package-lock.json
 *.tsbuildinfo
 *.tgz
 .env
-.sentinel.pid
-.sentinel.log
+*.pid
 src/shared/version.ts
 NOTES.md
 .rclaude/
