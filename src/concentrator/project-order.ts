@@ -1,13 +1,14 @@
 /**
  * Project Order - persistent tree structure for the sidebar project list.
  *
- * Each leaf node represents a project (currently keyed by CWD as `cwd:<path>`,
- * but project identity is intended to become CWD-agnostic over time -- keep
- * renames pointed at "project", not "cwd").
+ * Each leaf node represents a project keyed by its project URI
+ * (e.g. `claude:///Users/jonas/projects/remote-claude`).
+ * Legacy `cwd:<path>` node IDs are migrated on load.
  */
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { cwdToProjectUri } from '../shared/project-uri'
 
 export interface ProjectOrderGroup {
   id: string
@@ -18,7 +19,7 @@ export interface ProjectOrderGroup {
 }
 
 export interface ProjectOrderProject {
-  id: string // "cwd:<path>" today; opaque project identity going forward
+  id: string // project URI (e.g. claude:///path)
   type: 'project'
 }
 
@@ -31,16 +32,27 @@ export interface ProjectOrder {
 let orderPath = ''
 let order: ProjectOrder = { tree: [] }
 
+/** Migrate a node ID from legacy `cwd:<path>` format to project URI. */
+function migrateNodeId(id: string): string {
+  if (id.startsWith('cwd:')) {
+    return cwdToProjectUri(id.slice(4))
+  }
+  return id
+}
+
 /**
  * Normalize legacy in-memory shapes to the current format. Accepts:
  *   - Current: { tree: [...] } with node.type === 'project' | 'group'
  *   - Legacy v2: { version: 2, tree: [...] } with leaf node.type === 'session'
+ *   - Legacy node IDs: `cwd:<path>` -> project URI
  * Anything else returns an empty tree.
  */
-function normalize(raw: unknown): ProjectOrder {
-  if (!raw || typeof raw !== 'object') return { tree: [] }
+function normalize(raw: unknown): { order: ProjectOrder; migrated: boolean } {
+  if (!raw || typeof raw !== 'object') return { order: { tree: [] }, migrated: false }
   const obj = raw as Record<string, unknown>
-  if (!Array.isArray(obj.tree)) return { tree: [] }
+  if (!Array.isArray(obj.tree)) return { order: { tree: [] }, migrated: false }
+
+  let migrated = false
 
   function walk(nodes: unknown[]): ProjectOrderNode[] {
     const out: ProjectOrderNode[] = []
@@ -57,13 +69,15 @@ function normalize(raw: unknown): ProjectOrder {
           ...(typeof node.isOpen === 'boolean' ? { isOpen: node.isOpen } : {}),
         })
       } else if ((node.type === 'project' || node.type === 'session') && typeof node.id === 'string') {
-        out.push({ id: node.id, type: 'project' })
+        const newId = migrateNodeId(node.id)
+        if (newId !== node.id) migrated = true
+        out.push({ id: newId, type: 'project' })
       }
     }
     return out
   }
 
-  return { tree: walk(obj.tree) }
+  return { order: { tree: walk(obj.tree) }, migrated }
 }
 
 export function initProjectOrder(cacheDir: string): void {
@@ -86,13 +100,14 @@ export function initProjectOrder(cacheDir: string): void {
   if (existsSync(orderPath)) {
     try {
       const raw = JSON.parse(readFileSync(orderPath, 'utf-8'))
-      const normalized = normalize(raw)
-      // Persist if the on-disk shape was legacy (version/session type)
-      const wasLegacy =
+      const wasLegacyFormat =
         (raw && typeof raw === 'object' && 'version' in raw) ||
         JSON.stringify(raw?.tree ?? []).includes('"type":"session"')
+
+      const { order: normalized, migrated: hadCwdIds } = normalize(raw)
       order = normalized
-      if (wasLegacy) save()
+
+      if (wasLegacyFormat || hadCwdIds) save()
     } catch {
       order = { tree: [] }
     }
@@ -110,20 +125,26 @@ export function getProjectOrder(): ProjectOrder {
 
 export function setProjectOrder(update: ProjectOrder): void {
   if (!update || !Array.isArray(update.tree)) return
-  order = normalize(update)
+  const { order: normalized } = normalize(update)
+  order = normalized
   save()
 }
 
-/** Extract all CWD-keyed project IDs from a subtree. */
-export function getAllTreeCwds(nodes: ProjectOrderNode[] = order.tree): Set<string> {
-  const cwds = new Set<string>()
+/** Extract all project URIs from a subtree. */
+export function getAllTreeProjects(nodes: ProjectOrderNode[] = order.tree): Set<string> {
+  const uris = new Set<string>()
   for (const node of nodes) {
     if (node.type === 'project') {
-      const cwd = node.id.startsWith('cwd:') ? node.id.slice(4) : node.id
-      cwds.add(cwd)
+      const uri = node.id.startsWith('cwd:') ? cwdToProjectUri(node.id.slice(4)) : node.id
+      uris.add(uri)
     } else {
-      for (const c of getAllTreeCwds(node.children)) cwds.add(c)
+      for (const u of getAllTreeProjects(node.children)) uris.add(u)
     }
   }
-  return cwds
+  return uris
+}
+
+/** @deprecated Use getAllTreeProjects() instead. */
+export function getAllTreeCwds(nodes: ProjectOrderNode[] = order.tree): Set<string> {
+  return getAllTreeProjects(nodes)
 }

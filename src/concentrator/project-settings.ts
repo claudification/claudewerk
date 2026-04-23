@@ -1,10 +1,12 @@
 /**
- * Project Settings - persistent label/icon/color per project path
+ * Project Settings - persistent label/icon/color per project.
  * Stored as a JSON file in the concentrator cache dir.
+ * Keys are project URIs (claude:///path). Bare CWD inputs are transparently upgraded.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { cwdToProjectUri } from '../shared/project-uri'
 import type { ProjectSettings } from '../shared/protocol'
 
 export type { ProjectSettings } from '../shared/protocol'
@@ -14,13 +16,30 @@ type SettingsMap = Record<string, ProjectSettings>
 let settingsPath = ''
 let settings: SettingsMap = {}
 
+function normalizeKey(cwdOrUri: string): string {
+  if (cwdOrUri.startsWith('/')) return cwdToProjectUri(cwdOrUri)
+  return cwdOrUri
+}
+
 export function initProjectSettings(cacheDir: string): void {
   settingsPath = join(cacheDir, 'project-settings.json')
   mkdirSync(dirname(settingsPath), { recursive: true })
 
   if (existsSync(settingsPath)) {
     try {
-      settings = JSON.parse(readFileSync(settingsPath, 'utf-8'))
+      const raw: SettingsMap = JSON.parse(readFileSync(settingsPath, 'utf-8'))
+      // Migrate legacy CWD keys to project URIs
+      let migrated = false
+      for (const [key, value] of Object.entries(raw)) {
+        if (key.startsWith('/')) {
+          const uri = cwdToProjectUri(key)
+          settings[uri] = { ...(settings[uri] || {}), ...value }
+          migrated = true
+        } else {
+          settings[key] = value
+        }
+      }
+      if (migrated) save()
     } catch {
       settings = {}
     }
@@ -36,27 +55,28 @@ export function getAllProjectSettings(): SettingsMap {
   return settings
 }
 
-export function getProjectSettings(cwd: string): ProjectSettings | null {
-  return settings[cwd] || null
+export function getProjectSettings(cwdOrUri: string): ProjectSettings | null {
+  return settings[normalizeKey(cwdOrUri)] || null
 }
 
-export function setProjectSettings(cwd: string, update: ProjectSettings): void {
-  const existing = settings[cwd] || {}
-  settings[cwd] = { ...existing, ...update }
+export function setProjectSettings(cwdOrUri: string, update: ProjectSettings): void {
+  const key = normalizeKey(cwdOrUri)
+  const existing = settings[key] || {}
+  settings[key] = { ...existing, ...update }
   // Remove empty string values
-  for (const [key, val] of Object.entries(settings[cwd])) {
+  for (const [k, val] of Object.entries(settings[key])) {
     if (val === '' || val === undefined) {
-      delete (settings[cwd] as Record<string, unknown>)[key]
+      delete (settings[key] as Record<string, unknown>)[k]
     }
   }
   // Remove entry if empty
-  if (Object.keys(settings[cwd]).length === 0) {
-    delete settings[cwd]
+  if (Object.keys(settings[key]).length === 0) {
+    delete settings[key]
   }
   save()
 }
 
-export function deleteProjectSettings(cwd: string): void {
-  delete settings[cwd]
+export function deleteProjectSettings(cwdOrUri: string): void {
+  delete settings[normalizeKey(cwdOrUri)]
   save()
 }

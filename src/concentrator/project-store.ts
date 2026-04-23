@@ -28,12 +28,14 @@
  * ```
  *
  * The `scope` column stores the full URI. The `cwd` column is the raw
- * filesystem path (Claude Code specific). Both are indexed for lookup.
+ * filesystem path (Claude Code specific). The `project_uri` column is
+ * the canonical project identity URI. Both are indexed for lookup.
  * Integer `id` is what every other table references.
  */
 
 import { Database, type Statement } from 'bun:sqlite'
 import { resolve } from 'node:path'
+import { cwdToProjectUri } from '../shared/project-uri'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -43,6 +45,7 @@ export interface Project {
   scope: string
   slug: string
   label: string | null
+  project_uri: string
 }
 
 // ─── Module State ───────────────────────────────────────────────────
@@ -53,11 +56,12 @@ let stmtByCwd: Statement | null = null
 let stmtByScope: Statement | null = null
 let stmtById: Statement | null = null
 let stmtBySlug: Statement | null = null
+let stmtByProjectUri: Statement | null = null
 let stmtUpdateLabel: Statement | null = null
 let stmtUpdateScope: Statement | null = null
 
-/** In-memory cache: cwd -> Project (hot path, avoids DB hit on every hook event) */
-const cwdCache = new Map<string, Project>()
+/** In-memory cache: project_uri -> Project (hot path, avoids DB hit on every hook event) */
+const projectCache = new Map<string, Project>()
 
 // ─── Slug derivation ────────────────────────────────────────────────
 
@@ -76,6 +80,8 @@ export function scopeFromCwd(cwd: string): string {
 }
 
 // ─── Init ───────────────────────────────────────────────────────────
+
+const ALL_COLUMNS = 'id, cwd, scope, slug, label, project_uri'
 
 export function initProjectStore(cacheDir: string): void {
   const dbPath = resolve(cacheDir, 'projects.db')
@@ -97,13 +103,50 @@ export function initProjectStore(cacheDir: string): void {
 
   db.run('CREATE INDEX IF NOT EXISTS idx_projects_slug ON projects(slug)')
 
+  // Migration: add project_uri column if it doesn't exist
+  const columns = db.prepare("PRAGMA table_info('projects')").all() as Array<{ name: string }>
+  const hasProjectUri = columns.some(c => c.name === 'project_uri')
+
+  if (!hasProjectUri) {
+    db.run('ALTER TABLE projects ADD COLUMN project_uri TEXT')
+    // Backfill: project_uri = cwdToProjectUri(cwd) for all existing rows
+    const rows = db.prepare('SELECT id, cwd FROM projects WHERE project_uri IS NULL').all() as Array<{
+      id: number
+      cwd: string
+    }>
+    const backfill = db.prepare('UPDATE projects SET project_uri = $project_uri WHERE id = $id')
+    for (const row of rows) {
+      backfill.run({ project_uri: cwdToProjectUri(row.cwd), id: row.id })
+    }
+    console.log(`[projects] Migrated ${rows.length} rows: backfilled project_uri`)
+  }
+
+  // Ensure any remaining NULLs are backfilled (e.g. rows inserted by old code after column add)
+  const nullCount = (db.prepare('SELECT COUNT(*) as n FROM projects WHERE project_uri IS NULL').get() as { n: number })
+    .n
+  if (nullCount > 0) {
+    const rows = db.prepare('SELECT id, cwd FROM projects WHERE project_uri IS NULL').all() as Array<{
+      id: number
+      cwd: string
+    }>
+    const backfill = db.prepare('UPDATE projects SET project_uri = $project_uri WHERE id = $id')
+    for (const row of rows) {
+      backfill.run({ project_uri: cwdToProjectUri(row.cwd), id: row.id })
+    }
+    console.log(`[projects] Backfilled ${nullCount} NULL project_uri values`)
+  }
+
+  // Create unique index on project_uri (after backfill, all values are non-null)
+  db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_project_uri ON projects(project_uri)')
+
   stmtInsert = db.prepare(`
-    INSERT INTO projects (cwd, scope, slug, label) VALUES ($cwd, $scope, $slug, $label)
+    INSERT INTO projects (cwd, scope, slug, label, project_uri) VALUES ($cwd, $scope, $slug, $label, $project_uri)
   `)
-  stmtByCwd = db.prepare('SELECT id, cwd, scope, slug, label FROM projects WHERE cwd = $cwd')
-  stmtByScope = db.prepare('SELECT id, cwd, scope, slug, label FROM projects WHERE scope = $scope')
-  stmtById = db.prepare('SELECT id, cwd, scope, slug, label FROM projects WHERE id = $id')
-  stmtBySlug = db.prepare('SELECT id, cwd, scope, slug, label FROM projects WHERE slug = $slug')
+  stmtByCwd = db.prepare(`SELECT ${ALL_COLUMNS} FROM projects WHERE cwd = $cwd`)
+  stmtByScope = db.prepare(`SELECT ${ALL_COLUMNS} FROM projects WHERE scope = $scope`)
+  stmtById = db.prepare(`SELECT ${ALL_COLUMNS} FROM projects WHERE id = $id`)
+  stmtBySlug = db.prepare(`SELECT ${ALL_COLUMNS} FROM projects WHERE slug = $slug`)
+  stmtByProjectUri = db.prepare(`SELECT ${ALL_COLUMNS} FROM projects WHERE project_uri = $project_uri`)
   stmtUpdateLabel = db.prepare('UPDATE projects SET label = $label WHERE id = $id')
   stmtUpdateScope = db.prepare('UPDATE projects SET scope = $scope WHERE id = $id')
 
@@ -117,13 +160,15 @@ export function initProjectStore(cacheDir: string): void {
  * Get or create a project by CWD. This is the primary entry point --
  * called on every hook event to resolve cwd -> integer project_id.
  *
- * Uses in-memory cache for the hot path. Cache miss -> DB lookup -> DB insert.
+ * Uses in-memory cache keyed by project URI for the hot path.
+ * Cache miss -> DB lookup -> DB insert.
  */
 export function getOrCreateProject(cwd: string, label?: string): Project {
+  const projectUri = cwdToProjectUri(cwd)
+
   // Hot path: cache hit
-  const cached = cwdCache.get(cwd)
+  const cached = projectCache.get(projectUri)
   if (cached) {
-    // Update label if it changed (project-settings rename)
     if (label && label !== cached.label) {
       cached.label = label
       stmtUpdateLabel?.run({ label, id: cached.id })
@@ -131,25 +176,37 @@ export function getOrCreateProject(cwd: string, label?: string): Project {
     return cached
   }
 
-  // Cache miss: check DB
-  const existing = stmtByCwd?.get({ cwd }) as Project | undefined
+  // Cache miss: check DB by project URI first, then fall back to CWD
+  let existing = stmtByProjectUri?.get({ project_uri: projectUri }) as Project | undefined
+  if (!existing) {
+    existing = stmtByCwd?.get({ cwd }) as Project | undefined
+  }
+
   if (existing) {
     if (label && label !== existing.label) {
       existing.label = label
       stmtUpdateLabel?.run({ label, id: existing.id })
     }
-    cwdCache.set(cwd, existing)
+    // Ensure project_uri is populated for legacy rows found by CWD
+    if (!existing.project_uri) {
+      existing.project_uri = projectUri
+      db?.prepare('UPDATE projects SET project_uri = $project_uri WHERE id = $id').run({
+        project_uri: projectUri,
+        id: existing.id,
+      })
+    }
+    projectCache.set(projectUri, existing)
     return existing
   }
 
   // Not in DB: create
   const slug = slugFromCwd(cwd)
   const scope = scopeFromCwd(cwd)
-  stmtInsert?.run({ cwd, scope, slug, label: label || null })
+  stmtInsert?.run({ cwd, scope, slug, label: label || null, project_uri: projectUri })
 
   // Re-fetch to get the auto-assigned id
-  const created = stmtByCwd?.get({ cwd }) as Project
-  cwdCache.set(cwd, created)
+  const created = stmtByProjectUri?.get({ project_uri: projectUri }) as Project
+  projectCache.set(projectUri, created)
   return created
 }
 
@@ -168,17 +225,21 @@ export function getProjectByScope(scope: string): Project | null {
   return (stmtByScope?.get({ scope }) as Project) || null
 }
 
+/** Lookup by project URI */
+export function getProjectByUri(projectUri: string): Project | null {
+  return (stmtByProjectUri?.get({ project_uri: projectUri }) as Project) || null
+}
+
 /** List all projects (for admin UI, dashboards) */
 export function listProjects(): Project[] {
   if (!db) return []
-  return db.query('SELECT id, cwd, scope, slug, label FROM projects ORDER BY id').all() as Project[]
+  return db.query(`SELECT ${ALL_COLUMNS} FROM projects ORDER BY id`).all() as Project[]
 }
 
 /** Update the scope URI for a project (for future migration to custom URIs) */
 export function updateProjectScope(id: number, scope: string): void {
   stmtUpdateScope?.run({ scope, id })
-  // Invalidate cache entry if present
-  for (const [, p] of cwdCache) {
+  for (const [, p] of projectCache) {
     if (p.id === id) {
       p.scope = scope
       break
@@ -202,8 +263,9 @@ export function closeProjectStore(): void {
     stmtByScope = null
     stmtById = null
     stmtBySlug = null
+    stmtByProjectUri = null
     stmtUpdateLabel = null
     stmtUpdateScope = null
-    cwdCache.clear()
+    projectCache.clear()
   }
 }
