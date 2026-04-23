@@ -3,6 +3,7 @@
  * Connects to concentrator with automatic reconnection and offline queuing
  */
 
+import { cwdToProjectUri } from '../shared/project-uri'
 import type {
   BgTaskOutput,
   BootEvent,
@@ -231,6 +232,8 @@ export function createWsClient(options: WsClientOptions): WsClient {
     onDiag,
   } = options
 
+  const project = cwdToProjectUri(cwd)
+
   let sessionId: string | null = initialSessionId
   let ws: WebSocket | null = null
   let connected = false
@@ -271,6 +274,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
               sessionId,
               wrapperId,
               cwd,
+              project,
               startedAt: Date.now(),
               model,
               configuredModel,
@@ -294,6 +298,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
               type: 'wrapper_boot',
               wrapperId,
               cwd,
+              project,
               capabilities: capabilities || [],
               claudeArgs: options.initialBoot?.claudeArgs || args || [],
               claudeVersion,
@@ -644,6 +649,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
       newSessionId,
       wrapperId,
       cwd: newCwd,
+      project: cwdToProjectUri(newCwd),
       model: newModel,
     }
     send(msg)
@@ -734,6 +740,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
       sessionId: newSessionId,
       wrapperId,
       cwd,
+      project,
       startedAt: Date.now(),
       model,
       capabilities,

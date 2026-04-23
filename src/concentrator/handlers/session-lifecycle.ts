@@ -3,6 +3,7 @@
  * heartbeat, session clear (re-key), notify, and end.
  */
 
+import { cwdToProjectUri } from '../../shared/project-uri'
 import { slugify } from '../address-book'
 import type { MessageHandler } from '../handler-context'
 import { registerHandlers } from '../message-router'
@@ -12,6 +13,7 @@ import { registerHandlers } from '../message-router'
 const meta: MessageHandler = (ctx, data) => {
   const wrapperId = (data.wrapperId as string) || (data.sessionId as string) // backwards compat
   const sessionId = data.sessionId as string
+  const project = (data.project as string) ?? cwdToProjectUri(data.cwd as string)
   ctx.ws.data.sessionId = sessionId
   ctx.ws.data.wrapperId = wrapperId
 
@@ -21,6 +23,7 @@ const meta: MessageHandler = (ctx, data) => {
   const existingSession = ctx.sessions.getSession(sessionId)
   if (existingSession) {
     ctx.sessions.resumeSession(sessionId)
+    existingSession.project = project
     if (data.capabilities) existingSession.capabilities = data.capabilities
     if (data.version) existingSession.version = data.version as string
     if (data.buildTime) existingSession.buildTime = data.buildTime as string
@@ -47,6 +50,7 @@ const meta: MessageHandler = (ctx, data) => {
       data.args,
       data.capabilities,
     )
+    newSession.project = project
     if (data.version) newSession.version = data.version as string
     if (data.buildTime) newSession.buildTime = data.buildTime as string
     if (data.claudeVersion) newSession.claudeVersion = data.claudeVersion as string
@@ -150,15 +154,19 @@ const sessionClear: MessageHandler = (ctx, data) => {
   const clearWrapperId = (data.wrapperId as string) || ctx.ws.data.wrapperId
   if (!oldId || !newId || !clearWrapperId) return
 
+  const clearProject = (data.project as string) ?? cwdToProjectUri(data.cwd as string)
+
   const session = ctx.sessions.rekeySession(oldId, newId, clearWrapperId, data.cwd as string, data.model as string)
   if (session) {
+    session.project = clearProject
     ctx.ws.data.sessionId = newId
     ctx.log.debug(
       `Session re-keyed: ${oldId.slice(0, 8)} -> ${newId.slice(0, 8)} wrapper=${clearWrapperId.slice(0, 8)} (${data.cwd})`,
     )
   } else {
     ctx.log.debug(`session_clear: old session ${oldId.slice(0, 8)} not found, creating new`)
-    ctx.sessions.createSession(newId, data.cwd as string, data.model as string)
+    const created = ctx.sessions.createSession(newId, data.cwd as string, data.model as string)
+    created.project = clearProject
     ctx.ws.data.sessionId = newId
     ctx.sessions.setSessionSocket(newId, clearWrapperId, ctx.ws)
   }

@@ -8,6 +8,7 @@
  * real one.
  */
 
+import { cwdToProjectUri } from '../../shared/project-uri'
 import type {
   BootStep,
   TranscriptBootEntry,
@@ -27,6 +28,8 @@ const wrapperBoot: MessageHandler = (ctx, data) => {
     return
   }
 
+  const project = (data.project as string) ?? cwdToProjectUri(cwd)
+
   // Track the WS so subsequent messages from this wrapper are routed here.
   ctx.ws.data.sessionId = wrapperId
   ctx.ws.data.wrapperId = wrapperId
@@ -43,6 +46,7 @@ const wrapperBoot: MessageHandler = (ctx, data) => {
   if (existing) {
     existing.status = 'booting'
     existing.lastActivity = Date.now()
+    existing.project = project
     if (pendingLaunchConfig && !existing.launchConfig) {
       existing.launchConfig = pendingLaunchConfig
       if (pendingLaunchConfig.effort) existing.effortLevel = pendingLaunchConfig.effort
@@ -53,6 +57,7 @@ const wrapperBoot: MessageHandler = (ctx, data) => {
     // replaces this once session_promote arrives.
     const placeholder = ctx.sessions.createSession(wrapperId, cwd, undefined, claudeArgs, capabilities)
     placeholder.status = 'booting'
+    placeholder.project = project
     if (pendingLaunchConfig) {
       placeholder.launchConfig = pendingLaunchConfig
       if (pendingLaunchConfig.effort) placeholder.effortLevel = pendingLaunchConfig.effort
@@ -157,12 +162,14 @@ const sessionPromote: MessageHandler = (ctx, data) => {
 
   // Re-key the booting session to the real session id. This moves the
   // transcript (including boot entries), sockets, subscriptions, etc.
+  const bootProject = bootSession.project
   const rekeyed = ctx.sessions.rekeySession(wrapperId, newSessionId, wrapperId, bootSession.cwd, undefined)
   if (!rekeyed) {
     ctx.log.debug(`[boot] rekey failed for ${wrapperId.slice(0, 8)} -> ${newSessionId.slice(0, 8)}`)
     return
   }
   rekeyed.status = 'starting'
+  rekeyed.project = bootProject
   ctx.ws.data.sessionId = newSessionId
   ctx.log.debug(
     `[boot] promoted ${wrapperId.slice(0, 8)} -> ${newSessionId.slice(0, 8)} (source=${data.source || 'unknown'})`,
