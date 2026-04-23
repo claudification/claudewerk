@@ -971,6 +971,7 @@ export const SessionItemCompact = memo(function SessionItemCompact({ session }: 
   const selectSubagent = useSessionsStore(s => s.selectSubagent)
   const ps = useSessionsStore(s => s.projectSettings[session.cwd])
   const showCost = useSessionsStore(s => s.dashboardPrefs.showCostInList)
+  const showContextBar = useSessionsStore(s => s.dashboardPrefs.showContextInList)
   const isRenaming = useSessionsStore(s => s.renamingSessionId === session.id)
   const hasPendingPermission = useSessionsStore(s => s.pendingPermissions.some(p => p.sessionId === session.id))
 
@@ -1007,9 +1008,7 @@ export const SessionItemCompact = memo(function SessionItemCompact({ session }: 
               isSelected ? 'text-accent' : 'text-muted-foreground',
             )}
           >
-            {session.title || session.agentName
-              ? `${((session.title || session.agentName) ?? '').slice(0, 20)} [${session.id.slice(0, 6)}]`
-              : session.id.slice(0, 8)}
+            {(session.title || session.agentName || '').slice(0, 24) || session.id.slice(0, 8)}
           </span>
         )}
         {session.compacting && <span className="text-[9px] text-amber-400 font-bold animate-pulse">COMPACT</span>}
@@ -1053,6 +1052,51 @@ export const SessionItemCompact = memo(function SessionItemCompact({ session }: 
         <SessionInfoButton session={session} visible={isSelected} />
         {session.status === 'ended' && <DismissButton sessionId={session.id} />}
       </div>
+      {session.gitBranch && session.gitBranch !== 'main' && session.gitBranch !== 'master' && (
+        <div className="pl-4 flex items-center gap-1">
+          <span
+            className={cn(
+              'text-[9px] font-mono truncate',
+              session.adHocWorktree ? 'text-orange-400/70' : 'text-purple-400/60',
+            )}
+          >
+            {session.adHocWorktree ? '⎇ ' : '⌥ '}
+            {session.gitBranch}
+          </span>
+        </div>
+      )}
+      {showContextBar &&
+        session.tokenUsage &&
+        (() => {
+          const { input, cacheCreation, cacheRead } = session.tokenUsage
+          const total = input + cacheCreation + cacheRead
+          if (total === 0) return null
+          const maxTokens = session.contextWindow ?? contextWindowSize(session.model)
+          const pct = Math.min(100, Math.round((total / maxTokens) * 100))
+          const threshold = session.autocompactPct || 83
+          const warnAt = threshold - 5
+          return (
+            <div className="mt-0.5 pl-4 flex items-center gap-1.5">
+              <div className="flex-1 h-1 bg-muted/50 rounded-full overflow-hidden">
+                <div
+                  className={cn(
+                    'h-full rounded-full transition-all',
+                    pct < warnAt ? 'bg-emerald-400/60' : pct < threshold ? 'bg-amber-400/60' : 'bg-red-400/70',
+                  )}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <span
+                className={cn(
+                  'text-[9px] font-mono tabular-nums shrink-0',
+                  pct < warnAt ? 'text-emerald-400/50' : pct < threshold ? 'text-amber-400/50' : 'text-red-400/60',
+                )}
+              >
+                {pct}%
+              </span>
+            </div>
+          )
+        })()}
       <SessionItemTasksBlock
         session={session}
         selectedSubagentId={selectedSubagentId}
