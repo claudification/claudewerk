@@ -461,6 +461,14 @@ function Dashboard() {
     { label: 'Toggle debug console', key: 'd', group: 'View' },
   )
 
+  useCommand(
+    'toggle-debug-direct',
+    () => {
+      useSessionsStore.getState().toggleDebugConsole()
+    },
+    { label: 'Toggle debug console', shortcut: 'ctrl+shift+d', group: 'View' },
+  )
+
   useChordCommand(
     'toggle-tty',
     () => {
