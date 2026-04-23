@@ -1,6 +1,51 @@
-// @vitest-environment jsdom
+// Minimal DOM mocks for bun test runner (vitest @jsdom pragma not supported).
+// Must run BEFORE key-layers.ts evaluates its module-level `isMac` detection,
+// so we mock navigator first and use dynamic import below.
+if (typeof globalThis.KeyboardEvent === 'undefined') {
+  globalThis.KeyboardEvent = class KeyboardEvent extends Event {
+    readonly key: string
+    readonly ctrlKey: boolean
+    readonly metaKey: boolean
+    readonly altKey: boolean
+    readonly shiftKey: boolean
+    constructor(type: string, init: KeyboardEventInit = {}) {
+      super(type, init)
+      this.key = init.key ?? ''
+      this.ctrlKey = init.ctrlKey ?? false
+      this.metaKey = init.metaKey ?? false
+      this.altKey = init.altKey ?? false
+      this.shiftKey = init.shiftKey ?? false
+    }
+  } as unknown as typeof KeyboardEvent
+}
+if (typeof globalThis.window === 'undefined') {
+  const listeners: Record<string, Function[]> = {}
+  globalThis.window = {
+    addEventListener(type: string, fn: Function) {
+      ;(listeners[type] ??= []).push(fn)
+    },
+    removeEventListener(type: string, fn: Function) {
+      const arr = listeners[type]
+      if (arr) listeners[type] = arr.filter(f => f !== fn)
+    },
+  } as unknown as Window & typeof globalThis
+}
+if (typeof globalThis.document === 'undefined') {
+  globalThis.document = {
+    querySelector: () => null,
+    activeElement: null,
+  } as unknown as Document
+}
+// Force non-Mac platform so isMac resolves false (ctrlKey = mod, metaKey = ignored)
+const realNavigator = globalThis.navigator
+globalThis.navigator = { platform: 'Linux', userAgent: 'bun-test' } as unknown as Navigator
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { _test } from './key-layers'
+
+// Dynamic import so module-level isMac sees the mocked navigator
+const { _test } = await import('./key-layers')
+// Restore real navigator after module load
+globalThis.navigator = realNavigator
 
 const { pushLayer, popLayer, dispatch, normalizeEvent, layers, resetDoubleTap } = _test
 

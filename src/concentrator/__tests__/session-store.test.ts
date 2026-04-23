@@ -515,7 +515,7 @@ describe('session.model derivation', () => {
     expect(store.getSession('model-3')!.model).toBe('claude-opus-4-7')
   })
 
-  it('assistant transcript entry updates session.model to a newer real model', () => {
+  it('assistant transcript entry does NOT overwrite an existing model (fallback only)', () => {
     store.createSession('model-4', '/cwd')
     store.addEvent(
       'model-4',
@@ -526,8 +526,9 @@ describe('session.model derivation', () => {
       [{ type: 'assistant', message: { model: 'claude-sonnet-4-6' } } as TranscriptEntry],
       true,
     )
-    // Assistant messages are the authoritative source -- newer wins
-    expect(store.getSession('model-4')!.model).toBe('claude-sonnet-4-6')
+    // Assistant messages are fallback only -- they strip context-window suffixes
+    // like [1m], so configuredModel / SessionStart is the authoritative source
+    expect(store.getSession('model-4')!.model).toBe('claude-opus-4-7')
   })
 
   it('<synthetic> assistant entry does NOT clobber a real model', () => {
@@ -544,13 +545,15 @@ describe('session.model derivation', () => {
     expect(store.getSession('model-5')!.model).toBe('claude-opus-4-7')
   })
 
-  it('<synthetic> assistant entry sets session.model when no real model exists yet', () => {
+  it('<synthetic> assistant entry is always rejected (never sets session.model)', () => {
     store.createSession('model-6', '/cwd')
     store.addTranscriptEntries(
       'model-6',
       [{ type: 'assistant', message: { model: '<synthetic>' } } as TranscriptEntry],
       true,
     )
-    expect(store.getSession('model-6')!.model).toBe('<synthetic>')
+    // <synthetic> entries are auto-compact summaries / hook-injected messages,
+    // not real API turns -- never use them for model tracking
+    expect(store.getSession('model-6')!.model).toBeUndefined()
   })
 })
