@@ -856,7 +856,12 @@ export function ToolLine({
           if (Array.isArray(parsed) && parsed[0]?.type === 'text' && typeof parsed[0].text === 'string') {
             parsed = JSON.parse(parsed[0].text)
           }
-          const sessions = parsed as Array<{ id: string; status: string }>
+          // Handle both formats: flat array (legacy) or { self, sessions } (current)
+          const sessions: Array<{ id: string; status: string }> = Array.isArray(parsed)
+            ? parsed
+            : Array.isArray(parsed?.sessions)
+              ? parsed.sessions
+              : []
           summary = `${sessions.length} sessions` + (parts.length ? ` (${parts.join(', ')})` : '')
           details = (
             <div className="text-[10px] font-mono space-y-0.5 mt-1">
