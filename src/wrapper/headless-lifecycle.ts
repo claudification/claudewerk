@@ -217,12 +217,18 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
     },
 
     onJsonStreamLine(line) {
-      const buf = ctx.jsonStreamBuffer
-      buf.push(line)
-      if (buf.length > 200) buf.splice(0, buf.length - 200)
       if (ctx.jsonStreamAttached && ctx.wsClient?.isConnected()) {
         ctx.wsClient.sendJsonStreamData([line], false)
       }
+      // Buffer only non-noise entries so backfill contains meaningful data.
+      // Live noise is still relayed above -- client hideNoise toggle handles it.
+      try {
+        const parsed = JSON.parse(line)
+        if (parsed.type === 'stream_event' || parsed.type === 'rate_limit_event') return
+      } catch {}
+      const buf = ctx.jsonStreamBuffer
+      buf.push(line)
+      if (buf.length > 200) buf.splice(0, buf.length - 200)
     },
 
     onStreamEvent(event) {
