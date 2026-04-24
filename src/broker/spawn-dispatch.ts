@@ -80,8 +80,24 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
     throw err
   }
 
-  const sentinel = deps.sessions.getSentinel()
-  if (!sentinel) return { ok: false, error: 'No sentinel connected', statusCode: 503 }
+  // Route to the specified sentinel, or default
+  const targetAlias = req.sentinel
+  let sentinel: ReturnType<typeof deps.sessions.getSentinel>
+  if (targetAlias) {
+    sentinel = deps.sessions.getSentinelByAlias(targetAlias)
+    if (!sentinel) {
+      const connected = deps.sessions.getConnectedSentinels()
+      const available = connected.map(s => s.alias).join(', ') || 'none'
+      return {
+        ok: false,
+        error: `Sentinel "${targetAlias}" is offline. Available: ${available}`,
+        statusCode: 503,
+      }
+    }
+  } else {
+    sentinel = deps.sessions.getSentinel()
+    if (!sentinel) return { ok: false, error: 'No sentinel connected', statusCode: 503 }
+  }
 
   if (req.mode === 'resume' && !req.resumeId) {
     return { ok: false, error: 'resumeId required for resume mode', statusCode: 400 }

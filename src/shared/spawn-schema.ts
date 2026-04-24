@@ -113,6 +113,7 @@ export const spawnRequestSchema = z.object({
     .boolean()
     .optional()
     .describe('Keep session running after prompt completes (only applies when adHoc=true, ignored otherwise)'),
+  sentinel: z.string().optional().describe('Target sentinel alias for spawn routing. Default sentinel if omitted.'),
   jobId: z.string().uuid().optional().describe('Caller-supplied job id for progress correlation'),
 })
 export type SpawnRequest = z.infer<typeof spawnRequestSchema>

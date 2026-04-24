@@ -1,8 +1,21 @@
 import type { ServerWebSocket } from 'bun'
 import type { UsageUpdate } from '../../shared/protocol'
-import type { DashboardMessage } from './types'
+import type { DashboardMessage, SentinelStatusInfo } from './types'
 
 const SENTINEL_DIAG_MAX = 200
+
+function buildSentinelList(state: SentinelState): SentinelStatusInfo[] {
+  const list: SentinelStatusInfo[] = []
+  for (const conn of state.sentinels.values()) {
+    list.push({
+      sentinelId: conn.sentinelId,
+      alias: conn.alias,
+      hostname: conn.hostname,
+      connected: true,
+    })
+  }
+  return list
+}
 
 export interface SentinelConnection {
   ws: ServerWebSocket<unknown>
@@ -66,7 +79,13 @@ export function setSentinel(
   }
   state.sentinels.set(sentinelId, conn)
   state.sentinelsByAlias.set(alias, sentinelId)
-  broadcast({ type: 'sentinel_status', connected: true, machineId: info?.machineId, hostname: info?.hostname })
+  broadcast({
+    type: 'sentinel_status',
+    connected: true,
+    machineId: info?.machineId,
+    hostname: info?.hostname,
+    sentinels: buildSentinelList(state),
+  })
   return true
 }
 
@@ -79,7 +98,11 @@ export function removeSentinel(
     if (conn.ws === ws) {
       state.sentinels.delete(id)
       state.sentinelsByAlias.delete(conn.alias)
-      broadcast({ type: 'sentinel_status', connected: false })
+      broadcast({
+        type: 'sentinel_status',
+        connected: state.sentinels.size > 0,
+        sentinels: buildSentinelList(state),
+      })
       return
     }
   }
