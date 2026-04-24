@@ -39,6 +39,7 @@ import { getAllProjectSettings, getProjectSettings, initProjectSettings, setProj
 import { closeProjectStore, initProjectStore } from './project-store'
 import { initPush, isPushConfigured, sendPushToAll } from './push'
 import { createRouter } from './routes'
+import { createSentinelRegistry } from './sentinel-registry'
 import { createSessionStore } from './session-store'
 import {
   cleanExpired as cleanExpiredShares,
@@ -350,10 +351,14 @@ async function main() {
     console.log('[push] Web Push disabled (set VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY to enable)')
   }
 
+  // Initialize sentinel registry (persisted sentinel host records)
+  const sentinelRegistry = authCacheDir ? createSentinelRegistry(authCacheDir) : undefined
+
   const sessionStore = createSessionStore({
     cacheDir,
     enablePersistence: !noPersistence,
     store,
+    sentinelRegistry,
   })
 
   // Handle --clear-cache

@@ -4,17 +4,33 @@ import type { DashboardMessage } from './types'
 
 const SENTINEL_DIAG_MAX = 200
 
+export interface SentinelConnection {
+  ws: ServerWebSocket<unknown>
+  sentinelId: string
+  alias: string
+  hostname?: string
+  machineId?: string
+  spawnRoot?: string
+  connectedAt: number
+}
+
+export interface SentinelIdentifyInfo {
+  machineId?: string
+  hostname?: string
+  alias?: string
+  spawnRoot?: string
+  sentinelId?: string
+}
+
 export interface SentinelState {
-  socket: ServerWebSocket<unknown> | undefined
-  info: { machineId?: string; hostname?: string } | undefined
+  sentinels: Map<string, SentinelConnection> // sentinelId -> live connection
   diagLog: Array<{ t: number; type: string; msg: string; args?: unknown }>
   usage: UsageUpdate | undefined
 }
 
 export function createSentinelState(): SentinelState {
   return {
-    socket: undefined,
-    info: undefined,
+    sentinels: new Map(),
     diagLog: [],
     usage: undefined,
   }
@@ -24,11 +40,23 @@ export function setSentinel(
   state: SentinelState,
   ws: ServerWebSocket<unknown>,
   broadcast: (msg: DashboardMessage) => void,
-  info?: { machineId?: string; hostname?: string },
+  info?: SentinelIdentifyInfo,
 ): boolean {
-  if (state.socket) return false
-  state.socket = ws
-  state.info = info
+  // Phase 0: accept only one sentinel at a time
+  if (state.sentinels.size > 0) return false
+
+  const sentinelId = info?.sentinelId || 'default'
+  const alias = info?.alias || 'default'
+  const conn: SentinelConnection = {
+    ws,
+    sentinelId,
+    alias,
+    hostname: info?.hostname,
+    machineId: info?.machineId,
+    spawnRoot: info?.spawnRoot,
+    connectedAt: Date.now(),
+  }
+  state.sentinels.set(sentinelId, conn)
   broadcast({ type: 'sentinel_status', connected: true, machineId: info?.machineId, hostname: info?.hostname })
   return true
 }
@@ -38,10 +66,12 @@ export function removeSentinel(
   ws: ServerWebSocket<unknown>,
   broadcast: (msg: DashboardMessage) => void,
 ): void {
-  if (state.socket === ws) {
-    state.socket = undefined
-    state.info = undefined
-    broadcast({ type: 'sentinel_status', connected: false })
+  for (const [id, conn] of state.sentinels) {
+    if (conn.ws === ws) {
+      state.sentinels.delete(id)
+      broadcast({ type: 'sentinel_status', connected: false })
+      return
+    }
   }
 }
 

@@ -1230,6 +1230,8 @@ export interface Session {
   modelMismatch?: { requested: string; actual: string; detectedAt: number }
   resultText?: string // final result text from headless session (captured from stream-json result message)
   recap?: { content: string; timestamp: number } // away_summary from CC recaps
+  hostSentinelId?: string // which sentinel owns this session (from sentinel registry)
+  hostSentinelAlias?: string // denormalized display alias of the sentinel
 }
 
 /** Resolved launch configuration -- stored on session at spawn time, reused on revive */
@@ -1309,6 +1311,8 @@ export interface SentinelIdentify {
   type: 'sentinel_identify'
   machineId?: string // short fingerprint (truncated SHA-256 of platform UUID/machine-id)
   hostname?: string
+  alias?: string // suggested sentinel alias (first-contact only; broker may override with stored value)
+  spawnRoot?: string // default directory for relative spawn paths
 }
 
 export interface ReviveResult {
@@ -1552,6 +1556,8 @@ export interface SessionSummary {
   modelMismatch?: Session['modelMismatch']
   resultText?: string
   recap?: Session['recap']
+  hostSentinelId?: string
+  hostSentinelAlias?: string
 }
 
 // Subscription channels (dashboard <-> broker pub/sub)

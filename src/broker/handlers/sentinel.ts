@@ -10,6 +10,8 @@ const sentinelIdentify: MessageHandler = (ctx, data) => {
   const sentinelMeta = {
     machineId: typeof data.machineId === 'string' ? data.machineId : undefined,
     hostname: typeof data.hostname === 'string' ? data.hostname : undefined,
+    alias: typeof data.alias === 'string' ? data.alias : undefined,
+    spawnRoot: typeof data.spawnRoot === 'string' ? data.spawnRoot : undefined,
   }
   const accepted = ctx.sessions.setSentinel(ctx.ws, sentinelMeta)
   if (accepted) {

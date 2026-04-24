@@ -27,6 +27,7 @@ import type { UserGrant } from './permissions'
 import { resolvePermissionFlags, resolvePermissions } from './permissions'
 import { getProjectSettings } from './project-settings'
 import { appendSharedFile } from './routes'
+import type { SentinelRegistry } from './sentinel-registry'
 import { createChannelRegistry } from './session-store/channel-registry'
 import { createListenerRegistry } from './session-store/listeners'
 import { detectClipboardMime, detectContextModeFromStdout, isReadableText } from './session-store/parsers'
@@ -35,6 +36,7 @@ import {
   createSentinelState,
   pushSentinelDiag as pushSentinelDiagImpl,
   removeSentinel as removeSentinelImpl,
+  type SentinelIdentifyInfo,
   setSentinel as setSentinelImpl,
   setUsage as setUsageImpl,
 } from './session-store/sentinel'
@@ -59,6 +61,7 @@ export interface SessionStoreOptions {
   cacheDir?: string
   enablePersistence?: boolean
   store?: StoreDriver
+  sentinelRegistry?: SentinelRegistry
 }
 
 export interface SessionStore {
@@ -158,10 +161,12 @@ export interface SessionStore {
   broadcastToChannel: (channel: SubscriptionChannel, sessionId: string, message: unknown, agentId?: string) => void
   isV2Subscriber: (ws: ServerWebSocket<unknown>) => boolean
   getSubscriptionsDiag: () => SubscriptionsDiag
-  // Sentinel methods (exclusive single sentinel connection)
-  setSentinel: (ws: ServerWebSocket<unknown>, info?: { machineId?: string; hostname?: string }) => boolean
+  // Sentinel methods (exclusive single sentinel connection; sentinels Map internally)
+  setSentinel: (ws: ServerWebSocket<unknown>, info?: SentinelIdentifyInfo) => boolean
   getSentinel: () => ServerWebSocket<unknown> | undefined
   getSentinelInfo: () => { machineId?: string; hostname?: string } | undefined
+  getDefaultSentinelId: () => string | undefined
+  getDefaultSentinelAlias: () => string | undefined
   removeSentinel: (ws: ServerWebSocket<unknown>) => void
   hasSentinel: () => boolean
   // Sentinel diagnostics (structured log entries from sentinel)
@@ -259,7 +264,7 @@ export interface SessionStore {
  * Create a session store with optional persistence
  */
 export function createSessionStore(options: SessionStoreOptions = {}): SessionStore {
-  const { store } = options
+  const { store, sentinelRegistry } = options
 
   const sessions = new Map<string, Session>()
   // sessionId -> (conversationId -> socket): multiple rclaude instances can share a Claude session
@@ -467,6 +472,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       modelMismatch: session.modelMismatch,
       resultText: session.resultText,
       recap: session.recap,
+      hostSentinelId: session.hostSentinelId,
+      hostSentinelAlias: session.hostSentinelAlias,
     }
   }
 
@@ -697,6 +704,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
           summary: (full as unknown as { summary?: string })?.summary || (fullMeta.summary as string | undefined),
           agentName: fullMeta.agentName as string | undefined,
           prLinks: fullMeta.prLinks as Session['prLinks'],
+          hostSentinelId: fullMeta.hostSentinelId as string | undefined,
+          hostSentinelAlias: fullMeta.hostSentinelAlias as string | undefined,
         }
         sessions.set(session.id, session)
       }
@@ -743,6 +752,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         description: session.description,
         agentName: session.agentName,
         prLinks: session.prLinks?.length ? session.prLinks : undefined,
+        hostSentinelId: session.hostSentinelId,
+        hostSentinelAlias: session.hostSentinelAlias,
       }
       if (!existing) {
         store.sessions.create({
@@ -832,6 +843,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         totalApiDurationMs: 0,
       },
       costTimeline: [],
+      hostSentinelId: getDefaultSentinelId(),
+      hostSentinelAlias: getDefaultSentinelAlias(),
     }
     sessions.set(id, session)
     persistSession(session)
@@ -1794,23 +1807,64 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     }
   }
 
-  // Sentinel management: extracted to sentinel.ts
+  // Sentinel management: extracted to sentinel.ts (sentinels Map internally)
   const sentinelState = createSentinelState()
-  function setSentinel(ws: ServerWebSocket<unknown>, info?: { machineId?: string; hostname?: string }): boolean {
-    return setSentinelImpl(sentinelState, ws, broadcast, info)
+
+  function setSentinel(ws: ServerWebSocket<unknown>, info?: SentinelIdentifyInfo): boolean {
+    // Auto-register sentinel on first connect if registry is available
+    let sentinelId = info?.sentinelId
+    let alias = info?.alias || 'default'
+    if (sentinelRegistry) {
+      const defaultId = sentinelRegistry.getDefaultId()
+      if (!defaultId) {
+        const record = sentinelRegistry.create({ alias, isDefault: true })
+        sentinelId = record.sentinelId
+        alias = record.aliases[0]
+      } else {
+        sentinelId = defaultId
+        const record = sentinelRegistry.get(defaultId)
+        if (record) alias = record.aliases[0]
+      }
+    }
+    return setSentinelImpl(sentinelState, ws, broadcast, { ...info, sentinelId, alias })
   }
+
   function getSentinel(): ServerWebSocket<unknown> | undefined {
-    return sentinelState.socket
+    const defaultId = sentinelRegistry?.getDefaultId()
+    if (defaultId) return sentinelState.sentinels.get(defaultId)?.ws
+    const first = sentinelState.sentinels.values().next()
+    return first.done ? undefined : first.value.ws
   }
+
   function getSentinelInfo(): { machineId?: string; hostname?: string } | undefined {
-    return sentinelState.info
+    const defaultId = sentinelRegistry?.getDefaultId()
+    const conn = defaultId ? sentinelState.sentinels.get(defaultId) : sentinelState.sentinels.values().next().value
+    return conn ? { machineId: conn.machineId, hostname: conn.hostname } : undefined
   }
+
+  function getDefaultSentinelId(): string | undefined {
+    if (sentinelRegistry) return sentinelRegistry.getDefaultId()
+    const first = sentinelState.sentinels.values().next()
+    return first.done ? undefined : first.value.sentinelId
+  }
+
+  function getDefaultSentinelAlias(): string | undefined {
+    if (sentinelRegistry) {
+      const def = sentinelRegistry.getDefault()
+      return def?.aliases[0]
+    }
+    const first = sentinelState.sentinels.values().next()
+    return first.done ? undefined : first.value.alias
+  }
+
   function removeSentinel(ws: ServerWebSocket<unknown>): void {
     removeSentinelImpl(sentinelState, ws, broadcast)
   }
+
   function hasSentinel(): boolean {
-    return !!sentinelState.socket
+    return sentinelState.sentinels.size > 0
   }
+
   function pushSentinelDiag(entry: { t: number; type: string; msg: string; args?: unknown }): void {
     pushSentinelDiagImpl(sentinelState, entry)
   }
@@ -2525,6 +2579,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     setSentinel,
     getSentinel,
     getSentinelInfo,
+    getDefaultSentinelId,
+    getDefaultSentinelAlias,
     removeSentinel,
     hasSentinel,
     pushSentinelDiag,

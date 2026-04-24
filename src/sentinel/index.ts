@@ -1191,7 +1191,14 @@ function connect(
     log('Connected to broker')
     activeWs = ws
     // Identify as sentinel with machine fingerprint
-    ws.send(JSON.stringify({ type: 'sentinel_identify', machineId: getMachineId(), hostname: osHostname() }))
+    ws.send(
+      JSON.stringify({
+        type: 'sentinel_identify',
+        machineId: getMachineId(),
+        hostname: osHostname(),
+        spawnRoot,
+      }),
+    )
 
     // Report any dead PIDs from previous sentinel run
     reportDeadPids(ws)
