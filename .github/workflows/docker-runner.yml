@@ -52,7 +52,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.CLAUDEWERK_GHCR_TOKEN }}
 
       - uses: docker/build-push-action@v6
         with:
