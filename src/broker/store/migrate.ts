@@ -514,9 +514,10 @@ function migrateCostData(store: StoreDriver, cacheDir: string, result: Migration
       return
     }
 
-    // Prefer project_uri; fall back to cwd (pre-migration DBs) and synthesize URI
+    // Prefer project_uri (post-migration DBs have already dropped the cwd column);
+    // fall back to synthesizing a URI from cwd for pre-migration DBs
     const selectExpr = hasProjectUri
-      ? "COALESCE(project_uri, CASE WHEN cwd IS NOT NULL AND cwd != '' THEN 'claude:///' || cwd ELSE '' END, '')"
+      ? "COALESCE(project_uri, '')"
       : "CASE WHEN cwd IS NOT NULL AND cwd != '' THEN 'claude:///' || cwd ELSE '' END"
 
     const rows = legacy

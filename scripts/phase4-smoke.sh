@@ -110,12 +110,15 @@ fi
 # ─── 5. Boot scratch broker ──────────────────────────────────────────────
 echo
 echo "--- boot scratch broker on :$BROKER_PORT ---"
-RCLAUDE_SECRET="$SECRET" bun run src/broker/index.ts \
-  --port "$BROKER_PORT" \
-  --cache-dir "$SCRATCH" \
-  --rclaude-secret "$SECRET" \
-  --no-persistence \
-  > "$SCRATCH/broker.log" 2>&1 &
+# Strip inherited VAPID env vars -- push init rejects http://localhost subjects
+env -u VAPID_PUBLIC_KEY -u VAPID_PRIVATE_KEY \
+  RCLAUDE_SECRET="$SECRET" \
+  bun run src/broker/index.ts \
+    --port "$BROKER_PORT" \
+    --cache-dir "$SCRATCH" \
+    --rclaude-secret "$SECRET" \
+    --no-persistence \
+    > "$SCRATCH/broker.log" 2>&1 &
 BROKER_PID=$!
 echo "  broker pid $BROKER_PID, log: $SCRATCH/broker.log"
 
