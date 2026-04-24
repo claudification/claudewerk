@@ -136,8 +136,10 @@ export function formatEffort(effort: string | undefined): { label: string; symbo
       return { label: 'medium', symbol: '\u25D0' } // ◐
     case 'high':
       return { label: 'high', symbol: '\u25CF' } // ●
+    case 'xhigh':
+      return { label: 'xhigh', symbol: '\u25C9' } // ◉
     case 'max':
-      return { label: 'max', symbol: '\u25C9' } // ◉
+      return { label: 'max', symbol: '\u2B24' } // ⬤
     default:
       return { label: effort, symbol: '\u25D0' }
   }
