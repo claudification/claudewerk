@@ -5,7 +5,7 @@
 
 import type { ServerWebSocket } from 'bun'
 import { resolveContextWindow } from '../shared/context-window'
-import { cwdToProjectUri, extractProjectLabel } from '../shared/project-uri'
+import { DEFAULT_SENTINEL_NAME, buildProjectUri, cwdToProjectUri, extractProjectLabel, parseProjectUri } from '../shared/project-uri'
 import type {
   AgentHostCapability,
   HookEvent,
@@ -803,6 +803,24 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     // StoreDriver writes are immediate -- this is now a no-op
   }
 
+  /** Build/rewrite a project URI using the sentinel alias as authority.
+   *  - Raw CWD string: builds `claude://{alias}/path` directly
+   *  - Existing URI with 'default' or empty authority: rewrites to sentinel alias
+   *  - Existing URI with non-default authority: left as-is (other sentinel, Phase 2+) */
+  function resolveProjectUri(projectOrCwd: string, sentinelAlias?: string): string {
+    if (!projectOrCwd.includes('://')) {
+      return cwdToProjectUri(projectOrCwd, 'claude', sentinelAlias)
+    }
+    if (!sentinelAlias || sentinelAlias === DEFAULT_SENTINEL_NAME) {
+      return projectOrCwd
+    }
+    const parsed = parseProjectUri(projectOrCwd)
+    if (parsed.scheme === 'claude' && (!parsed.authority || parsed.authority === DEFAULT_SENTINEL_NAME)) {
+      return buildProjectUri({ scheme: parsed.scheme, authority: sentinelAlias, path: parsed.path, fragment: parsed.fragment })
+    }
+    return projectOrCwd
+  }
+
   function createSession(
     id: string,
     projectOrCwd: string,
@@ -810,7 +828,8 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     args?: string[],
     capabilities?: AgentHostCapability[],
   ): Session {
-    const project = projectOrCwd.includes('://') ? projectOrCwd : cwdToProjectUri(projectOrCwd)
+    const sentinelAlias = getDefaultSentinelAlias()
+    const project = resolveProjectUri(projectOrCwd, sentinelAlias)
     const session: Session = {
       id,
       project,
