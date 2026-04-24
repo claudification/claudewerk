@@ -70,9 +70,17 @@ graph LR
 
 **Data flow:** `rclaude` (the agent host) wraps the `claude` CLI with a PTY,
 injects hooks, and streams everything (events, transcripts, tasks, terminal
-output) to the broker over a single WebSocket. The broker stores sessions in
-memory, persists to disk, and serves the control panel. No filesystem sharing
-between host and Docker.
+output) to the broker over a single WebSocket. The broker holds hot sessions
+in memory for fast routing and writes everything through to a unified SQLite
+`store.db` (sessions, transcripts, events, KV, messages, shares, address book,
+scope links, tasks, cost turns, hourly rollups). Analytics and the project
+registry live in sibling SQLite files. Nothing touches the host filesystem --
+the Docker volume is the single source of truth.
+
+**Project URIs** are canonical: `claude://default/{absolute_path}`. The
+authority slot is the sentinel name (`default` = local install; multi-sentinel
+fills in real host names). See `src/shared/project-uri.ts` for parse /
+normalize / match / compare helpers.
 
 ### Components
 
@@ -82,7 +90,7 @@ between host and Docker.
 | **Broker** | `broker` | Central server. Hono HTTP + WS + WebAuthn + inter-session routing + voice relay. Runs in Docker |
 | **Control Panel** | *(web)* | React SPA. Vite + Tailwind + Zustand. Voice, terminal, transcript, DnD, chat. Served by broker |
 | **Sentinel** | `sentinel` | Host-side daemon. Spawns/revives agent hosts, manages tmux sessions |
-| **Broker CLI** | `broker-cli` | CLI for auth management. Create invites, list/revoke users |
+| **Broker CLI** | `broker-cli` | Ops CLI. Manage users + passkeys, absorb legacy files (`migrate`), read-only SQL inspection (`query`) |
 
 ### Vocabulary
 
@@ -245,6 +253,22 @@ record, release to submit.
 When Claude copies text to clipboard, the control panel captures it as a cyan
 banner with COPY/DISMISS buttons. Works via OSC 52 interception. Supports
 both text and images.
+
+### Durable SQLite storage
+
+Everything persists through a unified SQLite `store.db` -- sessions, events,
+transcripts, tasks, shares, inter-session messages, settings, cost turns,
+hourly rollups, address book, project links. Transcripts are append-only with
+cursor-based pagination and per-session `session_seq` counters for the
+sync-check protocol. No 500-entry transcript cap, no 200-session cap, no
+debounced JSON flushes.
+
+On boot, the broker runs an idempotent migration gated by a schema-version
+stamp in the KV table -- legacy JSON/JSONL files left over from the
+pre-SQLite era are absorbed on first start, then the startup is a single
+KV read on every subsequent boot. Use `broker-cli query "SELECT ..."` to
+inspect any of the three SQLite databases (`store.db`, `analytics.db`,
+`projects.db`) in readonly mode, against a live broker, without a DB client.
 
 ---
 
@@ -416,6 +440,24 @@ long-lived).
 | `CADDY_HOST` | Caddy reverse proxy hostname | *(empty)* |
 | `VAPID_PUBLIC_KEY` | VAPID public key for push notifications | *(optional)* |
 | `VAPID_PRIVATE_KEY` | VAPID private key for push notifications | *(optional)* |
+
+### Data volume
+
+The `concentrator-data` Docker volume holds **everything**: three SQLite
+databases (`store.db`, `analytics.db`, `projects.db`), the auth state
+(`auth.json`, `auth.secret`, `passkeys.*`), the blob store (`blobs/`),
+model pricing cache, and crash reports. Back up the volume, back up the
+whole broker.
+
+```bash
+# Snapshot backup -- ~1min for 1GB-scale data
+BACKUP="concentrator-data-backup-$(date +%Y%m%d)"
+docker volume create $BACKUP
+docker run --rm \
+  -v concentrator-data:/from:ro \
+  -v $BACKUP:/to \
+  alpine cp -a /from/. /to/
+```
 
 ### Frontend hot-reload
 
@@ -832,24 +874,29 @@ claudwerk/
 │   │   ├── routes.ts             HTTP routes composition root
 │   │   ├── routes/               Per-domain route modules
 │   │   ├── __tests__/            Vitest behavioral tests
-│   │   ├── session-store.ts      Session registry + persistence
-│   │   ├── session-store/        Domain modules
-│   │   ├── session-order.ts      Tree-based session organization
-│   │   ├── session-links.ts      Inter-session permission management
-│   │   ├── address-book.ts       Per-caller routing slugs
-│   │   ├── message-queue.ts      Offline message queue
-│   │   ├── auth.ts               WebAuthn passkey auth
+│   │   ├── session-store.ts      Runtime session registry (hot cache over StoreDriver)
+│   │   ├── session-store/        Domain modules (sync-protocol, broadcast, spawn-jobs, ...)
+│   │   ├── store/                Unified StoreDriver (SQLite + in-memory)
+│   │   │   ├── types.ts            Interface contracts (SessionStore, TranscriptStore, CostStore, ...)
+│   │   │   ├── sqlite/             SQLite implementation (all SQL lives here)
+│   │   │   ├── memory/             In-memory implementation (tests + proof of contract)
+│   │   │   ├── migrate.ts          Legacy JSON/JSONL absorb + runStartupMigration
+│   │   │   ├── migrate-cli.ts      broker-cli migrate
+│   │   │   └── query-cli.ts        broker-cli query (readonly SQL)
+│   │   ├── project-store.ts      Project registry (separate projects.db, integer PKs)
+│   │   ├── analytics-store.ts    Tool-use analytics (separate analytics.db)
+│   │   ├── session-order.ts      Tree-based session organization (backed by store.kv)
+│   │   ├── project-links.ts      Inter-project trust (backed by store.scopeLinks)
+│   │   ├── address-book.ts       Per-caller routing slugs (backed by store.addressBook)
+│   │   ├── message-queue.ts      Offline message queue (backed by store.messages)
+│   │   ├── auth.ts               WebAuthn passkey auth (backed by auth.json)
 │   │   ├── auth-routes.ts        Auth HTTP endpoints
 │   │   ├── push.ts               Web Push notifications (VAPID)
 │   │   ├── voice-stream.ts       Deepgram voice transcription
-│   │   ├── global-settings.ts    Server-wide settings
-│   │   ├── project-settings.ts   Per-project label/icon/color/trust
-│   │   ├── shares.ts             Session sharing
-│   │   ├── store/                Unified StoreDriver (SQLite + in-memory)
-│   │   │   ├── types.ts            Interface contracts (SessionStore, CostStore, ...)
-│   │   │   ├── sqlite/             SQLite implementation (all SQL lives here)
-│   │   │   └── memory/             In-memory implementation (tests + proof of contract)
-│   │   └── cli.ts                CLI tool entry point
+│   │   ├── global-settings.ts    Server-wide settings (backed by store.kv)
+│   │   ├── project-settings.ts   Per-project label/icon/color/trust (backed by store.kv)
+│   │   ├── shares.ts             Session sharing (backed by store.shares)
+│   │   └── cli.ts                broker-cli entry (auth + migrate + query)
 │   ├── sentinel/                 Host daemon
 │   │   └── index.ts              Spawn + WS listener
 │   └── shared/
