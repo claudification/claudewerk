@@ -881,7 +881,7 @@ export function initMcpChannel(cb: McpChannelCallbacks, id?: AgentHostIdentity):
             {
               type: 'text',
               text: result.timedOut
-                ? `Session spawn sent to ${cwd} (${modeDesc}) but session did not connect within 2 minutes. It may still be booting - use list_sessions to check.${result.jobId ? ` jobId=${result.jobId}` : ''}`
+                ? `Session spawn sent to ${cwd} (${modeDesc}) but session did not connect within the rendezvous timeout. It may still be booting - use list_sessions to check.${result.jobId ? ` jobId=${result.jobId}` : ''}`
                 : `Session spawning at ${cwd} (${modeDesc}). Use list_sessions to check when ready.${result.jobId ? ` jobId=${result.jobId}` : ''}`,
             },
           ],

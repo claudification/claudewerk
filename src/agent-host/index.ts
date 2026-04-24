@@ -1187,6 +1187,13 @@ async function main() {
         pendingRestartResult?.(result)
       },
       onChannelSpawnResult(result) {
+        if (result.requestId && pendingSpawnRequestId && result.requestId !== pendingSpawnRequestId) {
+          diag(
+            'channel',
+            `Ignoring stale channel_spawn_result (expected=${pendingSpawnRequestId.slice(0, 8)}, got=${result.requestId.slice(0, 8)})`,
+          )
+          return
+        }
         pendingSpawnResult?.(result)
       },
       onSpawnDiagnosticsResult(result) {
@@ -1348,7 +1355,7 @@ async function main() {
         if (channelEnabled && isMcpChannelReady()) {
           const text = isReady
             ? `Session ${action === 'spawn' ? 'spawned' : 'revived'}: ${cwd?.split('/').pop() || sessionId?.slice(0, 8)} (${sessionId?.slice(0, 8)})`
-            : `Session ${action} timed out: ${error || 'no response within 2 minutes'}`
+            : `Session ${action} timed out: ${error || 'no response within timeout'}`
           pushChannelMessage(text, {
             sender: 'system',
             [`${action}_result`]: isReady ? 'ready' : 'timeout',
@@ -1574,17 +1581,29 @@ async function main() {
       async onSpawnSession({ onProgress, ...spawnParams }) {
         if (!ctx.wsClient?.isConnected()) return { ok: false, error: 'Not connected to broker' }
 
-        // Step 1: Send spawn request via WS, get immediate ack with conversationId + jobId
+        // Step 1: Send spawn request via WS, get immediate ack with conversationId + jobId.
+        // requestId correlates ack to this specific request, preventing stale
+        // channel_spawn_result messages from resolving the wrong promise.
+        const requestId = randomUUID()
         const spawnResult = await new Promise<{ ok: boolean; error?: string; conversationId?: string; jobId?: string }>(
           resolve => {
-            const timeout = setTimeout(() => resolve({ ok: false, error: 'Timeout' }), 15000)
+            const timeout = setTimeout(() => {
+              if (pendingSpawnRequestId === requestId) {
+                pendingSpawnResult = null
+                pendingSpawnRequestId = null
+              }
+              resolve({ ok: false, error: 'Timeout' })
+            }, 15000)
+            pendingSpawnRequestId = requestId
             pendingSpawnResult = result => {
               clearTimeout(timeout)
               pendingSpawnResult = null
+              pendingSpawnRequestId = null
               resolve(result)
             }
             ctx.wsClient?.send({
               type: 'channel_spawn',
+              requestId,
               ...spawnParams,
             } as unknown as AgentHostMessage)
           },
@@ -1613,15 +1632,18 @@ async function main() {
           ctx.wsClient?.send({ type: 'unsubscribe_job', jobId } as unknown as AgentHostMessage)
         }
 
-        // Step 2: Await rendezvous (broker sends spawn_ready/spawn_timeout when session connects)
+        // Step 2: Await rendezvous (broker sends spawn_ready/spawn_timeout when session connects).
+        // Must stay under CC's ~60s MCP tool timeout. The broker's own rendezvous is 120s
+        // but we give up sooner and return timedOut so the MCP caller isn't left hanging.
+        const SPAWN_RENDEZVOUS_MS = 45_000
         if (spawnResult.conversationId) {
           try {
             const wid = spawnResult.conversationId
             const result = await new Promise<Record<string, unknown>>((resolve, reject) => {
               const timer = setTimeout(() => {
                 pendingRendezvous.delete(wid)
-                reject(new Error('Rendezvous timeout (45s)'))
-              }, 45_000)
+                reject(new Error(`Rendezvous timeout (${SPAWN_RENDEZVOUS_MS / 1000}s)`))
+              }, SPAWN_RENDEZVOUS_MS)
               pendingRendezvous.set(wid, {
                 resolve: msg => {
                   clearTimeout(timer)
@@ -1805,7 +1827,10 @@ async function main() {
   let pendingRestartResult:
     | ((result: { ok: boolean; error?: string; name?: string; selfRestart?: boolean; alreadyEnded?: boolean }) => void)
     | null = null
-  let pendingSpawnResult: ((result: { ok: boolean; error?: string; conversationId?: string }) => void) | null = null
+  let pendingSpawnResult:
+    | ((result: { ok: boolean; error?: string; conversationId?: string; requestId?: string }) => void)
+    | null = null
+  let pendingSpawnRequestId: string | null = null
   // Keyed by jobId so concurrent get_spawn_diagnostics calls don't trample each
   // other. Broker replies include the jobId so we can route back.
   const pendingSpawnDiagnostics = new Map<

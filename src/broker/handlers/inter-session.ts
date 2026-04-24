@@ -106,9 +106,10 @@ const handleChannelSpawn: MessageHandler = (ctx, data) => {
   ctx.requireBenevolent()
   ctx.requireSentinel()
 
+  const reqId = typeof data.requestId === 'string' ? data.requestId : undefined
   const spawnPath = data.cwd as string
   if (!spawnPath || typeof spawnPath !== 'string') {
-    ctx.reply({ type: 'channel_spawn_result', ok: false, error: 'Missing cwd' })
+    ctx.reply({ type: 'channel_spawn_result', ok: false, error: 'Missing cwd', requestId: reqId })
     return
   }
 
@@ -116,7 +117,12 @@ const handleChannelSpawn: MessageHandler = (ctx, data) => {
   // jobId is always generated server-side by dispatchSpawn.
   const parsed = spawnRequestSchema.omit({ jobId: true }).safeParse({ ...data, cwd: spawnPath })
   if (!parsed.success) {
-    ctx.reply({ type: 'channel_spawn_result', ok: false, error: `Invalid spawn params: ${parsed.error.message}` })
+    ctx.reply({
+      type: 'channel_spawn_result',
+      ok: false,
+      error: `Invalid spawn params: ${parsed.error.message}`,
+      requestId: reqId,
+    })
     return
   }
   const req: SpawnRequest = { ...parsed.data, headless: parsed.data.headless !== false }
@@ -145,10 +151,11 @@ const handleChannelSpawn: MessageHandler = (ctx, data) => {
           ok: true,
           conversationId: result.conversationId,
           jobId: result.jobId,
+          requestId: reqId,
         })
         ctx.log.debug(`Benevolent spawn: -> ${spawnPath}`)
       } else {
-        ctx.reply({ type: 'channel_spawn_result', ok: false, error: result.error })
+        ctx.reply({ type: 'channel_spawn_result', ok: false, error: result.error, requestId: reqId })
       }
     })
     .catch((err: unknown) => {
@@ -156,6 +163,7 @@ const handleChannelSpawn: MessageHandler = (ctx, data) => {
         type: 'channel_spawn_result',
         ok: false,
         error: err instanceof Error ? err.message : 'Spawn error',
+        requestId: reqId,
       })
     })
 }

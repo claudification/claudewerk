@@ -95,7 +95,7 @@ export interface WsClientOptions {
     selfRestart?: boolean
     alreadyEnded?: boolean
   }) => void
-  onChannelSpawnResult?: (result: { ok: boolean; error?: string; conversationId?: string }) => void
+  onChannelSpawnResult?: (result: { ok: boolean; error?: string; conversationId?: string; requestId?: string }) => void
   onSpawnDiagnosticsResult?: (result: {
     ok: boolean
     jobId?: string
@@ -521,7 +521,9 @@ export function createWsClient(options: WsClientOptions): WsClient {
                 break
               }
               if (msgType === 'channel_spawn_result') {
-                onChannelSpawnResult?.(message as unknown as { ok: boolean; error?: string; conversationId?: string })
+                onChannelSpawnResult?.(
+                  message as unknown as { ok: boolean; error?: string; conversationId?: string; requestId?: string },
+                )
                 break
               }
               if (msgType === 'spawn_diagnostics_result') {
