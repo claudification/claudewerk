@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { useSessionsStore } from '@/hooks/use-sessions'
 import type { Session } from '@/lib/types'
 import { extractProjectLabel, projectPath } from '@/lib/types'
@@ -7,6 +7,14 @@ import { ProjectSettingsButton, ProjectSettingsEditor, renderProjectIcon } from 
 import { partitionSessions } from './partition'
 import { ProjectContextMenu, SessionContextMenu } from './session-context-menu'
 import { SessionCard, SessionItemCompact } from './session-item'
+
+function sessionsEqual(a: Session[], b: Session[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false
+  }
+  return true
+}
 
 // ─── Dismiss all ended sessions button ────────────────────────────
 
@@ -82,94 +90,100 @@ function DismissAllEndedButton({ ended }: { ended: Session[] }) {
   )
 }
 
-// ─── Multi-session CWD card ────────────────────────────────────────
+// ─── Multi-session project card ────────────────────────────────────
 
-function CwdSessionGroup({ sessions, project }: { sessions: Session[]; project: string }) {
-  const [showSettings, setShowSettings] = useState(false)
-  const ps = useSessionsStore(s => s.projectSettings[project])
-  const displayName = ps?.label || extractProjectLabel(project)
-  const displayColor = ps?.color
-  const { adhoc, normal, ended } = partitionSessions(sessions)
-  // Project-level rollups: any session in this CWD needing attention?
-  const hasPendingPermission = useSessionsStore(s => {
-    const ids = new Set(sessions.map(x => x.id))
-    return s.pendingPermissions.some(p => ids.has(p.sessionId))
-  })
-  const hasPendingAttention = sessions.some(s => s.pendingAttention)
-  const hasNotification = sessions.some(s => s.hasNotification)
+const ProjectSessionGroup = memo(
+  function ProjectSessionGroup({ sessions, project }: { sessions: Session[]; project: string }) {
+    const [showSettings, setShowSettings] = useState(false)
+    const ps = useSessionsStore(s => s.projectSettings[project])
+    const displayName = ps?.label || extractProjectLabel(project)
+    const displayColor = ps?.color
+    const { adhoc, normal, ended } = partitionSessions(sessions)
+    // Project-level rollups: any session in this project needing attention?
+    const hasPendingPermission = useSessionsStore(s => {
+      const ids = new Set(sessions.map(x => x.id))
+      return s.pendingPermissions.some(p => ids.has(p.sessionId))
+    })
+    const hasPendingAttention = sessions.some(s => s.pendingAttention)
+    const hasNotification = sessions.some(s => s.hasNotification)
 
-  return (
-    <div>
-      <div
-        className="border border-border"
-        style={displayColor ? { borderLeftColor: displayColor, borderLeftWidth: '3px' } : undefined}
-      >
-        <ProjectContextMenu project={project} sessions={sessions} onOpenSettings={() => setShowSettings(true)}>
-          <div className="flex items-center gap-1.5 p-3 pb-1">
-            {ps?.icon && (
-              <span style={displayColor ? { color: displayColor } : undefined}>{renderProjectIcon(ps.icon)}</span>
-            )}
-            <span
-              className="font-bold text-sm flex-1 truncate text-primary"
-              style={displayColor ? { color: displayColor } : undefined}
-              title={projectPath(project)}
-            >
-              {displayName}
-            </span>
-            <span className="text-[10px] text-muted-foreground font-mono">{sessions.length} sessions</span>
-            {hasPendingPermission && (
+    return (
+      <div>
+        <div
+          className="border border-border"
+          style={displayColor ? { borderLeftColor: displayColor, borderLeftWidth: '3px' } : undefined}
+        >
+          <ProjectContextMenu project={project} sessions={sessions} onOpenSettings={() => setShowSettings(true)}>
+            <div className="flex items-center gap-1.5 p-3 pb-1">
+              {ps?.icon && (
+                <span style={displayColor ? { color: displayColor } : undefined}>{renderProjectIcon(ps.icon)}</span>
+              )}
               <span
-                className="text-[9px] text-amber-400 font-bold animate-pulse"
-                title="A session in this project has a pending permission request"
+                className="font-bold text-sm flex-1 truncate text-primary"
+                style={displayColor ? { color: displayColor } : undefined}
+                title={projectPath(project)}
               >
-                PERM
+                {displayName}
               </span>
-            )}
-            {hasPendingAttention && !hasPendingPermission && (
-              <span className="text-[9px] text-amber-400 font-bold animate-pulse">WAITING</span>
-            )}
-            {hasNotification && <span className="text-[9px] text-teal-400 font-bold">NOTIFY</span>}
-            {ended.length > 0 && <DismissAllEndedButton ended={ended} />}
-            <ProjectSettingsButton
-              onClick={e => {
-                e.stopPropagation()
-                setShowSettings(!showSettings)
-              }}
-            />
-          </div>
-        </ProjectContextMenu>
-        <div className="space-y-0.5 pb-1">
-          {normal.map(session => (
-            <SessionContextMenu key={session.id} session={session} onOpenSettings={() => setShowSettings(true)}>
-              <div>
-                <SessionItemCompact session={session} />
-              </div>
-            </SessionContextMenu>
-          ))}
-          {adhoc.length > 0 && normal.length > 0 && (
-            <div className="flex items-center gap-2 px-3 py-1">
-              <span className="flex-1 h-px bg-border" />
-              <span className="text-[9px] text-muted-foreground/40 uppercase tracking-wider">ad-hoc</span>
-              <span className="flex-1 h-px bg-border" />
+              <span className="text-[10px] text-muted-foreground font-mono">{sessions.length} sessions</span>
+              {hasPendingPermission && (
+                <span
+                  className="text-[9px] text-amber-400 font-bold animate-pulse"
+                  title="A session in this project has a pending permission request"
+                >
+                  PERM
+                </span>
+              )}
+              {hasPendingAttention && !hasPendingPermission && (
+                <span className="text-[9px] text-amber-400 font-bold animate-pulse">WAITING</span>
+              )}
+              {hasNotification && <span className="text-[9px] text-teal-400 font-bold">NOTIFY</span>}
+              {ended.length > 0 && <DismissAllEndedButton ended={ended} />}
+              <ProjectSettingsButton
+                onClick={e => {
+                  e.stopPropagation()
+                  setShowSettings(!showSettings)
+                }}
+              />
             </div>
-          )}
-          {adhoc.map(session => (
-            <SessionContextMenu key={session.id} session={session} onOpenSettings={() => setShowSettings(true)}>
-              <div>
-                <SessionItemCompact session={session} />
+          </ProjectContextMenu>
+          <div className="space-y-0.5 pb-1">
+            {normal.map(session => (
+              <SessionContextMenu key={session.id} session={session} onOpenSettings={() => setShowSettings(true)}>
+                <div>
+                  <SessionItemCompact session={session} />
+                </div>
+              </SessionContextMenu>
+            ))}
+            {adhoc.length > 0 && normal.length > 0 && (
+              <div className="flex items-center gap-2 px-3 py-1">
+                <span className="flex-1 h-px bg-border" />
+                <span className="text-[9px] text-muted-foreground/40 uppercase tracking-wider">ad-hoc</span>
+                <span className="flex-1 h-px bg-border" />
               </div>
-            </SessionContextMenu>
-          ))}
+            )}
+            {adhoc.map(session => (
+              <SessionContextMenu key={session.id} session={session} onOpenSettings={() => setShowSettings(true)}>
+                <div>
+                  <SessionItemCompact session={session} />
+                </div>
+              </SessionContextMenu>
+            ))}
+          </div>
         </div>
+        {showSettings && <ProjectSettingsEditor project={project} onClose={() => setShowSettings(false)} />}
       </div>
-      {showSettings && <ProjectSettingsEditor project={project} onClose={() => setShowSettings(false)} />}
-    </div>
-  )
-}
+    )
+  },
+  (prev, next) => prev.project === next.project && sessionsEqual(prev.sessions, next.sessions),
+)
 
-// ─── CWD node renderer (single or multi-session) ──────────────────
+// ─── Project node renderer (single or multi-session) ─────────────
 
-export function ProjectNode({ project, sessions }: { project: string; sessions: Session[] }) {
-  if (sessions.length === 1) return <SessionCard session={sessions[0]} />
-  return <CwdSessionGroup sessions={sessions} project={project} />
-}
+export const ProjectNode = memo(
+  function ProjectNode({ project, sessions }: { project: string; sessions: Session[] }) {
+    if (sessions.length === 1) return <SessionCard session={sessions[0]} />
+    return <ProjectSessionGroup sessions={sessions} project={project} />
+  },
+  (prev, next) => prev.project === next.project && sessionsEqual(prev.sessions, next.sessions),
+)
