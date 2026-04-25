@@ -62,6 +62,7 @@ function makeCtx(init: { claudeSessionId?: string | null; pendingClearFromId?: s
     currentLaunchId: 'test-launch-id',
     currentLaunchPhase: 'initial' as const,
     launchEvents: [],
+    pendingTranscriptEntries: [],
     diag: (type: string, msg: string, args?: unknown) => diagCalls.push({ type, msg, args }),
     debug: () => {},
     connectToBroker: (id: string | null) => connectCalls.push(id),

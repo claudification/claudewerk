@@ -27,6 +27,7 @@
 import { cwdToProjectUri } from '../shared/project-uri'
 import type { AgentHostContext } from './agent-host-context'
 import { emitLaunchEvent } from './launch-events'
+import { flushPendingTranscriptEntries } from './transcript-manager'
 
 export type SessionTransitionKind = 'boot' | 'rekey' | 'confirm'
 export type SessionTransitionSource = 'hook' | 'stream_json'
@@ -117,6 +118,10 @@ export function observeClaudeSessionId(
   emitLaunchEvent(ctx, 'ready', {
     detail: `session=${newSessionId.slice(0, 8)} kind=${kind}`,
   })
+
+  // Flush any transcript entries that arrived before claudeSessionId was set
+  // (e.g. the initial ad-hoc prompt in headless mode).
+  flushPendingTranscriptEntries(ctx)
 
   return emitTransition(ctx, {
     kind,

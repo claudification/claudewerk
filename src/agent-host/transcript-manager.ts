@@ -230,8 +230,13 @@ export async function sendTranscriptEntriesChunked(
   isInitial: boolean,
   agentId?: string,
 ) {
-  if (!ctx.claudeSessionId || !ctx.wsClient?.isConnected()) {
-    debug(`Cannot send ${entries.length} entries: sessionId=${!!ctx.claudeSessionId} ws=${ctx.wsClient?.isConnected()}`)
+  if (!ctx.claudeSessionId) {
+    debug(`Buffering ${entries.length} transcript entries (claudeSessionId not set yet)`)
+    ctx.pendingTranscriptEntries.push({ entries, isInitial, agentId })
+    return
+  }
+  if (!ctx.wsClient?.isConnected()) {
+    debug(`Cannot send ${entries.length} entries: ws not connected`)
     return
   }
   // Intercept TodoWrite tool calls and synthesize as tasks
@@ -254,6 +259,19 @@ export async function sendTranscriptEntriesChunked(
   for (let i = 0; i < augmented.length; i += TRANSCRIPT_CHUNK_SIZE) {
     const chunk = augmented.slice(i, i + TRANSCRIPT_CHUNK_SIZE)
     send(chunk, isInitial && i === 0)
+  }
+}
+
+/**
+ * Flush transcript entries that were buffered before claudeSessionId was set.
+ * Called from session-transition once the session ID becomes available.
+ */
+export async function flushPendingTranscriptEntries(ctx: AgentHostContext): Promise<void> {
+  if (ctx.pendingTranscriptEntries.length === 0) return
+  const pending = ctx.pendingTranscriptEntries.splice(0)
+  debug(`Flushing ${pending.length} buffered transcript batches`)
+  for (const { entries, isInitial, agentId } of pending) {
+    await sendTranscriptEntriesChunked(ctx, entries, isInitial, agentId)
   }
 }
 

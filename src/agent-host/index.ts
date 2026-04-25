@@ -484,6 +484,8 @@ async function main() {
     pendingAskRequests: new Map(),
     outstandingInteractions: new Map(),
 
+    pendingTranscriptEntries: [],
+
     // Event queue
     eventQueue: [],
 

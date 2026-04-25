@@ -77,6 +77,10 @@ export interface AgentHostContext {
   readonly agentToolUseMap: Map<string, string>
   readonly pendingAskRequests: Map<string, { requestId: string; questions: unknown[] }>
 
+  // Transcript entries received before claudeSessionId was set (e.g. initial prompt in headless mode).
+  // Flushed by session-transition once claudeSessionId becomes available.
+  readonly pendingTranscriptEntries: Array<{ entries: TranscriptEntry[]; isInitial: boolean; agentId?: string }>
+
   // Event queue
   readonly eventQueue: HookEvent[]
 
