@@ -191,7 +191,12 @@ export function SessionHeader({
       </button>
       {!infoExpanded && (session.recap || projectSettings?.description) && (
         <div
-          className="px-3 pb-1.5 -mt-0.5 text-[10px] text-muted-foreground/40 italic truncate"
+          className={cn(
+            'px-3 pb-1.5 -mt-0.5 text-[10px] truncate transition-all duration-700',
+            session.recap && session.recapFresh
+              ? 'text-zinc-300/70 border-l-2 border-zinc-500/40 ml-3 pl-2 bg-zinc-800/15 rounded-r'
+              : 'text-muted-foreground/40 italic',
+          )}
           title={session.recap?.content || projectSettings?.description}
         >
           {session.recap?.content || projectSettings?.description}
@@ -510,8 +515,16 @@ export function SessionHeader({
                 </div>
               )}
               {session.recap && (
-                <div className="text-[10px] text-muted-foreground/40 italic truncate" title={session.recap.content}>
-                  Recap: {session.recap.content}
+                <div
+                  className={cn(
+                    'text-[10px] transition-all duration-700',
+                    session.recapFresh
+                      ? 'text-zinc-300/70 border-l-2 border-zinc-500/40 pl-2 py-1 bg-zinc-800/15 rounded-r leading-relaxed'
+                      : 'text-muted-foreground/40 italic truncate',
+                  )}
+                  title={session.recap.content}
+                >
+                  {session.recapFresh ? session.recap.content : `Recap: ${session.recap.content}`}
                 </div>
               )}
               {session.prLinks && session.prLinks.length > 0 && (

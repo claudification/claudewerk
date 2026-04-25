@@ -481,6 +481,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       modelMismatch: session.modelMismatch,
       resultText: session.resultText,
       recap: session.recap,
+      recapFresh: session.recapFresh,
       hostSentinelId: session.hostSentinelId,
       hostSentinelAlias: session.hostSentinelAlias,
     }
@@ -707,6 +708,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
           launchConfig: fullMeta.launchConfig as LaunchConfig | undefined,
           resultText: fullMeta.resultText as string | undefined,
           recap: fullMeta.recap as Session['recap'],
+          recapFresh: fullMeta.recapFresh as boolean | undefined,
           title: rec.title || (fullMeta.title as string | undefined),
           titleUserSet: fullMeta.titleUserSet as boolean | undefined,
           description: fullMeta.description as string | undefined,
@@ -757,6 +759,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         launchConfig: session.launchConfig,
         resultText: session.resultText,
         recap: session.recap,
+        recapFresh: session.recapFresh,
         titleUserSet: session.titleUserSet,
         description: session.description,
         agentName: session.agentName,
@@ -1110,6 +1113,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       const isRecap = eventInput?.type === 'system' && eventInput?.subtype === 'away_summary'
       if (isRecap && typeof eventInput?.content === 'string') {
         session.recap = { content: eventInput.content, timestamp: event.timestamp }
+        session.recapFresh = true
         scheduleSessionUpdate(sessionId)
       }
 
@@ -1550,6 +1554,9 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     const session = sessions.get(sessionId)
     if (session) {
       session.lastActivity = Date.now()
+      if (session.recapFresh && (!session.recap || Date.now() - session.recap.timestamp > 10_000)) {
+        session.recapFresh = false
+      }
       if (session.status === 'idle') {
         session.status = 'active'
       }
@@ -2074,7 +2081,9 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
         if (entry.type === 'system' && (entry as Record<string, unknown>).subtype === 'away_summary') {
           const content = (entry as Record<string, unknown>).content
           if (typeof content === 'string' && content.trim()) {
-            session.recap = { content: content.trim(), timestamp: new Date(entry.timestamp || 0).getTime() }
+            const recapTs = new Date(entry.timestamp || 0).getTime()
+            session.recap = { content: content.trim(), timestamp: recapTs }
+            session.recapFresh = session.lastActivity <= recapTs + 10_000
             sessionChanged = true
           }
         }

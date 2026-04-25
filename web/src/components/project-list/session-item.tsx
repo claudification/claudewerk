@@ -865,8 +865,18 @@ const SessionItemFull = memo(function SessionItemFull({ session }: { session: Se
         </div>
       )}
       {!session.summary && session.recap && (
-        <div className="mt-1 text-[10px] text-muted-foreground/50 italic truncate" title={session.recap.content}>
-          {session.recap.content}
+        <div
+          className={cn(
+            'mt-1.5 text-[10px] truncate transition-all duration-700 group/recap relative',
+            session.recapFresh
+              ? 'text-zinc-300/80 border-l-2 border-zinc-500/50 pl-2 py-0.5 bg-zinc-800/20 rounded-r'
+              : 'text-muted-foreground/50 italic pl-1',
+          )}
+        >
+          <span className="block truncate">{session.recap.content}</span>
+          <div className="hidden [@media(hover:hover)]:group-hover/recap:block absolute left-0 top-full z-50 mt-1 max-w-[320px] p-2.5 bg-zinc-900 border border-zinc-700 rounded shadow-lg text-[10px] text-zinc-300 leading-relaxed whitespace-normal">
+            {session.recap.content}
+          </div>
         </div>
       )}
       {session.prLinks && session.prLinks.length > 0 && (
@@ -1042,6 +1052,17 @@ export const SessionItemCompact = memo(function SessionItemCompact({ session }: 
             {session.adHocWorktree ? '⎇ ' : '⌥ '}
             {session.gitBranch}
           </span>
+        </div>
+      )}
+      {session.recap && session.recapFresh && (
+        <div
+          className="mt-0.5 pl-4 text-[9px] text-zinc-400/70 truncate group/recap relative"
+          title={session.recap.content}
+        >
+          {session.recap.content}
+          <div className="hidden [@media(hover:hover)]:group-hover/recap:block absolute left-0 top-full z-50 mt-1 max-w-[280px] p-2 bg-zinc-900 border border-zinc-700 rounded shadow-lg text-[10px] text-zinc-300 leading-relaxed whitespace-normal">
+            {session.recap.content}
+          </div>
         </div>
       )}
       {showContextBar &&

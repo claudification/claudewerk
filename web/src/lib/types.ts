@@ -125,6 +125,7 @@ export interface Session {
   launchConfig?: import('@shared/protocol').LaunchConfig
   resultText?: string
   recap?: { content: string; timestamp: number }
+  recapFresh?: boolean
   lastEvent?: {
     hookEvent: string
     timestamp: number
