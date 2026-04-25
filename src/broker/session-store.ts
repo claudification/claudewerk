@@ -1844,13 +1844,13 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   const sentinelState = createSentinelState()
 
   function setSentinel(ws: ServerWebSocket<unknown>, info?: SentinelIdentifyInfo): boolean {
-    // Auto-register sentinel on first connect if registry is available
     let sentinelId = info?.sentinelId
-    let alias = info?.alias || 'default'
-    if (sentinelRegistry) {
+    let alias = info?.alias
+    if (!sentinelId && sentinelRegistry) {
+      // No per-sentinel secret -- map to default sentinel (legacy/admin auth)
       const defaultId = sentinelRegistry.getDefaultId()
       if (!defaultId) {
-        const record = sentinelRegistry.create({ alias, isDefault: true })
+        const record = sentinelRegistry.create({ alias: alias || 'default', isDefault: true })
         sentinelId = record.sentinelId
         alias = record.aliases[0]
       } else {
