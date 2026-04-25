@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { useSessionsStore } from '@/hooks/use-sessions'
+import { clearCacheAndReload } from '@/lib/utils'
 import { BUILD_VERSION } from '../../../src/shared/version'
 
 interface Props {
@@ -224,17 +225,7 @@ export class ErrorBoundary extends Component<Props, State> {
               </button>
               <button
                 type="button"
-                onClick={async () => {
-                  // Nuke SW + all caches, then hard reload
-                  try {
-                    const regs = await navigator.serviceWorker?.getRegistrations()
-                    if (regs) for (const r of regs) await r.unregister()
-                    const names = await caches?.keys()
-                    if (names) for (const n of names) await caches.delete(n)
-                  } catch {}
-                  // Cache-bust: add timestamp to force fresh fetch past any proxy/CDN cache
-                  window.location.href = `${window.location.origin}/?_cb=${Date.now()}${window.location.hash}`
-                }}
+                onClick={() => clearCacheAndReload()}
                 className="px-4 py-2 bg-secondary text-secondary-foreground font-bold text-sm hover:bg-secondary/80 transition-colors"
               >
                 ↻ RELOAD

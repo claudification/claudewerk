@@ -201,16 +201,33 @@ export function haptic(pattern: 'tap' | 'double' | 'success' | 'error' | 'tick' 
   }
 }
 
-/** Clear all SW caches, unregister service worker, and reload.
- * Stashes the current build hash so the next page load can show feedback
- * (success: hash changed; no-op: hash identical). */
-export async function clearCacheAndReload(): Promise<void> {
+/** Nuclear reload: nuke ALL service workers, ALL caches, sessionStorage,
+ * then hard-navigate with a cache-bust param. Guaranteed to fire the
+ * reload within 2s even if cache/SW ops hang or reject. */
+export function clearCacheAndReload(): void {
   try {
     localStorage.setItem(PRE_RELOAD_KEY, JSON.stringify({ hash: BUILD_VERSION.gitHashShort, ts: Date.now() }))
   } catch {}
-  const keys = await caches.keys()
-  await Promise.all(keys.map(k => caches.delete(k)))
-  const reg = await navigator.serviceWorker?.getRegistration('/sw.js')
-  if (reg) await reg.unregister()
-  window.location.reload()
+
+  const deadline = setTimeout(hardNavigate, 2000)
+
+  ;(async () => {
+    try {
+      const regs = await navigator.serviceWorker?.getRegistrations()
+      if (regs) await Promise.allSettled(regs.map(r => r.unregister()))
+    } catch {}
+    try {
+      const keys = await caches?.keys()
+      if (keys) await Promise.allSettled(keys.map(k => caches.delete(k)))
+    } catch {}
+    try {
+      sessionStorage.clear()
+    } catch {}
+    clearTimeout(deadline)
+    hardNavigate()
+  })()
+}
+
+function hardNavigate() {
+  window.location.href = `${window.location.origin}/?_cb=${Date.now()}${window.location.hash}`
 }
