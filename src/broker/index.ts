@@ -394,7 +394,8 @@ async function main() {
   })
   process.on('SIGHUP', () => {
     reloadState()
-    console.log('[auth] Reloaded auth state from disk (SIGHUP)')
+    sentinelRegistry?.load()
+    console.log('[auth] Reloaded auth + sentinel registry from disk (SIGHUP)')
 
     // Terminate WS connections for revoked users
     const subscribers = sessionStore.getSubscribers()
