@@ -11,8 +11,16 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-SENTINEL_BIN="$PROJECT_DIR/bin/sentinel"
 ENV_FILE="$PROJECT_DIR/.env"
+
+# Prefer the dogfood install (`bun install -g ./packages/sentinel`) over the
+# local compiled binary -- we eat what we ship. Falls back to `bin/sentinel`
+# if the global install isn't set up.
+if SENTINEL_BIN="$(command -v sentinel 2>/dev/null)" && [[ -n "$SENTINEL_BIN" ]]; then
+  : # using global install (dogfood)
+else
+  SENTINEL_BIN="$PROJECT_DIR/bin/sentinel"
+fi
 PID_FILE="$PROJECT_DIR/.sentinel.pid"
 LOG_FILE="$PROJECT_DIR/.sentinel.log"
 
@@ -72,7 +80,7 @@ fi
 # --- Validation ---
 
 # Binary exists
-[[ -x "$SENTINEL_BIN" ]] || die "Sentinel binary not found: $SENTINEL_BIN (run: bun run build:sentinel)"
+[[ -x "$SENTINEL_BIN" ]] || die "Sentinel binary not found: $SENTINEL_BIN (run: bun run build:packages && bun install -g ./packages/sentinel  -- or fall back to: bun run build:sentinel)"
 
 # Secret is set
 [[ -n "${RCLAUDE_SECRET:-}" ]] || die "RCLAUDE_SECRET not set. Set in .env or environment."

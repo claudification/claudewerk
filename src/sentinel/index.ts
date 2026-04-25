@@ -15,7 +15,16 @@ import { checkBunVersion } from '../shared/bun-version'
 checkBunVersion()
 
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { hostname as osHostname } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { Subprocess } from 'bun'
@@ -443,18 +452,39 @@ async function captureChildStderr(proc: Subprocess, conversationId: string) {
   }
 }
 
-// Find revive-session.sh in common locations
+// Find revive-session.sh in common locations.
+// Two install layouts to support:
+//   1. Compiled standalone: process.argv[0] is the binary itself (bin/sentinel
+//      under the project root) -- look in ../scripts/.
+//   2. Bundled JS via `bun install -g ./packages/sentinel`: process.argv[0] is
+//      the bun runtime; the actual script is process.argv[1], a symlink chain
+//      that ends at packages/sentinel/bin/sentinel inside the project root.
+//      realpathSync follows the chain back to the source layout.
 function findReviveScript(): string {
-  const binDir = dirname(resolve(process.argv[0]))
+  const argv0Dir = dirname(resolve(process.argv[0]))
+  const argv1 = process.argv[1]
+  let scriptDir: string | null = null
+  if (argv1) {
+    try {
+      scriptDir = dirname(realpathSync(argv1))
+    } catch {}
+  }
   const homeLocalBin = `${process.env.HOME || '/root'}/.local/bin`
   const candidates = [
-    resolve(binDir, 'revive-session.sh'), // same dir as binary
-    resolve(binDir, '../scripts/revive-session.sh'), // dev layout: bin/../scripts/
-    resolve(binDir, 'scripts/revive-session.sh'), // compiled binary in project root
-    resolve(homeLocalBin, 'revive-session.sh'), // installed to ~/.local/bin
-  ]
+    // Bundled JS dogfood/npm: packages/sentinel/bin/ -> project root scripts/
+    scriptDir && resolve(scriptDir, '../../../scripts/revive-session.sh'),
+    // Compiled standalone: bin/ -> project root scripts/
+    resolve(argv0Dir, '../scripts/revive-session.sh'),
+    // Compiled binary sitting at project root with sibling scripts/
+    resolve(argv0Dir, 'scripts/revive-session.sh'),
+    // Same dir as binary (fallback)
+    resolve(argv0Dir, 'revive-session.sh'),
+    scriptDir && resolve(scriptDir, 'revive-session.sh'),
+    // Installed to ~/.local/bin
+    resolve(homeLocalBin, 'revive-session.sh'),
+  ].filter((p): p is string => typeof p === 'string')
   for (const path of candidates) {
-    if (Bun.spawnSync(['test', '-f', path]).success) return path
+    if (existsSync(path)) return path
   }
   return candidates[0] // will fail at startup validation
 }
