@@ -36,6 +36,7 @@ type LaunchFieldKey =
   | 'maxBudgetUsd'
   | 'timeout'
   | 'name'
+  | 'description'
   | 'env'
 
 export type LaunchFieldsValue = {
@@ -47,6 +48,7 @@ export type LaunchFieldsValue = {
   autocompactPct?: number | ''
   maxBudgetUsd?: string
   name?: string
+  description?: string
   envText?: string
 
   // Worktree: split into enable flag + branch name
@@ -282,6 +284,19 @@ export function LaunchConfigFields({ value, onChange, show = {}, disabled = {} }
             onChange={e => onChange({ name: e.target.value })}
             disabled={disabled.name}
             className="flex-1 max-w-[220px] text-[10px] font-mono bg-[#1a1b26] border border-[#33467c]/50 text-foreground px-2 py-1 outline-none"
+          />
+        </Row>
+      )}
+      {show.description && (
+        <Row label="Description" subtitle="What this session is about" htmlFor="lcf-description">
+          <input
+            id="lcf-description"
+            type="text"
+            value={value.description ?? ''}
+            onChange={e => onChange({ description: e.target.value })}
+            disabled={disabled.description}
+            placeholder="optional"
+            className="flex-1 max-w-[220px] text-[10px] font-mono bg-[#1a1b26] border border-[#33467c]/50 text-foreground px-2 py-1 outline-none placeholder:text-[#565f89]"
           />
         </Row>
       )}

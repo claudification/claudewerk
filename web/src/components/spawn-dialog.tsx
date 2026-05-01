@@ -53,6 +53,7 @@ export function SpawnDialog() {
   const [useWorktree, setUseWorktree] = useState(false)
   const [worktreeName, setWorktreeName] = useState('')
   const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
   const [permissionMode, setPermissionMode] = useState('')
   const [autocompactPct, setAutocompactPct] = useState<number | ''>('')
   const [maxBudgetUsd, setMaxBudgetUsd] = useState('')
@@ -95,6 +96,7 @@ export function SpawnDialog() {
       setUseWorktree(false)
       setWorktreeName('')
       setName('')
+      setDescription('')
       const pm = ps?.defaultPermissionMode || (gs.defaultPermissionMode as string) || 'default'
       setPermissionMode(pm === 'default' ? '' : pm)
       const acp = ps?.defaultAutocompactPct ?? (gs.defaultAutocompactPct as number) ?? 0
@@ -201,6 +203,7 @@ export function SpawnDialog() {
       bare: bare || undefined,
       repl: repl || undefined,
       name: name.trim() || undefined,
+      description: description.trim() || undefined,
       model: (model || undefined) as SpawnRequest['model'],
       effort: (effort || undefined) as SpawnRequest['effort'],
       agent: agent.trim() || undefined,
@@ -382,6 +385,7 @@ export function SpawnDialog() {
     if ('worktreeName' in patch) setWorktreeName(patch.worktreeName ?? '')
     if ('envText' in patch) setEnvText(patch.envText ?? '')
     if ('name' in patch) setName(patch.name ?? '')
+    if ('description' in patch) setDescription(patch.description ?? '')
     if ('includePartialMessages' in patch) setIncludePartialMessages(patch.includePartialMessages ?? true)
   }
 
@@ -397,6 +401,7 @@ export function SpawnDialog() {
     worktreeName,
     envText,
     name,
+    description,
   }
 
   return (
@@ -498,7 +503,7 @@ export function SpawnDialog() {
                     <LaunchConfigFields
                       value={fieldsValue}
                       onChange={applyFieldsPatch}
-                      show={{ name: true, model: true, effort: true }}
+                      show={{ name: true, description: true, model: true, effort: true }}
                     />
                   </div>
                 )}
