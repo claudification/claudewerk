@@ -257,7 +257,7 @@ export function SessionHeader({
             )
           })()}
       </button>
-      {!infoExpanded && (session.recap || projectSettings?.description) && (
+      {!infoExpanded && (session.recap || session.description) && (
         <div
           className={cn(
             'px-3 pb-1.5 -mt-0.5 text-[10px] truncate transition-all duration-700',
@@ -265,9 +265,9 @@ export function SessionHeader({
               ? 'text-zinc-300 border-l-2 border-zinc-500/60 ml-3 pl-2 bg-zinc-800/20 rounded-r'
               : 'text-muted-foreground/70 italic',
           )}
-          title={session.recap?.content || projectSettings?.description}
+          title={session.recap?.content || session.description}
         >
-          {session.recap?.content || projectSettings?.description}
+          {session.recap?.content || session.description}
         </div>
       )}
       <CacheExpiredBanner
@@ -573,11 +573,6 @@ export function SessionHeader({
                 </button>
               </div>
               <HeaderDescription session={session} />
-              {projectSettings?.description && (
-                <div className="text-[10px] text-muted-foreground/60 italic" title={projectSettings.description}>
-                  {projectSettings.description}
-                </div>
-              )}
               {session.summary && (
                 <div className="text-[10px] text-muted-foreground/70 truncate" title={session.summary}>
                   {session.summary}

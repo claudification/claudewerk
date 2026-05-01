@@ -12,7 +12,7 @@ import { type SpawnRequest, spawnRequestSchema } from '../../shared/spawn-schema
 import { getGlobalSettings } from '../global-settings'
 import type { MessageHandler } from '../handler-context'
 import { registerHandlers } from '../message-router'
-import { getProjectSettings, setProjectSettings } from '../project-settings'
+import { getProjectSettings } from '../project-settings'
 import { dispatchSpawn } from '../spawn-dispatch'
 import { resolveSessionTarget } from './channel-id'
 
@@ -140,7 +140,6 @@ const handleChannelSpawn: MessageHandler = (ctx, data) => {
     sessions: ctx.sessions,
     getProjectSettings,
     getGlobalSettings,
-    setProjectSettings,
     callerContext,
     rendezvousCallerSessionId: callerSession,
   })
@@ -311,7 +310,6 @@ const handleChannelConfigure: MessageHandler = (ctx, data) => {
   if (data.label !== undefined) update.label = data.label
   if (data.icon !== undefined) update.icon = data.icon
   if (data.color !== undefined) update.color = data.color
-  if (data.description !== undefined) update.description = data.description
   if (data.keyterms !== undefined) update.keyterms = data.keyterms
 
   if (Object.keys(update).length === 0) {

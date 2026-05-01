@@ -858,16 +858,16 @@ const SessionItemFull = memo(function SessionItemFull({ session }: { session: Se
         <div className="mt-0.5 pl-1">
           <InlineDescription session={session} />
         </div>
-      ) : session.description || ps?.description ? (
+      ) : session.description ? (
         <div
           className="mt-0.5 text-[10px] text-muted-foreground/60 truncate pl-1 italic cursor-pointer hover:text-muted-foreground/80 transition-colors"
-          title={`${session.description || ps?.description}\n(click to edit)`}
+          title={`${session.description}\n(click to edit)`}
           onClick={e => {
             e.stopPropagation()
             useSessionsStore.getState().setEditingDescriptionSessionId(session.id)
           }}
         >
-          {session.description || ps?.description}
+          {session.description}
         </div>
       ) : null}
       {session.gitBranch && session.gitBranch !== 'main' && session.gitBranch !== 'master' && (
@@ -1109,8 +1109,13 @@ export const SessionItemCompact = memo(function SessionItemCompact({ session }: 
           </span>
         </div>
       )}
+      {session.description && (
+        <div className="mt-0.5 pl-4 text-[9px] text-muted-foreground/70 truncate" title={session.description}>
+          {session.description}
+        </div>
+      )}
       {session.summary && (
-        <div className="mt-0.5 pl-4 text-[9px] text-muted-foreground/70 truncate" title={session.summary}>
+        <div className="mt-0.5 pl-4 text-[9px] text-muted-foreground/50 truncate" title={session.summary}>
           {session.summary}
         </div>
       )}

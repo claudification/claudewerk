@@ -201,9 +201,7 @@ const channelListSessions: MessageHandler = (ctx, data) => {
       status: (isLive ? 'live' : 'inactive') as 'live' | 'inactive',
       capabilities: s.capabilities,
       ...(projSettings?.label && projSettings.label !== sessionName ? { label: projSettings.label } : {}),
-      ...(s.description || projSettings?.description
-        ? { description: s.description || projSettings?.description }
-        : {}),
+      ...(s.description ? { description: s.description } : {}),
       link: isLinked ? 'connected' : linkStatus === 'blocked' ? 'blocked' : undefined,
       title: s.title,
       summary: s.summary,

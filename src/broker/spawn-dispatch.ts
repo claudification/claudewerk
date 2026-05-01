@@ -51,7 +51,6 @@ export type SpawnDispatchDeps = {
   sessions: SessionStore
   getProjectSettings: (project: string) => ProjectSettings | null
   getGlobalSettings: () => GlobalSettings
-  setProjectSettings?: (project: string, update: Partial<ProjectSettings>) => void
   /** Caller context for the unified permission gate. */
   callerContext: SpawnCallerContext
   /** If set, register a rendezvous so the caller session is notified when the spawned wrapper connects. */
@@ -187,10 +186,6 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
       leaveRunning: req.leaveRunning,
       name: req.name,
     })
-
-    if (req.description && deps.setProjectSettings) {
-      deps.setProjectSettings(req.cwd, { description: req.description })
-    }
 
     deps.sessions.setPendingLaunchConfig(conversationId, {
       headless,
