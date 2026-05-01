@@ -999,6 +999,9 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
     session.archivedTasks = []
     session.diagLog = []
     session.tokenUsage = undefined
+    session.summary = undefined
+    session.recap = undefined
+    session.recapFresh = undefined
     for (const bgTask of session.bgTasks) {
       if (bgTask.status === 'running') {
         bgTask.status = 'killed'
