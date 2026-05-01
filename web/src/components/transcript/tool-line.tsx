@@ -100,7 +100,7 @@ function parseTaskIdFromResult(result: string | undefined): string {
 function lookupTaskSubject(taskId: string | undefined): string {
   if (!taskId) return ''
   const state = useConversationsStore.getState()
-  const sid = state.selectedSessionId
+  const sid = state.selectedConversationId
   if (!sid) return ''
   const session = sid ? state.sessionsById[sid] : undefined
   if (!session) return ''
@@ -174,7 +174,7 @@ export function ToolLine({
   // Path sanitization for command display
   const sessionPath = useConversationsStore(s => {
     if (s.controlPanelPrefs.sanitizePaths === false) return undefined
-    const sid = s.selectedSessionId
+    const sid = s.selectedConversationId
     const session = sid ? s.sessionsById[sid] : undefined
     return session ? projectPath(session.project) : undefined
   })
@@ -500,8 +500,8 @@ export function ToolLine({
                 e.stopPropagation()
                 const store = useConversationsStore.getState()
                 store.selectSubagent(agentIdForNav)
-                if (store.selectedSessionId) {
-                  store.openTab(store.selectedSessionId, 'transcript')
+                if (store.selectedConversationId) {
+                  store.openTab(store.selectedConversationId, 'transcript')
                 }
               }}
               className={cn(
