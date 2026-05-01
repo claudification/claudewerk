@@ -1054,7 +1054,12 @@ export const SessionItemCompact = memo(function SessionItemCompact({ session }: 
           </span>
         </div>
       )}
-      {session.recap && session.recapFresh && (
+      {session.summary && (
+        <div className="mt-0.5 pl-4 text-[9px] text-muted-foreground/70 truncate" title={session.summary}>
+          {session.summary}
+        </div>
+      )}
+      {!session.summary && session.recap && session.recapFresh && (
         <div
           className="mt-0.5 pl-4 text-[9px] text-zinc-400/70 truncate group/recap relative"
           title={session.recap.content}
