@@ -585,6 +585,52 @@ function InlineRename({ session }: { session: Session }) {
   )
 }
 
+// ─── Inline description input ───────────────────────────────────────
+
+function InlineDescription({ session }: { session: Session }) {
+  const updateDescription = useSessionsStore(s => s.updateDescription)
+  const setEditingDescriptionSessionId = useSessionsStore(s => s.setEditingDescriptionSessionId)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [value, setValue] = useState(session.description || '')
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    }, 50)
+    return () => clearTimeout(t)
+  }, [])
+
+  function submit() {
+    updateDescription(session.id, value.trim())
+    haptic('success')
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      value={value}
+      onChange={e => setValue(e.target.value)}
+      onKeyDown={e => {
+        e.stopPropagation()
+        if (e.key === 'Enter') submit()
+        if (e.key === 'Escape') setEditingDescriptionSessionId(null)
+      }}
+      onClick={e => e.stopPropagation()}
+      onBlur={submit}
+      autoComplete="off"
+      autoCorrect="off"
+      autoCapitalize="off"
+      spellCheck={false}
+      data-1p-ignore
+      data-lpignore="true"
+      data-form-type="other"
+      className="w-full bg-background/80 border border-accent/50 text-[10px] font-mono px-1 py-0.5 outline-none text-muted-foreground italic"
+      placeholder="session description"
+    />
+  )
+}
+
 // ─── Session card outer wrapper (shared by Full + Compact) ────────
 
 function SessionItemShell({
@@ -718,6 +764,7 @@ const SessionItemFull = memo(function SessionItemFull({ session }: { session: Se
   const showContextBar = useSessionsStore(s => s.controlPanelPrefs.showContextInList)
   const showCost = useSessionsStore(s => s.controlPanelPrefs.showCostInList)
   const isRenaming = useSessionsStore(s => s.renamingSessionId === session.id)
+  const isEditingDescription = useSessionsStore(s => s.editingDescriptionSessionId === session.id)
   const hasPendingPermission = useSessionsStore(s => s.pendingPermissions.some(p => p.sessionId === session.id))
 
   const projectName = projectDisplayName(projectPath(session.project), ps?.label)
@@ -807,14 +854,22 @@ const SessionItemFull = memo(function SessionItemFull({ session }: { session: Se
           {isRenaming ? <InlineRename session={session} /> : sessionName}
         </div>
       )}
-      {(session.description || ps?.description) && (
+      {isEditingDescription ? (
+        <div className="mt-0.5 pl-1">
+          <InlineDescription session={session} />
+        </div>
+      ) : session.description || ps?.description ? (
         <div
-          className="mt-0.5 text-[10px] text-muted-foreground/60 truncate pl-1 italic"
-          title={session.description || ps?.description}
+          className="mt-0.5 text-[10px] text-muted-foreground/60 truncate pl-1 italic cursor-pointer hover:text-muted-foreground/80 transition-colors"
+          title={`${session.description || ps?.description}\n(click to edit)`}
+          onClick={e => {
+            e.stopPropagation()
+            useSessionsStore.getState().setEditingDescriptionSessionId(session.id)
+          }}
         >
           {session.description || ps?.description}
         </div>
-      )}
+      ) : null}
       {session.gitBranch && session.gitBranch !== 'main' && session.gitBranch !== 'master' && (
         <div className="mt-0.5 pl-1 flex items-center gap-1">
           <span

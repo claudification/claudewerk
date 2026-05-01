@@ -134,6 +134,15 @@ export function SessionContextMenu({
           >
             Rename...
           </ContextMenu.Item>
+          <ContextMenu.Item
+            className={menuItemClass}
+            onSelect={() => {
+              haptic('tap')
+              useSessionsStore.getState().setEditingDescriptionSessionId(session.id)
+            }}
+          >
+            Edit description...
+          </ContextMenu.Item>
           {onOpenSettings && (
             <ContextMenu.Item
               className={menuItemClass}

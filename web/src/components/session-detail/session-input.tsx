@@ -23,7 +23,7 @@ export function ScrollToBottomButton({
     <button
       type="button"
       onClick={onClick}
-      className="absolute bottom-22 right-3 z-50 w-8 h-8 flex items-center justify-center rounded-full bg-[#7aa2f7] text-[#1a1b26] shadow-lg shadow-[#7aa2f7]/20 hover:bg-[#89b4fa] transition-colors cursor-pointer"
+      className="absolute bottom-22 right-3 z-50 w-8 h-8 flex items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/80 transition-colors cursor-pointer"
       title={direction === 'up' ? 'Scroll to top' : 'Scroll to bottom'}
     >
       <Icon className="h-4 w-4" />
@@ -67,7 +67,7 @@ export const InputBar = memo(function InputBar({ sessionId }: { sessionId: strin
     inputRef.current = text
   }
 
-  // Session switch: save old draft, restore new
+  // Session switch: save old draft, restore new, focus input (desktop only)
   useEffect(() => {
     if (sessionRef.current !== sessionId) {
       useSessionsStore.getState().setInputDraft(sessionRef.current, inputRef.current)
@@ -75,6 +75,9 @@ export const InputBar = memo(function InputBar({ sessionId }: { sessionId: strin
       setLocalInput(restored)
       inputRef.current = restored
       sessionRef.current = sessionId
+      if (!isMobileViewport()) {
+        requestAnimationFrame(() => containerRef.current && focusInputEditor(containerRef.current))
+      }
     }
   }, [sessionId])
 

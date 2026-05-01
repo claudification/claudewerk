@@ -1,9 +1,10 @@
 import type { ProjectSettings } from '@shared/protocol'
-import { ChevronDown, ChevronRight, Copy } from 'lucide-react'
+import { ChevronDown, ChevronRight, Copy, Pencil } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { CacheExpiredBanner, CacheTimer } from '@/components/cache-timer'
 import { CostSparkline } from '@/components/cost-sparkline'
 import { renderProjectIcon } from '@/components/project-settings-editor'
-import { wsSend } from '@/hooks/use-sessions'
+import { useSessionsStore, wsSend } from '@/hooks/use-sessions'
 import { formatCost, getBurnRate, getCacheEfficiency, getCostColor, getSessionCost } from '@/lib/cost-utils'
 import type { Session } from '@/lib/types'
 import { projectPath } from '@/lib/types'
@@ -17,6 +18,70 @@ import {
   formatTime,
   haptic,
 } from '@/lib/utils'
+
+// ─── Inline description editor (session header, expanded view) ──────
+
+function HeaderDescription({ session }: { session: Session }) {
+  const isEditing = useSessionsStore(s => s.editingDescriptionSessionId === session.id)
+  const setEditing = useSessionsStore(s => s.setEditingDescriptionSessionId)
+  const updateDescription = useSessionsStore(s => s.updateDescription)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [value, setValue] = useState(session.description || '')
+
+  useEffect(() => {
+    if (isEditing) {
+      setValue(session.description || '')
+      const t = setTimeout(() => {
+        inputRef.current?.focus()
+        inputRef.current?.select()
+      }, 50)
+      return () => clearTimeout(t)
+    }
+  }, [isEditing, session.description])
+
+  function submit() {
+    updateDescription(session.id, value.trim())
+    haptic('success')
+  }
+
+  if (isEditing) {
+    return (
+      <input
+        ref={inputRef}
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') submit()
+          if (e.key === 'Escape') setEditing(null)
+        }}
+        onBlur={submit}
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
+        data-1p-ignore
+        data-lpignore="true"
+        data-form-type="other"
+        className="w-full bg-background/80 border border-accent/50 text-[10px] font-mono px-1.5 py-0.5 outline-none text-muted-foreground italic"
+        placeholder="session description"
+      />
+    )
+  }
+
+  return (
+    <div className="group/desc flex items-center gap-1 cursor-pointer" onClick={() => setEditing(session.id)}>
+      <span
+        className={cn(
+          'text-[10px] truncate',
+          session.description ? 'text-muted-foreground/70 italic' : 'text-muted-foreground/30 italic',
+        )}
+      >
+        {session.description || 'add description...'}
+      </span>
+      <Pencil className="w-2.5 h-2.5 text-muted-foreground/20 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/desc:opacity-100 transition-opacity" />
+    </div>
+  )
+}
 
 interface ConversationTarget {
   projectA: string
@@ -63,128 +128,131 @@ export function SessionHeader({
           (() => {
             const ps = projectSettings
             return (
-              <span className="inline-flex items-center gap-1.5">
-                {ps?.icon && (
-                  <span style={ps?.color ? { color: ps.color } : undefined}>
-                    {renderProjectIcon(ps.icon, 'w-3.5 h-3.5')}
+              <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 min-w-0">
+                <span className="inline-flex items-center gap-1.5 min-w-0">
+                  {ps?.icon && (
+                    <span className="shrink-0" style={ps?.color ? { color: ps.color } : undefined}>
+                      {renderProjectIcon(ps.icon, 'w-3.5 h-3.5')}
+                    </span>
+                  )}
+                  <span className="text-sm font-bold truncate" style={ps?.color ? { color: ps.color } : undefined}>
+                    {ps?.label || projectPath(session.project).split('/').slice(-2).join('/')}
                   </span>
-                )}
-                <span className="text-sm font-bold truncate" style={ps?.color ? { color: ps.color } : undefined}>
-                  {ps?.label || projectPath(session.project).split('/').slice(-2).join('/')}
                 </span>
-                <span>
-                  {' · '}
-                  {formatModel(model || session.model)}
-                  {session.effortLevel &&
-                    (() => {
-                      const effort = formatEffort(session.effortLevel)
-                      return effort ? (
-                        <span className="text-muted-foreground ml-1" title={`effort: ${effort.label}`}>
-                          {effort.symbol}
+                <span className="inline-flex items-center gap-1 shrink-0 flex-wrap">
+                  <span className="whitespace-nowrap">
+                    {formatModel(model || session.model)}
+                    {session.effortLevel &&
+                      (() => {
+                        const effort = formatEffort(session.effortLevel)
+                        return effort ? (
+                          <span className="text-muted-foreground ml-1" title={`effort: ${effort.label}`}>
+                            {effort.symbol}
+                          </span>
+                        ) : null
+                      })()}
+                  </span>
+                  {(() => {
+                    const pm = formatPermissionMode(session.permissionMode)
+                    if (!pm && inPlanMode)
+                      return (
+                        <span className="text-[10px] text-blue-400 font-bold px-1 py-0.5 bg-blue-500/10 rounded">
+                          PLAN
                         </span>
-                      ) : null
-                    })()}
-                </span>
-                {(() => {
-                  const pm = formatPermissionMode(session.permissionMode)
-                  if (!pm && inPlanMode)
+                      )
+                    if (!pm) return null
                     return (
-                      <span className="text-[10px] text-blue-400 font-bold ml-1 px-1 py-0.5 bg-blue-500/10 rounded">
-                        PLAN
+                      <span
+                        className={cn('text-[10px] font-bold px-1 py-0.5 rounded', pm.color, pm.bgColor)}
+                        title={`Permission mode: ${session.permissionMode}`}
+                      >
+                        {pm.label}
                       </span>
                     )
-                  if (!pm) return null
-                  return (
+                  })()}
+                  {session.capabilities?.includes('ad-hoc') && (
                     <span
-                      className={cn('text-[10px] font-bold ml-1 px-1 py-0.5 rounded', pm.color, pm.bgColor)}
-                      title={`Permission mode: ${session.permissionMode}`}
-                    >
-                      {pm.label}
-                    </span>
-                  )
-                })()}
-                {session.capabilities?.includes('ad-hoc') && (
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    className="text-[10px] text-amber-400 font-bold ml-1 px-1 py-0.5 bg-amber-500/10 rounded cursor-pointer hover:bg-amber-500/20"
-                    onClick={() => {
-                      if (session.adHocTaskId) {
-                        window.dispatchEvent(
-                          new CustomEvent('open-project-task', { detail: { taskId: session.adHocTaskId } }),
-                        )
-                      }
-                    }}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' || e.key === ' ') {
+                      role="button"
+                      tabIndex={0}
+                      className="text-[10px] text-amber-400 font-bold px-1 py-0.5 bg-amber-500/10 rounded cursor-pointer hover:bg-amber-500/20"
+                      onClick={() => {
                         if (session.adHocTaskId) {
                           window.dispatchEvent(
                             new CustomEvent('open-project-task', { detail: { taskId: session.adHocTaskId } }),
                           )
                         }
-                      }
-                    }}
-                    title={session.adHocTaskId ? `Task: ${session.adHocTaskId}` : 'Ad-hoc session'}
-                  >
-                    &#x26A1; AD-HOC{session.adHocTaskId ? ` (${session.adHocTaskId})` : ''}
-                  </span>
-                )}
-                {session.tokenUsage &&
-                  (() => {
-                    const { input, cacheCreation, cacheRead } = session.tokenUsage
-                    const total = input + cacheCreation + cacheRead
-                    const maxTokens = session.contextWindow ?? contextWindowSize(model || session.model)
-                    const pct = Math.min(100, Math.round((total / maxTokens) * 100))
-                    const totalK = Math.round(total / 1000)
-                    const threshold = session.autocompactPct || 83
-                    const warnAt = threshold - 5
-                    return (
-                      <span className="inline-flex items-center gap-1 ml-1">
-                        <span className="text-muted-foreground">·</span>
-                        <span className="inline-block w-12 h-1.5 bg-muted rounded-full overflow-hidden">
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          if (session.adHocTaskId) {
+                            window.dispatchEvent(
+                              new CustomEvent('open-project-task', { detail: { taskId: session.adHocTaskId } }),
+                            )
+                          }
+                        }
+                      }}
+                      title={session.adHocTaskId ? `Task: ${session.adHocTaskId}` : 'Ad-hoc session'}
+                    >
+                      &#x26A1; AD-HOC{session.adHocTaskId ? ` (${session.adHocTaskId})` : ''}
+                    </span>
+                  )}
+                  {session.tokenUsage &&
+                    (() => {
+                      const { input, cacheCreation, cacheRead } = session.tokenUsage
+                      const total = input + cacheCreation + cacheRead
+                      const maxTokens = session.contextWindow ?? contextWindowSize(model || session.model)
+                      const pct = Math.min(100, Math.round((total / maxTokens) * 100))
+                      const totalK = Math.round(total / 1000)
+                      const threshold = session.autocompactPct || 83
+                      const warnAt = threshold - 5
+                      return (
+                        <span className="inline-flex items-center gap-1">
+                          <span className="text-muted-foreground">·</span>
+                          <span className="inline-block w-12 h-1.5 bg-muted rounded-full overflow-hidden">
+                            <span
+                              className={cn(
+                                'block h-full rounded-full',
+                                pct < warnAt ? 'bg-emerald-400' : pct < threshold ? 'bg-amber-400' : 'bg-red-400',
+                              )}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </span>
                           <span
                             className={cn(
-                              'block h-full rounded-full',
-                              pct < warnAt ? 'bg-emerald-400' : pct < threshold ? 'bg-amber-400' : 'bg-red-400',
+                              'text-[10px] font-mono whitespace-nowrap',
+                              pct < warnAt
+                                ? 'text-emerald-400/70'
+                                : pct < threshold
+                                  ? 'text-amber-400/70'
+                                  : 'text-red-400/70',
                             )}
-                            style={{ width: `${pct}%` }}
-                          />
+                          >
+                            {totalK.toLocaleString()}K ({pct}%)
+                          </span>
                         </span>
-                        <span
-                          className={cn(
-                            'text-[10px] font-mono',
-                            pct < warnAt
-                              ? 'text-emerald-400/70'
-                              : pct < threshold
-                                ? 'text-amber-400/70'
-                                : 'text-red-400/70',
-                          )}
-                        >
-                          {totalK.toLocaleString()}K ({pct}%)
+                      )
+                    })()}
+                  {session.stats &&
+                    (() => {
+                      const { cost, exact } = getSessionCost(session.stats, model || session.model)
+                      if (cost < 0.01) return null
+                      return (
+                        <span className="inline-flex items-center gap-1">
+                          <span className="text-muted-foreground">·</span>
+                          <span className={cn('text-[10px] font-mono whitespace-nowrap', getCostColor(cost))}>
+                            {formatCost(cost, exact)}
+                          </span>
                         </span>
-                      </span>
-                    )
-                  })()}
-                {session.stats &&
-                  (() => {
-                    const { cost, exact } = getSessionCost(session.stats, model || session.model)
-                    if (cost < 0.01) return null
-                    return (
-                      <span className="inline-flex items-center gap-1 ml-1">
-                        <span className="text-muted-foreground">·</span>
-                        <span className={cn('text-[10px] font-mono', getCostColor(cost))}>
-                          {formatCost(cost, exact)}
-                        </span>
-                      </span>
-                    )
-                  })()}
-                <CacheTimer
-                  lastTurnEndedAt={session.lastTurnEndedAt}
-                  tokenUsage={session.tokenUsage}
-                  model={model || session.model}
-                  cacheTtl={session.cacheTtl}
-                  isIdle={session.status === 'idle'}
-                />
+                      )
+                    })()}
+                  <CacheTimer
+                    lastTurnEndedAt={session.lastTurnEndedAt}
+                    tokenUsage={session.tokenUsage}
+                    model={model || session.model}
+                    cacheTtl={session.cacheTtl}
+                    isIdle={session.status === 'idle'}
+                  />
+                </span>
               </span>
             )
           })()}
@@ -194,8 +262,8 @@ export function SessionHeader({
           className={cn(
             'px-3 pb-1.5 -mt-0.5 text-[10px] truncate transition-all duration-700',
             session.recap && session.recapFresh
-              ? 'text-zinc-300/70 border-l-2 border-zinc-500/40 ml-3 pl-2 bg-zinc-800/15 rounded-r'
-              : 'text-muted-foreground/40 italic',
+              ? 'text-zinc-300 border-l-2 border-zinc-500/60 ml-3 pl-2 bg-zinc-800/20 rounded-r'
+              : 'text-muted-foreground/70 italic',
           )}
           title={session.recap?.content || projectSettings?.description}
         >
@@ -504,6 +572,7 @@ export function SessionHeader({
                   <Copy className="w-3 h-3" />
                 </button>
               </div>
+              <HeaderDescription session={session} />
               {projectSettings?.description && (
                 <div className="text-[10px] text-muted-foreground/60 italic" title={projectSettings.description}>
                   {projectSettings.description}

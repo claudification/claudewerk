@@ -87,8 +87,32 @@ function scheduleStreamRelease() {
   if (keepOpen) console.log('[voice] keepMicOpen: mic idle timer set (30min)')
 }
 
-const MIC_CONSTRAINTS: MediaStreamConstraints = {
-  audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true },
+function preferredDeviceId(): string {
+  return useSessionsStore.getState().controlPanelPrefs.voiceDeviceId || ''
+}
+
+function micConstraints(deviceId: string): MediaStreamConstraints {
+  return {
+    audio: {
+      sampleRate: 16000,
+      channelCount: 1,
+      echoCancellation: true,
+      noiseSuppression: true,
+      ...(deviceId ? { deviceId } : {}),
+    },
+  }
+}
+
+/** Release the warm stream so the next recording picks up a new device. */
+export function invalidateWarmStream() {
+  if (warmStream) {
+    for (const t of warmStream.getTracks()) t.stop()
+    warmStream = null
+  }
+  if (warmStreamTimer) {
+    clearTimeout(warmStreamTimer)
+    warmStreamTimer = null
+  }
 }
 
 /** Pre-warm the mic stream (fire-and-forget). Call on mount when keepMicOpen is enabled. */
@@ -103,14 +127,24 @@ async function acquireMicStream(): Promise<MediaStream> {
     clearTimeout(warmStreamTimer)
     warmStreamTimer = null
   }
+  const wantDevice = preferredDeviceId()
   if (isStreamLive(warmStream)) {
-    console.log('[voice] reusing warm stream (0ms)')
-    return warmStream
+    const activeDevice = warmStream.getAudioTracks()[0]?.getSettings().deviceId ?? ''
+    if (!wantDevice || activeDevice === wantDevice) {
+      console.log(`[voice] reusing warm stream (0ms, device=${activeDevice.slice(0, 8) || 'default'})`)
+      return warmStream
+    }
+    console.log(
+      `[voice] device mismatch (have=${activeDevice.slice(0, 8)}, want=${wantDevice.slice(0, 8)}), re-acquiring`,
+    )
+    for (const t of warmStream.getTracks()) t.stop()
+    warmStream = null
   }
   const t0 = performance.now()
-  const stream = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS)
-  const elapsed = performance.now() - t0
-  console.log(`[voice] mic acquired in ${elapsed.toFixed(0)}ms (cold start)`)
+  const stream = await navigator.mediaDevices.getUserMedia(micConstraints(wantDevice))
+  const ms = performance.now() - t0
+  const gotDevice = stream.getAudioTracks()[0]?.getSettings().deviceId ?? 'unknown'
+  console.log(`[voice] mic acquired in ${ms.toFixed(0)}ms (device=${gotDevice.slice(0, 8)})`)
   warmStream = stream
   return stream
 }

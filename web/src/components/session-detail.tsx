@@ -298,7 +298,7 @@ export const SessionDetail = memo(function SessionDetail() {
                   </span>
                 )}
               </div>
-              <div className="flex-1 min-h-0 overflow-hidden">
+              <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
                 {subagentLoading && subagentTranscript.length === 0 ? (
                   <div className="flex items-center justify-center h-full text-muted-foreground text-xs">
                     Loading transcript...
@@ -313,6 +313,7 @@ export const SessionDetail = memo(function SessionDetail() {
                     follow={follow}
                     showThinking={showThinking}
                     onUserScroll={disableFollow}
+                    onReachedBottom={enableFollow}
                   />
                 )}
               </div>

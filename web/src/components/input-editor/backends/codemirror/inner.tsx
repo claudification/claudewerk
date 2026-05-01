@@ -27,7 +27,7 @@ import { useIsMobile } from '../../shell/use-is-mobile'
 import { useScrollLock } from '../../shell/use-scroll-lock'
 import type { SubCommandContext } from '../../sub-commands'
 import type { InputEditorProps } from '../../types'
-import { buildInputExtensions, submitFromEditor } from './extensions'
+import { buildInputExtensions, darkThemeBase, submitFromEditor } from './extensions'
 import { attachPasteUpload, uploadDroppedFile } from './paste-drop'
 
 export default function CodeMirrorBackendInner(props: InputEditorProps) {
@@ -256,7 +256,7 @@ export default function CodeMirrorBackendInner(props: InputEditorProps) {
       // tap to open the panel.
       autoFocus={props.autoFocus && (props.inline || !isMobile)}
       basicSetup={false}
-      theme="dark"
+      theme={darkThemeBase}
       onCreateEditor={onCreateEditor}
       onFocus={onFocus}
       onBlur={onBlur}
@@ -300,8 +300,8 @@ export default function CodeMirrorBackendInner(props: InputEditorProps) {
         expanded
           ? 'fixed inset-0 z-[999] flex flex-col bg-background'
           : cn(
-              'relative w-full rounded-md border border-border/40 bg-muted/30 overflow-hidden',
-              'focus-within:border-accent/60 focus-within:bg-muted/50 transition-colors',
+              'relative w-full rounded-md border border-border/60 bg-transparent overflow-hidden',
+              'focus-within:border-border transition-colors',
               props.className,
             ),
       )}

@@ -260,6 +260,9 @@ interface SessionsState {
   renamingSessionId: string | null
   setRenamingSessionId: (sessionId: string | null) => void
   renameSession: (sessionId: string, name: string, description?: string) => void
+  editingDescriptionSessionId: string | null
+  setEditingDescriptionSessionId: (sessionId: string | null) => void
+  updateDescription: (sessionId: string, description: string) => void
   setPendingFilePath: (path: string | null) => void
   pendingTaskEdit: { slug: string; status: string } | null
   setPendingTaskEdit: (task: { slug: string; status: string } | null) => void
@@ -571,6 +574,19 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
           : s,
       )
       return { renamingSessionId: null, sessions, sessionsById: buildSessionsById(sessions) }
+    })
+  },
+  editingDescriptionSessionId: null,
+  setEditingDescriptionSessionId: sessionId => set({ editingDescriptionSessionId: sessionId }),
+  updateDescription: (sessionId, description) => {
+    const session = get().sessionsById[sessionId]
+    const name = session?.title || ''
+    wsSend('rename_session', { sessionId, name, description })
+    set(state => {
+      const sessions = state.sessions.map(s =>
+        s.id === sessionId ? { ...s, description: description || undefined } : s,
+      )
+      return { editingDescriptionSessionId: null, sessions, sessionsById: buildSessionsById(sessions) }
     })
   },
   inputDrafts: {},

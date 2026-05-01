@@ -1,6 +1,7 @@
 import { Save } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSessionsStore, wsSend } from '@/hooks/use-sessions'
+import { invalidateWarmStream } from '@/hooks/use-voice-recording'
 import { resolveToolDisplay, type SettingsTab, TOOL_DISPLAY_KEYS } from '@/lib/control-panel-prefs'
 import { extractProjectLabel } from '@/lib/types'
 import { clearCacheAndReload } from '@/lib/utils'
@@ -17,6 +18,7 @@ import {
   SizePicker,
 } from './settings/settings-inputs'
 import { SettingsShell, type SettingsShellTab } from './settings/settings-shell'
+import { VoiceDevicePicker } from './settings/voice-device-picker'
 
 // --- Default session picker ---
 function DefaultSessionPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
@@ -303,6 +305,22 @@ const SETTINGS: SettingItem[] = [
         checked={ctx.prefs.keepMicOpen}
         onChange={e => ctx.updatePrefs({ keepMicOpen: e.target.checked })}
         className="accent-primary w-4 h-4"
+      />
+    ),
+  },
+  {
+    tab: 'input',
+    group: 'Input',
+    label: 'Audio input device',
+    description: 'Microphone to use for voice input (change takes effect on next recording)',
+    keywords: 'mic microphone device headphones audio input select',
+    render: ctx => (
+      <VoiceDevicePicker
+        value={ctx.prefs.voiceDeviceId ?? ''}
+        onChange={v => {
+          ctx.updatePrefs({ voiceDeviceId: v })
+          invalidateWarmStream()
+        }}
       />
     ),
   },

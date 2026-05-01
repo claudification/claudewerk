@@ -166,7 +166,16 @@ const effortKeywordPlugin = ViewPlugin.fromClass(
 )
 
 // ---------------------------------------------------------------------------
-// Theme (Tokyo Night, no border, transparent bg)
+// Dark mode base -- replaces @uiw/react-codemirror's built-in "dark" theme
+// which injects an opaque background on its wrapper div. This signals dark
+// mode to CM6 without adding any visual styling of its own.
+// ---------------------------------------------------------------------------
+
+export const darkThemeBase = EditorView.theme({}, { dark: true })
+
+// ---------------------------------------------------------------------------
+// Theme -- uses the system's CSS custom properties from globals.css so the
+// editor blends with the rest of the control panel.
 // ---------------------------------------------------------------------------
 
 function inputTheme(fontSize: number, minHeight: string, maxHeight: string): Extension {
@@ -174,58 +183,62 @@ function inputTheme(fontSize: number, minHeight: string, maxHeight: string): Ext
     {
       '&': {
         fontSize: `${fontSize}px`,
-        fontFamily: '"Geist Mono", "JetBrains Mono", monospace',
+        fontFamily: 'var(--font-mono)',
         backgroundColor: 'transparent',
       },
       '&.cm-focused': { outline: 'none' },
       '.cm-content': {
         padding: '8px 12px',
-        caretColor: '#7aa2f7',
-        color: '#a9b1d6',
+        caretColor: 'var(--color-primary)',
+        color: 'var(--color-foreground)',
         minHeight,
       },
-      '.cm-cursor': { borderLeftColor: '#7aa2f7' },
-      '.cm-selectionBackground': { backgroundColor: 'rgba(122, 162, 247, 0.2) !important' },
-      '&.cm-focused .cm-selectionBackground': { backgroundColor: 'rgba(122, 162, 247, 0.3) !important' },
+      '.cm-cursor': { borderLeftColor: 'var(--color-primary)' },
+      '.cm-selectionBackground': {
+        backgroundColor: 'color-mix(in oklch, var(--color-primary) 20%, transparent) !important',
+      },
+      '&.cm-focused .cm-selectionBackground': {
+        backgroundColor: 'color-mix(in oklch, var(--color-primary) 30%, transparent) !important',
+      },
       '.cm-scroller': { overflow: 'auto', maxHeight, lineHeight: '1.5' },
-      '.cm-placeholder': { color: 'rgba(169, 177, 214, 0.35)' },
+      '.cm-placeholder': { color: 'color-mix(in oklch, var(--color-muted-foreground) 45%, transparent)' },
       '.cm-effort-keyword': {
-        color: '#ff9e64',
+        color: 'var(--color-accent)',
         textDecoration: 'underline',
-        textDecorationColor: 'rgba(255, 158, 100, 0.4)',
+        textDecorationColor: 'color-mix(in oklch, var(--color-accent) 40%, transparent)',
         textUnderlineOffset: '2px',
       },
-      // Lightweight markdown decorator classes (regex-based, see markdownDecoratorPlugin)
-      '.cm-md-heading': { color: '#7aa2f7', fontWeight: 'bold' },
-      '.cm-md-strong': { color: '#c0caf5', fontWeight: 'bold' },
-      '.cm-md-emphasis': { color: '#c0caf5', fontStyle: 'italic' },
-      '.cm-md-strikethrough': { textDecoration: 'line-through', color: '#565f89' },
-      '.cm-md-monospace': { color: '#89ddff' },
-      '.cm-md-link': { color: '#73daca', textDecoration: 'underline' },
-      '.cm-md-quote': { color: '#9ece6a' },
-      '.cm-md-list': { color: '#e0af68' },
+      // Markdown decorator classes -- matches prose-hacker styling in globals.css
+      '.cm-md-heading': { color: 'var(--color-primary)', fontWeight: 'bold' },
+      '.cm-md-strong': { color: 'var(--color-accent)', fontWeight: 'bold' },
+      '.cm-md-emphasis': { color: 'var(--color-primary)', fontStyle: 'italic' },
+      '.cm-md-strikethrough': { textDecoration: 'line-through', color: 'var(--color-muted-foreground)' },
+      '.cm-md-monospace': { color: 'var(--color-active)' },
+      '.cm-md-link': { color: 'var(--color-primary)', textDecoration: 'underline' },
+      '.cm-md-quote': { color: 'var(--color-muted-foreground)', fontStyle: 'italic' },
+      '.cm-md-list': { color: 'var(--color-accent)' },
       '.cm-tooltip.cm-tooltip-autocomplete': {
-        backgroundColor: '#1a1b26',
-        border: '1px solid #33467c',
+        backgroundColor: 'var(--color-background)',
+        border: '1px solid var(--color-border)',
         borderRadius: '0',
-        fontFamily: '"Geist Mono", "JetBrains Mono", monospace',
+        fontFamily: 'var(--font-mono)',
         fontSize: '12px',
         boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
       },
       '.cm-tooltip.cm-tooltip-autocomplete > ul': { maxHeight: '14em', fontFamily: 'inherit' },
-      '.cm-tooltip.cm-tooltip-autocomplete > ul > li': { padding: '2px 8px', color: '#a9b1d6' },
+      '.cm-tooltip.cm-tooltip-autocomplete > ul > li': { padding: '2px 8px', color: 'var(--color-foreground)' },
       '.cm-tooltip-autocomplete ul li[aria-selected]': {
-        backgroundColor: 'rgba(122, 162, 247, 0.2)',
-        color: '#c0caf5',
+        backgroundColor: 'color-mix(in oklch, var(--color-primary) 20%, transparent)',
+        color: 'var(--color-foreground)',
       },
       '.cm-completionLabel': { color: 'inherit' },
       '.cm-completionDetail': {
         marginLeft: '8px',
-        color: '#565f89',
+        color: 'var(--color-muted-foreground)',
         fontStyle: 'normal',
         fontSize: '11px',
       },
-      '.cm-completionMatchedText': { color: '#7aa2f7', textDecoration: 'none', fontWeight: 'bold' },
+      '.cm-completionMatchedText': { color: 'var(--color-primary)', textDecoration: 'none', fontWeight: 'bold' },
     },
     { dark: true },
   )
