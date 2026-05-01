@@ -4,7 +4,7 @@
 // 2s deadline guarantees reload even if cache/SW ops hang.
 if (localStorage.getItem('sw-crash-detected')) {
   localStorage.removeItem('sw-crash-detected')
-  const go = () => (window.location.href = `${location.origin}/?_cb=${Date.now()}${location.hash}`)
+  const go = () => window.location.replace(`${location.origin}/?_cb=${Date.now()}${location.hash}`)
   const deadline = setTimeout(go, 2000)
   ;(async () => {
     try {

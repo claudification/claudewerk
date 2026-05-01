@@ -250,7 +250,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   function handleAuthSuccess(name: string) {
     // Clear invite hash/params if present
     if (inviteToken) {
-      window.location.hash = ''
+      history.replaceState(null, '', window.location.pathname + window.location.search)
       setInviteToken(null)
     }
     setAuthStatus({ authenticated: true, name, hasUsers: true })

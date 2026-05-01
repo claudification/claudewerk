@@ -229,5 +229,5 @@ export function clearCacheAndReload(): void {
 }
 
 function hardNavigate() {
-  window.location.href = `${window.location.origin}/?_cb=${Date.now()}${window.location.hash}`
+  window.location.replace(`${window.location.origin}/?_cb=${Date.now()}${window.location.hash}`)
 }
