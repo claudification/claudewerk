@@ -1017,6 +1017,7 @@ export const SessionItemCompact = memo(function SessionItemCompact({ session }: 
   const showCost = useSessionsStore(s => s.controlPanelPrefs.showCostInList)
   const showContextBar = useSessionsStore(s => s.controlPanelPrefs.showContextInList)
   const isRenaming = useSessionsStore(s => s.renamingSessionId === session.id)
+  const isEditingDescription = useSessionsStore(s => s.editingDescriptionSessionId === session.id)
   const hasPendingPermission = useSessionsStore(s => s.pendingPermissions.some(p => p.sessionId === session.id))
 
   const displayColor = ps?.color
@@ -1109,11 +1110,22 @@ export const SessionItemCompact = memo(function SessionItemCompact({ session }: 
           </span>
         </div>
       )}
-      {session.description && (
-        <div className="mt-0.5 pl-4 text-[9px] text-muted-foreground/70 truncate" title={session.description}>
+      {isEditingDescription ? (
+        <div className="mt-0.5 pl-4">
+          <InlineDescription session={session} />
+        </div>
+      ) : session.description ? (
+        <div
+          className="mt-0.5 pl-4 text-[9px] text-muted-foreground/70 truncate cursor-pointer hover:text-muted-foreground/90 transition-colors"
+          title={`${session.description}\n(click to edit)`}
+          onClick={e => {
+            e.stopPropagation()
+            useSessionsStore.getState().setEditingDescriptionSessionId(session.id)
+          }}
+        >
           {session.description}
         </div>
-      )}
+      ) : null}
       {session.summary && (
         <div className="mt-0.5 pl-4 text-[9px] text-muted-foreground/50 truncate" title={session.summary}>
           {session.summary}
