@@ -864,12 +864,8 @@ const ConversationItemFull = memo(function SessionItemFull({ session }: { sessio
         </div>
       ) : session.description ? (
         <div
-          className="mt-0.5 text-[10px] text-muted-foreground/60 truncate pl-1 italic cursor-pointer hover:text-muted-foreground/80 transition-colors"
-          title={`${session.description}\n(click to edit)`}
-          onClick={e => {
-            e.stopPropagation()
-            useConversationsStore.getState().setEditingDescriptionConversationId(session.id)
-          }}
+          className="mt-0.5 text-[10px] text-muted-foreground/60 truncate pl-1 italic"
+          title={session.description}
         >
           {session.description}
         </div>
@@ -1124,12 +1120,8 @@ export const ConversationItemCompact = memo(function SessionItemCompact({ sessio
         </div>
       ) : session.description ? (
         <div
-          className="mt-0.5 pl-4 text-[9px] text-muted-foreground/70 truncate cursor-pointer hover:text-muted-foreground/90 transition-colors"
-          title={`${session.description}\n(click to edit)`}
-          onClick={e => {
-            e.stopPropagation()
-            useConversationsStore.getState().setEditingDescriptionConversationId(session.id)
-          }}
+          className="mt-0.5 pl-4 text-[9px] text-muted-foreground/70 truncate"
+          title={session.description}
         >
           {session.description}
         </div>
