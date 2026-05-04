@@ -2,10 +2,10 @@ import { memo, useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import type { Session } from '@/lib/types'
 import { extractProjectLabel, projectPath } from '@/lib/types'
-import { haptic } from '@/lib/utils'
 import { ProjectSettingsButton, ProjectSettingsEditor, renderProjectIcon } from '../project-settings-editor'
 import { ConversationContextMenu, ProjectContextMenu } from './conversation-context-menu'
 import { ConversationCard, ConversationItemCompact } from './conversation-item'
+import { InlineConfirmButton } from './inline-confirm-button'
 import { partitionConversations } from './partition'
 
 function sessionsEqual(a: Session[], b: Session[]): boolean {
@@ -20,73 +20,29 @@ function sessionsEqual(a: Session[], b: Session[]): boolean {
 
 function DismissAllEndedButton({ ended }: { ended: Session[] }) {
   const dismissConversation = useConversationsStore(s => s.dismissConversation)
-  const [confirming, setConfirming] = useState(false)
   if (ended.length === 0) return null
 
-  if (confirming) {
-    return (
-      <div
-        className="flex items-center gap-1 text-[9px]"
-        role="group"
-        onClick={e => e.stopPropagation()}
-        onKeyDown={e => e.stopPropagation()}
-      >
-        <span className="text-muted-foreground">dismiss {ended.length}?</span>
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => {
-            haptic('tap')
-            for (const s of ended) dismissConversation(s.id)
-            setConfirming(false)
-          }}
-          onKeyDown={e => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              haptic('tap')
-              for (const s of ended) dismissConversation(s.id)
-              setConfirming(false)
-            }
-          }}
-          className="text-destructive hover:text-destructive/80 cursor-pointer font-bold"
-        >
-          yes
-        </div>
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => setConfirming(false)}
-          onKeyDown={e => {
-            if (e.key === 'Enter' || e.key === ' ') setConfirming(false)
-          }}
-          className="text-muted-foreground hover:text-foreground cursor-pointer"
-        >
-          no
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={e => {
-        e.stopPropagation()
-        haptic('tap')
-        setConfirming(true)
+    <InlineConfirmButton
+      onConfirm={() => {
+        for (const s of ended) dismissConversation(s.id)
       }}
-      onKeyDown={e => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.stopPropagation()
-          haptic('tap')
-          setConfirming(true)
-        }
-      }}
-      className="text-[9px] text-muted-foreground/40 hover:text-destructive cursor-pointer px-1 transition-colors"
-      title={`Dismiss ${ended.length} ended session${ended.length > 1 ? 's' : ''}`}
-    >
-      {'\u2715'} ended
-    </div>
+      confirmLabel={<span className="text-muted-foreground">dismiss {ended.length}?</span>}
+      trigger={requestConfirm => (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={requestConfirm}
+          onKeyDown={e => {
+            if (e.key === 'Enter' || e.key === ' ') requestConfirm(e)
+          }}
+          className="text-[9px] text-muted-foreground/40 hover:text-destructive cursor-pointer px-1 transition-colors"
+          title={`Dismiss ${ended.length} ended session${ended.length > 1 ? 's' : ''}`}
+        >
+          {'\u2715'} ended
+        </div>
+      )}
+    />
   )
 }
 

@@ -128,7 +128,7 @@ export function getModelsFetchedAt(): number {
   return lastFetchedAt
 }
 
-export function stopModelPricing() {
+function stopModelPricing() {
   if (refreshTimer) {
     clearInterval(refreshTimer)
     refreshTimer = null

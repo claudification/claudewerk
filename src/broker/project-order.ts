@@ -118,7 +118,7 @@ export function setProjectOrder(update: ProjectOrder): void {
 }
 
 /** Extract all project URIs from a subtree. */
-export function getAllTreeProjects(nodes: ProjectOrderNode[] = order.tree): Set<string> {
+function getAllTreeProjects(nodes: ProjectOrderNode[] = order.tree): Set<string> {
   const uris = new Set<string>()
   for (const node of nodes) {
     if (node.type === 'project') {
@@ -132,6 +132,6 @@ export function getAllTreeProjects(nodes: ProjectOrderNode[] = order.tree): Set<
 }
 
 /** @deprecated Use getAllTreeProjects() instead. */
-export function getAllTreeCwds(nodes: ProjectOrderNode[] = order.tree): Set<string> {
+function getAllTreeCwds(nodes: ProjectOrderNode[] = order.tree): Set<string> {
   return getAllTreeProjects(nodes)
 }

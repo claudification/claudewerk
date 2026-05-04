@@ -63,7 +63,7 @@ const projectCache = new Map<string, Project>()
 // ─── Slug derivation ────────────────────────────────────────────────
 
 /** Derive a URL-safe slug from a filesystem path (last segment, lowercased) */
-export function slugFromPath(fsPath: string): string {
+function slugFromPath(fsPath: string): string {
   if (!fsPath) return 'unknown'
   const segments = fsPath.replace(/\/+$/, '').split('/')
   const last = segments[segments.length - 1]
@@ -71,7 +71,7 @@ export function slugFromPath(fsPath: string): string {
 }
 
 /** Derive a scope URI from a filesystem path (Claude Code default) */
-export function scopeFromPath(fsPath: string): string {
+function scopeFromPath(fsPath: string): string {
   if (!fsPath) return 'claude://default/'
   // fsPath starts with '/', so this yields canonical `claude://default/abs/path`
   return `claude://default${fsPath}`
@@ -236,12 +236,12 @@ export function getProjectBySlug(slug: string): Project | null {
 }
 
 /** Lookup by scope URI */
-export function getProjectByScope(scope: string): Project | null {
+function getProjectByScope(scope: string): Project | null {
   return (stmtByScope?.get({ scope }) as Project) || null
 }
 
 /** Lookup by project URI */
-export function getProjectByUri(projectUri: string): Project | null {
+function getProjectByUri(projectUri: string): Project | null {
   return (stmtByProjectUri?.get({ project_uri: projectUri }) as Project) || null
 }
 
@@ -252,7 +252,7 @@ export function listProjects(): Project[] {
 }
 
 /** Update the scope URI for a project (for future migration to custom URIs) */
-export function updateProjectScope(id: number, scope: string): void {
+function updateProjectScope(id: number, scope: string): void {
   stmtUpdateScope?.run({ scope, id })
   for (const [, p] of projectCache) {
     if (p.id === id) {

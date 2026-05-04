@@ -198,7 +198,7 @@ function deepMerge<T extends Record<string, unknown>>(base: T, override: Partial
 /**
  * Generate merged settings with hook injection
  */
-export async function generateMergedSettings(
+async function generateMergedSettings(
   conversationId: string,
   port: number,
   claudeVersion?: string,
@@ -307,7 +307,7 @@ export async function writeMergedSettings(
  * Write .mcp.json for channel support.
  * Merges rclaude MCP server into existing project .mcp.json without overwriting user servers.
  */
-export async function writeMcpConfig(cwd: string, port: number): Promise<void> {
+async function writeMcpConfig(cwd: string, port: number): Promise<void> {
   const mcpPath = join(cwd, '.mcp.json')
   let existing: Record<string, unknown> = {}
   try {
@@ -331,7 +331,7 @@ export async function writeMcpConfig(cwd: string, port: number): Promise<void> {
 /**
  * Remove rclaude entry from .mcp.json on cleanup
  */
-export async function cleanupMcpConfig(cwd: string): Promise<void> {
+async function cleanupMcpConfig(cwd: string): Promise<void> {
   const mcpPath = join(cwd, '.mcp.json')
   try {
     const file = Bun.file(mcpPath)

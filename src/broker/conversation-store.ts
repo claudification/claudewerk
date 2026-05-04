@@ -76,6 +76,7 @@ export interface ConversationStoreOptions {
   sentinelRegistry?: SentinelRegistry
 }
 
+// fallow-ignore-next-line duplicate-export
 export interface ConversationStore {
   createConversation: (
     id: string,

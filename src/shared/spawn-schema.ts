@@ -35,7 +35,7 @@ export const MODEL_OPTION_GROUPS: ModelOptionGroup[] = (() => {
 })()
 
 /** Flat list for backwards compat -- includes Default sentinel. */
-export const MODEL_OPTIONS = [
+const MODEL_OPTIONS = [
   { value: DEFAULT_SENTINEL, label: 'Default', info: 'Use project / global default' },
   ...DROPDOWN_MODEL_ENTRIES.map(m => ({ value: m.id, label: m.label, info: m.info })),
 ] as const
@@ -58,7 +58,7 @@ export const PERMISSION_MODE_OPTIONS = [
 ] as const
 
 // Keep TIMEOUT_OPTIONS simple; used only by RunTaskDialog today
-export const TIMEOUT_OPTIONS = [
+const TIMEOUT_OPTIONS = [
   { value: '5', label: '5 min' },
   { value: '10', label: '10 min' },
   { value: '15', label: '15 min' },
@@ -68,10 +68,10 @@ export const TIMEOUT_OPTIONS = [
 
 // Accept any slug CC recognizes. The full list lives in CC_MODELS (models.ts).
 // dispatchSpawn does the real validation with a helpful error listing valid models.
-export const modelEnum = z.enum(ALL_CC_SLUGS as unknown as [string, ...string[]])
-export const effortEnum = z.enum(['low', 'medium', 'high', 'xhigh', 'max'])
-export const permissionModeEnum = z.enum(['plan', 'acceptEdits', 'auto', 'bypassPermissions'])
-export const spawnModeEnum = z.enum(['fresh', 'resume'])
+const modelEnum = z.enum(ALL_CC_SLUGS as unknown as [string, ...string[]])
+const effortEnum = z.enum(['low', 'medium', 'high', 'xhigh', 'max'])
+const permissionModeEnum = z.enum(['plan', 'acceptEdits', 'auto', 'bypassPermissions'])
+const spawnModeEnum = z.enum(['fresh', 'resume'])
 
 export const spawnRequestSchema = z.object({
   cwd: z

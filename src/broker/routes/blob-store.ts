@@ -33,7 +33,7 @@ export function initBlobStore(cacheDir: string): void {
   }
 }
 
-export function hashString(input: string): string {
+function hashString(input: string): string {
   const hasher = new Bun.CryptoHasher('sha256')
   hasher.update(input)
   const bytes = hasher.digest()
@@ -42,7 +42,7 @@ export function hashString(input: string): string {
   return n.toString(36) // ~12-13 chars base36, ~10^19 combinations
 }
 
-export function registerFilePath(path: string): string {
+function registerFilePath(path: string): string {
   if (!blobDir) return hashString(path)
   // Copy file to blob store so it survives even if source disappears
   const hash = hashString(path)
@@ -60,7 +60,7 @@ export function registerFilePath(path: string): string {
   return hash
 }
 
-export function registerBlob(data: string, mediaType: string): string {
+function registerBlob(data: string, mediaType: string): string {
   const key = `${data.length}:${data.slice(0, 200)}`
   const hash = hashString(key)
   if (blobDir) {

@@ -56,7 +56,7 @@ export type BuildDiagnosticsInput = {
   task?: TaskMeta
 }
 
-export const SENSITIVE_DIAG_ENV_KEYS: ReadonlySet<string> = new Set([
+const SENSITIVE_DIAG_ENV_KEYS: ReadonlySet<string> = new Set([
   'ANTHROPIC_API_KEY',
   'OPENAI_API_KEY',
   'AWS_SECRET_ACCESS_KEY',

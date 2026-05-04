@@ -284,7 +284,7 @@ export function findUserByCredentialId(credentialId: string): PasskeyUser | unde
 }
 
 /** Kill all active auth sessions for a user. Returns count of killed sessions. */
-export function killUserSessions(name: string): number {
+function killUserSessions(name: string): number {
   let killed = 0
   for (const [token, session] of Object.entries(state.sessions)) {
     if (session.name === name) {

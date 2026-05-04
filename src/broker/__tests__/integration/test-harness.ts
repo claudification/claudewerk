@@ -36,7 +36,7 @@ export interface MockWs {
 
 let mockIdCounter = 0
 
-export function createMockWs(data: Partial<WsData> = {}): MockWs {
+function createMockWs(data: Partial<WsData> = {}): MockWs {
   const sent: Array<Record<string, unknown>> = []
   const id = `mock-${++mockIdCounter}`
   let closed = false
@@ -413,7 +413,7 @@ export function createTestHarness(): TestHarness {
 // ---------------------------------------------------------------------------
 
 /** Wait for messages of a specific type to appear in a mock WS's sent buffer */
-export async function waitForMessage(mock: MockWs, type: string, timeoutMs = 500): Promise<Record<string, unknown>> {
+async function waitForMessage(mock: MockWs, type: string, timeoutMs = 500): Promise<Record<string, unknown>> {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
     const msgs = mock.messagesOfType(type)

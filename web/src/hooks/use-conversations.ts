@@ -1,3 +1,4 @@
+import type { RclaudePermissionConfig } from '@shared/protocol'
 import { create } from 'zustand'
 import {
   type ControlPanelPrefs,
@@ -27,7 +28,6 @@ import { getConversationTab, getLastConversationId, initUIState, setLastConversa
 import { recordOut } from './ws-stats'
 
 export type { ProjectSettingsMap }
-export { extractProjectLabel }
 
 // Background task output streaming - module-level to avoid Zustand re-renders on every chunk
 const bgTaskOutputMap = new Map<string, string>()
@@ -1161,15 +1161,7 @@ export function deleteProjectSettings(projectUri: string): boolean {
 }
 
 // ─── rclaude config (permission rules) API ──────────────────────────
-export interface RclaudePermissionConfig {
-  permissions?: {
-    Write?: { allow?: string[] }
-    Edit?: { allow?: string[] }
-    Read?: { allow?: string[] }
-  }
-  allowAll?: boolean
-  allowPlanMode?: boolean
-}
+export type { RclaudePermissionConfig } from '@shared/protocol'
 
 interface ConfigDataResponse {
   config: RclaudePermissionConfig | null

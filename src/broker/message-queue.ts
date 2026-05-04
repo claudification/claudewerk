@@ -139,7 +139,7 @@ export function getQueueSize(targetProject: string): number {
 }
 
 /** Get total queue stats (for diagnostics). */
-export function getQueueStats(): { targets: number; messages: number } {
+function getQueueStats(): { targets: number; messages: number } {
   let messages = 0
   for (const queue of Object.values(queues)) {
     messages += queue.length

@@ -33,7 +33,7 @@ export function isPushConfigured(): boolean {
   return vapidConfigured
 }
 
-export function getVapidPublicKey(config: PushConfig): string {
+function getVapidPublicKey(config: PushConfig): string {
   return config.vapidPublicKey
 }
 
@@ -126,10 +126,7 @@ export async function sendPushToAll(payload: PushPayload): Promise<{ sent: numbe
 }
 
 /** Send push to a specific user's devices */
-export async function sendPushToUser(
-  userName: string,
-  payload: PushPayload,
-): Promise<{ sent: number; failed: number }> {
+async function sendPushToUser(userName: string, payload: PushPayload): Promise<{ sent: number; failed: number }> {
   if (!vapidConfigured) return { sent: 0, failed: 0 }
 
   const user = getUser(userName)

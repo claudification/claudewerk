@@ -18,7 +18,7 @@ import {
   updateProjectTask,
 } from './project-tasks'
 
-export function ensureFileEditor(ctx: AgentHostContext): FileEditor {
+function ensureFileEditor(ctx: AgentHostContext): FileEditor {
   if (!ctx.fileEditor) {
     ctx.fileEditor = new FileEditor(ctx.cwd, ctx.claudeSessionId || ctx.conversationId)
   }

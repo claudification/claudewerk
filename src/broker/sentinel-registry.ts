@@ -11,7 +11,7 @@ import { join } from 'node:path'
 
 const SENTINEL_SECRET_PREFIX = 'snt_'
 
-export function generateSentinelSecret(): string {
+function generateSentinelSecret(): string {
   return SENTINEL_SECRET_PREFIX + randomBytes(32).toString('base64url')
 }
 

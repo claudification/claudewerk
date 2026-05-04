@@ -71,6 +71,7 @@ export interface AgentHostIdentity {
   claudeAuth?: { email?: string; orgId?: string; orgName?: string; subscriptionType?: string }
 }
 
+// fallow-ignore-next-line duplicate-export
 export interface PermissionRequestData {
   requestId: string
   toolName: string
@@ -1464,7 +1465,7 @@ export function initMcpChannel(cb: McpChannelCallbacks, id?: AgentHostIdentity):
  * Connect the MCP server to the transport.
  * Must be called once before handling requests.
  */
-export async function connectMcpChannel(): Promise<void> {
+async function connectMcpChannel(): Promise<void> {
   if (!state || state.connected) return
   try {
     await state.mcpServer.connect(state.transport)

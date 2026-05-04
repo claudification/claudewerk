@@ -19,7 +19,7 @@ function requireEnv(name: string): string {
   return val
 }
 
-export function getBrokerUrl(): string {
+function getBrokerUrl(): string {
   return requireEnv('STAGING_BROKER_URL')
 }
 
@@ -31,7 +31,7 @@ export function getBrokerSecret(): string {
 // HTTP helpers
 // ---------------------------------------------------------------------------
 
-export function httpUrl(path: string): string {
+function httpUrl(path: string): string {
   return `http://${getBrokerUrl()}${path}`
 }
 
@@ -168,7 +168,7 @@ export async function waitForMessage(ws: LiveWs, type: string, timeoutMs = 5000)
 /**
  * Wait for N messages of a specific type to accumulate.
  */
-export async function waitForMessages(
+async function waitForMessages(
   ws: LiveWs,
   type: string,
   count: number,

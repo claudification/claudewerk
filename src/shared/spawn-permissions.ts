@@ -28,7 +28,6 @@ export type SpawnCallerContext = {
 
 /** Thrown when spawn is denied. Callers map to HTTP 403 / WS error reply. */
 export class SpawnPermissionError extends Error {
-  code = 'spawn_forbidden'
   field: string | undefined
   required: TrustLevel | 'spawn_permission'
   constructor(message: string, field?: string, required: TrustLevel | 'spawn_permission' = 'spawn_permission') {
@@ -39,7 +38,7 @@ export class SpawnPermissionError extends Error {
   }
 }
 
-export const SENSITIVE_ENV_KEYS: ReadonlySet<string> = new Set([
+const SENSITIVE_ENV_KEYS: ReadonlySet<string> = new Set([
   'HOME',
   'PATH',
   'USER',

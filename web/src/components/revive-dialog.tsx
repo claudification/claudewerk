@@ -12,15 +12,14 @@
 import { RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
-import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { TogglePill } from '@/components/ui/toggle-pill'
 import { reviveConversation, useConversationsStore } from '@/hooks/use-conversations'
 import { useLaunchProgress } from '@/hooks/use-launch-progress'
 import { useKeyLayer } from '@/lib/key-layers'
 import { projectPath } from '@/lib/types'
-import { cn, haptic } from '@/lib/utils'
+import { haptic } from '@/lib/utils'
 import { LaunchConfigFields, type LaunchFieldsValue } from './launch-config-fields'
-import { LaunchErrorBanner, LaunchFooterActions, LaunchStepList } from './launch-monitor'
+import { LaunchDialogBottom } from './launch-monitor'
 
 interface ReviveDialogOptions {
   conversationId: string
@@ -327,66 +326,25 @@ export function ReviveDialog() {
             </div>
           )}
 
-          {/* Launching Phase */}
-          {phase === 'launching' && (
-            <div className="space-y-3">
-              <LaunchStepList steps={progress.steps} />
-            </div>
-          )}
-
-          {displayError && (
-            <div className="shrink-0">
-              <LaunchErrorBanner error={displayError} copied={progress.copied} onCopy={handleCopyLog} />
-            </div>
-          )}
-
-          <div className="flex gap-2 pt-1 shrink-0">
-            {phase === 'config' && (
-              <>
-                <button
-                  type="button"
-                  onClick={handleClose}
-                  className={cn(
-                    'flex-1 px-4 py-2 rounded text-sm font-mono',
-                    'bg-transparent border border-border text-muted-foreground',
-                    'hover:bg-accent/10 transition-colors',
-                    'flex items-center justify-center gap-2',
-                  )}
-                >
-                  Cancel
-                  <Kbd>Esc</Kbd>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleRevive}
-                  className={cn(
-                    'flex-1 px-4 py-2 rounded text-sm font-mono font-bold',
-                    'bg-emerald-500 text-[#1a1b26] hover:bg-emerald-500/90',
-                    'transition-colors',
-                    'flex items-center justify-center gap-2',
-                  )}
-                >
-                  Revive
-                  <KbdGroup>
-                    <Kbd className="bg-[#1a1b26]/20 text-[#1a1b26]/70">↵</Kbd>
-                  </KbdGroup>
-                </button>
-              </>
-            )}
-            {phase === 'launching' && (
-              <LaunchFooterActions
-                isConnected={progress.isConnected}
-                isComplete={progress.isComplete}
-                hasError={progress.hasError}
-                viewCountdown={progress.viewCountdown}
-                onViewConversation={() => {
-                  progress.setViewCountdown(null)
-                  handleViewConversation()
-                }}
-                onClose={handleClose}
-              />
-            )}
-          </div>
+          <LaunchDialogBottom
+            phase={phase}
+            steps={progress.steps}
+            displayError={displayError}
+            copied={progress.copied}
+            onCopyLog={handleCopyLog}
+            onClose={handleClose}
+            onAction={handleRevive}
+            actionLabel="Revive"
+            actionColorClass="bg-emerald-500 text-[#1a1b26] hover:bg-emerald-500/90"
+            isConnected={progress.isConnected}
+            isComplete={progress.isComplete}
+            hasError={progress.hasError}
+            viewCountdown={progress.viewCountdown}
+            onViewConversation={() => {
+              progress.setViewCountdown(null)
+              handleViewConversation()
+            }}
+          />
         </div>
       </DialogContent>
     </Dialog>

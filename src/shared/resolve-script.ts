@@ -260,7 +260,7 @@ export function resolveScript(name: string): string | null {
  * Called by `rclaude --install-scripts` or during first run.
  * Returns the directory where scripts were installed.
  */
-export function installScripts(): string {
+function installScripts(): string {
   const dir = xdgScriptsDir()
   mkdirSync(dir, { recursive: true })
 
@@ -275,6 +275,6 @@ export function installScripts(): string {
 /**
  * List all available script names.
  */
-export function listScriptNames(): string[] {
+function listScriptNames(): string[] {
   return Object.keys(EMBEDDED_SCRIPTS)
 }

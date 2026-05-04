@@ -22,7 +22,7 @@ export interface UpdateCheckResult {
   error?: string
 }
 
-export function getVersionInfo(): UpdateCheckResult['current'] {
+function getVersionInfo(): UpdateCheckResult['current'] {
   return {
     hash: BUILD_VERSION.gitHash,
     hashShort: BUILD_VERSION.gitHashShort,

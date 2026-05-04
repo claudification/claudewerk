@@ -28,6 +28,7 @@ import { ProjectSettingsButton, ProjectSettingsEditor, renderProjectIcon } from 
 import { ShareIndicator } from '../share-panel'
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog'
 import { ConversationContextMenu } from './conversation-context-menu'
+import { InlineConfirmButton } from './inline-confirm-button'
 
 // ─── Shared visual components ──────────────────────────────────────
 
@@ -470,71 +471,25 @@ function ResultTextModal({ session }: { session: Session }) {
 
 function DismissButton({ conversationId }: { conversationId: string }) {
   const dismissConversation = useConversationsStore(s => s.dismissConversation)
-  const [confirming, setConfirming] = useState(false)
-
-  if (confirming) {
-    return (
-      <div
-        className="flex items-center gap-1 text-[9px]"
-        role="group"
-        onClick={e => e.stopPropagation()}
-        onKeyDown={e => e.stopPropagation()}
-      >
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => {
-            haptic('tap')
-            dismissConversation(conversationId)
-            setConfirming(false)
-          }}
-          onKeyDown={e => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              haptic('tap')
-              dismissConversation(conversationId)
-              setConfirming(false)
-            }
-          }}
-          className="text-destructive hover:text-destructive/80 cursor-pointer font-bold"
-        >
-          yes
-        </div>
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => setConfirming(false)}
-          onKeyDown={e => {
-            if (e.key === 'Enter' || e.key === ' ') setConfirming(false)
-          }}
-          className="text-muted-foreground hover:text-foreground cursor-pointer"
-        >
-          no
-        </div>
-      </div>
-    )
-  }
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={e => {
-        e.stopPropagation()
-        haptic('tap')
-        setConfirming(true)
-      }}
-      onKeyDown={e => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.stopPropagation()
-          haptic('tap')
-          setConfirming(true)
-        }
-      }}
-      className="opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 text-muted-foreground/40 hover:text-destructive transition-opacity cursor-pointer px-0.5"
-      title="Dismiss session"
-    >
-      {'\u2715'}
-    </div>
+    <InlineConfirmButton
+      onConfirm={() => dismissConversation(conversationId)}
+      trigger={requestConfirm => (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={requestConfirm}
+          onKeyDown={e => {
+            if (e.key === 'Enter' || e.key === ' ') requestConfirm(e)
+          }}
+          className="opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 text-muted-foreground/40 hover:text-destructive transition-opacity cursor-pointer px-0.5"
+          title="Dismiss session"
+        >
+          {'\u2715'}
+        </div>
+      )}
+    />
   )
 }
 

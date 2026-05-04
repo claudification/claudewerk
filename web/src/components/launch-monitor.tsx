@@ -4,13 +4,14 @@
  * agent host; this file just exports the pieces they share.
  *
  * Exports:
- *   LaunchStepList    - Step rendering with status icons
- *   LaunchErrorBanner - Error display with copy button
+ *   LaunchStepList      - Step rendering with status icons
+ *   LaunchErrorBanner   - Error display with copy button
  *   LaunchFooterActions - View Session + Close buttons
+ *   LaunchDialogBottom  - Composed launching steps + error + footer (used by both dialogs)
  */
 
 import { Copy } from 'lucide-react'
-import { Kbd } from '@/components/ui/kbd'
+import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import type { LaunchStep } from '@/hooks/use-launch-progress'
 import { cn } from '@/lib/utils'
 
@@ -135,6 +136,101 @@ export function LaunchFooterActions({
         {hasError || isConnected || isComplete ? 'Close' : 'Background'}
         <Kbd className="opacity-60">Esc</Kbd>
       </button>
+    </>
+  )
+}
+
+/** Composed bottom section shared by SpawnDialog and ReviveDialog:
+ *  launching step list + error banner + two-phase footer (config buttons / launch actions). */
+export function LaunchDialogBottom({
+  phase,
+  steps,
+  displayError,
+  copied,
+  onCopyLog,
+  onClose,
+  onAction,
+  actionLabel,
+  actionColorClass,
+  isConnected,
+  isComplete,
+  hasError,
+  viewCountdown,
+  onViewConversation,
+}: {
+  phase: 'config' | 'launching'
+  steps: LaunchStep[]
+  displayError: string | null | undefined
+  copied: boolean
+  onCopyLog: () => void
+  onClose: () => void
+  onAction: () => void
+  actionLabel: string
+  actionColorClass: string
+  isConnected: boolean
+  isComplete: boolean
+  hasError: boolean
+  viewCountdown: number | null
+  onViewConversation: () => void
+}) {
+  return (
+    <>
+      {phase === 'launching' && (
+        <div className="space-y-3">
+          <LaunchStepList steps={steps} />
+        </div>
+      )}
+
+      {displayError && (
+        <div className="shrink-0">
+          <LaunchErrorBanner error={displayError} copied={copied} onCopy={onCopyLog} />
+        </div>
+      )}
+
+      <div className="flex gap-2 pt-1 shrink-0">
+        {phase === 'config' && (
+          <>
+            <button
+              type="button"
+              onClick={onClose}
+              className={cn(
+                'flex-1 px-4 py-2 rounded text-sm font-mono',
+                'bg-transparent border border-border text-muted-foreground',
+                'hover:bg-accent/10 transition-colors',
+                'flex items-center justify-center gap-2',
+              )}
+            >
+              Cancel
+              <Kbd>Esc</Kbd>
+            </button>
+            <button
+              type="button"
+              onClick={onAction}
+              className={cn(
+                'flex-1 px-4 py-2 rounded text-sm font-mono font-bold',
+                actionColorClass,
+                'transition-colors',
+                'flex items-center justify-center gap-2',
+              )}
+            >
+              {actionLabel}
+              <KbdGroup>
+                <Kbd className="bg-[#1a1b26]/20 text-[#1a1b26]/70">↵</Kbd>
+              </KbdGroup>
+            </button>
+          </>
+        )}
+        {phase === 'launching' && (
+          <LaunchFooterActions
+            isConnected={isConnected}
+            isComplete={isComplete}
+            hasError={hasError}
+            viewCountdown={viewCountdown}
+            onViewConversation={onViewConversation}
+            onClose={onClose}
+          />
+        )}
+      </div>
     </>
   )
 }

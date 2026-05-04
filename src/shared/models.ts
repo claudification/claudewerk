@@ -61,7 +61,7 @@ export interface CCModelFamily {
  * Every model family CC v2.1.116 recognizes, with token limits extracted
  * from the binary. Ordered newest-first within each tier.
  */
-export const CC_MODELS: readonly CCModelFamily[] = [
+const CC_MODELS: readonly CCModelFamily[] = [
   // ── Current models ──────────────────────────────────────────────
   {
     familyId: 'claude-opus-4-7',
@@ -297,7 +297,7 @@ function formatModelError(slug: string): string {
  * want picking "Sonnet (latest)" from our UI to unambiguously mean 1M.
  * Bump the pinned id when Anthropic releases a newer one.
  */
-export const MODEL_CATALOG: readonly ModelEntry[] = [
+const MODEL_CATALOG: readonly ModelEntry[] = [
   // --- "Latest" aliases: prominent, explicit 1M where supported ---
   {
     id: 'claude-opus-4-7[1m]',
@@ -462,7 +462,7 @@ export const MODEL_CATALOG: readonly ModelEntry[] = [
 ] as const
 
 /** Every id known to rclaude -- drives `modelEnum` validation. */
-export const KNOWN_MODEL_IDS: readonly string[] = MODEL_CATALOG.map(m => m.id)
+const KNOWN_MODEL_IDS: readonly string[] = MODEL_CATALOG.map(m => m.id)
 
 /** Ids surfaced in the `/model` autocomplete list (preserves catalog order). */
 export const COMPLETER_MODEL_IDS: readonly string[] = MODEL_CATALOG.filter(m => m.showInCompleter).map(m => m.id)

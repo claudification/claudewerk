@@ -238,7 +238,7 @@ interface TranscriptSettings {
 
 type ResultLookup = (id: string) => { result: string; extra?: Record<string, unknown>; isError?: boolean } | undefined
 
-export function GroupView({
+function GroupView({
   group,
   getResult,
   settings,

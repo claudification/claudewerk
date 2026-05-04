@@ -9,7 +9,7 @@ import { join } from 'node:path'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
-export function reapExpiredFiles(blobDir: string, maxAgeDays = 7): number {
+function reapExpiredFiles(blobDir: string, maxAgeDays = 7): number {
   const cutoff = Date.now() - maxAgeDays * DAY_MS
   let evicted = 0
   try {

@@ -74,7 +74,7 @@ export function rejectBadMessage(ctx: HandlerContext, report: BadDataReport): vo
  *   const sessionId = requireString(ctx, data, 'ccSessionId', 'meta')
  *   if (sessionId === null) return
  */
-export function requireString(ctx: HandlerContext, data: MessageData, field: string, type: string): string | null {
+function requireString(ctx: HandlerContext, data: MessageData, field: string, type: string): string | null {
   const value = data[field]
   if (typeof value !== 'string') {
     rejectBadMessage(ctx, {

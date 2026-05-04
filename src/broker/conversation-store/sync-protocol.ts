@@ -33,7 +33,7 @@ export function syncStamp(sync: SyncState, message: unknown): string {
   return JSON.stringify({ _epoch: sync.epoch, _seq: sync.seq, ...(message as Record<string, unknown>) })
 }
 
-export function sendSyncResponse(
+function sendSyncResponse(
   sync: SyncState,
   ws: ServerWebSocket<unknown>,
   type: string,

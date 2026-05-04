@@ -22,7 +22,7 @@ const MAX_BG_TASK_WATCHERS = 50
  * Two paths: (1) JSONL entries already have toolUseResult.oldString/newString -> compute directly
  * (2) Stream entries: assistant has tool_use.input, user has tool_result -> cache input, apply on result
  */
-export function augmentEditPatches(ctx: AgentHostContext, entries: TranscriptEntry[]): TranscriptEntry[] {
+function augmentEditPatches(ctx: AgentHostContext, entries: TranscriptEntry[]): TranscriptEntry[] {
   for (const entry of entries) {
     const e = entry as Record<string, unknown>
 
@@ -93,7 +93,7 @@ export function augmentEditPatches(ctx: AgentHostContext, entries: TranscriptEnt
  * Scan transcript entries for TodoWrite tool_use blocks and synthesize
  * them into tasks_update WS messages (same format as CC's native tasks).
  */
-export function interceptTodoWrite(ctx: AgentHostContext, entries: TranscriptEntry[]) {
+function interceptTodoWrite(ctx: AgentHostContext, entries: TranscriptEntry[]) {
   if (!ctx.claudeSessionId || !ctx.wsClient?.isConnected()) return
   for (const entry of entries) {
     if (entry.type !== 'assistant') continue
@@ -145,7 +145,7 @@ function filterParentEntries(entries: TranscriptEntry[]): TranscriptEntry[] {
  *   Phase A: cache Read tool_use file_path by block.id
  *   Phase B: on tool_result with file.base64, upload and strip base64
  */
-export async function processImageReadResults(ctx: AgentHostContext, entries: TranscriptEntry[]): Promise<void> {
+async function processImageReadResults(ctx: AgentHostContext, entries: TranscriptEntry[]): Promise<void> {
   for (const entry of entries) {
     const e = entry as Record<string, unknown>
     const msg = (e as { message?: { content?: unknown[] } }).message
@@ -369,7 +369,7 @@ export function startBgTaskOutputWatcher(ctx: AgentHostContext, taskId: string, 
 }
 
 // Scan transcript entries for background task IDs and start output watchers
-export function scanForBgTasks(ctx: AgentHostContext, entries: TranscriptEntry[]) {
+function scanForBgTasks(ctx: AgentHostContext, entries: TranscriptEntry[]) {
   for (const entry of entries) {
     const tur = (entry as Record<string, unknown>).toolUseResult as Record<string, unknown> | undefined
     if (!tur?.backgroundTaskId) continue

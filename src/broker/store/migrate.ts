@@ -630,7 +630,7 @@ function canonicalizeColumn(db: Database, table: string, column: string): number
   return r.changes ?? 0
 }
 
-export function canonicalizeUris(cacheDir: string): CanonicalizeResult {
+function canonicalizeUris(cacheDir: string): CanonicalizeResult {
   const result: CanonicalizeResult = {
     storeTurns: 0,
     storeHourlyDeleted: 0,

@@ -4,7 +4,7 @@
  * Tests that actually need SQLite should run under bun test directly.
  */
 
-export class Database {
+class Database {
   constructor(_path?: string, _opts?: unknown) {}
   query(_sql: string) {
     return {

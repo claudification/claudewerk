@@ -9,7 +9,7 @@ import type { KVStore } from './store/types'
 
 const KV_KEY = 'global-settings'
 
-export const GlobalSettingsSchema = z.object({
+const GlobalSettingsSchema = z.object({
   userLabel: z.string().max(20).default(''),
   agentLabel: z.string().max(20).default(''),
   userColor: z.string().max(50).default(''),

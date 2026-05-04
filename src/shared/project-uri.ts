@@ -136,7 +136,7 @@ export function normalizeProjectUri(uri: string): string {
   return `${parsed.scheme}://${authority}${path}${fragment}`
 }
 
-export function projectWithoutConversation(uri: string): string {
+function projectWithoutConversation(uri: string): string {
   const hashIdx = uri.indexOf('#')
   return hashIdx >= 0 ? uri.slice(0, hashIdx) : uri
 }

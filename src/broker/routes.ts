@@ -27,8 +27,6 @@ export {
   mediaTypeToExt,
   processImagesInEntry,
   readSharedFiles,
-  registerBlob,
-  registerFilePath,
   type SharedFileEntry,
   storeBlobStreaming,
 } from './routes/blob-store'

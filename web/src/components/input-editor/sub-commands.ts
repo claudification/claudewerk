@@ -53,7 +53,7 @@ export interface SubCommandDef {
   enterBehavior?: 'select' | 'select-or-submit'
 }
 
-export const SUB_COMMANDS: SubCommandDef[] = [
+const SUB_COMMANDS: SubCommandDef[] = [
   {
     name: 'model',
     enterBehavior: 'select-or-submit',

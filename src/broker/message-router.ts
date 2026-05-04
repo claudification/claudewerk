@@ -9,7 +9,7 @@ import { GuardError, type HandlerContext, type MessageData, type MessageHandler 
 const handlers = new Map<string, MessageHandler>()
 
 /** Register a handler for a message type */
-export function registerHandler(type: string, handler: MessageHandler): void {
+function registerHandler(type: string, handler: MessageHandler): void {
   handlers.set(type, handler)
 }
 
@@ -49,6 +49,6 @@ export function routeMessage(ctx: HandlerContext, type: string, data: MessageDat
 }
 
 /** Check if a handler is registered for a type */
-export function hasHandler(type: string): boolean {
+function hasHandler(type: string): boolean {
   return handlers.has(type)
 }

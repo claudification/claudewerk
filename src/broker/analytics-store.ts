@@ -671,12 +671,12 @@ export function queryModelComparison(period: '24h' | '7d' | '30d' | '90d', proje
  * Import a pre-built TurnAnalytics record (for mass import script).
  * Bypasses the accumulator -- the caller has already classified the turn.
  */
-export function importTurn(turn: TurnAnalytics): void {
+function importTurn(turn: TurnAnalytics): void {
   enqueueTurn(turn)
 }
 
 /** Force flush the batch queue (for import scripts and shutdown) */
-export function flush(): void {
+function flush(): void {
   flushBatch()
 }
 

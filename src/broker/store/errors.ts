@@ -1,4 +1,4 @@
-export class StoreError extends Error {
+class StoreError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'StoreError'
@@ -12,7 +12,7 @@ export class ConversationNotFound extends StoreError {
   }
 }
 
-export class EntryNotFound extends StoreError {
+class EntryNotFound extends StoreError {
   constructor(id: number) {
     super(`Entry not found: ${id}`)
     this.name = 'EntryNotFound'

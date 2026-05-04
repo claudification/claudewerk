@@ -73,7 +73,7 @@ export function projectDisplayName(projectOrPath: string, label?: string): strin
  * side) and `components/transcript/session-tag.tsx` (client) so slugs
  * round-trip across the wire.
  */
-export function slugify(name: string): string {
+function slugify(name: string): string {
   return (
     name
       .toLowerCase()
