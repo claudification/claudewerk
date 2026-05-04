@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # rclaude installer
-# Sets up the rclaude wrapper, shell config, and optionally the concentrator
+# Sets up the rclaude agent host, shell config, and optionally the concentrator
 #
 set -euo pipefail
 
@@ -83,7 +83,7 @@ cd "$REPO_DIR"
 # ─── Build binaries ──────────────────────────────────────────────
 info "Building binaries..."
 mkdir -p "$BIN_DIR"
-bun run build:wrapper
+bun run build:agent-host
 bun run build:sentinel
 ok "Built rclaude and sentinel"
 

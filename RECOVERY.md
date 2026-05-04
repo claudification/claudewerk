@@ -26,7 +26,7 @@ docker compose -f docker-compose.staging.yml up -d --build
 ## Connect to Staging
 
 ```bash
-# Wrapper (interactive session)
+# Agent Host (interactive session)
 RCLAUDE_CONCENTRATOR=ws://localhost:19999 rclaude
 
 # Sentinel

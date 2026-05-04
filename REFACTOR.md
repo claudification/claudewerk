@@ -1,7 +1,7 @@
 # Refactor Backlog
 
 From project-wide `/simplify` review (2026-03-12). Three parallel Opus agents
-scanned all four components (wrapper, concentrator, agent, web dashboard).
+scanned all four components (agent host, concentrator, agent, web dashboard).
 
 ## Completed
 
@@ -16,7 +16,7 @@ scanned all four components (wrapper, concentrator, agent, web dashboard).
 - [x] **PERF: Overly broad Zustand selectors** - narrowed to selected session only (f86112b)
 - [x] **BUG: Infinite re-render from unstable Zustand selector fallbacks** - stable module-level refs (a8e83fc)
 - [x] **REUSE: Triple type duplication (SessionSummary)** - moved to `src/shared/protocol.ts`, `@shared/*` path alias (6d45ecf)
-- [x] **BUG: WrapperID leaking across sessions** - defense in depth in `setSessionSocket` (63a893a)
+- [x] **BUG: Agent HostID leaking across sessions** - defense in depth in `setSessionSocket` (63a893a)
 - [x] **BUG: RCLAUDE_CONVERSATION_ID leaking across tmux sessions** - inline env var prefix (adf5771)
 - [x] **PERF: Transcript-view full reprocess on every entry** - incremental grouping with `useIncrementalGroups` (cb841cc)
 - [x] **Session eviction / TTL** - 1h TTL + 50 ended session cap, full cache cleanup (0b5fdcf)

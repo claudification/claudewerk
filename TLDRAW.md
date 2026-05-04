@@ -29,7 +29,7 @@ Single install gets you everything. Internally it bundles:
 - `radix-ui` (already in our web/package.json -- no extra cost)
 - `@tiptap/core`, `@tiptap/react`, `@tiptap/starter-kit` (rich text editing inside shapes)
 - `hotkeys-js` (keyboard shortcut handling)
-- `idb` (IndexedDB wrapper for persistence)
+- `idb` (IndexedDB agent host for persistence)
 - `lz-string` (compression for snapshots)
 - `classnames` (CSS class util)
 
@@ -107,7 +107,7 @@ function WhiteboardPanel() {
 
 ### Container Requirements
 
-tldraw fills its parent container (width/height 100%). The parent **must have explicit dimensions**. Inside a modal/dialog, this means the dialog needs a fixed size or `position: fixed; inset: 0` on the wrapper.
+tldraw fills its parent container (width/height 100%). The parent **must have explicit dimensions**. Inside a modal/dialog, this means the dialog needs a fixed size or `position: fixed; inset: 0` on the agent host.
 
 ### Accessing the Editor
 

@@ -29,26 +29,26 @@ rclaude --headless
 | Slash command autocomplete data | |
 
 **Permission flow:** `--permission-prompt-tool stdio` sends `control_request` with
-`subtype: "can_use_tool"` for sensitive writes. Wrapper checks auto-approve rules
+`subtype: "can_use_tool"` for sensitive writes. Agent Host checks auto-approve rules
 (rclaude.json + built-in rules), then auto-approves or forwards to dashboard.
 
 **Streaming:** CC sends `stream_event` with `content_block_delta`/`text_delta`.
-Wrapper unwraps and forwards as `stream_delta` WS messages.
+Agent Host unwraps and forwards as `stream_delta` WS messages.
 
 **Subagent routing:** Entries with non-null `parent_tool_use_id` route to subagent
-transcript via `onSubagentEntry`. Wrapper maps `toolUseId -> agentId` from `task_started`.
+transcript via `onSubagentEntry`. Agent Host maps `toolUseId -> agentId` from `task_started`.
 
 **Edit diffs:** CC puts `structuredPatch`, `oldString`, `newString` on `tool_use_result`.
-Stream backend copies to camelCase `toolUseResult`. Wrapper's `augmentEditPatches` caches
+Stream backend copies to camelCase `toolUseResult`. Agent Host's `augmentEditPatches` caches
 Edit inputs from assistant entries and computes patches for results.
 
 **AskUserQuestion (headless only):** `can_use_tool` with `tool_name: "AskUserQuestion"` ->
-wrapper intercepts -> `ask_question` WS -> dashboard shows banners -> user answers ->
+agent host intercepts -> `ask_question` WS -> dashboard shows banners -> user answers ->
 `control_response` with `{behavior: "allow", updatedInput: {questions, answers}}`.
 
 **Plan Mode (headless only):** Via `can_use_tool` control_request flow.
-- EnterPlanMode: wrapper checks `allowPlanMode` config, auto-approves, broadcasts `plan_mode_changed`
-- ExitPlanMode: wrapper reads plan from `~/.claude/plans/` (most recent `.md`), forwards as
+- EnterPlanMode: agent host checks `allowPlanMode` config, auto-approves, broadcasts `plan_mode_changed`
+- ExitPlanMode: agent host reads plan from `~/.claude/plans/` (most recent `.md`), forwards as
   `plan_approval` WS. Dashboard renders in DialogModal. Auto-approves if WS disconnected.
 - Config: `allowPlanMode` in `.rclaude/rclaude.json` (default: true). `RCLAUDE_NO_PLAN_MODE=1` for agents.
 - CC writes plan to `~/.claude/plans/{slug}.md` before firing -- plan NOT in `can_use_tool` input.

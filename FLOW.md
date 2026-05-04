@@ -7,21 +7,21 @@ conversationId = physical identity (this machine, this process, this PTY)
 sessionId = logical identity (Claude Code session, can be shared via --continue)
 ```
 
-Multiple wrappers can share a sessionId. Each wrapper has exactly one PTY.
-A session only ends when its LAST wrapper disconnects.
+Multiple agent hosts can share a sessionId. Each agent host has exactly one PTY.
+A session only ends when its LAST agent host disconnects.
 
 ## Data Flow
 
 ```mermaid
 graph TD
     subgraph "Host Machine A"
-        WA[rclaude wrapper A<br/>conversationId: abc-123]
+        WA[rclaude agent host A<br/>conversationId: abc-123]
         PTYA[PTY A]
         WA --- PTYA
     end
 
     subgraph "Host Machine B"
-        WB[rclaude wrapper B<br/>conversationId: def-456]
+        WB[rclaude agent host B<br/>conversationId: def-456]
         PTYB[PTY B]
         WB --- PTYB
     end
@@ -35,7 +35,7 @@ graph TD
     subgraph "Browser"
         DASH[Dashboard]
         TERM[WebTerminal<br/>props: conversationId]
-        TABS[Wrapper Tabs<br/>one tab per conversationId]
+        TABS[Agent Host Tabs<br/>one tab per conversationId]
         TERM --> TABS
     end
 
@@ -58,32 +58,32 @@ All terminal messages route by `conversationId`, never `sessionId`:
 sequenceDiagram
     participant Browser as Browser (WebTerminal)
     participant Conc as Concentrator
-    participant Wrapper as rclaude (conversationId)
+    participant Agent Host as rclaude (conversationId)
 
     Note over Browser: User clicks TTY button<br/>resolves session.conversationIds[0]
 
     Browser->>Conc: terminal_attach {conversationId, cols, rows}
     Conc->>Conc: addTerminalViewer(conversationId, browserWs)
-    Conc->>Conc: getSessionSocketByWrapper(conversationId)
-    Conc->>Wrapper: terminal_attach {conversationId, cols, rows}
-    Wrapper->>Wrapper: Start PTY forwarding
+    Conc->>Conc: getSessionSocketByAgent Host(conversationId)
+    Conc->>Agent Host: terminal_attach {conversationId, cols, rows}
+    Agent Host->>Agent Host: Start PTY forwarding
 
     loop PTY output
-        Wrapper->>Conc: terminal_data {conversationId, data}
+        Agent Host->>Conc: terminal_data {conversationId, data}
         Conc->>Conc: getTerminalViewers(conversationId)
         Conc->>Browser: terminal_data {conversationId, data}
     end
 
     loop User keystrokes
         Browser->>Conc: terminal_data {conversationId, data}
-        Conc->>Conc: getSessionSocketByWrapper(conversationId)
-        Conc->>Wrapper: terminal_data {conversationId, data}
+        Conc->>Conc: getSessionSocketByAgent Host(conversationId)
+        Conc->>Agent Host: terminal_data {conversationId, data}
     end
 
     Browser->>Conc: terminal_detach {conversationId}
     Conc->>Conc: removeTerminalViewer(conversationId, browserWs)
     Note over Conc: If last viewer removed:
-    Conc->>Wrapper: terminal_detach {conversationId}
+    Conc->>Agent Host: terminal_detach {conversationId}
 ```
 
 ## Store & UI Routing
@@ -91,7 +91,7 @@ sequenceDiagram
 ```mermaid
 graph LR
     subgraph "Zustand Store"
-        TWI[terminalWrapperId: string | null]
+        TWI[terminalAgent HostId: string | null]
         ST[showTerminal: boolean]
         OT["openTerminal(conversationId)"]
     end
@@ -110,7 +110,7 @@ graph LR
 
     subgraph "web-terminal.tsx"
         WT["WebTerminal(conversationId)"]
-        WTABS["Wrapper Tabs"]
+        WTABS["Agent Host Tabs"]
         WT --> WTABS
         WTABS -->|"click tab"| OT
     end
@@ -120,12 +120,12 @@ graph LR
     TWI --> WT
 ```
 
-## Session Lifecycle with Multiple Wrappers
+## Session Lifecycle with Multiple Agent Hosts
 
 ```mermaid
 sequenceDiagram
-    participant W1 as Wrapper A (conversationId: abc)
-    participant W2 as Wrapper B (conversationId: def)
+    participant W1 as Agent Host A (conversationId: abc)
+    participant W2 as Agent Host B (conversationId: def)
     participant C as Concentrator
     participant D as Dashboard
 
@@ -140,14 +140,14 @@ sequenceDiagram
 
     W2->>C: end {sessionId: S1}
     C->>C: removeSessionSocket(S1, def)
-    C->>C: getActiveWrapperCount(S1) = 1
-    Note over C: Still 1 wrapper alive - session stays active
+    C->>C: getActiveAgent HostCount(S1) = 1
+    Note over C: Still 1 agent host alive - session stays active
     C->>D: session_update {conversationIds: [abc]}
 
     W1->>C: end {sessionId: S1}
     C->>C: removeSessionSocket(S1, abc)
-    C->>C: getActiveWrapperCount(S1) = 0
-    Note over C: Last wrapper gone - NOW end the session
+    C->>C: getActiveAgent HostCount(S1) = 0
+    Note over C: Last agent host gone - NOW end the session
     C->>C: endSession(S1)
     C->>D: session_ended
 ```
@@ -177,5 +177,5 @@ sequenceDiagram
 | Hash | Meaning |
 |------|---------|
 | `#session/{sessionId}` | Select session in main panel |
-| `#terminal/{conversationId}` | Open terminal overlay for wrapper |
-| `#popout-terminal/{conversationId}` | Popout terminal window for wrapper |
+| `#terminal/{conversationId}` | Open terminal overlay for agent host |
+| `#popout-terminal/{conversationId}` | Popout terminal window for agent host |

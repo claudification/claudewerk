@@ -72,7 +72,7 @@ Project board tasks under `.rclaude/project/`. Status reflects post-PR #46 state
 | `refactor-use-sessions` | OPEN | RISKY (Zustand selector stability) -- defer unless forced |
 | `investigate-breaking-use-websocket` | OPEN | RISKY -- same reason |
 | `refactor-arrow-const-handlers` | OPEN | Project-wide style sweep, mechanical |
-| `code-hygene-...internalId` | OPEN | Pure rename `internalId` -> `conversationId` wrapper-side |
+| `code-hygene-...internalId` | OPEN | Pure rename `internalId` -> `conversationId` agent host-side |
 
 Master task umbrella: `.rclaude/project/inbox/master-refactor-codebase-simplification.md` (the original pre-execution plan; now partly outdated -- use this doc as the current source of truth).
 
@@ -121,7 +121,7 @@ the refactor agenda. All live under `.claude/docs/` (mostly gitignored, referenc
 | `plan-permission-gating.md` | PROPOSAL | Pairs with permission middleware refactor |
 | `plan-sqlite-storage.md` | PROPOSAL | Storage layer redesign (see `sqlite-storage-architecture` board task) |
 | `plan-agnostic-protocol.md` | PROPOSAL | Protocol-agnostic architecture -- large, future |
-| `plan-docker-isolation.md` | PROPOSAL | Session sandboxing -- orthogonal to refactor but touches wrapper/agent |
+| `plan-docker-isolation.md` | PROPOSAL | Session sandboxing -- orthogonal to refactor but touches agent host/agent |
 | `plan-multi-tenant.md` | PROPOSAL | Multi-tenant -- depends on permission redesign |
 | `plan-multi-host-agent.md` | PROPOSAL | Agent layering |
 | `plan-multi-sentinel.md` | PROPOSAL | Sentinel architecture |

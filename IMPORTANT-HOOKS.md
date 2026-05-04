@@ -159,7 +159,7 @@ instantly (~8ms). They bypass the normal user message queue path.
 
 | ID | Source | Lifetime | Purpose |
 |---|---|---|---|
-| `internalId` | `randomUUID()` at rclaude start | Entire wrapper process | Local server validation, settings file naming, PTY routing |
+| `internalId` | `randomUUID()` at rclaude start | Entire agent host process | Local server validation, settings file naming, PTY routing |
 | `claudeSessionId` | `data.session_id` from SessionStart | Until `/clear` or restart | Canonical identity for concentrator, transcript path |
 | `data.session_id` in hooks | Each hook payload | Per-event | Parent session = `claudeSessionId`; subagent hooks = subagent's own ID |
 
@@ -351,7 +351,7 @@ to run `scripts/worktree-finish.sh` before exiting. This rebases onto main and
 fast-forwards. Interactive sessions get guidance via CLAUDE.md.
 
 **Layer 3 - Safety nets:**
-- Wrapper (`headless-lifecycle.ts`): On ad-hoc result, checks for unmerged
+- Agent Host (`headless-lifecycle.ts`): On ad-hoc result, checks for unmerged
   commits and attempts fast-forward before exit.
 - WorktreeRemove hook: Last chance to fast-forward before CC deletes the worktree.
   CC ignores exit codes, so this can't block removal.

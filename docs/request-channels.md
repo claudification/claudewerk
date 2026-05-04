@@ -6,7 +6,7 @@ agent -> dashboard), correlated by a unique ID generated at request time.
 ## Why not broadcast?
 
 Broadcast patterns (e.g., `broadcastScoped()`) send events to all dashboard
-clients and require clients to filter by session/wrapper ID. This has problems:
+clients and require clients to filter by session/agent host ID. This has problems:
 
 - No subscription lifecycle -- events fire whether anyone cares or not
 - Race conditions when subscribing after the triggering action

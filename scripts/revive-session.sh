@@ -115,7 +115,7 @@ fi
 if [[ -n "${RCLAUDE_INITIAL_PROMPT_FILE:-}" ]]; then
   CMD_PREFIX+="RCLAUDE_INITIAL_PROMPT_FILE=${RCLAUDE_INITIAL_PROMPT_FILE} "
 fi
-# Worktree name forwarded so the wrapper can include it in SessionMeta
+# Worktree name forwarded so the agent host can include it in SessionMeta
 if [[ -n "${RCLAUDE_WORKTREE:-}" ]]; then
   SAFE_WORKTREE="${RCLAUDE_WORKTREE//[\"\'\`\\]/}"
   CMD_PREFIX+="RCLAUDE_WORKTREE='${SAFE_WORKTREE}' "

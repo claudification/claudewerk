@@ -6,14 +6,14 @@ echo "[*] Building everything..."
 echo "[1/5] Web dashboard"
 bun run build:web 2>/dev/null || (cd web && bunx vite build)
 
-echo "[2/5] rclaude wrapper"
-bun build src/wrapper/index.ts --compile --minify --outfile bin/rclaude
+echo "[2/5] rclaude (agent host)"
+bun build src/agent-host/index.ts --compile --minify --outfile bin/rclaude
 
-echo "[3/5] concentrator"
-bun run scripts/build-concentrator.ts
+echo "[3/5] broker"
+bun run scripts/build-broker.ts
 
-echo "[4/5] concentrator-cli"
-bun build src/concentrator/cli.ts --compile --minify --outfile bin/concentrator-cli
+echo "[4/5] broker-cli"
+bun build src/broker/cli.ts --compile --minify --outfile bin/broker-cli
 
 echo "[5/5] sentinel"
 bun build src/sentinel/index.ts --compile --minify --outfile bin/sentinel
@@ -24,7 +24,7 @@ ls -lh bin/
 
 if [ "${1:-}" = "--deploy" ]; then
   echo ""
-  echo "[*] Deploying concentrator..."
+  echo "[*] Deploying broker..."
   docker compose build --no-cache
   docker compose up -d
   echo "[+] Deployed"

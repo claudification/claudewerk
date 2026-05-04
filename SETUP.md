@@ -12,7 +12,7 @@
 ```
 
 Full setup guide for running claudewerk: the concentrator server,
-the rclaude wrapper, the dashboard, session revival sentinel, and all
+the rclaude agent host, the dashboard, session revival sentinel, and all
 supporting infrastructure.
 
 ---
@@ -22,7 +22,7 @@ supporting infrastructure.
 1. [Prerequisites](#prerequisites)
 2. [Quick Start (Local Dev)](#quick-start-local-dev)
 3. [Concentrator Server (Docker)](#concentrator-server-docker)
-4. [Host Setup (rclaude wrapper)](#host-setup-rclaude-wrapper)
+4. [Host Setup (rclaude agent host)](#host-setup-rclaude-agent host)
 5. [Authentication (WebAuthn Passkeys)](#authentication-webauthn-passkeys)
 6. [Session Revival Sentinel (tmux)](#session-revival-agent-tmux)
 7. [MCP Channel Mode](#mcp-channel-mode)
@@ -169,9 +169,9 @@ docker compose -f docker-compose.standalone.yml up -d
 
 ---
 
-## Host Setup (rclaude wrapper)
+## Host Setup (rclaude agent host)
 
-Every machine running Claude Code needs the rclaude wrapper installed.
+Every machine running Claude Code needs the rclaude agent host installed.
 
 ### 1. Build and install
 
@@ -189,7 +189,7 @@ This creates symlinks in `~/.local/bin/`:
 
 | Symlink | Binary | Purpose |
 |---------|--------|---------|
-| `rclaude` | `bin/rclaude` | Main wrapper (replaces `claude`) |
+| `rclaude` | `bin/rclaude` | Main agent host (replaces `claude`) |
 | `concentrator` | `bin/broker` | Server binary |
 | `concentrator-cli` | `bin/broker-cli` | Auth management CLI |
 | `sentinel` | `bin/sentinel` | Session revival sentinel |
@@ -537,7 +537,7 @@ server {
 | `DEEPGRAM_API_KEY` | no | - | Voice streaming: speech-to-text |
 | `OPENROUTER_API_KEY` | no | - | Voice: Haiku transcript refinement |
 
-### Host (rclaude wrapper)
+### Host (rclaude agent host)
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
@@ -564,7 +564,7 @@ bun run build           # All binaries + frontend
 | Command | Output | Description |
 |---------|--------|-------------|
 | `bun run build:web` | `web/dist/` | Vite frontend build |
-| `bun run build:wrapper` | `bin/rclaude` | rclaude CLI wrapper |
+| `bun run build:agent-host` | `bin/rclaude` | rclaude CLI agent host |
 | `bun run build:broker` | `bin/broker` | Server binary |
 | `bun run build:cli` | `bin/broker-cli` | Auth CLI |
 | `bun run build:sentinel` | `bin/sentinel` | Host sentinel |
@@ -574,7 +574,7 @@ bun run build           # All binaries + frontend
 
 | Command | Port | Description |
 |---------|------|-------------|
-| `bun run dev:wrapper` | - | rclaude without compile step |
+| `bun run dev:agent-host` | - | rclaude without compile step |
 | `bun run dev:broker` | 9999 | Concentrator with hot reload |
 | `bun run dev:web` | 3456 | Vite dev server |
 
@@ -753,7 +753,7 @@ docker exec concentrator ls /srv/web/index.html
 ```mermaid
 graph TB
     subgraph Host["Host Machine(s)"]
-        RC[rclaude wrapper]
+        RC[rclaude agent host]
         CC[Claude Code CLI]
         AG[sentinel]
         TM[tmux sessions]

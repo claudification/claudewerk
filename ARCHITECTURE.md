@@ -11,7 +11,7 @@
        ▼                             ▼                             ▼
 ┌─────────────┐              ┌─────────────┐              ┌─────────────┐
 │   rclaude   │              │   rclaude   │              │   rclaude   │
-│   wrapper   │              │   wrapper   │              │   wrapper   │
+│   agent host   │              │   agent host   │              │   agent host   │
 ├─────────────┤              ├─────────────┤              ├─────────────┤
 │ • Gen UUID  │              │ • Gen UUID  │              │ • Gen UUID  │
 │ • Merge     │              │ • Merge     │              │ • Merge     │
@@ -110,7 +110,7 @@
 
 | Component | Binary | Port | Description |
 |-----------|--------|------|-------------|
-| rclaude | `bin/rclaude` | dynamic | Wrapper that spawns claude with hook injection |
+| rclaude | `bin/rclaude` | dynamic | Agent Host that spawns claude with hook injection |
 | concentrator | `bin/broker` | 9999 | Aggregates sessions, serves dashboard |
 | web | `web/dist/` | embedded | React dashboard (embedded in concentrator) |
 

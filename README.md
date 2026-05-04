@@ -98,7 +98,7 @@ normalize / match / compare helpers.
 
 | Component | Binary | What it does |
 |-----------|--------|-------------|
-| **Agent Host** | `rclaude` | CLI wrapper. Spawns claude with PTY, injects hooks, MCP channel server, streams to broker |
+| **Agent Host** | `rclaude` | CLI agent host. Spawns claude with PTY, injects hooks, MCP channel server, streams to broker |
 | **Broker** | `broker` | Central server. Hono HTTP + WS + WebAuthn + inter-session routing + voice relay. Runs in Docker |
 | **Control Panel** | *(web)* | React SPA. Vite + Tailwind + Zustand. Voice, terminal, transcript, DnD, chat. Served by broker |
 | **Sentinel** | `sentinel` | Host-side daemon. Spawns/revives agent hosts, manages tmux sessions |
@@ -967,7 +967,7 @@ claudewerk/
 ```bash
 bun install && cd web && bun install && cd ..
 
-bun run dev:wrapper              # Agent host (hot reload)
+bun run dev:agent-host              # Agent host (hot reload)
 bun run dev:broker               # Broker (hot reload)
 bun run dev:web                  # Control panel (Vite dev server)
 
@@ -976,7 +976,7 @@ bunx biome check --write .       # Lint + format
 
 bun run build                    # Build everything
 bun run build:web                # Control panel -> web/dist/
-bun run build:wrapper            # rclaude -> bin/rclaude
+bun run build:agent-host            # rclaude -> bin/rclaude
 bun run build:broker             # broker -> bin/broker
 bun run build:cli                # broker-cli -> bin/broker-cli
 bun run build:sentinel           # sentinel -> bin/sentinel
@@ -986,7 +986,7 @@ bun run build:sentinel           # sentinel -> bin/sentinel
 
 ## Shell Integration
 
-### Wrapper function (`cc` / `ccc`)
+### Agent Host function (`cc` / `ccc`)
 
 ```bash
 cc() {

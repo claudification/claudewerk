@@ -884,7 +884,7 @@ tool_use/tool_result lifecycle is visible in the stream.
 | Resource | URL / Path |
 |----------|------------|
 | CC source (minified) | `cli.js` in the `@anthropic-ai/claude-code` npm package |
-| Key functions | `qK7` (prompt wrapper), `ffA` (stdin transport), `EK7` (main stream loop), `we2` (agent loop) |
+| Key functions | `qK7` (prompt agent host), `ffA` (stdin transport), `EK7` (main stream loop), `we2` (agent loop) |
 | Zod schemas | `tD1` (can_use_tool response), `HD1` (hook_callback response), `VD1` (permission rules) |
 | GitHub issue (protocol discussion) | https://github.com/anthropics/claude-code/issues/24594 |
 | Agent SDK streaming docs | https://platform.claude.com/docs/en/agent-sdk/streaming-vs-single-mode |

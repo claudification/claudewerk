@@ -12,7 +12,7 @@ may be on a phone -- structured UI is faster.
 ImagePicker, Toggle, Slider, Button, Stack, Grid, Group
 
 **Key features:**
-- Local file paths in Image/ImagePicker auto-uploaded by wrapper
+- Local file paths in Image/ImagePicker auto-uploaded by agent host
 - `pages` array for wizard-style multi-page flows
 - Buttons record `id` as `_action` but don't dismiss (only Submit does)
 - 5-minute timeout, auto-extends 50% on interaction
