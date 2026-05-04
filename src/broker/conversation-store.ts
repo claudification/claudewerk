@@ -641,7 +641,16 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     if (!store) return
     try {
       const records = store.sessions.list()
+      let droppedBadIds = 0
       for (const rec of records) {
+        // Defense in depth: SQLite TEXT PRIMARY KEY does not enforce NOT NULL,
+        // so a pre-fix broker that wrote conversations with id=undefined could
+        // leave NULL-id rows behind. Drop them on load -- the rest of the
+        // codebase assumes session.id is a usable string and crashes otherwise.
+        if (typeof rec.id !== 'string' || rec.id.length === 0) {
+          droppedBadIds++
+          continue
+        }
         const meta = (rec as unknown as { meta?: Record<string, unknown> }).meta || {}
         // Full record for meta fields
         const full = store.sessions.get(rec.id)
@@ -721,7 +730,13 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
         conversations.set(session.id, session)
       }
       if (records.length > 0) {
-        console.log(`[store] Loaded ${records.length} sessions from SQLite`)
+        const loaded = records.length - droppedBadIds
+        console.log(`[store] Loaded ${loaded} sessions from SQLite`)
+        if (droppedBadIds > 0) {
+          console.warn(
+            `[store] BAD DATA: dropped ${droppedBadIds} session record(s) with null/empty id from SQLite. These are leftover from a pre-validation broker that accepted malformed meta. The broker self-cleans these on next persistConversation cycle.`,
+          )
+        }
       }
     } catch (err) {
       console.error(`[store] Failed to load sessions: ${err}`)
@@ -845,6 +860,16 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     args?: string[],
     capabilities?: AgentHostCapability[],
   ): Conversation {
+    // Gate: refuse to create a conversation with an invalid id. Without this,
+    // a buggy caller would key the conversations Map with `undefined`, and
+    // every subsequent `.id.slice(0, 8)` against that entry would crash the
+    // broker. Handlers should validate their wire input BEFORE calling this
+    // (see src/broker/handlers/validate.ts), but this is defense in depth.
+    if (typeof id !== 'string' || id.length === 0) {
+      throw new Error(
+        `createConversation: invalid id (${typeof id} ${JSON.stringify(id)}). The handler must validate wire input before calling createConversation.`,
+      )
+    }
     const sentinelAlias = getDefaultSentinelAlias()
     const project = resolveProjectUri(projectOrCwd, sentinelAlias)
     const session: Conversation = {

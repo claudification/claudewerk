@@ -7,13 +7,34 @@ import { cwdToProjectUri, extractProjectLabel } from '../../shared/project-uri'
 import { slugify } from '../address-book'
 import type { MessageHandler } from '../handler-context'
 import { registerHandlers } from '../message-router'
+import { rejectBadMessage, requireStrings } from './validate'
 
 // ─── Session meta (wrapper connecting) ─────────────────────────────
 
 const meta: MessageHandler = (ctx, data) => {
-  const conversationId = data.conversationId as string
-  const ccSessionId = data.ccSessionId as string
-  const project = (data.project as string) ?? cwdToProjectUri(data.cwd as string)
+  // Gate: meta is the broker's most consequential message -- it creates or
+  // resumes a conversation. If a sender provides bad data here we MUST
+  // reject loudly before anything reads ccSessionId/conversationId, or the
+  // conversation Map gets keyed by `undefined` and every subsequent
+  // `.id.slice(0, 8)` blows up. (Deploy incident 2026-05-04.)
+  const required = requireStrings(ctx, data, ['conversationId', 'ccSessionId'] as const, 'meta')
+  if (!required) return
+  const { conversationId, ccSessionId } = required
+
+  // Project is best-effort: we accept either an explicit project URI or a
+  // cwd we can derive one from. Reject if we got neither.
+  const projectField = data.project
+  const cwdField = data.cwd
+  if (typeof projectField !== 'string' && typeof cwdField !== 'string') {
+    rejectBadMessage(ctx, {
+      type: 'meta',
+      field: 'project',
+      reason: 'either project (string) or cwd (string) is required',
+      received: { project: projectField, cwd: cwdField },
+    })
+    return
+  }
+  const project = (projectField as string | undefined) ?? cwdToProjectUri(cwdField as string)
   ctx.ws.data.conversationId = conversationId
   ctx.ws.data.ccSessionId = ccSessionId
 

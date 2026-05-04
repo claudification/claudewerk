@@ -830,16 +830,25 @@ async function main() {
   // Print status periodically
   if (verbose) {
     setInterval(() => {
-      const sessions = conversationStore.getActiveConversations()
-      if (sessions.length > 0) {
+      try {
+        const sessions = conversationStore.getActiveConversations()
+        if (sessions.length === 0) return
         console.log(`\n[i] Active sessions: ${sessions.length}`)
         for (const session of sessions) {
+          if (typeof session.id !== 'string' || session.id.length === 0) {
+            console.warn(
+              `[broker] BAD DATA: active conversation with invalid id (id=${JSON.stringify(session.id)}, project=${session.project ?? '?'}, status=${session.status ?? '?'}, startedAt=${session.startedAt}) -- skipping in logger; this should never happen and indicates a handler accepted malformed input`,
+            )
+            continue
+          }
           const age = formatDuration(Date.now() - session.startedAt)
           const idle = formatDuration(Date.now() - session.lastActivity)
           console.log(
-            `    ${session.id.slice(0, 8)}... [${session.status.toUpperCase()}] age=${age} idle=${idle} events=${session.events.length}`,
+            `    ${session.id.slice(0, 8)}... [${(session.status ?? 'unknown').toUpperCase()}] age=${age} idle=${idle} events=${session.events?.length ?? 0}`,
           )
         }
+      } catch (err) {
+        console.error('[broker] Periodic status logger crashed -- swallowing to keep broker alive:', err)
       }
     }, 60000)
   }

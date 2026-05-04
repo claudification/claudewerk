@@ -400,6 +400,31 @@ export function buildConversationsById(sessions: Session[]): Record<string, Sess
   return map
 }
 
+/**
+ * Defense in depth: drop conversations the broker shouldn't have sent us.
+ * Anything without a usable string id will crash list renderers downstream
+ * (`s.id.slice(0, 8)`, JSX `key={s.id}`, etc). The broker is supposed to
+ * reject malformed input at the handler boundary; if anything slips through
+ * we drop it here and warn loudly so the bug is visible.
+ */
+function sanitizeConversations(sessions: Session[]): Session[] {
+  if (!Array.isArray(sessions)) return []
+  const out: Session[] = []
+  for (const s of sessions) {
+    if (!s || typeof s.id !== 'string' || s.id.length === 0) {
+      console.warn('[bad-data] dropping conversation with invalid id from broker payload:', {
+        id: s?.id,
+        project: s?.project,
+        status: s?.status,
+        startedAt: s?.startedAt,
+      })
+      continue
+    }
+    out.push(s)
+  }
+  return out
+}
+
 export const useConversationsStore = create<ConversationsState>((set, get) => ({
   sessions: [],
   sessionsById: {},
@@ -619,7 +644,10 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
     }),
   resolveToolDisplay: (tool: ToolDisplayKey) => resolveToolDisplay(get().controlPanelPrefs, tool),
 
-  setConversations: sessions => set({ sessions, sessionsById: buildConversationsById(sessions) }),
+  setConversations: sessions => {
+    const clean = sanitizeConversations(sessions)
+    set({ sessions: clean, sessionsById: buildConversationsById(clean) })
+  },
   selectConversation: (id: string | null, reason?: string) => {
     const prev = get().selectedConversationId
     if (id !== prev) {
