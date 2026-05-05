@@ -86,7 +86,9 @@ export const spawnRequestSchema = z.object({
   headless: z
     .boolean()
     .optional()
-    .describe('stream-json mode. Default: true for ad-hoc, otherwise project/global default'),
+    .describe(
+      'stream-json mode. Default: true. Do NOT set to false unless the user explicitly requests a PTY/interactive session.',
+    ),
   bare: z.boolean().optional().describe('Launch without injecting hooks'),
   repl: z.boolean().optional().describe('Launch CC in REPL mode'),
   name: z.string().optional().describe('Display label in sidebar'),
@@ -94,7 +96,7 @@ export const spawnRequestSchema = z.object({
     .string()
     .optional()
     .describe('Short description of what this conversation is about. Shown in dashboard and list_conversations.'),
-  model: modelEnum.optional().describe('Model preset or pinned version'),
+  model: modelEnum.optional().describe('Model override. Omit to use project/global default. Only set when a specific model is requested.'),
   effort: effortEnum.optional().describe('Thinking effort budget'),
   permissionMode: permissionModeEnum.optional().describe('CC permission prompting mode'),
   autocompactPct: z.number().min(0).max(100).optional().describe('Auto-compact threshold (%)'),
