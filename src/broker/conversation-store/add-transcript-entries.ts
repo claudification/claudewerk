@@ -1,4 +1,5 @@
 import type {
+  Conversation,
   TranscriptAgentNameEntry,
   TranscriptAssistantEntry,
   TranscriptCustomTitleEntry,
@@ -27,10 +28,12 @@ import { handleUserEntry } from './transcript-handlers/user-entry'
  * stats / metadata from them. Re-broadcasts compaction markers and live
  * subagent transcripts. No-op when the conversation isn't registered.
  *
- * Thin orchestrator: cache + seq stamping live here; per-entry-type work
- * delegates to typed helpers under `transcript-handlers/`. Each helper
- * returns `boolean` indicating whether session metadata changed so this
- * function can decide if a session update is warranted.
+ * Thin orchestrator: cache + seq stamping + dirty flag + stats reset live
+ * here, plus post-loop scans for bg-task notifications and live subagent
+ * transcripts. Per-entry-type work delegates to typed helpers under
+ * `transcript-handlers/`, dispatched through the `entryHandlers` table
+ * below. Each helper returns `boolean` indicating whether session metadata
+ * changed so the orchestrator can decide if a session update is warranted.
  */
 export function addTranscriptEntries(
   ctx: ConversationStoreContext,
@@ -59,45 +62,8 @@ export function addTranscriptEntries(
       sessionChanged = true
     }
 
-    if (entry.type === 'compacted') {
-      session.stats.compactionCount++
-      continue
-    }
-
-    if (entry.type === 'user') {
-      if (handleUserEntry(ctx, conversationId, session, entry as TranscriptUserEntry, isInitial)) sessionChanged = true
-      continue
-    }
-
-    if (entry.type === 'assistant') {
-      if (handleAssistantEntry(session, entry as TranscriptAssistantEntry)) sessionChanged = true
-      continue
-    }
-
-    if (entry.type === 'system') {
-      if (handleSystemEntry(ctx, conversationId, session, entry as TranscriptSystemEntry, isInitial)) {
-        sessionChanged = true
-      }
-      continue
-    }
-
-    if (entry.type === 'summary') {
-      if (handleSummaryEntry(conversationId, session, entry as TranscriptSummaryEntry)) sessionChanged = true
-      continue
-    }
-
-    if (entry.type === 'custom-title') {
-      if (handleCustomTitleEntry(conversationId, session, entry as TranscriptCustomTitleEntry)) sessionChanged = true
-      continue
-    }
-
-    if (entry.type === 'agent-name') {
-      if (handleAgentNameEntry(conversationId, session, entry as TranscriptAgentNameEntry)) sessionChanged = true
-      continue
-    }
-
-    if (entry.type === 'pr-link') {
-      if (handlePrLinkEntry(conversationId, session, entry as TranscriptPrLinkEntry)) sessionChanged = true
+    if (entryHandlers[entry.type]?.(ctx, conversationId, session, entry, isInitial)) {
+      sessionChanged = true
     }
   }
 
@@ -106,6 +72,116 @@ export function addTranscriptEntries(
   extractLiveSubagentEntries(ctx, conversationId, entries)
 
   if (sessionChanged) ctx.scheduleConversationUpdate(conversationId)
+}
+
+// ─── per-entry-type dispatch table ─────────────────────────────────────────
+//
+// Each entry adapts a typed transcript-handler helper to the uniform
+// `TranscriptEntryHandler` signature so the orchestrator can dispatch
+// through a `Record<entryType, TranscriptEntryHandler>`. The narrow cast
+// happens once at the boundary in each adapter; the helpers themselves
+// work with the narrow type. Each adapter returns `true` when session
+// metadata mutated, so the orchestrator can OR the results and decide
+// whether to schedule a session update.
+
+type TranscriptEntryHandler = (
+  ctx: ConversationStoreContext,
+  conversationId: string,
+  session: Conversation,
+  entry: TranscriptEntry,
+  isInitial: boolean,
+) => boolean
+
+function dispatchCompacted(
+  _ctx: ConversationStoreContext,
+  _conversationId: string,
+  session: Conversation,
+  _entry: TranscriptEntry,
+  _isInitial: boolean,
+): boolean {
+  session.stats.compactionCount++
+  return false
+}
+
+function dispatchUserEntry(
+  ctx: ConversationStoreContext,
+  conversationId: string,
+  session: Conversation,
+  entry: TranscriptEntry,
+  isInitial: boolean,
+): boolean {
+  return handleUserEntry(ctx, conversationId, session, entry as TranscriptUserEntry, isInitial)
+}
+
+function dispatchAssistantEntry(
+  _ctx: ConversationStoreContext,
+  _conversationId: string,
+  session: Conversation,
+  entry: TranscriptEntry,
+  _isInitial: boolean,
+): boolean {
+  return handleAssistantEntry(session, entry as TranscriptAssistantEntry)
+}
+
+function dispatchSystemEntry(
+  ctx: ConversationStoreContext,
+  conversationId: string,
+  session: Conversation,
+  entry: TranscriptEntry,
+  isInitial: boolean,
+): boolean {
+  return handleSystemEntry(ctx, conversationId, session, entry as TranscriptSystemEntry, isInitial)
+}
+
+function dispatchSummaryEntry(
+  _ctx: ConversationStoreContext,
+  conversationId: string,
+  session: Conversation,
+  entry: TranscriptEntry,
+  _isInitial: boolean,
+): boolean {
+  return handleSummaryEntry(conversationId, session, entry as TranscriptSummaryEntry)
+}
+
+function dispatchCustomTitleEntry(
+  _ctx: ConversationStoreContext,
+  conversationId: string,
+  session: Conversation,
+  entry: TranscriptEntry,
+  _isInitial: boolean,
+): boolean {
+  return handleCustomTitleEntry(conversationId, session, entry as TranscriptCustomTitleEntry)
+}
+
+function dispatchAgentNameEntry(
+  _ctx: ConversationStoreContext,
+  conversationId: string,
+  session: Conversation,
+  entry: TranscriptEntry,
+  _isInitial: boolean,
+): boolean {
+  return handleAgentNameEntry(conversationId, session, entry as TranscriptAgentNameEntry)
+}
+
+function dispatchPrLinkEntry(
+  _ctx: ConversationStoreContext,
+  conversationId: string,
+  session: Conversation,
+  entry: TranscriptEntry,
+  _isInitial: boolean,
+): boolean {
+  return handlePrLinkEntry(conversationId, session, entry as TranscriptPrLinkEntry)
+}
+
+const entryHandlers: Record<string, TranscriptEntryHandler> = {
+  compacted: dispatchCompacted,
+  user: dispatchUserEntry,
+  assistant: dispatchAssistantEntry,
+  system: dispatchSystemEntry,
+  summary: dispatchSummaryEntry,
+  'custom-title': dispatchCustomTitleEntry,
+  'agent-name': dispatchAgentNameEntry,
+  'pr-link': dispatchPrLinkEntry,
 }
 
 function appendToCache(
