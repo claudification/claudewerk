@@ -7,7 +7,7 @@ type Row = Record<string, string | number | bigint | boolean | null>
 function rowToShare(row: Row): ShareRecord {
   return {
     token: row.token as string,
-    conversationId: row.session_id as string,
+    conversationId: row.conversation_id as string,
     permissions: JSON.parse(row.permissions as string),
     createdAt: row.created_at as number,
     expiresAt: row.expires_at as number,
@@ -18,10 +18,10 @@ function rowToShare(row: Row): ShareRecord {
 export function createSqliteShareStore(db: Database): ShareStore {
   const stmtGet = db.prepare('SELECT * FROM shares WHERE token = $token')
   const stmtInsert = db.prepare(`
-    INSERT INTO shares (token, session_id, permissions, created_at, expires_at, viewer_count)
-    VALUES ($token, $sessionId, $permissions, $createdAt, $expiresAt, 0)
+    INSERT INTO shares (token, conversation_id, permissions, created_at, expires_at, viewer_count)
+    VALUES ($token, $conversationId, $permissions, $createdAt, $expiresAt, 0)
   `)
-  const stmtForConversation = db.prepare('SELECT * FROM shares WHERE session_id = $conversationId')
+  const stmtForConversation = db.prepare('SELECT * FROM shares WHERE conversation_id = $conversationId')
   const stmtIncrement = db.prepare('UPDATE shares SET viewer_count = viewer_count + 1 WHERE token = $token')
   const stmtDelete = db.prepare('DELETE FROM shares WHERE token = $token')
   const stmtDeleteExpired = db.prepare('DELETE FROM shares WHERE expires_at <= $now')
@@ -34,7 +34,7 @@ export function createSqliteShareStore(db: Database): ShareStore {
       const now = Date.now()
       stmtInsert.run({
         token: input.token,
-        sessionId: input.conversationId,
+        conversationId: input.conversationId,
         permissions: JSON.stringify(input.permissions),
         createdAt: now,
         expiresAt: input.expiresAt,

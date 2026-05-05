@@ -7,8 +7,8 @@ import type { Conversation, TranscriptEntry, TranscriptUserEntry } from '../../.
  *
  * Returns true when at least one bgTask state was updated.
  */
-export function detectBgTaskNotifications(session: Conversation, entries: TranscriptEntry[]): boolean {
-  if (!session.bgTasks.some(t => t.status === 'running')) return false
+export function detectBgTaskNotifications(conv: Conversation, entries: TranscriptEntry[]): boolean {
+  if (!conv.bgTasks.some(t => t.status === 'running')) return false
 
   let changed = false
   for (const entry of entries) {
@@ -21,7 +21,7 @@ export function detectBgTaskNotifications(session: Conversation, entries: Transc
     while (match !== null) {
       const taskId = match[1]
       const status = match[2]
-      const bgTask = session.bgTasks.find(t => t.taskId === taskId && t.status === 'running')
+      const bgTask = conv.bgTasks.find(t => t.taskId === taskId && t.status === 'running')
       if (bgTask) {
         bgTask.status = status === 'completed' ? 'completed' : 'killed'
         bgTask.completedAt = Date.now()

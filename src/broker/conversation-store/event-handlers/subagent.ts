@@ -9,17 +9,17 @@ import type { ConversationStoreContext } from '../event-context'
 export function handleSubagentStart(
   ctx: ConversationStoreContext,
   conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   event: HookEventOf<'SubagentStart'>,
 ): void {
   const data = event.data
   const agentId = data.agent_id
   if (!agentId) return
 
-  if (!session.subagents.some(a => a.agentId === agentId)) {
+  if (!conv.subagents.some(a => a.agentId === agentId)) {
     const queue = ctx.pendingAgentDescriptions.get(conversationId)
     const description = queue?.shift()
-    session.subagents.push({
+    conv.subagents.push({
       agentId,
       agentType: data.agent_type || 'unknown',
       description,
@@ -30,7 +30,7 @@ export function handleSubagentStart(
   }
 
   // Teammates are agents -- flip the matching teammate row to working
-  const teammate = session.teammates.find(t => t.agentId === agentId)
+  const teammate = conv.teammates.find(t => t.agentId === agentId)
   if (teammate) {
     teammate.status = 'working'
   }
@@ -40,12 +40,12 @@ export function handleSubagentStart(
  * SubagentStop: mark the subagent stopped, capture its transcript path if
  * provided, flip the matching teammate row to stopped.
  */
-export function handleSubagentStop(session: Conversation, event: HookEventOf<'SubagentStop'>): void {
+export function handleSubagentStop(conv: Conversation, event: HookEventOf<'SubagentStop'>): void {
   const data = event.data
   const agentId = data.agent_id
   if (!agentId) return
 
-  const agent = session.subagents.find(a => a.agentId === agentId)
+  const agent = conv.subagents.find(a => a.agentId === agentId)
   if (agent) {
     agent.stoppedAt = event.timestamp
     agent.status = 'stopped'
@@ -54,7 +54,7 @@ export function handleSubagentStop(session: Conversation, event: HookEventOf<'Su
     }
   }
 
-  const teammate = session.teammates.find(t => t.agentId === agentId)
+  const teammate = conv.teammates.find(t => t.agentId === agentId)
   if (teammate) {
     teammate.status = 'stopped'
     teammate.stoppedAt = event.timestamp

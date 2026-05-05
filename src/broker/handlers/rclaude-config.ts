@@ -13,10 +13,10 @@ import type { MessageHandler } from '../handler-context'
 import { registerHandlers } from '../message-router'
 
 function findWrapperSocketByProject(ctx: Parameters<MessageHandler>[0], project: string) {
-  for (const session of ctx.conversations.getAllConversations()) {
-    if (session.project !== project) continue
-    const socket = ctx.conversations.getConversationSocket(session.id)
-    if (socket) return { socket, session }
+  for (const conv of ctx.conversations.getAllConversations()) {
+    if (conv.project !== project) continue
+    const socket = ctx.conversations.getConversationSocket(conv.id)
+    if (socket) return { socket, conv }
   }
   return undefined
 }
@@ -35,7 +35,7 @@ const rclaudeConfigGet: MessageHandler = (ctx, data) => {
       requestId: data.requestId,
       config: null,
       project,
-      error: 'No session connected at this project',
+      error: 'No conversation connected at this project',
     })
   }
 }
@@ -53,7 +53,7 @@ const rclaudeConfigSet: MessageHandler = (ctx, data) => {
       type: 'rclaude_config_ok',
       requestId: data.requestId,
       ok: false,
-      error: 'No session connected at this project',
+      error: 'No conversation connected at this project',
     })
   }
 }

@@ -7,7 +7,7 @@ class StoreError extends Error {
 
 export class ConversationNotFound extends StoreError {
   constructor(id: string) {
-    super(`Session not found: ${id}`)
+    super(`Conversation not found: ${id}`)
     this.name = 'SessionNotFound'
   }
 }

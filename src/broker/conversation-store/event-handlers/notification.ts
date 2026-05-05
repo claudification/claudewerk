@@ -10,12 +10,12 @@ import type { ConversationStoreContext } from '../event-context'
 export function handleNotification(
   ctx: ConversationStoreContext,
   conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   event: HookEventOf<'Notification'>,
 ): void {
-  session.hasNotification = true
+  conv.hasNotification = true
   const message = typeof event.data.message === 'string' ? event.data.message : 'Needs attention'
-  const projectName = getProjectSettings(session.project)?.label || extractProjectLabel(session.project)
+  const projectName = getProjectSettings(conv.project)?.label || extractProjectLabel(conv.project)
   ctx.broadcastConversationScoped(
     {
       type: 'toast',
@@ -23,6 +23,6 @@ export function handleNotification(
       title: projectName,
       message,
     },
-    session.project,
+    conv.project,
   )
 }

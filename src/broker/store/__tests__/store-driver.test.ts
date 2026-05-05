@@ -35,87 +35,87 @@ function runStoreTests(name: string, createDriver: () => StoreDriver) {
 
     describe('sessions', () => {
       it('create + get returns the conversation', () => {
-        store.sessions.create({
+        store.conversations.create({
           id: 'sess-1',
           scope: 'project-a',
           agentType: 'claude',
         })
-        const session = store.sessions.get('sess-1')
-        expect(session).not.toBeNull()
-        expect(session!.id).toBe('sess-1')
-        expect(session!.scope).toBe('project-a')
-        expect(session!.agentType).toBe('claude')
-        expect(session!.status).toBe('active')
+        const conv = store.conversations.get('sess-1')
+        expect(conv).not.toBeNull()
+        expect(conv!.id).toBe('sess-1')
+        expect(conv!.scope).toBe('project-a')
+        expect(conv!.agentType).toBe('claude')
+        expect(conv!.status).toBe('active')
       })
 
       it('update patches only specified fields', () => {
-        store.sessions.create({
+        store.conversations.create({
           id: 'sess-patch',
           scope: 'scope-1',
           agentType: 'claude',
         })
-        store.sessions.update('sess-patch', { title: 'Updated Title' })
-        const session = store.sessions.get('sess-patch')!
-        expect(session.title).toBe('Updated Title')
-        expect(session.scope).toBe('scope-1')
-        expect(session.agentType).toBe('claude')
+        store.conversations.update('sess-patch', { title: 'Updated Title' })
+        const conv = store.conversations.get('sess-patch')!
+        expect(conv.title).toBe('Updated Title')
+        expect(conv.scope).toBe('scope-1')
+        expect(conv.agentType).toBe('claude')
       })
 
       it('delete removes the conversation', () => {
-        store.sessions.create({ id: 'sess-del', scope: 's', agentType: 'claude' })
-        store.sessions.delete('sess-del')
-        expect(store.sessions.get('sess-del')).toBeNull()
+        store.conversations.create({ id: 'sess-del', scope: 's', agentType: 'claude' })
+        store.conversations.delete('sess-del')
+        expect(store.conversations.get('sess-del')).toBeNull()
       })
 
       it('get returns null for missing ID', () => {
-        expect(store.sessions.get('nonexistent')).toBeNull()
+        expect(store.conversations.get('nonexistent')).toBeNull()
       })
 
       it('list with status filter', () => {
-        store.sessions.create({ id: 's1', scope: 'p', agentType: 'claude' })
-        store.sessions.create({ id: 's2', scope: 'p', agentType: 'claude' })
-        store.sessions.update('s2', { status: 'ended' })
+        store.conversations.create({ id: 's1', scope: 'p', agentType: 'claude' })
+        store.conversations.create({ id: 's2', scope: 'p', agentType: 'claude' })
+        store.conversations.update('s2', { status: 'ended' })
 
-        const active = store.sessions.list({ status: ['active'] })
+        const active = store.conversations.list({ status: ['active'] })
         expect(active.map(s => s.id)).toContain('s1')
         expect(active.map(s => s.id)).not.toContain('s2')
 
-        const ended = store.sessions.list({ status: ['ended'] })
+        const ended = store.conversations.list({ status: ['ended'] })
         expect(ended.map(s => s.id)).toContain('s2')
         expect(ended.map(s => s.id)).not.toContain('s1')
       })
 
       it('listByScope returns only conversations for given scope', () => {
-        store.sessions.create({ id: 'sa', scope: 'alpha', agentType: 'claude' })
-        store.sessions.create({ id: 'sb', scope: 'beta', agentType: 'claude' })
-        store.sessions.create({ id: 'sc', scope: 'alpha', agentType: 'claude' })
+        store.conversations.create({ id: 'sa', scope: 'alpha', agentType: 'claude' })
+        store.conversations.create({ id: 'sb', scope: 'beta', agentType: 'claude' })
+        store.conversations.create({ id: 'sc', scope: 'alpha', agentType: 'claude' })
 
-        const alpha = store.sessions.listByScope('alpha')
+        const alpha = store.conversations.listByScope('alpha')
         expect(alpha.map(s => s.id)).toContain('sa')
         expect(alpha.map(s => s.id)).toContain('sc')
         expect(alpha.map(s => s.id)).not.toContain('sb')
       })
 
       it('listByScope with status filter', () => {
-        store.sessions.create({ id: 'sf1', scope: 'proj', agentType: 'claude' })
-        store.sessions.create({ id: 'sf2', scope: 'proj', agentType: 'claude' })
-        store.sessions.update('sf2', { status: 'ended' })
+        store.conversations.create({ id: 'sf1', scope: 'proj', agentType: 'claude' })
+        store.conversations.create({ id: 'sf2', scope: 'proj', agentType: 'claude' })
+        store.conversations.update('sf2', { status: 'ended' })
 
-        const active = store.sessions.listByScope('proj', { status: ['active'] })
+        const active = store.conversations.listByScope('proj', { status: ['active'] })
         expect(active.map(s => s.id)).toContain('sf1')
         expect(active.map(s => s.id)).not.toContain('sf2')
       })
 
       it('updateStats merges stats', () => {
-        store.sessions.create({ id: 'stats-1', scope: 's', agentType: 'claude' })
-        store.sessions.updateStats('stats-1', { inputTokens: 100, outputTokens: 50 })
-        store.sessions.updateStats('stats-1', { inputTokens: 200, toolCalls: 3 })
+        store.conversations.create({ id: 'stats-1', scope: 's', agentType: 'claude' })
+        store.conversations.updateStats('stats-1', { inputTokens: 100, outputTokens: 50 })
+        store.conversations.updateStats('stats-1', { inputTokens: 200, toolCalls: 3 })
 
-        const session = store.sessions.get('stats-1')!
-        expect(session.stats).toBeDefined()
-        expect(session.stats!.inputTokens).toBe(200)
-        expect(session.stats!.outputTokens).toBe(50)
-        expect(session.stats!.toolCalls).toBe(3)
+        const conv = store.conversations.get('stats-1')!
+        expect(conv.stats).toBeDefined()
+        expect(conv.stats!.inputTokens).toBe(200)
+        expect(conv.stats!.outputTokens).toBe(50)
+        expect(conv.stats!.toolCalls).toBe(3)
       })
     })
 
@@ -128,7 +128,7 @@ function runStoreTests(name: string, createDriver: () => StoreDriver) {
       const EPOCH = 'epoch-1'
 
       beforeEach(() => {
-        store.sessions.create({ id: SESSION, scope: 'p', agentType: 'claude' })
+        store.conversations.create({ id: SESSION, scope: 'p', agentType: 'claude' })
       })
 
       it('append + getLatest returns entries in order', () => {
@@ -146,7 +146,7 @@ function runStoreTests(name: string, createDriver: () => StoreDriver) {
         expect(latest[2].uuid).toBe('u3')
       })
 
-      it('append assigns sequential session_seq values', () => {
+      it('append assigns sequential seq values', () => {
         store.transcripts.append(SESSION, EPOCH, [
           makeTranscriptEntry('user', 'a1'),
           makeTranscriptEntry('assistant', 'a2'),
@@ -154,7 +154,7 @@ function runStoreTests(name: string, createDriver: () => StoreDriver) {
         store.transcripts.append(SESSION, EPOCH, [makeTranscriptEntry('user', 'a3')])
 
         const all = store.transcripts.getLatest(SESSION, 10)
-        const seqs = all.map(e => e.sessionSeq)
+        const seqs = all.map(e => e.seq)
         expect(seqs).toEqual([1, 2, 3])
       })
 
@@ -186,8 +186,8 @@ function runStoreTests(name: string, createDriver: () => StoreDriver) {
 
         const result = store.transcripts.getSinceSeq(SESSION, 1)
         expect(result.entries).toHaveLength(2)
-        expect(result.entries[0].sessionSeq).toBe(2)
-        expect(result.entries[1].sessionSeq).toBe(3)
+        expect(result.entries[0].seq).toBe(2)
+        expect(result.entries[1].seq).toBe(3)
         expect(result.lastSeq).toBe(3)
       })
 
@@ -265,7 +265,7 @@ function runStoreTests(name: string, createDriver: () => StoreDriver) {
       const SESSION = 'ev-sess'
 
       beforeEach(() => {
-        store.sessions.create({ id: SESSION, scope: 'p', agentType: 'claude' })
+        store.conversations.create({ id: SESSION, scope: 'p', agentType: 'claude' })
       })
 
       it('append + getForConversation returns events', () => {

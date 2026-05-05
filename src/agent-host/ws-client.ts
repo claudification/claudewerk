@@ -78,7 +78,7 @@ export interface WsClientOptions {
   onAck?: (origins: string[]) => void
   onTranscriptKick?: () => void
   onChannelConversationsList?: (
-    sessions: InterConversationListResponse['sessions'],
+    conversations: InterConversationListResponse['conversations'],
     self?: InterConversationListResponse['self'],
   ) => void
   onChannelSendResult?: (result: unknown) => void
@@ -466,7 +466,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
               onConfigSet?.(message.requestId, message.config)
               break
             case 'channel_conversations_list':
-              onChannelConversationsList?.(message.sessions, message.self)
+              onChannelConversationsList?.(message.conversations, message.self)
               break
             case 'channel_deliver':
               onChannelDeliver?.(message)

@@ -149,7 +149,7 @@ export function initAuth(opts: {
         writeFileSync(authFilePath, JSON.stringify(state, null, 2), { mode: 0o600 })
         console.log('[auth] Migrated user data (grants + serverRoles + scope backfill)')
       }
-      // Clean expired sessions on load
+      // Clean expired conversations on load
       const now = Date.now()
       for (const [token, session] of Object.entries(state.sessions)) {
         if (session.expiresAt < now) delete state.sessions[token]
@@ -464,7 +464,7 @@ export function renewSessionIfNeeded(signedToken: string): boolean {
   const session = state.sessions[token]
   if (!session) return false
 
-  // Renew if past halfway (e.g. > 3.5 days into a 7-day session)
+  // Renew if past halfway (e.g. > 3.5 days into a 7-day conversation)
   const halfLife = SESSION_MAX_AGE_MS / 2
   const remaining = session.expiresAt - Date.now()
   if (remaining > halfLife) return false

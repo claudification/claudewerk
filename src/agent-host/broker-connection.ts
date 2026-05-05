@@ -285,8 +285,8 @@ export function connectToBroker(ctx: AgentHostContext, deps: BrokerConnectionDep
     onTranscriptKick() {
       handleTranscriptKick(ctx)
     },
-    onChannelConversationsList(sessions, self) {
-      pendingListConversations?.(sessions, self)
+    onChannelConversationsList(conversations, self) {
+      pendingListConversations?.(conversations, self)
     },
     onChannelSendResult(result) {
       pendingSendResult?.(result as { ok: boolean; error?: string; conversationId?: string; targetSessionId?: string })

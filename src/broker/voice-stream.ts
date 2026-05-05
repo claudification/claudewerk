@@ -11,7 +11,7 @@ import { getGlobalSettings } from './global-settings'
 import { getProjectSettings } from './project-settings'
 
 const DEEPGRAM_LIVE_URL = 'wss://api.deepgram.com/v1/listen'
-const VOICE_TIMEOUT_MS = 120_000 // Max 120s recording session
+const VOICE_TIMEOUT_MS = 120_000 // Max 120s recording conversation
 const KEEPALIVE_INTERVAL_MS = 5_000 // Deepgram kills connection after 10s of no audio
 
 interface VoiceSession {

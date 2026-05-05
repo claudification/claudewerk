@@ -149,7 +149,7 @@ export function createContext(ws: ServerWebSocket<WsData>, deps: ContextDeps): H
       // No grants on WS data = legacy connection or bearer auth (treat as admin)
       const grants = ws.data.grants
       if (!grants) return
-      // Use provided project, fall back to caller session project, then '*' for global checks
+      // Use provided project, fall back to caller conversation project, then '*' for global checks
       const targetProject = project || caller?.project || '*'
       const { permissions: perms, isAdmin } = resolvePermissions(grants, targetProject)
       if (!isAdmin && !perms.has(permission)) {

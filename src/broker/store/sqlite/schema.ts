@@ -6,7 +6,7 @@ export function createSchema(db: Database) {
   db.run('PRAGMA synchronous = NORMAL')
 
   db.run(`
-    CREATE TABLE IF NOT EXISTS sessions (
+    CREATE TABLE IF NOT EXISTS conversations (
       id TEXT PRIMARY KEY,
       scope TEXT NOT NULL,
       agent_type TEXT NOT NULL,
@@ -25,15 +25,15 @@ export function createSchema(db: Database) {
       stats TEXT
     )
   `)
-  db.run('CREATE INDEX IF NOT EXISTS idx_sessions_scope ON sessions(scope)')
-  db.run('CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status)')
-  db.run('CREATE INDEX IF NOT EXISTS idx_sessions_created_at ON sessions(created_at)')
+  db.run('CREATE INDEX IF NOT EXISTS idx_conversations_scope ON conversations(scope)')
+  db.run('CREATE INDEX IF NOT EXISTS idx_conversations_status ON conversations(status)')
+  db.run('CREATE INDEX IF NOT EXISTS idx_conversations_created_at ON conversations(created_at)')
 
   db.run(`
     CREATE TABLE IF NOT EXISTS transcript_entries (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id TEXT NOT NULL,
-      session_seq INTEGER NOT NULL,
+      conversation_id TEXT NOT NULL,
+      seq INTEGER NOT NULL,
       sync_epoch TEXT NOT NULL,
       type TEXT NOT NULL,
       subtype TEXT,
@@ -42,25 +42,25 @@ export function createSchema(db: Database) {
       content TEXT NOT NULL,
       timestamp INTEGER NOT NULL,
       ingested_at INTEGER NOT NULL,
-      UNIQUE(session_id, uuid)
+      UNIQUE(conversation_id, uuid)
     )
   `)
-  db.run('CREATE INDEX IF NOT EXISTS idx_transcript_session ON transcript_entries(session_id)')
-  db.run('CREATE INDEX IF NOT EXISTS idx_transcript_session_seq ON transcript_entries(session_id, session_seq)')
-  db.run('CREATE INDEX IF NOT EXISTS idx_transcript_session_agent ON transcript_entries(session_id, agent_id)')
+  db.run('CREATE INDEX IF NOT EXISTS idx_transcript_session ON transcript_entries(conversation_id)')
+  db.run('CREATE INDEX IF NOT EXISTS idx_transcript_session_seq ON transcript_entries(conversation_id, seq)')
+  db.run('CREATE INDEX IF NOT EXISTS idx_transcript_session_agent ON transcript_entries(conversation_id, agent_id)')
   db.run('CREATE INDEX IF NOT EXISTS idx_transcript_timestamp ON transcript_entries(timestamp)')
 
   db.run(`
     CREATE TABLE IF NOT EXISTS events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id TEXT NOT NULL,
+      conversation_id TEXT NOT NULL,
       type TEXT NOT NULL,
       data TEXT,
       created_at INTEGER NOT NULL
     )
   `)
-  db.run('CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id)')
-  db.run('CREATE INDEX IF NOT EXISTS idx_events_type ON events(session_id, type)')
+  db.run('CREATE INDEX IF NOT EXISTS idx_events_session ON events(conversation_id)')
+  db.run('CREATE INDEX IF NOT EXISTS idx_events_type ON events(conversation_id, type)')
 
   db.run(`
     CREATE TABLE IF NOT EXISTS scope_links (
@@ -122,30 +122,30 @@ export function createSchema(db: Database) {
   db.run(`
     CREATE TABLE IF NOT EXISTS tasks (
       id TEXT NOT NULL,
-      session_id TEXT NOT NULL,
+      conversation_id TEXT NOT NULL,
       kind TEXT NOT NULL,
       status TEXT NOT NULL,
       name TEXT,
       data TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER,
-      PRIMARY KEY(session_id, id)
+      PRIMARY KEY(conversation_id, id)
     )
   `)
-  db.run('CREATE INDEX IF NOT EXISTS idx_tasks_session ON tasks(session_id)')
-  db.run('CREATE INDEX IF NOT EXISTS idx_tasks_kind ON tasks(session_id, kind)')
+  db.run('CREATE INDEX IF NOT EXISTS idx_tasks_session ON tasks(conversation_id)')
+  db.run('CREATE INDEX IF NOT EXISTS idx_tasks_kind ON tasks(conversation_id, kind)')
 
   db.run(`
     CREATE TABLE IF NOT EXISTS shares (
       token TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
+      conversation_id TEXT NOT NULL,
       permissions TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       expires_at INTEGER NOT NULL,
       viewer_count INTEGER NOT NULL DEFAULT 0
     )
   `)
-  db.run('CREATE INDEX IF NOT EXISTS idx_shares_session ON shares(session_id)')
+  db.run('CREATE INDEX IF NOT EXISTS idx_shares_session ON shares(conversation_id)')
   db.run('CREATE INDEX IF NOT EXISTS idx_shares_expires ON shares(expires_at)')
 
   db.run(`
@@ -159,7 +159,7 @@ export function createSchema(db: Database) {
     CREATE TABLE IF NOT EXISTS turns (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       timestamp INTEGER NOT NULL,
-      session_id TEXT NOT NULL,
+      conversation_id TEXT NOT NULL,
       project_uri TEXT NOT NULL DEFAULT '',
       account TEXT NOT NULL DEFAULT '',
       org_id TEXT NOT NULL DEFAULT '',

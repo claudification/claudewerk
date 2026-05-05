@@ -180,7 +180,7 @@ run('dashboard subscription', () => {
     const dashboard = await connectDashboard()
     const list = await waitForMessage(dashboard, 'conversations_list')
     expect(list.type).toBe('conversations_list')
-    expect(Array.isArray(list.sessions)).toBe(true)
+    expect(Array.isArray(list.conversations)).toBe(true)
   })
 
   it('dashboard receives conversation_update when agent host boots', async () => {
@@ -204,7 +204,7 @@ run('dashboard subscription', () => {
 
     const update = await waitForMessage(dashboard, 'conversation_update')
     expect(update.type).toBe('conversation_update')
-    const session = update.session as Record<string, unknown>
+    const session = update.conversation as Record<string, unknown>
     expect(session.id).toBe(convId)
     expect(session.status).toBe('booting')
   })
@@ -247,18 +247,18 @@ run('dashboard subscription', () => {
     await waitForMessage(agent, 'ack')
     dashboard.received.length = 0
 
-    // End it
+    // End it (real agent host sends convId, not ccSessionId)
     agent.send({
       type: 'end',
-      conversationId: ccSessionId,
+      conversationId: convId,
       reason: 'staging_test_done',
       endedAt: Date.now(),
     })
 
     // The broker broadcasts 'conversation_ended' (not 'conversation_update')
     const ended = await waitForMessage(dashboard, 'conversation_ended')
-    expect(ended.conversationId).toBe(ccSessionId)
-    const session = ended.session as Record<string, unknown>
+    expect(ended.conversationId).toBe(convId)
+    const session = ended.conversation as Record<string, unknown>
     expect(session.status).toBe('ended')
   })
 })
@@ -488,7 +488,7 @@ run('HTTP API', () => {
       conversationId: convId,
       hookEvent: 'UserPromptSubmit',
       timestamp: Date.now(),
-      data: { session_id: ccSessionId, prompt: 'staging test prompt' },
+      data: { conversation_id: ccSessionId, prompt: 'staging test prompt' },
     })
     await sleep(200)
 
@@ -555,7 +555,7 @@ run('wire protocol shape', () => {
     // Dashboard gets the list
     const dashboard = await connectDashboard()
     const list = await waitForMessage(dashboard, 'conversations_list')
-    const sessions = list.sessions as Array<Record<string, unknown>>
+    const sessions = list.conversations as Array<Record<string, unknown>>
     expect(sessions.length).toBeGreaterThan(0)
 
     for (const s of sessions) {
@@ -583,7 +583,7 @@ run('wire protocol shape', () => {
     })
 
     const update = await waitForMessage(dashboard, 'conversation_update')
-    const session = update.session as Record<string, unknown>
+    const session = update.conversation as Record<string, unknown>
     expect(session.id).toBeDefined()
     expect(typeof session.id).toBe('string')
   })
@@ -623,12 +623,12 @@ run('wire protocol shape', () => {
 
     const dashboard = await connectDashboard()
     const list = await waitForMessage(dashboard, 'conversations_list')
-    const sessions = list.sessions as Array<Record<string, unknown>>
-    const session = sessions.find(s => s.id === ccSessionId)
-    expect(session).toBeDefined()
-    expect(session?.stats).toBeDefined()
+    const conversations = list.conversations as Array<Record<string, unknown>>
+    const target = conversations.find(s => s.id === convId)
+    expect(target).toBeDefined()
+    expect(target?.stats).toBeDefined()
 
-    const stats = session?.stats as Record<string, unknown>
+    const stats = target?.stats as Record<string, unknown>
     expect(typeof stats.totalInputTokens).toBe('number')
     expect(typeof stats.totalOutputTokens).toBe('number')
     expect(typeof stats.turnCount).toBe('number')
@@ -683,7 +683,7 @@ run('session clear (rekey)', () => {
     const oldCcSessionId = testId('old-cc')
     const newCcSessionId = testId('new-cc')
 
-    // Boot + promote + meta with old session
+    // Boot + promote + meta with old conversation
     agent.send({
       type: 'agent_host_boot',
       conversationId: convId,
@@ -727,9 +727,8 @@ run('session clear (rekey)', () => {
     expect(convRes.status).toBe(200)
     const data = (await convRes.json()) as Record<string, unknown>
     expect(data.id).toBe(convId)
-    expect(data.ccSessionId).toBe(newCcSessionId)
 
-    // Old ccSessionId is NOT a store key
+    // Old ccSessionId is NOT a store key (broker never uses it as an identifier)
     const oldRes = await httpGet(`/conversations/${oldCcSessionId}`, { bearer: getBrokerSecret() })
     expect(oldRes.status).toBe(404)
   })
@@ -781,14 +780,14 @@ run('dashboard to agent relay', () => {
 
     dashboard.send({
       type: 'send_input',
-      conversationId: ccSessionId,
+      conversationId: convId,
       input: 'hello from dashboard',
     })
 
     // Agent should receive the relayed input
     const input = await waitForMessage(agent, 'input')
     expect(input.input).toBe('hello from dashboard')
-    expect(input.conversationId).toBe(ccSessionId)
+    expect(input.conversationId).toBe(convId)
   })
 
   it('send_interrupt is forwarded from dashboard to agent host', async () => {
@@ -832,12 +831,12 @@ run('dashboard to agent relay', () => {
 
     dashboard.send({
       type: 'send_interrupt',
-      conversationId: ccSessionId,
+      conversationId: convId,
     })
 
     // Agent should receive the interrupt
     const interrupt = await waitForMessage(agent, 'interrupt')
-    expect(interrupt.conversationId).toBe(ccSessionId)
+    expect(interrupt.conversationId).toBe(convId)
 
     // Dashboard should get confirmation
     const result = await waitForMessage(dashboard, 'send_interrupt_result')

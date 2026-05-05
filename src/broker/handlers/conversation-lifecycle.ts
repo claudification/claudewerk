@@ -1,6 +1,6 @@
 /**
  * Conversation lifecycle handlers: meta (connect/resume), hook events,
- * heartbeat, session clear (re-key), notify, and end.
+ * heartbeat, conversation clear (re-key), notify, and end.
  */
 
 import { cwdToProjectUri, extractProjectLabel } from '../../shared/project-uri'
@@ -41,7 +41,8 @@ const meta: MessageHandler = (ctx, data) => {
   const existing = ctx.conversations.getConversation(conversationId)
 
   function applyMetadata(conv: import('../../shared/protocol').Conversation) {
-    conv.ccSessionId = ccSessionId
+    if (!conv.agentHostMeta) conv.agentHostMeta = {}
+    conv.agentHostMeta.ccSessionId = ccSessionId
     conv.project = project
     if (data.model) conv.model = data.model as string
     if (data.capabilities) conv.capabilities = data.capabilities
@@ -180,7 +181,8 @@ const conversationClear: MessageHandler = (ctx, data) => {
   } else {
     ctx.log.debug(`conversation_clear: conversation ${conversationId.slice(0, 8)} not found, creating new`)
     const newConv = ctx.conversations.createConversation(conversationId, clearProject, data.model as string)
-    newConv.ccSessionId = newCcSessionId
+    if (!newConv.agentHostMeta) newConv.agentHostMeta = {}
+    newConv.agentHostMeta.ccSessionId = newCcSessionId
     ctx.ws.data.ccSessionId = newCcSessionId
     ctx.conversations.setConversationSocket(conversationId, conversationId, ctx.ws)
   }

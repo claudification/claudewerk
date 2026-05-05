@@ -74,10 +74,10 @@ interface ConversationSnapshot {
 
 export function createSqliteCostStore(db: Database): CostStore {
   const stmtInsertTurn = db.prepare(`
-    INSERT INTO turns (timestamp, session_id, project_uri, account, org_id, model,
+    INSERT INTO turns (timestamp, conversation_id, project_uri, account, org_id, model,
       input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
       cost_usd, exact_cost)
-    VALUES ($timestamp, $sessionId, $projectUri, $account, $orgId, $model,
+    VALUES ($timestamp, $conversationId, $projectUri, $account, $orgId, $model,
       $inputTokens, $outputTokens, $cacheReadTokens, $cacheWriteTokens,
       $costUsd, $exactCost)
   `)
@@ -102,7 +102,7 @@ export function createSqliteCostStore(db: Database): CostStore {
     GROUP BY hour, account, model, project_uri`,
   )
 
-  // Per-session cumulative snapshots live in memory -- cheap, reset on restart.
+  // Per-conversation cumulative snapshots live in memory -- cheap, reset on restart.
   // After a restart the first turn becomes an outlier (full cumulative as delta);
   // this matches the behavior of the old file-level cost-store.ts.
   const lastSnapshot = new Map<string, ConversationSnapshot>()
@@ -117,7 +117,7 @@ export function createSqliteCostStore(db: Database): CostStore {
   function recordTurn(record: TurnRecord): void {
     stmtInsertTurn.run({
       timestamp: record.timestamp,
-      sessionId: record.conversationId,
+      conversationId: record.conversationId,
       projectUri: normalizeUri(record.projectUri),
       account: record.account,
       orgId: record.orgId,
@@ -205,7 +205,7 @@ export function createSqliteCostStore(db: Database): CostStore {
     const countRow = queryGet(db, `SELECT COUNT(*) as n FROM turns ${where}`, binds) as { n: number }
     const rows = queryAll(
       db,
-      `SELECT timestamp, session_id, COALESCE(project_uri, '') as project_uri,
+      `SELECT timestamp, conversation_id, COALESCE(project_uri, '') as project_uri,
       account, org_id, model,
       input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
       cost_usd, exact_cost
@@ -217,7 +217,7 @@ export function createSqliteCostStore(db: Database): CostStore {
       total: countRow.n,
       rows: rows.map(r => ({
         timestamp: r.timestamp as number,
-        conversationId: r.session_id as string,
+        conversationId: r.conversation_id as string,
         projectUri: (r.project_uri as string) || '',
         account: r.account as string,
         orgId: r.org_id as string,

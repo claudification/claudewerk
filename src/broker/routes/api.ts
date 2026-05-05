@@ -211,7 +211,7 @@ export function createApiRouter(
     )
     const wrapperSocket = sessionForCwd ? conversationStore.getConversationSocket(sessionForCwd.id) : null
     if (!wrapperSocket) {
-      return c.json({ error: 'No active session connected for this project' }, 503)
+      return c.json({ error: 'No active conversation connected for this project' }, 503)
     }
 
     const filesToRead = [
@@ -314,7 +314,7 @@ Output a JSON array of strings. Each string should be the correct spelling of on
   app.post('/api/files', async c => {
     if (!blobDir) return c.json({ error: 'Blob store not configured' }, 503)
 
-    // Require files permission -- check session CWD if available, else any grant
+    // Require files permission -- check conversation CWD if available, else any grant
     const uploadConversationId = c.req.header('x-session-id') || c.req.query('conversationId') || undefined
     const uploadCwd = uploadConversationId
       ? conversationStore.getConversation(uploadConversationId)?.project
@@ -474,12 +474,12 @@ Output a JSON array of strings. Each string should be the correct spelling of on
 
     const keyterms: string[] = []
     if (body.conversationId) {
-      const session = conversationStore.getConversation(body.conversationId)
-      if (session?.project) {
-        const projSettings = getProjectSettings(session.project)
+      const conv = conversationStore.getConversation(body.conversationId)
+      if (conv?.project) {
+        const projSettings = getProjectSettings(conv.project)
         if (projSettings?.keyterms?.length) {
           keyterms.push(...projSettings.keyterms)
-          console.log(`[transcribe] Project keyterms for ${session.project}: ${projSettings.keyterms.join(', ')}`)
+          console.log(`[transcribe] Project keyterms for ${conv.project}: ${projSettings.keyterms.join(', ')}`)
         }
       }
     }

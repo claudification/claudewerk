@@ -94,27 +94,24 @@ export interface ConversationOverview {
   lastEvent?: { hookEvent: string; timestamp: number }
 }
 
-export function conversationToOverview(
-  session: Conversation,
-  conversationStore: ConversationStore,
-): ConversationOverview {
-  const lastEvent = session.events[session.events.length - 1]
+export function conversationToOverview(conv: Conversation, conversationStore: ConversationStore): ConversationOverview {
+  const lastEvent = conv.events[conv.events.length - 1]
   return {
-    id: session.id,
-    project: session.project,
-    model: session.model,
-    status: session.status,
-    connectionIds: conversationStore.getConnectionIds(session.id),
-    startedAt: session.startedAt,
-    lastActivity: session.lastActivity,
-    eventCount: session.events.length,
-    activeSubagentCount: session.subagents.filter(a => a.status === 'running').length,
-    totalSubagentCount: session.subagents.length,
-    team: session.team,
-    summary: session.summary,
-    title: session.title,
-    agentName: session.agentName,
-    prLinks: session.prLinks,
+    id: conv.id,
+    project: conv.project,
+    model: conv.model,
+    status: conv.status,
+    connectionIds: conversationStore.getConnectionIds(conv.id),
+    startedAt: conv.startedAt,
+    lastActivity: conv.lastActivity,
+    eventCount: conv.events.length,
+    activeSubagentCount: conv.subagents.filter(a => a.status === 'running').length,
+    totalSubagentCount: conv.subagents.length,
+    team: conv.team,
+    summary: conv.summary,
+    title: conv.title,
+    agentName: conv.agentName,
+    prLinks: conv.prLinks,
     lastEvent: lastEvent ? { hookEvent: lastEvent.hookEvent, timestamp: lastEvent.timestamp } : undefined,
   }
 }

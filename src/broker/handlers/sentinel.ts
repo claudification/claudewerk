@@ -73,7 +73,7 @@ const spawnResult: MessageHandler = (ctx, data) => {
   const jobId = data.jobId as string | undefined
   if (jobId) {
     if (data.success) {
-      // Sentinel confirmed the agent host process has started (tmux session is up)
+      // Sentinel confirmed the agent host process has started (tmux conversation is up)
       ctx.conversations.forwardJobEvent(jobId, {
         type: 'launch_progress',
         jobId,
@@ -141,7 +141,7 @@ const spawnFailed: MessageHandler = (ctx, data) => {
     }
   }
 
-  // Also broadcast for any non-job listeners (session detail, diag, etc.)
+  // Also broadcast for any non-job listeners (conversation detail, diag, etc.)
   if (projectPath) {
     ctx.broadcastScoped(
       { type: 'spawn_failed', conversationId, exitCode, elapsedMs, error: errorMsg, pid: data.pid },

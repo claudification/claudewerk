@@ -4,31 +4,31 @@ import { detectContextModeFromStdout } from '../parsers'
 
 /**
  * Per-system-entry dispatch: compact_boundary, turn_duration, away_summary,
- * local_command. Returns true when session metadata changed.
+ * local_command. Returns true when conversation metadata changed.
  */
 export function handleSystemEntry(
   ctx: ConversationStoreContext,
   conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   entry: TranscriptSystemEntry,
   isInitial: boolean,
 ): boolean {
   let changed = false
 
   if (entry.subtype === 'compact_boundary') {
-    if (handleCompactBoundary(ctx, conversationId, session, entry, isInitial)) changed = true
+    if (handleCompactBoundary(ctx, conversationId, conv, entry, isInitial)) changed = true
   }
 
   if (typeof entry.content === 'string' && entry.subtype === 'local_command') {
-    if (applyContextMode(conversationId, session, entry.content)) changed = true
+    if (applyContextMode(conversationId, conv, entry.content)) changed = true
   }
 
   if (entry.subtype === 'away_summary') {
-    if (handleAwaySummaryEntry(session, entry)) changed = true
+    if (handleAwaySummaryEntry(conv, entry)) changed = true
   }
 
   if (!isInitial && entry.subtype === 'turn_duration' && typeof entry.durationMs === 'number') {
-    session.stats.totalApiDurationMs += entry.durationMs
+    conv.stats.totalApiDurationMs += entry.durationMs
     changed = true
   }
 
@@ -43,23 +43,23 @@ export function handleSystemEntry(
 function handleCompactBoundary(
   ctx: ConversationStoreContext,
   conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   entry: TranscriptSystemEntry,
   isInitial: boolean,
 ): boolean {
   if (isInitial) {
-    session.stats.compactionCount++
-    session.compactedAt = new Date(entry.timestamp || 0).getTime()
+    conv.stats.compactionCount++
+    conv.compactedAt = new Date(entry.timestamp || 0).getTime()
     return false
   }
 
   // Live: cross-check against hook-based detection.
   // If hooks already handled this compaction (compactedAt set recently), skip.
-  const recentlyCompacted = !!session.compactedAt && Date.now() - session.compactedAt < 30_000
-  if (recentlyCompacted || session.compacting) return false
+  const recentlyCompacted = !!conv.compactedAt && Date.now() - conv.compactedAt < 30_000
+  if (recentlyCompacted || conv.compacting) return false
 
-  session.compactedAt = Date.now()
-  session.stats.compactionCount++
+  conv.compactedAt = Date.now()
+  conv.stats.compactionCount++
   const marker = { type: 'compacted' as const, timestamp: entry.timestamp || new Date().toISOString() }
   ctx.addTranscriptEntries(conversationId, [marker], false)
   ctx.broadcastToChannel('conversation:transcript', conversationId, {
@@ -68,7 +68,7 @@ function handleCompactBoundary(
     entries: [marker],
     isInitial: false,
   })
-  console.log(`[compact] detected via JSONL compact_boundary (session ${conversationId.slice(0, 8)})`)
+  console.log(`[compact] detected via JSONL compact_boundary (conversation ${conversationId.slice(0, 8)})`)
   return true
 }
 
@@ -77,14 +77,14 @@ function handleCompactBoundary(
  * to 'idle' (CC writes away_summary precisely because the conversation
  * went idle long enough to need a "what were we doing" summary).
  */
-function handleAwaySummaryEntry(session: Conversation, entry: TranscriptSystemEntry): boolean {
+function handleAwaySummaryEntry(conv: Conversation, entry: TranscriptSystemEntry): boolean {
   const content = entry.content
   if (typeof content !== 'string' || !content.trim()) return false
   const recapTs = new Date(entry.timestamp || 0).getTime()
-  session.recap = { content: content.trim(), timestamp: recapTs }
-  session.recapFresh = session.lastActivity <= recapTs + 10_000
-  if (session.status === 'active') {
-    session.status = 'idle'
+  conv.recap = { content: content.trim(), timestamp: recapTs }
+  conv.recapFresh = conv.lastActivity <= recapTs + 10_000
+  if (conv.status === 'active') {
+    conv.status = 'idle'
   }
   return true
 }
@@ -95,10 +95,10 @@ function handleAwaySummaryEntry(session: Conversation, entry: TranscriptSystemEn
  * system local_command entries and user entries that wrap stdout in
  * `<local-command-stdout>` blocks.
  */
-export function applyContextMode(conversationId: string, session: Conversation, stdout: string): boolean {
+export function applyContextMode(conversationId: string, conv: Conversation, stdout: string): boolean {
   const mode = detectContextModeFromStdout(stdout)
-  if (!mode || session.contextMode === mode) return false
-  session.contextMode = mode
-  console.log(`[meta] context mode: ${mode} (session ${conversationId.slice(0, 8)})`)
+  if (!mode || conv.contextMode === mode) return false
+  conv.contextMode = mode
+  console.log(`[meta] context mode: ${mode} (conversation ${conversationId.slice(0, 8)})`)
   return true
 }

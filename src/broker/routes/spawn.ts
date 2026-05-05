@@ -42,7 +42,7 @@ export function createSpawnRouter(conversationStore: ConversationStore, helpers:
     }
 
     const result = await dispatchSpawn(body, {
-      sessions: conversationStore,
+      conversationStore,
       getProjectSettings,
       getGlobalSettings,
       callerContext,

@@ -30,14 +30,14 @@ import type { GlobalSettings } from './global-settings'
  * No-op if jobId is undefined (callers that dispatch without tracking a job).
  */
 function emitProgress(
-  sessions: ConversationStore,
+  conversationStore: ConversationStore,
   jobId: string | undefined,
   step: LaunchStep,
   status: LaunchProgressEvent['status'],
   extra?: Partial<LaunchProgressEvent>,
 ): void {
   if (!jobId) return
-  sessions.forwardJobEvent(jobId, {
+  conversationStore.forwardJobEvent(jobId, {
     type: 'launch_progress',
     jobId,
     step,
@@ -48,12 +48,12 @@ function emitProgress(
 }
 
 export type SpawnDispatchDeps = {
-  sessions: ConversationStore
+  conversationStore: ConversationStore
   getProjectSettings: (project: string) => ProjectSettings | null
   getGlobalSettings: () => GlobalSettings
   /** Caller context for the unified permission gate. */
   callerContext: SpawnCallerContext
-  /** If set, register a rendezvous so the caller session is notified when the spawned agent host connects. */
+  /** If set, register a rendezvous so the caller conversation is notified when the spawned agent host connects. */
   rendezvousCallerConversationId?: string | null
 }
 
@@ -81,11 +81,11 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
 
   // Route to the specified sentinel, or default
   const targetAlias = req.sentinel
-  let sentinel: ReturnType<typeof deps.sessions.getSentinel>
+  let sentinel: ReturnType<typeof deps.conversationStore.getSentinel>
   if (targetAlias) {
-    sentinel = deps.sessions.getSentinelByAlias(targetAlias)
+    sentinel = deps.conversationStore.getSentinelByAlias(targetAlias)
     if (!sentinel) {
-      const connected = deps.sessions.getConnectedSentinels()
+      const connected = deps.conversationStore.getConnectedSentinels()
       const available = connected.map(s => s.alias).join(', ') || 'none'
       return {
         ok: false,
@@ -94,7 +94,7 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
       }
     }
   } else {
-    sentinel = deps.sessions.getSentinel()
+    sentinel = deps.conversationStore.getSentinel()
     if (!sentinel) return { ok: false, error: 'No sentinel connected', statusCode: 503 }
   }
 
@@ -104,7 +104,7 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
 
   if (req.name) {
     const usedNames = new Set(
-      deps.sessions
+      deps.conversationStore
         .getAllConversations()
         .map((s: Conversation) => s.title)
         .filter(Boolean) as string[],
@@ -117,8 +117,8 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
   const conversationId = randomUUID()
   const jobId = req.jobId ?? randomUUID()
 
-  deps.sessions.createJob(jobId, conversationId)
-  emitProgress(deps.sessions, jobId, 'job_created', 'done', { conversationId })
+  deps.conversationStore.createJob(jobId, conversationId)
+  emitProgress(deps.conversationStore, jobId, 'job_created', 'done', { conversationId })
 
   const projectLabel = req.cwd.split('/').pop() || req.cwd
   if (req.adHoc) {
@@ -146,29 +146,29 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
   if (model) {
     const validation = validateModel(model)
     if (!validation.valid) {
-      emitProgress(deps.sessions, jobId, 'failed', 'error', { error: validation.warning })
+      emitProgress(deps.conversationStore, jobId, 'failed', 'error', { error: validation.warning })
       return { ok: false, error: validation.warning || `Unknown model: ${model}`, statusCode: 400 }
     }
   }
 
   const result = await new Promise<SpawnResult>((resolve, reject) => {
     const timeout = setTimeout(() => {
-      deps.sessions.removeSpawnListener(requestId)
+      deps.conversationStore.removeSpawnListener(requestId)
       reject(new Error('Spawn timed out (15s)'))
     }, 15000)
 
-    deps.sessions.addSpawnListener(requestId, msg => {
+    deps.conversationStore.addSpawnListener(requestId, msg => {
       clearTimeout(timeout)
       resolve(msg as SpawnResult)
     })
 
-    emitProgress(deps.sessions, jobId, 'spawn_sent', 'active')
+    emitProgress(deps.conversationStore, jobId, 'spawn_sent', 'active')
 
     // Record the resolved config on the job so MCP get_spawn_diagnostics can
     // return it later -- we intentionally drop the prompt (can be large / PII)
     // and the env map (sensitive values live there; diagnostics builder
     // redacts known-secret keys).
-    deps.sessions.recordJobConfig(jobId, {
+    deps.conversationStore.recordJobConfig(jobId, {
       cwd: req.cwd,
       adHoc: req.adHoc,
       adHocTaskId: req.adHocTaskId,
@@ -187,7 +187,7 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
       name: req.name,
     })
 
-    deps.sessions.setPendingLaunchConfig(conversationId, {
+    deps.conversationStore.setPendingLaunchConfig(conversationId, {
       headless,
       model,
       effort,
@@ -220,7 +220,7 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
           deriveConversationName(req) ??
           generateConversationName(
             new Set(
-              deps.sessions
+              deps.conversationStore
                 .getAllConversations()
                 .map((s: Conversation) => s.title)
                 .filter(Boolean) as string[],
@@ -251,38 +251,38 @@ export async function dispatchSpawn(req: SpawnRequest, deps: SpawnDispatchDeps):
 
   if (!result.success) {
     if (req.adHoc) console.log(`[ad-hoc] Spawn FAILED: ${result.error || 'unknown'} (${projectLabel})`)
-    emitProgress(deps.sessions, jobId, 'failed', 'error', { error: result.error || 'Spawn failed' })
+    emitProgress(deps.conversationStore, jobId, 'failed', 'error', { error: result.error || 'Spawn failed' })
     return { ok: false, error: result.error || 'Spawn failed', statusCode: 500 }
   }
-  emitProgress(deps.sessions, jobId, 'agent_acked', 'done', { detail: result.tmuxSession })
+  emitProgress(deps.conversationStore, jobId, 'agent_acked', 'done', { detail: result.tmuxSession })
   if (req.adHoc) console.log(`[ad-hoc] Spawn OK: conv=${conversationId.slice(0, 8)} tmux=${result.tmuxSession}`)
 
   const callerConversationId = deps.rendezvousCallerConversationId
   if (callerConversationId) {
     // Don't block the response -- caller gets immediate success + conversationId.
     // Rendezvous resolves async and pushes spawn_ready / spawn_timeout.
-    deps.sessions
+    deps.conversationStore
       .addRendezvous(conversationId, callerConversationId, req.cwd, 'spawn')
-      .then(session => {
-        emitProgress(deps.sessions, jobId, 'session_connected', 'done', {
-          ccSessionId: session.ccSessionId || session.id,
+      .then(conv => {
+        emitProgress(deps.conversationStore, jobId, 'session_connected', 'done', {
+          ccSessionId: (conv.agentHostMeta?.ccSessionId as string) || conv.id,
           conversationId,
         })
-        const callerWs = deps.sessions.getConversationSocket(callerConversationId)
+        const callerWs = deps.conversationStore.getConversationSocket(callerConversationId)
         callerWs?.send(
           JSON.stringify({
             type: 'spawn_ready',
-            ccSessionId: session.ccSessionId || session.id,
-            project: session.project,
+            ccSessionId: (conv.agentHostMeta?.ccSessionId as string) || conv.id,
+            project: conv.project,
             conversationId,
-            session,
+            conv,
           }),
         )
       })
       .catch(err => {
         const errMsg = typeof err === 'string' ? err : 'Spawn rendezvous timed out'
-        emitProgress(deps.sessions, jobId, 'failed', 'error', { error: errMsg })
-        const callerWs = deps.sessions.getConversationSocket(callerConversationId)
+        emitProgress(deps.conversationStore, jobId, 'failed', 'error', { error: errMsg })
+        const callerWs = deps.conversationStore.getConversationSocket(callerConversationId)
         callerWs?.send(
           JSON.stringify({
             type: 'spawn_timeout',

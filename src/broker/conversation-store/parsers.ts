@@ -1,5 +1,5 @@
 /**
- * Pure parsing/detection helpers for session-store.
+ * Pure parsing/detection helpers for conversation-store.
  * No closure state, no side effects -- safe to call from anywhere.
  */
 

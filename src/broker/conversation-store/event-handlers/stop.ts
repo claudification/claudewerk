@@ -10,15 +10,15 @@ import type { ConversationStoreContext } from '../event-context'
 export function handleStop(
   ctx: ConversationStoreContext,
   conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   event: HookEventOf<'Stop' | 'StopFailure'>,
 ): void {
-  session.status = 'idle'
-  session.lastTurnEndedAt = event.timestamp
+  conv.status = 'idle'
+  conv.lastTurnEndedAt = event.timestamp
 
   if (event.hookEvent === 'StopFailure') {
     const d = event.data
-    session.lastError = {
+    conv.lastError = {
       stopReason: String(d.stop_reason ?? d.stopReason ?? ''),
       errorType: String(d.error_type ?? d.errorType ?? ''),
       errorMessage: String(d.error_message ?? d.errorMessage ?? d.error ?? ''),
@@ -27,12 +27,12 @@ export function handleStop(
     return
   }
 
-  // Stop: estimate cumulative cost for PTY sessions
-  if (session.capabilities?.includes('headless')) return
-  const s = session.stats
+  // Stop: estimate cumulative cost for PTY conversations
+  if (conv.capabilities?.includes('headless')) return
+  const s = conv.stats
   if (s.totalInputTokens === 0 && s.totalOutputTokens === 0) return
 
-  const info = session.model ? getModelInfo(session.model) : undefined
+  const info = conv.model ? getModelInfo(conv.model) : undefined
   let totalEstCost: number
   if (info) {
     const uncached = Math.max(0, s.totalInputTokens - s.totalCacheCreation - s.totalCacheRead)
@@ -59,10 +59,10 @@ export function handleStop(
   ctx.store?.costs.recordTurnFromCumulatives({
     timestamp: event.timestamp,
     conversationId,
-    projectUri: session.project,
-    account: session.claudeAuth?.email || '',
-    orgId: session.claudeAuth?.orgId || '',
-    model: session.model || '',
+    projectUri: conv.project,
+    account: conv.claudeAuth?.email || '',
+    orgId: conv.claudeAuth?.orgId || '',
+    model: conv.model || '',
     totalInputTokens: s.totalInputTokens,
     totalOutputTokens: s.totalOutputTokens,
     totalCacheRead: s.totalCacheRead,

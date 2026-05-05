@@ -11,37 +11,37 @@ import { applyContextMode } from './system-entry'
  *   - Detect OSC 52 clipboard sequences in tool_result blocks (live only)
  *   - Count lines added/removed from Edit/MultiEdit structuredPatch (live only)
  *
- * Returns true when session metadata mutated (lines counts, context mode).
- * Turn counts are stats-only and don't drive a session update on their own.
+ * Returns true when conversation metadata mutated (lines counts, context mode).
+ * Turn counts are stats-only and don't drive a conversation update on their own.
  */
 export function handleUserEntry(
   ctx: ConversationStoreContext,
   conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   entry: TranscriptUserEntry,
   isInitial: boolean,
 ): boolean {
   let changed = false
 
-  countUserTurn(session, entry)
+  countUserTurn(conv, entry)
 
   // Context mode lives in user entries when CC wraps stdout in the message body
   const stringContent = typeof entry.message?.content === 'string' ? entry.message.content : undefined
   if (stringContent?.includes('local-command-stdout')) {
-    if (applyContextMode(conversationId, session, stringContent)) changed = true
+    if (applyContextMode(conversationId, conv, stringContent)) changed = true
   }
 
   if (!isInitial) {
-    if (detectClipboardCaptures(ctx, conversationId, session, entry)) {
-      // clipboard captures don't drive a session update directly
+    if (detectClipboardCaptures(ctx, conversationId, conv, entry)) {
+      // clipboard captures don't drive a conversation update directly
     }
-    if (countStructuredPatchLines(session, entry)) changed = true
+    if (countStructuredPatchLines(conv, entry)) changed = true
   }
 
   return changed
 }
 
-function countUserTurn(session: Conversation, entry: TranscriptUserEntry): void {
+function countUserTurn(conv: Conversation, entry: TranscriptUserEntry): void {
   const content = entry.message?.content
   if (typeof content !== 'string' && !Array.isArray(content)) return
   // Pure tool-result messages aren't real user turns
@@ -49,13 +49,13 @@ function countUserTurn(session: Conversation, entry: TranscriptUserEntry): void 
     if (!content.some(c => c.type === 'text')) return
     if (content.some(c => c.type === 'tool_result')) return
   }
-  session.stats.turnCount++
+  conv.stats.turnCount++
 }
 
 function detectClipboardCaptures(
   ctx: ConversationStoreContext,
   conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   entry: TranscriptUserEntry,
 ): boolean {
   const content = entry.message?.content
@@ -89,7 +89,7 @@ function detectClipboardCaptures(
       ...(mime ? { base64, mimeType: mime } : { text: decodedText }),
       timestamp: Date.now(),
     }
-    ctx.broadcastConversationScoped(capture, session.project)
+    ctx.broadcastConversationScoped(capture, conv.project)
     if (toolUseId) ctx.processedClipboardIds.add(toolUseId)
     // Persist to shared files log (per-project, survives restarts)
     const clipHash = `clip_${Date.now().toString(36)}_${base64.slice(0, 8)}`
@@ -98,20 +98,20 @@ function detectClipboardCaptures(
       hash: clipHash,
       filename: mime ? `clipboard.${mime.split('/')[1]}` : 'clipboard.txt',
       mediaType: mime || 'text/plain',
-      project: session.project,
+      project: conv.project,
       conversationId,
       size: base64.length,
       url: '',
       text: decodedText,
       createdAt: Date.now(),
     })
-    console.log(`[clipboard] ${capture.contentType} from transcript (session ${conversationId.slice(0, 8)})`)
+    console.log(`[clipboard] ${capture.contentType} from transcript (conversation ${conversationId.slice(0, 8)})`)
     captured = true
   }
   return captured
 }
 
-function countStructuredPatchLines(session: Conversation, entry: TranscriptUserEntry): boolean {
+function countStructuredPatchLines(conv: Conversation, entry: TranscriptUserEntry): boolean {
   const content = entry.message?.content
   if (!Array.isArray(content)) return false
 
@@ -125,8 +125,8 @@ function countStructuredPatchLines(session: Conversation, entry: TranscriptUserE
     for (const hunk of patches) {
       if (!Array.isArray(hunk.lines)) continue
       for (const line of hunk.lines) {
-        if (line.startsWith('+')) session.stats.linesAdded++
-        else if (line.startsWith('-')) session.stats.linesRemoved++
+        if (line.startsWith('+')) conv.stats.linesAdded++
+        else if (line.startsWith('-')) conv.stats.linesRemoved++
       }
     }
     changed = true

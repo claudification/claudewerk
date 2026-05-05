@@ -56,8 +56,8 @@ export function createProjectLinkRegistry(
         const [a, b] = key.split('|')
         const other = a === normalizeProjectUri(thisProject) ? b : b === normalizeProjectUri(thisProject) ? a : null
         if (!other) continue
-        const session = Array.from(conversations.values()).find(s => normalizeProjectUri(s.project) === other)
-        const otherProject = session?.project || other
+        const conv = Array.from(conversations.values()).find(s => normalizeProjectUri(s.project) === other)
+        const otherProject = conv?.project || other
         const name = getProjectSettings(otherProject)?.label || extractProjectLabel(otherProject)
         result.push({ project: otherProject, name })
       }
@@ -112,8 +112,8 @@ export function createProjectLinkRegistry(
       const project = toProjectUri(projectOrCwd)
       const json = JSON.stringify(message)
       let count = 0
-      for (const [conversationId, session] of conversations) {
-        if (session.project !== project) continue
+      for (const [conversationId, conv] of conversations) {
+        if (conv.project !== project) continue
         const wrappers = conversationSockets.get(conversationId)
         if (!wrappers) continue
         for (const ws of wrappers.values()) {

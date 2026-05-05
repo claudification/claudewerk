@@ -138,7 +138,7 @@ function createMockStoreDriver(): StoreDriver {
     pruneOlderThan: () => ({ turns: 0, hourly: 0 }),
   }
   return {
-    sessions: noopStore,
+    conversations: noopStore,
     transcripts: {
       append: noop,
       getPage: () => ({ entries: [], nextCursor: null, prevCursor: null, totalCount: 0 }),

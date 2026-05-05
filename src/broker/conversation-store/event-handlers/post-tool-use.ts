@@ -8,13 +8,13 @@ import type { Conversation, HookEventOf } from '../../../shared/protocol'
  * task id), and bg-task completion detection (TaskOutput / TaskStop tool
  * names mark the corresponding bgTask done/killed).
  */
-export function handlePostToolUseTracking(session: Conversation, event: HookEventOf<'PostToolUse'>): void {
+export function handlePostToolUseTracking(conv: Conversation, event: HookEventOf<'PostToolUse'>): void {
   const { tool_name: toolName } = event.data
 
-  if (toolName === 'TaskStop') correlateTaskStopWithSubagent(session, event)
-  if (toolName === 'Bash') registerBgTaskFromBash(session, event)
+  if (toolName === 'TaskStop') correlateTaskStopWithSubagent(conv, event)
+  if (toolName === 'Bash') registerBgTaskFromBash(conv, event)
   if (toolName === 'TaskOutput' || toolName === 'TaskStop') {
-    completeBgTask(session, event, toolName)
+    completeBgTask(conv, event, toolName)
   }
 }
 
@@ -22,10 +22,10 @@ export function handlePostToolUseTracking(session: Conversation, event: HookEven
  * TaskStop tool kills a background subagent that didn't fire SubagentStop
  * on its own. task_id IS the agent_id.
  */
-function correlateTaskStopWithSubagent(session: Conversation, event: HookEventOf<'PostToolUse'>): void {
+function correlateTaskStopWithSubagent(conv: Conversation, event: HookEventOf<'PostToolUse'>): void {
   const taskId = event.data.tool_input.task_id
   if (typeof taskId !== 'string') return
-  const agent = session.subagents.find(a => a.agentId === taskId && a.status === 'running')
+  const agent = conv.subagents.find(a => a.agentId === taskId && a.status === 'running')
   if (!agent) return
   agent.status = 'stopped'
   agent.stoppedAt = event.timestamp
@@ -35,7 +35,7 @@ function correlateTaskStopWithSubagent(session: Conversation, event: HookEventOf
  * Bash with a backgroundTaskId in the response (or user-triggered Ctrl+B
  * with the legacy "with ID: xxx" string format) registers a new bgTask.
  */
-function registerBgTaskFromBash(session: Conversation, event: HookEventOf<'PostToolUse'>): void {
+function registerBgTaskFromBash(conv: Conversation, event: HookEventOf<'PostToolUse'>): void {
   const responseObj = event.data.tool_response
   const bgTaskId =
     typeof responseObj === 'object' && responseObj !== null
@@ -54,7 +54,7 @@ function registerBgTaskFromBash(session: Conversation, event: HookEventOf<'PostT
   const input = event.data.tool_input
   const command = typeof input.command === 'string' ? input.command : ''
   const description = typeof input.description === 'string' ? input.description : ''
-  session.bgTasks.push({
+  conv.bgTasks.push({
     taskId,
     command: command.slice(0, 100),
     description,
@@ -69,14 +69,14 @@ function registerBgTaskFromBash(session: Conversation, event: HookEventOf<'PostT
  * already in a terminal state or unknown.
  */
 function completeBgTask(
-  session: Conversation,
+  conv: Conversation,
   event: HookEventOf<'PostToolUse'>,
   toolName: 'TaskOutput' | 'TaskStop',
 ): void {
   const input = event.data.tool_input
   const rawTaskId = input.task_id ?? input.taskId
   if (typeof rawTaskId !== 'string') return
-  const bgTask = session.bgTasks.find(t => t.taskId === rawTaskId)
+  const bgTask = conv.bgTasks.find(t => t.taskId === rawTaskId)
   if (!bgTask || bgTask.status !== 'running') return
   bgTask.completedAt = event.timestamp
   bgTask.status = toolName === 'TaskStop' ? 'killed' : 'completed'

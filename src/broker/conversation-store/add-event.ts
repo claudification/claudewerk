@@ -30,31 +30,31 @@ import { handleTaskCompleted, handleTeammateIdle } from './event-handlers/team'
  * `event-handlers/`, dispatched through the `eventHandlers` table below.
  */
 export function addEvent(ctx: ConversationStoreContext, conversationId: string, event: HookEvent): void {
-  const session = ctx.conversations.get(conversationId)
-  if (!session) return
+  const conv = ctx.conversations.get(conversationId)
+  if (!conv) return
 
-  session.events.push(event)
-  if (session.events.length > MAX_EVENTS) {
-    session.events.splice(0, session.events.length - MAX_EVENTS)
+  conv.events.push(event)
+  if (conv.events.length > MAX_EVENTS) {
+    conv.events.splice(0, conv.events.length - MAX_EVENTS)
   }
-  session.lastActivity = Date.now()
+  conv.lastActivity = Date.now()
 
   // Feed analytics store (non-blocking, fire-and-forget)
   recordHookEvent(conversationId, event.hookEvent, (event.data || {}) as Record<string, unknown>, {
-    projectUri: session.project,
-    model: session.model || '',
-    account: (session.claudeAuth?.email as string) || '',
-    projectLabel: getProjectSettings(session.project)?.label,
+    projectUri: conv.project,
+    model: conv.model || '',
+    account: (conv.claudeAuth?.email as string) || '',
+    projectLabel: getProjectSettings(conv.project)?.label,
   })
 
-  // Correlate hook events to subagents: if the hook's session_id differs
-  // from the parent session ID, it came from a subagent context.
+  // Correlate hook events to subagents: if the hook's conversation_id differs
+  // from the parent conversation ID, it came from a subagent context.
   // MUST happen BEFORE status transitions so subagent activity doesn't
   // flip the parent from idle -> active (spinner stays on after Stop).
-  const hookConversationId = (event.data as { session_id?: unknown }).session_id
-  const isSubagentEvent = typeof hookConversationId === 'string' && hookConversationId !== session.id
+  const hookConversationId = (event.data as { conversation_id?: unknown }).conversation_id
+  const isSubagentEvent = typeof hookConversationId === 'string' && hookConversationId !== conv.id
   if (isSubagentEvent) {
-    const subagent = session.subagents.find(a => a.agentId === hookConversationId && a.status === 'running')
+    const subagent = conv.subagents.find(a => a.agentId === hookConversationId && a.status === 'running')
     if (subagent) subagent.events.push(event)
   }
 
@@ -65,8 +65,8 @@ export function addEvent(ctx: ConversationStoreContext, conversationId: string, 
   const eventInput = (event.data as { input?: { type?: unknown; subtype?: unknown; content?: unknown } }).input
   const isRecap = eventInput?.type === 'system' && eventInput?.subtype === 'away_summary'
   if (isRecap && typeof eventInput?.content === 'string') {
-    session.recap = { content: eventInput.content, timestamp: event.timestamp }
-    session.recapFresh = true
+    conv.recap = { content: eventInput.content, timestamp: event.timestamp }
+    conv.recapFresh = true
     ctx.scheduleConversationUpdate(conversationId)
   }
 
@@ -75,12 +75,12 @@ export function addEvent(ctx: ConversationStoreContext, conversationId: string, 
   // Skip recap events -- away_summary is system-generated, not user work.
   if (!isSubagentEvent && !isRecap) {
     if (event.hookEvent === 'Stop' || event.hookEvent === 'StopFailure') {
-      handleStop(ctx, conversationId, session, event as HookEventOf<'Stop' | 'StopFailure'>)
-    } else if (!PASSIVE_HOOKS.has(event.hookEvent) && session.status !== 'ended') {
-      session.status = 'active'
-      // Clear error/rate-limit when session resumes working
-      if (session.lastError) session.lastError = undefined
-      if (session.rateLimit) session.rateLimit = undefined
+      handleStop(ctx, conversationId, conv, event as HookEventOf<'Stop' | 'StopFailure'>)
+    } else if (!PASSIVE_HOOKS.has(event.hookEvent) && conv.status !== 'ended') {
+      conv.status = 'active'
+      // Clear error/rate-limit when conversation resumes working
+      if (conv.lastError) conv.lastError = undefined
+      if (conv.rateLimit) conv.rateLimit = undefined
     }
   }
 
@@ -89,7 +89,7 @@ export function addEvent(ctx: ConversationStoreContext, conversationId: string, 
   // !isRecap). Everything else fires unconditionally regardless of subagent
   // origin or recap classification.
   const handler = eventHandlers[event.hookEvent]
-  if (handler) handler(ctx, conversationId, session, event)
+  if (handler) handler(ctx, conversationId, conv, event)
 
   // Broadcast event to dashboard subscribers (channel-filtered for v2)
   ctx.broadcastToChannel('conversation:events', conversationId, {
@@ -100,9 +100,9 @@ export function addEvent(ctx: ConversationStoreContext, conversationId: string, 
 
   // Transcript kick: if events are flowing but no transcript entries, nudge the agent host
   if (
-    session.events.length >= TRANSCRIPT_KICK_EVENT_THRESHOLD &&
+    conv.events.length >= TRANSCRIPT_KICK_EVENT_THRESHOLD &&
     !ctx.transcriptCache.has(conversationId) &&
-    session.status !== 'ended'
+    conv.status !== 'ended'
   ) {
     const now = Date.now()
     const lastKick = ctx.lastTranscriptKick.get(conversationId) || 0
@@ -113,7 +113,7 @@ export function addEvent(ctx: ConversationStoreContext, conversationId: string, 
         for (const ws of wrappers.values()) {
           try {
             ws.send(JSON.stringify({ type: 'transcript_kick', conversationId }))
-            console.log(`[session-store] Sent transcript_kick to wrapper for ${conversationId.slice(0, 8)}`)
+            console.log(`[conversation-store] Sent transcript_kick to wrapper for ${conversationId.slice(0, 8)}`)
           } catch {
             // Wrapper socket may be dead
           }
@@ -122,7 +122,7 @@ export function addEvent(ctx: ConversationStoreContext, conversationId: string, 
     }
   }
 
-  // Coalesce session update (for lastActivity, eventCount changes)
+  // Coalesce conversation update (for lastActivity, eventCount changes)
   ctx.scheduleConversationUpdate(conversationId)
 }
 
@@ -137,137 +137,137 @@ export function addEvent(ctx: ConversationStoreContext, conversationId: string, 
 type EventHandler = (
   ctx: ConversationStoreContext,
   conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   event: HookEvent,
 ) => void
 
 function dispatchSessionStart(
   ctx: ConversationStoreContext,
   conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   event: HookEvent,
 ): void {
   const sessionStartEvent = event as HookEventOf<'SessionStart'>
-  handleSessionStart(session, sessionStartEvent)
-  handleCompactEvent(ctx, conversationId, session, sessionStartEvent)
+  handleSessionStart(conv, sessionStartEvent)
+  handleCompactEvent(ctx, conversationId, conv, sessionStartEvent)
 }
 
 function dispatchCompact(
   ctx: ConversationStoreContext,
   conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   event: HookEvent,
 ): void {
-  handleCompactEvent(ctx, conversationId, session, event as HookEventOf<'PreCompact' | 'PostCompact' | 'SessionStart'>)
+  handleCompactEvent(ctx, conversationId, conv, event as HookEventOf<'PreCompact' | 'PostCompact' | 'SessionStart'>)
 }
 
 function dispatchCwdChanged(
   _ctx: ConversationStoreContext,
   _conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   event: HookEvent,
 ): void {
-  handleCwdChanged(session, event as HookEventOf<'CwdChanged'>)
+  handleCwdChanged(conv, event as HookEventOf<'CwdChanged'>)
 }
 
 function dispatchPreToolUse(
   ctx: ConversationStoreContext,
   conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   event: HookEvent,
 ): void {
-  handlePreToolUse(ctx, conversationId, session, event as HookEventOf<'PreToolUse'>)
+  handlePreToolUse(ctx, conversationId, conv, event as HookEventOf<'PreToolUse'>)
 }
 
 function dispatchPermissionRequest(
   _ctx: ConversationStoreContext,
   _conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   event: HookEvent,
 ): void {
-  handlePermissionRequest(session, event as HookEventOf<'PermissionRequest'>)
+  handlePermissionRequest(conv, event as HookEventOf<'PermissionRequest'>)
 }
 
 function dispatchPermissionDenied(
   ctx: ConversationStoreContext,
   conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   event: HookEvent,
 ): void {
-  handlePermissionDenied(ctx, conversationId, session, event as HookEventOf<'PermissionDenied'>)
+  handlePermissionDenied(ctx, conversationId, conv, event as HookEventOf<'PermissionDenied'>)
 }
 
 function dispatchElicitation(
   _ctx: ConversationStoreContext,
   _conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   event: HookEvent,
 ): void {
-  handleElicitation(session, event as HookEventOf<'Elicitation'>)
+  handleElicitation(conv, event as HookEventOf<'Elicitation'>)
 }
 
 function dispatchPostToolUse(
   _ctx: ConversationStoreContext,
   _conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   event: HookEvent,
 ): void {
-  clearPendingAttention(session)
-  handlePostToolUseTracking(session, event as HookEventOf<'PostToolUse'>)
+  clearPendingAttention(conv)
+  handlePostToolUseTracking(conv, event as HookEventOf<'PostToolUse'>)
 }
 
 function dispatchClearPendingAttention(
   _ctx: ConversationStoreContext,
   _conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   _event: HookEvent,
 ): void {
-  clearPendingAttention(session)
+  clearPendingAttention(conv)
 }
 
 function dispatchSubagentStart(
   ctx: ConversationStoreContext,
   conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   event: HookEvent,
 ): void {
-  handleSubagentStart(ctx, conversationId, session, event as HookEventOf<'SubagentStart'>)
+  handleSubagentStart(ctx, conversationId, conv, event as HookEventOf<'SubagentStart'>)
 }
 
 function dispatchSubagentStop(
   _ctx: ConversationStoreContext,
   _conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   event: HookEvent,
 ): void {
-  handleSubagentStop(session, event as HookEventOf<'SubagentStop'>)
+  handleSubagentStop(conv, event as HookEventOf<'SubagentStop'>)
 }
 
 function dispatchTeammateIdle(
   _ctx: ConversationStoreContext,
   _conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   event: HookEvent,
 ): void {
-  handleTeammateIdle(session, event as HookEventOf<'TeammateIdle'>)
+  handleTeammateIdle(conv, event as HookEventOf<'TeammateIdle'>)
 }
 
 function dispatchTaskCompleted(
   _ctx: ConversationStoreContext,
   _conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   event: HookEvent,
 ): void {
-  handleTaskCompleted(session, event as HookEventOf<'TaskCompleted'>)
+  handleTaskCompleted(conv, event as HookEventOf<'TaskCompleted'>)
 }
 
 function dispatchNotification(
   ctx: ConversationStoreContext,
   conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   event: HookEvent,
 ): void {
-  handleNotification(ctx, conversationId, session, event as HookEventOf<'Notification'>)
+  handleNotification(ctx, conversationId, conv, event as HookEventOf<'Notification'>)
 }
 
 const eventHandlers: Partial<Record<HookEventType, EventHandler>> = {

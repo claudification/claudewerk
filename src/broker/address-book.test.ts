@@ -42,10 +42,10 @@ describe('address book', () => {
   })
 
   it('does NOT re-slug when the same CWD is reported under different names (project identity is sticky)', () => {
-    // First session registers with project name "Arr"
+    // First conversation registers with project name "Arr"
     const first = getOrAssign('/callers/cwd', '/projects/arr', 'Arr')
     expect(first).toBe('arr')
-    // A second session in the same project reports an inconsistent name; the
+    // A second conversation in the same project reports an inconsistent name; the
     // slug must stick to what the project was registered as the first time.
     const second = getOrAssign('/callers/cwd', '/projects/arr', 'something-else')
     expect(second).toBe('arr')
@@ -71,7 +71,7 @@ describe('address book', () => {
 
   it('wipes legacy (unversioned) data on init', () => {
     // Pre-v2 format: bare map, no _version marker -- slugs may be poisoned by
-    // the old rule that keyed project slugs off session titles.
+    // the old rule that keyed project slugs off conversation titles.
     const kvWithLegacy = createTestKV()
     kvWithLegacy.set('address-books', { '/caller': { 'blazing-igloo': '/projects/arr' } })
     initAddressBook(kvWithLegacy)

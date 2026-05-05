@@ -47,7 +47,7 @@ const handleSpawnRequest: MessageHandler = (ctx, data) => {
   // Fire-and-track: dispatchSpawn is async but the router doesn't await handlers.
   // We catch promise rejections to ensure the caller always gets an ack.
   dispatchSpawn(req, {
-    sessions: ctx.conversations,
+    conversationStore: ctx.conversations,
     getProjectSettings,
     getGlobalSettings,
     callerContext,

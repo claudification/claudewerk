@@ -1,7 +1,7 @@
 import type { ServerWebSocket } from 'bun'
 import type { ConnectionId, ConversationId, JobId } from '../../shared/identity'
 import { extractProjectLabel } from '../../shared/project-uri'
-import type { ConversationSummary } from '../../shared/protocol'
+import type { Conversation, ConversationSummary } from '../../shared/protocol'
 
 interface LaunchJobEvent {
   type: string
@@ -72,11 +72,11 @@ export interface RendezvousRegistry {
     callerConversationId: ConversationId,
     project: string,
     action: 'spawn' | 'revive' | 'restart',
-  ) => Promise<ConversationSummary>
+  ) => Promise<Conversation>
   resolveRendezvous: (
     connectionId: ConnectionId,
     conversationId: ConversationId,
-    toConversationSummary: (id: ConversationId) => ConversationSummary | undefined,
+    getConversation: (id: ConversationId) => Conversation | undefined,
   ) => boolean
   getRendezvousInfo: (connectionId: ConnectionId) => RendezvousInfo | undefined
   addPendingRestart: (connectionId: ConnectionId, info: PendingRestartInfo) => void
@@ -244,7 +244,7 @@ export function createRendezvousRegistry(): RendezvousRegistry {
     conversationId: string
     project: string
     action: 'spawn' | 'revive' | 'restart'
-    resolve: (session: ConversationSummary) => void
+    resolve: (conv: Conversation) => void
     reject: (error: string) => void
     timer: ReturnType<typeof setTimeout>
     registeredAt: number
@@ -280,17 +280,17 @@ export function createRendezvousRegistry(): RendezvousRegistry {
       })
     },
 
-    resolveRendezvous(connectionId, conversationId, toConversationSummary) {
+    resolveRendezvous(connectionId, conversationId, getConversation) {
       const rv = conversationRendezvous.get(connectionId)
       if (!rv) return false
       conversationRendezvous.delete(connectionId)
       clearTimeout(rv.timer)
-      const summary = toConversationSummary(conversationId)
-      if (!summary) {
+      const conv = getConversation(conversationId)
+      if (!conv) {
         rv.reject('Conversation created but not found in store')
         return false
       }
-      rv.resolve(summary)
+      rv.resolve(conv)
       const elapsed = Date.now() - rv.registeredAt
       console.log(
         `[rendezvous] RESOLVED: ${rv.action} conversation=${conversationId.slice(0, 8)} connection=${connectionId.slice(0, 8)} elapsed=${elapsed}ms caller=${rv.callerConversationId.slice(0, 8)}`,

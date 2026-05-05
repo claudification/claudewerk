@@ -116,8 +116,8 @@ function compact(): void {
     const removed = entries.length - compacted.length
     entries = compacted
     save()
-    console.log(`[inter-session-log] Compacted: removed ${removed} entries, ${entries.length} remaining`)
+    console.log(`[inter-conversation-log] Compacted: removed ${removed} entries, ${entries.length} remaining`)
   } else if (entries.length > 0) {
-    console.log(`[inter-session-log] ${entries.length} entries (no compaction needed)`)
+    console.log(`[inter-conversation-log] ${entries.length} entries (no compaction needed)`)
   }
 }

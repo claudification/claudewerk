@@ -9,7 +9,7 @@ import type { ConversationStoreContext } from '../event-context'
 export function handlePreToolUse(
   ctx: ConversationStoreContext,
   conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   event: HookEventOf<'PreToolUse'>,
 ): void {
   const data = event.data
@@ -25,7 +25,7 @@ export function handlePreToolUse(
 
   if (data.tool_name === 'AskUserQuestion') {
     const question = data.tool_input?.question
-    session.pendingAttention = {
+    conv.pendingAttention = {
       type: 'ask',
       toolName: 'AskUserQuestion',
       question: typeof question === 'string' ? question : undefined,
