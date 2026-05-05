@@ -974,6 +974,7 @@ export interface SessionStartData {
   cwd: string
   model?: string
   source?: string
+  transcript_path?: string
 }
 
 export interface UserPromptSubmitData {
@@ -991,7 +992,7 @@ export interface PostToolUseData {
   session_id: string
   tool_name: string
   tool_input: Record<string, unknown>
-  tool_response?: string
+  tool_response?: string | Record<string, unknown>
 }
 
 export interface PostToolUseFailureData {
@@ -1019,13 +1020,13 @@ export interface SessionEndData {
 
 export interface SubagentStartData {
   session_id: string
-  agent_id: string
-  agent_type: string
+  agent_id?: string
+  agent_type?: string
 }
 
 export interface SubagentStopData {
   session_id: string
-  agent_id: string
+  agent_id?: string
   transcript?: string
   agent_type?: string
   agent_transcript_path?: string
@@ -1034,14 +1035,14 @@ export interface SubagentStopData {
 
 export interface TeammateIdleData {
   session_id: string
-  agent_id: string
+  agent_id?: string
   agent_name?: string
   team_name?: string
 }
 
 export interface TaskCompletedData {
   session_id: string
-  task_id: string
+  task_id?: string
   task_subject?: string
   owner?: string
   team_name?: string
@@ -1057,10 +1058,86 @@ export interface PreCompactData {
   trigger: string
 }
 
+export interface PostCompactData {
+  session_id: string
+  trigger?: string
+}
+
 export interface PermissionRequestData {
   session_id: string
-  tool: string
+  tool?: string
+  tool_name?: string
+  tool_input?: Record<string, unknown>
   suggestions?: string[]
+}
+
+export interface PermissionDeniedData {
+  session_id: string
+  tool_name?: string
+  tool_input?: Record<string, unknown>
+  reason?: string
+}
+
+export interface StopFailureData {
+  session_id: string
+  stop_reason?: string
+  error_type?: string
+  error_message?: string
+  error?: string
+  // CC compatibility: some versions emit camelCase variants
+  stopReason?: string
+  errorType?: string
+  errorMessage?: string
+}
+
+export interface ElicitationData {
+  session_id: string
+  message?: string
+  schema?: Record<string, unknown>
+}
+
+export interface ElicitationResultData {
+  session_id: string
+  result?: unknown
+}
+
+export interface CwdChangedData {
+  session_id: string
+  cwd?: string
+}
+
+export interface FileChangedData {
+  session_id: string
+  path?: string
+}
+
+export interface TaskCreatedData {
+  session_id: string
+  task_id?: string
+  description?: string
+}
+
+export interface InstructionsLoadedData {
+  session_id: string
+  source?: string
+}
+
+export interface ConfigChangeData {
+  session_id: string
+  key?: string
+  value?: unknown
+}
+
+export interface WorktreeCreateData {
+  session_id: string
+  name?: string
+  cwd?: string
+  path?: string
+}
+
+export interface WorktreeRemoveData {
+  session_id: string
+  path?: string
 }
 
 export type HookEventData =
@@ -1071,15 +1148,76 @@ export type HookEventData =
   | PostToolUseFailureData
   | NotificationData
   | StopData
+  | StopFailureData
   | SessionEndData
   | SubagentStartData
   | SubagentStopData
   | PreCompactData
+  | PostCompactData
   | PermissionRequestData
+  | PermissionDeniedData
   | TeammateIdleData
   | TaskCompletedData
   | SetupData
+  | ElicitationData
+  | ElicitationResultData
+  | CwdChangedData
+  | FileChangedData
+  | TaskCreatedData
+  | InstructionsLoadedData
+  | ConfigChangeData
+  | WorktreeCreateData
+  | WorktreeRemoveData
   | Record<string, unknown>
+
+/**
+ * Maps each HookEventType to its typed payload shape. Used by HookEventOf<T>
+ * so per-event handlers can narrow `event.data` without ad-hoc casts.
+ */
+export interface HookEventDataMap {
+  SessionStart: SessionStartData
+  UserPromptSubmit: UserPromptSubmitData
+  PreToolUse: PreToolUseData
+  PostToolUse: PostToolUseData
+  PostToolUseFailure: PostToolUseFailureData
+  Notification: NotificationData
+  Stop: StopData
+  StopFailure: StopFailureData
+  SessionEnd: SessionEndData
+  SubagentStart: SubagentStartData
+  SubagentStop: SubagentStopData
+  PreCompact: PreCompactData
+  PostCompact: PostCompactData
+  PermissionRequest: PermissionRequestData
+  PermissionDenied: PermissionDeniedData
+  TeammateIdle: TeammateIdleData
+  TaskCompleted: TaskCompletedData
+  InstructionsLoaded: InstructionsLoadedData
+  ConfigChange: ConfigChangeData
+  WorktreeCreate: WorktreeCreateData
+  WorktreeRemove: WorktreeRemoveData
+  Elicitation: ElicitationData
+  ElicitationResult: ElicitationResultData
+  Setup: SetupData
+  CwdChanged: CwdChangedData
+  FileChanged: FileChangedData
+  TaskCreated: TaskCreatedData
+}
+
+/**
+ * Narrowed HookEvent for a specific hook-event family. Use after a
+ * discriminated check on `event.hookEvent` so per-event handlers get
+ * `event.data` typed precisely. Distributive over T so a union like
+ * `HookEventOf<'Stop' | 'StopFailure'>` becomes `HookEventOf<'Stop'> |
+ * HookEventOf<'StopFailure'>` -- discriminated unions narrow correctly
+ * on `event.hookEvent` checks.
+ */
+export type HookEventOf<T extends HookEventType> = T extends HookEventType
+  ? Omit<HookEvent, 'hookEvent' | 'data'> & {
+      hookEvent: T
+      data: T extends keyof HookEventDataMap ? HookEventDataMap[T] : Record<string, unknown>
+    }
+  : never
 
 // Sub-agent tracking
 export interface SubagentInfo {
