@@ -939,9 +939,15 @@ function runStoreTests(name: string, createDriver: () => StoreDriver) {
       })
 
       it('queryHourly groupBy=day merges hour buckets into days', () => {
-        // All within one day, one account+model combo
+        // Anchor to yesterday's midnight UTC so all turns sit in completed past
+        // hours regardless of the wall-clock time when the test runs. Anchoring
+        // to "today" is flaky: queryHourly intentionally excludes the in-progress
+        // current hour AND (sqlite) bounds materialization to <= Date.now(), so
+        // turns stamped a few hours into "today" can be either current-hour or
+        // future depending on UTC clock time.
         const midnight = new Date()
         midnight.setUTCHours(0, 0, 0, 0)
+        midnight.setUTCDate(midnight.getUTCDate() - 1)
         const day = midnight.getTime()
 
         store.costs.recordTurn(baseTurn({ timestamp: day + 1 * 60 * 60 * 1000, costUsd: 0.1 }))
@@ -949,9 +955,9 @@ function runStoreTests(name: string, createDriver: () => StoreDriver) {
         store.costs.recordTurn(baseTurn({ timestamp: day + 5 * 60 * 60 * 1000, costUsd: 0.3 }))
 
         const days = store.costs.queryHourly({ groupBy: 'day' })
-        const today = days.find(d => d.hour === new Date(day).toISOString().slice(0, 10))
-        expect(today).toBeDefined()
-        expect(today!.costUsd).toBeCloseTo(0.6)
+        const yesterday = days.find(d => d.hour === new Date(day).toISOString().slice(0, 10))
+        expect(yesterday).toBeDefined()
+        expect(yesterday!.costUsd).toBeCloseTo(0.6)
       })
 
       it('pruneOlderThan deletes old turns + hourly rows', () => {
