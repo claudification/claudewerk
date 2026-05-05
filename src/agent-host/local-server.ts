@@ -13,7 +13,7 @@ export function setLocalServerDebug(fn: (msg: string) => void) {
   debugFn = fn
 }
 
-type HttpServer = Server<unknown>
+export type HttpServer = Server<unknown>
 
 /** Hook response JSON for AskUserQuestion -- returned to CC via PreToolUse hook stdout */
 interface AskHookResponse {

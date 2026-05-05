@@ -27,7 +27,7 @@ interface PermissionConfig {
   allowPlanMode?: boolean // default: true
 }
 
-interface RulesEngine {
+export interface RulesEngine {
   shouldAutoApprove(toolName: string, inputPreview: string): boolean
   addConversationRule(toolName: string): void
   removeConversationRule(toolName: string): void
