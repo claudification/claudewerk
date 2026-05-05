@@ -1,5 +1,5 @@
 /**
- * Channel pub/sub registry for session-store.
+ * Channel pub/sub registry for conversation-store.
  *
  * Owns: channelSubscribers (forward index), subscriberRegistry (reverse index), v2Subscribers.
  * Deps injected: controlPanelSubscribers (shared mutable ref), syncStamp, recordTraffic.

@@ -110,7 +110,7 @@ describe('TranscriptCache', () => {
 
     const s1 = store.getTranscriptEntries('s1')
     const s2 = store.getTranscriptEntries('s2')
-    // Each session has its own counter starting at 1.
+    // Each conversation has its own counter starting at 1.
     expect(s1.map(e => e.seq)).toEqual([1, 2, 3])
     expect(s2.map(e => e.seq)).toEqual([1])
   })

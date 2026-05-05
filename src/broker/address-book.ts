@@ -14,7 +14,7 @@ import type { KVStore } from './store/types'
 type BookMap = Record<string, Record<string, string>>
 
 // Bump when the slug-generation rules change and existing books must be rebuilt.
-// v2: project slugs are derived from project label/dirname, not session titles.
+// v2: project slugs are derived from project label/dirname, not conversation titles.
 const CURRENT_VERSION = 2
 
 const KV_KEY = 'address-books'
@@ -34,7 +34,7 @@ export function initAddressBook(store: KVStore): void {
     books = parsed.books || {}
   } else if (parsed) {
     // Legacy (unversioned) or older-version data: slugs may be poisoned by the
-    // pre-v2 rule that used session titles as project slugs. Rebuild lazily.
+    // pre-v2 rule that used conversation titles as project slugs. Rebuild lazily.
     books = {}
     save()
   } else {

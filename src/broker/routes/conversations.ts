@@ -24,23 +24,25 @@ export function createConversationsRouter(conversationStore: ConversationStore, 
 
   app.get('/conversations', c => {
     const activeOnly = c.req.query('active') === 'true'
-    const sessions = activeOnly ? conversationStore.getActiveConversations() : conversationStore.getAllConversations()
-    const filtered = filterConversationsByHttpGrants(c.req.raw, sessions)
+    const conversations = activeOnly
+      ? conversationStore.getActiveConversations()
+      : conversationStore.getAllConversations()
+    const filtered = filterConversationsByHttpGrants(c.req.raw, conversations)
     return c.json(filtered.map(s => conversationToOverview(s, conversationStore)))
   })
 
   app.get('/conversations/:id', c => {
-    const session = conversationStore.getConversation(c.req.param('id'))
-    if (!session) return c.json({ error: 'Session not found' }, 404)
-    if (!httpHasPermission(c.req.raw, 'chat:read', session.project)) return c.json({ error: 'Forbidden' }, 403)
-    return c.json(conversationToOverview(session, conversationStore))
+    const conv = conversationStore.getConversation(c.req.param('id'))
+    if (!conv) return c.json({ error: 'Conversation not found' }, 404)
+    if (!httpHasPermission(c.req.raw, 'chat:read', conv.project)) return c.json({ error: 'Forbidden' }, 403)
+    return c.json(conversationToOverview(conv, conversationStore))
   })
 
   app.get('/conversations/:id/events', c => {
     const conversationId = c.req.param('id')
-    const session = conversationStore.getConversation(conversationId)
-    if (!session) return c.json({ error: 'Session not found' }, 404)
-    if (!httpHasPermission(c.req.raw, 'chat:read', session.project)) return c.json({ error: 'Forbidden' }, 403)
+    const conv = conversationStore.getConversation(conversationId)
+    if (!conv) return c.json({ error: 'Conversation not found' }, 404)
+    if (!httpHasPermission(c.req.raw, 'chat:read', conv.project)) return c.json({ error: 'Forbidden' }, 403)
     const limit = parseInt(c.req.query('limit') || '0', 10)
     const since = parseInt(c.req.query('since') || '0', 10)
     const events = conversationStore.getConversationEvents(conversationId, limit || undefined, since || undefined)
@@ -48,10 +50,10 @@ export function createConversationsRouter(conversationStore: ConversationStore, 
   })
 
   app.get('/conversations/:id/subagents', c => {
-    const session = conversationStore.getConversation(c.req.param('id'))
-    if (!session) return c.json({ error: 'Session not found' }, 404)
-    if (!httpHasPermission(c.req.raw, 'chat:read', session.project)) return c.json({ error: 'Forbidden' }, 403)
-    return c.json(session.subagents)
+    const conv = conversationStore.getConversation(c.req.param('id'))
+    if (!conv) return c.json({ error: 'Conversation not found' }, 404)
+    if (!httpHasPermission(c.req.raw, 'chat:read', conv.project)) return c.json({ error: 'Forbidden' }, 403)
+    return c.json(conv.subagents)
   })
 
   // Transcript fetch.
@@ -72,9 +74,9 @@ export function createConversationsRouter(conversationStore: ConversationStore, 
   //     between its last applied seq and the oldest returned seq.
   app.get('/conversations/:id/transcript', c => {
     const conversationId = c.req.param('id')
-    const session = conversationStore.getConversation(conversationId)
-    if (!session) return c.json({ error: 'Session not found' }, 404)
-    if (!httpHasPermission(c.req.raw, 'chat:read', session.project)) return c.json({ error: 'Forbidden' }, 403)
+    const conv = conversationStore.getConversation(conversationId)
+    if (!conv) return c.json({ error: 'Conversation not found' }, 404)
+    if (!httpHasPermission(c.req.raw, 'chat:read', conv.project)) return c.json({ error: 'Forbidden' }, 403)
     const limit = parseInt(c.req.query('limit') || '20', 10)
     const filter = c.req.query('filter')
     const sinceSeqRaw = c.req.query('sinceSeq')
@@ -130,9 +132,9 @@ export function createConversationsRouter(conversationStore: ConversationStore, 
   app.get('/conversations/:id/subagents/:agentId/transcript', c => {
     const conversationId = c.req.param('id')
     const agentId = c.req.param('agentId')
-    const session = conversationStore.getConversation(conversationId)
-    if (!session) return c.json({ error: 'Session not found' }, 404)
-    if (!httpHasPermission(c.req.raw, 'chat:read', session.project)) return c.json({ error: 'Forbidden' }, 403)
+    const conv = conversationStore.getConversation(conversationId)
+    if (!conv) return c.json({ error: 'Conversation not found' }, 404)
+    if (!httpHasPermission(c.req.raw, 'chat:read', conv.project)) return c.json({ error: 'Forbidden' }, 403)
     const limit = parseInt(c.req.query('limit') || '100', 10)
     if (!conversationStore.hasSubagentTranscriptCache(conversationId, agentId)) {
       return c.json({ error: 'No subagent transcript in cache' }, 404)
@@ -144,47 +146,47 @@ export function createConversationsRouter(conversationStore: ConversationStore, 
   app.get('/conversations/:id/diag', c => {
     if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
     const conversationId = c.req.param('id')
-    const session = conversationStore.getConversation(conversationId)
-    if (!session) return c.json({ error: 'Session not found' }, 404)
+    const conv = conversationStore.getConversation(conversationId)
+    if (!conv) return c.json({ error: 'Conversation not found' }, 404)
     return c.json({
       id: conversationId,
-      project: session.project,
-      model: session.model,
-      status: session.status,
+      project: conv.project,
+      model: conv.model,
+      status: conv.status,
       connectionIds: conversationStore.getConnectionIds(conversationId),
-      capabilities: session.capabilities,
-      version: session.version,
-      buildTime: session.buildTime,
-      startedAt: session.startedAt,
-      lastActivity: session.lastActivity,
-      compacting: session.compacting,
-      compactedAt: session.compactedAt,
-      eventCount: session.events.length,
+      capabilities: conv.capabilities,
+      version: conv.version,
+      buildTime: conv.buildTime,
+      startedAt: conv.startedAt,
+      lastActivity: conv.lastActivity,
+      compacting: conv.compacting,
+      compactedAt: conv.compactedAt,
+      eventCount: conv.events.length,
       transcriptCacheEntries: conversationStore.getTranscriptEntries(conversationId).length,
-      subagents: session.subagents,
-      tasks: session.tasks,
-      bgTasks: session.bgTasks,
-      teammates: session.teammates,
-      team: session.team,
-      args: session.args,
-      sessionInfo: (session as unknown as Record<string, unknown>).sessionInfo,
-      diagLog: session.diagLog,
+      subagents: conv.subagents,
+      tasks: conv.tasks,
+      bgTasks: conv.bgTasks,
+      teammates: conv.teammates,
+      team: conv.team,
+      args: conv.args,
+      sessionInfo: (conv as unknown as Record<string, unknown>).sessionInfo,
+      diagLog: conv.diagLog,
     })
   })
 
   app.get('/conversations/:id/tasks', c => {
-    const session = conversationStore.getConversation(c.req.param('id'))
-    if (!session) return c.json({ error: 'Session not found' }, 404)
-    if (!httpHasPermission(c.req.raw, 'chat:read', session.project)) return c.json({ error: 'Forbidden' }, 403)
-    return c.json({ tasks: session.tasks, archivedTasks: session.archivedTasks })
+    const conv = conversationStore.getConversation(c.req.param('id'))
+    if (!conv) return c.json({ error: 'Conversation not found' }, 404)
+    if (!httpHasPermission(c.req.raw, 'chat:read', conv.project)) return c.json({ error: 'Forbidden' }, 403)
+    return c.json({ tasks: conv.tasks, archivedTasks: conv.archivedTasks })
   })
 
   app.post('/conversations/:id/input', async c => {
     const conversationId = c.req.param('id')
-    const session = conversationStore.getConversation(conversationId)
-    if (!session) return c.json({ error: 'Session not found' }, 404)
-    if (!httpHasPermission(c.req.raw, 'chat', session.project)) return c.json({ error: 'Forbidden' }, 403)
-    if (session.status === 'ended') return c.json({ error: 'Session has ended' }, 400)
+    const conv = conversationStore.getConversation(conversationId)
+    if (!conv) return c.json({ error: 'Conversation not found' }, 404)
+    if (!httpHasPermission(c.req.raw, 'chat', conv.project)) return c.json({ error: 'Forbidden' }, 403)
+    if (conv.status === 'ended') return c.json({ error: 'Conversation has ended' }, 400)
 
     const ws = conversationStore.getConversationSocket(conversationId)
     if (!ws) return c.json({ error: 'Session not connected' }, 400)
@@ -206,9 +208,9 @@ export function createConversationsRouter(conversationStore: ConversationStore, 
     if (!httpHasPermission(c.req.raw, 'spawn', '*'))
       return c.json({ error: 'Forbidden: spawn permission required' }, 403)
     const targetId = c.req.param('id')
-    const session = conversationStore.getConversation(targetId)
-    if (!session) return c.json({ error: 'Session not found' }, 404)
-    if (session.status === 'active') return c.json({ error: 'Session is already active' }, 400)
+    const conv = conversationStore.getConversation(targetId)
+    if (!conv) return c.json({ error: 'Conversation not found' }, 404)
+    if (conv.status === 'active') return c.json({ error: 'Conversation is already active' }, 400)
 
     // If called with X-Caller-Session header, check benevolent trust
     const callerConversationId = c.req.header('X-Caller-Session')
@@ -224,16 +226,13 @@ export function createConversationsRouter(conversationStore: ConversationStore, 
     if (!sentinel) return c.json({ error: 'No sentinel connected' }, 503)
 
     const conversationId = randomUUID()
-    const lc = session.launchConfig // stored launch config from original spawn
+    const lc = conv.launchConfig // stored launch config from original spawn
     const name =
-      session.title ||
-      getProjectSettings(session.project)?.label ||
-      extractProjectLabel(session.project) ||
-      targetId.slice(0, 8)
+      conv.title || getProjectSettings(conv.project)?.label || extractProjectLabel(conv.project) || targetId.slice(0, 8)
     // Resolve defaults: launch config > project > global > undefined
-    const projSettings = getProjectSettings(session.project)
+    const projSettings = getProjectSettings(conv.project)
     const globalSettings = getGlobalSettings()
-    const sessionPath = parseProjectUri(session.project).path
+    const sessionPath = parseProjectUri(conv.project).path
     const resolved = resolveSpawnConfig(
       {
         cwd: sessionPath,
@@ -254,7 +253,7 @@ export function createConversationsRouter(conversationStore: ConversationStore, 
     const { buildReviveMessage } = await import('../build-revive')
     sentinel.send(
       JSON.stringify(
-        buildReviveMessage(session, conversationId, {
+        buildReviveMessage(conv, conversationId, {
           headless,
           effort,
           model,
@@ -270,7 +269,7 @@ export function createConversationsRouter(conversationStore: ConversationStore, 
     // Register rendezvous for MCP callers
     if (callerConversationId) {
       conversationStore
-        .addRendezvous(conversationId, callerConversationId, session.project, 'revive')
+        .addRendezvous(conversationId, callerConversationId, conv.project, 'revive')
         .then(revived => {
           const callerWs = conversationStore.getConversationSocket(callerConversationId)
           if (callerWs) {
@@ -279,7 +278,7 @@ export function createConversationsRouter(conversationStore: ConversationStore, 
                 type: 'revive_ready',
                 conversationId: revived.id,
                 project: revived.project,
-                session: revived,
+                conversation: revived,
               }),
             )
           }
@@ -291,7 +290,7 @@ export function createConversationsRouter(conversationStore: ConversationStore, 
               JSON.stringify({
                 type: 'revive_timeout',
                 conversationId,
-                project: session.project,
+                project: conv.project,
                 error: typeof err === 'string' ? err : 'Revive rendezvous timed out',
               }),
             )
@@ -312,18 +311,18 @@ export function createConversationsRouter(conversationStore: ConversationStore, 
       if (dirname && slugify(dirname) === slug) return true
       return slugify(s.id.slice(0, 8)) === slug
     })
-    if (!match) return c.json({ error: 'Session not found' }, 404)
+    if (!match) return c.json({ error: 'Conversation not found' }, 404)
     return c.json(conversationToOverview(match, conversationStore))
   })
 
   app.get('/api/share-resolve/:token', c => {
     const share = validateShare(c.req.param('token'))
     if (!share) return c.json({ error: 'Invalid or expired share' }, 404)
-    const conversations = conversationStore.getAllConversations().filter(s => s.project === share.sessionCwd)
+    const conversations = conversationStore.getAllConversations().filter(s => s.project === share.project)
     conversations.sort((a, b) => b.lastActivity - a.lastActivity)
     const best = conversations[0]
     return c.json({
-      project: share.sessionCwd,
+      project: share.project,
       conversationId: best?.id || null,
     })
   })
@@ -331,9 +330,9 @@ export function createConversationsRouter(conversationStore: ConversationStore, 
   app.delete('/conversations/:id', c => {
     if (!httpHasPermission(c.req.raw, 'settings', '*')) return c.json({ error: 'Forbidden' }, 403)
     const conversationId = c.req.param('id')
-    const session = conversationStore.getConversation(conversationId)
-    if (!session) return c.json({ error: 'Session not found' }, 404)
-    if (session.status !== 'ended') return c.json({ error: 'Only ended sessions can be dismissed' }, 400)
+    const conv = conversationStore.getConversation(conversationId)
+    if (!conv) return c.json({ error: 'Conversation not found' }, 404)
+    if (conv.status !== 'ended') return c.json({ error: 'Only ended conversations can be dismissed' }, 400)
     conversationStore.removeConversation(conversationId)
     broadcastToSubscribers(conversationStore, { type: 'conversation_dismissed', conversationId })
     return c.json({ success: true })

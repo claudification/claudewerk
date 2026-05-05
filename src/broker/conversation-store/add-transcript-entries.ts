@@ -24,7 +24,7 @@ import { handleSystemEntry } from './transcript-handlers/system-entry'
 import { handleUserEntry } from './transcript-handlers/user-entry'
 
 /**
- * Persist a batch of transcript entries to the cache + derive session-level
+ * Persist a batch of transcript entries to the cache + derive conversation-level
  * stats / metadata from them. Re-broadcasts compaction markers and live
  * subagent transcripts. No-op when the conversation isn't registered.
  *
@@ -32,8 +32,8 @@ import { handleUserEntry } from './transcript-handlers/user-entry'
  * here, plus post-loop scans for bg-task notifications and live subagent
  * transcripts. Per-entry-type work delegates to typed helpers under
  * `transcript-handlers/`, dispatched through the `entryHandlers` table
- * below. Each helper returns `boolean` indicating whether session metadata
- * changed so the orchestrator can decide if a session update is warranted.
+ * below. Each helper returns `boolean` indicating whether conversation metadata
+ * changed so the orchestrator can decide if a conversation update is warranted.
  */
 export function addTranscriptEntries(
   ctx: ConversationStoreContext,
@@ -49,26 +49,26 @@ export function addTranscriptEntries(
   appendToCache(ctx, conversationId, entries, isInitial)
   ctx.dirtyTranscripts.add(conversationId)
 
-  const session = ctx.conversations.get(conversationId)
-  if (!session) return
+  const conv = ctx.conversations.get(conversationId)
+  if (!conv) return
 
-  if (!session.stats || isInitial) resetSessionMetadataAndStats(session, isInitial)
+  if (!conv.stats || isInitial) resetSessionMetadataAndStats(conv, isInitial)
 
   let sessionChanged = false
   for (const entry of entries) {
     // gitBranch lives on the base type and applies to any entry
-    if (!session.gitBranch && entry.gitBranch) {
-      session.gitBranch = entry.gitBranch
+    if (!conv.gitBranch && entry.gitBranch) {
+      conv.gitBranch = entry.gitBranch
       sessionChanged = true
     }
 
-    if (entryHandlers[entry.type]?.(ctx, conversationId, session, entry, isInitial)) {
+    if (entryHandlers[entry.type]?.(ctx, conversationId, conv, entry, isInitial)) {
       sessionChanged = true
     }
   }
 
   // Post-loop scans: bg task completion + live subagent extraction
-  if (detectBgTaskNotifications(session, entries)) sessionChanged = true
+  if (detectBgTaskNotifications(conv, entries)) sessionChanged = true
   extractLiveSubagentEntries(ctx, conversationId, entries)
 
   if (sessionChanged) ctx.scheduleConversationUpdate(conversationId)
@@ -80,14 +80,14 @@ export function addTranscriptEntries(
 // `TranscriptEntryHandler` signature so the orchestrator can dispatch
 // through a `Record<entryType, TranscriptEntryHandler>`. The narrow cast
 // happens once at the boundary in each adapter; the helpers themselves
-// work with the narrow type. Each adapter returns `true` when session
+// work with the narrow type. Each adapter returns `true` when conversation
 // metadata mutated, so the orchestrator can OR the results and decide
-// whether to schedule a session update.
+// whether to schedule a conversation update.
 
 type TranscriptEntryHandler = (
   ctx: ConversationStoreContext,
   conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   entry: TranscriptEntry,
   isInitial: boolean,
 ) => boolean
@@ -95,82 +95,82 @@ type TranscriptEntryHandler = (
 function dispatchCompacted(
   _ctx: ConversationStoreContext,
   _conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   _entry: TranscriptEntry,
   _isInitial: boolean,
 ): boolean {
-  session.stats.compactionCount++
+  conv.stats.compactionCount++
   return false
 }
 
 function dispatchUserEntry(
   ctx: ConversationStoreContext,
   conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   entry: TranscriptEntry,
   isInitial: boolean,
 ): boolean {
-  return handleUserEntry(ctx, conversationId, session, entry as TranscriptUserEntry, isInitial)
+  return handleUserEntry(ctx, conversationId, conv, entry as TranscriptUserEntry, isInitial)
 }
 
 function dispatchAssistantEntry(
   _ctx: ConversationStoreContext,
   _conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   entry: TranscriptEntry,
   _isInitial: boolean,
 ): boolean {
-  return handleAssistantEntry(session, entry as TranscriptAssistantEntry)
+  return handleAssistantEntry(conv, entry as TranscriptAssistantEntry)
 }
 
 function dispatchSystemEntry(
   ctx: ConversationStoreContext,
   conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   entry: TranscriptEntry,
   isInitial: boolean,
 ): boolean {
-  return handleSystemEntry(ctx, conversationId, session, entry as TranscriptSystemEntry, isInitial)
+  return handleSystemEntry(ctx, conversationId, conv, entry as TranscriptSystemEntry, isInitial)
 }
 
 function dispatchSummaryEntry(
   _ctx: ConversationStoreContext,
   conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   entry: TranscriptEntry,
   _isInitial: boolean,
 ): boolean {
-  return handleSummaryEntry(conversationId, session, entry as TranscriptSummaryEntry)
+  return handleSummaryEntry(conversationId, conv, entry as TranscriptSummaryEntry)
 }
 
 function dispatchCustomTitleEntry(
   _ctx: ConversationStoreContext,
   conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   entry: TranscriptEntry,
   _isInitial: boolean,
 ): boolean {
-  return handleCustomTitleEntry(conversationId, session, entry as TranscriptCustomTitleEntry)
+  return handleCustomTitleEntry(conversationId, conv, entry as TranscriptCustomTitleEntry)
 }
 
 function dispatchAgentNameEntry(
   _ctx: ConversationStoreContext,
   conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   entry: TranscriptEntry,
   _isInitial: boolean,
 ): boolean {
-  return handleAgentNameEntry(conversationId, session, entry as TranscriptAgentNameEntry)
+  return handleAgentNameEntry(conversationId, conv, entry as TranscriptAgentNameEntry)
 }
 
 function dispatchPrLinkEntry(
   _ctx: ConversationStoreContext,
   conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   entry: TranscriptEntry,
   _isInitial: boolean,
 ): boolean {
-  return handlePrLinkEntry(conversationId, session, entry as TranscriptPrLinkEntry)
+  return handlePrLinkEntry(conversationId, conv, entry as TranscriptPrLinkEntry)
 }
 
 const entryHandlers: Record<string, TranscriptEntryHandler> = {
@@ -204,19 +204,19 @@ function appendToCache(
 }
 
 function resetSessionMetadataAndStats(
-  session: NonNullable<ReturnType<ConversationStoreContext['conversations']['get']>>,
+  conv: NonNullable<ReturnType<ConversationStoreContext['conversations']['get']>>,
   isInitial: boolean,
 ): void {
   // Reset metadata + stats on initial load to avoid double-counting when
   // the transcript watcher re-reads the full file (restart, reconnect,
   // truncation recovery). Preserve user-set titles (set via spawn dialog).
   if (isInitial) {
-    session.summary = undefined
-    if (!session.titleUserSet) session.title = undefined
-    session.agentName = undefined
-    session.prLinks = undefined
+    conv.summary = undefined
+    if (!conv.titleUserSet) conv.title = undefined
+    conv.agentName = undefined
+    conv.prLinks = undefined
   }
-  session.stats = {
+  conv.stats = {
     totalInputTokens: 0,
     totalOutputTokens: 0,
     totalCacheCreation: 0,

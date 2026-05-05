@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Claudwerk Broker
- * Aggregates sessions from multiple rclaude instances
+ * Aggregates conversations from multiple rclaude instances
  */
 
 import { checkBunVersion } from '../shared/bun-version'
@@ -156,7 +156,7 @@ function printHelp() {
   console.log(`
 broker - Claudwerk Broker
 
-Receives session events from rclaude instances and provides a unified view.
+Receives conversation events from rclaude instances and provides a unified view.
 
 USAGE:
   broker [OPTIONS]
@@ -167,8 +167,8 @@ OPTIONS:
   -v, --verbose          Enable verbose logging
   -w, --web-dir <dir>    Serve web dashboard from directory
   --cache-dir <dir>      Session cache directory (default: ~/.cache/broker)
-  --clear-cache          Clear session cache and exit
-  --no-persistence       Disable session persistence
+  --clear-cache          Clear conversation cache and exit
+  --no-persistence       Disable conversation persistence
   --allow-root <dir>     Add allowed filesystem root (repeatable)
   --rp-id <domain>       WebAuthn relying party ID (default: localhost)
   --origin <url>         Allowed WebAuthn origin (repeatable, default: http://localhost:PORT)
@@ -177,21 +177,21 @@ OPTIONS:
 
 ENDPOINTS:
   WebSocket:
-    ws://localhost:${DEFAULT_BROKER_PORT}/      Connect session
+    ws://localhost:${DEFAULT_BROKER_PORT}/      Connect conversation
 
   REST API:
-    GET  /conversations                List all sessions
-    GET  /conversations?active=true    List active sessions only
-    GET  /conversations/:id            Get session details
-    GET  /conversations/:id/events     Get session events
-    POST /conversations/:id/input      Send input to session
+    GET  /conversations                List all conversations
+    GET  /conversations?active=true    List active conversations only
+    GET  /conversations/:id            Get conversation details
+    GET  /conversations/:id/events     Get conversation events
+    POST /conversations/:id/input      Send input to conversation
     GET  /health                  Health check
 
 EXAMPLES:
   broker                   # Start on default port
   broker -p 8080           # Start on port 8080
   broker -v                # Start with verbose logging
-  broker --clear-cache     # Clear cached sessions
+  broker --clear-cache     # Clear cached conversations
 `)
 }
 
@@ -426,8 +426,8 @@ async function main() {
     for (const ws of subscribers) {
       const data = ws.data as { authToken?: string; userName?: string }
       if (!data.authToken) continue // rclaude/agent connections use secret, not tokens
-      const session = validateConversation(data.authToken)
-      if (!session) {
+      const conv = validateConversation(data.authToken)
+      if (!conv) {
         console.log(`[auth] Closing expired WS for user: ${data.userName || 'unknown'}`)
         conversationStore.removeTerminalViewerBySocket(ws)
         conversationStore.removeJsonStreamViewerBySocket(ws)
@@ -505,8 +505,8 @@ async function main() {
 
       // Auto-send push notification on Notification hook events
       if (event.hookEvent === 'Notification' && isPushConfigured()) {
-        const session = conversationStore.getConversation(conversationId)
-        const label = session?.project ? extractProjectLabel(session.project) : conversationId.slice(0, 8)
+        const conv = conversationStore.getConversation(conversationId)
+        const label = conv?.project ? extractProjectLabel(conv.project) : conversationId.slice(0, 8)
         const d = event.data as Record<string, unknown>
         const message = (d?.message as string) || 'Awaiting input...'
         const notifType = (d?.notification_type as string) || 'Notification'
@@ -518,10 +518,10 @@ async function main() {
         }).catch(() => {})
       }
 
-      // Auto-send push on session Stop (Claude finished working)
+      // Auto-send push on conversation Stop (Claude finished working)
       if (event.hookEvent === 'Stop' && isPushConfigured()) {
-        const session = conversationStore.getConversation(conversationId)
-        const label = session?.project ? extractProjectLabel(session.project) : conversationId.slice(0, 8)
+        const conv = conversationStore.getConversation(conversationId)
+        const label = conv?.project ? extractProjectLabel(conv.project) : conversationId.slice(0, 8)
         const d = event.data as Record<string, unknown>
         const reason = (d?.stop_hook_reason as string) || 'completed'
         sendPushToAll({
@@ -683,7 +683,7 @@ async function main() {
 
           // Handle dashboard subscriber disconnection
           if (ws.data.isControlPanel) {
-            // Clean up any active voice streaming session
+            // Clean up any active voice streaming conversation
             cleanupVoiceForWs(ws)
             // If this dashboard was viewing a terminal or json stream, remove from viewers
             conversationStore.removeTerminalViewerBySocket(ws)
@@ -754,8 +754,8 @@ async function main() {
             const primaryConversationId = hintConversationId ?? touchedConversationIds[0]
             for (const cid of conversationIdsToCheck) {
               const remaining = conversationStore.getActiveConversationCount(cid)
-              const session = conversationStore.getConversation(cid)
-              if (!session || session.status === 'ended' || remaining > 0) {
+              const conv = conversationStore.getConversation(cid)
+              if (!conv || conv.status === 'ended' || remaining > 0) {
                 if (verbose && remaining > 0) {
                   console.log(
                     `[~] Wrapper disconnected from conversation ${cid.slice(0, 8)}... (${remaining} wrappers remaining)`,
@@ -781,7 +781,7 @@ async function main() {
                   console.log(
                     `[restart] Reviving after disconnect: ${extractProjectLabel(pendingRestart.project)} conversationId=${conversationId.slice(0, 8)}`,
                   )
-                  sentinel.send(JSON.stringify(buildReviveMessage(session, conversationId)))
+                  sentinel.send(JSON.stringify(buildReviveMessage(conv, conversationId)))
 
                   // Register rendezvous for caller (if not self-restart)
                   if (!pendingRestart.isSelfRestart) {
@@ -799,7 +799,7 @@ async function main() {
                             type: 'restart_ready',
                             conversationId: revived.id,
                             project: revived.project,
-                            session: revived,
+                            conversation: revived,
                           }),
                         )
                       })
@@ -858,20 +858,20 @@ async function main() {
   if (verbose) {
     setInterval(() => {
       try {
-        const sessions = conversationStore.getActiveConversations()
-        if (sessions.length === 0) return
-        console.log(`\n[i] Active sessions: ${sessions.length}`)
-        for (const session of sessions) {
-          if (typeof session.id !== 'string' || session.id.length === 0) {
+        const conversations = conversationStore.getActiveConversations()
+        if (conversations.length === 0) return
+        console.log(`\n[i] Active conversations: ${conversations.length}`)
+        for (const conv of conversations) {
+          if (typeof conv.id !== 'string' || conv.id.length === 0) {
             console.warn(
-              `[broker] BAD DATA: active conversation with invalid id (id=${JSON.stringify(session.id)}, project=${session.project ?? '?'}, status=${session.status ?? '?'}, startedAt=${session.startedAt}) -- skipping in logger; this should never happen and indicates a handler accepted malformed input`,
+              `[broker] BAD DATA: active conversation with invalid id (id=${JSON.stringify(conv.id)}, project=${conv.project ?? '?'}, status=${conv.status ?? '?'}, startedAt=${conv.startedAt}) -- skipping in logger; this should never happen and indicates a handler accepted malformed input`,
             )
             continue
           }
-          const age = formatDuration(Date.now() - session.startedAt)
-          const idle = formatDuration(Date.now() - session.lastActivity)
+          const age = formatDuration(Date.now() - conv.startedAt)
+          const idle = formatDuration(Date.now() - conv.lastActivity)
           console.log(
-            `    ${session.id.slice(0, 8)}... [${(session.status ?? 'unknown').toUpperCase()}] age=${age} idle=${idle} events=${session.events?.length ?? 0}`,
+            `    ${conv.id.slice(0, 8)}... [${(conv.status ?? 'unknown').toUpperCase()}] age=${age} idle=${idle} events=${conv.events?.length ?? 0}`,
           )
         }
       } catch (err) {

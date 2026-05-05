@@ -8,31 +8,31 @@ import type { Conversation, TranscriptAssistantEntry } from '../../../shared/pro
  *
  * Returns true when usage was extracted (which mutates lots of stats).
  */
-export function handleAssistantEntry(session: Conversation, entry: TranscriptAssistantEntry): boolean {
+export function handleAssistantEntry(conv: Conversation, entry: TranscriptAssistantEntry): boolean {
   const content = entry.message?.content
   if (Array.isArray(content)) {
-    session.stats.toolCallCount += content.filter(c => c.type === 'tool_use').length
+    conv.stats.toolCallCount += content.filter(c => c.type === 'tool_use').length
   }
 
-  // Init message (session.model) is ground truth. Assistant messages strip
+  // Init message (conversation.model) is ground truth. Assistant messages strip
   // context-window suffixes like [1m], so only use as a last-resort fallback.
   const assistantModel = entry.message?.model
-  if (typeof assistantModel === 'string' && assistantModel !== '<synthetic>' && !session.model) {
-    session.model = assistantModel
+  if (typeof assistantModel === 'string' && assistantModel !== '<synthetic>' && !conv.model) {
+    conv.model = assistantModel
   }
 
-  return extractUsage(session, entry, assistantModel)
+  return extractUsage(conv, entry, assistantModel)
 }
 
 function extractUsage(
-  session: Conversation,
+  conv: Conversation,
   entry: TranscriptAssistantEntry,
   assistantModel: string | undefined,
 ): boolean {
   const usage = entry.message?.usage
   if (!usage || typeof usage.input_tokens !== 'number' || assistantModel === '<synthetic>') return false
 
-  session.tokenUsage = {
+  conv.tokenUsage = {
     input: usage.input_tokens || 0,
     cacheCreation: usage.cache_creation_input_tokens || 0,
     cacheRead: usage.cache_read_input_tokens || 0,
@@ -48,20 +48,20 @@ function extractUsage(
   const cwRemainder = Math.max(0, cwTotal - cw5m - cw1h)
 
   if (cw5m + cwRemainder > 0 || cw1h > 0) {
-    session.cacheTtl = cw1h > cw5m + cwRemainder ? '1h' : '5m'
+    conv.cacheTtl = cw1h > cw5m + cwRemainder ? '1h' : '5m'
   }
 
-  session.stats.totalInputTokens += (usage.input_tokens || 0) + cwTotal + (usage.cache_read_input_tokens || 0)
-  session.stats.totalOutputTokens += usage.output_tokens || 0
-  session.stats.totalCacheCreation += cwTotal
-  session.stats.totalCacheWrite5m += cw5m + cwRemainder
-  session.stats.totalCacheWrite1h += cw1h
-  session.stats.totalCacheRead += usage.cache_read_input_tokens || 0
+  conv.stats.totalInputTokens += (usage.input_tokens || 0) + cwTotal + (usage.cache_read_input_tokens || 0)
+  conv.stats.totalOutputTokens += usage.output_tokens || 0
+  conv.stats.totalCacheCreation += cwTotal
+  conv.stats.totalCacheWrite5m += cw5m + cwRemainder
+  conv.stats.totalCacheWrite1h += cw1h
+  conv.stats.totalCacheRead += usage.cache_read_input_tokens || 0
 
-  // Cost timeline snapshot for PTY sessions (headless uses turn_cost from stream backend)
-  if (!session.stats.totalCostUsd) {
-    if (!session.costTimeline) session.costTimeline = []
-    const s = session.stats
+  // Cost timeline snapshot for PTY conversations (headless uses turn_cost from stream backend)
+  if (!conv.stats.totalCostUsd) {
+    if (!conv.costTimeline) conv.costTimeline = []
+    const s = conv.stats
     const uncached = Math.max(0, s.totalInputTokens - s.totalCacheCreation - s.totalCacheRead)
     const est =
       (uncached * 15 +
@@ -70,9 +70,9 @@ function extractUsage(
         s.totalCacheWrite5m * 18.75 +
         s.totalCacheWrite1h * 30) /
       1_000_000
-    session.costTimeline.push({ t: Date.now(), cost: est })
-    if (session.costTimeline.length > 500) {
-      session.costTimeline = session.costTimeline.slice(-500)
+    conv.costTimeline.push({ t: Date.now(), cost: est })
+    if (conv.costTimeline.length > 500) {
+      conv.costTimeline = conv.costTimeline.slice(-500)
     }
   }
 

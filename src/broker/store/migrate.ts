@@ -100,7 +100,7 @@ function migrateSessions(store: StoreDriver, cacheDir: string, result: Migration
         meta: buildConversationMeta(session),
       }
 
-      store.sessions.create(create)
+      store.conversations.create(create)
 
       const patch: ConversationPatch = {
         status: (session.status as string) || 'ended',
@@ -109,7 +109,7 @@ function migrateSessions(store: StoreDriver, cacheDir: string, result: Migration
         endedAt: session.status === 'ended' ? (session.lastActivity as number) : undefined,
         stats: buildConversationStats(session),
       }
-      store.sessions.update(id, patch)
+      store.conversations.update(id, patch)
       result.counts.sessions++
     } catch (err) {
       result.warnings.push(`sessions.json: failed to import session ${id}: ${err instanceof Error ? err.message : err}`)
@@ -317,7 +317,7 @@ function migrateShares(store: StoreDriver, cacheDir: string, result: MigrationRe
 
       const create: ShareCreate = {
         token: s.token as string,
-        conversationId: (s.sessionCwd as string) || (s.sessionId as string) || '',
+        conversationId: (s.project as string) || (s.sessionId as string) || '',
         permissions: permObj,
         expiresAt: s.expiresAt as number,
       }
@@ -529,7 +529,7 @@ function migrateCostData(store: StoreDriver, cacheDir: string, result: Migration
 
     const rows = legacy
       .query(
-        `SELECT timestamp, session_id, ${selectExpr} as project_uri,
+        `SELECT timestamp, conversation_id, ${selectExpr} as project_uri,
           account, org_id, model,
           input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
           cost_usd, exact_cost
@@ -541,7 +541,7 @@ function migrateCostData(store: StoreDriver, cacheDir: string, result: Migration
     for (const r of rows) {
       const rec: TurnRecord = {
         timestamp: (r.timestamp as number) ?? 0,
-        conversationId: (r.session_id as string) ?? '',
+        conversationId: (r.conversation_id as string) ?? '',
         projectUri: (r.project_uri as string) || '',
         account: (r.account as string) ?? '',
         orgId: (r.org_id as string) ?? '',
@@ -656,7 +656,7 @@ function canonicalizeUris(cacheDir: string): CanonicalizeResult {
         .run()
       result.storeHourlyDeleted = r.changes ?? 0
 
-      result.storeConversations = canonicalizeColumn(db, 'sessions', 'scope')
+      result.storeConversations = canonicalizeColumn(db, 'conversations', 'scope')
       // scope_links: both columns, plus dedup on collision (PK is (scope_a, scope_b))
       const sl1 = canonicalizeColumn(db, 'scope_links', 'scope_a')
       const sl2 = canonicalizeColumn(db, 'scope_links', 'scope_b')

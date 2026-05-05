@@ -346,7 +346,7 @@ describe('HTTP API data contracts', () => {
       conversationId: convId,
       hookEvent: 'UserPromptSubmit',
       timestamp: Date.now(),
-      data: { session_id: ccSessionId, prompt: 'Hello' },
+      data: { conversation_id: ccSessionId, prompt: 'Hello' },
     })
 
     h.agentSend(agent, {
@@ -354,7 +354,7 @@ describe('HTTP API data contracts', () => {
       conversationId: convId,
       hookEvent: 'Stop',
       timestamp: Date.now(),
-      data: { session_id: ccSessionId, reason: 'completed' },
+      data: { conversation_id: ccSessionId, reason: 'completed' },
     })
 
     const events = h.conversationStore.getConversationEvents(convId)

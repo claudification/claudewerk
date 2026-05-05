@@ -1,6 +1,6 @@
 /**
  * Session Store
- * In-memory session registry with event storage, backed by StoreDriver for persistence
+ * In-memory conversation registry with event storage, backed by StoreDriver for persistence
  */
 
 import type { ServerWebSocket } from 'bun'
@@ -117,14 +117,14 @@ export interface ConversationStore {
   addBgTaskOutput: (conversationId: string, taskId: string, data: string, done: boolean) => void
   getBgTaskOutput: (taskId: string) => string | undefined
   broadcastConversationUpdate: (conversationId: string) => void
-  // Terminal viewer methods (multiple viewers per session)
+  // Terminal viewer methods (multiple viewers per conversation)
   // Terminal viewers keyed by conversationId (each PTY is on a specific rclaude instance)
   addTerminalViewer: (conversationId: string, ws: ServerWebSocket<unknown>) => void
   getTerminalViewers: (conversationId: string) => Set<ServerWebSocket<unknown>>
   removeTerminalViewer: (conversationId: string, ws: ServerWebSocket<unknown>) => void
   removeTerminalViewerBySocket: (ws: ServerWebSocket<unknown>) => void
   hasTerminalViewers: (conversationId: string) => boolean
-  // JSON stream viewer methods (raw NDJSON tail for headless sessions)
+  // JSON stream viewer methods (raw NDJSON tail for headless conversations)
   addJsonStreamViewer: (conversationId: string, ws: ServerWebSocket<unknown>) => void
   getJsonStreamViewers: (conversationId: string) => Set<ServerWebSocket<unknown>>
   removeJsonStreamViewer: (conversationId: string, ws: ServerWebSocket<unknown>) => void
@@ -230,7 +230,7 @@ export interface ConversationStore {
     callerConversationId: string,
     project: string,
     action: 'spawn' | 'revive' | 'restart',
-  ) => Promise<ConversationSummary>
+  ) => Promise<Conversation>
   // Pending restart (terminate + auto-revive on disconnect)
   addPendingRestart: (conversationId: string, info: PendingRestartInfo) => void
   consumePendingRestart: (conversationId: string) => PendingRestartInfo | undefined
@@ -239,7 +239,7 @@ export interface ConversationStore {
   // Pending launch configs (set at spawn, consumed on connect to restore on revive)
   setPendingLaunchConfig: (conversationId: string, config: LaunchConfig) => void
   consumePendingLaunchConfig: (conversationId: string) => LaunchConfig | undefined
-  // Pending session names (set at spawn, consumed on connect)
+  // Pending conversation names (set at spawn, consumed on connect)
   setPendingConversationName: (conversationId: string, name: string) => void
   consumePendingConversationName: (conversationId: string) => string | undefined
   // Inter-project link management
@@ -274,7 +274,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
   const conversationSockets = new Map<string, Map<string, ServerWebSocket<unknown>>>()
   // Terminal viewers keyed by conversationId (each PTY is on a specific conversation)
   const terminalRegistry = createTerminalRegistry()
-  // JSON stream viewers keyed by conversationId (raw NDJSON tail for headless sessions)
+  // JSON stream viewers keyed by conversationId (raw NDJSON tail for headless conversations)
   const jsonStreamRegistry = createViewerRegistry()
   const controlPanelSubscribers = new Set<ServerWebSocket<unknown>>()
   let subscriberIdCounter = 0
@@ -324,12 +324,12 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
 
   // Transcript cache: conversationId -> entries (ring buffer, max 1000 per conversation)
   const transcriptCache = new Map<string, TranscriptEntry[]>()
-  // Dirty tracking for transcript persistence: sessions modified since last flush
+  // Dirty tracking for transcript persistence: conversations modified since last flush
   const dirtyTranscripts = new Set<string>()
   // Deduplicate clipboard captures by tool_use_id (prevents re-processing on transcript re-reads)
   const processedClipboardIds = new Set<string>()
 
-  /** Per-session monotonic transcript sequence counter. Stamps `entry.seq` on
+  /** Per-conversation monotonic transcript sequence counter. Stamps `entry.seq` on
    *  every cache insert so the sync protocol can detect drift by last-seq-seen
    *  rather than by entry count (which is unreliable when caps differ between
    *  server and client, or when entries are edited in place).
@@ -383,32 +383,31 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     addSubagentTranscriptEntries,
   }
 
-  // Helper to create session summary for broadcasting
-  function toConversationSummary(session: Conversation): ConversationSummary {
-    const wrappers = conversationSockets.get(session.id)
+  // Helper to create conversation summary for broadcasting
+  function toConversationSummary(conv: Conversation): ConversationSummary {
+    const wrappers = conversationSockets.get(conv.id)
     return {
-      id: session.id,
-      ccSessionId: session.ccSessionId,
-      project: session.project,
-      model: deriveModelName(session.model, session.configuredModel),
-      capabilities: session.capabilities,
-      version: session.version,
-      buildTime: session.buildTime,
-      claudeVersion: session.claudeVersion,
-      claudeAuth: session.claudeAuth,
-      spinnerVerbs: session.spinnerVerbs,
-      autocompactPct: session.autocompactPct,
-      maxBudgetUsd: session.maxBudgetUsd,
+      id: conv.id,
+      project: conv.project,
+      model: deriveModelName(conv.model, conv.configuredModel),
+      capabilities: conv.capabilities,
+      version: conv.version,
+      buildTime: conv.buildTime,
+      claudeVersion: conv.claudeVersion,
+      claudeAuth: conv.claudeAuth,
+      spinnerVerbs: conv.spinnerVerbs,
+      autocompactPct: conv.autocompactPct,
+      maxBudgetUsd: conv.maxBudgetUsd,
       connectionIds: wrappers ? Array.from(wrappers.keys()) : [],
-      startedAt: session.startedAt,
-      lastActivity: session.lastActivity,
-      status: session.status,
-      compacting: session.compacting || undefined,
-      compactedAt: session.compactedAt,
-      eventCount: session.events.length,
-      activeSubagentCount: session.subagents.filter(a => a.status === 'running').length,
-      totalSubagentCount: session.subagents.length,
-      subagents: session.subagents.map(a => ({
+      startedAt: conv.startedAt,
+      lastActivity: conv.lastActivity,
+      status: conv.status,
+      compacting: conv.compacting || undefined,
+      compactedAt: conv.compactedAt,
+      eventCount: conv.events.length,
+      activeSubagentCount: conv.subagents.filter(a => a.status === 'running').length,
+      totalSubagentCount: conv.subagents.length,
+      subagents: conv.subagents.map(a => ({
         agentId: a.agentId,
         agentType: a.agentType,
         description: a.description,
@@ -418,20 +417,20 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
         eventCount: a.events.length,
         ...(a.tokenUsage && { tokenUsage: a.tokenUsage }),
       })),
-      taskCount: session.tasks.length,
-      pendingTaskCount: session.tasks.filter(t => t.status === 'pending' || t.status === 'in_progress').length,
-      activeTasks: session.tasks.filter(t => t.status === 'in_progress').map(t => ({ id: t.id, subject: t.subject })),
-      pendingTasks: session.tasks
+      taskCount: conv.tasks.length,
+      pendingTaskCount: conv.tasks.filter(t => t.status === 'pending' || t.status === 'in_progress').length,
+      activeTasks: conv.tasks.filter(t => t.status === 'in_progress').map(t => ({ id: t.id, subject: t.subject })),
+      pendingTasks: conv.tasks
         .filter(t => t.status === 'pending')
         .slice(0, 4)
         .map(t => ({ id: t.id, subject: t.subject })),
-      archivedTaskCount: session.archivedTasks.reduce((sum, g) => sum + g.tasks.length, 0),
-      archivedTasks: session.archivedTasks
+      archivedTaskCount: conv.archivedTasks.reduce((sum, g) => sum + g.tasks.length, 0),
+      archivedTasks: conv.archivedTasks
         .flatMap(g => g.tasks)
         .slice(-50)
         .map(t => ({ id: t.id, subject: t.subject })),
-      runningBgTaskCount: session.bgTasks.filter(t => t.status === 'running').length,
-      bgTasks: session.bgTasks.map(t => ({
+      runningBgTaskCount: conv.bgTasks.filter(t => t.status === 'running').length,
+      bgTasks: conv.bgTasks.map(t => ({
         taskId: t.taskId,
         command: t.command,
         description: t.description,
@@ -439,43 +438,43 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
         completedAt: t.completedAt,
         status: t.status,
       })),
-      monitors: session.monitors,
-      runningMonitorCount: session.monitors.filter(m => m.status === 'running').length,
-      teammates: session.teammates.map(t => ({
+      monitors: conv.monitors,
+      runningMonitorCount: conv.monitors.filter(m => m.status === 'running').length,
+      teammates: conv.teammates.map(t => ({
         name: t.name,
         status: t.status,
         currentTaskSubject: t.currentTaskSubject,
         completedTaskCount: t.completedTaskCount,
       })),
-      team: session.team,
-      effortLevel: session.effortLevel,
-      permissionMode: session.permissionMode || undefined,
-      lastError: session.lastError,
-      rateLimit: session.rateLimit,
-      planMode: session.planMode || undefined,
-      pendingAttention: session.pendingAttention,
-      hasNotification: session.hasNotification,
-      summary: session.summary,
-      title: session.title,
-      description: session.description,
-      agentName: session.agentName,
-      prLinks: session.prLinks,
-      linkedProjects: getLinkedProjects(session.id),
-      tokenUsage: session.tokenUsage,
-      contextWindow: resolveContextWindow(deriveModelName(session.model, session.configuredModel), session.contextMode),
-      cacheTtl: session.cacheTtl,
-      lastTurnEndedAt: session.lastTurnEndedAt,
-      stats: session.stats,
-      costTimeline: session.costTimeline,
-      gitBranch: session.gitBranch,
-      adHocTaskId: session.adHocTaskId,
-      adHocWorktree: session.adHocWorktree,
-      modelMismatch: session.modelMismatch,
-      resultText: session.resultText,
-      recap: session.recap,
-      recapFresh: session.recapFresh,
-      hostSentinelId: session.hostSentinelId,
-      hostSentinelAlias: session.hostSentinelAlias,
+      team: conv.team,
+      effortLevel: conv.effortLevel,
+      permissionMode: conv.permissionMode || undefined,
+      lastError: conv.lastError,
+      rateLimit: conv.rateLimit,
+      planMode: conv.planMode || undefined,
+      pendingAttention: conv.pendingAttention,
+      hasNotification: conv.hasNotification,
+      summary: conv.summary,
+      title: conv.title,
+      description: conv.description,
+      agentName: conv.agentName,
+      prLinks: conv.prLinks,
+      linkedProjects: getLinkedProjects(conv.id),
+      tokenUsage: conv.tokenUsage,
+      contextWindow: resolveContextWindow(deriveModelName(conv.model, conv.configuredModel), conv.contextMode),
+      cacheTtl: conv.cacheTtl,
+      lastTurnEndedAt: conv.lastTurnEndedAt,
+      stats: conv.stats,
+      costTimeline: conv.costTimeline,
+      gitBranch: conv.gitBranch,
+      adHocTaskId: conv.adHocTaskId,
+      adHocWorktree: conv.adHocWorktree,
+      modelMismatch: conv.modelMismatch,
+      resultText: conv.resultText,
+      recap: conv.recap,
+      recapFresh: conv.recapFresh,
+      hostSentinelId: conv.hostSentinelId,
+      hostSentinelAlias: conv.hostSentinelAlias,
     }
   }
 
@@ -518,7 +517,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     }
   }
 
-  // Coalesced session_update broadcasts: only the last update per session per tick is sent
+  // Coalesced session_update broadcasts: only the last update per conversation per tick is sent
   const pendingConversationUpdates = new Set<string>()
   let sessionUpdateScheduled = false
 
@@ -533,15 +532,15 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
   function flushConversationUpdates(): void {
     sessionUpdateScheduled = false
     for (const id of pendingConversationUpdates) {
-      const session = conversations.get(id)
-      if (session) {
+      const conv = conversations.get(id)
+      if (conv) {
         broadcastConversationScoped(
           {
             type: 'conversation_update',
             conversationId: id,
-            session: toConversationSummary(session),
+            conversation: toConversationSummary(conv),
           },
-          session.project,
+          conv.project,
         )
       }
     }
@@ -553,10 +552,10 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     loadFromStore()
   }
 
-  // Periodically mark idle sessions, clean stale agents, evict old sessions, and save state
+  // Periodically mark idle conversations, clean stale agents, evict old conversations, and save state
   const ENDED_EVICTION_TTL_MS = 28 * 24 * 60 * 60 * 1000 // 28 days after ending (user can manually dismiss)
-  const ZOMBIE_EVICTION_TTL_MS = 30 * 24 * 60 * 60 * 1000 // 30 days for stale STARTING sessions
-  const MAX_ENDED_SESSIONS = 200 // hard cap on ended sessions in memory
+  const ZOMBIE_EVICTION_TTL_MS = 30 * 24 * 60 * 60 * 1000 // 30 days for stale STARTING conversations
+  const MAX_ENDED_SESSIONS = 200 // hard cap on ended conversations in memory
 
   setInterval(() => {
     const now = Date.now()
@@ -564,21 +563,21 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     const LIVENESS_MS = 5 * 60_000 // 5m without hooks = not "actively receiving"
     const toEvict: string[] = []
 
-    for (const session of conversations.values()) {
+    for (const conv of conversations.values()) {
       let changed = false
 
-      // Liveness check: no hooks for 30s means session isn't actively receiving
-      if (session.status === 'active' && now - session.lastActivity > LIVENESS_MS) {
-        session.status = 'idle'
+      // Liveness check: no hooks for 30s means conversation isn't actively receiving
+      if (conv.status === 'active' && now - conv.lastActivity > LIVENESS_MS) {
+        conv.status = 'idle'
         changed = true
       }
 
       // Clean up stale "running" agents (SubagentStop may have been missed)
-      for (const agent of session.subagents) {
+      for (const agent of conv.subagents) {
         if (
           agent.status === 'running' &&
           now - agent.startedAt > STALE_AGENT_MS &&
-          now - session.lastActivity > STALE_AGENT_MS
+          now - conv.lastActivity > STALE_AGENT_MS
         ) {
           agent.status = 'stopped'
           agent.stoppedAt = now
@@ -587,22 +586,22 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       }
 
       // Mark ended conversations for eviction after TTL
-      if (session.status === 'ended' && now - session.lastActivity > ENDED_EVICTION_TTL_MS) {
-        toEvict.push(session.id)
+      if (conv.status === 'ended' && now - conv.lastActivity > ENDED_EVICTION_TTL_MS) {
+        toEvict.push(conv.id)
       }
 
-      // Evict zombie sessions: STARTING with 0 events, idle > 24h, no active agent host
-      if (session.status === 'starting' && session.events.length === 0) {
-        const idleMs = now - session.lastActivity
-        if (idleMs > ZOMBIE_EVICTION_TTL_MS && !conversationSockets.has(session.id)) {
+      // Evict zombie conversations: STARTING with 0 events, idle > 24h, no active agent host
+      if (conv.status === 'starting' && conv.events.length === 0) {
+        const idleMs = now - conv.lastActivity
+        if (idleMs > ZOMBIE_EVICTION_TTL_MS && !conversationSockets.has(conv.id)) {
           const hours = Math.round(idleMs / 3600000)
-          console.log(`[evict] Zombie session ${session.id.slice(0, 8)} (STARTING, 0 events, idle ${hours}h)`)
-          toEvict.push(session.id)
+          console.log(`[evict] Zombie conversation ${conv.id.slice(0, 8)} (STARTING, 0 events, idle ${hours}h)`)
+          toEvict.push(conv.id)
         }
       }
 
       if (changed) {
-        scheduleConversationUpdate(session.id)
+        scheduleConversationUpdate(conv.id)
       }
     }
 
@@ -632,22 +631,22 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
   function loadFromStore(): void {
     if (!store) return
     try {
-      const records = store.sessions.list()
+      const records = store.conversations.list()
       let droppedBadIds = 0
       for (const rec of records) {
         // Defense in depth: SQLite TEXT PRIMARY KEY does not enforce NOT NULL,
         // so a pre-fix broker that wrote conversations with id=undefined could
         // leave NULL-id rows behind. Drop them on load -- the rest of the
-        // codebase assumes session.id is a usable string and crashes otherwise.
+        // codebase assumes conversation.id is a usable string and crashes otherwise.
         if (typeof rec.id !== 'string' || rec.id.length === 0) {
           droppedBadIds++
           continue
         }
         const meta = (rec as unknown as { meta?: Record<string, unknown> }).meta || {}
         // Full record for meta fields
-        const full = store.sessions.get(rec.id)
+        const full = store.conversations.get(rec.id)
         const fullMeta = full?.meta || meta
-        const session: Conversation = {
+        const conv: Conversation = {
           id: rec.id,
           project: rec.scope || cwdToProjectUri('/'),
           model: rec.model,
@@ -719,14 +718,14 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
           hostSentinelId: fullMeta.hostSentinelId as string | undefined,
           hostSentinelAlias: fullMeta.hostSentinelAlias as string | undefined,
         }
-        conversations.set(session.id, session)
+        conversations.set(conv.id, conv)
       }
       if (records.length > 0) {
         const loaded = records.length - droppedBadIds
         console.log(`[store] Loaded ${loaded} sessions from SQLite`)
         if (droppedBadIds > 0) {
           console.warn(
-            `[store] BAD DATA: dropped ${droppedBadIds} session record(s) with null/empty id from SQLite. These are leftover from a pre-validation broker that accepted malformed meta. The broker self-cleans these on next persistConversation cycle.`,
+            `[store] BAD DATA: dropped ${droppedBadIds} conversation record(s) with null/empty id from SQLite. These are leftover from a pre-validation broker that accepted malformed meta. The broker self-cleans these on next persistConversation cycle.`,
           )
         }
       }
@@ -735,70 +734,70 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     }
   }
 
-  function persistConversation(session: Conversation): void {
+  function persistConversation(conv: Conversation): void {
     if (!store) return
     try {
-      const existing = store.sessions.get(session.id)
+      const existing = store.conversations.get(conv.id)
       const meta: Record<string, unknown> = {
-        subagents: session.subagents,
-        tasks: session.tasks,
-        archivedTasks: session.archivedTasks,
-        bgTasks: session.bgTasks,
-        monitors: session.monitors,
-        teammates: session.teammates,
-        team: session.team,
-        configuredModel: session.configuredModel,
-        permissionMode: session.permissionMode,
-        effortLevel: session.effortLevel,
-        contextMode: session.contextMode,
-        args: session.args,
-        capabilities: session.capabilities,
-        version: session.version,
-        buildTime: session.buildTime,
-        claudeVersion: session.claudeVersion,
-        claudeAuth: session.claudeAuth,
-        transcriptPath: session.transcriptPath,
-        compactedAt: session.compactedAt,
-        costTimeline: session.costTimeline,
-        gitBranch: session.gitBranch,
-        adHocTaskId: session.adHocTaskId,
-        adHocWorktree: session.adHocWorktree,
-        launchConfig: session.launchConfig,
-        resultText: session.resultText,
-        recap: session.recap,
-        recapFresh: session.recapFresh,
-        titleUserSet: session.titleUserSet,
-        description: session.description,
-        agentName: session.agentName,
-        prLinks: session.prLinks?.length ? session.prLinks : undefined,
-        hostSentinelId: session.hostSentinelId,
-        hostSentinelAlias: session.hostSentinelAlias,
+        subagents: conv.subagents,
+        tasks: conv.tasks,
+        archivedTasks: conv.archivedTasks,
+        bgTasks: conv.bgTasks,
+        monitors: conv.monitors,
+        teammates: conv.teammates,
+        team: conv.team,
+        configuredModel: conv.configuredModel,
+        permissionMode: conv.permissionMode,
+        effortLevel: conv.effortLevel,
+        contextMode: conv.contextMode,
+        args: conv.args,
+        capabilities: conv.capabilities,
+        version: conv.version,
+        buildTime: conv.buildTime,
+        claudeVersion: conv.claudeVersion,
+        claudeAuth: conv.claudeAuth,
+        transcriptPath: conv.transcriptPath,
+        compactedAt: conv.compactedAt,
+        costTimeline: conv.costTimeline,
+        gitBranch: conv.gitBranch,
+        adHocTaskId: conv.adHocTaskId,
+        adHocWorktree: conv.adHocWorktree,
+        launchConfig: conv.launchConfig,
+        resultText: conv.resultText,
+        recap: conv.recap,
+        recapFresh: conv.recapFresh,
+        titleUserSet: conv.titleUserSet,
+        description: conv.description,
+        agentName: conv.agentName,
+        prLinks: conv.prLinks?.length ? conv.prLinks : undefined,
+        hostSentinelId: conv.hostSentinelId,
+        hostSentinelAlias: conv.hostSentinelAlias,
       }
       if (!existing) {
-        store.sessions.create({
-          id: session.id,
-          scope: session.project,
+        store.conversations.create({
+          id: conv.id,
+          scope: conv.project,
           agentType: 'rclaude',
-          agentVersion: session.version,
-          title: session.title,
-          model: session.model,
+          agentVersion: conv.version,
+          title: conv.title,
+          model: conv.model,
           meta,
-          createdAt: session.startedAt,
+          createdAt: conv.startedAt,
         })
       } else {
-        store.sessions.update(session.id, {
-          status: session.status,
-          model: session.model,
-          title: session.title,
-          summary: session.summary,
-          lastActivity: session.lastActivity,
-          endedAt: session.status === 'ended' ? session.lastActivity : undefined,
+        store.conversations.update(conv.id, {
+          status: conv.status,
+          model: conv.model,
+          title: conv.title,
+          summary: conv.summary,
+          lastActivity: conv.lastActivity,
+          endedAt: conv.status === 'ended' ? conv.lastActivity : undefined,
           meta,
-          stats: session.stats as unknown as import('./store/types').ConversationStats,
+          stats: conv.stats as unknown as import('./store/types').ConversationStats,
         })
       }
     } catch (err) {
-      console.error(`[store] Failed to persist session ${session.id.slice(0, 8)}: ${err}`)
+      console.error(`[store] Failed to persist conversation ${conv.id.slice(0, 8)}: ${err}`)
     }
   }
 
@@ -809,9 +808,9 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
   async function clearState(): Promise<void> {
     conversations.clear()
     if (store) {
-      const all = store.sessions.list()
+      const all = store.conversations.list()
       for (const s of all) {
-        store.sessions.delete(s.id)
+        store.conversations.delete(s.id)
       }
     }
   }
@@ -864,7 +863,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     }
     const sentinelAlias = getDefaultSentinelAlias()
     const project = resolveProjectUri(projectOrCwd, sentinelAlias)
-    const session: Conversation = {
+    const conv: Conversation = {
       id,
       project,
       model,
@@ -899,17 +898,17 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       hostSentinelId: getDefaultSentinelId(),
       hostSentinelAlias: getDefaultSentinelAlias(),
     }
-    conversations.set(id, session)
-    persistConversation(session)
+    conversations.set(id, conv)
+    persistConversation(conv)
 
     // Broadcast to dashboard subscribers (scoped by grants)
     broadcastConversationScoped(
       {
         type: 'conversation_created',
         conversationId: id,
-        session: toConversationSummary(session),
+        conversation: toConversationSummary(conv),
       },
-      session.project,
+      conv.project,
     )
 
     // Push per-conversation permissions to scoped subscribers so the client can
@@ -917,35 +916,35 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     for (const ws of controlPanelSubscribers) {
       try {
         const grants = (ws.data as { grants?: UserGrant[] }).grants
-        if (!grants) continue // admins don't use sessionPermissions
-        const { permissions } = resolvePermissions(grants, session.project)
+        if (!grants) continue // admins don't use conversationPermissions
+        const { permissions } = resolvePermissions(grants, conv.project)
         if (!permissions.has('chat:read')) continue
         ws.send(
           JSON.stringify({
             type: 'permissions',
-            sessions: { [id]: resolvePermissionFlags(grants, session.project) },
+            sessions: { [id]: resolvePermissionFlags(grants, conv.project) },
           }),
         )
       } catch {}
     }
 
-    return session
+    return conv
   }
 
   function resumeConversation(id: string): void {
-    const session = conversations.get(id)
-    if (session) {
-      session.status = 'starting'
-      session.lastActivity = Date.now()
+    const conv = conversations.get(id)
+    if (conv) {
+      conv.status = 'starting'
+      conv.lastActivity = Date.now()
       // Reset stale state from previous run
-      session.subagents = []
-      session.teammates = []
-      session.team = undefined
-      session.compacting = false
-      session.lastError = undefined
-      session.rateLimit = undefined
+      conv.subagents = []
+      conv.teammates = []
+      conv.team = undefined
+      conv.compacting = false
+      conv.lastError = undefined
+      conv.rateLimit = undefined
       // Mark stale bg tasks as killed
-      for (const bgTask of session.bgTasks) {
+      for (const bgTask of conv.bgTasks) {
         if (bgTask.status === 'running') {
           bgTask.status = 'killed'
           bgTask.completedAt = Date.now()
@@ -956,15 +955,15 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
         {
           type: 'conversation_update',
           conversationId: id,
-          session: toConversationSummary(session),
+          conversation: toConversationSummary(conv),
         },
-        session.project,
+        conv.project,
       )
     }
   }
 
-  // Handle /clear: reset ephemeral state, update ccSessionId metadata.
-  // The conversation key (conversationId) does NOT change -- ccSessionId is metadata only.
+  // Handle /clear: reset ephemeral state, store new ccSessionId in opaque meta.
+  // The conversation key (conversationId) does NOT change.
   function clearConversation(
     conversationId: string,
     newCcSessionId: string,
@@ -972,30 +971,31 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     newModel?: string,
   ): Conversation | undefined {
     const newProject = newProjectOrCwd.includes('://') ? newProjectOrCwd : cwdToProjectUri(newProjectOrCwd)
-    const session = conversations.get(conversationId)
-    if (!session) return undefined
+    const conv = conversations.get(conversationId)
+    if (!conv) return undefined
 
-    session.ccSessionId = newCcSessionId
-    session.project = newProject
-    if (newModel) session.model = newModel
-    session.status = 'idle'
-    session.lastActivity = Date.now()
-    persistConversation(session)
+    if (!conv.agentHostMeta) conv.agentHostMeta = {}
+    conv.agentHostMeta.ccSessionId = newCcSessionId
+    conv.project = newProject
+    if (newModel) conv.model = newModel
+    conv.status = 'idle'
+    conv.lastActivity = Date.now()
+    persistConversation(conv)
 
     // Reset ephemeral state (preserve compacting flag - processEvent handles the transition)
-    const wasCompacting = session.compacting
-    session.events = []
-    session.subagents = []
-    session.teammates = []
-    session.team = undefined
-    session.tasks = []
-    session.archivedTasks = []
-    session.diagLog = []
-    session.tokenUsage = undefined
-    session.summary = undefined
-    session.recap = undefined
-    session.recapFresh = undefined
-    for (const bgTask of session.bgTasks) {
+    const wasCompacting = conv.compacting
+    conv.events = []
+    conv.subagents = []
+    conv.teammates = []
+    conv.team = undefined
+    conv.tasks = []
+    conv.archivedTasks = []
+    conv.diagLog = []
+    conv.tokenUsage = undefined
+    conv.summary = undefined
+    conv.recap = undefined
+    conv.recapFresh = undefined
+    for (const bgTask of conv.bgTasks) {
       if (bgTask.status === 'running') {
         bgTask.status = 'killed'
         bgTask.completedAt = Date.now()
@@ -1003,7 +1003,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     }
 
     // Clear transcript caches + seq counters. Key is stable (conversationId), but
-    // the transcript content is stale after /clear -- wipe it so the fresh session
+    // the transcript content is stale after /clear -- wipe it so the fresh conversation
     // starts with a clean slate.
     transcriptCache.delete(conversationId)
     transcriptSeqCounters.delete(conversationId)
@@ -1023,9 +1023,9 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       {
         type: 'conversation_update',
         conversationId,
-        session: toConversationSummary(session),
+        conversation: toConversationSummary(conv),
       },
-      session.project,
+      conv.project,
     )
 
     if (wasCompacting) {
@@ -1039,7 +1039,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       })
     }
 
-    return session
+    return conv
   }
 
   function getConversation(id: string): Conversation | undefined {
@@ -1059,27 +1059,27 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
   }
 
   function updateActivity(conversationId: string): void {
-    const session = conversations.get(conversationId)
-    if (session) {
-      session.lastActivity = Date.now()
-      if (session.recapFresh && (!session.recap || Date.now() - session.recap.timestamp > 10_000)) {
-        session.recapFresh = false
+    const conv = conversations.get(conversationId)
+    if (conv) {
+      conv.lastActivity = Date.now()
+      if (conv.recapFresh && (!conv.recap || Date.now() - conv.recap.timestamp > 10_000)) {
+        conv.recapFresh = false
       }
-      if (session.status === 'idle') {
-        session.status = 'active'
+      if (conv.status === 'idle') {
+        conv.status = 'active'
       }
     }
   }
 
   function endConversation(conversationId: string, _reason: string): void {
-    const session = conversations.get(conversationId)
-    if (session) {
-      session.status = 'ended'
-      session.planMode = false
+    const conv = conversations.get(conversationId)
+    if (conv) {
+      conv.status = 'ended'
+      conv.planMode = false
       clearAnalyticsSession(conversationId)
 
       // Mark all running subagents as stopped (SubagentStop hook may not fire)
-      for (const agent of session.subagents) {
+      for (const agent of conv.subagents) {
         if (agent.status === 'running') {
           agent.status = 'stopped'
           agent.stoppedAt = Date.now()
@@ -1087,7 +1087,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       }
 
       // Mark all teammates as stopped
-      for (const teammate of session.teammates) {
+      for (const teammate of conv.teammates) {
         if (teammate.status !== 'stopped') {
           teammate.status = 'stopped'
           teammate.stoppedAt = Date.now()
@@ -1095,7 +1095,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       }
 
       // Mark all running bg tasks as killed
-      for (const bgTask of session.bgTasks) {
+      for (const bgTask of conv.bgTasks) {
         if (bgTask.status === 'running') {
           bgTask.status = 'killed'
           bgTask.completedAt = Date.now()
@@ -1107,20 +1107,20 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
         {
           type: 'conversation_ended',
           conversationId,
-          session: toConversationSummary(session),
+          conversation: toConversationSummary(conv),
         },
-        session.project,
+        conv.project,
       )
 
       // Persist to store immediately
-      persistConversation(session)
+      persistConversation(conv)
     }
   }
 
   function removeConversation(conversationId: string): void {
-    const session = conversations.get(conversationId)
-    if (session) {
-      for (const bg of session.bgTasks) {
+    const conv = conversations.get(conversationId)
+    if (conv) {
+      for (const bg of conv.bgTasks) {
         bgTaskOutputCache.delete(bg.taskId)
       }
     }
@@ -1139,16 +1139,16 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     }
     if (store) {
       try {
-        store.sessions.delete(conversationId)
+        store.conversations.delete(conversationId)
       } catch {}
     }
   }
 
   function getConversationEvents(conversationId: string, limit?: number, since?: number): HookEvent[] {
-    const session = conversations.get(conversationId)
-    if (!session) return []
+    const conv = conversations.get(conversationId)
+    if (!conv) return []
 
-    let events = session.events
+    let events = conv.events
 
     // Filter by timestamp if since is provided
     if (since) {
@@ -1280,7 +1280,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     return ended
   }
 
-  // Terminal viewer management (multiple viewers per session) -- delegated to terminal-registry
+  // Terminal viewer management (multiple viewers per conversation) -- delegated to terminal-registry
   const {
     addTerminalViewer,
     getTerminalViewers,
@@ -1326,7 +1326,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     const allSummaries = Array.from(conversations.values()).map(toConversationSummary)
     return JSON.stringify({
       type: 'conversations_list',
-      sessions: filterConversationsByGrants(allSummaries, grants),
+      conversations: filterConversationsByGrants(allSummaries, grants),
       serverVersion: BUILD_VERSION.gitHashShort,
       _epoch: sync.epoch,
       _seq: sync.seq,
@@ -1353,20 +1353,20 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
   }
 
   function updateTasks(conversationId: string, tasks: TaskInfo[]): void {
-    const session = conversations.get(conversationId)
-    if (!session) return
+    const conv = conversations.get(conversationId)
+    if (!conv) return
 
     // Diff: find tasks that disappeared (deleted by Claude after completion)
     const incomingIds = new Set(tasks.map(t => t.id))
-    const disappeared = session.tasks.filter(t => !incomingIds.has(t.id))
+    const disappeared = conv.tasks.filter(t => !incomingIds.has(t.id))
     if (disappeared.length > 0) {
-      session.archivedTasks.push({
+      conv.archivedTasks.push({
         archivedAt: Date.now(),
         tasks: disappeared,
       })
     }
 
-    session.tasks = tasks
+    conv.tasks = tasks
     scheduleConversationUpdate(conversationId)
   }
 
@@ -1391,7 +1391,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     const active = listShares()
     const shares = active.map(s => ({
       token: s.token,
-      sessionCwd: s.sessionCwd,
+      project: s.project,
       createdAt: s.createdAt,
       expiresAt: s.expiresAt,
       createdBy: s.createdBy,
@@ -1563,9 +1563,9 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     }
 
     // Extract token usage from subagent transcript entries
-    const session = conversations.get(conversationId)
-    if (!session) return
-    const subagent = session.subagents.find(a => a.agentId === agentId)
+    const conv = conversations.get(conversationId)
+    if (!conv) return
+    const subagent = conv.subagents.find(a => a.agentId === agentId)
     if (!subagent) return
 
     let changed = false
@@ -1612,9 +1612,9 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       bgTaskOutputCache.set(taskId, combined.length > 100_000 ? combined.slice(-100_000) : combined)
     }
     // Store output reference on the bgTask if it exists
-    const session = conversations.get(conversationId)
-    if (session && done) {
-      const bgTask = session.bgTasks.find(t => t.taskId === taskId)
+    const conv = conversations.get(conversationId)
+    if (conv && done) {
+      const bgTask = conv.bgTasks.find(t => t.taskId === taskId)
       if (bgTask && bgTask.status === 'running') {
         bgTask.status = 'completed'
         bgTask.completedAt = Date.now()
@@ -1637,7 +1637,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
 
   function setPendingLaunchConfig(conversationId: string, config: LaunchConfig) {
     pendingLaunchConfigs.set(conversationId, config)
-    // Auto-cleanup after 5 min in case session never connects
+    // Auto-cleanup after 5 min in case conversation never connects
     setTimeout(() => pendingLaunchConfigs.delete(conversationId), 5 * 60 * 1000)
   }
 
@@ -1671,18 +1671,17 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     callerConversationId: string,
     project: string,
     action: 'spawn' | 'revive' | 'restart',
-  ): Promise<ConversationSummary> {
+  ): Promise<Conversation> {
     return rendezvous.addRendezvous(conversationId, callerConversationId, project, action)
   }
 
   function resolveRendezvous(conversationId: string, connectionId: string): boolean {
     return rendezvous.resolveRendezvous(conversationId, connectionId, id => {
-      const session = conversations.get(id)
-      return session ? toConversationSummary(session) : undefined
+      return conversations.get(id)
     })
   }
 
-  // ─── Pending session names (set at spawn time, applied on connect) ──
+  // ─── Pending conversation names (set at spawn time, applied on connect) ──
   const pendingConversationNames = new Map<string, string>()
 
   function setPendingConversationName(conversationId: string, name: string): void {

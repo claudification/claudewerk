@@ -26,8 +26,8 @@ export interface ControlPanelMessage {
     | 'usage_update'
   conversationId?: string
   previousConversationId?: string
-  session?: ConversationSummary
-  sessions?: ConversationSummary[]
+  conversation?: ConversationSummary
+  conversations?: ConversationSummary[]
   event?: unknown
   connected?: boolean
   machineId?: string

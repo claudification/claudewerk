@@ -32,11 +32,11 @@ export interface ConversationLike {
  * slug to the same value (so siblings stay disambiguable).
  */
 export function computeConversationSlug(target: ConversationLike, siblingConversations: ConversationLike[]): string {
-  const sessionSlug = slugify(target.title || target.id.slice(0, 8))
+  const conversationSlug = slugify(target.title || target.id.slice(0, 8))
   const collides = siblingConversations.some(
-    other => other.id !== target.id && slugify(other.title || other.id.slice(0, 8)) === sessionSlug,
+    other => other.id !== target.id && slugify(other.title || other.id.slice(0, 8)) === conversationSlug,
   )
-  return collides ? `${sessionSlug}-${target.id.slice(0, 6)}` : sessionSlug
+  return collides ? `${conversationSlug}-${target.id.slice(0, 6)}` : conversationSlug
 }
 
 /**
@@ -56,7 +56,7 @@ export function computeLocalId(
 // ─── Send target resolution ─────────────────────────────────────────
 
 export type ResolveSendTarget =
-  | { kind: 'resolved'; session: ConversationLike }
+  | { kind: 'resolved'; conversation: ConversationLike }
   | { kind: 'not_found' }
   | { kind: 'ambiguous'; canonicalProject: string; candidates: ConversationLike[] }
 
@@ -64,9 +64,9 @@ export interface ResolveSendInput {
   /** The slug to the LEFT of `:` in the wire `to` -- a project slug. */
   projectSlug: string
   /** The slug to the RIGHT of `:`, or undefined for bare addressing. */
-  sessionSlug: string | undefined
+  conversationSlug: string | undefined
   /** All sessions registered at the resolved target project (live + inactive). */
-  sessionsAtProject: ConversationLike[]
+  conversationsAtProject: ConversationLike[]
   /** The canonical project slug (label or dirname) to surface in error messages. */
   canonicalProject: string
   /** Predicate -- "is this conversation currently online?". Live count drives ambiguity. */
@@ -74,7 +74,7 @@ export interface ResolveSendInput {
 }
 
 /**
- * Resolve a parsed `(projectSlug, sessionSlug?)` target against the conversation
+ * Resolve a parsed `(projectSlug, conversationSlug?)` target against the conversation
  * registered at a given project. Returns the chosen session, a not-found marker,
  * or an ambiguous-bare error with the candidate compound ids the caller
  * should use instead.
@@ -85,30 +85,30 @@ export interface ResolveSendInput {
  * pick one explicitly with the compound form).
  */
 export function resolveSendTarget(input: ResolveSendInput): ResolveSendTarget {
-  const { projectSlug, sessionSlug, sessionsAtProject, isLive } = input
+  const { projectSlug, conversationSlug, conversationsAtProject, isLive } = input
 
-  if (sessionSlug !== undefined) {
-    const exact = sessionsAtProject.find(s => slugify(s.title || s.id.slice(0, 8)) === sessionSlug)
-    if (exact) return { kind: 'resolved', session: exact }
-    const prefix = sessionsAtProject.find(s => slugify(s.title || s.id.slice(0, 8)).startsWith(sessionSlug))
-    if (prefix) return { kind: 'resolved', session: prefix }
+  if (conversationSlug !== undefined) {
+    const exact = conversationsAtProject.find(s => slugify(s.title || s.id.slice(0, 8)) === conversationSlug)
+    if (exact) return { kind: 'resolved', conversation: exact }
+    const prefix = conversationsAtProject.find(s => slugify(s.title || s.id.slice(0, 8)).startsWith(conversationSlug))
+    if (prefix) return { kind: 'resolved', conversation: prefix }
     return { kind: 'not_found' }
   }
 
   // Bare addressing.
-  // First: exact session-title match (a conversation named "arr" beats project-level dispatch).
-  const titleMatch = sessionsAtProject.find(s => slugify(s.title || s.id.slice(0, 8)) === projectSlug)
-  if (titleMatch) return { kind: 'resolved', session: titleMatch }
+  // First: exact conversation-title match (a conversation named "arr" beats project-level dispatch).
+  const titleMatch = conversationsAtProject.find(s => slugify(s.title || s.id.slice(0, 8)) === projectSlug)
+  if (titleMatch) return { kind: 'resolved', conversation: titleMatch }
 
-  const live = sessionsAtProject.filter(isLive)
-  if (live.length === 1) return { kind: 'resolved', session: live[0] }
+  const live = conversationsAtProject.filter(isLive)
+  if (live.length === 1) return { kind: 'resolved', conversation: live[0] }
   if (live.length > 1) {
     return { kind: 'ambiguous', canonicalProject: input.canonicalProject, candidates: live }
   }
   // No live -- fall back to inactive, but only if unambiguous.
-  if (sessionsAtProject.length === 1) return { kind: 'resolved', session: sessionsAtProject[0] }
-  if (sessionsAtProject.length > 1) {
-    return { kind: 'ambiguous', canonicalProject: input.canonicalProject, candidates: sessionsAtProject }
+  if (conversationsAtProject.length === 1) return { kind: 'resolved', conversation: conversationsAtProject[0] }
+  if (conversationsAtProject.length > 1) {
+    return { kind: 'ambiguous', canonicalProject: input.canonicalProject, candidates: conversationsAtProject }
   }
   return { kind: 'not_found' }
 }
@@ -127,7 +127,7 @@ export function formatAmbiguityError(canonicalProject: string, candidates: Conve
 // ─── Shared target resolution ──────────────────────────────────────
 
 export type ResolveConversationResult =
-  | { kind: 'resolved'; session: ConversationLike }
+  | { kind: 'resolved'; conversation: ConversationLike }
   | { kind: 'not_found'; error: string }
   | { kind: 'ambiguous'; error: string }
 
@@ -157,7 +157,7 @@ export function resolveConversationTarget(targetId: string, deps: ResolveConvers
   const colonIdx = targetId.indexOf(':')
   const hasCompound = colonIdx >= 0
   const projectSlug = hasCompound ? targetId.slice(0, colonIdx) : targetId
-  const sessionSlug = hasCompound ? targetId.slice(colonIdx + 1) : undefined
+  const conversationSlug = hasCompound ? targetId.slice(colonIdx + 1) : undefined
 
   let targetProject = deps.callerProject ? deps.addressBook.resolve(deps.callerProject, projectSlug) : undefined
 
@@ -172,13 +172,13 @@ export function resolveConversationTarget(targetId: string, deps: ResolveConvers
   }
 
   if (targetProject) {
-    const sessionsAtProject = deps.getAllConversations().filter(s => isSameProject(s.project, targetProject))
+    const conversationsAtProject = deps.getAllConversations().filter(s => isSameProject(s.project, targetProject))
     const projSettings = deps.getProjectSettings(targetProject)
     const canonicalProject = slugify(projSettings?.label || extractProjectLabel(targetProject))
     const resolved = resolveSendTarget({
       projectSlug,
-      sessionSlug,
-      sessionsAtProject,
+      conversationSlug,
+      conversationsAtProject,
       canonicalProject,
       isLive: s => deps.getActiveConversationCount(s.id) > 0,
     })
@@ -186,13 +186,13 @@ export function resolveConversationTarget(targetId: string, deps: ResolveConvers
       return { kind: 'ambiguous', error: formatAmbiguityError(resolved.canonicalProject, resolved.candidates) }
     }
     if (resolved.kind === 'resolved') {
-      return { kind: 'resolved', session: resolved.session }
+      return { kind: 'resolved', conversation: resolved.conversation }
     }
-    return { kind: 'not_found', error: `Session not found at project "${canonicalProject}"` }
+    return { kind: 'not_found', error: `Conversation not found at project "${canonicalProject}"` }
   }
 
   // Fallback: try raw internal ID / conversation ID
   const fallback = deps.findConversationByConversationId(targetId) || deps.getConversation(targetId)
-  if (fallback) return { kind: 'resolved', session: fallback }
+  if (fallback) return { kind: 'resolved', conversation: fallback }
   return { kind: 'not_found', error: 'Target not connected. Use list_conversations to find current sessions.' }
 }

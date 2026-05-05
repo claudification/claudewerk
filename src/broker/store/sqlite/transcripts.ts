@@ -6,8 +6,8 @@ type Params = Record<string, string | number | bigint | boolean | null>
 function rowToEntry(row: Params): TranscriptEntryRecord {
   return {
     id: row.id as number,
-    conversationId: row.session_id as string,
-    sessionSeq: row.session_seq as number,
+    conversationId: row.conversation_id as string,
+    seq: row.seq as number,
     syncEpoch: row.sync_epoch as string,
     type: row.type as string,
     subtype: (row.subtype as string) ?? undefined,
@@ -22,32 +22,32 @@ function rowToEntry(row: Params): TranscriptEntryRecord {
 export function createSqliteTranscriptStore(db: Database): TranscriptStore {
   const stmtInsert = db.prepare(`
     INSERT OR IGNORE INTO transcript_entries
-      (session_id, session_seq, sync_epoch, type, subtype, agent_id, uuid, content, timestamp, ingested_at)
-    VALUES ($sessionId, $sessionSeq, $syncEpoch, $type, $subtype, $agentId, $uuid, $content, $timestamp, $ingestedAt)
+      (conversation_id, seq, sync_epoch, type, subtype, agent_id, uuid, content, timestamp, ingested_at)
+    VALUES ($conversationId, $seq, $syncEpoch, $type, $subtype, $agentId, $uuid, $content, $timestamp, $ingestedAt)
   `)
 
   const stmtMaxSeq = db.prepare(
-    'SELECT COALESCE(MAX(session_seq), 0) as max_seq FROM transcript_entries WHERE session_id = $sessionId',
+    'SELECT COALESCE(MAX(seq), 0) as max_seq FROM transcript_entries WHERE conversation_id = $conversationId',
   )
 
-  const stmtCount = db.prepare('SELECT COUNT(*) as cnt FROM transcript_entries WHERE session_id = $sessionId')
+  const stmtCount = db.prepare('SELECT COUNT(*) as cnt FROM transcript_entries WHERE conversation_id = $conversationId')
   const stmtCountAgent = db.prepare(
-    'SELECT COUNT(*) as cnt FROM transcript_entries WHERE session_id = $sessionId AND agent_id = $agentId',
+    'SELECT COUNT(*) as cnt FROM transcript_entries WHERE conversation_id = $conversationId AND agent_id = $agentId',
   )
   const stmtCountNoAgent = db.prepare(
-    'SELECT COUNT(*) as cnt FROM transcript_entries WHERE session_id = $sessionId AND agent_id IS NULL',
+    'SELECT COUNT(*) as cnt FROM transcript_entries WHERE conversation_id = $conversationId AND agent_id IS NULL',
   )
 
   return {
     append(conversationId, syncEpoch, entries: TranscriptEntryInput[]) {
       const doAppend = db.transaction(() => {
-        let seq = (stmtMaxSeq.get({ sessionId: conversationId }) as { max_seq: number }).max_seq
+        let seq = (stmtMaxSeq.get({ conversationId: conversationId }) as { max_seq: number }).max_seq
         const now = Date.now()
         for (const e of entries) {
           seq++
           stmtInsert.run({
-            sessionId: conversationId,
-            sessionSeq: seq,
+            conversationId: conversationId,
+            seq: seq,
             syncEpoch,
             type: e.type,
             subtype: e.subtype ?? null,
@@ -66,8 +66,8 @@ export function createSqliteTranscriptStore(db: Database): TranscriptStore {
       const limit = opts.limit ?? 50
       const direction = opts.direction ?? 'forward'
 
-      let totalSql = 'SELECT COUNT(*) as cnt FROM transcript_entries WHERE session_id = $sessionId'
-      const totalParams: Params = { sessionId: conversationId }
+      let totalSql = 'SELECT COUNT(*) as cnt FROM transcript_entries WHERE conversation_id = $conversationId'
+      const totalParams: Params = { conversationId: conversationId }
       if (opts.agentId !== undefined) {
         if (opts.agentId === null) {
           totalSql += ' AND agent_id IS NULL'
@@ -78,8 +78,8 @@ export function createSqliteTranscriptStore(db: Database): TranscriptStore {
       }
       const totalCount = (db.prepare(totalSql).get(totalParams) as { cnt: number }).cnt
 
-      let sql = 'SELECT * FROM transcript_entries WHERE session_id = $sessionId'
-      const params: Params = { sessionId: conversationId, limit }
+      let sql = 'SELECT * FROM transcript_entries WHERE conversation_id = $conversationId'
+      const params: Params = { conversationId: conversationId, limit }
 
       if (opts.agentId !== undefined) {
         if (opts.agentId === null) {
@@ -124,8 +124,8 @@ export function createSqliteTranscriptStore(db: Database): TranscriptStore {
     },
 
     getLatest(conversationId, limit, agentId) {
-      let sql = 'SELECT * FROM transcript_entries WHERE session_id = $sessionId'
-      const params: Params = { sessionId: conversationId, limit }
+      let sql = 'SELECT * FROM transcript_entries WHERE conversation_id = $conversationId'
+      const params: Params = { conversationId: conversationId, limit }
 
       if (agentId !== undefined) {
         if (agentId === null) {
@@ -142,19 +142,19 @@ export function createSqliteTranscriptStore(db: Database): TranscriptStore {
     },
 
     getSinceSeq(conversationId, sinceSeq, limit) {
-      const maxSeq = (stmtMaxSeq.get({ sessionId: conversationId }) as { max_seq: number }).max_seq
+      const maxSeq = (stmtMaxSeq.get({ conversationId: conversationId }) as { max_seq: number }).max_seq
 
       let gap = false
       if (sinceSeq > 0) {
         const check = db
-          .prepare('SELECT 1 FROM transcript_entries WHERE session_id = $sessionId AND session_seq = $sinceSeq')
-          .get({ sessionId: conversationId, sinceSeq })
+          .prepare('SELECT 1 FROM transcript_entries WHERE conversation_id = $conversationId AND seq = $sinceSeq')
+          .get({ conversationId: conversationId, sinceSeq })
         gap = !check
       }
 
       let sql =
-        'SELECT * FROM transcript_entries WHERE session_id = $sessionId AND session_seq > $sinceSeq ORDER BY session_seq ASC'
-      const params: Params = { sessionId: conversationId, sinceSeq }
+        'SELECT * FROM transcript_entries WHERE conversation_id = $conversationId AND seq > $sinceSeq ORDER BY seq ASC'
+      const params: Params = { conversationId: conversationId, sinceSeq }
       if (limit) {
         sql += ' LIMIT $limit'
         params.limit = limit
@@ -162,18 +162,18 @@ export function createSqliteTranscriptStore(db: Database): TranscriptStore {
 
       const rows = db.prepare(sql).all(params) as Params[]
       const entries = rows.map(rowToEntry)
-      const lastSeq = entries.length > 0 ? entries[entries.length - 1].sessionSeq : maxSeq
+      const lastSeq = entries.length > 0 ? entries[entries.length - 1].seq : maxSeq
 
       return { entries, lastSeq, gap }
     },
 
     getLastSeq(conversationId) {
-      return (stmtMaxSeq.get({ sessionId: conversationId }) as { max_seq: number }).max_seq
+      return (stmtMaxSeq.get({ conversationId: conversationId }) as { max_seq: number }).max_seq
     },
 
     find(conversationId, filter) {
-      let sql = 'SELECT * FROM transcript_entries WHERE session_id = $sessionId'
-      const params: Params = { sessionId: conversationId }
+      let sql = 'SELECT * FROM transcript_entries WHERE conversation_id = $conversationId'
+      const params: Params = { conversationId: conversationId }
 
       if (filter.types?.length) {
         const placeholders = filter.types.map((_, i) => `$type${i}`)
@@ -226,11 +226,11 @@ export function createSqliteTranscriptStore(db: Database): TranscriptStore {
     count(conversationId, agentId) {
       if (agentId !== undefined) {
         if (agentId === null) {
-          return (stmtCountNoAgent.get({ sessionId: conversationId }) as { cnt: number }).cnt
+          return (stmtCountNoAgent.get({ conversationId: conversationId }) as { cnt: number }).cnt
         }
-        return (stmtCountAgent.get({ sessionId: conversationId, agentId }) as { cnt: number }).cnt
+        return (stmtCountAgent.get({ conversationId: conversationId, agentId }) as { cnt: number }).cnt
       }
-      return (stmtCount.get({ sessionId: conversationId }) as { cnt: number }).cnt
+      return (stmtCount.get({ conversationId: conversationId }) as { cnt: number }).cnt
     },
 
     pruneOlderThan(cutoffMs) {
@@ -246,8 +246,8 @@ function getNextId(
   afterId: number,
   agentId: string | null | undefined,
 ): number | null {
-  let sql = 'SELECT id FROM transcript_entries WHERE session_id = $sessionId AND id > $afterId'
-  const params: Params = { sessionId: conversationId, afterId }
+  let sql = 'SELECT id FROM transcript_entries WHERE conversation_id = $conversationId AND id > $afterId'
+  const params: Params = { conversationId: conversationId, afterId }
   if (agentId !== undefined) {
     if (agentId === null) {
       sql += ' AND agent_id IS NULL'
@@ -267,8 +267,8 @@ function getPrevId(
   beforeId: number,
   agentId: string | null | undefined,
 ): number | null {
-  let sql = 'SELECT id FROM transcript_entries WHERE session_id = $sessionId AND id < $beforeId'
-  const params: Params = { sessionId: conversationId, beforeId }
+  let sql = 'SELECT id FROM transcript_entries WHERE conversation_id = $conversationId AND id < $beforeId'
+  const params: Params = { conversationId: conversationId, beforeId }
   if (agentId !== undefined) {
     if (agentId === null) {
       sql += ' AND agent_id IS NULL'

@@ -80,9 +80,9 @@ export function createAdminRouter(
           perConversationPerms[s.id] = resolvePermissionFlags(user.grants, s.project, serverRoles)
         }
         try {
-          ws.send(JSON.stringify({ type: 'permissions', global, sessions: perConversationPerms }))
+          ws.send(JSON.stringify({ type: 'permissions', global, conversations: perConversationPerms }))
         } catch {}
-        // Re-send filtered session list (user might gain/lose access)
+        // Re-send filtered conversation list (user might gain/lose access)
         conversationStore.sendConversationsList(ws)
       }
     }
@@ -188,7 +188,7 @@ export function createAdminRouter(
     if (caller === name) return c.json({ error: 'Cannot delete yourself' }, 400)
     const user = getUser(name)
     if (!user) return c.json({ error: 'User not found' }, 404)
-    // Revoke first (kills sessions), then we'd need a deleteUser -- for now revoke is enough
+    // Revoke first (kills conversations), then we'd need a deleteUser -- for now revoke is enough
     revokeUser(name)
     return c.json({ ok: true })
   })
@@ -229,18 +229,18 @@ export function createAdminRouter(
   app.post('/api/shares', async c => {
     if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
     const body = await c.req.json<{
-      sessionCwd: string
+      project: string
       expiresIn?: number // ms from now
       expiresAt?: number // absolute timestamp
       label?: string
       permissions?: string[]
       hideUserInput?: boolean
     }>()
-    if (!body.sessionCwd) return c.json({ error: 'sessionCwd is required' }, 400)
+    if (!body.project) return c.json({ error: 'project is required' }, 400)
     const expiresAt = body.expiresAt || (body.expiresIn ? Date.now() + body.expiresIn : Date.now() + 4 * 60 * 60 * 1000) // default 4h
     try {
       const share = createSessionShare({
-        sessionCwd: body.sessionCwd,
+        project: body.project,
         expiresAt,
         createdBy: getAuthenticatedUser(c.req.raw) || 'admin',
         label: body.label,
@@ -360,7 +360,7 @@ export function createAdminRouter(
     return c.json({ ok: true, removed, purged })
   })
 
-  // ─── Inter-session message history ──────────────────────────────────
+  // ─── Inter-conversation message history ──────────────────────────────────
   app.get('/api/links/messages', c => {
     if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
     const projectA = c.req.query('projectA') || c.req.query('cwdA')

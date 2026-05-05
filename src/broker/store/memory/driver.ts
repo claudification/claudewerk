@@ -75,15 +75,15 @@ function toSummary(s: ConversationRecord): ConversationSummaryRecord {
 }
 
 function createConversationStore(): ConversationStore {
-  const sessions = new Map<string, ConversationRecord>()
+  const conversations = new Map<string, ConversationRecord>()
 
   return {
     get(id) {
-      return sessions.get(id) ?? null
+      return conversations.get(id) ?? null
     },
 
     create(input: ConversationCreate) {
-      if (sessions.has(input.id)) {
+      if (conversations.has(input.id)) {
         throw new DuplicateEntry(`Session already exists: ${input.id}`)
       }
       const rec: ConversationRecord = {
@@ -97,12 +97,12 @@ function createConversationStore(): ConversationStore {
         createdAt: input.createdAt ?? Date.now(),
         meta: input.meta,
       }
-      sessions.set(input.id, rec)
+      conversations.set(input.id, rec)
       return rec
     },
 
     update(id, patch: ConversationPatch) {
-      const s = sessions.get(id)
+      const s = conversations.get(id)
       if (!s) throw new ConversationNotFound(id)
       for (const [k, v] of Object.entries(patch)) {
         if (v !== undefined) (s as unknown as Record<string, unknown>)[k] = v
@@ -110,11 +110,11 @@ function createConversationStore(): ConversationStore {
     },
 
     delete(id) {
-      sessions.delete(id)
+      conversations.delete(id)
     },
 
     list(filter?: ConversationFilter) {
-      let results = [...sessions.values()]
+      let results = [...conversations.values()]
       if (filter?.scope) results = results.filter(s => s.scope === filter.scope)
       const statuses = filter?.status
       if (statuses?.length) results = results.filter(s => statuses.includes(s.status))
@@ -126,7 +126,7 @@ function createConversationStore(): ConversationStore {
     },
 
     listByScope(scope, filter) {
-      let results = [...sessions.values()].filter(s => s.scope === scope)
+      let results = [...conversations.values()].filter(s => s.scope === scope)
       const statuses = filter?.status
       if (statuses?.length) results = results.filter(s => statuses.includes(s.status))
       results.sort((a, b) => b.createdAt - a.createdAt)
@@ -134,7 +134,7 @@ function createConversationStore(): ConversationStore {
     },
 
     updateStats(id, stats: Partial<ConversationStats>) {
-      const s = sessions.get(id)
+      const s = conversations.get(id)
       if (!s) throw new ConversationNotFound(id)
       s.stats = { ...s.stats, ...stats }
     },
@@ -169,7 +169,7 @@ function createTranscriptStore(): TranscriptStore {
         arr.push({
           id: nextId(),
           conversationId,
-          sessionSeq: nextSeq(conversationId),
+          seq: nextSeq(conversationId),
           syncEpoch,
           type: e.type,
           subtype: e.subtype,
@@ -221,12 +221,12 @@ function createTranscriptStore(): TranscriptStore {
     getSinceSeq(conversationId, sinceSeq, limit) {
       const arr = getEntries(conversationId)
       const maxSeq = seqCounters.get(conversationId) ?? 0
-      const gap = sinceSeq > 0 && !arr.some(e => e.sessionSeq === sinceSeq)
-      const filtered = arr.filter(e => e.sessionSeq > sinceSeq)
+      const gap = sinceSeq > 0 && !arr.some(e => e.seq === sinceSeq)
+      const filtered = arr.filter(e => e.seq > sinceSeq)
       const sliced = limit ? filtered.slice(0, limit) : filtered
       return {
         entries: sliced,
-        lastSeq: sliced.length > 0 ? sliced[sliced.length - 1].sessionSeq : maxSeq,
+        lastSeq: sliced.length > 0 ? sliced[sliced.length - 1].seq : maxSeq,
         gap,
       }
     },
@@ -813,7 +813,7 @@ function createCostStore(): CostStore {
 
 export function createMemoryDriver(): StoreDriver {
   return {
-    sessions: createConversationStore(),
+    conversations: createConversationStore(),
     transcripts: createTranscriptStore(),
     events: createEventStore(),
     kv: createKVStore(),

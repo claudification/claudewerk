@@ -111,8 +111,8 @@ function getCookieValue(req: Request): string | null {
 export function getAuthenticatedUser(req: Request): string | null {
   const token = getCookieValue(req)
   if (!token) return null
-  const session = validateConversation(token)
-  return session?.name ?? null
+  const conv = validateConversation(token)
+  return conv?.name ?? null
 }
 
 /**
@@ -163,7 +163,7 @@ export function requireAuth(req: Request): Response | null {
   // Specific auth routes needed for login/registration flow (no cookie yet)
   if (PUBLIC_AUTH_ROUTES.has(url.pathname)) return null
 
-  // WebSocket: rclaude authenticates with shared secret or per-sentinel secret, dashboard with session cookie/token
+  // WebSocket: rclaude authenticates with shared secret or per-sentinel secret, dashboard with conversation cookie/token
   if (req.headers.get('upgrade')?.toLowerCase() === 'websocket') {
     const secret = url.searchParams.get('secret')
     if (secret) {
@@ -193,7 +193,7 @@ export function requireAuth(req: Request): Response | null {
   if (shareToken && validateShareFn?.(shareToken)) return null
 
   // Not authenticated - only allow SPA HTML navigation for non-API paths
-  // API paths (/sessions, /file, etc.) must NEVER fall through without auth
+  // API paths (/conversations, /file, etc.) must NEVER fall through without auth
   const accept = req.headers.get('accept') || ''
   const isApiPath =
     url.pathname.startsWith('/conversations') || url.pathname.startsWith('/api/') || url.pathname.startsWith('/auth/')
@@ -216,7 +216,7 @@ export async function handleAuthRoute(req: Request): Promise<Response | null> {
     const userName = getAuthenticatedUser(req)
     const token = getCookieValue(req)
     const headers: Record<string, string> = {}
-    // Silently renew session cookie if past halfway point
+    // Silently renew conversation cookie if past halfway point
     if (userName && token && renewSessionIfNeeded(token)) {
       headers['Set-Cookie'] = setCookie(token)
     }
@@ -315,7 +315,7 @@ export async function handleAuthRoute(req: Request): Promise<Response | null> {
       addCredential(invite.name, storedCred)
       consumeInvite(token)
 
-      // Create session
+      // Create conversation
       const sessionToken = createAuthToken(invite.name)
 
       return new Response(JSON.stringify({ verified: true, name: invite.name }), {
@@ -391,7 +391,7 @@ export async function handleAuthRoute(req: Request): Promise<Response | null> {
       // Update counter
       updateCredentialCounter(credentialId, verification.authenticationInfo.newCounter)
 
-      // Create session
+      // Create conversation
       const sessionToken = createAuthToken(user.name)
 
       return new Response(JSON.stringify({ verified: true, name: user.name }), {

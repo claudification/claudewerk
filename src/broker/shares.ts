@@ -1,7 +1,7 @@
 /**
  * Session Shares - link-based temporary access to sessions.
  *
- * Generates tokens that grant limited permissions to a specific session CWD.
+ * Generates tokens that grant limited permissions to a specific project.
  * No user registration needed - the token IS the auth.
  * Backed by StoreDriver KVStore (replaces JSON file persistence).
  */
@@ -12,7 +12,7 @@ import type { KVStore } from './store/types'
 
 export interface ConversationShare {
   token: string
-  sessionCwd: string
+  project: string
   createdAt: number
   expiresAt: number
   createdBy: string
@@ -23,7 +23,7 @@ export interface ConversationShare {
   hideUserInput?: boolean
 }
 
-// Default permissions for shared sessions
+// Default permissions for shared conversations
 const DEFAULT_SHARE_PERMISSIONS = ['chat', 'chat:read', 'files:read', 'terminal:read']
 
 const KV_KEY = 'shares'
@@ -59,7 +59,7 @@ export function initShares(opts: { kv: KVStore; skipTimers?: boolean }) {
 
 /** Create a new share token. Returns the share object. */
 export function createShare(opts: {
-  sessionCwd: string
+  project: string
   expiresAt: number
   createdBy: string
   label?: string
@@ -79,7 +79,7 @@ export function createShare(opts: {
   const token = randomBytes(32).toString('base64url')
   const share: ConversationShare = {
     token,
-    sessionCwd: opts.sessionCwd,
+    project: opts.project,
     createdAt: Date.now(),
     expiresAt: opts.expiresAt,
     createdBy: opts.createdBy,
@@ -92,7 +92,7 @@ export function createShare(opts: {
   shares.push(share)
   save()
   console.log(
-    `[shares] Created share for ${opts.sessionCwd} by ${opts.createdBy} (expires ${new Date(opts.expiresAt).toISOString()})`,
+    `[shares] Created share for ${opts.project} by ${opts.createdBy} (expires ${new Date(opts.expiresAt).toISOString()})`,
   )
   return share
 }
@@ -112,7 +112,7 @@ export function revokeShare(token: string): boolean {
   if (!share) return false
   share.revoked = true
   save()
-  console.log(`[shares] Revoked share for ${share.sessionCwd}`)
+  console.log(`[shares] Revoked share for ${share.project}`)
   return true
 }
 
@@ -123,7 +123,7 @@ export function listShares(): ConversationShare[] {
 
 /** List active shares for a specific project. */
 function listSharesForProject(project: string): ConversationShare[] {
-  return shares.filter(s => !s.revoked && s.expiresAt > Date.now() && s.sessionCwd === project)
+  return shares.filter(s => !s.revoked && s.expiresAt > Date.now() && s.project === project)
 }
 
 /** Get a specific share by token (even if expired/revoked, for admin display). */
@@ -135,7 +135,7 @@ export function getShare(token: string): ConversationShare | undefined {
 export function shareToGrants(share: ConversationShare): UserGrant[] {
   return [
     {
-      legacyCwd: share.sessionCwd,
+      legacyCwd: share.project,
       permissions: share.permissions as UserGrant['permissions'],
     },
   ]
@@ -149,7 +149,7 @@ export function cleanExpired(): string[] {
     if (!share.revoked && share.expiresAt <= now) {
       share.revoked = true
       expired.push(share.token)
-      console.log(`[shares] Share expired for ${share.sessionCwd} (created by ${share.createdBy})`)
+      console.log(`[shares] Share expired for ${share.project} (created by ${share.createdBy})`)
     }
   }
   if (expired.length > 0) save()

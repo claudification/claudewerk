@@ -749,7 +749,7 @@ export interface InterSessionListRequest {
 
 export interface InterConversationListResponse {
   type: 'channel_conversations_list'
-  sessions: Array<{
+  conversations: Array<{
     id: string
     name: string
     project: string
@@ -1363,7 +1363,7 @@ export interface ArchivedTaskGroup {
 
 export interface Conversation {
   id: string // conversationId -- stable primary key, survives /clear
-  ccSessionId?: string // CC's internal session ID -- metadata only, NEVER used as key or in logic
+  agentHostMeta?: Record<string, unknown> // opaque bag from agent host (ccSessionId lives here, broker never reads it)
   project: string // project URI identity (e.g. "claude:///Users/jonas/projects/foo")
   currentPath?: string // where Claude is currently working (CwdChanged hook)
   model?: string
@@ -1749,7 +1749,6 @@ export interface SentinelStatus {
 // Session summary: broker -> dashboard wire format
 export interface ConversationSummary {
   id: string
-  ccSessionId?: string
   project: string
   model?: string
   capabilities?: AgentHostCapability[]

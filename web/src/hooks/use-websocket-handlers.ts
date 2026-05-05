@@ -28,8 +28,8 @@ export interface DashboardMessage {
   type: string
   conversationId?: string
   previousConversationId?: string
-  session?: ConversationSummary
-  sessions?: ConversationSummary[]
+  conversation?: ConversationSummary
+  conversations?: ConversationSummary[]
   // biome-ignore lint/suspicious/noExplicitAny: pass-through for unknown server fields
   [key: string]: any
 }
@@ -135,8 +135,8 @@ function handleSyncStale(msg: DashboardMessage) {
 // ─── conversation lifecycle ────────────────────────────────────────────────
 
 function handleConversationsList(msg: DashboardMessage) {
-  if (msg.sessions) {
-    useConversationsStore.getState().setConversations(msg.sessions.map(toSession))
+  if (msg.conversations) {
+    useConversationsStore.getState().setConversations(msg.conversations.map(toSession))
     applyHashRoute()
   }
   // Version mismatch detection removed -- SW lifecycle handles update detection.
@@ -144,8 +144,8 @@ function handleConversationsList(msg: DashboardMessage) {
 }
 
 function handleConversationCreated(msg: DashboardMessage) {
-  if (!msg.session) return
-  const newConversation = toSession(msg.session)
+  if (!msg.conversation) return
+  const newConversation = toSession(msg.conversation)
   useConversationsStore.setState(state => {
     let sessions: Session[]
     if (state.sessions.some(s => s.id === newConversation.id)) {
@@ -158,9 +158,9 @@ function handleConversationCreated(msg: DashboardMessage) {
 }
 
 function handleConversationUpdate(msg: DashboardMessage) {
-  if (!(msg.session && msg.conversationId)) return
+  if (!(msg.conversation && msg.conversationId)) return
   const conversationId = msg.conversationId
-  const session = msg.session
+  const session = msg.conversation
   const prevId = msg.previousConversationId
   const matchId = prevId || conversationId
   useConversationsStore.setState(state => {
@@ -719,9 +719,9 @@ function handleConversationDismissed(msg: DashboardMessage) {
 function handlePermissions(msg: DashboardMessage) {
   const update: Record<string, unknown> = {}
   if (msg.global) update.permissions = msg.global
-  if (msg.sessions) {
+  if (msg.conversations) {
     // Merge into existing sessionPermissions (incremental updates for new conversation)
-    update.sessionPermissions = { ...useConversationsStore.getState().sessionPermissions, ...msg.sessions }
+    update.sessionPermissions = { ...useConversationsStore.getState().sessionPermissions, ...msg.conversations }
   }
   if (Object.keys(update).length > 0) useConversationsStore.setState(update)
 }

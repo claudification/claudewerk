@@ -96,7 +96,7 @@ const dialogResult: MessageHandler = (ctx, data) => {
 }
 
 // Dialog dismiss: agent host -> broker -> dashboard
-// (e.g. timeout on agent host side, session ended)
+// (e.g. timeout on agent host side, conversation ended)
 const dialogDismiss: MessageHandler = (ctx, data) => {
   const conversationId = (data.conversationId || data.conversationId || ctx.ws.data.conversationId) as string
   const dialogId = data.dialogId as string

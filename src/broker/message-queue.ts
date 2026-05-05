@@ -12,7 +12,7 @@ interface QueuedMessage {
   senderProject: string
   senderName: string
   message: Record<string, unknown> // the delivery payload
-  targetName?: string // session name slug for compound-addressed delivery
+  targetName?: string // conversation name slug for compound-addressed delivery
 }
 
 // targetProject -> queued messages
@@ -107,7 +107,7 @@ export function drain(targetProject: string, sessionName?: string): QueuedMessag
   const valid = queue.filter(m => now - m.ts < MESSAGE_TTL_MS)
 
   if (!sessionName) {
-    // No session name filter -- drain everything (backward compat)
+    // No conversation name filter -- drain everything (backward compat)
     delete queues[targetProject]
     save()
     return valid

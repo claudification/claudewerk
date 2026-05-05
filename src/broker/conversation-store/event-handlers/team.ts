@@ -5,19 +5,19 @@ import type { Conversation, HookEventOf } from '../../../shared/protocol'
  * upsert the teammate row to idle. Idle teammates have cleared their
  * current task assignment.
  */
-export function handleTeammateIdle(session: Conversation, event: HookEventOf<'TeammateIdle'>): void {
+export function handleTeammateIdle(conv: Conversation, event: HookEventOf<'TeammateIdle'>): void {
   const data = event.data
   const teamName = data.team_name ?? ''
   const agentId = data.agent_id ?? ''
   const agentName = data.agent_name ?? agentId.slice(0, 8)
 
-  if (teamName && !session.team) {
-    session.team = { teamName, role: 'lead' }
+  if (teamName && !conv.team) {
+    conv.team = { teamName, role: 'lead' }
   }
 
   if (!agentId) return
 
-  let teammate = session.teammates.find(t => t.agentId === agentId)
+  let teammate = conv.teammates.find(t => t.agentId === agentId)
   if (!teammate) {
     teammate = {
       agentId,
@@ -27,7 +27,7 @@ export function handleTeammateIdle(session: Conversation, event: HookEventOf<'Te
       startedAt: event.timestamp,
       completedTaskCount: 0,
     }
-    session.teammates.push(teammate)
+    conv.teammates.push(teammate)
   }
   teammate.status = 'idle'
   teammate.currentTaskId = undefined
@@ -39,16 +39,16 @@ export function handleTeammateIdle(session: Conversation, event: HookEventOf<'Te
  * clear their current-task assignment. Lookup is by name (owner) since
  * task events identify the agent by name, not agent_id.
  */
-export function handleTaskCompleted(session: Conversation, event: HookEventOf<'TaskCompleted'>): void {
+export function handleTaskCompleted(conv: Conversation, event: HookEventOf<'TaskCompleted'>): void {
   const data = event.data
   const owner = data.owner ?? ''
   const teamName = data.team_name ?? ''
 
-  if (teamName && !session.team) {
-    session.team = { teamName, role: 'lead' }
+  if (teamName && !conv.team) {
+    conv.team = { teamName, role: 'lead' }
   }
 
-  const teammate = session.teammates.find(t => t.name === owner)
+  const teammate = conv.teammates.find(t => t.name === owner)
   if (!teammate) return
 
   teammate.completedTaskCount++

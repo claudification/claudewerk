@@ -55,7 +55,7 @@ export function createWsServer(options: WsServerOptions): WsServer {
     },
     websocket: {
       open(_ws: ServerWebSocket<WsData>) {
-        // Connection established, waiting for session meta
+        // Connection established, waiting for conversation meta
       },
       message(ws: ServerWebSocket<WsData>, message) {
         try {
@@ -71,7 +71,8 @@ export function createWsServer(options: WsServerOptions): WsServer {
               const existingConversation = conversationStore.getConversation(conversationId)
               if (existingConversation) {
                 conversationStore.resumeConversation(conversationId)
-                existingConversation.ccSessionId = meta.ccSessionId
+                if (!existingConversation.agentHostMeta) existingConversation.agentHostMeta = {}
+                existingConversation.agentHostMeta.ccSessionId = meta.ccSessionId
                 if (meta.configuredModel) existingConversation.configuredModel = meta.configuredModel
               } else {
                 const conversation = conversationStore.createConversation(
@@ -80,7 +81,8 @@ export function createWsServer(options: WsServerOptions): WsServer {
                   meta.model,
                   meta.args,
                 )
-                conversation.ccSessionId = meta.ccSessionId
+                if (!conversation.agentHostMeta) conversation.agentHostMeta = {}
+                conversation.agentHostMeta.ccSessionId = meta.ccSessionId
                 if (meta.configuredModel) conversation.configuredModel = meta.configuredModel
               }
 

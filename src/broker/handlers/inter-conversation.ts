@@ -38,12 +38,12 @@ const handleChannelRevive: MessageHandler = (ctx, data) => {
     ctx.reply({
       type: 'channel_revive_result',
       ok: false,
-      error: 'Session not found. Use list_conversations to discover current sessions.',
+      error: 'Conversation not found. Use list_conversations to discover current sessions.',
     })
     return
   }
   if (target.status === 'active') {
-    ctx.reply({ type: 'channel_revive_result', ok: false, error: 'Session is already active' })
+    ctx.reply({ type: 'channel_revive_result', ok: false, error: 'Conversation is already active' })
     return
   }
 
@@ -132,7 +132,7 @@ const handleChannelSpawn: MessageHandler = (ctx, data) => {
   }
 
   dispatchSpawn(req, {
-    sessions: ctx.conversations,
+    conversationStore: ctx.conversations,
     getProjectSettings,
     getGlobalSettings,
     callerContext,
@@ -180,18 +180,18 @@ const handleChannelRestart: MessageHandler = (ctx, data) => {
     addressBook: ctx.addressBook,
     callerProject: callerSess?.project,
   })
-  const target = resolved.kind === 'resolved' ? ctx.conversations.getConversation(resolved.session.id) : undefined
+  const target = resolved.kind === 'resolved' ? ctx.conversations.getConversation(resolved.conversation.id) : undefined
   const targetWs =
     resolved.kind === 'resolved'
-      ? ctx.conversations.findSocketByConversationId(resolved.session.id) ||
-        ctx.conversations.getConversationSocket(resolved.session.id)
+      ? ctx.conversations.findSocketByConversationId(resolved.conversation.id) ||
+        ctx.conversations.getConversationSocket(resolved.conversation.id)
       : undefined
 
   if (!target) {
     ctx.reply({
       type: 'channel_restart_result',
       ok: false,
-      error: resolved.kind !== 'resolved' ? resolved.error : 'Session not found',
+      error: resolved.kind !== 'resolved' ? resolved.error : 'Conversation not found',
     })
     return
   }
@@ -285,12 +285,12 @@ const handleChannelConfigure: MessageHandler = (ctx, data) => {
     addressBook: ctx.addressBook,
     callerProject: callerSess?.project,
   })
-  const target = resolved.kind === 'resolved' ? ctx.conversations.getConversation(resolved.session.id) : undefined
+  const target = resolved.kind === 'resolved' ? ctx.conversations.getConversation(resolved.conversation.id) : undefined
   if (!target) {
     ctx.reply({
       type: 'channel_configure_result',
       ok: false,
-      error: resolved.kind !== 'resolved' ? resolved.error : 'Session not found.',
+      error: resolved.kind !== 'resolved' ? resolved.error : 'Conversation not found.',
     })
     return
   }
@@ -313,7 +313,7 @@ const handleChannelConfigure: MessageHandler = (ctx, data) => {
   ctx.log.debug(`Configure: -> ${target.id.slice(0, 8)} ${Object.keys(update).join(',')}`)
 }
 
-// ─── Unified session control ───
+// ─── Unified conversation control ───
 
 const VALID_CONTROL_ACTIONS = new Set(['clear', 'quit', 'interrupt', 'set_model', 'set_effort', 'set_permission_mode'])
 
@@ -351,7 +351,7 @@ const handleSessionControl: MessageHandler = (ctx, data) => {
     return
   }
 
-  // Resolve target: compound ID (project:session-slug), bare slug, or raw internal ID
+  // Resolve target: compound ID (project:conversation-slug), bare slug, or raw internal ID
   const callerSession = ctx.ws.data.conversationId
   const callerSess = callerSession ? ctx.conversations.getConversation(callerSession) : undefined
   const resolved = resolveConversationTarget(targetId, {
@@ -368,10 +368,10 @@ const handleSessionControl: MessageHandler = (ctx, data) => {
     ctx.reply({ type: 'conversation_control_result', ok: false, action, error: resolved.error })
     return
   }
-  const targetSess = ctx.conversations.getConversation(resolved.session.id)
+  const targetSess = ctx.conversations.getConversation(resolved.conversation.id)
   const targetWs =
-    ctx.conversations.findSocketByConversationId(resolved.session.id) ||
-    ctx.conversations.getConversationSocket(resolved.session.id)
+    ctx.conversations.findSocketByConversationId(resolved.conversation.id) ||
+    ctx.conversations.getConversationSocket(resolved.conversation.id)
   if (!targetSess || !targetWs) {
     ctx.reply({
       type: 'conversation_control_result',
@@ -382,7 +382,7 @@ const handleSessionControl: MessageHandler = (ctx, data) => {
     return
   }
   if (targetSess.status === 'ended') {
-    ctx.reply({ type: 'conversation_control_result', ok: false, action, error: 'Session has ended' })
+    ctx.reply({ type: 'conversation_control_result', ok: false, action, error: 'Conversation has ended' })
     return
   }
 

@@ -51,12 +51,12 @@ function rowToSummary(row: Params): ConversationSummaryRecord {
 }
 
 export function createSqliteSessionStore(db: Database): ConversationStore {
-  const stmtGet = db.prepare('SELECT * FROM sessions WHERE id = $id')
+  const stmtGet = db.prepare('SELECT * FROM conversations WHERE id = $id')
   const stmtInsert = db.prepare(`
-    INSERT INTO sessions (id, scope, agent_type, agent_version, title, model, status, created_at, meta)
+    INSERT INTO conversations (id, scope, agent_type, agent_version, title, model, status, created_at, meta)
     VALUES ($id, $scope, $agentType, $agentVersion, $title, $model, $status, $createdAt, $meta)
   `)
-  const stmtDelete = db.prepare('DELETE FROM sessions WHERE id = $id')
+  const stmtDelete = db.prepare('DELETE FROM conversations WHERE id = $id')
 
   return {
     get(id) {
@@ -146,7 +146,7 @@ export function createSqliteSessionStore(db: Database): ConversationStore {
       }
 
       if (sets.length > 0) {
-        db.prepare(`UPDATE sessions SET ${sets.join(', ')} WHERE id = $id`).run(params)
+        db.prepare(`UPDATE conversations SET ${sets.join(', ')} WHERE id = $id`).run(params)
       }
     },
 
@@ -177,7 +177,7 @@ export function createSqliteSessionStore(db: Database): ConversationStore {
       const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
       const limit = filter?.limit ?? -1
       const offset = filter?.offset ?? 0
-      const sql = `SELECT * FROM sessions ${where} ORDER BY created_at DESC LIMIT $limit OFFSET $offset`
+      const sql = `SELECT * FROM conversations ${where} ORDER BY created_at DESC LIMIT $limit OFFSET $offset`
       const rows = db.prepare(sql).all({ ...params, limit, offset }) as Params[]
       return rows.map(rowToSummary)
     },
@@ -195,7 +195,7 @@ export function createSqliteSessionStore(db: Database): ConversationStore {
       }
 
       const where = `WHERE ${conditions.join(' AND ')}`
-      const sql = `SELECT * FROM sessions ${where} ORDER BY created_at DESC`
+      const sql = `SELECT * FROM conversations ${where} ORDER BY created_at DESC`
       const rows = db.prepare(sql).all(params) as Params[]
       return rows.map(rowToSummary)
     },
@@ -206,7 +206,7 @@ export function createSqliteSessionStore(db: Database): ConversationStore {
 
       const existing: ConversationStats = row.stats ? JSON.parse(row.stats as string) : {}
       const merged = { ...existing, ...stats }
-      db.prepare('UPDATE sessions SET stats = $stats WHERE id = $id').run({
+      db.prepare('UPDATE conversations SET stats = $stats WHERE id = $id').run({
         id,
         stats: JSON.stringify(merged),
       })

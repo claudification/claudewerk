@@ -45,10 +45,10 @@ describe('conversation lifecycle', () => {
     const updates = dashboard.messagesOfType('conversation_update')
     expect(updates.length).toBeGreaterThan(0)
     const lastUpdate = updates[updates.length - 1]
-    expect(lastUpdate.session).toBeDefined()
-    const session = lastUpdate.session as Record<string, unknown>
-    expect(session.status).toBe('booting')
-    expect(session.id).toBe(convId)
+    expect(lastUpdate.conversation).toBeDefined()
+    const broadcast = lastUpdate.conversation as Record<string, unknown>
+    expect(broadcast.status).toBe('booting')
+    expect(broadcast.id).toBe(convId)
   })
 
   it('meta after wrapper_boot promotes the conversation and broadcasts update', async () => {
@@ -155,7 +155,7 @@ describe('conversation lifecycle', () => {
     const conv = h.conversationStore.getConversation(convId)
     expect(conv).toBeDefined()
     expect(conv?.id).toBe(convId)
-    expect(conv?.ccSessionId).toBe(newCcSessionId)
+    expect(conv?.agentHostMeta?.ccSessionId).toBe(newCcSessionId)
     expect(conv?.project).toBe('claude:///home/user/project')
 
     // Old ccSessionId is NOT a store key
@@ -191,7 +191,7 @@ describe('message routing', () => {
       conversationId: convId,
       hookEvent: 'UserPromptSubmit',
       timestamp: Date.now(),
-      data: { session_id: ccSessionId, prompt: 'Hello world' },
+      data: { conversation_id: ccSessionId, prompt: 'Hello world' },
     })
 
     const events = h.conversationStore.getConversationEvents(convId)
@@ -376,8 +376,8 @@ describe('conversation status signal', () => {
 
     const updates = dashboard.messagesOfType('conversation_update')
     expect(updates.length).toBeGreaterThan(0)
-    const session = updates[updates.length - 1].session as Record<string, unknown>
-    expect(session.status).toBe('active')
+    const convUpdate = updates[updates.length - 1].conversation as Record<string, unknown>
+    expect(convUpdate.status).toBe('active')
   })
 
   it('conversation_status idle -> active clears stale error', async () => {
@@ -437,19 +437,17 @@ describe('wire protocol shape', () => {
 
     const listMsgs = dashboard.messagesOfType('conversations_list')
     expect(listMsgs.length).toBe(1)
-    const sessions = listMsgs[0].sessions as Array<Record<string, unknown>>
-    expect(sessions.length).toBeGreaterThan(0)
+    const conversations = listMsgs[0].conversations as Array<Record<string, unknown>>
+    expect(conversations.length).toBeGreaterThan(0)
 
-    for (const s of sessions) {
-      // Every session in the list has an 'id' field (the conversationId)
+    for (const s of conversations) {
       expect(s.id).toBeDefined()
       expect(typeof s.id).toBe('string')
-      // connectionIds is an array (separate from the primary ID)
       expect(Array.isArray(s.connectionIds)).toBe(true)
     }
   })
 
-  it('conversation_update broadcasts use conversationId as session.id', async () => {
+  it('conversation_update broadcasts use conversationId as conversation.id', async () => {
     const dashboard = h.connectDashboard()
     dashboard.clearMessages()
 
@@ -463,9 +461,9 @@ describe('wire protocol shape', () => {
 
     const updates = dashboard.messagesOfType('conversation_update')
     for (const update of updates) {
-      const session = update.session as Record<string, unknown>
-      expect(session.id).toBeDefined()
-      expect(typeof session.id).toBe('string')
+      const convPayload = update.conversation as Record<string, unknown>
+      expect(convPayload.id).toBeDefined()
+      expect(typeof convPayload.id).toBe('string')
     }
   })
 
@@ -491,7 +489,7 @@ describe('wire protocol shape', () => {
       conversationId: convId,
       hookEvent: 'Stop',
       timestamp: Date.now(),
-      data: { session_id: ccSessionId, reason: 'completed' },
+      data: { conversation_id: ccSessionId, reason: 'completed' },
     })
 
     // Hook events are stored against the conversationId (the store's primary key)
@@ -543,11 +541,11 @@ describe('wire protocol shape', () => {
 
     const dashboard = h.connectDashboard()
     const listMsgs = dashboard.messagesOfType('conversations_list')
-    const sessions = listMsgs[0].sessions as Array<Record<string, unknown>>
-    const session = sessions.find(s => s.id === convId)
-    expect(session).toBeDefined()
-    expect(session?.stats).toBeDefined()
-    const stats = session?.stats as Record<string, unknown>
+    const conversations = listMsgs[0].conversations as Array<Record<string, unknown>>
+    const target = conversations.find(s => s.id === convId)
+    expect(target).toBeDefined()
+    expect(target?.stats).toBeDefined()
+    const stats = target?.stats as Record<string, unknown>
     expect(typeof stats.totalInputTokens).toBe('number')
     expect(typeof stats.totalOutputTokens).toBe('number')
     expect(typeof stats.turnCount).toBe('number')

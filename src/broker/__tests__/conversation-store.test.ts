@@ -47,7 +47,7 @@ function makeHookEvent(
     conversationId: sessionId,
     hookEvent,
     timestamp: Date.now(),
-    data: { session_id: sessionId },
+    data: { conversation_id: sessionId },
     ...overrides,
   }
 }
@@ -73,10 +73,10 @@ beforeEach(() => {
 describe('conversation lifecycle', () => {
   it('createConversation returns a conversation accessible via getConversation', () => {
     store.createConversation('sess-1', '/home/user/project')
-    const session = store.getConversation('sess-1')
-    expect(session).toBeDefined()
-    expect(session!.id).toBe('sess-1')
-    expect(session!.project).toBe('claude://default/home/user/project')
+    const conv = store.getConversation('sess-1')
+    expect(conv).toBeDefined()
+    expect(conv!.id).toBe('sess-1')
+    expect(conv!.project).toBe('claude://default/home/user/project')
   })
 
   it('createConversation makes conversation appear in getAllConversations', () => {
@@ -95,16 +95,16 @@ describe('conversation lifecycle', () => {
 
   it('createConversation called twice with same id returns existing conversation without duplicate', () => {
     const first = store.createConversation('dup-id', '/cwd')
-    // Second call -- session already exists, so it goes straight through conversations.set(id, session)
-    // The implementation does NOT check for existence; it overwrites but the original session is gone.
-    // Read actual code: conversations.set(id, session) -- it creates a NEW session object every time.
+    // Second call -- conversation already exists, so it goes straight through conversations.set(id, conversation)
+    // The implementation does NOT check for existence; it overwrites but the original conversation is gone.
+    // Read actual code: conversations.set(id, conversation) -- it creates a NEW conversation object every time.
     // Verify via getAllConversations that only one entry exists with that id.
     store.createConversation('dup-id', '/cwd')
     const all = store.getAllConversations()
     const withId = all.filter(s => s.id === 'dup-id')
     // The implementation overwrites, so there is still exactly one entry
     expect(withId).toHaveLength(1)
-    // The returned session from first call is now replaced -- second createConversation wins
+    // The returned conversation from first call is now replaced -- second createConversation wins
     expect(first.id).toBe('dup-id')
   })
 
@@ -146,7 +146,7 @@ describe('conversation lifecycle', () => {
 
   it('clearConversation resets ephemeral state and updates ccSessionId metadata', () => {
     const conv = store.createConversation('conv-1', '/cwd')
-    conv.ccSessionId = 'old-cc-id'
+    conv.agentHostMeta = { ccSessionId: 'old-cc-id' }
     conv.events.push({
       type: 'hook',
       hookEvent: 'SessionStart',
@@ -160,7 +160,7 @@ describe('conversation lifecycle', () => {
     const cleared = store.getConversation('conv-1')
     expect(cleared).toBeDefined()
     expect(cleared!.id).toBe('conv-1')
-    expect(cleared!.ccSessionId).toBe('new-cc-id')
+    expect(cleared!.agentHostMeta?.ccSessionId).toBe('new-cc-id')
     expect(cleared!.events).toEqual([])
     expect(cleared!.status).toBe('idle')
   })
@@ -242,10 +242,10 @@ describe('event ingestion', () => {
       { id: 'task-2', subject: 'Do another', status: 'in_progress', updatedAt: Date.now() },
     ]
     store.updateTasks('task-sess', tasks)
-    const session = store.getConversation('task-sess')!
-    expect(session.tasks).toHaveLength(2)
-    expect(session.tasks[0].id).toBe('task-1')
-    expect(session.tasks[1].status).toBe('in_progress')
+    const conv = store.getConversation('task-sess')!
+    expect(conv.tasks).toHaveLength(2)
+    expect(conv.tasks[0].id).toBe('task-1')
+    expect(conv.tasks[1].status).toBe('in_progress')
   })
 })
 
@@ -484,7 +484,7 @@ describe('conversation socket tracking', () => {
 })
 
 // ---------------------------------------------------------------------------
-// session.model invariant (guards commit 83a4ce7: dashboard reads session.model
+// conversation.model invariant (guards commit 83a4ce7: dashboard reads conversation.model
 // instead of scanning cached SessionStart events per render)
 // ---------------------------------------------------------------------------
 
@@ -495,7 +495,7 @@ describe('conversation.model derivation', () => {
 
     store.addEvent(
       'model-1',
-      makeHookEvent('model-1', 'SessionStart', { data: { session_id: 'model-1', model: 'claude-opus-4-7' } }),
+      makeHookEvent('model-1', 'SessionStart', { data: { conversation_id: 'model-1', model: 'claude-opus-4-7' } }),
     )
 
     expect(store.getConversation('model-1')!.model).toBe('claude-opus-4-7')
@@ -505,14 +505,14 @@ describe('conversation.model derivation', () => {
     store.createConversation('model-2', '/cwd')
     store.addEvent(
       'model-2',
-      makeHookEvent('model-2', 'SessionStart', { data: { session_id: 'model-2', model: 'claude-opus-4-7' } }),
+      makeHookEvent('model-2', 'SessionStart', { data: { conversation_id: 'model-2', model: 'claude-opus-4-7' } }),
     )
     expect(store.getConversation('model-2')!.model).toBe('claude-opus-4-7')
 
     // Re-emission (e.g. /model switch) arrives with a different model -- must update
     store.addEvent(
       'model-2',
-      makeHookEvent('model-2', 'SessionStart', { data: { session_id: 'model-2', model: 'claude-sonnet-4-6' } }),
+      makeHookEvent('model-2', 'SessionStart', { data: { conversation_id: 'model-2', model: 'claude-sonnet-4-6' } }),
     )
     expect(store.getConversation('model-2')!.model).toBe('claude-sonnet-4-6')
   })
@@ -531,7 +531,7 @@ describe('conversation.model derivation', () => {
     store.createConversation('model-4', '/cwd')
     store.addEvent(
       'model-4',
-      makeHookEvent('model-4', 'SessionStart', { data: { session_id: 'model-4', model: 'claude-opus-4-7' } }),
+      makeHookEvent('model-4', 'SessionStart', { data: { conversation_id: 'model-4', model: 'claude-opus-4-7' } }),
     )
     store.addTranscriptEntries(
       'model-4',
@@ -546,7 +546,7 @@ describe('conversation.model derivation', () => {
     store.createConversation('model-5', '/cwd')
     store.addEvent(
       'model-5',
-      makeHookEvent('model-5', 'SessionStart', { data: { session_id: 'model-5', model: 'claude-opus-4-7' } }),
+      makeHookEvent('model-5', 'SessionStart', { data: { conversation_id: 'model-5', model: 'claude-opus-4-7' } }),
     )
     store.addTranscriptEntries(
       'model-5',
@@ -622,8 +622,8 @@ describe('deriveModelName', () => {
 describe('project URI field', () => {
   it('createConversation auto-populates project from cwd', () => {
     store.createConversation('proj-1', '/Users/jonas/projects/foo')
-    const session = store.getConversation('proj-1')!
-    expect(session.project).toBe('claude://default/Users/jonas/projects/foo')
+    const conv = store.getConversation('proj-1')!
+    expect(conv.project).toBe('claude://default/Users/jonas/projects/foo')
   })
 
   it('project uses claude:// scheme by default', () => {
@@ -634,17 +634,17 @@ describe('project URI field', () => {
   it('clearConversation updates project from new cwd', () => {
     store.createConversation('proj-clear', '/old/path')
     store.clearConversation('proj-clear', 'new-cc-id', '/new/path')
-    const session = store.getConversation('proj-clear')!
-    expect(session.id).toBe('proj-clear')
-    expect(session.ccSessionId).toBe('new-cc-id')
-    expect(session.project).toBe('claude://default/new/path')
+    const conv = store.getConversation('proj-clear')!
+    expect(conv.id).toBe('proj-clear')
+    expect(conv.agentHostMeta?.ccSessionId).toBe('new-cc-id')
+    expect(conv.project).toBe('claude://default/new/path')
   })
 
   it('project field survives conversation resume', () => {
     store.createConversation('proj-resume', '/Users/jonas/projects/bar')
     store.resumeConversation('proj-resume')
-    const session = store.getConversation('proj-resume')!
-    expect(session.project).toBe('claude://default/Users/jonas/projects/bar')
+    const conv = store.getConversation('proj-resume')!
+    expect(conv.project).toBe('claude://default/Users/jonas/projects/bar')
   })
 })
 

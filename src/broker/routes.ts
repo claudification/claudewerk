@@ -20,7 +20,7 @@ import { createSpawnRouter } from './routes/spawn'
 import { createStatsRouter } from './routes/stats'
 import type { StoreDriver } from './store/types'
 
-// Re-export blob/file helpers for external consumers (session-store, handlers, etc.)
+// Re-export blob/file helpers for external consumers (conversation-store, handlers, etc.)
 export { appendSharedFile, type SharedFileEntry } from './routes/blob-store'
 
 // ─── MIME types ────────────────────────────────────────────────────────

@@ -59,7 +59,7 @@ const agentHostBoot: MessageHandler = (ctx, data) => {
     }
     if (bootConfiguredModel) existing.configuredModel = bootConfiguredModel
   } else {
-    // Create a placeholder session keyed by conversationId -- the real conversationId
+    // Create a placeholder conversation keyed by conversationId -- the real conversationId
     // replaces this once conversation_promote arrives.
     const placeholder = ctx.conversations.createConversation(
       conversationId,
@@ -92,10 +92,10 @@ const bootEvent: MessageHandler = (ctx, data) => {
   const step = data.step as BootStep
   if (!conversationId || !step) return
 
-  const session =
+  const conv =
     ctx.conversations.getConversation(conversationId) ||
     ctx.conversations.findConversationByConversationId(conversationId)
-  if (!session) {
+  if (!conv) {
     ctx.log.debug(`[boot] boot_event for unknown wrapper: ${conversationId.slice(0, 8)} step=${step}`)
     return
   }
@@ -109,10 +109,10 @@ const bootEvent: MessageHandler = (ctx, data) => {
   }
 
   // Append to the conversation's transcript + broadcast to dashboard subscribers.
-  ctx.conversations.addTranscriptEntries(session.id, [entry], false)
-  ctx.conversations.broadcastToChannel('conversation:transcript', session.id, {
+  ctx.conversations.addTranscriptEntries(conv.id, [entry], false)
+  ctx.conversations.broadcastToChannel('conversation:transcript', conv.id, {
     type: 'transcript_entries',
-    conversationId: session.id,
+    conversationId: conv.id,
     entries: [entry],
     isInitial: false,
   })
@@ -127,11 +127,11 @@ const launchEvent: MessageHandler = (ctx, data) => {
 
   // Route via conversationId (stable across rekeys) or the conversation id on the event.
   const conversationIdFromEvent = data.conversationId as string | null
-  const session =
+  const conv =
     (conversationIdFromEvent ? ctx.conversations.getConversation(conversationIdFromEvent) : undefined) ||
     ctx.conversations.getConversation(conversationId) ||
     ctx.conversations.findConversationByConversationId(conversationId)
-  if (!session) {
+  if (!conv) {
     ctx.log.debug(`[launch] event for unknown wrapper: ${conversationId.slice(0, 8)} step=${step}`)
     return
   }
@@ -146,10 +146,10 @@ const launchEvent: MessageHandler = (ctx, data) => {
     timestamp: new Date().toISOString(),
   }
 
-  ctx.conversations.addTranscriptEntries(session.id, [entry], false)
-  ctx.conversations.broadcastToChannel('conversation:transcript', session.id, {
+  ctx.conversations.addTranscriptEntries(conv.id, [entry], false)
+  ctx.conversations.broadcastToChannel('conversation:transcript', conv.id, {
     type: 'transcript_entries',
-    conversationId: session.id,
+    conversationId: conv.id,
     entries: [entry],
     isInitial: false,
   })
@@ -166,8 +166,9 @@ const conversationPromote: MessageHandler = (ctx, data) => {
     return
   }
 
-  // Store ccSessionId as metadata -- conversationId (the store key) stays the same.
-  bootConversation.ccSessionId = ccSessionId
+  // Store ccSessionId in opaque agent host meta -- broker never reads it back.
+  if (!bootConversation.agentHostMeta) bootConversation.agentHostMeta = {}
+  bootConversation.agentHostMeta.ccSessionId = ccSessionId
   bootConversation.status = 'starting'
   ctx.ws.data.ccSessionId = ccSessionId
   ctx.conversations.broadcastConversationUpdate(conversationId)

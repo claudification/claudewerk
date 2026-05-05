@@ -93,7 +93,7 @@ export interface ConversationSummaryRecord {
 
 export interface ConversationStore {
   get(id: string): ConversationRecord | null
-  create(session: ConversationCreate): ConversationRecord
+  create(conversation: ConversationCreate): ConversationRecord
   update(id: string, patch: ConversationPatch): void
   delete(id: string): void
   list(filter?: ConversationFilter): ConversationSummaryRecord[]
@@ -108,7 +108,7 @@ export interface ConversationStore {
 export interface TranscriptEntryRecord {
   id: number
   conversationId: string
-  sessionSeq: number
+  seq: number
   syncEpoch: string
   type: string
   subtype?: string
@@ -257,7 +257,7 @@ export interface MessageStore {
 }
 
 // ---------------------------------------------------------------------------
-// Shares (session sharing via token)
+// Shares (conversation sharing via token)
 // ---------------------------------------------------------------------------
 
 export interface ShareCreate {
@@ -455,7 +455,7 @@ export interface StoreConfig {
 }
 
 export interface StoreDriver {
-  readonly sessions: ConversationStore
+  readonly conversations: ConversationStore
   readonly transcripts: TranscriptStore
   readonly events: EventStore
   readonly kv: KVStore

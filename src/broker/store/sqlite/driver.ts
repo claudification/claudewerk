@@ -19,7 +19,7 @@ export function createSqliteDriver(config: StoreConfig): StoreDriver {
   createSchema(db)
 
   return {
-    sessions: createSqliteSessionStore(db),
+    conversations: createSqliteSessionStore(db),
     transcripts: createSqliteTranscriptStore(db),
     events: createSqliteEventStore(db),
     kv: createSqliteKVStore(db),

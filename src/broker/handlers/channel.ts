@@ -1,6 +1,6 @@
 /**
  * Channel handlers: inter-conversation messaging, session discovery, link management,
- * channel subscriptions, dashboard subscriptions, and session quit relay.
+ * channel subscriptions, dashboard subscriptions, and conversation quit relay.
  */
 
 import { deriveModelName } from '../../shared/models'
@@ -34,12 +34,12 @@ const subscribe: MessageHandler = (ctx, data) => {
     const serverRoles = user?.serverRoles
     // Global permissions (project='*')
     const global = resolvePermissionFlags(grants, '*', serverRoles)
-    // Per-session permissions (resolved against each conversation's project)
-    const sessions: Record<string, ReturnType<typeof resolvePermissionFlags>> = {}
+    // Per-conversation permissions (resolved against each conversation's project)
+    const perConversation: Record<string, ReturnType<typeof resolvePermissionFlags>> = {}
     for (const s of ctx.conversations.getActiveConversations()) {
-      sessions[s.id] = resolvePermissionFlags(grants, s.project, serverRoles)
+      perConversation[s.id] = resolvePermissionFlags(grants, s.project, serverRoles)
     }
-    ctx.reply({ type: 'permissions', global, sessions })
+    ctx.reply({ type: 'permissions', global, conversations: perConversation })
   }
 
   // Push initial shares state to admin subscribers
@@ -152,7 +152,7 @@ const channelListSessions: MessageHandler = (ctx, data) => {
     })
     .filter(s => s.id !== callerSession)
     .filter(s => {
-      // Hide ad-hoc sessions unless they have an established link with the caller
+      // Hide ad-hoc conversations unless they have an established link with the caller
       const isAdHoc = s.capabilities?.includes('ad-hoc')
       if (!isAdHoc) return true
       if (!callerSession) return false
@@ -160,7 +160,7 @@ const channelListSessions: MessageHandler = (ctx, data) => {
       return linkStatus === 'linked'
     })
 
-  // Group sessions by project to detect multi-session projects
+  // Group conversations by project to detect multi-conversation projects
   const projectGroups = new Map<string, typeof filtered>()
   for (const s of filtered) {
     const group = projectGroups.get(s.project) || []
@@ -180,22 +180,22 @@ const channelListSessions: MessageHandler = (ctx, data) => {
 
     // Assign a stable project-level slug via the caller's address book.
     // Slug is derived from the PROJECT (label or dirname), never the conversation title --
-    // multiple sessions can share a project; the project identity must not depend on
-    // whichever session happened to register first.
+    // multiple conversations can share a project; the project identity must not depend on
+    // whichever conversation happened to register first.
     const projectName = projSettings?.label || extractProjectLabel(s.project)
     const projectSlug = callerProject
       ? ctx.addressBook.getOrAssign(callerProject, s.project, projectName)
       : slugify(projectName)
 
-    // ALWAYS compound `project:session-slug` -- bare ids would silently flip
-    // shape when a second session spawns at the same project. See channel-id.ts.
+    // ALWAYS compound `project:conversation-slug` -- bare ids would silently flip
+    // shape when a second conversation spawns at the same project. See channel-id.ts.
     const projGroup = projectGroups.get(s.project) || [s]
     const localId = computeLocalId(s, projectSlug, projGroup)
 
     return {
       id: localId, // stable local address (use for send_message, etc.)
       project: projectSlug, // project-level grouping ID
-      session_id: s.id,
+      conversation_id: s.id,
       name: sessionName,
       projectUri: s.project,
       cwd: showFull ? parseProjectUri(s.project).path : shortProject, // backward compat for MCP consumers
@@ -219,7 +219,7 @@ const channelListSessions: MessageHandler = (ctx, data) => {
         : {}),
     }
   })
-  // Build self identity from caller's session
+  // Build self identity from caller's conversation
   let self: Record<string, unknown> | undefined
   if (callerSession) {
     const s = ctx.conversations.getConversation(callerSession)
@@ -234,7 +234,7 @@ const channelListSessions: MessageHandler = (ctx, data) => {
       self = {
         id: localId,
         project: projectSlug,
-        session_id: s.id,
+        conversation_id: s.id,
         name: s.title || projSettings?.label || extractProjectLabel(s.project),
         projectUri: s.project,
         cwd: parseProjectUri(s.project).path, // backward compat for MCP consumers
@@ -246,10 +246,10 @@ const channelListSessions: MessageHandler = (ctx, data) => {
     }
   }
 
-  ctx.reply({ type: 'channel_conversations_list', sessions: result, self })
+  ctx.reply({ type: 'channel_conversations_list', conversations: result, self })
 }
 
-// ─── Inter-session messaging (channel_send) ────────────────────────
+// ─── Inter-conversation messaging (channel_send) ────────────────────────
 
 /**
  * Compute the sender's routable ID from the receiver's perspective.
@@ -271,11 +271,11 @@ function computeSenderRoutableId(
     return { routable: fallback, project: fallback }
   }
   const projectSlug = ctx.addressBook.getOrAssign(toProject, fromSess.project, fromProjectName)
-  const sessionsAtProject = Array.from(ctx.conversations.getAllConversations()).filter(s =>
+  const conversationsAtProject = Array.from(ctx.conversations.getAllConversations()).filter(s =>
     isSameProject(s.project, fromSess.project),
   )
   // Always compound -- list_conversations must be able to round-trip the from-id.
-  const projGroup = sessionsAtProject.length > 0 ? sessionsAtProject : [fromSess]
+  const projGroup = conversationsAtProject.length > 0 ? conversationsAtProject : [fromSess]
   return { routable: computeLocalId(fromSess, projectSlug, projGroup), project: projectSlug }
 }
 
@@ -287,15 +287,15 @@ const channelSend: MessageHandler = (ctx, data) => {
   const fromSess = ctx.conversations.getConversation(fromSession)
   const callerProject = fromSess?.project || ctx.caller?.project
 
-  // Parse compound target: "project:session-name" or bare "project"
+  // Parse compound target: "project:conversation-name" or bare "project"
   const colonIdx = toTarget.indexOf(':')
   const projectSlug = colonIdx >= 0 ? toTarget.slice(0, colonIdx) : toTarget
-  const sessionSlug = colonIdx >= 0 ? toTarget.slice(colonIdx + 1) : undefined
+  const conversationSlug = colonIdx >= 0 ? toTarget.slice(colonIdx + 1) : undefined
 
   // Resolve target: address book first, auto-populate on miss, then raw ID fallback
   let targetProject = callerProject ? ctx.addressBook.resolve(callerProject, projectSlug) : undefined
 
-  // Address book miss -- populate from all known sessions (same as list_conversations),
+  // Address book miss -- populate from all known conversations (same as list_conversations),
   // then retry. This makes send_message work on first call without a prior list_conversations.
   if (!targetProject && callerProject) {
     for (const s of ctx.conversations.getAllConversations()) {
@@ -309,15 +309,15 @@ const channelSend: MessageHandler = (ctx, data) => {
 
   let toSess: ReturnType<typeof ctx.conversations.getConversation> | undefined
   if (targetProject) {
-    const sessionsAtProject = Array.from(ctx.conversations.getAllConversations()).filter(s =>
+    const conversationsAtProject = Array.from(ctx.conversations.getAllConversations()).filter(s =>
       isSameProject(s.project, targetProject),
     )
     const projSettings = ctx.getProjectSettings(targetProject)
     const canonicalProject = slugify(projSettings?.label || extractProjectLabel(targetProject))
     const resolved = resolveSendTarget({
       projectSlug,
-      sessionSlug,
-      sessionsAtProject,
+      conversationSlug,
+      conversationsAtProject,
       canonicalProject,
       isLive: s => ctx.conversations.getActiveConversationCount(s.id) > 0,
     })
@@ -330,7 +330,7 @@ const channelSend: MessageHandler = (ctx, data) => {
       return
     }
     if (resolved.kind === 'resolved') {
-      toSess = ctx.conversations.getConversation(resolved.session.id)
+      toSess = ctx.conversations.getConversation(resolved.conversation.id)
     }
   } else {
     toSess = ctx.conversations.findConversationByConversationId(toTarget) || ctx.conversations.getConversation(toTarget)
@@ -362,7 +362,7 @@ const channelSend: MessageHandler = (ctx, data) => {
       context: data.context,
       conversationId,
     }
-    ctx.messageQueue.enqueue(targetProject, callerProject || '', fromProjectName, delivery, sessionSlug)
+    ctx.messageQueue.enqueue(targetProject, callerProject || '', fromProjectName, delivery, conversationSlug)
 
     // Brief wait: if target reconnects within 1s, the queue drains automatically
     // and we can report 'delivered' instead of 'queued'
@@ -372,12 +372,12 @@ const channelSend: MessageHandler = (ctx, data) => {
         // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by enclosing if (targetProject) block
         if (ctx.messageQueue.getQueueSize(targetProject!) === 0) {
           ctx.reply({ type: 'channel_send_result', ok: true, conversationId, status: 'delivered' })
-          ctx.log.debug(`[inter-session] ${fromSession.slice(0, 8)} -> ${toTarget} (queued then delivered)`)
+          ctx.log.debug(`[inter-conversation] ${fromSession.slice(0, 8)} -> ${toTarget} (queued then delivered)`)
           return
         }
       }
       ctx.reply({ type: 'channel_send_result', ok: true, conversationId, status: 'queued' })
-      ctx.log.debug(`[inter-session] ${fromSession.slice(0, 8)} -> ${toTarget} (queued, target offline)`)
+      ctx.log.debug(`[inter-conversation] ${fromSession.slice(0, 8)} -> ${toTarget} (queued, target offline)`)
     }
     checkDelivered().catch(() => {
       ctx.reply({ type: 'channel_send_result', ok: true, conversationId, status: 'queued' })
@@ -428,7 +428,7 @@ const channelSend: MessageHandler = (ctx, data) => {
 
   const targetTrust = toSess.project ? ctx.getProjectSettings(toSess.project)?.trustLevel : undefined
   const fromTrust = fromSess?.project ? ctx.getProjectSettings(fromSess.project)?.trustLevel : undefined
-  // Sister sessions = same project, different session IDs (worktrees, parallel headless runs, a PTY
+  // Sister conversations = same project, different conversation IDs (worktrees, parallel headless runs, a PTY
   // and its spawned helper). Cross-project stays on the link-approval path so unexpected A<->B
   // chatter is surfaced to the user instead of being silently auto-linked.
   const isSisterSession = !!fromSess?.project && !!toSess.project && isSameProject(fromSess.project, toSess.project)
@@ -484,7 +484,8 @@ const channelSend: MessageHandler = (ctx, data) => {
       ctx.reply({
         type: 'channel_send_result',
         ok: false,
-        error: 'Target session not connected. It may have restarted. Use list_conversations to resolve current IDs.',
+        error:
+          'Target conversation not connected. It may have restarted. Use list_conversations to resolve current IDs.',
       })
     }
   } else {
@@ -500,11 +501,11 @@ const channelSend: MessageHandler = (ctx, data) => {
     ctx.reply({ type: 'channel_send_result', ok: true, conversationId, status: 'queued', targetSessionId: toSession })
   }
   ctx.log.debug(
-    `[inter-session] ${fromSession.slice(0, 8)} -> ${toSession.slice(0, 8)}: ${data.intent} (${linkStatus})`,
+    `[inter-conversation] ${fromSession.slice(0, 8)} -> ${toSession.slice(0, 8)}: ${data.intent} (${linkStatus})`,
   )
 }
 
-// ─── Quit session relay (dashboard -> agent host) ─────────────────────
+// ─── Quit conversation relay (dashboard -> agent host) ─────────────────────
 
 const quitConversation: MessageHandler = (ctx, data) => {
   const conversationId = data.conversationId as string
@@ -582,7 +583,7 @@ const channelUnlink: MessageHandler = (ctx, data) => {
     ctx.log.debug(`Link severed: ${extractProjectLabel(projectA)} X ${extractProjectLabel(projectB)}`)
     return
   }
-  // Legacy session-ID path
+  // Legacy conversation-ID path
   const sessionA = data.sessionA as string
   const sessionB = data.sessionB as string
   if (!sessionA || !sessionB) return
@@ -613,7 +614,7 @@ export function registerChannelHandlers(): void {
     channel_unsubscribe_all: channelUnsubscribeAll,
     // Conversation discovery
     channel_list_conversations: channelListSessions,
-    // Inter-session messaging
+    // Inter-conversation messaging
     channel_send: channelSend,
     // Conversation terminate relay
     terminate_conversation: quitConversation,

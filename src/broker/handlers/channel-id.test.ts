@@ -38,7 +38,7 @@ describe('computeConversationSlug', () => {
 describe('computeLocalId', () => {
   it('always produces compound ids -- even for a single-conversation project', () => {
     // This is the whole point of the always-compound rule: ids must not flip
-    // shape when a second session spawns later.
+    // shape when a second conversation spawns later.
     const a = s('xxxxxxxx', 'viral-zebra')
     expect(computeLocalId(a, 'arr', [a])).toBe('arr:viral-zebra')
   })
@@ -62,34 +62,34 @@ describe('resolveSendTarget', () => {
       const b = s('b', 'punk-jackal')
       const r = resolveSendTarget({
         projectSlug: 'arr',
-        sessionSlug: 'punk-jackal',
-        sessionsAtProject: [a, b],
+        conversationSlug: 'punk-jackal',
+        conversationsAtProject: [a, b],
         canonicalProject: 'arr',
         isLive: allLive,
       })
       expect(r.kind).toBe('resolved')
-      if (r.kind === 'resolved') expect(r.session.id).toBe('b')
+      if (r.kind === 'resolved') expect(r.conversation.id).toBe('b')
     })
 
     it('falls back to a prefix match when no exact', () => {
       const a = s('a', 'viral-zebra')
       const r = resolveSendTarget({
         projectSlug: 'arr',
-        sessionSlug: 'viral',
-        sessionsAtProject: [a],
+        conversationSlug: 'viral',
+        conversationsAtProject: [a],
         canonicalProject: 'arr',
         isLive: allLive,
       })
       expect(r.kind).toBe('resolved')
-      if (r.kind === 'resolved') expect(r.session.id).toBe('a')
+      if (r.kind === 'resolved') expect(r.conversation.id).toBe('a')
     })
 
     it('returns not_found when no conversation matches', () => {
       const a = s('a', 'viral-zebra')
       const r = resolveSendTarget({
         projectSlug: 'arr',
-        sessionSlug: 'nope',
-        sessionsAtProject: [a],
+        conversationSlug: 'nope',
+        conversationsAtProject: [a],
         canonicalProject: 'arr',
         isLive: allLive,
       })
@@ -102,13 +102,13 @@ describe('resolveSendTarget', () => {
       const a = s('a', 'viral-zebra')
       const r = resolveSendTarget({
         projectSlug: 'arr',
-        sessionSlug: undefined,
-        sessionsAtProject: [a],
+        conversationSlug: undefined,
+        conversationsAtProject: [a],
         canonicalProject: 'arr',
         isLive: allLive,
       })
       expect(r.kind).toBe('resolved')
-      if (r.kind === 'resolved') expect(r.session.id).toBe('a')
+      if (r.kind === 'resolved') expect(r.conversation.id).toBe('a')
     })
 
     it('FAILS as ambiguous when multiple LIVE sessions share the project', () => {
@@ -116,8 +116,8 @@ describe('resolveSendTarget', () => {
       const b = s('b', 'punk-jackal')
       const r = resolveSendTarget({
         projectSlug: 'arr',
-        sessionSlug: undefined,
-        sessionsAtProject: [a, b],
+        conversationSlug: undefined,
+        conversationsAtProject: [a, b],
         canonicalProject: 'arr',
         isLive: allLive,
       })
@@ -133,13 +133,13 @@ describe('resolveSendTarget', () => {
       const dead = s('dead', 'punk-jackal')
       const r = resolveSendTarget({
         projectSlug: 'arr',
-        sessionSlug: undefined,
-        sessionsAtProject: [live, dead],
+        conversationSlug: undefined,
+        conversationsAtProject: [live, dead],
         canonicalProject: 'arr',
         isLive: x => x.id === 'live',
       })
       expect(r.kind).toBe('resolved')
-      if (r.kind === 'resolved') expect(r.session.id).toBe('live')
+      if (r.kind === 'resolved') expect(r.conversation.id).toBe('live')
     })
 
     it('FAILS as ambiguous when no live sessions but multiple inactive', () => {
@@ -147,8 +147,8 @@ describe('resolveSendTarget', () => {
       const b = s('b', 'punk-jackal')
       const r = resolveSendTarget({
         projectSlug: 'arr',
-        sessionSlug: undefined,
-        sessionsAtProject: [a, b],
+        conversationSlug: undefined,
+        conversationsAtProject: [a, b],
         canonicalProject: 'arr',
         isLive: noneLive,
       })
@@ -159,36 +159,36 @@ describe('resolveSendTarget', () => {
       const a = s('a', 'viral-zebra')
       const r = resolveSendTarget({
         projectSlug: 'arr',
-        sessionSlug: undefined,
-        sessionsAtProject: [a],
+        conversationSlug: undefined,
+        conversationsAtProject: [a],
         canonicalProject: 'arr',
         isLive: noneLive,
       })
       expect(r.kind).toBe('resolved')
-      if (r.kind === 'resolved') expect(r.session.id).toBe('a')
+      if (r.kind === 'resolved') expect(r.conversation.id).toBe('a')
     })
 
     it('prefers a conversation whose own title matches the bare slug', () => {
       // Edge case: if a conversation is literally named "arr" inside project "arr",
-      // bare addressing should target THAT session, not project-level dispatch.
+      // bare addressing should target THAT conversation, not project-level dispatch.
       const namedArr = s('named', 'arr')
       const other = s('other', 'punk-jackal')
       const r = resolveSendTarget({
         projectSlug: 'arr',
-        sessionSlug: undefined,
-        sessionsAtProject: [namedArr, other],
+        conversationSlug: undefined,
+        conversationsAtProject: [namedArr, other],
         canonicalProject: 'arr',
         isLive: allLive,
       })
       expect(r.kind).toBe('resolved')
-      if (r.kind === 'resolved') expect(r.session.id).toBe('named')
+      if (r.kind === 'resolved') expect(r.conversation.id).toBe('named')
     })
 
     it('returns not_found when the project has no sessions at all', () => {
       const r = resolveSendTarget({
         projectSlug: 'arr',
-        sessionSlug: undefined,
-        sessionsAtProject: [],
+        conversationSlug: undefined,
+        conversationsAtProject: [],
         canonicalProject: 'arr',
         isLive: allLive,
       })

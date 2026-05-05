@@ -3,7 +3,7 @@
  *
  * Tracks per-turn tool usage sequences, task classification, and one-shot
  * success rates. Designed to be non-blocking: hook events are pushed into
- * an in-memory buffer per session, then flushed to SQLite asynchronously
+ * an in-memory buffer per conversation, then flushed to SQLite asynchronously
  * on turn boundaries (Stop/StopFailure) via a batch queue.
  *
  * Completely independent from cost-store -- analytics is interesting but
@@ -71,7 +71,7 @@ export interface TurnAnalytics {
   tools: string[]
 }
 
-/** Per-session accumulator for the current turn's tool events */
+/** Per-conversation accumulator for the current turn's tool events */
 interface TurnAccumulator {
   tools: ToolUseEvent[]
   promptSnippet: string
@@ -174,7 +174,7 @@ function flushBatch(): void {
       for (const turn of batch) {
         stmtInsertTurn?.run({
           timestamp: turn.timestamp,
-          sessionId: turn.conversationId,
+          conversationId: turn.conversationId,
           projectUri: turn.projectUri,
           projectId: turn.projectId,
           model: turn.model,
@@ -192,7 +192,7 @@ function flushBatch(): void {
         for (const toolName of turn.tools) {
           stmtInsertToolUse?.run({
             timestamp: turn.timestamp,
-            sessionId: turn.conversationId,
+            conversationId: turn.conversationId,
             toolName,
           })
         }
@@ -307,7 +307,7 @@ export function initAnalyticsStore(cacheDir: string): void {
       CREATE TABLE IF NOT EXISTS turns (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp INTEGER NOT NULL,
-        session_id TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
         project_uri TEXT NOT NULL DEFAULT '',
         project_id INTEGER NOT NULL DEFAULT 0,
         model TEXT NOT NULL DEFAULT '',
@@ -329,14 +329,14 @@ export function initAnalyticsStore(cacheDir: string): void {
       CREATE TABLE IF NOT EXISTS tool_uses (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp INTEGER NOT NULL,
-        session_id TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
         tool_name TEXT NOT NULL
       )
     `)
 
     // Indexes
     db.run('CREATE INDEX IF NOT EXISTS idx_analytics_timestamp ON turns(timestamp)')
-    db.run('CREATE INDEX IF NOT EXISTS idx_analytics_session ON turns(session_id)')
+    db.run('CREATE INDEX IF NOT EXISTS idx_analytics_session ON turns(conversation_id)')
     db.run('CREATE INDEX IF NOT EXISTS idx_analytics_project_uri ON turns(project_uri)')
     db.run('CREATE INDEX IF NOT EXISTS idx_analytics_project ON turns(project_id)')
     db.run('CREATE INDEX IF NOT EXISTS idx_analytics_category ON turns(task_category)')
@@ -352,17 +352,17 @@ export function initAnalyticsStore(cacheDir: string): void {
     }
 
     stmtInsertTurn = db.prepare(`
-      INSERT INTO turns (timestamp, session_id, project_uri, project_id, model, account,
+      INSERT INTO turns (timestamp, conversation_id, project_uri, project_id, model, account,
         tool_sequence, tool_call_count, task_category, retry_count,
         one_shot, had_error, prompt_snippet)
-      VALUES ($timestamp, $sessionId, $projectUri, $projectId, $model, $account,
+      VALUES ($timestamp, $conversationId, $projectUri, $projectId, $model, $account,
         $toolSequence, $toolCallCount, $taskCategory, $retryCount,
         $oneShot, $hadError, $promptSnippet)
     `)
 
     stmtInsertToolUse = db.prepare(`
-      INSERT INTO tool_uses (timestamp, session_id, tool_name)
-      VALUES ($timestamp, $sessionId, $toolName)
+      INSERT INTO tool_uses (timestamp, conversation_id, tool_name)
+      VALUES ($timestamp, $conversationId, $toolName)
     `)
 
     // Cleanup on startup + daily
@@ -381,7 +381,7 @@ export function initAnalyticsStore(cacheDir: string): void {
   }
 }
 
-// ─── Hook Event Ingestion (called from session-store) ───────────────
+// ─── Hook Event Ingestion (called from conversation-store) ───────────────
 
 /**
  * Process a hook event for analytics. Called from addEvent() in session-store.
@@ -477,7 +477,7 @@ export function recordHookEvent(
 }
 
 /**
- * Clear the turn accumulator for a conversation (e.g. on session end).
+ * Clear the turn accumulator for a conversation (e.g. on conversation end).
  */
 export function clearSession(conversationId: string): void {
   turnAccumulators.delete(conversationId)
@@ -539,9 +539,9 @@ export function querySummary(period: '24h' | '7d' | '30d' | '90d', project?: str
     binds,
   ) as Array<{ category: TaskCategory; count: number; one_shot_rate: number }>
 
-  // For top tools, join through session_id + timestamp range (tool_uses has no project_id)
+  // For top tools, join through conversation_id + timestamp range (tool_uses has no project_id)
   const toolWhere = project
-    ? `WHERE tu.timestamp >= $cutoff AND tu.session_id IN (SELECT DISTINCT session_id FROM turns ${where})`
+    ? `WHERE tu.timestamp >= $cutoff AND tu.conversation_id IN (SELECT DISTINCT conversation_id FROM turns ${where})`
     : 'WHERE tu.timestamp >= $cutoff'
   const topTools = queryAll(
     `SELECT tu.tool_name as toolName, COUNT(*) as count

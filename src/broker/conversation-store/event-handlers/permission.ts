@@ -6,10 +6,10 @@ import type { ConversationStoreContext } from '../event-context'
 /**
  * PermissionRequest: Claude is blocked waiting for permission approval.
  */
-export function handlePermissionRequest(session: Conversation, event: HookEventOf<'PermissionRequest'>): void {
+export function handlePermissionRequest(conv: Conversation, event: HookEventOf<'PermissionRequest'>): void {
   const data = event.data
   const filePath = data.tool_input?.file_path
-  session.pendingAttention = {
+  conv.pendingAttention = {
     type: 'permission',
     toolName: data.tool_name,
     filePath: typeof filePath === 'string' ? filePath : undefined,
@@ -24,17 +24,17 @@ export function handlePermissionRequest(session: Conversation, event: HookEventO
 export function handlePermissionDenied(
   ctx: ConversationStoreContext,
   conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   event: HookEventOf<'PermissionDenied'>,
 ): void {
-  if (session.pendingAttention?.type === 'permission') {
-    session.pendingAttention = undefined
+  if (conv.pendingAttention?.type === 'permission') {
+    conv.pendingAttention = undefined
   }
-  if (session.pendingPermission) {
-    session.pendingPermission = undefined
+  if (conv.pendingPermission) {
+    conv.pendingPermission = undefined
   }
   const toolName = event.data.tool_name
-  const projectName = getProjectSettings(session.project)?.label || extractProjectLabel(session.project)
+  const projectName = getProjectSettings(conv.project)?.label || extractProjectLabel(conv.project)
   ctx.broadcastConversationScoped(
     {
       type: 'toast',
@@ -42,7 +42,7 @@ export function handlePermissionDenied(
       title: projectName,
       message: `Permission denied: ${toolName || 'unknown tool'}`,
     },
-    session.project,
+    conv.project,
   )
 }
 
@@ -50,8 +50,8 @@ export function handlePermissionDenied(
  * Elicitation: Claude is asking a structured question via the elicitation
  * protocol. Sets pendingAttention so the UI can prompt the user.
  */
-export function handleElicitation(session: Conversation, event: HookEventOf<'Elicitation'>): void {
-  session.pendingAttention = {
+export function handleElicitation(conv: Conversation, event: HookEventOf<'Elicitation'>): void {
+  conv.pendingAttention = {
     type: 'elicitation',
     question: event.data.message,
     timestamp: event.timestamp,
@@ -63,8 +63,8 @@ export function handleElicitation(session: Conversation, event: HookEventOf<'Eli
  * blocking interaction is done: PostToolUse, PostToolUseFailure,
  * ElicitationResult.
  */
-export function clearPendingAttention(session: Conversation): void {
-  if (session.pendingAttention) session.pendingAttention = undefined
-  if (session.pendingPermission) session.pendingPermission = undefined
-  if (session.pendingAskQuestion) session.pendingAskQuestion = undefined
+export function clearPendingAttention(conv: Conversation): void {
+  if (conv.pendingAttention) conv.pendingAttention = undefined
+  if (conv.pendingPermission) conv.pendingPermission = undefined
+  if (conv.pendingAskQuestion) conv.pendingAskQuestion = undefined
 }

@@ -12,27 +12,27 @@ import type { ConversationStoreContext } from '../event-context'
 export function handleCompactEvent(
   ctx: ConversationStoreContext,
   conversationId: string,
-  session: Conversation,
+  conv: Conversation,
   event: HookEventOf<'PreCompact' | 'PostCompact' | 'SessionStart'>,
 ): void {
   if (event.hookEvent === 'PreCompact') {
-    session.compacting = true
+    conv.compacting = true
     emitCompactionMarker(ctx, conversationId, 'compacting')
     return
   }
 
-  if (event.hookEvent === 'PostCompact' && session.compacting) {
-    session.compacting = false
-    session.compactedAt = Date.now()
+  if (event.hookEvent === 'PostCompact' && conv.compacting) {
+    conv.compacting = false
+    conv.compactedAt = Date.now()
     emitCompactionMarker(ctx, conversationId, 'compacted')
     return
   }
 
   // SessionStart fallback for CC < 2.1.76: SessionStart after PreCompact
   // means compaction completed
-  if (event.hookEvent === 'SessionStart' && session.compacting) {
-    session.compacting = false
-    session.compactedAt = Date.now()
+  if (event.hookEvent === 'SessionStart' && conv.compacting) {
+    conv.compacting = false
+    conv.compactedAt = Date.now()
     emitCompactionMarker(ctx, conversationId, 'compacted')
   }
 }

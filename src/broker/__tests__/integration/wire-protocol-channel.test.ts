@@ -63,7 +63,7 @@ describe('inter-session messaging', () => {
       const result = agentA.messagesOfType('channel_conversations_list')
       expect(result.length).toBe(1)
 
-      const sessions = result[0].sessions as Array<{ id: string; project: string }>
+      const sessions = result[0].conversations as Array<{ id: string; project: string }>
       expect(sessions.length).toBeGreaterThanOrEqual(1)
 
       const found = sessions.find(s => s.project?.includes('project-beta'))
@@ -87,7 +87,7 @@ describe('inter-session messaging', () => {
       const result = agentA.messagesOfType('channel_conversations_list')
       expect(result.length).toBe(1)
 
-      const sessions = result[0].sessions as Array<{ id: string }>
+      const sessions = result[0].conversations as Array<{ id: string }>
       const self = sessions.find(s => s.id?.includes(sessionA))
       expect(self).toBeUndefined()
     })
@@ -152,7 +152,7 @@ describe('inter-session messaging', () => {
 
       await h.flushUpdates()
 
-      // Simulate /clear on session A -- rekeys to a new session ID
+      // Simulate /clear on conversation A -- rekeys to a new conversation ID
       const newSessionA = testId('sess-a-new')
       h.agentSend(agentA, {
         type: 'conversation_clear',
@@ -230,7 +230,7 @@ describe('inter-session messaging', () => {
       // First, list_conversations to get the compound ID
       h.agentSend(agentA, { type: 'channel_list_conversations' })
       const listResult = agentA.messagesOfType('channel_conversations_list')
-      const sessions = listResult[0].sessions as Array<{ id: string }>
+      const sessions = listResult[0].conversations as Array<{ id: string }>
       const betaSession = sessions.find(s => s.id?.includes('project-beta'))
       expect(betaSession).toBeDefined()
 

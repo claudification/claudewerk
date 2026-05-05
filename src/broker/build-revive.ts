@@ -16,6 +16,7 @@ export interface ReviveOverrides {
 /**
  * Build a ReviveConversation message from a conversation's full metadata.
  * The broker sends everything it knows; the sentinel picks what it needs.
+ * agentHostMeta is passed through opaquely -- broker never interprets it.
  */
 export function buildReviveMessage(
   conversation: Conversation,
@@ -23,11 +24,12 @@ export function buildReviveMessage(
   overrides?: ReviveOverrides & { jobId?: string },
 ): ReviveConversation {
   const lc = conversation.launchConfig
+  const meta = conversation.agentHostMeta || {}
   return {
     type: 'revive',
     conversationId: newConversationId,
     project: conversation.project,
-    ccSessionId: conversation.ccSessionId || conversation.id,
+    ccSessionId: (meta.ccSessionId as string) || conversation.id,
     jobId: overrides?.jobId,
     sessionName: conversation.title || undefined,
     mode: 'resume',

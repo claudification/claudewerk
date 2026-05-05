@@ -307,7 +307,7 @@ const streamDelta: MessageHandler = (ctx, data) => {
   }
 }
 
-// Rate limit event from headless backend - store on session and broadcast update
+// Rate limit event from headless backend - store on conversation and broadcast update
 const rateLimitHandler: MessageHandler = (ctx, data) => {
   const conversationId = (data.conversationId || ctx.ws.data.conversationId) as string
   if (!conversationId) return
@@ -390,7 +390,7 @@ const conversationName: MessageHandler = (ctx, data) => {
   }
 }
 
-// Monitor lifecycle events - update session monitor state and broadcast
+// Monitor lifecycle events - update conversation monitor state and broadcast
 const monitorUpdate: MessageHandler = (ctx, data) => {
   const conversationId = (data.conversationId || ctx.ws.data.conversationId) as string
   if (!conversationId) return
@@ -458,7 +458,7 @@ const scheduledTaskFire: MessageHandler = (ctx, data) => {
   ctx.log.debug(`scheduled_task_fire: "${(data.content as string)?.slice(0, 60)}"`)
 }
 
-// Store the final result text from headless sessions (used for ad-hoc task completion display)
+// Store the final result text from headless conversations (used for ad-hoc task completion display)
 const resultText: MessageHandler = (ctx, data) => {
   const conversationId = data.conversationId as string
   const text = data.text as string
