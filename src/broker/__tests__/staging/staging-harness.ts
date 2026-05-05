@@ -9,6 +9,8 @@
  *   STAGING_SECRET      -- shared secret for agent host auth
  */
 
+import { AGENT_HOST_PROTOCOL_VERSION } from '../../../shared/protocol'
+
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
@@ -99,6 +101,12 @@ function createLiveWs(url: string): LiveWs {
       return received.filter(m => m.type === type)
     },
     send(data: Record<string, unknown>) {
+      // Auto-inject protocolVersion on the two messages that gate on it.
+      // The broker rejects agent_host_boot / meta without it; tests that
+      // exercise the gate explicitly can override by setting it themselves.
+      if ((data.type === 'agent_host_boot' || data.type === 'meta') && data.protocolVersion === undefined) {
+        data = { ...data, protocolVersion: AGENT_HOST_PROTOCOL_VERSION }
+      }
       ws.send(JSON.stringify(data))
     },
     close() {
@@ -163,25 +171,6 @@ export async function waitForMessage(ws: LiveWs, type: string, timeoutMs = 5000)
   }
   const types = ws.received.map(m => m.type).join(', ')
   throw new Error(`Timed out waiting for message type "${type}" after ${timeoutMs}ms (got: ${types || 'none'})`)
-}
-
-/**
- * Wait for N messages of a specific type to accumulate.
- */
-async function waitForMessages(
-  ws: LiveWs,
-  type: string,
-  count: number,
-  timeoutMs = 5000,
-): Promise<Array<Record<string, unknown>>> {
-  const start = Date.now()
-  while (Date.now() - start < timeoutMs) {
-    const msgs = ws.messagesOfType(type)
-    if (msgs.length >= count) return msgs
-    await sleep(50)
-  }
-  const got = ws.messagesOfType(type).length
-  throw new Error(`Timed out waiting for ${count}x "${type}" messages after ${timeoutMs}ms (got ${got})`)
 }
 
 // ---------------------------------------------------------------------------

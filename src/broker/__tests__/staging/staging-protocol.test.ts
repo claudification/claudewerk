@@ -518,7 +518,7 @@ run('HTTP API', () => {
 // ---------------------------------------------------------------------------
 
 run('wire protocol shape', () => {
-  it('conversations_list sessions have id and ccSessionIds array', async () => {
+  it('conversations_list sessions have id and connectionIds array', async () => {
     // Create a conversation first so the list is not empty
     const agent = await connectAgentHost()
     const convId = testId('conv')
@@ -561,7 +561,7 @@ run('wire protocol shape', () => {
     for (const s of sessions) {
       expect(s.id).toBeDefined()
       expect(typeof s.id).toBe('string')
-      expect(Array.isArray(s.ccSessionIds)).toBe(true)
+      expect(Array.isArray(s.connectionIds)).toBe(true)
     }
   })
 
