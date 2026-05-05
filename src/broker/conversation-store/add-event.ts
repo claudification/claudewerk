@@ -1,4 +1,4 @@
-import type { HookEvent, HookEventOf, TranscriptUserEntry } from '../../shared/protocol'
+import type { Conversation, HookEvent, HookEventOf, HookEventType, TranscriptUserEntry } from '../../shared/protocol'
 import { recordHookEvent } from '../analytics-store'
 import { getProjectSettings } from '../project-settings'
 import { MAX_EVENTS, PASSIVE_HOOKS, TRANSCRIPT_KICK_DEBOUNCE_MS, TRANSCRIPT_KICK_EVENT_THRESHOLD } from './constants'
@@ -27,7 +27,7 @@ import { handleTaskCompleted, handleTeammateIdle } from './event-handlers/team'
  * Thin orchestrator: cross-cutting work (push to history, recap detection,
  * subagent correlation, status transitions, broadcast, transcript kick)
  * lives here; per-hook-event behavior is delegated to typed helpers in
- * `event-handlers/`.
+ * `event-handlers/`, dispatched through the `eventHandlers` table below.
  */
 export function addEvent(ctx: ConversationStoreContext, conversationId: string, event: HookEvent): void {
   const session = ctx.conversations.get(conversationId)
@@ -84,71 +84,12 @@ export function addEvent(ctx: ConversationStoreContext, conversationId: string, 
     }
   }
 
-  // Per-event handlers (each is a no-op when not its event)
-  if (event.hookEvent === 'SessionStart') {
-    handleSessionStart(session, event as HookEventOf<'SessionStart'>)
-  }
-
-  if (event.hookEvent === 'CwdChanged') {
-    handleCwdChanged(session, event as HookEventOf<'CwdChanged'>)
-  }
-
-  if (event.hookEvent === 'PreCompact' || event.hookEvent === 'PostCompact' || event.hookEvent === 'SessionStart') {
-    handleCompactEvent(
-      ctx,
-      conversationId,
-      session,
-      event as HookEventOf<'PreCompact' | 'PostCompact' | 'SessionStart'>,
-    )
-  }
-
-  if (event.hookEvent === 'PreToolUse') {
-    handlePreToolUse(ctx, conversationId, session, event as HookEventOf<'PreToolUse'>)
-  }
-
-  if (event.hookEvent === 'PermissionRequest') {
-    handlePermissionRequest(session, event as HookEventOf<'PermissionRequest'>)
-  }
-
-  if (event.hookEvent === 'PermissionDenied') {
-    handlePermissionDenied(ctx, conversationId, session, event as HookEventOf<'PermissionDenied'>)
-  }
-
-  if (event.hookEvent === 'Elicitation') {
-    handleElicitation(session, event as HookEventOf<'Elicitation'>)
-  }
-
-  if (
-    event.hookEvent === 'PostToolUse' ||
-    event.hookEvent === 'PostToolUseFailure' ||
-    event.hookEvent === 'ElicitationResult'
-  ) {
-    clearPendingAttention(session)
-  }
-
-  if (event.hookEvent === 'SubagentStart') {
-    handleSubagentStart(ctx, conversationId, session, event as HookEventOf<'SubagentStart'>)
-  }
-
-  if (event.hookEvent === 'SubagentStop') {
-    handleSubagentStop(session, event as HookEventOf<'SubagentStop'>)
-  }
-
-  if (event.hookEvent === 'PostToolUse') {
-    handlePostToolUseTracking(session, event as HookEventOf<'PostToolUse'>)
-  }
-
-  if (event.hookEvent === 'TeammateIdle') {
-    handleTeammateIdle(session, event as HookEventOf<'TeammateIdle'>)
-  }
-
-  if (event.hookEvent === 'TaskCompleted') {
-    handleTaskCompleted(session, event as HookEventOf<'TaskCompleted'>)
-  }
-
-  if (event.hookEvent === 'Notification') {
-    handleNotification(ctx, conversationId, session, event as HookEventOf<'Notification'>)
-  }
+  // Per-event-type dispatch. Stop/StopFailure are handled above as part of
+  // the status-transition block (they're conditional on !isSubagentEvent &&
+  // !isRecap). Everything else fires unconditionally regardless of subagent
+  // origin or recap classification.
+  const handler = eventHandlers[event.hookEvent]
+  if (handler) handler(ctx, conversationId, session, event)
 
   // Broadcast event to dashboard subscribers (channel-filtered for v2)
   ctx.broadcastToChannel('conversation:events', conversationId, {
@@ -183,6 +124,169 @@ export function addEvent(ctx: ConversationStoreContext, conversationId: string, 
 
   // Coalesce session update (for lastActivity, eventCount changes)
   ctx.scheduleConversationUpdate(conversationId)
+}
+
+// ─── per-hook-event dispatch table ─────────────────────────────────────────
+//
+// Each entry below adapts a typed helper (or composition of helpers) to the
+// uniform `EventHandler` signature so the orchestrator can dispatch through a
+// `Record<HookEventType, EventHandler>`. The `as HookEventOf<...>` cast lives
+// at the boundary inside each adapter -- the helpers themselves work with
+// the narrow type and never see the union.
+
+type EventHandler = (
+  ctx: ConversationStoreContext,
+  conversationId: string,
+  session: Conversation,
+  event: HookEvent,
+) => void
+
+function dispatchSessionStart(
+  ctx: ConversationStoreContext,
+  conversationId: string,
+  session: Conversation,
+  event: HookEvent,
+): void {
+  const sessionStartEvent = event as HookEventOf<'SessionStart'>
+  handleSessionStart(session, sessionStartEvent)
+  handleCompactEvent(ctx, conversationId, session, sessionStartEvent)
+}
+
+function dispatchCompact(
+  ctx: ConversationStoreContext,
+  conversationId: string,
+  session: Conversation,
+  event: HookEvent,
+): void {
+  handleCompactEvent(ctx, conversationId, session, event as HookEventOf<'PreCompact' | 'PostCompact' | 'SessionStart'>)
+}
+
+function dispatchCwdChanged(
+  _ctx: ConversationStoreContext,
+  _conversationId: string,
+  session: Conversation,
+  event: HookEvent,
+): void {
+  handleCwdChanged(session, event as HookEventOf<'CwdChanged'>)
+}
+
+function dispatchPreToolUse(
+  ctx: ConversationStoreContext,
+  conversationId: string,
+  session: Conversation,
+  event: HookEvent,
+): void {
+  handlePreToolUse(ctx, conversationId, session, event as HookEventOf<'PreToolUse'>)
+}
+
+function dispatchPermissionRequest(
+  _ctx: ConversationStoreContext,
+  _conversationId: string,
+  session: Conversation,
+  event: HookEvent,
+): void {
+  handlePermissionRequest(session, event as HookEventOf<'PermissionRequest'>)
+}
+
+function dispatchPermissionDenied(
+  ctx: ConversationStoreContext,
+  conversationId: string,
+  session: Conversation,
+  event: HookEvent,
+): void {
+  handlePermissionDenied(ctx, conversationId, session, event as HookEventOf<'PermissionDenied'>)
+}
+
+function dispatchElicitation(
+  _ctx: ConversationStoreContext,
+  _conversationId: string,
+  session: Conversation,
+  event: HookEvent,
+): void {
+  handleElicitation(session, event as HookEventOf<'Elicitation'>)
+}
+
+function dispatchPostToolUse(
+  _ctx: ConversationStoreContext,
+  _conversationId: string,
+  session: Conversation,
+  event: HookEvent,
+): void {
+  clearPendingAttention(session)
+  handlePostToolUseTracking(session, event as HookEventOf<'PostToolUse'>)
+}
+
+function dispatchClearPendingAttention(
+  _ctx: ConversationStoreContext,
+  _conversationId: string,
+  session: Conversation,
+  _event: HookEvent,
+): void {
+  clearPendingAttention(session)
+}
+
+function dispatchSubagentStart(
+  ctx: ConversationStoreContext,
+  conversationId: string,
+  session: Conversation,
+  event: HookEvent,
+): void {
+  handleSubagentStart(ctx, conversationId, session, event as HookEventOf<'SubagentStart'>)
+}
+
+function dispatchSubagentStop(
+  _ctx: ConversationStoreContext,
+  _conversationId: string,
+  session: Conversation,
+  event: HookEvent,
+): void {
+  handleSubagentStop(session, event as HookEventOf<'SubagentStop'>)
+}
+
+function dispatchTeammateIdle(
+  _ctx: ConversationStoreContext,
+  _conversationId: string,
+  session: Conversation,
+  event: HookEvent,
+): void {
+  handleTeammateIdle(session, event as HookEventOf<'TeammateIdle'>)
+}
+
+function dispatchTaskCompleted(
+  _ctx: ConversationStoreContext,
+  _conversationId: string,
+  session: Conversation,
+  event: HookEvent,
+): void {
+  handleTaskCompleted(session, event as HookEventOf<'TaskCompleted'>)
+}
+
+function dispatchNotification(
+  ctx: ConversationStoreContext,
+  conversationId: string,
+  session: Conversation,
+  event: HookEvent,
+): void {
+  handleNotification(ctx, conversationId, session, event as HookEventOf<'Notification'>)
+}
+
+const eventHandlers: Partial<Record<HookEventType, EventHandler>> = {
+  SessionStart: dispatchSessionStart,
+  CwdChanged: dispatchCwdChanged,
+  PreCompact: dispatchCompact,
+  PostCompact: dispatchCompact,
+  PreToolUse: dispatchPreToolUse,
+  PermissionRequest: dispatchPermissionRequest,
+  PermissionDenied: dispatchPermissionDenied,
+  Elicitation: dispatchElicitation,
+  PostToolUse: dispatchPostToolUse,
+  PostToolUseFailure: dispatchClearPendingAttention,
+  ElicitationResult: dispatchClearPendingAttention,
+  SubagentStart: dispatchSubagentStart,
+  SubagentStop: dispatchSubagentStop,
+  TeammateIdle: dispatchTeammateIdle,
+  TaskCompleted: dispatchTaskCompleted,
+  Notification: dispatchNotification,
 }
 
 // re-export so callers don't need a second import
