@@ -792,6 +792,14 @@ const ConversationItemFull = memo(function ConversationItemFull({ conversation }
         >
           {projectName}
         </span>
+        {conversation.backend === 'daemon' && (
+          <span
+            className="px-1.5 py-0.5 text-[10px] uppercase font-bold bg-sky-500/20 text-sky-400 border border-sky-500/50"
+            title="Native claude agents background session -- claudewerk mirrors it read-only"
+          >
+            native
+          </span>
+        )}
         {conversation.planMode && (
           <span className="px-1.5 py-0.5 text-[10px] uppercase font-bold bg-blue-500/20 text-blue-400 border border-blue-500/50">
             plan
@@ -1068,6 +1076,11 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
             )}
           >
             {(conversation.title || conversation.agentName || '').slice(0, 24) || conversation.id.slice(0, 8)}
+          </span>
+        )}
+        {conversation.backend === 'daemon' && (
+          <span className="text-[9px] text-sky-400 font-bold" title="Native claude agents session -- read-only mirror">
+            NATIVE
           </span>
         )}
         {conversation.compacting && <span className="text-[9px] text-amber-400 font-bold animate-pulse">COMPACT</span>}

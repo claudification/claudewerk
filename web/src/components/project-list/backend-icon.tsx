@@ -65,6 +65,9 @@ export const BACKENDS: Record<string, BackendDef> = {
   },
   opencode: { icon: OpenCodeIcon, color: 'text-emerald-400', label: 'OpenCode' },
   acp: { icon: OpenCodeIcon, color: 'text-emerald-400', label: 'OpenCode' },
+  // Native `claude agents` background session, mirrored read-only by the
+  // sentinel. Still Claude Code -- the sky tint sets it apart from orange.
+  daemon: { icon: ClaudeIcon, color: 'text-sky-400', label: 'Claude agents (native daemon)' },
 }
 
 export function getBackendIconElement(backend: string, size = 14): ReactNode {
