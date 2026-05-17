@@ -44,6 +44,7 @@ import type {
 } from '../shared/protocol'
 import { DEFAULT_BROKER_URL, HEARTBEAT_INTERVAL_MS } from '../shared/protocol'
 import { getAcpRecipe, listAcpRecipes } from './acp-recipes'
+import { startDaemonRosterWatch, stopDaemonRosterWatch } from './daemon-roster'
 import { type PreflightIssue, preflightSpawn } from './preflight'
 
 /** Pre-flight warnings stashed per-conversation. Surfaced when CC dies early
@@ -1674,6 +1675,9 @@ function connect(
     // Start usage polling
     startUsagePolling(ws, verbose)
 
+    // Start mirroring the Claude Code daemon roster (read-only native bg sessions)
+    startDaemonRosterWatch(ws, { log, diag })
+
     // Start heartbeat
     heartbeatTimer = setInterval(() => {
       try {
@@ -2328,6 +2332,7 @@ function connect(
     activeWs = null
     if (heartbeatTimer) clearInterval(heartbeatTimer)
     stopUsagePolling()
+    stopDaemonRosterWatch()
 
     const detail = event.code ? ` (code=${event.code}${event.reason ? ` reason=${event.reason}` : ''})` : ''
     if (shouldReconnect) {
