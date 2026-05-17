@@ -3,6 +3,7 @@
  * Defines the message format between agent host and broker
  */
 
+import type { JobRecord } from './cc-daemon/types'
 import type { DialogLayout, DialogResult } from './dialog-schema'
 import type { SpawnRequest } from './spawn-schema'
 
@@ -2115,6 +2116,55 @@ export interface ClaudeEfficiencyUpdate {
   polledAt: number
 }
 
+// --- Claude Code daemon (`claude agents`) read-only mirror -------------------
+//
+// Phase 1 of the daemon integration: the sentinel observes native background
+// sessions hosted by `claude daemon` and pushes them to the broker, which
+// surfaces them as read-only Conversation rows (agentHostType: 'daemon').
+// See .claude/docs/plan-claude-agents-integration.md.
+
+/**
+ * A daemon background job as claudewerk sees it: the daemon's own JobRecord
+ * (from the cc-daemon `list` op / roster.json) plus the stable conversationId
+ * the sentinel minted for it. `sessionId` is the daemon's full session id --
+ * a ccSessionId; the broker stores it opaquely and never routes by it.
+ */
+export interface DaemonJobInfo extends JobRecord {
+  /** Stable claudewerk conversationId minted by the sentinel (conv_...). */
+  conversationId: string
+}
+
+/**
+ * Sentinel -> Broker: the full set of daemon background jobs the sentinel
+ * currently observes. Authoritative -- the broker reconciles its read-only
+ * daemon Conversation rows against `jobs` (create new ones, mark vanished
+ * ones ended). Sent on sentinel connect and on every roster.json change.
+ */
+export interface DaemonRosterUpdate {
+  type: 'daemon_roster_update'
+  /** Whether a `claude daemon` is currently reachable on the sentinel host. */
+  daemonPresent: boolean
+  /** Daemon control-protocol version (the cc-daemon `proto`), when known. */
+  daemonProto?: number
+  /** Every job the daemon currently knows about. Empty when daemonPresent is false. */
+  jobs: DaemonJobInfo[]
+  /** Epoch ms when the sentinel observed this roster. */
+  observedAt: number
+}
+
+/**
+ * Sentinel -> Broker: one daemon job's state changed -- a delta from a held
+ * `subscribe` stream or a roster diff. Updates a single read-only daemon
+ * Conversation row without resending the whole roster.
+ */
+export interface DaemonJobState {
+  type: 'daemon_job_state'
+  /** The job's current state, including its conversationId. */
+  job: DaemonJobInfo
+  /** Epoch ms when the sentinel observed this state. */
+  observedAt: number
+}
+
 export type SentinelMessage =
   | SentinelIdentify
   | ReviveResult
@@ -2124,6 +2174,8 @@ export type SentinelMessage =
   | ListCcSessionsResult
   | UsageUpdate
   | LaunchLog
+  | DaemonRosterUpdate
+  | DaemonJobState
 
 // Broker -> Sentinel messages
 //
