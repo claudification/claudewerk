@@ -27,44 +27,71 @@ export function resolveSockDir(): string | null {
   return sockDirFromRoster() ?? sockDirFromScan()
 }
 
+/** Parsed shape of the bits of `roster.json` we read. */
+export interface RosterShape {
+  workers?: Record<string, { rendezvousSock?: string } | undefined>
+}
+
+/**
+ * Derive the daemon sock dir from a parsed roster object. Pure -- the file
+ * read lives in `sockDirFromRoster`. A worker's `rendezvousSock` is
+ * `<dir>/rv/<short>.sock`, so the sock dir is two path segments up.
+ */
+export function sockDirFromRosterData(roster: RosterShape): string | null {
+  const sock = Object.values(roster.workers ?? {}).find(w => w?.rendezvousSock)?.rendezvousSock
+  return sock ? join(sock, '..', '..') : null
+}
+
 /** roster.json carries absolute worker socket paths; the sock dir is two up. */
 function sockDirFromRoster(): string | null {
   try {
-    const roster = JSON.parse(readFileSync(ROSTER_PATH, 'utf8')) as {
-      workers?: Record<string, { rendezvousSock?: string }>
-    }
-    for (const worker of Object.values(roster.workers ?? {})) {
-      // `<dir>/rv/<short>.sock` -> `<dir>`
-      if (worker?.rendezvousSock) return join(worker.rendezvousSock, '..', '..')
-    }
+    return sockDirFromRosterData(JSON.parse(readFileSync(ROSTER_PATH, 'utf8')) as RosterShape)
   } catch {
-    // roster absent or unparseable -- daemon may be down. Fall through.
+    // roster absent or unparseable -- daemon may be down. Treat as not found.
+    return null
   }
-  return null
+}
+
+/** The per-uid daemon base dir `/tmp/cc-daemon-<uid>`, or null off Unix. */
+function uidBaseDir(): string | null {
+  const uid = typeof process.getuid === 'function' ? process.getuid() : null
+  return uid == null ? null : `/tmp/cc-daemon-${uid}`
+}
+
+/** `readdirSync` that yields `[]` instead of throwing on a missing dir. */
+function readDirSafe(dir: string): string[] {
+  try {
+    return readdirSync(dir)
+  } catch {
+    return []
+  }
+}
+
+/** mtime of `<dir>/control.sock`, or null if it has no reachable socket. */
+function controlSockMtime(dir: string): number | null {
+  const sock = join(dir, 'control.sock')
+  if (!existsSync(sock)) return null
+  try {
+    return statSync(sock).mtimeMs
+  } catch {
+    return null // socket vanished between readdir and stat
+  }
+}
+
+/** Instance dirs under `base` that hold a control socket, newest mtime first. */
+function scanControlDirs(base: string): { dir: string; mtimeMs: number }[] {
+  const found: { dir: string; mtimeMs: number }[] = []
+  for (const name of readDirSafe(base)) {
+    const dir = join(base, name)
+    const mtimeMs = controlSockMtime(dir)
+    if (mtimeMs != null) found.push({ dir, mtimeMs })
+  }
+  return found.sort((a, b) => b.mtimeMs - a.mtimeMs)
 }
 
 /** Fallback when the daemon is up with zero workers: scan the per-uid base dir. */
 function sockDirFromScan(): string | null {
-  const uid = typeof process.getuid === 'function' ? process.getuid() : null
-  if (uid == null) return null
-  const base = `/tmp/cc-daemon-${uid}`
-  let entries: string[]
-  try {
-    entries = readdirSync(base)
-  } catch {
-    return null
-  }
-  let newest: { dir: string; mtimeMs: number } | null = null
-  for (const name of entries) {
-    const dir = join(base, name)
-    const sock = join(dir, 'control.sock')
-    if (!existsSync(sock)) continue
-    try {
-      const { mtimeMs } = statSync(sock)
-      if (!newest || mtimeMs > newest.mtimeMs) newest = { dir, mtimeMs }
-    } catch {
-      // socket vanished between readdir and stat -- skip.
-    }
-  }
-  return newest?.dir ?? null
+  const base = uidBaseDir()
+  if (!base) return null
+  return scanControlDirs(base)[0]?.dir ?? null
 }

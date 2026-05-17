@@ -28,21 +28,35 @@ export function encodeFrame(op: ControlRequest): string {
   return `${JSON.stringify({ proto: CC_DAEMON_PROTO, ...op })}\n`
 }
 
-/** Parse one JSON response line into a DaemonResponse. Throws on malformed input. */
-export function parseResponse(line: string): DaemonResponse {
+/**
+ * Parse one JSON line into a plain object. Shared by the request/response and
+ * `subscribe` decoders -- both frame the wire as newline-delimited JSON.
+ * Throws a labelled error on non-JSON or non-object input.
+ */
+export function parseJsonObject(line: string, label: string): Record<string, unknown> {
   let obj: unknown
   try {
     obj = JSON.parse(line)
   } catch {
-    throw new Error(`cc-daemon: non-JSON response frame: ${truncate(line)}`)
+    throw new Error(`cc-daemon: non-JSON ${label}: ${truncate(line)}`)
   }
-  if (!obj || typeof obj !== 'object' || typeof (obj as { ok?: unknown }).ok !== 'boolean') {
-    throw new Error(`cc-daemon: malformed response frame: ${truncate(line)}`)
+  if (!obj || typeof obj !== 'object') {
+    throw new Error(`cc-daemon: malformed ${label}: ${truncate(line)}`)
   }
-  return obj as DaemonResponse
+  return obj as Record<string, unknown>
 }
 
-function truncate(value: string, max = 120): string {
+/** Parse one JSON response line into a DaemonResponse. Throws on malformed input. */
+export function parseResponse(line: string): DaemonResponse {
+  const obj = parseJsonObject(line, 'response frame')
+  if (typeof obj.ok !== 'boolean') {
+    throw new Error(`cc-daemon: response frame missing boolean \`ok\`: ${truncate(line)}`)
+  }
+  return obj as unknown as DaemonResponse
+}
+
+/** Clip a string for safe inclusion in an error message. */
+export function truncate(value: string, max = 120): string {
   return value.length > max ? `${value.slice(0, max)}...` : value
 }
 
