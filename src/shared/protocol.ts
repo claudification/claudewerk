@@ -1174,6 +1174,8 @@ export type TerminationSource =
   // not an actual termination -- a previously-ended conversation got
   // un-ended because `meta` or `agent_host_boot` arrived for it).
   | 'broker-unend' // status flipped from 'ended' back to active (flap)
+  // Daemon-mirrored sessions (read-only `claude agents` mirror)
+  | 'daemon-job-gone' // a mirrored daemon job reached a terminal state or left the roster
   // Future-facing
   | 'sentinel-kill' // explicit sentinel kill (not yet wired)
   | 'unknown' // legacy paths until tagged

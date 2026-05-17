@@ -7,6 +7,7 @@ import { registerBootLifecycleHandlers } from './boot-lifecycle'
 import { registerChannelHandlers } from './channel'
 import { registerDashboardActionHandlers } from './control-panel-actions'
 import { registerConversationLifecycleHandlers } from './conversation-lifecycle'
+import { registerDaemonHandlers } from './daemon'
 import { registerDialogHandlers } from './dialog'
 import { registerFileHandlers } from './files'
 import { registerGatewayHandlers } from './gateway'
@@ -38,6 +39,7 @@ export function registerAllHandlers(): void {
   registerRclaudeConfigHandlers()
   registerRecapHandlers()
   registerConversationLifecycleHandlers()
+  registerDaemonHandlers()
   registerSpawnApprovalHandlers()
   registerSpawnHandlers()
   registerTerminalHandlers()
