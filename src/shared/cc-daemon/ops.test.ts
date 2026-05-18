@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import { ProtocolMismatchError, request } from './client'
 import { type FakeDaemon, startFakeDaemon } from './fake-daemon'
-import { has, leases, list, ping } from './ops'
+import { has, kill, lease, leases, list, ping, reply, resize, respawnStale } from './ops'
 import { CC_DAEMON_PROTO } from './types'
 
 let daemon: FakeDaemon | undefined
@@ -64,6 +64,74 @@ describe('ops against a fake daemon', () => {
     })
     const resp = await leases(daemon.sockPath)
     expect(resp.ok).toBe(true)
+  })
+
+  it('lease registers a client with label/cwd/pid', async () => {
+    let seen: Record<string, unknown> | undefined
+    daemon = await startFakeDaemon((req, conn) => {
+      seen = req
+      conn.send({ ok: true, op: 'lease' })
+      conn.end()
+    })
+    await lease(daemon.sockPath, { label: 'sentinel', cwd: '/x', pid: 42 })
+    expect(seen?.op).toBe('lease')
+    expect(seen?.client).toEqual({ label: 'sentinel', cwd: '/x', pid: 42 })
+  })
+
+  it('resize sends cols/rows and the attachId when given', async () => {
+    let seen: Record<string, unknown> | undefined
+    daemon = await startFakeDaemon((req, conn) => {
+      seen = req
+      conn.send({ ok: true, op: 'resize' })
+      conn.end()
+    })
+    await resize(daemon.sockPath, 'aeb185f9', 100, 30, 'att_1')
+    expect(seen).toMatchObject({ op: 'resize', short: 'aeb185f9', cols: 100, rows: 30, attachId: 'att_1' })
+  })
+
+  it('resize omits attachId when not given', async () => {
+    let seen: Record<string, unknown> | undefined
+    daemon = await startFakeDaemon((req, conn) => {
+      seen = req
+      conn.send({ ok: true, op: 'resize' })
+      conn.end()
+    })
+    await resize(daemon.sockPath, 'aeb185f9', 80, 24)
+    expect(seen).toMatchObject({ op: 'resize', short: 'aeb185f9', cols: 80, rows: 24 })
+    expect(seen).not.toHaveProperty('attachId')
+  })
+
+  it('reply injects text into a worker', async () => {
+    let seen: Record<string, unknown> | undefined
+    daemon = await startFakeDaemon((req, conn) => {
+      seen = req
+      conn.send({ ok: true, op: 'reply' })
+      conn.end()
+    })
+    await reply(daemon.sockPath, 'aeb185f9', 'continue please')
+    expect(seen).toMatchObject({ op: 'reply', short: 'aeb185f9', text: 'continue please' })
+  })
+
+  it('kill passes the signal through when given', async () => {
+    let seen: Record<string, unknown> | undefined
+    daemon = await startFakeDaemon((req, conn) => {
+      seen = req
+      conn.send({ ok: true, op: 'kill' })
+      conn.end()
+    })
+    await kill(daemon.sockPath, 'aeb185f9', 'SIGKILL')
+    expect(seen).toMatchObject({ op: 'kill', short: 'aeb185f9', signal: 'SIGKILL' })
+  })
+
+  it('respawnStale targets a worker short id', async () => {
+    let seen: Record<string, unknown> | undefined
+    daemon = await startFakeDaemon((req, conn) => {
+      seen = req
+      conn.send({ ok: true, op: 'respawn-stale' })
+      conn.end()
+    })
+    await respawnStale(daemon.sockPath, 'aeb185f9')
+    expect(seen).toMatchObject({ op: 'respawn-stale', short: 'aeb185f9' })
   })
 
   it('maps an EPROTO error frame to ProtocolMismatchError', async () => {

@@ -20,8 +20,15 @@ export interface FakeConn {
   send(obj: unknown): void
   /** Write a raw string (for partial-frame / malformed-input tests). */
   raw(text: string): void
+  /** Write raw bytes (for attach PTY-stream tests). */
+  rawBytes(data: Buffer): void
   /** Close the connection. */
   end(): void
+  /**
+   * Register a sink for raw bytes the client sends AFTER its first request
+   * line -- i.e. attach PTY input. Set by an `attach` handler.
+   */
+  onInput?: (data: Buffer) => void
 }
 
 /** Decides how the fake daemon answers one request frame. */
@@ -41,17 +48,26 @@ export function startFakeDaemon(handler: FakeHandler): Promise<FakeDaemon> {
 
   const server: Server = createServer(socket => {
     let buf = ''
+    let requestDispatched = false
     const conn: FakeConn = {
       send: obj => socket.write(`${JSON.stringify(obj)}\n`),
       raw: text => socket.write(text),
+      rawBytes: data => socket.write(data),
       end: () => socket.end(),
     }
     socket.on('data', (chunk: Buffer) => {
+      // Once the first request line is dispatched, treat further bytes as raw
+      // input (attach PTY input) and hand them to the handler-registered sink.
+      if (requestDispatched) {
+        conn.onInput?.(chunk)
+        return
+      }
       buf += chunk.toString()
       const nl = buf.indexOf('\n')
       if (nl < 0) return // wait for a complete request line
       const line = buf.slice(0, nl)
-      buf = buf.slice(nl + 1)
+      const leftover = buf.slice(nl + 1)
+      requestDispatched = true
       let req: Record<string, unknown>
       try {
         req = JSON.parse(line) as Record<string, unknown>
@@ -60,6 +76,7 @@ export function startFakeDaemon(handler: FakeHandler): Promise<FakeDaemon> {
         return
       }
       handler(req, conn)
+      if (leftover.length > 0) conn.onInput?.(Buffer.from(leftover))
     })
     socket.on('error', () => {}) // client hang-ups are expected in tests
   })

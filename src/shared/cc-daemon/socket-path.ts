@@ -29,7 +29,21 @@ export function resolveSockDir(): string | null {
 
 /** Parsed shape of the bits of `roster.json` we read. */
 export interface RosterShape {
-  workers?: Record<string, { rendezvousSock?: string } | undefined>
+  workers?: Record<string, { rendezvousSock?: string; ptySock?: string } | undefined>
+}
+
+/**
+ * Resolve a worker's `ptySock` -- the per-worker socket carrying the framed
+ * `[len:u32be][kind:u8]` PTY duplex. `null` if the worker (or the roster) is
+ * absent. Pure read of `roster.json`.
+ */
+export function resolveWorkerPtySock(short: string): string | null {
+  try {
+    const roster = JSON.parse(readFileSync(ROSTER_PATH, 'utf8')) as RosterShape
+    return roster.workers?.[short]?.ptySock ?? null
+  } catch {
+    return null
+  }
 }
 
 /**
