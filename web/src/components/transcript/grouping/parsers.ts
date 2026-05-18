@@ -59,16 +59,22 @@ export function extractSkillName(entry: TranscriptUserEntry): string | undefined
   return match?.[1]
 }
 
-// Detect if a user entry is a skill content injection (the big markdown dump)
+// Detect if a user entry is a skill content injection (the big markdown dump
+// after a Skill tool call or /slash command).
+//
+// The broker does NOT persist CC's per-entry `isMeta` / `sourceToolUseID`
+// fields -- it stores a whitelist (message/seq/timestamp/type/uuid plus
+// toolUseResult), so detection cannot rely on them and must key on the content
+// shape instead. The Skill tool always injects content opening with the exact
+// marker below; the /slash path opens with a markdown heading. Both stay gated
+// by `pendingSkillName` at the call site, so a stray markdown paste can't match.
 export function isSkillContent(entry: TranscriptUserEntry): boolean {
-  if (!entry.isMeta) return false
   const content = entry.message?.content
-  if (Array.isArray(content)) {
-    const text = content
-      .filter(c => c.type === 'text')
-      .map(c => c.text)
-      .join('')
-    return text.length > 300 && (!!entry.sourceToolUseID || text.startsWith('#') || text.startsWith('Base directory'))
-  }
-  return false
+  if (!Array.isArray(content)) return false
+  const text = content
+    .filter(c => c.type === 'text')
+    .map(c => c.text)
+    .join('')
+  if (text.length <= 300) return false
+  return text.startsWith('Base directory for this skill:') || text.startsWith('#')
 }

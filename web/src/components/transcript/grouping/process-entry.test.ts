@@ -56,3 +56,31 @@ describe('processEntry - Stop hook feedback', () => {
     expect(groups[0]?.type).toBe('user')
   })
 })
+
+// The Skill tool produces two consecutive user entries: a tool_result carrying
+// `toolUseResult.commandName`, then the big markdown dump. The broker strips
+// CC's `isMeta` / `sourceToolUseID` fields, so detection keys on content shape.
+const SKILL_BODY = `Base directory for this skill: /Users/jonas/.claude/skills/minimalist-skill\n\n# Protocol\n${'x'.repeat(400)}`
+
+function skillToolResult(commandName: string): TranscriptEntry {
+  return {
+    type: 'user',
+    timestamp: '2026-05-18T17:21:00.000Z',
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_x', content: 'ok' }] },
+    toolUseResult: { success: true, commandName },
+  } as unknown as TranscriptEntry
+}
+
+describe('processEntry - Skill content', () => {
+  it('collapses skill content into a skill group (broker-stored shape, no isMeta)', () => {
+    const { groups } = group([skillToolResult('minimalist-skill'), userEntry(textBlocks(SKILL_BODY))])
+    expect(groups).toHaveLength(1)
+    expect(groups[0].type).toBe('skill')
+    expect(groups[0].skillName).toBe('minimalist-skill')
+  })
+
+  it('leaves a big markdown user message alone when no skill was just invoked', () => {
+    const { groups } = group([userEntry(textBlocks(SKILL_BODY))])
+    expect(groups[0]?.type).toBe('user')
+  })
+})
