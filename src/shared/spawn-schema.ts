@@ -170,5 +170,87 @@ export const spawnRequestSchema = z.object({
     .describe(
       'Appended to the generated system prompt. CC maps this to --append-system-prompt; chat-api prepends a system message. Ignored by backends that cannot honor it (hermes, opencode).',
     ),
+  daemonMode: z
+    .enum(['new', 'resume', 'attach'])
+    .optional()
+    .describe(
+      'Daemon launch mode. "new": claude --bg a fresh worker. "resume": claude --bg --resume a forked worker. ' +
+        '"attach": attach to an already-running daemon worker (no claude --bg). Only used when backend=daemon; ' +
+        'defaults to "new".',
+    ),
+  daemonResumeSessionId: z
+    .string()
+    .optional()
+    .describe(
+      'Daemon session id to resume -- the input to claude --bg --resume <id>. The resumed worker forks to a fresh ' +
+        'ccSessionId. Required when daemonMode=resume.',
+    ),
+  daemonAttachShort: z
+    .string()
+    .regex(/^[0-9a-f]{8}$/, 'daemonAttachShort must be an 8-hex daemon worker short id')
+    .optional()
+    .describe('8-hex daemon worker short id to attach to, from the daemon roster. Required when daemonMode=attach.'),
+  daemonSettingsPath: z
+    .string()
+    .optional()
+    .describe(
+      'Absolute path on the sentinel host to a settings JSON (claude --bg --settings). ' +
+        'Injected for daemonMode new|resume only.',
+    ),
+  daemonMcpConfigPath: z
+    .string()
+    .optional()
+    .describe(
+      'Absolute path on the sentinel host to an MCP config JSON (claude --bg --mcp-config). ' +
+        'Injected for daemonMode new|resume only.',
+    ),
 })
 export type SpawnRequest = z.infer<typeof spawnRequestSchema>
+
+/** The fields `refineDaemonSpawn` inspects -- a structural subset of SpawnRequest
+ *  so callers that `.omit()` the base object can still re-apply the refinement. */
+export type DaemonSpawnFields = Pick<
+  SpawnRequest,
+  'backend' | 'daemonMode' | 'prompt' | 'daemonResumeSessionId' | 'daemonAttachShort'
+>
+
+/**
+ * Cross-field validation for daemon launch modes. Extracted as a standalone
+ * refinement so callers that `.omit()`/`.extend()` the base object (the
+ * inter-conversation spawn path) can re-apply it. A no-op for non-daemon
+ * backends.
+ *
+ * Rules: new -> `prompt` required (claude --bg dispatches with one);
+ * resume -> `daemonResumeSessionId` required; attach -> `daemonAttachShort`
+ * required. The daemon backend re-checks these server-side too -- this is the
+ * request-validation layer, not the only gate.
+ */
+export function refineDaemonSpawn(req: DaemonSpawnFields, ctx: z.RefinementCtx): void {
+  if (req.backend !== 'daemon') return
+  const mode = req.daemonMode ?? 'new'
+  if (mode === 'new' && !req.prompt?.trim()) {
+    ctx.addIssue({ code: 'custom', message: 'daemon spawn (new mode) requires a prompt', path: ['prompt'] })
+  }
+  if (mode === 'resume' && !req.daemonResumeSessionId?.trim()) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'daemon spawn (resume mode) requires daemonResumeSessionId',
+      path: ['daemonResumeSessionId'],
+    })
+  }
+  if (mode === 'attach' && !req.daemonAttachShort?.trim()) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'daemon spawn (attach mode) requires daemonAttachShort',
+      path: ['daemonAttachShort'],
+    })
+  }
+}
+
+/**
+ * The schema spawn ENTRY POINTS validate against: the base object plus the
+ * daemon cross-field rules. Use this in routes/handlers. Use the bare
+ * `spawnRequestSchema` object only when you need `.omit()`/`.extend()`/
+ * `.partial()` (those are ZodObject methods this refined schema lacks).
+ */
+export const validatedSpawnRequestSchema = spawnRequestSchema.superRefine(refineDaemonSpawn)

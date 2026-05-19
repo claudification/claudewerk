@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { Hono } from 'hono'
 import type { ListCcSessionsResult, ListDirsResult } from '../../shared/protocol'
 import { mapProjectTrust, type SpawnCallerContext } from '../../shared/spawn-permissions'
-import { spawnRequestSchema } from '../../shared/spawn-schema'
+import { validatedSpawnRequestSchema } from '../../shared/spawn-schema'
 import type { ConversationStore } from '../conversation-store'
 import { getGlobalSettings } from '../global-settings'
 import { getProjectSettings } from '../project-settings'
@@ -22,7 +22,7 @@ export function createSpawnRouter(conversationStore: ConversationStore, helpers:
     if (!httpHasPermission(c.req.raw, 'spawn', '*'))
       return c.json({ error: 'Forbidden: spawn permission required' }, 403)
 
-    const parsed = spawnRequestSchema.safeParse(await c.req.json())
+    const parsed = validatedSpawnRequestSchema.safeParse(await c.req.json())
     if (!parsed.success) {
       return c.json({ error: parsed.error.message, issues: parsed.error.issues }, 400)
     }

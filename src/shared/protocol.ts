@@ -654,6 +654,7 @@ export type AgentHostMessage =
   | ConversationStatusSignal
   | JsonStreamData
   | HostTransportReconnect
+  | DaemonLaunchEvent
 
 export interface ConversationNameUpdate {
   type: 'conversation_name'
@@ -1139,6 +1140,7 @@ export type BrokerMessage =
   | ConversationStatusTransition
   | SocketReplaced
   | PhantomReapCandidate
+  | DaemonControlResult
 
 export interface NotifyConfigUpdated {
   type: 'notify_config_updated'
@@ -2174,6 +2176,86 @@ export interface DaemonJobState {
   job: DaemonJobInfo
   /** Epoch ms when the sentinel observed this state. */
   observedAt: number
+}
+
+// ─── Daemon launch lifecycle + remote control (Phase D / Phase G) ──────────
+
+/**
+ * A daemon-specific launch step surfaced to the user in the launch timeline.
+ * Finer-grained than `boot_event` -- covers the `claude --bg` dispatch and the
+ * daemon control-socket `attach` handshake the daemon-agent-host drives.
+ */
+export type DaemonLaunchStep =
+  | 'dispatch_requested' // sentinel about to run claude --bg (new/resume)
+  | 'worker_dispatched' // claude --bg returned a short id
+  | 'attach_started' // daemon-host opening the attach socket
+  | 'attach_retry' // ESTARTING/ENOJOB, retrying
+  | 'attached' // attach ack received
+  | 'attach_lost' // attach socket dropped, reconnecting
+  | 'reattached' // re-attach succeeded
+  | 'worker_gone' // worker left the roster / ended
+
+/**
+ * Agent host -> broker -> control panel: a structured daemon launch step,
+ * rendered inline in the launch timeline. Every dispatch / attach / retry /
+ * re-attach / worker-gone transition is one of these (EVERYTHING IS A
+ * STRUCTURED MESSAGE). `raw` carries the full payload for the JsonInspector.
+ */
+export interface DaemonLaunchEvent {
+  type: 'daemon_launch_event'
+  conversationId: string
+  step: DaemonLaunchStep
+  daemonMode: 'new' | 'resume' | 'attach'
+  /** 8-hex worker short, once known. */
+  short?: string
+  detail?: string
+  /** Full structured payload for the JsonInspector (i) button. */
+  raw?: Record<string, unknown>
+  /** Epoch ms the step occurred. */
+  t: number
+}
+
+/**
+ * Broker -> control panel: the outcome of a daemon remote-control op
+ * (reply / permission-response / kill / respawn-stale). Phase G surfaces every
+ * control verb's result as one of these.
+ */
+export interface DaemonControlResult {
+  type: 'daemon_control_result'
+  conversationId: string
+  op: 'reply' | 'permission_response' | 'kill' | 'respawn_stale'
+  ok: boolean
+  /** Daemon error code on failure (EPROTO, ENOJOB, ENOREPLY, ...). */
+  code?: string
+  detail?: string
+  /** Epoch ms the op settled. */
+  t: number
+}
+
+/**
+ * Control panel -> broker: respawn a sleep/wake-stale daemon worker via the
+ * daemon `respawn-stale` op. Phase G -- the handler lands with the remote
+ * control work; the type is defined here so the wire contract is stable.
+ */
+export interface DaemonRespawnStaleRequest {
+  type: 'daemon_respawn_stale'
+  conversationId: string
+}
+
+/**
+ * Control panel -> broker: answer a tool-use permission gate a daemon worker
+ * is blocked on. Phase G. The sentinel/host translate this to the daemon's
+ * `permission-response` op once that op's schema is live-verified (plan
+ * Section 8 spike 5).
+ */
+export interface DaemonPermissionResponse {
+  type: 'daemon_permission_response'
+  conversationId: string
+  /** Tool-use request id the worker is gated on (from JobRecord.needs / subscribe). */
+  requestId: string
+  decision: 'allow' | 'deny'
+  /** Optional: persist the decision for the session. */
+  scope?: 'once' | 'session'
 }
 
 export type SentinelMessage =

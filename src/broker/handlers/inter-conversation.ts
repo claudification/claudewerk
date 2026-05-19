@@ -8,7 +8,7 @@ import { extractProjectLabel } from '../../shared/project-uri'
 import type { ConversationControlAction } from '../../shared/protocol'
 import { resolveSpawnConfig } from '../../shared/spawn-defaults'
 import { mapProjectTrust, type SpawnCallerContext } from '../../shared/spawn-permissions'
-import { type SpawnRequest, spawnRequestSchema } from '../../shared/spawn-schema'
+import { refineDaemonSpawn, type SpawnRequest, spawnRequestSchema } from '../../shared/spawn-schema'
 import { buildReviveMessage } from '../build-revive'
 import { getGlobalSettings } from '../global-settings'
 import type { MessageHandler } from '../handler-context'
@@ -113,7 +113,10 @@ const handleChannelSpawn: MessageHandler = (ctx, data) => {
 
   // Parse the full SpawnRequest from the channel_spawn payload.
   // jobId is always generated server-side by dispatchSpawn.
-  const parsed = spawnRequestSchema.omit({ jobId: true }).safeParse({ ...data, cwd: spawnPath })
+  const parsed = spawnRequestSchema
+    .omit({ jobId: true })
+    .superRefine(refineDaemonSpawn)
+    .safeParse({ ...data, cwd: spawnPath })
   if (!parsed.success) {
     ctx.reply({
       type: 'channel_spawn_result',

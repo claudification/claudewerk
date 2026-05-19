@@ -2,32 +2,55 @@
  * Daemon backend -- claudewerk conversations hosted on a Claude Code daemon
  * worker (subscription-billed), driven by `src/daemon-agent-host/`.
  *
- * The dashboard requests `backend: 'daemon'`. The broker tags the spawn
- * `agentHostType: 'daemon'`; the sentinel dispatches a `claude --bg` worker,
- * captures its short id, and launches `bin/daemon-host` which attaches to that
- * worker's PTY over the daemon control socket. From the broker's point of view
- * the daemon-agent-host is an ordinary socket-based agent host -- it sends
- * `agent_host_boot`, transcript entries and terminal data exactly like the
- * Claude agent host.
+ * The dashboard requests `backend: 'daemon'` with a `daemonMode`. The broker
+ * tags the spawn `agentHostType: 'daemon'` and forwards the mode + config to
+ * the sentinel, which dispatches (NEW/RESUME) or attaches (ATTACH). From the
+ * broker's point of view the daemon-agent-host is an ordinary socket-based
+ * agent host -- it sends `agent_host_boot`, transcript entries and terminal
+ * data exactly like the Claude agent host.
  *
- * MVP constraint: `claude --bg` dispatches a job with a prompt, so a daemon
- * spawn requires an initial prompt. Promptless interactive daemon spawns are a
- * follow-up (Phase 3, the socket `dispatch` op).
+ * Three launch modes (see `.claude/docs/plan-daemon-launch-ux.md`):
+ *   NEW     claude --bg <prompt> + config       -> mint a fresh conversationId
+ *   RESUME  claude --bg --resume <id> + config  -> mint a fresh conversationId
+ *   ATTACH  attach to a roster worker (no --bg) -> REUSE the mirrored row's id
  *
- * See `.claude/docs/plan-claude-agents-integration.md` sections 6.1-6.3.
+ * The broker persists HOW a daemon conversation was launched into the opaque
+ * `agentHostMeta` bag (`DAEMON_META.*` keys) so a later revive can re-apply it.
+ * This file is the only reader of those keys; the broker core never interprets
+ * them -- boundary-safe.
  */
 
 import { randomUUID } from 'node:crypto'
 import { generateConversationName } from '../../shared/conversation-names'
 import { cwdToProjectUri } from '../../shared/project-uri'
-import type { LaunchProgressEvent, LaunchStep, SpawnResult as SentinelSpawnResult } from '../../shared/protocol'
+import type {
+  Conversation,
+  LaunchProgressEvent,
+  LaunchStep,
+  SpawnResult as SentinelSpawnResult,
+} from '../../shared/protocol'
 import { deriveConversationName, validateConversationName } from '../../shared/spawn-naming'
 import type { SpawnRequest } from '../../shared/spawn-schema'
 import type { ConversationStore } from '../conversation-store'
 import type { ConversationBackend, InputResult, SpawnDeps, SpawnResult } from './types'
 
-/** agentHostMeta key -- the broker core never reads it; only this file does. */
-const META_BACKEND = 'backend'
+/** Daemon launch mode -- resolved once, defaults to 'new'. */
+type DaemonMode = 'new' | 'resume' | 'attach'
+
+/**
+ * `agentHostMeta` keys this backend owns. The broker core never reads these;
+ * only this file reads them back, and `handlers/daemon.ts` writes `short` when
+ * it mirrors a roster job. `agentHostMeta` is an opaque bag -- boundary-safe.
+ */
+export const DAEMON_META = {
+  backend: 'backend',
+  mode: 'daemonMode',
+  settings: 'daemonSettingsPath',
+  mcp: 'daemonMcpConfigPath',
+  appendPrompt: 'appendSystemPrompt',
+  resume: 'daemonResumeSessionId',
+  short: 'daemonShort',
+} as const
 
 function emitProgress(
   conversationStore: ConversationStore,
@@ -59,11 +82,84 @@ export const daemonBackend: ConversationBackend = {
   },
 }
 
-async function spawnDaemon(req: SpawnRequest, deps: SpawnDeps): Promise<SpawnResult> {
-  // claude --bg dispatches a job with a prompt -- a daemon spawn needs one.
-  if (!req.prompt?.trim()) {
-    return { ok: false, error: 'Daemon spawn requires an initial prompt', statusCode: 400 }
+/**
+ * Mode-specific required-field check. `refineDaemonSpawn` enforces the same at
+ * the request-validation boundary; this guards non-HTTP callers (the MCP spawn
+ * tool validates against the bare object schema, which has no cross-field
+ * refinement). Returns an error string, or null when the request is valid.
+ */
+export function validateDaemonModeFields(req: SpawnRequest, mode: DaemonMode): string | null {
+  // Per mode: [human label for the error, the field that must be non-empty].
+  const required: Record<DaemonMode, [string, string | undefined]> = {
+    new: ['an initial prompt', req.prompt],
+    resume: ['daemonResumeSessionId', req.daemonResumeSessionId],
+    attach: ['daemonAttachShort', req.daemonAttachShort],
   }
+  const [label, value] = required[mode]
+  return value?.trim() ? null : `Daemon spawn (${mode} mode) requires ${label}`
+}
+
+/** Read the daemon worker short the roster mirror stored on a conversation. */
+function readDaemonShort(conv: Conversation): string | undefined {
+  const value = conv.agentHostMeta?.[DAEMON_META.short]
+  return typeof value === 'string' ? value : undefined
+}
+
+/**
+ * Find the roster-mirrored daemon conversation for a worker `short`. ATTACH
+ * reuses this conversationId rather than minting a duplicate row -- attaching
+ * is "take over an observed session", not "create a new conversation".
+ */
+export function findDaemonConversationByShort(deps: SpawnDeps, short: string): Conversation | undefined {
+  return deps.conversationStore
+    .getAllConversations()
+    .find(c => c.agentHostType === 'daemon' && readDaemonShort(c) === short)
+}
+
+/**
+ * Build the daemon launch-config metadata persisted on the conversation, so a
+ * later revive can re-apply the same launch. Merges over any existing meta
+ * (the daemon-agent-host's `agent_host_boot` adds ccSessionId later). ATTACH
+ * injects no config -- the worker was already configured by whoever ran it.
+ */
+export function buildDaemonLaunchMeta(
+  req: SpawnRequest,
+  mode: DaemonMode,
+  existing: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const meta: Record<string, unknown> = { ...existing, [DAEMON_META.backend]: 'daemon', [DAEMON_META.mode]: mode }
+  // ATTACH injects no config -- the worker was already configured. NEW/RESUME
+  // record the injected config; RESUME also records the resumed session id.
+  const pairs: Array<[string, string | undefined]> = []
+  if (mode !== 'attach') {
+    pairs.push(
+      [DAEMON_META.settings, req.daemonSettingsPath],
+      [DAEMON_META.mcp, req.daemonMcpConfigPath],
+      [DAEMON_META.appendPrompt, req.appendSystemPrompt],
+    )
+  }
+  if (mode === 'resume') pairs.push([DAEMON_META.resume, req.daemonResumeSessionId])
+  for (const [key, value] of pairs) {
+    if (value) meta[key] = value
+  }
+  return meta
+}
+
+/** One-line summary of the config flags a NEW/RESUME spawn injects. */
+function describeDaemonConfig(req: SpawnRequest): string {
+  return (
+    `${req.daemonSettingsPath ? ' +settings' : ''}` +
+    `${req.daemonMcpConfigPath ? ' +mcp' : ''}` +
+    `${req.appendSystemPrompt ? ' +sysprompt' : ''}` +
+    `${req.env ? ` +${Object.keys(req.env).length}env` : ''}`
+  )
+}
+
+async function spawnDaemon(req: SpawnRequest, deps: SpawnDeps): Promise<SpawnResult> {
+  const daemonMode: DaemonMode = req.daemonMode ?? 'new'
+
+  const modeErr = validateDaemonModeFields(req, daemonMode)
+  if (modeErr) return { ok: false, error: modeErr, statusCode: 400 }
 
   const sentinelResult = resolveSentinel(req, deps)
   if (!sentinelResult.ok) return sentinelResult.error
@@ -85,10 +181,26 @@ async function spawnDaemon(req: SpawnRequest, deps: SpawnDeps): Promise<SpawnRes
   }
 
   const requestId = randomUUID()
-  const conversationId = randomUUID()
   const jobId = req.jobId ?? randomUUID()
-  const conversationName = deriveConversationName(req) ?? generateConversationName(usedNames)
-  const project = cwdToProjectUri(req.cwd, 'daemon')
+
+  // ATTACH takes over an already-mirrored daemon roster conversation -- reuse
+  // its conversationId. NEW/RESUME mint a fresh one. If the roster has not been
+  // seen yet (no mirror row), ATTACH falls back to minting one too.
+  const reused =
+    daemonMode === 'attach' && req.daemonAttachShort
+      ? findDaemonConversationByShort(deps, req.daemonAttachShort)
+      : undefined
+  const conversationId = reused?.id ?? randomUUID()
+  const conversationName = deriveConversationName(req) ?? reused?.title ?? generateConversationName(usedNames)
+  const project = reused?.project ?? cwdToProjectUri(req.cwd, 'daemon')
+
+  console.log(
+    `[daemon-spawn] dispatch mode=${daemonMode} conv=${conversationId.slice(0, 8)} job=${jobId.slice(0, 8)} ` +
+      `sentinel=${req.sentinel ?? 'default'} reusedConv=${reused ? 'yes' : 'no'}` +
+      (daemonMode === 'attach' ? ` short=${req.daemonAttachShort}` : '') +
+      (daemonMode === 'resume' ? ` resumeFrom=${req.daemonResumeSessionId?.slice(0, 8)}` : '') +
+      (daemonMode !== 'attach' ? describeDaemonConfig(req) : ''),
+  )
 
   deps.conversationStore.createJob(jobId, conversationId)
   emitProgress(deps.conversationStore, jobId, 'job_created', 'done', { conversationId })
@@ -101,10 +213,12 @@ async function spawnDaemon(req: SpawnRequest, deps: SpawnDeps): Promise<SpawnRes
     conversationId,
     jobId,
     conversationName,
+    daemonMode,
   })
 
   if (!result.success) {
     const errorMsg = result.error || 'Spawn failed'
+    console.warn(`[daemon-spawn] FAILED mode=${daemonMode} conv=${conversationId.slice(0, 8)}: ${errorMsg}`)
     emitProgress(deps.conversationStore, jobId, 'failed', 'error', { error: errorMsg })
     deps.conversationStore.failJob(jobId, errorMsg)
     return { ok: false, error: errorMsg, statusCode: 500 }
@@ -116,13 +230,20 @@ async function spawnDaemon(req: SpawnRequest, deps: SpawnDeps): Promise<SpawnRes
   if (!conv) {
     conv = deps.conversationStore.createConversation(conversationId, project, req.model || '', [], ['terminal'])
   }
+  const statusBefore = conv.status
   conv.agentHostType = 'daemon'
-  conv.agentHostMeta = { [META_BACKEND]: 'daemon' }
+  conv.agentHostMeta = buildDaemonLaunchMeta(req, daemonMode, conv.agentHostMeta)
   conv.project = project
   conv.title = req.name || conversationName
   if (req.description) conv.description = req.description
+  // ATTACH reactivates a previously read-only / ended roster mirror row.
+  if (conv.status === 'ended') conv.endedBy = undefined
   deps.conversationStore.persistConversationById(conversationId)
 
+  console.log(
+    `[daemon-spawn] OK mode=${daemonMode} conv=${conversationId.slice(0, 8)} ` +
+      `statusBefore=${statusBefore} tmux=${result.tmuxSession ?? 'none'} launchConfig=persisted`,
+  )
   emitProgress(deps.conversationStore, jobId, 'agent_acked', 'done')
   return { ok: true, conversationId, jobId, tmuxSession: result.tmuxSession }
 }
@@ -160,6 +281,49 @@ function resolveSentinel(
   return { ok: true, sentinel, resolvedSentinelId: deps.conversationStore.getDefaultSentinelId() }
 }
 
+/**
+ * Build the `spawn` payload sent to the sentinel. NEW/RESUME carry the prompt
+ * and config injection; ATTACH carries only the roster short (no claude --bg,
+ * no config -- the worker is already configured).
+ */
+export function buildSentinelSpawnMessage(opts: {
+  req: SpawnRequest
+  requestId: string
+  conversationId: string
+  jobId: string
+  conversationName: string
+  daemonMode: DaemonMode
+}): Record<string, unknown> {
+  const { req, requestId, conversationId, jobId, conversationName, daemonMode } = opts
+  const msg: Record<string, unknown> = {
+    type: 'spawn',
+    requestId,
+    conversationId,
+    jobId,
+    // The sentinel routes daemon-tagged spawns to its daemon dispatch path.
+    agentHostType: 'daemon',
+    daemonMode,
+    cwd: req.cwd,
+    mkdir: req.mkdir || false,
+    mode: req.mode || 'fresh',
+    model: req.model || undefined,
+    conversationName,
+    conversationDescription: req.description || undefined,
+    env: req.env || undefined,
+  }
+  if (daemonMode === 'attach') {
+    msg.daemonAttachShort = req.daemonAttachShort
+    return msg
+  }
+  // NEW / RESUME -- prompt + config injection.
+  msg.prompt = req.prompt
+  if (daemonMode === 'resume') msg.daemonResumeSessionId = req.daemonResumeSessionId
+  if (req.daemonSettingsPath) msg.daemonSettingsPath = req.daemonSettingsPath
+  if (req.daemonMcpConfigPath) msg.daemonMcpConfigPath = req.daemonMcpConfigPath
+  if (req.appendSystemPrompt) msg.appendSystemPrompt = req.appendSystemPrompt
+  return msg
+}
+
 /** Send the spawn message to the sentinel and await its spawn_result. */
 function dispatchToSentinel(opts: {
   sentinel: NonNullable<ReturnType<ConversationStore['getSentinel']>>
@@ -169,8 +333,9 @@ function dispatchToSentinel(opts: {
   conversationId: string
   jobId: string
   conversationName: string
+  daemonMode: DaemonMode
 }): Promise<SentinelSpawnResult> {
-  const { sentinel, deps, req, requestId, conversationId, jobId, conversationName } = opts
+  const { sentinel, deps, req, requestId, conversationId, jobId, daemonMode } = opts
   return new Promise<SentinelSpawnResult>((resolve, reject) => {
     const timeout = setTimeout(() => {
       deps.conversationStore.removeSpawnListener(requestId)
@@ -196,24 +361,10 @@ function dispatchToSentinel(opts: {
     })
 
     try {
-      sentinel.send(
-        JSON.stringify({
-          type: 'spawn',
-          requestId,
-          conversationId,
-          jobId,
-          // The sentinel routes daemon-tagged spawns to its `claude --bg`
-          // dispatch + bin/daemon-host launch path.
-          agentHostType: 'daemon',
-          cwd: req.cwd,
-          mkdir: req.mkdir || false,
-          mode: req.mode || 'fresh',
-          model: req.model || undefined,
-          conversationName,
-          conversationDescription: req.description || undefined,
-          prompt: req.prompt,
-          env: req.env || undefined,
-        }),
+      sentinel.send(JSON.stringify(buildSentinelSpawnMessage(opts)))
+      console.log(
+        `[daemon-spawn] spawn message sent to sentinel mode=${daemonMode} conv=${conversationId.slice(0, 8)} ` +
+          `req=${requestId.slice(0, 8)}`,
       )
     } catch {
       clearTimeout(timeout)

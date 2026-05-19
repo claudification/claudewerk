@@ -13,9 +13,10 @@
  * boundary path, so `lint:boundary` stays green with no whitelist entry.
  */
 import { cwdToProjectUri } from '../../shared/project-uri'
-import type { Conversation, DaemonJobInfo } from '../../shared/protocol'
+import type { Conversation, DaemonJobInfo, DaemonLaunchEvent, DaemonLaunchStep } from '../../shared/protocol'
+import { DAEMON_META } from '../backends/daemon'
 import type { HandlerContext, MessageHandler } from '../handler-context'
-import { registerHandlers, SENTINEL_ONLY } from '../message-router'
+import { AGENT_HOST_ONLY, registerHandlers, SENTINEL_ONLY } from '../message-router'
 
 /** Daemon job states that mean the session has finished for good. */
 const ENDED_STATES = new Set(['done', 'failed', 'stopped', 'crashed'])
@@ -50,6 +51,16 @@ function applyDaemonDisplayFields(conv: Conversation, job: DaemonJobInfo): void 
   if (job.intent) conv.description = job.intent
 }
 
+/**
+ * Persist the daemon worker `short` into the opaque agentHostMeta bag so the
+ * daemon backend can resolve `short -> conversationId` for an ATTACH spawn
+ * (take over this read-only mirror interactively). Boundary-safe: `short` is
+ * the daemon's job routing key, not a ccSessionId.
+ */
+function stampDaemonShort(conv: Conversation, job: DaemonJobInfo): void {
+  conv.agentHostMeta = { ...conv.agentHostMeta, [DAEMON_META.short]: job.short }
+}
+
 /** End a daemon-mirrored conversation through the tagged termination path. */
 function endDaemonConversation(ctx: HandlerContext, id: string, note: string): void {
   const conv = ctx.conversations.getConversation(id)
@@ -77,6 +88,7 @@ function createDaemonConversation(
   conv.hostSentinelId = sentinelId
   conv.hostSentinelAlias = alias
   applyDaemonDisplayFields(conv, job)
+  stampDaemonShort(conv, job)
   conv.status = status === 'ended' ? 'idle' : status // end via the tagged path below
   ctx.conversations.persistConversationById(conv.id)
   ctx.conversations.broadcastConversationUpdate(conv.id)
@@ -105,6 +117,7 @@ function applyDaemonState(
   conv.lastActivity = Date.now()
   conv.currentPath = job.cwd
   applyDaemonDisplayFields(conv, job)
+  stampDaemonShort(conv, job)
   ctx.conversations.persistConversationById(conv.id)
   ctx.conversations.broadcastConversationUpdate(conv.id)
 }
@@ -164,6 +177,71 @@ const daemonJobState: MessageHandler = (ctx, data) => {
   upsertDaemonConversation(ctx, job, ctx.ws.data.sentinelId, ctx.ws.data.sentinelAlias)
 }
 
+/** The eight valid daemon launch steps -- guards malformed wire input. */
+const DAEMON_LAUNCH_STEPS = new Set<DaemonLaunchStep>([
+  'dispatch_requested',
+  'worker_dispatched',
+  'attach_started',
+  'attach_retry',
+  'attached',
+  'attach_lost',
+  'reattached',
+  'worker_gone',
+])
+
+/**
+ * Validate + normalize a raw `daemon_launch_event` wire payload into a typed
+ * DaemonLaunchEvent. Returns null when required fields (conversationId, a known
+ * step, daemonMode) are missing or malformed. Pure -- unit-testable without a
+ * HandlerContext.
+ */
+export function normalizeDaemonLaunchEvent(data: Record<string, unknown>): DaemonLaunchEvent | null {
+  const { conversationId, step, daemonMode } = data
+  if (typeof conversationId !== 'string' || !conversationId) return null
+  if (typeof step !== 'string' || !DAEMON_LAUNCH_STEPS.has(step as DaemonLaunchStep)) return null
+  if (daemonMode !== 'new' && daemonMode !== 'resume' && daemonMode !== 'attach') return null
+  return {
+    type: 'daemon_launch_event',
+    conversationId,
+    step: step as DaemonLaunchStep,
+    daemonMode,
+    short: typeof data.short === 'string' ? data.short : undefined,
+    detail: typeof data.detail === 'string' ? data.detail : undefined,
+    raw: data.raw && typeof data.raw === 'object' ? (data.raw as Record<string, unknown>) : undefined,
+    t: typeof data.t === 'number' ? data.t : Date.now(),
+  }
+}
+
+/**
+ * Agent host -> broker: a structured daemon launch step (dispatch / attach /
+ * retry / re-attach / worker-gone). The broker logs it with full context and
+ * re-broadcasts it to dashboard subscribers so the launch timeline renders it
+ * live. EVERYTHING IS A STRUCTURED MESSAGE -- no diag-only launch events.
+ */
+const daemonLaunchEvent: MessageHandler = (ctx, data) => {
+  const event = normalizeDaemonLaunchEvent(data)
+  if (!event) {
+    ctx.log.debug('[daemon] daemon_launch_event malformed, ignoring')
+    return
+  }
+  const conv = ctx.conversations.getConversation(event.conversationId)
+  if (!conv) {
+    ctx.log.debug(
+      `[daemon] launch event for unknown conversation ${event.conversationId.slice(0, 8)} step=${event.step}`,
+    )
+    return
+  }
+  ctx.log.info(
+    `[daemon] launch event conv=${event.conversationId.slice(0, 8)} mode=${event.daemonMode} step=${event.step}` +
+      `${event.short ? ` short=${event.short}` : ''}${event.detail ? ` -- ${event.detail}` : ''}`,
+  )
+  // Spread into a fresh object literal -- interfaces lack the implicit index
+  // signature that Record<string, unknown> requires; an object literal has one.
+  ctx.broadcastScoped({ ...event }, conv.project)
+}
+
 export function registerDaemonHandlers(): void {
+  // Roster ingest is sentinel-sourced; launch events are agent-host-sourced.
   registerHandlers({ daemon_roster_update: daemonRosterUpdate, daemon_job_state: daemonJobState }, SENTINEL_ONLY)
+  registerHandlers({ daemon_launch_event: daemonLaunchEvent }, AGENT_HOST_ONLY)
 }

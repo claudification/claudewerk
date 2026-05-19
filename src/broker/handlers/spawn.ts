@@ -9,7 +9,7 @@
  */
 
 import { mapProjectTrust, type SpawnCallerContext } from '../../shared/spawn-permissions'
-import { spawnRequestSchema } from '../../shared/spawn-schema'
+import { validatedSpawnRequestSchema } from '../../shared/spawn-schema'
 import { getGlobalSettings } from '../global-settings'
 import type { MessageHandler } from '../handler-context'
 import { DASHBOARD_ROLES, registerHandlers } from '../message-router'
@@ -23,7 +23,7 @@ const handleSpawnRequest: MessageHandler = (ctx, data) => {
   // Agent Hosts/agents bypass (not applicable here; spawn_request is dashboard-only).
   ctx.requirePermission('spawn', '*')
 
-  const parsed = spawnRequestSchema.safeParse(data)
+  const parsed = validatedSpawnRequestSchema.safeParse(data)
   if (!parsed.success) {
     ctx.reply({
       type: 'spawn_request_ack',

@@ -241,15 +241,23 @@
         "count": 1
       }
     },
-    "src/broker/backends/daemon.ts": {
-      "crap_critical": {
-        "count": 1
-      },
+    "src/broker/backends/daemon.test.ts": {
       "crap_high": {
         "count": 1
       },
       "crap_moderate": {
         "count": 1
+      }
+    },
+    "src/broker/backends/daemon.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 3
       }
     },
     "src/broker/backends/hermes.ts": {
@@ -646,6 +654,14 @@
       },
       "crap_moderate": {
         "count": 2
+      }
+    },
+    "src/broker/handlers/daemon.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
       }
     },
     "src/broker/handlers/dialog.ts": {

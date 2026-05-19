@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'bun:test'
-import { isValidDaemonJob, mapDaemonState, parseDaemonJobs, registerDaemonHandlers } from './daemon'
+import {
+  isValidDaemonJob,
+  mapDaemonState,
+  normalizeDaemonLaunchEvent,
+  parseDaemonJobs,
+  registerDaemonHandlers,
+} from './daemon'
 
 describe('mapDaemonState', () => {
   it('maps terminal states to ended', () => {
@@ -62,6 +68,65 @@ describe('parseDaemonJobs', () => {
   it('returns an empty array for non-array input', () => {
     expect(parseDaemonJobs(undefined)).toEqual([])
     expect(parseDaemonJobs({})).toEqual([])
+  })
+})
+
+describe('normalizeDaemonLaunchEvent', () => {
+  const base = { type: 'daemon_launch_event', conversationId: 'conv_x', step: 'attached', daemonMode: 'new', t: 123 }
+
+  it('normalizes a well-formed event', () => {
+    const e = normalizeDaemonLaunchEvent(base)
+    expect(e).not.toBeNull()
+    expect(e?.step).toBe('attached')
+    expect(e?.daemonMode).toBe('new')
+    expect(e?.t).toBe(123)
+  })
+
+  it('carries optional short/detail/raw through', () => {
+    const e = normalizeDaemonLaunchEvent({ ...base, short: 'aeb185f9', detail: 'ack', raw: { via: 'spare' } })
+    expect(e?.short).toBe('aeb185f9')
+    expect(e?.detail).toBe('ack')
+    expect(e?.raw).toEqual({ via: 'spare' })
+  })
+
+  it('defaults t to now when absent', () => {
+    const before = Date.now()
+    const e = normalizeDaemonLaunchEvent({
+      type: 'daemon_launch_event',
+      conversationId: 'c',
+      step: 'attached',
+      daemonMode: 'new',
+    })
+    expect(e?.t).toBeGreaterThanOrEqual(before)
+  })
+
+  it('rejects a missing conversationId', () => {
+    expect(normalizeDaemonLaunchEvent({ ...base, conversationId: undefined })).toBeNull()
+    expect(normalizeDaemonLaunchEvent({ ...base, conversationId: '' })).toBeNull()
+  })
+
+  it('rejects an unknown launch step', () => {
+    expect(normalizeDaemonLaunchEvent({ ...base, step: 'bogus_step' })).toBeNull()
+  })
+
+  it('rejects an invalid daemonMode', () => {
+    expect(normalizeDaemonLaunchEvent({ ...base, daemonMode: 'sideways' })).toBeNull()
+  })
+
+  it('accepts every documented launch step', () => {
+    const steps = [
+      'dispatch_requested',
+      'worker_dispatched',
+      'attach_started',
+      'attach_retry',
+      'attached',
+      'attach_lost',
+      'reattached',
+      'worker_gone',
+    ]
+    for (const step of steps) {
+      expect(normalizeDaemonLaunchEvent({ ...base, step })).not.toBeNull()
+    }
   })
 })
 
