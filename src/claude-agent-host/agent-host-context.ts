@@ -90,7 +90,7 @@ export interface AgentHostContext {
   readonly pendingEditInputs: Map<string, { oldString: string; newString: string }>
   readonly pendingReadPaths: Map<string, string> // tool_use_id -> file_path for image upload
   readonly agentToolUseMap: Map<string, string>
-  readonly pendingAskRequests: Map<string, { requestId: string; questions: unknown[] }>
+  readonly pendingAskRequests: Map<string, { requestId: string; questions: unknown[]; timer?: ReturnType<typeof setTimeout> }>
   /** tool_use_id -> Claude tool name. Populated by the dialect translator
    *  on each tool_use block; consumed when the matching tool_result block
    *  arrives so the result envelope mapper knows the source tool kind. */

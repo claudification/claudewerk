@@ -12,7 +12,7 @@ import { debug as _debug } from './debug'
 import { emitLaunchEvent, filterRelevantEnv } from './launch-events'
 import { hasPendingAskRequests } from './local-server'
 import { hasPendingDialogs, resetMcpChannel } from './mcp-channel'
-import { countInteractions, sendInteraction } from './pending-interactions'
+import { clearInteraction, countInteractions, sendInteraction } from './pending-interactions'
 import { observeClaudeSessionId } from './session-transition'
 import { writeMergedSettings } from './settings-merge'
 import type { StreamBackendOptions, StreamProcess } from './stream-backend'
@@ -419,14 +419,28 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
       // registry replayed to the broker on (re)connect. Both required.
       if (request.toolName === 'AskUserQuestion' && toolUseId) {
         const questions = (request.toolInput?.questions as unknown[]) || []
-        ctx.pendingAskRequests.set(toolUseId, { requestId: request.requestId, questions })
+        const timeoutSecs = Number(process.env.CLAUDWERK_ASK_TIMEOUT_SECONDS ?? 14400) // 4 hours default
+        const timeoutMs = timeoutSecs * 1000
+        const timer = setTimeout(() => {
+          if (!ctx.pendingAskRequests.has(toolUseId)) return
+          ctx.pendingAskRequests.delete(toolUseId)
+          clearInteraction(ctx, toolUseId)
+          ctx.streamProc?.sendPermissionResponse(request.requestId, false, undefined, toolUseId)
+          ctx.wsClient?.send({
+            type: 'ask_question_timeout',
+            conversationId: ctx.conversationId,
+            toolUseId,
+          } as unknown as AgentHostMessage)
+          ctx.diag('headless', `AskUserQuestion timed out after ${timeoutSecs}s: ${toolUseId.slice(0, 12)}`)
+        }, timeoutMs)
+        ctx.pendingAskRequests.set(toolUseId, { requestId: request.requestId, questions, timer })
         sendInteraction(ctx, 'ask_question', toolUseId, {
           type: 'ask_question',
           conversationId: ctx.conversationId,
           toolUseId,
           questions,
         } as unknown as AgentHostMessage)
-        ctx.diag('headless', `AskUserQuestion: ${toolUseId.slice(0, 12)} ${questions.length}q`)
+        ctx.diag('headless', `AskUserQuestion: ${toolUseId.slice(0, 12)} ${questions.length}q (timeout ${timeoutSecs}s)`)
         return
       }
 

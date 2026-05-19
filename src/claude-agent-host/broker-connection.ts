@@ -735,6 +735,7 @@ function handleAskAnswer(
   clearInteraction(ctx, toolUseId)
   const pending = ctx.pendingAskRequests.get(toolUseId)
   if (pending && deps.headless && ctx.streamProc) {
+    if (pending.timer) clearTimeout(pending.timer)
     ctx.pendingAskRequests.delete(toolUseId)
     if (skip || !answers) {
       ctx.streamProc.sendPermissionResponse(pending.requestId, false, undefined, toolUseId)

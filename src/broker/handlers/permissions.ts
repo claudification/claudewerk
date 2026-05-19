@@ -241,6 +241,33 @@ const askAnswer: MessageHandler = (ctx, data) => {
   }
 }
 
+// AskUserQuestion timeout: agent host -> broker (headless, no user response within deadline)
+// Same cleanup as askAnswer(skip=true) but no forwarding needed -- agent host already
+// sent sendPermissionResponse(false) to CC before emitting this message.
+const askQuestionTimeout: MessageHandler = (ctx, data) => {
+  const conversationId = data.conversationId as string
+  const toolUseId = data.toolUseId as string
+  const conversation = conversationId ? ctx.conversations.getConversation(conversationId) : undefined
+
+  if (conversation) {
+    delete conversation.pendingAskQuestion
+    if (conversation.pendingAttention?.type === 'ask') {
+      delete conversation.pendingAttention
+    }
+    ctx.conversations.persistConversationById(conversationId)
+    ctx.conversations.broadcastConversationUpdate(conversationId)
+  }
+
+  if (conversation?.project) {
+    ctx.broadcastScoped(
+      { type: 'ask_dismiss', conversationId, toolUseId } satisfies AskQuestionDismiss,
+      conversation.project,
+    )
+  }
+
+  ctx.log.info(`[ask] Timeout: ${toolUseId?.slice(0, 12)} on ${conversationId?.slice(0, 8)} -- CC unblocked with skip`)
+}
+
 export function registerPermissionHandlers(): void {
   // Agent host -> dashboard.
   registerHandlers(
@@ -249,6 +276,7 @@ export function registerPermissionHandlers(): void {
       permission_auto_approved: permissionAutoApproved,
       clipboard_capture: clipboardCapture,
       ask_question: askQuestion,
+      ask_question_timeout: askQuestionTimeout,
     },
     AGENT_HOST_ONLY,
   )

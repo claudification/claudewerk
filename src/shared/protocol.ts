@@ -1015,6 +1015,15 @@ export interface AskQuestionDismiss {
   toolUseId: string
 }
 
+// Agent host -> broker: headless AskUserQuestion expired with no user response.
+// Broker treats it identically to a skipped ask_answer: clears pending state and
+// broadcasts ask_dismiss so the question card disappears on all dashboard sessions.
+export interface AskQuestionTimeout {
+  type: 'ask_question_timeout'
+  conversationId: string
+  toolUseId: string
+}
+
 // Dialog MCP tool (channel-based rich UI for user interaction)
 export type { DialogComponent, DialogLayout, DialogResult } from './dialog-schema'
 
