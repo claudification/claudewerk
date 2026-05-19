@@ -57,6 +57,7 @@ import {
 import { startDaemonRosterWatch, stopDaemonRosterWatch } from './daemon-roster'
 import { type PreflightIssue, preflightSpawn } from './preflight'
 import { runProfileCli } from './profile-cli'
+import { pickProfile } from './selection'
 import {
   configDirFor,
   DEFAULT_PROFILE_NAME,
@@ -202,6 +203,41 @@ interface TrackedChild {
 
 /** Live headless children spawned by this sentinel instance */
 const trackedChildren = new Map<string, TrackedChild>()
+
+/**
+ * Per-profile live-load tracker (sentinel-side). Maps profile NAME -> count
+ * of live agent hosts running under that profile. Fed by `bindConversationToProfile`
+ * at successful spawn / revive dispatch and decremented when the conversation's
+ * trackedChild is removed. Consumed by Balanced selection (see selection.ts).
+ *
+ * Kept separate from `trackedChildren` because not every spawn path produces
+ * a trackedChild here (daemon-host attaches to an out-of-process worker), and
+ * because the picker needs the profile dimension which TrackedChild doesn't
+ * carry.
+ */
+const profileLoad = new Map<string, number>()
+const conversationProfileBinding = new Map<string, string>()
+
+function bindConversationToProfile(conversationId: string, profileName: string): void {
+  // Drop any prior binding -- a re-spawn under a different profile would otherwise leak.
+  unbindConversationFromProfile(conversationId)
+  conversationProfileBinding.set(conversationId, profileName)
+  profileLoad.set(profileName, (profileLoad.get(profileName) ?? 0) + 1)
+}
+
+function unbindConversationFromProfile(conversationId: string): void {
+  const name = conversationProfileBinding.get(conversationId)
+  if (!name) return
+  conversationProfileBinding.delete(conversationId)
+  const cur = profileLoad.get(name) ?? 0
+  if (cur <= 1) profileLoad.delete(name)
+  else profileLoad.set(name, cur - 1)
+}
+
+/** Returns live load count for a profile (0 if absent). For Balanced selection. */
+function liveLoadForProfile(profileName: string): number {
+  return profileLoad.get(profileName) ?? 0
+}
 
 /** Dead PIDs discovered from registry on startup (reported once WS connects) */
 const deadPidsToReport: PidRegistryEntry[] = []
@@ -560,6 +596,7 @@ function spawnHeadlessDirect(
   proc.exited.then(exitCode => {
     const elapsedMs = Date.now() - startTime
     trackedChildren.delete(conversationId)
+    unbindConversationFromProfile(conversationId)
     writePidRegistry()
 
     if (exitCode === 0) {
@@ -683,6 +720,7 @@ function spawnOpenCodeHostDirect(opts: {
   proc.exited.then(exitCode => {
     const elapsedMs = Date.now() - startTime
     trackedChildren.delete(opts.conversationId)
+    unbindConversationFromProfile(opts.conversationId)
     writePidRegistry()
     if (exitCode === 0) {
       log(`opencode-host exited normally: PID ${pid} conv=${opts.conversationId.slice(0, 8)} (${elapsedMs}ms)`)
@@ -821,6 +859,7 @@ function spawnAcpHostDirect(opts: {
   proc.exited.then(exitCode => {
     const elapsedMs = Date.now() - startTime
     trackedChildren.delete(opts.conversationId)
+    unbindConversationFromProfile(opts.conversationId)
     writePidRegistry()
     prepared.cleanup?.()
     if (exitCode === 0) {
@@ -996,6 +1035,7 @@ function spawnDaemonHostDirect(opts: {
   proc.exited.then(exitCode => {
     const elapsedMs = Date.now() - startTime
     trackedChildren.delete(opts.conversationId)
+    unbindConversationFromProfile(opts.conversationId)
     writePidRegistry()
     if (exitCode === 0) {
       log(`daemon-host exited normally: PID ${pid} conv=${opts.conversationId.slice(0, 8)} (${elapsedMs}ms)`)
@@ -1994,10 +2034,26 @@ function connect(
           // Resolve the sentinel profile. Revive always pins -- the URI
           // userinfo carries the RESOLVED profile name written at spawn
           // time, and `reviveMsg.profile` echoes it back. balanced/random
-          // never reach revive. Falls through to `default` when absent.
+          // never reach revive (the broker strips mode tokens at spawn_result
+          // time per Phase 3); guard defensively here. Falls through to
+          // `default` when absent.
+          let reviveProfileInput = reviveMsg.profile ?? parsedRevive.profile
+          if (reviveProfileInput === 'balanced' || reviveProfileInput === 'random') {
+            // Defensive: a buggy broker or test harness should NEVER trigger
+            // a re-roll on revive. Log loud + drop the token to fall back to
+            // default rather than pulling the rug on transcript discovery.
+            log(
+              `[revive] WARN selection-mode token "${reviveProfileInput}" arrived on revive for conv=${reviveMsg.conversationId.slice(0, 8)} -- treating as <absent>, NOT re-rolling`,
+            )
+            diag('revive', 'selection-mode token on revive (defensive fallback)', {
+              conversationId: reviveMsg.conversationId.slice(0, 8),
+              originalProfile: reviveProfileInput,
+            })
+            reviveProfileInput = undefined
+          }
           let resolvedReviveProfile: ResolvedProfile
           try {
-            resolvedReviveProfile = resolveProfile(config, reviveMsg.profile ?? parsedRevive.profile)
+            resolvedReviveProfile = resolveProfile(config, reviveProfileInput)
           } catch (e) {
             const errMsg = `revive: profile resolution failed: ${(e as Error).message}`
             launchLog(reviveMsg.jobId, 'profile resolution failed', 'error', errMsg)
@@ -2104,6 +2160,7 @@ function connect(
               }),
             )
             if (acpRes.success) {
+              bindConversationToProfile(reviveMsg.conversationId, resolvedReviveProfile.name)
               launchLog(reviveMsg.jobId, 'Waiting for ACP conversation to connect', 'info')
             } else {
               log(`ACP revive failed: ${acpRes.error}`)
@@ -2173,6 +2230,7 @@ function connect(
               }),
             )
             if (ocRes.success) {
+              bindConversationToProfile(reviveMsg.conversationId, resolvedReviveProfile.name)
               launchLog(reviveMsg.jobId, 'Waiting for OpenCode conversation to connect', 'info')
             } else {
               log(`OpenCode revive failed: ${ocRes.error}`)
@@ -2209,6 +2267,7 @@ function connect(
           const { tmuxPaneId, ...reviveResult } = result
           ws.send(JSON.stringify(reviveResult))
           if (result.success) {
+            bindConversationToProfile(reviveMsg.conversationId, resolvedReviveProfile.name)
             launchLog(reviveMsg.jobId, 'Waiting for conversation to connect', 'info')
             if (result.tmuxSession) {
               log(
@@ -2271,13 +2330,23 @@ function connect(
             break
           }
 
-          // Resolve the sentinel profile. Phase 2 honors absent / `default`
-          // / literal-name; balanced/random fall through to default until
-          // Phase 4 ships real selection. Unknown literal names abort the
-          // spawn with a structured error.
+          // Resolve the sentinel profile. Phase 4: a literal name short-circuits
+          // (fixed); `balanced` / `random` mode tokens run the picker over the
+          // pooled set; absent / `default` consults config.defaultSelection.
+          // Unknown literal names abort with a structured spawn failure.
           let resolvedSpawnProfile: ResolvedProfile
+          let spawnPicker: 'fixed' | 'balanced' | 'random' | 'default' = 'default'
+          let spawnPickerPool: string[] = []
+          let spawnPickerReason = ''
           try {
-            resolvedSpawnProfile = resolveProfile(config, spawnMsg.profile)
+            const picked = pickProfile(config, {
+              input: spawnMsg.profile,
+              liveLoad: liveLoadForProfile,
+            })
+            resolvedSpawnProfile = picked.profile
+            spawnPicker = picked.picker
+            spawnPickerPool = picked.pool
+            spawnPickerReason = picked.reason
           } catch (e) {
             const errMsg = `spawn: profile resolution failed: ${(e as Error).message}`
             launchLog(spawnMsg.jobId, 'profile resolution failed', 'error', errMsg)
@@ -2294,6 +2363,21 @@ function connect(
             )
             break
           }
+          // LOG EVERYTHING covenant: surface the picker decision so a future
+          // engineer can reconstruct why a given conversation landed on a
+          // given profile from sentinel logs + diag alone.
+          log(
+            `[picker] mode=${spawnMsg.profile ?? '<absent>'} -> picked=${resolvedSpawnProfile.name} via=${spawnPicker} reason=${spawnPickerReason} pool=[${spawnPickerPool.join(',')}] conv=${spawnMsg.conversationId.slice(0, 8)}`,
+          )
+          diag('spawn', 'profile picked', {
+            input: spawnMsg.profile ?? null,
+            picker: spawnPicker,
+            picked: resolvedSpawnProfile.name,
+            reason: spawnPickerReason,
+            pool: spawnPickerPool,
+            conversationId: spawnMsg.conversationId.slice(0, 8),
+            liveLoadSnapshot: Object.fromEntries(profileLoad),
+          })
           const spawnCwdRaw = spawnMsg.cwd
           // Per-profile spawnRoot overrides the sentinel-wide one when set
           // (e.g. a `work` profile that defaults to `~/work`). Profile env
@@ -2442,7 +2526,10 @@ function connect(
                 conversationId: spawnMsg.conversationId,
               } satisfies SpawnResult),
             )
-            if (acpRes.success) launchLog(spawnMsg.jobId, 'Waiting for conversation to connect', 'info')
+            if (acpRes.success) {
+              bindConversationToProfile(spawnMsg.conversationId, resolvedSpawnProfile.name)
+              launchLog(spawnMsg.jobId, 'Waiting for conversation to connect', 'info')
+            }
             break
           }
 
@@ -2550,7 +2637,10 @@ function connect(
               conversationId: spawnMsg.conversationId,
             }
             ws.send(JSON.stringify(ocResp))
-            if (ocRes.success) launchLog(spawnMsg.jobId, 'Waiting for conversation to connect', 'info')
+            if (ocRes.success) {
+              bindConversationToProfile(spawnMsg.conversationId, resolvedSpawnProfile.name)
+              launchLog(spawnMsg.jobId, 'Waiting for conversation to connect', 'info')
+            }
             break
           }
 
@@ -2708,7 +2798,10 @@ function connect(
                 conversationId: spawnMsg.conversationId,
               } satisfies SpawnResult),
             )
-            if (daemonRes.success) launchLog(spawnMsg.jobId, 'Waiting for conversation to connect', 'info')
+            if (daemonRes.success) {
+              bindConversationToProfile(spawnMsg.conversationId, resolvedSpawnProfile.name)
+              launchLog(spawnMsg.jobId, 'Waiting for conversation to connect', 'info')
+            }
             break
           }
 
@@ -2761,6 +2854,7 @@ function connect(
           }
           ws.send(JSON.stringify(response))
           if (spawnRes.success) {
+            bindConversationToProfile(spawnMsg.conversationId, resolvedSpawnProfile.name)
             launchLog(spawnMsg.jobId, 'Waiting for conversation to connect', 'info')
 
             // Async tmux pane health check (same as revive path)

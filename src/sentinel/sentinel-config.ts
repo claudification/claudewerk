@@ -269,19 +269,26 @@ function validateSpawnRoot(
 }
 
 /**
- * Resolve a profile name (or absent) to its bundle. Returns the implicit
- * `default` profile when `name` is undefined, the literal string `"default"`,
- * or any of the selection-mode tokens (`balanced`, `random`) -- selection
- * is Phase 4's job; for Phase 2 they fall through to default.
+ * Resolve a profile name (or absent) to its bundle. Used by the revive path,
+ * which always carries a literal name (the broker strips mode tokens at
+ * spawn_result time per Phase 3).
+ *
+ * Selection-mode tokens (`balanced`, `random`) are NOT a valid revive input.
+ * The sentinel's revive handler converts any such token to `undefined` and
+ * logs a WARN before calling this function -- so a token reaching here is a
+ * caller-side bug; fall back to `default` defensively.
+ *
+ * Spawn paths use `pickProfile()` in `selection.ts` instead, which knows how
+ * to dispatch literal vs. balanced vs. random.
  *
  * Throws when a literal name is given and the profile is unknown -- catch
- * this at the spawn boundary and translate to a structured spawn failure.
+ * this at the spawn / revive boundary and translate to a structured failure.
  */
 // fallow-ignore-next-line complexity
 export function resolveProfile(config: SentinelConfig, name?: string): ResolvedProfile {
   if (!name || name === DEFAULT_PROFILE_NAME) return config.profiles[DEFAULT_PROFILE_NAME]
   if (name === 'balanced' || name === 'random') {
-    // Phase 4 implements real selection. Until then these fall back to default.
+    // Defensive: the revive guard converts these to undefined before calling.
     return config.profiles[DEFAULT_PROFILE_NAME]
   }
   const profile = config.profiles[name]
