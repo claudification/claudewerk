@@ -456,7 +456,11 @@ describe('host-transport: reconnect backoff', () => {
     t.close()
   })
 
-  it('gives up after maxAttempts and reports via onError', async () => {
+  it('keeps reconnecting past the old maxAttempts cap -- never gives up', async () => {
+    // Regression guard for commit af70b486: the reconnect attempt cap was
+    // removed so an agent host with a live CC subprocess never abandons the
+    // broker. `maxAttempts` is deprecated + ignored; the transport reconnects
+    // indefinitely and never reports a "gave up" error.
     const onError = mock((_err: Error) => {})
     createHostTransport({
       brokerUrl: 'ws://b:1',
@@ -468,13 +472,16 @@ describe('host-transport: reconnect backoff', () => {
     lastSocket().open()
     await flush()
 
-    // Drop connection repeatedly, each time the transport reconnects until it
-    // hits maxAttempts and gives up.
-    for (let i = 0; i < 4; i++) {
+    const socketsBefore = sockets.length
+    // Drop the connection far more times than the old 2-attempt cap allowed.
+    for (let i = 0; i < 6; i++) {
       lastSocket().closeFromServer()
       await flush(40)
     }
-    expect(onError.mock.calls.some(c => /gave up/.test((c[0] as Error).message))).toBe(true)
+    // The transport kept opening fresh sockets well past the old cap...
+    expect(sockets.length).toBeGreaterThan(socketsBefore + 2)
+    // ...and never surfaced a "gave up" error.
+    expect(onError.mock.calls.some(c => /gave up/.test((c[0] as Error).message))).toBe(false)
   })
 })
 
