@@ -4,7 +4,8 @@
  * Decision tree:
  *   1. Pin check (sentinel reachable, project URI parseable)
  *      -> on failure: emit a "launch blocked" toast and STOP (D3)
- *   2. Resolve cwd: override.cwd > profile.project -> path
+ *   2. Resolve cwd: the profile's pinned project wins; override.cwd is
+ *      only a fallback for an unpinned profile.
  *      -> on empty cwd: emit a "launch blocked" toast and STOP.
  *         A chord/palette launch is supposed to inherit cwd from the
  *         currently-selected conversation when no pin is set -- if we
@@ -60,7 +61,9 @@ export async function runProfile(
     return
   }
 
-  const cwd = override.cwd ?? pin.cwd
+  // Pinned project URI wins. override.cwd (the currently-selected
+  // conversation's cwd) is only a fallback for an unpinned profile.
+  const cwd = pin.cwd ?? override.cwd
   if (!cwd) {
     emit(deps, {
       variant: 'blocked',
