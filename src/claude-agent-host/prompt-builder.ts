@@ -4,38 +4,15 @@
  * (attached files, notifications, MCP tools, channel, headless instructions).
  */
 
-export interface PromptIdentity {
-  ccSessionId: string
-  conversationId: string
-  cwd: string
-  configuredModel?: string
-  headless: boolean
-}
-
 export interface PromptOptions {
   channelEnabled: boolean
   headless: boolean
-  identity?: PromptIdentity
 }
 
 export function buildSystemPrompt(opts: PromptOptions): string {
-  const { channelEnabled, headless, identity } = opts
+  const { channelEnabled, headless } = opts
 
   return [
-    ...(identity
-      ? [
-          '# Conversation Identity (rclaude)',
-          '',
-          `- **CC Session ID:** \`${identity.ccSessionId}\``,
-          `- **Conversation ID:** \`${identity.conversationId}\``,
-          `- **CWD:** \`${identity.cwd}\``,
-          ...(identity.configuredModel ? [`- **Model:** \`${identity.configuredModel}\``] : []),
-          `- **Backend:** ${identity.headless ? 'headless' : 'PTY'}`,
-          '',
-          'Use `mcp__rclaude__whoami` for full identity details including versions and git info.',
-          '',
-        ]
-      : []),
     '# Attached Files (rclaude)',
     '',
     'When the user sends a message containing markdown image or file links like `![filename](https://...)` or `[filename](https://...)`,',

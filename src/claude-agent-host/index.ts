@@ -301,13 +301,6 @@ async function main() {
     buildSystemPrompt({
       channelEnabled: cli.channelEnabled,
       headless: cli.headless,
-      identity: {
-        ccSessionId: conversationId,
-        conversationId,
-        cwd,
-        configuredModel: cli.configuredModel,
-        headless: cli.headless,
-      },
     }),
   )
   cli.claudeArgs.push('--append-system-prompt', readFileSync(promptFile, 'utf-8'))
