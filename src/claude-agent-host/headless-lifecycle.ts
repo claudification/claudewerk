@@ -6,6 +6,7 @@
 
 import { readFileSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
+import { claudeConfigDir } from '../shared/claude-config-dir'
 import type { AgentHostMessage } from '../shared/protocol'
 import type { AgentHostContext } from './agent-host-context'
 import { debug as _debug } from './debug'
@@ -134,7 +135,7 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
       if (init.session_id && !ctx.parentTranscriptPath) {
         const cwdSlug = ctx.cwd.replace(/\//g, '-').replace(/^-/, '')
         const transcriptId = ctx.resumeId || init.session_id
-        ctx.parentTranscriptPath = join(process.env.HOME || '', '.claude', 'projects', cwdSlug, `${transcriptId}.jsonl`)
+        ctx.parentTranscriptPath = join(claudeConfigDir(), 'projects', cwdSlug, `${transcriptId}.jsonl`)
         debug(
           `[headless] Derived transcript path: ${ctx.parentTranscriptPath}${ctx.resumeId ? ` (resumed from ${ctx.resumeId})` : ''}`,
         )

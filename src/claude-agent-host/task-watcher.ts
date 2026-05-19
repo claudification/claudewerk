@@ -5,9 +5,9 @@
  */
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { watch as chokidarWatch } from 'chokidar'
+import { claudeConfigDir } from '../shared/claude-config-dir'
 import type { AgentHostMessage, TaskInfo, TasksUpdate } from '../shared/protocol'
 import { normalizeTodoStatus } from '../shared/task-normalize'
 import { TASK_STATUS_PATTERN } from '../shared/task-statuses'
@@ -93,7 +93,7 @@ export function readAndSendTasks(ctx: AgentHostContext) {
 
 export function startTaskWatching(ctx: AgentHostContext) {
   if (ctx.taskWatcher) return
-  const tasksBase = join(homedir(), '.claude', 'tasks')
+  const tasksBase = join(claudeConfigDir(), 'tasks')
   const candidates = new Set<string>()
   if (ctx.claudeSessionId) candidates.add(join(tasksBase, ctx.claudeSessionId))
   candidates.add(join(tasksBase, ctx.conversationId))

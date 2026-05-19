@@ -3,8 +3,8 @@
  * Reads user's Claude settings and injects hook configurations
  */
 
-import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { claudeConfigDir } from '../shared/claude-config-dir'
 import { resolveScript } from '../shared/resolve-script'
 
 interface CommandHook {
@@ -128,7 +128,7 @@ function getSupportedHookEvents(claudeVersion?: string): string[] {
  * Read user's existing Claude settings
  */
 async function readUserSettings(): Promise<ClaudeSettings> {
-  const settingsPath = join(homedir(), '.claude', 'settings.json')
+  const settingsPath = join(claudeConfigDir(), 'settings.json')
   const file = Bun.file(settingsPath)
 
   if (await file.exists()) {

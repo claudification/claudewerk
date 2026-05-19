@@ -37,6 +37,13 @@ export interface PreflightInput {
   gitBin?: string
   /** Optional override for `$HOME` (tests). */
   home?: string
+  /**
+   * Active Claude config directory for the resume transcript-slug check.
+   * Defaults to `$HOME/.claude` (today's behaviour). Sentinel profiles
+   * (`.claude/docs/plan-sentinel-profiles.md`) override this so the resume
+   * check looks in the profile's `CLAUDE_CONFIG_DIR/projects/` instead.
+   */
+  configDir?: string
   /** Optional override for `runGit` (tests). */
   runGit?: (args: string[], cwd: string) => { ok: boolean; stdout: string }
 }
@@ -108,20 +115,22 @@ export function preflightSpawn(input: PreflightInput): PreflightResult {
   }
 
   // ─── 3. Transcript slug (SOFT) ────────────────────────────────────
-  // CC writes transcripts to ~/.claude/projects/{slug}/{ccSessionId}.jsonl
-  // where slug is cwd with all `/` replaced by `-`. This path layout is a
-  // CC implementation detail -- they may change it. So this is a WARNING,
-  // not a hard failure. If CC then dies during boot, the warning is
-  // surfaced as a likely cause.
+  // CC writes transcripts to <configDir>/projects/{slug}/{ccSessionId}.jsonl
+  // where slug is cwd with all `/` replaced by `-` and `configDir` is
+  // `CLAUDE_CONFIG_DIR` (or `~/.claude` for the implicit default profile).
+  // This path layout is a CC implementation detail -- they may change it.
+  // So this is a WARNING, not a hard failure. If CC then dies during boot,
+  // the warning is surfaced as a likely cause.
   if (input.resumeCcSessionId) {
     const home = input.home ?? process.env.HOME ?? '/root'
+    const configDir = input.configDir ?? join(home, '.claude')
     const slug = input.cwd.replace(/\//g, '-')
-    const expectedPath = join(home, '.claude', 'projects', slug, `${input.resumeCcSessionId}.jsonl`)
+    const expectedPath = join(configDir, 'projects', slug, `${input.resumeCcSessionId}.jsonl`)
     if (!existsSync(expectedPath)) {
       // Try to locate the transcript elsewhere -- worktree-removed scenarios
       // leave the file under a different slug. This is best-effort: if we
       // find it, surface the actual path so the user (or operator) can act.
-      const elsewhere = findTranscriptElsewhere(home, input.resumeCcSessionId)
+      const elsewhere = findTranscriptElsewhere(configDir, input.resumeCcSessionId)
       const detail: Record<string, unknown> = { expectedPath, ccSessionId: input.resumeCcSessionId }
       let message = `Transcript file not found at expected path for --resume ${input.resumeCcSessionId.slice(0, 8)}. CC may fail to resume.`
       if (elsewhere) {
@@ -137,13 +146,13 @@ export function preflightSpawn(input: PreflightInput): PreflightResult {
 }
 
 /**
- * Best-effort: glob ~/.claude/projects/STAR/{ccSessionId}.jsonl. Returns
+ * Best-effort: glob <configDir>/projects/STAR/{ccSessionId}.jsonl. Returns
  * the first match (most recently modified is not worth ranking -- the
  * file is unique per session ID). Returns null if nothing matches or the
  * projects dir doesn't exist.
  */
-function findTranscriptElsewhere(home: string, ccSessionId: string): string | null {
-  const projectsDir = join(home, '.claude', 'projects')
+function findTranscriptElsewhere(configDir: string, ccSessionId: string): string | null {
+  const projectsDir = join(configDir, 'projects')
   if (!existsSync(projectsDir)) return null
   try {
     const { readdirSync } = require('node:fs') as typeof import('node:fs')

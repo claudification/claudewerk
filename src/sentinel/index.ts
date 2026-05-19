@@ -56,6 +56,17 @@ import {
 } from './daemon-dispatch'
 import { startDaemonRosterWatch, stopDaemonRosterWatch } from './daemon-roster'
 import { type PreflightIssue, preflightSpawn } from './preflight'
+import { runProfileCli } from './profile-cli'
+import {
+  configDirFor,
+  DEFAULT_PROFILE_NAME,
+  defaultConfigPath,
+  loadSentinelConfig,
+  profileSummaries,
+  type ResolvedProfile,
+  resolveProfile,
+  type SentinelConfig,
+} from './sentinel-config'
 
 /** Pre-flight warnings stashed per-conversation. Surfaced when CC dies early
  *  after spawn so the user sees a likely cause instead of a bare exit code. */
@@ -72,11 +83,15 @@ function runPreflight(opts: {
   resumeCcSessionId?: string
   conversationId: string
   jobId?: string
+  /** Active sentinel-profile configDir. Routed into preflight's transcript
+   *  slug check so resume looks in the right profile's projects dir. */
+  configDir?: string
 }): boolean {
   const { issues, ok } = preflightSpawn({
     cwd: opts.cwd,
     worktree: opts.worktree,
     resumeCcSessionId: opts.resumeCcSessionId,
+    configDir: opts.configDir,
   })
   const warnings: string[] = []
   for (const issue of issues) {
@@ -249,10 +264,9 @@ function reportDeadPids(ws: WebSocket) {
 
 // ─── CC Transcript Discovery ─────────────────────────────────────────
 
-function listCcSessions(cwd: string): ListCcSessionsResult['ccSessions'] {
-  const home = process.env.HOME || '/root'
+function listCcSessions(cwd: string, configDir: string): ListCcSessionsResult['ccSessions'] {
   const mangledCwd = cwd.replace(/\//g, '-')
-  const projectDir = join(home, '.claude', 'projects', mangledCwd)
+  const projectDir = join(configDir, 'projects', mangledCwd)
   if (!existsSync(projectDir)) return []
 
   const entries: ListCcSessionsResult['ccSessions'] = []
@@ -391,6 +405,19 @@ function cleanSentinelEnv(): Record<string, string | undefined> {
 /**
  * Build the env object for a directly-spawned headless rclaude process.
  * Replicates what revive-session.sh sets up, minus the shell quoting dance.
+ *
+ * Sentinel-profile injection (see `.claude/docs/plan-sentinel-profiles.md`):
+ * `configDir` sets `CLAUDE_CONFIG_DIR` on the spawned agent-host process AND
+ * the `claude` CLI child it forks -- both need it (the agent-host's hooks +
+ * transcript-path discovery, the CLI's own config/credential discovery).
+ * `profileEnv` is merged in alongside (e.g. `ANTHROPIC_API_KEY` for an alt
+ * account). Both are REAL env vars, not stuffed into `RCLAUDE_CUSTOM_ENV` --
+ * the agent-host process must see them in its own `process.env`.
+ *
+ * `RCLAUDE_CUSTOM_ENV` (the existing `opts.env`) carries USER-typed env from
+ * the launch config; it's kept separate from `profileEnv` so the user env
+ * (broker-persisted, audit-visible) is not entangled with the profile env
+ * (sentinel-resident, never persisted -- Profile-Env Boundary covenant).
  */
 function buildHeadlessEnv(opts: {
   secret: string
@@ -414,6 +441,12 @@ function buildHeadlessEnv(opts: {
   includePartialMessages?: boolean
   appendSystemPrompt?: string
   env?: Record<string, string>
+  /** Resolved configDir for the active sentinel profile. Injected as
+   *  `CLAUDE_CONFIG_DIR` on the child process. */
+  configDir?: string
+  /** Resolved profile env (e.g. `ANTHROPIC_API_KEY`). Merged DIRECTLY into
+   *  process env so the agent host and its `claude` child both see it. */
+  profileEnv?: Record<string, string>
 }): Record<string, string | undefined> {
   // Start from sanitized sentinel env (PATH, API keys, etc. but no conversation-scoped vars)
   const env = cleanSentinelEnv()
@@ -443,6 +476,14 @@ function buildHeadlessEnv(opts: {
   if (opts.includePartialMessages === false) env.RCLAUDE_INCLUDE_PARTIAL_MESSAGES = '0'
   if (opts.appendSystemPrompt) env.CLAUDWERK_APPEND_SYSTEM_PROMPT = opts.appendSystemPrompt
   if (opts.env && Object.keys(opts.env).length) env.RCLAUDE_CUSTOM_ENV = JSON.stringify(opts.env)
+
+  // Sentinel profile -- inject CLAUDE_CONFIG_DIR + profile.env DIRECTLY into
+  // the child process env (not via RCLAUDE_CUSTOM_ENV). The agent host AND
+  // the `claude` CLI it forks both need these in `process.env`.
+  if (opts.configDir) env.CLAUDE_CONFIG_DIR = opts.configDir
+  if (opts.profileEnv) {
+    for (const [k, v] of Object.entries(opts.profileEnv)) env[k] = v
+  }
 
   return env
 }
@@ -1067,6 +1108,7 @@ function parseArgs() {
   let reviveScript = DEFAULT_REVIVE_SCRIPT
   let spawnRoot = process.env.HOME || '/root'
   let noSpawn = false
+  let configPath: string | undefined
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]
@@ -1080,6 +1122,8 @@ function parseArgs() {
       spawnRoot = resolve(args[++i])
     } else if (arg === '--no-spawn') {
       noSpawn = true
+    } else if (arg === '--config') {
+      configPath = resolve(args[++i])
     } else if (arg === '-v' || arg === '--verbose') {
       verbose = true
     } else if (arg === '--help' || arg === '-h') {
@@ -1096,7 +1140,7 @@ function parseArgs() {
       process.env.RCLAUDE_SECRET
   }
 
-  return { brokerUrl, secret, verbose, reviveScript, spawnRoot, noSpawn }
+  return { brokerUrl, secret, verbose, reviveScript, spawnRoot, noSpawn, configPath }
 }
 
 function printHelp() {
@@ -1109,12 +1153,14 @@ PTY/interactive conversations use tmux via revive-session.sh.
 
 USAGE:
   sentinel [OPTIONS]
+  sentinel profile <subcommand> [args...]   See \`sentinel profile --help\`
 
 OPTIONS:
   --broker <url>   Broker WebSocket URL (default: ${DEFAULT_BROKER_URL})
   --secret <s>           Secret (CLAUDWERK_SENTINEL_SECRET or RCLAUDE_SECRET env)
   --revive-script <path> Path to revive-session.sh (default: auto-detected)
   --spawn-root <path>    Root directory for relative spawn paths (default: $HOME)
+  --config <path>        Sentinel config (default: ${defaultConfigPath()})
   -v, --verbose          Enable verbose logging
   -h, --help             Show this help
 
@@ -1184,6 +1230,7 @@ async function reviveConversation(
   adHocWorktree?: string,
   env?: Record<string, string>,
   agent?: string,
+  profile?: ResolvedProfile,
 ): Promise<ReviveResult & { tmuxPaneId?: string }> {
   const result: ReviveResult = {
     type: 'revive_result',
@@ -1212,6 +1259,7 @@ async function reviveConversation(
       resumeCcSessionId: mode === 'resume' ? ccSessionId : undefined,
       conversationId,
       jobId,
+      configDir: profile?.configDir,
     })
     if (!preflightOk) {
       result.error = 'Pre-flight check failed (see launch log)'
@@ -1239,6 +1287,8 @@ async function reviveConversation(
       model,
       worktree: adHocWorktree,
       env,
+      configDir: profile?.configDir,
+      profileEnv: profile?.env,
     })
 
     launchLog(jobId, 'Reviving headless (direct spawn)', 'info', `mode=${mode || 'default'}`)
@@ -1259,6 +1309,7 @@ async function reviveConversation(
     resumeCcSessionId: mode === 'resume' ? ccSessionId : undefined,
     conversationId,
     jobId,
+    configDir: profile?.configDir,
   })
   if (!ptyPreflightOk) {
     result.error = 'Pre-flight check failed (see launch log)'
@@ -1288,6 +1339,11 @@ async function reviveConversation(
       ...(adHocWorktree ? { RCLAUDE_WORKTREE: adHocWorktree } : {}),
       ...(agent ? { RCLAUDE_AGENT: agent } : {}),
       ...(env && Object.keys(env).length ? { RCLAUDE_CUSTOM_ENV: JSON.stringify(env) } : {}),
+      // Sentinel profile -- inject CLAUDE_CONFIG_DIR + profile.env DIRECTLY
+      // so revive-session.sh, the tmux child, and the rclaude binary all see
+      // them as real env. Profile-Env Boundary: never echo over the wire.
+      ...(profile?.configDir ? { CLAUDE_CONFIG_DIR: profile.configDir } : {}),
+      ...(profile?.env ?? {}),
     },
   })
 
@@ -1394,6 +1450,7 @@ async function spawnConversation(
   env?: Record<string, string>,
   agent?: string,
   appendSystemPrompt?: string,
+  profile?: ResolvedProfile,
 ): Promise<{ success: boolean; error?: string; tmuxSession?: string; tmuxPaneId?: string }> {
   launchLog(jobId, 'Validating directory', 'info', cwd)
 
@@ -1478,6 +1535,7 @@ async function spawnConversation(
       resumeCcSessionId: mode === 'resume' ? resumeId : undefined,
       conversationId,
       jobId,
+      configDir: profile?.configDir,
     })
     if (!preflightOk) {
       return { success: false, error: 'Pre-flight check failed (see launch log)' }
@@ -1514,6 +1572,8 @@ async function spawnConversation(
       includePartialMessages,
       appendSystemPrompt,
       env,
+      configDir: profile?.configDir,
+      profileEnv: profile?.env,
     })
 
     const spawnRes = spawnHeadlessDirect(rclaudeBin, cwd, conversationId, args, spawnEnv, jobId)
@@ -1533,6 +1593,7 @@ async function spawnConversation(
     resumeCcSessionId: mode === 'resume' ? resumeId : undefined,
     conversationId,
     jobId,
+    configDir: profile?.configDir,
   })
   if (!ptyPreflightOk) {
     return { success: false, error: 'Pre-flight check failed (see launch log)' }
@@ -1571,6 +1632,11 @@ async function spawnConversation(
     ...(worktree ? { RCLAUDE_WORKTREE: shellSafe(worktree) } : {}),
     ...(agent ? { RCLAUDE_AGENT: shellSafe(agent) } : {}),
     ...(env && Object.keys(env).length ? { RCLAUDE_CUSTOM_ENV: JSON.stringify(env) } : {}),
+    // Sentinel profile -- CLAUDE_CONFIG_DIR + profile.env injected DIRECTLY
+    // so revive-session.sh, the tmux shell, and rclaude all see them as real
+    // env vars. Profile-Env Boundary: never echo over the wire.
+    ...(profile?.configDir ? { CLAUDE_CONFIG_DIR: profile.configDir } : {}),
+    ...(profile?.env ?? {}),
   }
 
   launchLog(jobId, 'Starting tmux session', 'info')
@@ -1641,9 +1707,14 @@ function listDirs(dirPath: string): { dirs: string[]; error?: string } {
 // ─── Credential Discovery ─────────────────────────────────────────
 // Priority: 1) macOS Keychain  2) ~/.claude/.credentials.json  3) ~/.claude.json
 
-function getOAuthToken(): string | null {
-  // 1. macOS Keychain
-  if (process.platform === 'darwin') {
+function getOAuthToken(configDir: string): string | null {
+  const home = process.env.HOME || '/root'
+  const isDefaultProfile = configDir === join(home, '.claude')
+
+  // 1. macOS Keychain (default profile only). The keychain stores credentials
+  // for the user's primary Claude account; alternate-profile creds live
+  // exclusively in the profile's own configDir.
+  if (process.platform === 'darwin' && isDefaultProfile) {
     try {
       const result = Bun.spawnSync(['security', 'find-generic-password', '-s', 'Claude Code-credentials', '-w'], {
         stdout: 'pipe',
@@ -1658,9 +1729,8 @@ function getOAuthToken(): string | null {
     } catch {}
   }
 
-  // 2. ~/.claude/.credentials.json
-  const home = process.env.HOME || '/root'
-  const credPath = resolve(home, '.claude/.credentials.json')
+  // 2. <configDir>/.credentials.json
+  const credPath = resolve(configDir, '.credentials.json')
   try {
     if (existsSync(credPath)) {
       const data = JSON.parse(readFileSync(credPath, 'utf8'))
@@ -1669,15 +1739,18 @@ function getOAuthToken(): string | null {
     }
   } catch {}
 
-  // 3. ~/.claude.json
-  const legacyPath = resolve(home, '.claude.json')
-  try {
-    if (existsSync(legacyPath)) {
-      const data = JSON.parse(readFileSync(legacyPath, 'utf8'))
-      const token = data?.oauthAccount?.accessToken || data?.primaryApiKey
-      if (token) return token
-    }
-  } catch {}
+  // 3. ~/.claude.json (legacy single-file format at home root -- default
+  // profile only; alternate profiles don't share that file).
+  if (isDefaultProfile) {
+    const legacyPath = resolve(home, '.claude.json')
+    try {
+      if (existsSync(legacyPath)) {
+        const data = JSON.parse(readFileSync(legacyPath, 'utf8'))
+        const token = data?.oauthAccount?.accessToken || data?.primaryApiKey
+        if (token) return token
+      }
+    } catch {}
+  }
 
   return null
 }
@@ -1764,11 +1837,11 @@ async function fetchUsage(
   }
 }
 
-async function pollUsage(): Promise<UsageUpdate | null> {
+async function pollUsage(defaultProfileConfigDir: string): Promise<UsageUpdate | null> {
   // Re-read token every poll. The OAuth bearer rotates; capturing it once
   // in a closure (the old behavior) silently 401'd until the next WS
   // reconnect, which is the long lag the user was seeing.
-  let token = getOAuthToken()
+  let token = getOAuthToken(defaultProfileConfigDir)
   if (!token) {
     diag('usage', 'No OAuth token available at poll time')
     return null
@@ -1780,7 +1853,7 @@ async function pollUsage(): Promise<UsageUpdate | null> {
   // On 401 (token rotated mid-session), re-read once and retry.
   if (!res.ok && res.status === 401) {
     diag('usage', '401 - re-reading token and retrying once')
-    const fresh = getOAuthToken()
+    const fresh = getOAuthToken(defaultProfileConfigDir)
     if (fresh && fresh !== token) {
       token = fresh
       res = await fetchUsage(token)
@@ -1800,22 +1873,22 @@ async function pollUsage(): Promise<UsageUpdate | null> {
 
 let usagePollTimer: ReturnType<typeof setInterval> | null = null
 
-function startUsagePolling(ws: WebSocket, verbose: boolean) {
+function startUsagePolling(ws: WebSocket, verbose: boolean, defaultProfileConfigDir: string) {
   stopUsagePolling() // clean up any previous timer
 
-  const token = getOAuthToken()
+  const token = getOAuthToken(defaultProfileConfigDir)
   if (!token) {
     log('No OAuth token found - usage polling disabled')
     diag('usage', 'No OAuth token discovered (checked keychain + credential files)')
     return
   }
   const intervalMin = USAGE_POLL_INTERVAL_MS / 60_000
-  log(`OAuth token found - starting usage polling (${intervalMin}min interval)`)
+  log(`OAuth token found - starting usage polling (${intervalMin}min interval, configDir=${defaultProfileConfigDir})`)
   diag('usage', 'Token discovered, polling started')
 
   async function doPoll() {
     try {
-      const usage = await pollUsage()
+      const usage = await pollUsage(defaultProfileConfigDir)
       if (usage && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(usage))
         debug(`Usage sent: 5h=${usage.fiveHour.usedPercent}% 7d=${usage.sevenDay.usedPercent}%`, verbose)
@@ -1845,6 +1918,7 @@ function connect(
   verbose: boolean,
   spawnRoot: string,
   noSpawn: boolean,
+  config: SentinelConfig,
 ) {
   const wsUrl = secret ? `${url}?secret=${encodeURIComponent(secret)}` : url
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null
@@ -1857,21 +1931,25 @@ function connect(
   ws.onopen = () => {
     log('Connected to broker')
     activeWs = ws
-    // Identify as sentinel with machine fingerprint
-    ws.send(
-      JSON.stringify({
-        type: 'sentinel_identify',
-        machineId: getMachineId(),
-        hostname: osHostname(),
-        spawnRoot,
-      }),
-    )
+    // Identify as sentinel with machine fingerprint. Profile NAMES + display
+    // travel here -- per the Profile-Env Boundary covenant, the configDir
+    // and `profile.env` never leave the sentinel.
+    const identify = {
+      type: 'sentinel_identify' as const,
+      machineId: getMachineId(),
+      hostname: osHostname(),
+      spawnRoot,
+      profiles: profileSummaries(config),
+      defaultSelection: config.defaultSelection,
+    }
+    ws.send(JSON.stringify(identify))
 
     // Report any dead PIDs from previous sentinel run
     reportDeadPids(ws)
 
-    // Start usage polling
-    startUsagePolling(ws, verbose)
+    // Start usage polling (default-profile credentials only -- per-profile
+    // polling rolls up in Phase 5 once usage tracking is profile-aware).
+    startUsagePolling(ws, verbose, config.profiles[DEFAULT_PROFILE_NAME].configDir)
 
     // Start mirroring the Claude Code daemon roster (read-only native bg sessions)
     startDaemonRosterWatch(ws, { log, diag })
@@ -1909,8 +1987,35 @@ function connect(
 
         case 'revive': {
           const reviveMsg = msg as ReviveConversation
-          const reviveCwd = parseProjectUri(reviveMsg.project).path
+          const parsedRevive = parseProjectUri(reviveMsg.project)
+          const reviveCwd = parsedRevive.path
           const aht = reviveMsg.agentHostType || 'claude'
+
+          // Resolve the sentinel profile. Revive always pins -- the URI
+          // userinfo carries the RESOLVED profile name written at spawn
+          // time, and `reviveMsg.profile` echoes it back. balanced/random
+          // never reach revive. Falls through to `default` when absent.
+          let resolvedReviveProfile: ResolvedProfile
+          try {
+            resolvedReviveProfile = resolveProfile(config, reviveMsg.profile ?? parsedRevive.profile)
+          } catch (e) {
+            const errMsg = `revive: profile resolution failed: ${(e as Error).message}`
+            launchLog(reviveMsg.jobId, 'profile resolution failed', 'error', errMsg)
+            log(errMsg)
+            ws.send(
+              JSON.stringify({
+                type: 'revive_result',
+                ccSessionId: reviveMsg.ccSessionId,
+                conversationId: reviveMsg.conversationId,
+                project: reviveMsg.project,
+                jobId: reviveMsg.jobId,
+                success: false,
+                continued: false,
+                error: errMsg,
+              } satisfies ReviveResult),
+            )
+            break
+          }
           log(
             `Reviving ccSession=${reviveMsg.ccSessionId.slice(0, 8)} conv=${reviveMsg.conversationId.slice(0, 8)} mode=${reviveMsg.mode || 'default'} headless=${reviveMsg.headless !== false} agentHostType=${aht}${reviveMsg.effort ? ` effort=${reviveMsg.effort}` : ''}${reviveMsg.model ? ` model=${reviveMsg.model}` : ''}${reviveMsg.maxBudgetUsd ? ` maxBudget=$${reviveMsg.maxBudgetUsd}` : ''}${reviveMsg.jobId ? ` job=${reviveMsg.jobId?.slice(0, 8)}` : ''} (${reviveCwd})`,
           )
@@ -2094,8 +2199,13 @@ function connect(
             reviveMsg.adHocWorktree,
             reviveMsg.env,
             reviveMsg.agent,
+            resolvedReviveProfile,
           )
-          // Strip sentinel-internal tmuxPaneId before sending over WS
+          // Strip sentinel-internal tmuxPaneId before sending over WS. Echo the
+          // resolved profile NAME (not configDir / env -- Profile-Env Boundary).
+          if (resolvedReviveProfile.name !== DEFAULT_PROFILE_NAME) {
+            result.resolvedProfile = resolvedReviveProfile.name
+          }
           const { tmuxPaneId, ...reviveResult } = result
           ws.send(JSON.stringify(reviveResult))
           if (result.success) {
@@ -2160,9 +2270,42 @@ function connect(
             )
             break
           }
+
+          // Resolve the sentinel profile. Phase 2 honors absent / `default`
+          // / literal-name; balanced/random fall through to default until
+          // Phase 4 ships real selection. Unknown literal names abort the
+          // spawn with a structured error.
+          let resolvedSpawnProfile: ResolvedProfile
+          try {
+            resolvedSpawnProfile = resolveProfile(config, spawnMsg.profile)
+          } catch (e) {
+            const errMsg = `spawn: profile resolution failed: ${(e as Error).message}`
+            launchLog(spawnMsg.jobId, 'profile resolution failed', 'error', errMsg)
+            log(errMsg)
+            ws.send(
+              JSON.stringify({
+                type: 'spawn_result',
+                requestId: spawnMsg.requestId,
+                jobId: spawnMsg.jobId,
+                success: false,
+                error: errMsg,
+                conversationId: spawnMsg.conversationId,
+              } satisfies SpawnResult),
+            )
+            break
+          }
           const spawnCwdRaw = spawnMsg.cwd
-          const expandedCwd = expandPath(spawnCwdRaw, spawnRoot)
-          const resolvedProject = cwdToProjectUri(expandedCwd)
+          // Per-profile spawnRoot overrides the sentinel-wide one when set
+          // (e.g. a `work` profile that defaults to `~/work`). Profile env
+          // never reaches the broker; the resolved cwd does.
+          const effectiveSpawnRoot = resolvedSpawnProfile.spawnRoot ?? spawnRoot
+          const expandedCwd = expandPath(spawnCwdRaw, effectiveSpawnRoot)
+          // Carry the resolved profile name through to the stored URI so
+          // revive can pin the same profile forever. Default profile is
+          // implicit (no userinfo emitted).
+          const profileForUri =
+            resolvedSpawnProfile.name !== DEFAULT_PROFILE_NAME ? resolvedSpawnProfile.name : undefined
+          const resolvedProject = cwdToProjectUri(expandedCwd, 'claude', undefined, profileForUri)
           launchLog(spawnMsg.jobId, 'Sentinel received spawn request', 'ok', expandedCwd.split('/').pop())
           diag('spawn', 'Spawn request received', {
             requestId: spawnMsg.requestId,
@@ -2598,6 +2741,7 @@ function connect(
             spawnMsg.env,
             spawnMsg.agent,
             spawnMsg.appendSystemPrompt,
+            resolvedSpawnProfile,
           )
           const response: SpawnResult = {
             type: 'spawn_result',
@@ -2608,6 +2752,12 @@ function connect(
             project: resolvedProject,
             tmuxSession: spawnRes.tmuxSession,
             conversationId: spawnMsg.conversationId,
+          }
+          // Echo the resolved profile NAME (not configDir / env -- Profile-Env
+          // Boundary). Default profile is implicit; omit so existing clients
+          // unaware of `resolvedProfile` stay unaffected.
+          if (resolvedSpawnProfile.name !== DEFAULT_PROFILE_NAME) {
+            response.resolvedProfile = resolvedSpawnProfile.name
           }
           ws.send(JSON.stringify(response))
           if (spawnRes.success) {
@@ -2666,10 +2816,20 @@ function connect(
         }
 
         case 'list_cc_sessions': {
-          const sessMsg = msg as { requestId: string; cwd: string }
+          const sessMsg = msg as { requestId: string; cwd: string; profile?: string }
           const expandedCwd = expandPath(sessMsg.cwd, spawnRoot)
-          debug(`Listing CC sessions for: ${expandedCwd}`, verbose)
-          const ccSessions = listCcSessions(expandedCwd)
+          // Phase 2 honors an optional `profile` field on the request even
+          // though the broker does not send it yet -- Phase 3 wires this.
+          // Unknown profile name falls back to the default profile's configDir
+          // (silent best-effort: this is a UI-aiding read, not a write path).
+          let listConfigDir: string
+          try {
+            listConfigDir = configDirFor(config, sessMsg.profile)
+          } catch {
+            listConfigDir = configDirFor(config)
+          }
+          debug(`Listing CC sessions for: ${expandedCwd} (configDir=${listConfigDir})`, verbose)
+          const ccSessions = listCcSessions(expandedCwd, listConfigDir)
           const sessResponse: ListCcSessionsResult = {
             type: 'list_cc_sessions_result',
             requestId: sessMsg.requestId,
@@ -2693,7 +2853,7 @@ function connect(
     const detail = event.code ? ` (code=${event.code}${event.reason ? ` reason=${event.reason}` : ''})` : ''
     if (shouldReconnect) {
       log(`Disconnected${detail}. Reconnecting in ${RECONNECT_DELAY_MS / 1000}s...`)
-      setTimeout(() => connect(url, secret, reviveScript, verbose, spawnRoot, noSpawn), RECONNECT_DELAY_MS)
+      setTimeout(() => connect(url, secret, reviveScript, verbose, spawnRoot, noSpawn, config), RECONNECT_DELAY_MS)
     } else {
       log(`Connection closed${detail}`)
     }
@@ -2705,7 +2865,35 @@ function connect(
 }
 
 // Main
-const { brokerUrl, secret, verbose, reviveScript, spawnRoot, noSpawn } = parseArgs()
+
+// `sentinel profile <subcommand>` runs entirely without a broker connection
+// and exits when done. Detect BEFORE arg parsing / WS connect so the user
+// can run profile management even on a host without a broker secret.
+if (process.argv[2] === 'profile') {
+  // Honor a leading `--config <path>` placed before the `profile` keyword as
+  // well as after it; parseProfileConfigPath scans the full argv.
+  const profileArgs = process.argv.slice(3)
+  const exitCode = await runProfileCli(profileArgs, { configPath: extractConfigPath(process.argv) })
+  process.exit(exitCode)
+}
+
+const { brokerUrl, secret, verbose, reviveScript, spawnRoot, noSpawn, configPath } = parseArgs()
+
+let config: SentinelConfig
+try {
+  config = loadSentinelConfig({ configPath })
+} catch (e) {
+  console.error(`ERROR: ${(e as Error).message}`)
+  process.exit(1)
+}
+
+if (config.sourcePath) {
+  log(`Loaded sentinel config: ${config.sourcePath}`)
+} else {
+  log(`No sentinel config at ${configPath ?? defaultConfigPath()} -- using implicit default profile only`)
+}
+const profileNames = Object.keys(config.profiles).sort()
+log(`Profiles: ${profileNames.join(', ')} (defaultSelection=${config.defaultSelection})`)
 
 if (!secret) {
   console.error('ERROR: --secret or CLAUDWERK_SENTINEL_SECRET / RCLAUDE_SECRET is required')
@@ -2765,4 +2953,16 @@ process.on('SIGINT', () => {
 log('Starting sentinel (single instance)')
 log(`Revive script: ${reviveScript}`)
 log(`Spawn root: ${spawnRoot}${noSpawn ? ' (DISABLED)' : ''}`)
-connect(brokerUrl, secret, reviveScript, verbose, spawnRoot, noSpawn)
+connect(brokerUrl, secret, reviveScript, verbose, spawnRoot, noSpawn, config)
+
+/**
+ * Scan `argv` for a `--config <path>` flag. Used by the `sentinel profile`
+ * subcommand path which runs before `parseArgs()`. Returns the resolved
+ * absolute path or `undefined` when the flag is absent.
+ */
+function extractConfigPath(argv: string[]): string | undefined {
+  for (let i = 2; i < argv.length; i++) {
+    if (argv[i] === '--config' && argv[i + 1]) return resolve(argv[i + 1])
+  }
+  return undefined
+}

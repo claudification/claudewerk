@@ -3,8 +3,8 @@
  */
 
 import { readFileSync, realpathSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
+import { claudeConfigDir } from '../shared/claude-config-dir'
 import { DEFAULT_BROKER_URL } from '../shared/protocol'
 import { checkForUpdate, formatUpdateResult, formatVersion } from '../shared/update-check'
 import { debug } from './debug'
@@ -79,7 +79,7 @@ export function detectClaudeAuth(): ClaudeAuthInfo | undefined {
 
 export function readSpinnerVerbs(): string[] | undefined {
   try {
-    const settingsPath = join(homedir(), '.claude', 'settings.json')
+    const settingsPath = join(claudeConfigDir(), 'settings.json')
     const text = readFileSync(settingsPath, 'utf-8')
     const data = JSON.parse(text)
     const sv = data.spinnerVerbs
