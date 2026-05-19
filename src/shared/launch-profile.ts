@@ -9,7 +9,6 @@
  * - Control panel:   web/src/components/launch-profiles/
  */
 
-import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { spawnRequestSchema } from './spawn-schema'
 
@@ -65,7 +64,10 @@ export const launchProfileListSchema = z
   .max(LAUNCH_PROFILE_MAX_COUNT, `at most ${LAUNCH_PROFILE_MAX_COUNT} profiles`)
 
 export function newLaunchProfileId(): string {
-  return `${LAUNCH_PROFILE_ID_PREFIX}${randomUUID().replace(/-/g, '').slice(0, 8)}`
+  // Web Crypto global -- works in both the browser and Bun. `node:crypto`
+  // does NOT survive bundling for the control panel (the polyfill has no
+  // randomUUID export), and this module is shared with web/.
+  return `${LAUNCH_PROFILE_ID_PREFIX}${crypto.randomUUID().replace(/-/g, '').slice(0, 8)}`
 }
 
 export function isLaunchProfileId(id: unknown): id is string {
