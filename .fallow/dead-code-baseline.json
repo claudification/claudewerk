@@ -65,7 +65,6 @@
     "src/shared/protocol.ts:JobComplete",
     "src/shared/protocol.ts:JobFailed",
     "src/shared/protocol.ts:DaemonRosterRequest",
-    "src/shared/protocol.ts:DaemonRespawnStaleRequest",
     "src/shared/protocol.ts:DaemonPermissionResponse",
     "src/shared/protocol.ts:SentinelMessage",
     "src/shared/protocol.ts:RclaudeConfigData",

@@ -22,6 +22,7 @@ import type {
   RecapSummary,
 } from '@shared/protocol'
 import { handleLaunchProfilesUpdatedMessage } from '@/components/launch-profiles/use-launch-profiles'
+import { daemonControlToast } from '@/lib/daemon-control'
 import type {
   ClaudeEfficiencyUpdate,
   ClaudeHealthUpdate,
@@ -529,6 +530,18 @@ function handleDaemonRoster(msg: DashboardMessage) {
   })
 }
 
+/**
+ * `daemon_control_result` -- the outcome of a daemon remote-control op
+ * (reply / kill / respawn-stale / permission-response), forwarded by the
+ * broker. Surfaced as a toast so every control verb the user fired resolves
+ * visibly (EVERYTHING IS A STRUCTURED MESSAGE). A successful `reply` is
+ * intentionally quiet -- the transcript already shows it.
+ */
+function handleDaemonControlResult(msg: DashboardMessage) {
+  const toast = daemonControlToast(msg)
+  if (toast) window.dispatchEvent(new CustomEvent('rclaude-toast', { detail: toast }))
+}
+
 function handleUsageUpdate(msg: DashboardMessage) {
   if (msg.usage) {
     useConversationsStore.getState().setPlanUsage(msg.usage)
@@ -1014,6 +1027,7 @@ export const handlers: Record<string, MessageHandler> = {
   tasks_update: handleTasksUpdate,
   sentinel_status: handleSentinelStatus,
   daemon_roster: handleDaemonRoster,
+  daemon_control_result: handleDaemonControlResult,
   usage_update: handleUsageUpdate,
   claude_health_update: handleClaudeHealthUpdate,
   claude_efficiency_update: handleClaudeEfficiencyUpdate,

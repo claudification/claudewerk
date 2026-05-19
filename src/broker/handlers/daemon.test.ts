@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'bun:test'
+import type { Conversation } from '../../shared/protocol'
+import { GuardError, type HandlerContext } from '../handler-context'
 import {
+  daemonControlResult,
+  daemonRespawnStale,
   isValidDaemonJob,
   mapDaemonState,
+  normalizeDaemonControlResult,
   normalizeDaemonLaunchEvent,
   parseDaemonJobs,
   registerDaemonHandlers,
@@ -133,5 +138,148 @@ describe('normalizeDaemonLaunchEvent', () => {
 describe('registerDaemonHandlers', () => {
   it('registers without throwing', () => {
     expect(() => registerDaemonHandlers()).not.toThrow()
+  })
+})
+
+// ─── Phase G -- remote control ─────────────────────────────────────────────
+
+describe('normalizeDaemonControlResult', () => {
+  const base = { type: 'daemon_control_result', conversationId: 'conv_x', op: 'reply', ok: true, t: 99 }
+
+  it('normalizes a well-formed ok result', () => {
+    const r = normalizeDaemonControlResult(base)
+    expect(r).not.toBeNull()
+    expect(r?.op).toBe('reply')
+    expect(r?.ok).toBe(true)
+    expect(r?.t).toBe(99)
+  })
+
+  it('carries code + detail through on a failure result', () => {
+    const r = normalizeDaemonControlResult({ ...base, ok: false, code: 'ENOREPLY', detail: 'mid-turn' })
+    expect(r?.ok).toBe(false)
+    expect(r?.code).toBe('ENOREPLY')
+    expect(r?.detail).toBe('mid-turn')
+  })
+
+  it('accepts every documented control op', () => {
+    for (const op of ['reply', 'permission_response', 'kill', 'respawn_stale']) {
+      expect(normalizeDaemonControlResult({ ...base, op })).not.toBeNull()
+    }
+  })
+
+  it('rejects a missing conversationId, an unknown op, and a non-boolean ok', () => {
+    expect(normalizeDaemonControlResult({ ...base, conversationId: '' })).toBeNull()
+    expect(normalizeDaemonControlResult({ ...base, op: 'bogus' })).toBeNull()
+    expect(normalizeDaemonControlResult({ ...base, ok: 'yes' })).toBeNull()
+  })
+
+  it('defaults t to now when absent', () => {
+    const before = Date.now()
+    const r = normalizeDaemonControlResult({ type: 'daemon_control_result', conversationId: 'c', op: 'kill', ok: true })
+    expect(r?.t).toBeGreaterThanOrEqual(before)
+  })
+})
+
+/** Minimal fake socket recording every frame written to it. */
+function fakeSocket(): { sent: string[] } & { send(s: string): void } {
+  const sent: string[] = []
+  return { sent, send: (s: string) => sent.push(s) }
+}
+
+interface FakeCtxResult {
+  ctx: HandlerContext
+  broadcasts: { msg: Record<string, unknown>; project: string }[]
+  logs: string[]
+}
+
+/** Build a HandlerContext fake exposing only what the Phase-G handlers touch. */
+function makeFakeCtx(opts: {
+  conversation?: Conversation
+  socket?: { send(s: string): void }
+  permissionThrows?: boolean
+}): FakeCtxResult {
+  const broadcasts: { msg: Record<string, unknown>; project: string }[] = []
+  const logs: string[] = []
+  const conv = opts.conversation
+  const ctx = {
+    conversations: {
+      getConversation: (id: string) => (conv && conv.id === id ? conv : undefined),
+      getConversationSocket: (id: string) => (opts.socket && conv?.id === id ? opts.socket : undefined),
+      getConnectionIds: () => [],
+      findSocketByConversationId: () => undefined,
+    },
+    requirePermission: () => {
+      if (opts.permissionThrows) throw new GuardError('permission denied')
+    },
+    broadcastScoped: (msg: Record<string, unknown>, project: string) => broadcasts.push({ msg, project }),
+    log: {
+      info: (m: string) => logs.push(`info:${m}`),
+      debug: (m: string) => logs.push(`debug:${m}`),
+      error: (m: string) => logs.push(`error:${m}`),
+    },
+  } as unknown as HandlerContext
+  return { ctx, broadcasts, logs }
+}
+
+/** A daemon-backed conversation row. */
+function daemonConv(id = 'conv_d'): Conversation {
+  return { id, project: 'claude:///tmp/proj', agentHostType: 'daemon', status: 'active' } as Conversation
+}
+
+describe('daemonControlResult handler', () => {
+  it('re-broadcasts a valid result scoped to the conversation project', () => {
+    const { ctx, broadcasts } = makeFakeCtx({ conversation: daemonConv() })
+    daemonControlResult(ctx, { type: 'daemon_control_result', conversationId: 'conv_d', op: 'reply', ok: true, t: 1 })
+    expect(broadcasts).toHaveLength(1)
+    expect(broadcasts[0]?.project).toBe('claude:///tmp/proj')
+    expect(broadcasts[0]?.msg.op).toBe('reply')
+  })
+
+  it('ignores a malformed payload', () => {
+    const { ctx, broadcasts } = makeFakeCtx({ conversation: daemonConv() })
+    daemonControlResult(ctx, { type: 'daemon_control_result', conversationId: 'conv_d', op: 'bogus', ok: true })
+    expect(broadcasts).toHaveLength(0)
+  })
+
+  it('ignores a result for an unknown conversation', () => {
+    const { ctx, broadcasts } = makeFakeCtx({})
+    daemonControlResult(ctx, { type: 'daemon_control_result', conversationId: 'conv_gone', op: 'kill', ok: true })
+    expect(broadcasts).toHaveLength(0)
+  })
+})
+
+describe('daemonRespawnStale handler', () => {
+  it('forwards daemon_respawn_stale to the connected host socket', () => {
+    const socket = fakeSocket()
+    const { ctx } = makeFakeCtx({ conversation: daemonConv(), socket })
+    daemonRespawnStale(ctx, { conversationId: 'conv_d' })
+    expect(socket.sent).toHaveLength(1)
+    expect(JSON.parse(socket.sent[0] as string)).toEqual({ type: 'daemon_respawn_stale', conversationId: 'conv_d' })
+  })
+
+  it('emits an EHOSTGONE failure result when no host socket is connected', () => {
+    const { ctx, broadcasts } = makeFakeCtx({ conversation: daemonConv() })
+    daemonRespawnStale(ctx, { conversationId: 'conv_d' })
+    expect(broadcasts).toHaveLength(1)
+    expect(broadcasts[0]?.msg.ok).toBe(false)
+    expect(broadcasts[0]?.msg.code).toBe('EHOSTGONE')
+    expect(broadcasts[0]?.msg.op).toBe('respawn_stale')
+  })
+
+  it('throws GuardError for a missing / unknown conversation', () => {
+    const { ctx } = makeFakeCtx({})
+    expect(() => daemonRespawnStale(ctx, {})).toThrow(GuardError)
+    expect(() => daemonRespawnStale(ctx, { conversationId: 'conv_nope' })).toThrow(GuardError)
+  })
+
+  it('throws GuardError for a non-daemon conversation', () => {
+    const conv = { ...daemonConv(), agentHostType: 'claude' } as Conversation
+    const { ctx } = makeFakeCtx({ conversation: conv })
+    expect(() => daemonRespawnStale(ctx, { conversationId: 'conv_d' })).toThrow(/not a daemon/)
+  })
+
+  it('throws GuardError when the caller lacks chat permission', () => {
+    const { ctx } = makeFakeCtx({ conversation: daemonConv(), permissionThrows: true })
+    expect(() => daemonRespawnStale(ctx, { conversationId: 'conv_d' })).toThrow(GuardError)
   })
 })

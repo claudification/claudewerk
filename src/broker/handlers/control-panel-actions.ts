@@ -23,6 +23,7 @@ import {
   getProjectSettings,
   setProjectSettings,
 } from '../project-settings'
+import { resolveConversationSocket } from './socket-routing'
 
 // ─── Send input to a conversation ──────────────────────────────────────
 
@@ -59,14 +60,7 @@ const sendInput: MessageHandler = (ctx, data) => {
   }
 
   // Socket-based backends (Claude CC) -- forward to agent host WebSocket
-  let ws = ctx.conversations.getConversationSocket(conversationId)
-  if (!ws) {
-    const routingIds = ctx.conversations.getConnectionIds(conversationId)
-    for (const wid of routingIds) {
-      ws = ctx.conversations.findSocketByConversationId(wid)
-      if (ws) break
-    }
-  }
+  const ws = resolveConversationSocket(ctx, conversationId)
   if (!ws) throw new GuardError('Conversation not connected')
 
   const crDelay = typeof data.crDelay === 'number' && data.crDelay > 0 ? data.crDelay : undefined
@@ -217,14 +211,7 @@ const sendInterrupt: MessageHandler = (ctx, data) => {
   if (conversation.status === 'ended') throw new GuardError('Conversation has ended')
   ctx.requirePermission('chat', conversation.project)
 
-  let ws = ctx.conversations.getConversationSocket(conversationId)
-  if (!ws) {
-    const routingIds = ctx.conversations.getConnectionIds(conversationId)
-    for (const wid of routingIds) {
-      ws = ctx.conversations.findSocketByConversationId(wid)
-      if (ws) break
-    }
-  }
+  const ws = resolveConversationSocket(ctx, conversationId)
   if (!ws) throw new GuardError('Conversation not connected')
 
   ws.send(JSON.stringify({ type: 'interrupt', conversationId: conversationId }))

@@ -12,18 +12,22 @@
  * ccSessionId is captured later (Phase 2) through the normal agent-host
  * boundary path, so `lint:boundary` stays green with no whitelist entry.
  */
+import { controlResultFailure } from '../../shared/cc-daemon/control-result'
 import { cwdToProjectUri } from '../../shared/project-uri'
 import type {
   Conversation,
+  DaemonControlResult,
   DaemonJobInfo,
   DaemonLaunchEvent,
   DaemonLaunchStep,
+  DaemonRespawnStaleRequest,
   DaemonRosterForward,
   DaemonRosterJob,
 } from '../../shared/protocol'
 import { DAEMON_META } from '../backends/daemon'
-import type { HandlerContext, MessageHandler } from '../handler-context'
+import { GuardError, type HandlerContext, type MessageHandler } from '../handler-context'
 import { AGENT_HOST_ONLY, DASHBOARD_ROLES, registerHandlers, SENTINEL_ONLY } from '../message-router'
+import { resolveConversationSocket } from './socket-routing'
 
 /** Daemon job states that mean the session has finished for good. */
 const ENDED_STATES = new Set(['done', 'failed', 'stopped', 'crashed'])
@@ -327,10 +331,106 @@ const daemonLaunchEvent: MessageHandler = (ctx, data) => {
   ctx.broadcastScoped({ ...event }, conv.project)
 }
 
+// ─── Phase G -- remote control (reply / kill / respawn-stale) ──────────────
+
+/** The four ops a DaemonControlResult can report on. */
+const DAEMON_CONTROL_OPS = new Set<DaemonControlResult['op']>(['reply', 'permission_response', 'kill', 'respawn_stale'])
+
+/**
+ * Validate + normalize a raw `daemon_control_result` wire payload. Returns
+ * null when conversationId / a known op / the boolean `ok` are missing or
+ * malformed. Pure -- unit-testable without a HandlerContext.
+ */
+export function normalizeDaemonControlResult(data: Record<string, unknown>): DaemonControlResult | null {
+  const { conversationId, op, ok } = data
+  if (typeof conversationId !== 'string' || !conversationId) return null
+  if (typeof op !== 'string' || !DAEMON_CONTROL_OPS.has(op as DaemonControlResult['op'])) return null
+  if (typeof ok !== 'boolean') return null
+  return {
+    type: 'daemon_control_result',
+    conversationId,
+    op: op as DaemonControlResult['op'],
+    ok,
+    code: typeof data.code === 'string' ? data.code : undefined,
+    detail: typeof data.detail === 'string' ? data.detail : undefined,
+    t: typeof data.t === 'number' ? data.t : Date.now(),
+  }
+}
+
+/**
+ * Agent host -> broker: the outcome of a daemon remote-control op. The
+ * daemon-agent-host ran the op (it owns the control socket); the broker logs
+ * it with full context and re-broadcasts it to dashboard subscribers so the
+ * user sees the result. EVERYTHING IS A STRUCTURED MESSAGE -- no diag-only
+ * control outcomes. Boundary-safe: a DaemonControlResult carries no
+ * ccSessionId, only conversationId / op / ok / code / detail.
+ */
+export const daemonControlResult: MessageHandler = (ctx, data) => {
+  const result = normalizeDaemonControlResult(data)
+  if (!result) {
+    ctx.log.debug('[daemon] daemon_control_result malformed, ignoring')
+    return
+  }
+  const conv = ctx.conversations.getConversation(result.conversationId)
+  if (!conv) {
+    ctx.log.debug(
+      `[daemon] control result for unknown conversation ${result.conversationId.slice(0, 8)} op=${result.op}`,
+    )
+    return
+  }
+  ctx.log.info(
+    `[daemon] control result conv=${result.conversationId.slice(0, 8)} op=${result.op} ok=${result.ok}` +
+      `${result.code ? ` code=${result.code}` : ''}${result.detail ? ` -- ${result.detail}` : ''}`,
+  )
+  // Object literal -- interfaces lack the implicit index signature broadcastScoped wants.
+  ctx.broadcastScoped({ ...result }, conv.project)
+}
+
+/**
+ * Control panel -> broker: respawn a sleep/wake-stale daemon worker. The
+ * broker permission-checks, then forwards `daemon_respawn_stale` to the
+ * daemon-agent-host, which runs the daemon `respawn-stale` op and emits the
+ * `DaemonControlResult`. When no host socket is connected the broker cannot
+ * forward at all -- it originates a failure result itself (EHOSTGONE) so the
+ * user's control op still resolves visibly.
+ */
+export const daemonRespawnStale: MessageHandler = (ctx, data) => {
+  const conversationId = typeof data.conversationId === 'string' ? data.conversationId : ''
+  if (!conversationId) throw new GuardError('daemon_respawn_stale: missing conversationId')
+  const conv = ctx.conversations.getConversation(conversationId)
+  if (!conv) throw new GuardError('daemon_respawn_stale: conversation not found')
+  ctx.requirePermission('chat', conv.project)
+  if (conv.agentHostType !== 'daemon') {
+    throw new GuardError('daemon_respawn_stale: not a daemon-backed conversation')
+  }
+
+  const ws = resolveConversationSocket(ctx, conversationId)
+  if (!ws) {
+    const result = controlResultFailure(conversationId, 'respawn_stale', 'EHOSTGONE', 'daemon-agent-host not connected')
+    ctx.log.info(
+      `[daemon] respawn-stale conv=${conversationId.slice(0, 8)} -- no host socket (EHOSTGONE), cannot forward`,
+    )
+    ctx.broadcastScoped({ ...result }, conv.project)
+    return
+  }
+  const request: DaemonRespawnStaleRequest = { type: 'daemon_respawn_stale', conversationId }
+  ws.send(JSON.stringify(request))
+  ctx.log.info(
+    `[daemon] respawn-stale forwarded conv=${conversationId.slice(0, 8)} project=${conv.project} -- awaiting host result`,
+  )
+}
+
 export function registerDaemonHandlers(): void {
-  // Roster ingest is sentinel-sourced; launch events are agent-host-sourced;
-  // the roster replay request is dashboard-sourced.
+  // Roster ingest is sentinel-sourced; launch events + control results are
+  // agent-host-sourced; the roster replay request + respawn-stale are
+  // dashboard-sourced.
   registerHandlers({ daemon_roster_update: daemonRosterUpdate, daemon_job_state: daemonJobState }, SENTINEL_ONLY)
-  registerHandlers({ daemon_launch_event: daemonLaunchEvent }, AGENT_HOST_ONLY)
-  registerHandlers({ daemon_roster_request: daemonRosterRequest }, DASHBOARD_ROLES)
+  registerHandlers(
+    { daemon_launch_event: daemonLaunchEvent, daemon_control_result: daemonControlResult },
+    AGENT_HOST_ONLY,
+  )
+  registerHandlers(
+    { daemon_roster_request: daemonRosterRequest, daemon_respawn_stale: daemonRespawnStale },
+    DASHBOARD_ROLES,
+  )
 }

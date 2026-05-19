@@ -4,8 +4,11 @@
  * Two directions:
  *   - Worker PTY output (raw bytes from `AttachHandle.onData`) -> broker as
  *     `terminal_data` messages via `feedPty()`.
- *   - Broker terminal input / resize messages -> worker PTY via the `AttachHandle`
- *     methods (`writeInput`, `resize`), routed through `handleMessage()`.
+ *   - Broker raw-terminal messages (`terminal_data` / `terminal_resize` /
+ *     `terminal_attach` / `terminal_detach`) -> worker PTY via the
+ *     `AttachHandle` methods (`writeInput`, `resize`), routed through
+ *     `handleMessage()`. Chat-box `input` is NOT handled here -- the daemon
+ *     host routes it to the cc-daemon `reply` op (see `daemon-control.ts`).
  *
  * The bridge owns NO state beyond a `stopped` flag and the CURRENT attach
  * handle. Lifecycle of both the `HostTransport` and the `AttachHandle` is
@@ -16,14 +19,7 @@
 
 import type { AttachHandle } from '../shared/cc-daemon/attach'
 import type { HostTransport } from '../shared/host-transport'
-import type {
-  BrokerMessage,
-  SendInput,
-  TerminalAttach,
-  TerminalData,
-  TerminalDetach,
-  TerminalResize,
-} from '../shared/protocol'
+import type { BrokerMessage, TerminalAttach, TerminalData, TerminalDetach, TerminalResize } from '../shared/protocol'
 
 export interface BrokerBridgeOptions {
   transport: HostTransport
@@ -35,7 +31,7 @@ export interface BrokerBridgeOptions {
 export interface BrokerBridge {
   /** Feed raw PTY bytes (from attach()'s onData callback) to the broker as terminal_data. */
   feedPty(pty: Buffer): void
-  /** Route one inbound broker message. Returns true if it was consumed (a terminal/input message). */
+  /** Route one inbound broker message. Returns true if it was consumed (a raw-terminal message). */
   handleMessage(msg: BrokerMessage): boolean
   /** Swap in a new attach handle after a socket-drop re-attach. */
   setAttachHandle(handle: AttachHandle): void
@@ -65,16 +61,6 @@ export function createBrokerBridge(opts: BrokerBridgeOptions): BrokerBridge {
           attachHandle.writeInput(m.data)
         } else {
           debug?.(`broker-bridge: terminal_data dropped -- attach handle closed (conversationId=${conversationId})`)
-        }
-        return true
-      }
-
-      case 'input': {
-        const m = msg as SendInput
-        if (!attachHandle.closed) {
-          attachHandle.writeInput(`${m.input}\r`)
-        } else {
-          debug?.(`broker-bridge: input dropped -- attach handle closed (conversationId=${conversationId})`)
         }
         return true
       }

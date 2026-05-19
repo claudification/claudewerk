@@ -60,11 +60,13 @@ import {
   type ConversationEnd,
   type ConversationMeta,
   type ConversationReset,
+  type SendInput,
 } from '../shared/protocol'
 import { BUILD_VERSION } from '../shared/version'
 import { attachWithRetry } from './attach-retry'
 import { type BrokerBridge, createBrokerBridge } from './broker-bridge'
 import { type DaemonHostConfig, parseDaemonHostConfig } from './cli-args'
+import { createDaemonControl } from './daemon-control'
 import { type DaemonSessionObserver, observeDaemonSession } from './session-observer'
 import { createTranscriptBridge, type TranscriptBridge } from './transcript-bridge'
 
@@ -154,6 +156,19 @@ async function main(): Promise<void> {
     onDiag: (_kind, m, args) => debug(`diag: ${m} ${args ? JSON.stringify(args) : ''}`),
   })
 
+  // --- remote-control surface (reply / kill / respawn-stale) -----------------
+  // Routes the broker's control verbs onto the cc-daemon control socket and
+  // emits a DaemonControlResult for every op. `handleInbound` references this
+  // before this line runs, but it is only ever CALLED after the WS connects,
+  // by which point `daemonControl` is assigned.
+  const daemonControl = createDaemonControl({
+    controlSock,
+    daemonShort: cfg.daemonShort,
+    conversationId: cfg.conversationId,
+    emit: result => transport.send(result),
+    log,
+  })
+
   /** Emit a structured boot-lifecycle event so the user sees host progress. */
   function emitBoot(step: BootStep, detail?: string): void {
     const ev: BootEvent = { type: 'boot_event', conversationId: cfg.conversationId, step, t: Date.now() }
@@ -165,18 +180,48 @@ async function main(): Promise<void> {
   emitBoot('agent_host_started', HOST_VERSION)
 
   // --- inbound broker message routing ----------------------------------------
+  /**
+   * Route one inbound broker message. The remote-control verbs (Phase G) are
+   * intercepted here and dispatched to the cc-daemon control socket; raw
+   * terminal traffic falls through to the PTY bridge.
+   *   `input`                  -> daemon `reply` (chat-box turn injection)
+   *   `terminate_conversation` -> daemon `kill`, then host shutdown
+   *   `daemon_respawn_stale`   -> daemon `respawn-stale`
+   */
   function handleInbound(msg: BrokerMessage): void {
     const t = (msg as { type?: string }).type
     if (t === 'terminate_conversation') {
-      log('broker requested termination')
-      shutdown('dashboard-other', false)
+      log('broker requested termination -- killing daemon worker')
+      daemonControl
+        .kill()
+        .catch((err: unknown) => log(`kill op error: ${(err as Error).message}`))
+        .finally(() => shutdown('dashboard-other', false))
+      return
+    }
+    if (t === 'daemon_respawn_stale') {
+      log('broker requested respawn-stale')
+      void daemonControl
+        .respawnStale()
+        .catch((err: unknown) => log(`respawn-stale op error: ${(err as Error).message}`))
+      return
+    }
+    if (t === 'input') {
+      // The chat box submits a turn -- route to the daemon `reply` op rather
+      // than typing raw bytes into the worker PTY (the raw web terminal still
+      // uses `terminal_data` -> PTY below).
+      const input = (msg as SendInput).input
+      if (typeof input === 'string' && input.length > 0) {
+        void daemonControl.reply(input).catch((err: unknown) => log(`reply op error: ${(err as Error).message}`))
+      } else {
+        debug('input message with empty/invalid input -- ignored')
+      }
       return
     }
     if (t === 'transcript_request' || t === 'transcript_kick') {
       transcriptBridge?.resend().catch((err: unknown) => debug(`resend failed: ${(err as Error).message}`))
       return
     }
-    // terminal_data / input / terminal_resize / terminal_attach -> the worker PTY
+    // terminal_data / terminal_resize / terminal_attach / terminal_detach -> PTY
     bridge?.handleMessage(msg)
   }
 

@@ -9,6 +9,7 @@ import { openSpawnDialog } from '@/components/spawn-dialog'
 import { openTerminateConfirm } from '@/components/terminate-confirm'
 import { sendInput, useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import { formatShortcut, useChordCommand, useCommand, validateChordBindings } from '@/lib/commands'
+import { canRespawnStaleDaemon } from '@/lib/daemon-control'
 import { focusInputEditor } from '@/lib/focus-input'
 import { canTerminal, projectPath } from '@/lib/types'
 import { isMobileViewport } from '@/lib/utils'
@@ -239,6 +240,22 @@ export function useGlobalCommands(toggleSidebar: () => void) {
       }
     },
     { label: 'Interrupt current turn', shortcut: 'Escape Escape', group: 'Conversation' },
+  )
+
+  useCommand(
+    'respawn-stale-daemon',
+    () => {
+      const store = useConversationsStore.getState()
+      const sid = store.selectedConversationId
+      if (!sid) return
+      const conversation = store.conversationsById[sid]
+      // Daemon-only -- routes the cc-daemon `respawn-stale` op at a
+      // sleep/wake-stale worker; a no-op for any other backend.
+      if (canRespawnStaleDaemon(conversation)) {
+        wsSend('daemon_respawn_stale', { conversationId: sid })
+      }
+    },
+    { label: 'Respawn stale daemon worker', group: 'Conversation' },
   )
 
   useCommand(

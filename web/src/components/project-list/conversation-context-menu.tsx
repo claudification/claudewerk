@@ -1,6 +1,7 @@
 import { ContextMenu } from 'radix-ui'
 import type { ReactNode } from 'react'
 import { saveProjectOrder, updateProjectSettings, useConversationsStore, wsSend } from '@/hooks/use-conversations'
+import { canRespawnStaleDaemon } from '@/lib/daemon-control'
 import type { Conversation, ProjectOrder, ProjectOrderGroup } from '@/lib/types'
 import { projectPath } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
@@ -225,6 +226,17 @@ export function ConversationContextMenu({
             {ps?.pinned ? 'Unpin project' : 'Pin project'}
           </ContextMenu.Item>
           <ContextMenu.Separator className="h-px bg-border my-1" />
+          {canRespawnStaleDaemon(conversation) && (
+            <ContextMenu.Item
+              className={cn(menuItemClass, 'text-sky-400')}
+              onSelect={() => {
+                haptic('tap')
+                wsSend('daemon_respawn_stale', { conversationId: conversation.id })
+              }}
+            >
+              Respawn stale worker
+            </ContextMenu.Item>
+          )}
           {conversation.status !== 'ended' && (
             <ContextMenu.Item
               className={cn(menuItemClass, 'text-destructive')}

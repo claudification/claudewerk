@@ -655,6 +655,7 @@ export type AgentHostMessage =
   | JsonStreamData
   | HostTransportReconnect
   | DaemonLaunchEvent
+  | DaemonControlResult
 
 export interface ConversationNameUpdate {
   type: 'conversation_name'
@@ -1142,6 +1143,7 @@ export type BrokerMessage =
   | PhantomReapCandidate
   | DaemonControlResult
   | DaemonRosterForward
+  | DaemonRespawnStaleRequest
 
 export interface NotifyConfigUpdated {
   type: 'notify_config_updated'
@@ -2266,9 +2268,16 @@ export interface DaemonLaunchEvent {
 }
 
 /**
- * Broker -> control panel: the outcome of a daemon remote-control op
- * (reply / permission-response / kill / respawn-stale). Phase G surfaces every
- * control verb's result as one of these.
+ * The outcome of a daemon remote-control op (reply / permission-response /
+ * kill / respawn-stale). Phase G surfaces every control verb's result as one
+ * of these.
+ *
+ * Emitted by the daemon-agent-host (the authority that runs the daemon op)
+ * as an agent-host -> broker message; the broker re-broadcasts it scoped to
+ * the conversation's project so the control panel renders the outcome
+ * (EVERYTHING IS A STRUCTURED MESSAGE). The broker also originates one
+ * directly on the failure path where it cannot even forward the request
+ * (no daemon-agent-host socket).
  */
 export interface DaemonControlResult {
   type: 'daemon_control_result'
