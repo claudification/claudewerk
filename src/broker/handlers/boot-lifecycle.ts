@@ -9,7 +9,7 @@
  */
 
 import { createHash } from 'node:crypto'
-import { cwdToProjectUri } from '../../shared/project-uri'
+import { cwdToProjectUri, getProfileFromUri, withProfile } from '../../shared/project-uri'
 import type {
   AgentHostCapability,
   AgentHostLaunchPhase,
@@ -41,7 +41,7 @@ const agentHostBoot: MessageHandler = (ctx, data) => {
     return
   }
 
-  const resolvedProject = project ?? cwdToProjectUri(bootPath as string)
+  const baseProject = project ?? cwdToProjectUri(bootPath as string)
 
   // Track the WS so subsequent messages from this agent host are routed here.
   ctx.ws.data.conversationId = conversationId
@@ -50,6 +50,31 @@ const agentHostBoot: MessageHandler = (ctx, data) => {
   const pendingLaunchConfig = ctx.conversations.consumePendingLaunchConfig(conversationId)
 
   const existing = ctx.conversations.getConversation(conversationId)
+
+  // Sentinel-profile pin: when spawn-dispatch saw `spawn_result.resolvedProfile`,
+  // it stashed the NAME so we can write it into the conversation's stored
+  // projectUri userinfo here. Revive then reads the same name back from the
+  // URI and forwards it to the sentinel as a `fixed` selection -- conversations
+  // are permanently bound to their picked profile. PROFILE-ENV BOUNDARY: the
+  // broker handles the NAME slot only.
+  //
+  // Sources, in priority:
+  //   1. The agent host's `data.project` already carries the profile (sentinel
+  //      built it that way) -- pass through.
+  //   2. spawn-dispatch stashed a pending resolved profile.
+  //   3. The existing conversation already has a profile (reconnect / boot-on-
+  //      active) -- preserve it.
+  const pendingResolved = ctx.conversations.consumePendingResolvedProfile(conversationId)
+  const incomingProfile = getProfileFromUri(baseProject)
+  const existingProfile = existing?.project ? getProfileFromUri(existing.project) : undefined
+  const pinnedProfile = incomingProfile ?? pendingResolved ?? existingProfile
+  const resolvedProject = pinnedProfile ? withProfile(baseProject, pinnedProfile) : baseProject
+  if (pinnedProfile && pinnedProfile !== incomingProfile) {
+    console.log(
+      `[boot-profile] conv=${conversationId.slice(0, 8)} pinned=${pinnedProfile} ` +
+        `source=${pendingResolved ? 'pending' : 'existing'} base=${baseProject} -> ${resolvedProject}`,
+    )
+  }
   const capabilities = (data.capabilities as AgentHostCapability[] | undefined) || []
   const claudeArgs = (data.claudeArgs as string[] | undefined) || []
 

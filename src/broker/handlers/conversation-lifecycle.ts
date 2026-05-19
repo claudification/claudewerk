@@ -3,7 +3,7 @@
  * heartbeat, conversation clear (re-key), notify, and end.
  */
 
-import { cwdToProjectUri, extractProjectLabel } from '../../shared/project-uri'
+import { cwdToProjectUri, extractProjectLabel, getProfileFromUri, withProfile } from '../../shared/project-uri'
 import type { Conversation, HookEvent, TerminationDetail, TerminationSource } from '../../shared/protocol'
 import { slugify } from '../address-book'
 import type { MessageHandler } from '../handler-context'
@@ -32,7 +32,7 @@ const meta: MessageHandler = (ctx, data) => {
     })
     return
   }
-  const project = (projectField as string | undefined) ?? cwdToProjectUri(cwdField as string)
+  const baseProject = (projectField as string | undefined) ?? cwdToProjectUri(cwdField as string)
   ctx.ws.data.conversationId = conversationId
   ctx.ws.data.ccSessionId = ccSessionId
   ctx.ws.data.connectionId = conversationId
@@ -40,6 +40,27 @@ const meta: MessageHandler = (ctx, data) => {
   const pendingLaunchConfig = ctx.conversations.consumePendingLaunchConfig(conversationId)
 
   const existing = ctx.conversations.getConversation(conversationId)
+
+  // Sentinel-profile pin -- once the conversation has a profile in its URI
+  // userinfo it stays there. Possible sources, in priority:
+  //   1. The agent host's `data.project` already carries the profile (sentinel
+  //      built it that way) -- pass through.
+  //   2. spawn-dispatch stashed a pending resolved profile (boot didn't fire,
+  //      meta is the first frame for this conversation).
+  //   3. The conversation already has a profile (boot ran first) -- preserve
+  //      it through this re-write.
+  // PROFILE-ENV BOUNDARY: NAME slot only; broker never holds configDir / env.
+  const pendingResolved = ctx.conversations.consumePendingResolvedProfile(conversationId)
+  const incomingProfile = getProfileFromUri(baseProject)
+  const existingProfile = existing?.project ? getProfileFromUri(existing.project) : undefined
+  const pinnedProfile = incomingProfile ?? pendingResolved ?? existingProfile
+  const project = pinnedProfile ? withProfile(baseProject, pinnedProfile) : baseProject
+  if (pinnedProfile && (pendingResolved || existingProfile) && !incomingProfile) {
+    console.log(
+      `[meta-profile] conv=${conversationId.slice(0, 8)} pinned=${pinnedProfile} ` +
+        `source=${pendingResolved ? 'pending' : 'existing'} base=${baseProject}`,
+    )
+  }
 
   function applyMetadata(conv: Conversation) {
     if (!conv.agentHostMeta) conv.agentHostMeta = {}
@@ -177,7 +198,15 @@ const conversationReset: MessageHandler = (ctx, data) => {
   const conversationId = (data.conversationId as string) || ctx.ws.data.conversationId
   if (!conversationId) return
 
-  const resetProject = (data.project as string) ?? cwdToProjectUri(data.cwd as string)
+  const resetBase = (data.project as string) ?? cwdToProjectUri(data.cwd as string)
+  // Preserve the sentinel-profile pin across /clear -- the agent host re-sends
+  // its project URI without userinfo, but the conversation is permanently
+  // bound to the originally-resolved profile.
+  const existingConv = ctx.conversations.getConversation(conversationId)
+  const existingProfile = existingConv?.project ? getProfileFromUri(existingConv.project) : undefined
+  const incomingProfile = getProfileFromUri(resetBase)
+  const pinned = incomingProfile ?? existingProfile
+  const resetProject = pinned ? withProfile(resetBase, pinned) : resetBase
 
   const conversation = ctx.conversations.clearConversation(conversationId, resetProject, data.model as string)
   if (conversation) {

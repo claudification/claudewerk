@@ -6,6 +6,7 @@ import {
   cwdToProjectUri,
   DEFAULT_SENTINEL_NAME,
   extractProjectLabel,
+  getProfileFromUri,
   isSameProject,
   isSameProjectConversation,
   matchProjectUri,
@@ -14,6 +15,7 @@ import {
   stripProfile,
   tryParseProjectUri,
   validateProjectUri,
+  withProfile,
 } from './project-uri'
 
 describe('parseProjectUri', () => {
@@ -897,5 +899,55 @@ describe('sentinel profile -- stripProfile', () => {
   test('handles non-claude schemes the same way', () => {
     expect(stripProfile('codex://work@beast/path')).toBe('codex://beast/path')
     expect(stripProfile('opencode://alt@default/path')).toBe('opencode://default/path')
+  })
+})
+
+describe('withProfile', () => {
+  test('sets profile on profile-less URI', () => {
+    expect(withProfile('claude://default/path', 'work')).toBe('claude://work@default/path')
+  })
+
+  test('replaces existing profile', () => {
+    expect(withProfile('claude://alt@default/path', 'work')).toBe('claude://work@default/path')
+  })
+
+  test('strips profile when given undefined', () => {
+    expect(withProfile('claude://work@default/path', undefined)).toBe('claude://default/path')
+    expect(withProfile('claude://default/path', undefined)).toBe('claude://default/path')
+  })
+
+  test('preserves path and fragment', () => {
+    expect(withProfile('claude://default/Users/jonas/projects/foo#conv_x', 'work')).toBe(
+      'claude://work@default/Users/jonas/projects/foo#conv_x',
+    )
+  })
+
+  test('safe on wildcards / malformed URIs', () => {
+    // No scheme://: pass-through after stripping (still no userinfo to strip).
+    expect(withProfile('*', 'work')).toBe('*')
+    expect(withProfile('not-a-uri', 'work')).toBe('not-a-uri')
+  })
+
+  test('works across schemes', () => {
+    expect(withProfile('codex://beast/path', 'work')).toBe('codex://work@beast/path')
+    expect(withProfile('opencode://default/path', 'alt')).toBe('opencode://alt@default/path')
+  })
+})
+
+describe('getProfileFromUri', () => {
+  test('returns the profile when present', () => {
+    expect(getProfileFromUri('claude://work@default/path')).toBe('work')
+    expect(getProfileFromUri('claude://alt@beast/path#conv_x')).toBe('alt')
+  })
+
+  test('returns undefined for profile-less URIs', () => {
+    expect(getProfileFromUri('claude://default/path')).toBeUndefined()
+    expect(getProfileFromUri('claude:///path')).toBeUndefined()
+  })
+
+  test('safe on malformed input', () => {
+    expect(getProfileFromUri('not-a-uri')).toBeUndefined()
+    // `*` parses as wildcard with no profile.
+    expect(getProfileFromUri('*')).toBeUndefined()
   })
 })

@@ -4,6 +4,7 @@
  */
 
 import { Hono } from 'hono'
+import type { SelectionMode, SentinelProfileInfo } from '../../shared/protocol'
 import type { ConversationStore } from '../conversation-store'
 import { isValidSentinelAlias, type SentinelRegistry } from '../sentinel-registry'
 import type { RouteHelpers } from './shared'
@@ -47,6 +48,7 @@ export function createSentinelRouter(
   })
 
   // ─── List sentinels ────────────────────────────────────────────────────
+  // fallow-ignore-next-line complexity
   app.get('/api/sentinels', c => {
     if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Admin access required' }, 403)
 
@@ -61,6 +63,11 @@ export function createSentinelRouter(
       hostname?: string
       spawnRoot?: string
       createdAt: number
+      /** Sentinel-reported profile NAMES + display only (Profile-Env Boundary).
+       *  Present when the sentinel is connected AND reported a non-empty
+       *  profiles list. Stale offline sentinels do NOT carry profiles. */
+      profiles?: SentinelProfileInfo[]
+      defaultSelection?: SelectionMode
     }> = []
 
     for (const [sentinelId, record] of all) {
@@ -75,6 +82,8 @@ export function createSentinelRouter(
         hostname: conn?.hostname,
         spawnRoot: conn?.spawnRoot,
         createdAt: record.createdAt,
+        profiles: conn?.profiles,
+        defaultSelection: conn?.defaultSelection,
       })
     }
 

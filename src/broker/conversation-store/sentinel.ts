@@ -3,6 +3,8 @@ import {
   type ClaudeEfficiencyUpdate,
   type ClaudeHealthUpdate,
   HEARTBEAT_INTERVAL_MS,
+  type SelectionMode,
+  type SentinelProfileInfo,
   type UsageUpdate,
 } from '../../shared/protocol'
 import type { ControlPanelMessage, SentinelStatusInfo } from './types'
@@ -32,6 +34,13 @@ export interface SentinelConnection {
   spawnRoot?: string
   connectedAt: number
   lastHeartbeat: number
+  /** Sentinel-reported profile NAMES + display metadata. Refreshed on every
+   *  sentinel_identify. Lives in memory only -- the registry file does not
+   *  persist profiles (profile config is sentinel-local; the broker rediscovers
+   *  on reconnect). NEVER contains configDir / env -- Profile-Env Boundary. */
+  profiles?: SentinelProfileInfo[]
+  /** What the sentinel does on a no-profile spawn. */
+  defaultSelection?: SelectionMode
 }
 
 export interface SentinelIdentifyInfo {
@@ -40,6 +49,9 @@ export interface SentinelIdentifyInfo {
   alias?: string
   spawnRoot?: string
   sentinelId?: string
+  /** Reported profile NAMES + display only -- NEVER configDir or env. */
+  profiles?: SentinelProfileInfo[]
+  defaultSelection?: SelectionMode
 }
 
 export interface SentinelState {
@@ -89,6 +101,8 @@ export function setSentinel(
     spawnRoot: info?.spawnRoot,
     connectedAt: now,
     lastHeartbeat: now,
+    profiles: info?.profiles,
+    defaultSelection: info?.defaultSelection,
   }
   state.sentinels.set(sentinelId, conn)
   state.sentinelsByAlias.set(alias, sentinelId)

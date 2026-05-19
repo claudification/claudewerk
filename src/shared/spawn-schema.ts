@@ -204,6 +204,17 @@ export const spawnRequestSchema = z.object({
       'Absolute path on the sentinel host to an MCP config JSON (claude --bg --mcp-config). ' +
         'Injected for daemonMode new|resume only.',
     ),
+  profile: z
+    .string()
+    .min(1)
+    .max(63)
+    .optional()
+    .describe(
+      'Sentinel-profile selection. Either a literal profile name (Fixed mode, e.g. "work") or a SelectionMode ' +
+        'token ("default" | "balanced" | "random"). When absent, the sentinel applies its defaultSelection ' +
+        '(typically the implicit "default" profile = $HOME/.claude). Profile env (configDir, API keys) is ' +
+        'resolved sentinel-side; the broker never holds it.',
+    ),
 })
 export type SpawnRequest = z.infer<typeof spawnRequestSchema>
 

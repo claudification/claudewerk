@@ -89,6 +89,40 @@ for (const relPath of files) {
         reason: 'Broker must not use bare `sessionId` (use conversationId)',
       })
     }
+
+    // Rule 3 (sentinel-profiles): the broker stores the profile NAME only.
+    // Reading `configDir` or `profile.env` is a Profile-Env Boundary violation
+    // -- credentials live on the sentinel. See `.claude/docs/plan-sentinel-
+    // profiles.md` Profile-Env Boundary covenant.
+    if (/\bconfigDir\b/.test(line)) {
+      // Allow string-literal references (error messages, log strings).
+      if (!/['"`].*configDir.*['"`]/.test(line)) {
+        violations.push({
+          file: relPath,
+          line: lineNum,
+          text: line.trim(),
+          reason:
+            "Broker must not read `configDir` -- it's a sentinel-side concept (Profile-Env Boundary). " +
+            'The broker stores the profile NAME only.',
+        })
+      }
+    }
+    // `profile.env` is a property access into a sentinel-resident bundle.
+    // Match both `profile.env` (dot-access) and `.env` immediately after a
+    // `profile` reference. We deliberately do NOT flag `LaunchConfig.env`
+    // (that's the user-typed env, broker-safe).
+    if (/\bprofile\.env\b/.test(line)) {
+      if (!/['"`].*profile\.env.*['"`]/.test(line)) {
+        violations.push({
+          file: relPath,
+          line: lineNum,
+          text: line.trim(),
+          reason:
+            'Broker must not read `profile.env` -- API keys / configDir live sentinel-side ' +
+            '(Profile-Env Boundary). Forward NAMES only.',
+        })
+      }
+    }
   }
 }
 

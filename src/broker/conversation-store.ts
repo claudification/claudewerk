@@ -300,6 +300,12 @@ export interface ConversationStore {
   // Pending launch configs (set at spawn, consumed on connect to restore on revive)
   setPendingLaunchConfig: (conversationId: string, config: LaunchConfig) => void
   consumePendingLaunchConfig: (conversationId: string) => LaunchConfig | undefined
+  // Pending resolved sentinel-profile name (set when spawn_result echoes back
+  // the sentinel's pick; consumed when boot / meta lands so the conversation's
+  // stored projectUri carries the profile in userinfo). NAME ONLY -- the
+  // broker never sees configDir / env (Profile-Env Boundary).
+  setPendingResolvedProfile: (conversationId: string, profileName: string) => void
+  consumePendingResolvedProfile: (conversationId: string) => string | undefined
   // Pending conversation names (set at spawn, consumed on connect)
   setPendingConversationName: (conversationId: string, name: string) => void
   consumePendingConversationName: (conversationId: string) => string | undefined
@@ -2340,6 +2346,26 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     return config
   }
 
+  // ─── Pending Resolved Profile (conversationId -> profileName) ───────────
+  // Set by spawn-dispatch when the sentinel echoes `resolvedProfile`; consumed
+  // by boot-lifecycle / conversation-lifecycle so the conversation's stored
+  // projectUri carries the profile in userinfo. The conversation is then
+  // permanently bound to that profile; revive reads it back from the URI.
+  // PROFILE-ENV BOUNDARY: name only -- configDir / env stay sentinel-side.
+  const pendingResolvedProfiles = new Map<string, string>()
+
+  function setPendingResolvedProfile(conversationId: string, profileName: string) {
+    pendingResolvedProfiles.set(conversationId, profileName)
+    // Auto-cleanup after 5 min in case the conversation never connects.
+    setTimeout(() => pendingResolvedProfiles.delete(conversationId), 5 * 60 * 1000)
+  }
+
+  function consumePendingResolvedProfile(conversationId: string): string | undefined {
+    const name = pendingResolvedProfiles.get(conversationId)
+    if (name) pendingResolvedProfiles.delete(conversationId)
+    return name
+  }
+
   // Launch jobs: extracted to spawn-jobs.ts
   const spawnJobs = createSpawnJobRegistry()
   const {
@@ -2541,6 +2567,8 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     getRendezvousInfo,
     setPendingLaunchConfig,
     consumePendingLaunchConfig,
+    setPendingResolvedProfile,
+    consumePendingResolvedProfile,
     setPendingConversationName,
     consumePendingConversationName,
     recordTraffic,

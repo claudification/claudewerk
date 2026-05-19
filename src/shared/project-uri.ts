@@ -320,6 +320,40 @@ function projectWithoutConversation(uri: string): string {
  * Safe on wildcards, scheme-wildcards, and malformed input -- returns the
  * string unchanged when there is no userinfo to strip.
  */
+/**
+ * Set or replace the sentinel-profile userinfo (`work@`) on a project URI.
+ * `profile === undefined` strips the userinfo (i.e. promotes back to the
+ * implicit `default` profile).
+ *
+ * Used by the broker when a sentinel echoes back its resolved profile NAME
+ * (`spawn_result.resolvedProfile`) and the conversation's stored projectUri
+ * must be rewritten to pin the profile for future revives. Safe on wildcards
+ * / malformed URIs -- returns unchanged when the prefix doesn't parse.
+ *
+ * PROFILE-ENV BOUNDARY: the broker manipulates the NAME slot only; configDir
+ * / env never appear in a URI.
+ */
+/**
+ * Read the sentinel-profile userinfo (`work@`) from a project URI, returning
+ * undefined when absent. Tolerant of malformed input. Use this when the
+ * broker needs the NAME to forward to a sentinel (e.g. revive pin).
+ */
+export function getProfileFromUri(uri: string): string | undefined {
+  try {
+    return parseProjectUri(uri).profile
+  } catch {
+    return undefined
+  }
+}
+
+export function withProfile(uri: string, profile: string | undefined): string {
+  const stripped = stripProfile(uri)
+  if (!profile) return stripped
+  const schemeMatch = stripped.match(/^([a-z][a-z0-9+.-]*:\/\/)(.*)$/i)
+  if (!schemeMatch) return stripped
+  return `${schemeMatch[1]}${profile}@${schemeMatch[2]}`
+}
+
 export function stripProfile(uri: string): string {
   const schemeMatch = uri.match(/^([a-z][a-z0-9+.-]*:\/\/)(.*)$/i)
   if (!schemeMatch) return uri

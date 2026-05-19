@@ -3,15 +3,45 @@
  * directory listing results, diagnostic entries.
  */
 
-import type { UsageUpdate } from '../../shared/protocol'
+import type { SelectionMode, SentinelProfileInfo, UsageUpdate } from '../../shared/protocol'
 import type { MessageHandler } from '../handler-context'
 import { ANY_ROLE, registerHandlers, SENTINEL_ONLY } from '../message-router'
 
+/** Validate the sentinel-reported profiles slice. PROFILE-ENV BOUNDARY: any
+ *  field other than NAME + display metadata + flags is dropped here. If a
+ *  malformed sentinel ever sent `configDir` / `env` in the profiles array,
+ *  it would NOT survive this filter and never reach broker storage. */
+// fallow-ignore-next-line complexity
+function sanitizeReportedProfiles(raw: unknown): SentinelProfileInfo[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const out: SentinelProfileInfo[] = []
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue
+    const rec = entry as Record<string, unknown>
+    const name = typeof rec.name === 'string' ? rec.name : null
+    if (!name) continue
+    const label = typeof rec.label === 'string' ? rec.label : undefined
+    const color = typeof rec.color === 'string' ? rec.color : undefined
+    const pooled = typeof rec.pooled === 'boolean' ? rec.pooled : true
+    const authed = typeof rec.authed === 'boolean' ? rec.authed : false
+    out.push({ name, label, color, pooled, authed })
+  }
+  return out
+}
+
+function validatedSelectionMode(raw: unknown): SelectionMode | undefined {
+  if (raw === 'default' || raw === 'balanced' || raw === 'random') return raw
+  return undefined
+}
+
+// fallow-ignore-next-line complexity
 const sentinelIdentify: MessageHandler = (ctx, data) => {
   // Prefer auth-derived sentinel identity from WS upgrade (per-sentinel secret)
   // over self-reported values from the identify message
   const authSentinelId = ctx.ws.data.sentinelId
   const authAlias = ctx.ws.data.sentinelAlias
+  const profiles = sanitizeReportedProfiles(data.profiles)
+  const defaultSelection = validatedSelectionMode(data.defaultSelection)
 
   const sentinelMeta = {
     machineId: typeof data.machineId === 'string' ? data.machineId : undefined,
@@ -19,6 +49,8 @@ const sentinelIdentify: MessageHandler = (ctx, data) => {
     alias: authAlias || (typeof data.alias === 'string' ? data.alias : undefined),
     spawnRoot: typeof data.spawnRoot === 'string' ? data.spawnRoot : undefined,
     sentinelId: authSentinelId,
+    profiles,
+    defaultSelection,
   }
   const accepted = ctx.conversations.setSentinel(ctx.ws, sentinelMeta)
   if (accepted) {
@@ -26,7 +58,11 @@ const sentinelIdentify: MessageHandler = (ctx, data) => {
     ctx.reply({ type: 'ack', eventId: 'sentinel' })
     const label = sentinelMeta.hostname ? ` (${sentinelMeta.hostname} / ${sentinelMeta.machineId})` : ''
     const aliasLabel = sentinelMeta.alias ? ` alias=${sentinelMeta.alias}` : ''
-    ctx.log.info(`Sentinel connected${label}${aliasLabel}`)
+    const profilesLabel =
+      profiles && profiles.length > 0
+        ? ` profiles=[${profiles.map(p => `${p.name}${p.authed ? '' : '?'}${p.pooled ? '' : '/np'}`).join(',')}] defaultSelection=${defaultSelection ?? 'default'}`
+        : ''
+    ctx.log.info(`Sentinel connected${label}${aliasLabel}${profilesLabel}`)
   } else {
     ctx.reply({ type: 'sentinel_reject', reason: 'Sentinel rejected' })
     ctx.ws.close(4409, 'Sentinel rejected')

@@ -20,7 +20,14 @@ import { randomUUID } from 'node:crypto'
 import { generateConversationName } from '../shared/conversation-names'
 import { validateModel } from '../shared/models'
 import { cwdToProjectUri, validateProjectUri } from '../shared/project-uri'
-import type { Conversation, LaunchProgressEvent, LaunchStep, ProjectSettings, SpawnResult } from '../shared/protocol'
+import type {
+  Conversation,
+  LaunchConfig,
+  LaunchProgressEvent,
+  LaunchStep,
+  ProjectSettings,
+  SpawnResult,
+} from '../shared/protocol'
 import { resolveDefaultBackend, resolveSpawnConfig } from '../shared/spawn-defaults'
 import { deriveConversationName, validateConversationName } from '../shared/spawn-naming'
 import { evaluateSpawnPermission, type SpawnCallerContext } from '../shared/spawn-permissions'
@@ -28,6 +35,25 @@ import type { SpawnRequest } from '../shared/spawn-schema'
 import { resolveBackendByName, type SpawnDeps } from './backends'
 import type { ConversationStore } from './conversation-store'
 import type { GlobalSettings } from './global-settings'
+
+/** Selection-mode tokens that are NOT literal profile names. Phase 4 ships
+ *  the picker behavior; Phase 3 just forwards these to the sentinel. */
+const SELECTION_MODE_TOKENS = new Set<string>(['default', 'balanced', 'random'])
+
+/**
+ * Translate the wire-level `req.profile` (string | undefined) into the
+ * persisted `LaunchConfig.sentinelProfile` tagged union (INTENT). Absent
+ * input and the literal `'default'` token both yield undefined (default
+ * profile is implicit on the conversation record). Phase 4 ships real
+ * picker behavior; for now Phase 3 just persists the user's intent so it
+ * round-trips across revive + launch-profile save.
+ */
+function intentFromProfileField(profile?: string): LaunchConfig['sentinelProfile'] {
+  if (!profile || profile === 'default') return undefined
+  if (profile === 'balanced') return { kind: 'balanced' }
+  if (profile === 'random') return { kind: 'random' }
+  return { kind: 'fixed', name: profile }
+}
 
 /**
  * Stash the spawn request as `pendingSpawnApproval` on the caller conversation
@@ -251,6 +277,34 @@ async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): 
     }
   }
 
+  // Sentinel-profile validation. When `req.profile` is a LITERAL name (not a
+  // selection-mode token, not absent), confirm the target sentinel actually
+  // reported that profile. Unknown -> structured spawn failure with the known
+  // list so the caller can correct it. Selection-mode tokens (balanced/random)
+  // and absent profile pass through -- the sentinel does the picking. The
+  // PROFILE-ENV BOUNDARY covenant means the broker validates by NAME only;
+  // configDir / env never reach this code path.
+  if (req.profile && !SELECTION_MODE_TOKENS.has(req.profile) && resolvedSentinelId) {
+    const conn = deps.conversationStore.getSentinelConnection(resolvedSentinelId)
+    const reported = conn?.profiles
+    if (reported && reported.length > 0) {
+      const known = new Set(reported.map(p => p.name))
+      if (!known.has(req.profile)) {
+        const sentinelLabel = targetAlias ?? conn?.alias ?? 'default'
+        const known_list = Array.from(known).sort().join(', ') || 'none'
+        return {
+          ok: false,
+          error: `profile "${req.profile}" not configured on sentinel "${sentinelLabel}"; known: ${known_list}`,
+          statusCode: 400,
+        }
+      }
+    }
+    // If the sentinel never reported any profiles (legacy / no config file),
+    // we still forward the name. The sentinel itself will reject unknown names
+    // with a structured spawn_result error, so the broker stays permissive
+    // rather than gating off a missing identify field.
+  }
+
   if (req.mode === 'resume' && !req.resumeId) {
     return { ok: false, error: 'resumeId required for resume mode', statusCode: 400 }
   }
@@ -357,6 +411,9 @@ async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): 
       maxBudgetUsd,
       env: req.env || undefined,
       appendSystemPrompt: req.appendSystemPrompt || undefined,
+      // Sentinel-profile INTENT (broker-safe NAME / mode token only). Profile
+      // env stays sentinel-side (PROFILE-ENV BOUNDARY covenant).
+      sentinelProfile: intentFromProfileField(req.profile),
     })
 
     try {
@@ -398,6 +455,7 @@ async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): 
           worktree: req.worktree || undefined,
           env: req.env || undefined,
           appendSystemPrompt: req.appendSystemPrompt || undefined,
+          profile: req.profile || undefined,
         }),
       )
     } catch {
@@ -421,6 +479,18 @@ async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): 
     emitProgress(deps.conversationStore, jobId, 'failed', 'error', { error: errorMsg })
     deps.conversationStore.failJob(jobId, errorMsg)
     return { ok: false, error: errorMsg, statusCode: 500 }
+  }
+  // Sentinel-profile pin: when the sentinel echoes back a resolved profile
+  // name, stash it so the boot / meta handler can write it into the
+  // conversation's stored projectUri userinfo. The conversation is then
+  // permanently bound to that profile (revive reads it from the URI).
+  // PROFILE-ENV BOUNDARY: name only -- configDir / env stay sentinel-side.
+  if (result.resolvedProfile && typeof result.resolvedProfile === 'string') {
+    deps.conversationStore.setPendingResolvedProfile(conversationId, result.resolvedProfile)
+    console.log(
+      `[spawn-profile] conv=${conversationId.slice(0, 8)} resolvedProfile=${result.resolvedProfile} ` +
+        `intent=${req.profile ?? 'default'}`,
+    )
   }
   const project = result.project ?? projectLabel
   emitProgress(deps.conversationStore, jobId, 'agent_acked', 'done', { detail: result.tmuxSession })
