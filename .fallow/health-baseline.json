@@ -170,6 +170,14 @@
         "count": 1
       }
     },
+    "src/broker/__tests__/staging/daemon-e2e.test.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
     "src/broker/__tests__/staging/opencode-e2e.test.ts": {
       "crap_critical": {
         "count": 2
@@ -1567,6 +1575,9 @@
       },
       "crap_critical": {
         "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
       }
     },
     "src/opencode-agent-host/dialect/from-opencode-ndjson.ts": {
@@ -2909,9 +2920,9 @@
     "web/src/components/settings/notifications-section.tsx:untested risk",
     "src/claude-agent-host/stream-handlers.ts:untested risk",
     "src/claude-agent-host/mcp-tools/project-board.ts:complexity",
+    "src/claude-agent-host/headless-lifecycle.ts:complexity",
     "src/broker/conversation-store/event-handlers/post-tool-use.ts:untested risk",
     "src/claude-agent-host/mcp-tools/conversations.ts:complexity",
-    "src/claude-agent-host/headless-lifecycle.ts:complexity",
     "src/broker/index.ts:complexity",
     "web/src/components/event-detail.tsx:complexity",
     "src/shared/opencode-config.test.ts:untested risk",

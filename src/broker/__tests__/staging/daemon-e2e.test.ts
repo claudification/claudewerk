@@ -28,7 +28,16 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve as resolvePath } from 'node:path'
 import { resolveControlSocket } from '../../../shared/cc-daemon/socket-path'
-import { cleanup, connectDashboard, getBrokerSecret, httpGet, sleep, testId, waitForMatch, waitForMessage } from './staging-harness'
+import {
+  cleanup,
+  connectDashboard,
+  getBrokerSecret,
+  httpGet,
+  sleep,
+  testId,
+  waitForMatch,
+  waitForMessage,
+} from './staging-harness'
 
 const STAGING_AVAILABLE = !!(process.env.STAGING_BROKER_URL && process.env.STAGING_SECRET)
 const DAEMON_BIN = resolvePath(process.cwd(), 'bin/daemon-host')
