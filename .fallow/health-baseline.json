@@ -1,0 +1,2931 @@
+{
+  "finding_counts": {
+    "scripts/acp-failures.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "scripts/acp-spike-phase-a5.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "scripts/acp-spike.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "scripts/build-broker.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "scripts/build-packages.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "scripts/lib/require-clean-tree.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "scripts/rclaude-config.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/acp-agent-host/agent-callbacks.ts": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/acp-agent-host/dialect/from-acp-generic.ts": {
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 6
+      }
+    },
+    "src/acp-agent-host/dialect/from-acp.ts": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/acp-agent-host/index.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 8
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/acp-agent-host/jsonrpc.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      }
+    },
+    "src/acp-agent-host/recipe.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/acp-agent-host/translator.test.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/acp-agent-host/translator.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 6
+      }
+    },
+    "src/broker/__tests__/chat-api-spawn.test.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/__tests__/hermes-spawn.test.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/__tests__/integration/test-harness.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/__tests__/integration/wire-protocol-channel.test.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/__tests__/integration/wire-protocol-features.test.ts": {
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "src/broker/__tests__/pending-state-persistence.test.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/broker/__tests__/staging/acp-e2e.test.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/__tests__/staging/opencode-e2e.test.ts": {
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/address-book.ts": {
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "src/broker/analytics-store.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 7
+      }
+    },
+    "src/broker/auth-routes.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/auth.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/broker/backends/chat-api.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/backends/daemon.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/backends/hermes.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/backends/opencode.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/backup.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/build-revive.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "src/broker/cli.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/cli/backup-commands.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/cli/gateway-commands.ts": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/broker/cli/parse-args.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "src/broker/cli/passkey-commands.ts": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/broker/cli/role-commands.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/cli/sentinel-commands.ts": {
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "src/broker/cli/shared.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/cli/termination-commands.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/cli/user-commands.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/connection-registry.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/conversation-store.ts": {
+      "complexity_critical": {
+        "count": 4
+      },
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 7
+      },
+      "crap_high": {
+        "count": 10
+      },
+      "crap_moderate": {
+        "count": 10
+      }
+    },
+    "src/broker/conversation-store/add-event.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "src/broker/conversation-store/add-transcript-entries.ts": {
+      "crap_critical": {
+        "count": 2
+      }
+    },
+    "src/broker/conversation-store/channel-registry.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/broker/conversation-store/event-handlers/compact.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/conversation-store/event-handlers/permission.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/conversation-store/event-handlers/post-tool-use.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/broker/conversation-store/event-handlers/pre-tool-use.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/conversation-store/event-handlers/stop.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "src/broker/conversation-store/event-handlers/subagent.ts": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/broker/conversation-store/event-handlers/team.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/conversation-store/parsers.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/conversation-store/project-links.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "src/broker/conversation-store/sentinel.ts": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "src/broker/conversation-store/spawn-jobs.ts": {
+      "crap_critical": {
+        "count": 2
+      }
+    },
+    "src/broker/conversation-store/sync-protocol.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "src/broker/conversation-store/transcript-handlers/assistant-entry.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/conversation-store/transcript-handlers/bg-task-notifications.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/conversation-store/transcript-handlers/mention-notify.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/conversation-store/transcript-handlers/metadata-entry.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/conversation-store/transcript-handlers/subagent-extraction.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/conversation-store/transcript-handlers/system-entry.ts": {
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/conversation-store/transcript-handlers/user-entry.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "src/broker/create-context.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/external-status.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/file-reaper.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/global-settings.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/handler-context.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/handlers/boot-lifecycle.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "src/broker/handlers/channel-id.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/handlers/channel.ts": {
+      "complexity_critical": {
+        "count": 6
+      },
+      "crap_critical": {
+        "count": 9
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/handlers/control-panel-actions.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "src/broker/handlers/conversation-lifecycle.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 5
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/broker/handlers/dialog.ts": {
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/handlers/files.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/handlers/gateway.ts": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "src/broker/handlers/inter-conversation.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 4
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/handlers/json-stream.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/handlers/permissions.ts": {
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 4
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/broker/handlers/plan-approval.ts": {
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/handlers/rclaude-config.ts": {
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "src/broker/handlers/recap.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "src/broker/handlers/sentinel.ts": {
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/handlers/spawn.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/handlers/terminal.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/handlers/transcript.ts": {
+      "complexity_critical": {
+        "count": 4
+      },
+      "crap_critical": {
+        "count": 5
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 7
+      }
+    },
+    "src/broker/handlers/validate.ts": {
+      "crap_critical": {
+        "count": 2
+      }
+    },
+    "src/broker/index.ts": {
+      "complexity_critical": {
+        "count": 4
+      },
+      "crap_critical": {
+        "count": 5
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "src/broker/inter-conversation-log.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/launch-profiles/broadcast.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/launch-profiles/routes.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/launch-profiles/storage.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/message-queue.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/message-router.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/model-pricing.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "src/broker/path-jail.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/permissions.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/project-links.ts": {
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "src/broker/project-order.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/project-settings.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/project-store.ts": {
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "src/broker/push.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      }
+    },
+    "src/broker/recap-orchestrator.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/recap/__tests__/live-prompt.test.ts": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "src/broker/recap/period/llm/prompt-builder.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/recap/period/render/metadata.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/recap/period/render/parse-recap.ts": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/broker/recap/period/resolve-period.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/routes.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/routes/__tests__/recaps.test.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/routes/admin.ts": {
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 8
+      }
+    },
+    "src/broker/routes/api.ts": {
+      "complexity_critical": {
+        "count": 4
+      },
+      "crap_critical": {
+        "count": 7
+      },
+      "crap_moderate": {
+        "count": 5
+      }
+    },
+    "src/broker/routes/blob-store.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "src/broker/routes/chat-api.ts": {
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/broker/routes/conversations.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "src/broker/routes/gateways.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/routes/mcp-server.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/broker/routes/recaps.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/broker/routes/sentinels.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "src/broker/routes/shared.ts": {
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/routes/spawn.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "src/broker/routes/stats.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "src/broker/sentinel-registry.ts": {
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/broker/shares.ts": {
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/broker/spawn-dispatch.ts": {
+      "complexity_critical": {
+        "count": 3
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/broker/store/memory/driver.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 6
+      },
+      "crap_high": {
+        "count": 4
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "src/broker/store/migrate-cli.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "src/broker/store/migrate.ts": {
+      "complexity_critical": {
+        "count": 8
+      },
+      "crap_critical": {
+        "count": 9
+      },
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "src/broker/store/query-cli.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/broker/store/sqlite/conversations.ts": {
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "src/broker/store/sqlite/costs.ts": {
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "src/broker/store/sqlite/events.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/store/sqlite/messages.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/broker/store/sqlite/migrate-messages.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      }
+    },
+    "src/broker/store/sqlite/schema.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/broker/store/sqlite/tasks.ts": {
+      "crap_critical": {
+        "count": 3
+      }
+    },
+    "src/broker/store/sqlite/transcripts.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/broker/termination-log.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "src/broker/voice-stream.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/claude-agent-host/broker-connection.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 5
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "src/claude-agent-host/cleanup.ts": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/claude-agent-host/cli-args.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/claude-agent-host/dialect/from-claude.ts": {
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "src/claude-agent-host/execute-control.ts": {
+      "crap_critical": {
+        "count": 2
+      }
+    },
+    "src/claude-agent-host/file-editor-handler.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "src/claude-agent-host/file-editor.ts": {
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/claude-agent-host/headless-lifecycle.ts": {
+      "complexity_critical": {
+        "count": 3
+      },
+      "crap_critical": {
+        "count": 5
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "src/claude-agent-host/hook-processor.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/claude-agent-host/index.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "src/claude-agent-host/launch-events.ts": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "src/claude-agent-host/local-server.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/claude-agent-host/mcp-callbacks.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/claude-agent-host/mcp-channel.ts": {
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 7
+      }
+    },
+    "src/claude-agent-host/mcp-tools/conversations.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 5
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/claude-agent-host/mcp-tools/dialog.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      }
+    },
+    "src/claude-agent-host/mcp-tools/hosts.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/claude-agent-host/mcp-tools/identity.ts": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "src/claude-agent-host/mcp-tools/lib/broker-rpc.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/claude-agent-host/mcp-tools/project-board.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      }
+    },
+    "src/claude-agent-host/mcp-tools/recap.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/claude-agent-host/mcp-tools/search.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/claude-agent-host/mcp-tools/spawn.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/claude-agent-host/osc52-parser.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/claude-agent-host/permission-rules.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/claude-agent-host/project-tasks.ts": {
+      "crap_high": {
+        "count": 5
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/claude-agent-host/pty-spawn.ts": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/claude-agent-host/session-transition.ts": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "src/claude-agent-host/settings-merge.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/claude-agent-host/stream-backend.ts": {
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "src/claude-agent-host/stream-handlers.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 10
+      },
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "src/claude-agent-host/stream-replay.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/claude-agent-host/task-watcher.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "src/claude-agent-host/transcript-manager.ts": {
+      "complexity_critical": {
+        "count": 5
+      },
+      "crap_critical": {
+        "count": 6
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 5
+      }
+    },
+    "src/claude-agent-host/transcript-watcher.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/claude-agent-host/ws-client.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/daemon-agent-host/broker-bridge.ts": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "src/daemon-agent-host/cli-args.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/daemon-agent-host/session-observer.ts": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "src/daemon-agent-host/transcript-bridge.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "src/opencode-agent-host/dialect/from-opencode-ndjson.ts": {
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 6
+      }
+    },
+    "src/opencode-agent-host/index.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "src/opencode-agent-host/ndjson-parser.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/sentinel/acp-recipes.ts": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/sentinel/index.ts": {
+      "complexity_critical": {
+        "count": 7
+      },
+      "crap_critical": {
+        "count": 10
+      },
+      "crap_high": {
+        "count": 8
+      },
+      "crap_moderate": {
+        "count": 15
+      }
+    },
+    "src/sentinel/preflight.test.ts": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/sentinel/preflight.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/shared/bun-version.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/shared/cc-daemon/attach.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/shared/cc-daemon/fake-daemon.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/shared/cc-daemon/frame.ts": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/shared/dialog-schema.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 2
+      }
+    },
+    "src/shared/diff.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/shared/host-transport/index.ts": {
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 5
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/shared/mime-detect.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/shared/opencode-config.test.ts": {
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/shared/opencode-config.ts": {
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "src/shared/path-guard.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/shared/project-uri.ts": {
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/shared/resolve-script.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/shared/spawn-defaults.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      }
+    },
+    "src/shared/task-extract.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "src/shared/tool-vocab.ts": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "src/shared/transcript-filter.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/shared/update-check.ts": {
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/public/sw.js": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/src/app.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/action-fab.tsx": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "web/src/components/auth-gate.tsx": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/src/components/codemirror-setup.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/command-palette/command-palette.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/command-palette/command-results.tsx": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "web/src/components/command-palette/conversation-results.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/command-palette/footer-hints.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "web/src/components/command-palette/key-handlers.ts": {
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/src/components/command-palette/mode-detect.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "web/src/components/command-palette/spawn-results.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/command-palette/use-command-mode.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/command-palette/use-command-palette.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/command-palette/use-conversation-mode.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/command-palette/use-file-mode.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/command-palette/use-spawn-mode.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/src/components/conversation-detail.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/conversation-detail/conversation-banners.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "web/src/components/conversation-detail/conversation-header.tsx": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/conversation-detail/conversation-tabs.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/conversation-detail/header-expanded-panel.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/conversation-detail/header-status-row.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/conversation-detail/project-action-panel.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/conversation-detail/tab-content-panels.tsx": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/debug-console.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/diag-view.tsx": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/dialog/dialog-modal.tsx": {
+      "complexity_high": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "web/src/components/dialog/dialog-renderer.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/efficiency-widget.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/error-boundary.tsx": {
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/src/components/event-detail.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/file-editor.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/gateway-manager.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/header.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/health-widget.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/inline-terminal.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/input-editor/autocomplete-shared.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/input-editor/backends/codemirror/autocomplete.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/src/components/input-editor/backends/codemirror/inner.tsx": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/json-highlight.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/json-inspector.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/json-stream-panel.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/launch-config-fields.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "web/src/components/launch-monitor.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/launch-profiles/editor-mapping.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      }
+    },
+    "web/src/components/launch-profiles/launch-profile-commands.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/launch-profiles/manager-editor.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/launch-profiles/manager-list.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/launch-profiles/manager.tsx": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/markdown-input.tsx": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/markdown-input/handle-key-down.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/markdown-input/use-autocomplete.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/markdown.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/nerd-connections-tab.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "web/src/components/nerd-modal.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "web/src/components/notification-bell.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/notification-panel.tsx": {
+      "crap_critical": {
+        "count": 3
+      }
+    },
+    "web/src/components/project-board.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "web/src/components/project-list.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 5
+      }
+    },
+    "web/src/components/project-list/conversation-context-menu.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/project-list/conversation-item.tsx": {
+      "complexity_critical": {
+        "count": 5
+      },
+      "crap_critical": {
+        "count": 6
+      },
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "web/src/components/project-list/conversation-sorting.tsx": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/src/components/project-list/project-node.tsx": {
+      "crap_critical": {
+        "count": 2
+      }
+    },
+    "web/src/components/project-settings-editor.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/src/components/quick-task-modal.tsx": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "web/src/components/recap-jobs/recap-jobs-widget.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/recap/public-recap-view.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/recap/recap-viewer.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/revive-dialog.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/search-index-manager.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/src/components/sentinel-manager.tsx": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/settings-page.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/src/components/settings/key-capture.tsx": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/settings/manage-chat-connections-dialog.tsx": {
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/settings/manage-project-links-dialog.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/settings/model-picker.tsx": {
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "web/src/components/settings/notifications-section.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/settings/permission-rules-editor.tsx": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/shared-conversation-view.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/shared-view.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/spawn-dialog.tsx": {
+      "complexity_critical": {
+        "count": 4
+      },
+      "crap_critical": {
+        "count": 4
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/src/components/subagent-view.tsx": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/src/components/task-batch-selector.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "web/src/components/tasks-view.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/toast.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/transcript-search.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "web/src/components/transcript/agent-views.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/transcript/boot-timeline.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/transcript/conversation-tag.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/transcript/grep-results.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "complexity_moderate": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "web/src/components/transcript/group-view.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/transcript/grouping.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "web/src/components/transcript/grouping/parsers.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/transcript/grouping/process-entry.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "complexity_high": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "web/src/components/transcript/parse-entries.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "web/src/components/transcript/shared.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/transcript/tool-cases-agent.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/transcript/tool-cases-core.tsx": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/transcript/tool-cases-mcp-spawn.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/transcript/tool-cases-mcp.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/transcript/tool-cases-misc.tsx": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/transcript/tool-cases-search.tsx": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/transcript/tool-cases-tasks.tsx": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/src/components/transcript/tool-dispatch.tsx": {
+      "complexity_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/transcript/tool-line.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/transcript/tool-renderers.tsx": {
+      "complexity_moderate": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/transcript/transcript-view.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/ui/sheet.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/usage-bar.tsx": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/user-admin.tsx": {
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "web/src/components/voice-fab.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "web/src/components/voice-key.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/voice-overlay.tsx": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/web-terminal.tsx": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "web/src/hooks/use-build-update.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/src/hooks/use-conversations.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "web/src/hooks/use-global-commands.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "web/src/hooks/use-launch-channel.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/hooks/use-launch-progress.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/hooks/use-swipe-to-open.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/hooks/use-sync-effects.ts": {
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/src/hooks/use-voice-recording.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/hooks/use-websocket-handlers.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 5
+      },
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 7
+      }
+    },
+    "web/src/hooks/use-websocket.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "web/src/lib/chunk-load-log.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/lib/commands.ts": {
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/lib/key-layers.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "complexity_high": {
+        "count": 1
+      },
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/lib/legacy-to-canonical.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "web/src/lib/themes.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/lib/types.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/main.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/vite.config.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    }
+  },
+  "runtime_coverage_findings": [],
+  "target_keys": [
+    "web/src/components/launch-profiles/editor-mapping.ts:untested risk",
+    "src/broker/backends/index.ts:dead code",
+    "web/src/components/revive-dialog.tsx:high impact",
+    "src/broker/conversation-store/transcript-handlers/assistant-entry.ts:untested risk",
+    "src/broker/connection-registry.ts:dead code",
+    "src/broker/backends/chat-api.ts:complexity",
+    "src/shared/tool-vocab.ts:dead code",
+    "src/broker/recap/__tests__/synthetic-fixtures.ts:dead code",
+    "src/broker/store/migrate-cli.ts:complexity",
+    "web/src/components/markdown-input/use-autocomplete.ts:high impact",
+    "web/src/components/launch-profiles/profile-dropdown.tsx:dead code",
+    "src/shared/spawn-defaults.ts:high impact",
+    "src/acp-agent-host/dialect/from-acp-generic.ts:high impact",
+    "src/broker/routes/conversations.ts:complexity",
+    "web/src/components/spawn-dialog.tsx:complexity",
+    "web/src/hooks/use-launch-progress.ts:high impact",
+    "web/src/components/transcript/agent-views.tsx:complexity",
+    "src/broker/conversation-store.ts:complexity",
+    "web/src/components/project-list/project-node.tsx:untested risk",
+    "src/broker/spawn-dispatch.ts:complexity",
+    "web/src/components/command-palette/use-conversation-mode.ts:untested risk",
+    "src/shared/transcript-filter.ts:high impact",
+    "src/broker/recap/shared/transcript-extract.ts:high impact",
+    "web/src/components/launch-config-fields.tsx:complexity",
+    "src/broker/handlers/inter-conversation.ts:complexity",
+    "src/broker/store/memory/driver.ts:high impact",
+    "src/broker/handlers/conversation-lifecycle.ts:complexity",
+    "web/src/lib/legacy-to-canonical.ts:high impact",
+    "web/src/lib/task-scoring.ts:high impact",
+    "src/broker/routes/stats.ts:untested risk",
+    "web/src/components/transcript/grouping.tsx:complexity",
+    "web/src/components/command-palette/command-palette.tsx:complexity",
+    "src/broker/conversation-store/transcript-handlers/user-entry.ts:complexity",
+    "web/src/components/transcript/grouping/process-entry.ts:complexity",
+    "src/claude-agent-host/cli-args.ts:complexity",
+    "web/src/components/transcript/tool-cases-search.tsx:complexity",
+    "web/src/components/transcript/tool-cases-core.tsx:untested risk",
+    "web/src/components/transcript/system-line.tsx:complexity",
+    "src/broker/conversation-store/add-event.ts:complexity",
+    "src/broker/conversation-store/transcript-handlers/mention-notify.ts:untested risk",
+    "src/claude-agent-host/transcript-manager.ts:high impact",
+    "src/broker/cli/parse-args.ts:high impact",
+    "src/broker/conversation-store/project-links.ts:untested risk",
+    "src/broker/handlers/recap.ts:untested risk",
+    "src/broker/termination-log.ts:complexity",
+    "web/src/components/transcript/tool-cases-tasks.tsx:untested risk",
+    "web/src/components/launch-profiles/draft.ts:high impact",
+    "src/broker/auth-routes.ts:complexity",
+    "src/broker/auth.ts:complexity",
+    "web/src/components/project-settings-editor.tsx:complexity",
+    "web/src/components/command-palette/conversation-results.tsx:untested risk",
+    "web/src/components/recap-jobs/recap-submenu.tsx:circular dependency",
+    "web/src/hooks/use-websocket.ts:complexity",
+    "web/src/lib/key-layers.ts:complexity",
+    "web/src/components/project-list/conversation-item.tsx:complexity",
+    "web/src/components/transcript/parse-entries.ts:complexity",
+    "src/claude-agent-host/hook-processor.ts:complexity",
+    "src/broker/handlers/boot-lifecycle.ts:complexity",
+    "src/broker/cli/user-commands.ts:untested risk",
+    "src/broker/permissions.ts:complexity",
+    "src/opencode-agent-host/dialect/from-opencode-ndjson.ts:untested risk",
+    "src/broker/conversation-store/parsers.ts:untested risk",
+    "src/broker/recap/shared/json-parse.ts:high impact",
+    "src/claude-agent-host/permission-rules.ts:high impact",
+    "web/src/components/subagent-view.tsx:untested risk",
+    "src/claude-agent-host/local-server.ts:complexity",
+    "src/broker/handlers/channel.ts:complexity",
+    "web/src/components/recap-jobs/recap-custom-range-dialog.tsx:circular dependency",
+    "web/src/components/transcript/tool-cases-misc.tsx:untested risk",
+    "src/claude-agent-host/mcp-tools/dialog.ts:complexity",
+    "web/src/components/project-list.tsx:complexity",
+    "web/src/components/json-stream-panel.tsx:untested risk",
+    "web/src/hooks/use-build-update.ts:untested risk",
+    "web/src/components/voice-fab.tsx:complexity",
+    "web/src/components/command-palette/use-file-mode.ts:untested risk",
+    "web/src/components/markdown-input/handle-key-down.ts:untested risk",
+    "src/broker/handlers/files.ts:untested risk",
+    "web/src/components/transcript/transcript-view.tsx:complexity",
+    "src/broker/cli/termination-commands.ts:complexity",
+    "src/shared/dialog-schema.ts:complexity",
+    "src/broker/store/sqlite/conversations.ts:untested risk",
+    "src/broker/store/sqlite/tasks.ts:untested risk",
+    "web/src/components/settings/notifications-section.tsx:untested risk",
+    "src/claude-agent-host/stream-handlers.ts:untested risk",
+    "src/claude-agent-host/mcp-tools/project-board.ts:complexity",
+    "src/broker/conversation-store/event-handlers/post-tool-use.ts:untested risk",
+    "src/claude-agent-host/mcp-tools/conversations.ts:complexity",
+    "src/claude-agent-host/headless-lifecycle.ts:complexity",
+    "src/broker/index.ts:complexity",
+    "web/src/components/event-detail.tsx:complexity",
+    "src/shared/opencode-config.test.ts:untested risk",
+    "src/opencode-agent-host/ndjson-parser.ts:complexity",
+    "web/public/sw.js:untested risk",
+    "web/src/components/conversation-detail/conversation-banners.tsx:complexity",
+    "src/claude-agent-host/ws-client.ts:complexity",
+    "web/src/components/transcript/grep-results.tsx:complexity",
+    "src/claude-agent-host/osc52-parser.ts:complexity",
+    "scripts/acp-failures.ts:untested risk",
+    "src/broker/store/migrate.ts:complexity",
+    "src/broker/conversation-store/channel-registry.ts:complexity",
+    "src/sentinel/index.ts:complexity",
+    "web/src/components/command-palette/footer-hints.tsx:complexity",
+    "src/acp-agent-host/translator.ts:complexity"
+  ]
+}
