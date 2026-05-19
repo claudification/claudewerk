@@ -1,11 +1,12 @@
 /**
  * Tier 1 unit tests for `cli-args` -- daemon-agent-host env-var resolution.
- * Covers the CLAUDWERK_ >> RCLAUDE_ precedence covenant and the defaults.
- * The missing-required-var paths call `process.exit(1)` and are not unit-tested
- * here (they are two trivial guard clauses).
+ * Covers the CLAUDWERK_ >> RCLAUDE_ precedence covenant, the defaults, and the
+ * launch-mode parsing. The precedence tests drive `parseDaemonHostConfig()`
+ * against `process.env`; the mode + required-var tests drive the pure
+ * `resolveDaemonHostConfig(env)` so error paths are checked without exiting.
  */
-import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { parseDaemonHostConfig } from './cli-args'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { parseDaemonHostConfig, resolveDaemonHostConfig } from './cli-args'
 
 /** Env keys this module reads -- saved + restored around every test. */
 const KEYS = [
@@ -73,4 +74,90 @@ test('cwd uses RCLAUDE_CWD when set, else process.cwd()', () => {
   expect(parseDaemonHostConfig().cwd).toBe('/tmp/worker-cwd')
   delete process.env.RCLAUDE_CWD
   expect(parseDaemonHostConfig().cwd).toBe(process.cwd())
+})
+
+// ---------------------------------------------------------------------------
+// resolveDaemonHostConfig -- the pure resolver: launch mode + required vars.
+// ---------------------------------------------------------------------------
+
+/** A minimal env that resolves successfully in `new` mode. */
+function baseEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+  return {
+    RCLAUDE_CONVERSATION_ID: 'conv_test',
+    CLAUDWERK_DAEMON_SHORT: 'aaaa1111',
+    ...extra,
+  }
+}
+
+/** Unwrap a successful result or fail the test loudly. */
+function expectOk(result: ReturnType<typeof resolveDaemonHostConfig>) {
+  if (!result.ok) throw new Error(`expected ok config, got error: ${result.error}`)
+  return result.config
+}
+
+describe('resolveDaemonHostConfig -- launch mode', () => {
+  test('mode defaults to new when CLAUDWERK_DAEMON_MODE is unset', () => {
+    const cfg = expectOk(resolveDaemonHostConfig(baseEnv()))
+    expect(cfg.mode).toBe('new')
+    expect(cfg.resumeSessionId).toBeUndefined()
+  })
+
+  test('parses mode=attach', () => {
+    const cfg = expectOk(resolveDaemonHostConfig(baseEnv({ CLAUDWERK_DAEMON_MODE: 'attach' })))
+    expect(cfg.mode).toBe('attach')
+  })
+
+  test('parses mode=resume and carries the resume session id', () => {
+    const cfg = expectOk(
+      resolveDaemonHostConfig(
+        baseEnv({ CLAUDWERK_DAEMON_MODE: 'resume', CLAUDWERK_DAEMON_RESUME_SESSION: 'sess-to-resume' }),
+      ),
+    )
+    expect(cfg.mode).toBe('resume')
+    expect(cfg.resumeSessionId).toBe('sess-to-resume')
+  })
+
+  test('rejects an unknown mode value', () => {
+    const result = resolveDaemonHostConfig(baseEnv({ CLAUDWERK_DAEMON_MODE: 'bogus' }))
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toMatch(/new\|resume\|attach/)
+  })
+
+  test('resume mode requires CLAUDWERK_DAEMON_RESUME_SESSION', () => {
+    const result = resolveDaemonHostConfig(baseEnv({ CLAUDWERK_DAEMON_MODE: 'resume' }))
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toMatch(/CLAUDWERK_DAEMON_RESUME_SESSION/)
+  })
+
+  test('resumeSessionId is dropped for new/attach even if the env var is set', () => {
+    const cfg = expectOk(
+      resolveDaemonHostConfig(baseEnv({ CLAUDWERK_DAEMON_MODE: 'attach', CLAUDWERK_DAEMON_RESUME_SESSION: 'stray' })),
+    )
+    expect(cfg.resumeSessionId).toBeUndefined()
+  })
+})
+
+describe('resolveDaemonHostConfig -- required vars', () => {
+  test('CLAUDWERK_DAEMON_SHORT is required in attach mode', () => {
+    const env = baseEnv({ CLAUDWERK_DAEMON_MODE: 'attach' })
+    delete env.CLAUDWERK_DAEMON_SHORT
+    const result = resolveDaemonHostConfig(env)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toMatch(/CLAUDWERK_DAEMON_SHORT/)
+  })
+
+  test('CLAUDWERK_DAEMON_SHORT is required in new mode too', () => {
+    const env = baseEnv()
+    delete env.CLAUDWERK_DAEMON_SHORT
+    const result = resolveDaemonHostConfig(env)
+    expect(result.ok).toBe(false)
+  })
+
+  test('RCLAUDE_CONVERSATION_ID is required', () => {
+    const env = baseEnv()
+    delete env.RCLAUDE_CONVERSATION_ID
+    const result = resolveDaemonHostConfig(env)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toMatch(/RCLAUDE_CONVERSATION_ID/)
+  })
 })

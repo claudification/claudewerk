@@ -1554,6 +1554,11 @@
         "count": 1
       }
     },
+    "src/daemon-agent-host/attach-retry.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
     "src/daemon-agent-host/broker-bridge.ts": {
       "crap_critical": {
         "count": 1
@@ -1564,9 +1569,17 @@
         "count": 1
       }
     },
-    "src/daemon-agent-host/session-observer.ts": {
-      "crap_critical": {
+    "src/daemon-agent-host/index.ts": {
+      "crap_moderate": {
         "count": 1
+      }
+    },
+    "src/daemon-agent-host/session-observer.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 4
       }
     },
     "src/daemon-agent-host/transcript-bridge.ts": {
@@ -1574,9 +1587,6 @@
         "count": 1
       },
       "crap_critical": {
-        "count": 1
-      },
-      "crap_moderate": {
         "count": 1
       }
     },

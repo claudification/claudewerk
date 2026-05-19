@@ -27,10 +27,27 @@
 import { createConnection, type Socket } from 'node:net'
 import { encodeFrame, ProtocolMismatchError, parseJsonObject, truncate } from './client'
 import { resize } from './ops'
-import type { AttachAck, AttachCaps, DaemonErr } from './types'
+import type { AttachAck, AttachCaps, DaemonErr, DaemonErrorCode } from './types'
 
 /** Default attacher caps when the caller does not supply its own. */
 const DEFAULT_CAPS: AttachCaps = { terminal: 'xterm-256color', mux: null, ssh: false }
+
+/**
+ * Thrown when the daemon refuses an `attach` with a structured `{ok:false}`
+ * frame. Carries the daemon `code` (ENOJOB / ESTARTING / EKICKED / ...) so a
+ * caller -- `attachWithRetry` in particular -- can branch on it cleanly rather
+ * than regex-matching the message. `EPROTO` is NOT surfaced here: it becomes a
+ * `ProtocolMismatchError` (never retried).
+ */
+export class DaemonAttachError extends Error {
+  /** Daemon error code from the rejection frame, if the daemon supplied one. */
+  readonly code: DaemonErrorCode | undefined
+  constructor(message: string, code: DaemonErrorCode | undefined) {
+    super(message)
+    this.name = 'DaemonAttachError'
+    this.code = code
+  }
+}
 
 /** Why an attach session ended -- reported to `onClose`. */
 export type AttachCloseReason =
@@ -81,11 +98,15 @@ function makeAttachId(): string {
   return `att_${Math.random().toString(36).slice(2, 10)}`
 }
 
-/** Build an Error from a daemon rejection frame -- ProtocolMismatchError on EPROTO. */
+/**
+ * Build an Error from a daemon rejection frame. `EPROTO` becomes a
+ * `ProtocolMismatchError` (never retried); every other code becomes a
+ * `DaemonAttachError` carrying the `code` so the retry layer can branch on it.
+ */
 function rejectionError(frame: DaemonErr, short: string): Error {
   if (frame.code === 'EPROTO') return new ProtocolMismatchError(frame.error)
   const suffix = frame.code ? ` (${frame.code})` : ''
-  return new Error(`cc-daemon: attach ${short} rejected: ${frame.error}${suffix}`)
+  return new DaemonAttachError(`cc-daemon: attach ${short} rejected: ${frame.error}${suffix}`, frame.code)
 }
 
 /** Internal mutable state shared by the connection's event handlers. */

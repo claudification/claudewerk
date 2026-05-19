@@ -12,17 +12,19 @@
  *
  * Because the daemon -- not claudewerk -- owns the worker process, claudewerk's
  * SessionStart hook never fires. The worker's `ccSessionId` is therefore
- * DERIVED, not observed via a hook: `session-observer.ts` polls the daemon's
- * `list` op and reads `JobRecord.sessionId` for our worker short.
+ * DERIVED, not observed via a hook: `session-observer.ts` reads it from the
+ * daemon `list` op (the initial id) and from the project transcript directory
+ * (a `/clear` rotation -- the daemon's `JobRecord.sessionId` never rotates).
  *
  * Lifecycle:
- *   1. parseDaemonHostConfig()      -- env -> config
+ *   1. parseDaemonHostConfig()      -- env -> config (mode: new|resume|attach)
  *   2. resolveControlSocket()       -- locate the daemon control.sock
  *   3. createHostTransport()        -- connect to the broker, emit boot events
- *   4. observeDaemonSession()       -- poll for the worker's ccSessionId
- *   5. first ccSessionId            -- attach the PTY, wire the bridges
+ *   4. observeDaemonSession()       -- derive the worker's ccSessionId
+ *   5. first ccSessionId            -- attachWithRetry the PTY, wire the bridges
  *   6. ccSessionId rotates (/clear) -- conversation_reset, re-point transcript
- *   7. worker gone / SIGTERM        -- close everything, exit
+ *   7. attach socket drops          -- probe `has`; re-attach if the worker lives
+ *   8. worker gone / SIGTERM        -- close everything, exit
  *
  * The transcript watch, dialect translation and broker transport are reused
  * verbatim from claude-agent-host -- the daemon worker IS `claude`, so its
@@ -35,6 +37,8 @@
  *   CLAUDWERK_SECRET / RCLAUDE_SECRET   broker auth token
  *   RCLAUDE_CONVERSATION_ID             stable conversation id (broker key)
  *   CLAUDWERK_DAEMON_SHORT              the 8-hex daemon worker short id
+ *   CLAUDWERK_DAEMON_MODE               new | resume | attach (default: new)
+ *   CLAUDWERK_DAEMON_RESUME_SESSION     resume input id (mode=resume only)
  *   RCLAUDE_CWD                         worker cwd (transcript-path slug source)
  */
 
@@ -42,7 +46,8 @@ import { checkBunVersion } from '../shared/bun-version'
 
 checkBunVersion()
 
-import { type AttachHandle, attach } from '../shared/cc-daemon/attach'
+import type { AttachCloseReason, AttachHandle } from '../shared/cc-daemon/attach'
+import { has } from '../shared/cc-daemon/ops'
 import { resolveControlSocket } from '../shared/cc-daemon/socket-path'
 import { createHostTransport, type HostTransport } from '../shared/host-transport'
 import { cwdToProjectUri } from '../shared/project-uri'
@@ -57,6 +62,7 @@ import {
   type ConversationReset,
 } from '../shared/protocol'
 import { BUILD_VERSION } from '../shared/version'
+import { attachWithRetry } from './attach-retry'
 import { type BrokerBridge, createBrokerBridge } from './broker-bridge'
 import { type DaemonHostConfig, parseDaemonHostConfig } from './cli-args'
 import { type DaemonSessionObserver, observeDaemonSession } from './session-observer'
@@ -108,7 +114,11 @@ function buildMeta(cfg: DaemonHostConfig, ccSessionId: string): ConversationMeta
 
 async function main(): Promise<void> {
   const cfg = parseDaemonHostConfig()
-  log(`starting conv=${cfg.conversationId.slice(0, 8)} short=${cfg.daemonShort} cwd=${cfg.cwd} broker=${cfg.brokerUrl}`)
+  const resumeNote = cfg.resumeSessionId ? ` resumeFrom=${cfg.resumeSessionId.slice(0, 8)}` : ''
+  log(
+    `starting conv=${cfg.conversationId.slice(0, 8)} short=${cfg.daemonShort} mode=${cfg.mode}${resumeNote} ` +
+      `cwd=${cfg.cwd} broker=${cfg.brokerUrl}`,
+  )
 
   const controlSock = resolveControlSocket()
   if (!controlSock) {
@@ -124,6 +134,8 @@ async function main(): Promise<void> {
   let transcriptBridge: TranscriptBridge | null = null
   let observer: DaemonSessionObserver | null = null
   let shuttingDown = false
+  /** True while a socket-drop re-attach is in flight -- guards re-entrancy. */
+  let reattaching = false
 
   // --- broker transport (created up front so boot events have a channel) -----
   const transport: HostTransport = createHostTransport({
@@ -206,27 +218,76 @@ async function main(): Promise<void> {
       .catch((err: unknown) => debug(`re-watch failed: ${(err as Error).message}`))
   }
 
+  /**
+   * Open (or re-open) the attach socket to the daemon worker. `attachWithRetry`
+   * absorbs the transient ESTARTING/ENOJOB boot race; on success the new handle
+   * is recorded and handed to the bridge. Used by both first-time `bootstrap()`
+   * and the socket-drop re-attach path.
+   */
+  async function doAttach(): Promise<AttachHandle> {
+    const handle = await attachWithRetry(
+      controlSock as string,
+      cfg.daemonShort,
+      {
+        cols: DEFAULT_COLS,
+        rows: DEFAULT_ROWS,
+        onData: pty => bridge?.feedPty(pty),
+        onClose: handleAttachClose,
+        onError: err => debug(`attach error: ${err.message}`),
+      },
+      {
+        onRetry: (attempt, maxAttempts, code) =>
+          emitBoot('awaiting_init', `attach retry ${attempt}/${maxAttempts} (${code ?? 'transient'})`),
+      },
+    )
+    attachHandle = handle
+    bridge?.setAttachHandle(handle)
+    debug(`attached: short=${cfg.daemonShort} state=${handle.ack.state} via=${handle.ack.via}`)
+    return handle
+  }
+
+  /**
+   * Attach socket closed. `client-closed` is our own shutdown -- ignore it.
+   * Anything else: the socket dropped, but the WORKER may still be alive (a
+   * daemon hiccup, a transient network blip). Probe `has` before deciding --
+   * re-attach a live worker rather than ending the conversation.
+   */
+  function handleAttachClose(reason: AttachCloseReason): void {
+    if (reason === 'client-closed' || shuttingDown || reattaching) return
+    reattaching = true
+    log(`attach socket dropped: reason=${reason} short=${cfg.daemonShort} -- probing worker liveness`)
+    emitBoot('awaiting_init', `attach lost (${reason}); probing worker`)
+    reattachAfterDrop(reason)
+      .catch((err: unknown) => {
+        log(`re-attach failed: ${(err as Error).message}`)
+        shutdown('daemon-job-gone', true)
+      })
+      .finally(() => {
+        reattaching = false
+      })
+  }
+
+  /** Probe the worker after an attach drop; re-attach if alive, else end. */
+  async function reattachAfterDrop(reason: AttachCloseReason): Promise<void> {
+    const probe = await has(controlSock as string, cfg.daemonShort)
+    const alive = probe.ok === true && probe.alive === true
+    const present = probe.ok === true && probe.present === true
+    if (!alive || !present) {
+      log(`worker gone after attach drop: short=${cfg.daemonShort} alive=${alive} present=${present} reason=${reason}`)
+      shutdown('daemon-job-gone', true)
+      return
+    }
+    log(`worker still alive after attach drop -- re-attaching: short=${cfg.daemonShort} reason=${reason}`)
+    await doAttach()
+    emitBoot('conversation_ready', `re-attached after socket drop (${reason})`)
+  }
+
   /** One-time setup after the worker's first ccSessionId is known. */
   async function bootstrap(firstSessionId: string): Promise<void> {
-    attachHandle = await attach(controlSock as string, cfg.daemonShort, {
-      cols: DEFAULT_COLS,
-      rows: DEFAULT_ROWS,
-      onData: pty => bridge?.feedPty(pty),
-      onClose: reason => {
-        // `client-closed` is our own shutdown; anything else means the worker
-        // PTY went away (worker exited, daemon died, kicked).
-        if (reason !== 'client-closed' && !shuttingDown) {
-          log(`attach closed: ${reason}`)
-          shutdown('daemon-job-gone', true)
-        }
-      },
-      onError: err => debug(`attach error: ${err.message}`),
-    })
-    debug(`attached: state=${attachHandle.ack.state} via=${attachHandle.ack.via}`)
-
+    const handle = await doAttach()
     bridge = createBrokerBridge({
       transport,
-      attachHandle,
+      attachHandle: handle,
       conversationId: cfg.conversationId,
       debug,
     })
@@ -243,6 +304,8 @@ async function main(): Promise<void> {
   observer = observeDaemonSession({
     controlSock,
     daemonShort: cfg.daemonShort,
+    mode: cfg.mode,
+    cwd: cfg.cwd,
     onSessionId,
     onGone: () => {
       if (!shuttingDown) {

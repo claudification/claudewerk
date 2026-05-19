@@ -7,9 +7,11 @@
  *   - Broker terminal input / resize messages -> worker PTY via the `AttachHandle`
  *     methods (`writeInput`, `resize`), routed through `handleMessage()`.
  *
- * The bridge owns NO state beyond a `stopped` flag. Lifecycle of both the
- * `HostTransport` and the `AttachHandle` is managed by the caller (index.ts).
- * Stopping the bridge is idempotent and does NOT close the attach handle.
+ * The bridge owns NO state beyond a `stopped` flag and the CURRENT attach
+ * handle. Lifecycle of both the `HostTransport` and the `AttachHandle` is
+ * managed by the caller (index.ts). On a socket-drop re-attach the caller
+ * swaps in the new handle via `setAttachHandle()`. Stopping the bridge is
+ * idempotent and does NOT close the attach handle.
  */
 
 import type { AttachHandle } from '../shared/cc-daemon/attach'
@@ -35,12 +37,15 @@ export interface BrokerBridge {
   feedPty(pty: Buffer): void
   /** Route one inbound broker message. Returns true if it was consumed (a terminal/input message). */
   handleMessage(msg: BrokerMessage): boolean
+  /** Swap in a new attach handle after a socket-drop re-attach. */
+  setAttachHandle(handle: AttachHandle): void
   /** Stop the bridge. Idempotent. */
   stop(): void
 }
 
 export function createBrokerBridge(opts: BrokerBridgeOptions): BrokerBridge {
-  const { transport, attachHandle, conversationId, debug } = opts
+  const { transport, conversationId, debug } = opts
+  let attachHandle = opts.attachHandle
   let stopped = false
 
   function feedPty(pty: Buffer): void {
@@ -115,9 +120,14 @@ export function createBrokerBridge(opts: BrokerBridgeOptions): BrokerBridge {
     }
   }
 
+  function setAttachHandle(handle: AttachHandle): void {
+    attachHandle = handle
+    debug?.(`broker-bridge: attach handle swapped (conversationId=${conversationId})`)
+  }
+
   function stop(): void {
     stopped = true
   }
 
-  return { feedPty, handleMessage, stop }
+  return { feedPty, handleMessage, setAttachHandle, stop }
 }

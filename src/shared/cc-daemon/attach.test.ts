@@ -4,7 +4,7 @@
  * wire path: newline-JSON ack frame, then raw PTY bytes on the same connection.
  */
 import { afterEach, describe, expect, test } from 'bun:test'
-import { type AttachCloseReason, attach } from './attach'
+import { type AttachCloseReason, attach, DaemonAttachError } from './attach'
 import { ProtocolMismatchError } from './client'
 import { type FakeConn, type FakeDaemon, startFakeDaemon } from './fake-daemon'
 
@@ -101,6 +101,19 @@ describe('attach', () => {
       if (req.op === 'attach') conn.send({ ok: false, error: 'no such job', code: 'ENOJOB' })
     })
     expect(attach(daemon.sockPath, 'deadbeef', { cols: 80, rows: 24, onData: () => {} })).rejects.toThrow(/ENOJOB/)
+  })
+
+  test('a daemon refusal rejects as DaemonAttachError carrying the code', async () => {
+    daemon = await startFakeDaemon((req, conn) => {
+      if (req.op === 'attach') conn.send({ ok: false, error: 'worker still booting', code: 'ESTARTING' })
+    })
+    try {
+      await attach(daemon.sockPath, 'abcd1234', { cols: 80, rows: 24, onData: () => {} })
+      throw new Error('attach should have rejected')
+    } catch (err) {
+      expect(err).toBeInstanceOf(DaemonAttachError)
+      expect((err as DaemonAttachError).code).toBe('ESTARTING')
+    }
   })
 
   test('rejects an EPROTO refusal as ProtocolMismatchError', async () => {

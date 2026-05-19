@@ -297,7 +297,9 @@ permissive; callers branch on `type` and read fields defensively.
 ### Usage in claudewerk
 
 claudewerk's `session-observer.ts` uses `list` polling (not `subscribe`) to
-derive `ccSessionId` from `JobRecord.sessionId`. The sentinel's `daemon-roster.ts`
+discover the worker and derive its INITIAL `ccSessionId` from
+`JobRecord.sessionId`. It does NOT use `list` to detect a `/clear` rotation --
+that field never rotates (see Section 9). The sentinel's `daemon-roster.ts`
 uses `roster.json` + `list` for roster discovery. `subscribe` is available for
 richer per-job state tracking if needed (e.g. Phase G permission-gate observation).
 
@@ -373,7 +375,9 @@ is the designed response, not observed behavior.
 `ESTARTING` and `ENOJOB` from `attach` are transient -- the worker is booting or
 the daemon has not registered it yet. claudewerk retries with backoff up to 10
 attempts (500 ms per step), per `attachWithRetry()` in
-`src/daemon-agent-host/index.ts` (Phase B).
+`src/daemon-agent-host/attach-retry.ts`. A daemon refusal surfaces as a
+`DaemonAttachError` carrying the `code`, so the retry layer branches cleanly;
+`EPROTO` surfaces as `ProtocolMismatchError` and is never retried.
 
 `EPROTO` is NEVER retried -- a protocol mismatch requires a binary update, not a
 retry.
@@ -460,10 +464,26 @@ adoption. The stable `conversationId` survives `/clear`, daemon restarts, and
 worker respawns. The daemon `short` is the routing key within the daemon; it
 changes on each `claude --bg` dispatch (including `--resume`).
 
-`/clear` inside a daemon worker rotates `ccSessionId` -- `JobRecord.sessionId`
-changes on the next `list` poll. `session-observer.ts` detects this change and
-fires the `onSessionId` callback for the new session ID, which propagates to
-the broker through the normal `session-transition.ts` boundary path.
+### `/clear` rotation: NOT via `list`
+
+A daemon job's `JobRecord.sessionId` is fixed at dispatch and is **immutable**
+-- a `/clear` inside the worker does NOT rotate it (live-verified, 2026-05-19:
+`list` kept reporting the dispatch-time id for 40s after a `/clear`). What
+`/clear` DOES do is mint a fresh CC session and a fresh
+`~/.claude/projects/<slug>/<newId>.jsonl` transcript file.
+
+So `session-observer.ts` derives identity in two halves:
+
+- **Initial `ccSessionId`** -- from `list`'s `JobRecord.sessionId` (new/resume:
+  the just-dispatched worker has not `/clear`'d yet) or from the newest-mtime
+  JSONL in the project dir (attach: the worker may already have `/clear`'d,
+  staling the `list` id).
+- **`/clear` rotation** -- by polling the project transcript directory: when a
+  JSONL strictly newer than the current session's JSONL appears, that file's
+  name is the rotated `ccSessionId`. The observer fires `onSessionId`, which
+  propagates to the broker through the normal `session-transition.ts` boundary
+  path. The daemon `short` is the stable anchor; the rotating `ccSessionId` is
+  just the JSONL file name.
 
 ---
 
