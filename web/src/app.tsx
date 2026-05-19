@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Command, FileText, Menu } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Command, Crosshair, FileText, Menu } from 'lucide-react'
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { ActionFab } from '@/components/action-fab'
 import { AuthExpiredModal } from '@/components/auth-expired-modal'
@@ -132,6 +132,15 @@ function Dashboard() {
     }
   }, [selectedConversationId])
 
+  // When mobile sheet opens, scroll the current conversation into view
+  useEffect(() => {
+    if (!sheetOpen || !selectedConversationId) return
+    const timer = setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('locate-conversation'))
+    }, 180)
+    return () => clearTimeout(timer)
+  }, [sheetOpen, selectedConversationId])
+
   function handleSwitcherSelect(id: string) {
     const store = useConversationsStore.getState()
     store.selectConversation(id)
@@ -159,6 +168,18 @@ function Dashboard() {
               <SheetTitle>Conversations</SheetTitle>
             </SheetHeader>
             <div className="flex flex-col h-full">
+              {selectedConversationId && (
+                <div className="flex items-center justify-end px-2 pt-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => window.dispatchEvent(new CustomEvent('locate-conversation'))}
+                    className="p-1 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
+                    title="Scroll to current conversation"
+                  >
+                    <Crosshair className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
               <div className="flex-1 overflow-y-auto p-2">
                 <ProjectList />
               </div>
@@ -209,6 +230,16 @@ function Dashboard() {
         ) : (
           <div className="hidden lg:flex w-[350px] shrink-0 border border-border overflow-hidden flex-col">
             <div className="flex items-center justify-end px-1 pt-1 shrink-0">
+              {selectedConversationId && (
+                <button
+                  type="button"
+                  onClick={() => window.dispatchEvent(new CustomEvent('locate-conversation'))}
+                  className="p-1 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
+                  title="Scroll to current conversation"
+                >
+                  <Crosshair className="h-3.5 w-3.5" />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={toggleSidebar}

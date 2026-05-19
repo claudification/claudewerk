@@ -169,21 +169,38 @@ export function ProjectList() {
     })
   }
 
-  // Scroll into view + pulse when conversation is selected (e.g. via Ctrl+K)
-  // Groups stay collapsed -- the selected conversation "peeks" below the group header
-  useEffect(() => {
+  // Scroll the selected conversation into view and pulse it
+  function scrollToSelected() {
     if (!selectedConversationId) return
     setPulseConversationId(selectedConversationId)
     requestAnimationFrame(() => {
       const el = document.querySelector(`[data-conversation-id="${selectedConversationId}"]`)
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+        el.classList.remove('conversation-pulse')
+        // Force reflow so re-adding the class restarts the animation
+        void (el as HTMLElement).offsetWidth
         el.classList.add('conversation-pulse')
         setTimeout(() => el.classList.remove('conversation-pulse'), 1500)
       }
     })
-    const timer = setTimeout(() => setPulseConversationId(null), 1500)
-    return () => clearTimeout(timer)
+    setTimeout(() => setPulseConversationId(null), 1500)
+  }
+
+  // Auto-scroll + pulse when selection changes (e.g. via Ctrl+K)
+  useEffect(() => {
+    scrollToSelected()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedConversationId])
+
+  // Allow external callers (e.g. locate button, mobile sheet open) to trigger scroll+pulse
+  useEffect(() => {
+    function handleLocate() {
+      scrollToSelected()
+    }
+    window.addEventListener('locate-conversation', handleLocate)
+    return () => window.removeEventListener('locate-conversation', handleLocate)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedConversationId])
 
   // Rename group
