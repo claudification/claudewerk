@@ -66,7 +66,16 @@ export function resize(
   )
 }
 
-/** Inject `text` into a worker as a turn, without attaching. Mutating. */
+/**
+ * Inject `text` into a worker as a turn, without attaching. Mutating.
+ *
+ * SPIKED LIVE 2026-05-20 (Spike 6): the daemon accepts `reply` against both
+ * `running` (busy) and `done` workers -- `{ok:true, op:'reply'}` in both
+ * cases. No ENOREPLY boundary surfaced for these states. `failed` and
+ * `idle` boundaries are deferred -- a fresh Haiku worker quickly transitions
+ * `starting -> running -> done`, so reaching them deterministically in a
+ * short spike was not possible.
+ */
 export function reply(sockPath: string, short: string, text: string): Promise<DaemonResponse> {
   return request(sockPath, { op: 'reply', short, text })
 }
