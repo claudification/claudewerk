@@ -835,40 +835,12 @@ const ConversationItemFull = memo(function ConversationItemFull({ conversation }
           <span className="text-[9px] text-amber-400 font-bold animate-pulse">WAITING</span>
         )}
         {conversation.hasNotification && <span className="text-[9px] text-teal-400 font-bold">NOTIFY</span>}
-        {conversation.hostSentinelAlias && conversation.hostSentinelAlias !== 'default' && (
-          <span className="px-1 py-0.5 text-[8px] rounded bg-muted text-muted-foreground font-medium">
-            {conversation.hostSentinelAlias}
-          </span>
-        )}
-        <SentinelProfileBadge
-          project={conversation.project}
-          hostSentinelAlias={conversation.hostSentinelAlias}
-          launchConfig={conversation.launchConfig}
-        />
         <ConversationInfoButton conversation={conversation} visible={isSelected} />
         <ShareIndicator conversationProject={conversation.project} conversationId={conversation.id} />
         {conversation.resultText && conversation.capabilities?.includes('ad-hoc') && (
           <ResultTextModal conversation={conversation} />
         )}
         {conversation.status === 'ended' && <DismissButton conversationId={conversation.id} />}
-        {showCost &&
-          conversation.stats &&
-          (() => {
-            const { cost, exact } = getConversationCost(conversation.stats, conversation.model)
-            if (cost < 0.01) return null
-            const level = getCostLevel(cost)
-            return (
-              <span
-                className={cn(
-                  'text-[9px] font-mono ml-auto shrink-0',
-                  level === 'low' ? 'text-emerald-400/40' : cn('px-1 py-0.5 font-bold border', getCostBgColor(cost)),
-                )}
-                title={`Cost: ${formatCost(cost, exact)}`}
-              >
-                {formatCost(cost, exact)}
-              </span>
-            )
-          })()}
       </div>
       {(isRenaming || conversationName) && (
         <div className="mt-0.5 text-[10px] text-muted-foreground font-mono truncate pl-1">
@@ -1025,6 +997,59 @@ const ConversationItemFull = memo(function ConversationItemFull({ conversation }
           }
           return null
         })()}
+      {/* ── Meta footer (Design B) -- profile chip first, then host alias, cost, WT ── */}
+      {(() => {
+        const items: ReactNode[] = []
+        items.push(
+          <SentinelProfileBadge
+            key="profile"
+            project={conversation.project}
+            hostSentinelAlias={conversation.hostSentinelAlias}
+            launchConfig={conversation.launchConfig}
+          />,
+        )
+        if (conversation.hostSentinelAlias && conversation.hostSentinelAlias !== 'default')
+          items.push(
+            <span key="host" className="px-1 py-0.5 text-[8px] rounded bg-muted text-muted-foreground font-medium">
+              {conversation.hostSentinelAlias}
+            </span>,
+          )
+        if (showCost && conversation.stats) {
+          const { cost, exact } = getConversationCost(conversation.stats, conversation.model)
+          if (cost >= 0.01) {
+            const level = getCostLevel(cost)
+            items.push(
+              <span
+                key="cost"
+                className={cn(
+                  'text-[9px] font-mono',
+                  level === 'low' ? 'text-emerald-400/40' : cn('px-1 py-0.5 font-bold border', getCostBgColor(cost)),
+                )}
+                title={`Cost: ${formatCost(cost, exact)}`}
+              >
+                {formatCost(cost, exact)}
+              </span>,
+            )
+          }
+        }
+        if (conversation.adHocWorktree)
+          items.push(
+            <span key="wt" className="text-[9px] text-orange-400 font-bold">
+              WT
+            </span>,
+          )
+        if (items.length === 0) return null
+        return (
+          <div className="mt-1.5 flex items-center gap-1.5 text-[9px]">
+            {items.map((node, i) => (
+              <span key={i} className="contents">
+                {i > 0 && <span className="text-muted-foreground/30">·</span>}
+                {node}
+              </span>
+            ))}
+          </div>
+        )
+      })()}
     </ConversationItemShell>
   )
 })
@@ -1064,7 +1089,11 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
 
   // Compute identity/state values once -- consumed by meta footer (desktop) or
   // subtitle prefix (mobile).
-  const permissionBadge = formatPermissionMode(conversation.permissionMode)
+  // Permission-mode badges (B/E/A) intentionally suppressed -- they repeat
+  // across most cards and dilute the meta line. Plan mode is the exception:
+  // it materially changes behavior and stays visible.
+  const permissionBadge =
+    conversation.permissionMode === 'plan' ? formatPermissionMode(conversation.permissionMode) : null
   const planModeBadge =
     !permissionBadge && conversation.planMode
       ? { label: 'P', color: 'text-blue-400', title: 'Plan mode -- requires plan approval' }
@@ -1138,8 +1167,8 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
         ) : (
           <span
             className={cn(
-              'font-mono text-[11px] flex-1 truncate',
-              isSelected ? 'text-accent' : 'text-muted-foreground',
+              'font-mono text-[11px] font-semibold flex-1 truncate',
+              isSelected ? 'text-accent' : 'text-foreground',
             )}
           >
             {(conversation.title || conversation.agentName || '').slice(0, 24) || conversation.id.slice(0, 8)}
