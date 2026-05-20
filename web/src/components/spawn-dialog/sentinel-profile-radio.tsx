@@ -143,7 +143,11 @@ interface ProfilePillProps {
 
 function buildProfilePillTitle(profile: SentinelProfileInfo): string {
   const poolPart = profile.pool === null ? 'pinned (no pool)' : `pool: ${profile.pool}`
-  return [profile.label, poolPart, profile.authed ? 'authed' : 'not authed'].filter(Boolean).join(' - ')
+  // Auth detection is best-effort -- sentinel only looks for credential
+  // files at the configDir root. macOS keychain-stored creds yield a
+  // false-negative, so surface as "auth unknown" instead of "not authed".
+  const authPart = profile.authed ? 'authed' : 'auth unknown (run `sentinel profile auth`)'
+  return [profile.label, poolPart, authPart].filter(Boolean).join(' - ')
 }
 
 function ProfilePill({ profile, active, disabled, onClick }: ProfilePillProps) {
@@ -165,10 +169,10 @@ function ProfilePill({ profile, active, disabled, onClick }: ProfilePillProps) {
       )}
       style={active ? undefined : colorStyle}
     >
-      <User className={cn('w-3 h-3', profile.authed ? '' : 'text-destructive/70')} style={fgColor} />
+      <User className={cn('w-3 h-3', profile.authed ? '' : 'text-amber-400/80')} style={fgColor} />
       <span style={fgColor}>{profile.name}</span>
       {profile.pool === null && <span className="text-[8px] text-comment uppercase">pinned</span>}
-      {!profile.authed && <span className="text-[8px] text-destructive/70 uppercase">unauth</span>}
+      {!profile.authed && <span className="text-[8px] text-amber-400/80 uppercase">auth ?</span>}
     </button>
   )
 }

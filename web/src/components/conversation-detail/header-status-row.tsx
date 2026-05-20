@@ -1,3 +1,4 @@
+import { extractProfileFromProjectUri } from '@/components/project-list/sentinel-profile-badge'
 import type { Conversation } from '@/lib/types'
 import { cn, formatEffort, formatModel, formatPermissionMode } from '@/lib/utils'
 
@@ -39,15 +40,23 @@ export function StatusRow({ conversation, model }: { conversation: Conversation;
       {conversation.claudeVersion && (
         <span className="text-muted-foreground text-[10px]">cc/{conversation.claudeVersion}</span>
       )}
-      {conversation.claudeAuth?.email && (
-        <span className="text-cyan-400/70 text-[10px]">
-          {conversation.claudeAuth.email.split('@')[0]}
-          {conversation.claudeAuth.orgName ? ` / ${conversation.claudeAuth.orgName}` : ''}
-          {conversation.claudeAuth.subscriptionType ? (
-            <span className="text-muted-foreground ml-1">[{conversation.claudeAuth.subscriptionType}]</span>
-          ) : null}
-        </span>
-      )}
+      {conversation.claudeAuth?.email &&
+        (() => {
+          const profile = extractProfileFromProjectUri(conversation.project) ?? 'default'
+          const auth = conversation.claudeAuth
+          const tip = [
+            auth.email,
+            auth.orgName ? `org: ${auth.orgName}` : null,
+            auth.subscriptionType ? `[${auth.subscriptionType}]` : null,
+          ]
+            .filter(Boolean)
+            .join('\n')
+          return (
+            <span className="text-cyan-400/70 text-[10px] cursor-help" title={tip}>
+              {profile}
+            </span>
+          )
+        })()}
       {conversation.gitBranch && (
         <span className="text-purple-400 text-[10px]">
           <span className="text-muted-foreground">branch:</span> {conversation.gitBranch}

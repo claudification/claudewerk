@@ -66,12 +66,23 @@ function ProfileUsageSpan({ usage }: { usage?: ProfileUsageRow }) {
   )
 }
 
+/** Auth detection is best-effort: the sentinel only checks for credential
+ *  files at the configDir root. macOS stores Claude creds in the Keychain
+ *  (no file present), so a "no" verdict may actually be an authed profile.
+ *  Render the unknown state as a warning, not a hard fail, until we have a
+ *  cross-platform auth probe. */
+const AUTH_UNKNOWN_TIP =
+  "Sentinel couldn't find .credentials.json / .claude.json at the configDir root. The profile may still be authed via the OS keychain (macOS). Run `sentinel profile auth <name>` to (re-)login if needed."
+
 function ProfileBreakdownLine({ profile, usage }: { profile: SentinelProfileInfoLite; usage?: ProfileUsageRow }) {
-  const authClass = profile.authed ? 'text-active/70' : 'text-destructive/50'
+  const authClass = profile.authed ? 'text-active/70' : 'text-amber-400/70'
+  const authGlyph = profile.authed ? '✓' : '?'
   const colorStyle = profile.color ? { color: profile.color } : undefined
   return (
     <div className="flex items-center gap-2 pl-6 py-0.5 text-[10px] text-muted-foreground/80 font-mono">
-      <span className={`text-sm ${authClass}`}>{profile.authed ? '✓' : '!'}</span>
+      <span className={`text-sm ${authClass}`} title={profile.authed ? 'Credentials file present' : AUTH_UNKNOWN_TIP}>
+        {authGlyph}
+      </span>
       <span className="text-foreground" style={colorStyle}>
         {profile.name}
       </span>

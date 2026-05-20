@@ -27,7 +27,7 @@ function ProfileEntryRow({
       )}
     >
       <User
-        className={cn('w-3.5 h-3.5 shrink-0', profile.authed ? 'text-active' : 'text-destructive/60')}
+        className={cn('w-3.5 h-3.5 shrink-0', profile.authed ? 'text-active' : 'text-amber-400/80')}
         style={colorStyle}
       />
       <span className="text-xs text-foreground" style={colorStyle}>
@@ -36,7 +36,14 @@ function ProfileEntryRow({
       {profile.label && <span className="text-[9px] text-comment">{profile.label}</span>}
       {profile.pool === null && <span className="text-[9px] text-comment uppercase">pinned</span>}
       {profile.pool && <span className="text-[9px] text-comment lowercase">#{profile.pool}</span>}
-      {profile.authed === false && <span className="text-[9px] text-destructive/70 uppercase">not authed</span>}
+      {profile.authed === false && (
+        <span
+          className="text-[9px] text-amber-400/80 uppercase"
+          title="Sentinel couldn't find credentials file at configDir root; may still be authed via OS keychain"
+        >
+          auth ?
+        </span>
+      )}
     </button>
   )
 }
