@@ -186,17 +186,18 @@ const ProjectConversationGroup = memo(
                 <span className="flex-1 h-px bg-border" />
               </div>
             )}
-            {worktrees.length > 0 && worktrees.map(conversation => (
-              <ConversationContextMenu
-                key={conversation.id}
-                conversation={conversation}
-                onOpenSettings={() => setShowSettings(true)}
-              >
-                <div>
-                  <ConversationItemCompact conversation={conversation} />
-                </div>
-              </ConversationContextMenu>
-            ))}
+            {worktrees.length > 0 &&
+              worktrees.map(conversation => (
+                <ConversationContextMenu
+                  key={conversation.id}
+                  conversation={conversation}
+                  onOpenSettings={() => setShowSettings(true)}
+                >
+                  <div>
+                    <ConversationItemCompact conversation={conversation} />
+                  </div>
+                </ConversationContextMenu>
+              ))}
           </div>
         </div>
         {showSettings && <ProjectSettingsEditor project={project} onClose={() => setShowSettings(false)} />}

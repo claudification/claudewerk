@@ -423,7 +423,9 @@ export function ProjectList() {
   // from the structural shape so we don't have to subscribe to conversationsById.
   // Strip profile so a `work@default` selection still highlights the project
   // node organized under the canonical `default` URI.
-  const selectedProjectRaw = selectedConversationId ? structure.find(s => s.id === selectedConversationId)?.project : null
+  const selectedProjectRaw = selectedConversationId
+    ? structure.find(s => s.id === selectedConversationId)?.project
+    : null
   const selectedProject = selectedProjectRaw ? stripProfile(selectedProjectRaw) : null
 
   return (

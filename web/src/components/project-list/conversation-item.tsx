@@ -26,6 +26,7 @@ import {
   projectDisplayName,
   truncate,
 } from '@/lib/utils'
+import { useIsMobile } from '../input-editor/shell/use-is-mobile'
 import { Markdown } from '../markdown'
 import { ProjectSettingsButton, ProjectSettingsEditor, renderProjectIcon } from '../project-settings-editor'
 import { ShareIndicator } from '../share-panel'
@@ -1054,11 +1055,69 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
   )
 
   const displayColor = ps?.color
+  const isMobile = useIsMobile()
 
   function handleClick() {
     haptic('tap')
     selectConversation(conversation.id)
   }
+
+  // Compute identity/state values once -- consumed by meta footer (desktop) or
+  // subtitle prefix (mobile).
+  const permissionBadge = formatPermissionMode(conversation.permissionMode)
+  const planModeBadge =
+    !permissionBadge && conversation.planMode
+      ? { label: 'P', color: 'text-blue-400', title: 'Plan mode -- requires plan approval' }
+      : null
+  const cacheInfo =
+    conversation.status === 'idle'
+      ? getCacheTimerInfo(
+          conversation.lastTurnEndedAt,
+          conversation.tokenUsage,
+          conversation.model,
+          conversation.cacheTtl,
+        )
+      : null
+  const costInfo = (() => {
+    if (!showCost || !conversation.stats) return null
+    const { cost, exact } = getConversationCost(conversation.stats, conversation.model)
+    if (cost < 0.5) return null
+    return { cost, exact, colorClass: getCostBgColor(cost).split(' ')[1] }
+  })()
+  const showHostAlias = conversation.hostSentinelAlias && conversation.hostSentinelAlias !== 'default'
+
+  // Context % (used by both layouts on the title row)
+  const ctx = (() => {
+    if (!showContextBar || !conversation.tokenUsage) return null
+    const { input, cacheCreation, cacheRead } = conversation.tokenUsage
+    const total = input + cacheCreation + cacheRead
+    if (total === 0) return null
+    const maxTokens = conversation.contextWindow ?? contextWindowSize(conversation.model)
+    const pct = Math.min(100, Math.round((total / maxTokens) * 100))
+    const threshold = conversation.autocompactPct || 83
+    const warnAt = threshold - 5
+    const color = pct < warnAt ? 'text-emerald-400/60' : pct < threshold ? 'text-amber-400/60' : 'text-red-400/70'
+    const barColor = pct < warnAt ? 'bg-emerald-400/60' : pct < threshold ? 'bg-amber-400/60' : 'bg-red-400/70'
+    return { pct, color, barColor }
+  })()
+
+  // Mobile state prefix: small chips/text rendered BEFORE the subtitle.
+  // Encoded as renderable nodes so coloring/styling per item is preserved.
+  const mobilePrefix: ReactNode[] = []
+  if (cacheInfo?.state === 'expired') mobilePrefix.push(<span className="text-red-400/70 font-bold">EXPIRED</span>)
+  else if (cacheInfo?.state === 'critical') mobilePrefix.push(<span className="text-red-400 font-bold">CACHE</span>)
+  else if (cacheInfo?.state === 'warning') mobilePrefix.push(<span className="text-amber-400 font-bold">CACHE</span>)
+  if (permissionBadge)
+    mobilePrefix.push(<span className={cn('font-bold', permissionBadge.color)}>{permissionBadge.label}</span>)
+  else if (planModeBadge)
+    mobilePrefix.push(<span className={cn('font-bold', planModeBadge.color)}>{planModeBadge.label}</span>)
+  if (conversation.adHocWorktree) mobilePrefix.push(<span className="text-orange-400 font-bold">WT</span>)
+  if (costInfo)
+    mobilePrefix.push(
+      <span className={cn('font-bold font-mono', costInfo.colorClass)}>
+        {formatCost(costInfo.cost, costInfo.exact)}
+      </span>,
+    )
 
   return (
     <ConversationItemShell
@@ -1068,6 +1127,7 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
       variant="compact"
       onClick={handleClick}
     >
+      {/* ── TITLE ROW: status, backend, title, action/attention badges, %, info ─ */}
       <div className="flex items-center gap-1.5">
         <StatusIndicator status={conversation.status} adHoc={conversation.capabilities?.includes('ad-hoc')} />
         <BackendIcon backend={conversation.backend} size={11} />
@@ -1085,6 +1145,7 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
             {(conversation.title || conversation.agentName || '').slice(0, 24) || conversation.id.slice(0, 8)}
           </span>
         )}
+        {/* Action / attention badges -- always on title row in both layouts */}
         {conversation.backend === 'daemon' && (
           <span className="text-[9px] text-sky-400 font-bold" title="Native claude agents session -- read-only mirror">
             NATIVE
@@ -1099,66 +1160,14 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
             <Clock size={11} className="text-amber-400" />
           </span>
         )}
-        {(() => {
-          const pm = formatPermissionMode(conversation.permissionMode)
-          if (!pm && conversation.planMode)
-            return (
-              <span className="text-[9px] text-blue-400 font-bold" title="Plan mode -- requires plan approval">
-                P
-              </span>
-            )
-          if (!pm) return null
-          return (
-            <span className={cn('text-[9px] font-bold', pm.color)} title={pm.title}>
-              {pm.label}
-            </span>
-          )
-        })()}
-        {conversation.status === 'idle' &&
-          (() => {
-            const ci = getCacheTimerInfo(
-              conversation.lastTurnEndedAt,
-              conversation.tokenUsage,
-              conversation.model,
-              conversation.cacheTtl,
-            )
-            if (!ci) return null
-            return ci.state === 'expired' ? (
-              <span className="text-[9px] text-red-400/70 font-bold">EXPIRED</span>
-            ) : ci.state === 'critical' ? (
-              <span className="text-[9px] text-red-400 font-bold animate-pulse">CACHE</span>
-            ) : ci.state === 'warning' ? (
-              <span className="text-[9px] text-amber-400 font-bold">CACHE</span>
-            ) : null
-          })()}
-        {showCost &&
-          conversation.stats &&
-          (() => {
-            const { cost, exact } = getConversationCost(conversation.stats, conversation.model)
-            if (cost < 0.5) return null
-            return (
-              <span className={cn('text-[9px] font-bold font-mono', getCostBgColor(cost).split(' ')[1])}>
-                {formatCost(cost, exact)}
-              </span>
-            )
-          })()}
-        {conversation.adHocWorktree && <span className="text-[9px] text-orange-400 font-bold">WT</span>}
         {hasPendingLink && <span className="text-[9px] text-teal-400 font-bold animate-pulse">LINK</span>}
         {hasPendingPermission && <span className="text-[9px] text-amber-400 font-bold animate-pulse">PERM</span>}
         {conversation.pendingAttention && (
           <span className="text-[9px] text-amber-400 font-bold animate-pulse">WAITING</span>
         )}
         {conversation.hasNotification && <span className="text-[9px] text-teal-400 font-bold">NOTIFY</span>}
-        {conversation.hostSentinelAlias && conversation.hostSentinelAlias !== 'default' && (
-          <span className="px-1 py-0.5 text-[8px] rounded bg-muted text-muted-foreground font-medium">
-            {conversation.hostSentinelAlias}
-          </span>
-        )}
-        <SentinelProfileBadge
-          project={conversation.project}
-          hostSentinelAlias={conversation.hostSentinelAlias}
-          launchConfig={conversation.launchConfig}
-        />
+        {/* Context % -- title row in both layouts (Design B + M3) */}
+        {ctx && <span className={cn('text-[9px] font-mono tabular-nums shrink-0', ctx.color)}>{ctx.pct}%</span>}
         <ConversationInfoButton conversation={conversation} visible={isSelected} />
         {conversation.status === 'ended' && <DismissButton conversationId={conversation.id} />}
       </div>
@@ -1175,52 +1184,134 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
           </span>
         </div>
       )}
+      {/* ── SUBTITLE: description / summary / recap (mobile prepends state prefix) ── */}
       {isEditingDescription ? (
         <div className="mt-0.5 pl-4">
           <InlineDescription conversation={conversation} />
         </div>
-      ) : conversation.description ? (
-        <div className="mt-0.5 pl-4 text-[9px] text-muted-foreground/70 truncate" title={conversation.description}>
-          {conversation.description}
-        </div>
-      ) : null}
-      {conversation.summary && (
+      ) : (
+        (() => {
+          const subtitle = conversation.description || conversation.summary || conversation.recap?.title
+          // Mobile-only chip prefixes (state + identity) rendered inline before subtitle
+          const mobileChips: ReactNode[] = isMobile ? [...mobilePrefix] : []
+          if (isMobile && showHostAlias)
+            mobileChips.push(
+              <span className="text-muted-foreground/60 font-medium">{conversation.hostSentinelAlias}</span>,
+            )
+          if (isMobile)
+            mobileChips.push(
+              <SentinelProfileBadge
+                project={conversation.project}
+                hostSentinelAlias={conversation.hostSentinelAlias}
+                launchConfig={conversation.launchConfig}
+              />,
+            )
+          if (!subtitle && mobileChips.length === 0) return null
+          const baseColor = conversation.description
+            ? 'text-muted-foreground/70'
+            : conversation.summary
+              ? 'text-muted-foreground/50'
+              : 'text-zinc-400/80'
+          return (
+            <div className={cn('mt-0.5 pl-4 text-[9px] truncate flex items-center gap-1', baseColor)} title={subtitle}>
+              {mobileChips.map((node, i) => (
+                <span key={i} className="contents">
+                  {i > 0 && <span className="text-muted-foreground/30">·</span>}
+                  {node}
+                </span>
+              ))}
+              {subtitle && mobileChips.length > 0 && <span className="text-muted-foreground/30">·</span>}
+              {subtitle && <span className="truncate">{subtitle}</span>}
+            </div>
+          )
+        })()
+      )}
+      {/* Desktop-only: separate summary + recap lines (mobile collapses them into the single subtitle above) */}
+      {!isMobile && conversation.description && conversation.summary && (
         <div className="mt-0.5 pl-4 text-[9px] text-muted-foreground/50 truncate" title={conversation.summary}>
           {conversation.summary}
         </div>
       )}
-      {conversation.recap?.title && (
+      {!isMobile && (conversation.description || conversation.summary) && conversation.recap?.title && (
         <div className="mt-0.5 pl-4 text-[9px] text-zinc-400/80 truncate">{conversation.recap.title}</div>
       )}
-      {showContextBar &&
-        conversation.tokenUsage &&
+      {/* ── DESKTOP ONLY: progress bar (no % -- it's on title row) ── */}
+      {!isMobile && ctx && (
+        <div className="mt-0.5 pl-4">
+          <div className="h-1 bg-muted/50 rounded-full overflow-hidden">
+            <div className={cn('h-full rounded-full transition-all', ctx.barColor)} style={{ width: `${ctx.pct}%` }} />
+          </div>
+        </div>
+      )}
+      {/* ── DESKTOP ONLY: meta footer -- identity + state, dot-separated ── */}
+      {!isMobile &&
         (() => {
-          const { input, cacheCreation, cacheRead } = conversation.tokenUsage
-          const total = input + cacheCreation + cacheRead
-          if (total === 0) return null
-          const maxTokens = conversation.contextWindow ?? contextWindowSize(conversation.model)
-          const pct = Math.min(100, Math.round((total / maxTokens) * 100))
-          const threshold = conversation.autocompactPct || 83
-          const warnAt = threshold - 5
+          const items: ReactNode[] = []
+          if (permissionBadge)
+            items.push(
+              <span key="pm" className={cn('font-bold', permissionBadge.color)} title={permissionBadge.title}>
+                {permissionBadge.label}
+              </span>,
+            )
+          else if (planModeBadge)
+            items.push(
+              <span key="pm" className={cn('font-bold', planModeBadge.color)} title={planModeBadge.title}>
+                {planModeBadge.label}
+              </span>,
+            )
+          if (cacheInfo?.state === 'expired')
+            items.push(
+              <span key="cache" className="text-red-400/70 font-bold">
+                EXPIRED
+              </span>,
+            )
+          else if (cacheInfo?.state === 'critical')
+            items.push(
+              <span key="cache" className="text-red-400 font-bold animate-pulse">
+                CACHE
+              </span>,
+            )
+          else if (cacheInfo?.state === 'warning')
+            items.push(
+              <span key="cache" className="text-amber-400 font-bold">
+                CACHE
+              </span>,
+            )
+          if (costInfo)
+            items.push(
+              <span key="cost" className={cn('font-bold font-mono', costInfo.colorClass)}>
+                {formatCost(costInfo.cost, costInfo.exact)}
+              </span>,
+            )
+          if (conversation.adHocWorktree)
+            items.push(
+              <span key="wt" className="text-orange-400 font-bold">
+                WT
+              </span>,
+            )
+          if (showHostAlias)
+            items.push(
+              <span key="host" className="px-1 py-0.5 text-[8px] rounded bg-muted text-muted-foreground font-medium">
+                {conversation.hostSentinelAlias}
+              </span>,
+            )
+          items.push(
+            <SentinelProfileBadge
+              key="profile"
+              project={conversation.project}
+              hostSentinelAlias={conversation.hostSentinelAlias}
+              launchConfig={conversation.launchConfig}
+            />,
+          )
+          if (items.length === 0) return null
           return (
-            <div className="mt-0.5 pl-4 flex items-center gap-1.5">
-              <div className="flex-1 h-1 bg-muted/50 rounded-full overflow-hidden">
-                <div
-                  className={cn(
-                    'h-full rounded-full transition-all',
-                    pct < warnAt ? 'bg-emerald-400/60' : pct < threshold ? 'bg-amber-400/60' : 'bg-red-400/70',
-                  )}
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
-              <span
-                className={cn(
-                  'text-[9px] font-mono tabular-nums shrink-0',
-                  pct < warnAt ? 'text-emerald-400/50' : pct < threshold ? 'text-amber-400/50' : 'text-red-400/60',
-                )}
-              >
-                {pct}%
-              </span>
+            <div className="mt-1 pl-4 flex items-center gap-1.5 text-[9px]">
+              {items.map((node, i) => (
+                <span key={i} className="contents">
+                  {i > 0 && <span className="text-muted-foreground/30">·</span>}
+                  {node}
+                </span>
+              ))}
             </div>
           )
         })()}

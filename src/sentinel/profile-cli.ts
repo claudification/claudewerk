@@ -235,7 +235,9 @@ function cmdSet(configPath: string, args: string[]): number {
   const profiles = file.profiles ?? {}
   const entry = profiles[name]
   if (!entry) {
-    process.stderr.write(`set: profile "${name}" not found in ${configPath} (known: ${Object.keys(profiles).join(', ') || 'none'})\n`)
+    process.stderr.write(
+      `set: profile "${name}" not found in ${configPath} (known: ${Object.keys(profiles).join(', ') || 'none'})\n`,
+    )
     return 1
   }
 
