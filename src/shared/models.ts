@@ -308,11 +308,15 @@ const MODEL_CATALOG: readonly ModelEntry[] = [
     showInCompleter: true,
   },
   {
+    // Hidden from dropdown: Sonnet 1M moved to API/usage-credit billing, not
+    // included on any subscription tier. Still accepted via `/model` typing
+    // for API/PAYG/credits-enabled accounts. Profile-capabilities work will
+    // surface it conditionally when we know the (sentinel, profile) tier.
     id: 'claude-sonnet-4-6[1m]',
     label: 'Sonnet (latest, 1M)',
-    info: 'Sonnet 4.6 · 1M · 128K output',
+    info: 'Sonnet 4.6 · 1M · 128K output (requires usage credits)',
     window: 1_000_000,
-    showInDropdown: true,
+    showInDropdown: false,
     showInCompleter: true,
   },
   {
