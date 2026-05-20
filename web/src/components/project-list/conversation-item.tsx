@@ -1166,8 +1166,10 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
           <span className="text-[9px] text-amber-400 font-bold animate-pulse">WAITING</span>
         )}
         {conversation.hasNotification && <span className="text-[9px] text-teal-400 font-bold">NOTIFY</span>}
-        {/* Context % -- title row in both layouts (Design B + M3) */}
-        {ctx && <span className={cn('text-[9px] font-mono tabular-nums shrink-0', ctx.color)}>{ctx.pct}%</span>}
+        {/* Context % -- mobile-only on title row (desktop docks it at the bar's right edge) */}
+        {isMobile && ctx && (
+          <span className={cn('text-[9px] font-mono tabular-nums shrink-0', ctx.color)}>{ctx.pct}%</span>
+        )}
         <ConversationInfoButton conversation={conversation} visible={isSelected} />
         {conversation.status === 'ended' && <DismissButton conversationId={conversation.id} />}
       </div>
@@ -1192,13 +1194,9 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
       ) : (
         (() => {
           const subtitle = conversation.description || conversation.summary || conversation.recap?.title
-          // Mobile-only chip prefixes (state + identity) rendered inline before subtitle
-          const mobileChips: ReactNode[] = isMobile ? [...mobilePrefix] : []
-          if (isMobile && showHostAlias)
-            mobileChips.push(
-              <span className="text-muted-foreground/60 font-medium">{conversation.hostSentinelAlias}</span>,
-            )
-          if (isMobile)
+          // Mobile chip prefixes -- profile first (identity), then host alias, then state.
+          const mobileChips: ReactNode[] = []
+          if (isMobile) {
             mobileChips.push(
               <SentinelProfileBadge
                 project={conversation.project}
@@ -1206,6 +1204,12 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
                 launchConfig={conversation.launchConfig}
               />,
             )
+            if (showHostAlias)
+              mobileChips.push(
+                <span className="text-muted-foreground/60 font-medium">{conversation.hostSentinelAlias}</span>,
+              )
+            mobileChips.push(...mobilePrefix)
+          }
           if (!subtitle && mobileChips.length === 0) return null
           const baseColor = conversation.description
             ? 'text-muted-foreground/70'
@@ -1235,18 +1239,34 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
       {!isMobile && (conversation.description || conversation.summary) && conversation.recap?.title && (
         <div className="mt-0.5 pl-4 text-[9px] text-zinc-400/80 truncate">{conversation.recap.title}</div>
       )}
-      {/* ── DESKTOP ONLY: progress bar (no % -- it's on title row) ── */}
+      {/* ── DESKTOP ONLY: progress bar + % flexed to the bar's right edge ── */}
       {!isMobile && ctx && (
-        <div className="mt-0.5 pl-4">
-          <div className="h-1 bg-muted/50 rounded-full overflow-hidden">
+        <div className="mt-0.5 pl-4 flex items-center gap-1.5">
+          <div className="flex-1 h-1 bg-muted/50 rounded-full overflow-hidden">
             <div className={cn('h-full rounded-full transition-all', ctx.barColor)} style={{ width: `${ctx.pct}%` }} />
           </div>
+          <span className={cn('text-[9px] font-mono tabular-nums shrink-0', ctx.color)}>{ctx.pct}%</span>
         </div>
       )}
-      {/* ── DESKTOP ONLY: meta footer -- identity + state, dot-separated ── */}
+      {/* ── DESKTOP ONLY: meta footer -- profile chip first, then state, dot-separated ── */}
       {!isMobile &&
         (() => {
           const items: ReactNode[] = []
+          // Profile pill always leads -- identity over state.
+          items.push(
+            <SentinelProfileBadge
+              key="profile"
+              project={conversation.project}
+              hostSentinelAlias={conversation.hostSentinelAlias}
+              launchConfig={conversation.launchConfig}
+            />,
+          )
+          if (showHostAlias)
+            items.push(
+              <span key="host" className="px-1 py-0.5 text-[8px] rounded bg-muted text-muted-foreground font-medium">
+                {conversation.hostSentinelAlias}
+              </span>,
+            )
           if (permissionBadge)
             items.push(
               <span key="pm" className={cn('font-bold', permissionBadge.color)} title={permissionBadge.title}>
@@ -1289,20 +1309,6 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
                 WT
               </span>,
             )
-          if (showHostAlias)
-            items.push(
-              <span key="host" className="px-1 py-0.5 text-[8px] rounded bg-muted text-muted-foreground font-medium">
-                {conversation.hostSentinelAlias}
-              </span>,
-            )
-          items.push(
-            <SentinelProfileBadge
-              key="profile"
-              project={conversation.project}
-              hostSentinelAlias={conversation.hostSentinelAlias}
-              launchConfig={conversation.launchConfig}
-            />,
-          )
           if (items.length === 0) return null
           return (
             <div className="mt-1 pl-4 flex items-center gap-1.5 text-[9px]">
