@@ -54,6 +54,29 @@ export function lastPathSegments(path: string, n = 3): string {
 }
 
 /**
+ * Detects if a project URI points to a git worktree managed by rclaude.
+ * Matches paths containing /.claude/worktrees/{branch}.
+ * Returns { parentUri, branchName } or null if not a worktree URI.
+ */
+export function parseWorktreeUri(uri: string): { parentUri: string; branchName: string } | null {
+  const path = projectPath(uri)
+  const MARKER = '/.claude/worktrees/'
+  const idx = path.indexOf(MARKER)
+  if (idx === -1) return null
+  const parentPath = path.slice(0, idx)
+  const branchName = path.slice(idx + MARKER.length).split('/')[0]
+  if (!branchName) return null
+  try {
+    const url = new URL(uri)
+    url.pathname = parentPath
+    url.hash = ''
+    return { parentUri: url.toString(), branchName }
+  } catch {
+    return null
+  }
+}
+
+/**
  * Display name for a project identified by URI or path. Uses the user-provided
  * label when present, otherwise falls back to the last 3 path segments. Same
  * convention the project list + conversation switcher use -- keep all name

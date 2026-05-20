@@ -16,7 +16,7 @@ import {
   useConversationsStore,
 } from '@/hooks/use-conversations'
 import type { ProjectOrder, ProjectOrderGroup, ProjectOrderNode } from '@/lib/types'
-import { cn, haptic } from '@/lib/utils'
+import { cn, haptic, parseWorktreeUri } from '@/lib/utils'
 import { MaybeProfiler } from './perf-profiler'
 import { ConversationCompactPeek, InactiveProjectItem } from './project-list/conversation-item'
 import { GroupNode, NewGroupDropTarget, SortableNode } from './project-list/conversation-sorting'
@@ -64,29 +64,8 @@ export function ProjectList() {
     return map
   }, [structure])
 
-  // Group conversation IDs by project URI.
-  const idsByProject = useMemo(() => {
-    const map = new Map<string, string[]>()
-    for (const s of structure) {
-      const group = map.get(s.project) || []
-      group.push(s.id)
-      map.set(s.project, group)
-    }
-    return map
-  }, [structure])
-
-  // Filtered view: hide ended conversations from project groups when toggle is off.
-  const visibleIdsByProject = useMemo(() => {
-    if (showEnded) return idsByProject
-    const map = new Map<string, string[]>()
-    for (const [project, ids] of idsByProject) {
-      const filtered = ids.filter(id => structureById.get(id)?.status !== 'ended')
-      if (filtered.length > 0) map.set(project, filtered)
-    }
-    return map
-  }, [idsByProject, showEnded, structureById])
-
   // Track which projects are in the organized tree (by project URI).
+  // Defined before idsByProject because idsByProject uses it for worktree re-keying.
   const treeProjects = useMemo(() => {
     const projects = new Set<string>()
     function walk(nodes: ProjectOrderNode[]) {
@@ -102,6 +81,34 @@ export function ProjectList() {
     return projects
   }, [projectOrder])
 
+  // Group conversation IDs by project URI.
+  // Worktree URIs (/.claude/worktrees/{branch}) are re-keyed to their parent URI
+  // so worktree conversations appear nested under the parent project group.
+  // Exception: if the worktree URI itself is explicitly in the organized tree,
+  // the user has placed it there intentionally -- don't move it.
+  const idsByProject = useMemo(() => {
+    const map = new Map<string, string[]>()
+    for (const s of structure) {
+      const wt = parseWorktreeUri(s.project)
+      const key = wt && !treeProjects.has(s.project) ? wt.parentUri : s.project
+      const group = map.get(key) || []
+      group.push(s.id)
+      map.set(key, group)
+    }
+    return map
+  }, [structure, treeProjects])
+
+  // Filtered view: hide ended conversations from project groups when toggle is off.
+  const visibleIdsByProject = useMemo(() => {
+    if (showEnded) return idsByProject
+    const map = new Map<string, string[]>()
+    for (const [project, ids] of idsByProject) {
+      const filtered = ids.filter(id => structureById.get(id)?.status !== 'ended')
+      if (filtered.length > 0) map.set(project, filtered)
+    }
+    return map
+  }, [idsByProject, showEnded, structureById])
+
   // Pinned projects not in tree (show even with 0 conversations)
   const pinnedNotInTree = useMemo(() => {
     const result: string[] = []
@@ -113,15 +120,19 @@ export function ProjectList() {
     return result
   }, [projectSettings, treeProjects, visibleIdsByProject])
 
-  // Unorganized active conversations (uses visibleIdsByProject to respect showEnded filter)
+  // Unorganized active conversations (uses visibleIdsByProject to respect showEnded filter).
+  // Uses the same effective-project-key logic as idsByProject so worktree conversations
+  // appear under their parent group rather than as a separate entry.
   const unorganized = useMemo(() => {
     const seen = new Set<string>()
     const result: Array<{ project: string; conversationIds: string[] }> = []
     for (const s of structure) {
-      if (s.status !== 'ended' && !treeProjects.has(s.project) && !seen.has(s.project)) {
-        seen.add(s.project)
-        const ids = visibleIdsByProject.get(s.project) || []
-        if (ids.length > 0) result.push({ project: s.project, conversationIds: ids })
+      const wt = parseWorktreeUri(s.project)
+      const effectiveProject = wt && !treeProjects.has(s.project) ? wt.parentUri : s.project
+      if (s.status !== 'ended' && !treeProjects.has(effectiveProject) && !seen.has(effectiveProject)) {
+        seen.add(effectiveProject)
+        const ids = visibleIdsByProject.get(effectiveProject) || []
+        if (ids.length > 0) result.push({ project: effectiveProject, conversationIds: ids })
       }
     }
     result.sort((a, b) => {
