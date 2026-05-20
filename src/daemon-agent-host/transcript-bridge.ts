@@ -101,6 +101,10 @@ export function createTranscriptBridge(opts: TranscriptBridgeOptions): Transcrip
         onError?.(err)
       },
       debug,
+      // claude --bg returns the worker short BEFORE CC creates the JSONL.
+      // Give the file a window to appear so the bridge does not silently
+      // no-op on the dispatch->attach race.
+      waitForFileMs: 15_000,
     })
 
     await watcher.start(path)

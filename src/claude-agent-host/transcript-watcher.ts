@@ -9,7 +9,7 @@
  * This happens on /clear and compaction which create new transcript files.
  */
 
-import { type FileHandle, open, stat } from 'node:fs/promises'
+import { access, type FileHandle, open, stat } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { type FSWatcher as ChokidarWatcher, watch as chokidarWatch } from 'chokidar'
 import type { TranscriptEntry } from '../shared/protocol'
@@ -43,6 +43,14 @@ export interface TranscriptWatcherOptions {
   onNewFile?: (filename: string) => void
   onError?: (error: Error) => void
   debug?: (msg: string) => void
+  /**
+   * Poll for the JSONL to exist before opening it. Daemon workers register
+   * with the daemon before CC creates their transcript file, so callers that
+   * attach right after `claude --bg` returns the short id can race the file
+   * into existence. Default 0 (no wait -- preserves the old behavior for
+   * agent-host paths that always see an existing file).
+   */
+  waitForFileMs?: number
 }
 
 export interface TranscriptWatcher {
@@ -57,7 +65,7 @@ export interface TranscriptWatcher {
  * Reads from the last known offset, parses new lines, emits entries.
  */
 export function createTranscriptWatcher(options: TranscriptWatcherOptions): TranscriptWatcher {
-  const { onEntries, onNewFile, onError, debug } = options
+  const { onEntries, onNewFile, onError, debug, waitForFileMs = 0 } = options
 
   let fileHandle: FileHandle | null = null
   let watcher: ChokidarWatcher | null = null
@@ -165,6 +173,19 @@ export function createTranscriptWatcher(options: TranscriptWatcherOptions): Tran
     offset = 0
     partial = ''
     entryCount = 0
+
+    if (waitForFileMs > 0) {
+      const deadline = Date.now() + waitForFileMs
+      while (Date.now() < deadline) {
+        if (stopped) return
+        try {
+          await access(path)
+          break
+        } catch {
+          await new Promise<void>(r => setTimeout(r, 100))
+        }
+      }
+    }
 
     try {
       fileHandle = await open(path, 'r')
