@@ -11,6 +11,7 @@
  */
 
 import type { DialogLayout } from '@shared/dialog-schema'
+import { formatResetIn } from '@shared/format-reset-time'
 import type { LaunchProfile } from '@shared/launch-profile'
 import type {
   ConversationSummary,
@@ -956,50 +957,103 @@ function handleSpawnRequestAckMsg(msg: DashboardMessage) {
 
 // ─── rate limit status ──────────────────────────────────────────────────────
 
-function handleRateLimitStatus(msg: DashboardMessage) {
-  const status = msg.status as string | undefined
-  const rateLimitType = msg.rateLimitType as string | undefined
-  const utilization = ((msg.raw as Record<string, unknown>)?.rate_limit_info as Record<string, unknown> | undefined)
-    ?.utilization as number | undefined
-  const conversationId = msg.conversationId as string | undefined
+/**
+ * Dismissal TTL for rate-limit toasts. Keyed on {sentinel}:{profile}:{type} --
+ * NOT conversationId -- so dismissing once silences every conversation that
+ * shares the same account+sentinel+bucket. Tunable via localStorage pref
+ * `rclaude.rateLimitDismissTtlMs`. Minimum 5 min.
+ */
+const RATE_LIMIT_DISMISS_MIN_MS = 5 * 60 * 1000
 
-  if (status === 'allowed') return // No toast when cleared
+function getRateLimitDismissTtlMs(): number {
+  try {
+    const raw = localStorage.getItem('rclaude.rateLimitDismissTtlMs')
+    const n = raw ? parseInt(raw, 10) : NaN
+    if (Number.isFinite(n) && n >= RATE_LIMIT_DISMISS_MIN_MS) return n
+  } catch {}
+  return RATE_LIMIT_DISMISS_MIN_MS
+}
 
-  const isCritical = (utilization ?? 0) >= 0.75
-  const dismissalKey = `rate-limit-dismissed:${conversationId}:${rateLimitType}`
-  const dismissedAt = localStorage.getItem(dismissalKey)
-  const now = Date.now()
-  const oneHourAgo = now - 60 * 60 * 1000
+function rateLimitDismissalKey(sentinel: string, profile: string, rateLimitType: string): string {
+  return `rate-limit-dismissed:${sentinel}:${profile}:${rateLimitType}`
+}
 
-  // Skip if dismissed within the last hour
-  if (dismissedAt && parseInt(dismissedAt, 10) > oneHourAgo) {
-    return
+interface RateLimitFields {
+  status: string | undefined
+  conversationId: string | undefined
+  retryAfterMs: number | undefined
+  resetsAt: number | undefined
+  rateLimitType: string
+  utilization: number | undefined
+  profile: string
+  sentinelKey: string
+  sentinelAlias: string
+}
+
+function extractRateLimitFields(msg: DashboardMessage): RateLimitFields {
+  const info = (msg.raw as Record<string, unknown>)?.rate_limit_info as Record<string, unknown> | undefined
+  const sentinelId = (msg.sentinelId as string | undefined) || ''
+  const sentinelAlias = (msg.sentinelAlias as string | undefined) || sentinelId || 'sentinel'
+  return {
+    status: msg.status as string | undefined,
+    conversationId: msg.conversationId as string | undefined,
+    retryAfterMs: msg.retryAfterMs as number | undefined,
+    resetsAt: msg.resetsAt as number | undefined,
+    rateLimitType: (msg.rateLimitType as string | undefined) ?? 'unknown',
+    utilization: info?.utilization as number | undefined,
+    profile: (msg.profile as string | undefined) || 'default',
+    sentinelKey: sentinelId || sentinelAlias,
+    sentinelAlias,
   }
+}
 
-  const limitLabel = formatRateBucketName(rateLimitType)
-  const utilizationPct = utilization ? Math.round(utilization * 100) : '?'
-  const toastId = `${conversationId}:${rateLimitType}`
+function isDismissed(key: string, now: number): boolean {
+  const v = localStorage.getItem(key)
+  if (!v) return false
+  const dismissedAt = parseInt(v, 10)
+  return Number.isFinite(dismissedAt) && dismissedAt > now - getRateLimitDismissTtlMs()
+}
 
-  const retryText = msg.retryAfterMs ? ` Retry in ${Math.ceil(msg.retryAfterMs / 1000)}s.` : ''
-  const originalDetail = {
-    title: isCritical ? '🔔 Rate Limited' : 'Rate Limited',
-    body: `${limitLabel} limit at ${utilizationPct}%.${retryText}`,
+function registerDismissOnce(toastId: string, dismissalKey: string): void {
+  const handler = () => {
+    try {
+      localStorage.setItem(dismissalKey, Date.now().toString())
+    } catch {}
+  }
+  window.addEventListener(`toast-dismissed:${toastId}`, handler, { once: true })
+}
+
+function buildRateLimitDetail(f: RateLimitFields, isNotice: boolean, toastId: string) {
+  const limitLabel = formatRateBucketName(f.rateLimitType)
+  const utilizationPct = f.utilization != null ? Math.round(f.utilization * 100) : undefined
+  const meta = utilizationPct != null ? `${limitLabel} · ${utilizationPct}%` : limitLabel
+  const resetText = formatResetIn(f.resetsAt)
+  const identity = `${f.profile} @ ${f.sentinelAlias}`
+  const body = resetText ? `${identity}\n${resetText.charAt(0).toUpperCase()}${resetText.slice(1)}` : identity
+  const isCritical = (f.utilization ?? 0) >= 0.75
+  return {
+    title: isNotice ? 'Rate Limit Notice' : 'Rate Limited',
+    meta,
+    body,
     variant: 'warning',
-    persistent: isCritical, // Persist only if utilization >= 75%
-    conversationId,
+    persistent: isCritical || !isNotice,
+    conversationId: f.conversationId,
     toastId,
   }
+}
 
-  window.dispatchEvent(new CustomEvent('rclaude-toast', { detail: originalDetail }))
+function handleRateLimitStatus(msg: DashboardMessage) {
+  const f = extractRateLimitFields(msg)
+  if (f.status === 'allowed') return
 
-  // Set up listener to mark dismissed when user closes the toast (if persistent)
-  if (isCritical) {
-    const handleDismiss = () => {
-      localStorage.setItem(dismissalKey, now.toString())
-      window.removeEventListener(`toast-dismissed:${toastId}`, handleDismiss)
-    }
-    window.addEventListener(`toast-dismissed:${toastId}`, handleDismiss)
-  }
+  const isNotice = f.retryAfterMs === undefined
+  const dismissalKey = rateLimitDismissalKey(f.sentinelKey, f.profile, f.rateLimitType)
+  if (isDismissed(dismissalKey, Date.now())) return
+
+  const toastId = `rate-limit:${f.sentinelKey}:${f.profile}:${f.rateLimitType}`
+  const detail = buildRateLimitDetail(f, isNotice, toastId)
+  window.dispatchEvent(new CustomEvent('rclaude-toast', { detail }))
+  registerDismissOnce(toastId, dismissalKey)
 }
 
 // ─── dispatch table ────────────────────────────────────────────────────────

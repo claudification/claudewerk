@@ -1,11 +1,13 @@
 import { Copy, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { haptic } from '@/lib/utils'
 
 interface Toast {
   id: number
   title: string
+  /** Optional right-aligned chip next to the title (e.g. "7-day · 84%"). */
+  meta?: string
   body: string
   conversationId?: string
   taskId?: string
@@ -18,25 +20,76 @@ interface Toast {
 }
 
 let nextId = 0
+const AUTO_DISMISS_MS = 8000
 
 export function ToastContainer() {
   const [toasts, setToasts] = useState<Toast[]>([])
+  const timersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map())
 
   useEffect(() => {
-    function handleToast(e: Event) {
-      const { title, body, conversationId, taskId, toastId, variant, persistent, copyText } = (e as CustomEvent).detail
-      const id = nextId++
-      haptic('double')
-      setToasts(prev => [...prev, { id, title, body, conversationId, taskId, toastId, variant, persistent, copyText }])
-      if (!persistent) {
-        setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 8000)
+    const timers = timersRef.current
+
+    function clearTimer(id: number) {
+      const t = timers.get(id)
+      if (t) {
+        clearTimeout(t)
+        timers.delete(id)
       }
     }
+
+    function scheduleAutoDismiss(id: number) {
+      clearTimer(id)
+      timers.set(
+        id,
+        setTimeout(() => {
+          timers.delete(id)
+          setToasts(prev => prev.filter(t => t.id !== id))
+        }, AUTO_DISMISS_MS),
+      )
+    }
+
+    function handleToast(e: Event) {
+      const { title, meta, body, conversationId, taskId, toastId, variant, persistent, copyText } = (e as CustomEvent)
+        .detail
+
+      setToasts(prev => {
+        // Dedup by toastId: if an existing toast carries the same toastId,
+        // REPLACE it in place (preserve numeric id so the React key/timer
+        // bookkeeping stays stable). Otherwise append a fresh entry.
+        if (toastId) {
+          const existing = prev.find(t => t.toastId === toastId)
+          if (existing) {
+            haptic('tap')
+            if (persistent) clearTimer(existing.id)
+            else scheduleAutoDismiss(existing.id)
+            return prev.map(t =>
+              t.id === existing.id
+                ? { ...t, title, meta, body, conversationId, taskId, variant, persistent, copyText }
+                : t,
+            )
+          }
+        }
+        const id = nextId++
+        haptic('double')
+        if (!persistent) scheduleAutoDismiss(id)
+        return [...prev, { id, title, meta, body, conversationId, taskId, toastId, variant, persistent, copyText }]
+      })
+    }
+
     window.addEventListener('rclaude-toast', handleToast)
-    return () => window.removeEventListener('rclaude-toast', handleToast)
+    return () => {
+      window.removeEventListener('rclaude-toast', handleToast)
+      for (const t of timers.values()) clearTimeout(t)
+      timers.clear()
+    }
   }, [])
 
   function dismiss(id: number, toastId?: string) {
+    const timer = timersRef.current.get(id)
+    if (timer) {
+      clearTimeout(timer)
+      timersRef.current.delete(id)
+    }
     if (toastId) {
       window.dispatchEvent(new CustomEvent(`toast-dismissed:${toastId}`))
     }
@@ -68,11 +121,14 @@ export function ToastContainer() {
           tabIndex={0}
         >
           <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <div
-                className={`text-xs font-bold uppercase tracking-wider ${t.variant === 'warning' ? 'text-orange-400' : 'text-accent'}`}
-              >
-                {t.title}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline justify-between gap-2">
+                <div
+                  className={`text-xs font-bold uppercase tracking-wider ${t.variant === 'warning' ? 'text-orange-400' : 'text-accent'}`}
+                >
+                  {t.title}
+                </div>
+                {t.meta ? <div className="text-[10px] font-mono text-muted-foreground shrink-0">{t.meta}</div> : null}
               </div>
               <div className="text-sm text-foreground mt-1 whitespace-pre-line">{t.body}</div>
               {t.copyText ? (

@@ -1,3 +1,4 @@
+import { formatResetIn } from '@shared/format-reset-time'
 import type { ProjectSettings } from '@shared/protocol'
 import { ChevronRight, Copy } from 'lucide-react'
 import { useState } from 'react'
@@ -24,10 +25,17 @@ export function ErrorBanner({ lastError }: { lastError: Conversation['lastError'
 
 export function RateLimitBanner({ rateLimit }: { rateLimit: Conversation['rateLimit'] }) {
   if (!rateLimit) return null
+  const identity =
+    rateLimit.profile && rateLimit.sentinelAlias
+      ? `${rateLimit.profile} @ ${rateLimit.sentinelAlias}`
+      : rateLimit.sentinelAlias || rateLimit.profile || undefined
+  const resetText = formatResetIn(rateLimit.resetsAt)
   return (
     <div className="px-2 py-1 bg-amber-500/10 border border-amber-500/30 text-[10px] font-mono flex items-center gap-2">
       <span className="text-amber-400 font-bold uppercase">Rate Limited</span>
       <span className="text-amber-400/70">{rateLimit.message}</span>
+      {identity && <span className="text-muted-foreground">{identity}</span>}
+      {resetText && <span className="text-amber-400/70">{resetText}</span>}
       <span className="text-muted-foreground ml-auto">{formatTime(rateLimit.timestamp)}</span>
     </div>
   )

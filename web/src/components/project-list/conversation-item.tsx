@@ -1,3 +1,4 @@
+import { formatResetIn } from '@shared/format-reset-time'
 import { Clock } from 'lucide-react'
 import { memo, type ReactNode, useEffect, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
@@ -822,7 +823,7 @@ const ConversationItemFull = memo(function ConversationItemFull({ conversation }
         {conversation.rateLimit && !conversation.lastError && (
           <span
             className="px-1 py-0.5 text-amber-400 border border-amber-500/40 bg-amber-500/20"
-            title={`${conversation.rateLimit.message}${conversation.rateLimit.retryAfterMs ? ` (retry in ${Math.ceil(conversation.rateLimit.retryAfterMs / 1000)}s)` : ''}`}
+            title={`${conversation.rateLimit.message}${formatResetIn(conversation.rateLimit.resetsAt) ? ` (${formatResetIn(conversation.rateLimit.resetsAt)})` : ''}`}
           >
             <Clock size={12} />
           </span>
@@ -1093,7 +1094,7 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
         {conversation.lastError && <span className="text-[9px] text-destructive font-bold">ERROR</span>}
         {conversation.rateLimit && !conversation.lastError && (
           <span
-            title={`Rate limited: ${conversation.rateLimit.message}${conversation.rateLimit.retryAfterMs ? ` (retry in ${Math.ceil(conversation.rateLimit.retryAfterMs / 1000)}s)` : ''}`}
+            title={`Rate limited: ${conversation.rateLimit.message}${formatResetIn(conversation.rateLimit.resetsAt) ? ` (${formatResetIn(conversation.rateLimit.resetsAt)})` : ''}`}
           >
             <Clock size={11} className="text-amber-400" />
           </span>

@@ -331,6 +331,59 @@ function formatRateLimitMessage(opts: {
   return isNotice ? `Rate limit notice${typeSuffix}${tail}` : `Rate limited${typeSuffix}${tail}`
 }
 
+interface RateLimitTags {
+  profile: string
+  sentinelId: string
+  sentinelAlias: string
+}
+
+function rateLimitTagsFor(conversation: {
+  project: string
+  hostSentinelId?: string
+  hostSentinelAlias?: string
+}): RateLimitTags {
+  return {
+    profile: getProfileFromUri(conversation.project) || 'default',
+    sentinelId: conversation.hostSentinelId || '',
+    sentinelAlias: conversation.hostSentinelAlias || '',
+  }
+}
+
+function emitRateLimitEntry(
+  ctx: Parameters<MessageHandler>[0],
+  conversationId: string,
+  payload: {
+    message: string
+    retryAfterMs: number | undefined
+    resetsAt: number | undefined
+    isNotice: boolean
+    raw: Record<string, unknown> | undefined
+    tags: RateLimitTags
+  },
+) {
+  const entry = {
+    type: 'system' as const,
+    subtype: 'rate_limit',
+    content: payload.message,
+    retryAfterMs: payload.retryAfterMs,
+    resetsAt: payload.resetsAt,
+    isNotice: payload.isNotice,
+    raw: payload.raw,
+    profile: payload.tags.profile,
+    sentinelId: payload.tags.sentinelId,
+    sentinelAlias: payload.tags.sentinelAlias,
+    uuid: randomUUID(),
+    timestamp: new Date().toISOString(),
+  }
+  ctx.conversations.addTranscriptEntries(conversationId, [entry], false)
+  ctx.conversations.broadcastToChannel('conversation:transcript', conversationId, {
+    type: 'transcript_entries',
+    conversationId,
+    entries: [entry],
+    isInitial: false,
+  })
+}
+
 // Rate limit status from headless backend.
 //
 // Three cases:
@@ -351,43 +404,25 @@ const rateLimitStatusHandler: MessageHandler = (ctx, data) => {
   if (!conversation) return
 
   const status = data.status as string
-  const retryAfterMs = data.retryAfterMs as number | undefined
-  const rateLimitType = data.rateLimitType as string | undefined
-  const resetsAt = data.resetsAt as number | undefined
-  const profile = getProfileFromUri(conversation.project) || 'default'
-  const sentinelId = conversation.hostSentinelId || ''
-  const sentinelAlias = conversation.hostSentinelAlias || ''
+  const tags = rateLimitTagsFor(conversation)
 
   if (status === 'allowed') {
     if (!conversation.rateLimit) return
     conversation.rateLimit = undefined
     ctx.conversations.broadcastConversationUpdate(conversationId)
-    ctx.broadcast({
-      type: 'rate_limit_status',
-      conversationId,
-      status: 'allowed',
-      profile,
-      sentinelId,
-      sentinelAlias,
-    })
+    ctx.broadcast({ type: 'rate_limit_status', conversationId, status: 'allowed', ...tags })
     return
   }
 
+  const retryAfterMs = data.retryAfterMs as number | undefined
+  const rateLimitType = data.rateLimitType as string | undefined
+  const resetsAt = data.resetsAt as number | undefined
   // Notice = limit signal with no retry_after_ms. Actual block = has retry_after_ms.
   const isNotice = retryAfterMs === undefined
   const message = formatRateLimitMessage({ rateLimitType, resetsAt, isNotice })
 
   if (!isNotice) {
-    // Actual block: set the per-conversation banner.
-    conversation.rateLimit = {
-      retryAfterMs,
-      resetsAt,
-      message,
-      timestamp: Date.now(),
-      profile,
-      sentinelId,
-      sentinelAlias,
-    }
+    conversation.rateLimit = { retryAfterMs, resetsAt, message, timestamp: Date.now(), ...tags }
     ctx.conversations.broadcastConversationUpdate(conversationId)
   }
 
@@ -399,31 +434,16 @@ const rateLimitStatusHandler: MessageHandler = (ctx, data) => {
     retryAfterMs,
     resetsAt,
     raw: data.raw,
-    profile,
-    sentinelId,
-    sentinelAlias,
+    ...tags,
   })
 
-  const entry = {
-    type: 'system' as const,
-    subtype: 'rate_limit',
-    content: message,
+  emitRateLimitEntry(ctx, conversationId, {
+    message,
     retryAfterMs,
     resetsAt,
     isNotice,
     raw: data.raw as Record<string, unknown> | undefined,
-    profile,
-    sentinelId,
-    sentinelAlias,
-    uuid: randomUUID(),
-    timestamp: new Date().toISOString(),
-  }
-  ctx.conversations.addTranscriptEntries(conversationId, [entry], false)
-  ctx.conversations.broadcastToChannel('conversation:transcript', conversationId, {
-    type: 'transcript_entries',
-    conversationId,
-    entries: [entry],
-    isInitial: false,
+    tags,
   })
 }
 

@@ -1,3 +1,4 @@
+import { formatResetIn } from '@shared/format-reset-time'
 import { parseRecapContent } from '@shared/recap'
 import { formatRateBucketName } from '@/lib/utils'
 import { JsonInspector } from '../json-inspector'
@@ -47,13 +48,17 @@ function describeSystemEntry(sub: string, entry: Record<string, unknown>, time: 
       }
     case 'rate_limit': {
       const retryMs = entry.retryAfterMs as number | undefined
+      const resetsAt = (entry.resetsAt as number | undefined) ?? undefined
+      const isNotice = (entry.isNotice as boolean | undefined) ?? retryMs === undefined
       const info = (entry.raw as Record<string, unknown>)?.rate_limit_info as Record<string, unknown> | undefined
       const limitType = info?.rateLimitType as string | undefined
       const formattedType = formatRateBucketName(limitType)
+      const resetTail = formatResetIn(resetsAt)
+      const tail = resetTail ? ` -- ${resetTail}` : ''
       return {
         kind: 'text',
-        text: `Rate limited (${formattedType})${retryMs ? ` - retry in ${Math.ceil(retryMs / 1000)}s` : ''}`,
-        color: 'text-amber-400/70',
+        text: isNotice ? `Rate limit notice (${formattedType})${tail}` : `Rate limited (${formattedType})${tail}`,
+        color: isNotice ? 'text-amber-400/50' : 'text-amber-400/80',
       }
     }
     case 'informational':

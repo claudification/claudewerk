@@ -89,14 +89,21 @@ export interface Conversation {
   effortLevel?: string
   permissionMode?: string
   lastError?: { stopReason?: string; errorType?: string; errorMessage?: string; timestamp: number }
+  /**
+   * Set ONLY for actual rate limits. NOT set for notices (e.g. 7-day soft warnings).
+   */
   rateLimit?: {
     retryAfterMs?: number
+    /** Epoch ms when the bucket resets (UI live formatter source). */
+    resetsAt?: number
     message: string
     timestamp: number
     /** Resolved sentinel-profile name -- which account hit the limit. */
     profile?: string
     /** Sentinel hosting that profile. */
     sentinelId?: string
+    /** Denormalized human-readable sentinel alias for UI display. */
+    sentinelAlias?: string
   }
   planMode?: boolean
   pendingAttention?: {
