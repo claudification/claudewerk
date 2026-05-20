@@ -217,6 +217,8 @@ function spawnProcess(options: StreamBackendOptions) {
     'stream-json',
     '--input-format',
     'stream-json',
+    // CC 2.1.145+ rejects --print + --output-format=stream-json without --verbose.
+    '--verbose',
     ...(options.includePartialMessages !== false ? ['--include-partial-messages'] : []),
     '--replay-user-messages',
     '--permission-prompt-tool',
