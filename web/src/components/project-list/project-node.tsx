@@ -1,4 +1,4 @@
-import { Pin } from 'lucide-react'
+import { GitBranch, Pin } from 'lucide-react'
 import { memo, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useConversationsStore } from '@/hooks/use-conversations'
@@ -68,7 +68,7 @@ const ProjectConversationGroup = memo(
     const conversations = useConversationsStore(
       useShallow(s => conversationIds.map(id => s.conversationsById[id]).filter(Boolean) as Conversation[]),
     )
-    const { adhoc, normal, ended } = partitionConversations(conversations)
+    const { worktrees, adhoc, normal, ended } = partitionConversations(conversations)
     // Project-level rollups: any conversation in this project needing attention?
     const hasPendingPermission = useConversationsStore(s => {
       const ids = new Set(conversationIds)
@@ -178,6 +178,27 @@ const ProjectConversationGroup = memo(
                 </div>
               </ConversationContextMenu>
             ))}
+            {worktrees.length > 0 && (
+              <>
+                <div className="flex items-center gap-2 px-3 py-1">
+                  <span className="flex-1 h-px bg-border" />
+                  <GitBranch className="w-2.5 h-2.5 text-muted-foreground/40" />
+                  <span className="text-[9px] text-muted-foreground/40 uppercase tracking-wider">worktrees</span>
+                  <span className="flex-1 h-px bg-border" />
+                </div>
+                {worktrees.map(conversation => (
+                  <ConversationContextMenu
+                    key={conversation.id}
+                    conversation={conversation}
+                    onOpenSettings={() => setShowSettings(true)}
+                  >
+                    <div>
+                      <ConversationItemCompact conversation={conversation} />
+                    </div>
+                  </ConversationContextMenu>
+                ))}
+              </>
+            )}
           </div>
         </div>
         {showSettings && <ProjectSettingsEditor project={project} onClose={() => setShowSettings(false)} />}
