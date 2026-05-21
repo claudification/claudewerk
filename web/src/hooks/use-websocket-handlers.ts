@@ -610,6 +610,12 @@ function handleUsageUpdate(msg: DashboardMessage) {
   }
 }
 
+function handleSentinelUsageReport(msg: DashboardMessage) {
+  if (typeof msg.sentinelId !== 'string' || !Array.isArray(msg.profileUsage)) return
+  const polledAt = typeof msg.polledAt === 'number' ? msg.polledAt : Date.now()
+  useConversationsStore.getState().setSentinelProfileUsage(msg.sentinelId, msg.profileUsage, polledAt)
+}
+
 function handleClaudeHealthUpdate(msg: DashboardMessage) {
   useConversationsStore.getState().setClaudeHealth(msg as unknown as ClaudeHealthUpdate)
 }
@@ -1146,6 +1152,7 @@ export const handlers: Record<string, MessageHandler> = {
   daemon_session_retired: handleDaemonSessionRetired,
   cc_version_changed: handleCcVersionChanged,
   usage_update: handleUsageUpdate,
+  sentinel_usage_report: handleSentinelUsageReport,
   claude_health_update: handleClaudeHealthUpdate,
   claude_efficiency_update: handleClaudeEfficiencyUpdate,
   rate_limit_status: handleRateLimitStatus,

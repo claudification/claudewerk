@@ -25,6 +25,7 @@ import {
   type Conversation,
   flattenProjectOrderTree,
   type HookEvent,
+  type ProfileUsageSnapshot,
   type ProjectOrder,
   type ProjectSettings,
   type ProjectSettingsMap,
@@ -166,6 +167,12 @@ interface ConversationsState {
   daemonRosters: Record<string, DaemonRosterForward>
   setDaemonRoster: (roster: DaemonRosterForward) => void
   planUsage: UsageUpdate | null
+  /** Per-(sentinelId, profile) usage snapshots from the broker's
+   *  `sentinel_usage_report` broadcast. Keyed `${sentinelId}/${profile}`.
+   *  Replaces planUsage for multi-profile installs; planUsage remains for
+   *  back-compat with single-profile pre-Phase-1 sentinels. See
+   *  `.claude/docs/plan-sentinel-profile-usage.md`. */
+  profileUsage: Record<string, ProfileUsageSnapshot & { sentinelId: string; polledAt: number }>
   claudeHealth: ClaudeHealthUpdate | null
   claudeEfficiency: ClaudeEfficiencyUpdate | null
   error: string | null
@@ -294,6 +301,9 @@ interface ConversationsState {
   setConnected: (connected: boolean) => void
   setSentinelConnected: (connected: boolean, sentinels?: SentinelStatusInfo[]) => void
   setPlanUsage: (usage: UsageUpdate) => void
+  /** Replace the per-sentinel slice of profileUsage with a fresh batch from
+   *  `sentinel_usage_report`. Other sentinels' entries are preserved. */
+  setSentinelProfileUsage: (sentinelId: string, profiles: ProfileUsageSnapshot[], polledAt: number) => void
   setClaudeHealth: (health: ClaudeHealthUpdate) => void
   setClaudeEfficiency: (efficiency: ClaudeEfficiencyUpdate) => void
   setError: (error: string | null) => void
@@ -597,6 +607,7 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
       daemonRosters: { ...state.daemonRosters, [roster.sentinelId ?? 'default']: roster },
     })),
   planUsage: null,
+  profileUsage: {},
   claudeHealth: null,
   claudeEfficiency: null,
   error: null,
@@ -1015,6 +1026,19 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   setSentinelConnected: (connected, sentinels) =>
     set({ sentinelConnected: connected, ...(sentinels !== undefined && { sentinels }) }),
   setPlanUsage: usage => set({ planUsage: usage }),
+  setSentinelProfileUsage: (sentinelId, profiles, polledAt) =>
+    set(state => {
+      // Drop existing entries for this sentinel (each cycle is a full
+      // refresh of that sentinel's profile set), then merge the new batch.
+      const next: typeof state.profileUsage = {}
+      for (const [key, value] of Object.entries(state.profileUsage)) {
+        if (value.sentinelId !== sentinelId) next[key] = value
+      }
+      for (const snap of profiles) {
+        next[`${sentinelId}/${snap.profile}`] = { ...snap, sentinelId, polledAt }
+      }
+      return { profileUsage: next }
+    }),
   setClaudeHealth: health => set({ claudeHealth: health }),
   setClaudeEfficiency: efficiency => set({ claudeEfficiency: efficiency }),
   setError: error => set({ error }),

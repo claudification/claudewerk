@@ -12,6 +12,7 @@ export type {
   HookEventType,
   LaunchConfig,
   MonitorInfo,
+  ProfileUsageSnapshot,
   ProjectSettings,
   SubagentInfo,
   TaskInfo,
