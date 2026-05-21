@@ -3,7 +3,13 @@
  * directory listing results, diagnostic entries.
  */
 
-import type { CcVersionChanged, SelectionMode, SentinelProfileInfo, UsageUpdate } from '../../shared/protocol'
+import type {
+  CcVersionChanged,
+  ProfileUsageSnapshot,
+  SelectionMode,
+  SentinelProfileInfo,
+  UsageUpdate,
+} from '../../shared/protocol'
 import type { MessageHandler } from '../handler-context'
 import { ANY_ROLE, registerHandlers, SENTINEL_ONLY } from '../message-router'
 
@@ -308,6 +314,50 @@ const usageUpdate: MessageHandler = (ctx, data) => {
   }
 }
 
+/** Sanitise an incoming per-profile usage snapshot. Drops anything that would
+ *  violate the PROFILE-ENV BOUNDARY (e.g. a misbehaving sentinel that tries to
+ *  include `configDir` in the snapshot) -- only profile NAME + utilisation
+ *  numbers + error tag survive. */
+// fallow-ignore-next-line complexity
+function sanitizeProfileUsageSnapshot(raw: unknown): ProfileUsageSnapshot | null {
+  if (!raw || typeof raw !== 'object') return null
+  const rec = raw as Record<string, unknown>
+  const profile = typeof rec.profile === 'string' ? rec.profile : null
+  if (!profile) return null
+  const authed = typeof rec.authed === 'boolean' ? rec.authed : false
+  const polledAt = typeof rec.polledAt === 'number' ? rec.polledAt : Date.now()
+  const snap: ProfileUsageSnapshot = { profile, authed, polledAt }
+  if (rec.fiveHour && typeof rec.fiveHour === 'object') snap.fiveHour = rec.fiveHour as ProfileUsageSnapshot['fiveHour']
+  if (rec.sevenDay && typeof rec.sevenDay === 'object') snap.sevenDay = rec.sevenDay as ProfileUsageSnapshot['sevenDay']
+  if (rec.sevenDayOpus && typeof rec.sevenDayOpus === 'object')
+    snap.sevenDayOpus = rec.sevenDayOpus as ProfileUsageSnapshot['sevenDayOpus']
+  if (rec.sevenDaySonnet && typeof rec.sevenDaySonnet === 'object')
+    snap.sevenDaySonnet = rec.sevenDaySonnet as ProfileUsageSnapshot['sevenDaySonnet']
+  if (rec.extraUsage && typeof rec.extraUsage === 'object')
+    snap.extraUsage = rec.extraUsage as ProfileUsageSnapshot['extraUsage']
+  if (rec.error && typeof rec.error === 'object') snap.error = rec.error as ProfileUsageSnapshot['error']
+  return snap
+}
+
+const sentinelUsageReport: MessageHandler = (ctx, data) => {
+  const polledAt = typeof data.polledAt === 'number' ? data.polledAt : Date.now()
+  const rawProfiles = Array.isArray(data.profiles) ? data.profiles : []
+  const profiles: ProfileUsageSnapshot[] = []
+  for (const raw of rawProfiles) {
+    const snap = sanitizeProfileUsageSnapshot(raw)
+    if (snap) profiles.push(snap)
+  }
+  const accepted = ctx.conversations.setSentinelProfileUsage(ctx.ws, profiles, polledAt)
+  if (!accepted) {
+    ctx.log.debug(`sentinel_usage_report ignored: WS not associated with any sentinel`)
+    return
+  }
+  ctx.log.debug(
+    `sentinel_usage_report: ${profiles.length} profile(s) ` +
+      profiles.map(p => `${p.profile}=${p.error ? `err:${p.error.kind}` : `${p.sevenDay?.usedPercent}%`}`).join(' '),
+  )
+}
+
 export function registerSentinelHandlers(): void {
   // sentinel_identify is the bootstrap message that sets `isSentinel = true`
   // on the connection. With per-sentinel secrets (snt_ prefix), the WS is
@@ -327,6 +377,7 @@ export function registerSentinelHandlers(): void {
       launch_log: launchLog,
       sentinel_diag: sentinelDiag,
       usage_update: usageUpdate,
+      sentinel_usage_report: sentinelUsageReport,
       cc_version_changed: ccVersionChanged,
     },
     SENTINEL_ONLY,

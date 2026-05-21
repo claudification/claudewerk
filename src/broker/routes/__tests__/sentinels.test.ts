@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ServerWebSocket } from 'bun'
 import { Hono } from 'hono'
-import type { SentinelProfileInfo } from '../../../shared/protocol'
+import type { ProfileUsageSnapshot, SentinelProfileInfo } from '../../../shared/protocol'
 import { setRclaudeSecret } from '../../auth-routes'
 import { type ConversationStore, createConversationStore } from '../../conversation-store'
 import { createSentinelRegistry, type SentinelRegistry } from '../../sentinel-registry'
@@ -133,5 +133,65 @@ describe('GET /api/sentinels', () => {
     expect(data[0].defaultSelection).toBeUndefined()
     expect(data[0].pools).toBeUndefined()
     expect(data[0].defaultPool).toBeUndefined()
+  })
+})
+
+describe('GET /api/sentinels/:id/usage', () => {
+  const snapshots: ProfileUsageSnapshot[] = [
+    {
+      profile: 'default',
+      authed: true,
+      polledAt: 1000,
+      fiveHour: { usedPercent: 12, resetAt: '2026-05-21T15:00:00Z' },
+      sevenDay: { usedPercent: 47, resetAt: '2026-05-28T00:00:00Z' },
+    },
+    { profile: 'work', authed: false, polledAt: 1000, error: { kind: 'no_token' } },
+  ]
+
+  it('returns 403 without admin auth', async () => {
+    const res = await app.request('/api/sentinels/snt_x/usage')
+    expect(res.status).toBe(403)
+  })
+
+  it('returns 404 when sentinel is unknown', async () => {
+    const res = await app.request('/api/sentinels/snt_does-not-exist/usage', { headers: authHeaders() })
+    expect(res.status).toBe(404)
+  })
+
+  it('returns 404 when sentinel is connected but has not reported yet', async () => {
+    const record = sentinelRegistry.create({ alias: 'fresh', generateSecret: true })
+    conversationStore.setSentinel(makeFakeWs(), { sentinelId: record.sentinelId, alias: record.aliases[0] })
+    const res = await app.request(`/api/sentinels/${record.sentinelId}/usage`, { headers: authHeaders() })
+    expect(res.status).toBe(404)
+  })
+
+  it('returns the latest report (sorted by profile name) after the handler stored it', async () => {
+    const record = sentinelRegistry.create({ alias: 'beast', generateSecret: true })
+    const ws = makeFakeWs()
+    conversationStore.setSentinel(ws, { sentinelId: record.sentinelId, alias: record.aliases[0] })
+    expect(conversationStore.setSentinelProfileUsage(ws, snapshots, 1000)).toBe(true)
+
+    const res = await app.request(`/api/sentinels/${record.sentinelId}/usage`, { headers: authHeaders() })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { profiles: ProfileUsageSnapshot[]; polledAt: number }
+    expect(body.polledAt).toBe(1000)
+    expect(body.profiles.map(p => p.profile)).toEqual(['default', 'work'])
+    expect(body.profiles[0].fiveHour?.usedPercent).toBe(12)
+    expect(body.profiles[1].error?.kind).toBe('no_token')
+  })
+
+  it('drops the report when the sentinel disconnects', async () => {
+    const record = sentinelRegistry.create({ alias: 'gone', generateSecret: true })
+    const ws = makeFakeWs()
+    conversationStore.setSentinel(ws, { sentinelId: record.sentinelId, alias: record.aliases[0] })
+    conversationStore.setSentinelProfileUsage(ws, snapshots, 1000)
+    conversationStore.removeSentinel(ws)
+    const res = await app.request(`/api/sentinels/${record.sentinelId}/usage`, { headers: authHeaders() })
+    expect(res.status).toBe(404)
+  })
+
+  it('setSentinelProfileUsage returns false when WS is not associated with any sentinel', () => {
+    const orphanWs = makeFakeWs()
+    expect(conversationStore.setSentinelProfileUsage(orphanWs, snapshots, 1000)).toBe(false)
   })
 })

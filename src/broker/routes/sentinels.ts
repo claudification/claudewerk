@@ -125,6 +125,24 @@ export function createSentinelRouter(
     })
   })
 
+  // ─── Read per-profile usage for one sentinel ──────────────────────────
+  //
+  // Returns the latest batched `sentinel_usage_report` snapshots the broker
+  // has from this sentinel. 404 when the sentinel is unknown / offline /
+  // hasn't reported yet. Used by the control panel for hydration on
+  // reconnect (Phase 4) -- the live updates flow through the WS broadcast.
+  //
+  // Snapshots carry NAMES + utilisation numbers only -- Profile-Env Boundary
+  // is preserved end-to-end (the sentinel sanitises at the wire, the broker
+  // re-sanitises in the handler, this route just emits what's stored).
+  app.get('/api/sentinels/:id/usage', c => {
+    if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Admin access required' }, 403)
+    const sentinelId = c.req.param('id')
+    const usage = conversationStore.getSentinelProfileUsage(sentinelId)
+    if (!usage) return c.json({ error: 'No usage data for sentinel' }, 404)
+    return c.json(usage)
+  })
+
   // ─── Delete sentinel ──────────────────────────────────────────────────
   app.delete('/api/sentinels/:id', c => {
     if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Admin access required' }, 403)

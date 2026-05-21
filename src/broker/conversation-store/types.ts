@@ -3,6 +3,7 @@ import type {
   ClaudeHealthUpdate,
   ConversationSummary,
   LaunchProfile,
+  ProfileUsageSnapshot,
   SelectionMode,
   SentinelProfileInfo,
   TerminationDetail,
@@ -48,6 +49,7 @@ export interface ControlPanelMessage {
     | 'project_settings_updated'
     | 'clipboard_capture'
     | 'usage_update'
+    | 'sentinel_usage_report'
     | 'claude_health_update'
     | 'claude_efficiency_update'
     | 'launch_profiles_updated'
@@ -71,6 +73,12 @@ export interface ControlPanelMessage {
   claudeEfficiency?: ClaudeEfficiencyUpdate
   userName?: string
   launchProfiles?: LaunchProfile[]
+  // Per-sentinel profile usage broadcast (sentinel_usage_report).
+  // sentinelId is stamped by the broker; profileUsage carries one entry
+  // per profile the sentinel knows about. Polled-at lives on each entry.
+  sentinelId?: string
+  profileUsage?: ProfileUsageSnapshot[]
+  polledAt?: number
   // Termination metadata (only on conversation_terminated)
   source?: TerminationSource | string
   initiator?: string

@@ -3,6 +3,7 @@ import {
   type ClaudeEfficiencyUpdate,
   type ClaudeHealthUpdate,
   HEARTBEAT_INTERVAL_MS,
+  type ProfileUsageSnapshot,
   type SelectionMode,
   type SentinelProfileInfo,
   type UsageUpdate,
@@ -50,6 +51,21 @@ export interface SentinelConnection {
   /** Pool the sentinel uses when a Balanced/Random launch omits a pool.
    *  Defaults to `'default'`. */
   defaultPool?: string
+  /** Latest per-profile usage snapshots reported by this sentinel.
+   *  Keyed by `ProfileUsageSnapshot.profile`. Refreshed every poll cycle
+   *  (default 3min). Cleared with the connection -- a disconnected sentinel
+   *  has no live telemetry to show.
+   *
+   *  Profile NAMES + utilisation numbers only (Profile-Env Boundary).
+   *  Used by:
+   *   - the control panel's top usage bar (Phase 4)
+   *   - the launch dialog's profile-radio inline mini-bars (Phase 5)
+   *   - the sentinel's own Smart Balance picker (Phase 3, read from
+   *     `getLatestProfileUsage` in `src/sentinel/index.ts` -- this map is the
+   *     broker's mirror, sentinel still owns the source of truth) */
+  profileUsage?: Map<string, ProfileUsageSnapshot>
+  /** ms epoch of the most recent `sentinel_usage_report` from this sentinel. */
+  profileUsagePolledAt?: number
 }
 
 export interface SentinelIdentifyInfo {
@@ -180,6 +196,53 @@ export function setUsage(
 ): void {
   state.usage = usage
   broadcast({ type: 'usage_update', usage } as unknown as ControlPanelMessage)
+}
+
+/**
+ * Record a sentinel's batched per-profile usage report. Replaces the per-profile
+ * snapshot map on the connection wholesale (every cycle covers every profile),
+ * then broadcasts to the control panel so the top usage bar + launch-dialog
+ * mini-bars can refresh.
+ *
+ * Returns `false` (no-op) when the sentinel is unknown -- this happens for
+ * legacy shared-secret sentinels whose connection wasn't promoted yet.
+ */
+export function setSentinelProfileUsage(
+  state: SentinelState,
+  ws: ServerWebSocket<unknown>,
+  profiles: ProfileUsageSnapshot[],
+  polledAt: number,
+  broadcast: (msg: ControlPanelMessage) => void,
+): boolean {
+  for (const conn of state.sentinels.values()) {
+    if (conn.ws !== ws) continue
+    const map = new Map<string, ProfileUsageSnapshot>()
+    for (const snap of profiles) map.set(snap.profile, snap)
+    conn.profileUsage = map
+    conn.profileUsagePolledAt = polledAt
+    broadcast({
+      type: 'sentinel_usage_report',
+      sentinelId: conn.sentinelId,
+      profileUsage: profiles,
+      polledAt,
+    })
+    return true
+  }
+  return false
+}
+
+/** Read-only view of a sentinel's latest per-profile usage. Returns `undefined`
+ *  when the sentinel is offline or hasn't reported yet. */
+export function getSentinelProfileUsage(
+  state: SentinelState,
+  sentinelId: string,
+): { profiles: ProfileUsageSnapshot[]; polledAt: number } | undefined {
+  const conn = state.sentinels.get(sentinelId)
+  if (!conn?.profileUsage || conn.profileUsagePolledAt === undefined) return undefined
+  return {
+    profiles: [...conn.profileUsage.values()].sort((a, b) => a.profile.localeCompare(b.profile)),
+    polledAt: conn.profileUsagePolledAt,
+  }
 }
 
 export function setClaudeHealth(

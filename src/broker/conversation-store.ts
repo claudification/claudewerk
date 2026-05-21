@@ -21,6 +21,7 @@ import type {
   ConversationSummary,
   HookEvent,
   LaunchConfig,
+  ProfileUsageSnapshot,
   SubscriptionChannel,
   SubscriptionsDiag,
   TaskInfo,
@@ -43,6 +44,7 @@ import { createProjectLinkRegistry } from './conversation-store/project-links'
 import {
   buildSentinelList,
   createSentinelState,
+  getSentinelProfileUsage as getSentinelProfileUsageImpl,
   isSentinelAlive as isSentinelAliveImpl,
   pushSentinelDiag as pushSentinelDiagImpl,
   recordSentinelHeartbeat as recordSentinelHeartbeatImpl,
@@ -52,6 +54,7 @@ import {
   setClaudeEfficiency as setClaudeEfficiencyImpl,
   setClaudeHealth as setClaudeHealthImpl,
   setSentinel as setSentinelImpl,
+  setSentinelProfileUsage as setSentinelProfileUsageImpl,
   setUsage as setUsageImpl,
 } from './conversation-store/sentinel'
 import {
@@ -227,6 +230,9 @@ export interface ConversationStore {
   // Plan usage data (from sentinel OAuth usage API polling)
   setUsage: (usage: UsageUpdate) => void
   getUsage: () => UsageUpdate | undefined
+  // Per-sentinel per-profile usage (batched sentinel_usage_report)
+  setSentinelProfileUsage: (ws: ServerWebSocket<unknown>, profiles: ProfileUsageSnapshot[], polledAt: number) => boolean
+  getSentinelProfileUsage: (sentinelId: string) => { profiles: ProfileUsageSnapshot[]; polledAt: number } | undefined
   // External status data (broker polls clanker.watch + usage.report)
   setClaudeHealth: (health: ClaudeHealthUpdate) => void
   getClaudeHealth: () => ClaudeHealthUpdate | undefined
@@ -2177,6 +2183,18 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
   function getUsage(): UsageUpdate | undefined {
     return sentinelState.usage
   }
+  function setSentinelProfileUsage(
+    ws: ServerWebSocket<unknown>,
+    profiles: ProfileUsageSnapshot[],
+    polledAt: number,
+  ): boolean {
+    return setSentinelProfileUsageImpl(sentinelState, ws, profiles, polledAt, broadcast)
+  }
+  function getSentinelProfileUsage(
+    sentinelId: string,
+  ): { profiles: ProfileUsageSnapshot[]; polledAt: number } | undefined {
+    return getSentinelProfileUsageImpl(sentinelState, sentinelId)
+  }
   function setClaudeHealth(health: ClaudeHealthUpdate): void {
     setClaudeHealthImpl(sentinelState, health, broadcast)
   }
@@ -2520,6 +2538,8 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     getSentinelDiag,
     setUsage,
     getUsage,
+    setSentinelProfileUsage,
+    getSentinelProfileUsage,
     setClaudeHealth,
     getClaudeHealth,
     setClaudeEfficiency,
