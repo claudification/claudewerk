@@ -6,11 +6,11 @@
  */
 
 import type { ChatApiConnection } from '@shared/chat-api-types'
-import type { CcSessionEntry } from '@shared/protocol'
+import type { CcSessionEntry, ProfileUsageSnapshot } from '@shared/protocol'
 import { buildSpawnDiagnostics } from '@shared/spawn-diagnostics'
 import { OPENCODE_TOOL_PERMISSION_OPTIONS, type OpenCodeToolPermission, type SpawnRequest } from '@shared/spawn-schema'
 import { ChevronDown, Zap } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   OPENCODE_CURATED_VALUES,
   OPENCODE_CUSTOM_SENTINEL,
@@ -176,6 +176,7 @@ export function SpawnDialog() {
   // Used by the Sentinel-profile radio (Phase 6) to know which profiles to
   // offer for the target sentinel. NAMES + display only (Profile-Env Boundary).
   const sentinelStatuses = useConversationsStore(s => s.sentinels)
+  const profileUsage = useConversationsStore(s => s.profileUsage)
   const { profiles: launchProfiles } = useLaunchProfiles()
   const launchProfilesRef = useRef(launchProfiles)
   launchProfilesRef.current = launchProfiles
@@ -685,6 +686,18 @@ export function SpawnDialog() {
   const targetDefaultSelection = targetSentinel?.defaultSelection
   const targetPools = targetSentinel?.pools ?? []
   const targetDefaultPool = targetSentinel?.defaultPool
+  // Build the per-profile usage map for the radio's inline mini-bars. Map
+  // keyed by NAME (radio knows nothing about the sentinelId); we filter
+  // `profileUsage` to entries from THIS sentinel so cross-sentinel name
+  // collisions (work@default vs work@beast) don't bleed into the picker.
+  const profileUsageMap = useMemo(() => {
+    const out = new Map<string, ProfileUsageSnapshot>()
+    if (!targetSentinel) return out
+    for (const entry of Object.values(profileUsage)) {
+      if (entry.sentinelId === targetSentinel.sentinelId) out.set(entry.profile, entry)
+    }
+    return out
+  }, [profileUsage, targetSentinel])
 
   const fieldsValue: LaunchFieldsValue = {
     model,
@@ -823,6 +836,7 @@ export function SpawnDialog() {
                       setSentinelPool(v)
                       haptic('tick')
                     }}
+                    profileUsage={profileUsageMap}
                   />
                 </div>
               )}

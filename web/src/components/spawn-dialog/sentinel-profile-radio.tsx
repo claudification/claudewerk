@@ -20,9 +20,18 @@
  * authed only. configDir / env are sentinel-local and never reach the UI.
  */
 
-import type { SentinelProfileInfo } from '@shared/protocol'
+import type { ProfileUsageSnapshot, SentinelProfileInfo } from '@shared/protocol'
 import { Hash, Shuffle, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+/** Pct -> tailwind text color. Mirrors usage-bar.tsx so the launch modal +
+ *  top bar speak the same visual language. */
+function usageTextColor(pct: number): string {
+  if (pct < 50) return 'text-emerald-400'
+  if (pct < 75) return 'text-amber-400'
+  if (pct < 90) return 'text-orange-400'
+  return 'text-red-400'
+}
 
 interface SentinelProfileRadioProps {
   /** Profiles reported by the target sentinel (NAMES + display only). */
@@ -45,6 +54,10 @@ interface SentinelProfileRadioProps {
   poolValue: string
   onPoolChange: (next: string) => void
   disabled?: boolean
+  /** Per-profile usage snapshots (NAME-keyed). When present, each profile
+   *  pill renders inline `5h X% / 7d Y%` so the user can pick by current
+   *  headroom. Errored / unauthed / missing entries render "no data". */
+  profileUsage?: Map<string, ProfileUsageSnapshot>
 }
 
 export function SentinelProfileRadio({
@@ -57,6 +70,7 @@ export function SentinelProfileRadio({
   poolValue,
   onPoolChange,
   disabled,
+  profileUsage,
 }: SentinelProfileRadioProps) {
   if (profiles.length < 2) return null
 
@@ -88,6 +102,7 @@ export function SentinelProfileRadio({
             active={resolvedValue === p.name}
             disabled={disabled}
             onClick={() => onChange(p.name)}
+            usage={profileUsage?.get(p.name)}
           />
         ))}
       </div>
@@ -139,21 +154,32 @@ interface ProfilePillProps {
   active: boolean
   disabled?: boolean
   onClick: () => void
+  /** Latest usage snapshot for this profile (when telemetry is available). */
+  usage?: ProfileUsageSnapshot
 }
 
-function buildProfilePillTitle(profile: SentinelProfileInfo): string {
+// fallow-ignore-next-line complexity
+function buildProfilePillTitle(profile: SentinelProfileInfo, usage?: ProfileUsageSnapshot): string {
   const poolPart = profile.pool === null ? 'pinned (no pool)' : `pool: ${profile.pool}`
   // Auth detection is best-effort -- sentinel only looks for credential
   // files at the configDir root. macOS keychain-stored creds yield a
   // false-negative, so surface as "auth unknown" instead of "not authed".
   const authPart = profile.authed ? 'authed' : 'auth unknown (run `sentinel profile auth`)'
-  return [profile.label, poolPart, authPart].filter(Boolean).join(' - ')
+  let usagePart = ''
+  if (usage?.error) usagePart = `usage: ${usage.error.kind}`
+  else if (usage?.fiveHour && usage?.sevenDay) {
+    usagePart = `5h ${Math.round(usage.fiveHour.usedPercent)}% / 7d ${Math.round(usage.sevenDay.usedPercent)}%`
+  }
+  return [profile.label, poolPart, authPart, usagePart].filter(Boolean).join(' - ')
 }
 
-function ProfilePill({ profile, active, disabled, onClick }: ProfilePillProps) {
-  const title = buildProfilePillTitle(profile)
+// fallow-ignore-next-line complexity
+function ProfilePill({ profile, active, disabled, onClick, usage }: ProfilePillProps) {
+  const title = buildProfilePillTitle(profile, usage)
   const colorStyle = profile.color ? { borderColor: profile.color } : undefined
   const fgColor = profile.color ? { color: profile.color } : undefined
+  const hasUsage = usage && !usage.error && usage.fiveHour && usage.sevenDay
+  const worstPct = hasUsage ? Math.max(usage.fiveHour!.usedPercent, usage.sevenDay!.usedPercent) : 0
   return (
     <button
       type="button"
@@ -171,6 +197,14 @@ function ProfilePill({ profile, active, disabled, onClick }: ProfilePillProps) {
     >
       <User className={cn('w-3 h-3', profile.authed ? '' : 'text-amber-400/80')} style={fgColor} />
       <span style={fgColor}>{profile.name}</span>
+      {hasUsage && (
+        <span className={cn('text-[9px] tabular-nums', usageTextColor(worstPct))}>{Math.round(worstPct)}%</span>
+      )}
+      {!hasUsage && usage?.error && (
+        <span className="text-[8px] text-comment italic">
+          {usage.error.kind === 'no_token' ? 'no auth' : 'no data'}
+        </span>
+      )}
       {profile.pool === null && <span className="text-[8px] text-comment uppercase">pinned</span>}
       {!profile.authed && <span className="text-[8px] text-amber-400/80 uppercase">auth ?</span>}
     </button>
