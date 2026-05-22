@@ -7,7 +7,7 @@
  * Backed by StoreDriver KVStore (replaces JSON file persistence).
  */
 
-import { cwdToProjectUri } from '../shared/project-uri'
+import { cwdToProjectUri, projectIdentityKey } from '../shared/project-uri'
 import type { KVStore } from './store/types'
 
 export interface ProjectOrderGroup {
@@ -34,12 +34,13 @@ const KV_KEY = 'project-order'
 let kv: KVStore | null = null
 let order: ProjectOrder = { tree: [] }
 
-/** Migrate a node ID from legacy `cwd:<path>` format to project URI. */
+/** Migrate a node ID from legacy `cwd:<path>` format to a canonical project URI.
+ *  Also collapses profile userinfo, empty authority, quad-slash scars, and
+ *  conversation fragments so sibling tree entries that name the same project
+ *  dedupe into one node. */
 function migrateNodeId(id: string): string {
-  if (id.startsWith('cwd:')) {
-    return cwdToProjectUri(id.slice(4))
-  }
-  return id
+  const upgraded = id.startsWith('cwd:') ? cwdToProjectUri(id.slice(4)) : id
+  return projectIdentityKey(upgraded)
 }
 
 /**
@@ -58,6 +59,9 @@ function normalize(raw: unknown): { order: ProjectOrder; migrated: boolean } {
 
   function walk(nodes: unknown[]): ProjectOrderNode[] {
     const out: ProjectOrderNode[] = []
+    // Dedupe project IDs within this level -- profile-collapsed siblings
+    // would otherwise produce duplicate keys that dnd-kit chokes on.
+    const seenProjects = new Set<string>()
     for (const n of nodes) {
       if (!n || typeof n !== 'object') continue
       const node = n as Record<string, unknown>
@@ -73,6 +77,11 @@ function normalize(raw: unknown): { order: ProjectOrder; migrated: boolean } {
       } else if ((node.type === 'project' || node.type === 'session') && typeof node.id === 'string') {
         const newId = migrateNodeId(node.id)
         if (newId !== node.id) migrated = true
+        if (seenProjects.has(newId)) {
+          migrated = true
+          continue
+        }
+        seenProjects.add(newId)
         out.push({ id: newId, type: 'project' })
       }
     }
@@ -117,13 +126,13 @@ export function setProjectOrder(update: ProjectOrder): void {
   save()
 }
 
-/** Extract all project URIs from a subtree. */
+/** Extract all project URIs from a subtree. Routes through migrateNodeId so
+ *  legacy or profile-bearing leaf IDs return their canonical form. */
 function getAllTreeProjects(nodes: ProjectOrderNode[] = order.tree): Set<string> {
   const uris = new Set<string>()
   for (const node of nodes) {
     if (node.type === 'project') {
-      const uri = node.id.startsWith('cwd:') ? cwdToProjectUri(node.id.slice(4)) : node.id
-      uris.add(uri)
+      uris.add(migrateNodeId(node.id))
     } else {
       for (const u of getAllTreeProjects(node.children)) uris.add(u)
     }

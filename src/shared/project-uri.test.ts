@@ -11,6 +11,7 @@ import {
   matchProjectUri,
   normalizeProjectUri,
   parseProjectUri,
+  projectIdentityKey,
   tryParseProjectUri,
   validateProjectUri,
 } from './project-uri'
@@ -611,5 +612,42 @@ describe('legacy profile@ URI -- validateProjectUri rejects new writes', () => {
     const r = validateProjectUri('claude://work@default/path')
     expect(r.valid).toBe(false)
     if (!r.valid) expect(r.error).toContain('userinfo')
+  })
+})
+
+describe('projectIdentityKey -- canonical key for settings/order lookups', () => {
+  test('strips conversation fragment', () => {
+    expect(projectIdentityKey('claude://default/x/y#conv_abc')).toBe('claude://default/x/y')
+  })
+
+  test('strips profile@ userinfo', () => {
+    expect(projectIdentityKey('claude://work@default/x/y')).toBe('claude://default/x/y')
+  })
+
+  test('upgrades empty authority to default sentinel', () => {
+    expect(projectIdentityKey('claude:///x/y')).toBe('claude://default/x/y')
+  })
+
+  test('collapses quad-slash scar', () => {
+    expect(projectIdentityKey('claude:////x/y')).toBe('claude://default/x/y')
+  })
+
+  test('strips trailing slash', () => {
+    expect(projectIdentityKey('claude://default/x/y/')).toBe('claude://default/x/y')
+  })
+
+  test('all transformations combine', () => {
+    expect(projectIdentityKey('CLAUDE://work@default/x/y/#conv_z')).toBe('claude://default/x/y')
+  })
+
+  test('idempotent on already-canonical input', () => {
+    const key = 'claude://default/Users/jonas/foo'
+    expect(projectIdentityKey(key)).toBe(key)
+    expect(projectIdentityKey(projectIdentityKey(key))).toBe(key)
+  })
+
+  test('passes wildcards through unchanged', () => {
+    expect(projectIdentityKey('*')).toBe('*')
+    expect(projectIdentityKey('claude:*')).toBe('claude:*')
   })
 })
