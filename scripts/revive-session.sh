@@ -127,10 +127,18 @@ if [[ -n "${RCLAUDE_EFFORT:-}" ]]; then
   EFFORT_FLAG=" --effort $RCLAUDE_EFFORT"
 fi
 
-# Append --model flag if set (passed through to claude CLI)
+# Append --model flag if set (passed through to claude CLI).
+# Single-quote the model: zsh (the login shell wrap below) parses the command
+# string and treats `[1m]` (the 1M-context model suffix, e.g.
+# `claude-sonnet-4-6[1m]`) as a glob character class. If the cwd has no
+# matching file, zsh aborts with `no matches found` and the rclaude process
+# never starts -- the tmux pane dies in <5s and the sentinel reports
+# "rclaude crashed during startup". Quoting also defends against any other
+# shell-metacharacter slipping into a model name.
 MODEL_FLAG=""
 if [[ -n "${RCLAUDE_MODEL:-}" ]]; then
-  MODEL_FLAG=" --model $RCLAUDE_MODEL"
+  SAFE_MODEL="${RCLAUDE_MODEL//[\"\'\`\\]/}"
+  MODEL_FLAG=" --model '${SAFE_MODEL}'"
 fi
 
 # Append --agent flag if set (passed through to claude CLI)
