@@ -304,3 +304,19 @@ export function isSameProject(a: string, b: string): boolean {
 export function isSameProjectConversation(a: string, b: string): boolean {
   return compareProjectConversationUri(a, b) === 0
 }
+
+/**
+ * Canonical project key for map / settings / sidebar group lookups.
+ *
+ * Strips the `#conversation` fragment, then runs `normalizeProjectUri()` so
+ * scheme case, empty authority, trailing slashes, quad-slash scars, and
+ * legacy `profile@host` userinfo all collapse to the same canonical string.
+ *
+ * Use this EVERYWHERE a URI is used as a key to identify a project --
+ * `projectSettings[projectIdentityKey(uri)]`, group-by buckets, sidebar map
+ * lookups, etc. If a future URI extension adds an identity-irrelevant slot,
+ * strip it HERE and nowhere else.
+ */
+export function projectIdentityKey(uri: string): string {
+  return normalizeProjectUri(projectWithoutConversation(uri))
+}

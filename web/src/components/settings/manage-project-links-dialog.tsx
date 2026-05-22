@@ -1,3 +1,4 @@
+import { projectIdentityKey } from '@shared/project-uri'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
@@ -134,7 +135,7 @@ export function ManageProjectLinksDialog() {
       .filter(p => {
         if (!lf) return true
         const name = projectDisplayName(p).toLowerCase()
-        const settingsLabel = projectSettings[p.project_uri]?.label?.toLowerCase()
+        const settingsLabel = projectSettings[projectIdentityKey(p.project_uri)]?.label?.toLowerCase()
         return name.includes(lf) || p.slug.includes(lf) || settingsLabel?.includes(lf)
       })
   }, [projects, focusProject, filter, projectSettings])

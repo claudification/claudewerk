@@ -1,3 +1,4 @@
+import { projectIdentityKey } from '@shared/project-uri'
 /**
  * Revive Dialog - Pre-revive configuration + launch monitor.
  *
@@ -69,7 +70,7 @@ export function ReviveDialog() {
   useEffect(() => {
     _openDialog = (options: ReviveDialogOptions) => {
       const sess = useConversationsStore.getState().conversationsById[options.conversationId]
-      const ps = sess ? projectSettings[sess.project] : undefined
+      const ps = sess ? projectSettings[projectIdentityKey(sess.project)] : undefined
       const gs = globalSettings as Record<string, unknown>
       const lc = sess?.launchConfig
 

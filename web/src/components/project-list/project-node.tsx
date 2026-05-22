@@ -1,3 +1,4 @@
+import { projectIdentityKey } from '@shared/project-uri'
 import { GitBranch, Pin } from 'lucide-react'
 import { memo, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
@@ -58,7 +59,7 @@ function DismissAllEndedButton({ endedIds }: { endedIds: string[] }) {
 const ProjectConversationGroup = memo(
   function ProjectConversationGroup({ conversationIds, project }: { conversationIds: string[]; project: string }) {
     const [showSettings, setShowSettings] = useState(false)
-    const ps = useConversationsStore(s => s.projectSettings[project])
+    const ps = useConversationsStore(s => s.projectSettings[projectIdentityKey(project)])
     const selectProject = useConversationsStore(s => s.selectProject)
     const displayName = ps?.label || extractProjectLabel(project)
     const displayColor = ps?.color
@@ -211,7 +212,7 @@ const ProjectConversationGroup = memo(
 
 export function PinnedProjectNode({ project }: { project: string }) {
   const [showSettings, setShowSettings] = useState(false)
-  const ps = useConversationsStore(s => s.projectSettings[project])
+  const ps = useConversationsStore(s => s.projectSettings[projectIdentityKey(project)])
   const selectProject = useConversationsStore(s => s.selectProject)
   const isSelected = useConversationsStore(s => s.selectedProjectUri === project)
   const displayName = ps?.label || extractProjectLabel(project)
@@ -273,7 +274,7 @@ const ConversationCardById = memo(function ConversationCardById({ conversationId
 
 export const ProjectNode = memo(
   function ProjectNode({ project, conversationIds }: { project: string; conversationIds: string[] }) {
-    const isPinned = useConversationsStore(s => s.projectSettings[project]?.pinned)
+    const isPinned = useConversationsStore(s => s.projectSettings[projectIdentityKey(project)]?.pinned)
     if (conversationIds.length === 1) {
       return (
         <div className="relative">

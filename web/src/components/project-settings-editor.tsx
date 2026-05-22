@@ -1,3 +1,4 @@
+import { projectIdentityKey } from '@shared/project-uri'
 import { OPENCODE_TOOL_PERMISSION_OPTIONS, type OpenCodeToolPermission } from '@shared/spawn-schema'
 import {
   Activity,
@@ -581,7 +582,7 @@ const PROJECT_TABS: SettingsShellTab[] = [
 export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEditorProps) {
   const projectSettings = useConversationsStore(s => s.projectSettings)
   const setProjectSettings = useConversationsStore(s => s.setProjectSettings)
-  const current = projectSettings[project] || {}
+  const current = projectSettings[projectIdentityKey(project)] || {}
 
   const [activeTab, setActiveTab] = useState('general')
   const [label, setLabel] = useState(current.label || '')
@@ -604,7 +605,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
   const [generateError, setGenerateError] = useState<string | null>(null)
 
   useEffect(() => {
-    const c = projectSettings[project] || {}
+    const c = projectSettings[projectIdentityKey(project)] || {}
     setLabel(c.label || '')
     setIcon(c.icon || '')
     setColor(c.color || '')

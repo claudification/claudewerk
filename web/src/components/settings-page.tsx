@@ -1,3 +1,4 @@
+import { projectIdentityKey } from '@shared/project-uri'
 import { Save } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useConversationsStore, wsSend } from '@/hooks/use-conversations'
@@ -31,7 +32,10 @@ function DefaultConversationPicker({ value, onChange }: { value: string; onChang
     const seen = new Map<string, string>()
     for (const s of conversations) {
       if (s.project && !seen.has(s.project)) {
-        seen.set(s.project, projectSettings[s.project]?.label || extractProjectLabel(s.project) || s.project)
+        seen.set(
+          s.project,
+          projectSettings[projectIdentityKey(s.project)]?.label || extractProjectLabel(s.project) || s.project,
+        )
       }
     }
     return Array.from(seen.entries()).sort((a, b) => a[1].localeCompare(b[1]))

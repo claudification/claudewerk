@@ -1,3 +1,4 @@
+import { projectIdentityKey } from '@shared/project-uri'
 import type { HookEvent } from '@shared/protocol'
 import { memo, useRef } from 'react'
 import { useShallow } from 'zustand/react/shallow'
@@ -76,7 +77,7 @@ export const ConversationDetail = memo(function ConversationDetail() {
   })
   const sentinelConnected = useConversationsStore(state => state.sentinelConnected)
   const projectSettings = useConversationsStore(state =>
-    conversation?.project ? state.projectSettings[conversation.project] : undefined,
+    conversation?.project ? state.projectSettings[projectIdentityKey(conversation.project)] : undefined,
   )
 
   const { selectedSubagentId, selectSubagent, subagentTranscript, subagentLoading } =

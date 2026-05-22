@@ -1,3 +1,4 @@
+import { projectIdentityKey } from '@shared/project-uri'
 /**
  * TranscriptView - Virtualized transcript renderer.
  * Uses @tanstack/react-virtual for efficient rendering of large transcript streams.
@@ -207,7 +208,9 @@ const ThinkingSpinner = memo(function ThinkingSpinner({ conversationId }: { conv
   // Custom verbs: project settings override > conversation verbs (from CC settings) > defaults
   const customVerbs = useConversationsStore(state => {
     const conversation = conversationId ? state.conversationsById[conversationId] : undefined
-    const projectVerbs = conversation?.project ? state.projectSettings[conversation.project]?.verbs : undefined
+    const projectVerbs = conversation?.project
+      ? state.projectSettings[projectIdentityKey(conversation.project)]?.verbs
+      : undefined
     return projectVerbs?.length ? projectVerbs : conversation?.spinnerVerbs
   })
   const verbList = customVerbs?.length ? customVerbs : VERBS

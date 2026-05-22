@@ -1,3 +1,4 @@
+import { projectIdentityKey } from '@shared/project-uri'
 /**
  * Spawn Dialog - Pre-spawn configuration + launch monitor
  *
@@ -193,7 +194,7 @@ export function SpawnDialog() {
   const progressReset = progress.reset
   useEffect(() => {
     _openDialog = (options: SpawnDialogOptions) => {
-      const ps = projectSettings[cwdToProjectUri(options.path)]
+      const ps = projectSettings[projectIdentityKey(cwdToProjectUri(options.path))]
       const gs = globalSettings as Record<string, unknown>
       // Resolve defaults: project > global > hardcoded
       const defaultMode = ps?.defaultLaunchMode || (gs.defaultLaunchMode as string) || 'headless'
@@ -244,7 +245,7 @@ export function SpawnDialog() {
       // the broker keys on). Falls back to 'safe' so we never silently grant
       // bash/write/edit on a fresh project.
       const opencodeProjectUri = `opencode://${deriveOpenCodeSlug(initialOpenCodeModel)}`
-      const ocPs = projectSettings[opencodeProjectUri]
+      const ocPs = projectSettings[projectIdentityKey(opencodeProjectUri)]
       setOpenCodeToolPermission((ocPs?.defaultOpenCodeToolPermission ?? 'safe') as OpenCodeToolPermission)
       setConfigTab('basic')
       setSavedFeedback(null)

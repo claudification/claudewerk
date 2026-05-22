@@ -1,3 +1,4 @@
+import { projectIdentityKey } from '@shared/project-uri'
 /**
  * CM6 autocomplete for slash commands, @ mentions, and : conversation refs.
  *
@@ -246,7 +247,10 @@ function conversationCompletions(query: string): ConversationCompletion[] {
     // For un-labelled projects, fall back to the project label (same convention
     // the sidebar + command-palette conversation rows use). conversation.id is a UUID,
     // so never display it as a name.
-    const displayLabel = projectDisplayName(conversation.project, projectSettings[conversation.project]?.label)
+    const displayLabel = projectDisplayName(
+      conversation.project,
+      projectSettings[projectIdentityKey(conversation.project)]?.label,
+    )
     const name = conversation.title || conversation.agentName || ''
     // The insertable slug -- always compound `project:conversation-slug` to mirror
     // list_conversations and stay stable across spawn/end churn at the project.

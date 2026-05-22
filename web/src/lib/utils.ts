@@ -1,3 +1,4 @@
+import { projectIdentityKey } from '@shared/project-uri'
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { BUILD_VERSION } from '../../../src/shared/version'
@@ -81,7 +82,7 @@ export function parseWorktreeUri(uri: string): { parentUri: string; branchName: 
  * label when present, otherwise falls back to the last 3 path segments. Same
  * convention the project list + conversation switcher use -- keep all name
  * rendering going through this so un-labelled projects look consistent
- * everywhere. Pass `projectSettings[project]?.label` (or `undefined`) as the
+ * everywhere. Pass `projectSettings[projectIdentityKey(project)]?.label` (or `undefined`) as the
  * label; caller handles the lookup so the helper stays map-shape-agnostic.
  *
  * Accepts both project URIs ("claude:///Users/jonas/foo") and raw paths.
@@ -123,7 +124,9 @@ export function conversationAddressableSlug(
   siblingConversations: ReadonlyArray<{ id: string; title?: string; agentName?: string }>,
 ): string {
   const projectName =
-    projectSettings[conversation.project]?.label || extractProjectLabel(conversation.project) || 'project'
+    projectSettings[projectIdentityKey(conversation.project)]?.label ||
+    extractProjectLabel(conversation.project) ||
+    'project'
   const projectSlug = slugify(projectName)
   const titleFor = (s: { id: string; title?: string; agentName?: string }) =>
     slugify(s.title || s.agentName || s.id.slice(0, 8))

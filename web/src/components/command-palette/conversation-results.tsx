@@ -1,3 +1,4 @@
+import { projectIdentityKey } from '@shared/project-uri'
 import { type Conversation, canTerminal, projectPath } from '@/lib/types'
 import { cn, formatAge, formatModel, projectDisplayName } from '@/lib/utils'
 import { renderProjectIcon } from '../project-settings-editor'
@@ -59,25 +60,31 @@ export function ConversationRow({
       </span>
       <div className="flex-1 min-w-0">
         <div className="text-xs text-foreground truncate flex items-center gap-1.5">
-          {projectSettings[conversation.project]?.icon && (
+          {projectSettings[projectIdentityKey(conversation.project)]?.icon && (
             <span
               style={
-                projectSettings[conversation.project]?.color
-                  ? { color: projectSettings[conversation.project].color }
+                projectSettings[projectIdentityKey(conversation.project)]?.color
+                  ? { color: projectSettings[projectIdentityKey(conversation.project)].color }
                   : undefined
               }
             >
-              {renderProjectIcon(projectSettings[conversation.project]?.icon || '', 'w-3 h-3 inline')}
+              {renderProjectIcon(
+                projectSettings[projectIdentityKey(conversation.project)]?.icon || '',
+                'w-3 h-3 inline',
+              )}
             </span>
           )}
           <span
             style={
-              projectSettings[conversation.project]?.color
-                ? { color: projectSettings[conversation.project].color }
+              projectSettings[projectIdentityKey(conversation.project)]?.color
+                ? { color: projectSettings[projectIdentityKey(conversation.project)].color }
                 : undefined
             }
           >
-            {projectDisplayName(projectPath(conversation.project), projectSettings[conversation.project]?.label)}
+            {projectDisplayName(
+              projectPath(conversation.project),
+              projectSettings[projectIdentityKey(conversation.project)]?.label,
+            )}
           </span>
           {(conversation.title || conversation.agentName) && (
             <>

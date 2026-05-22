@@ -8,6 +8,7 @@ import {
   useSensors,
 } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { projectIdentityKey } from '@shared/project-uri'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   type ConversationStructure,
@@ -446,7 +447,7 @@ export function ProjectList() {
                           const childProject = child.id
                           const childIds = visibleIdsByProject.get(childProject)
                           if (!childIds || childIds.length === 0) {
-                            if (projectSettings[childProject]?.pinned) {
+                            if (projectSettings[projectIdentityKey(childProject)]?.pinned) {
                               return (
                                 <SortableNode key={child.id} id={child.id}>
                                   <PinnedProjectNode project={childProject} />
@@ -477,7 +478,7 @@ export function ProjectList() {
               const nodeProject = node.id
               const nodeIds = visibleIdsByProject.get(nodeProject)
               if (!nodeIds || nodeIds.length === 0) {
-                if (projectSettings[nodeProject]?.pinned) {
+                if (projectSettings[projectIdentityKey(nodeProject)]?.pinned) {
                   return (
                     <SortableNode key={node.id} id={node.id}>
                       <PinnedProjectNode project={nodeProject} />

@@ -1,3 +1,4 @@
+import { projectIdentityKey } from '@shared/project-uri'
 import { Fzf } from 'fzf'
 import { useMemo } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
@@ -56,7 +57,7 @@ export function useConversationMode(
     () =>
       new Fzf(allConversations, {
         selector: (s: Conversation) => {
-          const ps = projectSettings[s.project]
+          const ps = projectSettings[projectIdentityKey(s.project)]
           const title = s.title || ''
           const label = ps?.label || ''
           const path = projectPath(s.project)

@@ -1,3 +1,4 @@
+import { projectIdentityKey } from '@shared/project-uri'
 import { useState } from 'react'
 import { useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import type { Conversation } from '@/lib/types'
@@ -205,7 +206,7 @@ function RecapAllButton({ conversations }: { conversations: Conversation[] }) {
 }
 
 export function ProjectActionPanel({ projectUri }: { projectUri: string }) {
-  const ps = useConversationsStore(s => s.projectSettings[projectUri])
+  const ps = useConversationsStore(s => s.projectSettings[projectIdentityKey(projectUri)])
   const conversations = useConversationsStore(s => s.conversations)
   const sentinelConnected = useConversationsStore(s => s.sentinelConnected)
   const [showAllRecent, setShowAllRecent] = useState(false)

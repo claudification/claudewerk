@@ -1,3 +1,4 @@
+import { projectIdentityKey } from '@shared/project-uri'
 /**
  * ConversationTag - Clickable conversation name badge with hover tooltip showing project/status.
  * Shared by send_message (tool-line) and received inter-conversation messages (group-view).
@@ -29,7 +30,7 @@ function findConversationBySlug(slug: string) {
   const { conversations, projectSettings } = useConversationsStore.getState()
   const normalizedSlug = slug.toLowerCase()
   for (const s of conversations) {
-    const ps = projectSettings[s.project]
+    const ps = projectSettings[projectIdentityKey(s.project)]
     if (ps?.label && slugify(ps.label) === normalizedSlug) return s
     if (s.title && slugify(s.title) === normalizedSlug) return s
     const dirname = extractProjectLabel(s.project)
@@ -48,7 +49,7 @@ function resolveConversationDisplay(idOrSlug: string, fallbackId?: string) {
     (fallbackId ? conversationsById[fallbackId] : undefined) ||
     findConversationBySlug(bare) ||
     findConversationBySlug(idOrSlug)
-  const projLabel = conversation?.project ? projectSettings[conversation.project]?.label : undefined
+  const projLabel = conversation?.project ? projectSettings[projectIdentityKey(conversation.project)]?.label : undefined
   const title = conversation?.title
   const displayName =
     projLabel && title

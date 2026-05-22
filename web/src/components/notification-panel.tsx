@@ -1,3 +1,4 @@
+import { projectIdentityKey } from '@shared/project-uri'
 import type { ReactNode } from 'react'
 import { renderProjectIcon } from '@/components/project-settings-editor'
 import { BannerButton, ConversationBanner } from '@/components/ui/conversation-banner'
@@ -239,7 +240,7 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
     <div className="divide-y divide-border/50">
       {conversationGroups.map(([conversationId, groupItems]) => {
         const conversation = conversations[conversationId]
-        const ps = conversation ? projectSettings[conversation.project] : undefined
+        const ps = conversation ? projectSettings[projectIdentityKey(conversation.project)] : undefined
         const displayColor = ps?.color
         const conversationName = conversation?.title || conversation?.agentName || conversationId.slice(0, 8)
         const projectName = conversation ? projectDisplayName(projectPath(conversation.project), ps?.label) : ''

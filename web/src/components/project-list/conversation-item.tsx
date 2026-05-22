@@ -1,4 +1,5 @@
 import { formatResetIn } from '@shared/format-reset-time'
+import { projectIdentityKey } from '@shared/project-uri'
 import { Clock } from 'lucide-react'
 import { memo, type ReactNode, useEffect, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
@@ -751,7 +752,7 @@ const ConversationItemFull = memo(function ConversationItemFull({ conversation }
   const selectConversation = useConversationsStore(s => s.selectConversation)
 
   const openTab = useConversationsStore(s => s.openTab)
-  const ps = useConversationsStore(s => s.projectSettings[conversation.project])
+  const ps = useConversationsStore(s => s.projectSettings[projectIdentityKey(conversation.project)])
   const showContextBar = useConversationsStore(s => s.controlPanelPrefs.showContextInList)
   const showCost = useConversationsStore(s => s.controlPanelPrefs.showCostInList)
   const showRecapDesc = useConversationsStore(s => s.controlPanelPrefs.showRecapDescInList)
@@ -1067,7 +1068,7 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
   )
   const selectConversation = useConversationsStore(s => s.selectConversation)
 
-  const ps = useConversationsStore(s => s.projectSettings[conversation.project])
+  const ps = useConversationsStore(s => s.projectSettings[projectIdentityKey(conversation.project)])
   const showCost = useConversationsStore(s => s.controlPanelPrefs.showCostInList)
   const showContextBar = useConversationsStore(s => s.controlPanelPrefs.showContextInList)
   const isRenaming = useConversationsStore(s => s.renamingConversationId === conversation.id)
@@ -1412,7 +1413,7 @@ export const InactiveProjectItem = memo(
     )
     const latest =
       conversations.length > 0 ? conversations.reduce((a, b) => (a.lastActivity > b.lastActivity ? a : b)) : null
-    const ps = useConversationsStore(s => (latest ? s.projectSettings[latest.project] : undefined))
+    const ps = useConversationsStore(s => (latest ? s.projectSettings[projectIdentityKey(latest.project)] : undefined))
     if (!latest) return null
     const displayName = projectDisplayName(projectPath(latest.project), ps?.label)
     const displayColor = ps?.color

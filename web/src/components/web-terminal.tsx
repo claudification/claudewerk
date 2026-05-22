@@ -1,3 +1,4 @@
+import { projectIdentityKey } from '@shared/project-uri'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal } from '@xterm/xterm'
@@ -70,7 +71,7 @@ export function WebTerminal({ conversationId, onClose, popout }: WebTerminalProp
   useEffect(() => {
     if (!popout) return
     if (ownerConversation) {
-      const ps = projectSettings[ownerConversation.project]
+      const ps = projectSettings[projectIdentityKey(ownerConversation.project)]
       const name = ps?.label || extractProjectLabel(ownerConversation.project) || conversationId.slice(0, 8)
       document.title = `TTY: ${name}`
     } else {

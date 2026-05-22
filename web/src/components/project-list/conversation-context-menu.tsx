@@ -1,3 +1,4 @@
+import { projectIdentityKey } from '@shared/project-uri'
 import { ContextMenu } from 'radix-ui'
 import type { ReactNode } from 'react'
 import { saveProjectOrder, updateProjectSettings, useConversationsStore, wsSend } from '@/hooks/use-conversations'
@@ -121,7 +122,7 @@ export function ConversationContextMenu({
 }) {
   const dismissConversation = useConversationsStore(s => s.dismissConversation)
   const selectConversation = useConversationsStore(s => s.selectConversation)
-  const ps = useConversationsStore(s => s.projectSettings[conversation.project])
+  const ps = useConversationsStore(s => s.projectSettings[projectIdentityKey(conversation.project)])
 
   return (
     <ContextMenu.Root>
@@ -278,7 +279,7 @@ export function ConversationContextMenu({
 }
 
 function ProjectMenuItems({ project, onOpenSettings }: { project: string; onOpenSettings: () => void }) {
-  const ps = useConversationsStore(s => s.projectSettings[project])
+  const ps = useConversationsStore(s => s.projectSettings[projectIdentityKey(project)])
   return (
     <>
       <ContextMenu.Item
