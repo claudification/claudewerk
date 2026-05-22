@@ -1173,6 +1173,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
               lastActivityAgoMs,
               hostVersion: conv.version,
               ccSessionId: ccSessionIdHint,
+              profile: conv.resolvedProfile,
               note: endedBy
                 ? `prev end: source=${endedBy.source} initiator=${endedBy.initiator ?? 'none'} at=${new Date(endedBy.at).toISOString()}`
                 : 'no prior endedBy recorded',
@@ -1433,6 +1434,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
         lastActivityAgoMs,
         hostVersion: conv.version,
         ccSessionId: ccSessionIdHint,
+        profile: conv.resolvedProfile,
       }
 
       // Append to NDJSON termination log (best-effort, never throws). The

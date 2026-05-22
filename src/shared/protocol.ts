@@ -1218,6 +1218,13 @@ export interface TerminationDetail {
   /** Agent host version string (rclaude/HASH) for cross-deploy correlation. */
   hostVersion?: string
   /**
+   * Resolved sentinel-profile name (`conv.resolvedProfile`) at time of death.
+   * Absent for default-profile conversations. Required when reviewing
+   * quota-exhaustion bugs offline: without it you cannot tell which account
+   * died from the NDJSON alone. NAME only, never credentials/configDir.
+   */
+  profile?: string
+  /**
    * Discriminator. Default 'termination'. 'unend' records are appended when
    * `resumeConversation` flips a previously-`ended` conversation back to
    * `idle` (the flap signal) -- they share the schema for one-file greppability.
