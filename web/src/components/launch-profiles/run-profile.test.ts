@@ -52,21 +52,25 @@ describe('buildSpawnRequest', () => {
     expect((req as unknown as { immediate?: boolean }).immediate).toBeUndefined()
   })
 
-  it('carries daemon launch fields straight through', () => {
+  it('carries daemon launch fields (transport + injected paths) straight through', () => {
     const req = buildSpawnRequest(
-      p({ spawn: { backend: 'daemon', daemonMode: 'new', daemonSettingsPath: '/s.json' } }),
+      p({ spawn: { backend: 'claude', transport: 'claude-daemon', settingsPath: '/s.json' } }),
       '/x',
       undefined,
     )
-    expect(req.backend).toBe('daemon')
-    expect(req.daemonMode).toBe('new')
-    expect(req.daemonSettingsPath).toBe('/s.json')
+    expect(req.backend).toBe('claude')
+    expect(req.transport).toBe('claude-daemon')
+    expect(req.settingsPath).toBe('/s.json')
   })
 })
 
 describe('runProfile -- daemon profiles always open the dialog', () => {
   it('a daemon profile opens the spawn dialog pre-filled, even when immediate', async () => {
-    const profile = p({ id: 'lp_daemon', spawn: { backend: 'daemon', daemonMode: 'new' }, immediate: true })
+    const profile = p({
+      id: 'lp_daemon',
+      spawn: { backend: 'claude', transport: 'claude-daemon' },
+      immediate: true,
+    })
     await runProfile(profile, { cwd: '/tmp/work' }, { sentinels: [] })
     expect(sendSpawnRequestMock).not.toHaveBeenCalled()
     expect(openSpawnDialogMock).toHaveBeenCalledTimes(1)
@@ -88,7 +92,7 @@ describe('runProfile -- daemon profiles always open the dialog', () => {
   })
 
   it('a daemon profile with no resolvable cwd is blocked before opening the dialog', async () => {
-    const profile = p({ spawn: { backend: 'daemon', daemonMode: 'new' }, immediate: true })
+    const profile = p({ spawn: { backend: 'claude', transport: 'claude-daemon' }, immediate: true })
     const toasts: string[] = []
     await runProfile(profile, {}, { sentinels: [], onToast: t => toasts.push(t.variant) })
     expect(openSpawnDialogMock).not.toHaveBeenCalled()

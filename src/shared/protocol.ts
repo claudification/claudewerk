@@ -2059,20 +2059,22 @@ export interface LaunchConfig {
   appendSystemPrompt?: string
   agentHostType?: string
   /** Resolved transport for this launch (transport-reframe): 'claude-pty' |
-   *  'claude-headless' | 'claude-daemon'. The control-panel-facing wire field;
-   *  `daemonMode` below moves into `transportMeta` at Phase 6. */
+   *  'claude-headless' | 'claude-daemon'. The control-panel-facing wire field.
+   *  Daemon launch inputs (mode / settingsPath / mcpConfigPath) live in
+   *  `transportMeta` -- the control panel reads the typed display fields the
+   *  daemon transport copies into this struct, not the opaque bag. */
   transport?: string
-  openCodeModel?: string
-  acpAgent?: string
-  toolPermission?: 'none' | 'safe' | 'full'
-  // Daemon backend (agentHostType === 'daemon'): how the worker was launched.
-  // NOT the conversation's ccSessionId -- these are launch INPUTS the daemon
-  // backend recorded so the control panel can show how a daemon conversation
-  // was started. `daemonResumeSessionId` (the fork-from id) is deliberately
-  // absent -- it is session-shaped and never surfaced.
+  /** Daemon transport (transport === 'claude-daemon'): how the worker was
+   *  launched. NOT the conversation's ccSessionId -- these are launch INPUTS
+   *  the claude-daemon transport recorded so the control panel can show how a
+   *  daemon conversation was started. The fork-from session id is deliberately
+   *  absent -- it is session-shaped and never surfaced. */
   daemonMode?: 'new' | 'resume' | 'attach'
   daemonSettingsPath?: string
   daemonMcpConfigPath?: string
+  openCodeModel?: string
+  acpAgent?: string
+  toolPermission?: 'none' | 'safe' | 'full'
   /**
    * Per-launch sentinel-profile INTENT -- what the user asked for at launch
    * time. Absent => no hint (sentinel picks least-loaded across all profiles).
@@ -2692,36 +2694,18 @@ export interface SpawnConversation {
   /** Which ACP agent recipe to use when agentHostType === 'acp'. The sentinel
    *  resolves this against its acp-recipes registry. e.g. 'opencode'. */
   acpAgent?: string
-  /** Daemon launch mode. 'new': `claude --bg` a fresh worker. 'resume':
-   *  `claude --bg --resume <sessionId>` a forked worker. 'attach': attach to an
-   *  already-running daemon worker (no `claude --bg`). Defaults to 'new' when
-   *  absent. Only meaningful when agentHostType === 'daemon'. */
-  daemonMode?: 'new' | 'resume' | 'attach'
-  /** Daemon session id to resume -- the input to `claude --bg --resume <id>`.
-   *  The resumed worker forks to a fresh ccSessionId (it carries prior history
-   *  but does NOT keep this id). Required when daemonMode === 'resume'. Only
-   *  meaningful when agentHostType === 'daemon'. */
-  daemonResumeSessionId?: string
-  /** 8-hex daemon worker short id to attach to, taken from the daemon roster.
-   *  Required when daemonMode === 'attach'; the sentinel never runs
-   *  `claude --bg` for attach. Only meaningful when agentHostType === 'daemon'. */
-  daemonAttachShort?: string
-  /** Absolute path on the sentinel host to a settings JSON. Injected as
-   *  `claude --bg --settings <path>` for daemonMode new|resume only (attach
-   *  reuses the worker's existing config). Only meaningful when
-   *  agentHostType === 'daemon'. */
-  daemonSettingsPath?: string
-  /** Absolute path on the sentinel host to an MCP config JSON. Injected as
-   *  `claude --bg --mcp-config <path>` for daemonMode new|resume only. Only
-   *  meaningful when agentHostType === 'daemon'. */
-  daemonMcpConfigPath?: string
   /** Resolved transport for this spawn (transport-reframe § 0.2): the wire
-   *  mechanism driving the claude backend. The sentinel branches on this in
-   *  later phases; carried now so the value round-trips end-to-end. */
+   *  mechanism driving the claude backend. The sentinel routes daemon spawns by
+   *  agentHostType === 'daemon' and reads the daemon launch inputs (mode /
+   *  attachShort / resumeSessionId / settingsPath / mcpConfigPath) from
+   *  `transportMeta` -- there are no flat `daemon*` fields on this message. */
   transport?: string
   /** Backend-specific opaque bag (parallel to agentHostMeta). The broker core
    *  forwards it wholesale; only the backend / sentinel dispatch path / agent
-   *  host read it. See `.claude/docs/plan-claude-transport-reframe.md` § 0.3. */
+   *  host read it. The claude-daemon transport's launch inputs ride here:
+   *  `mode` ('new'|'resume'|'attach'), `attachShort`, `resumeSessionId`,
+   *  `settingsPath`, `mcpConfigPath`, `appendSystemPrompt`. See
+   *  `.claude/docs/plan-claude-transport-reframe.md` § 0.3. */
   transportMeta?: Record<string, unknown>
   /** Sentinel-profile selection at spawn time. Either a `SelectionMode`
    *  ('default' | 'balanced' | 'random') OR a literal profile NAME ("Fixed"
@@ -2962,7 +2946,14 @@ export interface ConversationSummary {
   recapFresh?: boolean
   hostSentinelId?: string
   hostSentinelAlias?: string
+  /** Agent family (claude / opencode / chat-api / hermes). The daemon is NOT a
+   *  backend -- a daemon conversation reports `backend: 'claude'` + the
+   *  `claude-daemon` transport below. */
   backend?: string
+  /** Resolved transport for the claude family: 'claude-pty' | 'claude-headless'
+   *  | 'claude-daemon'. The canonical discriminator the control panel keys
+   *  daemon-specific UI off. */
+  transport?: string
 }
 
 // Subscription channels (dashboard <-> broker pub/sub)

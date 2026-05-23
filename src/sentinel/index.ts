@@ -2886,25 +2886,37 @@ function connect(
               break
             }
 
-            // NEW: claude --bg a fresh worker. RESUME: claude --bg --resume a
-            // forked worker. ATTACH: attach to an already-running roster worker
-            // (no claude --bg). Default 'new' for backward-compat with the
-            // pre-Phase-C daemon backend, which sends no daemonMode.
-            const daemonMode: DaemonLaunchMode = spawnMsg.daemonMode ?? 'new'
+            // Transport reframe (Phase 6): the daemon launch inputs ride in the
+            // opaque `transportMeta` bag (normalized broker-side) -- there are no
+            // flat `daemon*` fields on the spawn message anymore. src/sentinel is
+            // a backend dispatch path, allowed to read transportMeta.
+            const daemonMeta = (spawnMsg.transportMeta ?? {}) as Record<string, unknown>
+            const daemonMetaStr = (key: string): string | undefined =>
+              typeof daemonMeta[key] === 'string' ? (daemonMeta[key] as string) : undefined
+            // NEW: dispatch a fresh worker. RESUME: dispatch --resume a forked
+            // worker. ATTACH: attach to an already-running roster worker (no
+            // dispatch). Default 'new' when the mode key is absent/garbage.
+            const metaMode = daemonMetaStr('mode')
+            const daemonMode: DaemonLaunchMode = metaMode === 'resume' || metaMode === 'attach' ? metaMode : 'new'
+            const daemonResumeSessionId = daemonMetaStr('resumeSessionId')
+            const daemonAttachShort = daemonMetaStr('attachShort')
+            const daemonSettingsPath = daemonMetaStr('settingsPath')
+            const daemonMcpConfigPath = daemonMetaStr('mcpConfigPath')
+            const daemonAppendSystemPrompt = daemonMetaStr('appendSystemPrompt')
 
-            // Mode-specific required fields. NEW needs a prompt (claude --bg
-            // dispatches a job with one); RESUME needs the session to fork
-            // from; ATTACH needs the roster short to attach to.
+            // Mode-specific required fields. NEW needs a prompt (the worker
+            // dispatches with one); RESUME needs the session to fork from;
+            // ATTACH needs the roster short to attach to.
             if (daemonMode === 'new' && !spawnMsg.prompt?.trim()) {
-              sendDaemonFail('daemon spawn (new mode) requires an initial prompt -- claude --bg dispatches with one')
+              sendDaemonFail('claude-daemon spawn (new mode) requires an initial prompt')
               break
             }
-            if (daemonMode === 'resume' && !spawnMsg.daemonResumeSessionId?.trim()) {
-              sendDaemonFail('daemon spawn (resume mode) requires daemonResumeSessionId (the session to resume)')
+            if (daemonMode === 'resume' && !daemonResumeSessionId?.trim()) {
+              sendDaemonFail('claude-daemon spawn (resume mode) requires transportMeta.resumeSessionId')
               break
             }
-            if (daemonMode === 'attach' && !spawnMsg.daemonAttachShort?.trim()) {
-              sendDaemonFail('daemon spawn (attach mode) requires daemonAttachShort (the roster worker short id)')
+            if (daemonMode === 'attach' && !daemonAttachShort?.trim()) {
+              sendDaemonFail('claude-daemon spawn (attach mode) requires transportMeta.attachShort')
               break
             }
 
@@ -2936,7 +2948,7 @@ function connect(
             let daemonShort: string
             if (daemonMode === 'attach') {
               // daemonAttachShort is validated non-empty above.
-              const attachShort = spawnMsg.daemonAttachShort as string
+              const attachShort = daemonAttachShort as string
               const controlSock = resolveControlSocket()
               if (!controlSock) {
                 sendDaemonFail(
@@ -2957,9 +2969,9 @@ function connect(
               daemonShort = attachShort
               launchLog(spawnMsg.jobId, 'daemon attach target verified', 'ok', `short=${daemonShort} present`)
             } else {
-              // NEW / RESUME -- validate config paths exist, then claude --bg.
+              // NEW / RESUME -- validate config paths exist, then dispatch.
               const pathCheck = validateDaemonConfigPaths(
-                { settingsPath: spawnMsg.daemonSettingsPath, mcpConfigPath: spawnMsg.daemonMcpConfigPath },
+                { settingsPath: daemonSettingsPath, mcpConfigPath: daemonMcpConfigPath },
                 existsSync,
               )
               if (!pathCheck.ok) {
@@ -2970,13 +2982,13 @@ function connect(
                 cwd: expandedCwd,
                 mode: daemonMode,
                 prompt: spawnMsg.prompt,
-                resumeSessionId: spawnMsg.daemonResumeSessionId,
+                resumeSessionId: daemonResumeSessionId,
                 model: spawnMsg.model,
                 name: spawnMsg.conversationName,
                 profile: resolvedSpawnProfile,
-                settingsPath: spawnMsg.daemonSettingsPath,
-                mcpConfigPath: spawnMsg.daemonMcpConfigPath,
-                appendSystemPrompt: spawnMsg.appendSystemPrompt,
+                settingsPath: daemonSettingsPath,
+                mcpConfigPath: daemonMcpConfigPath,
+                appendSystemPrompt: daemonAppendSystemPrompt,
                 env: spawnMsg.env,
                 jobId: spawnMsg.jobId,
               })
@@ -2994,7 +3006,7 @@ function connect(
               conversationId: spawnMsg.conversationId,
               daemonShort,
               mode: daemonMode,
-              resumeSessionId: spawnMsg.daemonResumeSessionId,
+              resumeSessionId: daemonResumeSessionId,
               secret,
               jobId: spawnMsg.jobId,
               conversationName: spawnMsg.conversationName,

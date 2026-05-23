@@ -20,7 +20,7 @@ function fakeKv(initial?: Record<string, unknown>): KVStore {
 // do not inherit this file's mutations.
 afterAll(() => initGlobalSettings(fakeKv({})))
 
-describe('global-settings defaultTransport (transport reframe Phase 3)', () => {
+describe('global-settings defaultTransport (transport reframe)', () => {
   it('schema default: defaultTransport.claude is claude-pty', () => {
     initGlobalSettings(fakeKv())
     expect(getGlobalSettings().defaultTransport.claude).toBe('claude-pty')
@@ -31,39 +31,24 @@ describe('global-settings defaultTransport (transport reframe Phase 3)', () => {
     expect(getGlobalSettings().defaultTransport.claude).toBe('claude-pty')
   })
 
-  it('migrates a legacy defaultBackend=daemon blob into defaultTransport.claude=claude-daemon', () => {
+  it('honors a stored defaultTransport.claude value', () => {
+    initGlobalSettings(fakeKv({ defaultTransport: { claude: 'claude-daemon' } }))
+    expect(getGlobalSettings().defaultTransport.claude).toBe('claude-daemon')
+  })
+
+  it('parses a pre-Phase-6 blob carrying the removed defaultBackend (zod strips it, falls back to the default)', () => {
+    // Phase 3 migrated live blobs to `defaultTransport`; Phase 6 dropped the
+    // `defaultBackend` enum + the migrate-on-read. A blob that ONLY has the
+    // removed field parses cleanly (key stripped) to the schema default.
     initGlobalSettings(fakeKv({ defaultBackend: 'daemon' }))
     const s = getGlobalSettings()
-    expect(s.defaultTransport.claude).toBe('claude-daemon')
-    // legacy field preserved for the dual-read fallback (dropped in Phase 6).
-    expect(s.defaultBackend).toBe('daemon')
-  })
-
-  it('migrates legacy defaultBackend=headless into claude-headless', () => {
-    initGlobalSettings(fakeKv({ defaultBackend: 'headless' }))
-    expect(getGlobalSettings().defaultTransport.claude).toBe('claude-headless')
-  })
-
-  it('migrates legacy defaultBackend=pty into claude-pty', () => {
-    initGlobalSettings(fakeKv({ defaultBackend: 'pty' }))
-    expect(getGlobalSettings().defaultTransport.claude).toBe('claude-pty')
-  })
-
-  it('does not overwrite an explicit defaultTransport with the legacy field', () => {
-    initGlobalSettings(fakeKv({ defaultBackend: 'daemon', defaultTransport: { claude: 'claude-pty' } }))
-    expect(getGlobalSettings().defaultTransport.claude).toBe('claude-pty')
+    expect(s.defaultTransport.claude).toBe('claude-pty')
+    expect('defaultBackend' in s).toBe(false)
   })
 
   it('updateGlobalSettings persists a new defaultTransport value', () => {
     initGlobalSettings(fakeKv())
     const { settings } = updateGlobalSettings({ defaultTransport: { claude: 'claude-daemon' } })
     expect(settings.defaultTransport.claude).toBe('claude-daemon')
-  })
-
-  it('updateGlobalSettings still accepts the legacy defaultBackend field', () => {
-    initGlobalSettings(fakeKv())
-    const { settings, errors } = updateGlobalSettings({ defaultBackend: 'daemon' })
-    expect(errors).toBeUndefined()
-    expect(settings.defaultBackend).toBe('daemon')
   })
 })

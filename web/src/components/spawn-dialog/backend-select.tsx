@@ -3,11 +3,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { haptic } from '@/lib/utils'
 import { getBackendIconElement } from '../project-list/backend-icon'
 
-// `daemon` remains a legacy persisted value (launch profiles + the dual-write
-// spawn shape) until Phase 6, but it is NO LONGER a backend the user picks: the
-// daemon is a claude "Process model" (transport). The selector below offers
-// only the real backends; daemon is chosen via ProcessModelSegmented.
-export type BackendKind = 'claude' | 'chat-api' | 'hermes' | 'opencode' | 'daemon'
+// The agent families the user can pick. The daemon is NOT a backend: it is a
+// claude "Process model" (the `claude-daemon` transport), chosen via
+// ProcessModelSegmented.
+export type BackendKind = 'claude' | 'chat-api' | 'hermes' | 'opencode'
 
 interface BackendOption {
   value: BackendKind

@@ -39,11 +39,10 @@ import { SentinelProfileBadge } from './sentinel-profile-badge'
 
 // ─── Shared visual components ──────────────────────────────────────
 
-/** A daemon-transport conversation. Transport reframe (Phase 5): key off the
- *  canonical `transport === 'claude-daemon'`, with the legacy
- *  `backend === 'daemon'` as a dual-read for pre-transport conversations. */
+/** A daemon-transport conversation. Keyed off the canonical
+ *  `transport === 'claude-daemon'` discriminator. */
 function isDaemonTransport(conversation: Conversation): boolean {
-  return conversation.transport === 'claude-daemon' || conversation.backend === 'daemon'
+  return conversation.transport === 'claude-daemon'
 }
 
 function StatusIndicator({ status, adHoc }: { status: Conversation['status']; adHoc?: boolean }) {

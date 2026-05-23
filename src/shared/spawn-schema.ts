@@ -145,10 +145,12 @@ export const spawnRequestSchema = z.object({
   sentinel: z.string().optional().describe('Target sentinel alias for spawn routing. Default sentinel if omitted.'),
   jobId: z.string().uuid().optional().describe('Caller-supplied job id for progress correlation'),
   backend: z
-    .enum(['claude', 'chat-api', 'hermes', 'opencode', 'daemon'])
+    .enum(['claude', 'chat-api', 'hermes', 'opencode'])
     .optional()
     .describe(
-      'Agent backend. Default: claude. "chat-api" for generic chat, "hermes" for Hermes gateway, "opencode" for OpenCode (multi-provider tool-using agent), "daemon" for a Claude Code daemon-hosted worker (subscription-billed).',
+      'Agent backend (the agent family). Default: claude. "chat-api" for generic chat, "hermes" for Hermes gateway, ' +
+        '"opencode" for OpenCode (multi-provider tool-using agent). The daemon is NOT a backend -- it is the claude ' +
+        'backend\'s "claude-daemon" transport (set `transport`).',
     ),
   chatConnectionId: z.string().optional().describe('Chat API connection ID (required when backend=chat-api)'),
   chatConnectionName: z.string().optional().describe('Chat API connection display name (for project URI)'),
@@ -177,47 +179,13 @@ export const spawnRequestSchema = z.object({
     .describe(
       'Appended to the generated system prompt. CC maps this to --append-system-prompt; chat-api prepends a system message. Ignored by backends that cannot honor it (hermes, opencode).',
     ),
-  daemonMode: z
-    .enum(['new', 'resume', 'attach'])
-    .optional()
-    .describe(
-      'Daemon launch mode. "new": claude --bg a fresh worker. "resume": claude --bg --resume a forked worker. ' +
-        '"attach": attach to an already-running daemon worker (no claude --bg). Only used when backend=daemon; ' +
-        'defaults to "new".',
-    ),
-  daemonResumeSessionId: z
-    .string()
-    .optional()
-    .describe(
-      'Daemon session id to resume -- the input to claude --bg --resume <id>. The resumed worker forks to a fresh ' +
-        'ccSessionId. Required when daemonMode=resume.',
-    ),
-  daemonAttachShort: z
-    .string()
-    .regex(/^[0-9a-f]{8}$/, 'daemonAttachShort must be an 8-hex daemon worker short id')
-    .optional()
-    .describe('8-hex daemon worker short id to attach to, from the daemon roster. Required when daemonMode=attach.'),
-  daemonSettingsPath: z
-    .string()
-    .optional()
-    .describe(
-      'Absolute path on the sentinel host to a settings JSON (claude --bg --settings). ' +
-        'Injected for daemonMode new|resume only.',
-    ),
-  daemonMcpConfigPath: z
-    .string()
-    .optional()
-    .describe(
-      'Absolute path on the sentinel host to an MCP config JSON (claude --bg --mcp-config). ' +
-        'Injected for daemonMode new|resume only.',
-    ),
   transport: transportEnum
     .optional()
     .describe(
-      'Wire mechanism for the claude backend. Defaults are applied by resolveSpawnConfig per backend. ' +
-        '"claude-pty" interactive terminal, "claude-headless" stream-json over stdin, "claude-daemon" cc-daemon ' +
-        'socket worker (subscription-billed). When set, this is the canonical activation discriminator; the legacy ' +
-        '`backend:"daemon"` + `headless` shape is dual-read during the transport-reframe migration.',
+      'Wire mechanism for the claude backend (the canonical activation discriminator). Defaults are applied by ' +
+        'resolveSpawnConfig per backend. "claude-pty" interactive terminal, "claude-headless" stream-json over ' +
+        'stdin, "claude-daemon" cc-daemon socket worker (subscription-billed). Daemon-specific launch inputs ' +
+        '(mode / attachShort / resumeSessionId / settingsPath / mcpConfigPath) live in `transportMeta`.',
     ),
   transportMeta: z
     .record(z.string(), z.unknown())
@@ -265,46 +233,6 @@ export const spawnRequestSchema = z.object({
     ),
 })
 export type SpawnRequest = z.infer<typeof spawnRequestSchema>
-
-/** The fields `refineDaemonSpawn` inspects -- a structural subset of SpawnRequest
- *  so callers that `.omit()` the base object can still re-apply the refinement. */
-export type DaemonSpawnFields = Pick<
-  SpawnRequest,
-  'backend' | 'daemonMode' | 'prompt' | 'daemonResumeSessionId' | 'daemonAttachShort'
->
-
-/**
- * Cross-field validation for daemon launch modes. Extracted as a standalone
- * refinement so callers that `.omit()`/`.extend()` the base object (the
- * inter-conversation spawn path) can re-apply it. A no-op for non-daemon
- * backends.
- *
- * Rules: new -> `prompt` required (claude --bg dispatches with one);
- * resume -> `daemonResumeSessionId` required; attach -> `daemonAttachShort`
- * required. The daemon backend re-checks these server-side too -- this is the
- * request-validation layer, not the only gate.
- */
-export function refineDaemonSpawn(req: DaemonSpawnFields, ctx: z.RefinementCtx): void {
-  if (req.backend !== 'daemon') return
-  const mode = req.daemonMode ?? 'new'
-  if (mode === 'new' && !req.prompt?.trim()) {
-    ctx.addIssue({ code: 'custom', message: 'daemon spawn (new mode) requires a prompt', path: ['prompt'] })
-  }
-  if (mode === 'resume' && !req.daemonResumeSessionId?.trim()) {
-    ctx.addIssue({
-      code: 'custom',
-      message: 'daemon spawn (resume mode) requires daemonResumeSessionId',
-      path: ['daemonResumeSessionId'],
-    })
-  }
-  if (mode === 'attach' && !req.daemonAttachShort?.trim()) {
-    ctx.addIssue({
-      code: 'custom',
-      message: 'daemon spawn (attach mode) requires daemonAttachShort',
-      path: ['daemonAttachShort'],
-    })
-  }
-}
 
 /** The fields `refineTransportSpawn` inspects. `transportMeta` is the opaque
  *  bag; the daemon transport's cross-field rules read its string keys. A
@@ -376,13 +304,9 @@ export function refineTransportSpawn(req: TransportSpawnFields, ctx: z.Refinemen
 }
 
 /**
- * The schema spawn ENTRY POINTS validate against: the base object plus BOTH
- * the legacy daemon cross-field rules and the new transport cross-field rules.
- * During the transport-reframe migration a dual-write request sets both shapes,
- * so both refinements run and must agree. Use this in routes/handlers. Use the
- * bare `spawnRequestSchema` object only when you need `.omit()`/`.extend()`/
+ * The schema spawn ENTRY POINTS validate against: the base object plus the
+ * transport cross-field rules. Use this in routes/handlers. Use the bare
+ * `spawnRequestSchema` object only when you need `.omit()`/`.extend()`/
  * `.partial()` (those are ZodObject methods this refined schema lacks).
  */
-export const validatedSpawnRequestSchema = spawnRequestSchema
-  .superRefine(refineDaemonSpawn)
-  .superRefine(refineTransportSpawn)
+export const validatedSpawnRequestSchema = spawnRequestSchema.superRefine(refineTransportSpawn)

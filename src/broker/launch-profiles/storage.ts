@@ -8,7 +8,12 @@
  *   []    -> user emptied the list; preserve verbatim, do NOT re-seed
  */
 
-import { LAUNCH_PROFILE_MAX_COUNT, type LaunchProfile, launchProfileListSchema } from '../../shared/launch-profile'
+import {
+  LAUNCH_PROFILE_MAX_COUNT,
+  type LaunchProfile,
+  launchProfileListSchema,
+  migrateLegacyDaemonProfiles,
+} from '../../shared/launch-profile'
 import { buildSeedProfiles } from '../../shared/launch-profile-seeds'
 import type { KVStore } from '../store/types'
 
@@ -19,7 +24,14 @@ export function launchProfilesKey(userName: string): string {
 }
 
 export function getLaunchProfilesRaw(kv: KVStore, userName: string): LaunchProfile[] | null {
-  return kv.get<LaunchProfile[]>(launchProfilesKey(userName))
+  const raw = kv.get<LaunchProfile[]>(launchProfilesKey(userName))
+  if (raw === null) return null
+  // Transport reframe (Phase 6): rewrite any stored legacy daemon profile
+  // (`backend:'daemon'` + flat `daemon*`) to the canonical transport shape at
+  // the read boundary, so every consumer (web apply bridge, broadcast, routes)
+  // sees `transport:'claude-daemon'` + `transportMeta`. Mirrors the global
+  // settings `migrateLegacyDefaultBackend` migrate-on-read.
+  return migrateLegacyDaemonProfiles(raw) as LaunchProfile[]
 }
 
 export function getLaunchProfilesOrSeed(kv: KVStore, userName: string, nowMs: number = Date.now()): LaunchProfile[] {

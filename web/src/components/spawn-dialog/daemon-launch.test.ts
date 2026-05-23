@@ -87,7 +87,7 @@ describe('validateDaemonAttach', () => {
 })
 
 describe('buildDaemonSpawnFields -- NEW', () => {
-  test('shapes a new-mode request with prompt + config injection', () => {
+  test('shapes a new-mode request: backend claude + transport + transportMeta config', () => {
     const fields = buildDaemonSpawnFields({
       mode: 'new',
       form: form({
@@ -100,37 +100,43 @@ describe('buildDaemonSpawnFields -- NEW', () => {
         worktreeName: 'feature-x',
       }),
     })
-    expect(fields.backend).toBe('daemon')
-    expect(fields.daemonMode).toBe('new')
+    // The daemon is a transport, not a backend.
+    expect(fields.backend).toBe('claude')
+    expect(fields.transport).toBe('claude-daemon')
     expect(fields.prompt).toBe('build it')
     expect(fields.model).toBe('claude-opus-4-7')
-    expect(fields.appendSystemPrompt).toBe('be terse')
     expect(fields.env).toEqual({ FOO: 'bar' })
-    expect(fields.daemonSettingsPath).toBe('/s.json')
-    expect(fields.daemonMcpConfigPath).toBe('/m.json')
     expect(fields.worktree).toBe('feature-x')
-    expect(fields.daemonResumeSessionId).toBeUndefined()
-    expect(fields.daemonAttachShort).toBeUndefined()
+    // daemon launch inputs ride in transportMeta, NOT flat daemon* fields.
+    expect(fields.transportMeta).toEqual({
+      mode: 'new',
+      settingsPath: '/s.json',
+      mcpConfigPath: '/m.json',
+      appendSystemPrompt: 'be terse',
+    })
+    expect('daemonMode' in fields).toBe(false)
+    expect('daemonSettingsPath' in fields).toBe(false)
   })
 
-  test('omits empty optional fields', () => {
+  test('omits empty optional fields; transportMeta is mode-only', () => {
     const fields = buildDaemonSpawnFields({ mode: 'new', form: form({ prompt: 'go' }) })
     expect(fields.prompt).toBe('go')
     expect(fields.model).toBeUndefined()
     expect(fields.env).toBeUndefined()
-    expect(fields.daemonSettingsPath).toBeUndefined()
     expect(fields.worktree).toBeUndefined()
+    expect(fields.transport).toBe('claude-daemon')
+    expect(fields.transportMeta).toEqual({ mode: 'new' })
   })
 })
 
 describe('buildDaemonSpawnFields -- RESUME', () => {
-  test('forwards daemonResumeSessionId and keeps the prompt optional', () => {
+  test('forwards resumeSessionId in transportMeta and keeps the prompt optional', () => {
     const fields = buildDaemonSpawnFields({
       mode: 'resume',
       form: form({ resumeSessionId: 'ccs_prior', prompt: '' }),
     })
-    expect(fields.daemonMode).toBe('resume')
-    expect(fields.daemonResumeSessionId).toBe('ccs_prior')
+    expect(fields.transport).toBe('claude-daemon')
+    expect(fields.transportMeta).toEqual({ mode: 'resume', resumeSessionId: 'ccs_prior' })
     expect(fields.prompt).toBeUndefined()
   })
 
@@ -144,61 +150,16 @@ describe('buildDaemonSpawnFields -- RESUME', () => {
 })
 
 describe('buildDaemonSpawnFields -- ATTACH', () => {
-  test('forwards only the attach short -- no prompt, no config injection', () => {
+  test('forwards only the attach short in transportMeta -- no prompt, no config injection', () => {
     const fields = buildDaemonSpawnFields({
       mode: 'attach',
       form: form({ prompt: 'ignored', settingsPath: '/ignored.json' }),
       attachShort: 'aeb185f9',
     })
-    expect(fields.backend).toBe('daemon')
-    expect(fields.daemonMode).toBe('attach')
-    expect(fields.daemonAttachShort).toBe('aeb185f9')
-    expect(fields.prompt).toBeUndefined()
-    expect(fields.daemonSettingsPath).toBeUndefined()
-    expect(fields.daemonMcpConfigPath).toBeUndefined()
-    expect(fields.env).toBeUndefined()
-    expect(fields.daemonResumeSessionId).toBeUndefined()
-  })
-})
-
-describe('buildDaemonSpawnFields -- transport-reframe DUAL-WRITE', () => {
-  test('NEW writes transport=claude-daemon + a transportMeta bag mirroring the flat fields', () => {
-    const fields = buildDaemonSpawnFields({
-      mode: 'new',
-      form: form({
-        prompt: 'build it',
-        appendSystemPrompt: 'be terse',
-        settingsPath: '/s.json',
-        mcpConfigPath: '/m.json',
-      }),
-    })
-    expect(fields.transport).toBe('claude-daemon')
-    expect(fields.transportMeta).toEqual({
-      mode: 'new',
-      settingsPath: '/s.json',
-      mcpConfigPath: '/m.json',
-      appendSystemPrompt: 'be terse',
-    })
-  })
-
-  test('NEW omits empty optional keys from the transportMeta bag', () => {
-    const fields = buildDaemonSpawnFields({ mode: 'new', form: form({ prompt: 'go' }) })
-    expect(fields.transport).toBe('claude-daemon')
-    expect(fields.transportMeta).toEqual({ mode: 'new' })
-  })
-
-  test('RESUME carries resumeSessionId in the transportMeta bag', () => {
-    const fields = buildDaemonSpawnFields({ mode: 'resume', form: form({ resumeSessionId: 'ccs_prior' }) })
-    expect(fields.transportMeta).toEqual({ mode: 'resume', resumeSessionId: 'ccs_prior' })
-  })
-
-  test('ATTACH transportMeta is mode + attachShort only (no forbidden config keys)', () => {
-    const fields = buildDaemonSpawnFields({
-      mode: 'attach',
-      form: form({ prompt: 'ignored', settingsPath: '/ignored.json' }),
-      attachShort: 'aeb185f9',
-    })
+    expect(fields.backend).toBe('claude')
     expect(fields.transport).toBe('claude-daemon')
     expect(fields.transportMeta).toEqual({ mode: 'attach', attachShort: 'aeb185f9' })
+    expect(fields.prompt).toBeUndefined()
+    expect(fields.env).toBeUndefined()
   })
 })

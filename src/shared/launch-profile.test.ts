@@ -7,6 +7,7 @@ import {
   LAUNCH_PROFILE_MAX_APPEND_SP,
   launchProfileListSchema,
   launchProfileSchema,
+  migrateLegacyDaemonProfiles,
   newLaunchProfileId,
 } from './launch-profile'
 
@@ -51,11 +52,11 @@ describe('isLaunchProfileId', () => {
 })
 
 describe('backendSupportsAppendSystemPrompt', () => {
-  it('returns true for claude, chat-api and daemon', () => {
+  it('returns true for claude and chat-api', () => {
     expect(backendSupportsAppendSystemPrompt('claude')).toBe(true)
     expect(backendSupportsAppendSystemPrompt('chat-api')).toBe(true)
-    // spike 2: `claude --bg --append-system-prompt` is honored by daemon workers.
-    expect(backendSupportsAppendSystemPrompt('daemon')).toBe(true)
+    // The daemon is the claude family (backend:'claude' + claude-daemon
+    // transport); spike 2 verified the daemon worker honors --append-system-prompt.
   })
 
   it('returns false for hermes and opencode', () => {
@@ -73,9 +74,10 @@ describe('backendSupportsAppendSystemPrompt', () => {
     expect(list).not.toContain('opencode')
   })
 
-  it('matrix sanity: list includes daemon', () => {
+  it('matrix sanity: list includes claude and chat-api', () => {
     const list: readonly string[] = BACKENDS_WITH_APPEND_SYSTEM_PROMPT
-    expect(list).toContain('daemon')
+    expect(list).toContain('claude')
+    expect(list).toContain('chat-api')
   })
 })
 
@@ -124,56 +126,64 @@ describe('launchProfileSchema', () => {
   })
 })
 
-describe('launchProfileSchema -- daemon profiles', () => {
-  it('accepts a daemon profile with new mode + config injection fields', () => {
+describe('launchProfileSchema -- daemon profiles (transport reframe)', () => {
+  it('accepts a daemon profile (transport:claude-daemon + injected config fields)', () => {
     const ok = {
       ...baseProfile(),
       spawn: {
-        backend: 'daemon' as const,
-        daemonMode: 'new' as const,
+        backend: 'claude' as const,
+        transport: 'claude-daemon' as const,
         model: 'claude-haiku-4-5',
-        daemonSettingsPath: '/etc/claude/settings.json',
-        daemonMcpConfigPath: '/etc/claude/mcp.json',
+        settingsPath: '/etc/claude/settings.json',
+        mcpConfigPath: '/etc/claude/mcp.json',
         appendSystemPrompt: 'Be terse.',
       },
     }
     const parsed = launchProfileSchema.safeParse(ok)
     expect(parsed.success).toBe(true)
     if (parsed.success) {
-      expect(parsed.data.spawn.daemonMode).toBe('new')
-      expect(parsed.data.spawn.daemonSettingsPath).toBe('/etc/claude/settings.json')
-      expect(parsed.data.spawn.daemonMcpConfigPath).toBe('/etc/claude/mcp.json')
+      expect(parsed.data.spawn.transport).toBe('claude-daemon')
+      expect(parsed.data.spawn.settingsPath).toBe('/etc/claude/settings.json')
+      expect(parsed.data.spawn.mcpConfigPath).toBe('/etc/claude/mcp.json')
     }
   })
 
-  it('accepts a daemon profile with resume mode', () => {
-    const ok = { ...baseProfile(), spawn: { backend: 'daemon' as const, daemonMode: 'resume' as const } }
-    expect(launchProfileSchema.safeParse(ok).success).toBe(true)
-  })
-
-  it('rejects daemonMode=attach -- attach is a per-launch mode, never a profile', () => {
-    const bad = { ...baseProfile(), spawn: { backend: 'daemon', daemonMode: 'attach' } }
+  it('rejects the removed backend:"daemon" value', () => {
+    const bad = { ...baseProfile(), spawn: { backend: 'daemon' } }
     expect(launchProfileSchema.safeParse(bad).success).toBe(false)
   })
 
-  it('strips per-launch-only daemon fields (daemonResumeSessionId, daemonAttachShort)', () => {
-    const input = {
-      ...baseProfile(),
-      spawn: {
-        backend: 'daemon' as const,
-        daemonMode: 'resume' as const,
-        daemonResumeSessionId: 'ccs_should_be_stripped',
-        daemonAttachShort: 'aeb185f9',
+  it('migrateLegacyDaemonProfiles rewrites a stored backend:"daemon" profile to the transport shape', () => {
+    const legacy = [
+      {
+        ...baseProfile(),
+        spawn: {
+          backend: 'daemon',
+          daemonMode: 'new',
+          daemonSettingsPath: '/etc/s.json',
+          daemonMcpConfigPath: '/etc/mcp.json',
+          model: 'claude-haiku-4-5',
+        },
       },
-    }
-    const parsed = launchProfileSchema.safeParse(input)
-    expect(parsed.success).toBe(true)
-    if (parsed.success) {
-      // .omit()'d from profileSpawnSchema -- zod drops the unknown keys.
-      expect((parsed.data.spawn as Record<string, unknown>).daemonResumeSessionId).toBeUndefined()
-      expect((parsed.data.spawn as Record<string, unknown>).daemonAttachShort).toBeUndefined()
-      expect(parsed.data.spawn.daemonMode).toBe('resume')
-    }
+    ]
+    const migrated = migrateLegacyDaemonProfiles(legacy) as Array<{ spawn: Record<string, unknown> }>
+    const s = migrated[0]!.spawn
+    expect(s.backend).toBe('claude')
+    expect(s.transport).toBe('claude-daemon')
+    expect(s.settingsPath).toBe('/etc/s.json')
+    expect(s.mcpConfigPath).toBe('/etc/mcp.json')
+    expect(s.model).toBe('claude-haiku-4-5')
+    // legacy flat fields dropped
+    expect('daemonMode' in s).toBe(false)
+    expect('daemonSettingsPath' in s).toBe(false)
+    // and the migrated profile parses cleanly
+    expect(launchProfileSchema.safeParse(migrated[0]).success).toBe(true)
+  })
+
+  it('migrateLegacyDaemonProfiles leaves a new-shape daemon profile untouched', () => {
+    const current = [{ ...baseProfile(), spawn: { backend: 'claude', transport: 'claude-daemon' } }]
+    const migrated = migrateLegacyDaemonProfiles(current) as typeof current
+    expect(migrated[0]!.spawn).toEqual(current[0]!.spawn)
   })
 })
 

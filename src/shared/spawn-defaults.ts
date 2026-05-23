@@ -25,129 +25,110 @@ export type DefaultsSource = {
   defaultRepl?: boolean
   defaultIncludePartialMessages?: boolean
   /**
-   * Transport reframe (Phase 3): the per-backend default transport. Replaces
-   * `defaultBackend` at the GLOBAL tier. The resolvers read this FIRST and fall
-   * back to `defaultBackend` for one phase (dropped in Phase 6), so a loose
-   * DefaultsSource carrying only `defaultBackend` (e.g. a pre-migration fixture)
-   * still resolves correctly. `claude:'claude-daemon'` -> daemon backend (NEW
-   * mode); `'claude-pty'`/`'claude-headless'` -> claude backend at that wire.
+   * The per-backend default transport for AGENT-SPAWNED conversations that name
+   * no transport explicitly (the cutover knob). Only the GLOBAL tier carries it.
+   * `claude:'claude-daemon'` -> the claude-daemon transport (NEW mode); other
+   * `claude-*` values -> the claude backend at that wire. The claude family is
+   * the only one with a transport in this plan.
    */
   defaultTransport?: { claude?: NonNullable<SpawnRequest['transport']> }
-  /**
-   * LEGACY cutover flag (transport reframe dual-read fallback). Only the GLOBAL
-   * tier ever carries this -- it is the default backend for agent-spawned
-   * conversations that name none explicitly. 'daemon' -> daemon backend (NEW
-   * mode); 'pty'/'headless' -> claude backend at that launch mode. Superseded by
-   * `defaultTransport`; consulted only when `defaultTransport` is absent.
-   */
-  defaultBackend?: 'daemon' | 'pty' | 'headless'
 }
 
 /** Shape returned by resolveSpawnConfig -- `headless` is always concrete. */
 export type ResolvedSpawnConfig = Partial<SpawnRequest> & { headless: boolean }
 
 /**
- * The backend a spawn resolves to, plus a human-readable reason. The `reason`
- * exists for the LOG EVERYTHING covenant -- the dispatch site logs it so the
- * backend fork is never a silent decision.
+ * The transport (and backend) a spawn resolves to, plus a human-readable
+ * reason. The `reason` exists for the LOG EVERYTHING covenant -- the dispatch
+ * site logs it so the transport fork is never a silent decision.
  */
-export type BackendDecision = {
+export type TransportDecision = {
   backend: SpawnRequest['backend']
-  daemonMode: SpawnRequest['daemonMode']
+  transport: SpawnRequest['transport']
   reason: string
 }
 
 /**
- * Decide the backend for a spawn request. Precedence:
- *   1. an explicit `partial.backend` always wins (control panel, launch
- *      profiles, an MCP caller that named one);
- *   2. adHoc spawns always stay the claude headless path -- never daemon;
- *   3. otherwise the global default transport drives it -- `defaultTransport.
- *      claude='claude-daemon'` adopts the daemon backend (NEW mode unless the
- *      caller set `daemonMode`); the other claude transports / unset leave the
- *      backend unset (claude). The legacy `defaultBackend` flat enum is the
- *      dual-read fallback when `defaultTransport` is absent (dropped in Phase 6).
+ * Decide the transport an agent-spawn adopts up front (so the dispatch site can
+ * route `claude-daemon` before resolving the rest of the config). Precedence:
+ *   1. an explicit `partial.transport` always wins;
+ *   2. an explicit non-claude backend (opencode / chat-api / hermes) has no
+ *      transport in this plan -> undefined;
+ *   3. adHoc spawns stay the claude headless path -- never daemon -> the
+ *      transport is derived from the headless flag in resolveSpawnConfig;
+ *   4. otherwise `defaultTransport.claude='claude-daemon'` stamps the
+ *      claude-daemon transport (the cutover knob). The pty/headless defaults are
+ *      left to derive from the resolved headless flag (they respect an explicit
+ *      `headless` toggle + project/profile launch mode that this global-only
+ *      decision cannot see).
  *
- * This is the cutover knob. Agent-spawned conversations (MCP spawn_conversation,
- * inter-conversation channel_spawn) carry no explicit backend, so the global
- * default governs them; user launches from the control panel always name a
- * backend / transport and are unaffected.
+ * Agent-spawned conversations (MCP spawn_conversation, inter-conversation
+ * channel_spawn) carry no explicit transport, so the global default governs
+ * them; user launches from the control panel always name a transport.
  */
-export function resolveDefaultBackend(partial: Partial<SpawnRequest>, global?: DefaultsSource | null): BackendDecision {
-  if (partial.backend) {
+export function resolveDefaultTransport(
+  partial: Partial<SpawnRequest>,
+  global?: DefaultsSource | null,
+): TransportDecision {
+  if (partial.transport) {
+    return { backend: partial.backend, transport: partial.transport, reason: `explicit transport=${partial.transport}` }
+  }
+  if (partial.backend && partial.backend !== 'claude') {
     return {
       backend: partial.backend,
-      daemonMode: partial.backend === 'daemon' ? (partial.daemonMode ?? 'new') : partial.daemonMode,
-      reason: `explicit backend=${partial.backend}`,
+      transport: undefined,
+      reason: `explicit backend=${partial.backend} (no transport)`,
     }
   }
   if (partial.adHoc) {
-    return { backend: undefined, daemonMode: undefined, reason: 'adHoc spawn -> claude headless path' }
+    return { backend: partial.backend, transport: undefined, reason: 'adHoc spawn -> claude headless (derived)' }
   }
-  // Transport reframe (Phase 3): prefer the per-backend default transport; fall
-  // back to the legacy `defaultBackend` flat enum (dropped in Phase 6).
   const claudeTransport = global?.defaultTransport?.claude
-  if (claudeTransport) {
-    if (claudeTransport === 'claude-daemon') {
-      const daemonMode = partial.daemonMode ?? 'new'
-      return { backend: 'daemon', daemonMode, reason: `defaultTransport.claude=claude-daemon -> daemon ${daemonMode}` }
-    }
-    return { backend: undefined, daemonMode: undefined, reason: `defaultTransport.claude=${claudeTransport} -> claude` }
+  if (partial.headless === undefined && claudeTransport === 'claude-daemon') {
+    return { backend: partial.backend, transport: 'claude-daemon', reason: 'defaultTransport.claude=claude-daemon' }
   }
-  const flag = global?.defaultBackend
-  if (flag === 'daemon') {
-    const daemonMode = partial.daemonMode ?? 'new'
-    return { backend: 'daemon', daemonMode, reason: `defaultBackend=daemon -> daemon ${daemonMode}` }
+  return {
+    backend: partial.backend,
+    transport: undefined,
+    reason: `defaultTransport.claude=${claudeTransport ?? 'unset'} -> derive from headless`,
   }
-  return { backend: undefined, daemonMode: undefined, reason: `defaultBackend=${flag ?? 'unset'} -> claude` }
 }
 
 /**
- * Resolve the `transport` (transport reframe § 0.2) alongside the backend.
- * Phase 1 dual-resolution:
+ * Resolve the `transport` (transport reframe § 0.2) for the claude family.
  *   1. an explicit `partial.transport` always wins;
- *   2. the daemon backend implies `claude-daemon`;
- *   3. the claude backend (or unset, which defaults to claude) maps the
- *      resolved `headless` flag to `claude-headless` / `claude-pty`.
- * Other backends (opencode / chat-api / hermes) have no transport in this plan
- * yet -- they resolve to `undefined`. The default source is the global
- * `defaultTransport.claude` (Phase 3), threaded in via the already-resolved
- * `resolvedBackend` (resolveDefaultBackend) and `headless` (globalLaunchMode)
- * flags; the legacy `defaultBackend` is their dual-read fallback (Phase 6 drop).
+ *   2. a non-claude backend (opencode / chat-api / hermes) has no transport;
+ *   3. adHoc is always `claude-headless`;
+ *   4. `defaultTransport.claude='claude-daemon'` (when no explicit headless
+ *      toggle) yields `claude-daemon` -- the only transport not derivable from
+ *      the headless flag;
+ *   5. otherwise the resolved `headless` flag maps to `claude-headless` /
+ *      `claude-pty`.
  */
-export function resolveTransport(
+function resolveTransport(
   partial: Partial<SpawnRequest>,
   resolvedBackend: SpawnRequest['backend'],
   headless: boolean,
+  global?: DefaultsSource | null,
 ): SpawnRequest['transport'] {
   if (partial.transport) return partial.transport
-  if (resolvedBackend === 'daemon') return 'claude-daemon'
-  if (resolvedBackend === undefined || resolvedBackend === 'claude') {
-    return headless ? 'claude-headless' : 'claude-pty'
-  }
-  return undefined
+  if (resolvedBackend && resolvedBackend !== 'claude') return undefined
+  if (partial.adHoc) return 'claude-headless'
+  if (partial.headless === undefined && global?.defaultTransport?.claude === 'claude-daemon') return 'claude-daemon'
+  return headless ? 'claude-headless' : 'claude-pty'
 }
 
 /**
  * The global-tier launch mode. The global default transport supersedes the
  * legacy `defaultLaunchMode` at the global tier: `claude-headless` -> headless,
- * `claude-pty`/`claude-daemon` -> pty. The legacy `defaultBackend` flat enum is
- * the dual-read fallback (Phase 6 drop); `defaultLaunchMode` is the final
- * fallback when neither transport default is set.
+ * `claude-pty`/`claude-daemon` -> pty. `defaultLaunchMode` is the fallback when
+ * no default transport is set.
  */
 function globalLaunchMode(global?: DefaultsSource | null): 'headless' | 'pty' | undefined {
   const claudeTransport = global?.defaultTransport?.claude
   if (claudeTransport === 'claude-headless') return 'headless'
   if (claudeTransport === 'claude-pty' || claudeTransport === 'claude-daemon') return 'pty'
-  switch (global?.defaultBackend) {
-    case 'headless':
-      return 'headless'
-    case 'pty':
-    case 'daemon':
-      return 'pty'
-    default:
-      return global?.defaultLaunchMode
-  }
+  return global?.defaultLaunchMode
 }
 
 /**
@@ -172,11 +153,6 @@ export function resolveSpawnConfig(
     project?.defaultPermissionMode,
     global?.defaultPermissionMode,
   ) as SpawnRequest['permissionMode'] | undefined
-
-  // Phase I cutover: the backend an agent-spawned conversation adopts. Carried
-  // through ResolvedSpawnConfig so callers see the resolved choice; the dispatch
-  // site (src/broker/spawn-dispatch.ts) is the one that logs the decision.
-  const backendDecision = resolveDefaultBackend(partial, global)
 
   const launchMode = profile?.defaultLaunchMode || project?.defaultLaunchMode || globalLaunchMode(global)
   // Default to PTY. PTY conversations bill against the Anthropic subscription;
@@ -208,18 +184,17 @@ export function resolveSpawnConfig(
       global?.defaultIncludePartialMessages ??
       true)
 
-  // Transport reframe (Phase 1): resolve the transport alongside the backend so
-  // every caller sees the canonical wire discriminator. Derived from the
-  // resolved `headless` flag for the claude backend.
-  const transport = resolveTransport(partial, backendDecision.backend, headless)
+  // Transport reframe: resolve the canonical wire discriminator. Daemon is a
+  // transport (`claude-daemon`), not a backend -- the backend stays as the
+  // caller named it (claude/opencode/chat-api/hermes) or unset (claude).
+  const transport = resolveTransport(partial, partial.backend, headless, global)
 
   return {
     ...partial,
     model,
     effort,
     permissionMode: partial.adHoc ? 'bypassPermissions' : permissionModeResolved,
-    backend: backendDecision.backend,
-    daemonMode: backendDecision.daemonMode,
+    backend: partial.backend,
     transport,
     headless,
     autocompactPct,

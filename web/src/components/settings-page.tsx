@@ -57,17 +57,11 @@ function DefaultConversationPicker({ value, onChange }: { value: string; onChang
   )
 }
 
-// Transport reframe (Phase 3): the agent-spawn default transport picker reads
-// the new `defaultTransport.claude` shape, but still renders a legacy
-// `defaultBackend` value (pre-Phase-3 settings blobs) so the control stays
-// correct during the transition. Falls back to 'claude-pty' when neither is set.
+// The agent-spawn default transport picker reads `defaultTransport.claude`.
+// Falls back to 'claude-pty' when unset (the broker materializes that default).
 function resolveDefaultTransport(server: Record<string, unknown>): string {
   const dt = server.defaultTransport as { claude?: string } | undefined
-  if (dt?.claude) return dt.claude
-  const legacy = server.defaultBackend
-  if (legacy === 'daemon') return 'claude-daemon'
-  if (legacy === 'headless') return 'claude-headless'
-  return 'claude-pty'
+  return dt?.claude ?? 'claude-pty'
 }
 
 // --- Shortcuts (inline) ---
@@ -689,7 +683,7 @@ const SETTINGS: SettingItem[] = [
       >
         <option value="claude-pty">PTY (terminal)</option>
         <option value="claude-headless">Headless (stream-json)</option>
-        <option value="claude-daemon">Daemon (claude --bg)</option>
+        <option value="claude-daemon">Daemon (background worker)</option>
       </select>
     ),
   },

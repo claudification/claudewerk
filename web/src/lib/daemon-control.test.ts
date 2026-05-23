@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { canRespawnStaleDaemon, daemonControlToast } from './daemon-control'
 
 describe('canRespawnStaleDaemon', () => {
-  it('is true for a daemon-backed conversation', () => {
-    expect(canRespawnStaleDaemon({ backend: 'daemon' })).toBe(true)
+  it('is true for a claude-daemon transport conversation', () => {
+    expect(canRespawnStaleDaemon({ transport: 'claude-daemon' })).toBe(true)
   })
 
-  it('is false for non-daemon backends and missing input', () => {
-    expect(canRespawnStaleDaemon({ backend: 'claude' })).toBe(false)
+  it('is false for non-daemon transports and missing input', () => {
+    expect(canRespawnStaleDaemon({ transport: 'claude-pty' })).toBe(false)
+    expect(canRespawnStaleDaemon({ transport: 'claude-headless' })).toBe(false)
     expect(canRespawnStaleDaemon({})).toBe(false)
     expect(canRespawnStaleDaemon(undefined)).toBe(false)
     expect(canRespawnStaleDaemon(null)).toBe(false)

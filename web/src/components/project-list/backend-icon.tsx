@@ -65,21 +65,20 @@ export const BACKENDS: Record<string, BackendDef> = {
   },
   opencode: { icon: OpenCodeIcon, color: 'text-emerald-400', label: 'OpenCode' },
   acp: { icon: OpenCodeIcon, color: 'text-emerald-400', label: 'OpenCode' },
-  // Native `claude agents` background session, mirrored read-only by the
-  // sentinel. Still Claude Code -- the sky tint sets it apart from orange.
+  // The claude-daemon transport (native `claude agents` background session).
+  // Keyed 'daemon' (the icon-registry key, NOT a backend). Still Claude Code --
+  // the sky tint sets it apart from orange.
   daemon: { icon: ClaudeIcon, color: 'text-sky-400', label: 'Claude agents (native daemon)' },
 }
 
 /**
- * Resolve which `BACKENDS` key drives the icon. Transport reframe (Phase 5):
- * the daemon icon keys off `transport === 'claude-daemon'` -- the canonical
- * discriminator -- with the legacy `backend === 'daemon'` as a dual-read
- * fallback for conversations spawned before transport was persisted. Other
- * claude transports (claude-pty / claude-headless) fall through to the plain
- * claude backend (no distinct icon).
+ * Resolve which `BACKENDS` key drives the icon. The daemon icon keys off
+ * `transport === 'claude-daemon'` -- the canonical discriminator. Other claude
+ * transports (claude-pty / claude-headless) fall through to the plain claude
+ * backend (no distinct icon).
  */
 function resolveBackendIconKey({ backend, transport }: { backend?: string; transport?: string }): string {
-  if (transport === 'claude-daemon' || backend === 'daemon') return 'daemon'
+  if (transport === 'claude-daemon') return 'daemon'
   return backend ?? 'claude'
 }
 

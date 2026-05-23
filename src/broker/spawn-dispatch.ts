@@ -20,19 +20,15 @@ import { randomUUID } from 'node:crypto'
 import { generateConversationName } from '../shared/conversation-names'
 import { validateModel } from '../shared/models'
 import { cwdToProjectUri, validateProjectUri } from '../shared/project-uri'
-import type {
-  Conversation,
-  LaunchConfig,
-  LaunchProgressEvent,
-  LaunchStep,
-  ProjectSettings,
-  SpawnResult,
-} from '../shared/protocol'
-import { resolveDefaultBackend, resolveSpawnConfig } from '../shared/spawn-defaults'
+import type { Conversation, LaunchConfig, ProjectSettings, SpawnResult } from '../shared/protocol'
+import { resolveDefaultTransport, resolveSpawnConfig } from '../shared/spawn-defaults'
 import { deriveConversationName, validateConversationName } from '../shared/spawn-naming'
 import { evaluateSpawnPermission, type SpawnCallerContext } from '../shared/spawn-permissions'
 import type { SpawnRequest } from '../shared/spawn-schema'
 import { resolveBackendByName, type SpawnDeps } from './backends'
+import { dispatchClaudeDaemon } from './backends/claude-daemon'
+// Shared spawn-progress emit helper (transport reframe Phase 6 de-duplication).
+import { emitLaunchProgress as emitProgress } from './backends/launch-progress'
 import type { ConversationStore } from './conversation-store'
 import type { GlobalSettings } from './global-settings'
 
@@ -93,28 +89,6 @@ function maybeQueueApproval(req: SpawnRequest, deps: SpawnDispatchDeps, reason: 
   }
 }
 
-/**
- * Emit a first-class launch_progress event to all subscribers of the job.
- * No-op if jobId is undefined (callers that dispatch without tracking a job).
- */
-function emitProgress(
-  conversationStore: ConversationStore,
-  jobId: string | undefined,
-  step: LaunchStep,
-  status: LaunchProgressEvent['status'],
-  extra?: Partial<LaunchProgressEvent>,
-): void {
-  if (!jobId) return
-  conversationStore.forwardJobEvent(jobId, {
-    type: 'launch_progress',
-    jobId,
-    step,
-    status,
-    t: Date.now(),
-    ...extra,
-  })
-}
-
 export type SpawnDispatchDeps = {
   conversationStore: ConversationStore
   getProjectSettings: (project: string) => ProjectSettings | null
@@ -152,32 +126,35 @@ export type SpawnDispatchResult =
     }
 
 /**
- * Resolve the backend for a spawn request before it is dispatched. Agent-spawned
- * conversations (MCP `spawn_conversation`, inter-conversation `channel_spawn`)
- * carry no explicit backend -- the global default transport routes them
- * (`defaultTransport.claude`, with the legacy `defaultBackend` as a dual-read
- * fallback). The decision is logged with full context here because the backend
- * fork is otherwise a silent branch in the dispatch path (LOG EVERYTHING).
+ * Resolve the transport for a spawn request before it is dispatched.
+ * Agent-spawned conversations (MCP `spawn_conversation`, inter-conversation
+ * `channel_spawn`) carry no explicit transport -- the global default routes them
+ * (`defaultTransport.claude`). Stamps `claude-daemon` up front so the dispatch
+ * branch below can route it; the pty/headless transport is finalized later by
+ * resolveSpawnConfig (it needs the resolved headless flag). The decision is
+ * logged with full context because the transport fork is otherwise a silent
+ * branch in the dispatch path (LOG EVERYTHING).
  */
-function applyDefaultBackend(req: SpawnRequest, global: GlobalSettings): SpawnRequest {
-  const decision = resolveDefaultBackend(req, global)
-  // Transport reframe: honor an explicit `transport`; otherwise the daemon
-  // backend implies the claude-daemon transport. The claude PTY/headless
-  // transport is resolved later by resolveSpawnConfig (it needs the resolved
-  // headless flag); opencode/chat-api/hermes carry no transport in this plan.
-  const transport: SpawnRequest['transport'] =
-    req.transport ?? (decision.backend === 'daemon' ? 'claude-daemon' : undefined)
-  console.log(
-    `[spawn-backend] cwd=${req.cwd ?? '?'} explicitBackend=${req.backend ?? 'none'} ` +
-      `adHoc=${req.adHoc ? 'y' : 'n'} defaultTransport.claude=${global.defaultTransport?.claude ?? '-'} ` +
-      `defaultBackend=${global.defaultBackend ?? '-'} => ` +
-      `backend=${decision.backend ?? 'claude'} daemonMode=${decision.daemonMode ?? '-'} ` +
-      `transport=${transport ?? '-'} (${decision.reason})`,
+function applyDefaultTransport(req: SpawnRequest, global: GlobalSettings): SpawnRequest {
+  const decision = resolveDefaultTransport(req, global)
+  console.log(spawnTransportLog(req, global, decision))
+  return { ...req, backend: decision.backend, transport: decision.transport }
+}
+
+/** The `[spawn-transport]` decision log line (LOG EVERYTHING covenant). */
+function spawnTransportLog(
+  req: SpawnRequest,
+  global: GlobalSettings,
+  decision: ReturnType<typeof resolveDefaultTransport>,
+): string {
+  const explicitBackend = req.backend ?? 'none'
+  const explicitTransport = req.transport ?? 'none'
+  const globalDefault = global.defaultTransport?.claude ?? '-'
+  const resolved = decision.transport ?? '-'
+  return (
+    `[spawn-transport] cwd=${req.cwd} explicitBackend=${explicitBackend} explicitTransport=${explicitTransport} ` +
+    `adHoc=${req.adHoc ? 'y' : 'n'} defaultTransport.claude=${globalDefault} => transport=${resolved} (${decision.reason})`
   )
-  if (decision.backend === req.backend && decision.daemonMode === req.daemonMode && transport === req.transport) {
-    return req
-  }
-  return { ...req, backend: decision.backend, daemonMode: decision.daemonMode, transport }
 }
 
 /**
@@ -190,11 +167,11 @@ function applyDefaultBackend(req: SpawnRequest, global: GlobalSettings): SpawnRe
  * already.
  */
 export async function dispatchSpawn(rawReq: SpawnRequest, deps: SpawnDispatchDeps): Promise<SpawnDispatchResult> {
-  // Phase I cutover: resolve the backend up front so the permission gate, the
-  // approval-queue stash, and the registry dispatch below all act on the
-  // resolved request (an agent-spawned conversation adopts the global
-  // `defaultBackend` when it named none explicitly).
-  const req = applyDefaultBackend(rawReq, deps.getGlobalSettings())
+  // Resolve the transport up front so the permission gate, the approval-queue
+  // stash, and the dispatch branch below all act on the resolved request (an
+  // agent-spawned conversation adopts the global `defaultTransport` when it
+  // named none explicitly).
+  const req = applyDefaultTransport(rawReq, deps.getGlobalSettings())
   const evalResult = evaluateSpawnPermission(deps.callerContext, req)
   if (!evalResult.ok) {
     if (evalResult.kind === 'reject') {
@@ -228,30 +205,37 @@ export async function dispatchSpawn(rawReq: SpawnRequest, deps: SpawnDispatchDep
     }
   }
 
+  const spawnDeps: SpawnDeps = {
+    conversationStore: deps.conversationStore,
+    getProjectSettings: deps.getProjectSettings,
+    getGlobalSettings: deps.getGlobalSettings,
+    callerContext: deps.callerContext,
+    rendezvousCallerConversationId: deps.rendezvousCallerConversationId,
+  }
+
+  // --- claude-daemon transport --------------------------------------------
+  // The daemon is the claude backend's `claude-daemon` transport (it is not a
+  // peer backend). Routed by the transport discriminator, NOT `req.backend`.
+  if (req.transport === 'claude-daemon') {
+    return dispatchClaudeDaemon(req, spawnDeps)
+  }
+
   // --- Registry-driven dispatch -------------------------------------------
   // If the requested backend has its own spawn() implementation, delegate.
-  // Otherwise fall through to the legacy Claude path below.
+  // Otherwise fall through to the inline Claude (PTY/headless) path below.
   if (req.backend) {
     const backend = resolveBackendByName(req.backend)
     if (!backend) {
       return { ok: false, error: `Unknown backend: ${req.backend}`, statusCode: 400 }
     }
     if (backend.spawn) {
-      const spawnDeps: SpawnDeps = {
-        conversationStore: deps.conversationStore,
-        getProjectSettings: deps.getProjectSettings,
-        getGlobalSettings: deps.getGlobalSettings,
-        callerContext: deps.callerContext,
-        rendezvousCallerConversationId: deps.rendezvousCallerConversationId,
-      }
-      const result = await backend.spawn(req, spawnDeps)
-      return result
+      return backend.spawn(req, spawnDeps)
     }
-    // No spawn() method -- backend handles input only (e.g. legacy Claude).
+    // No spawn() method -- backend handles input only (e.g. Claude).
     // Fall through to the inline Claude path.
   }
 
-  // --- Inline Claude path (legacy; to be moved into claudeBackend.spawn) ---
+  // --- Inline Claude (PTY/headless) path ----------------------------------
   return dispatchClaudeSpawn(req, deps)
 }
 

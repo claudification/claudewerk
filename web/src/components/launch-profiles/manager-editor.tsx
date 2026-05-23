@@ -5,7 +5,7 @@ import {
   type ClaudeTransport,
   deriveClaudeTransport,
   isClaudeFamilyBackend,
-  processModelToBackendHeadless,
+  processModelToState,
 } from '@/components/spawn-dialog/process-model'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { launchFieldsFromProfile, spawnPatchFromLaunchFields } from './editor-mapping'
@@ -29,12 +29,13 @@ interface Props {
 
 export function ManagerEditor({ profile, onChange }: Props) {
   const backend = (profile.spawn.backend ?? 'claude') as BackendKind
-  // Transport reframe (Phase 5): daemon is detected via the canonical
-  // transport (`claude-daemon`), derived from the persisted (backend, headless)
-  // shape with the legacy `backend === 'daemon'` as the dual-read.
+  // The daemon is detected via the canonical `transport` discriminator. Daemon
+  // profiles always persist `transport: 'claude-daemon'`; a profile without a
+  // transport is a non-daemon claude launch, so the fallback derives PTY vs
+  // headless from the stored launch mode (never daemon).
   const transport: ClaudeTransport =
     (profile.spawn.transport as ClaudeTransport | undefined) ??
-    deriveClaudeTransport(profile.spawn.backend, profile.spawn.headless ?? true)
+    deriveClaudeTransport(false, profile.spawn.headless ?? true)
   const isDaemon = transport === 'claude-daemon'
   const showProcessModel = isClaudeFamilyBackend(backend)
   const showAppendSp = backendSupportsAppendSystemPrompt(backend)
@@ -56,30 +57,26 @@ export function ManagerEditor({ profile, onChange }: Props) {
       cleared.openCodeModel = undefined
       cleared.toolPermission = undefined
     }
-    // Leaving the claude family drops the daemon launch config + transport.
-    cleared.daemonMode = undefined
-    cleared.daemonSettingsPath = undefined
-    cleared.daemonMcpConfigPath = undefined
+    // Leaving the claude family drops the daemon transport + its injected config.
     cleared.transport = undefined
+    cleared.settingsPath = undefined
+    cleared.mcpConfigPath = undefined
     patchSpawn(cleared)
   }
 
-  // Process model picker for the claude family -- maps a chosen transport onto
-  // the persisted (backend, headless) pair + writes the canonical `transport`.
-  // Daemon seeds `daemonMode`; leaving daemon drops the daemon-only config.
+  // Process model picker for the claude family -- writes the canonical
+  // `transport` + the derived headless flag. Leaving daemon drops the daemon-only
+  // injected config (settings / mcp paths).
   function switchProcessModel(pm: ClaudeTransport) {
-    const next = processModelToBackendHeadless(pm, profile.spawn.headless ?? true)
+    const next = processModelToState(pm, profile.spawn.headless ?? true)
     const patchSpawnValue: Partial<LaunchProfile['spawn']> = {
-      backend: next.backend === 'daemon' ? 'daemon' : undefined,
+      backend: undefined,
       headless: next.headless,
       transport: pm,
     }
-    if (next.backend === 'daemon') {
-      patchSpawnValue.daemonMode = profile.spawn.daemonMode ?? 'new'
-    } else {
-      patchSpawnValue.daemonMode = undefined
-      patchSpawnValue.daemonSettingsPath = undefined
-      patchSpawnValue.daemonMcpConfigPath = undefined
+    if (!next.isDaemon) {
+      patchSpawnValue.settingsPath = undefined
+      patchSpawnValue.mcpConfigPath = undefined
     }
     patchSpawn(patchSpawnValue)
   }
@@ -88,11 +85,7 @@ export function ManagerEditor({ profile, onChange }: Props) {
     <div className="flex-1 overflow-y-auto p-4 space-y-5">
       <IdentitySection profile={profile} onPatch={patch} />
       <BehaviorSection profile={profile} onPatch={patch} />
-      <BackendSection
-        backend={backend === 'daemon' ? 'claude' : backend}
-        onChange={switchBackend}
-        hasIncompatibleFields={hasIncompatibleFields}
-      />
+      <BackendSection backend={backend} onChange={switchBackend} hasIncompatibleFields={hasIncompatibleFields} />
       {showProcessModel && <ProcessModelSection transport={transport} onChange={switchProcessModel} />}
       <SentinelProfileSection profile={profile} onPatchSpawn={patchSpawn} sentinels={sentinels} />
       {isDaemon && <DaemonConfigSection spawn={profile.spawn} onPatch={patchSpawn} />}
@@ -122,7 +115,10 @@ export function ManagerEditor({ profile, onChange }: Props) {
  * control (transport reframe Phase 5), so the legacy headless toggle is gone.
  */
 function launchFieldsShowFor(backend: BackendKind, isDaemon: boolean) {
-  const isClaude = backend === 'claude'
+  // The daemon transport rides the claude backend but is not the PTY/headless
+  // agent host, so repl / bare / partial-messages (agent-host runtime flags)
+  // do not apply to it.
+  const isClaude = backend === 'claude' && !isDaemon
   return {
     model: true,
     effort: !isDaemon,
@@ -138,9 +134,6 @@ function launchFieldsShowFor(backend: BackendKind, isDaemon: boolean) {
 
 function hasBackendIncompatibleFields(profile: LaunchProfile, backend: BackendKind): boolean {
   const s = profile.spawn
-  // Daemon-only injected paths are dropped by `switchBackend` on any move off
-  // the daemon backend -- warn so the user does not lose them silently.
-  if (backend === 'daemon') return !!(s.daemonSettingsPath || s.daemonMcpConfigPath)
   if (backend === 'opencode') return false
   return !!(s.appendSystemPrompt || s.openCodeModel || s.toolPermission)
 }

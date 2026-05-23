@@ -581,7 +581,11 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       recapFresh: conv.recapFresh,
       hostSentinelId: conv.hostSentinelId,
       hostSentinelAlias: conv.hostSentinelAlias,
-      backend: conv.agentHostType || 'claude',
+      // The daemon is the claude backend's `claude-daemon` transport, not a
+      // backend: a daemon-hosted conversation (agentHostType === 'daemon')
+      // reports the `claude` family + the transport below.
+      backend: conv.agentHostType && conv.agentHostType !== 'daemon' ? conv.agentHostType : 'claude',
+      transport: conv.transport,
     }
   }
 

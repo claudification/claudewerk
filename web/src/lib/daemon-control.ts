@@ -35,12 +35,12 @@ const DAEMON_OP_LABELS: Record<string, string> = {
 }
 
 /**
- * True when the respawn-stale action should be offered. Respawn-stale targets
- * a daemon-backed worker that went sleep/wake-stale; the broker maps daemon
- * jobs onto conversations with `backend === 'daemon'`.
+ * True when the respawn-stale action should be offered. Respawn-stale targets a
+ * daemon worker that went sleep/wake-stale -- a conversation on the canonical
+ * `claude-daemon` transport.
  */
-export function canRespawnStaleDaemon(conversation: { backend?: string } | undefined | null): boolean {
-  return conversation?.backend === 'daemon'
+export function canRespawnStaleDaemon(conversation: { transport?: string } | undefined | null): boolean {
+  return conversation?.transport === 'claude-daemon'
 }
 
 /**

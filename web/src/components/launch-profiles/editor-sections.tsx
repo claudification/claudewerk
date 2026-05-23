@@ -101,9 +101,8 @@ export function BackendSection({
 }
 
 /**
- * Process model picker for the claude family (transport reframe Phase 5):
- * Interactive PTY / Headless / Daemon. Maps to `transport`; the daemon option
- * replaces the legacy `backend === 'daemon'` selection.
+ * Process model picker for the claude family: Interactive PTY / Headless /
+ * Daemon. Maps to the `transport` discriminator.
  */
 export function ProcessModelSection({
   transport,
@@ -172,19 +171,14 @@ export function HiddenAppendPromptNotice({ backend, hasValue }: { backend: Backe
   )
 }
 
-// A daemon launch profile only ever persists `new` / `resume` -- `attach`
-// targets an ephemeral roster worker and is a per-launch-only choice.
-const DAEMON_PROFILE_MODES: Array<{ value: 'new' | 'resume'; label: string; hint: string }> = [
-  { value: 'new', label: 'New', hint: 'claude --bg with a fresh prompt (entered at launch)' },
-  { value: 'resume', label: 'Resume', hint: 'claude --bg --resume -- the session id is entered at launch' },
-]
-
 /**
- * Daemon-specific launch config for a profile: the launch mode (new/resume)
- * plus the sentinel-host config paths injected into `claude --bg`. Rendered
- * only when the profile's backend is `daemon`. The per-launch-only
- * `daemonResumeSessionId` / `daemonAttachShort` are deliberately absent --
- * they are stripped by `profileSpawnSchema` and supplied in the spawn dialog.
+ * Daemon-specific launch config for a profile: the sentinel-host config paths
+ * injected when the daemon worker is dispatched. Rendered only when the
+ * profile's transport is `claude-daemon`. A daemon profile is always NEW-mode:
+ * RESUME / ATTACH target an ephemeral session/worker the user supplies in the
+ * spawn dialog, so they are per-launch only and never saved to a profile. The
+ * paths ride the backend-general `settingsPath` / `mcpConfigPath` fields (the
+ * web-readable typed shape -- the opaque `transportMeta` bag is broker-only).
  */
 export function DaemonConfigSection({
   spawn,
@@ -193,36 +187,23 @@ export function DaemonConfigSection({
   spawn: LaunchProfile['spawn']
   onPatch: (next: Partial<LaunchProfile['spawn']>) => void
 }) {
-  const mode = spawn.daemonMode === 'resume' ? 'resume' : 'new'
-  const modeHint = DAEMON_PROFILE_MODES.find(m => m.value === mode)?.hint
   return (
-    <Section title="Daemon launch" subtitle="Attach mode is per-launch only and is never saved to a profile.">
-      <LabeledRow label="Mode" subtitle={modeHint}>
-        <div className="flex gap-1.5">
-          {DAEMON_PROFILE_MODES.map(m => (
-            <TogglePill
-              key={m.value}
-              small
-              label={m.label}
-              title={m.hint}
-              active={mode === m.value}
-              onClick={() => onPatch({ daemonMode: m.value })}
-            />
-          ))}
-        </div>
-      </LabeledRow>
-      <LabeledRow label="Settings path" subtitle="Absolute path on the sentinel host. claude --bg --settings">
+    <Section
+      title="Daemon launch"
+      subtitle="A new worker is dispatched at launch. Resume / attach are per-launch only."
+    >
+      <LabeledRow label="Settings path" subtitle="Absolute path on the sentinel host. claude --settings">
         <TextInput
-          value={spawn.daemonSettingsPath ?? ''}
-          onChange={v => onPatch({ daemonSettingsPath: v || undefined })}
+          value={spawn.settingsPath ?? ''}
+          onChange={v => onPatch({ settingsPath: v || undefined })}
           placeholder="/abs/path/to/settings.json"
           maxWidth={260}
         />
       </LabeledRow>
-      <LabeledRow label="MCP config path" subtitle="Absolute path on the sentinel host. claude --bg --mcp-config">
+      <LabeledRow label="MCP config path" subtitle="Absolute path on the sentinel host. claude --mcp-config">
         <TextInput
-          value={spawn.daemonMcpConfigPath ?? ''}
-          onChange={v => onPatch({ daemonMcpConfigPath: v || undefined })}
+          value={spawn.mcpConfigPath ?? ''}
+          onChange={v => onPatch({ mcpConfigPath: v || undefined })}
           placeholder="/abs/path/to/mcp.json"
           maxWidth={260}
         />

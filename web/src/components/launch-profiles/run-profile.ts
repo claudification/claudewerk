@@ -77,9 +77,8 @@ export async function runProfile(
   // Daemon launches need per-launch input a profile cannot carry (RESUME a
   // session id to fork from, ATTACH a roster worker), so they open the spawn
   // dialog pre-filled rather than firing straight to the broker -- regardless
-  // of the profile's `immediate` flag. Transport reframe (Phase 5): detect via
-  // the canonical transport, with `backend === 'daemon'` as the dual-read.
-  const isDaemon = profile.spawn.transport === 'claude-daemon' || profile.spawn.backend === 'daemon'
+  // of the profile's `immediate` flag. Detected via the canonical `transport`.
+  const isDaemon = profile.spawn.transport === 'claude-daemon'
   const immediate = (profile.immediate ?? true) && !isDaemon
   if (!immediate) {
     openSpawnDialog({

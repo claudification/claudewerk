@@ -127,10 +127,11 @@ export function TrustLevelBadge({ projectSettings }: { projectSettings: ProjectS
 /**
  * Read-only "Launch config" disclosure for a daemon-transport conversation --
  * how the worker was launched (transport + mode + injected config). Renders
- * nothing for non-daemon conversations. Transport reframe (Phase 5): keys off
- * the canonical `transport === 'claude-daemon'` (with `daemonMode` as the
- * legacy dual-read) and surfaces `transport` directly. The conversation's live
- * ccSessionId is never shown -- this is launch INPUT only.
+ * nothing for non-daemon conversations. Keys off the canonical
+ * `transport === 'claude-daemon'` and surfaces `transport` directly. The mode +
+ * injected paths are read from the typed `launchConfig` display fields the
+ * claude-daemon transport projects (the opaque `transportMeta` bag is never read
+ * by the control panel). The conversation's live ccSessionId is never shown.
  */
 type LaunchConfigDetail = NonNullable<Conversation['launchConfig']>
 
@@ -156,7 +157,7 @@ export function LaunchConfigRow({ conversation }: { conversation: Conversation }
   const [open, setOpen] = useState(false)
   const lc = conversation.launchConfig
   const transport = conversation.transport ?? lc?.transport
-  const isDaemon = transport === 'claude-daemon' || !!lc?.daemonMode
+  const isDaemon = transport === 'claude-daemon'
   if (!lc || !isDaemon) return null
 
   const rows = buildLaunchConfigRows(transport, lc)

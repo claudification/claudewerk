@@ -3,56 +3,50 @@
  * spawn dialog + launch-profile editor.
  *
  * Transport reframe (`.claude/docs/plan-claude-transport-reframe.md` § 3.1):
- * the daemon is no longer a separate backend -- it is one of three claude
- * process models. The control panel keys daemon-specific UI off `transport`
- * (`claude-daemon`) rather than the legacy `backend === 'daemon'`.
- *
- * The launch-profile persistence + the apply bridge still store
- * `backend: 'daemon'` (the Phase-1 dual-write shape; Phase 6 deletes it). So
- * this module DERIVES the transport from the (backend, headless) pair the
- * dialog + profiles already own, and maps a chosen process model back onto
- * that pair. No new persisted state -- the derivation is the single source of
- * truth for the UI gate.
+ * the daemon is not a separate backend -- it is one of three claude process
+ * models (`claude-pty` / `claude-headless` / `claude-daemon`). The control panel
+ * keys daemon-specific UI off the transport. The claude family's process model
+ * is tracked as an `(isDaemon, headless)` pair: `headless` distinguishes PTY vs
+ * stream-json, and the orthogonal `isDaemon` flag selects the daemon transport.
  */
 
 const CLAUDE_TRANSPORTS = ['claude-pty', 'claude-headless', 'claude-daemon'] as const
 export type ClaudeTransport = (typeof CLAUDE_TRANSPORTS)[number]
 
 /** Backends that belong to the claude family (and therefore own a process
- *  model). `daemon` is still a legacy backend value until Phase 6. */
+ *  model). The daemon is a transport of this family, not a backend. */
 export function isClaudeFamilyBackend(backend: string | undefined): boolean {
-  return backend === undefined || backend === 'claude' || backend === 'daemon'
+  return backend === undefined || backend === 'claude'
 }
 
 /**
- * Derive the claude transport from the legacy (backend, headless) pair. Daemon
+ * Derive the claude transport from the (isDaemon, headless) selection. Daemon
  * wins regardless of headless; otherwise headless picks stream-json vs PTY.
  */
-export function deriveClaudeTransport(backend: string | undefined, headless: boolean): ClaudeTransport {
-  if (backend === 'daemon') return 'claude-daemon'
+export function deriveClaudeTransport(isDaemon: boolean, headless: boolean): ClaudeTransport {
+  if (isDaemon) return 'claude-daemon'
   return headless ? 'claude-headless' : 'claude-pty'
 }
 
-export interface BackendHeadless {
-  /** Effective backend for the claude family: `daemon` for the daemon process
-   *  model, `claude` otherwise. */
-  backend: 'claude' | 'daemon'
+export interface ProcessModelState {
+  /** True when the daemon process model (`claude-daemon` transport) is chosen. */
+  isDaemon: boolean
   headless: boolean
 }
 
 /**
- * Map a chosen process model back onto the (backend, headless) pair the dialog
- * + profile persist. `headless` is irrelevant for the daemon transport, so the
+ * Map a chosen process model onto the (isDaemon, headless) pair the dialog +
+ * profile track. `headless` is irrelevant for the daemon transport, so the
  * previous value is preserved (keeps a later PTY/Headless switch sticky).
  */
-export function processModelToBackendHeadless(pm: ClaudeTransport, prevHeadless: boolean): BackendHeadless {
+export function processModelToState(pm: ClaudeTransport, prevHeadless: boolean): ProcessModelState {
   switch (pm) {
     case 'claude-daemon':
-      return { backend: 'daemon', headless: prevHeadless }
+      return { isDaemon: true, headless: prevHeadless }
     case 'claude-headless':
-      return { backend: 'claude', headless: true }
+      return { isDaemon: false, headless: true }
     default:
-      return { backend: 'claude', headless: false }
+      return { isDaemon: false, headless: false }
   }
 }
 

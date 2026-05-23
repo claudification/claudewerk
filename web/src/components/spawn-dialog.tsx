@@ -57,7 +57,7 @@ import {
   type ClaudeTransport,
   deriveClaudeTransport,
   isClaudeFamilyBackend,
-  processModelToBackendHeadless,
+  processModelToState,
 } from './spawn-dialog/process-model'
 import { ProcessModelSegmented } from './spawn-dialog/process-model-segmented'
 import { SentinelProfileRadio } from './spawn-dialog/sentinel-profile-radio'
@@ -139,7 +139,11 @@ export function SpawnDialog() {
   const [resumeId, setResumeId] = useState('')
   const [envText, setEnvText] = useState('')
   const [backend, setBackend] = useState<BackendKind>('claude')
-  // Daemon backend launch state (only meaningful when backend === 'daemon').
+  // The daemon process model (`claude-daemon` transport) for the claude family.
+  // Orthogonal to `headless` (PTY vs stream-json); together they derive the
+  // claude transport. Only meaningful when `backend` is the claude family.
+  const [isDaemon, setIsDaemon] = useState(false)
+  // Daemon launch state (only meaningful when `isDaemon`).
   const [daemonMode, setDaemonMode] = useState<DaemonMode>('new')
   const [daemonForm, setDaemonForm] = useState<DaemonModeFormValue>(blankDaemonForm)
   const [daemonAttach, setDaemonAttach] = useState<DaemonRosterEntry | null>(null)
@@ -231,6 +235,7 @@ export function SpawnDialog() {
       // projects open with the OpenCode backend pre-selected. Other schemes
       // (claude://, hermes://, etc.) start on Claude and let the user pick.
       setBackend(options.projectUri?.startsWith('opencode://') ? 'opencode' : 'claude')
+      setIsDaemon(false)
       setDaemonMode('new')
       setDaemonForm(blankDaemonForm())
       setDaemonAttach(null)
@@ -286,6 +291,7 @@ export function SpawnDialog() {
           setEnvText,
           setOpenCodeModel,
           setOpenCodeToolPermission,
+          setIsDaemon,
           setDaemonMode,
           setDaemonForm,
           setSentinelProfile,
@@ -371,18 +377,17 @@ export function SpawnDialog() {
     setJobId(null)
   }, [progress.launch.conversationId, progress.spawnedConversation, progress.setViewCountdown])
 
-  // Derived claude "Process model" (transport). Daemon is no longer a backend
-  // (transport reframe Phase 5) -- it is the third claude process model. The
-  // (backend, headless) pair stays the persisted source of truth (the dialog +
-  // launch profiles still dual-write backend:'daemon'); transport is derived
-  // from it and drives the daemon-specific UI gate.
-  const transport: ClaudeTransport = deriveClaudeTransport(backend, headless)
+  // Derived claude "Process model" (transport). The daemon is not a backend --
+  // it is the third claude process model, tracked by the orthogonal `isDaemon`
+  // flag alongside `headless` (PTY vs stream-json). The transport drives the
+  // daemon-specific UI gate and is written to the spawn request.
+  const transport: ClaudeTransport = deriveClaudeTransport(isDaemon, headless)
   const showProcessModel = isClaudeFamilyBackend(backend)
-  const isDaemonTransport = transport === 'claude-daemon'
+  const isDaemonTransport = showProcessModel && transport === 'claude-daemon'
   const setProcessModel = useCallback(
     (pm: ClaudeTransport) => {
-      const next = processModelToBackendHeadless(pm, headless)
-      setBackend(next.backend)
+      const next = processModelToState(pm, headless)
+      setIsDaemon(next.isDaemon)
       setHeadless(next.headless)
       haptic('tap')
     },
@@ -792,6 +797,7 @@ export function SpawnDialog() {
                       setEnvText,
                       setOpenCodeModel,
                       setOpenCodeToolPermission,
+                      setIsDaemon,
                       setDaemonMode,
                       setDaemonForm,
                       setSentinelProfile,
@@ -816,7 +822,7 @@ export function SpawnDialog() {
                       envText,
                       openCodeModel: openCodeModel || undefined,
                       toolPermission: openCodeToolPermission,
-                      daemonMode,
+                      isDaemon: isDaemonTransport,
                       daemonForm,
                       sentinelProfile: sentinelProfile || undefined,
                     })
@@ -826,12 +832,12 @@ export function SpawnDialog() {
                   }}
                 />
               </div>
-              {/* Backend selector (Claude / Chat / Hermes / OpenCode). Daemon
-                  collapses to Claude here -- it is selected via the Process
-                  model control below (transport reframe Phase 5). */}
+              {/* Backend selector (Claude / Chat / Hermes / OpenCode). The
+                  daemon is not a backend -- it is selected via the Process
+                  model control below. */}
               <div className="shrink-0">
                 <BackendSelect
-                  value={backend === 'daemon' ? 'claude' : backend}
+                  value={backend}
                   onChange={v => {
                     if (profileId && v !== backend) setProfileId(undefined)
                     setBackend(v)

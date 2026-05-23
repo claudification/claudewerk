@@ -27,15 +27,24 @@ describe('LaunchConfigRow', () => {
     expect(container.firstChild).toBeNull()
   })
 
-  test('renders nothing for a non-daemon launchConfig (no daemonMode)', () => {
+  test('renders nothing for a non-daemon launchConfig (no claude-daemon transport)', () => {
     const { container } = render(<LaunchConfigRow conversation={conv({ headless: true, model: 'claude-haiku-4-5' })} />)
     expect(container.firstChild).toBeNull()
   })
 
   test('shows the daemon mode summary for a daemon conversation', () => {
-    render(<LaunchConfigRow conversation={conv({ headless: false, agentHostType: 'daemon', daemonMode: 'resume' })} />)
+    render(
+      <LaunchConfigRow
+        conversation={conv({
+          headless: false,
+          agentHostType: 'daemon',
+          transport: 'claude-daemon',
+          daemonMode: 'resume',
+        })}
+      />,
+    )
     expect(screen.getByText('Launch config')).toBeDefined()
-    expect(screen.getByText('daemon · resume')).toBeDefined()
+    expect(screen.getByText('claude-daemon · resume')).toBeDefined()
   })
 
   test('is collapsed by default and expands on click', () => {
@@ -44,6 +53,7 @@ describe('LaunchConfigRow', () => {
         conversation={conv({
           headless: false,
           agentHostType: 'daemon',
+          transport: 'claude-daemon',
           daemonMode: 'new',
           model: 'claude-opus-4-7',
           daemonSettingsPath: '/etc/claude/settings.json',
@@ -64,6 +74,7 @@ describe('LaunchConfigRow', () => {
         conversation={conv({
           headless: false,
           agentHostType: 'daemon',
+          transport: 'claude-daemon',
           daemonMode: 'new',
           env: { API_TOKEN: 'super-secret-value', DEBUG: '1' },
         })}
@@ -105,6 +116,7 @@ describe('LaunchConfigRow', () => {
         conversation={conv({
           headless: false,
           agentHostType: 'daemon',
+          transport: 'claude-daemon',
           daemonMode: 'new',
           daemonMcpConfigPath: '/etc/claude/mcp.json',
           appendSystemPrompt: 'Be terse.',

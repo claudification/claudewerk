@@ -25,7 +25,7 @@ import type {
   DaemonRosterJob,
   DaemonSessionRetired,
 } from '../../shared/protocol'
-import { DAEMON_META } from '../backends/daemon'
+import { DAEMON_META } from '../backends/claude-daemon'
 import { GuardError, type HandlerContext, type MessageHandler } from '../handler-context'
 import { AGENT_HOST_ONLY, DASHBOARD_ROLES, registerHandlers, SENTINEL_ONLY } from '../message-router'
 import { resolveConversationSocket } from './socket-routing'
@@ -65,7 +65,7 @@ function applyDaemonDisplayFields(conv: Conversation, job: DaemonJobInfo): void 
 
 /**
  * Persist the daemon worker `short` into the opaque agentHostMeta bag so the
- * daemon backend can resolve `short -> conversationId` for an ATTACH spawn
+ * claude-daemon transport can resolve `short -> conversationId` for an ATTACH spawn
  * (take over this read-only mirror interactively). Boundary-safe: `short` is
  * the daemon's job routing key, not a ccSessionId.
  */

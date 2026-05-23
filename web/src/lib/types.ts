@@ -168,10 +168,12 @@ export interface Conversation {
   }
   hostSentinelId?: string
   hostSentinelAlias?: string
+  /** Agent family (claude / opencode / chat-api / hermes). The daemon is NOT a
+   *  backend -- it is the claude `claude-daemon` transport below. */
   backend?: string
   /** Resolved transport (transport reframe): 'claude-pty' | 'claude-headless'
    *  | 'claude-daemon'. The canonical discriminator the control panel keys
-   *  daemon-specific UI off; `backend === 'daemon'` is the legacy dual-read. */
+   *  daemon-specific UI off. */
   transport?: string
 }
 

@@ -20,15 +20,13 @@ import { randomUUID } from 'node:crypto'
 import { generateConversationName } from '../../shared/conversation-names'
 import { DEFAULT_OPENCODE_TOOL_PERMISSION, normalizeTier, resolveOpenCodeModel } from '../../shared/opencode-config'
 import { cwdToProjectUri } from '../../shared/project-uri'
-import type {
-  Conversation,
-  LaunchProgressEvent,
-  LaunchStep,
-  SpawnResult as SentinelSpawnResult,
-} from '../../shared/protocol'
+import type { Conversation } from '../../shared/protocol'
 import { deriveConversationName, validateConversationName } from '../../shared/spawn-naming'
 import type { SpawnRequest } from '../../shared/spawn-schema'
-import type { ConversationStore } from '../conversation-store'
+// Shared spawn-progress emit helper (transport reframe Phase 6 de-duplication).
+import { emitLaunchProgress as emitProgress } from './launch-progress'
+// Shared sentinel spawn round-trip (transport reframe Phase 6 de-duplication).
+import { awaitSentinelSpawn } from './sentinel-spawn'
 import type { ConversationBackend, InputResult, SpawnDeps, SpawnResult } from './types'
 
 /**
@@ -39,24 +37,6 @@ const META_OPENCODE_SESSION_ID = 'openCodeSessionId'
 const META_BACKEND = 'backend'
 const META_PROVIDER_MODEL = 'openCodeModel'
 const META_TOOL_PERMISSION = 'openCodeToolPermission'
-
-function emitProgress(
-  conversationStore: ConversationStore,
-  jobId: string | undefined,
-  step: LaunchStep,
-  status: LaunchProgressEvent['status'],
-  extra?: Partial<LaunchProgressEvent>,
-): void {
-  if (!jobId) return
-  conversationStore.forwardJobEvent(jobId, {
-    type: 'launch_progress',
-    jobId,
-    step,
-    status,
-    t: Date.now(),
-    ...extra,
-  })
-}
 
 export const opencodeBackend: ConversationBackend = {
   type: 'opencode',
@@ -164,17 +144,9 @@ async function spawnOpenCode(req: SpawnRequest, deps: SpawnDeps): Promise<SpawnR
   // Send a sentinel spawn message tagged with backend=opencode so the sentinel
   // launches the opencode-host binary instead of rclaude. The sentinel speaks
   // a small wire protocol; we set `agentHostType` to drive its dispatch.
-  const result = await new Promise<SentinelSpawnResult>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      deps.conversationStore.removeSpawnListener(requestId)
-      reject(new Error('Sentinel did not respond (15s timeout)'))
-    }, 15000)
-
-    deps.conversationStore.addSpawnListener(requestId, msg => {
-      clearTimeout(timeout)
-      resolve(msg as SentinelSpawnResult)
-    })
-
+  // Listener/timeout handshake is shared with the claude-daemon transport
+  // (`awaitSentinelSpawn`); only the message + pre-send progress differ.
+  const result = await awaitSentinelSpawn(deps.conversationStore, requestId, () => {
     emitProgress(deps.conversationStore, jobId, 'spawn_sent', 'active')
 
     deps.conversationStore.recordJobConfig(jobId, {
@@ -202,47 +174,33 @@ async function spawnOpenCode(req: SpawnRequest, deps: SpawnDeps): Promise<SpawnR
       toolPermission,
     })
 
-    try {
-      sentinel.send(
-        JSON.stringify({
-          type: 'spawn',
-          requestId,
-          conversationId,
-          jobId,
-          // Sentinel routes ACP-tagged spawns to bin/acp-host. acpAgent
-          // selects the recipe (acp-recipes.ts) used to launch the underlying
-          // agent CLI (e.g. `opencode acp`). The wire protocol the host
-          // speaks back to the broker is identical to the legacy NDJSON
-          // path's, so the broker doesn't care which one is in use.
-          agentHostType: 'acp',
-          acpAgent: 'opencode',
-          cwd: req.cwd,
-          mkdir: req.mkdir || false,
-          mode: req.mode || 'fresh',
-          model: resolvedModel,
-          conversationName,
-          conversationDescription: req.description || undefined,
-          prompt: req.prompt || undefined,
-          worktree: req.worktree || undefined,
-          env: req.env || undefined,
-          // Pass through OpenCode-specific extras (later: from req.backendExtras).
-          openCodeModel: resolvedModel,
-          toolPermission,
-        }),
-      )
-    } catch {
-      clearTimeout(timeout)
-      deps.conversationStore.removeSpawnListener(requestId)
-      reject(new Error('Sentinel offline (send failed)'))
-      return
-    }
-  }).catch((err: unknown) => {
-    return {
-      type: 'spawn_result',
-      requestId,
-      success: false,
-      error: err instanceof Error ? err.message : String(err),
-    } as SentinelSpawnResult
+    sentinel.send(
+      JSON.stringify({
+        type: 'spawn',
+        requestId,
+        conversationId,
+        jobId,
+        // Sentinel routes ACP-tagged spawns to bin/acp-host. acpAgent
+        // selects the recipe (acp-recipes.ts) used to launch the underlying
+        // agent CLI (e.g. `opencode acp`). The wire protocol the host
+        // speaks back to the broker is identical to the legacy NDJSON
+        // path's, so the broker doesn't care which one is in use.
+        agentHostType: 'acp',
+        acpAgent: 'opencode',
+        cwd: req.cwd,
+        mkdir: req.mkdir || false,
+        mode: req.mode || 'fresh',
+        model: resolvedModel,
+        conversationName,
+        conversationDescription: req.description || undefined,
+        prompt: req.prompt || undefined,
+        worktree: req.worktree || undefined,
+        env: req.env || undefined,
+        // Pass through OpenCode-specific extras (later: from req.backendExtras).
+        openCodeModel: resolvedModel,
+        toolPermission,
+      }),
+    )
   })
 
   if (!result.success) {

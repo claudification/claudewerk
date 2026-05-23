@@ -4,7 +4,7 @@ import {
   type DefaultsSource,
   profileToDefaultsSource,
   profileToSpawnPartial,
-  resolveDefaultBackend,
+  resolveDefaultTransport,
   resolveSpawnConfig,
 } from './spawn-defaults'
 import type { SpawnRequest } from './spawn-schema'
@@ -114,111 +114,43 @@ describe('resolveSpawnConfig', () => {
       expect(resolveSpawnConfig({}, null, { defaultLaunchMode: 'headless' }).headless).toBe(true)
     })
 
-    it('defaultBackend=headless opts into headless', () => {
-      expect(resolveSpawnConfig({}, null, { defaultBackend: 'headless' }).headless).toBe(true)
+    it('defaultTransport.claude=claude-headless opts into headless', () => {
+      expect(resolveSpawnConfig({}, null, { defaultTransport: { claude: 'claude-headless' } }).headless).toBe(true)
     })
 
-    it('defaultBackend=pty yields PTY', () => {
-      expect(resolveSpawnConfig({}, null, { defaultBackend: 'pty' }).headless).toBe(false)
+    it('defaultTransport.claude=claude-pty yields PTY', () => {
+      expect(resolveSpawnConfig({}, null, { defaultTransport: { claude: 'claude-pty' } }).headless).toBe(false)
     })
 
-    it('defaultBackend supersedes defaultLaunchMode at the global tier', () => {
-      // both global -- the Phase I flag wins over the legacy launch mode.
-      expect(resolveSpawnConfig({}, null, { defaultBackend: 'headless', defaultLaunchMode: 'pty' }).headless).toBe(true)
-      expect(resolveSpawnConfig({}, null, { defaultBackend: 'pty', defaultLaunchMode: 'headless' }).headless).toBe(
-        false,
-      )
+    it('defaultTransport supersedes defaultLaunchMode at the global tier', () => {
+      expect(
+        resolveSpawnConfig({}, null, { defaultTransport: { claude: 'claude-headless' }, defaultLaunchMode: 'pty' })
+          .headless,
+      ).toBe(true)
+      expect(
+        resolveSpawnConfig({}, null, { defaultTransport: { claude: 'claude-pty' }, defaultLaunchMode: 'headless' })
+          .headless,
+      ).toBe(false)
     })
 
-    it('project defaultLaunchMode still overrides defaultBackend', () => {
-      expect(resolveSpawnConfig({}, { defaultLaunchMode: 'pty' }, { defaultBackend: 'headless' }).headless).toBe(false)
+    it('project defaultLaunchMode still overrides defaultTransport', () => {
+      expect(
+        resolveSpawnConfig({}, { defaultLaunchMode: 'pty' }, { defaultTransport: { claude: 'claude-headless' } })
+          .headless,
+      ).toBe(false)
     })
 
-    it('defaultBackend=daemon resolves to a non-headless (PTY-ish) launch mode', () => {
-      // headless is moot for the daemon backend, but must not be left true.
-      expect(resolveSpawnConfig({}, null, { defaultBackend: 'daemon' }).headless).toBe(false)
-    })
-  })
-
-  describe('defaultBackend (Phase I cutover)', () => {
-    it('defaultBackend=daemon makes an agent spawn resolve to the daemon backend, NEW mode', () => {
-      const out = resolveSpawnConfig({}, null, { defaultBackend: 'daemon' })
-      expect(out.backend).toBe('daemon')
-      expect(out.daemonMode).toBe('new')
-    })
-
-    it('defaultBackend=pty leaves the backend unset (claude)', () => {
-      expect(resolveSpawnConfig({}, null, { defaultBackend: 'pty' }).backend).toBeUndefined()
-    })
-
-    it('defaultBackend=headless leaves the backend unset (claude)', () => {
-      expect(resolveSpawnConfig({}, null, { defaultBackend: 'headless' }).backend).toBeUndefined()
-    })
-
-    it('unset defaultBackend leaves the backend unset (claude)', () => {
-      expect(resolveSpawnConfig({}, null, null).backend).toBeUndefined()
-      expect(resolveSpawnConfig({}, null, {}).backend).toBeUndefined()
-    })
-
-    it('an explicit backend always wins over defaultBackend=daemon', () => {
-      expect(resolveSpawnConfig({ backend: 'opencode' }, null, { defaultBackend: 'daemon' }).backend).toBe('opencode')
-    })
-
-    it('adHoc spawns never adopt the daemon backend', () => {
-      const out = resolveSpawnConfig({ adHoc: true }, null, { defaultBackend: 'daemon' })
-      expect(out.backend).toBeUndefined()
-      expect(out.daemonMode).toBeUndefined()
-    })
-
-    it('an explicit daemon backend keeps its daemonMode', () => {
-      expect(resolveSpawnConfig({ backend: 'daemon', daemonMode: 'attach' }, null, null).daemonMode).toBe('attach')
-    })
-
-    it('an explicit daemon backend with no daemonMode defaults to new', () => {
-      expect(resolveSpawnConfig({ backend: 'daemon' }, null, null).daemonMode).toBe('new')
+    it('defaultTransport.claude=claude-daemon resolves to a non-headless (PTY-ish) launch mode', () => {
+      // headless is moot for the daemon transport, but must not be left true.
+      expect(resolveSpawnConfig({}, null, { defaultTransport: { claude: 'claude-daemon' } }).headless).toBe(false)
     })
   })
 
-  describe('resolveDefaultBackend', () => {
-    it('an explicit backend always wins', () => {
-      const d = resolveDefaultBackend({ backend: 'hermes' }, { defaultBackend: 'daemon' })
-      expect(d.backend).toBe('hermes')
-      expect(d.reason).toContain('explicit')
-    })
-
-    it('a non-daemon explicit backend is not stamped with a daemonMode', () => {
-      expect(resolveDefaultBackend({ backend: 'opencode' }, null).daemonMode).toBeUndefined()
-    })
-
-    it('adHoc resolves to the claude path regardless of defaultBackend', () => {
-      const d = resolveDefaultBackend({ adHoc: true }, { defaultBackend: 'daemon' })
-      expect(d.backend).toBeUndefined()
-      expect(d.reason).toContain('adHoc')
-    })
-
-    it('defaultBackend=daemon resolves to daemon NEW with a descriptive reason', () => {
-      const d = resolveDefaultBackend({}, { defaultBackend: 'daemon' })
-      expect(d.backend).toBe('daemon')
-      expect(d.daemonMode).toBe('new')
-      expect(d.reason).toContain('defaultBackend=daemon')
-    })
-
-    it('defaultBackend=daemon honors a caller-supplied daemonMode', () => {
-      expect(resolveDefaultBackend({ daemonMode: 'resume' }, { defaultBackend: 'daemon' }).daemonMode).toBe('resume')
-    })
-
-    it('defaultBackend pty / headless / unset all resolve to the claude path', () => {
-      expect(resolveDefaultBackend({}, { defaultBackend: 'pty' }).backend).toBeUndefined()
-      expect(resolveDefaultBackend({}, { defaultBackend: 'headless' }).backend).toBeUndefined()
-      expect(resolveDefaultBackend({}, null).backend).toBeUndefined()
-    })
-  })
-
-  describe('defaultTransport (transport reframe Phase 3)', () => {
-    it('defaultTransport.claude=claude-daemon resolves to the daemon backend, NEW mode', () => {
+  describe('defaultTransport (the cutover knob)', () => {
+    it('defaultTransport.claude=claude-daemon resolves to the claude-daemon transport, backend stays claude', () => {
       const out = resolveSpawnConfig({}, null, { defaultTransport: { claude: 'claude-daemon' } })
-      expect(out.backend).toBe('daemon')
-      expect(out.daemonMode).toBe('new')
+      // daemon is a transport, NOT a backend -- the backend stays unset (claude).
+      expect(out.backend).toBeUndefined()
       expect(out.transport).toBe('claude-daemon')
     })
 
@@ -236,52 +168,66 @@ describe('resolveSpawnConfig', () => {
       expect(out.transport).toBe('claude-headless')
     })
 
-    it('defaultTransport wins over a disagreeing legacy defaultBackend (dual-read precedence)', () => {
-      // a migrated blob carries both; the new field is the source of truth.
-      const out = resolveSpawnConfig({}, null, {
-        defaultTransport: { claude: 'claude-daemon' },
-        defaultBackend: 'pty',
-      })
-      expect(out.backend).toBe('daemon')
-      expect(out.transport).toBe('claude-daemon')
-    })
-
-    it('falls back to legacy defaultBackend when defaultTransport is absent', () => {
-      expect(resolveSpawnConfig({}, null, { defaultBackend: 'daemon' }).backend).toBe('daemon')
-      expect(resolveSpawnConfig({}, null, { defaultBackend: 'headless' }).headless).toBe(true)
-      expect(resolveSpawnConfig({}, null, { defaultBackend: 'pty' }).headless).toBe(false)
-    })
-
-    it('an explicit backend still wins over defaultTransport.claude=claude-daemon', () => {
-      expect(
-        resolveSpawnConfig({ backend: 'opencode' }, null, { defaultTransport: { claude: 'claude-daemon' } }).backend,
-      ).toBe('opencode')
-    })
-
-    it('adHoc spawns never adopt the daemon backend even with defaultTransport=claude-daemon', () => {
-      const out = resolveSpawnConfig({ adHoc: true }, null, { defaultTransport: { claude: 'claude-daemon' } })
+    it('unset defaultTransport leaves the backend unset (claude) and derives PTY', () => {
+      const out = resolveSpawnConfig({}, null, null)
       expect(out.backend).toBeUndefined()
-      expect(out.daemonMode).toBeUndefined()
+      expect(out.transport).toBe('claude-pty')
     })
 
-    it('resolveDefaultBackend reason names defaultTransport when it drove the decision', () => {
-      const d = resolveDefaultBackend({}, { defaultTransport: { claude: 'claude-daemon' } })
-      expect(d.backend).toBe('daemon')
-      expect(d.daemonMode).toBe('new')
+    it('an explicit transport always wins over the global default', () => {
+      expect(
+        resolveSpawnConfig({ transport: 'claude-pty' }, null, { defaultTransport: { claude: 'claude-daemon' } })
+          .transport,
+      ).toBe('claude-pty')
+    })
+
+    it('an explicit non-claude backend ignores the claude default transport', () => {
+      const out = resolveSpawnConfig({ backend: 'opencode' }, null, { defaultTransport: { claude: 'claude-daemon' } })
+      expect(out.backend).toBe('opencode')
+      expect(out.transport).toBeUndefined()
+    })
+
+    it('adHoc spawns never adopt the daemon transport even with defaultTransport=claude-daemon', () => {
+      const out = resolveSpawnConfig({ adHoc: true }, null, { defaultTransport: { claude: 'claude-daemon' } })
+      expect(out.transport).toBe('claude-headless')
+    })
+  })
+
+  describe('resolveDefaultTransport', () => {
+    it('an explicit transport always wins', () => {
+      const d = resolveDefaultTransport({ transport: 'claude-pty' }, { defaultTransport: { claude: 'claude-daemon' } })
+      expect(d.transport).toBe('claude-pty')
+      expect(d.reason).toContain('explicit transport')
+    })
+
+    it('a non-claude explicit backend gets no transport', () => {
+      const d = resolveDefaultTransport({ backend: 'opencode' }, { defaultTransport: { claude: 'claude-daemon' } })
+      expect(d.backend).toBe('opencode')
+      expect(d.transport).toBeUndefined()
+    })
+
+    it('adHoc resolves to the claude headless path (derived), never daemon', () => {
+      const d = resolveDefaultTransport({ adHoc: true }, { defaultTransport: { claude: 'claude-daemon' } })
+      expect(d.transport).toBeUndefined()
+      expect(d.reason).toContain('adHoc')
+    })
+
+    it('defaultTransport.claude=claude-daemon stamps the claude-daemon transport with a descriptive reason', () => {
+      const d = resolveDefaultTransport({}, { defaultTransport: { claude: 'claude-daemon' } })
+      expect(d.backend).toBeUndefined()
+      expect(d.transport).toBe('claude-daemon')
       expect(d.reason).toContain('defaultTransport.claude=claude-daemon')
     })
 
-    it('defaultTransport.claude=claude-daemon honors a caller-supplied daemonMode', () => {
-      expect(
-        resolveDefaultBackend({ daemonMode: 'resume' }, { defaultTransport: { claude: 'claude-daemon' } }).daemonMode,
-      ).toBe('resume')
+    it('an explicit headless toggle defers the transport (does not stamp claude-daemon)', () => {
+      const d = resolveDefaultTransport({ headless: false }, { defaultTransport: { claude: 'claude-daemon' } })
+      expect(d.transport).toBeUndefined()
     })
 
-    it('project defaultLaunchMode still overrides defaultTransport at the global tier', () => {
-      expect(
-        resolveSpawnConfig({}, { defaultLaunchMode: 'pty' }, { defaultTransport: { claude: 'claude-headless' } })
-          .headless,
-      ).toBe(false)
+    it('claude-pty / claude-headless / unset defaults defer to the derived transport', () => {
+      expect(resolveDefaultTransport({}, { defaultTransport: { claude: 'claude-pty' } }).transport).toBeUndefined()
+      expect(resolveDefaultTransport({}, { defaultTransport: { claude: 'claude-headless' } }).transport).toBeUndefined()
+      expect(resolveDefaultTransport({}, null).transport).toBeUndefined()
     })
   })
 

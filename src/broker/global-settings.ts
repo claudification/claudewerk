@@ -34,12 +34,6 @@ const GlobalSettingsSchema = z.object({
   // flips it to 'claude-daemon' once the Tier-2 live smoke is green and the
   // post-June-15 billing pool is reconfirmed.
   defaultTransport: z.object({ claude: transportEnum.default('claude-pty') }).default({ claude: 'claude-pty' }),
-  // LEGACY (transport reframe): the flat pre-Phase-3 enum that defaultTransport
-  // replaces. Kept as a dual-read fallback through Phase 6 -- the resolvers
-  // (src/shared/spawn-defaults.ts) read defaultTransport FIRST, fall back to
-  // this. A settings blob saved before Phase 3 migrates into defaultTransport on
-  // read (migrateLegacyDefaultBackend). Deleted in Phase 6.
-  defaultBackend: z.enum(['daemon', 'pty', 'headless']).default('pty'),
   defaultEffort: z.enum(['default', 'low', 'medium', 'high', 'max']).default('default'),
   defaultModel: z.string().max(50).default(''),
   // Spawn dialog defaults
@@ -57,29 +51,6 @@ const GlobalSettingsSchema = z.object({
 
 export type GlobalSettings = z.infer<typeof GlobalSettingsSchema>
 
-const LEGACY_BACKEND_TO_TRANSPORT = {
-  daemon: 'claude-daemon',
-  pty: 'claude-pty',
-  headless: 'claude-headless',
-} as const
-
-/**
- * Migrate a pre-Phase-3 settings blob (transport reframe): when it carries a
- * legacy `defaultBackend` but no `defaultTransport`, derive `defaultTransport.
- * claude` from it so a stored `defaultBackend:'daemon'` keeps routing agent
- * spawns to the daemon transport after the rename. Returns a shallow copy with
- * the derived field; no-op once `defaultTransport` is present (every save after
- * this phase writes both). Fires only on a raw input that explicitly set the
- * legacy field, so a fresh `parse({})` keeps the schema default untouched
- * (Phase 8 can flip it).
- */
-function migrateLegacyDefaultBackend(raw: Record<string, unknown>): Record<string, unknown> {
-  if (raw.defaultTransport !== undefined) return raw
-  const legacy = raw.defaultBackend
-  if (legacy !== 'daemon' && legacy !== 'pty' && legacy !== 'headless') return raw
-  return { ...raw, defaultTransport: { claude: LEGACY_BACKEND_TO_TRANSPORT[legacy] } }
-}
-
 let kv: KVStore | null = null
 let settings: GlobalSettings = GlobalSettingsSchema.parse({})
 
@@ -89,7 +60,11 @@ export function initGlobalSettings(store: KVStore): void {
   const raw = kv.get<Record<string, unknown>>(KV_KEY)
   if (raw) {
     try {
-      settings = GlobalSettingsSchema.parse(migrateLegacyDefaultBackend(raw))
+      // A pre-Phase-3 blob may still carry the removed `defaultBackend` enum;
+      // zod strips unknown keys, so it parses cleanly and falls back to the
+      // `defaultTransport` schema default (`claude-pty`). The Phase-3 migration
+      // already rewrote live blobs to carry `defaultTransport`.
+      settings = GlobalSettingsSchema.parse(raw)
     } catch {
       // Soft fail - use defaults
       settings = GlobalSettingsSchema.parse({})

@@ -10,7 +10,8 @@ import type { LaunchProfile } from '@shared/launch-profile'
 import { blankDaemonForm, type DaemonMode, type DaemonModeFormValue } from '@/components/spawn-dialog/daemon-launch'
 import { parseEnvText } from '@/lib/env-parse'
 
-// Single source of truth for the backend union -- includes 'daemon'.
+// Single source of truth for the backend union (claude / chat-api / hermes /
+// opencode). The daemon is the claude `claude-daemon` transport, not a backend.
 export type { BackendKind } from '@/components/spawn-dialog/backend-select'
 
 import type { BackendKind } from '@/components/spawn-dialog/backend-select'
@@ -30,7 +31,9 @@ export interface SpawnFormSetters {
   setEnvText: (v: string) => void
   setOpenCodeModel?: (v: string) => void
   setOpenCodeToolPermission?: (v: 'none' | 'safe' | 'full') => void
-  /** Daemon launch state -- only invoked when the profile's backend is daemon. */
+  /** Daemon process model selector -- true for the `claude-daemon` transport. */
+  setIsDaemon?: (v: boolean) => void
+  /** Daemon launch state -- only invoked for a daemon (`claude-daemon`) profile. */
   setDaemonMode?: (v: DaemonMode) => void
   setDaemonForm?: (v: DaemonModeFormValue) => void
   /** Sentinel-profile INTENT -- either a literal profile name or a
@@ -45,10 +48,10 @@ export interface SpawnFormSetters {
 
 export function applyProfileToForm(profile: LaunchProfile, setters: SpawnFormSetters): void {
   const s = profile.spawn
-  // Daemon profiles drive a separate config form (mode + DaemonModeFormValue),
-  // not the generic per-field state -- restore that and stop. Transport reframe
-  // (Phase 5): detect via the canonical transport, dual-read `backend`.
-  if (s.transport === 'claude-daemon' || s.backend === 'daemon') {
+  // Daemon profiles drive a separate config form (DaemonModeFormValue), not the
+  // generic per-field state -- restore that and stop. Detected via the canonical
+  // `transport` discriminator.
+  if (s.transport === 'claude-daemon') {
     applyDaemonProfileToForm(s, setters)
     // Daemon launches also honor the sentinel-profile pick (the daemon worker
     // runs under the resolved profile's `CLAUDE_CONFIG_DIR`).
@@ -56,6 +59,7 @@ export function applyProfileToForm(profile: LaunchProfile, setters: SpawnFormSet
     if (setters.setSentinelPool) setters.setSentinelPool(s.pool ?? '')
     return
   }
+  setters.setIsDaemon?.(false)
   if (s.headless !== undefined) setters.setHeadless(s.headless)
   setters.setModel(s.model ?? '')
   setters.setEffort(s.effort ?? '')
@@ -84,42 +88,44 @@ function envObjectToText(env: Record<string, string> | undefined): string {
 }
 
 /**
- * Restore a daemon launch profile into the spawn dialog's daemon state.
- * `prompt` / `resumeSessionId` are intentionally left blank -- they are
- * per-launch input the user supplies in the dialog (a profile never carries
- * them, see `profileSpawnSchema`).
+ * Restore a daemon launch profile into the spawn dialog's daemon state. A
+ * daemon profile is always NEW-mode (resume / attach are per-launch only), so
+ * the mode is seeded to `new`; `prompt` / `resumeSessionId` are left blank --
+ * per-launch input the user supplies in the dialog. The injected paths ride the
+ * web-readable `settingsPath` / `mcpConfigPath` typed fields (the opaque
+ * `transportMeta` bag is broker-only -- the control panel never reads it).
  */
 function applyDaemonProfileToForm(s: LaunchProfile['spawn'], setters: SpawnFormSetters): void {
-  setters.setBackend('daemon')
-  setters.setDaemonMode?.(s.daemonMode === 'resume' ? 'resume' : 'new')
+  setters.setBackend('claude')
+  setters.setIsDaemon?.(true)
+  setters.setDaemonMode?.('new')
   setters.setDaemonForm?.({
     ...blankDaemonForm(),
     model: s.model ?? '',
     appendSystemPrompt: s.appendSystemPrompt ?? '',
     envText: envObjectToText(s.env),
-    settingsPath: s.daemonSettingsPath ?? '',
-    mcpConfigPath: s.daemonMcpConfigPath ?? '',
+    settingsPath: s.settingsPath ?? '',
+    mcpConfigPath: s.mcpConfigPath ?? '',
     worktreeName: s.worktree ?? '',
   })
 }
 
 /**
- * Capture the daemon config form as a profile spawn slice. `attach` collapses
- * to `new` (a profile cannot pin an ephemeral attach target); `prompt` and
- * `resumeSessionId` are dropped -- they are per-launch only.
+ * Capture the daemon config form as a profile spawn slice. A daemon profile is
+ * always NEW-mode (`attach` / `resume` target an ephemeral worker/session the
+ * user supplies at launch); `prompt` / `resumeSessionId` are dropped. The
+ * injected paths ride the web-readable `settingsPath` / `mcpConfigPath` typed
+ * fields; the canonical `transport: 'claude-daemon'` is the discriminator.
  */
-function daemonFormToProfileSpawn(mode: DaemonMode, form: DaemonModeFormValue): LaunchProfile['spawn'] {
-  const out: LaunchProfile['spawn'] = {
-    backend: 'daemon',
-    daemonMode: mode === 'resume' ? 'resume' : 'new',
-  }
+function daemonFormToProfileSpawn(form: DaemonModeFormValue): LaunchProfile['spawn'] {
+  const out: LaunchProfile['spawn'] = { backend: 'claude', transport: 'claude-daemon' }
   const model = form.model.trim()
   if (model) out.model = model as LaunchProfile['spawn']['model']
   if (form.appendSystemPrompt.trim()) out.appendSystemPrompt = form.appendSystemPrompt
   const settings = form.settingsPath.trim()
-  if (settings) out.daemonSettingsPath = settings
+  if (settings) out.settingsPath = settings
   const mcp = form.mcpConfigPath.trim()
-  if (mcp) out.daemonMcpConfigPath = mcp
+  if (mcp) out.mcpConfigPath = mcp
   const worktree = form.worktreeName.trim()
   if (worktree) out.worktree = worktree
   const [env] = parseEnvText(form.envText)
@@ -142,8 +148,9 @@ export interface FormSnapshotInput {
   envText: string
   openCodeModel?: string
   toolPermission?: 'none' | 'safe' | 'full'
-  /** Daemon launch state -- read only when `backend === 'daemon'`. */
-  daemonMode?: DaemonMode
+  /** True when the claude daemon process model (`claude-daemon`) is selected. */
+  isDaemon?: boolean
+  /** Daemon launch config -- read only when `isDaemon`. */
   daemonForm?: DaemonModeFormValue
   /** Sentinel-profile INTENT -- empty string omits the field (sentinel
    *  applies its `defaultSelection`). Stored verbatim on the launch
@@ -160,11 +167,11 @@ export interface FormSnapshotInput {
  * user can hit "Save as profile..." without retyping anything.
  */
 export function formSnapshotToProfileSpawn(snap: FormSnapshotInput): LaunchProfile['spawn'] {
-  // The daemon backend owns a separate config form -- snapshot it instead of
+  // The daemon transport owns a separate config form -- snapshot it instead of
   // the generic per-field state (the generic fields are not daemon launch
   // params and would just bloat the profile).
-  if (snap.backend === 'daemon') {
-    const out = daemonFormToProfileSpawn(snap.daemonMode ?? 'new', snap.daemonForm ?? blankDaemonForm())
+  if (snap.isDaemon) {
+    const out = daemonFormToProfileSpawn(snap.daemonForm ?? blankDaemonForm())
     if (snap.sentinelProfile) out.profile = snap.sentinelProfile
     if (snap.sentinelPool) out.pool = snap.sentinelPool
     return out

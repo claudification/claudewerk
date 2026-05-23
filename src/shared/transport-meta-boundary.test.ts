@@ -13,7 +13,7 @@ import {
 describe('lint:boundary -- transportMeta opaque-bag rule', () => {
   describe('isTransportMetaReader (whitelist)', () => {
     it('allows backend implementations', () => {
-      expect(isTransportMetaReader('src/broker/backends/daemon.ts')).toBe(true)
+      expect(isTransportMetaReader('src/broker/backends/claude-daemon.ts')).toBe(true)
       expect(isTransportMetaReader('src/broker/backends/claude.ts')).toBe(true)
     })
 
@@ -68,7 +68,7 @@ describe('lint:boundary -- transportMeta opaque-bag rule', () => {
     })
 
     it('ALLOWS a whitelisted reader (backend)', () => {
-      expect(transportMetaReadsInFile('src/broker/backends/daemon.ts', readSnippet).length).toBe(0)
+      expect(transportMetaReadsInFile('src/broker/backends/claude-daemon.ts', readSnippet).length).toBe(0)
     })
 
     it('ALLOWS the type-definition file', () => {

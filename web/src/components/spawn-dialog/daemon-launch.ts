@@ -1,11 +1,11 @@
 /**
- * daemon-launch -- pure helpers for the spawn dialog's Daemon backend.
+ * daemon-launch -- pure helpers for the spawn dialog's claude-daemon transport.
  *
- * Three launch modes ride a single `daemonMode` discriminator (plan
+ * Three launch modes ride the `transportMeta.mode` discriminator (plan
  * `.claude/docs/plan-daemon-launch-ux.md` Section 2):
- *   - new:    `claude --bg "<prompt>"`              -- prompt required
- *   - resume: `claude --bg --resume <sessionId>`    -- resume session id required
- *   - attach: attach to a roster worker (no --bg)   -- 8-hex short required
+ *   - new:    dispatch a fresh worker                -- prompt optional
+ *   - resume: dispatch --resume <sessionId>          -- resume session id required
+ *   - attach: attach to a roster worker (no dispatch) -- 8-hex short required
  *
  * This module is side-effect free and DOM-free so the validation + spawn-request
  * shaping is unit-testable without rendering the dialog.
@@ -121,11 +121,12 @@ function compactMeta(meta: Record<string, string | undefined>): Record<string, u
  * - NEW/RESUME forward the prompt + config (settings/mcp/sysprompt/env/model).
  * - RESUME additionally forwards the resume session id.
  *
- * DUAL-WRITE (transport reframe Phase 1): populates BOTH the new canonical
- * `transport: 'claude-daemon'` + `transportMeta` bag AND the legacy flat
- * `daemon*` fields. The schema validates either; the broker prefers the new
- * shape (backends/daemon.ts dual-reads transportMeta). Phase 5 drops the
- * legacy fields here.
+ * Transport reframe (Phase 6 -- the delete phase): emits ONLY the canonical
+ * `backend: 'claude'` + `transport: 'claude-daemon'` + `transportMeta` shape.
+ * The daemon launch inputs (mode / attachShort / resumeSessionId / settingsPath
+ * / mcpConfigPath / appendSystemPrompt) live in the opaque `transportMeta` bag;
+ * the flat `daemon*` fields are gone. `prompt` / `model` / `env` / `worktree`
+ * stay top-level (they are backend-general SpawnRequest fields).
  *
  * Callers validate via `validateDaemonModeForm` / `validateDaemonAttach` first;
  * this function does no validation, it only shapes the request.
@@ -135,9 +136,7 @@ export function buildDaemonSpawnFields(input: DaemonSpawnInput): Partial<SpawnRe
   if (mode === 'attach') {
     const short = attachShort?.trim() || undefined
     return {
-      backend: 'daemon',
-      daemonMode: 'attach',
-      daemonAttachShort: short,
+      backend: 'claude',
       transport: 'claude-daemon',
       transportMeta: compactMeta({ mode: 'attach', attachShort: short }),
     }
@@ -148,16 +147,11 @@ export function buildDaemonSpawnFields(input: DaemonSpawnInput): Partial<SpawnRe
   const appendSystemPrompt = trimmed(form.appendSystemPrompt)
   const resumeSessionId = mode === 'resume' ? trimmed(form.resumeSessionId) : undefined
   return {
-    backend: 'daemon',
-    daemonMode: mode,
+    backend: 'claude',
     prompt: trimmed(form.prompt),
     model: trimmed(form.model) as SpawnRequest['model'],
-    appendSystemPrompt,
     env: env ?? undefined,
-    daemonSettingsPath: settingsPath,
-    daemonMcpConfigPath: mcpConfigPath,
     worktree: trimmed(form.worktreeName),
-    daemonResumeSessionId: resumeSessionId,
     transport: 'claude-daemon',
     transportMeta: compactMeta({ mode, settingsPath, mcpConfigPath, appendSystemPrompt, resumeSessionId }),
   }

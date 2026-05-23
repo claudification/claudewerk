@@ -8,7 +8,6 @@ import type { Conversation } from '../../shared/protocol'
 import { acpBackend } from './acp'
 import { chatApiBackend } from './chat-api'
 import { claudeBackend } from './claude'
-import { daemonBackend } from './daemon'
 import { hermesBackend } from './hermes'
 import { opencodeBackend } from './opencode'
 import type { ConversationBackend } from './types'
@@ -28,9 +27,13 @@ registerBackend(chatApiBackend)
 registerBackend(hermesBackend)
 registerBackend(opencodeBackend)
 registerBackend(acpBackend)
-registerBackend(daemonBackend)
+// No `daemon` backend: the daemon is the claude backend's `claude-daemon`
+// transport. Daemon-hosted conversations (agentHostType === 'daemon') resolve
+// to the claude backend below for input handling -- both require an agent
+// socket and forward input identically.
 
-/** Resolve a backend for an existing conversation. Falls back to claude. */
+/** Resolve a backend for an existing conversation. Falls back to claude (which
+ *  also covers daemon-hosted conversations -- the daemon is a claude transport). */
 export function resolveBackend(conversation: Conversation): ConversationBackend {
   const type = conversation.agentHostType || 'claude'
   return backendsByType.get(type) || claudeBackend
