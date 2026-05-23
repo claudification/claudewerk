@@ -81,6 +81,31 @@ export function resolveDefaultBackend(partial: Partial<SpawnRequest>, global?: D
 }
 
 /**
+ * Resolve the `transport` (transport reframe § 0.2) alongside the backend.
+ * Phase 1 dual-resolution:
+ *   1. an explicit `partial.transport` always wins;
+ *   2. the daemon backend implies `claude-daemon`;
+ *   3. the claude backend (or unset, which defaults to claude) maps the
+ *      resolved `headless` flag to `claude-headless` / `claude-pty`.
+ * Other backends (opencode / chat-api / hermes) have no transport in this plan
+ * yet -- they resolve to `undefined`. The legacy `defaultBackend` still drives
+ * the headless flag (and therefore the transport) for Phase 1; the
+ * `defaultTransport` rename is Phase 3.
+ */
+export function resolveTransport(
+  partial: Partial<SpawnRequest>,
+  resolvedBackend: SpawnRequest['backend'],
+  headless: boolean,
+): SpawnRequest['transport'] {
+  if (partial.transport) return partial.transport
+  if (resolvedBackend === 'daemon') return 'claude-daemon'
+  if (resolvedBackend === undefined || resolvedBackend === 'claude') {
+    return headless ? 'claude-headless' : 'claude-pty'
+  }
+  return undefined
+}
+
+/**
  * The global-tier launch mode. The Phase I `defaultBackend` flag supersedes the
  * legacy `defaultLaunchMode` at the global tier; `defaultLaunchMode` is the
  * fallback only when `defaultBackend` is absent (e.g. a null global source).
@@ -155,6 +180,11 @@ export function resolveSpawnConfig(
       global?.defaultIncludePartialMessages ??
       true)
 
+  // Transport reframe (Phase 1): resolve the transport alongside the backend so
+  // every caller sees the canonical wire discriminator. Derived from the
+  // resolved `headless` flag for the claude backend.
+  const transport = resolveTransport(partial, backendDecision.backend, headless)
+
   return {
     ...partial,
     model,
@@ -162,6 +192,7 @@ export function resolveSpawnConfig(
     permissionMode: partial.adHoc ? 'bypassPermissions' : permissionModeResolved,
     backend: backendDecision.backend,
     daemonMode: backendDecision.daemonMode,
+    transport,
     headless,
     autocompactPct,
     maxBudgetUsd,

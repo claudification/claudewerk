@@ -160,13 +160,22 @@ export type SpawnDispatchResult =
  */
 function applyDefaultBackend(req: SpawnRequest, global: GlobalSettings): SpawnRequest {
   const decision = resolveDefaultBackend(req, global)
+  // Transport reframe (Phase 1): honor an explicit `transport`; otherwise the
+  // daemon backend implies the claude-daemon transport. The claude PTY/headless
+  // transport is resolved later by resolveSpawnConfig (it needs the resolved
+  // headless flag); opencode/chat-api/hermes carry no transport in this plan.
+  const transport: SpawnRequest['transport'] =
+    req.transport ?? (decision.backend === 'daemon' ? 'claude-daemon' : undefined)
   console.log(
     `[spawn-backend] cwd=${req.cwd ?? '?'} explicitBackend=${req.backend ?? 'none'} ` +
       `adHoc=${req.adHoc ? 'y' : 'n'} defaultBackend=${global.defaultBackend} => ` +
-      `backend=${decision.backend ?? 'claude'} daemonMode=${decision.daemonMode ?? '-'} (${decision.reason})`,
+      `backend=${decision.backend ?? 'claude'} daemonMode=${decision.daemonMode ?? '-'} ` +
+      `transport=${transport ?? '-'} (${decision.reason})`,
   )
-  if (decision.backend === req.backend && decision.daemonMode === req.daemonMode) return req
-  return { ...req, backend: decision.backend, daemonMode: decision.daemonMode }
+  if (decision.backend === req.backend && decision.daemonMode === req.daemonMode && transport === req.transport) {
+    return req
+  }
+  return { ...req, backend: decision.backend, daemonMode: decision.daemonMode, transport }
 }
 
 /**
@@ -372,6 +381,7 @@ async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): 
     bare,
     repl,
     includePartialMessages,
+    transport,
   } = resolved
 
   if (model) {
@@ -420,6 +430,7 @@ async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): 
 
     deps.conversationStore.setPendingLaunchConfig(conversationId, {
       headless,
+      transport,
       model,
       effort,
       agent,

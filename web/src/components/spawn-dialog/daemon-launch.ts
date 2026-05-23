@@ -103,13 +103,29 @@ export interface DaemonSpawnInput {
 
 const trimmed = (s: string): string | undefined => s.trim() || undefined
 
+/** Drop undefined-valued keys so the opaque transportMeta bag stays minimal
+ *  (and an `attach` bag never carries forbidden config keys). */
+function compactMeta(meta: Record<string, string | undefined>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(meta)) {
+    if (value !== undefined) out[key] = value
+  }
+  return out
+}
+
 /**
  * Build the daemon-specific slice of a SpawnRequest for the given mode. The
  * spawn dialog merges this onto the common fields (cwd, name, sentinel, jobId).
  *
- * - ATTACH forwards ONLY `daemonAttachShort` -- no prompt, no config injection.
+ * - ATTACH forwards ONLY the worker short -- no prompt, no config injection.
  * - NEW/RESUME forward the prompt + config (settings/mcp/sysprompt/env/model).
- * - RESUME additionally forwards `daemonResumeSessionId`.
+ * - RESUME additionally forwards the resume session id.
+ *
+ * DUAL-WRITE (transport reframe Phase 1): populates BOTH the new canonical
+ * `transport: 'claude-daemon'` + `transportMeta` bag AND the legacy flat
+ * `daemon*` fields. The schema validates either; the broker prefers the new
+ * shape (backends/daemon.ts dual-reads transportMeta). Phase 5 drops the
+ * legacy fields here.
  *
  * Callers validate via `validateDaemonModeForm` / `validateDaemonAttach` first;
  * this function does no validation, it only shapes the request.
@@ -117,23 +133,32 @@ const trimmed = (s: string): string | undefined => s.trim() || undefined
 export function buildDaemonSpawnFields(input: DaemonSpawnInput): Partial<SpawnRequest> {
   const { mode, form, attachShort } = input
   if (mode === 'attach') {
+    const short = attachShort?.trim() || undefined
     return {
       backend: 'daemon',
       daemonMode: 'attach',
-      daemonAttachShort: attachShort?.trim() || undefined,
+      daemonAttachShort: short,
+      transport: 'claude-daemon',
+      transportMeta: compactMeta({ mode: 'attach', attachShort: short }),
     }
   }
   const [env] = parseEnvText(form.envText)
+  const settingsPath = trimmed(form.settingsPath)
+  const mcpConfigPath = trimmed(form.mcpConfigPath)
+  const appendSystemPrompt = trimmed(form.appendSystemPrompt)
+  const resumeSessionId = mode === 'resume' ? trimmed(form.resumeSessionId) : undefined
   return {
     backend: 'daemon',
     daemonMode: mode,
     prompt: trimmed(form.prompt),
     model: trimmed(form.model) as SpawnRequest['model'],
-    appendSystemPrompt: trimmed(form.appendSystemPrompt),
+    appendSystemPrompt,
     env: env ?? undefined,
-    daemonSettingsPath: trimmed(form.settingsPath),
-    daemonMcpConfigPath: trimmed(form.mcpConfigPath),
+    daemonSettingsPath: settingsPath,
+    daemonMcpConfigPath: mcpConfigPath,
     worktree: trimmed(form.worktreeName),
-    daemonResumeSessionId: mode === 'resume' ? trimmed(form.resumeSessionId) : undefined,
+    daemonResumeSessionId: resumeSessionId,
+    transport: 'claude-daemon',
+    transportMeta: compactMeta({ mode, settingsPath, mcpConfigPath, appendSystemPrompt, resumeSessionId }),
   }
 }

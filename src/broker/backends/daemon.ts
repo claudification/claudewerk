@@ -59,6 +59,44 @@ export const DAEMON_META = {
   retiredAt: 'retiredAt',
 } as const
 
+/** Read a string-valued key from the opaque `transportMeta` bag. This file is a
+ *  backend implementation -- the ONLY broker layer allowed to read transportMeta
+ *  (plan § 0.3, enforced by `lint:boundary`). */
+function metaStr(meta: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = meta?.[key]
+  return typeof value === 'string' ? value : undefined
+}
+
+/** Read the daemon launch mode from `transportMeta`, accepting only the three
+ *  valid modes (garbage in the opaque bag falls back to the legacy field). */
+function metaMode(meta: Record<string, unknown> | undefined): DaemonMode | undefined {
+  const value = metaStr(meta, 'mode')
+  return value === 'new' || value === 'resume' || value === 'attach' ? value : undefined
+}
+
+/**
+ * Dual-read normalization for the transport reframe (Phase 1). The NEW spawn
+ * shape carries the daemon launch inputs in `transportMeta` (plus the promoted
+ * top-level `settingsPath`/`mcpConfigPath`); the LEGACY shape carries flat
+ * `daemon*` fields. Prefer the new shape when present, fall back to the legacy
+ * fields, and return a request whose flat fields are populated so the rest of
+ * this backend (which reads the flat fields) works unchanged. A no-op when no
+ * `transportMeta` is present (pure legacy callers). See plan § 0.3 / Phase 1.
+ */
+export function normalizeDaemonReq(req: SpawnRequest): SpawnRequest {
+  const tm = req.transportMeta
+  if (!tm) return req
+  return {
+    ...req,
+    daemonMode: metaMode(tm) ?? req.daemonMode,
+    daemonResumeSessionId: metaStr(tm, 'resumeSessionId') ?? req.daemonResumeSessionId,
+    daemonAttachShort: metaStr(tm, 'attachShort') ?? req.daemonAttachShort,
+    daemonSettingsPath: metaStr(tm, 'settingsPath') ?? req.settingsPath ?? req.daemonSettingsPath,
+    daemonMcpConfigPath: metaStr(tm, 'mcpConfigPath') ?? req.mcpConfigPath ?? req.daemonMcpConfigPath,
+    appendSystemPrompt: metaStr(tm, 'appendSystemPrompt') ?? req.appendSystemPrompt,
+  }
+}
+
 function emitProgress(
   conversationStore: ConversationStore,
   jobId: string | undefined,
@@ -160,7 +198,12 @@ export function buildDaemonLaunchMeta(
  * is deliberately NOT surfaced here (session-shaped; boundary rule).
  */
 export function buildDaemonLaunchConfig(req: SpawnRequest, mode: DaemonMode): LaunchConfig {
-  const config: LaunchConfig = { headless: false, agentHostType: 'daemon', daemonMode: mode }
+  const config: LaunchConfig = {
+    headless: false,
+    agentHostType: 'daemon',
+    daemonMode: mode,
+    transport: 'claude-daemon',
+  }
   if (req.model) config.model = req.model
   if (mode !== 'attach') {
     if (req.daemonSettingsPath) config.daemonSettingsPath = req.daemonSettingsPath
@@ -181,7 +224,10 @@ function describeDaemonConfig(req: SpawnRequest): string {
   )
 }
 
-async function spawnDaemon(req: SpawnRequest, deps: SpawnDeps): Promise<SpawnResult> {
+async function spawnDaemon(rawReq: SpawnRequest, deps: SpawnDeps): Promise<SpawnResult> {
+  // Transport reframe: collapse the new transportMeta shape onto the legacy flat
+  // fields so the rest of this backend reads one normalized request.
+  const req = normalizeDaemonReq(rawReq)
   const daemonMode: DaemonMode = req.daemonMode ?? 'new'
 
   const modeErr = validateDaemonModeFields(req, daemonMode)
@@ -258,6 +304,7 @@ async function spawnDaemon(req: SpawnRequest, deps: SpawnDeps): Promise<SpawnRes
   }
   const statusBefore = conv.status
   conv.agentHostType = 'daemon'
+  conv.transport = 'claude-daemon'
   conv.agentHostMeta = buildDaemonLaunchMeta(req, daemonMode, conv.agentHostMeta)
   // The typed, control-panel-facing launch record (read-only Launch config
   // block). Separate from the opaque agentHostMeta revive bag above.
@@ -332,6 +379,11 @@ export function buildSentinelSpawnMessage(opts: {
     // The sentinel routes daemon-tagged spawns to its daemon dispatch path.
     agentHostType: 'daemon',
     daemonMode,
+    // Transport reframe: forward the discriminator + opaque bag wholesale so
+    // they round-trip to the sentinel. The sentinel still routes by
+    // `agentHostType` in Phase 1; it branches on `transport` from Phase 2.
+    transport: req.transport,
+    transportMeta: req.transportMeta,
     cwd: req.cwd,
     mkdir: req.mkdir || false,
     mode: req.mode || 'fresh',

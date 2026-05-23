@@ -85,6 +85,13 @@ const effortEnum = z.enum(['low', 'medium', 'high', 'xhigh', 'max'])
 const permissionModeEnum = z.enum(['plan', 'acceptEdits', 'auto', 'bypassPermissions'])
 const spawnModeEnum = z.enum(['fresh', 'resume'])
 
+// Transports per backend (the wire mechanism used to drive a member of the
+// backend family). Fully qualified with the backend they belong to so the
+// discriminator never collides when other backends grow their own transports.
+// See `.claude/docs/plan-claude-transport-reframe.md` § 0.1 / 0.2. Only the
+// three `claude-*` values are valid in this plan; future backends add their own.
+const transportEnum = z.enum(['claude-pty', 'claude-headless', 'claude-daemon'])
+
 export const spawnRequestSchema = z.object({
   cwd: z
     .string()
@@ -204,6 +211,37 @@ export const spawnRequestSchema = z.object({
       'Absolute path on the sentinel host to an MCP config JSON (claude --bg --mcp-config). ' +
         'Injected for daemonMode new|resume only.',
     ),
+  transport: transportEnum
+    .optional()
+    .describe(
+      'Wire mechanism for the claude backend. Defaults are applied by resolveSpawnConfig per backend. ' +
+        '"claude-pty" interactive terminal, "claude-headless" stream-json over stdin, "claude-daemon" cc-daemon ' +
+        'socket worker (subscription-billed). When set, this is the canonical activation discriminator; the legacy ' +
+        '`backend:"daemon"` + `headless` shape is dual-read during the transport-reframe migration.',
+    ),
+  transportMeta: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe(
+      'Backend-specific opaque bag (parallel to agentHostMeta). The broker core passes it through wholesale; ' +
+        'do NOT type or branch on its contents outside a backend implementation. ' +
+        'claude-daemon keys: mode ("new"|"resume"|"attach"), attachShort (8-hex, attach), resumeSessionId (resume), ' +
+        'settingsPath / mcpConfigPath / appendSystemPrompt (new|resume only). See plan-claude-transport-reframe.md § 0.3.',
+    ),
+  settingsPath: z
+    .string()
+    .optional()
+    .describe(
+      'Absolute path to a settings JSON. Backend-general (promoted from daemonSettingsPath): honored by backends ' +
+        'that accept --settings (claude across all transports). Wired into PTY/headless in Phase 2.',
+    ),
+  mcpConfigPath: z
+    .string()
+    .optional()
+    .describe(
+      'Absolute path to an MCP config JSON. Backend-general (promoted from daemonMcpConfigPath): honored by backends ' +
+        'that accept --mcp-config (claude across all transports). Wired into PTY/headless in Phase 2.',
+    ),
   profile: z
     .string()
     .min(1)
@@ -268,10 +306,83 @@ export function refineDaemonSpawn(req: DaemonSpawnFields, ctx: z.RefinementCtx):
   }
 }
 
+/** The fields `refineTransportSpawn` inspects. `transportMeta` is the opaque
+ *  bag; the daemon transport's cross-field rules read its string keys. A
+ *  structural subset so `.omit()` callers can re-apply the refinement. */
+export type TransportSpawnFields = Pick<SpawnRequest, 'transport' | 'transportMeta' | 'prompt'>
+
+/** Read a string-valued key from the opaque `transportMeta` bag, else undefined. */
+function transportMetaString(meta: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = meta?.[key]
+  return typeof value === 'string' ? value : undefined
+}
+
 /**
- * The schema spawn ENTRY POINTS validate against: the base object plus the
- * daemon cross-field rules. Use this in routes/handlers. Use the bare
- * `spawnRequestSchema` object only when you need `.omit()`/`.extend()`/
+ * Cross-field validation for the NEW `transport` + `transportMeta` shape,
+ * mirroring `refineDaemonSpawn` keyed on the canonical discriminator. Fires
+ * ONLY for `transport === 'claude-daemon'`; the other transports (claude-pty,
+ * claude-headless) carry no sub-mode and need no cross-field check. A no-op for
+ * legacy requests that set no `transport`.
+ *
+ * Rules (plan-claude-transport-reframe.md § 2.1): mode defaults to 'new';
+ * new -> `prompt` required (promptless dispatch is a Phase 4 relaxation);
+ * resume -> `transportMeta.resumeSessionId` required; attach ->
+ * `transportMeta.attachShort` required AND config injection (settingsPath /
+ * mcpConfigPath / appendSystemPrompt) forbidden (ATTACH takes over an
+ * already-configured worker). `attachShort`, when present, must be 8-hex.
+ */
+export function refineTransportSpawn(req: TransportSpawnFields, ctx: z.RefinementCtx): void {
+  if (req.transport !== 'claude-daemon') return
+  const meta = req.transportMeta
+  const mode = transportMetaString(meta, 'mode') ?? 'new'
+
+  if (mode === 'new' && !req.prompt?.trim()) {
+    ctx.addIssue({ code: 'custom', message: 'claude-daemon spawn (new mode) requires a prompt', path: ['prompt'] })
+  }
+  if (mode === 'resume' && !transportMetaString(meta, 'resumeSessionId')?.trim()) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'claude-daemon spawn (resume mode) requires transportMeta.resumeSessionId',
+      path: ['transportMeta', 'resumeSessionId'],
+    })
+  }
+  if (mode === 'attach') {
+    if (!transportMetaString(meta, 'attachShort')?.trim()) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'claude-daemon spawn (attach mode) requires transportMeta.attachShort',
+        path: ['transportMeta', 'attachShort'],
+      })
+    }
+    // ATTACH attaches to an already-configured worker -- config injection is a bug.
+    for (const key of ['settingsPath', 'mcpConfigPath', 'appendSystemPrompt'] as const) {
+      if (transportMetaString(meta, key)) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `claude-daemon attach must not set transportMeta.${key} (the worker is already configured)`,
+          path: ['transportMeta', key],
+        })
+      }
+    }
+  }
+  const short = transportMetaString(meta, 'attachShort')
+  if (short !== undefined && !/^[0-9a-f]{8}$/.test(short)) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'transportMeta.attachShort must be an 8-hex daemon worker short id',
+      path: ['transportMeta', 'attachShort'],
+    })
+  }
+}
+
+/**
+ * The schema spawn ENTRY POINTS validate against: the base object plus BOTH
+ * the legacy daemon cross-field rules and the new transport cross-field rules.
+ * During the transport-reframe migration a dual-write request sets both shapes,
+ * so both refinements run and must agree. Use this in routes/handlers. Use the
+ * bare `spawnRequestSchema` object only when you need `.omit()`/`.extend()`/
  * `.partial()` (those are ZodObject methods this refined schema lacks).
  */
-export const validatedSpawnRequestSchema = spawnRequestSchema.superRefine(refineDaemonSpawn)
+export const validatedSpawnRequestSchema = spawnRequestSchema
+  .superRefine(refineDaemonSpawn)
+  .superRefine(refineTransportSpawn)

@@ -65,6 +65,118 @@ describe('validatedSpawnRequestSchema -- daemon cross-field rules (refineDaemonS
   })
 })
 
+/** A minimal claude-daemon transport spawn request, overridable per-test. */
+const transportDaemonReq = (
+  meta: Record<string, unknown> = {},
+  over: Partial<SpawnRequest> = {},
+): Record<string, unknown> => ({
+  cwd: '/tmp/work',
+  transport: 'claude-daemon',
+  transportMeta: meta,
+  ...over,
+})
+
+describe('validatedSpawnRequestSchema -- transport cross-field rules (refineTransportSpawn)', () => {
+  it('does not apply transport rules to a non-daemon transport (claude-pty, no prompt -> ok)', () => {
+    expect(validatedSpawnRequestSchema.safeParse({ cwd: '/tmp', transport: 'claude-pty' }).success).toBe(true)
+  })
+
+  it('does not apply transport rules when no transport is set (legacy shape)', () => {
+    expect(validatedSpawnRequestSchema.safeParse({ cwd: '/tmp', backend: 'claude' }).success).toBe(true)
+  })
+
+  it('accepts claude-daemon new with a prompt', () => {
+    expect(validatedSpawnRequestSchema.safeParse(transportDaemonReq({ mode: 'new' }, { prompt: 'go' })).success).toBe(
+      true,
+    )
+  })
+
+  it('rejects claude-daemon new without a prompt', () => {
+    expect(validatedSpawnRequestSchema.safeParse(transportDaemonReq({ mode: 'new' })).success).toBe(false)
+  })
+
+  it('treats an absent transportMeta.mode as new (no prompt -> reject)', () => {
+    expect(validatedSpawnRequestSchema.safeParse(transportDaemonReq()).success).toBe(false)
+  })
+
+  it('rejects claude-daemon resume without transportMeta.resumeSessionId', () => {
+    expect(validatedSpawnRequestSchema.safeParse(transportDaemonReq({ mode: 'resume' })).success).toBe(false)
+  })
+
+  it('accepts claude-daemon resume with resumeSessionId and no prompt', () => {
+    expect(
+      validatedSpawnRequestSchema.safeParse(transportDaemonReq({ mode: 'resume', resumeSessionId: 'sess-1' })).success,
+    ).toBe(true)
+  })
+
+  it('rejects claude-daemon attach without transportMeta.attachShort', () => {
+    expect(validatedSpawnRequestSchema.safeParse(transportDaemonReq({ mode: 'attach' })).success).toBe(false)
+  })
+
+  it('accepts claude-daemon attach with a valid 8-hex attachShort and no prompt', () => {
+    expect(
+      validatedSpawnRequestSchema.safeParse(transportDaemonReq({ mode: 'attach', attachShort: 'aeb185f9' })).success,
+    ).toBe(true)
+  })
+
+  it('rejects an attachShort that is not 8 hex chars', () => {
+    expect(
+      validatedSpawnRequestSchema.safeParse(transportDaemonReq({ mode: 'attach', attachShort: 'NOTHEX!!' })).success,
+    ).toBe(false)
+    expect(
+      validatedSpawnRequestSchema.safeParse(transportDaemonReq({ mode: 'attach', attachShort: 'abc' })).success,
+    ).toBe(false)
+  })
+
+  it('forbids config injection on attach (settingsPath / mcpConfigPath / appendSystemPrompt in transportMeta)', () => {
+    for (const key of ['settingsPath', 'mcpConfigPath', 'appendSystemPrompt']) {
+      const r = validatedSpawnRequestSchema.safeParse(
+        transportDaemonReq({ mode: 'attach', attachShort: 'aeb185f9', [key]: '/x' }),
+      )
+      expect(r.success).toBe(false)
+      if (!r.success) {
+        expect(r.error.issues.some(i => i.path.includes('transportMeta') && i.path.includes(key))).toBe(true)
+      }
+    }
+  })
+
+  it('surfaces the failing field in the issue path (resume -> transportMeta.resumeSessionId)', () => {
+    const r = validatedSpawnRequestSchema.safeParse(transportDaemonReq({ mode: 'resume' }))
+    expect(r.success).toBe(false)
+    if (!r.success) {
+      expect(r.error.issues.some(i => i.path.includes('transportMeta') && i.path.includes('resumeSessionId'))).toBe(
+        true,
+      )
+    }
+  })
+
+  it('accepts the dual-write shape (legacy daemon* AND new transport/transportMeta together)', () => {
+    const dualWrite = validatedSpawnRequestSchema.safeParse({
+      cwd: '/tmp/work',
+      backend: 'daemon',
+      daemonMode: 'new',
+      prompt: 'go',
+      transport: 'claude-daemon',
+      transportMeta: { mode: 'new' },
+    })
+    expect(dualWrite.success).toBe(true)
+  })
+
+  it('promotes settingsPath / mcpConfigPath to top-level (accepted on a claude spawn)', () => {
+    const r = validatedSpawnRequestSchema.safeParse({
+      cwd: '/tmp',
+      backend: 'claude',
+      settingsPath: '/abs/settings.json',
+      mcpConfigPath: '/abs/mcp.json',
+    })
+    expect(r.success).toBe(true)
+    if (r.success) {
+      expect(r.data.settingsPath).toBe('/abs/settings.json')
+      expect(r.data.mcpConfigPath).toBe('/abs/mcp.json')
+    }
+  })
+})
+
 describe('validatedSpawnRequestSchema -- sentinel profile / pool fields (Phase 9 audit)', () => {
   it('accepts a literal profile name (Fixed selection)', () => {
     expect(validatedSpawnRequestSchema.safeParse({ cwd: '/tmp', profile: 'work' }).success).toBe(true)

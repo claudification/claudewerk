@@ -1825,6 +1825,15 @@ export interface Conversation {
   version?: string
   buildTime?: string
   agentHostType?: string
+  /** Resolved transport for this conversation (the wire mechanism driving the
+   *  backend): 'claude-pty' | 'claude-headless' | 'claude-daemon'. Set at spawn
+   *  by resolveSpawnConfig. `agentHostType` stays as a redundant display proxy
+   *  until Phase 5 of the transport reframe. */
+  transport?: string
+  /** Backend-specific opaque bag (parallel to agentHostMeta). The broker core
+   *  NEVER reads or branches on this -- only a backend implementation does.
+   *  See `.claude/docs/plan-claude-transport-reframe.md` § 0.3. */
+  transportMeta?: Record<string, unknown>
   claudeVersion?: string
   claudeAuth?: { email?: string; orgId?: string; orgName?: string; subscriptionType?: string }
   startedAt: number
@@ -2049,6 +2058,10 @@ export interface LaunchConfig {
   env?: Record<string, string>
   appendSystemPrompt?: string
   agentHostType?: string
+  /** Resolved transport for this launch (transport-reframe): 'claude-pty' |
+   *  'claude-headless' | 'claude-daemon'. The control-panel-facing wire field;
+   *  `daemonMode` below moves into `transportMeta` at Phase 6. */
+  transport?: string
   openCodeModel?: string
   acpAgent?: string
   toolPermission?: 'none' | 'safe' | 'full'
@@ -2691,6 +2704,14 @@ export interface SpawnConversation {
    *  `claude --bg --mcp-config <path>` for daemonMode new|resume only. Only
    *  meaningful when agentHostType === 'daemon'. */
   daemonMcpConfigPath?: string
+  /** Resolved transport for this spawn (transport-reframe § 0.2): the wire
+   *  mechanism driving the claude backend. The sentinel branches on this in
+   *  later phases; carried now so the value round-trips end-to-end. */
+  transport?: string
+  /** Backend-specific opaque bag (parallel to agentHostMeta). The broker core
+   *  forwards it wholesale; only the backend / sentinel dispatch path / agent
+   *  host read it. See `.claude/docs/plan-claude-transport-reframe.md` § 0.3. */
+  transportMeta?: Record<string, unknown>
   /** Sentinel-profile selection at spawn time. Either a `SelectionMode`
    *  ('default' | 'balanced' | 'random') OR a literal profile NAME ("Fixed"
    *  mode). When absent the sentinel falls back to its `defaultSelection`.

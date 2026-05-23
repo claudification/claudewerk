@@ -8,7 +8,7 @@ import { extractProjectLabel, parseProjectUri } from '../../shared/project-uri'
 import type { ConversationControlAction } from '../../shared/protocol'
 import { resolveSpawnConfig } from '../../shared/spawn-defaults'
 import { mapProjectTrust, type SpawnCallerContext } from '../../shared/spawn-permissions'
-import { refineDaemonSpawn, type SpawnRequest, spawnRequestSchema } from '../../shared/spawn-schema'
+import { refineDaemonSpawn, refineTransportSpawn, type SpawnRequest, spawnRequestSchema } from '../../shared/spawn-schema'
 import { buildReviveMessage } from '../build-revive'
 import { getGlobalSettings } from '../global-settings'
 import type { MessageHandler } from '../handler-context'
@@ -145,6 +145,7 @@ const handleChannelSpawn: MessageHandler = (ctx, data) => {
   const parsed = spawnRequestSchema
     .omit({ jobId: true })
     .superRefine(refineDaemonSpawn)
+    .superRefine(refineTransportSpawn)
     .safeParse({ ...data, cwd: spawnPath })
   if (!parsed.success) {
     ctx.reply({
