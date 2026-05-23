@@ -657,6 +657,8 @@ export type AgentHostMessage =
   | DaemonLaunchEvent
   | DaemonControlResult
   | DaemonSessionRetired
+  | DaemonStatePatch
+  | DaemonBlockObserved
 
 export interface ConversationNameUpdate {
   type: 'conversation_name'
@@ -681,6 +683,17 @@ export interface ConversationInfoUpdate {
   fastModeState: string
 }
 
+/**
+ * The richer daemon run-state vocab from the cc-daemon `subscribe` state stream
+ * (transport-reframe Phase 7, control surface uplift #12d). Live-confirmed
+ * values 2026-05-23: `running`, `working` (snapshot + state patches). The rest
+ * are from the daemon state-machine inventory (protocol doc § 5.5): a worker
+ * may also report `blocked` (interaction gate), `resuming`, `failed`, `done`,
+ * `crashed`. PTY/headless transports do not produce this; it rides only on a
+ * `claude-daemon` conversation_status.
+ */
+export type DaemonRunState = 'running' | 'working' | 'blocked' | 'resuming' | 'failed' | 'done' | 'crashed'
+
 // Backend-agnostic session status signal (agent host -> broker)
 // Works for any backend (headless stream-json, PTY, future transports).
 // Fired when the agent host detects work starting/stopping, independent of CC hooks.
@@ -688,6 +701,15 @@ export interface ConversationStatusSignal {
   type: 'conversation_status'
   conversationId: string
   status: 'active' | 'idle'
+  /**
+   * DAEMON TRANSPORT UPLIFT (#12d): the cc-daemon worker's richer run-state and
+   * human-readable detail, mirrored from the `subscribe` state stream by the
+   * daemon-agent-host status mirror. `status` (active/idle) is derived from the
+   * daemon `tempo`; `daemonState` carries the finer vocab and `detail` the
+   * worker's own status string ("running echo SPIKE_OK"). Absent for PTY/headless.
+   */
+  daemonState?: DaemonRunState
+  detail?: string
 }
 
 // Headless streaming deltas (token-by-token from --include-partial-messages)
@@ -2486,6 +2508,55 @@ export interface DaemonControlResult {
   code?: string
   detail?: string
   /** Epoch ms the op settled. */
+  t: number
+}
+
+/**
+ * Agent host -> broker -> control panel: ONE cc-daemon `subscribe` state patch,
+ * the typed shape derived from the Phase 7 live captures (2026-05-23). The patch
+ * is a partial `JobRecord` -- only changed fields ship. Live-confirmed keys:
+ * `state`, `tempo`, `detail`, `needs` (+ `pid`, ignored here). The daemon-agent-
+ * host status mirror forwards these so the control panel shows the worker's own
+ * status vocab instead of scraping the PTY. `raw` carries the full patch for the
+ * JsonInspector.
+ */
+export interface DaemonStatePatch {
+  type: 'daemon_state_patch'
+  conversationId: string
+  state?: DaemonRunState
+  tempo?: 'active' | 'idle'
+  detail?: string
+  /** Human-readable "what's blocking", when the worker is at a gate (often ""). */
+  needs?: string
+  /** Full raw patch for the JsonInspector (i) button. */
+  raw?: Record<string, unknown>
+  /** Epoch ms the patch was observed. */
+  t: number
+}
+
+/**
+ * Agent host -> broker -> control panel: a daemon worker surfaced an interaction
+ * gate (tool-use permission or AskUserQuestion) on its `subscribe` state stream.
+ *
+ * DEFENSIVE / DORMANT: Phase 7 live spikes (3d/3e, 2026-05-23) established that
+ * claudewerk's `source:'fleet'` spare-pool workers AUTO-ACCEPT tool permissions
+ * -- no block fired across the captures, so this message is not emitted in the
+ * common config. It exists so that IF a worker ever reports `state:'blocked'` or
+ * a `block`/`needs` patch, the control panel surfaces it (and the `requestId`,
+ * when present, is the `permission-response` correlator). Built on the protocol-
+ * doc-predicted `block:{requestId}` shape (§ 5.5) since it could not be captured
+ * live. See feature #5 / #10 (documented regressions).
+ */
+export interface DaemonBlockObserved {
+  type: 'daemon_block_observed'
+  conversationId: string
+  /** The human-readable "what's blocking" string (the daemon `needs` field). */
+  needs?: string
+  /** The `permission-response` correlator, if the daemon surfaced one in `block`. */
+  requestId?: string
+  /** Full raw block payload for the JsonInspector. */
+  raw?: Record<string, unknown>
+  /** Epoch ms the block was observed. */
   t: number
 }
 

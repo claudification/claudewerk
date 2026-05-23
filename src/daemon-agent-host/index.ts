@@ -69,6 +69,7 @@ import { type BrokerBridge, createBrokerBridge } from './broker-bridge'
 import { type DaemonHostConfig, parseDaemonHostConfig } from './cli-args'
 import { createDaemonControl } from './daemon-control'
 import { classifyVanish, type DaemonSessionObserver, observeDaemonSession } from './session-observer'
+import { createStatusMirror, type StatusMirror } from './status-mirror'
 import { createTranscriptBridge, type TranscriptBridge } from './transcript-bridge'
 
 const log = (msg: string) => process.stderr.write(`[daemon-host] ${msg}\n`)
@@ -135,6 +136,7 @@ async function main(): Promise<void> {
   let attachHandle: AttachHandle | null = null
   let bridge: BrokerBridge | null = null
   let transcriptBridge: TranscriptBridge | null = null
+  let statusMirror: StatusMirror | null = null
   let observer: DaemonSessionObserver | null = null
   let shuttingDown = false
   /** True while a socket-drop re-attach is in flight -- guards re-entrancy. */
@@ -344,6 +346,16 @@ async function main(): Promise<void> {
       debug: debugEnabled ? (m: string) => debug(`[tx] ${m}`) : undefined,
     })
     await transcriptBridge.watch(firstSessionId, cfg.cwd)
+    // Mirror the worker's `subscribe` state stream to the broker as structured
+    // status (transport-reframe Phase 7, uplift #12d). A second read-only
+    // connection alongside the PTY attach -- best-effort, never fatal.
+    statusMirror = createStatusMirror({
+      controlSock: controlSock as string,
+      daemonShort: cfg.daemonShort,
+      conversationId: cfg.conversationId,
+      send: msg => transport.send(msg),
+      log: debugEnabled ? (m: string) => debug(m) : undefined,
+    })
     emitBoot('conversation_ready')
   }
 
@@ -421,6 +433,7 @@ async function main(): Promise<void> {
     observer?.stop()
     bridge?.stop()
     transcriptBridge?.stop()
+    statusMirror?.stop()
     attachHandle?.close()
     transport.flush()
     setTimeout(() => {

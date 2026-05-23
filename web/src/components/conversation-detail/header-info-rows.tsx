@@ -2,7 +2,7 @@ import { formatResetIn } from '@shared/format-reset-time'
 import type { ProjectSettings } from '@shared/protocol'
 import { ChevronRight, Copy } from 'lucide-react'
 import { useState } from 'react'
-import { wsSend } from '@/hooks/use-conversations'
+import { useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import type { Conversation } from '@/lib/types'
 import { projectPath } from '@/lib/types'
 import { cn, formatTime, haptic } from '@/lib/utils'
@@ -188,6 +188,54 @@ export function LaunchConfigRow({ conversation }: { conversation: Conversation }
               </span>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** State -> tailwind text color for the live worker status dot. */
+const DAEMON_STATE_COLORS: Record<string, string> = {
+  blocked: 'text-amber-400',
+  failed: 'text-red-400',
+  crashed: 'text-red-400',
+  done: 'text-muted-foreground',
+}
+function daemonStateColor(state: string | undefined): string {
+  // working / running / resuming -> green (default)
+  return (state && DAEMON_STATE_COLORS[state]) || 'text-green-400'
+}
+
+/**
+ * Live daemon worker status (transport-reframe Phase 7 uplift #12d): the
+ * worker's own run-state + human-readable detail from the cc-daemon `subscribe`
+ * stream (the `daemon_state_patch` broadcast), plus a block banner when a worker
+ * surfaces an interaction gate (`daemon_block_observed`, usually dormant).
+ * Renders nothing for non-daemon conversations or before the first patch.
+ */
+export function DaemonWorkerStatusRow({ conversation }: { conversation: Conversation }) {
+  const transport = conversation.transport ?? conversation.launchConfig?.transport
+  const status = useConversationsStore(s => s.daemonStatus[conversation.id])
+  if (transport !== 'claude-daemon' || !status) return null
+  const { state, detail, blockedNeeds } = status
+  return (
+    <div className="space-y-0.5">
+      {(state || detail) && (
+        <div className="flex items-center gap-1.5 text-[10px] font-mono">
+          <span className={cn('font-bold uppercase', daemonStateColor(state))}>{state ?? 'worker'}</span>
+          {detail && (
+            <span className="text-muted-foreground truncate" title={detail}>
+              {detail}
+            </span>
+          )}
+        </div>
+      )}
+      {blockedNeeds && (
+        <div className="px-2 py-1 bg-amber-500/10 border border-amber-500/30 text-[10px] font-mono flex items-center gap-2">
+          <span className="text-amber-400 font-bold uppercase">Waiting</span>
+          <span className="text-amber-400/70 truncate" title={blockedNeeds}>
+            {blockedNeeds}
+          </span>
         </div>
       )}
     </div>

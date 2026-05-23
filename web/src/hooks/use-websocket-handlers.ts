@@ -543,6 +543,57 @@ function handleDaemonControlResult(msg: DashboardMessage) {
   if (toast) window.dispatchEvent(new CustomEvent('rclaude-toast', { detail: toast }))
 }
 
+/** Coerce an unknown wire field to a string, else undefined. Keeps the daemon
+ *  status handlers below branch -- one decision point, not four. */
+const wireStr = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined)
+
+/**
+ * `daemon_state_patch` -- one cc-daemon `subscribe` state patch, mirrored by
+ * the daemon-agent-host (transport-reframe Phase 7 uplift #12d). Stores the
+ * worker's own run-state + human-readable detail per conversation so the
+ * control panel can show "working -- running tests" instead of scraping the PTY.
+ */
+function handleDaemonStatePatch(msg: DashboardMessage) {
+  const conversationId = wireStr(msg.conversationId)
+  if (!conversationId) return
+  useConversationsStore.getState().setDaemonStatePatch(conversationId, {
+    state: wireStr(msg.state),
+    tempo: wireStr(msg.tempo),
+    detail: wireStr(msg.detail),
+    t: typeof msg.t === 'number' ? msg.t : Date.now(),
+  })
+}
+
+/** Build the "worker is waiting" toast for a surfaced daemon block. */
+function daemonBlockToast(conversationId: string, needs: string | undefined) {
+  return {
+    title: 'Daemon worker is waiting',
+    meta: 'daemon',
+    body: needs || 'The worker is at an interaction gate.',
+    variant: 'info',
+    persistent: false,
+    conversationId,
+    toastId: `daemon-block:${conversationId}`,
+  }
+}
+
+/**
+ * `daemon_block_observed` -- a daemon worker surfaced an interaction gate.
+ * DORMANT in the auto-accept fleet config (Phase 7 spikes 3d/3e); when it does
+ * fire, store it (for a header banner) and toast so the user can act.
+ */
+function handleDaemonBlockObserved(msg: DashboardMessage) {
+  const conversationId = wireStr(msg.conversationId)
+  if (!conversationId) return
+  const needs = wireStr(msg.needs)
+  useConversationsStore.getState().setDaemonBlock(conversationId, {
+    needs,
+    requestId: wireStr(msg.requestId),
+    t: typeof msg.t === 'number' ? msg.t : Date.now(),
+  })
+  window.dispatchEvent(new CustomEvent('rclaude-toast', { detail: daemonBlockToast(conversationId, needs) }))
+}
+
 /**
  * `daemon_session_retired` -- a daemon worker was retired by the daemon
  * after a long idle window (typically ~5min). Distinct from a crash. Surfaced
@@ -1150,6 +1201,8 @@ export const handlers: Record<string, MessageHandler> = {
   daemon_roster: handleDaemonRoster,
   daemon_control_result: handleDaemonControlResult,
   daemon_session_retired: handleDaemonSessionRetired,
+  daemon_state_patch: handleDaemonStatePatch,
+  daemon_block_observed: handleDaemonBlockObserved,
   cc_version_changed: handleCcVersionChanged,
   usage_update: handleUsageUpdate,
   sentinel_usage_report: handleSentinelUsageReport,

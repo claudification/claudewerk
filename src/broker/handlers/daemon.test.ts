@@ -6,8 +6,10 @@ import {
   daemonRespawnStale,
   isValidDaemonJob,
   mapDaemonState,
+  normalizeDaemonBlockObserved,
   normalizeDaemonControlResult,
   normalizeDaemonLaunchEvent,
+  normalizeDaemonStatePatch,
   parseDaemonJobs,
   registerDaemonHandlers,
 } from './daemon'
@@ -281,5 +283,62 @@ describe('daemonRespawnStale handler', () => {
   it('throws GuardError when the caller lacks chat permission', () => {
     const { ctx } = makeFakeCtx({ conversation: daemonConv(), permissionThrows: true })
     expect(() => daemonRespawnStale(ctx, { conversationId: 'conv_d' })).toThrow(GuardError)
+  })
+})
+
+describe('normalizeDaemonStatePatch', () => {
+  it('returns null without a conversationId', () => {
+    expect(normalizeDaemonStatePatch({ state: 'working' })).toBeNull()
+  })
+
+  it('normalizes a working patch with detail/tempo/needs', () => {
+    const r = normalizeDaemonStatePatch({
+      conversationId: 'conv_x',
+      state: 'working',
+      tempo: 'idle',
+      detail: 'running echo',
+      needs: '',
+      raw: { state: 'working' },
+      t: 42,
+    })
+    expect(r).toEqual({
+      type: 'daemon_state_patch',
+      conversationId: 'conv_x',
+      state: 'working',
+      tempo: 'idle',
+      detail: 'running echo',
+      needs: '',
+      raw: { state: 'working' },
+      t: 42,
+    })
+  })
+
+  it('drops an unknown state value', () => {
+    const r = normalizeDaemonStatePatch({ conversationId: 'conv_x', state: 'bogus' })
+    expect(r?.state).toBeUndefined()
+  })
+})
+
+describe('normalizeDaemonBlockObserved', () => {
+  it('returns null without a conversationId', () => {
+    expect(normalizeDaemonBlockObserved({ needs: 'allow?' })).toBeNull()
+  })
+
+  it('normalizes needs + requestId', () => {
+    const r = normalizeDaemonBlockObserved({
+      conversationId: 'conv_x',
+      needs: 'allow Bash?',
+      requestId: 'req_1',
+      raw: { block: { requestId: 'req_1' } },
+      t: 7,
+    })
+    expect(r).toEqual({
+      type: 'daemon_block_observed',
+      conversationId: 'conv_x',
+      needs: 'allow Bash?',
+      requestId: 'req_1',
+      raw: { block: { requestId: 'req_1' } },
+      t: 7,
+    })
   })
 })

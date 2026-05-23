@@ -166,6 +166,20 @@ interface ConversationsState {
    *  by the spawn dialog's ATTACH mode via use-daemon-roster. */
   daemonRosters: Record<string, DaemonRosterForward>
   setDaemonRoster: (roster: DaemonRosterForward) => void
+  /** Live daemon worker status, keyed by conversationId. Fed by the
+   *  `daemon_state_patch` broadcast (transport-reframe Phase 7 uplift #12d) --
+   *  the worker's own run-state + human-readable detail from the cc-daemon
+   *  `subscribe` stream. `blockedNeeds`/`blockRequestId` carry a surfaced
+   *  interaction gate (`daemon_block_observed`); usually empty (auto-accept). */
+  daemonStatus: Record<
+    string,
+    { state?: string; tempo?: string; detail?: string; blockedNeeds?: string; blockRequestId?: string; t: number }
+  >
+  setDaemonStatePatch: (
+    conversationId: string,
+    patch: { state?: string; tempo?: string; detail?: string; t: number },
+  ) => void
+  setDaemonBlock: (conversationId: string, block: { needs?: string; requestId?: string; t: number }) => void
   planUsage: UsageUpdate | null
   /** Per-(sentinelId, profile) usage snapshots from the broker's
    *  `sentinel_usage_report` broadcast. Keyed `${sentinelId}/${profile}`.
@@ -605,6 +619,26 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   setDaemonRoster: roster =>
     set(state => ({
       daemonRosters: { ...state.daemonRosters, [roster.sentinelId ?? 'default']: roster },
+    })),
+  daemonStatus: {},
+  setDaemonStatePatch: (conversationId, patch) =>
+    set(state => ({
+      daemonStatus: {
+        ...state.daemonStatus,
+        [conversationId]: { ...state.daemonStatus[conversationId], ...patch },
+      },
+    })),
+  setDaemonBlock: (conversationId, block) =>
+    set(state => ({
+      daemonStatus: {
+        ...state.daemonStatus,
+        [conversationId]: {
+          ...state.daemonStatus[conversationId],
+          blockedNeeds: block.needs,
+          blockRequestId: block.requestId,
+          t: block.t,
+        },
+      },
     })),
   planUsage: null,
   profileUsage: {},

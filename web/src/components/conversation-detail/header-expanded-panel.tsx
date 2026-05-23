@@ -6,6 +6,7 @@ import { cn, contextWindowSize, formatAge, formatTime } from '@/lib/utils'
 import type { ConversationTarget } from './conversation-header'
 import { HeaderDescription } from './header-description'
 import {
+  DaemonWorkerStatusRow,
   ErrorBanner,
   LaunchConfigRow,
   LinkedProjects,
@@ -63,6 +64,7 @@ export function HeaderExpandedPanel({
       <RateLimitBanner rateLimit={conversation.rateLimit} />
       <ProjectPathRow project={conversation.project} />
       <LaunchConfigRow conversation={conversation} />
+      <DaemonWorkerStatusRow conversation={conversation} />
       <HeaderDescription conversation={conversation} />
       <SummaryRow summary={conversation.summary} />
       <RecapRow recap={conversation.recap} recapFresh={conversation.recapFresh} />

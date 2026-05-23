@@ -16,6 +16,7 @@ import { controlResultFailure } from '../../shared/cc-daemon/control-result'
 import { cwdToProjectUri } from '../../shared/project-uri'
 import type {
   Conversation,
+  DaemonBlockObserved,
   DaemonControlResult,
   DaemonJobInfo,
   DaemonLaunchEvent,
@@ -23,7 +24,9 @@ import type {
   DaemonRespawnStaleRequest,
   DaemonRosterForward,
   DaemonRosterJob,
+  DaemonRunState,
   DaemonSessionRetired,
+  DaemonStatePatch,
 } from '../../shared/protocol'
 import { DAEMON_META } from '../backends/claude-daemon'
 import { GuardError, type HandlerContext, type MessageHandler } from '../handler-context'
@@ -269,6 +272,13 @@ const daemonJobState: MessageHandler = (ctx, data) => {
   upsertDaemonConversation(ctx, job, ctx.ws.data.sentinelId, ctx.ws.data.sentinelAlias)
 }
 
+// Field coercion helpers -- one branch each, so the normalizers stay branch-free.
+const wireStr = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined)
+const wireNum = (v: unknown, fallback: number): number => (typeof v === 'number' ? v : fallback)
+const wireObj = (v: unknown): Record<string, unknown> | undefined =>
+  v && typeof v === 'object' ? (v as Record<string, unknown>) : undefined
+const wireTempo = (v: unknown): 'active' | 'idle' | undefined => (v === 'active' || v === 'idle' ? v : undefined)
+
 /** The eight valid daemon launch steps -- guards malformed wire input. */
 const DAEMON_LAUNCH_STEPS = new Set<DaemonLaunchStep>([
   'dispatch_requested',
@@ -281,6 +291,14 @@ const DAEMON_LAUNCH_STEPS = new Set<DaemonLaunchStep>([
   'worker_gone',
 ])
 
+function asLaunchStep(v: unknown): DaemonLaunchStep | undefined {
+  return typeof v === 'string' && DAEMON_LAUNCH_STEPS.has(v as DaemonLaunchStep) ? (v as DaemonLaunchStep) : undefined
+}
+
+function asDaemonMode(v: unknown): 'new' | 'resume' | 'attach' | undefined {
+  return v === 'new' || v === 'resume' || v === 'attach' ? v : undefined
+}
+
 /**
  * Validate + normalize a raw `daemon_launch_event` wire payload into a typed
  * DaemonLaunchEvent. Returns null when required fields (conversationId, a known
@@ -288,18 +306,18 @@ const DAEMON_LAUNCH_STEPS = new Set<DaemonLaunchStep>([
  * HandlerContext.
  */
 export function normalizeDaemonLaunchEvent(data: Record<string, unknown>): DaemonLaunchEvent | null {
-  const { conversationId, step, daemonMode } = data
-  if (typeof conversationId !== 'string' || !conversationId) return null
-  if (typeof step !== 'string' || !DAEMON_LAUNCH_STEPS.has(step as DaemonLaunchStep)) return null
-  if (daemonMode !== 'new' && daemonMode !== 'resume' && daemonMode !== 'attach') return null
+  const conversationId = wireStr(data.conversationId)
+  const step = asLaunchStep(data.step)
+  const daemonMode = asDaemonMode(data.daemonMode)
+  if (!conversationId || !step || !daemonMode) return null
   return {
     type: 'daemon_launch_event',
     conversationId,
-    step: step as DaemonLaunchStep,
+    step,
     daemonMode,
-    short: typeof data.short === 'string' ? data.short : undefined,
-    detail: typeof data.detail === 'string' ? data.detail : undefined,
-    raw: data.raw && typeof data.raw === 'object' ? (data.raw as Record<string, unknown>) : undefined,
+    short: wireStr(data.short),
+    detail: wireStr(data.detail),
+    raw: wireObj(data.raw),
     t: typeof data.t === 'number' ? data.t : Date.now(),
   }
 }
@@ -492,6 +510,98 @@ const daemonSessionRetired: MessageHandler = (ctx, data) => {
   ctx.broadcastScoped({ ...event }, conv.project)
 }
 
+// ─── Phase 7 -- daemon status uplift (subscribe state stream) ──────────────
+
+/** The richer daemon run-state vocab (transport-reframe Phase 7, uplift #12d). */
+const DAEMON_RUN_STATES = new Set<DaemonRunState>([
+  'running',
+  'working',
+  'blocked',
+  'resuming',
+  'failed',
+  'done',
+  'crashed',
+])
+
+function asRunState(v: unknown): DaemonRunState | undefined {
+  return typeof v === 'string' && DAEMON_RUN_STATES.has(v as DaemonRunState) ? (v as DaemonRunState) : undefined
+}
+
+/**
+ * Validate + normalize a raw `daemon_state_patch` wire payload. Returns null
+ * when conversationId is missing. Pure -- unit-testable without a context.
+ */
+export function normalizeDaemonStatePatch(data: Record<string, unknown>): DaemonStatePatch | null {
+  const conversationId = wireStr(data.conversationId)
+  if (!conversationId) return null
+  return {
+    type: 'daemon_state_patch',
+    conversationId,
+    state: asRunState(data.state),
+    tempo: wireTempo(data.tempo),
+    detail: wireStr(data.detail),
+    needs: wireStr(data.needs),
+    raw: wireObj(data.raw),
+    t: wireNum(data.t, Date.now()),
+  }
+}
+
+/**
+ * Agent host -> broker: one cc-daemon `subscribe` state patch. The broker
+ * re-broadcasts it scoped to the conversation's project so the control panel
+ * renders the worker's own status vocab (transport-reframe Phase 7 uplift #12d).
+ * Granular + frequent -- broadcast only, NOT persisted (the coarse status rides
+ * the conversation_status signal which the lifecycle handler persists).
+ */
+const daemonStatePatch: MessageHandler = (ctx, data) => {
+  const patch = normalizeDaemonStatePatch(data)
+  if (!patch) {
+    ctx.log.debug('[daemon] daemon_state_patch malformed, ignoring')
+    return
+  }
+  const conv = ctx.conversations.getConversation(patch.conversationId)
+  if (!conv) return
+  ctx.broadcastScoped({ ...patch }, conv.project)
+}
+
+/**
+ * Validate + normalize a raw `daemon_block_observed` wire payload. Returns null
+ * when conversationId is missing. Pure -- unit-testable without a context.
+ */
+export function normalizeDaemonBlockObserved(data: Record<string, unknown>): DaemonBlockObserved | null {
+  const conversationId = wireStr(data.conversationId)
+  if (!conversationId) return null
+  return {
+    type: 'daemon_block_observed',
+    conversationId,
+    needs: wireStr(data.needs),
+    requestId: wireStr(data.requestId),
+    raw: wireObj(data.raw),
+    t: wireNum(data.t, Date.now()),
+  }
+}
+
+/**
+ * Agent host -> broker: a daemon worker surfaced an interaction gate. The
+ * broker logs + re-broadcasts so the control panel can show a block banner.
+ * DEFENSIVE -- dormant in the auto-accept fleet config (Phase 7 spikes 3d/3e);
+ * present so a future blocking worker is surfaced, not silently stuck.
+ */
+const daemonBlockObserved: MessageHandler = (ctx, data) => {
+  const event = normalizeDaemonBlockObserved(data)
+  if (!event) {
+    ctx.log.debug('[daemon] daemon_block_observed malformed, ignoring')
+    return
+  }
+  const conv = ctx.conversations.getConversation(event.conversationId)
+  if (!conv) return
+  ctx.log.info(
+    `[daemon] block observed conv=${event.conversationId.slice(0, 8)}` +
+      `${event.requestId ? ` requestId=${event.requestId}` : ''}${event.needs ? ` -- ${event.needs}` : ''}`,
+  )
+  ctx.broadcastScoped({ ...event }, conv.project)
+}
+
 export function registerDaemonHandlers(): void {
   // Roster ingest is sentinel-sourced; launch events + control results are
   // agent-host-sourced; the roster replay request + respawn-stale are
@@ -502,6 +612,8 @@ export function registerDaemonHandlers(): void {
       daemon_launch_event: daemonLaunchEvent,
       daemon_control_result: daemonControlResult,
       daemon_session_retired: daemonSessionRetired,
+      daemon_state_patch: daemonStatePatch,
+      daemon_block_observed: daemonBlockObserved,
     },
     AGENT_HOST_ONLY,
   )
