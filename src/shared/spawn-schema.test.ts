@@ -49,12 +49,12 @@ describe('validatedSpawnRequestSchema -- transport cross-field rules (refineTran
     )
   })
 
-  it('rejects claude-daemon new without a prompt', () => {
-    expect(validatedSpawnRequestSchema.safeParse(transportDaemonReq({ mode: 'new' })).success).toBe(false)
+  it('accepts claude-daemon new WITHOUT a prompt (promptless NEW -- Phase 4/5/7)', () => {
+    expect(validatedSpawnRequestSchema.safeParse(transportDaemonReq({ mode: 'new' })).success).toBe(true)
   })
 
-  it('treats an absent transportMeta.mode as new (no prompt -> reject)', () => {
-    expect(validatedSpawnRequestSchema.safeParse(transportDaemonReq()).success).toBe(false)
+  it('treats an absent transportMeta.mode as new (no prompt -> accept)', () => {
+    expect(validatedSpawnRequestSchema.safeParse(transportDaemonReq()).success).toBe(true)
   })
 
   it('rejects claude-daemon resume without transportMeta.resumeSessionId', () => {

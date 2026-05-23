@@ -121,15 +121,21 @@ function compact(entries: Array<[string, unknown]>): Record<string, unknown> {
  * request is valid. `refineTransportSpawn` enforces the same at the
  * request-validation boundary; this guards non-HTTP callers (the MCP spawn tool
  * validates against the bare object schema, which has no cross-field refinement).
+ *
+ * NEW mode requires nothing -- promptless NEW dispatch is supported (Phase 4
+ * socket dispatch P1 + Phase 5 UI relabel). Only RESUME/ATTACH carry a required
+ * field.
  */
-export function validateDaemonModeFields(req: SpawnRequest, cfg: DaemonConfig): string | null {
+export function validateDaemonModeFields(_req: SpawnRequest, cfg: DaemonConfig): string | null {
   // Per mode: [human label for the error, the field that must be non-empty].
+  // NEW has no required field (value undefined -> treated as satisfied below).
   const required: Record<DaemonMode, [string, string | undefined]> = {
-    new: ['an initial prompt', req.prompt],
+    new: ['', undefined],
     resume: ['transportMeta.resumeSessionId', cfg.resumeSessionId],
     attach: ['transportMeta.attachShort', cfg.attachShort],
   }
   const [label, value] = required[cfg.mode]
+  if (!label) return null // NEW -- nothing required
   return value?.trim() ? null : `claude-daemon spawn (${cfg.mode} mode) requires ${label}`
 }
 

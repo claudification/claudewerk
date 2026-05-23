@@ -52,8 +52,8 @@ describe('readDaemonConfig', () => {
 })
 
 describe('validateDaemonModeFields', () => {
-  it('new mode requires a prompt', () => {
-    expect(validateDaemonModeFields(req(), cfg({ mode: 'new' }))).toMatch(/new mode/)
+  it('new mode requires nothing (promptless NEW supported -- Phase 4/5/7)', () => {
+    expect(validateDaemonModeFields(req(), cfg({ mode: 'new' }))).toBeNull()
     expect(validateDaemonModeFields(req({}, { prompt: 'go' }), cfg({ mode: 'new' }))).toBeNull()
   })
 
@@ -274,11 +274,13 @@ function makeFakeDeps(opts: { sentinelResult?: Record<string, unknown>; seed?: F
 }
 
 describe('dispatchClaudeDaemon -- mode validation', () => {
-  it('rejects NEW without a prompt (400)', async () => {
-    const { deps } = makeFakeDeps()
+  it('accepts NEW without a prompt -- promptless NEW (Phase 4/5/7)', async () => {
+    const { deps, sent } = makeFakeDeps()
     const r = await dispatchClaudeDaemon(req({ mode: 'new' }), deps)
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.statusCode).toBe(400)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    // Promptless NEW dispatches a worker with no initial prompt.
+    expect(sent[0]!.prompt ?? '').toBe('')
   })
 
   it('rejects RESUME without resumeSessionId (400)', async () => {

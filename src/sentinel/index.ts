@@ -2904,13 +2904,11 @@ function connect(
             const daemonMcpConfigPath = daemonMetaStr('mcpConfigPath')
             const daemonAppendSystemPrompt = daemonMetaStr('appendSystemPrompt')
 
-            // Mode-specific required fields. NEW needs a prompt (the worker
-            // dispatches with one); RESUME needs the session to fork from;
-            // ATTACH needs the roster short to attach to.
-            if (daemonMode === 'new' && !spawnMsg.prompt?.trim()) {
-              sendDaemonFail('claude-daemon spawn (new mode) requires an initial prompt')
-              break
-            }
+            // Mode-specific required fields. NEW needs nothing -- promptless NEW
+            // dispatch is supported (Phase 4 socket dispatch P1 proved
+            // `launch.args:[]` boots an idle worker that takes its first turn via
+            // a later `reply`). RESUME needs the session to fork from; ATTACH
+            // needs the roster short to attach to.
             if (daemonMode === 'resume' && !daemonResumeSessionId?.trim()) {
               sendDaemonFail('claude-daemon spawn (resume mode) requires transportMeta.resumeSessionId')
               break

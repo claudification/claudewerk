@@ -253,54 +253,62 @@ function transportMetaString(meta: Record<string, unknown> | undefined, key: str
  * legacy requests that set no `transport`.
  *
  * Rules (plan-claude-transport-reframe.md § 2.1): mode defaults to 'new';
- * new -> `prompt` required (promptless dispatch is a Phase 4 relaxation);
- * resume -> `transportMeta.resumeSessionId` required; attach ->
- * `transportMeta.attachShort` required AND config injection (settingsPath /
- * mcpConfigPath / appendSystemPrompt) forbidden (ATTACH takes over an
- * already-configured worker). `attachShort`, when present, must be 8-hex.
+ * new -> NO required field (promptless NEW dispatch is supported -- Phase 4
+ * socket dispatch P1 proved promptless `launch.args:[]` works, and Phase 5
+ * relabeled the UI prompt "(optional)"; a daemon worker can boot idle and take
+ * its first turn via a later `reply`); resume -> `transportMeta.resumeSessionId`
+ * required; attach -> `transportMeta.attachShort` required AND config injection
+ * (settingsPath / mcpConfigPath / appendSystemPrompt) forbidden (ATTACH takes
+ * over an already-configured worker). `attachShort`, when present, must be 8-hex.
  */
+/** RESUME requires the session to fork from. */
+function refineDaemonResume(meta: Record<string, unknown> | undefined, ctx: z.RefinementCtx): void {
+  if (transportMetaString(meta, 'resumeSessionId')?.trim()) return
+  ctx.addIssue({
+    code: 'custom',
+    message: 'claude-daemon spawn (resume mode) requires transportMeta.resumeSessionId',
+    path: ['transportMeta', 'resumeSessionId'],
+  })
+}
+
+/** ATTACH requires the roster short AND forbids config injection (the worker is already configured). */
+function refineDaemonAttach(meta: Record<string, unknown> | undefined, ctx: z.RefinementCtx): void {
+  if (!transportMetaString(meta, 'attachShort')?.trim()) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'claude-daemon spawn (attach mode) requires transportMeta.attachShort',
+      path: ['transportMeta', 'attachShort'],
+    })
+  }
+  for (const key of ['settingsPath', 'mcpConfigPath', 'appendSystemPrompt'] as const) {
+    if (!transportMetaString(meta, key)) continue
+    ctx.addIssue({
+      code: 'custom',
+      message: `claude-daemon attach must not set transportMeta.${key} (the worker is already configured)`,
+      path: ['transportMeta', key],
+    })
+  }
+}
+
+/** `attachShort`, whenever present, must be an 8-hex daemon worker short id. */
+function refineAttachShortFormat(meta: Record<string, unknown> | undefined, ctx: z.RefinementCtx): void {
+  const short = transportMetaString(meta, 'attachShort')
+  if (short === undefined || /^[0-9a-f]{8}$/.test(short)) return
+  ctx.addIssue({
+    code: 'custom',
+    message: 'transportMeta.attachShort must be an 8-hex daemon worker short id',
+    path: ['transportMeta', 'attachShort'],
+  })
+}
+
 export function refineTransportSpawn(req: TransportSpawnFields, ctx: z.RefinementCtx): void {
   if (req.transport !== 'claude-daemon') return
   const meta = req.transportMeta
   const mode = transportMetaString(meta, 'mode') ?? 'new'
-
-  if (mode === 'new' && !req.prompt?.trim()) {
-    ctx.addIssue({ code: 'custom', message: 'claude-daemon spawn (new mode) requires a prompt', path: ['prompt'] })
-  }
-  if (mode === 'resume' && !transportMetaString(meta, 'resumeSessionId')?.trim()) {
-    ctx.addIssue({
-      code: 'custom',
-      message: 'claude-daemon spawn (resume mode) requires transportMeta.resumeSessionId',
-      path: ['transportMeta', 'resumeSessionId'],
-    })
-  }
-  if (mode === 'attach') {
-    if (!transportMetaString(meta, 'attachShort')?.trim()) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'claude-daemon spawn (attach mode) requires transportMeta.attachShort',
-        path: ['transportMeta', 'attachShort'],
-      })
-    }
-    // ATTACH attaches to an already-configured worker -- config injection is a bug.
-    for (const key of ['settingsPath', 'mcpConfigPath', 'appendSystemPrompt'] as const) {
-      if (transportMetaString(meta, key)) {
-        ctx.addIssue({
-          code: 'custom',
-          message: `claude-daemon attach must not set transportMeta.${key} (the worker is already configured)`,
-          path: ['transportMeta', key],
-        })
-      }
-    }
-  }
-  const short = transportMetaString(meta, 'attachShort')
-  if (short !== undefined && !/^[0-9a-f]{8}$/.test(short)) {
-    ctx.addIssue({
-      code: 'custom',
-      message: 'transportMeta.attachShort must be an 8-hex daemon worker short id',
-      path: ['transportMeta', 'attachShort'],
-    })
-  }
+  // NEW mode requires nothing -- promptless NEW is intended (Phase 4 + Phase 5).
+  if (mode === 'resume') refineDaemonResume(meta, ctx)
+  if (mode === 'attach') refineDaemonAttach(meta, ctx)
+  refineAttachShortFormat(meta, ctx)
 }
 
 /**
