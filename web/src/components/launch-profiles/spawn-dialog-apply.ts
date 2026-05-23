@@ -46,8 +46,9 @@ export interface SpawnFormSetters {
 export function applyProfileToForm(profile: LaunchProfile, setters: SpawnFormSetters): void {
   const s = profile.spawn
   // Daemon profiles drive a separate config form (mode + DaemonModeFormValue),
-  // not the generic per-field state -- restore that and stop.
-  if (s.backend === 'daemon') {
+  // not the generic per-field state -- restore that and stop. Transport reframe
+  // (Phase 5): detect via the canonical transport, dual-read `backend`.
+  if (s.transport === 'claude-daemon' || s.backend === 'daemon') {
     applyDaemonProfileToForm(s, setters)
     // Daemon launches also honor the sentinel-profile pick (the daemon worker
     // runs under the resolved profile's `CLAUDE_CONFIG_DIR`).

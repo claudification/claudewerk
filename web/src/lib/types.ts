@@ -169,6 +169,10 @@ export interface Conversation {
   hostSentinelId?: string
   hostSentinelAlias?: string
   backend?: string
+  /** Resolved transport (transport reframe): 'claude-pty' | 'claude-headless'
+   *  | 'claude-daemon'. The canonical discriminator the control panel keys
+   *  daemon-specific UI off; `backend === 'daemon'` is the legacy dual-read. */
+  transport?: string
 }
 
 // Project order tree types -- each leaf is a project keyed by project URI

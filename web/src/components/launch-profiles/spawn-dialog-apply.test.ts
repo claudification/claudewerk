@@ -194,6 +194,15 @@ describe('applyProfileToForm -- daemon backend', () => {
     applyProfileToForm(profile({ backend: 'daemon' }), setters)
     expect(setters.setDaemonMode).toHaveBeenCalledWith('new')
   })
+
+  test('detects a transport-only daemon profile (no backend) and restores daemon state', () => {
+    const setters = setterSpies()
+    applyProfileToForm(profile({ transport: 'claude-daemon', daemonMode: 'resume' }), setters)
+    expect(setters.setBackend).toHaveBeenCalledWith('daemon')
+    expect(setters.setDaemonMode).toHaveBeenCalledWith('resume')
+    // Generic claude setters stay untouched -- daemon owns a separate form.
+    expect(setters.setEffort).not.toHaveBeenCalled()
+  })
 })
 
 describe('daemon profile round-trip -- snapshot -> profile -> form', () => {

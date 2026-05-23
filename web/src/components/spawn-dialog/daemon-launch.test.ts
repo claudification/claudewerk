@@ -27,11 +27,9 @@ describe('blankDaemonForm', () => {
 })
 
 describe('validateDaemonModeForm -- NEW', () => {
-  test('requires a non-empty prompt', () => {
-    expect(validateDaemonModeForm('new', form())).toContain('Prompt is required for a new daemon worker')
-    expect(validateDaemonModeForm('new', form({ prompt: '   ' }))).toContain(
-      'Prompt is required for a new daemon worker',
-    )
+  test('allows a promptless NEW worker (transport reframe Phase 4: promptless dispatch)', () => {
+    expect(validateDaemonModeForm('new', form())).toEqual([])
+    expect(validateDaemonModeForm('new', form({ prompt: '   ' }))).toEqual([])
   })
 
   test('passes with a prompt and no other config', () => {

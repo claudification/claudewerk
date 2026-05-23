@@ -39,6 +39,13 @@ import { SentinelProfileBadge } from './sentinel-profile-badge'
 
 // ─── Shared visual components ──────────────────────────────────────
 
+/** A daemon-transport conversation. Transport reframe (Phase 5): key off the
+ *  canonical `transport === 'claude-daemon'`, with the legacy
+ *  `backend === 'daemon'` as a dual-read for pre-transport conversations. */
+function isDaemonTransport(conversation: Conversation): boolean {
+  return conversation.transport === 'claude-daemon' || conversation.backend === 'daemon'
+}
+
 function StatusIndicator({ status, adHoc }: { status: Conversation['status']; adHoc?: boolean }) {
   // Ad-hoc conversations get a lightning bolt instead of status dots
   if (adHoc) {
@@ -161,7 +168,7 @@ function LaunchParamsSection({ conversation }: { conversation: Conversation }) {
               label="backend"
               value={
                 <span className="flex items-center gap-1">
-                  <BackendIcon backend={conversation.backend} size={10} />
+                  <BackendIcon backend={conversation.backend} transport={conversation.transport} size={10} />
                   {conversation.backend}
                 </span>
               }
@@ -784,7 +791,7 @@ const ConversationItemFull = memo(function ConversationItemFull({ conversation }
     >
       <div className="flex items-center gap-1.5">
         <StatusIndicator status={conversation.status} adHoc={conversation.capabilities?.includes('ad-hoc')} />
-        <BackendIcon backend={conversation.backend} />
+        <BackendIcon backend={conversation.backend} transport={conversation.transport} />
         {ps?.icon && (
           <span style={displayColor && !isSelected ? { color: displayColor } : undefined}>
             {renderProjectIcon(ps.icon)}
@@ -796,7 +803,7 @@ const ConversationItemFull = memo(function ConversationItemFull({ conversation }
         >
           {projectName}
         </span>
-        {conversation.backend === 'daemon' && (
+        {isDaemonTransport(conversation) && (
           <span
             className="px-1.5 py-0.5 text-[10px] uppercase font-bold bg-sky-500/20 text-sky-400 border border-sky-500/50"
             title="Native claude agents background session -- claudewerk mirrors it read-only"
@@ -1160,7 +1167,7 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
       {/* ── TITLE ROW: status, backend, title, action/attention badges, %, info ─ */}
       <div className="flex items-center gap-1.5">
         <StatusIndicator status={conversation.status} adHoc={conversation.capabilities?.includes('ad-hoc')} />
-        <BackendIcon backend={conversation.backend} size={11} />
+        <BackendIcon backend={conversation.backend} transport={conversation.transport} size={11} />
         {isRenaming ? (
           <div className="flex-1 min-w-0">
             <InlineRename conversation={conversation} />
@@ -1176,7 +1183,7 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
           </span>
         )}
         {/* Action / attention badges -- always on title row in both layouts */}
-        {conversation.backend === 'daemon' && (
+        {isDaemonTransport(conversation) && (
           <span className="text-[9px] text-sky-400 font-bold" title="Native claude agents session -- read-only mirror">
             NATIVE
           </span>

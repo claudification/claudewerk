@@ -70,6 +70,19 @@ export const BACKENDS: Record<string, BackendDef> = {
   daemon: { icon: ClaudeIcon, color: 'text-sky-400', label: 'Claude agents (native daemon)' },
 }
 
+/**
+ * Resolve which `BACKENDS` key drives the icon. Transport reframe (Phase 5):
+ * the daemon icon keys off `transport === 'claude-daemon'` -- the canonical
+ * discriminator -- with the legacy `backend === 'daemon'` as a dual-read
+ * fallback for conversations spawned before transport was persisted. Other
+ * claude transports (claude-pty / claude-headless) fall through to the plain
+ * claude backend (no distinct icon).
+ */
+function resolveBackendIconKey({ backend, transport }: { backend?: string; transport?: string }): string {
+  if (transport === 'claude-daemon' || backend === 'daemon') return 'daemon'
+  return backend ?? 'claude'
+}
+
 export function getBackendIconElement(backend: string, size = 14): ReactNode {
   const def = BACKENDS[backend]
   if (!def) return null
@@ -80,9 +93,18 @@ export function getBackendIconElement(backend: string, size = 14): ReactNode {
   return <Icon size={size} className={def.color} />
 }
 
-export function BackendIcon({ backend, size = 12 }: { backend?: string; size?: number }) {
-  if (!backend || backend === 'claude') return null
-  const def = BACKENDS[backend]
+export function BackendIcon({
+  backend,
+  transport,
+  size = 12,
+}: {
+  backend?: string
+  transport?: string
+  size?: number
+}) {
+  const key = resolveBackendIconKey({ backend, transport })
+  if (key === 'claude') return null
+  const def = BACKENDS[key]
   if (!def) return null
   const Icon = def.icon
   return (

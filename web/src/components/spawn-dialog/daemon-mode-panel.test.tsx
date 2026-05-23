@@ -33,10 +33,10 @@ function Harness({
 }
 
 describe('DaemonModePanel -- NEW', () => {
-  test('renders a required prompt field and no resume field', () => {
+  test('renders an optional prompt field (promptless NEW) and no resume field', () => {
     render(<Harness mode="new" />)
-    expect(screen.getByText('(required)')).toBeDefined()
-    expect(screen.getByPlaceholderText('First turn for the new daemon worker...')).toBeDefined()
+    expect(screen.getByText('(optional)')).toBeDefined()
+    expect(screen.getByPlaceholderText('First turn for the new daemon worker (optional)...')).toBeDefined()
     expect(screen.queryByPlaceholderText('daemon session id to fork from')).toBeNull()
   })
 
@@ -50,7 +50,7 @@ describe('DaemonModePanel -- NEW', () => {
   test('typing the prompt patches onChange', () => {
     const spy = vi.fn()
     render(<Harness mode="new" onChangeSpy={spy} />)
-    const textarea = screen.getByPlaceholderText('First turn for the new daemon worker...')
+    const textarea = screen.getByPlaceholderText('First turn for the new daemon worker (optional)...')
     fireEvent.change(textarea, { target: { value: 'build the feature' } })
     expect(spy).toHaveBeenCalledWith({ prompt: 'build the feature' })
   })

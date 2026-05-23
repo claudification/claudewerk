@@ -3,6 +3,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { haptic } from '@/lib/utils'
 import { getBackendIconElement } from '../project-list/backend-icon'
 
+// `daemon` remains a legacy persisted value (launch profiles + the dual-write
+// spawn shape) until Phase 6, but it is NO LONGER a backend the user picks: the
+// daemon is a claude "Process model" (transport). The selector below offers
+// only the real backends; daemon is chosen via ProcessModelSegmented.
 export type BackendKind = 'claude' | 'chat-api' | 'hermes' | 'opencode' | 'daemon'
 
 interface BackendOption {
@@ -38,12 +42,6 @@ export function BackendSelect({ value, onChange, chatAvailable, hermesAvailable 
       setupNeeded: hermesAvailable ? undefined : 'no Hermes gateway connected',
     },
     { value: 'opencode', label: 'OpenCode', info: '75+ providers, free models supported', hotkey: 'Alt+4' },
-    {
-      value: 'daemon',
-      label: 'Claude daemon',
-      info: 'Native claude --bg worker -- subscription-billed. New / Resume / Attach.',
-      hotkey: 'Alt+5',
-    },
   ]
 
   return (

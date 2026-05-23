@@ -125,23 +125,41 @@ export function TrustLevelBadge({ projectSettings }: { projectSettings: ProjectS
 }
 
 /**
- * Read-only "Launch config" disclosure for a daemon-backed conversation --
- * how the worker was launched (mode + injected config). Renders nothing for
- * non-daemon conversations (no `daemonMode` on their launchConfig). The
- * conversation's live ccSessionId is never shown -- this is launch INPUT only.
+ * Read-only "Launch config" disclosure for a daemon-transport conversation --
+ * how the worker was launched (transport + mode + injected config). Renders
+ * nothing for non-daemon conversations. Transport reframe (Phase 5): keys off
+ * the canonical `transport === 'claude-daemon'` (with `daemonMode` as the
+ * legacy dual-read) and surfaces `transport` directly. The conversation's live
+ * ccSessionId is never shown -- this is launch INPUT only.
  */
-export function LaunchConfigRow({ conversation }: { conversation: Conversation }) {
-  const [open, setOpen] = useState(false)
-  const lc = conversation.launchConfig
-  if (!lc || !lc.daemonMode) return null
+type LaunchConfigDetail = NonNullable<Conversation['launchConfig']>
 
-  const rows: Array<{ k: string; v: string; mono?: boolean }> = [{ k: 'mode', v: lc.daemonMode }]
+/** The detail rows for the daemon launch-config disclosure. Pure so the
+ *  component stays thin (transport + mode + injected config; never secrets). */
+function buildLaunchConfigRows(
+  transport: string | undefined,
+  lc: LaunchConfigDetail,
+): Array<{ k: string; v: string; mono?: boolean }> {
+  const rows: Array<{ k: string; v: string; mono?: boolean }> = []
+  if (transport) rows.push({ k: 'transport', v: transport, mono: true })
+  if (lc.daemonMode) rows.push({ k: 'mode', v: lc.daemonMode })
   if (lc.model) rows.push({ k: 'model', v: lc.model, mono: true })
   if (lc.daemonSettingsPath) rows.push({ k: 'settings', v: lc.daemonSettingsPath, mono: true })
   if (lc.daemonMcpConfigPath) rows.push({ k: 'mcp config', v: lc.daemonMcpConfigPath, mono: true })
   if (lc.appendSystemPrompt) rows.push({ k: 'system prompt suffix', v: lc.appendSystemPrompt })
   const envKeys = lc.env ? Object.keys(lc.env) : []
   if (envKeys.length) rows.push({ k: 'env', v: envKeys.join(', '), mono: true })
+  return rows
+}
+
+export function LaunchConfigRow({ conversation }: { conversation: Conversation }) {
+  const [open, setOpen] = useState(false)
+  const lc = conversation.launchConfig
+  const transport = conversation.transport ?? lc?.transport
+  const isDaemon = transport === 'claude-daemon' || !!lc?.daemonMode
+  if (!lc || !isDaemon) return null
+
+  const rows = buildLaunchConfigRows(transport, lc)
 
   return (
     <div className="border border-border/60 rounded">
@@ -155,7 +173,9 @@ export function LaunchConfigRow({ conversation }: { conversation: Conversation }
       >
         <ChevronRight className={cn('w-3 h-3 transition-transform', open && 'rotate-90')} />
         <span className="uppercase tracking-wide">Launch config</span>
-        <span className="ml-auto text-comment">daemon · {lc.daemonMode}</span>
+        <span className="ml-auto text-comment font-mono">
+          {`${transport ?? 'daemon'}${lc.daemonMode ? ` · ${lc.daemonMode}` : ''}`}
+        </span>
       </button>
       {open && (
         <div className="px-2 pb-1.5 pt-0.5 space-y-0.5">

@@ -73,9 +73,9 @@ function absPathErrors(value: DaemonModeFormValue): string[] {
  */
 export function validateDaemonModeForm(mode: 'new' | 'resume', value: DaemonModeFormValue): string[] {
   const errors: string[] = []
-  if (mode === 'new' && !value.prompt.trim()) {
-    errors.push('Prompt is required for a new daemon worker')
-  }
+  // NEW no longer requires a prompt: the cc-daemon socket dispatch supports
+  // promptless launch (transport reframe Phase 4 -- spike P1). A prompt is
+  // still accepted and forwarded as the first turn when supplied.
   if (mode === 'resume' && !value.resumeSessionId.trim()) {
     errors.push('Resume session id is required')
   }

@@ -62,7 +62,8 @@ function absPathError(raw: string): string | undefined {
   return v && !v.startsWith('/') ? 'Must be an absolute path (start with /)' : undefined
 }
 
-/** The first-turn prompt field -- required for NEW, optional for RESUME. */
+/** The first-turn prompt field. Optional for both modes: NEW supports
+ *  promptless dispatch (transport reframe Phase 4), RESUME continues a session. */
 function PromptField({
   mode,
   value,
@@ -75,19 +76,16 @@ function PromptField({
   return (
     <div className="space-y-1">
       <div className="text-[10px] font-mono text-muted-foreground">
-        Prompt{' '}
-        {mode === 'new' ? (
-          <span className="text-amber-400/80">(required)</span>
-        ) : (
-          <span className="text-comment">(optional)</span>
-        )}
+        Prompt <span className="text-comment">(optional)</span>
       </div>
       <textarea
         value={value}
         onChange={e => onChange(e.target.value)}
         rows={3}
         spellCheck={false}
-        placeholder={mode === 'new' ? 'First turn for the new daemon worker...' : 'Optional first turn after resume...'}
+        placeholder={
+          mode === 'new' ? 'First turn for the new daemon worker (optional)...' : 'Optional first turn after resume...'
+        }
         className="w-full text-[10px] font-mono bg-surface-inset border border-primary/20 text-foreground px-2 py-1 outline-none resize-y"
       />
     </div>

@@ -128,3 +128,41 @@ describe('ManagerEditor -- daemon backend', () => {
     expect(next.spawn.daemonSettingsPath).toBe('/abs/settings.json')
   })
 })
+
+describe('ManagerEditor -- process model (transport reframe Phase 5)', () => {
+  // Render an editor, click a Process model tile, return the patched profile.
+  function editViaProcessModel(spawn: LaunchProfile['spawn'], tile: RegExp): LaunchProfile {
+    const onChange = vi.fn()
+    render(<ManagerEditor profile={profile(spawn)} onChange={onChange} />)
+    fireEvent.click(screen.getByRole('button', { name: tile }))
+    return onChange.mock.calls[0]![0] as LaunchProfile
+  }
+
+  test('renders the Process model picker for a claude profile', () => {
+    render(<ManagerEditor profile={profile({ backend: 'claude' })} onChange={vi.fn()} />)
+    expect(screen.getByText('Process model')).toBeDefined()
+  })
+
+  test('a profile carrying only transport=claude-daemon is detected as daemon', () => {
+    render(<ManagerEditor profile={profile({ transport: 'claude-daemon', daemonMode: 'new' })} onChange={vi.fn()} />)
+    expect(screen.getByText('Daemon launch')).toBeDefined()
+  })
+
+  test('switching the process model to Daemon patches backend + transport + seeds daemonMode', () => {
+    const next = editViaProcessModel({ backend: 'claude' }, /Daemon/)
+    expect(next.spawn.backend).toBe('daemon')
+    expect(next.spawn.transport).toBe('claude-daemon')
+    expect(next.spawn.daemonMode).toBe('new')
+  })
+
+  test('switching a daemon profile back to Interactive clears the daemon config', () => {
+    const next = editViaProcessModel(
+      { backend: 'daemon', daemonMode: 'resume', daemonSettingsPath: '/s.json' },
+      /Interactive/,
+    )
+    expect(next.spawn.backend).toBeUndefined()
+    expect(next.spawn.transport).toBe('claude-pty')
+    expect(next.spawn.daemonMode).toBeUndefined()
+    expect(next.spawn.daemonSettingsPath).toBeUndefined()
+  })
+})

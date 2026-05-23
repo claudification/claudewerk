@@ -16,6 +16,11 @@ function conv(launchConfig?: LaunchConfig): Conversation {
   return { launchConfig } as unknown as Conversation
 }
 
+/** A conversation with a top-level transport (transport reframe Phase 5). */
+function convWithTransport(transport: string, launchConfig?: LaunchConfig): Conversation {
+  return { transport, launchConfig } as unknown as Conversation
+}
+
 describe('LaunchConfigRow', () => {
   test('renders nothing for a conversation with no launchConfig', () => {
     const { container } = render(<LaunchConfigRow conversation={conv()} />)
@@ -67,6 +72,31 @@ describe('LaunchConfigRow', () => {
     fireEvent.click(screen.getByRole('button'))
     expect(screen.getByText('API_TOKEN, DEBUG')).toBeDefined()
     expect(screen.queryByText(/super-secret-value/)).toBeNull()
+  })
+
+  test('keys off conv.transport === claude-daemon and surfaces the transport in the summary', () => {
+    render(
+      <LaunchConfigRow conversation={convWithTransport('claude-daemon', { headless: false, daemonMode: 'new' })} />,
+    )
+    expect(screen.getByText('Launch config')).toBeDefined()
+    expect(screen.getByText('claude-daemon · new')).toBeDefined()
+  })
+
+  test('shows a transport row when expanded', () => {
+    render(
+      <LaunchConfigRow conversation={convWithTransport('claude-daemon', { headless: false, daemonMode: 'new' })} />,
+    )
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.getByText('transport')).toBeDefined()
+    // The transport value appears in both the summary and the expanded row.
+    expect(screen.getAllByText('claude-daemon').length).toBeGreaterThan(0)
+  })
+
+  test('renders nothing for a claude-headless transport (not a daemon)', () => {
+    const { container } = render(
+      <LaunchConfigRow conversation={convWithTransport('claude-headless', { headless: true })} />,
+    )
+    expect(container.firstChild).toBeNull()
   })
 
   test('shows the mcp config path and system prompt suffix when set', () => {

@@ -4,6 +4,8 @@ import { DEFAULT_SENTINEL_NAME, parseProjectUri } from '@shared/project-uri'
 import type { ComponentProps } from 'react'
 import { LaunchConfigFields, type LaunchFieldsValue } from '@/components/launch-config-fields'
 import { type BackendKind, BackendSelect } from '@/components/spawn-dialog/backend-select'
+import type { ClaudeTransport } from '@/components/spawn-dialog/process-model'
+import { ProcessModelSegmented } from '@/components/spawn-dialog/process-model-segmented'
 import { SentinelProfileRadio } from '@/components/spawn-dialog/sentinel-profile-radio'
 import { TogglePill } from '@/components/ui/toggle-pill'
 import type { SentinelStatusInfo } from '@/hooks/use-conversations'
@@ -94,6 +96,25 @@ export function BackendSection({
   return (
     <Section title="Backend">
       <BackendSelect value={backend} onChange={handleChange} chatAvailable hermesAvailable />
+    </Section>
+  )
+}
+
+/**
+ * Process model picker for the claude family (transport reframe Phase 5):
+ * Interactive PTY / Headless / Daemon. Maps to `transport`; the daemon option
+ * replaces the legacy `backend === 'daemon'` selection.
+ */
+export function ProcessModelSection({
+  transport,
+  onChange,
+}: {
+  transport: ClaudeTransport
+  onChange: (transport: ClaudeTransport) => void
+}) {
+  return (
+    <Section title="Process model">
+      <ProcessModelSegmented value={transport} onChange={onChange} showHeading={false} />
     </Section>
   )
 }

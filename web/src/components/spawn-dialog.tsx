@@ -53,6 +53,13 @@ import {
 } from './spawn-dialog/daemon-launch'
 import { DaemonModePanel } from './spawn-dialog/daemon-mode-panel'
 import { DaemonRosterBrowser } from './spawn-dialog/daemon-roster-browser'
+import {
+  type ClaudeTransport,
+  deriveClaudeTransport,
+  isClaudeFamilyBackend,
+  processModelToBackendHeadless,
+} from './spawn-dialog/process-model'
+import { ProcessModelSegmented } from './spawn-dialog/process-model-segmented'
 import { SentinelProfileRadio } from './spawn-dialog/sentinel-profile-radio'
 
 /** Mirrors src/broker/backends/opencode.ts deriveOpenCodeSlug -- needed
@@ -364,6 +371,24 @@ export function SpawnDialog() {
     setJobId(null)
   }, [progress.launch.conversationId, progress.spawnedConversation, progress.setViewCountdown])
 
+  // Derived claude "Process model" (transport). Daemon is no longer a backend
+  // (transport reframe Phase 5) -- it is the third claude process model. The
+  // (backend, headless) pair stays the persisted source of truth (the dialog +
+  // launch profiles still dual-write backend:'daemon'); transport is derived
+  // from it and drives the daemon-specific UI gate.
+  const transport: ClaudeTransport = deriveClaudeTransport(backend, headless)
+  const showProcessModel = isClaudeFamilyBackend(backend)
+  const isDaemonTransport = transport === 'claude-daemon'
+  const setProcessModel = useCallback(
+    (pm: ClaudeTransport) => {
+      const next = processModelToBackendHeadless(pm, headless)
+      setBackend(next.backend)
+      setHeadless(next.headless)
+      haptic('tap')
+    },
+    [headless],
+  )
+
   const handleSpawn = useCallback(async () => {
     if (!state.options || phase !== 'config') return
 
@@ -372,10 +397,10 @@ export function SpawnDialog() {
     const newJobId = crypto.randomUUID()
     let spawnReq: SpawnRequest
 
-    if (backend === 'daemon') {
-      // Daemon launch: validate the active mode, then shape the request.
-      // NEW/RESUME validate the config form; ATTACH validates the picked
-      // roster worker.
+    if (isDaemonTransport) {
+      // Daemon launch (transport === 'claude-daemon'): validate the active
+      // mode, then shape the request. NEW/RESUME validate the config form;
+      // ATTACH validates the picked roster worker.
       const daemonValidation =
         daemonMode === 'attach'
           ? validateDaemonAttach(daemonAttach?.short)
@@ -434,6 +459,10 @@ export function SpawnDialog() {
         env: parsedEnv || undefined,
         jobId: newJobId,
         backend: backend !== 'claude' ? backend : undefined,
+        // Write the canonical transport for claude PTY/headless launches
+        // (transport reframe). Other backends resolve their own transport
+        // broker-side, so leave it absent.
+        transport: backend === 'claude' ? transport : undefined,
         chatConnectionId: backend === 'chat-api' ? chatConnectionId || undefined : undefined,
         chatConnectionName:
           backend === 'chat-api' ? chatConnections.find(a => a.id === chatConnectionId)?.name : undefined,
@@ -484,6 +513,8 @@ export function SpawnDialog() {
     worktreeName,
     envText,
     backend,
+    transport,
+    isDaemonTransport,
     chatConnectionId,
     chatConnections,
     openCodeModel,
@@ -493,6 +524,7 @@ export function SpawnDialog() {
     daemonForm,
     daemonAttach,
     sentinelProfile,
+    sentinelPool,
     progress,
     description.trim,
   ])
@@ -508,14 +540,12 @@ export function SpawnDialog() {
         else if (phase === 'launching' && progress.isConnected) handleViewConversation()
       },
       h: () => {
-        if (phase !== 'config') return
-        setHeadless(true)
-        haptic('tap')
+        if (phase !== 'config' || !showProcessModel) return
+        setProcessModel('claude-headless')
       },
       p: () => {
-        if (phase !== 'config') return
-        setHeadless(false)
-        haptic('tap')
+        if (phase !== 'config' || !showProcessModel) return
+        setProcessModel('claude-pty')
       },
       '1': () => {
         if (phase !== 'config') return
@@ -551,11 +581,9 @@ export function SpawnDialog() {
         setBackend('opencode')
         haptic('tap')
       },
-      'alt+5': () => {
-        if (phase !== 'config') return
-        setBackend('daemon')
-        haptic('tap')
-      },
+      // Daemon is no longer a backend hotkey (transport reframe) -- it is the
+      // "Daemon" Process model for the claude backend, picked via the
+      // ProcessModelSegmented control.
     },
     { id: 'spawn-dialog', enabled: state.open },
   )
@@ -798,10 +826,12 @@ export function SpawnDialog() {
                   }}
                 />
               </div>
-              {/* Backend selector (Claude / Chat / Hermes / OpenCode) */}
+              {/* Backend selector (Claude / Chat / Hermes / OpenCode). Daemon
+                  collapses to Claude here -- it is selected via the Process
+                  model control below (transport reframe Phase 5). */}
               <div className="shrink-0">
                 <BackendSelect
-                  value={backend}
+                  value={backend === 'daemon' ? 'claude' : backend}
                   onChange={v => {
                     if (profileId && v !== backend) setProfileId(undefined)
                     setBackend(v)
@@ -810,6 +840,14 @@ export function SpawnDialog() {
                   hermesAvailable={hermesGateways.some(g => g.connected)}
                 />
               </div>
+
+              {/* Process model (claude family only): Interactive PTY / Headless
+                  / Daemon -- maps to transport. */}
+              {showProcessModel && (
+                <div className="shrink-0 px-1.5">
+                  <ProcessModelSegmented value={transport} onChange={setProcessModel} shortcutHints />
+                </div>
+              )}
 
               {/* Sentinel-profile selector -- only rendered when the target
                   sentinel reports >1 profile (single-profile sentinels have
@@ -837,8 +875,9 @@ export function SpawnDialog() {
                 </div>
               )}
 
-              {/* -- Daemon config (New / Resume / Attach) -- */}
-              {backend === 'daemon' ? (
+              {/* -- Daemon config (New / Resume / Attach) -- gated on the
+                  daemon transport (transport reframe Phase 5). -- */}
+              {isDaemonTransport ? (
                 <div className="flex flex-col gap-3 px-1.5 py-1 overflow-y-auto flex-1 min-h-0">
                   <DaemonModeSegmented
                     mode={daemonMode}
@@ -1056,11 +1095,12 @@ export function SpawnDialog() {
                   <div className="overflow-y-auto flex-1 min-h-0 space-y-4 px-1.5 py-1">
                     {configTab === 'basic' && (
                       <div className="space-y-3">
+                        {/* Headless/PTY is now the Process model control above; the
+                            basic tab no longer renders a separate Mode toggle. */}
                         <LaunchConfigFields
                           value={fieldsValue}
                           onChange={applyFieldsPatch}
-                          show={{ headless: true, name: true, description: true, model: true, effort: true }}
-                          headlessShortcutHints
+                          show={{ name: true, description: true, model: true, effort: true }}
                         />
                       </div>
                     )}
