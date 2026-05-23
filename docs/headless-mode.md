@@ -7,7 +7,9 @@
 ## Headless Mode (stream-json backend)
 
 `rclaude --headless` or `RCLAUDE_HEADLESS=1` uses Claude's `--print` mode with
-structured NDJSON I/O instead of PTY. Default for agent-spawned sessions.
+structured NDJSON I/O instead of PTY. Explicitly selectable; since the Phase 8
+transport-reframe cutover (2026-05-23) the default for agent-spawned sessions is
+the `claude-daemon` transport (see `docs/daemon-mode.md`).
 
 **Protocol reference:** `docs/stream-json-protocol.md` (879 lines, reverse-engineered)
 

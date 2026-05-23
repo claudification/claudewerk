@@ -30,10 +30,11 @@ const GlobalSettingsSchema = z.object({
   // Supersedes defaultLaunchMode at the GLOBAL tier for agent-spawn resolution
   // (profile/project launch modes still override). The control panel spawn
   // dialog is unaffected -- it always names a transport explicitly.
-  // Schema default 'claude-pty': the conservative pre-cutover value. Phase 8
-  // flips it to 'claude-daemon' once the Tier-2 live smoke is green and the
-  // post-June-15 billing pool is reconfirmed.
-  defaultTransport: z.object({ claude: transportEnum.default('claude-pty') }).default({ claude: 'claude-pty' }),
+  // Schema default 'claude-daemon' (Phase 8 cutover): agent-spawned claude
+  // conversations default to a subscription-billed daemon NEW-mode worker.
+  // 'claude-pty'/'claude-headless' remain explicitly selectable via the
+  // per-backend map (settings UI + spawn dialog).
+  defaultTransport: z.object({ claude: transportEnum.default('claude-daemon') }).default({ claude: 'claude-daemon' }),
   defaultEffort: z.enum(['default', 'low', 'medium', 'high', 'max']).default('default'),
   defaultModel: z.string().max(50).default(''),
   // Spawn dialog defaults
@@ -62,8 +63,8 @@ export function initGlobalSettings(store: KVStore): void {
     try {
       // A pre-Phase-3 blob may still carry the removed `defaultBackend` enum;
       // zod strips unknown keys, so it parses cleanly and falls back to the
-      // `defaultTransport` schema default (`claude-pty`). The Phase-3 migration
-      // already rewrote live blobs to carry `defaultTransport`.
+      // `defaultTransport` schema default (`claude-daemon`). The Phase-3
+      // migration already rewrote live blobs to carry `defaultTransport`.
       settings = GlobalSettingsSchema.parse(raw)
     } catch {
       // Soft fail - use defaults

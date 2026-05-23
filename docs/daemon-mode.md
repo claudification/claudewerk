@@ -5,14 +5,20 @@ reframe, `.claude/docs/plan-claude-transport-reframe.md`):
 
 | Transport         | Wire mechanism                          | Default for          |
 | ----------------- | --------------------------------------- | -------------------- |
-| `claude-pty`      | terminal emulation (interactive)        | user-interactive     |
+| `claude-pty`      | terminal emulation (interactive)        | user-interactive (selectable) |
 | `claude-headless` | stream-json over stdin/stdout           | (selectable)         |
-| `claude-daemon`   | the cc-daemon control socket (attach + reply + subscribe) | agent-spawned (Phase 8 flip) |
+| `claude-daemon`   | the cc-daemon control socket (attach + reply + subscribe) | **agent-spawned (default since Phase 8, 2026-05-23)** |
 
 Daemon mode attaches to a background `claude` worker hosted by the Claude Code
 supervisor daemon (`claude daemon`, 2.1.143+). The worker is billed against the
 Anthropic **subscription pool**, not the API pool -- the strategic reason daemon
-becomes the default transport after the 2026-06-15 billing reclassification.
+is now the default transport for agent-spawned conversations. The Phase 8
+cutover (`defaultTransport.claude` = `claude-daemon` in
+`src/broker/global-settings.ts`) governs agent-spawned launches (MCP
+`spawn_conversation`, inter-conversation `channel_spawn`); the control-panel
+spawn dialog always names a transport explicitly, so PTY and headless remain one
+click away. The subscription-pool billing is re-verified against the 2026-06-15
+billing reclassification (see the plan's Phase 8 release-gate).
 
 The worker is owned by the daemon, not by claudewerk. claudewerk attaches to its
 PTY (mirrored to the broker as `terminal_data`) and observes its state via the

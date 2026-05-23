@@ -21,19 +21,19 @@ function fakeKv(initial?: Record<string, unknown>): KVStore {
 afterAll(() => initGlobalSettings(fakeKv({})))
 
 describe('global-settings defaultTransport (transport reframe)', () => {
-  it('schema default: defaultTransport.claude is claude-pty', () => {
+  it('schema default: defaultTransport.claude is claude-daemon (Phase 8 cutover)', () => {
     initGlobalSettings(fakeKv())
-    expect(getGlobalSettings().defaultTransport.claude).toBe('claude-pty')
+    expect(getGlobalSettings().defaultTransport.claude).toBe('claude-daemon')
   })
 
   it('within-object default fills claude when defaultTransport is set without it', () => {
     initGlobalSettings(fakeKv({ defaultTransport: {} }))
-    expect(getGlobalSettings().defaultTransport.claude).toBe('claude-pty')
+    expect(getGlobalSettings().defaultTransport.claude).toBe('claude-daemon')
   })
 
-  it('honors a stored defaultTransport.claude value', () => {
-    initGlobalSettings(fakeKv({ defaultTransport: { claude: 'claude-daemon' } }))
-    expect(getGlobalSettings().defaultTransport.claude).toBe('claude-daemon')
+  it('honors a stored defaultTransport.claude value (overrides the daemon default)', () => {
+    initGlobalSettings(fakeKv({ defaultTransport: { claude: 'claude-pty' } }))
+    expect(getGlobalSettings().defaultTransport.claude).toBe('claude-pty')
   })
 
   it('parses a pre-Phase-6 blob carrying the removed defaultBackend (zod strips it, falls back to the default)', () => {
@@ -42,13 +42,13 @@ describe('global-settings defaultTransport (transport reframe)', () => {
     // removed field parses cleanly (key stripped) to the schema default.
     initGlobalSettings(fakeKv({ defaultBackend: 'daemon' }))
     const s = getGlobalSettings()
-    expect(s.defaultTransport.claude).toBe('claude-pty')
+    expect(s.defaultTransport.claude).toBe('claude-daemon')
     expect('defaultBackend' in s).toBe(false)
   })
 
-  it('updateGlobalSettings persists a new defaultTransport value', () => {
+  it('updateGlobalSettings persists a new defaultTransport value (overriding the daemon default)', () => {
     initGlobalSettings(fakeKv())
-    const { settings } = updateGlobalSettings({ defaultTransport: { claude: 'claude-daemon' } })
-    expect(settings.defaultTransport.claude).toBe('claude-daemon')
+    const { settings } = updateGlobalSettings({ defaultTransport: { claude: 'claude-pty' } })
+    expect(settings.defaultTransport.claude).toBe('claude-pty')
   })
 })

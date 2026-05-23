@@ -89,6 +89,15 @@ scope links, tasks, cost turns, hourly rollups). Analytics and the project
 registry live in sibling SQLite files. Nothing touches the host filesystem --
 the Docker volume is the single source of truth.
 
+**Backends x transports:** claudewerk hosts the `claude` backend across three
+transports -- `claude-pty` (interactive terminal, the TTY tunnel above),
+`claude-headless` (stream-json over stdin/stdout), and `claude-daemon` (the
+`cc-daemon` background-worker socket). The daemon transport is the **default
+for agent-spawned conversations** (MCP `spawn_conversation`, inter-conversation
+`channel_spawn`): it bills the Claude subscription pool and survives an
+agent-host crash. Control-panel launches always name a transport explicitly, so
+PTY and headless stay one click away. See `docs/daemon-mode.md`.
+
 **Project URIs** are canonical: `claude://default/{absolute_path}`. The
 authority slot is the sentinel name (`default` = local install; multi-sentinel
 fills in real host names). See `src/shared/project-uri.ts` for parse /
