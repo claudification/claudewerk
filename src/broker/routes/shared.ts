@@ -141,9 +141,20 @@ export interface ConversationOverview {
   // list_conversations, third-party tools) from re-parsing the URI to find
   // the resolved profile.
   sentinelProfile?: string
+  /** Direct spawner conversationId. See plan-spawn-parent-tracking.md. */
+  parentConversationId?: string
+  /** Topmost ancestor in the spawn chain. Stable grouping key for the UI. */
+  rootConversationId?: string
+  /** Count of conversations that have this conversation as their direct parent.
+   *  0 = no spawned children. REST-only; WS clients derive from local list. */
+  directChildCount?: number
 }
 
-export function conversationToOverview(conv: Conversation, conversationStore: ConversationStore): ConversationOverview {
+export function conversationToOverview(
+  conv: Conversation,
+  conversationStore: ConversationStore,
+  directChildCount?: number,
+): ConversationOverview {
   const lastEvent = conv.events[conv.events.length - 1]
   const sentinelProfile = conv.resolvedProfile || undefined
   return {
@@ -164,7 +175,23 @@ export function conversationToOverview(conv: Conversation, conversationStore: Co
     prLinks: conv.prLinks,
     lastEvent: lastEvent ? { hookEvent: lastEvent.hookEvent, timestamp: lastEvent.timestamp } : undefined,
     sentinelProfile,
+    parentConversationId: conv.parentConversationId,
+    rootConversationId: conv.rootConversationId,
+    directChildCount: directChildCount ?? 0,
   }
+}
+
+/** Build the parent -> directChildCount aggregate for the conversation set.
+ *  Single O(N) pass; safe to call once per overview-list request and reuse the
+ *  map across rows. For single-row endpoints we filter the conversation list
+ *  directly -- the cost is the same and avoids materializing the map. */
+export function buildDirectChildCounts(conversations: Conversation[]): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const c of conversations) {
+    const parent = c.parentConversationId
+    if (parent) counts.set(parent, (counts.get(parent) ?? 0) + 1)
+  }
+  return counts
 }
 
 // ─── Broadcast helper ──────────────────────────────────────────────────

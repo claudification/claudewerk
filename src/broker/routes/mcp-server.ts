@@ -298,7 +298,17 @@ function createMcpServer(
         .describe('Filter. Default = active+idle (everything not ended).'),
     },
     async ({ status }) => {
-      let conversations = conversationStore.getAllConversations()
+      const all = conversationStore.getAllConversations()
+      // directChildCount aggregate: built against the FULL set so a filter
+      // (e.g. status='active') still surfaces accurate counts for parents whose
+      // children fell outside the filter.
+      const childCounts = new Map<string, number>()
+      for (const c of all) {
+        if (c.parentConversationId) {
+          childCounts.set(c.parentConversationId, (childCounts.get(c.parentConversationId) ?? 0) + 1)
+        }
+      }
+      let conversations = all
       if (status && status !== 'all') {
         conversations = conversations.filter(c => c.status === status)
       } else if (!status) {
@@ -313,6 +323,9 @@ function createMcpServer(
         agentHostType: c.agentHostType,
         startedAt: c.startedAt,
         lastActivity: c.lastActivity,
+        parentConversationId: c.parentConversationId,
+        rootConversationId: c.rootConversationId,
+        directChildCount: childCounts.get(c.id) ?? 0,
       }))
       return { content: [{ type: 'text', text: JSON.stringify(summary, null, 2) }] }
     },

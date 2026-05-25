@@ -3128,6 +3128,12 @@ export interface ConversationSummary {
    *  | 'claude-daemon'. The canonical discriminator the control panel keys
    *  daemon-specific UI off. */
   transport?: string
+  /** Direct spawner conversationId (mirrors `Conversation.parentConversationId`).
+   *  See plan-spawn-parent-tracking.md. Stable for the lifetime of the conversation. */
+  parentConversationId?: string
+  /** Topmost ancestor in the spawn chain (mirrors `Conversation.rootConversationId`).
+   *  Grouping key for the control panel project list. */
+  rootConversationId?: string
 }
 
 // Subscription channels (dashboard <-> broker pub/sub)

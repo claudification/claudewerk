@@ -16,7 +16,7 @@ import { validateShare } from '../shares'
 import type { TerminationLog } from '../termination-log'
 import { processImagesInEntry } from './blob-store'
 import type { RouteHelpers } from './shared'
-import { broadcastToSubscribers, conversationToOverview } from './shared'
+import { broadcastToSubscribers, buildDirectChildCounts, conversationToOverview } from './shared'
 
 export function createConversationsRouter(
   conversationStore: ConversationStore,
@@ -31,15 +31,22 @@ export function createConversationsRouter(
     const conversations = activeOnly
       ? conversationStore.getActiveConversations()
       : conversationStore.getAllConversations()
+    // Aggregate parent -> child count across the FULL conversation set (not
+    // just the active subset): an ended parent shouldn't lose its child count
+    // when the list filters to active-only.
+    const childCounts = buildDirectChildCounts(conversationStore.getAllConversations())
     const filtered = filterConversationsByHttpGrants(c.req.raw, conversations)
-    return c.json(filtered.map(s => conversationToOverview(s, conversationStore)))
+    return c.json(filtered.map(s => conversationToOverview(s, conversationStore, childCounts.get(s.id) ?? 0)))
   })
 
   app.get('/conversations/:id', c => {
     const conv = conversationStore.getConversation(c.req.param('id'))
     if (!conv) return c.json({ error: 'Conversation not found' }, 404)
     if (!httpHasPermission(c.req.raw, 'chat:read', conv.project, conv.id)) return c.json({ error: 'Forbidden' }, 403)
-    return c.json(conversationToOverview(conv, conversationStore))
+    const childCount = conversationStore
+      .getAllConversations()
+      .reduce((n, x) => (x.parentConversationId === conv.id ? n + 1 : n), 0)
+    return c.json(conversationToOverview(conv, conversationStore, childCount))
   })
 
   app.get('/conversations/:id/events', c => {
@@ -361,7 +368,8 @@ export function createConversationsRouter(
       return slugify(s.id.slice(0, 8)) === slug
     })
     if (!match) return c.json({ error: 'Conversation not found' }, 404)
-    return c.json(conversationToOverview(match, conversationStore))
+    const childCount = all.reduce((n, x) => (x.parentConversationId === match.id ? n + 1 : n), 0)
+    return c.json(conversationToOverview(match, conversationStore, childCount))
   })
 
   app.get('/api/share-resolve/:token', c => {

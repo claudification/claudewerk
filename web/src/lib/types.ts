@@ -175,6 +175,16 @@ export interface Conversation {
    *  | 'claude-daemon'. The canonical discriminator the control panel keys
    *  daemon-specific UI off. */
   transport?: string
+  /** Direct spawner conversationId. NULL/absent = self-rooted (human-started).
+   *  Stable for the conversation's lifetime. See plan-spawn-parent-tracking.md. */
+  parentConversationId?: string
+  /** Topmost ancestor in the spawn chain. Grouping key for project-list
+   *  visual grouping: COALESCE(rootConversationId, id). */
+  rootConversationId?: string
+  /** Number of conversations whose parentConversationId == this.id. REST-only
+   *  field (set by /conversations + /conversations/:id); WS updates omit it
+   *  -- consumers needing live count derive it from the local list (O(N)). */
+  directChildCount?: number
 }
 
 // Project order tree types -- each leaf is a project keyed by project URI

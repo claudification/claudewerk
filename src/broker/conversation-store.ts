@@ -603,6 +603,8 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       // reports the `claude` family + the transport below.
       backend: conv.agentHostType && conv.agentHostType !== 'daemon' ? conv.agentHostType : 'claude',
       transport: conv.transport,
+      parentConversationId: conv.parentConversationId,
+      rootConversationId: conv.rootConversationId,
     }
   }
 
