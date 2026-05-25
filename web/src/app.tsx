@@ -5,6 +5,7 @@ import { AuthExpiredModal } from '@/components/auth-expired-modal'
 import { AuthGate } from '@/components/auth-gate'
 import { ChordOverlay } from '@/components/chord-overlay'
 import { CommandPalette } from '@/components/command-palette'
+import { BatchModeModal } from '@/components/command-palette/batch-mode'
 import { ConversationDetail } from '@/components/conversation-detail'
 import { DebugConsole } from '@/components/debug-console'
 import { Header } from '@/components/header'
@@ -68,6 +69,15 @@ function Dashboard() {
   const [showSentinelManager, setShowSentinelManager] = useState(false)
   const [showGatewayManager, setShowGatewayManager] = useState(false)
   const [showSearchIndex, setShowSearchIndex] = useState(false)
+  const [showBatchPalette, setShowBatchPalette] = useState(false)
+
+  useEffect(() => {
+    function open() {
+      setShowBatchPalette(true)
+    }
+    window.addEventListener('open-batch-palette', open)
+    return () => window.removeEventListener('open-batch-palette', open)
+  }, [])
 
   const { swUpdate, setSwUpdate } = useBuildUpdate()
 
@@ -283,6 +293,7 @@ function Dashboard() {
       <RenameModal />
       {canAdmin && <TaskBatchSelector />}
       {canAdmin && <ShortcutHelp />}
+      {canAdmin && <BatchModeModal open={showBatchPalette} onClose={() => setShowBatchPalette(false)} />}
 
       {showUserAdmin && (
         <Suspense fallback={null}>

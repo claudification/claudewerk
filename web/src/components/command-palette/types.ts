@@ -10,7 +10,7 @@ export interface PaletteCommand {
   action: () => void
 }
 
-export type PaletteMode = 'conversation' | 'command' | 'file' | 'spawn' | 'task' | 'theme'
+export type PaletteMode = 'conversation' | 'command' | 'file' | 'spawn' | 'task' | 'theme' | 'batch'
 
 /** Merged result item for the no-prefix palette: conversations + commands fuzzy-matched together. */
 export type MergedItem =

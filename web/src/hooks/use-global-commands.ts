@@ -303,6 +303,26 @@ export function useGlobalCommands(toggleSidebar: () => void) {
     when: () => useConversationsStore.getState().permissions.canEditUsers,
   })
 
+  useCommand('open-batch-operations', () => window.dispatchEvent(new Event('open-batch-palette')), {
+    label: 'Batch operations',
+    group: 'System',
+    when: () => useConversationsStore.getState().permissions.canAdmin,
+  })
+
+  useChordCommand(
+    'batch-operations-chord',
+    () => {
+      if (!useConversationsStore.getState().permissions.canAdmin) return
+      window.dispatchEvent(new Event('open-batch-palette'))
+    },
+    {
+      label: 'Batch operations',
+      key: 'b',
+      group: 'System',
+      when: () => useConversationsStore.getState().permissions.canAdmin,
+    },
+  )
+
   useCommand('manage-sentinels', () => window.dispatchEvent(new Event('open-sentinel-manager')), {
     label: 'Manage sentinels',
     group: 'System',
