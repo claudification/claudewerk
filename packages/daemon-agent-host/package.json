@@ -1,0 +1,24 @@
+{
+  "name": "@claudewerk/daemon-agent-host",
+  "version": "0.1.0",
+  "description": "Claudwerk agent host that attaches to a Claude Code cc-daemon background worker (subscription-billed)",
+  "bin": {
+    "daemon-host": "bin/daemon-host"
+  },
+  "files": [
+    "bin/daemon-host",
+    "bin/daemon-host.map"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/claudification/claudewerk.git",
+    "directory": "packages/daemon-agent-host"
+  },
+  "keywords": [
+    "claudewerk",
+    "claude-code",
+    "agent-host",
+    "daemon"
+  ]
+}

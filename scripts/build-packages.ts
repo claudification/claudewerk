@@ -1,8 +1,9 @@
 #!/usr/bin/env bun
 // Build script for the npm-distributed packages:
-//   - @claudewerk/claude-agent-host  -> packages/claude-agent-host/bin/rclaude
+//   - @claudewerk/claude-agent-host   -> packages/claude-agent-host/bin/rclaude
 //   - @claudewerk/opencode-agent-host -> packages/opencode-agent-host/bin/opencode-host
-//   - @claudewerk/sentinel           -> packages/sentinel/bin/sentinel
+//   - @claudewerk/daemon-agent-host   -> packages/daemon-agent-host/bin/daemon-host
+//   - @claudewerk/sentinel            -> packages/sentinel/bin/sentinel
 //
 // Same dirty-tree refusal as build-broker. These bundles are what `~/.bun/bin/rclaude`
 // and `~/.bun/bin/sentinel` resolve to via chained symlinks -- shipping WIP here
@@ -39,6 +40,12 @@ const TARGETS: PackageBuild[] = [
     entry: 'src/opencode-agent-host/index.ts',
     outdir: 'packages/opencode-agent-host/bin',
     binName: 'opencode-host',
+  },
+  {
+    name: 'daemon-agent-host',
+    entry: 'src/daemon-agent-host/index.ts',
+    outdir: 'packages/daemon-agent-host/bin',
+    binName: 'daemon-host',
   },
   {
     name: 'sentinel',
