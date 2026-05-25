@@ -231,6 +231,16 @@ const reviveConversation: MessageHandler = (ctx, data) => {
   const conversation = ctx.conversations.getConversation(conversationId)
   if (!conversation) throw new GuardError('Conversation not found')
   if (conversation.status === 'active') throw new GuardError('Conversation is already active')
+  // Live-socket guard (was missing -- caused the duplicate-boot flap):
+  // status can be 'idle' while a healthy agent host socket is still open
+  // (agent waiting for input). Dispatching a revive in that state spawns
+  // a SECOND rclaude for the same conversationId; its boot displaces the
+  // original socket in the broker registry and the original conv goes
+  // dark even though its process is fine. Block here -- the user must
+  // explicitly terminate first.
+  if (ctx.conversations.getActiveConversationCount(conversationId) > 0) {
+    throw new GuardError('Conversation has a live agent host socket (already alive)')
+  }
   ctx.requirePermission('spawn', conversation.project)
 
   const sentinel = ctx.getSentinel()

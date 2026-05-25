@@ -265,6 +265,13 @@ export function createConversationsRouter(
     const conv = conversationStore.getConversation(targetId)
     if (!conv) return c.json({ error: 'Conversation not found' }, 404)
     if (conv.status === 'active') return c.json({ error: 'Conversation is already active' }, 400)
+    // Live-socket guard: status can be 'idle' while a healthy agent host
+    // socket is still open. Without this, REST revive spawns a SECOND
+    // rclaude for the same conversationId and its boot displaces the
+    // original socket. See `reviveConversation` in control-panel-actions.ts.
+    if (conversationStore.getActiveConversationCount(targetId) > 0) {
+      return c.json({ error: 'Conversation has a live agent host socket (already alive)' }, 409)
+    }
 
     // If called with X-Caller-Conversation header, check benevolent trust
     const callerConversationId = c.req.header('X-Caller-Conversation')
