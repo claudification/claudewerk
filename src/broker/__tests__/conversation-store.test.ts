@@ -557,6 +557,64 @@ describe('conversation socket tracking', () => {
     expect(store.getActiveConversationCount('sock-remove')).toBe(0)
     expect(store.getConversationSocket('sock-remove')).toBeUndefined()
   })
+
+  // Regression: silently evicting a still-OPEN orphan WS from the registry
+  // on same-key replacement is the root cause of the broker-says-ENDED /
+  // host-says-LIVE flap. Boot/meta replace overwrites the slot; if the old
+  // WS isn't closed, it stays alive and keeps pumping events while the
+  // reaper believes liveSockets=0. setConversationSocket MUST close the
+  // orphan with code 4410.
+  it('setConversationSocket closes the previous OPEN socket on same-key replacement', () => {
+    store.createConversation('orphan-close', '/cwd')
+    const ws1 = mockSocket('ws-1')
+    let closedCode: number | undefined
+    let closedReason: string | undefined
+    ws1.close = ((code?: number, reason?: string) => {
+      closedCode = code
+      closedReason = reason
+    }) as ServerWebSocket<unknown>['close']
+
+    store.setConversationSocket('orphan-close', 'orphan-close', ws1)
+    const ws2 = mockSocket('ws-2')
+    store.setConversationSocket('orphan-close', 'orphan-close', ws2)
+
+    expect(closedCode).toBe(4410)
+    expect(closedReason).toBe('orphaned-by-reconnect')
+    expect(store.getConversationSocket('orphan-close')).toBe(ws2)
+  })
+
+  it('setConversationSocket does NOT call close() on a non-OPEN socket', () => {
+    store.createConversation('orphan-already-closed', '/cwd')
+    const ws1 = mockSocket('ws-1')
+    let closeCalled = false
+    ws1.close = (() => {
+      closeCalled = true
+    }) as ServerWebSocket<unknown>['close']
+    // Force CLOSING state to mimic an already-shutting-down socket.
+    Object.defineProperty(ws1, 'readyState', { value: 2, writable: true })
+
+    store.setConversationSocket('orphan-already-closed', 'orphan-already-closed', ws1)
+    const ws2 = mockSocket('ws-2')
+    store.setConversationSocket('orphan-already-closed', 'orphan-already-closed', ws2)
+
+    expect(closeCalled).toBe(false)
+    expect(store.getConversationSocket('orphan-already-closed')).toBe(ws2)
+  })
+
+  it('setConversationSocket is idempotent for the same socket (no self-close)', () => {
+    store.createConversation('orphan-self', '/cwd')
+    const ws = mockSocket('ws-self')
+    let closeCalled = false
+    ws.close = (() => {
+      closeCalled = true
+    }) as ServerWebSocket<unknown>['close']
+
+    store.setConversationSocket('orphan-self', 'orphan-self', ws)
+    store.setConversationSocket('orphan-self', 'orphan-self', ws)
+
+    expect(closeCalled).toBe(false)
+    expect(store.getConversationSocket('orphan-self')).toBe(ws)
+  })
 })
 
 // ---------------------------------------------------------------------------

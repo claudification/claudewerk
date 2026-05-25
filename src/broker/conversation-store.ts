@@ -1633,6 +1633,26 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     return events
   }
 
+  // Close a WebSocket that's about to be (or has just been) evicted from the
+  // conversationSockets registry. Without this explicit close, the orphaned
+  // WS stays OPEN and keeps pumping events that the reaper has no idea about
+  // -- producing the "broker says ENDED, agent host says LIVE" flap. Code
+  // 4410 is the broker's "orphaned-by-reconnect" signal so the agent-host
+  // side learns it lost the slot. Skip non-OPEN sockets: a CLOSING/CLOSED
+  // socket will emit its own close event imminently and re-closing pollutes
+  // logs without effect.
+  function closeOrphanedSocket(orphan: ServerWebSocket<unknown>, label: string, reason: string): void {
+    const readyState = (orphan as { readyState?: number }).readyState ?? -1
+    if (readyState !== WebSocket.OPEN) return
+    try {
+      orphan.close(4410, reason)
+      console.log(`[${label}] closed orphan WS (code=4410 reason=${reason})`)
+    } catch (err) {
+      console.warn(`[${label}] orphan close threw: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  // fallow-ignore-next-line complexity
   function setConversationSocket(
     conversationId: string,
     connectionId: string,
@@ -1642,20 +1662,33 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     // Detect cross-conversation reuse first (agent host reconnected with same
     // connectionId but a different conversation) -- log it loudly because
     // this is rare and almost always a sign of confused upstream state.
+    // Close the orphan (same bug class as same-key replacement below).
     for (const [convId, wrappers] of conversationSockets.entries()) {
       if (convId !== conversationId && wrappers.has(connectionId)) {
+        const orphanWs = wrappers.get(connectionId)
         console.warn(
           `[socket-cross-conv] conn=${connectionId.slice(0, 8)} migrated from conv=${convId.slice(0, 8)} to conv=${conversationId.slice(0, 8)} via=${via}`,
         )
         wrappers.delete(connectionId)
         if (wrappers.size === 0) conversationSockets.delete(convId)
         broadcastConversationUpdate(convId)
+        if (orphanWs && orphanWs !== ws) {
+          closeOrphanedSocket(orphanWs, `socket-cross-conv ${convId.slice(0, 8)}`, 'orphaned-by-cross-conv-migrate')
+        }
       }
     }
 
     // Detect SAME-key socket replacement -- the silent overwrite that turns
-    // a healthy live socket into a phantom. This is the WS#1 / WS#2 race
-    // signal that surfaces the boot/meta flap.
+    // a healthy live socket into a phantom. FLAP ROOT CAUSE (fixed
+    // 2026-05-26): when an agent host reconnects and sends a fresh meta/boot
+    // on WS_B while WS_A is still alive at the same (conversationId,
+    // connectionId) slot, the bare Map.set() below would silently evict
+    // WS_A. WS_A stays OPEN, keeps pumping tasks_update / hook events tagged
+    // with the right conversationId, the reaper never sees it. When WS_B
+    // closes shortly after (normal end of its turn), the registry empties,
+    // the reaper phantom-ends the conv, but the orphan keeps talking forever.
+    // Fix below: close the orphan AFTER installing the replacement so the
+    // close-handler never sees a temporary 0-socket window.
     const existingWrappers = conversationSockets.get(conversationId)
     const existingWs = existingWrappers?.get(connectionId)
     if (existingWs && existingWs !== ws) {
@@ -1689,6 +1722,14 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       conversationSockets.set(conversationId, wrappers)
     }
     wrappers.set(connectionId, ws)
+
+    if (existingWs && existingWs !== ws) {
+      closeOrphanedSocket(
+        existingWs,
+        `socket-replace ${conversationId.slice(0, 8)}/${connectionId.slice(0, 8)}`,
+        'orphaned-by-reconnect',
+      )
+    }
   }
 
   /** Drop sockets that are not OPEN. Returns the post-prune size. */
