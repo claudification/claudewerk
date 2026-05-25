@@ -526,6 +526,24 @@ function shouldInjectConfigDir(configDir: string | undefined): configDir is stri
   return configDir !== join(homedir(), '.claude')
 }
 
+/**
+ * Env to feed `resolveControlSocket` / `resolveSockDir` so the right
+ * profile's daemon roster (~/.claude vs ~/.claude-work) is consulted.
+ * Always returns a concrete env -- an explicit env arg also engages strict
+ * mode in the resolver (no scan fallback, which can't disambiguate between
+ * profile-isolated daemons under `/tmp/cc-daemon-<uid>/`). Default profile
+ * gets `{}`, which `rosterPath()` resolves to `~/.claude/daemon/roster.json`.
+ *
+ * NOTE: when the resolved profile's daemon is up but has 0 workers yet,
+ * roster.json carries `supervisorPid` but no socket hints, so the strict
+ * resolver returns null. That edge case fails clean ("no socket reachable
+ * for profile=X") rather than silently routing to another profile's daemon.
+ */
+function socketEnvForProfile(profile?: ResolvedProfile): NodeJS.ProcessEnv {
+  const configDir = profile?.configDir
+  return shouldInjectConfigDir(configDir) ? { CLAUDE_CONFIG_DIR: configDir } : {}
+}
+
 // ─── Direct Headless Spawn ──────────────────────────────────────────
 
 /**
@@ -1066,9 +1084,17 @@ async function dispatchDaemonWorker(opts: {
     return { short: null, output: `dispatch spec assembly failed: ${(e as Error).message}` }
   }
 
-  const sock = resolveControlSocket()
+  // Profile-aware socket routing: cc-daemon is one-per-CLAUDE_CONFIG_DIR.
+  // Pass the profile's configDir explicitly so the right roster is read
+  // (default ~/.claude vs ~/.claude-work etc.). Bare resolveControlSocket()
+  // would always read process.env -- wrong for cross-profile spawns.
+  const sock = resolveControlSocket(socketEnvForProfile(opts.profile))
   if (!sock) {
-    return { short: null, output: 'daemon dispatch: no Claude Code daemon control socket reachable' }
+    const profileLabel = opts.profile?.name ? ` (profile=${opts.profile.name})` : ''
+    return {
+      short: null,
+      output: `daemon dispatch: no Claude Code daemon control socket reachable${profileLabel}`,
+    }
   }
 
   const flags = [
@@ -2956,10 +2982,14 @@ function connect(
             if (daemonMode === 'attach') {
               // daemonAttachShort is validated non-empty above.
               const attachShort = daemonAttachShort as string
-              const controlSock = resolveControlSocket()
+              // Profile-aware socket routing -- pick the daemon under the
+              // resolved profile's CLAUDE_CONFIG_DIR (the work-profile worker
+              // lives under a different daemon than the default-profile one).
+              const controlSock = resolveControlSocket(socketEnvForProfile(resolvedSpawnProfile))
               if (!controlSock) {
+                const profileLabel = resolvedSpawnProfile?.name ? ` (profile=${resolvedSpawnProfile.name})` : ''
                 sendDaemonFail(
-                  'daemon attach: no Claude Code daemon control socket reachable -- the daemon may have idle-exited',
+                  `daemon attach: no Claude Code daemon control socket reachable${profileLabel} -- the daemon may have idle-exited`,
                 )
                 break
               }
