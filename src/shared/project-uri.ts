@@ -247,12 +247,35 @@ export function normalizeProjectUri(uri: string): string {
 /** Collapse multi-slash leading scars and drop a trailing slash. Pre-2026-04-25
  *  data produced by `'claude:///' || cwd` concatenation (where cwd was already
  *  absolute) yielded URIs like 'claude:////Users/...' which WHATWG parses as
- *  authority='' + path='//Users/...' -- canonical form is a single slash. */
+ *  authority='' + path='//Users/...' -- canonical form is a single slash.
+ *
+ *  Also strips `/.claude/worktrees/<name>` segments via `aliasPath()` so a
+ *  worktree's URI folds back to its parent repo at every comparator. */
 function canonicalPath(rawPath: string): string {
-  let path = rawPath
+  let path = aliasPath(rawPath)
   if (path.startsWith('//')) path = path.replace(/^\/+/, '/')
   if (path !== '/' && path.endsWith('/')) path = path.slice(0, -1)
   return path
+}
+
+/** Strip `/.claude/worktrees/<name>` segments from a filesystem path so a
+ *  worktree's URI folds back to its parent repo. A worktree IS the same
+ *  project on a branch (see WORK MODE covenant) -- carrying the worktree
+ *  path in the project URI splits the project bucket and breaks spawn-lineage
+ *  grouping. Same pattern as `aliasScheme()` for `daemon://`.
+ *
+ *  Examples:
+ *    /repo/.claude/worktrees/foo            -> /repo
+ *    /repo/.claude/worktrees/foo/src/x.ts   -> /repo/src/x.ts
+ *    /repo/.claude/worktrees/a/.claude/worktrees/b -> /repo  (g flag handles nesting)
+ *
+ *  Lives at the parse seam (called from `canonicalPath()`) so every comparator
+ *  (normalize, match, projectIdentityKey) inherits the alias for free. The
+ *  worktree-name segment must be a single path component -- trailing-slash or
+ *  missing-name forms (`/.claude/worktrees/`, `/.claude/worktrees`) don't
+ *  match and pass through untouched. */
+export function aliasPath(path: string): string {
+  return path.replace(/\/\.claude\/worktrees\/[^/]+/g, '')
 }
 
 function projectWithoutConversation(uri: string): string {

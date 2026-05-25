@@ -718,3 +718,113 @@ describe('daemon scheme alias', () => {
     expect(isSameProject('opencode://default/foo', 'claude://default/foo')).toBe(false)
   })
 })
+
+describe('worktree path alias', () => {
+  // A worktree IS the same project on a branch (see WORK MODE covenant).
+  // `<repo>/.claude/worktrees/<name>` collapses to `<repo>` at the parse
+  // seam so spawn-lineage grouping (and every other project-keyed surface)
+  // treats a worktree-spawned conversation as belonging to its parent repo.
+
+  test('normalizeProjectUri strips a worktree-root segment', () => {
+    expect(normalizeProjectUri('claude://default/Users/jonas/projects/foo/.claude/worktrees/feature-x')).toBe(
+      'claude://default/Users/jonas/projects/foo',
+    )
+  })
+
+  test('normalizeProjectUri preserves trailing path after a worktree segment', () => {
+    expect(
+      normalizeProjectUri('claude://default/Users/jonas/projects/foo/.claude/worktrees/feature-x/src/bar.ts'),
+    ).toBe('claude://default/Users/jonas/projects/foo/src/bar.ts')
+  })
+
+  test('normalizeProjectUri collapses nested worktrees in one pass', () => {
+    expect(
+      normalizeProjectUri(
+        'claude://default/Users/jonas/projects/foo/.claude/worktrees/a/.claude/worktrees/b',
+      ),
+    ).toBe('claude://default/Users/jonas/projects/foo')
+  })
+
+  test('normalizeProjectUri preserves trailing path after nested worktrees', () => {
+    expect(
+      normalizeProjectUri(
+        'claude://default/Users/jonas/projects/foo/.claude/worktrees/a/.claude/worktrees/b/src/x.ts',
+      ),
+    ).toBe('claude://default/Users/jonas/projects/foo/src/x.ts')
+  })
+
+  test('normalizeProjectUri preserves fragment when stripping a worktree', () => {
+    expect(
+      normalizeProjectUri('claude://default/Users/jonas/projects/foo/.claude/worktrees/feature-x#conv_abc'),
+    ).toBe('claude://default/Users/jonas/projects/foo#conv_abc')
+  })
+
+  test('projectIdentityKey collapses worktree and parent into the same bucket', () => {
+    expect(projectIdentityKey('claude://default/Users/jonas/projects/foo/.claude/worktrees/feature-x')).toBe(
+      projectIdentityKey('claude://default/Users/jonas/projects/foo'),
+    )
+  })
+
+  test('isSameProject treats worktree URI as the same project as its parent repo', () => {
+    expect(
+      isSameProject(
+        'claude://default/Users/jonas/projects/foo/.claude/worktrees/feature-x',
+        'claude://default/Users/jonas/projects/foo',
+      ),
+    ).toBe(true)
+  })
+
+  test('compareProjectUri returns 0 for worktree vs parent repo', () => {
+    expect(
+      compareProjectUri(
+        'claude://default/Users/jonas/projects/foo/.claude/worktrees/feature-x',
+        'claude://default/Users/jonas/projects/foo',
+      ),
+    ).toBe(0)
+  })
+
+  test('matchProjectUri exact match across worktree alias', () => {
+    expect(
+      matchProjectUri(
+        'claude://default/Users/jonas/projects/foo',
+        'claude://default/Users/jonas/projects/foo/.claude/worktrees/feature-x',
+      ),
+    ).toBe(true)
+    expect(
+      matchProjectUri(
+        'claude://default/Users/jonas/projects/foo/.claude/worktrees/feature-x',
+        'claude://default/Users/jonas/projects/foo',
+      ),
+    ).toBe(true)
+  })
+
+  test('matchProjectUri trailing-glob still matches worktree-rooted children', () => {
+    expect(
+      matchProjectUri(
+        'claude://default/Users/jonas/projects/foo/*',
+        'claude://default/Users/jonas/projects/foo/.claude/worktrees/feature-x/src/bar.ts',
+      ),
+    ).toBe(true)
+  })
+
+  test('worktree alias applies regardless of scheme', () => {
+    expect(normalizeProjectUri('opencode://default/Users/jonas/projects/foo/.claude/worktrees/feature-x')).toBe(
+      'opencode://default/Users/jonas/projects/foo',
+    )
+  })
+
+  test('trailing-slash / missing-name forms are not worktree paths and pass through', () => {
+    expect(normalizeProjectUri('claude://default/Users/jonas/projects/foo/.claude/worktrees/')).toBe(
+      'claude://default/Users/jonas/projects/foo/.claude/worktrees',
+    )
+    expect(normalizeProjectUri('claude://default/Users/jonas/projects/foo/.claude/worktrees')).toBe(
+      'claude://default/Users/jonas/projects/foo/.claude/worktrees',
+    )
+  })
+
+  test('worktree alias composes with daemon scheme alias', () => {
+    expect(
+      normalizeProjectUri('daemon://default/Users/jonas/projects/foo/.claude/worktrees/feature-x'),
+    ).toBe('claude://default/Users/jonas/projects/foo')
+  })
+})
