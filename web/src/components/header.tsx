@@ -143,11 +143,12 @@ function StatusIndicator() {
 }
 
 function BatchSelectedPill() {
-  const { count, batchId, isAdmin } = useConversationsStore(s => ({
-    count: s.selectedForBatch.size,
-    batchId: s.currentBatchId,
-    isAdmin: s.permissions.canAdmin,
-  }))
+  // Individual selectors -- a single object-returning selector creates a new
+  // object on every render, fails Zustand's default Object.is equality, and
+  // crashes the header with React #185 (max update depth exceeded).
+  const count = useConversationsStore(s => s.selectedForBatch.size)
+  const batchId = useConversationsStore(s => s.currentBatchId)
+  const isAdmin = useConversationsStore(s => s.permissions.canAdmin)
   const clear = useConversationsStore(s => s.clearBatchSelection)
   if (!isAdmin || (count === 0 && !batchId)) return null
   return (
