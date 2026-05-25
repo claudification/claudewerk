@@ -112,6 +112,10 @@ interface ConversationsState {
   /** O(1) lookup index maintained alongside conversations[] */
   conversationsById: Record<string, Conversation>
   selectedConversationId: string | null
+  /** Reason passed to the last selectConversation call. Drives the locate pulse: a
+   *  direct click/touch passes 'click' to suppress the pulse; programmatic selections
+   *  (spawn, command-palette, deep-link, defaults) pulse to draw attention. */
+  lastSelectReason: string | null
   selectedProjectUri: string | null
   selectedSubagentId: string | null
   conversationMru: string[]
@@ -591,6 +595,7 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   conversations: [],
   conversationsById: {},
   selectedConversationId: null,
+  lastSelectReason: null,
   selectedProjectUri: null,
   selectedSubagentId: null,
   conversationMru: [],
@@ -936,6 +941,7 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
       const closeTerminal = state.showTerminal ? { showTerminal: false, terminalWrapperId: null } : {}
       return {
         selectedConversationId: id,
+        lastSelectReason: reason ?? null,
         selectedProjectUri: null,
         selectedSubagentId: null,
         requestedTab: rememberedTab || (defaultView === 'tty' ? 'tty' : 'transcript'),

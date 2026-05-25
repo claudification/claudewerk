@@ -143,7 +143,7 @@ function Dashboard() {
 
   function handleSwitcherSelect(id: string) {
     const store = useConversationsStore.getState()
-    store.selectConversation(id)
+    store.selectConversation(id, 'command-palette')
     store.setShowSwitcher(false)
     if (!isMobileViewport()) {
       requestAnimationFrame(() => focusInputEditor())

@@ -777,7 +777,7 @@ const ConversationItemFull = memo(function ConversationItemFull({ conversation }
 
   function handleClick() {
     haptic('tap')
-    selectConversation(conversation.id)
+    selectConversation(conversation.id, 'click')
   }
 
   return (
@@ -1091,7 +1091,7 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
 
   function handleClick() {
     haptic('tap')
-    selectConversation(conversation.id)
+    selectConversation(conversation.id, 'click')
   }
 
   // Compute identity/state values once -- consumed by meta footer (desktop) or
@@ -1433,12 +1433,12 @@ export const InactiveProjectItem = memo(
             tabIndex={0}
             onClick={() => {
               haptic('tap')
-              selectConversation(latest.id)
+              selectConversation(latest.id, 'click')
             }}
             onKeyDown={e => {
               if (e.key === 'Enter' || e.key === ' ') {
                 haptic('tap')
-                selectConversation(latest.id)
+                selectConversation(latest.id, 'click')
               }
             }}
             className="w-full text-left border border-border hover:border-primary p-2 pl-3 transition-colors cursor-pointer"

@@ -41,7 +41,6 @@ export function ProjectList() {
   const showEnded = useConversationsStore(s => s.controlPanelPrefs.showEndedConversations)
   const showInactive = useConversationsStore(s => s.controlPanelPrefs.showInactiveByDefault)
   const updatePrefs = useConversationsStore(s => s.updateControlPanelPrefs)
-  const [_pulseConversationId, setPulseConversationId] = useState<string | null>(null)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
     try {
       const stored = localStorage.getItem('collapsed-groups')
@@ -182,14 +181,22 @@ export function ProjectList() {
     })
   }
 
-  // Scroll the selected conversation into view and pulse it
-  function scrollToSelected() {
+  // Scroll the selected conversation into view. Always safe to call -- block:'nearest'
+  // is a no-op when the item is already fully visible (e.g. you just clicked it).
+  function scrollSelectedIntoView() {
     if (!selectedConversationId) return
-    setPulseConversationId(selectedConversationId)
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-conversation-id="${selectedConversationId}"]`)
+      el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    })
+  }
+
+  // Pulse-glow the selected conversation to draw attention to it.
+  function pulseSelected() {
+    if (!selectedConversationId) return
     requestAnimationFrame(() => {
       const el = document.querySelector(`[data-conversation-id="${selectedConversationId}"]`)
       if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
         el.classList.remove('conversation-pulse')
         // Force reflow so re-adding the class restarts the animation
         void (el as HTMLElement).offsetWidth
@@ -197,19 +204,23 @@ export function ProjectList() {
         setTimeout(() => el.classList.remove('conversation-pulse'), 1500)
       }
     })
-    setTimeout(() => setPulseConversationId(null), 1500)
   }
 
-  // Auto-scroll + pulse when selection changes (e.g. via Ctrl+K)
+  // Selection changed: ALWAYS scroll into view, but only pulse for programmatic
+  // selections (spawn, command-palette, deep-link, defaults). A direct click/touch
+  // passes reason 'click' and is left silent -- you don't need a flourish on the
+  // thing your finger is already on.
   useEffect(() => {
-    scrollToSelected()
+    scrollSelectedIntoView()
+    if (useConversationsStore.getState().lastSelectReason !== 'click') pulseSelected()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedConversationId])
 
-  // Allow external callers (e.g. locate button, mobile sheet open) to trigger scroll+pulse
+  // External callers (locate button, CMD+P locate, mobile sheet open) always scroll + pulse.
   useEffect(() => {
     function handleLocate() {
-      scrollToSelected()
+      scrollSelectedIntoView()
+      pulseSelected()
     }
     window.addEventListener('locate-conversation', handleLocate)
     return () => window.removeEventListener('locate-conversation', handleLocate)
