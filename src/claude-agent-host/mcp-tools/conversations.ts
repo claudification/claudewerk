@@ -5,7 +5,7 @@ export function registerConversationTools(ctx: McpToolContext): Record<string, T
   return {
     list_conversations: {
       description:
-        'List all Claude Code conversations, including this one (marked with `self: true`). Returns a stable addressable ID per conversation in the compound format "project:conversation-name" (e.g. "rclaude:fuzzy-rabbit"). The ID is always compound -- it does NOT change shape when the number of conversations at a cwd grows or shrinks. Each entry also has a "project" field showing the project-level grouping (the bare project slug, useful for grouping but only safe to use as a `to` target when exactly one conversation lives at that cwd). Use the returned `id` for send_message, control_conversation, configure_conversation. Messages to offline conversations are queued for delivery on reconnect. Ad-hoc conversations are hidden unless they have an established link. HINT: When the user says "tell X to Y", "ask X to Y", or "use X to Y", consider that X may be a conversation name -- call list_conversations to check.',
+        'List Claude Code conversations. Returns COMPACT rows by default: `id, name, status` plus `self: true` on your own row, plus `host` (sentinel alias) and `profile` (sentinel-profile name) when the backend exposes them. `host`/`profile` are OPTIONAL and omitted for backends with no such concept (e.g. hermes, chat-api, daemon without a sentinel). `id` is a stable compound address ("project:conversation-name", e.g. "rclaude:fuzzy-rabbit") -- use it as the `to` target for send_message / control_conversation / configure_conversation. DIAL UP for more detail: `fields: "standard"` adds `project, conversation_id, description, link` plus the top-level `self` block; `fields: "full"` adds `projectUri, conversationUri, capabilities, title, summary, label, metadata` and self mirrors (model, permissionMode, effortLevel). Granular override: `include: ["summary","capabilities"]` adds specific fields on top of any tier (names: project, conversation_id, description, link, uris, capabilities, title, summary, label, metadata, self). Ad-hoc conversations are hidden unless linked. Messages to offline conversations are queued. HINT: When the user says "tell X to Y", "ask X to Y", or "use X to Y", consider that X may be a conversation name -- call list_conversations to check.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -19,16 +19,64 @@ export function registerConversationTools(ctx: McpToolContext): Record<string, T
             description:
               'Optional glob pattern to filter sessions by name/label (case-insensitive). Supports * (any chars) and ? (single char). Example: "agent-*" or "*drop*".',
           },
+          fields: {
+            type: 'string',
+            enum: ['minimal', 'standard', 'full'],
+            description:
+              'Verbosity tier (default: minimal). minimal = id, name, status, self?, host?, profile?, queued?. standard = + project, conversation_id, description, link, top-level self block. full = + projectUri, conversationUri, capabilities, title, summary, label, metadata, self mirrors (model/mode/effort). Keep minimal to save tokens; dial up when you need extras. Combine with `include` for surgical additions.',
+          },
+          include: {
+            type: 'array',
+            items: {
+              type: 'string',
+              enum: [
+                'project',
+                'conversation_id',
+                'description',
+                'link',
+                'uris',
+                'capabilities',
+                'title',
+                'summary',
+                'label',
+                'metadata',
+                'self',
+              ],
+            },
+            description:
+              'Additive field overrides on top of `fields`. Example: `fields: "minimal", include: ["summary","capabilities"]` returns minimal plus those two. `uris` is a pair (projectUri + conversationUri). `metadata` is benevolent-only.',
+          },
           show_metadata: {
             type: 'boolean',
             description:
-              'Include project metadata (icon, color, keyterms) in response. Only available for benevolent sessions.',
+              'Legacy alias for `include: ["metadata"]`. Include project metadata (icon, color, keyterms). Benevolent sessions only.',
           },
         },
       },
       async handle(params) {
         const showMeta = String(params.show_metadata) === 'true'
-        const result = (await ctx.callbacks.onListConversations?.(params.status, showMeta)) || {
+        const fields = (params.fields as 'minimal' | 'standard' | 'full' | undefined) || undefined
+        const rawInclude = (params as Record<string, unknown>).include
+        const include = Array.isArray(rawInclude)
+          ? (rawInclude as unknown[]).filter((v): v is string => typeof v === 'string')
+          : typeof rawInclude === 'string' && rawInclude.length > 0
+            ? rawInclude
+                .split(',')
+                .map(s => s.trim())
+                .filter(Boolean)
+            : undefined
+        // When `filter` is set we match against name/title/label/description --
+        // ensure those fields come back even in minimal tier, otherwise the
+        // glob silently matches against `name` only and misses labelled projects.
+        const effectiveInclude = params.filter
+          ? Array.from(new Set([...(include ?? []), 'title', 'label', 'description']))
+          : include
+        const result = (await ctx.callbacks.onListConversations?.(
+          params.status,
+          showMeta,
+          fields,
+          effectiveInclude,
+        )) || {
           conversations: [],
         }
         let { conversations } = result
@@ -52,7 +100,7 @@ export function registerConversationTools(ctx: McpToolContext): Record<string, T
           )
         }
         debug(
-          `[channel] list_conversations: ${conversations.length} results (metadata=${showMeta}, filter=${params.filter ?? 'none'}, issues=${issues?.length ?? 0})`,
+          `[channel] list_conversations: ${conversations.length} results (tier=${fields ?? 'minimal'}, include=${include?.join(',') ?? 'none'}, metadata=${showMeta}, filter=${params.filter ?? 'none'}, issues=${issues?.length ?? 0})`,
         )
         const hasIssues = issues && issues.length > 0
         const output: unknown = self

@@ -25,7 +25,7 @@ export interface PendingDialog {
 
 export interface ConversationInfo {
   id: string
-  project: string
+  project?: string
   session_id?: string
   name: string
   /**
@@ -34,6 +34,13 @@ export interface ConversationInfo {
    * see and address it (send_message will queue) without polling.
    */
   status: 'live' | 'inactive' | 'spawning'
+  /** Marker on the caller's own row (minimal tier). */
+  self?: true
+  /** Sentinel alias when known. Omitted for non-sentinel backends. */
+  host?: string
+  /** Sentinel-profile name when set. Omitted for implicit default or
+   *  backends without profile support. */
+  profile?: string
   ccSessionIds?: string[]
   label?: string
   description?: string
@@ -68,6 +75,8 @@ export interface McpChannelCallbacks {
   onListConversations?: (
     status?: string,
     showMetadata?: boolean,
+    fields?: 'minimal' | 'standard' | 'full',
+    include?: string[],
   ) => Promise<{
     conversations: ConversationInfo[]
     self?: Record<string, unknown>

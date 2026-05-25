@@ -84,7 +84,7 @@ export function buildMcpCallbacksWithRules(
       }
     },
 
-    async onListConversations(status, showMetadata) {
+    async onListConversations(status, showMetadata, fields, include) {
       if (!ctx.wsClient?.isConnected()) return { conversations: [] }
       return new Promise(resolve => {
         const timeout = setTimeout(() => resolve({ conversations: [] }), 5000)
@@ -97,6 +97,8 @@ export function buildMcpCallbacksWithRules(
           type: 'channel_list_conversations',
           status,
           show_metadata: showMetadata,
+          fields,
+          include,
         } as unknown as AgentHostMessage)
       })
     },

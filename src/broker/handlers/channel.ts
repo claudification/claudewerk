@@ -177,13 +177,101 @@ const channelUnsubscribeAll: MessageHandler = ctx => {
 
 // ─── Conversation discovery (list_conversations) ────────────────────────
 
+/**
+ * Field-selection model: callers pick a verbosity TIER (minimal | standard | full)
+ * and optionally an INCLUDE list to add specific extras on top. Default is
+ * `minimal`, which trims ~75% of the wire bytes vs. the historical full row.
+ *
+ * Always present (when relevant): id, name, status, self?, host?, profile?,
+ * queued?, spawnJobId?, spawnStep?. The `?`-marked fields are omitted when N/A
+ * rather than gated -- a connected sentinel-backed conv always exposes `host`,
+ * a non-sentinel backend (hermes / chat-api) always omits it. Same for
+ * `profile`: present iff `resolvedProfile` is set on the conversation.
+ *
+ * Tier additions (additive):
+ *   standard -> project, conversation_id, description, link
+ *   full     -> projectUri, conversationUri, capabilities, title, summary,
+ *               label, metadata (still benevolent-gated), full self block
+ *               (model, permissionMode, effortLevel)
+ *
+ * `include` is additive on any tier. Field names: 'project', 'conversation_id',
+ * 'description', 'link', 'uris' (projectUri+conversationUri pair),
+ * 'capabilities', 'title', 'summary', 'label', 'metadata', 'self'.
+ *
+ * Legacy `show_metadata: true` is translated to `include: ['metadata']`.
+ */
+type FieldTier = 'minimal' | 'standard' | 'full'
+type FieldFlag =
+  | 'project'
+  | 'conversation_id'
+  | 'description'
+  | 'link'
+  | 'uris'
+  | 'capabilities'
+  | 'title'
+  | 'summary'
+  | 'label'
+  | 'metadata'
+  | 'self'
+
+const KNOWN_FIELD_FLAGS = new Set<FieldFlag>([
+  'project',
+  'conversation_id',
+  'description',
+  'link',
+  'uris',
+  'capabilities',
+  'title',
+  'summary',
+  'label',
+  'metadata',
+  'self',
+])
+const STANDARD_FIELDS: FieldFlag[] = ['project', 'conversation_id', 'description', 'link', 'self']
+const FULL_EXTRA_FIELDS: FieldFlag[] = ['uris', 'capabilities', 'title', 'summary', 'label', 'metadata']
+
+function buildFieldSet(tier: FieldTier, include: readonly string[]): Set<FieldFlag> {
+  const f = new Set<FieldFlag>()
+  if (tier === 'standard' || tier === 'full') for (const k of STANDARD_FIELDS) f.add(k)
+  if (tier === 'full') for (const k of FULL_EXTRA_FIELDS) f.add(k)
+  for (const k of include) {
+    if (KNOWN_FIELD_FLAGS.has(k as FieldFlag)) f.add(k as FieldFlag)
+  }
+  return f
+}
+
+function normalizeTier(raw: unknown): FieldTier {
+  if (raw === 'standard' || raw === 'full' || raw === 'minimal') return raw
+  return 'minimal'
+}
+
+function normalizeIncludeList(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw.filter((v): v is string => typeof v === 'string')
+  if (typeof raw === 'string' && raw.length > 0)
+    return raw
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+  return []
+}
+
 const channelListConversations: MessageHandler = (ctx, data) => {
   const status = (data.status as string) || 'live'
-  const showMetadata = !!data.show_metadata
+  const tier = normalizeTier(data.fields)
+  const include = normalizeIncludeList(data.include)
+  // Back-compat: `show_metadata: true` folds into the include set.
+  if (data.show_metadata === true) include.push('metadata')
+  const fieldSet = buildFieldSet(tier, include)
   const callerConversation = ctx.ws.data.conversationId
   const callerProject = ctx.caller?.project
   const isBenevolent = ctx.callerSettings?.trustLevel === 'benevolent'
   const all = Array.from(ctx.conversations.getAllConversations())
+
+  // sentinelId -> alias map for the `host` field. Connected sentinels only;
+  // a conv whose owning sentinel is offline simply won't render a host badge.
+  // No-op cost when the sentinel pool is empty.
+  const sentinelAliasById = new Map<string, string>()
+  for (const s of ctx.conversations.getSentinels()) sentinelAliasById.set(s.sentinelId, s.alias)
 
   // Filter by status (include self, annotated later)
   const filtered = all
@@ -257,43 +345,55 @@ const channelListConversations: MessageHandler = (ctx, data) => {
       const localId = computeLocalId(s, projectSlug, projGroup)
 
       const isSelf = s.id === callerConversation
+      const host = s.hostSentinelId ? sentinelAliasById.get(s.hostSentinelId) : undefined
 
-      return [
-        {
-          id: localId, // stable local address (use for send_message, etc.)
-          project: projectSlug, // project-level grouping ID
-          conversation_id: s.id,
-          name: conversationName,
-          projectUri: s.project,
-          conversationUri: `${s.project}#${s.id}`, // permanent record handle
-          status: (isLive ? 'live' : 'inactive') as 'live' | 'inactive',
-          capabilities: s.capabilities,
-          ...(isSelf
-            ? {
-                self: true,
-                model: deriveModelName(s.model, s.configuredModel),
-                permissionMode: s.permissionMode,
-                effortLevel: s.effortLevel,
-              }
-            : {}),
-          ...(projSettings?.label && projSettings.label !== conversationName ? { label: projSettings.label } : {}),
-          ...(s.description ? { description: s.description } : {}),
-          link: isSelf ? undefined : isLinked ? 'connected' : linkStatus === 'blocked' ? 'blocked' : undefined,
-          title: s.title,
-          summary: s.summary,
-          ...(queueSize > 0 ? { queued: queueSize } : {}),
-          ...(showMetadata && isBenevolent && projSettings
-            ? {
-                metadata: {
-                  label: projSettings.label,
-                  icon: projSettings.icon,
-                  color: projSettings.color,
-                  keyterms: projSettings.keyterms,
-                },
-              }
-            : {}),
-        },
-      ]
+      const row: Record<string, unknown> = {
+        id: localId,
+        name: conversationName,
+        status: (isLive ? 'live' : 'inactive') as 'live' | 'inactive',
+      }
+      // Always-when-present signals (cheap + actionable, no tier gating)
+      if (isSelf) row.self = true
+      if (host) row.host = host
+      if (s.resolvedProfile) row.profile = s.resolvedProfile
+      if (queueSize > 0) row.queued = queueSize
+
+      // Tier-gated additions
+      if (fieldSet.has('project')) row.project = projectSlug
+      if (fieldSet.has('conversation_id')) row.conversation_id = s.id
+      if (fieldSet.has('description') && s.description) row.description = s.description
+      if (fieldSet.has('link') && !isSelf) {
+        const linkValue = isLinked ? 'connected' : linkStatus === 'blocked' ? 'blocked' : undefined
+        if (linkValue) row.link = linkValue
+      }
+      if (fieldSet.has('uris')) {
+        row.projectUri = s.project
+        row.conversationUri = `${s.project}#${s.id}` // permanent record handle
+      }
+      if (fieldSet.has('capabilities') && s.capabilities) row.capabilities = s.capabilities
+      if (fieldSet.has('title') && s.title) row.title = s.title
+      if (fieldSet.has('summary') && s.summary) row.summary = s.summary
+      if (fieldSet.has('label') && projSettings?.label && projSettings.label !== conversationName) {
+        row.label = projSettings.label
+      }
+      if (fieldSet.has('metadata') && isBenevolent && projSettings) {
+        row.metadata = {
+          label: projSettings.label,
+          icon: projSettings.icon,
+          color: projSettings.color,
+          keyterms: projSettings.keyterms,
+        }
+      }
+      // Self-row only: model/mode/effort live under the row in full tier
+      // (the structured `self` top-level block is the canonical place; this is
+      // a convenience mirror for callers that don't index into `self`).
+      if (isSelf && tier === 'full') {
+        row.model = deriveModelName(s.model, s.configuredModel)
+        if (s.permissionMode) row.permissionMode = s.permissionMode
+        if (s.effortLevel) row.effortLevel = s.effortLevel
+      }
+
+      return [row]
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       ctx.log.debug(
@@ -305,9 +405,10 @@ const channelListConversations: MessageHandler = (ctx, data) => {
   })
   // Build self identity from caller's conversation. Same defensive wrap as
   // the per-row loop above -- a malformed caller project URI must not crash
-  // the whole reply.
+  // the whole reply. Gated by tier: minimal callers get only `self: true`
+  // on the matching row and no structured top-level block.
   let self: Record<string, unknown> | undefined
-  if (callerConversation) {
+  if (callerConversation && fieldSet.has('self')) {
     const s = ctx.conversations.getConversation(callerConversation)
     if (s) {
       try {
@@ -318,18 +419,24 @@ const channelListConversations: MessageHandler = (ctx, data) => {
           : slugify(projectName)
         const allAtProject = all.filter(x => isSameProject(x.project, s.project))
         const localId = computeLocalId(s, projectSlug, allAtProject)
-        self = {
+        const host = s.hostSentinelId ? sentinelAliasById.get(s.hostSentinelId) : undefined
+        const block: Record<string, unknown> = {
           id: localId,
           project: projectSlug,
           conversation_id: s.id,
           name: s.title || projSettings?.label || extractProjectLabel(s.project),
-          projectUri: s.project,
-          conversationUri: `${s.project}#${s.id}`,
-          model: deriveModelName(s.model, s.configuredModel),
-          permissionMode: s.permissionMode,
-          effortLevel: s.effortLevel,
           status: 'live' as const,
         }
+        if (host) block.host = host
+        if (s.resolvedProfile) block.profile = s.resolvedProfile
+        if (tier === 'full') {
+          block.projectUri = s.project
+          block.conversationUri = `${s.project}#${s.id}`
+          block.model = deriveModelName(s.model, s.configuredModel)
+          if (s.permissionMode) block.permissionMode = s.permissionMode
+          if (s.effortLevel) block.effortLevel = s.effortLevel
+        }
+        self = block
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         ctx.log.debug(
@@ -362,22 +469,18 @@ const channelListConversations: MessageHandler = (ctx, data) => {
     const projGroup = filtered.filter(s => isSameProject(s.project, project))
     const target = { id: job.conversationId, project, title: conversationName }
     const localId = computeLocalId(target, projectSlug, [...projGroup, target])
-    result.push({
+    const row: Record<string, unknown> = {
       id: localId,
-      project: projectSlug,
-      conversation_id: job.conversationId,
       name: conversationName,
-      projectUri: project || 'pending',
-      // No conversationUri on spawning rows: the conversation hasn't booted, and
-      // a synthetic `pending#<id>` URI would lie about being a permanent record.
       status: 'spawning',
-      capabilities: undefined,
-      title: conversationName,
-      summary: undefined,
-      link: undefined,
       spawnJobId: job.jobId,
-      spawnStep: job.lastStep ?? undefined,
-    } as unknown as (typeof result)[number])
+    }
+    if (job.lastStep) row.spawnStep = job.lastStep
+    if (fieldSet.has('project')) row.project = projectSlug
+    if (fieldSet.has('conversation_id')) row.conversation_id = job.conversationId
+    if (fieldSet.has('uris')) row.projectUri = project || 'pending'
+    if (fieldSet.has('title')) row.title = conversationName
+    result.push(row)
   }
 
   ctx.reply({

@@ -956,47 +956,85 @@ export interface ProjectLinkResponse {
 export interface InterConversationListRequest {
   type: 'channel_list_conversations'
   status?: 'live' | 'inactive' | 'all'
+  /** Verbosity tier. Defaults to `minimal` -- trims ~75% of the wire bytes vs.
+   *  the historical full row. See channel.ts handler comment for the matrix. */
+  fields?: 'minimal' | 'standard' | 'full'
+  /** Additive field overrides on top of the tier. Comma-separated string OR
+   *  string[]. Names: 'project', 'conversation_id', 'description', 'link',
+   *  'uris', 'capabilities', 'title', 'summary', 'label', 'metadata', 'self'. */
+  include?: string[] | string
+  /** Legacy: equivalent to `include: ['metadata']`. Still honored. */
+  show_metadata?: boolean
 }
 
 export interface InterConversationListResponse {
   type: 'channel_conversations_list'
   conversations: Array<{
+    /** Stable routable address (`project:conversation-slug`). Always present. */
     id: string
+    /** Display name. Always present. */
     name: string
-    project: string
-    /** Canonical project URI (`claude://<sentinel>/<path>`). */
-    projectUri: string
-    /**
-     * Permanent record handle: `{projectUri}#{conversation_id}`. Omitted on
-     * `status: "spawning"` rows because the conversation has not booted yet
-     * and the URI would lie about being a permanent record.
-     */
-    conversationUri?: string
-    /**
-     * `spawning` entries are pre-boot synthetic rows surfaced from active spawn
-     * jobs. They have no `cc_session_id` and may still fail. Discoverable so
-     * callers can address a freshly-spawned worker without polling.
-     */
+    /** Always present. */
     status: 'live' | 'inactive' | 'spawning'
-    title?: string
+    /** Marker on the caller's own row (minimal tier surfaces self via this). */
+    self?: true
+    /** Sentinel alias hosting this conversation. Omitted for non-sentinel
+     *  backends (hermes, chat-api) and when the owning sentinel is offline. */
+    host?: string
+    /** Sentinel-profile name. Omitted when the implicit default profile is in
+     *  use or when the backend does not support profiles. */
+    profile?: string
+    /** Number of messages queued for this conversation while offline. Omitted
+     *  when zero. Always present when > 0 (no tier gating). */
+    queued?: number
+    /** Tier `standard`+: project-level grouping slug. */
+    project?: string
+    /** Tier `standard`+: broker-internal conversation UUID. */
+    conversation_id?: string
+    /** Tier `standard`+: free-form description. */
     description?: string
+    /** Tier `standard`+: link state with caller (`connected` | `blocked`). */
+    link?: 'connected' | 'blocked'
+    /** Tier `full` (or `include: ['uris']`): canonical project URI. */
+    projectUri?: string
+    /** Tier `full`: permanent record handle `{projectUri}#{conversation_id}`. */
+    conversationUri?: string
+    /** Tier `full`: capability flags. */
+    capabilities?: string[]
+    /** Tier `full`: conversation title (raw, may equal `name`). */
+    title?: string
+    /** Tier `full`: short summary string. */
     summary?: string
+    /** Tier `full`: project label when distinct from `name`. */
+    label?: string
+    /** Tier `full`: project metadata bag (benevolent callers only). */
+    metadata?: { label?: string; icon?: string; color?: string; keyterms?: string[] }
+    /** Self-row mirror in tier `full`. */
+    model?: string
+    permissionMode?: string
+    effortLevel?: string
     /** Only present on `status: "spawning"` rows. The job behind this entry. */
     spawnJobId?: string
     /** Only present on `status: "spawning"` rows. Last lifecycle step observed. */
     spawnStep?: string
   }>
+  /** Top-level structured self block. Returned in `standard`+ (or with
+   *  `include: ['self']`). In `minimal`, callers find self via the row's
+   *  `self: true` marker. */
   self?: {
     id: string
     project: string
-    projectUri: string
-    conversationUri: string
-    ccSessionId: string
+    conversation_id: string
     name: string
+    status: 'live'
+    host?: string
+    profile?: string
+    /** `full` tier only. */
+    projectUri?: string
+    conversationUri?: string
     model?: string
     permissionMode?: string
     effortLevel?: string
-    status: 'live'
   }
   /**
    * Issues encountered while enumerating conversations (capped at 10).

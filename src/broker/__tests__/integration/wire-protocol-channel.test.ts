@@ -59,7 +59,8 @@ describe('inter-conversation messaging', () => {
 
       await h.flushUpdates()
 
-      h.agentSend(agentA, { type: 'channel_list_conversations' })
+      // Need `project` field to match on -- standard tier.
+      h.agentSend(agentA, { type: 'channel_list_conversations', fields: 'standard' })
       const result = agentA.messagesOfType('channel_conversations_list')
       expect(result.length).toBe(1)
 
@@ -83,14 +84,103 @@ describe('inter-conversation messaging', () => {
 
       await h.flushUpdates()
 
+      // Default tier is `minimal` -- caller finds self via the `self: true` row
+      // marker (conversation_id is gated behind `standard`+).
       h.agentSend(agentA, { type: 'channel_list_conversations' })
       const result = agentA.messagesOfType('channel_conversations_list')
       expect(result.length).toBe(1)
 
-      const sessions = result[0].conversations as Array<{ id: string; conversation_id: string; self?: boolean }>
-      const selfEntry = sessions.find(s => s.conversation_id === convA)
+      const sessions = result[0].conversations as Array<{ id: string; self?: boolean }>
+      const selfEntry = sessions.find(s => s.self === true)
       expect(selfEntry).toBeDefined()
-      expect(selfEntry?.self).toBe(true)
+      expect(selfEntry?.id).toBeTruthy()
+    })
+
+    it('emits compact rows by default (minimal tier)', async () => {
+      const agentA = bootAndPromote({
+        conversationId: testId('conv-a'),
+        ccSessionId: testId('sess-a'),
+        project: 'claude:///home/user/project-alpha',
+      })
+      bootAndPromote({
+        conversationId: testId('conv-b'),
+        ccSessionId: testId('sess-b'),
+        project: 'claude:///home/user/project-beta',
+      })
+
+      await h.flushUpdates()
+
+      h.agentSend(agentA, { type: 'channel_list_conversations' })
+      const sessions = agentA.messagesOfType('channel_conversations_list')[0].conversations as Array<
+        Record<string, unknown>
+      >
+      const peer = sessions.find(s => s.id !== undefined && s.self !== true)
+      expect(peer).toBeDefined()
+      // Minimal tier MUST omit these
+      expect(peer?.conversation_id).toBeUndefined()
+      expect(peer?.projectUri).toBeUndefined()
+      expect(peer?.conversationUri).toBeUndefined()
+      expect(peer?.capabilities).toBeUndefined()
+      expect(peer?.summary).toBeUndefined()
+      // Minimal tier MUST keep these
+      expect(peer?.id).toBeDefined()
+      expect(peer?.name).toBeDefined()
+      expect(peer?.status).toBeDefined()
+    })
+
+    it('expands to standard tier on request', async () => {
+      const agentA = bootAndPromote({
+        conversationId: testId('conv-a'),
+        ccSessionId: testId('sess-a'),
+        project: 'claude:///home/user/project-alpha',
+      })
+      bootAndPromote({
+        conversationId: testId('conv-b'),
+        ccSessionId: testId('sess-b'),
+        project: 'claude:///home/user/project-beta',
+      })
+
+      await h.flushUpdates()
+
+      h.agentSend(agentA, { type: 'channel_list_conversations', fields: 'standard' })
+      const reply = agentA.messagesOfType('channel_conversations_list')[0]
+      const sessions = reply.conversations as Array<Record<string, unknown>>
+      const peer = sessions.find(s => s.self !== true)
+      expect(peer?.conversation_id).toBeDefined()
+      expect(peer?.project).toBeDefined()
+      // standard top-level self block also returned
+      expect(reply.self).toBeDefined()
+    })
+
+    it('honors include array as additive override', async () => {
+      const agentA = bootAndPromote({
+        conversationId: testId('conv-a'),
+        ccSessionId: testId('sess-a'),
+        project: 'claude:///home/user/project-alpha',
+      })
+      bootAndPromote({
+        conversationId: testId('conv-b'),
+        ccSessionId: testId('sess-b'),
+        project: 'claude:///home/user/project-beta',
+      })
+
+      await h.flushUpdates()
+
+      // minimal tier + explicit include: should add ONLY the requested fields
+      h.agentSend(agentA, {
+        type: 'channel_list_conversations',
+        fields: 'minimal',
+        include: ['conversation_id', 'capabilities'],
+      })
+      const sessions = agentA.messagesOfType('channel_conversations_list')[0].conversations as Array<
+        Record<string, unknown>
+      >
+      const peer = sessions.find(s => s.self !== true)
+      expect(peer?.conversation_id).toBeDefined()
+      expect(peer?.capabilities).toBeDefined()
+      // not in include -> still omitted
+      expect(peer?.summary).toBeUndefined()
+      expect(peer?.projectUri).toBeUndefined()
     })
   })
 
@@ -493,7 +583,8 @@ describe('inter-conversation messaging', () => {
 
       await h.flushUpdates()
 
-      h.agentSend(agent, { type: 'channel_list_conversations', status: 'all' })
+      // Use standard tier so spawning rows surface conversation_id for matching.
+      h.agentSend(agent, { type: 'channel_list_conversations', status: 'all', fields: 'standard' })
       const result = agent.messagesOfType('channel_conversations_list')
       expect(result.length).toBeGreaterThanOrEqual(1)
 
@@ -582,7 +673,8 @@ describe('inter-conversation messaging', () => {
 
       await h.flushUpdates()
 
-      h.agentSend(agent, { type: 'channel_list_conversations', status: 'all' })
+      // Need conversation_id to assert specific peers landed -- standard tier.
+      h.agentSend(agent, { type: 'channel_list_conversations', status: 'all', fields: 'standard' })
       const result = agent.messagesOfType('channel_conversations_list')
       expect(result.length).toBe(1) // handler MUST reply, not timeout
 
@@ -616,7 +708,7 @@ describe('inter-conversation messaging', () => {
 
       await h.flushUpdates()
 
-      h.agentSend(agent, { type: 'channel_list_conversations', status: 'all' })
+      h.agentSend(agent, { type: 'channel_list_conversations', status: 'all', fields: 'standard' })
       const result = agent.messagesOfType('channel_conversations_list')
       type Row = { conversation_id: string; status: string }
       const sessions = result[result.length - 1].conversations as Row[]

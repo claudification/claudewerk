@@ -174,8 +174,11 @@
       }
     },
     "src/broker/__tests__/integration/wire-protocol-channel.test.ts": {
-      "crap_moderate": {
+      "crap_high": {
         "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
       }
     },
     "src/broker/__tests__/integration/wire-protocol-features.test.ts": {
@@ -635,7 +638,7 @@
         "count": 9
       },
       "crap_high": {
-        "count": 2
+        "count": 3
       },
       "crap_moderate": {
         "count": 1
@@ -1381,7 +1384,7 @@
     },
     "src/claude-agent-host/mcp-tools/conversations.ts": {
       "complexity_critical": {
-        "count": 2
+        "count": 3
       },
       "crap_critical": {
         "count": 5
@@ -3065,11 +3068,11 @@
     "web/src/components/command-palette/use-command-palette.ts:complexity",
     "web/src/components/transcript/parse-entries.ts:complexity",
     "src/claude-agent-host/hook-processor.ts:complexity",
+    "src/broker/handlers/channel.ts:complexity",
     "src/broker/cli/user-commands.ts:untested risk",
     "src/broker/permissions.ts:complexity",
     "web/src/components/project-list.tsx:complexity",
     "src/opencode-agent-host/dialect/from-opencode-ndjson.ts:untested risk",
-    "src/broker/handlers/channel.ts:complexity",
     "src/broker/conversation-store/parsers.ts:untested risk",
     "src/broker/recap/shared/json-parse.ts:high impact",
     "src/claude-agent-host/permission-rules.ts:high impact",
