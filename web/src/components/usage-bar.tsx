@@ -1,6 +1,7 @@
 import { Popover } from 'radix-ui'
-import { useMemo, useRef, useState } from 'react'
+import { useMemo } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import { useHoverPopover } from '@/hooks/use-hover-popover'
 import type { ExtraUsage, ProfileUsageSnapshot, UsageWindow } from '@/lib/types'
 import { haptic } from '@/lib/utils'
 
@@ -200,49 +201,12 @@ function LegacyBody({ usage }: { usage: NonNullable<ReturnType<typeof useConvers
   )
 }
 
-function SummaryChip({
-  pct,
-  label,
-  tooltip,
-  onOpen,
-  onClose,
-  onClick,
-}: {
-  pct: number
-  label: string
-  tooltip: string
-  onOpen: () => void
-  onClose: () => void
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      title={tooltip}
-      className="flex items-center gap-1 cursor-pointer select-none hover:opacity-80 transition-opacity"
-      onMouseEnter={onOpen}
-      onMouseLeave={onClose}
-      onClick={onClick}
-    >
-      <span className={`text-[10px] ${usageTextColor(pct)} opacity-70`}>{label}</span>
-      <div className="w-10 sm:w-14 h-1.5 bg-muted rounded-full overflow-hidden">
-        <div
-          className={`h-full ${usageColor(pct)} rounded-full transition-all duration-500`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <span className={`text-[10px] tabular-nums ${usageTextColor(pct)}`}>{Math.round(pct)}%</span>
-    </button>
-  )
-}
-
 // fallow-ignore-next-line complexity
 export function UsageBar() {
   const planUsage = useConversationsStore(s => s.planUsage)
   const profileUsage = useConversationsStore(s => s.profileUsage)
   const sentinels = useConversationsStore(s => s.sentinels)
-  const [open, setOpen] = useState(false)
-  const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const { open, setOpen, handleMouseEnter, handleMouseLeave, cancelClose, toggle } = useHoverPopover()
 
   // Group snapshots by sentinel for the popover. Resolve alias for display.
   // fallow-ignore-next-line complexity
@@ -279,22 +243,26 @@ export function UsageBar() {
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
-        <SummaryChip
-          pct={pct}
-          label={stressed ? 'max' : '7d'}
-          tooltip={tooltip}
-          onOpen={() => {
-            hoverTimeout.current = setTimeout(() => setOpen(true), 300)
-          }}
-          onClose={() => {
-            if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
-            hoverTimeout.current = setTimeout(() => setOpen(false), 200)
-          }}
+        <button
+          type="button"
+          title={tooltip}
+          className="flex items-center gap-1 cursor-pointer select-none hover:opacity-80 transition-opacity"
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
           onClick={() => {
             haptic('tap')
-            setOpen(o => !o)
+            toggle()
           }}
-        />
+        >
+          <span className={`text-[10px] ${usageTextColor(pct)} opacity-70`}>{stressed ? 'max' : '7d'}</span>
+          <div className="w-10 sm:w-14 h-1.5 bg-muted rounded-full overflow-hidden">
+            <div
+              className={`h-full ${usageColor(pct)} rounded-full transition-all duration-500`}
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <span className={`text-[10px] tabular-nums ${usageTextColor(pct)}`}>{Math.round(pct)}%</span>
+        </button>
       </Popover.Trigger>
 
       <Popover.Portal>
@@ -302,13 +270,8 @@ export function UsageBar() {
           className={`z-50 w-80 rounded border ${usageBorderColor(pct)} bg-background/95 backdrop-blur-sm shadow-lg p-3 font-mono`}
           sideOffset={8}
           align="start"
-          onMouseEnter={() => {
-            if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
-          }}
-          onMouseLeave={() => {
-            if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
-            hoverTimeout.current = setTimeout(() => setOpen(false), 200)
-          }}
+          onMouseEnter={cancelClose}
+          onMouseLeave={handleMouseLeave}
           onOpenAutoFocus={e => e.preventDefault()}
         >
           {grouped.length > 0 ? (
