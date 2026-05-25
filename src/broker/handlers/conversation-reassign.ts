@@ -12,54 +12,47 @@
  * on top of the UI-side admin gate).
  */
 
-import type { GuardError as GuardErrorType } from '../handler-context'
-import type { MessageHandler } from '../handler-context'
+import type { Conversation } from '../../shared/protocol'
+import type { HandlerContext, MessageData, MessageHandler } from '../handler-context'
 import { GuardError } from '../handler-context'
 import { DASHBOARD_ROLES, registerHandlers } from '../message-router'
 import { resolvePermissions } from '../permissions'
 
-function requireAdmin(
-  ctx: Parameters<MessageHandler>[0],
-  project: string,
-  label: 'source' | 'target',
-): void {
-  // Agent hosts / sentinels / non-dashboard connections bypass (infrastructure).
+interface ReassignSnapshot {
+  projectUri: string
+  hostSentinelId: string | null
+  resolvedProfile: string | null
+}
+
+interface ParsedReassign {
+  toProjectUri?: string
+  hasProjectUri: boolean
+  hasSentinelChange: boolean
+  hasProfileChange: boolean
+  toHostSentinelId?: string | null
+  toProfile?: string | null
+}
+
+function requireAdmin(ctx: HandlerContext, project: string, label: 'source' | 'target'): void {
   if (!ctx.ws.data.isControlPanel) return
   const grants = ctx.ws.data.grants
   if (!grants) return
   const { isAdmin } = resolvePermissions(grants, project)
   if (!isAdmin) {
-    throw new GuardError(`Permission denied: admin required on ${label} project (${project})`) as GuardErrorType
+    throw new GuardError(`Permission denied: admin required on ${label} project (${project})`)
   }
 }
 
-const handleConversationReassign: MessageHandler = (ctx, data) => {
-  const targetId = typeof data.targetConversation === 'string' ? data.targetConversation : ''
-  const batchId = typeof data.batchId === 'string' ? data.batchId : undefined
+function replyError(ctx: HandlerContext, error: string, conversationId?: string): void {
+  ctx.reply({
+    type: 'conversation_reassign_result',
+    ok: false,
+    ...(conversationId ? { conversationId } : {}),
+    error,
+  })
+}
 
-  if (!targetId) {
-    ctx.reply({
-      type: 'conversation_reassign_result',
-      ok: false,
-      error: 'Missing targetConversation',
-    })
-    return
-  }
-
-  const conv = ctx.conversations.getConversation(targetId)
-  if (!conv) {
-    ctx.reply({
-      type: 'conversation_reassign_result',
-      ok: false,
-      error: 'Conversation not found',
-    })
-    return
-  }
-
-  // Field semantics (independent):
-  //   - omitted          -> leave unchanged
-  //   - string           -> set
-  //   - null (sentinel/profile only) -> clear
+function parsePayload(data: MessageData): ParsedReassign | { error: string } {
   const toProjectUriRaw = data.toProjectUri
   const toHostSentinelIdRaw = data.toHostSentinelId
   const toProfileRaw = data.toProfile
@@ -69,109 +62,62 @@ const handleConversationReassign: MessageHandler = (ctx, data) => {
   const hasProfileChange = toProfileRaw !== undefined
 
   if (!hasProjectUri && !hasSentinelChange && !hasProfileChange) {
-    ctx.reply({
-      type: 'conversation_reassign_result',
-      ok: false,
-      conversationId: targetId,
-      error: 'No fields to reassign',
-    })
-    return
+    return { error: 'No fields to reassign' }
   }
-
   if (hasSentinelChange && toHostSentinelIdRaw !== null && typeof toHostSentinelIdRaw !== 'string') {
-    ctx.reply({
-      type: 'conversation_reassign_result',
-      ok: false,
-      conversationId: targetId,
-      error: 'toHostSentinelId must be string or null',
-    })
-    return
+    return { error: 'toHostSentinelId must be string or null' }
   }
   if (hasProfileChange && toProfileRaw !== null && typeof toProfileRaw !== 'string') {
-    ctx.reply({
-      type: 'conversation_reassign_result',
-      ok: false,
-      conversationId: targetId,
-      error: 'toProfile must be string or null',
-    })
-    return
+    return { error: 'toProfile must be string or null' }
   }
 
-  // Permission: admin on source project. If the project is changing, also
-  // admin on the target project. requireAdmin throws GuardError which the
-  // router converts into a `conversation_reassign_result_result` reply --
-  // catch it locally so we emit our typed reply shape instead.
-  try {
-    requireAdmin(ctx, conv.project, 'source')
-    if (hasProjectUri && toProjectUriRaw !== conv.project) {
-      requireAdmin(ctx, toProjectUriRaw as string, 'target')
-    }
-  } catch (err) {
-    if (err instanceof GuardError) {
-      ctx.reply({
-        type: 'conversation_reassign_result',
-        ok: false,
-        conversationId: targetId,
-        error: err.message,
-      })
-      return
-    }
-    throw err
+  return {
+    toProjectUri: hasProjectUri ? (toProjectUriRaw as string) : undefined,
+    hasProjectUri,
+    hasSentinelChange,
+    hasProfileChange,
+    toHostSentinelId: hasSentinelChange ? (toHostSentinelIdRaw as string | null) : undefined,
+    toProfile: hasProfileChange ? (toProfileRaw as string | null) : undefined,
   }
+}
 
-  const prev = {
+function snapshot(conv: Conversation): ReassignSnapshot {
+  return {
     projectUri: conv.project,
     hostSentinelId: conv.hostSentinelId ?? null,
     resolvedProfile: conv.resolvedProfile ?? null,
   }
+}
 
-  if (hasProjectUri) {
-    conv.project = toProjectUriRaw as string
-  }
-  if (hasSentinelChange) {
-    if (toHostSentinelIdRaw === null) {
+function applyChanges(conv: Conversation, parsed: ParsedReassign): void {
+  if (parsed.hasProjectUri && parsed.toProjectUri) conv.project = parsed.toProjectUri
+  if (parsed.hasSentinelChange) {
+    if (parsed.toHostSentinelId === null) {
       conv.hostSentinelId = undefined
       conv.hostSentinelAlias = undefined
-    } else {
-      conv.hostSentinelId = toHostSentinelIdRaw as string
+    } else if (parsed.toHostSentinelId) {
+      conv.hostSentinelId = parsed.toHostSentinelId
     }
   }
-  if (hasProfileChange) {
-    conv.resolvedProfile = toProfileRaw === null ? undefined : (toProfileRaw as string)
+  if (parsed.hasProfileChange) {
+    conv.resolvedProfile = parsed.toProfile === null ? undefined : (parsed.toProfile as string)
   }
+}
 
-  const next = {
-    projectUri: conv.project,
-    hostSentinelId: conv.hostSentinelId ?? null,
-    resolvedProfile: conv.resolvedProfile ?? null,
-  }
+function describeInitiator(ctx: HandlerContext): string {
+  if (ctx.ws.data.userName) return `dashboard:${ctx.ws.data.userName}`
+  if (ctx.ws.data.conversationId) return `agent:${ctx.ws.data.conversationId.slice(0, 8)}`
+  return 'unknown'
+}
 
-  ctx.conversations.persistConversationById(targetId)
-  ctx.conversations.broadcastConversationUpdate(targetId)
-
-  const at = Date.now()
-  const broadcast = {
-    type: 'conversation_reassigned' as const,
-    conversationId: targetId,
-    prev,
-    next,
-    at,
-    ...(batchId ? { batchId } : {}),
-  }
-  // Scope to BOTH projects so subscribers on the source see the routing
-  // change leaving, and subscribers on the target see it arriving.
-  ctx.broadcastScoped(broadcast, prev.projectUri)
-  if (next.projectUri !== prev.projectUri) {
-    ctx.broadcastScoped(broadcast, next.projectUri)
-  }
-
-  // Per Log Everything covenant: full prev->next, batch correlation, initiator,
-  // and an explicit note that the running process was NOT migrated.
-  const initiator = ctx.ws.data.userName
-    ? `dashboard:${ctx.ws.data.userName}`
-    : ctx.ws.data.conversationId
-      ? `agent:${ctx.ws.data.conversationId.slice(0, 8)}`
-      : 'unknown'
+function logReassign(
+  ctx: HandlerContext,
+  conv: Conversation,
+  targetId: string,
+  prev: ReassignSnapshot,
+  next: ReassignSnapshot,
+  batchId: string | undefined,
+): void {
   const runStateNote =
     conv.status === 'active' || conv.status === 'idle' || conv.status === 'starting' || conv.status === 'booting'
       ? 'applied to persisted record; running process not migrated'
@@ -181,8 +127,64 @@ const handleConversationReassign: MessageHandler = (ctx, data) => {
       `project: ${prev.projectUri} -> ${next.projectUri} ` +
       `sentinel: ${prev.hostSentinelId ?? 'none'} -> ${next.hostSentinelId ?? 'none'} ` +
       `profile: ${prev.resolvedProfile ?? 'default'} -> ${next.resolvedProfile ?? 'default'} ` +
-      `status=${conv.status} initiator=${initiator} note="${runStateNote}"`,
+      `status=${conv.status} initiator=${describeInitiator(ctx)} note="${runStateNote}"`,
   )
+}
+
+const handleConversationReassign: MessageHandler = (ctx, data) => {
+  const targetId = typeof data.targetConversation === 'string' ? data.targetConversation : ''
+  const batchId = typeof data.batchId === 'string' ? data.batchId : undefined
+
+  if (!targetId) {
+    replyError(ctx, 'Missing targetConversation')
+    return
+  }
+  const conv = ctx.conversations.getConversation(targetId)
+  if (!conv) {
+    replyError(ctx, 'Conversation not found')
+    return
+  }
+
+  const parsed = parsePayload(data)
+  if ('error' in parsed) {
+    replyError(ctx, parsed.error, targetId)
+    return
+  }
+
+  try {
+    requireAdmin(ctx, conv.project, 'source')
+    if (parsed.hasProjectUri && parsed.toProjectUri && parsed.toProjectUri !== conv.project) {
+      requireAdmin(ctx, parsed.toProjectUri, 'target')
+    }
+  } catch (err) {
+    if (err instanceof GuardError) {
+      replyError(ctx, err.message, targetId)
+      return
+    }
+    throw err
+  }
+
+  const prev = snapshot(conv)
+  applyChanges(conv, parsed)
+  const next = snapshot(conv)
+
+  ctx.conversations.persistConversationById(targetId)
+  ctx.conversations.broadcastConversationUpdate(targetId)
+
+  const broadcast = {
+    type: 'conversation_reassigned' as const,
+    conversationId: targetId,
+    prev,
+    next,
+    at: Date.now(),
+    ...(batchId ? { batchId } : {}),
+  }
+  ctx.broadcastScoped(broadcast, prev.projectUri)
+  if (next.projectUri !== prev.projectUri) {
+    ctx.broadcastScoped(broadcast, next.projectUri)
+  }
+
+  logReassign(ctx, conv, targetId, prev, next, batchId)
 
   ctx.reply({
     type: 'conversation_reassign_result',
@@ -194,10 +196,5 @@ const handleConversationReassign: MessageHandler = (ctx, data) => {
 export { handleConversationReassign }
 
 export function registerConversationReassignHandlers(): void {
-  registerHandlers(
-    {
-      conversation_reassign: handleConversationReassign,
-    },
-    DASHBOARD_ROLES,
-  )
+  registerHandlers({ conversation_reassign: handleConversationReassign }, DASHBOARD_ROLES)
 }

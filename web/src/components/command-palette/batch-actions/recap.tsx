@@ -1,7 +1,7 @@
 import { wsSend } from '@/hooks/use-conversations'
 import type { Conversation } from '@/lib/types'
-import { runWithConcurrency } from './types'
 import type { BatchAction, BatchActionRunResult } from './types'
+import { runWithConcurrency } from './types'
 
 const CONCURRENCY = 5
 
@@ -25,19 +25,23 @@ export const RECAP_ACTION: BatchAction = {
     // Use 'today' -- the broker resolves start/end against the caller's tz.
     const period = { label: 'today' } as const
 
-    yield* runWithConcurrency<BatchActionRunResult>(ids, CONCURRENCY, async (conversationId): Promise<BatchActionRunResult> => {
-      const conv = byId.get(conversationId)
-      if (!conv) return { conversationId, ok: false, error: 'Conversation not in store' }
-      const ok = wsSend('recap_create', {
-        projectUri: conv.project,
-        period,
-        timeZone: tzGuess(),
-        batchId,
-        requestId: `${batchId}:${conversationId}`,
-      })
-      return ok
-        ? { conversationId, ok: true, detail: 'recap dispatched' }
-        : { conversationId, ok: false, error: 'WebSocket disconnected' }
-    })
+    yield* runWithConcurrency<BatchActionRunResult>(
+      ids,
+      CONCURRENCY,
+      async (conversationId): Promise<BatchActionRunResult> => {
+        const conv = byId.get(conversationId)
+        if (!conv) return { conversationId, ok: false, error: 'Conversation not in store' }
+        const ok = wsSend('recap_create', {
+          projectUri: conv.project,
+          period,
+          timeZone: tzGuess(),
+          batchId,
+          requestId: `${batchId}:${conversationId}`,
+        })
+        return ok
+          ? { conversationId, ok: true, detail: 'recap dispatched' }
+          : { conversationId, ok: false, error: 'WebSocket disconnected' }
+      },
+    )
   },
 }

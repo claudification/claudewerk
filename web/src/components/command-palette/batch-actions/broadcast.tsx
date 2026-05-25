@@ -1,12 +1,11 @@
 import { wsSend } from '@/hooks/use-conversations'
-import { runWithConcurrency } from './types'
 import type { BatchAction, BatchActionRunResult } from './types'
+import { runWithConcurrency } from './types'
 
 const CONCURRENCY = 5
 
-export interface BroadcastInput {
+interface BroadcastInput {
   message: string
-  /** Optional separate context block forwarded alongside the message. */
   context?: string
 }
 
@@ -31,18 +30,22 @@ export const BROADCAST_ACTION: BatchAction = {
     const message = input.message
     const context = input.context
 
-    yield* runWithConcurrency<BatchActionRunResult>(ids, CONCURRENCY, async (conversationId): Promise<BatchActionRunResult> => {
-      const ok = wsSend('channel_send', {
-        toConversation: conversationId,
-        intent: 'notify',
-        message,
-        ...(context ? { context } : {}),
-        batchId,
-        conversationId: `${batchId}:${conversationId}`,
-      })
-      return ok
-        ? { conversationId, ok: true, detail: 'broadcast dispatched' }
-        : { conversationId, ok: false, error: 'WebSocket disconnected' }
-    })
+    yield* runWithConcurrency<BatchActionRunResult>(
+      ids,
+      CONCURRENCY,
+      async (conversationId): Promise<BatchActionRunResult> => {
+        const ok = wsSend('channel_send', {
+          toConversation: conversationId,
+          intent: 'notify',
+          message,
+          ...(context ? { context } : {}),
+          batchId,
+          conversationId: `${batchId}:${conversationId}`,
+        })
+        return ok
+          ? { conversationId, ok: true, detail: 'broadcast dispatched' }
+          : { conversationId, ok: false, error: 'WebSocket disconnected' }
+      },
+    )
   },
 }

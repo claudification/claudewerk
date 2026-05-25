@@ -154,9 +154,7 @@ describe('conversation_reassign handler', () => {
     expect(updates).toEqual([conv.id])
     // Broadcast to both old and new project
     expect(broadcasts).toHaveLength(2)
-    expect(broadcasts.map(b => b.project).sort()).toEqual(
-      ['claude:///dest/proj', 'claude:///source/proj'].sort(),
-    )
+    expect(broadcasts.map(b => b.project).sort()).toEqual(['claude:///dest/proj', 'claude:///source/proj'].sort())
     expect(broadcasts[0]?.msg.type).toBe('conversation_reassigned')
     expect((broadcasts[0]?.msg as { batchId?: string }).batchId).toBe('batch_test1234')
     // Log includes prev->next, batch, initiator

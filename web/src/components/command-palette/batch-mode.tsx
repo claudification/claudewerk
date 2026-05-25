@@ -1,7 +1,8 @@
 import { extractProjectLabel } from '@shared/project-uri'
 import { useEffect, useMemo, useState } from 'react'
-import { useConversationsStore } from '@/hooks/use-conversations'
 import { useShallow } from 'zustand/react/shallow'
+import { useConversationsStore } from '@/hooks/use-conversations'
+import type { Conversation } from '@/lib/types'
 import { cn, formatAge } from '@/lib/utils'
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog'
 import { ALL_BATCH_ACTIONS, type BatchAction } from './batch-actions'
@@ -9,29 +10,72 @@ import { BatchProgress } from './batch-progress'
 
 const SELECT_ALL_CAP = 50
 
+function buildClearableField(key: 'toHostSentinelId' | 'toProfile', value: string): Record<string, string | null> {
+  if (value === '__clear__') return { [key]: null }
+  if (value) return { [key]: value }
+  return {}
+}
+
+interface FilterState {
+  project: string
+  status: 'any' | 'live' | 'idle' | 'ended'
+  sentinel: string
+  text: string
+}
+
+function matchesStatus(status: Conversation['status'], filter: FilterState['status']): boolean {
+  if (filter === 'any') return true
+  if (filter === 'live') return status === 'active'
+  if (filter === 'idle') return status === 'idle'
+  return status === 'ended'
+}
+
+function matchesSentinel(c: Conversation, q: string): boolean {
+  if (!q) return true
+  const needle = q.toLowerCase()
+  const hostId = (c.hostSentinelId ?? '').toLowerCase()
+  const alias = (c.hostSentinelAlias ?? '').toLowerCase()
+  return hostId.includes(needle) || alias.includes(needle)
+}
+
+function matchesText(c: Conversation, q: string): boolean {
+  if (!q) return true
+  const needle = q.toLowerCase()
+  return (c.title ?? '').toLowerCase().includes(needle) || c.project.toLowerCase().includes(needle)
+}
+
+function matchesProject(c: Conversation, q: string): boolean {
+  if (!q) return true
+  return c.project.toLowerCase().includes(q.toLowerCase())
+}
+
+function filterConversations(conversations: Conversation[], filter: FilterState): Conversation[] {
+  return conversations.filter(
+    c =>
+      matchesProject(c, filter.project) &&
+      matchesStatus(c.status, filter.status) &&
+      matchesSentinel(c, filter.sentinel) &&
+      matchesText(c, filter.text),
+  )
+}
+
 interface BatchModeModalProps {
   open: boolean
   onClose: () => void
 }
 
 export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
-  const {
-    conversations,
-    projectSettings,
-    selectedForBatch,
-    currentBatchId,
-    sentinels,
-    isAdmin,
-  } = useConversationsStore(
-    useShallow(s => ({
-      conversations: s.conversations,
-      projectSettings: s.projectSettings,
-      selectedForBatch: s.selectedForBatch,
-      currentBatchId: s.currentBatchId,
-      sentinels: s.sentinels,
-      isAdmin: s.permissions.canAdmin,
-    })),
-  )
+  const { conversations, projectSettings, selectedForBatch, currentBatchId, sentinels, isAdmin } =
+    useConversationsStore(
+      useShallow(s => ({
+        conversations: s.conversations,
+        projectSettings: s.projectSettings,
+        selectedForBatch: s.selectedForBatch,
+        currentBatchId: s.currentBatchId,
+        sentinels: s.sentinels,
+        isAdmin: s.permissions.canAdmin,
+      })),
+    )
   const { selectBatch, clearBatchSelection, startBatch, toggleBatchSelection } = useConversationsStore(
     useShallow(s => ({
       selectBatch: s.selectBatch,
@@ -48,9 +92,12 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
   const [selectedActionId, setSelectedActionId] = useState<string>(ALL_BATCH_ACTIONS[0]?.id ?? 'broadcast')
   const [confirmText, setConfirmText] = useState('')
 
-  const [runningBatch, setRunningBatch] = useState<{ batchId: string; action: BatchAction; ids: string[]; input: unknown } | null>(
-    null,
-  )
+  const [runningBatch, setRunningBatch] = useState<{
+    batchId: string
+    action: BatchAction
+    ids: string[]
+    input: unknown
+  } | null>(null)
   // Action-specific input state
   const [broadcastMessage, setBroadcastMessage] = useState('')
   const [reassignProject, setReassignProject] = useState('')
@@ -64,40 +111,22 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
 
   const action = ALL_BATCH_ACTIONS.find(a => a.id === selectedActionId) ?? ALL_BATCH_ACTIONS[0]
 
-  const filtered = useMemo(() => {
-    return conversations.filter(c => {
-      if (filterProject && !c.project.toLowerCase().includes(filterProject.toLowerCase())) return false
-      if (filterStatus !== 'any') {
-        if (filterStatus === 'live' && c.status !== 'active') return false
-        if (filterStatus === 'idle' && c.status !== 'idle') return false
-        if (filterStatus === 'ended' && c.status !== 'ended') return false
-      }
-      if (filterSentinel) {
-        const hostId = c.hostSentinelId ?? ''
-        const alias = c.hostSentinelAlias ?? ''
-        if (
-          !hostId.toLowerCase().includes(filterSentinel.toLowerCase()) &&
-          !alias.toLowerCase().includes(filterSentinel.toLowerCase())
-        ) {
-          return false
-        }
-      }
-      if (filterText) {
-        const t = filterText.toLowerCase()
-        const title = (c.title ?? '').toLowerCase()
-        const proj = c.project.toLowerCase()
-        if (!title.includes(t) && !proj.includes(t)) return false
-      }
-      return true
-    })
-  }, [conversations, filterProject, filterStatus, filterSentinel, filterText])
+  const filtered = useMemo(
+    () =>
+      filterConversations(conversations, {
+        project: filterProject,
+        status: filterStatus,
+        sentinel: filterSentinel,
+        text: filterText,
+      }),
+    [conversations, filterProject, filterStatus, filterSentinel, filterText],
+  )
 
   if (!isAdmin) return null
 
   const selectedIds = Array.from(selectedForBatch)
   const visibleSelected = filtered.filter(c => selectedForBatch.has(c.id))
-  const allVisibleSelected =
-    filtered.length > 0 && filtered.every(c => selectedForBatch.has(c.id))
+  const allVisibleSelected = filtered.length > 0 && filtered.every(c => selectedForBatch.has(c.id))
 
   function handleSelectAllVisible() {
     const visibleIds = filtered.slice(0, SELECT_ALL_CAP).map(c => c.id)
@@ -111,26 +140,21 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
     selectBatch(filtered.map(c => c.id))
   }
 
+  function buildReassignInput() {
+    return {
+      ...(reassignProject ? { toProjectUri: reassignProject } : {}),
+      ...buildClearableField('toHostSentinelId', reassignSentinel),
+      ...buildClearableField('toProfile', reassignProfile),
+    }
+  }
   function handleRun() {
     const batchId = currentBatchId ?? startBatch()
-    let input: unknown
-    if (action.requiresInput === 'broadcast') {
-      input = { message: broadcastMessage }
-    } else if (action.requiresInput === 'reassign') {
-      input = {
-        ...(reassignProject ? { toProjectUri: reassignProject } : {}),
-        ...(reassignSentinel === '__clear__'
-          ? { toHostSentinelId: null }
-          : reassignSentinel
-            ? { toHostSentinelId: reassignSentinel }
-            : {}),
-        ...(reassignProfile === '__clear__'
-          ? { toProfile: null }
-          : reassignProfile
-            ? { toProfile: reassignProfile }
-            : {}),
-      }
-    }
+    const input =
+      action.requiresInput === 'broadcast'
+        ? { message: broadcastMessage }
+        : action.requiresInput === 'reassign'
+          ? buildReassignInput()
+          : undefined
     setRunningBatch({ batchId, action, ids: selectedIds, input })
   }
 
@@ -160,9 +184,7 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
         <div className="flex items-center justify-between border-b border-border px-3 py-2">
           <div className="flex items-center gap-3">
             <DialogTitle className="text-sm font-bold text-accent">Batch operations</DialogTitle>
-            {currentBatchId && (
-              <span className="text-[10px] text-muted-foreground font-mono">{currentBatchId}</span>
-            )}
+            {currentBatchId && <span className="text-[10px] text-muted-foreground font-mono">{currentBatchId}</span>}
             <span className="text-[10px] text-muted-foreground/70">[{selectedIds.length} selected]</span>
           </div>
         </div>
@@ -370,11 +392,7 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
                 <span className="text-[10px] text-muted-foreground mr-auto">
                   {visibleSelected.length} of {filtered.length} visible selected
                 </span>
-                <button
-                  type="button"
-                  onClick={handleClose}
-                  className="px-3 py-1 text-xs bg-muted/20 hover:bg-muted/40"
-                >
+                <button type="button" onClick={handleClose} className="px-3 py-1 text-xs bg-muted/20 hover:bg-muted/40">
                   Cancel
                 </button>
                 <button

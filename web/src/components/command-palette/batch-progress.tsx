@@ -1,8 +1,46 @@
+import { extractProjectLabel } from '@shared/project-uri'
 import { Check, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
-import { extractProjectLabel } from '@shared/project-uri'
+import type { Conversation } from '@/lib/types'
 import type { BatchAction, BatchActionRunResult } from './batch-actions'
+
+function RowStatusIcon({ row }: { row: RowState | undefined }) {
+  if (!row?.settledAt) {
+    return (
+      <span className="w-3 h-3 inline-block rounded-full border-2 border-muted-foreground/40 border-t-transparent animate-spin" />
+    )
+  }
+  return row.ok ? (
+    <Check className="w-3 h-3 text-active shrink-0" />
+  ) : (
+    <X className="w-3 h-3 text-destructive shrink-0" />
+  )
+}
+
+function ProgressRow({
+  conversationId,
+  row,
+  conv,
+}: {
+  conversationId: string
+  row: RowState | undefined
+  conv: Conversation | undefined
+}) {
+  const label = conv?.title || (conv ? extractProjectLabel(conv.project) : conversationId.slice(0, 8))
+  const dur = row?.settledAt && row.startedAt ? row.settledAt - row.startedAt : null
+  const detail = row?.error ? row.error : (row?.detail ?? (row?.settledAt ? '' : 'pending'))
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5">
+      <RowStatusIcon row={row} />
+      <span className="truncate w-40 shrink-0" title={conversationId}>
+        {label}
+      </span>
+      <span className="flex-1 truncate text-muted-foreground/70">{detail}</span>
+      {dur !== null && <span className="text-[10px] text-muted-foreground/50 tabular-nums">{dur}ms</span>}
+    </div>
+  )
+}
 
 interface BatchProgressProps {
   action: BatchAction
@@ -89,30 +127,9 @@ export function BatchProgress({ action, conversationIds, batchId, input, onRetry
         </div>
       </div>
       <div className="max-h-[40vh] overflow-y-auto divide-y divide-border/40">
-        {conversationIds.map(id => {
-          const row = rows.get(id)
-          const conv = conversationsById[id]
-          const label = conv?.title || (conv ? extractProjectLabel(conv.project) : id.slice(0, 8))
-          const dur = row?.settledAt && row.startedAt ? row.settledAt - row.startedAt : null
-          return (
-            <div key={id} className="flex items-center gap-2 px-3 py-1.5">
-              {!row?.settledAt ? (
-                <span className="w-3 h-3 inline-block rounded-full border-2 border-muted-foreground/40 border-t-transparent animate-spin" />
-              ) : row.ok ? (
-                <Check className="w-3 h-3 text-active shrink-0" />
-              ) : (
-                <X className="w-3 h-3 text-destructive shrink-0" />
-              )}
-              <span className="truncate w-40 shrink-0" title={id}>
-                {label}
-              </span>
-              <span className="flex-1 truncate text-muted-foreground/70">
-                {row?.error ? row.error : (row?.detail ?? (row?.settledAt ? '' : 'pending'))}
-              </span>
-              {dur !== null && <span className="text-[10px] text-muted-foreground/50 tabular-nums">{dur}ms</span>}
-            </div>
-          )
-        })}
+        {conversationIds.map(id => (
+          <ProgressRow key={id} conversationId={id} row={rows.get(id)} conv={conversationsById[id]} />
+        ))}
       </div>
     </div>
   )

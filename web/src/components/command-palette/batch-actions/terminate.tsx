@@ -1,7 +1,7 @@
 import { wsSend } from '@/hooks/use-conversations'
 import type { Conversation } from '@/lib/types'
-import { runWithConcurrency } from './types'
 import type { BatchAction, BatchActionRunResult } from './types'
+import { runWithConcurrency } from './types'
 
 const CONCURRENCY = 5
 
@@ -18,32 +18,36 @@ export const TERMINATE_ACTION: BatchAction = {
   async *run({ ids, conversations, batchId }) {
     const byId = new Map(conversations.map((c: Conversation) => [c.id, c]))
 
-    yield* runWithConcurrency<BatchActionRunResult>(ids, CONCURRENCY, async (conversationId): Promise<BatchActionRunResult> => {
-      const conv = byId.get(conversationId)
-      if (!conv) return { conversationId, ok: false, error: 'Conversation not in store' }
+    yield* runWithConcurrency<BatchActionRunResult>(
+      ids,
+      CONCURRENCY,
+      async (conversationId): Promise<BatchActionRunResult> => {
+        const conv = byId.get(conversationId)
+        if (!conv) return { conversationId, ok: false, error: 'Conversation not in store' }
 
-      if (conv.status === 'ended') {
-        const url = `/conversations/${encodeURIComponent(conversationId)}?batchId=${encodeURIComponent(batchId)}`
-        try {
-          const res = await fetch(url, { method: 'DELETE' })
-          if (!res.ok) {
-            const body = await res.text().catch(() => '')
-            return { conversationId, ok: false, error: `HTTP ${res.status}: ${body.slice(0, 120)}` }
+        if (conv.status === 'ended') {
+          const url = `/conversations/${encodeURIComponent(conversationId)}?batchId=${encodeURIComponent(batchId)}`
+          try {
+            const res = await fetch(url, { method: 'DELETE' })
+            if (!res.ok) {
+              const body = await res.text().catch(() => '')
+              return { conversationId, ok: false, error: `HTTP ${res.status}: ${body.slice(0, 120)}` }
+            }
+            return { conversationId, ok: true, detail: 'dismissed' }
+          } catch (err) {
+            return { conversationId, ok: false, error: err instanceof Error ? err.message : 'Network error' }
           }
-          return { conversationId, ok: true, detail: 'dismissed' }
-        } catch (err) {
-          return { conversationId, ok: false, error: err instanceof Error ? err.message : 'Network error' }
         }
-      }
 
-      const ok = wsSend('terminate_conversation', {
-        conversationId,
-        source: 'dashboard-other',
-        batchId,
-      })
-      return ok
-        ? { conversationId, ok: true, detail: 'terminate sent' }
-        : { conversationId, ok: false, error: 'WebSocket disconnected' }
-    })
+        const ok = wsSend('terminate_conversation', {
+          conversationId,
+          source: 'dashboard-other',
+          batchId,
+        })
+        return ok
+          ? { conversationId, ok: true, detail: 'terminate sent' }
+          : { conversationId, ok: false, error: 'WebSocket disconnected' }
+      },
+    )
   },
 }

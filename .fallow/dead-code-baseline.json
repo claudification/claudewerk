@@ -22,6 +22,7 @@
     "src/broker/recap/__tests__/synthetic-fixtures.ts:makeErrors",
     "src/broker/recap/__tests__/synthetic-fixtures.ts:makeOpenQuestions",
     "src/broker/recap/__tests__/synthetic-fixtures.ts:makeCommits",
+    "src/sentinel/sentinel-config.ts:DEFAULT_PROFILE_WEIGHT",
     "src/shared/cc-daemon/socket-path.ts:resolveWorkerPtySock",
     "src/shared/opencode-config.ts:OPENCODE_FALLBACK_MODEL",
     "src/shared/tool-vocab.ts:TOOL_KINDS",
@@ -153,6 +154,8 @@
     "RecapStatus|src/broker/recap/period/store.ts|src/shared/protocol.ts",
     "SpawnResult|src/broker/backends/types.ts|src/shared/protocol.ts",
     "TaskStatus|src/shared/protocol.ts|src/shared/task-statuses.ts",
+    "cwdToProjectUri|src/shared/project-uri.ts|web/src/lib/types.ts",
+    "extractProjectLabel|src/shared/project-uri.ts|web/src/lib/types.ts",
     "subscribe|src/shared/cc-daemon/subscribe.ts|web/src/hooks/ws-stats.ts|web/src/lib/perf-metrics.ts"
   ],
   "type_only_dependencies": [],
