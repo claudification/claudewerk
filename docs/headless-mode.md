@@ -168,10 +168,10 @@ listing the known names. Profile env (config dir, API keys) is resolved
 sentinel-side only -- the broker never holds it (PROFILE-ENV BOUNDARY covenant).
 
 **Discovery:** call `list_hosts` -- each sentinel reports its configured profiles
-and pools. **Inheritance:** spawning from inside a conversation onto the *same*
-sentinel with BOTH params absent inherits the caller's resolved profile
-("spawn another like me"). Schema lives in `src/shared/spawn-schema.ts`;
-broker validation in `src/broker/spawn-dispatch.ts`.
+and pools. When both `profile` and `pool` are omitted the spawn falls through
+to the target sentinel's `defaultSelection` -- the broker does not infer the
+caller's profile. Schema lives in `src/shared/spawn-schema.ts`; broker
+validation in `src/broker/spawn-dispatch.ts`.
 
 ## Transport Abstraction
 

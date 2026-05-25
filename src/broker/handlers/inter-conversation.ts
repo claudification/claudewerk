@@ -4,7 +4,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { extractProjectLabel, parseProjectUri } from '../../shared/project-uri'
+import { extractProjectLabel } from '../../shared/project-uri'
 import type { ConversationControlAction } from '../../shared/protocol'
 import { resolveSpawnConfig } from '../../shared/spawn-defaults'
 import { mapProjectTrust, type SpawnCallerContext } from '../../shared/spawn-permissions'
@@ -94,35 +94,6 @@ const handleChannelRevive: MessageHandler = (ctx, data) => {
   ctx.log.debug(`Benevolent revive: -> ${targetConversationId.slice(0, 8)}`)
 }
 
-/**
- * MCP-spawn profile inheritance: when an agent calls `spawn_conversation`
- * without pinning a profile or pool, default to the caller's own sentinel
- * profile. Matches "spawn another like me" intent so agents on `work@beast`
- * don't silently fall back to `default@beast`. Only applies when targeting
- * the same sentinel (an explicit different `req.sentinel` means the caller
- * wants a different host and the caller's profile name may not exist there).
- */
-function parseCallerProject(callerProject: string | null): ReturnType<typeof parseProjectUri> | null {
-  if (!callerProject) return null
-  try {
-    return parseProjectUri(callerProject)
-  } catch {
-    return null
-  }
-}
-
-function inheritProfileFromCaller(
-  req: SpawnRequest,
-  callerProject: string | null,
-  callerResolvedProfile: string | undefined,
-): string | undefined {
-  if (req.profile || req.pool) return undefined
-  if (!callerResolvedProfile || callerResolvedProfile === 'default') return undefined
-  const parsed = parseCallerProject(callerProject)
-  const sentinelMatches = !req.sentinel || req.sentinel === parsed?.authority
-  return sentinelMatches ? callerResolvedProfile : undefined
-}
-
 const handleChannelSpawn: MessageHandler = (ctx, data) => {
   const callerConversationId = ctx.ws.data.conversationId
   if (!callerConversationId) return
@@ -159,15 +130,7 @@ const handleChannelSpawn: MessageHandler = (ctx, data) => {
 
   const callerProject = ctx.caller?.project ?? null
   const callerTrust = callerProject ? mapProjectTrust(getProjectSettings(callerProject)?.trustLevel) : 'trusted'
-  const callerConv = ctx.conversations.getConversation(callerConversationId)
 
-  const inheritedProfile = inheritProfileFromCaller(req, callerProject, callerConv?.resolvedProfile)
-  if (inheritedProfile) {
-    req.profile = inheritedProfile
-    ctx.log.debug(
-      `channel_spawn: inherited profile="${inheritedProfile}" from caller (sentinel="${req.sentinel ?? 'default'}")`,
-    )
-  }
   const callerContext: SpawnCallerContext = {
     kind: 'mcp',
     hasSpawnPermission: true,
