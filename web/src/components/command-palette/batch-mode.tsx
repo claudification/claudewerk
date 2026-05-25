@@ -55,7 +55,11 @@ function matchesProject(c: Conversation, q: string): boolean {
 
 function filterConversations(conversations: Conversation[], filter: FilterState): Conversation[] {
   return conversations.filter(
-    c => matchesProject(c, filter.project) && matchesStatus(c, filter) && matchesSentinel(c, filter.sentinel) && matchesText(c, filter.text),
+    c =>
+      matchesProject(c, filter.project) &&
+      matchesStatus(c, filter) &&
+      matchesSentinel(c, filter.sentinel) &&
+      matchesText(c, filter.text),
   )
 }
 
@@ -217,9 +221,22 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
     })
     const after = selectedOnly ? base.filter(c => selectedForBatch.has(c.id)) : base
     return [...after].sort((a, b) => defaultSort(a, b, projectSettings))
-  }, [conversations, filterProject, filterStatus, filterSentinel, filterText, showEnded, selectedOnly, selectedForBatch, projectSettings])
+  }, [
+    conversations,
+    filterProject,
+    filterStatus,
+    filterSentinel,
+    filterText,
+    showEnded,
+    selectedOnly,
+    selectedForBatch,
+    projectSettings,
+  ])
 
-  const flatRows = useMemo(() => flatten(filtered, groupByProject, projectSettings), [filtered, groupByProject, projectSettings])
+  const flatRows = useMemo(
+    () => flatten(filtered, groupByProject, projectSettings),
+    [filtered, groupByProject, projectSettings],
+  )
   const convRows = useMemo(() => flatRows.filter((r): r is ConvRow => r.kind === 'conv'), [flatRows])
   const focusableIndices = useMemo(
     () => flatRows.map((r, i) => (r.kind === 'conv' ? i : -1)).filter(i => i >= 0),
@@ -513,11 +530,7 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
                 <tbody>
                   {flatRows.map((row, idx) =>
                     row.kind === 'group' ? (
-                      <BatchGroupHeader
-                        key={`g:${row.project}`}
-                        row={row}
-                        cols={groupByProject ? 5 : 6}
-                      />
+                      <BatchGroupHeader key={`g:${row.project}`} row={row} cols={groupByProject ? 5 : 6} />
                     ) : (
                       <BatchRow
                         key={row.conv.id}
@@ -641,9 +654,7 @@ function BatchGroupHeader({ row, cols }: { row: GroupRow; cols: number }) {
     <tr className="bg-muted/15 border-y border-border/30">
       <td colSpan={cols} className="px-2 py-1">
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider">
-          {row.color && (
-            <span className="w-2 h-2 rounded-sm shrink-0" style={{ backgroundColor: row.color }} />
-          )}
+          {row.color && <span className="w-2 h-2 rounded-sm shrink-0" style={{ backgroundColor: row.color }} />}
           {row.icon && <span className="shrink-0 text-muted-foreground">{renderProjectIcon(row.icon, 'w-3 h-3')}</span>}
           <span className="text-foreground font-bold">{row.label}</span>
           <span className="text-muted-foreground/60">({row.count})</span>
