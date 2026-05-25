@@ -39,6 +39,7 @@ interface ObserveArgs {
   onError?: (err: Error) => void
   listFn: (sock: string) => Promise<ListResponse>
   scanProjectDirFn?: (dir: string) => Promise<JsonlEntry[]>
+  jsonlByPidFn?: (pid: number, dir: string) => Promise<string | null>
 }
 
 /** Start an observer with test defaults (10ms poll, empty dir scan). */
@@ -54,6 +55,7 @@ function observe(args: ObserveArgs): DaemonSessionObserver {
     onError: args.onError,
     listFn: args.listFn,
     scanProjectDirFn: args.scanProjectDirFn ?? (async () => []),
+    jsonlByPidFn: args.jsonlByPidFn,
   })
 }
 
@@ -197,6 +199,77 @@ describe('observeDaemonSession -- /clear rotation via the project dir', () => {
     await sleep(50)
     obs.stop()
     expect(seen).toEqual(['sess-1'])
+  })
+})
+
+describe('observeDaemonSession -- pid-based lookup (CROSS-WIRE defense)', () => {
+  test('uses pid-lsof result as primary -- ignores stale list id AND stale dir-scan', async () => {
+    const seen: string[] = []
+    const obs = observe({
+      mode: 'attach',
+      onSessionId: id => seen.push(id),
+      // The daemon reports a stale dispatch-time id.
+      listFn: async () => listOf({ short: 'aaaa1111', sessionId: 'stale-list-id', pid: 12345 }),
+      // The dir scan would surface a DIFFERENT (foreign) conv's JSONL --
+      // exactly the cross-wire that bit prod. pid-based path must win.
+      scanProjectDirFn: async () => [{ id: 'foreign-conv-jsonl', mtimeMs: 999 }],
+      jsonlByPidFn: async () => 'true-live-id',
+    })
+    await sleep(40)
+    obs.stop()
+    expect(seen).toEqual(['true-live-id'])
+  })
+
+  test('detects /clear rotation via pid-lsof when the worker reopens a fresh JSONL', async () => {
+    const seen: string[] = []
+    let openJsonl = 'before-clear'
+    const obs = observe({
+      mode: 'new',
+      onSessionId: id => seen.push(id),
+      listFn: async () => listOf({ short: 'aaaa1111', sessionId: 'before-clear', pid: 12345 }),
+      jsonlByPidFn: async () => openJsonl,
+    })
+    await sleep(30)
+    openJsonl = 'after-clear'
+    await sleep(40)
+    obs.stop()
+    expect(seen).toEqual(['before-clear', 'after-clear'])
+  })
+
+  test('does NOT cross-wire when pid-lsof returns null and a session was already established', async () => {
+    const seen: string[] = []
+    let pidReturn: string | null = 'true-live-id'
+    const obs = observe({
+      mode: 'new',
+      onSessionId: id => seen.push(id),
+      listFn: async () => listOf({ short: 'aaaa1111', sessionId: 'irrelevant', pid: 12345 }),
+      // After the initial report, lsof returns null (deep idle, fd closed)
+      // while the dir scan surfaces a foreign conv's JSONL with a newer mtime.
+      // Falling back to the dir scan here is the original bug -- it must NOT
+      // be reported. Last known id holds.
+      scanProjectDirFn: async () => [{ id: 'foreign-newer', mtimeMs: 999 }],
+      jsonlByPidFn: async () => pidReturn,
+    })
+    await sleep(30)
+    pidReturn = null
+    await sleep(40)
+    obs.stop()
+    expect(seen).toEqual(['true-live-id'])
+  })
+
+  test('uses pid-lsof for initial when present even if scan would have returned a different id', async () => {
+    const seen: string[] = []
+    const obs = observe({
+      mode: 'attach',
+      onSessionId: id => seen.push(id),
+      listFn: async () => listOf({ short: 'aaaa1111', sessionId: 'list-id', pid: 12345 }),
+      // Scan would have returned 'scan-newest' -- the buggy path. pid wins.
+      scanProjectDirFn: async () => [{ id: 'scan-newest', mtimeMs: 999 }],
+      jsonlByPidFn: async () => 'pid-correct',
+    })
+    await sleep(40)
+    obs.stop()
+    expect(seen).toEqual(['pid-correct'])
   })
 })
 

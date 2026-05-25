@@ -125,7 +125,10 @@
     "web/src/lib/types.ts:TranscriptSystemEntry"
   ],
   "private_type_leaks": [],
-  "unused_dependencies": [],
+  "unused_dependencies": [
+    "web/package.json:@codemirror/theme-one-dark",
+    "web/package.json:codemirror"
+  ],
   "unused_dev_dependencies": [],
   "circular_dependencies": [
     "web/src/components/recap-jobs/recap-custom-range-dialog.tsx->web/src/components/recap-jobs/recap-submenu.tsx"
@@ -138,7 +141,20 @@
   "unresolved_imports": [
     "scripts/lint-inline-import-type.ts:...",
     "scripts/lint-inline-import-type.ts:...",
-    "scripts/lint-inline-import-type.ts:./x"
+    "scripts/lint-inline-import-type.ts:./x",
+    "src/acp-agent-host/index.ts:../shared/version",
+    "src/broker/backup.ts:../shared/version",
+    "src/broker/conversation-store.ts:../shared/version",
+    "src/broker/routes/mcp-server.ts:../../shared/version",
+    "src/claude-agent-host/mcp-tools/identity.ts:../../shared/version",
+    "src/claude-agent-host/ws-client.ts:../shared/version",
+    "src/daemon-agent-host/index.ts:../shared/version",
+    "src/opencode-agent-host/index.ts:../shared/version",
+    "src/shared/update-check.ts:./version",
+    "web/src/components/error-boundary.tsx:../../../src/shared/version",
+    "web/src/components/settings-page.tsx:../../../src/shared/version",
+    "web/src/hooks/use-build-update.ts:../../../src/shared/version",
+    "web/src/lib/utils.ts:../../../src/shared/version"
   ],
   "unlisted_dependencies": [],
   "duplicate_exports": [

@@ -10,33 +10,45 @@
  *   - new / resume mode: from the daemon `list` op. The worker was just
  *     dispatched by `claude --bg`, so its `JobRecord.sessionId` IS the live
  *     run id -- no `/clear` can have happened yet.
- *   - attach mode: from the project transcript directory (newest-mtime JSONL).
- *     The worker is pre-existing and MAY have `/clear`'d since dispatch, in
- *     which case `JobRecord.sessionId` is the STALE dispatch-time id (it never
- *     rotates -- spike finding 2). The newest JSONL is the truth. `list`'s id
- *     is only the fallback for the brief window before any JSONL exists.
+ *   - attach mode: from the worker process's OPEN JSONL file descriptor
+ *     (lsof on `JobRecord.pid`). The worker is pre-existing and MAY have
+ *     `/clear`'d since dispatch, in which case `JobRecord.sessionId` is the
+ *     STALE dispatch-time id (it never rotates -- spike finding 2). The pid's
+ *     open .jsonl IS the truth. The project transcript dir is a LAST-RESORT
+ *     fallback (process-correlation unavailable) -- see CROSS-WIRE HAZARD.
  *
  * `/clear` ROTATION
  *   A `/clear` inside the worker mints a fresh CC session and a fresh
  *   `<id>.jsonl` -- but the daemon `JobRecord.sessionId` stays pinned to the
- *   dispatch-time id FOREVER (spike finding 2: it is immutable across internal
- *   `/clear`s). So rotation CANNOT be detected from `list`. It is detected by
- *   watching the project dir: when a JSONL strictly newer than the current
- *   session's JSONL appears, that new JSONL's name is the rotated ccSessionId.
+ *   dispatch-time id FOREVER (spike finding 2). The reliable signal is the
+ *   worker process's currently-open .jsonl fd (via lsof). The dir-scan path
+ *   is only safe when no other CC sessions share the project dir (see below).
+ *
+ * CROSS-WIRE HAZARD (the bug this module had until the lsof rewrite, 2026-05-26)
+ *   `~/.claude/projects/<slug>/` is SHARED across every CC process targeting
+ *   that cwd -- daemon workers AND user-interactive `rclaude` / `claude` runs.
+ *   The original dir-scan heuristic ("newest-mtime JSONL is the worker's")
+ *   cross-wired every daemon conv to whichever rclaude conv last touched its
+ *   JSONL in the same project. Symptoms: two conversations reporting the same
+ *   `ccSessionId`, silent name swaps (`lucky-banana` -> `jolly-koala`), and
+ *   `/clear`-on-idle phantom transitions. The pid-fd lookup correlates by
+ *   process, not file mtime -- impossible to cross-wire as long as the daemon
+ *   gives us a `pid` (it does; live-verified on CC 2.1.150).
  *
  * The daemon `short` is the stable anchor (it maps to claudewerk's
  * `conversationId`); the rotating ccSessionId is just the JSONL file name.
  *
  * Polling (not `subscribe` / `fs.watch`) is deliberate: a `list` call plus a
- * `readdir`+`stat` sweep is a handful of syscalls per second, survives a
- * transient daemon restart with no special handling, and needs no held
- * connection or watcher lifecycle to babysit. `/clear` is rare, so sub-second
- * latency is not required.
+ * targeted `lsof -p <pid>` (or `readdir`+`stat` fallback) is a handful of
+ * syscalls per second, survives a transient daemon restart with no special
+ * handling, and needs no held connection or watcher lifecycle to babysit.
+ * `/clear` is rare, so sub-second latency is not required.
  */
+import { execFile } from 'node:child_process'
 import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { list } from '../shared/cc-daemon/ops'
-import type { ListResponse } from '../shared/cc-daemon/types'
+import type { JobRecord, ListResponse } from '../shared/cc-daemon/types'
 import type { DaemonMode } from './cli-args'
 import { ccSessionIdFromJsonl, transcriptProjectDir } from './transcript-path'
 
@@ -76,9 +88,20 @@ export interface DaemonSessionObserverOptions {
   /**
    * Override the project-dir scan -- test seam. Given the project dir, returns
    * its transcript JSONLs sorted newest-mtime first. Defaults to a real
-   * `readdir` + `stat` sweep.
+   * `readdir` + `stat` sweep. This is the LAST-RESORT fallback when the daemon
+   * does not expose a pid -- see CROSS-WIRE HAZARD in the module docstring.
    */
   scanProjectDirFn?: (projectDir: string) => Promise<JsonlEntry[]>
+  /**
+   * Override the pid -> open-JSONL lookup -- test seam. Given the worker's pid
+   * and the project transcript dir, returns the ccSessionId of the .jsonl file
+   * the worker process currently has open (its live transcript). `null` means
+   * the lookup failed / no .jsonl is open / the platform does not support it.
+   * Defaults to `lsof -p <pid>` on darwin and linux. This is the PRIMARY
+   * signal -- it correlates by process, not by file mtime, so it cannot
+   * cross-wire to other CC sessions sharing the project dir.
+   */
+  jsonlByPidFn?: (pid: number, projectDir: string) => Promise<string | null>
 }
 
 /**
@@ -147,6 +170,38 @@ function detectRotation(scan: JsonlEntry[], lastSessionId: string): string | nul
   return null
 }
 
+/**
+ * Default pid -> open-JSONL lookup. Shells `lsof -p <pid>` and walks its
+ * output for a `.jsonl` path under `projectDir`. The first match's file name
+ * (stem) IS the worker's live ccSessionId. Returns `null` on lsof failure,
+ * no match, or any platform that does not ship lsof. Pure subprocess wrapper
+ * -- no side effects.
+ *
+ * Why this is correct: CC opens the transcript file for write while a turn is
+ * running, and re-opens on append. Under load the fd is always present; in
+ * deep idle it may be briefly closed, in which case we return `null` and the
+ * caller treats it as "no new observation this poll" (NOT a rotation -- see
+ * CROSS-WIRE HAZARD).
+ */
+function defaultJsonlByPid(pid: number, projectDir: string): Promise<string | null> {
+  return new Promise(resolve => {
+    execFile('lsof', ['-p', String(pid), '+c', '0'], { timeout: 2_000 }, (err, stdout) => {
+      if (err) return resolve(null)
+      const lines = stdout.split('\n')
+      for (const line of lines) {
+        const idx = line.indexOf(projectDir)
+        if (idx < 0) continue
+        const path = line.slice(idx).trim()
+        if (!path.endsWith('.jsonl')) continue
+        const name = path.slice(path.lastIndexOf('/') + 1)
+        const id = ccSessionIdFromJsonl(name)
+        if (id) return resolve(id)
+      }
+      resolve(null)
+    })
+  })
+}
+
 /** Default project-dir scan: every `*.jsonl`, newest-mtime first. */
 async function scanProjectDir(projectDir: string): Promise<JsonlEntry[]> {
   let names: string[]
@@ -179,6 +234,7 @@ async function scanProjectDir(projectDir: string): Promise<JsonlEntry[]> {
 export function observeDaemonSession(opts: DaemonSessionObserverOptions): DaemonSessionObserver {
   const pollList = opts.listFn ?? list
   const scanDir = opts.scanProjectDirFn ?? scanProjectDir
+  const lookupJsonlByPid = opts.jsonlByPidFn ?? defaultJsonlByPid
   const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS
   const projectDir = transcriptProjectDir(opts.cwd)
 
@@ -213,11 +269,13 @@ export function observeDaemonSession(opts: DaemonSessionObserverOptions): Daemon
   }
 
   /**
-   * Poll the daemon `list` op. Returns the worker's `JobRecord.sessionId`
-   * (possibly empty), or `null` if the worker is not in the roster. Drives
-   * `everSeen` / `onGone` as a side effect.
+   * Poll the daemon `list` op. Returns the worker's `JobRecord` (used for both
+   * its dispatch-time `sessionId` and its `pid` -- the pid feeds the lsof-based
+   * live-session lookup that defeats the project-dir cross-wire), or `null` if
+   * the worker is not in the roster. Drives `everSeen` / `onGone` as a side
+   * effect.
    */
-  async function pollWorker(): Promise<string | null> {
+  async function pollWorker(): Promise<JobRecord | null> {
     let resp: ListResponse
     try {
       resp = await pollList(opts.controlSock)
@@ -233,7 +291,7 @@ export function observeDaemonSession(opts: DaemonSessionObserverOptions): Daemon
     }
     everSeen = true
     lastObservation = nextObservation(lastObservation, job.state, Date.now())
-    return job.sessionId
+    return job
   }
 
   /** Scan the project transcript dir, surfacing failures via `onError`. */
@@ -246,20 +304,49 @@ export function observeDaemonSession(opts: DaemonSessionObserverOptions): Daemon
     }
   }
 
+  /**
+   * Try the pid-based correlation. Returns `'handled'` if a session was
+   * reported (or if pid was present but lsof was empty AND we already had a
+   * session -- the cross-wire-guard "hold the last id" path). Returns
+   * `'try-fallback'` only when we have no pid at all, OR when pid+lsof gave
+   * nothing AND we never had a session (so the fallback is the only chance to
+   * establish an initial id).
+   */
+  async function tryPidLookup(job: JobRecord): Promise<'handled' | 'try-fallback'> {
+    if (job.pid === undefined) return 'try-fallback'
+    const live = await lookupJsonlByPid(job.pid, projectDir)
+    if (stopped) return 'handled'
+    if (live) {
+      report(live)
+      return 'handled'
+    }
+    // pid is known but lsof returned nothing (deep idle, fd briefly closed).
+    // If we already have a session, HOLD it -- the dir-scan fallback would
+    // cross-wire to another conv. If we have NO session yet, fall back so the
+    // observer can at least bootstrap.
+    return lastSessionId !== null ? 'handled' : 'try-fallback'
+  }
+
+  /** Dir-scan fallback path -- only safe when pid correlation is unavailable. */
+  async function runDirScanFallback(job: JobRecord): Promise<void> {
+    const scan = await pollDir()
+    if (stopped) return
+    const next =
+      lastSessionId === null
+        ? deriveInitialId(opts.mode, job.sessionId ?? '', scan)
+        : detectRotation(scan, lastSessionId)
+    if (next) report(next)
+  }
+
   async function poll(): Promise<void> {
     if (stopped || polling) return
     polling = true
     try {
-      const listSessionId = await pollWorker()
-      if (stopped || goneFired) return
-      const scan = await pollDir()
-      if (stopped) return
-
-      const next =
-        lastSessionId === null
-          ? deriveInitialId(opts.mode, listSessionId ?? '', scan)
-          : detectRotation(scan, lastSessionId)
-      if (next) report(next)
+      const job = await pollWorker()
+      if (stopped || goneFired || !job) return
+      const outcome = await tryPidLookup(job)
+      if (stopped || outcome === 'handled') return
+      await runDirScanFallback(job)
     } finally {
       polling = false
     }
