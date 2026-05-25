@@ -66,13 +66,13 @@ function useProjectGroupingActions(project: string) {
         return node
       })
     newTree = [
+      ...newTree,
       {
         id: groupId,
         type: 'group' as const,
         name: name.trim(),
         children: [{ id: project, type: 'project' as const }],
       },
-      ...newTree,
     ]
     saveProjectOrder({ tree: newTree })
   }
