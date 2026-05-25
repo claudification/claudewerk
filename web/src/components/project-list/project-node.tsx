@@ -8,8 +8,9 @@ import { extractProjectLabel, projectPath } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
 import { ProjectSettingsButton, ProjectSettingsEditor, renderProjectIcon } from '../project-settings-editor'
 import { ConversationContextMenu, PinnedProjectContextMenu, ProjectContextMenu } from './conversation-context-menu'
-import { ConversationCard, ConversationItemCompact } from './conversation-item'
+import { ConversationCard, ConversationItemCompact, SpawnRootStub } from './conversation-item'
 import { InlineConfirmButton } from './inline-confirm-button'
+import { groupByLineage, neededOrphanRootIds } from './lineage'
 import { partitionConversations } from './partition'
 
 function idsEqual(a: string[], b: string[]): boolean {
@@ -82,6 +83,17 @@ const ProjectConversationGroup = memo(
     const hasPendingAttention = conversations.some(s => s.pendingAttention)
     const hasNotification = conversations.some(s => s.hasNotification)
 
+    // Spawn-lineage grouping for the normal bucket: cluster spawned children
+    // under their root. Roots that ended/filtered out of this project's visible
+    // set are pulled from the store as dimmed orphan roots so the chain stays
+    // visible. (Walking only `normal` -- ad-hoc / worktree buckets keep their
+    // own separators; daemon-spawned children land in `normal`.)
+    const orphanRootIds = neededOrphanRootIds(normal)
+    const orphanRoots = useConversationsStore(
+      useShallow(s => orphanRootIds.map(id => s.conversationsById[id]).filter(Boolean) as Conversation[]),
+    )
+    const normalGroups = groupByLineage(normal, orphanRoots)
+
     return (
       <div>
         <div
@@ -150,16 +162,24 @@ const ProjectConversationGroup = memo(
             </div>
           </ProjectContextMenu>
           <div className="space-y-0.5 pb-1">
-            {normal.map(conversation => (
-              <ConversationContextMenu
-                key={conversation.id}
-                conversation={conversation}
-                onOpenSettings={() => setShowSettings(true)}
-              >
-                <div>
-                  <ConversationItemCompact conversation={conversation} />
-                </div>
-              </ConversationContextMenu>
+            {normalGroups.map(group => (
+              <div key={group.key} className={group.members.length > 1 ? 'space-y-0.5' : undefined}>
+                {group.members.map(member =>
+                  member.orphanRoot ? (
+                    <SpawnRootStub key={member.conversation.id} conversationId={member.conversation.id} />
+                  ) : (
+                    <ConversationContextMenu
+                      key={member.conversation.id}
+                      conversation={member.conversation}
+                      onOpenSettings={() => setShowSettings(true)}
+                    >
+                      <div className={member.role === 'child' ? 'pl-3' : undefined}>
+                        <ConversationItemCompact conversation={member.conversation} />
+                      </div>
+                    </ConversationContextMenu>
+                  ),
+                )}
+              </div>
             ))}
             {adhoc.length > 0 && normal.length > 0 && (
               <div className="flex items-center gap-2 px-3 py-1">

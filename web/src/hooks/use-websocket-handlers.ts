@@ -120,6 +120,10 @@ function toConversation(summary: ConversationSummary): Conversation {
     spinnerVerbs: summary.spinnerVerbs,
     autocompactPct: summary.autocompactPct,
     backend: summary.backend,
+    // Spawn lineage (Phase 3 carries parent/root over WS; directChildCount is
+    // REST-only, so it stays undefined here and the UI walks the local list).
+    parentConversationId: summary.parentConversationId,
+    rootConversationId: summary.rootConversationId,
   }
 }
 

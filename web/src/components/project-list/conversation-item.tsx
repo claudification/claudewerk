@@ -99,6 +99,136 @@ function StatusIndicator({ status, adHoc }: { status: Conversation['status']; ad
   return <span className="w-2 h-2 rounded-full shrink-0 bg-idle" title={status} />
 }
 
+// ─── Spawn lineage (Phase 4) ───────────────────────────────────────
+
+/** Direct-children count for a conversation. Prefers the REST `directChildCount`;
+ *  falls back to walking the local conversation list (WS conversation updates
+ *  don't carry directChildCount, so a live control panel walks -- which is also
+ *  the authoritative live source the info dialog's children list uses). */
+function useDirectChildCount(conversation: Conversation): number {
+  return useConversationsStore(s => {
+    if (typeof conversation.directChildCount === 'number') return conversation.directChildCount
+    let n = 0
+    for (const c of s.conversations) if (c.parentConversationId === conversation.id) n++
+    return n
+  })
+}
+
+/** Neutral meta-chip rendering of the "N spawned" badge. Shared by the meta
+ *  footers (Full + Compact) and the SpawnRootStub. */
+function spawnedBadge(count: number): ReactNode {
+  return (
+    <span
+      className="px-1 py-0.5 text-[8px] rounded bg-muted text-muted-foreground font-medium"
+      title={`Spawned ${count} conversation${count > 1 ? 's' : ''}`}
+    >
+      {count} spawned
+    </span>
+  )
+}
+
+/** "N spawned" badge -- shown on a conversation that has spawned children. */
+function SpawnedChildrenBadge({ conversation }: { conversation: Conversation }) {
+  const count = useDirectChildCount(conversation)
+  if (count <= 0) return null
+  return spawnedBadge(count)
+}
+
+/** Title-row attention badges shared by the full + compact cards: pending link,
+ *  pending permission, waiting-for-input, notification, and "N spawned". Owns
+ *  the pending-link / pending-permission store subscriptions so the two cards
+ *  don't each duplicate the badge markup. */
+function ConversationAttentionBadges({ conversation }: { conversation: Conversation }) {
+  const hasPendingPermission = useConversationsStore(s =>
+    s.pendingPermissions.some(p => p.conversationId === conversation.id),
+  )
+  const hasPendingLink = useConversationsStore(s =>
+    s.pendingProjectLinks.some(r => r.fromConversation === conversation.id || r.toConversation === conversation.id),
+  )
+  return (
+    <>
+      {hasPendingLink && <span className="text-[9px] text-teal-400 font-bold animate-pulse">LINK</span>}
+      {hasPendingPermission && <span className="text-[9px] text-amber-400 font-bold animate-pulse">PERM</span>}
+      {conversation.pendingAttention && (
+        <span className="text-[9px] text-amber-400 font-bold animate-pulse">WAITING</span>
+      )}
+      {conversation.hasNotification && <span className="text-[9px] text-teal-400 font-bold">NOTIFY</span>}
+      <SpawnedChildrenBadge conversation={conversation} />
+    </>
+  )
+}
+
+/** "from {parent}" subtext on a spawned child. Click navigates to the parent
+ *  transcript. Degrades to "(deleted)" when the parent no longer exists. */
+function SpawnedFromSubtext({ conversation, padClass = 'pl-1' }: { conversation: Conversation; padClass?: string }) {
+  const parentId = conversation.parentConversationId
+  const selectConversation = useConversationsStore(s => s.selectConversation)
+  const parentTitle = useConversationsStore(s => {
+    if (!parentId) return null
+    const p = s.conversationsById[parentId]
+    return p ? p.title || p.agentName || p.id.slice(0, 8) : null
+  })
+  if (!parentId) return null
+  const deleted = parentTitle === null
+  return (
+    <div className={cn('mt-0.5 text-[9px] text-muted-foreground/60 truncate', padClass)}>
+      <button
+        type="button"
+        disabled={deleted}
+        onClick={e => {
+          e.stopPropagation()
+          if (deleted) return
+          haptic('tap')
+          selectConversation(parentId, 'click')
+        }}
+        className={cn(
+          'inline-flex items-center gap-0.5 max-w-full',
+          deleted ? 'cursor-default' : 'cursor-pointer hover:text-foreground',
+        )}
+        title={deleted ? 'Parent conversation no longer exists' : `Spawned from ${parentTitle}`}
+      >
+        <span className="shrink-0">{'↪'}</span>
+        <span className="truncate">from {deleted ? '(deleted)' : parentTitle}</span>
+      </button>
+    </div>
+  )
+}
+
+/** Dimmed orphan-root row: a spawn root no longer in the live set (ended /
+ *  inactive) pulled into its lineage group for context. No pulse, no selection
+ *  ring, no action badges -- click still opens the transcript. */
+export const SpawnRootStub = memo(function SpawnRootStub({ conversationId }: { conversationId: string }) {
+  const conversation = useConversationsStore(s => s.conversationsById[conversationId])
+  const selectConversation = useConversationsStore(s => s.selectConversation)
+  if (!conversation) return null
+  const title = conversation.title || conversation.agentName || conversation.id.slice(0, 8)
+  return (
+    <div
+      data-conversation-id={conversation.id}
+      role="button"
+      tabIndex={0}
+      onClick={() => {
+        haptic('tap')
+        selectConversation(conversation.id, 'click')
+      }}
+      onKeyDown={e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          haptic('tap')
+          selectConversation(conversation.id, 'click')
+        }
+      }}
+      className="w-full text-left border border-border/60 p-2 pl-4 transition-colors cursor-pointer hover:border-primary/40"
+      title={`Spawn root -- ${projectPath(conversation.project)}`}
+    >
+      <div className="flex items-center gap-1.5">
+        <StatusIndicator status={conversation.status} adHoc={conversation.capabilities?.includes('ad-hoc')} />
+        <span className="font-mono text-[11px] truncate flex-1 text-muted-foreground">{title}</span>
+        <SpawnedChildrenBadge conversation={conversation} />
+      </div>
+    </div>
+  )
+})
+
 // ─── Token formatting ─────────────────────────────────────────────
 
 function formatTokenCount(n: number): string {
@@ -237,6 +367,69 @@ function LaunchParamsSection({ conversation }: { conversation: Conversation }) {
 
 // ─── Conversation info dialog (replaces hover tooltip) ────────────────
 
+/** Lineage rows for the info dialog: who spawned this conversation and which
+ *  conversations it spawned. Children are walked from the local list (the
+ *  authoritative live source). Each entry navigates + closes the dialog. */
+function ConversationLineageSection({
+  conversation,
+  onNavigate,
+}: {
+  conversation: Conversation
+  onNavigate: (id: string) => void
+}) {
+  const parent = useConversationsStore(s =>
+    conversation.parentConversationId ? s.conversationsById[conversation.parentConversationId] : undefined,
+  )
+  const children = useConversationsStore(
+    useShallow(s => s.conversations.filter(c => c.parentConversationId === conversation.id)),
+  )
+  const hasParent = !!conversation.parentConversationId
+  if (!hasParent && children.length === 0) return null
+  return (
+    <>
+      <div className="border-t border-border" />
+      {hasParent && (
+        <div className="flex items-center gap-2">
+          <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Spawned from</span>
+          {parent ? (
+            <button
+              type="button"
+              onClick={() => onNavigate(parent.id)}
+              className="ml-auto text-accent hover:underline truncate max-w-[200px]"
+            >
+              {parent.title || parent.agentName || parent.id.slice(0, 8)}
+            </button>
+          ) : (
+            <span className="ml-auto text-muted-foreground/60 italic">(deleted)</span>
+          )}
+        </div>
+      )}
+      {children.length > 0 && (
+        <div className="space-y-1">
+          <span className="text-muted-foreground text-[10px] uppercase tracking-wider">
+            Direct children ({children.length})
+          </span>
+          <div className="space-y-0.5">
+            {children.map(child => (
+              <button
+                key={child.id}
+                type="button"
+                onClick={() => onNavigate(child.id)}
+                className="flex items-center gap-1.5 w-full text-left px-1 py-0.5 rounded hover:bg-accent/10 transition-colors"
+              >
+                <StatusIndicator status={child.status} adHoc={child.capabilities?.includes('ad-hoc')} />
+                <span className="truncate text-foreground/80">
+                  {child.title || child.agentName || child.id.slice(0, 8)}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 function ConversationInfoDialog({
   conversation,
   open,
@@ -251,8 +444,15 @@ function ConversationInfoDialog({
   const cost = conversation.stats ? getConversationCost(conversation.stats, resolvedModel) : null
   const duration = conversation.lastActivity - conversation.startedAt
   const isAdHoc = conversation.capabilities?.includes('ad-hoc')
+  const selectConversation = useConversationsStore(s => s.selectConversation)
 
   useKeyLayer({ Escape: () => onOpenChange(false) }, { id: 'conversation-info-dialog', enabled: open })
+
+  function navigateToConversation(id: string) {
+    haptic('tap')
+    selectConversation(id, 'click')
+    onOpenChange(false)
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -394,6 +594,9 @@ function ConversationInfoDialog({
               </div>
             </>
           )}
+
+          {/* Spawn lineage: parent + direct children */}
+          <ConversationLineageSection conversation={conversation} onNavigate={navigateToConversation} />
 
           {/* Conversation ID */}
           <div className="border-t border-border/50" />
@@ -791,13 +994,6 @@ const ConversationItemFull = memo(function ConversationItemFull({ conversation }
   const showRecapDesc = useConversationsStore(s => s.controlPanelPrefs.showRecapDescInList)
   const isRenaming = useConversationsStore(s => s.renamingConversationId === conversation.id)
   const isEditingDescription = useConversationsStore(s => s.editingDescriptionConversationId === conversation.id)
-  const hasPendingPermission = useConversationsStore(s =>
-    s.pendingPermissions.some(p => p.conversationId === conversation.id),
-  )
-  const hasPendingLink = useConversationsStore(s =>
-    s.pendingProjectLinks.some(r => r.fromConversation === conversation.id || r.toConversation === conversation.id),
-  )
-
   const projectName = projectDisplayName(projectPath(conversation.project), ps?.label)
   const conversationName = conversation.title || conversation.agentName
   const displayColor = ps?.color
@@ -863,12 +1059,7 @@ const ConversationItemFull = memo(function ConversationItemFull({ conversation }
             <Clock size={12} />
           </span>
         )}
-        {hasPendingLink && <span className="text-[9px] text-teal-400 font-bold animate-pulse">LINK</span>}
-        {hasPendingPermission && <span className="text-[9px] text-amber-400 font-bold animate-pulse">PERM</span>}
-        {conversation.pendingAttention && (
-          <span className="text-[9px] text-amber-400 font-bold animate-pulse">WAITING</span>
-        )}
-        {conversation.hasNotification && <span className="text-[9px] text-teal-400 font-bold">NOTIFY</span>}
+        <ConversationAttentionBadges conversation={conversation} />
         <ConversationInfoButton conversation={conversation} visible={isSelected} />
         <ShareIndicator conversationProject={conversation.project} conversationId={conversation.id} />
         {conversation.resultText && conversation.capabilities?.includes('ad-hoc') && (
@@ -881,6 +1072,7 @@ const ConversationItemFull = memo(function ConversationItemFull({ conversation }
           {isRenaming ? <InlineRename conversation={conversation} /> : conversationName}
         </div>
       )}
+      <SpawnedFromSubtext conversation={conversation} padClass="pl-1" />
       {isEditingDescription ? (
         <div className="mt-0.5 pl-1">
           <InlineDescription conversation={conversation} />
@@ -1106,13 +1298,6 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
   const showContextBar = useConversationsStore(s => s.controlPanelPrefs.showContextInList)
   const isRenaming = useConversationsStore(s => s.renamingConversationId === conversation.id)
   const isEditingDescription = useConversationsStore(s => s.editingDescriptionConversationId === conversation.id)
-  const hasPendingPermission = useConversationsStore(s =>
-    s.pendingPermissions.some(p => p.conversationId === conversation.id),
-  )
-  const hasPendingLink = useConversationsStore(s =>
-    s.pendingProjectLinks.some(r => r.fromConversation === conversation.id || r.toConversation === conversation.id),
-  )
-
   const displayColor = ps?.color
   const isMobile = useIsMobile()
 
@@ -1223,12 +1408,7 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
             <Clock size={11} className="text-amber-400" />
           </span>
         )}
-        {hasPendingLink && <span className="text-[9px] text-teal-400 font-bold animate-pulse">LINK</span>}
-        {hasPendingPermission && <span className="text-[9px] text-amber-400 font-bold animate-pulse">PERM</span>}
-        {conversation.pendingAttention && (
-          <span className="text-[9px] text-amber-400 font-bold animate-pulse">WAITING</span>
-        )}
-        {conversation.hasNotification && <span className="text-[9px] text-teal-400 font-bold">NOTIFY</span>}
+        <ConversationAttentionBadges conversation={conversation} />
         {/* Context % -- mobile-only on title row (desktop docks it at the bar's right edge) */}
         {isMobile && ctx && (
           <span className={cn('text-[9px] font-mono tabular-nums shrink-0', ctx.color)}>{ctx.pct}%</span>
@@ -1249,6 +1429,7 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
           </span>
         </div>
       )}
+      <SpawnedFromSubtext conversation={conversation} padClass="pl-4" />
       {/* ── SUBTITLE: description / summary / recap (mobile prepends state prefix) ── */}
       {isEditingDescription ? (
         <div className="mt-0.5 pl-4">
