@@ -680,6 +680,30 @@ export function sendAdHocPrompt(ctx: AgentHostContext): void {
 }
 
 /**
+ * PTY-mode analog of {@link sendAdHocPrompt}. Reads RCLAUDE_INITIAL_PROMPT_FILE,
+ * unlinks it, and returns the text so the caller can append it as a positional
+ * arg to `claude` (which pre-fills the input box in interactive mode). Returns
+ * null if no file, empty file, or read error -- caller falls back to no prompt.
+ */
+export function consumeAdHocPromptText(ctx: AgentHostContext): string | null {
+  const promptFile = process.env.RCLAUDE_INITIAL_PROMPT_FILE
+  if (!promptFile) return null
+  try {
+    const prompt = readFileSync(promptFile, 'utf-8').trim().replaceAll('\\n', '\n').replaceAll('\\t', '\t')
+    unlinkSync(promptFile)
+    if (!prompt) {
+      ctx.diag('ad-hoc', 'WARNING: prompt file empty (pty)')
+      return null
+    }
+    ctx.diag('ad-hoc', `PTY initial prompt -> positional arg (${prompt.length} chars)`)
+    return prompt
+  } catch (e) {
+    ctx.diag('ad-hoc', `FAILED to read prompt file (pty): ${e}`)
+    return null
+  }
+}
+
+/**
  * Respawn the headless CC process (used by /clear handler).
  * Reuses all callbacks since they reference the outer AgentHostContext.
  * Re-generates the settings file and MCP config to guarantee hooks + MCP

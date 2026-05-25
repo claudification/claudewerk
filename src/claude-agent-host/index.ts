@@ -40,7 +40,7 @@ import {
 import { debug, setDebugStderr } from './debug'
 import { wireDiag } from './diag-buffer'
 import { ensureRclaudeDir } from './ensure-rclaude-dir'
-import { buildHeadlessSpawnOptions, sendAdHocPrompt } from './headless-lifecycle'
+import { buildHeadlessSpawnOptions, consumeAdHocPromptText, sendAdHocPrompt } from './headless-lifecycle'
 import { processHookEvent } from './hook-processor'
 import { emitLaunchEvent, filterRelevantEnv } from './launch-events'
 import { setLocalServerDebug, startLocalServer } from './local-server'
@@ -378,8 +378,10 @@ async function main() {
       cleanup,
     })
   } else {
+    const ptyInitialPrompt = consumeAdHocPromptText(ctx)
+    const ptyArgs = ptyInitialPrompt ? [...finalClaudeArgs, ptyInitialPrompt] : finalClaudeArgs
     const result = spawnPty(ctx, {
-      finalClaudeArgs,
+      finalClaudeArgs: ptyArgs,
       settingsPath,
       conversationId,
       localServerPort,
