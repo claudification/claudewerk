@@ -924,7 +924,12 @@ export function SpawnDialog() {
                         <ConfigTabBar value={configTab} onChange={setConfigTab} />
                       </div>
                       <div className="overflow-y-auto flex-1 min-h-0 space-y-3 px-1.5 py-1">
-                        <DaemonModePanel mode={daemonMode} tab={configTab} value={daemonForm} onChange={patchDaemonForm} />
+                        <DaemonModePanel
+                          mode={daemonMode}
+                          tab={configTab}
+                          value={daemonForm}
+                          onChange={patchDaemonForm}
+                        />
                         {configTab === 'basic' && (
                           <LaunchConfigFields
                             value={fieldsValue}
