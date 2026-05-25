@@ -392,6 +392,7 @@ const handleConversationControl: MessageHandler = (ctx, data) => {
   const effort = typeof data.effort === 'string' ? data.effort : undefined
   const permissionMode = typeof data.permissionMode === 'string' ? data.permissionMode : undefined
   const fromConversation = (data.fromConversation as string) || ctx.ws.data.conversationId
+  const batchId = typeof data.batchId === 'string' ? data.batchId : undefined
 
   if (!targetId) {
     ctx.reply({ type: 'conversation_control_result', ok: false, error: 'Missing targetConversation' })
@@ -495,7 +496,7 @@ const handleConversationControl: MessageHandler = (ctx, data) => {
     name: targetSess.title || extractProjectLabel(targetSess.project),
   })
   ctx.log.debug(
-    `conversation_control: ${fromConversation?.slice(0, 8) ?? 'dashboard'} -> ${targetSess.id.slice(0, 8)} action=${action}${model ? ` model=${model}` : ''}${effort ? ` effort=${effort}` : ''}${permissionMode ? ` mode=${permissionMode}` : ''}`,
+    `conversation_control: ${fromConversation?.slice(0, 8) ?? 'dashboard'} -> ${targetSess.id.slice(0, 8)} action=${action}${model ? ` model=${model}` : ''}${effort ? ` effort=${effort}` : ''}${permissionMode ? ` mode=${permissionMode}` : ''}${batchId ? ` batch=${batchId}` : ''}`,
   )
 }
 

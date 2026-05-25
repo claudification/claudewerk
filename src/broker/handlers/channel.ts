@@ -684,6 +684,7 @@ const channelSend: MessageHandler = (ctx, data) => {
   const fromConversation = ctx.ws.data.conversationId || (data.fromConversation as string)
   const rawTo = data.toConversation
   if (!fromConversation || rawTo === undefined || rawTo === null) return
+  const batchId = typeof data.batchId === 'string' ? data.batchId : undefined
 
   const wasArray = Array.isArray(rawTo)
   const targets = (wasArray ? (rawTo as unknown[]) : [rawTo]).filter(
@@ -731,6 +732,13 @@ const channelSend: MessageHandler = (ctx, data) => {
   })
 
   const allOk = results.every(r => r.ok)
+  if (batchId) {
+    const okCount = results.filter(r => r.ok).length
+    ctx.log.info(
+      `[channel_send] batch=${batchId} from=${fromConversation.slice(0, 8)} ` +
+        `targets=${dedupedTargets.length} ok=${okCount} thread=${conversationId}`,
+    )
+  }
   if (wasArray) {
     ctx.reply({ type: 'channel_send_result', ok: allOk, conversationId, results })
     return
@@ -759,11 +767,14 @@ const quitConversation: MessageHandler = (ctx, data) => {
   const source: TerminationSource = (data.source as TerminationSource) || 'dashboard-other'
   const initiator =
     (data.initiator as string | undefined) || (ctx.ws.data.userName ? `user:${ctx.ws.data.userName}` : undefined)
+  const batchId = typeof data.batchId === 'string' ? data.batchId : undefined
 
   const targetWs = ctx.conversations.getConversationSocket(conversationId)
   if (targetWs) {
     targetWs.send(JSON.stringify({ type: 'terminate_conversation', conversationId, source, initiator }))
-    ctx.log.debug(`Conversation ${conversationId.slice(0, 8)} - terminate forwarded (source=${source})`)
+    ctx.log.debug(
+      `Conversation ${conversationId.slice(0, 8)} - terminate forwarded (source=${source}${batchId ? ` batch=${batchId}` : ''})`,
+    )
     return
   }
 

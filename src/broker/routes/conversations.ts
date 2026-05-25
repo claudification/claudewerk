@@ -380,8 +380,13 @@ export function createConversationsRouter(
     const conv = conversationStore.getConversation(conversationId)
     if (!conv) return c.json({ error: 'Conversation not found' }, 404)
     if (conv.status !== 'ended') return c.json({ error: 'Only ended conversations can be dismissed' }, 400)
+    const batchIdRaw = c.req.query('batchId')
+    const batchId = typeof batchIdRaw === 'string' && batchIdRaw.length > 0 ? batchIdRaw : undefined
     conversationStore.removeConversation(conversationId)
     broadcastToSubscribers(conversationStore, { type: 'conversation_dismissed', conversationId })
+    if (batchId) {
+      console.log(`[conversations.delete] batch=${batchId} conv=${conversationId.slice(0, 8)} project=${conv.project}`)
+    }
     return c.json({ success: true })
   })
 

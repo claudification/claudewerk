@@ -8,7 +8,13 @@ function recapCreate(ctx: HandlerContext, data: MessageData): void {
   const fields = requireStrings(ctx, data, ['projectUri', 'timeZone'] as const, 'recap_create')
   if (!fields) return
   const requestId = typeof data.requestId === 'string' ? data.requestId : undefined
+  const batchId = typeof data.batchId === 'string' ? data.batchId : undefined
   const echo = requestId ? { requestId } : {}
+  if (batchId) {
+    ctx.log.info(
+      `[recap_create] batch=${batchId} project=${fields.projectUri} period=${(data.period as { label?: string } | null)?.label ?? 'unknown'} requestId=${requestId ?? 'none'}`,
+    )
+  }
   const orchestrator = getRecapOrchestrator()
   if (!orchestrator) {
     ctx.reply({ type: 'recap_error', error: 'recap orchestrator not initialised', ...echo })
