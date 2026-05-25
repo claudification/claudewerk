@@ -17,7 +17,7 @@ export function ProcessModelSegmented({
 }: {
   value: ClaudeTransport
   onChange: (transport: ClaudeTransport) => void
-  /** Render H/P hints on the PTY/Headless tiles (spawn dialog binds them). */
+  /** Render H/P/D hints on the PTY/Headless/Daemon tiles (spawn dialog binds them). */
   shortcutHints?: boolean
   /** Render the "Process model" heading. Off when a parent Section already
    *  provides the title (the launch-profile editor). */
@@ -31,7 +31,14 @@ export function ProcessModelSegmented({
       )}
       <div className="flex gap-1.5">
         {PROCESS_MODEL_OPTIONS.map(opt => {
-          const hint = opt.value === 'claude-headless' ? 'H' : opt.value === 'claude-pty' ? 'P' : undefined
+          const hint =
+            opt.value === 'claude-headless'
+              ? 'H'
+              : opt.value === 'claude-pty'
+                ? 'P'
+                : opt.value === 'claude-daemon'
+                  ? 'D'
+                  : undefined
           return (
             <button
               key={opt.value}

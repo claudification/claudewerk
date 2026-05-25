@@ -14,15 +14,18 @@ afterEach(cleanup)
 /** Stateful harness so edits round-trip through a real value, like the dialog. */
 function Harness({
   mode,
+  tab = 'basic',
   onChangeSpy,
 }: {
   mode: 'new' | 'resume'
+  tab?: 'basic' | 'advanced'
   onChangeSpy?: (p: Partial<DaemonModeFormValue>) => void
 }) {
   const [value, setValue] = useState<DaemonModeFormValue>(blankDaemonForm)
   return (
     <DaemonModePanel
       mode={mode}
+      tab={tab}
       value={value}
       onChange={patch => {
         onChangeSpy?.(patch)
@@ -40,8 +43,15 @@ describe('DaemonModePanel -- NEW', () => {
     expect(screen.queryByPlaceholderText('daemon session id to fork from')).toBeNull()
   })
 
-  test('renders the settings, mcp-config and worktree fields', () => {
-    render(<Harness mode="new" />)
+  test('hides the advanced fields on the Basic tab', () => {
+    render(<Harness mode="new" tab="basic" />)
+    expect(screen.queryByPlaceholderText('/abs/path/to/settings.json')).toBeNull()
+    expect(screen.queryByPlaceholderText('/abs/path/to/mcp.json')).toBeNull()
+    expect(screen.queryByPlaceholderText('branch name')).toBeNull()
+  })
+
+  test('renders the settings, mcp-config and worktree fields on the Advanced tab', () => {
+    render(<Harness mode="new" tab="advanced" />)
     expect(screen.getByPlaceholderText('/abs/path/to/settings.json')).toBeDefined()
     expect(screen.getByPlaceholderText('/abs/path/to/mcp.json')).toBeDefined()
     expect(screen.getByPlaceholderText('branch name')).toBeDefined()
@@ -56,14 +66,14 @@ describe('DaemonModePanel -- NEW', () => {
   })
 
   test('flags a non-absolute settings path inline', () => {
-    render(<Harness mode="new" />)
+    render(<Harness mode="new" tab="advanced" />)
     const settings = screen.getByPlaceholderText('/abs/path/to/settings.json')
     fireEvent.change(settings, { target: { value: 'relative.json' } })
     expect(screen.getByText('Must be an absolute path (start with /)')).toBeDefined()
   })
 
   test('an absolute settings path shows no error', () => {
-    render(<Harness mode="new" />)
+    render(<Harness mode="new" tab="advanced" />)
     const settings = screen.getByPlaceholderText('/abs/path/to/settings.json')
     fireEvent.change(settings, { target: { value: '/etc/claude/settings.json' } })
     expect(screen.queryByText('Must be an absolute path (start with /)')).toBeNull()

@@ -535,7 +535,7 @@ export function SpawnDialog() {
   ])
 
   // Keyboard layer: Enter spawns (config) or views conversation (launching). Radix Dialog handles Escape.
-  // Config-only quick toggles: h/p = Headless/PTY, 1/2 = Basic/Advanced tab.
+  // Config-only quick toggles: h/p/d = Headless/PTY/Daemon, 1/2 = Basic/Advanced tab.
   // Single-letter/digit bindings are auto-skipped when a text input is focused
   // (see useKeyLayer: `if (inTextInput && !isModified && !isNonPrintable) return`).
   useKeyLayer(
@@ -551,6 +551,10 @@ export function SpawnDialog() {
       p: () => {
         if (phase !== 'config' || !showProcessModel) return
         setProcessModel('claude-pty')
+      },
+      d: () => {
+        if (phase !== 'config' || !showProcessModel) return
+        setProcessModel('claude-daemon')
       },
       '1': () => {
         if (phase !== 'config') return
@@ -884,32 +888,55 @@ export function SpawnDialog() {
               {/* -- Daemon config (New / Resume / Attach) -- gated on the
                   daemon transport (transport reframe Phase 5). -- */}
               {isDaemonTransport ? (
-                <div className="flex flex-col gap-3 px-1.5 py-1 overflow-y-auto flex-1 min-h-0">
-                  <DaemonModeSegmented
-                    mode={daemonMode}
-                    onChange={m => {
-                      setDaemonMode(m)
-                      setDaemonErrors([])
-                    }}
-                  />
-                  {daemonMode === 'attach' ? (
-                    <DaemonRosterBrowser
-                      selectedShort={daemonAttach?.short}
-                      onSelect={entry => {
-                        setDaemonAttach(entry)
+                <div className="flex flex-col gap-3 flex-1 min-h-0">
+                  <div className="shrink-0 px-1.5">
+                    <DaemonModeSegmented
+                      mode={daemonMode}
+                      onChange={m => {
+                        setDaemonMode(m)
                         setDaemonErrors([])
                       }}
                     />
+                  </div>
+                  {daemonMode === 'attach' ? (
+                    /* ATTACH carries no config -- the worker is already
+                       configured. No Basic/Advanced tabs, just the roster
+                       picker + the conversation label fields. */
+                    <div className="overflow-y-auto flex-1 min-h-0 space-y-3 px-1.5 py-1">
+                      <DaemonRosterBrowser
+                        selectedShort={daemonAttach?.short}
+                        onSelect={entry => {
+                          setDaemonAttach(entry)
+                          setDaemonErrors([])
+                        }}
+                      />
+                      <LaunchConfigFields
+                        value={fieldsValue}
+                        onChange={applyFieldsPatch}
+                        show={{ name: true, description: true }}
+                      />
+                    </div>
                   ) : (
-                    <DaemonModePanel mode={daemonMode} value={daemonForm} onChange={patchDaemonForm} />
+                    /* NEW/RESUME use the same Basic/Advanced tabs as the
+                       Interactive/Headless dialog (1/2 hotkeys apply). */
+                    <>
+                      <div className="shrink-0 px-1.5">
+                        <ConfigTabBar value={configTab} onChange={setConfigTab} />
+                      </div>
+                      <div className="overflow-y-auto flex-1 min-h-0 space-y-3 px-1.5 py-1">
+                        <DaemonModePanel mode={daemonMode} tab={configTab} value={daemonForm} onChange={patchDaemonForm} />
+                        {configTab === 'basic' && (
+                          <LaunchConfigFields
+                            value={fieldsValue}
+                            onChange={applyFieldsPatch}
+                            show={{ name: true, description: true }}
+                          />
+                        )}
+                      </div>
+                    </>
                   )}
-                  <LaunchConfigFields
-                    value={fieldsValue}
-                    onChange={applyFieldsPatch}
-                    show={{ name: true, description: true }}
-                  />
                   {daemonErrors.length > 0 && (
-                    <div className="text-[10px] font-mono text-red-400 space-y-0.5 border border-red-500/30 bg-red-950/20 rounded px-2 py-1.5">
+                    <div className="shrink-0 mx-1.5 text-[10px] font-mono text-red-400 space-y-0.5 border border-red-500/30 bg-red-950/20 rounded px-2 py-1.5">
                       {daemonErrors.map(e => (
                         <div key={e}>{e}</div>
                       ))}
@@ -1058,41 +1085,7 @@ export function SpawnDialog() {
                 </div>
               ) : (
                 <>
-                  {/* Tab selector */}
-                  <div className="flex gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setConfigTab('basic')
-                        haptic('tick')
-                      }}
-                      className={cn(
-                        'px-3 py-1 text-[11px] font-mono rounded transition-colors inline-flex items-center gap-1.5',
-                        configTab === 'basic'
-                          ? 'bg-primary/15 text-primary border border-primary/30'
-                          : 'text-comment hover:text-muted-foreground',
-                      )}
-                    >
-                      Basic
-                      <Kbd className="text-[10px]">1</Kbd>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setConfigTab('advanced')
-                        haptic('tick')
-                      }}
-                      className={cn(
-                        'px-3 py-1 text-[11px] font-mono rounded transition-colors inline-flex items-center gap-1.5',
-                        configTab === 'advanced'
-                          ? 'bg-primary/15 text-primary border border-primary/30'
-                          : 'text-comment hover:text-muted-foreground',
-                      )}
-                    >
-                      Advanced
-                      <Kbd className="text-[10px]">2</Kbd>
-                    </button>
-                  </div>
+                  <ConfigTabBar value={configTab} onChange={setConfigTab} />
 
                   {/* Scrollable content area.
                   Inner padding gives focus rings (ring-[3px]) room; without
@@ -1375,6 +1368,47 @@ function HermesGatewayPicker({
           </option>
         ))}
       </select>
+    </div>
+  )
+}
+
+// ─── Basic / Advanced Tab Bar ─────────────────────────────────────────
+// Shared by the Claude PTY/Headless config and the daemon NEW/RESUME config
+// so both honor the 1/2 hotkeys identically. Single source of truth for the
+// tab chrome -- don't inline a second copy.
+
+function ConfigTabBar({
+  value,
+  onChange,
+}: {
+  value: 'basic' | 'advanced'
+  onChange: (tab: 'basic' | 'advanced') => void
+}) {
+  const tabs: Array<{ key: 'basic' | 'advanced'; label: string; hint: string }> = [
+    { key: 'basic', label: 'Basic', hint: '1' },
+    { key: 'advanced', label: 'Advanced', hint: '2' },
+  ]
+  return (
+    <div className="flex gap-1.5 shrink-0">
+      {tabs.map(t => (
+        <button
+          key={t.key}
+          type="button"
+          onClick={() => {
+            onChange(t.key)
+            haptic('tick')
+          }}
+          className={cn(
+            'px-3 py-1 text-[11px] font-mono rounded transition-colors inline-flex items-center gap-1.5',
+            value === t.key
+              ? 'bg-primary/15 text-primary border border-primary/30'
+              : 'text-comment hover:text-muted-foreground',
+          )}
+        >
+          {t.label}
+          <Kbd className="text-[10px]">{t.hint}</Kbd>
+        </button>
+      ))}
     </div>
   )
 }

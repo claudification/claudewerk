@@ -13,6 +13,10 @@ import type { DaemonModeFormValue } from './daemon-launch'
 
 interface DaemonModePanelProps {
   mode: 'new' | 'resume'
+  /** Which config tier to render. Basic = the everyday fields (resume id,
+   *  prompt, model); Advanced = env, system-prompt suffix, sentinel-host paths,
+   *  worktree. Mirrors the Interactive/Headless dialog's Basic/Advanced tabs. */
+  tab: 'basic' | 'advanced'
   value: DaemonModeFormValue
   onChange: (patch: Partial<DaemonModeFormValue>) => void
 }
@@ -129,29 +133,43 @@ function DaemonPathFields({
   )
 }
 
-export function DaemonModePanel({ mode, value, onChange }: DaemonModePanelProps) {
+export function DaemonModePanel({ mode, tab, value, onChange }: DaemonModePanelProps) {
+  if (tab === 'basic') {
+    return (
+      <div className="space-y-3">
+        {mode === 'resume' && (
+          <TextField
+            label="Resume session id"
+            value={value.resumeSessionId}
+            onChange={v => onChange({ resumeSessionId: v })}
+            placeholder="daemon session id to fork from"
+            hint="claude --bg --resume <id>. The resumed worker forks to a fresh session that carries prior history."
+          />
+        )}
+
+        <PromptField mode={mode} value={value.prompt} onChange={v => onChange({ prompt: v })} />
+
+        {/* Model row reused from the shared launch config component. */}
+        <LaunchConfigFields
+          value={{ model: value.model }}
+          onChange={patch => {
+            if ('model' in patch) onChange({ model: patch.model ?? '' })
+          }}
+          show={{ model: true }}
+        />
+      </div>
+    )
+  }
+
+  // Advanced: env, system-prompt suffix, sentinel-host config paths, worktree.
   return (
     <div className="space-y-3">
-      {mode === 'resume' && (
-        <TextField
-          label="Resume session id"
-          value={value.resumeSessionId}
-          onChange={v => onChange({ resumeSessionId: v })}
-          placeholder="daemon session id to fork from"
-          hint="claude --bg --resume <id>. The resumed worker forks to a fresh session that carries prior history."
-        />
-      )}
-
-      <PromptField mode={mode} value={value.prompt} onChange={v => onChange({ prompt: v })} />
-
-      {/* Model + env rows reused from the shared launch config component. */}
       <LaunchConfigFields
-        value={{ model: value.model, envText: value.envText }}
+        value={{ envText: value.envText }}
         onChange={patch => {
-          if ('model' in patch) onChange({ model: patch.model ?? '' })
           if ('envText' in patch) onChange({ envText: patch.envText ?? '' })
         }}
-        show={{ model: true, env: true }}
+        show={{ env: true }}
       />
       <div className="text-[9px] text-comment -mt-1.5">Env is merged into the daemon worker process (claude --bg).</div>
 
