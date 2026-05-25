@@ -1895,6 +1895,20 @@ export interface Conversation {
   agentHostMeta?: Record<string, unknown> // opaque bag from agent host (ccSessionId lives here, broker never reads it)
   project: string // project URI identity (e.g. "claude:///Users/jonas/projects/foo")
   /**
+   * Direct spawner conversationId, captured at first persistence from the
+   * rendezvous registry. NULL/undefined = self-rooted (human-started). Set
+   * ONCE on the conversation's first INSERT; never overwritten by revive,
+   * /clear, or restart. See `.claude/docs/plan-spawn-parent-tracking.md`.
+   */
+  parentConversationId?: string
+  /**
+   * Topmost ancestor in the spawn chain. For an A->B->C chain, all three of
+   * B and C carry `rootConversationId = A.id`; A itself has no root. Computed
+   * at insert time (parent.rootConversationId ?? parent.id) so the UI grouping
+   * key is a column lookup rather than a recursive walk.
+   */
+  rootConversationId?: string
+  /**
    * Sentinel-profile NAME the sentinel resolved for this conversation. Set by
    * spawn_result.resolvedProfile / revive_result.resolvedProfile. Pinned for
    * the life of the conversation -- revive forwards this same name back.

@@ -31,7 +31,8 @@ import { cwdToProjectUri } from '../../shared/project-uri'
 import type { Conversation, LaunchConfig, SpawnResult as SentinelSpawnResult } from '../../shared/protocol'
 import { deriveConversationName, validateConversationName } from '../../shared/spawn-naming'
 import type { SpawnRequest } from '../../shared/spawn-schema'
-import type { ConversationStore } from '../conversation-store'
+import type { ConversationStore, CreateConversationLineage } from '../conversation-store'
+import { computeSpawnLineage } from '../spawn-lineage'
 import { emitLaunchProgress } from './launch-progress'
 import { awaitSentinelSpawn } from './sentinel-spawn'
 import type { SpawnDeps, SpawnResult } from './types'
@@ -251,7 +252,7 @@ export async function dispatchClaudeDaemon(req: SpawnRequest, deps: SpawnDeps): 
 
   finalizeDaemonConversation(deps, { conversationId, project, conversationName, req, cfg, result })
   emitLaunchProgress(deps.conversationStore, jobId, 'agent_acked', 'done')
-  return { ok: true, conversationId, jobId, tmuxSession: result.tmuxSession }
+  return { ok: true, conversationId, jobId, tmuxSession: result.tmuxSession, project }
 }
 
 /** Record a daemon dispatch failure (log + progress event + job fail) and
@@ -390,7 +391,18 @@ function finalizeDaemonConversation(
   },
 ): void {
   const { conversationId, project, conversationName, req, cfg, result } = opts
-  const conv = getOrCreateDaemonConversation(deps, conversationId, project, req.model)
+  // Phase 2 spawn-parent-tracking: capture parent + root on FIRST persistence.
+  // Daemon's `getOrCreateDaemonConversation` runs at finalize time (BEFORE the
+  // daemon-agent-host's agent_host_boot), so the boot-lifecycle's rendezvous
+  // lookup would miss it -- we plumb the caller id from deps directly here.
+  // ATTACH reuses an existing roster row -- lineage is preserved untouched.
+  const lineage = computeSpawnLineage(
+    deps.conversationStore,
+    deps.rendezvousCallerConversationId,
+    conversationId,
+    'daemon',
+  )
+  const conv = getOrCreateDaemonConversation(deps, conversationId, project, req.model, lineage)
   const statusBefore = conv.status
   conv.agentHostType = 'daemon'
   conv.transport = 'claude-daemon'
@@ -423,16 +435,19 @@ function daemonOkLog(
 }
 
 /** The conversation row to tag -- the existing one (revive / roster mirror) or
- *  a freshly-created terminal-capable row. */
+ *  a freshly-created terminal-capable row. Lineage is passed through to the
+ *  CREATE path only; revive/ATTACH paths preserve whatever was persisted on the
+ *  first INSERT (plan § 3 Phase 2 #7: idempotency). */
 function getOrCreateDaemonConversation(
   deps: SpawnDeps,
   conversationId: string,
   project: string,
   model: string | undefined,
+  lineage: CreateConversationLineage | undefined,
 ): Conversation {
   return (
     deps.conversationStore.getConversation(conversationId) ??
-    deps.conversationStore.createConversation(conversationId, project, model || '', [], ['terminal'])
+    deps.conversationStore.createConversation(conversationId, project, model || '', [], ['terminal'], lineage)
   )
 }
 

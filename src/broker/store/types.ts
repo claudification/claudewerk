@@ -28,6 +28,11 @@ export interface ConversationRecord {
   endedAt?: number
   lastActivity?: number
 
+  /** Direct spawner. NULL = self-rooted (default for human-started conversations). */
+  parentConversationId?: string
+  /** Topmost ancestor. NULL = self-rooted. Set once at first persistence; never overwritten. */
+  rootConversationId?: string
+
   meta?: Record<string, unknown>
   stats?: ConversationStats
 }
@@ -52,6 +57,11 @@ export interface ConversationCreate {
   model?: string
   meta?: Record<string, unknown>
   createdAt?: number
+  /** Spawn parent (the conversation that triggered the spawn). Set ONCE on first
+   *  persistence; never overwritten by subsequent updates. */
+  parentConversationId?: string
+  /** Topmost ancestor in the spawn chain. Set ONCE on first persistence. */
+  rootConversationId?: string
 }
 
 export interface ConversationPatch {
@@ -89,6 +99,8 @@ export interface ConversationSummaryRecord {
   createdAt: number
   endedAt?: number
   lastActivity?: number
+  parentConversationId?: string
+  rootConversationId?: string
 }
 
 export interface ConversationStore {

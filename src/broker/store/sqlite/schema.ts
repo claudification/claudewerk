@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite'
+import { migrateParentColumns } from './migrate-parent-columns'
 import { createRecapSchema } from './recap-schema'
 
 function tableColumns(db: Database, table: string): Set<string> {
@@ -144,6 +145,10 @@ export function createSchema(db: Database) {
   db.run('CREATE INDEX IF NOT EXISTS idx_conversations_scope ON conversations(scope)')
   db.run('CREATE INDEX IF NOT EXISTS idx_conversations_status ON conversations(status)')
   db.run('CREATE INDEX IF NOT EXISTS idx_conversations_created_at ON conversations(created_at)')
+
+  // Phase 2 spawn-parent-tracking: add parent_conversation_id +
+  // root_conversation_id (NULL = unrooted / human-started). Idempotent.
+  migrateParentColumns(db)
 
   db.run(`
     CREATE TABLE IF NOT EXISTS transcript_entries (

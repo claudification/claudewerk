@@ -110,7 +110,7 @@ export type SpawnDispatchDeps = {
 }
 
 export type SpawnDispatchResult =
-  | { ok: true; conversationId: string; jobId: string; tmuxSession?: string }
+  | { ok: true; conversationId: string; jobId: string; tmuxSession?: string; project?: string }
   | {
       ok: false
       error: string
@@ -216,27 +216,36 @@ export async function dispatchSpawn(rawReq: SpawnRequest, deps: SpawnDispatchDep
   // --- claude-daemon transport --------------------------------------------
   // The daemon is the claude backend's `claude-daemon` transport (it is not a
   // peer backend). Routed by the transport discriminator, NOT `req.backend`.
+  let result: SpawnDispatchResult
   if (req.transport === 'claude-daemon') {
-    return dispatchClaudeDaemon(req, spawnDeps)
-  }
-
-  // --- Registry-driven dispatch -------------------------------------------
-  // If the requested backend has its own spawn() implementation, delegate.
-  // Otherwise fall through to the inline Claude (PTY/headless) path below.
-  if (req.backend) {
+    result = await dispatchClaudeDaemon(req, spawnDeps)
+  } else if (req.backend) {
+    // --- Registry-driven dispatch -----------------------------------------
+    // If the requested backend has its own spawn() implementation, delegate.
+    // Otherwise fall through to the inline Claude (PTY/headless) path below.
     const backend = resolveBackendByName(req.backend)
     if (!backend) {
       return { ok: false, error: `Unknown backend: ${req.backend}`, statusCode: 400 }
     }
-    if (backend.spawn) {
-      return backend.spawn(req, spawnDeps)
-    }
-    // No spawn() method -- backend handles input only (e.g. Claude).
-    // Fall through to the inline Claude path.
+    result = backend.spawn ? await backend.spawn(req, spawnDeps) : await dispatchClaudeSpawn(req, deps)
+  } else {
+    // --- Inline Claude (PTY/headless) path --------------------------------
+    result = await dispatchClaudeSpawn(req, deps)
   }
 
-  // --- Inline Claude (PTY/headless) path ----------------------------------
-  return dispatchClaudeSpawn(req, deps)
+  // Centralised rendezvous registration: applies to EVERY successful spawn
+  // transport. Previously only `dispatchClaudeSpawn` registered, so daemon-
+  // and registry-backend spawns lost the caller link at the rendezvous
+  // registry -- that's what the Phase 2 KNOWN GAP fix addresses.
+  if (result.ok) {
+    registerSpawnRendezvous({
+      deps,
+      conversationId: result.conversationId,
+      jobId: result.jobId,
+      project: result.project ?? req.cwd,
+    })
+  }
+  return result
 }
 
 async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): Promise<SpawnDispatchResult> {
@@ -521,42 +530,66 @@ async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): 
   emitProgress(deps.conversationStore, jobId, 'agent_acked', 'done', { detail: result.tmuxSession })
   if (req.adHoc) console.log(`[ad-hoc] Spawn OK: conv=${conversationId.slice(0, 8)} tmux=${result.tmuxSession}`)
 
-  const callerConversationId = deps.rendezvousCallerConversationId
-  if (callerConversationId) {
-    // Don't block the response -- caller gets immediate success + conversationId.
-    // Rendezvous resolves async and pushes spawn_ready / spawn_timeout.
-    deps.conversationStore
-      .addRendezvous(conversationId, callerConversationId, project, 'spawn')
-      .then(conv => {
-        emitProgress(deps.conversationStore, jobId, 'conversation_connected', 'done', {
-          ccSessionId: (conv.agentHostMeta?.ccSessionId as string) || conv.id,
-          conversationId,
-        })
-        const callerWs = deps.conversationStore.getConversationSocket(callerConversationId)
-        callerWs?.send(
-          JSON.stringify({
-            type: 'spawn_ready',
-            ccSessionId: (conv.agentHostMeta?.ccSessionId as string) || conv.id,
-            project: conv.project,
-            conversationId,
-            conv,
-          }),
-        )
-      })
-      .catch(err => {
-        const errMsg = typeof err === 'string' ? err : 'Spawn rendezvous timed out'
-        emitProgress(deps.conversationStore, jobId, 'failed', 'error', { error: errMsg })
-        const callerWs = deps.conversationStore.getConversationSocket(callerConversationId)
-        callerWs?.send(
-          JSON.stringify({
-            type: 'spawn_timeout',
-            conversationId,
-            project,
-            error: errMsg,
-          }),
-        )
-      })
-  }
+  // Rendezvous registration moved up into `dispatchSpawn` -- this gives ALL
+  // transports (claude-daemon, claude-pty, claude-headless) uniform parent
+  // capture via the boot-lifecycle's rendezvous lookup. See Phase 2 plan §
+  // "KNOWN GAP surfaced for Phase 2" in plan-spawn-parent-tracking.md.
 
-  return { ok: true, conversationId, jobId, tmuxSession: result.tmuxSession }
+  return { ok: true, conversationId, jobId, tmuxSession: result.tmuxSession, project }
+}
+
+/**
+ * Register the post-dispatch rendezvous so the caller conversation gets the
+ * async `spawn_ready` / `spawn_timeout` push when the spawned agent host
+ * connects (or times out). Centralised here so EVERY transport
+ * (claude-daemon, claude-pty/headless, registry-driven backends) participates
+ * uniformly -- which also means the boot-lifecycle's parent-lineage lookup
+ * (`getRendezvousInfo`) works for spawn paths it never reached before.
+ *
+ * No caller id -> no-op. Spawn flows from non-conversation contexts
+ * (dashboard, HTTP without `X-Caller-Conversation`) skip the rendezvous.
+ */
+function registerSpawnRendezvous(opts: {
+  deps: SpawnDispatchDeps
+  conversationId: string
+  jobId: string
+  project: string
+}): void {
+  const { deps, conversationId, jobId, project } = opts
+  const callerConversationId = deps.rendezvousCallerConversationId
+  if (!callerConversationId) return
+  // Don't block the dispatch return -- caller gets immediate success +
+  // conversationId. The rendezvous resolves async via boot-lifecycle's
+  // `resolveRendezvous` call (or times out at 120s).
+  deps.conversationStore
+    .addRendezvous(conversationId, callerConversationId, project, 'spawn')
+    .then(conv => {
+      emitProgress(deps.conversationStore, jobId, 'conversation_connected', 'done', {
+        ccSessionId: (conv.agentHostMeta?.ccSessionId as string) || conv.id,
+        conversationId,
+      })
+      const callerWs = deps.conversationStore.getConversationSocket(callerConversationId)
+      callerWs?.send(
+        JSON.stringify({
+          type: 'spawn_ready',
+          ccSessionId: (conv.agentHostMeta?.ccSessionId as string) || conv.id,
+          project: conv.project,
+          conversationId,
+          conv,
+        }),
+      )
+    })
+    .catch(err => {
+      const errMsg = typeof err === 'string' ? err : 'Spawn rendezvous timed out'
+      emitProgress(deps.conversationStore, jobId, 'failed', 'error', { error: errMsg })
+      const callerWs = deps.conversationStore.getConversationSocket(callerConversationId)
+      callerWs?.send(
+        JSON.stringify({
+          type: 'spawn_timeout',
+          conversationId,
+          project,
+          error: errMsg,
+        }),
+      )
+    })
 }

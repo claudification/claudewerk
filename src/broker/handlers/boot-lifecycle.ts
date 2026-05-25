@@ -20,6 +20,7 @@ import type {
 } from '../../shared/protocol'
 import type { MessageHandler } from '../handler-context'
 import { AGENT_HOST_ONLY, registerHandlers } from '../message-router'
+import { computeSpawnLineage } from '../spawn-lineage'
 import { requireProtocolVersion } from './validate'
 
 function deterministicUuid(key: string): string {
@@ -117,12 +118,20 @@ const agentHostBoot: MessageHandler = (ctx, data) => {
   } else {
     // Create a placeholder conversation keyed by conversationId -- the real conversationId
     // replaces this once conversation_promote arrives.
+    // Lineage capture (Phase 2 spawn-parent-tracking): if the rendezvous
+    // registry has a caller entry for this conversationId, persist parent +
+    // root on the INSERT. The lineage is computed once -- subsequent reboots
+    // hit the `existing` branch above which intentionally does NOT touch
+    // parent/root.
+    const callerId = ctx.conversations.getRendezvousInfo(conversationId)?.callerConversationId
+    const lineage = computeSpawnLineage(ctx.conversations, callerId, conversationId, 'boot')
     const placeholder = ctx.conversations.createConversation(
       conversationId,
       resolvedProject,
       undefined,
       claudeArgs,
       capabilities,
+      lineage,
     )
     placeholder.status = 'booting'
     if (pinnedProfile) placeholder.resolvedProfile = pinnedProfile

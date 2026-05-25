@@ -47,7 +47,7 @@ export interface SpawnDeps {
 }
 
 export type SpawnResult =
-  | { ok: true; conversationId: string; jobId: string; tmuxSession?: string }
+  | { ok: true; conversationId: string; jobId: string; tmuxSession?: string; project?: string }
   | { ok: false; error: string; statusCode?: number }
 
 export interface ConversationBackend {

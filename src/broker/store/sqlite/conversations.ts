@@ -28,6 +28,8 @@ function rowToRecord(row: Params): ConversationRecord {
     createdAt: row.created_at as number,
     endedAt: (row.ended_at as number) ?? undefined,
     lastActivity: (row.last_activity as number) ?? undefined,
+    parentConversationId: (row.parent_conversation_id as string) ?? undefined,
+    rootConversationId: (row.root_conversation_id as string) ?? undefined,
     meta: row.meta ? JSON.parse(row.meta as string) : undefined,
     stats: row.stats ? JSON.parse(row.stats as string) : undefined,
   }
@@ -47,14 +49,22 @@ function rowToSummary(row: Params): ConversationSummaryRecord {
     createdAt: row.created_at as number,
     endedAt: (row.ended_at as number) ?? undefined,
     lastActivity: (row.last_activity as number) ?? undefined,
+    parentConversationId: (row.parent_conversation_id as string) ?? undefined,
+    rootConversationId: (row.root_conversation_id as string) ?? undefined,
   }
 }
 
 export function createSqliteConversationStore(db: Database): ConversationStore {
   const stmtGet = db.prepare('SELECT * FROM conversations WHERE id = $id')
   const stmtInsert = db.prepare(`
-    INSERT INTO conversations (id, scope, agent_type, agent_version, title, model, status, created_at, meta)
-    VALUES ($id, $scope, $agentType, $agentVersion, $title, $model, $status, $createdAt, $meta)
+    INSERT INTO conversations (
+      id, scope, agent_type, agent_version, title, model, status, created_at, meta,
+      parent_conversation_id, root_conversation_id
+    )
+    VALUES (
+      $id, $scope, $agentType, $agentVersion, $title, $model, $status, $createdAt, $meta,
+      $parentConversationId, $rootConversationId
+    )
   `)
   const stmtDelete = db.prepare('DELETE FROM conversations WHERE id = $id')
 
@@ -79,6 +89,8 @@ export function createSqliteConversationStore(db: Database): ConversationStore {
         status: 'active',
         createdAt,
         meta: input.meta ? JSON.stringify(input.meta) : null,
+        parentConversationId: input.parentConversationId ?? null,
+        rootConversationId: input.rootConversationId ?? null,
       })
       return {
         id: input.id,
@@ -90,6 +102,8 @@ export function createSqliteConversationStore(db: Database): ConversationStore {
         model: input.model,
         createdAt,
         meta: input.meta,
+        parentConversationId: input.parentConversationId,
+        rootConversationId: input.rootConversationId,
       }
     },
 

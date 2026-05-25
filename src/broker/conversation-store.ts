@@ -109,6 +109,16 @@ export interface EndConversationOpts {
   detail?: TerminationDetail
 }
 
+/** Optional lineage fields captured at the conversation's FIRST persistence.
+ *  Set ONCE -- subsequent reboots/revives must not touch these.  See
+ *  `.claude/docs/plan-spawn-parent-tracking.md`. */
+export interface CreateConversationLineage {
+  /** Direct spawner conversationId from the rendezvous registry. */
+  parentConversationId?: string
+  /** Topmost ancestor (parent.rootConversationId ?? parent.id), best-effort. */
+  rootConversationId?: string
+}
+
 export interface ConversationStore {
   createConversation: (
     id: string,
@@ -116,6 +126,7 @@ export interface ConversationStore {
     model?: string,
     args?: string[],
     capabilities?: AgentHostCapability[],
+    lineage?: CreateConversationLineage,
   ) => Conversation
   resumeConversation: (id: string) => void
   clearConversation: (conversationId: string, newProject: string, model?: string) => Conversation | undefined
@@ -814,6 +825,8 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
           id: rec.id,
           project: rec.scope || cwdToProjectUri('/'),
           model: rec.model,
+          parentConversationId: rec.parentConversationId,
+          rootConversationId: rec.rootConversationId,
           startedAt: rec.createdAt,
           lastActivity: rec.lastActivity || rec.createdAt,
           status: 'ended',
@@ -1000,6 +1013,11 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
           model: conv.model,
           meta,
           createdAt: conv.startedAt,
+          // Lineage is set ONCE on INSERT. The update branch below intentionally
+          // omits these fields -- a revive/restart must never overwrite the
+          // parent/root captured at first persistence (plan § 3 Phase 2 #7).
+          parentConversationId: conv.parentConversationId,
+          rootConversationId: conv.rootConversationId,
         })
       } else {
         store.conversations.update(conv.id, {
@@ -1067,6 +1085,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     model?: string,
     args?: string[],
     capabilities?: AgentHostCapability[],
+    lineage?: CreateConversationLineage,
   ): Conversation {
     // Gate: refuse to create a conversation with an invalid id. Without this,
     // a buggy caller would key the conversations Map with `undefined`, and
@@ -1098,6 +1117,8 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       model,
       args,
       capabilities,
+      parentConversationId: lineage?.parentConversationId,
+      rootConversationId: lineage?.rootConversationId,
       startedAt: Date.now(),
       lastActivity: Date.now(),
       status: 'starting',

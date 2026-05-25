@@ -74,6 +74,8 @@ function toSummary(s: ConversationRecord): ConversationSummaryRecord {
     createdAt: s.createdAt,
     endedAt: s.endedAt,
     lastActivity: s.lastActivity,
+    parentConversationId: s.parentConversationId,
+    rootConversationId: s.rootConversationId,
   }
 }
 
@@ -98,6 +100,8 @@ function createConversationStore(): ConversationStore {
         model: input.model,
         status: 'active',
         createdAt: input.createdAt ?? Date.now(),
+        parentConversationId: input.parentConversationId,
+        rootConversationId: input.rootConversationId,
         meta: input.meta,
       }
       conversations.set(input.id, rec)
