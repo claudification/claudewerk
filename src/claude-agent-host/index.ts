@@ -110,6 +110,7 @@ async function main() {
     syntheticUserUuids: new Map(),
     parentTranscriptPath: null,
     lastTasksJson: '',
+    lastProjectManifest: new Map(),
     planExitApprovedAt: 0,
 
     wsClient: null,

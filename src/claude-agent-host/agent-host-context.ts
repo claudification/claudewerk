@@ -13,6 +13,7 @@ import type {
   TranscriptEntry,
 } from '../shared/protocol'
 import type { FileEditor } from './file-editor'
+import type { ProjectTaskManifestEntry } from './project-tasks'
 import type { PtyProcess } from './pty-spawn'
 import type { StreamProcess } from './stream-backend'
 import type { TranscriptWatcher } from './transcript-watcher'
@@ -64,6 +65,13 @@ export interface AgentHostContext {
   parentTranscriptPath: string | null
   syntheticUserUuids: Map<string, string>
   lastTasksJson: string
+
+  /** Last project-task manifest broadcast to the broker, keyed by `${status}/${slug}`.
+   *  Used to compute incremental diffs (added/removed/modified) on every change
+   *  so the wire carries only the delta, not the full task set. Persists across
+   *  reconnects and session transitions -- clients refetch the manifest on
+   *  reconnect to resync. */
+  lastProjectManifest: Map<string, ProjectTaskManifestEntry>
 
   /** Timestamp (ms) of the most recent dashboard-approved ExitPlanMode. Used
    *  to suppress stale `system/status` messages that still carry

@@ -12,8 +12,11 @@ import {
   createProjectTask,
   deleteProjectTask,
   getProjectTask,
+  getProjectTasksBatch,
+  listProjectManifest,
   listProjectTasks,
   moveProjectTask,
+  type ProjectTaskRef,
   type TaskStatus,
   updateProjectTask,
 } from './project-tasks'
@@ -107,6 +110,23 @@ export function handleFileEditorMessage(ctx: AgentHostContext, msg: Record<strin
         respond('project_list_response', { notes })
       } catch (err) {
         respondError('project_list_response', err)
+      }
+      break
+    case 'project_manifest':
+      try {
+        const entries = listProjectManifest(ctx.cwd)
+        respond('project_manifest_response', { entries })
+      } catch (err) {
+        respondError('project_manifest_response', err)
+      }
+      break
+    case 'project_get':
+      try {
+        const refs = (msg.refs as ProjectTaskRef[] | undefined) ?? []
+        const notes = getProjectTasksBatch(ctx.cwd, refs)
+        respond('project_get_response', { notes })
+      } catch (err) {
+        respondError('project_get_response', err)
       }
       break
     case 'project_create':

@@ -160,6 +160,63 @@ export function listProjectTasks(cwd: string, filterStatus?: TaskStatus): Projec
   return tasks.sort((a, b) => b.mtime - a.mtime)
 }
 
+/** Cheap manifest entry: identity + mtime only, no frontmatter parse. */
+export interface ProjectTaskManifestEntry {
+  slug: string
+  status: TaskStatus
+  mtime: number
+}
+
+/** Reference to a single task by (slug, status). Used by batched lookups. */
+export interface ProjectTaskRef {
+  slug: string
+  status: TaskStatus
+}
+
+/**
+ * Build the project task manifest -- every task across every status folder,
+ * but only identity + mtime. No file reads, no frontmatter parse. The cheap
+ * complement to `listProjectTasks`. Sorted by mtime DESC.
+ */
+export function listProjectManifest(cwd: string): ProjectTaskManifestEntry[] {
+  const entries: ProjectTaskManifestEntry[] = []
+  for (const s of STATUSES) {
+    const dir = statusDir(cwd, s)
+    try {
+      for (const file of readdirSync(dir)) {
+        if (!file.endsWith('.md')) continue
+        try {
+          const mtime = statSync(join(dir, file)).mtimeMs
+          entries.push({ slug: file.replace(/\.md$/, ''), status: s, mtime })
+        } catch {
+          /* file vanished between readdir and stat */
+        }
+      }
+    } catch {
+      /* status dir absent or unreadable */
+    }
+  }
+  return entries.sort((a, b) => b.mtime - a.mtime)
+}
+
+/**
+ * Hydrate a batch of tasks by (slug, status). Returns the meta (no body) for
+ * each ref that resolves; missing refs are silently skipped. Order follows
+ * the input order for refs that resolve.
+ */
+export function getProjectTasksBatch(cwd: string, refs: ProjectTaskRef[]): ProjectTaskMeta[] {
+  const out: ProjectTaskMeta[] = []
+  for (const ref of refs) {
+    const dir = statusDir(cwd, ref.status)
+    const task = readTask(dir, `${ref.slug}.md`, ref.status)
+    if (task) {
+      const { body: _, ...meta } = task
+      out.push(meta)
+    }
+  }
+  return out
+}
+
 export function getProjectTask(cwd: string, status: TaskStatus, slug: string): ProjectTask | null {
   const dir = statusDir(cwd, status)
   return readTask(dir, `${slug}.md`, status)

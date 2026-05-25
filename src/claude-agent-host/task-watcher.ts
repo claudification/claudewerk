@@ -13,7 +13,39 @@ import { normalizeTodoStatus } from '../shared/task-normalize'
 import { TASK_STATUS_PATTERN } from '../shared/task-statuses'
 import type { AgentHostContext } from './agent-host-context'
 import { debug } from './debug'
-import { listProjectTasks } from './project-tasks'
+import { listProjectManifest, listProjectTasks, type ProjectTaskManifestEntry } from './project-tasks'
+
+type ManifestKey = string // `${status}/${slug}`
+function mkey(e: { slug: string; status: string }): ManifestKey {
+  return `${e.status}/${e.slug}`
+}
+
+interface ProjectDiff {
+  added: ProjectTaskManifestEntry[]
+  removed: { slug: string; status: string }[]
+  modified: ProjectTaskManifestEntry[]
+}
+
+function diffManifest(
+  prev: Map<ManifestKey, ProjectTaskManifestEntry>,
+  next: ProjectTaskManifestEntry[],
+): ProjectDiff {
+  const added: ProjectTaskManifestEntry[] = []
+  const modified: ProjectTaskManifestEntry[] = []
+  const seen = new Set<ManifestKey>()
+  for (const entry of next) {
+    const k = mkey(entry)
+    seen.add(k)
+    const prior = prev.get(k)
+    if (!prior) added.push(entry)
+    else if (prior.mtime !== entry.mtime) modified.push(entry)
+  }
+  const removed: { slug: string; status: string }[] = []
+  for (const [k, entry] of prev) {
+    if (!seen.has(k)) removed.push({ slug: entry.slug, status: entry.status })
+  }
+  return { added, removed, modified }
+}
 
 export function readAndSendTasks(ctx: AgentHostContext) {
   if (!ctx.wsClient?.isConnected() || !ctx.claudeSessionId) {
@@ -114,15 +146,35 @@ export function startTaskWatching(ctx: AgentHostContext) {
   ctx.diag('watch', 'Task watcher started', { dirs: ctx.taskCandidateDirs.map(d => d.split('/').pop()), watchPaths })
 }
 
+/**
+ * Compute the incremental diff vs the last broadcast manifest and emit
+ * `project_changed { diff, notes }` ONLY when something actually changed.
+ *
+ * `notes` (full snapshot) is kept transitionally so unrewired callers still
+ * work; new clients consume `diff`. Phase 3 of the incremental-tasks plan
+ * removes `notes`. See `.claude/docs/plan-project-tasks-incremental.md`.
+ */
 export function sendProjectChanged(ctx: AgentHostContext) {
   if (!ctx.wsClient?.isConnected() || !ctx.claudeSessionId) return
+  const nextManifest = listProjectManifest(ctx.cwd)
+  const diff = diffManifest(ctx.lastProjectManifest, nextManifest)
+  if (diff.added.length === 0 && diff.removed.length === 0 && diff.modified.length === 0) return
+
   const tasks = listProjectTasks(ctx.cwd)
   ctx.wsClient.send({
     type: 'project_changed',
     conversationId: ctx.conversationId,
+    diff,
     notes: tasks,
   } as unknown as AgentHostMessage)
-  debug(`Project tasks changed: ${tasks.length} tasks`)
+
+  const next = new Map<ManifestKey, ProjectTaskManifestEntry>()
+  for (const entry of nextManifest) next.set(mkey(entry), entry)
+  ctx.lastProjectManifest = next
+
+  debug(
+    `Project tasks changed: +${diff.added.length} -${diff.removed.length} ~${diff.modified.length} (total ${nextManifest.length})`,
+  )
 }
 
 const PROJECT_TASK_PATTERN = new RegExp(`\\.rclaude/project/(${TASK_STATUS_PATTERN})/.+\\.md$`)
@@ -150,17 +202,11 @@ export function startProjectWatching(ctx: AgentHostContext) {
   ctx.projectWatcher.on('change', onProjectTaskChange)
   ctx.projectWatcher.on('unlink', onProjectTaskChange)
 
-  let lastProjectHash = ''
-  const projectPollInterval = setInterval(() => {
-    try {
-      const tasks = listProjectTasks(ctx.cwd)
-      const hash = tasks.map(t => `${t.slug}:${t.status}`).join('|')
-      if (lastProjectHash && hash !== lastProjectHash) {
-        sendProjectChanged(ctx)
-      }
-      lastProjectHash = hash
-    } catch {}
-  }, 5000)
+  // Belt-and-braces poll for changes chokidar missed (network FS, editor
+  // atomic-rename quirks, the user editing markdown directly). The diff
+  // computation inside sendProjectChanged is the dedup -- a poll with no
+  // actual changes emits nothing on the wire.
+  const projectPollInterval = setInterval(() => sendProjectChanged(ctx), 5000)
   ctx.projectWatcher.on('close', () => clearInterval(projectPollInterval))
   debug('Project watcher started')
 }
