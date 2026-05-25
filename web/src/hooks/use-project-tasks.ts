@@ -60,6 +60,19 @@ const pendingRequests = new Map<
 >()
 let handlerInstalled = false
 
+/**
+ * Send a request and resolve on the matching requestId reply. Used by both
+ * the manifest/get cache path AND the legacy mutation shim (project_create
+ * etc.) so they share one pending-request map -- one source of truth for
+ * dispatching `*_response` messages.
+ */
+export function sendProjectRequest(
+  conversationId: string,
+  payload: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  return sendRequest(conversationId, payload)
+}
+
 function refKey(ref: { slug: string; status: TaskStatus }): string {
   return `${ref.status}/${ref.slug}`
 }
