@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { aliasPath } from '../../shared/project-uri'
 import type {
   ConversationCreate,
   ConversationPatch,
@@ -829,6 +830,160 @@ function daemonToClaudeUris(cacheDir: string): DaemonStripResult {
 }
 
 /**
+ * Strip `/.claude/worktrees/<name>` segments from every project-URI-bearing
+ * column. A worktree IS the same project on a branch (see WORK MODE
+ * covenant) -- carrying the worktree path in the URI splits the project
+ * bucket and breaks spawn-lineage grouping (children sit in a phantom
+ * project sibling instead of nested under the parent).
+ *
+ * Belt-and-suspenders `aliasPath()` in `canonicalPath()` handles any row
+ * that escapes this pass (stale rows mid-deploy, payloads written before
+ * the alias landed), but the on-disk rewrite stops sidebar / settings /
+ * permissions code from materializing two buckets for the same project.
+ *
+ * Worktree-name is a variable path segment (not a fixed prefix like
+ * `daemon://`), so we iterate by `rowid` in JS rather than using pure
+ * SQL `REPLACE`. UPDATE OR IGNORE handles PK / UNIQUE collisions where a
+ * parent-repo row already exists for the same identity; the per-column
+ * DELETE strips any stranded worktree-prefixed rows whose update was
+ * skipped due to the constraint.
+ *
+ * Idempotent: re-running is a no-op once stamp v7 is set.
+ */
+export interface WorktreeStripResult {
+  storeTurns: { updated: number; deleted: number }
+  storeHourlyDeleted: number
+  storeConversations: { updated: number; deleted: number }
+  storeScopeLinks: { updated: number; deleted: number }
+  storeAddressBook: { updated: number; deleted: number }
+  storeMessageQueue: { updated: number; deleted: number }
+  storeRecaps: { updated: number; deleted: number }
+  analyticsTurns: { updated: number; deleted: number }
+  projectsScope: { updated: number; deleted: number }
+  projectsProjectUri: { updated: number; deleted: number }
+}
+
+/** Iterate rows whose `column` contains a worktree segment, alias each
+ *  value, write back with UPDATE OR IGNORE (collision-safe), then DELETE
+ *  any stranded rows whose update was skipped because a parent-repo row
+ *  already owned the new key. Returns {updated, deleted}. */
+function worktreeReplaceColumn(db: Database, table: string, column: string): { updated: number; deleted: number } {
+  const rows = db
+    .prepare(`SELECT rowid AS rid, ${column} AS val FROM ${table} WHERE ${column} LIKE '%/.claude/worktrees/%'`)
+    .all() as Array<{ rid: number; val: string }>
+
+  const update = db.prepare(`UPDATE OR IGNORE ${table} SET ${column} = ? WHERE rowid = ?`)
+  let updated = 0
+  for (const row of rows) {
+    const next = aliasPath(row.val)
+    if (next === row.val) continue
+    const r = update.run(next, row.rid)
+    updated += r.changes ?? 0
+  }
+
+  // Mop up: any rows whose update was skipped (because a parent-repo row
+  // already owned the new key) are now stranded worktree-prefixed rows.
+  const d = db.prepare(`DELETE FROM ${table} WHERE ${column} LIKE '%/.claude/worktrees/%'`).run()
+  return { updated, deleted: d.changes ?? 0 }
+}
+
+function worktreeToParentUris(cacheDir: string): WorktreeStripResult {
+  const result: WorktreeStripResult = {
+    storeTurns: { updated: 0, deleted: 0 },
+    storeHourlyDeleted: 0,
+    storeConversations: { updated: 0, deleted: 0 },
+    storeScopeLinks: { updated: 0, deleted: 0 },
+    storeAddressBook: { updated: 0, deleted: 0 },
+    storeMessageQueue: { updated: 0, deleted: 0 },
+    storeRecaps: { updated: 0, deleted: 0 },
+    analyticsTurns: { updated: 0, deleted: 0 },
+    projectsScope: { updated: 0, deleted: 0 },
+    projectsProjectUri: { updated: 0, deleted: 0 },
+  }
+
+  const storeDbPath = join(cacheDir, 'store.db')
+  if (existsSync(storeDbPath)) {
+    const db = new Database(storeDbPath)
+    try {
+      result.storeTurns = worktreeReplaceColumn(db, 'turns', 'project_uri')
+
+      // hourly_stats: project_uri is in the PK -- DELETE worktree rows and let
+      // materializeHourly() rebuild from the now-clean turns table on next
+      // query (same approach v2/v6 took).
+      const r = db.prepare("DELETE FROM hourly_stats WHERE project_uri LIKE '%/.claude/worktrees/%'").run()
+      result.storeHourlyDeleted = r.changes ?? 0
+
+      result.storeConversations = worktreeReplaceColumn(db, 'conversations', 'scope')
+
+      const sl1 = worktreeReplaceColumn(db, 'scope_links', 'scope_a')
+      const sl2 = worktreeReplaceColumn(db, 'scope_links', 'scope_b')
+      result.storeScopeLinks = { updated: sl1.updated + sl2.updated, deleted: sl1.deleted + sl2.deleted }
+
+      const ab1 = worktreeReplaceColumn(db, 'address_book', 'owner_scope')
+      const ab2 = worktreeReplaceColumn(db, 'address_book', 'target_scope')
+      result.storeAddressBook = { updated: ab1.updated + ab2.updated, deleted: ab1.deleted + ab2.deleted }
+
+      const mq1 = worktreeReplaceColumn(db, 'message_queue', 'from_scope')
+      const mq2 = worktreeReplaceColumn(db, 'message_queue', 'to_scope')
+      result.storeMessageQueue = { updated: mq1.updated + mq2.updated, deleted: mq1.deleted + mq2.deleted }
+
+      // recaps table is optional on fresh DBs (createRecapSchema runs at init).
+      const hasRecaps = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='recaps'").get() as
+        | { name?: string }
+        | undefined
+      if (hasRecaps?.name) {
+        result.storeRecaps = worktreeReplaceColumn(db, 'recaps', 'project_uri')
+
+        // recaps_fts is an FTS5 virtual table -- iterate by rowid the same
+        // way (REPLACE() can't express a variable-segment substitution).
+        const hasFts = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='recaps_fts'").get() as
+          | { name?: string }
+          | undefined
+        if (hasFts?.name) {
+          const ftsRows = db
+            .prepare(
+              "SELECT rowid AS rid, project_uri AS val FROM recaps_fts WHERE project_uri LIKE '%/.claude/worktrees/%'",
+            )
+            .all() as Array<{ rid: number; val: string }>
+          const ftsUpdate = db.prepare('UPDATE recaps_fts SET project_uri = ? WHERE rowid = ?')
+          for (const row of ftsRows) {
+            const next = aliasPath(row.val)
+            if (next !== row.val) ftsUpdate.run(next, row.rid)
+          }
+        }
+      }
+    } finally {
+      db.close()
+    }
+  }
+
+  const analyticsDbPath = join(cacheDir, 'analytics.db')
+  if (existsSync(analyticsDbPath)) {
+    const db = new Database(analyticsDbPath)
+    try {
+      result.analyticsTurns = worktreeReplaceColumn(db, 'turns', 'project_uri')
+    } finally {
+      db.close()
+    }
+  }
+
+  // projects.db: separate file. projects.scope (UNIQUE) + projects.project_uri
+  // (UNIQUE INDEX). Worktree-prefixed rows may exist from previous boots.
+  const projectsDbPath = join(cacheDir, 'projects.db')
+  if (existsSync(projectsDbPath)) {
+    const db = new Database(projectsDbPath)
+    try {
+      result.projectsScope = worktreeReplaceColumn(db, 'projects', 'scope')
+      result.projectsProjectUri = worktreeReplaceColumn(db, 'projects', 'project_uri')
+    } finally {
+      db.close()
+    }
+  }
+
+  return result
+}
+
+/**
  * Current schema version. Bumped whenever a startup-time migration step is added.
  * - 1: Phase 4 complete (legacy JSON/JSONL/cost-data.db absorbed into store.db)
  * - 2: all project URIs canonicalized to `claude://default/{path}` form
@@ -847,8 +1002,12 @@ function daemonToClaudeUris(cacheDir: string): DaemonStripResult {
  * - 6: strip `daemon://` URIs to `claude://` across every project-URI-bearing
  *      column. The daemon is a transport, not a backend -- carrying it in
  *      the URI scheme was splitting the project bucket for the same folder.
+ * - 7: strip `/.claude/worktrees/<name>` segments across every project-URI-
+ *      bearing column. A worktree is the same project on a branch -- carrying
+ *      the worktree path in the URI split the project bucket and broke
+ *      spawn-lineage grouping (children sat in a phantom sibling project).
  */
-export const SCHEMA_VERSION = 6
+export const SCHEMA_VERSION = 7
 
 const SCHEMA_VERSION_KEY = 'schema-version'
 
@@ -861,6 +1020,7 @@ export interface StartupMigrationResult {
   tasksBackfilled?: { conversations: number; tasks: number; archived: number }
   sharesBackfilled?: number
   daemonStripped?: DaemonStripResult
+  worktreeStripped?: WorktreeStripResult
   skipped: boolean
 }
 
@@ -919,6 +1079,15 @@ export function runStartupMigration(store: StoreDriver, cacheDir: string): Start
   // permissions code from materializing two buckets for the same project.
   if (current < 6) {
     out.daemonStripped = daemonToClaudeUris(cacheDir)
+  }
+
+  // v7: strip `/.claude/worktrees/<name>` segments to fold worktree URIs back
+  // into their parent repo. Belt-and-suspenders alias in `canonicalPath()`
+  // handles any row that escapes this pass (live conversation mid-migration,
+  // post-rewrite write that snuck through), but the on-disk rewrite stops
+  // the sidebar from showing a phantom worktree project sibling.
+  if (current < 7) {
+    out.worktreeStripped = worktreeToParentUris(cacheDir)
   }
 
   store.kv.set(SCHEMA_VERSION_KEY, SCHEMA_VERSION)
