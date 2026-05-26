@@ -1206,7 +1206,10 @@ function spawnDaemonHostDirect(opts: {
     unbindConversationFromProfile(opts.conversationId)
     writePidRegistry()
     if (exitCode === 0) {
-      log(`daemon-host exited normally: PID ${pid} conv=${opts.conversationId.slice(0, 8)} (${elapsedMs}ms)`)
+      log(
+        `daemon-host exited normally: PID ${pid} conv=${opts.conversationId.slice(0, 8)} ` +
+          `short=${opts.daemonShort} mode=${opts.mode} elapsed=${elapsedMs}ms`,
+      )
     } else {
       const earlyFailure = elapsedMs < 5000
       log(
@@ -3060,17 +3063,36 @@ function connect(
                 break
               }
               let verdict: { ok: boolean; error?: string }
+              let probeResp: Awaited<ReturnType<typeof has>> | null = null
               try {
-                verdict = evaluateAttachPresence(await has(controlSock, attachShort), attachShort)
+                probeResp = await has(controlSock, attachShort)
+                verdict = evaluateAttachPresence(probeResp, attachShort)
               } catch (e: unknown) {
                 verdict = { ok: false, error: `daemon attach: has() probe failed: ${(e as Error).message}` }
               }
+              // The probe is a discriminated DaemonResponse (DaemonOk vs DaemonErr).
+              // Read alive/present via bracket access -- only present on the ok branch.
+              const probeOk = probeResp?.ok === true
+              const probeAlive = probeOk ? (probeResp as Record<string, unknown>).alive : undefined
+              const probePresent = probeOk ? (probeResp as Record<string, unknown>).present : undefined
+              const probeCode = probeResp && probeResp.ok === false ? probeResp.code : undefined
               if (!verdict.ok) {
+                log(
+                  `[daemon-attach] verify FAIL conv=${spawnMsg.conversationId.slice(0, 8)} short=${attachShort} ` +
+                    `probeOk=${probeOk} alive=${probeAlive ?? '-'} present=${probePresent ?? '-'} ` +
+                    `code=${probeCode ?? '-'} -- ${verdict.error}`,
+                )
                 sendDaemonFail(verdict.error ?? `daemon attach: worker ${attachShort} unavailable`)
                 break
               }
               daemonShort = attachShort
-              launchLog(spawnMsg.jobId, 'daemon attach target verified', 'ok', `short=${daemonShort} present`)
+              launchLog(
+                spawnMsg.jobId,
+                'daemon attach target verified',
+                'ok',
+                `conv=${spawnMsg.conversationId.slice(0, 8)} short=${daemonShort} ` +
+                  `alive=${probeAlive ?? '-'} present=${probePresent ?? '-'}`,
+              )
             } else {
               // NEW / RESUME -- validate config paths exist, then dispatch.
               const pathCheck = validateDaemonConfigPaths(

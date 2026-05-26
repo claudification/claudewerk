@@ -175,9 +175,15 @@ describe('normalizeDaemonControlResult', () => {
   })
 
   it('accepts every documented control op', () => {
-    for (const op of ['reply', 'permission_response', 'kill', 'respawn_stale']) {
+    // `permission_response` removed 2026-05-27 (sweep P1-2 / P3-5) -- the
+    // daemon op is a stub; live path is PermissionResponse + reply().
+    for (const op of ['reply', 'kill', 'respawn_stale', 'set_model', 'set_effort', 'interrupt']) {
       expect(normalizeDaemonControlResult({ ...base, op })).not.toBeNull()
     }
+  })
+
+  it('rejects the removed permission_response op (sweep P1-2 / P3-5)', () => {
+    expect(normalizeDaemonControlResult({ ...base, op: 'permission_response' })).toBeNull()
   })
 
   it('rejects a missing conversationId, an unknown op, and a non-boolean ok', () => {

@@ -133,8 +133,22 @@ function applyDaemonState(
   }
   if (conv.status === 'ended') {
     // A previously-ended daemon job is back in the roster (daemon restart /
-    // job resume). Loud log per the un-end flap covenant.
-    console.warn(`[daemon-unend] ${conv.id.slice(0, 8)} job reappeared in roster state=${job.state}`)
+    // job resume). Loud log per the un-end flap covenant -- this is THE
+    // origin-story flap path: a future engineer staring at broker logs must
+    // be able to reconstruct prev endedBy / prev lastActivity / age since end
+    // without re-running anything. (LOG EVERYTHING covenant, sweep P2 top.)
+    const endedAt = conv.endedBy?.at
+    const ageSinceEndMs = endedAt ? Date.now() - endedAt : null
+    const idleMs = conv.lastActivity ? Date.now() - conv.lastActivity : null
+    console.warn(
+      `[daemon-unend] ${conv.id.slice(0, 8)} job reappeared in roster ` +
+        `prevStatus=ended prevEndedBy=${conv.endedBy?.source ?? '-'}/` +
+        `${conv.endedBy?.initiator ?? '-'} ` +
+        `ageSinceEndMs=${ageSinceEndMs ?? '-'} ` +
+        `lastActivityAgoMs=${idleMs ?? '-'} ` +
+        `newState=${job.state} short=${job.short} cwd=${job.cwd} ` +
+        `sentinelId=${conv.hostSentinelId ?? '-'}`,
+    )
     conv.endedBy = undefined
   }
   conv.status = status
@@ -276,7 +290,11 @@ const daemonRosterUpdate: MessageHandler = (ctx, data) => {
  * next sentinel push lands.
  */
 const daemonRosterRequest: MessageHandler = (ctx, _data) => {
-  ctx.log.info(`[daemon] roster replay requested -- ${cachedRosters.size} cached sentinel roster(s)`)
+  ctx.log.info(
+    `[daemon] roster replay requested by connId=${ctx.ws.data.connectionId ?? '-'} ` +
+      `role=${ctx.ws.data.shareConversationId ? 'share' : 'control-panel'} ` +
+      `-- ${cachedRosters.size} cached sentinel roster(s)`,
+  )
   for (const roster of cachedRosters.values()) {
     ctx.reply({ ...roster })
   }

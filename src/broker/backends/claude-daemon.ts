@@ -259,10 +259,14 @@ export async function dispatchClaudeDaemon(req: SpawnRequest, deps: SpawnDeps): 
  *  return the 500 SpawnResult. */
 function failDaemonSpawn(
   deps: SpawnDeps,
-  opts: { jobId: string; conversationId: string; mode: DaemonMode; error?: string },
+  opts: { jobId: string; conversationId: string; mode: DaemonMode; error?: string; sentinelAlias?: string },
 ): SpawnResult {
   const errorMsg = opts.error || 'Spawn failed'
-  console.warn(`[daemon-spawn] FAILED mode=${opts.mode} conv=${opts.conversationId.slice(0, 8)}: ${errorMsg}`)
+  console.warn(
+    `[daemon-spawn] FAILED jobId=${opts.jobId.slice(0, 8)} mode=${opts.mode} ` +
+      `conv=${opts.conversationId.slice(0, 8)} sentinel=${opts.sentinelAlias ?? '-'} ` +
+      `statusCode=500: ${errorMsg}`,
+  )
   emitLaunchProgress(deps.conversationStore, opts.jobId, 'failed', 'error', { error: errorMsg })
   deps.conversationStore.failJob(opts.jobId, errorMsg)
   return { ok: false, error: errorMsg, statusCode: 500 }

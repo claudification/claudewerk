@@ -157,6 +157,10 @@ async function main(): Promise<void> {
    *  observer's `onGone` fires -- guards the worker_gone launch event so it
    *  emits exactly once per process. */
   let workerGoneEmitted = false
+  /** Transport error count + last-ok timer -- carried on the structured error
+   *  log line so a flap is reconstructable from logs alone (LOG EVERYTHING). */
+  let transportErrorCount = 0
+  let lastTransportOkAt = Date.now()
 
   // --- broker transport (created up front so boot events have a channel) -----
   const transport: HostTransport = createHostTransport({
@@ -168,14 +172,27 @@ async function main(): Promise<void> {
     onMessage: handleInbound,
     onConnected: () => {
       debug('broker connected')
+      lastTransportOkAt = Date.now()
       emitBoot('broker_connected')
       // Replay buffered daemon launch events so a late-attaching dashboard
       // sees the full timeline (EVERYTHING IS A STRUCTURED MESSAGE +
       // LOG EVERYTHING -- the timeline is the user-facing audit trail).
       launchEvents?.replay()
     },
-    onDisconnected: () => debug('broker disconnected'),
-    onError: err => debug(`transport error: ${err.message}`),
+    onDisconnected: () =>
+      log(
+        `[transport] broker disconnected conv=${cfg.conversationId.slice(0, 8)} ` +
+          `ccSessionId=${ccSessionId?.slice(0, 8) ?? '-'} attached=${attachHandle && !attachHandle.closed} ` +
+          `lastOkAgoMs=${Date.now() - lastTransportOkAt} shuttingDown=${shuttingDown}`,
+      ),
+    onError: err => {
+      transportErrorCount += 1
+      log(
+        `[transport] error conv=${cfg.conversationId.slice(0, 8)} ccSessionId=${ccSessionId?.slice(0, 8) ?? '-'} ` +
+          `errCount=${transportErrorCount} lastOkAgoMs=${Date.now() - lastTransportOkAt} ` +
+          `message="${err.message}"`,
+      )
+    },
     onDiag: (_kind, m, args) => debug(`diag: ${m} ${args ? JSON.stringify(args) : ''}`),
   })
 
@@ -447,7 +464,11 @@ async function main(): Promise<void> {
   function handleAttachClose(reason: AttachCloseReason): void {
     if (reason === 'client-closed' || shuttingDown || reattaching) return
     reattaching = true
-    log(`attach socket dropped: reason=${reason} short=${cfg.daemonShort} -- probing worker liveness`)
+    log(
+      `[attach] socket dropped reason=${reason} short=${cfg.daemonShort} ` +
+        `conv=${cfg.conversationId.slice(0, 8)} ccSessionId=${ccSessionId?.slice(0, 8) ?? '-'} ` +
+        `rotationCount=${ccRotationCount} -- probing worker liveness`,
+    )
     emitBoot('awaiting_init', `attach lost (${reason}); probing worker`)
     launchEvents?.emit('attach_lost', { detail: `reason=${reason}`, raw: { reason } })
     reattachAfterDrop(reason)
@@ -466,13 +487,20 @@ async function main(): Promise<void> {
     const alive = probe.ok === true && probe.alive === true
     const present = probe.ok === true && probe.present === true
     if (!alive || !present) {
-      log(`worker gone after attach drop: short=${cfg.daemonShort} alive=${alive} present=${present} reason=${reason}`)
+      log(
+        `[attach] worker gone after drop short=${cfg.daemonShort} conv=${cfg.conversationId.slice(0, 8)} ` +
+          `alive=${alive} present=${present} probeOk=${probe.ok} reason=${reason} ` +
+          `ccSessionId=${ccSessionId?.slice(0, 8) ?? '-'}`,
+      )
       emitWorkerGone({ reason: `attach-drop+probe alive=${alive} present=${present}`, source: reason })
       maybeEmitRetired()
       shutdown('daemon-job-gone', true)
       return
     }
-    log(`worker still alive after attach drop -- re-attaching: short=${cfg.daemonShort} reason=${reason}`)
+    log(
+      `[attach] worker still alive after drop -- re-attaching short=${cfg.daemonShort} ` +
+        `conv=${cfg.conversationId.slice(0, 8)} reason=${reason} ccSessionId=${ccSessionId?.slice(0, 8) ?? '-'}`,
+    )
     await doAttach()
     launchEvents?.emit('reattached', { detail: `reason=${reason}`, raw: { reason } })
     emitBoot('conversation_ready', `re-attached after socket drop (${reason})`)
@@ -525,8 +553,9 @@ async function main(): Promise<void> {
     const verdict = classifyVanish(observer?.lastObservation() ?? null, Date.now())
     if (!verdict.retired) {
       log(
-        `worker vanish NOT classified as retired -- lastState=${verdict.lastState ?? '(never seen)'}` +
-          ` idleMs=${verdict.idleMs ?? 0}`,
+        `[vanish] not classified as retired conv=${cfg.conversationId.slice(0, 8)} ` +
+          `short=${cfg.daemonShort} lastState=${verdict.lastState ?? '(never seen)'} idleMs=${verdict.idleMs ?? 0} ` +
+          `ccSessionId=${ccSessionId?.slice(0, 8) ?? '-'}`,
       )
       return
     }
