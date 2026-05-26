@@ -354,7 +354,9 @@ function createMcpServer(
       rootConversationId: z
         .string()
         .optional()
-        .describe('Return the full spawn subtree rooted at this conversationId (inclusive). Mutually exclusive with parentConversationId.'),
+        .describe(
+          'Return the full spawn subtree rooted at this conversationId (inclusive). Mutually exclusive with parentConversationId.',
+        ),
       parentConversationId: z
         .string()
         .optional()
