@@ -4,6 +4,7 @@ import { Clock } from 'lucide-react'
 import { memo, type ReactNode, useEffect, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import { useGhostShort } from '@/hooks/use-ghost-sessions'
 import {
   formatCost,
   getCacheTimerInfo,
@@ -34,6 +35,7 @@ import { ShareIndicator } from '../share-panel'
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog'
 import { BackendIcon } from './backend-icon'
 import { ConversationContextMenu } from './conversation-context-menu'
+import { GhostAttachButton, GhostBadge } from './ghost-attach'
 import { InlineConfirmButton } from './inline-confirm-button'
 import { SentinelProfileBadge } from './sentinel-profile-badge'
 
@@ -846,6 +848,7 @@ function ConversationItemShell({
   isSelected,
   displayColor,
   variant,
+  ghost = false,
   onClick,
   children,
 }: {
@@ -853,6 +856,8 @@ function ConversationItemShell({
   isSelected: boolean
   displayColor: string | undefined
   variant: 'full' | 'compact'
+  /** Discovered, not-yet-attached daemon worker -- rendered translucent + dashed. */
+  ghost?: boolean
   onClick: () => void
   children: ReactNode
 }) {
@@ -877,6 +882,9 @@ function ConversationItemShell({
               : displayColor
                 ? 'border-border hover:border-primary'
                 : 'border-border hover:border-primary hover:bg-card',
+        // Ghost: discovered daemon worker not yet attached. Dashed violet,
+        // faint tint, slightly dimmed -- reads as "phantom" vs an owned row.
+        ghost && !isSelected && 'border-dashed border-violet-500/40 bg-violet-500/[0.04] opacity-90',
       )}
       style={
         isSelected && conversation.planMode
@@ -997,6 +1005,10 @@ const ConversationItemFull = memo(function ConversationItemFull({ conversation }
   const projectName = projectDisplayName(projectPath(conversation.project), ps?.label)
   const conversationName = conversation.title || conversation.agentName
   const displayColor = ps?.color
+  // Ghost: a live daemon worker (in the roster) we are mirroring but not yet
+  // hosting (transport not flipped to claude-daemon). Attaching solidifies it.
+  const ghostShort = useGhostShort(conversation.id)
+  const isGhost = !!ghostShort && conversation.transport !== 'claude-daemon'
 
   function handleClick() {
     haptic('tap')
@@ -1009,6 +1021,7 @@ const ConversationItemFull = memo(function ConversationItemFull({ conversation }
       isSelected={isSelected}
       displayColor={displayColor}
       variant="full"
+      ghost={isGhost}
       onClick={handleClick}
     >
       <div className="flex items-center gap-1.5">
@@ -1025,7 +1038,9 @@ const ConversationItemFull = memo(function ConversationItemFull({ conversation }
         >
           {projectName}
         </span>
-        {isDaemonTransport(conversation) && (
+        {isGhost && <GhostBadge />}
+        {isGhost && <GhostAttachButton conversationId={conversation.id} />}
+        {!isGhost && isDaemonTransport(conversation) && (
           <span
             className="px-1.5 py-0.5 text-[10px] uppercase font-bold bg-sky-500/20 text-sky-400 border border-sky-500/50"
             title="Native claude agents background session -- claudewerk mirrors it read-only"
@@ -1300,6 +1315,9 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
   const isEditingDescription = useConversationsStore(s => s.editingDescriptionConversationId === conversation.id)
   const displayColor = ps?.color
   const isMobile = useIsMobile()
+  // Ghost: live daemon worker in the roster, not yet attached (see Full card).
+  const ghostShort = useGhostShort(conversation.id)
+  const isGhost = !!ghostShort && conversation.transport !== 'claude-daemon'
 
   function handleClick() {
     haptic('tap')
@@ -1373,6 +1391,7 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
       isSelected={isSelected}
       displayColor={displayColor}
       variant="compact"
+      ghost={isGhost}
       onClick={handleClick}
     >
       {/* ── TITLE ROW: status, backend, title, action/attention badges, %, info ─ */}
@@ -1394,7 +1413,9 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
           </span>
         )}
         {/* Action / attention badges -- always on title row in both layouts */}
-        {isDaemonTransport(conversation) && (
+        {isGhost && <GhostBadge compact />}
+        {isGhost && <GhostAttachButton conversationId={conversation.id} compact />}
+        {!isGhost && isDaemonTransport(conversation) && (
           <span className="text-[9px] text-sky-400 font-bold" title="Native claude agents session -- read-only mirror">
             NATIVE
           </span>

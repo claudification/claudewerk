@@ -15,6 +15,7 @@ import {
   saveProjectOrder,
   useConversationStructure,
   useConversationsStore,
+  wsSend,
 } from '@/hooks/use-conversations'
 import type { ProjectOrder, ProjectOrderGroup, ProjectOrderNode } from '@/lib/types'
 import { cn, haptic, parseWorktreeUri } from '@/lib/utils'
@@ -56,6 +57,15 @@ export function ProjectList() {
     const t = setInterval(() => setTick(n => n + 1), 30_000)
     return () => clearInterval(t)
   }, [])
+
+  // Ask the broker to replay the cached daemon roster on mount + every reconnect
+  // so ghost rows (unattached daemon workers) light up immediately instead of
+  // waiting up to one 10s sentinel poll. Subscribes to connectSeq only (changes
+  // on reconnect), NOT the roster data -- the per-row useGhostShort reads that.
+  const connectSeq = useConversationsStore(s => s.connectSeq)
+  useEffect(() => {
+    wsSend('daemon_roster_request')
+  }, [connectSeq])
 
   // Single id -> structure index shared by the grouping memos below.
   const structureById = useMemo(() => {
