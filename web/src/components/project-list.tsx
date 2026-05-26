@@ -480,7 +480,7 @@ export function ProjectList() {
 
   return (
     <MaybeProfiler id="ProjectList">
-      <div className="space-y-2 overflow-y-auto">
+      <div className="space-y-2 overflow-y-auto" data-perf-region="sidebar">
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}

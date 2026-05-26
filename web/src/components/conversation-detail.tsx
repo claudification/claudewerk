@@ -3,6 +3,7 @@ import type { HookEvent } from '@shared/protocol'
 import { memo, useRef } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import { useSwitchDiagnostics } from '@/hooks/use-switch-diagnostics'
 import { canJsonStream, canTerminal, type TranscriptEntry } from '@/lib/types'
 import { ClipboardBanners } from './conversation-detail/conversation-banners'
 import { ConversationHeader } from './conversation-detail/conversation-header'
@@ -86,6 +87,9 @@ export const ConversationDetail = memo(function ConversationDetail() {
     useTaskEditor(selectedConversationId ?? null)
 
   const inPlanMode = conversation?.planMode ?? false
+
+  // Perf-monitor-only: attribute slow switches to a concrete region (see hook).
+  useSwitchDiagnostics(selectedConversationId)
 
   const selectedProjectUri = useConversationsStore(state => state.selectedProjectUri)
 
