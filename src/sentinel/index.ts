@@ -64,7 +64,7 @@ import {
   evaluateAttachPresence,
   validateDaemonConfigPaths,
 } from './daemon-dispatch'
-import { startDaemonRosterWatch, stopDaemonRosterWatch } from './daemon-roster'
+import { registerDaemonSession, startDaemonRosterWatch, stopDaemonRosterWatch } from './daemon-roster'
 import { type PreflightIssue, preflightSpawn } from './preflight'
 import { runProfileCli } from './profile-cli'
 import { pickProfile } from './selection'
@@ -1046,7 +1046,7 @@ async function dispatchDaemonWorker(opts: {
    *  `~/.claude` -- see `shouldInjectConfigDir`). Its `env` (e.g.
    *  `ANTHROPIC_API_KEY` for alt accounts) is merged directly. */
   profile?: ResolvedProfile
-}): Promise<{ short: string | null; output: string }> {
+}): Promise<{ short: string | null; sessionId: string; output: string }> {
   // Worker env DELTA only -- the daemon applies it over its own base env (the
   // live spike confirmed an empty env still boots a worker). Profile.env first,
   // then per-spawn env, then CLAUDE_CONFIG_DIR last (an explicit per-profile
@@ -1083,7 +1083,7 @@ async function dispatchDaemonWorker(opts: {
       env: workerEnv,
     })
   } catch (e: unknown) {
-    return { short: null, output: `dispatch spec assembly failed: ${(e as Error).message}` }
+    return { short: null, sessionId, output: `dispatch spec assembly failed: ${(e as Error).message}` }
   }
 
   // Profile-aware socket routing: cc-daemon is one-per-CLAUDE_CONFIG_DIR.
@@ -1095,6 +1095,7 @@ async function dispatchDaemonWorker(opts: {
     const profileLabel = opts.profile?.name ? ` (profile=${opts.profile.name})` : ''
     return {
       short: null,
+      sessionId,
       output: `daemon dispatch: no Claude Code daemon control socket reachable${profileLabel}`,
     }
   }
@@ -1117,9 +1118,9 @@ async function dispatchDaemonWorker(opts: {
     if (resp.short !== short) {
       launchLog(opts.jobId, 'daemon dispatch short mismatch', 'info', `minted=${short} daemon=${resp.short}`)
     }
-    return { short: resp.short, output: `dispatch ok: short=${resp.short} pid=${resp.pid} via=${resp.via}` }
+    return { short: resp.short, sessionId, output: `dispatch ok: short=${resp.short} pid=${resp.pid} via=${resp.via}` }
   } catch (e: unknown) {
-    return { short: null, output: `daemon dispatch op failed: ${(e as Error).message}` }
+    return { short: null, sessionId, output: `daemon dispatch op failed: ${(e as Error).message}` }
   }
 }
 
@@ -3145,6 +3146,25 @@ function connect(
                 short: daemonShort,
                 detail: dispatched.output,
               })
+              // Unify daemon identity: register this session -> our conversationId in
+              // the sentinel daemon-map so the roster mirror REUSES it instead of
+              // minting a duplicate ghost row for the same worker (the split-identity
+              // bug). NEW only -- the minted sessionId becomes the worker's ccSessionId
+              // for a NEW dispatch; RESUME forks to a fresh daemon-assigned id we
+              // cannot pre-register (the observer binds it later).
+              if (daemonMode === 'new') {
+                const registered = registerDaemonSession(
+                  dispatched.sessionId,
+                  spawnMsg.conversationId,
+                  resolvedSpawnProfile.configDir,
+                )
+                launchLog(
+                  spawnMsg.jobId,
+                  'daemon session registered in roster map',
+                  'info',
+                  `session=${dispatched.sessionId.slice(0, 12)} conv=${spawnMsg.conversationId.slice(0, 8)} registered=${registered}`,
+                )
+              }
             }
 
             const daemonRes = spawnDaemonHostDirect({

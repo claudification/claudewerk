@@ -138,6 +138,22 @@ function applyDaemonState(
   job: DaemonJobInfo,
   status: Conversation['status'],
 ): void {
+  // A live daemon-host owns this conversation (claudewerk spawned or attached
+  // it): its status-mirror is the status authority (EVERYTHING IS A STRUCTURED
+  // MESSAGE). The roster mirror must NOT end or override status here -- that
+  // would prematurely kill an actively-hosted conversation whose worker is
+  // merely between turns (a one-shot worker at state:done/tempo:idle). This
+  // matters now that identity is unified: the roster shares the conversationId
+  // with the hosted spawn instead of tracking a separate ghost twin. Refresh
+  // only the roster-unique fields (live short to track respawn drift, polled
+  // profile); leave status + activity to the host.
+  if (ctx.conversations.findSocketByConversationId(conv.id)) {
+    if (job.profile) conv.resolvedProfile = job.profile
+    stampDaemonShort(conv, job)
+    ctx.conversations.persistConversationById(conv.id)
+    ctx.conversations.broadcastConversationUpdate(conv.id)
+    return
+  }
   if (status === 'ended') {
     endDaemonConversation(ctx, conv.id, `daemon job ${job.state}`)
     return
@@ -202,7 +218,12 @@ function reconcileVanishedDaemonConversations(
     .getAllConversations()
     .filter(c => c.agentHostType === 'daemon' && c.hostSentinelId === sentinelId && c.status !== 'ended')
   for (const conv of owned) {
-    if (!present.has(conv.id)) endDaemonConversation(ctx, conv.id, 'job left the daemon roster')
+    if (present.has(conv.id)) continue
+    // A live daemon-host owns its conversation's end: its session-observer
+    // detects the vanished worker and emits a structured conversation end. Skip
+    // hosted convs here so the roster mirror does not race or duplicate that end.
+    if (ctx.conversations.findSocketByConversationId(conv.id)) continue
+    endDaemonConversation(ctx, conv.id, 'job left the daemon roster')
   }
 }
 

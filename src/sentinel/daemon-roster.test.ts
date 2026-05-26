@@ -2,7 +2,13 @@ import { describe, expect, it } from 'bun:test'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { JobRecord } from '../shared/cc-daemon/types'
-import { buildJobInfos, daemonRosterPaths, mintConversationId, stopDaemonRosterWatch } from './daemon-roster'
+import {
+  buildJobInfos,
+  daemonRosterPaths,
+  mintConversationId,
+  planSessionRegistration,
+  stopDaemonRosterWatch,
+} from './daemon-roster'
 
 const job = (over: Partial<JobRecord> = {}): JobRecord => ({
   short: 'aeb185f9',
@@ -85,6 +91,37 @@ describe('daemonRosterPaths (CLAUDE_CONFIG_DIR audit fix, transport-reframe Phas
     const { daemonDir, mapPath } = daemonRosterPaths({})
     expect(daemonDir).toBe(join(homedir(), '.claude', 'daemon'))
     expect(mapPath).toBe(join(homedir(), '.claude', 'claudewerk-daemon-map.json'))
+  })
+})
+
+describe('planSessionRegistration (claudewerk spawn -> daemon-map dedup)', () => {
+  const WATCHED = '/home/u/.claude'
+
+  it('registers an unseen session under the watched daemon', () => {
+    expect(planSessionRegistration({}, 'sess-1', 'conv_A', undefined, WATCHED)).toBe('register')
+  })
+
+  it('is idempotent when already mapped to the same conversation', () => {
+    expect(planSessionRegistration({ 'sess-1': 'conv_A' }, 'sess-1', 'conv_A', undefined, WATCHED)).toBe('idempotent')
+  })
+
+  it('never clobbers a session mapped to a DIFFERENT conversation', () => {
+    expect(planSessionRegistration({ 'sess-1': 'conv_OTHER' }, 'sess-1', 'conv_A', undefined, WATCHED)).toBe(
+      'skip-conflict',
+    )
+  })
+
+  it('skips a worker on a foreign configDir (a daemon this roster does not watch)', () => {
+    expect(planSessionRegistration({}, 'sess-1', 'conv_A', '/home/u/.claude-work', WATCHED)).toBe('skip-foreign')
+  })
+
+  it('registers when the worker configDir matches the watched dir (trailing-slash normalized)', () => {
+    expect(planSessionRegistration({}, 'sess-1', 'conv_A', '/home/u/.claude/', WATCHED)).toBe('register')
+  })
+
+  it('skips empty session or conversation ids', () => {
+    expect(planSessionRegistration({}, '', 'conv_A', undefined, WATCHED)).toBe('skip-empty')
+    expect(planSessionRegistration({}, 'sess-1', '', undefined, WATCHED)).toBe('skip-empty')
   })
 })
 

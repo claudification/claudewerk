@@ -14,7 +14,7 @@
  */
 import { randomBytes } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { watch as chokidarWatch, type FSWatcher } from 'chokidar'
 import { list } from '../shared/cc-daemon/ops'
 import { resolveControlSocket } from '../shared/cc-daemon/socket-path'
@@ -45,6 +45,10 @@ export function daemonRosterPaths(env: NodeJS.ProcessEnv = process.env): { daemo
 const { daemonDir: DAEMON_DIR, mapPath: MAP_PATH } = daemonRosterPaths()
 /** Poll fallback -- chokidar gives instant updates, the poll is the floor. */
 const POLL_INTERVAL_MS = 10_000
+/** The CLAUDE_CONFIG_DIR whose daemon this roster watches (fixed at module load,
+ *  matches `daemonRosterPaths`). Scopes `registerDaemonSession`: only sessions on
+ *  THIS daemon can produce a duplicate ghost here. */
+const WATCHED_CONFIG_DIR = claudeConfigDir()
 
 /** Logging hooks supplied by the sentinel (`log` + structured `diag`). */
 export interface RosterWatchDeps {
@@ -120,6 +124,75 @@ let watcher: FSWatcher | null = null
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let running = false
 let idMap: Record<string, string> = {}
+/** Deps captured while the watch runs, so `registerDaemonSession` (called from
+ *  the spawn dispatch path, not the poll loop) can persist + diag against the
+ *  live idMap. Null when no watch is active. */
+let currentDeps: RosterWatchDeps | null = null
+
+/**
+ * Register a claudewerk-OWNED daemon session -> conversationId in the LIVE idMap
+ * so the roster mirror's `conversationIdFor` reuses this conversationId instead
+ * of minting a duplicate GHOST row for the same worker. Called by the spawn
+ * dispatch path right after a NEW daemon dispatch -- the minted sessionId
+ * BECOMES the worker's ccSessionId for a NEW dispatch (cc-daemon types.ts), so
+ * it is the authoritative key the roster will later see for this worker.
+ *
+ * Without this, claudewerk's own daemon spawn (conversationId minted broker-side)
+ * and the roster mirror (conversationId minted here, keyed by sessionId) derive
+ * DIFFERENT ids for the same worker -> two rows: the transcript/worker on one,
+ * an empty ghost on the other (the split-identity bug).
+ *
+ * No-op (returns false) when: the roster watch is not running; ids are empty;
+ * the worker's daemon (configDir) is not the one this roster watches (a
+ * cross-profile worker the roster never mirrors -- no ghost to prevent); or the
+ * session is already mapped to a DIFFERENT conversation (never clobber).
+ */
+export type SessionRegistrationVerdict = 'register' | 'idempotent' | 'skip-empty' | 'skip-foreign' | 'skip-conflict'
+
+/**
+ * PURE decision for {@link registerDaemonSession}: given the current idMap and
+ * configDir scoping, decide whether the session -> conversation mapping should
+ * be written. `skip-foreign` = the worker's daemon is not the one this roster
+ * watches (no ghost to prevent); `skip-conflict` = the session already maps to a
+ * DIFFERENT conversation (never clobber); `idempotent` = already mapped to the
+ * same conversation. Testable without the module state.
+ */
+export function planSessionRegistration(
+  idMap: Record<string, string>,
+  sessionId: string,
+  conversationId: string,
+  workerConfigDir: string | undefined,
+  watchedConfigDir: string,
+): SessionRegistrationVerdict {
+  if (!sessionId || !conversationId) return 'skip-empty'
+  if (workerConfigDir && resolve(workerConfigDir) !== resolve(watchedConfigDir)) return 'skip-foreign'
+  const existing = idMap[sessionId]
+  if (existing === conversationId) return 'idempotent'
+  if (existing) return 'skip-conflict'
+  return 'register'
+}
+
+export function registerDaemonSession(sessionId: string, conversationId: string, workerConfigDir?: string): boolean {
+  if (!running || !currentDeps) return false
+  const verdict = planSessionRegistration(idMap, sessionId, conversationId, workerConfigDir, WATCHED_CONFIG_DIR)
+  if (verdict === 'idempotent') return true
+  if (verdict === 'skip-conflict') {
+    currentDeps.diag('daemon', 'register: session already mapped, not clobbering', {
+      sessionId: sessionId.slice(0, 12),
+      existing: idMap[sessionId],
+      incoming: conversationId,
+    })
+    return false
+  }
+  if (verdict !== 'register') return false
+  idMap[sessionId] = conversationId
+  saveIdMap(idMap, currentDeps)
+  currentDeps.diag('daemon', 'register: claudewerk daemon spawn session -> conversation', {
+    sessionId: sessionId.slice(0, 12),
+    conversationId,
+  })
+  return true
+}
 
 /** Resolve the current roster and shape it into a DaemonRosterUpdate. */
 async function buildRosterUpdate(deps: RosterWatchDeps): Promise<DaemonRosterUpdate> {
@@ -182,6 +255,7 @@ function ensureWatcher(scan: () => void, deps: RosterWatchDeps): void {
 export function startDaemonRosterWatch(ws: WebSocket, deps: RosterWatchDeps): void {
   stopDaemonRosterWatch()
   running = true
+  currentDeps = deps
   idMap = loadIdMap()
   deps.log('Daemon roster watch started')
   deps.diag('daemon', 'Roster watch started', { pollMs: POLL_INTERVAL_MS })
@@ -201,6 +275,7 @@ export function startDaemonRosterWatch(ws: WebSocket, deps: RosterWatchDeps): vo
 /** Stop the roster watch and release the file watcher. Idempotent. */
 export function stopDaemonRosterWatch(): void {
   running = false
+  currentDeps = null
   if (pollTimer) {
     clearInterval(pollTimer)
     pollTimer = null
