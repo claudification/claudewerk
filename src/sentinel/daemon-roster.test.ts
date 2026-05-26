@@ -60,6 +60,18 @@ describe('buildJobInfos', () => {
     )
     expect(infos).toHaveLength(1)
   })
+
+  it('tags every job with the polled profile NAME', () => {
+    const { infos } = buildJobInfos([job(), job({ sessionId: 'other-sess', short: 'cafef00d' })], {}, 'work')
+    expect(infos).toHaveLength(2)
+    expect(infos[0]?.profile).toBe('work')
+    expect(infos[1]?.profile).toBe('work')
+  })
+
+  it('omits profile when none is supplied (default profile / back-compat)', () => {
+    const { infos } = buildJobInfos([job()], {})
+    expect(infos[0]?.profile).toBeUndefined()
+  })
 })
 
 describe('daemonRosterPaths (CLAUDE_CONFIG_DIR audit fix, transport-reframe Phase 2)', () => {

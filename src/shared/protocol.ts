@@ -2492,6 +2492,18 @@ export interface ClaudeEfficiencyUpdate {
 export interface DaemonJobInfo extends JobRecord {
   /** Stable claudewerk conversationId minted by the sentinel (conv_...). */
   conversationId: string
+  /**
+   * Sentinel-profile NAME this job was observed under -- the active profile of
+   * the daemon socket the sentinel polled. Drives `Conversation.resolvedProfile`
+   * on the broker mirror so the control panel can tint the badge correctly for
+   * ghost (read-only daemon) conversations.
+   *
+   * `undefined` means the implicit default profile.
+   *
+   * PROFILE-ENV BOUNDARY: NAME only -- never configDir / env / API keys. The
+   * sentinel keeps that data resident; the broker stores the name only.
+   */
+  profile?: string
 }
 
 /**

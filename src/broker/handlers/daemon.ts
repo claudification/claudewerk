@@ -53,7 +53,10 @@ export function mapDaemonState(state: string): Conversation['status'] {
 export function isValidDaemonJob(job: unknown): job is DaemonJobInfo {
   const obj = job as Record<string, unknown> | null
   if (!obj) return false
-  return ['conversationId', 'cwd', 'state', 'short'].every(k => typeof obj[k] === 'string')
+  if (!['conversationId', 'cwd', 'state', 'short'].every(k => typeof obj[k] === 'string')) return false
+  // Optional profile name -- accept string or undefined, reject other types so a
+  // malformed wire payload cannot smuggle e.g. a configDir object onto conv.resolvedProfile.
+  return obj.profile === undefined || typeof obj.profile === 'string'
 }
 
 /** Validate + filter a wire `jobs` array down to well-formed roster jobs. */
@@ -103,6 +106,11 @@ function createDaemonConversation(
   conv.currentPath = job.cwd
   conv.hostSentinelId = sentinelId
   conv.hostSentinelAlias = alias
+  // Sentinel-profile NAME the polled daemon socket belongs to. The control
+  // panel reads `conv.resolvedProfile` to tint the badge; without it, ghost
+  // rows from a non-default profile rendered as uncolored "default" before.
+  // PROFILE-ENV BOUNDARY: NAME only -- the sentinel never sends configDir/env.
+  if (job.profile) conv.resolvedProfile = job.profile
   applyDaemonDisplayFields(conv, job)
   stampDaemonShort(conv, job)
   conv.status = status === 'ended' ? 'idle' : status // end via the tagged path below
@@ -132,6 +140,10 @@ function applyDaemonState(
   conv.status = status
   conv.lastActivity = Date.now()
   conv.currentPath = job.cwd
+  // Refresh resolvedProfile -- a job's polled-under profile is authoritative
+  // (handles a sentinel restart that flips the active profile). Never clear it
+  // on a job that omits `profile` (back-compat with older sentinels).
+  if (job.profile) conv.resolvedProfile = job.profile
   applyDaemonDisplayFields(conv, job)
   stampDaemonShort(conv, job)
   ctx.conversations.persistConversationById(conv.id)
@@ -194,6 +206,12 @@ export function toRosterJob(job: DaemonJobInfo): DaemonRosterJob {
     nonce: job.nonce,
     source: job.source,
     needs: job.needs,
+    // Sentinel-profile NAME the polled daemon belonged to. Broker-safe (NAME
+    // only, no configDir/env). The control panel does not currently read this
+    // off the roster -- it reads `conv.resolvedProfile` -- but a future
+    // ATTACH-browser surface may want it visible per row, and forwarding it
+    // keeps the wire shape symmetric with the broker-side conversation mirror.
+    profile: job.profile,
   }
 }
 

@@ -14,6 +14,7 @@ import {
   getPools,
   loadSentinelConfig,
   profileIsAuthed,
+  profileNameForConfigDir,
   profileSummaries,
   resolveProfile,
 } from './sentinel-config'
@@ -220,6 +221,25 @@ describe('resolveProfile + configDirFor', () => {
   test('unknown profile throws', () => {
     const cfg = loadSentinelConfig({ configPath: join(scratch, 'none.json') })
     expect(() => resolveProfile(cfg, 'no-such')).toThrow(/unknown profile "no-such"/)
+  })
+})
+
+describe('profileNameForConfigDir', () => {
+  test('returns default when the dir matches the implicit default profile', () => {
+    const cfg = loadSentinelConfig({ configPath: join(scratch, 'none.json') })
+    expect(profileNameForConfigDir(cfg, join(homedir(), '.claude'))).toBe(DEFAULT_PROFILE_NAME)
+  })
+
+  test('returns the matching profile NAME for a non-default configDir', () => {
+    const path = join(scratch, 'cfg.json')
+    writeFileSync(path, JSON.stringify({ profiles: { work: { configDir: '~/.claude-work' } } }))
+    const cfg = loadSentinelConfig({ configPath: path, home: '/home/j' })
+    expect(profileNameForConfigDir(cfg, '/home/j/.claude-work')).toBe('work')
+  })
+
+  test('falls back to default when no profile matches the dir', () => {
+    const cfg = loadSentinelConfig({ configPath: join(scratch, 'none.json') })
+    expect(profileNameForConfigDir(cfg, '/nowhere/known')).toBe(DEFAULT_PROFILE_NAME)
   })
 })
 

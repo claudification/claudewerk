@@ -50,6 +50,13 @@ const POLL_INTERVAL_MS = 10_000
 export interface RosterWatchDeps {
   log: (msg: string) => void
   diag: (type: string, msg: string, args?: unknown) => void
+  /**
+   * Active sentinel-profile NAME the polled daemon socket belongs to. Stamped
+   * onto every roster job so the broker can set `Conversation.resolvedProfile`
+   * for ghost (read-only daemon) conversations. `undefined` means default.
+   * PROFILE-ENV BOUNDARY: NAME only -- configDir/env stay sentinel-resident.
+   */
+  profile?: string
 }
 
 /** Mint a fresh claudewerk conversationId (`conv_` + 12 url-safe chars). */
@@ -75,11 +82,16 @@ function conversationIdFor(sessionId: string, idMap: Record<string, string>): st
 export function buildJobInfos(
   jobs: JobRecord[],
   idMap: Record<string, string>,
+  profile?: string,
 ): { infos: DaemonJobInfo[]; mutated: boolean } {
   const sizeBefore = Object.keys(idMap).length
   const infos: DaemonJobInfo[] = jobs
     .filter(job => job.sessionId && job.short) // drop malformed records
-    .map(job => ({ ...job, conversationId: conversationIdFor(job.sessionId, idMap) }))
+    .map(job => {
+      const info: DaemonJobInfo = { ...job, conversationId: conversationIdFor(job.sessionId, idMap) }
+      if (profile) info.profile = profile
+      return info
+    })
   return { infos, mutated: Object.keys(idMap).length !== sizeBefore }
 }
 
@@ -118,7 +130,7 @@ async function buildRosterUpdate(deps: RosterWatchDeps): Promise<DaemonRosterUpd
   }
   try {
     const { jobs } = await list(sock)
-    const { infos, mutated } = buildJobInfos(jobs, idMap)
+    const { infos, mutated } = buildJobInfos(jobs, idMap, deps.profile)
     if (mutated) saveIdMap(idMap, deps)
     return {
       type: 'daemon_roster_update',

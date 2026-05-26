@@ -401,6 +401,22 @@ export function configDirFor(config: SentinelConfig, name?: string): string {
 }
 
 /**
+ * Find the profile NAME whose `configDir` matches `dir`. Used to tag the
+ * daemon-roster watch with the profile owning the socket the sentinel polls
+ * (today the sentinel's own active configDir -- multi-profile watching is
+ * deferred). Returns `DEFAULT_PROFILE_NAME` when no explicit profile matches.
+ *
+ * PROFILE-ENV BOUNDARY: the resolved NAME is broker-safe; the caller MUST NOT
+ * leak `configDir` itself onto the wire.
+ */
+export function profileNameForConfigDir(config: SentinelConfig, dir: string): string {
+  for (const p of Object.values(config.profiles)) {
+    if (p.configDir === dir) return p.name
+  }
+  return DEFAULT_PROFILE_NAME
+}
+
+/**
  * The broker-safe slice of profile data -- NAME + display + pool + authed.
  * NEVER includes configDir or env. Used to build `SentinelIdentify.profiles`.
  *

@@ -62,6 +62,16 @@ describe('toRosterJob', () => {
     expect(view.cliVersion).toBeUndefined()
     expect(view.short).toBe('aeb185f9')
   })
+
+  it('forwards the sentinel-profile NAME the job was polled under', () => {
+    const view = toRosterJob(fullJob({ profile: 'work' }))
+    expect(view.profile).toBe('work')
+  })
+
+  it('leaves profile undefined when the sentinel did not tag it (back-compat)', () => {
+    const view = toRosterJob(fullJob({ profile: undefined }))
+    expect(view.profile).toBeUndefined()
+  })
 })
 
 describe('buildRosterForward', () => {

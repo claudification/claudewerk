@@ -61,6 +61,16 @@ describe('isValidDaemonJob', () => {
     expect(isValidDaemonJob(null)).toBe(false)
     expect(isValidDaemonJob('nope')).toBe(false)
   })
+
+  it('accepts a profile NAME (optional) when present as a string', () => {
+    expect(isValidDaemonJob({ ...valid, profile: 'work' })).toBe(true)
+    expect(isValidDaemonJob({ ...valid, profile: undefined })).toBe(true)
+  })
+
+  it('rejects a non-string profile so a malformed wire payload cannot smuggle an object', () => {
+    expect(isValidDaemonJob({ ...valid, profile: { configDir: '/oops' } })).toBe(false)
+    expect(isValidDaemonJob({ ...valid, profile: 42 })).toBe(false)
+  })
 })
 
 describe('parseDaemonJobs', () => {

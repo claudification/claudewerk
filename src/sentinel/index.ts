@@ -31,6 +31,7 @@ import type { Subprocess } from 'bun'
 import { dispatch, has, ping } from '../shared/cc-daemon/ops'
 import { resolveControlSocket } from '../shared/cc-daemon/socket-path'
 import type { DispatchSpec } from '../shared/cc-daemon/types'
+import { claudeConfigDir } from '../shared/claude-config-dir'
 import { cwdToProjectUri, parseProjectUri } from '../shared/project-uri'
 import type {
   BrokerSentinelMessage,
@@ -73,6 +74,7 @@ import {
   defaultConfigPath,
   getPools,
   loadSentinelConfig,
+  profileNameForConfigDir,
   profileSummaries,
   type ResolvedProfile,
   resolveProfile,
@@ -2195,8 +2197,13 @@ function connect(
     // for one release. See `src/sentinel/usage-poller.ts`.
     startProfileUsagePolling(ws, verbose, config)
 
-    // Start mirroring the Claude Code daemon roster (read-only native bg sessions)
-    startDaemonRosterWatch(ws, { log, diag })
+    // Start mirroring the Claude Code daemon roster (read-only native bg sessions).
+    // Tag each polled job with the active profile NAME so the broker can set
+    // `Conversation.resolvedProfile` on the ghost mirror -- the control panel
+    // needs it to tint the badge. NAME only -- configDir/env stay sentinel-side
+    // per the Profile-Env Boundary covenant.
+    const activeProfile = profileNameForConfigDir(config, claudeConfigDir())
+    startDaemonRosterWatch(ws, { log, diag, profile: activeProfile })
 
     // Start the CC daemon version watcher. Pings every 60s; on diff, emits a
     // `cc_version_changed` event. Sentinel id stamped from the auth-derived
