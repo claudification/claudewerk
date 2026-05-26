@@ -142,12 +142,16 @@ function Dashboard() {
     }
   }, [selectedConversationId])
 
-  // When mobile sheet opens, scroll the current conversation into view
+  // When mobile sheet opens, scroll the current conversation into view.
+  // Sheet slide-in animation runs 500ms (see ui/sheet.tsx), so we wait past it
+  // before firing locate -- scrolling mid-animation either no-ops (item appears
+  // "in view" inside the off-screen viewport) or gets visually masked by the
+  // slide. The handler uses block:'center', behavior:'auto' for a definitive land.
   useEffect(() => {
     if (!sheetOpen || !selectedConversationId) return
     const timer = setTimeout(() => {
       window.dispatchEvent(new CustomEvent('locate-conversation'))
-    }, 180)
+    }, 540)
     return () => clearTimeout(timer)
   }, [sheetOpen, selectedConversationId])
 

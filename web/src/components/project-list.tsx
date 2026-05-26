@@ -230,11 +230,13 @@ export function ProjectList() {
 
   // Scroll the selected conversation into view. Always safe to call -- block:'nearest'
   // is a no-op when the item is already fully visible (e.g. you just clicked it).
-  function scrollSelectedIntoView() {
+  // Pass {block:'center', behavior:'auto'} for explicit "locate" (mobile sheet open,
+  // Crosshair button, CMD+P locate) so the landing is definitive and uncancellable.
+  function scrollSelectedIntoView(opts?: ScrollIntoViewOptions) {
     if (!selectedConversationId) return
     requestAnimationFrame(() => {
       const el = document.querySelector(`[data-conversation-id="${selectedConversationId}"]`)
-      el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      el?.scrollIntoView({ behavior: 'smooth', block: 'nearest', ...opts })
     })
   }
 
@@ -264,9 +266,11 @@ export function ProjectList() {
   }, [selectedConversationId])
 
   // External callers (locate button, CMD+P locate, mobile sheet open) always scroll + pulse.
+  // Use center+auto so the landing is definitive and the user immediately sees their
+  // conversation, not just a sliver of it pinned to the edge.
   useEffect(() => {
     function handleLocate() {
-      scrollSelectedIntoView()
+      scrollSelectedIntoView({ block: 'center', behavior: 'auto' })
       pulseSelected()
     }
     window.addEventListener('locate-conversation', handleLocate)
