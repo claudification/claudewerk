@@ -35,8 +35,22 @@ function useCommitToPaintTimer(id: string) {
     renderCountRef.current++
     const phase = renderCountRef.current === 1 ? 'mount' : 'update'
     const t0 = performance.now()
+    // Visibility at commit: rAF is paused/throttled while the tab is
+    // backgrounded, so a commit that happens (or resolves) while hidden yields
+    // a multi-second gap that is wall-clock idle, NOT main-thread jank. Capture
+    // both ends so we can tag the artifact instead of reporting a phantom stall.
+    const hiddenAtCommit = typeof document !== 'undefined' && document.hidden
     const handle = requestAnimationFrame(() => {
-      record('render', `${id}.commit->paint`, performance.now() - t0, phase)
+      const suspended = hiddenAtCommit || (typeof document !== 'undefined' && document.hidden)
+      // `suspended` is the machine-readable tag categoryStats() filters on, so a
+      // backgrounded-tab artifact never poisons Max/P95. Keep the entry (data is
+      // never dropped) -- just label why the number is huge.
+      record(
+        'render',
+        `${id}.commit->paint`,
+        performance.now() - t0,
+        suspended ? `${phase} suspended(tab-hidden)` : phase,
+      )
     })
     return () => cancelAnimationFrame(handle)
   })

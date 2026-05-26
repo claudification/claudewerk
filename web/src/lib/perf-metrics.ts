@@ -20,10 +20,30 @@ const listeners = new Set<() => void>()
 
 export function setPerfEnabled(on: boolean) {
   enabled = on
-  if (!on) {
+  if (on) {
+    bindVisibilityMarker()
+  } else {
     buffer.length = 0
     notify()
   }
+}
+
+/**
+ * Drop a zero-duration marker into the buffer whenever the tab hides/shows.
+ * Without this, a backgrounded tab produces a multi-second gap in the timeline
+ * with no explanation -- and every pending rAF flushes on resume as a phantom
+ * "stall". The marker makes the cause legible at a glance (visible in the full
+ * HUD list; the `suspended` tag on the affected commit->paint entries is the
+ * signal that survives the significant-only report filter). Bound once, lazily,
+ * the first time the monitor is enabled; record() no-ops while disabled.
+ */
+let visibilityMarkerBound = false
+function bindVisibilityMarker() {
+  if (visibilityMarkerBound || typeof document === 'undefined') return
+  visibilityMarkerBound = true
+  document.addEventListener('visibilitychange', () => {
+    record('other', 'visibility', 0, document.hidden ? 'hidden (rAF paused)' : 'visible')
+  })
 }
 
 export function isPerfEnabled(): boolean {
@@ -63,9 +83,15 @@ export function durationColor(ms: number): string {
   return 'text-red-400'
 }
 
-/** Summary stats for a category */
+/**
+ * Summary stats for a category. Excludes rAF-suspension artifacts (commit->paint
+ * entries tagged `suspended` while the tab was hidden) -- their gap is wall-clock
+ * idle time, not main-thread cost, and would otherwise poison Max/P95 with phantom
+ * multi-second "stalls". The raw entries stay in the buffer + entry list; only the
+ * aggregate ignores them.
+ */
 export function categoryStats(cat: PerfCategory): { count: number; avg: number; max: number; p95: number } {
-  const entries = buffer.filter(e => e.category === cat)
+  const entries = buffer.filter(e => e.category === cat && !e.detail?.includes('suspended'))
   if (entries.length === 0) return { count: 0, avg: 0, max: 0, p95: 0 }
   const durations = entries.map(e => e.durationMs).sort((a, b) => a - b)
   const sum = durations.reduce((a, b) => a + b, 0)
