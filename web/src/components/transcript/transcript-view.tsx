@@ -131,6 +131,9 @@ function getConvSizeCache(conversationId: string | null): Map<string, number> {
 const WINDOW_SIZE = 50
 const WINDOW_THRESHOLD = 80
 const LOAD_CHUNK = 100
+/** Auto-load older entries when a user scroll-UP brings the viewport within this
+ *  many px of the top (infinite scrollback, Phase 1b -- replaces the button). */
+const LOAD_EARLIER_SCROLL_THRESHOLD = 400
 
 /** Default window start: show the last WINDOW_SIZE entries, or all of them when
  *  the transcript is short enough that windowing buys nothing. */
@@ -389,7 +392,9 @@ export const TranscriptView = memo(function TranscriptView({
     setWindowStart(defaultWindowStart(entries.length))
   }
   const windowed = useMemo(() => (windowStart > 0 ? entries.slice(windowStart) : entries), [entries, windowStart])
-  const hasEarlier = windowStart > 0
+  // Live windowStart for the scroll handler (infinite scrollback trigger).
+  const windowStartRef = useRef(windowStart)
+  windowStartRef.current = windowStart
 
   const { getResult, groups } = useIncrementalGroups(windowed, cacheKey, windowStart)
 
@@ -624,6 +629,10 @@ export const TranscriptView = memo(function TranscriptView({
   // pin-to-bottom effect above early-returns because loadEarlier kills follow,
   // so the two never fight.
   const prependPendingRef = useRef(false)
+  // Re-entrancy guard for the scroll-up auto-trigger: set when a prepend is
+  // kicked off, cleared here once scrollTop has been corrected (moved away from
+  // the top), so a burst of scroll events can't fire multiple loads per chunk.
+  const loadingEarlierRef = useRef(false)
   const prevScrollHeightRef = useRef(0)
   // biome-ignore lint/correctness/useExhaustiveDependencies: totalSize/windowStart are intentional triggers; scrollHeight is read live, not a dep
   useLayoutEffect(() => {
@@ -634,6 +643,7 @@ export const TranscriptView = memo(function TranscriptView({
       const added = newSH - prevScrollHeightRef.current
       el.scrollTop = el.scrollTop + added
       prependPendingRef.current = false
+      loadingEarlierRef.current = false
       record('scroll', 'loadEarlierAnchor', performance.now() - t0, `+${Math.round(added)}px`)
     }
     prevScrollHeightRef.current = newSH
@@ -661,14 +671,29 @@ export const TranscriptView = memo(function TranscriptView({
   useEffect(() => {
     const el = parentRef.current
     if (!el || follow) return
+    // Seed with the position at attach time so the programmatic open snap
+    // (scrollTop -> 0 on a follow=false open) is NOT seen as a user scroll-up.
+    let lastScrollTop = el.scrollTop
     function handleScroll() {
       if (!el) return
+      const st = el.scrollTop
+      const movedUp = st < lastScrollTop
+      lastScrollTop = st
+      // Infinite scrollback (Phase 1b): a genuine user scroll-UP into the top
+      // band auto-prepends the next chunk of older entries. `movedUp` gates out
+      // the open snap + scroll-down; loadingEarlierRef + the post-correction
+      // scrollTop shift (away from top) prevent a cascade. windowStart>0 means
+      // there are still locally-held older entries to reveal.
+      if (windowStartRef.current > 0 && !loadingEarlierRef.current && movedUp && st < LOAD_EARLIER_SCROLL_THRESHOLD) {
+        loadingEarlierRef.current = true
+        loadEarlier()
+      }
       const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30
       if (atBottom) onReachedBottom?.()
     }
     el.addEventListener('scroll', handleScroll, { passive: true })
     return () => el.removeEventListener('scroll', handleScroll)
-  }, [follow, onReachedBottom])
+  }, [follow, onReachedBottom, loadEarlier])
 
   // Scroll to bottom: a single write. The dynamic-measurement settle (rows
   // measuring taller than estimated after first paint) is handled by the
@@ -760,19 +785,9 @@ export const TranscriptView = memo(function TranscriptView({
       onWheel={killFollow}
       onTouchStart={killFollow}
     >
-      {/* Progressive load (Phase 1a): only the last N entries render; this button
-          prepends older history with a synchronous scroll-anchor (no jump). */}
-      {hasEarlier && (
-        <div className="flex justify-center pb-3">
-          <button
-            type="button"
-            onClick={loadEarlier}
-            className="rounded-full border border-border bg-muted/40 px-3 py-1 text-[11px] font-mono text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            Load earlier ({windowStart} more)
-          </button>
-        </div>
-      )}
+      {/* Infinite scrollback (Phase 1b): older entries auto-prepend on scroll-up
+          (see the scroll handler) -- no button. The synchronous scroll-anchor
+          keeps the viewport pinned across the prepend. */}
       <div
         style={{
           height: `${totalSize}px`,
