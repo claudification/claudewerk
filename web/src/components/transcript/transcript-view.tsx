@@ -18,7 +18,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { useConversationsStore } from '@/hooks/use-conversations'
+import { fetchTranscriptBefore, useConversationsStore } from '@/hooks/use-conversations'
 import { record } from '@/lib/perf-metrics'
 import type { TranscriptAssistantEntry, TranscriptEntry } from '@/lib/types'
 import {
@@ -396,7 +396,23 @@ export const TranscriptView = memo(function TranscriptView({
   const windowStartRef = useRef(windowStart)
   windowStartRef.current = windowStart
 
-  const { getResult, groups } = useIncrementalGroups(windowed, cacheKey, windowStart)
+  // Grouping reset signal: identity of the FIRST rendered entry. Changes on a
+  // local window reveal (windowStart down) AND a server prepend (windowStart
+  // stays 0 but the oldest entry changes) -- both are head-growth that the
+  // tail-only incremental path would mis-group. Stays constant during streaming
+  // (tail append), so streaming stays incremental.
+  const regroupSignal = windowed.length > 0 ? (windowed[0].seq ?? windowed[0].uuid ?? windowStart) : windowStart
+  // More history exists on the server iff our oldest-held entry isn't seq 1.
+  const hasMoreOlder = (entries[0]?.seq ?? 1) > 1
+  // Live mirrors for the scroll handler (a stable closure that must read latest).
+  const hasMoreOlderRef = useRef(hasMoreOlder)
+  hasMoreOlderRef.current = hasMoreOlder
+  const entriesRef = useRef(entries)
+  entriesRef.current = entries
+  const cacheKeyRef = useRef(cacheKey)
+  cacheKeyRef.current = cacheKey
+
+  const { getResult, groups } = useIncrementalGroups(windowed, cacheKey, regroupSignal)
 
   // Lift settings selectors here (once) instead of per-GroupView (N times)
   const expandAll = useConversationsStore(state => state.expandAll)
@@ -633,6 +649,8 @@ export const TranscriptView = memo(function TranscriptView({
   // kicked off, cleared here once scrollTop has been corrected (moved away from
   // the top), so a burst of scroll events can't fire multiple loads per chunk.
   const loadingEarlierRef = useRef(false)
+  // Re-entrancy guard for the server-side older-history fetch (infinite scrollback).
+  const fetchingOlderRef = useRef(false)
   const prevScrollHeightRef = useRef(0)
   // biome-ignore lint/correctness/useExhaustiveDependencies: totalSize/windowStart are intentional triggers; scrollHeight is read live, not a dep
   useLayoutEffect(() => {
@@ -658,6 +676,30 @@ export const TranscriptView = memo(function TranscriptView({
     setWindowStart(s => Math.max(0, s - LOAD_CHUNK))
   }, [])
 
+  // Infinite scrollback past the locally-held window: fetch the next OLDER page
+  // from the broker (?before=) and prepend it to the store. The store array
+  // grows at the head; windowStart stays 0 so the fetched page renders, and the
+  // prepend layout-effect (set prependPendingRef here) corrects scrollTop -> no
+  // jump. Only for the main transcript view (cacheKey set), never subagents.
+  const fetchOlder = useCallback(() => {
+    const cid = cacheKeyRef.current
+    const oldestSeq = entriesRef.current[0]?.seq
+    if (!cid || oldestSeq === undefined || oldestSeq <= 1) return
+    fetchingOlderRef.current = true
+    followKilledRef.current = true
+    fetchTranscriptBefore(cid, oldestSeq, LOAD_CHUNK)
+      .then(res => {
+        if (res && res.entries.length > 0) {
+          prependPendingRef.current = true
+          useConversationsStore.getState().prependTranscript(cid, res.entries)
+        }
+        fetchingOlderRef.current = false
+      })
+      .catch(() => {
+        fetchingOlderRef.current = false
+      })
+  }, [])
+
   const killFollow = useCallback(
     (e: React.WheelEvent | React.TouchEvent) => {
       if (!follow) return
@@ -679,21 +721,24 @@ export const TranscriptView = memo(function TranscriptView({
       const st = el.scrollTop
       const movedUp = st < lastScrollTop
       lastScrollTop = st
-      // Infinite scrollback (Phase 1b): a genuine user scroll-UP into the top
-      // band auto-prepends the next chunk of older entries. `movedUp` gates out
-      // the open snap + scroll-down; loadingEarlierRef + the post-correction
-      // scrollTop shift (away from top) prevent a cascade. windowStart>0 means
-      // there are still locally-held older entries to reveal.
-      if (windowStartRef.current > 0 && !loadingEarlierRef.current && movedUp && st < LOAD_EARLIER_SCROLL_THRESHOLD) {
+      // Infinite scrollback: a genuine user scroll-UP into the top band reveals
+      // more history. `movedUp` gates out the open snap + scroll-down; the guards
+      // + the post-correction scrollTop shift (away from top) prevent a cascade.
+      const nearTop = movedUp && st < LOAD_EARLIER_SCROLL_THRESHOLD
+      if (nearTop && windowStartRef.current > 0 && !loadingEarlierRef.current) {
+        // Phase 1b: locally-held older entries -- reveal instantly, no network.
         loadingEarlierRef.current = true
         loadEarlier()
+      } else if (nearTop && windowStartRef.current === 0 && hasMoreOlderRef.current && !fetchingOlderRef.current) {
+        // Phase 2: local window exhausted -- page older history from the broker.
+        fetchOlder()
       }
       const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30
       if (atBottom) onReachedBottom?.()
     }
     el.addEventListener('scroll', handleScroll, { passive: true })
     return () => el.removeEventListener('scroll', handleScroll)
-  }, [follow, onReachedBottom, loadEarlier])
+  }, [follow, onReachedBottom, loadEarlier, fetchOlder])
 
   // Scroll to bottom: a single write. The dynamic-measurement settle (rows
   // measuring taller than estimated after first paint) is handled by the

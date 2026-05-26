@@ -313,6 +313,10 @@ interface ConversationsState {
   openTerminal: (conversationId: string) => void
   setEvents: (conversationId: string, events: HookEvent[]) => void
   setTranscript: (conversationId: string, entries: TranscriptEntry[]) => void
+  /** Prepend OLDER history (infinite scrollback) fetched via ?before=. Dedups by
+   *  seq against the current head; never touches lastAppliedTranscriptSeq (that
+   *  tracks the live tail / forward sync). */
+  prependTranscript: (conversationId: string, olderEntries: TranscriptEntry[]) => void
   setTasks: (conversationId: string, tasks: TaskInfo[]) => void
   setProjectSettings: (settings: ProjectSettingsMap) => void
   setProjectOrder: (order: ProjectOrder) => void
@@ -1110,6 +1114,23 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
         newDataSeq: state.newDataSeq + 1,
       }
     }),
+  prependTranscript: (conversationId, olderEntries) =>
+    set(state => {
+      if (olderEntries.length === 0) return state
+      const existing = state.transcripts[conversationId] || []
+      // existing is seq-ascending; older entries have lower seq. Dedup any
+      // overlap with the current head so a re-fetch can't double-insert.
+      const minExistingSeq =
+        existing.length > 0 ? (existing[0].seq ?? Number.POSITIVE_INFINITY) : Number.POSITIVE_INFINITY
+      const fresh = olderEntries.filter(e => (e.seq ?? 0) < minExistingSeq)
+      if (fresh.length === 0) return state
+      // NOTE: lastAppliedTranscriptSeq deliberately untouched -- prepend is OLDER
+      // history, it must not move the forward-sync tail cursor.
+      return {
+        transcripts: { ...state.transcripts, [conversationId]: [...fresh, ...existing] },
+        newDataSeq: state.newDataSeq + 1,
+      }
+    }),
   setTasks: (conversationId, tasks) => set(state => ({ tasks: { ...state.tasks, [conversationId]: tasks } })),
   setProjectSettings: settings => set({ projectSettings: settings }),
   setProjectOrder: order => set({ projectOrder: { ...order, tree: flattenProjectOrderTree(order.tree) } }),
@@ -1219,8 +1240,14 @@ export interface TranscriptFetchResult {
   gap: boolean
 }
 
+/** Initial cold-open fetch size. Small on purpose: the transcript renders only
+ *  the last ~50, and infinite scrollback pages older history via fetchTranscriptBefore.
+ *  Shrinking this from 500 cut the dominant cold-open fetch latency (250-410ms for
+ *  big conversations -> ~50ms). */
+const INITIAL_TRANSCRIPT_LIMIT = 100
+
 /** Fetch transcript entries for a conversation.
- *  - No `sinceSeq`: returns the last N entries (full mode).
+ *  - No `sinceSeq`: returns the last INITIAL_TRANSCRIPT_LIMIT entries (full mode).
  *  - With `sinceSeq`: returns entries with seq > sinceSeq (delta mode),
  *    used after sync_check flags the conversation as stale. If `gap=true` in the
  *    response, the client has evicted entries it needed -- full replace. */
@@ -1229,11 +1256,39 @@ export async function fetchTranscript(
   sinceSeq?: number,
 ): Promise<TranscriptFetchResult | null> {
   try {
-    const qs = sinceSeq !== undefined ? `?sinceSeq=${sinceSeq}&limit=1000` : `?limit=500`
+    const qs = sinceSeq !== undefined ? `?sinceSeq=${sinceSeq}&limit=1000` : `?limit=${INITIAL_TRANSCRIPT_LIMIT}`
     const res = await fetch(appendShareParam(`${API_BASE}/conversations/${conversationId}/transcript${qs}`))
     if (!res.ok) return null
     const body = await res.json()
     return body as TranscriptFetchResult
+  } catch {
+    return null
+  }
+}
+
+export interface TranscriptBeforeResult {
+  /** Older entries, OLDEST-first (prepend-ready). */
+  entries: TranscriptEntry[]
+  /** Smallest seq returned -- the cursor for the next (older) page. */
+  oldestSeq: number
+  /** True when entries older than `oldestSeq` still exist on the server. */
+  hasMore: boolean
+}
+
+/** Infinite scrollback: fetch the page of history immediately OLDER than
+ *  `beforeSeq` (the client's current oldest-held seq). Server returns them
+ *  oldest-first so the caller can prepend directly. */
+export async function fetchTranscriptBefore(
+  conversationId: string,
+  beforeSeq: number,
+  limit = 100,
+): Promise<TranscriptBeforeResult | null> {
+  try {
+    const res = await fetch(
+      appendShareParam(`${API_BASE}/conversations/${conversationId}/transcript?before=${beforeSeq}&limit=${limit}`),
+    )
+    if (!res.ok) return null
+    return (await res.json()) as TranscriptBeforeResult
   } catch {
     return null
   }
