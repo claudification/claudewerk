@@ -374,7 +374,7 @@ export interface ConversationStore {
 
 /** Fast-eviction TTL for dead daemon ghost rows (much shorter than the 28-day
  *  ended TTL -- a worthless empty ghost should not linger for weeks). */
-export const GHOST_EVICTION_TTL_MS = 15 * 60 * 1000
+const GHOST_EVICTION_TTL_MS = 15 * 60 * 1000
 
 /**
  * PURE: is this a dead daemon GHOST safe to evict fast?

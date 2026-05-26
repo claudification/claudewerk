@@ -410,7 +410,7 @@
         "count": 10
       },
       "crap_moderate": {
-        "count": 10
+        "count": 11
       }
     },
     "src/broker/conversation-store/add-event.ts": {
@@ -681,11 +681,14 @@
       }
     },
     "src/broker/handlers/daemon.ts": {
+      "crap_critical": {
+        "count": 1
+      },
       "crap_high": {
-        "count": 2
+        "count": 3
       },
       "crap_moderate": {
-        "count": 7
+        "count": 5
       }
     },
     "src/broker/handlers/dialog.ts": {
@@ -762,7 +765,7 @@
     },
     "src/broker/handlers/sentinel.ts": {
       "crap_critical": {
-        "count": 2
+        "count": 3
       },
       "crap_high": {
         "count": 1
@@ -1618,11 +1621,19 @@
       }
     },
     "src/daemon-agent-host/index.ts": {
-      "crap_high": {
+      "crap_critical": {
         "count": 1
       },
+      "crap_high": {
+        "count": 3
+      },
       "crap_moderate": {
-        "count": 2
+        "count": 1
+      }
+    },
+    "src/daemon-agent-host/launch-events.ts": {
+      "crap_moderate": {
+        "count": 1
       }
     },
     "src/daemon-agent-host/launch-smoke.ts": {
@@ -1689,6 +1700,9 @@
       }
     },
     "src/sentinel/cc-version-watcher.ts": {
+      "crap_critical": {
+        "count": 1
+      },
       "crap_moderate": {
         "count": 1
       }
@@ -1717,7 +1731,7 @@
         "count": 11
       },
       "crap_moderate": {
-        "count": 15
+        "count": 16
       }
     },
     "src/sentinel/preflight.test.ts": {
@@ -2368,7 +2382,7 @@
         "count": 3
       },
       "crap_moderate": {
-        "count": 4
+        "count": 3
       }
     },
     "web/src/components/notification-bell.tsx": {
@@ -3010,6 +3024,14 @@
         "count": 1
       }
     },
+    "web/src/lib/longtask-log.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
     "web/src/lib/themes.ts": {
       "crap_moderate": {
         "count": 1
@@ -3043,10 +3065,12 @@
     "web/src/components/revive-dialog.tsx:high impact",
     "src/broker/conversation-store/transcript-handlers/assistant-entry.ts:untested risk",
     "src/broker/connection-registry.ts:dead code",
+    "src/broker/conversation-store.ts:complexity",
     "src/broker/backends/chat-api.ts:complexity",
     "src/shared/tool-vocab.ts:dead code",
     "src/broker/recap/__tests__/synthetic-fixtures.ts:dead code",
     "src/broker/store/migrate-cli.ts:complexity",
+    "src/broker/handlers/sentinel.ts:untested risk",
     "web/src/components/markdown-input/use-autocomplete.ts:high impact",
     "web/src/components/launch-profiles/profile-dropdown.tsx:dead code",
     "web/src/components/spawn-dialog.tsx:complexity",
@@ -3054,7 +3078,6 @@
     "web/src/components/project-list/project-node.tsx:untested risk",
     "src/acp-agent-host/dialect/from-acp-generic.ts:high impact",
     "web/src/components/launch-config-fields.tsx:complexity",
-    "src/broker/conversation-store.ts:complexity",
     "src/broker/spawn-dispatch.ts:complexity",
     "web/src/hooks/use-launch-progress.ts:high impact",
     "web/src/components/transcript/agent-views.tsx:complexity",
@@ -3072,7 +3095,6 @@
     "web/src/lib/legacy-to-canonical.ts:high impact",
     "web/src/lib/task-scoring.ts:high impact",
     "web/src/components/transcript/system-line.tsx:complexity",
-    "src/broker/handlers/sentinel.ts:untested risk",
     "web/src/components/transcript/grouping/process-entry.ts:complexity",
     "web/src/components/project-settings-editor.tsx:complexity",
     "src/broker/conversation-store/transcript-handlers/user-entry.ts:complexity",
@@ -3105,6 +3127,7 @@
     "src/broker/cli/user-commands.ts:untested risk",
     "src/broker/permissions.ts:complexity",
     "src/opencode-agent-host/dialect/from-opencode-ndjson.ts:untested risk",
+    "web/src/lib/longtask-log.ts:untested risk",
     "web/src/components/project-list.tsx:complexity",
     "src/broker/conversation-store/parsers.ts:untested risk",
     "src/broker/recap/shared/json-parse.ts:high impact",
