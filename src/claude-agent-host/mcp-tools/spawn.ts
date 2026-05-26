@@ -118,8 +118,20 @@ async function handleSpawn(
   params: Record<string, string>,
   toolCtx: { progressToken?: string | number; extra: unknown },
 ) {
-  const cwd = params.cwd
-  if (!cwd) return { content: [{ type: 'text', text: 'Error: cwd is required for spawn' }], isError: true }
+  // cwd defaults to THIS conversation's own working directory when the caller
+  // omits it (the common "spawn a sibling right here" case). Fall back to the
+  // dialog cwd, and only hard-fail if neither resolves.
+  const cwd = params.cwd || ctx.getIdentity()?.cwd || ctx.getDialogCwd() || undefined
+  if (!cwd)
+    return {
+      content: [
+        {
+          type: 'text',
+          text: 'Error: cwd is required for spawn and the current working directory could not be resolved',
+        },
+      ],
+      isError: true,
+    }
   const mode = params.mode as 'fresh' | 'resume' | undefined
   const resumeId = params.resume_id
   if (mode === 'resume' && !resumeId) {
@@ -152,8 +164,34 @@ async function handleSpawn(
         jobId?: string
         conversation?: Record<string, unknown>
         timedOut?: boolean
+        // The trust gate fired and the broker stashed the request for a human
+        // ALLOW/DENY decision in the control panel. NOT a hard failure -- the
+        // spawn is queued behind a pending user-permission prompt.
+        pending?: boolean
+        approvalRequestId?: string
+        message?: string
       }
     | undefined
+  // Pending user approval -- disclose it explicitly. Without this branch the
+  // pending reply (which carries no `error`) fell through to the generic
+  // "Failed to spawn conversation" below, hiding the fact that the user has a
+  // permission prompt waiting to allow or deny the spawn.
+  if (result?.pending) {
+    debug(`[channel] spawn_conversation pending approval: req=${result.approvalRequestId?.slice(0, 8) ?? '?'}`)
+    return {
+      content: [
+        {
+          type: 'text',
+          text:
+            'PENDING USER APPROVAL -- the conversation has NOT been spawned yet. ' +
+            `${result.message || "Waiting for the user's approval."} A permission prompt is now waiting in the control panel; ` +
+            'the user must Allow or Deny this spawn. On Allow the conversation spawns and a spawn receipt appears in this transcript; ' +
+            'on Deny it will not spawn. Do not retry -- wait for the decision (poll list_conversations to see the outcome).',
+        },
+      ],
+      isError: true,
+    }
+  }
   if (!result?.ok) {
     debug(`[channel] spawn_conversation failed: ${result?.error}`)
     return { content: [{ type: 'text', text: result?.error || 'Failed to spawn conversation' }], isError: true }
