@@ -365,15 +365,27 @@ export const TranscriptView = memo(function TranscriptView({
   // incremental path (resetSignal below only changes on a prepend).
   const [windowStart, setWindowStart] = useState(() => defaultWindowStart(entries.length))
   const prevCacheKeyRef = useRef(cacheKey)
+  // True once we've sized the window against a NON-EMPTY transcript for the
+  // current cacheKey. A cold switch (MISS) opens the conversation with entries=[]
+  // (fetch in flight), so the initial windowStart is 0; without this flag the
+  // window would never re-default when the fetched transcript arrives, and a
+  // freshly-fetched 460-entry conversation would render ALL of it (measured
+  // 340ms commit->paint -- the cold-open bug this fixes).
+  const windowInitRef = useRef(entries.length > 0)
   // Derived-state reset (the documented "adjust state on prop change in render"
-  // pattern -- re-renders before commit, no flash): snap the window back to the
-  // last-N default when the conversation switches, or when the entries array
-  // shrank out from under a stale start (e.g. /clear replacing the transcript).
-  // The `windowStart > 0` guard is load-bearing: it stops an empty/zero-length
-  // transcript (windowStart 0, len 0) from re-triggering the reset forever, and
-  // `>=` catches the exact-boundary case where slice(windowStart) would be empty.
-  if (cacheKey !== prevCacheKeyRef.current || (windowStart > 0 && windowStart >= entries.length)) {
+  // pattern -- re-renders before commit, no flash, no full-render paint):
+  if (cacheKey !== prevCacheKeyRef.current) {
+    // Conversation switch -- snap to the last-N default for whatever is loaded
+    // (0 for a MISS; the real default for a HIT).
     prevCacheKeyRef.current = cacheKey
+    windowInitRef.current = entries.length > 0
+    setWindowStart(defaultWindowStart(entries.length))
+  } else if (!windowInitRef.current && entries.length > 0) {
+    // Cold-open transcript just arrived (MISS -> fetch). Size the window now.
+    windowInitRef.current = true
+    setWindowStart(defaultWindowStart(entries.length))
+  } else if (windowStart > 0 && windowStart >= entries.length) {
+    // Stale start past a shrunk array (e.g. /clear replacing the transcript).
     setWindowStart(defaultWindowStart(entries.length))
   }
   const windowed = useMemo(() => (windowStart > 0 ? entries.slice(windowStart) : entries), [entries, windowStart])
