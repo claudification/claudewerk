@@ -20,7 +20,7 @@
  * (`createStatusMirror`) holds the subscribe handle + the dedup state.
  */
 
-import { isSnapshot, type SubscribeHandle, subscribe } from '../shared/cc-daemon/subscribe'
+import { isSnapshot, type SubscribeCloseReason, type SubscribeHandle, subscribe } from '../shared/cc-daemon/subscribe'
 import type {
   AgentHostMessage,
   ConversationStatusSignal,
@@ -69,10 +69,7 @@ function asString(v: unknown): string | undefined {
  * so a worker sitting at `state:running, tempo:idle` between turns stayed
  * "active" forever.
  */
-function statusFromState(
-  state: DaemonRunState | undefined,
-  tempo: 'active' | 'idle' | undefined,
-): 'active' | 'idle' {
+function statusFromState(state: DaemonRunState | undefined, tempo: 'active' | 'idle' | undefined): 'active' | 'idle' {
   if (state && IDLE_STATES.has(state)) return 'idle'
   if (tempo === 'idle') return 'idle'
   return 'active'
@@ -198,40 +195,86 @@ export interface StatusMirror {
   stop(): void
 }
 
+/** Bounded re-subscribe backoff (ms). The index clamps to the last entry. */
+const RETRY_DELAYS_MS = [500, 1000, 2000, 4000] as const
+
+/**
+ * PURE: how long to wait before re-subscribing after a subscribe close, or
+ * `null` to give up.
+ *
+ * `client-closed` is our own `stop()` -- never retry. `daemon-error` is
+ * ENOJOB/EPROTO (the worker is gone or the protocol mismatched) -- the
+ * session-observer owns worker-gone, so the mirror does not spin re-subscribing.
+ * Transient transport closes (socket-closed/socket-error/parse-error/
+ * connect-timeout) retry with bounded backoff so a blip does not permanently
+ * stop the status stream.
+ */
+export function mirrorRetryDelayMs(reason: SubscribeCloseReason, attempt: number): number | null {
+  if (reason === 'client-closed' || reason === 'daemon-error') return null
+  if (attempt >= RETRY_DELAYS_MS.length) return null
+  return RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)] ?? null
+}
+
 /**
  * Open a read-only `subscribe` connection on the daemon worker and forward the
- * translated status messages to the broker. Best-effort: a missing socket or a
- * subscribe error simply ends the mirror (logged) -- it never throws, and the
- * PTY bridge keeps working regardless.
+ * translated status messages to the broker.
+ *
+ * SELF-HEALING: a transient transport drop re-subscribes with bounded backoff
+ * (a blip must not permanently stop the status stream -- the status-mirror is
+ * the sole status authority for a hosted daemon conversation). A worker-gone
+ * close (`daemon-error`/ENOJOB) does NOT retry -- the session-observer owns that
+ * and ends the conversation. Best-effort throughout: it never throws, and the
+ * PTY bridge keeps working regardless. Every non-client close is logged
+ * (LOG EVERYTHING) via the daemon-host's always-on logger.
  */
 export function createStatusMirror(deps: StatusMirrorDeps): StatusMirror {
   const { controlSock, daemonShort, conversationId, send, log } = deps
+  const convShort = conversationId.slice(0, 8)
   let prev: MirrorState = {}
+  let handle: SubscribeHandle | null = null
+  let retryTimer: ReturnType<typeof setTimeout> | null = null
+  let attempt = 0
+  let stopped = false
 
-  const handle: SubscribeHandle = subscribe(controlSock, daemonShort, {
-    onEvent: frame => {
-      // The snapshot's `record` is a full JobRecord; treat it as the initial patch.
-      const patch = isSnapshot(frame)
-        ? (frame.record as unknown as Record<string, unknown>)
-        : ((frame as { patch?: Record<string, unknown> }).patch ?? {})
-      const { messages, next } = translatePatch(conversationId, patch, prev, Date.now())
-      prev = next
-      for (const msg of messages) send(msg)
-    },
-    // LOG EVERYTHING: a mirror that closes/errors stops all status flow for this
-    // conversation -- it must be visible in production, not only under debug.
-    // The daemon-host supplies an always-on logger (see index.ts). `client-closed`
-    // is our own shutdown; everything else is an unexpected loss of the status
-    // stream (ENOJOB = the subscribed worker is gone, daemon-error, socket drop).
-    onClose: reason => {
-      if (reason === 'client-closed') return
-      log?.(`status-mirror: subscribe closed (${reason}) conv=${conversationId.slice(0, 8)} short=${daemonShort}`)
-    },
-    onError: err =>
-      log?.(`status-mirror: subscribe error: ${err.message} conv=${conversationId.slice(0, 8)} short=${daemonShort}`),
-  })
+  function open(): void {
+    handle = subscribe(controlSock, daemonShort, {
+      onEvent: frame => {
+        attempt = 0 // a live frame means the subscription is healthy -- reset backoff
+        // The snapshot's `record` is a full JobRecord; treat it as the initial patch.
+        const patch = isSnapshot(frame)
+          ? (frame.record as unknown as Record<string, unknown>)
+          : ((frame as { patch?: Record<string, unknown> }).patch ?? {})
+        const { messages, next } = translatePatch(conversationId, patch, prev, Date.now())
+        prev = next
+        for (const msg of messages) send(msg)
+      },
+      onClose: reason => {
+        if (stopped || reason === 'client-closed') return
+        const delay = mirrorRetryDelayMs(reason, attempt)
+        if (delay === null) {
+          log?.(`status-mirror: subscribe ended (${reason}) conv=${convShort} short=${daemonShort} -- not retrying`)
+          return
+        }
+        attempt += 1
+        log?.(
+          `status-mirror: subscribe lost (${reason}) conv=${convShort} short=${daemonShort} -- ` +
+            `re-subscribing in ${delay}ms (attempt ${attempt}/${RETRY_DELAYS_MS.length})`,
+        )
+        retryTimer = setTimeout(() => {
+          if (!stopped) open()
+        }, delay)
+      },
+      onError: err => log?.(`status-mirror: subscribe error: ${err.message} conv=${convShort} short=${daemonShort}`),
+    })
+  }
+
+  open()
 
   return {
-    stop: () => handle.close(),
+    stop: () => {
+      stopped = true
+      if (retryTimer) clearTimeout(retryTimer)
+      handle?.close()
+    },
   }
 }

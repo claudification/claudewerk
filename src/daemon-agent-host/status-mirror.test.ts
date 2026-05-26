@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import type { ConversationStatusSignal, DaemonBlockObserved, DaemonStatePatch } from '../shared/protocol'
-import { type MirrorState, translatePatch } from './status-mirror'
+import { type MirrorState, mirrorRetryDelayMs, translatePatch } from './status-mirror'
 
 const CONV = 'conv_abc123'
 const T = 1779536625072
@@ -112,5 +112,27 @@ describe('translatePatch', () => {
   it('does NOT emit daemon_block_observed for a non-blocking needs:""', () => {
     const { messages } = translatePatch(CONV, { state: 'working', needs: '' }, {}, T)
     expect(absent(messages, 'daemon_block_observed')).toBe(true)
+  })
+})
+
+describe('mirrorRetryDelayMs (status-mirror self-heal)', () => {
+  it('never retries our own stop (client-closed)', () => {
+    expect(mirrorRetryDelayMs('client-closed', 0)).toBeNull()
+  })
+
+  it('never retries worker-gone / proto mismatch (daemon-error) -- the observer owns that', () => {
+    expect(mirrorRetryDelayMs('daemon-error', 0)).toBeNull()
+  })
+
+  it('retries transient transport closes with bounded backoff', () => {
+    expect(mirrorRetryDelayMs('socket-closed', 0)).toBe(500)
+    expect(mirrorRetryDelayMs('socket-error', 1)).toBe(1000)
+    expect(mirrorRetryDelayMs('parse-error', 2)).toBe(2000)
+    expect(mirrorRetryDelayMs('connect-timeout', 3)).toBe(4000)
+  })
+
+  it('gives up after the bounded number of attempts', () => {
+    expect(mirrorRetryDelayMs('socket-closed', 4)).toBeNull()
+    expect(mirrorRetryDelayMs('socket-error', 99)).toBeNull()
   })
 })
