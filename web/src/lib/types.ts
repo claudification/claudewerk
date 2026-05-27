@@ -47,6 +47,11 @@ export function canJsonStream(s: Conversation): boolean {
 export interface Conversation {
   id: string
   project: string
+  /** Live working directory CC is using right now. `project` stays pinned to the
+   *  launch URI; `currentPath` shifts when the agent enters/exits a worktree (or
+   *  cd's around). Drives the worktree indicator in the header. Server mirror:
+   *  `Conversation.currentPath`. */
+  currentPath?: string
   /** Sentinel-profile NAME the sentinel resolved at spawn time. `undefined`
    *  means default profile. Mirrors `Conversation.resolvedProfile` server-side. */
   resolvedProfile?: string

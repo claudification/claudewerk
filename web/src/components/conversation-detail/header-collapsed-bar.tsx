@@ -1,10 +1,12 @@
 import type { ProjectSettings } from '@shared/protocol'
+import { GitBranch } from 'lucide-react'
 import { CacheTimer } from '@/components/cache-timer'
 import { renderProjectIcon } from '@/components/project-settings-editor'
 import { formatCost, getConversationCost, getCostColor } from '@/lib/cost-utils'
 import type { Conversation } from '@/lib/types'
 import { projectPath } from '@/lib/types'
 import { cn, contextWindowSize, formatEffort, formatModel, formatPermissionMode } from '@/lib/utils'
+import { worktreeName } from './header-info-rows'
 
 interface HeaderCollapsedBarProps {
   conversation: Conversation
@@ -25,6 +27,7 @@ export function HeaderCollapsedBar({ conversation, projectSettings: ps, model, i
         <span className="text-sm font-bold truncate" style={ps?.color ? { color: ps.color } : undefined}>
           {ps?.label || projectPath(conversation.project).split('/').slice(-2).join('/')}
         </span>
+        <WorktreeChip conversation={conversation} />
       </span>
       <span className="inline-flex items-center gap-1 shrink-0 flex-wrap">
         <span className="whitespace-nowrap">
@@ -43,6 +46,25 @@ export function HeaderCollapsedBar({ conversation, projectSettings: ps, model, i
           isIdle={conversation.status === 'idle'}
         />
       </span>
+    </span>
+  )
+}
+
+/** Compact worktree badge: shown when the agent is working inside a git
+ *  worktree (currentPath diverges from the project base). Glanceable at-rest
+ *  signal that this conversation left its launch directory. */
+function WorktreeChip({ conversation }: { conversation: Conversation }) {
+  const cur = conversation.currentPath
+  if (!cur || cur === projectPath(conversation.project)) return null
+  const wt = worktreeName(cur)
+  const label = wt || cur.split('/').filter(Boolean).pop() || cur
+  return (
+    <span
+      className="shrink-0 inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-violet-500/15 text-violet-300 border border-violet-500/30 text-[10px] font-mono max-w-[10rem]"
+      title={`Working in ${wt ? `worktree ${wt}` : cur}`}
+    >
+      <GitBranch className="w-3 h-3 shrink-0" />
+      <span className="truncate">{label}</span>
     </span>
   )
 }

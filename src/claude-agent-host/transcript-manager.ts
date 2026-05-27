@@ -19,6 +19,7 @@ import type { AgentHostContext } from './agent-host-context'
 import { debug as _debug, DEBUG } from './debug'
 import { translateClaudeToolResult, translateClaudeToolUse } from './dialect/from-claude'
 import { createTranscriptWatcher } from './transcript-watcher'
+import { detectWorktreeCwd } from './worktree-detect'
 
 const debug = (msg: string) => _debug(msg)
 
@@ -307,6 +308,14 @@ export async function sendTranscriptEntriesChunked(
   // CLAUDEWERK vocabulary. Mutates block.input -> canonical shape; original
   // dialect lives on block.raw.input afterwards.
   translateClaudeBlocks(ctx, augmented)
+
+  // Detect EnterWorktree/ExitWorktree tool results and synthesize a CwdChanged
+  // event so conv.currentPath (and the control-panel header) reflects the move.
+  // Live parent batches only -- never replay (would re-fire on every reconnect)
+  // and never subagents (they don't own the parent's cwd). Runs AFTER
+  // translateClaudeBlocks so block.raw.name / toolUseResult are populated.
+  if (!agentId && !isInitial) detectWorktreeCwd(ctx, augmented)
+
   const send = (chunk: TranscriptEntry[], initial: boolean) =>
     agentId
       ? ctx.wsClient?.sendSubagentTranscript(agentId, chunk, initial)

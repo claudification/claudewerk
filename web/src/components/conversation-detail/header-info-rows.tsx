@@ -1,6 +1,6 @@
 import { formatResetIn } from '@shared/format-reset-time'
 import type { ProjectSettings } from '@shared/protocol'
-import { ChevronRight, Copy } from 'lucide-react'
+import { ChevronRight, Copy, GitBranch } from 'lucide-react'
 import { useState } from 'react'
 import { useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import type { Conversation } from '@/lib/types'
@@ -56,6 +56,37 @@ export function ProjectPathRow({ project }: { project: string }) {
       >
         <Copy className="w-3 h-3" />
       </button>
+    </div>
+  )
+}
+
+/** Extract the worktree name from a `.../.claude/worktrees/<name>` path, else null. */
+export function worktreeName(path: string): string | null {
+  const m = path.match(/\/\.claude\/worktrees\/([^/]+)/)
+  return m ? m[1] : null
+}
+
+/**
+ * Live working-directory indicator. `conversation.project` is the pinned launch
+ * URI; `currentPath` is where CC is actually working now. When they diverge (the
+ * agent entered a git worktree via EnterWorktree, or cd'd elsewhere) surface it
+ * so the operator sees the conversation is no longer in its launch directory.
+ * Renders nothing when currentPath is unset or equals the project base.
+ */
+export function CurrentPathRow({ conversation }: { conversation: Conversation }) {
+  const cur = conversation.currentPath
+  if (!cur || cur === projectPath(conversation.project)) return null
+  const wt = worktreeName(cur)
+  const leaf = cur.split('/').filter(Boolean).pop() || cur
+  return (
+    <div className="flex items-center gap-1.5 text-[10px] font-mono min-w-0">
+      <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded border bg-violet-500/15 text-violet-300 border-violet-500/30 font-bold uppercase tracking-wide">
+        <GitBranch className="w-3 h-3" />
+        {wt ? wt : 'cwd'}
+      </span>
+      <span className="text-muted-foreground/60 truncate" title={cur}>
+        {wt ? cur : leaf}
+      </span>
     </div>
   )
 }
