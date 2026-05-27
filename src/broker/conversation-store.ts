@@ -759,7 +759,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
   // Periodically mark idle conversations, clean stale agents, evict old conversations, and save state
   const ENDED_EVICTION_TTL_MS = 28 * 24 * 60 * 60 * 1000 // 28 days after ending (user can manually dismiss)
   const ZOMBIE_EVICTION_TTL_MS = 30 * 24 * 60 * 60 * 1000 // 30 days for stale STARTING conversations
-  const MAX_ENDED_CONVERSATIONS = 200 // hard cap on ended conversations in memory
+  const MAX_ENDED_CONVERSATIONS = 500 // hard cap on ended conversations in memory
 
   function runMaintenancePass(): void {
     const now = Date.now()
