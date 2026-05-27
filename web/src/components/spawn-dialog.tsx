@@ -10,7 +10,7 @@ import type { ChatApiConnection } from '@shared/chat-api-types'
 import type { CcSessionEntry, ProfileUsageSnapshot } from '@shared/protocol'
 import { buildSpawnDiagnostics } from '@shared/spawn-diagnostics'
 import { OPENCODE_TOOL_PERMISSION_OPTIONS, type OpenCodeToolPermission, type SpawnRequest } from '@shared/spawn-schema'
-import { ChevronDown, Zap } from 'lucide-react'
+import { ChevronDown, GitBranch, Zap } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   OPENCODE_CURATED_VALUES,
@@ -34,6 +34,7 @@ import { parseEnvText } from '@/lib/env-parse'
 import { useKeyLayer } from '@/lib/key-layers'
 import { cwdToProjectUri } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
+import { detectWorktree } from '@/lib/worktree-path'
 import { LaunchConfigFields, type LaunchFieldsValue } from './launch-config-fields'
 import { LaunchDialogBottom } from './launch-monitor'
 import { putLaunchProfiles } from './launch-profiles/api'
@@ -129,6 +130,12 @@ export function SpawnDialog() {
   const [repl, setRepl] = useState(false)
   const [useWorktree, setUseWorktree] = useState(false)
   const [worktreeName, setWorktreeName] = useState('')
+  // When the launch trigger path lives under `.../<project>/.claude/worktrees/<name>`
+  // we default the launch CWD to the MAIN project path and surface a nudge to
+  // opt back into the worktree. `useWorktreePath` is the toggle, reset on every
+  // `_openDialog` -- intentionally not sticky (the nudge exists to surface the
+  // choice; remembering it defeats the point).
+  const [useWorktreePath, setUseWorktreePath] = useState(false)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [permissionMode, setPermissionMode] = useState('')
@@ -205,7 +212,13 @@ export function SpawnDialog() {
   const progressReset = progress.reset
   useEffect(() => {
     _openDialog = (options: SpawnDialogOptions) => {
-      const ps = projectSettings[projectIdentityKey(cwdToProjectUri(options.path))]
+      // Settings are project-scoped, not worktree-scoped: when the trigger
+      // path is inside `.claude/worktrees/<name>`, normalize the lookup to
+      // the main project so worktree launches inherit the project's saved
+      // defaults. Save-side normalizes the same way.
+      const settingsPath = detectWorktree(options.path)?.mainPath ?? options.path
+      setUseWorktreePath(false)
+      const ps = projectSettings[projectIdentityKey(cwdToProjectUri(settingsPath))]
       const gs = globalSettings as Record<string, unknown>
       // Resolve defaults: project > global > hardcoded
       const defaultMode = ps?.defaultLaunchMode || (gs.defaultLaunchMode as string) || 'headless'
@@ -394,6 +407,21 @@ export function SpawnDialog() {
     [headless],
   )
 
+  // Worktree-aware launch path. When the source path lives under
+  // `.../<project>/.claude/worktrees/<name>`, MAIN is the default and the
+  // user can flip to the worktree via the inline nudge below the CWD line.
+  // Otherwise the source path is used as-is. Declared here -- before
+  // `handleSpawn` -- so the useCallback dep array can reference it.
+  const worktreeCtx = useMemo(
+    () => (state.options?.path ? detectWorktree(state.options.path) : null),
+    [state.options?.path],
+  )
+  const effectivePath = worktreeCtx
+    ? useWorktreePath
+      ? worktreeCtx.worktreePath
+      : worktreeCtx.mainPath
+    : (state.options?.path ?? '')
+
   const handleSpawn = useCallback(async () => {
     if (!state.options || phase !== 'config') return
 
@@ -420,7 +448,7 @@ export function SpawnDialog() {
       spawnReq = {
         // ATTACH takes over an existing worker -- cwd comes from its roster
         // job; NEW/RESUME use the dialog's target directory.
-        cwd: isAttach && daemonAttach ? daemonAttach.cwd : state.options.path,
+        cwd: isAttach && daemonAttach ? daemonAttach.cwd : effectivePath,
         mkdir: isAttach ? false : state.options.mkdir || false,
         name: name.trim() || undefined,
         description: description.trim() || undefined,
@@ -441,7 +469,7 @@ export function SpawnDialog() {
       }
       const trimmedResumeId = resumeId.trim()
       spawnReq = {
-        cwd: state.options.path,
+        cwd: effectivePath,
         mkdir: state.options.mkdir || false,
         mode: trimmedResumeId ? 'resume' : undefined,
         resumeId: trimmedResumeId || undefined,
@@ -501,6 +529,7 @@ export function SpawnDialog() {
     }
   }, [
     state.options,
+    effectivePath,
     phase,
     headless,
     bare,
@@ -617,7 +646,10 @@ export function SpawnDialog() {
   function handleSaveProjectDefaults() {
     if (!state.options) return
     const defaults = buildSpawnDefaults()
-    updateProjectSettings(cwdToProjectUri(state.options.path), defaults)
+    // Save against the main project path so worktree launches share the
+    // project's defaults (mirrors the open-time normalization).
+    const settingsPath = worktreeCtx?.mainPath ?? state.options.path
+    updateProjectSettings(cwdToProjectUri(settingsPath), defaults)
     setSavedFeedback('project')
     haptic('success')
     setTimeout(() => setSavedFeedback(null), 2000)
@@ -656,7 +688,7 @@ export function SpawnDialog() {
       elapsedSec: progress.elapsed,
       error: progress.error || progress.launch.error || null,
       config: {
-        cwd: state.options?.path,
+        cwd: effectivePath,
         headless,
         bare,
         name: name || undefined,
@@ -682,7 +714,7 @@ export function SpawnDialog() {
     progress.copyToClipboard(JSON.stringify(diag, null, 2))
   }
 
-  const shortPath = state.options?.path?.replace(/^\/Users\/[^/]+/, '~') || ''
+  const shortPath = effectivePath.replace(/^\/Users\/[^/]+/, '~')
   const displayError = progress.error || progress.launch.error
 
   function applyFieldsPatch(patch: Partial<LaunchFieldsValue>) {
@@ -771,8 +803,54 @@ export function SpawnDialog() {
             )}
           </div>
 
-          {/* CWD display */}
-          <div className="text-[11px] font-mono text-muted-foreground truncate shrink-0">{shortPath}</div>
+          {/* CWD display + worktree nudge.
+              When the trigger path is inside `.../.claude/worktrees/<name>`,
+              MAIN is the default and we surface a one-click switch to the
+              worktree. State is per-open (not sticky) -- see useWorktreePath. */}
+          <div className="shrink-0 space-y-1">
+            <div className="text-[11px] font-mono text-muted-foreground truncate">{shortPath}</div>
+            {worktreeCtx && !useWorktreePath && (
+              <button
+                type="button"
+                onClick={() => {
+                  setUseWorktreePath(true)
+                  haptic('tap')
+                }}
+                className={cn(
+                  'w-full flex items-center gap-2 px-2 py-1.5 rounded',
+                  'border border-amber-500/40 bg-amber-500/10',
+                  'text-[10px] font-mono text-amber-200',
+                  'hover:bg-amber-500/20 hover:border-amber-500/60',
+                  'transition-colors text-left',
+                )}
+              >
+                <GitBranch className="w-3 h-3 shrink-0" />
+                <span className="flex-1 min-w-0 truncate">
+                  Detected worktree <span className="font-bold">{worktreeCtx.worktreeName}</span> -- click to launch
+                  there instead
+                </span>
+                <span className="text-amber-400 shrink-0">-&gt;</span>
+              </button>
+            )}
+            {worktreeCtx && useWorktreePath && (
+              <div className="flex items-center gap-2 px-1 text-[10px] font-mono text-comment">
+                <GitBranch className="w-3 h-3 text-primary" />
+                <span className="flex-1 min-w-0 truncate">
+                  Launching in worktree <span className="text-foreground">{worktreeCtx.worktreeName}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUseWorktreePath(false)
+                    haptic('tap')
+                  }}
+                  className="text-comment hover:text-foreground underline-offset-2 hover:underline"
+                >
+                  use main
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* ── Config Phase ── */}
           {phase === 'config' && (
@@ -1130,7 +1208,7 @@ export function SpawnDialog() {
                         <ResumeSessionField
                           resumeId={resumeId}
                           onResumeIdChange={setResumeId}
-                          cwd={state.options?.path || ''}
+                          cwd={effectivePath}
                           sentinel={state.options?.sentinel}
                         />
 
