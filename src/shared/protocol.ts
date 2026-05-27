@@ -3135,6 +3135,7 @@ export interface ConversationSummary {
   pendingTasks: Array<{ id: string; subject: string }>
   archivedTaskCount: number
   archivedTasks?: Array<{ id: string; subject: string }>
+  taskSubjects?: Record<string, string>
   runningBgTaskCount: number
   bgTasks: Array<{
     taskId: string

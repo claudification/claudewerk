@@ -583,6 +583,9 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
         .flatMap(g => g.tasks)
         .slice(-50)
         .map(t => ({ id: t.id, subject: t.subject })),
+      taskSubjects: Object.fromEntries(
+        [...conv.tasks, ...conv.archivedTasks.flatMap(g => g.tasks)].filter(t => t.subject).map(t => [t.id, t.subject]),
+      ),
       runningBgTaskCount: conv.bgTasks.filter(t => t.status === 'running').length,
       bgTasks: conv.bgTasks.map(t => ({
         taskId: t.taskId,

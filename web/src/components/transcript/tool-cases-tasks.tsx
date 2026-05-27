@@ -48,6 +48,7 @@ function lookupTaskSubject(taskId: string | undefined): string {
   const conversation = sid ? state.conversationsById[sid] : undefined
   if (!conversation) return ''
   return (
+    conversation.taskSubjects?.[taskId] ||
     conversation.activeTasks?.find(t => t.id === taskId)?.subject ||
     conversation.pendingTasks?.find(t => t.id === taskId)?.subject ||
     conversation.archivedTasks?.find(t => t.id === taskId)?.subject ||

@@ -79,6 +79,7 @@ export interface Conversation {
   pendingTasks: Array<{ id: string; subject: string }>
   archivedTaskCount?: number
   archivedTasks?: Array<{ id: string; subject: string }>
+  taskSubjects?: Record<string, string>
   runningBgTaskCount: number
   bgTasks: BgTaskSummary[]
   monitors?: MonitorInfo[]
