@@ -7,6 +7,7 @@ import { NerdModal } from '@/components/nerd-modal'
 import { NotificationBell } from '@/components/notification-bell'
 import { ProjectSettingsEditor } from '@/components/project-settings-editor'
 import { SettingsDialog } from '@/components/settings-page'
+import { TokenFlowBar } from '@/components/token-flow-bar'
 import { UsageBar } from '@/components/usage-bar'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { getRates, subscribe as subscribeStats } from '@/hooks/ws-stats'
@@ -217,6 +218,7 @@ export function Header() {
         <UsageBar />
         <HealthWidget />
         <EfficiencyWidget />
+        <TokenFlowBar />
         <BatchSelectedPill />
 
         <span className="flex-1" />
