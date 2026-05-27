@@ -13,6 +13,7 @@ import { createSchema } from './schema'
 import { createSqliteScopeLinkStore } from './scope-links'
 import { createSqliteShareStore } from './shares'
 import { createSqliteTaskStore } from './tasks'
+import { createSqliteTokenStore } from './tokens'
 import { createSqliteTranscriptStore } from './transcripts'
 
 export function createSqliteDriver(config: StoreConfig): StoreDriver {
@@ -33,6 +34,7 @@ export function createSqliteDriver(config: StoreConfig): StoreDriver {
     scopeLinks: createSqliteScopeLinkStore(db),
     tasks: createSqliteTaskStore(db),
     costs: createSqliteCostStore(db),
+    tokens: createSqliteTokenStore(db),
 
     init() {},
 

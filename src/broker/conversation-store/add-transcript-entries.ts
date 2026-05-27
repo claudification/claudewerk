@@ -13,7 +13,7 @@ import type {
 import type { TranscriptEntryInput } from '../store/types'
 import { MAX_TRANSCRIPT_ENTRIES } from './constants'
 import { assignTranscriptSeqs, type ConversationStoreContext } from './event-context'
-import { handleAssistantEntry } from './transcript-handlers/assistant-entry'
+import { handleAssistantEntry, perMessageTokenSample } from './transcript-handlers/assistant-entry'
 import { detectBgTaskNotifications } from './transcript-handlers/bg-task-notifications'
 import { handleMentionNotifications } from './transcript-handlers/mention-notify'
 import {
@@ -119,15 +119,51 @@ function dispatchUserEntry(
 
 function dispatchAssistantEntry(
   ctx: ConversationStoreContext,
-  _conversationId: string,
+  conversationId: string,
   conv: Conversation,
   entry: TranscriptEntry,
   isInitial: boolean,
 ): boolean {
   const assistantEntry = entry as TranscriptAssistantEntry
   const changed = handleAssistantEntry(conv, assistantEntry)
+  recordTokenSample(ctx, conversationId, conv, assistantEntry)
   handleMentionNotifications(ctx, conv, assistantEntry, isInitial)
   return changed
+}
+
+/**
+ * Persist one per-message token sample to the token_samples time-series (powers
+ * the live token-flow widget). One row per assistant API response; the store
+ * INSERT OR IGNOREs on (conversation_id, uuid) so isInitial full-file re-reads
+ * (reconnect/restart) and the Phase-3 backfill never double-count. Requires a
+ * uuid -- without one we can't de-dup, so we skip rather than risk inflation.
+ * Failures are swallowed: token stats must never break transcript ingest.
+ */
+function recordTokenSample(
+  ctx: ConversationStoreContext,
+  conversationId: string,
+  conv: Conversation,
+  entry: TranscriptAssistantEntry,
+): void {
+  if (!ctx.store || !entry.uuid) return
+  const sample = perMessageTokenSample(conv, entry)
+  if (!sample) return
+  try {
+    ctx.store.tokens.recordSample({
+      uuid: entry.uuid,
+      timestamp: resolveEntryTimestamp(entry.timestamp),
+      conversationId,
+      sentinelId: conv.hostSentinelId,
+      profile: conv.resolvedProfile,
+      model: sample.model,
+      inputTokens: sample.inputTokens,
+      outputTokens: sample.outputTokens,
+      cacheReadTokens: sample.cacheReadTokens,
+      cacheWriteTokens: sample.cacheWriteTokens,
+    })
+  } catch (err) {
+    console.error('[token-samples] recordSample failed:', err instanceof Error ? err.message : err)
+  }
 }
 
 function dispatchSystemEntry(
@@ -202,11 +238,16 @@ const entryHandlers: Record<string, TranscriptEntryHandler> = {
  * is in a weird state, transcript ingest must keep working for the dashboard.
  * Search just won't find these entries until things recover.
  */
+/** Resolve a transcript entry's timestamp (ISO string or absent) to epoch ms. */
+function resolveEntryTimestamp(raw: unknown): number {
+  const ts = typeof raw === 'string' ? Date.parse(raw) : Date.now()
+  return Number.isFinite(ts) ? ts : Date.now()
+}
+
 function persistToStore(ctx: ConversationStoreContext, conversationId: string, entries: TranscriptEntry[]): void {
   if (!ctx.store || entries.length === 0) return
   const inputs: TranscriptEntryInput[] = []
   for (const e of entries) {
-    const ts = typeof e.timestamp === 'string' ? Date.parse(e.timestamp) : Date.now()
     inputs.push({
       type: e.type,
       subtype:
@@ -215,7 +256,7 @@ function persistToStore(ctx: ConversationStoreContext, conversationId: string, e
           : undefined,
       uuid: e.uuid || randomUUID(),
       content: e as unknown as Record<string, unknown>,
-      timestamp: Number.isFinite(ts) ? ts : Date.now(),
+      timestamp: resolveEntryTimestamp(e.timestamp),
     })
   }
   try {

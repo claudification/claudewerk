@@ -139,6 +139,11 @@ function createMockStoreDriver(): StoreDriver {
     queryProfileBreakdown: () => [],
     pruneOlderThan: () => ({ turns: 0, hourly: 0 }),
   }
+  const noopTokens = {
+    recordSample: noop,
+    queryBuckets: () => [],
+    pruneOlderThan: () => 0,
+  }
   return {
     conversations: noopStore,
     transcripts: {
@@ -201,6 +206,7 @@ function createMockStoreDriver(): StoreDriver {
       pruneArchivedBefore: () => 0,
     },
     costs: noopCosts,
+    tokens: noopTokens,
     init: noop,
     close: noop,
     compact: noop,

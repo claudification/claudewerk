@@ -557,6 +557,62 @@ export interface ProfileBreakdownFilter {
 
 export type CostPeriod = '24h' | '7d' | '30d'
 
+// ---------------------------------------------------------------------------
+// Token samples (per-MESSAGE raw token usage time-series, for the live flow bar)
+// ---------------------------------------------------------------------------
+
+export interface TokenSampleInput {
+  /** Assistant-message uuid -- dedup key so isInitial re-reads + backfill
+   *  never double-count. (conversation_id, uuid) is UNIQUE. */
+  uuid: string
+  timestamp: number
+  conversationId: string
+  /** Sentinel ID (snt_...) hosting the conversation. Empty when unknown. */
+  sentinelId?: string
+  /** Resolved sentinel-profile name. 'default' when none. */
+  profile?: string
+  model: string
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+}
+
+export interface TokenBucketFilter {
+  from: number
+  to: number
+  /** Bucket width in ms. Rows are floored into [floor(ts/bucketMs)*bucketMs]. */
+  bucketMs: number
+  /** 'global' = one aggregate series; 'profile' = one series per (sentinelId, profile). */
+  groupBy?: 'global' | 'profile'
+  sentinelId?: string
+  profile?: string
+}
+
+export interface TokenBucket {
+  /** Bucket start (ms, aligned to bucketMs). */
+  bucketStart: number
+  /** '' in global mode; the sentinel id in profile mode. */
+  sentinelId: string
+  /** '' in global mode; the profile name in profile mode. */
+  profile: string
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  /** Number of per-message samples folded into this bucket. */
+  samples: number
+}
+
+export interface TokenStore {
+  /** Record one per-message sample. INSERT OR IGNORE on (conversation_id, uuid). */
+  recordSample(sample: TokenSampleInput): void
+  /** Bucketed aggregation for the flow chart (global series or per-profile series). */
+  queryBuckets(filter: TokenBucketFilter): TokenBucket[]
+  /** Delete samples older than cutoffMs. Returns rows deleted. */
+  pruneOlderThan(cutoffMs: number): number
+}
+
 export interface CostStore {
   /** Record a turn with explicit per-turn deltas (caller computed the diff). */
   recordTurn(record: TurnRecord): void
@@ -601,6 +657,7 @@ export interface StoreDriver {
   readonly scopeLinks: ScopeLinkStore
   readonly tasks: TaskStore
   readonly costs: CostStore
+  readonly tokens: TokenStore
 
   init(): void
   close(): void

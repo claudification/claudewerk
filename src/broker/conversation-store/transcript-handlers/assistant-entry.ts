@@ -78,3 +78,44 @@ function extractUsage(
 
   return true
 }
+
+export interface PerMessageTokenSample {
+  model: string
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+}
+
+/**
+ * Extract the RAW per-message token usage from an assistant entry for the
+ * token-flow time-series (token_samples). Returns null for `<synthetic>` blocks
+ * (auto-compact summaries, recap, hook-injected) and entries with no usage --
+ * the same guards as extractUsage. Values are PER-MESSAGE (one API response),
+ * NOT the cumulative `conv.stats.total*`. The caller persists one sample per
+ * assistant message; (conversation_id, uuid) de-dups re-reads + backfill.
+ */
+function numOr0(v: unknown): number {
+  return typeof v === 'number' ? v : 0
+}
+
+function resolveSampleModel(model: string | undefined, conv: Conversation): string {
+  if (typeof model === 'string' && model.length > 0) return model
+  return conv.model || ''
+}
+
+export function perMessageTokenSample(
+  conv: Conversation,
+  entry: TranscriptAssistantEntry,
+): PerMessageTokenSample | null {
+  const usage = entry.message?.usage
+  const model = entry.message?.model
+  if (!usage || typeof usage.input_tokens !== 'number' || model === '<synthetic>') return null
+  return {
+    model: resolveSampleModel(model, conv),
+    inputTokens: numOr0(usage.input_tokens),
+    outputTokens: numOr0(usage.output_tokens),
+    cacheReadTokens: numOr0(usage.cache_read_input_tokens),
+    cacheWriteTokens: numOr0(usage.cache_creation_input_tokens),
+  }
+}

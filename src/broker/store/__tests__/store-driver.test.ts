@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createMemoryDriver } from '../memory/driver'
 import { createSqliteDriver } from '../sqlite/driver'
-import type { StoreDriver, TranscriptEntryInput, TurnRecord } from '../types'
+import type { StoreDriver, TokenSampleInput, TranscriptEntryInput, TurnRecord } from '../types'
 
 function makeTranscriptEntry(
   type: string,
@@ -1113,6 +1113,81 @@ function runStoreTests(name: string, createDriver: () => StoreDriver) {
         const deleted = store.costs.pruneOlderThan(now - 30 * 24 * 60 * 60 * 1000)
         expect(deleted.turns).toBe(1)
         expect(store.costs.queryTurns({}).total).toBe(1)
+      })
+    })
+
+    // -----------------------------------------------------------------
+    // TokenStore (per-message token_samples time-series)
+    // -----------------------------------------------------------------
+
+    describe('tokens', () => {
+      function sample(overrides: Partial<TokenSampleInput> = {}): TokenSampleInput {
+        return {
+          uuid: crypto.randomUUID(),
+          timestamp: 1000,
+          conversationId: 's1',
+          sentinelId: 'snt_a',
+          profile: 'work',
+          model: 'claude-opus-4',
+          inputTokens: 100,
+          outputTokens: 200,
+          cacheReadTokens: 5000,
+          cacheWriteTokens: 25,
+          ...overrides,
+        }
+      }
+
+      it('de-dups on (conversationId, uuid) so re-reads do not double-count', () => {
+        store.tokens.recordSample(sample({ uuid: 'u1', timestamp: 1000 }))
+        store.tokens.recordSample(sample({ uuid: 'u1', timestamp: 1000 })) // re-read
+        store.tokens.recordSample(sample({ uuid: 'u2', timestamp: 1000 }))
+        const buckets = store.tokens.queryBuckets({ from: 0, to: 9999, bucketMs: 60_000 })
+        expect(buckets).toHaveLength(1)
+        expect(buckets[0].samples).toBe(2) // u1 once + u2 once, NOT 3
+        expect(buckets[0].outputTokens).toBe(400)
+      })
+
+      it('same uuid under different conversations is NOT a dup', () => {
+        store.tokens.recordSample(sample({ uuid: 'shared', conversationId: 'a' }))
+        store.tokens.recordSample(sample({ uuid: 'shared', conversationId: 'b' }))
+        const buckets = store.tokens.queryBuckets({ from: 0, to: 9999, bucketMs: 60_000 })
+        expect(buckets[0].samples).toBe(2)
+      })
+
+      it('buckets by floor(timestamp / bucketMs) and sums per bucket', () => {
+        store.tokens.recordSample(sample({ uuid: 'a', timestamp: 1000, inputTokens: 10 }))
+        store.tokens.recordSample(sample({ uuid: 'b', timestamp: 5000, inputTokens: 20 })) // same 60s bucket
+        store.tokens.recordSample(sample({ uuid: 'c', timestamp: 65_000, inputTokens: 30 })) // next bucket
+        const buckets = store.tokens.queryBuckets({ from: 0, to: 999_999, bucketMs: 60_000 })
+        expect(buckets).toHaveLength(2)
+        expect(buckets[0].bucketStart).toBe(0)
+        expect(buckets[0].inputTokens).toBe(30)
+        expect(buckets[1].bucketStart).toBe(60_000)
+        expect(buckets[1].inputTokens).toBe(30)
+      })
+
+      it('global mode aggregates across profiles; profile mode splits them', () => {
+        store.tokens.recordSample(sample({ uuid: 'a', sentinelId: 'snt_a', profile: 'work', outputTokens: 100 }))
+        store.tokens.recordSample(sample({ uuid: 'b', sentinelId: 'snt_a', profile: 'personal', outputTokens: 200 }))
+
+        const global = store.tokens.queryBuckets({ from: 0, to: 9999, bucketMs: 60_000, groupBy: 'global' })
+        expect(global).toHaveLength(1)
+        expect(global[0].outputTokens).toBe(300)
+        expect(global[0].profile).toBe('')
+
+        const perProfile = store.tokens.queryBuckets({ from: 0, to: 9999, bucketMs: 60_000, groupBy: 'profile' })
+        expect(perProfile).toHaveLength(2)
+        expect(perProfile.map(b => b.profile).sort()).toEqual(['personal', 'work'])
+      })
+
+      it('filters by from/to and prunes older samples', () => {
+        store.tokens.recordSample(sample({ uuid: 'old', timestamp: 1000 }))
+        store.tokens.recordSample(sample({ uuid: 'new', timestamp: 100_000 }))
+        expect(store.tokens.queryBuckets({ from: 50_000, to: 200_000, bucketMs: 60_000 })).toHaveLength(1)
+
+        const pruned = store.tokens.pruneOlderThan(50_000)
+        expect(pruned).toBe(1)
+        expect(store.tokens.queryBuckets({ from: 0, to: 200_000, bucketMs: 60_000 })).toHaveLength(1)
       })
     })
   })

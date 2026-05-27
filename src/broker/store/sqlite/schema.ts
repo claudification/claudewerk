@@ -413,4 +413,31 @@ export function createSchema(db: Database) {
   db.run('CREATE INDEX IF NOT EXISTS idx_hourly_hour ON hourly_stats(hour)')
   db.run('CREATE INDEX IF NOT EXISTS idx_hourly_project_uri ON hourly_stats(project_uri)')
   db.run('CREATE INDEX IF NOT EXISTS idx_hourly_sentinel_profile ON hourly_stats(sentinel_id, profile)')
+
+  // Per-MESSAGE raw token usage time-series (powers the live token-flow widget).
+  // Distinct from `turns` (per-TURN delta-of-cumulative cost rollup): each
+  // assistant API response carries its own `usage` block, so one row per
+  // assistant message gives near-continuous fleet-level resolution. Values are
+  // raw per-message usage (NOT cumulative -- the Anthropic API bills each
+  // request independently). De-dup key is (conversation_id, uuid): transcript
+  // re-reads on reconnect/restart (isInitial) AND the Phase-3 backfill from
+  // transcript_entries both INSERT OR IGNORE, so they never double-count.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS token_samples (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      uuid TEXT NOT NULL,
+      timestamp INTEGER NOT NULL,
+      conversation_id TEXT NOT NULL,
+      sentinel_id TEXT NOT NULL DEFAULT '',
+      profile TEXT NOT NULL DEFAULT 'default',
+      model TEXT NOT NULL DEFAULT '',
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(conversation_id, uuid)
+    )
+  `)
+  db.run('CREATE INDEX IF NOT EXISTS idx_token_samples_timestamp ON token_samples(timestamp)')
+  db.run('CREATE INDEX IF NOT EXISTS idx_token_samples_profile_ts ON token_samples(sentinel_id, profile, timestamp)')
 }

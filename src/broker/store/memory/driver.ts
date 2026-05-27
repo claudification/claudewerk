@@ -36,6 +36,10 @@ import type {
   TaskQuery,
   TaskRecord,
   TaskStore,
+  TokenBucket,
+  TokenBucketFilter,
+  TokenSampleInput,
+  TokenStore,
   TranscriptEntryRecord,
   TranscriptStore,
   TurnFilter,
@@ -1004,6 +1008,74 @@ function createCostStore(): CostStore {
   }
 }
 
+type MemTokenSample = TokenSampleInput & { sentinelId: string; profile: string }
+
+function sampleInWindow(s: MemTokenSample, f: TokenBucketFilter): boolean {
+  if (s.timestamp < f.from || s.timestamp > f.to) return false
+  if (f.sentinelId && s.sentinelId !== f.sentinelId) return false
+  if (f.profile && s.profile !== f.profile) return false
+  return true
+}
+
+function emptyTokenBucket(bucketStart: number, sentinelId: string, profile: string): TokenBucket {
+  return {
+    bucketStart,
+    sentinelId,
+    profile,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    samples: 0,
+  }
+}
+
+function createTokenStore(): TokenStore {
+  const samples: MemTokenSample[] = []
+  const seen = new Set<string>()
+
+  function profileBucketMem(p: string | undefined): string {
+    return p && p.length > 0 ? p : 'default'
+  }
+
+  return {
+    recordSample(s) {
+      const key = `${s.conversationId}\0${s.uuid}`
+      if (seen.has(key)) return
+      seen.add(key)
+      samples.push({ ...s, sentinelId: s.sentinelId ?? '', profile: profileBucketMem(s.profile) })
+    },
+
+    queryBuckets(filter) {
+      const perProfile = filter.groupBy === 'profile'
+      const buckets = new Map<string, TokenBucket>()
+      for (const s of samples) {
+        if (!sampleInWindow(s, filter)) continue
+        const bucketStart = Math.floor(s.timestamp / filter.bucketMs) * filter.bucketMs
+        const sentinelId = perProfile ? s.sentinelId : ''
+        const profile = perProfile ? s.profile : ''
+        const key = `${bucketStart}\0${sentinelId}\0${profile}`
+        const b = buckets.get(key) ?? emptyTokenBucket(bucketStart, sentinelId, profile)
+        b.inputTokens += s.inputTokens
+        b.outputTokens += s.outputTokens
+        b.cacheReadTokens += s.cacheReadTokens
+        b.cacheWriteTokens += s.cacheWriteTokens
+        b.samples++
+        buckets.set(key, b)
+      }
+      return [...buckets.values()].sort((a, b) => a.bucketStart - b.bucketStart)
+    },
+
+    pruneOlderThan(cutoffMs) {
+      const before = samples.length
+      for (let i = samples.length - 1; i >= 0; i--) {
+        if (samples[i].timestamp < cutoffMs) samples.splice(i, 1)
+      }
+      return before - samples.length
+    },
+  }
+}
+
 export function createMemoryDriver(): StoreDriver {
   return {
     conversations: createConversationStore(),
@@ -1016,6 +1088,7 @@ export function createMemoryDriver(): StoreDriver {
     scopeLinks: createScopeLinkStore(),
     tasks: createTaskStore(),
     costs: createCostStore(),
+    tokens: createTokenStore(),
     init() {},
     close() {},
     compact() {},
