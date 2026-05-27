@@ -50,16 +50,18 @@ export function buildMcpCallbacksWithRules(
 
     async onShareFile(filePath) {
       if (!isPathWithinCwd(filePath, deps.cwd)) {
-        debug(`[channel] share_file: path outside CWD: ${filePath}`)
-        return null
+        const msg = `Path ${filePath} is outside the conversation working directory (${deps.cwd}). share_file only accepts paths within CWD -- copy the file into the project tree first, or run the conversation from a parent directory.`
+        debug(`[channel] share_file: ${msg}`)
+        return { error: msg }
       }
       const httpUrl = deps.noBroker ? null : wsToHttpUrl(deps.brokerUrl)
-      if (!httpUrl) return null
+      if (!httpUrl) return { error: 'No broker connection -- share_file requires a broker to upload to.' }
       try {
         const file = Bun.file(filePath)
         if (!(await file.exists())) {
-          debug(`[channel] share_file: file not found: ${filePath}`)
-          return null
+          const msg = `File not found: ${filePath}`
+          debug(`[channel] share_file: ${msg}`)
+          return { error: msg }
         }
         const contentType = file.type || 'application/octet-stream'
         const res = await fetch(`${httpUrl}/api/files`, {
@@ -72,15 +74,19 @@ export function buildMcpCallbacksWithRules(
           body: file,
         })
         if (!res.ok) {
-          debug(`[channel] share_file: upload failed: ${res.status}`)
-          return null
+          const body = await res.text().catch(() => '')
+          const msg = `Broker upload failed: HTTP ${res.status}${body ? ` -- ${body.slice(0, 200)}` : ''}`
+          debug(`[channel] share_file: ${msg}`)
+          return { error: msg }
         }
         const data = (await res.json()) as { url?: string }
+        if (!data.url) return { error: 'Broker returned no URL.' }
         ctx.diag('channel', `Shared: ${filePath} -> ${data.url}`)
-        return data.url || null
+        return { url: data.url }
       } catch (err) {
-        debug(`[channel] share_file error: ${err instanceof Error ? err.message : err}`)
-        return null
+        const msg = `Upload error: ${err instanceof Error ? err.message : String(err)}`
+        debug(`[channel] share_file: ${msg}`)
+        return { error: msg }
       }
     },
 

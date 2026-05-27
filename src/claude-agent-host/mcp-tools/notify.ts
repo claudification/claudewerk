@@ -37,10 +37,18 @@ export function registerNotifyTools(ctx: McpToolContext): Record<string, ToolDef
       async handle(params) {
         const filePath = params.file_path
         if (!filePath) return { content: [{ type: 'text', text: 'Error: file_path is required' }], isError: true }
-        const url = await ctx.callbacks.onShareFile?.(filePath)
-        if (!url) return { content: [{ type: 'text', text: `Failed to upload ${filePath}` }], isError: true }
-        debug(`[channel] share_file: ${filePath} -> ${url}`)
-        return { content: [{ type: 'text', text: url }] }
+        if (!ctx.callbacks.onShareFile) {
+          return {
+            content: [{ type: 'text', text: 'share_file is not available in this conversation.' }],
+            isError: true,
+          }
+        }
+        const result = await ctx.callbacks.onShareFile(filePath)
+        if ('error' in result) {
+          return { content: [{ type: 'text', text: `share_file failed: ${result.error}` }], isError: true }
+        }
+        debug(`[channel] share_file: ${filePath} -> ${result.url}`)
+        return { content: [{ type: 'text', text: result.url }] }
       },
     },
 

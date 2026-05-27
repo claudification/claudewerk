@@ -124,7 +124,11 @@ export function registerDialogTool(ctx: McpToolContext): Record<string, ToolDef>
           if (uploader) {
             debug('[channel] dialog: uploading files (CWD-jailed)')
             const dialogCwd = ctx.getDialogCwd()
-            const uploadErr = await resolveDialogFiles(allComponents, uploader, dialogCwd, ctx.elog)
+            const uploadAdapter = async (path: string): Promise<string | null> => {
+              const r = await uploader(path)
+              return 'url' in r ? r.url : null
+            }
+            const uploadErr = await resolveDialogFiles(allComponents, uploadAdapter, dialogCwd, ctx.elog)
             if (uploadErr) {
               ctx.elog(` upload error: ${uploadErr}`)
               return { content: [{ type: 'text', text: `Dialog file error: ${uploadErr}` }], isError: true }

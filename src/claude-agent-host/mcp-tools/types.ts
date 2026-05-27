@@ -71,7 +71,7 @@ export interface PermissionRequestData {
 
 export interface McpChannelCallbacks {
   onNotify?: (message: string, title?: string) => void
-  onShareFile?: (filePath: string) => Promise<string | null>
+  onShareFile?: (filePath: string) => Promise<{ url: string } | { error: string }>
   onListConversations?: (
     status?: string,
     showMetadata?: boolean,
