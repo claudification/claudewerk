@@ -43,7 +43,7 @@ function trendArrow(trend: string): string {
 
 export function HealthWidget() {
   const health = useConversationsStore(s => s.claudeHealth)
-  const { open, setOpen, handleMouseEnter, handleMouseLeave, cancelClose, toggle } = useHoverPopover()
+  const { open, setOpen, handleMouseEnter, handleMouseLeave, cancelClose } = useHoverPopover()
 
   if (!health) return null
 
@@ -52,14 +52,15 @@ export function HealthWidget() {
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
-        <button
-          type="button"
+        <a
+          href="https://clanker.watch/status/claude"
+          target="_blank"
+          rel="noopener noreferrer"
           className="hidden sm:flex items-center gap-1 cursor-pointer select-none hover:opacity-80 transition-opacity"
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
           onClick={() => {
             haptic('tap')
-            toggle()
           }}
         >
           <span className={`text-[10px] ${dotColor}`}>{'●'}</span>
@@ -67,7 +68,7 @@ export function HealthWidget() {
           <span className={`text-[10px] tabular-nums ${health.isUp ? 'text-emerald-400' : 'text-red-400'}`}>
             {health.isUp ? `${Math.round(health.uptime24h)}%` : 'down'}
           </span>
-        </button>
+        </a>
       </Popover.Trigger>
 
       <Popover.Portal>
@@ -137,7 +138,7 @@ export function HealthWidget() {
                 Polled {new Date(health.polledAt).toLocaleTimeString()}
               </span>
               <a
-                href="https://clanker.watch"
+                href="https://clanker.watch/status/claude"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[9px] text-muted-foreground/40 hover:text-muted-foreground/80 hover:underline"
