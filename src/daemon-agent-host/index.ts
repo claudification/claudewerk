@@ -69,12 +69,12 @@ import {
   type SendInput,
   type UpdateConversationMetadata,
 } from '../shared/protocol'
-import { createDaemonLaunchEvents, type DaemonLaunchEvents } from './launch-events'
 import { BUILD_VERSION } from '../shared/version'
 import { attachWithRetry } from './attach-retry'
 import { type BrokerBridge, createBrokerBridge } from './broker-bridge'
 import { type DaemonHostConfig, parseDaemonHostConfig } from './cli-args'
 import { createDaemonControl } from './daemon-control'
+import { createDaemonLaunchEvents, type DaemonLaunchEvents } from './launch-events'
 import { classifyVanish, type DaemonSessionObserver, observeDaemonSession } from './session-observer'
 import { createStatusMirror, type StatusMirror } from './status-mirror'
 import { createTranscriptBridge, type TranscriptBridge } from './transcript-bridge'

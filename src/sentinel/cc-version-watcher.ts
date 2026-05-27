@@ -160,8 +160,7 @@ export function createCcVersionWatcher(opts: CcVersionWatcherOptions): CcVersion
       // future regression re-fires.
       if (opts.emitMinUnmet && opts.isDaemonDefault?.()) {
         if (ccVersionBelow(pingResult.version, minVersion)) {
-          const already =
-            lastMinUnmetFor?.installed === pingResult.version && lastMinUnmetFor?.required === minVersion
+          const already = lastMinUnmetFor?.installed === pingResult.version && lastMinUnmetFor?.required === minVersion
           if (!already) {
             lastMinUnmetFor = { installed: pingResult.version, required: minVersion }
             opts.emitMinUnmet({

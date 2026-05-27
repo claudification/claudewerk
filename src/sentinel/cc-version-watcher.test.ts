@@ -13,8 +13,8 @@ import {
   createCcVersionWatcher,
   diffCcVersion,
   type LastSeenCcVersion,
-  parseCcVersion,
   type PingResult,
+  parseCcVersion,
 } from './cc-version-watcher'
 
 describe('diffCcVersion', () => {
