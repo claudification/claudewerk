@@ -757,9 +757,8 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
   }
 
   // Periodically mark idle conversations, clean stale agents, evict old conversations, and save state
-  const ENDED_EVICTION_TTL_MS = 28 * 24 * 60 * 60 * 1000 // 28 days after ending (user can manually dismiss)
+  const ENDED_EVICTION_TTL_MS = 90 * 24 * 60 * 60 * 1000 // 90 days after ending, then cascade-deleted (retention)
   const ZOMBIE_EVICTION_TTL_MS = 30 * 24 * 60 * 60 * 1000 // 30 days for stale STARTING conversations
-  const MAX_ENDED_CONVERSATIONS = 500 // hard cap on ended conversations in memory
 
   function runMaintenancePass(): void {
     const now = Date.now()
@@ -843,24 +842,19 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       }
     }
 
-    // Evict TTL-expired ended conversations
+    // Evict TTL-expired ended conversations + dead daemon ghosts. There is
+    // deliberately NO hard cap on ended-conversation count: a count cap
+    // implemented as disk-deletion is exactly what orphaned hundreds of
+    // transcripts (see .claude/docs/plan-orphan-conversations.md). Memory is
+    // bounded instead by ENDED_EVICTION_TTL_MS (90d) -- ended conversations
+    // live in both memory and disk until the TTL cleanly cascade-deletes them
+    // (removeConversation now removes child transcript/event/task rows too).
     for (const id of toEvict) {
       removeConversation(id)
     }
 
-    // Hard cap: if too many ended conversations, evict oldest first
-    const ended = Array.from(conversations.values())
-      .filter(s => s.status === 'ended')
-      .sort((a, b) => a.lastActivity - b.lastActivity)
-    if (ended.length > MAX_ENDED_CONVERSATIONS) {
-      for (let i = 0; i < ended.length - MAX_ENDED_CONVERSATIONS; i++) {
-        removeConversation(ended[i].id)
-      }
-    }
-
-    if (toEvict.length > 0 || ended.length > MAX_ENDED_CONVERSATIONS) {
-      const evictedCount = toEvict.length + Math.max(0, ended.length - MAX_ENDED_CONVERSATIONS)
-      console.log(`[eviction] Removed ${evictedCount} ended conversations (${conversations.size} remaining)`)
+    if (toEvict.length > 0) {
+      console.log(`[eviction] Removed ${toEvict.length} ended/ghost conversations (${conversations.size} remaining)`)
     }
   }
   setInterval(runMaintenancePass, 10000)
@@ -1694,12 +1688,39 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       }
     }
     if (store) {
+      // Cascade-delete child rows BEFORE the parent so an intentional delete
+      // (90d TTL, ghost eviction, explicit user delete) never leaves orphans --
+      // transcript_entries with no conversations row are invisible to the
+      // dashboard (getAllConversations reads the in-memory Map only) yet sit on
+      // disk forever. Cost `turns` are intentionally NOT cascaded: they already
+      // self-prune at 30d (cost retention), cost stats aggregate by project/model
+      // with no conversations join, and keeping them preserves billing history.
+      let deletedTranscripts = 0
+      let deletedEvents = 0
+      let deletedTasks = 0
+      try {
+        deletedTranscripts = store.transcripts.deleteForConversation(conversationId)
+      } catch (err) {
+        console.error(`[remove] transcript cascade failed for ${conversationId.slice(0, 8)}: ${err}`)
+      }
+      try {
+        deletedEvents = store.events.deleteForConversation(conversationId)
+      } catch (err) {
+        console.error(`[remove] event cascade failed for ${conversationId.slice(0, 8)}: ${err}`)
+      }
+      try {
+        deletedTasks = store.tasks.deleteForConversation(conversationId)
+      } catch (err) {
+        console.error(`[remove] task cascade failed for ${conversationId.slice(0, 8)}: ${err}`)
+      }
       try {
         store.conversations.delete(conversationId)
-      } catch {}
-      try {
-        store.tasks.deleteForConversation(conversationId)
-      } catch {}
+      } catch (err) {
+        console.error(`[remove] conversation row delete failed for ${conversationId.slice(0, 8)}: ${err}`)
+      }
+      console.log(
+        `[remove] conversation=${conversationId.slice(0, 8)} cascade-deleted transcripts=${deletedTranscripts} events=${deletedEvents} tasks=${deletedTasks}`,
+      )
     }
   }
 

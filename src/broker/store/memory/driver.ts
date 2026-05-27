@@ -348,6 +348,12 @@ function createTranscriptStore(): TranscriptStore {
       return pruned
     },
 
+    deleteForConversation(conversationId) {
+      const removed = entries.get(conversationId)?.length ?? 0
+      entries.delete(conversationId)
+      return removed
+    },
+
     getIndexStats() {
       let totalEntries = 0
       for (const arr of entries.values()) totalEntries += arr.length
@@ -409,6 +415,12 @@ function createEventStore(): EventStore {
         pruned += before - (events.get(sid)?.length ?? 0)
       }
       return pruned
+    },
+
+    deleteForConversation(conversationId) {
+      const removed = events.get(conversationId)?.length ?? 0
+      events.delete(conversationId)
+      return removed
     },
   }
 }

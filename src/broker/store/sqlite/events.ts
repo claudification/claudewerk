@@ -61,5 +61,12 @@ export function createSqliteEventStore(db: Database): EventStore {
       const result = db.prepare('DELETE FROM events WHERE created_at < $cutoff').run({ cutoff: cutoffMs })
       return result.changes
     },
+
+    deleteForConversation(conversationId) {
+      const result = db
+        .prepare('DELETE FROM events WHERE conversation_id = $conversationId')
+        .run({ conversationId: conversationId })
+      return result.changes
+    },
   }
 }

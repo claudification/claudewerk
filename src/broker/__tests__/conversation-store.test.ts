@@ -14,6 +14,7 @@ import { deriveModelName } from '../../shared/models'
 import type { HookEvent, TaskInfo, TranscriptEntry } from '../../shared/protocol'
 import type { ConversationStore } from '../conversation-store'
 import { createConversationStore, isEvictableDaemonGhost } from '../conversation-store'
+import { createStore } from '../store'
 
 // Minimal mock socket -- used only for identity / set membership.
 // No actual send() calls reach these in non-persistence, no-subscriber mode
@@ -127,6 +128,44 @@ describe('conversation lifecycle', () => {
     expect(store.getConversation('remove-me')).toBeUndefined()
     expect(store.getAllConversations().map(s => s.id)).not.toContain('remove-me')
     expect(store.getActiveConversations().map(s => s.id)).not.toContain('remove-me')
+  })
+
+  it('removeConversation cascade-deletes transcript_entries + events (no orphans left)', () => {
+    const driver = createStore({ type: 'memory' })
+    driver.init()
+    const s = createConversationStore({ store: driver, enablePersistence: true })
+    s.createConversation('casc-1', '/cwd')
+
+    driver.transcripts.append('casc-1', 'epoch', [
+      { type: 'user', uuid: 'c1', content: { text: 'hi' }, timestamp: Date.now() },
+      { type: 'assistant', uuid: 'c2', content: { text: 'yo' }, timestamp: Date.now() },
+    ])
+    driver.events.append('casc-1', { type: 'SessionStart' })
+    expect(driver.transcripts.count('casc-1')).toBe(2)
+    expect(driver.events.getForConversation('casc-1')).toHaveLength(1)
+
+    s.removeConversation('casc-1')
+
+    // The whole point: deleting the conversation leaves no orphaned child rows.
+    expect(driver.transcripts.count('casc-1')).toBe(0)
+    expect(driver.events.getForConversation('casc-1')).toHaveLength(0)
+    expect(driver.conversations.get('casc-1')).toBeNull()
+  })
+
+  it('addTranscriptEntries refuses to persist for an unregistered conversation (orphan write guard)', () => {
+    const driver = createStore({ type: 'memory' })
+    driver.init()
+    const s = createConversationStore({ store: driver, enablePersistence: true })
+
+    // 'ghost' was never createConversation'd. Persisting its entries would strand
+    // invisible orphan transcript_entries -- the guard must skip the write.
+    s.addTranscriptEntries('ghost', [makeTranscriptEntry('user')], false)
+    expect(driver.transcripts.count('ghost')).toBe(0)
+
+    // Positive control: a registered conversation still persists normally.
+    s.createConversation('real', '/cwd')
+    s.addTranscriptEntries('real', [makeTranscriptEntry('user')], false)
+    expect(driver.transcripts.count('real')).toBe(1)
   })
 
   it('resumeConversation on an ended conversations restores it to active conversations', () => {
@@ -971,14 +1010,12 @@ describe('isEvictableDaemonGhost (dead daemon ghost cleanup)', () => {
   // requires `!agentHostMeta?.daemonMode` since `daemonMode` is written
   // exclusively by `buildDaemonLaunchMeta` in claudewerk's spawn path.
   it('never evicts a claudewerk-spawned daemon conv (agentHostMeta.daemonMode is set)', () => {
-    expect(
-      isEvictableDaemonGhost(ghost({ agentHostMeta: { daemonMode: 'new' } }), false, false, NOW, TTL),
-    ).toBe(false)
+    expect(isEvictableDaemonGhost(ghost({ agentHostMeta: { daemonMode: 'new' } }), false, false, NOW, TTL)).toBe(false)
   })
 
   it('still evicts a bare roster-mirror ghost (agentHostMeta has only daemonShort, no daemonMode)', () => {
-    expect(
-      isEvictableDaemonGhost(ghost({ agentHostMeta: { daemonShort: 'b764469d' } }), false, false, NOW, TTL),
-    ).toBe(true)
+    expect(isEvictableDaemonGhost(ghost({ agentHostMeta: { daemonShort: 'b764469d' } }), false, false, NOW, TTL)).toBe(
+      true,
+    )
   })
 })

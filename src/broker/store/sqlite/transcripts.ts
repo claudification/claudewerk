@@ -363,6 +363,18 @@ export function createSqliteTranscriptStore(db: Database): TranscriptStore {
       return result.changes
     },
 
+    deleteForConversation(conversationId) {
+      // Count BEFORE deleting: the transcript_fts_ad AFTER DELETE trigger keeps
+      // the FTS index in sync (so the row delete also clears search docs), but
+      // its shadow-table writes inflate run().changes -- making it useless as a
+      // deleted-row count. Read the true count from the prepared counter first.
+      const removed = (stmtCount.get({ conversationId: conversationId }) as { cnt: number }).cnt
+      db.prepare('DELETE FROM transcript_entries WHERE conversation_id = $conversationId').run({
+        conversationId: conversationId,
+      })
+      return removed
+    },
+
     getIndexStats() {
       const totalEntries = (db.prepare('SELECT COUNT(*) AS c FROM transcript_entries').get() as { c: number }).c
       const indexedDocs = (db.prepare('SELECT COUNT(*) AS c FROM transcript_fts_docsize').get() as { c: number }).c

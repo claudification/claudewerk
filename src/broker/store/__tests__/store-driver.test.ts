@@ -332,6 +332,27 @@ function runStoreTests(name: string, createDriver: () => StoreDriver) {
         const all = store.transcripts.getLatest(SESSION, 10)
         expect(all).toHaveLength(1)
       })
+
+      it('deleteForConversation removes every entry and returns the count', () => {
+        // Dedicated id: the shared SESSION accumulates entries across this
+        // describe's tests, so assert against an isolated conversation.
+        const DEL = 'tx-del-sess'
+        store.transcripts.append(DEL, EPOCH, [
+          makeTranscriptEntry('user', 'dfc-1'),
+          makeTranscriptEntry('assistant', 'dfc-2'),
+          makeTranscriptEntry('user', 'dfc-3'),
+        ])
+        expect(store.transcripts.count(DEL)).toBe(3)
+
+        const removed = store.transcripts.deleteForConversation(DEL)
+        expect(removed).toBe(3)
+        expect(store.transcripts.count(DEL)).toBe(0)
+        expect(store.transcripts.getLatest(DEL, 10)).toHaveLength(0)
+      })
+
+      it('deleteForConversation on an unknown conversation removes nothing', () => {
+        expect(store.transcripts.deleteForConversation('no-such-conv')).toBe(0)
+      })
     })
 
     // -----------------------------------------------------------------
@@ -381,6 +402,17 @@ function runStoreTests(name: string, createDriver: () => StoreDriver) {
 
         const remaining = store.events.getForConversation(SESSION)
         expect(remaining).toHaveLength(0)
+      })
+
+      it('deleteForConversation removes every event and returns the count', () => {
+        const DEL = 'ev-del-sess'
+        store.events.append(DEL, { type: 'SessionStart' })
+        store.events.append(DEL, { type: 'Stop' })
+        expect(store.events.getForConversation(DEL)).toHaveLength(2)
+
+        const removed = store.events.deleteForConversation(DEL)
+        expect(removed).toBe(2)
+        expect(store.events.getForConversation(DEL)).toHaveLength(0)
       })
     })
 

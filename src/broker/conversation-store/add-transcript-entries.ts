@@ -272,6 +272,21 @@ function resolveEntryTimestamp(raw: unknown): number {
 
 function persistToStore(ctx: ConversationStoreContext, conversationId: string, entries: TranscriptEntry[]): void {
   if (!ctx.store || entries.length === 0) return
+  // Orphan guard: never persist transcript rows for a conversation that is not
+  // registered in the in-memory Map. addTranscriptEntries already no-ops its
+  // metadata derivation for unregistered conversations (the `if (!conv) return`
+  // in the caller), but persistence historically ran first and still hit the
+  // store -- stranding invisible orphan transcript_entries when entries raced
+  // ahead of conversation registration, or arrived after the reaper evicted the
+  // conversation. getAllConversations serves only the Map, so a store row with
+  // no Map entry is unreachable. Skipping keeps store and Map consistent.
+  // See .claude/docs/plan-orphan-conversations.md (Phase 1, write-path source).
+  if (!ctx.conversations.has(conversationId)) {
+    console.warn(
+      `[transcript-store] skipped ${entries.length} entries for unregistered conversation ${conversationId.slice(0, 8)} (orphan-prevented)`,
+    )
+    return
+  }
   const inputs: TranscriptEntryInput[] = []
   for (const e of entries) {
     inputs.push({

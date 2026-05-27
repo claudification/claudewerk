@@ -223,6 +223,10 @@ export interface TranscriptStore {
   getWindow(conversationId: string, opts: WindowOpts): TranscriptEntryRecord[]
   count(conversationId: string, agentId?: string | null): number
   pruneOlderThan(cutoffMs: number): number
+  /** Delete every transcript entry for a conversation. Returns rows removed.
+   *  Used by removeConversation to cascade-delete on intentional deletion so
+   *  no orphan transcript_entries are left behind. */
+  deleteForConversation(conversationId: string): number
   /** Inspect FTS index health -- doc counts, completeness, conversation breadth. */
   getIndexStats(): SearchIndexStats
   /** Drop and rebuild the FTS index from transcript_entries. Memory driver no-ops. */
@@ -257,6 +261,9 @@ export interface EventStore {
     opts?: { types?: string[]; limit?: number; afterId?: number },
   ): EventRecord[]
   pruneOlderThan(cutoffMs: number): number
+  /** Delete every event for a conversation. Returns rows removed. Cascade
+   *  partner to TranscriptStore.deleteForConversation. */
+  deleteForConversation(conversationId: string): number
 }
 
 export interface EventInput {
