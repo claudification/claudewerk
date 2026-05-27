@@ -126,32 +126,41 @@ function dispatchAssistantEntry(
 ): boolean {
   const assistantEntry = entry as TranscriptAssistantEntry
   const changed = handleAssistantEntry(conv, assistantEntry)
-  recordTokenSample(ctx, conversationId, conv, assistantEntry)
+  recordTokenSample(ctx, conversationId, conv, assistantEntry, isInitial)
   handleMentionNotifications(ctx, conv, assistantEntry, isInitial)
   return changed
 }
 
 /**
  * Persist one per-message token sample to the token_samples time-series (powers
- * the live token-flow widget). One row per assistant API response; the store
- * INSERT OR IGNOREs on (conversation_id, uuid) so isInitial full-file re-reads
- * (reconnect/restart) and the Phase-3 backfill never double-count. Requires a
- * uuid -- without one we can't de-dup, so we skip rather than risk inflation.
- * Failures are swallowed: token stats must never break transcript ingest.
+ * the live token-flow widget) and broadcast it live. One row per assistant API
+ * response; the store INSERT OR IGNOREs on (conversation_id, uuid) so isInitial
+ * full-file re-reads (reconnect/restart) and the Phase-3 backfill never
+ * double-count. Requires a uuid -- without one we can't de-dup, so we skip
+ * rather than risk inflation.
+ *
+ * The live `token_sample` broadcast fires ONLY for newly-inserted (non-dup)
+ * samples AND only when !isInitial -- so a full-file re-read never replays
+ * history onto the live widget. The broker emits it globally (project '*',
+ * gated by chat:read on '*'); reconnecting clients re-seed from the REST window
+ * query, so no replay buffer is needed. Failures are swallowed: token stats
+ * must never break transcript ingest.
  */
 function recordTokenSample(
   ctx: ConversationStoreContext,
   conversationId: string,
   conv: Conversation,
   entry: TranscriptAssistantEntry,
+  isInitial: boolean,
 ): void {
   if (!ctx.store || !entry.uuid) return
   const sample = perMessageTokenSample(conv, entry)
   if (!sample) return
+  const timestamp = resolveEntryTimestamp(entry.timestamp)
   try {
-    ctx.store.tokens.recordSample({
+    const inserted = ctx.store.tokens.recordSample({
       uuid: entry.uuid,
-      timestamp: resolveEntryTimestamp(entry.timestamp),
+      timestamp,
       conversationId,
       sentinelId: conv.hostSentinelId,
       profile: conv.resolvedProfile,
@@ -161,6 +170,23 @@ function recordTokenSample(
       cacheReadTokens: sample.cacheReadTokens,
       cacheWriteTokens: sample.cacheWriteTokens,
     })
+    if (inserted && !isInitial) {
+      ctx.broadcastConversationScoped(
+        {
+          type: 'token_sample',
+          conversationId,
+          timestamp,
+          sentinelId: conv.hostSentinelId,
+          profile: conv.resolvedProfile || 'default',
+          model: sample.model,
+          inputTokens: sample.inputTokens,
+          outputTokens: sample.outputTokens,
+          cacheReadTokens: sample.cacheReadTokens,
+          cacheWriteTokens: sample.cacheWriteTokens,
+        },
+        '*',
+      )
+    }
   } catch (err) {
     console.error('[token-samples] recordSample failed:', err instanceof Error ? err.message : err)
   }

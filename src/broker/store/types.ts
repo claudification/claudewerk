@@ -605,8 +605,11 @@ export interface TokenBucket {
 }
 
 export interface TokenStore {
-  /** Record one per-message sample. INSERT OR IGNORE on (conversation_id, uuid). */
-  recordSample(sample: TokenSampleInput): void
+  /** Record one per-message sample. INSERT OR IGNORE on (conversation_id, uuid).
+   *  Returns true if a NEW row was inserted, false if it was a duplicate -- the
+   *  caller broadcasts only newly-inserted samples so isInitial re-reads never
+   *  replay history as live. */
+  recordSample(sample: TokenSampleInput): boolean
   /** Bucketed aggregation for the flow chart (global series or per-profile series). */
   queryBuckets(filter: TokenBucketFilter): TokenBucket[]
   /** Delete samples older than cutoffMs. Returns rows deleted. */

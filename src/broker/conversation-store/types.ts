@@ -57,6 +57,8 @@ export interface ControlPanelMessage {
     | 'conversation_status_transition'
     | 'socket_replaced'
     | 'phantom_reap_candidate'
+    // Live per-message token sample (powers the token-flow widget)
+    | 'token_sample'
   conversationId?: string
   previousConversationId?: string
   conversation?: ConversationSummary
@@ -99,4 +101,15 @@ export interface ControlPanelMessage {
   via?: string
   status?: string
   willEnd?: boolean
+  // Live token sample (token_sample). Raw PER-MESSAGE usage for the token-flow
+  // widget. conversationId + sentinelId reuse the fields above. timestamp is the
+  // assistant message time; profile/model identify the series; the four token
+  // counts are this single API response (NOT cumulative).
+  timestamp?: number
+  profile?: string
+  model?: string
+  inputTokens?: number
+  outputTokens?: number
+  cacheReadTokens?: number
+  cacheWriteTokens?: number
 }

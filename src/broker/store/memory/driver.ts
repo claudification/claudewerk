@@ -1041,9 +1041,10 @@ function createTokenStore(): TokenStore {
   return {
     recordSample(s) {
       const key = `${s.conversationId}\0${s.uuid}`
-      if (seen.has(key)) return
+      if (seen.has(key)) return false
       seen.add(key)
       samples.push({ ...s, sentinelId: s.sentinelId ?? '', profile: profileBucketMem(s.profile) })
+      return true
     },
 
     queryBuckets(filter) {

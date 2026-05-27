@@ -140,7 +140,7 @@ function createMockStoreDriver(): StoreDriver {
     pruneOlderThan: () => ({ turns: 0, hourly: 0 }),
   }
   const noopTokens = {
-    recordSample: noop,
+    recordSample: () => false,
     queryBuckets: () => [],
     pruneOlderThan: () => 0,
   }

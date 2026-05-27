@@ -33,8 +33,8 @@ export function createSqliteTokenStore(db: Database): TokenStore {
 
   const stmtPrune = db.prepare('DELETE FROM token_samples WHERE timestamp < $cutoff')
 
-  function recordSample(s: TokenSampleInput): void {
-    stmtInsert.run({
+  function recordSample(s: TokenSampleInput): boolean {
+    const result = stmtInsert.run({
       uuid: s.uuid,
       timestamp: s.timestamp,
       conversationId: s.conversationId,
@@ -46,6 +46,7 @@ export function createSqliteTokenStore(db: Database): TokenStore {
       cacheReadTokens: s.cacheReadTokens,
       cacheWriteTokens: s.cacheWriteTokens,
     })
+    return (result.changes ?? 0) > 0
   }
 
   function queryBuckets(filter: TokenBucketFilter): TokenBucket[] {
