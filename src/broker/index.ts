@@ -341,24 +341,38 @@ async function main() {
     }
   }
 
-  // Schedule cost data cleanup (30-day retention, runs daily)
+  // Schedule cost data cleanup (30-day retention, runs daily). Token-flow
+  // samples get a shorter 7-day window (disposable per-message time-series; the
+  // longest widget view is 1d).
   const COST_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
-  const costCleanupTimer = setInterval(
-    () => {
-      const cutoff = Date.now() - COST_RETENTION_MS
-      const deleted = store.costs.pruneOlderThan(cutoff)
-      if (deleted.turns > 0 || deleted.hourly > 0) {
-        console.log(`[cost] Cleanup: ${deleted.turns} turns, ${deleted.hourly} hourly rows removed (>30d)`)
-      }
-    },
-    24 * 60 * 60 * 1000,
-  )
-  // Prune once at startup too (don't block startup on it, but fire-and-forget)
-  {
-    const cutoff = Date.now() - COST_RETENTION_MS
-    const deleted = store.costs.pruneOlderThan(cutoff)
+  const TOKEN_SAMPLE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
+  const pruneCostAndTokens = (label: string) => {
+    const now = Date.now()
+    const deleted = store.costs.pruneOlderThan(now - COST_RETENTION_MS)
     if (deleted.turns > 0 || deleted.hourly > 0) {
-      console.log(`[cost] Startup cleanup: ${deleted.turns} turns, ${deleted.hourly} hourly rows removed (>30d)`)
+      console.log(`[cost] ${label}: ${deleted.turns} turns, ${deleted.hourly} hourly rows removed (>30d)`)
+    }
+    const tokenRows = store.tokens.pruneOlderThan(now - TOKEN_SAMPLE_RETENTION_MS)
+    if (tokenRows > 0) {
+      console.log(`[token-flow] ${label}: ${tokenRows} token samples removed (>7d)`)
+    }
+  }
+  const costCleanupTimer = setInterval(() => pruneCostAndTokens('Cleanup'), 24 * 60 * 60 * 1000)
+  // Prune once at startup too (fire-and-forget).
+  pruneCostAndTokens('Startup cleanup')
+
+  // One-shot token-flow backfill: populate token_samples from recent assistant
+  // transcript_entries (last 3 days) so the widget shows history on first
+  // deploy instead of an empty chart. kv-gated so it runs once, not every boot;
+  // INSERT OR IGNORE keeps it safe regardless.
+  if (!store.kv.get('token-samples-backfilled')) {
+    try {
+      const since = Date.now() - 3 * 24 * 60 * 60 * 1000
+      const inserted = store.tokens.backfillFromTranscripts(since)
+      store.kv.set('token-samples-backfilled', { at: Date.now(), inserted })
+      console.log(`[token-flow] Backfill: ${inserted} samples from transcripts (<=3d)`)
+    } catch (err) {
+      console.error(`[token-flow] Backfill failed: ${err instanceof Error ? err.message : err}`)
     }
   }
 

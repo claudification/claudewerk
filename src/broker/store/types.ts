@@ -614,6 +614,15 @@ export interface TokenStore {
   queryBuckets(filter: TokenBucketFilter): TokenBucket[]
   /** Delete samples older than cutoffMs. Returns rows deleted. */
   pruneOlderThan(cutoffMs: number): number
+  /**
+   * One-shot backfill from assistant transcript_entries since `sinceMs`, so the
+   * widget shows recent history on first deploy instead of an empty chart.
+   * Idempotent (INSERT OR IGNORE on uuid). sentinel/profile are attributed from
+   * the most recent `turns` row per conversation; conversations with no cost
+   * turns fall back to ''/'default' (global view unaffected). Returns rows
+   * inserted. Memory driver has no transcript_entries -> returns 0.
+   */
+  backfillFromTranscripts(sinceMs: number): number
 }
 
 export interface CostStore {

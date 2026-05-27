@@ -143,6 +143,7 @@ function createMockStoreDriver(): StoreDriver {
     recordSample: () => false,
     queryBuckets: () => [],
     pruneOlderThan: () => 0,
+    backfillFromTranscripts: () => 0,
   }
   return {
     conversations: noopStore,

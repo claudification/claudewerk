@@ -1202,3 +1202,79 @@ runStoreTests('MemoryDriver', () => createMemoryDriver())
 runStoreTests('SqliteDriver', () =>
   createSqliteDriver({ type: 'sqlite', dataDir: mkdtempSync(join(tmpdir(), 'store-test-')) }),
 )
+
+// -----------------------------------------------------------------
+// TokenStore.backfillFromTranscripts -- sqlite-only (scans transcript_entries
+// + turns, which the memory driver does not back).
+// -----------------------------------------------------------------
+
+describe('TokenStore backfill (sqlite)', () => {
+  it('backfills assistant entries, attributes profile from turns, skips synthetic/user, idempotent', () => {
+    const store = createSqliteDriver({ type: 'sqlite', dataDir: mkdtempSync(join(tmpdir(), 'token-backfill-')) })
+    store.init()
+
+    // A cost turn provides sentinel/profile attribution for conversation c1.
+    store.costs.recordTurn({
+      timestamp: 1000,
+      conversationId: 'c1',
+      projectUri: 'claude://default/p',
+      account: '',
+      orgId: '',
+      model: 'claude-opus-4',
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      costUsd: 0,
+      exactCost: true,
+      sentinelId: 'snt_x',
+      profile: 'work',
+    })
+
+    store.transcripts.append('c1', 'live', [
+      {
+        type: 'assistant',
+        uuid: 'm1',
+        timestamp: 2000,
+        content: {
+          type: 'assistant',
+          message: {
+            model: 'claude-opus-4',
+            usage: {
+              input_tokens: 100,
+              output_tokens: 50,
+              cache_read_input_tokens: 900,
+              cache_creation_input_tokens: 10,
+            },
+          },
+        },
+      },
+      {
+        type: 'assistant',
+        uuid: 'm2',
+        timestamp: 3000,
+        content: { type: 'assistant', message: { model: '<synthetic>', usage: { input_tokens: 5, output_tokens: 5 } } },
+      },
+      {
+        type: 'user',
+        uuid: 'u1',
+        timestamp: 2500,
+        content: { type: 'user', message: { role: 'user', content: 'hi' } },
+      },
+    ])
+
+    const inserted = store.tokens.backfillFromTranscripts(0)
+    expect(inserted).toBe(1) // m1 only; synthetic + user skipped
+
+    const buckets = store.tokens.queryBuckets({ from: 0, to: 9999, bucketMs: 60_000, groupBy: 'profile' })
+    expect(buckets).toHaveLength(1)
+    expect(buckets[0].profile).toBe('work')
+    expect(buckets[0].sentinelId).toBe('snt_x')
+    expect(buckets[0].outputTokens).toBe(50)
+    expect(buckets[0].cacheReadTokens).toBe(900)
+
+    // Idempotent: INSERT OR IGNORE means a second run inserts nothing.
+    expect(store.tokens.backfillFromTranscripts(0)).toBe(0)
+    store.close()
+  })
+})

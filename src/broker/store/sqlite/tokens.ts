@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite'
+import { type PerMessageTokenSample, sampleFromMessageUsage } from '../../../shared/token-usage'
 import type { TokenBucket, TokenBucketFilter, TokenSampleInput, TokenStore } from '../types'
 
 type Binds = Record<string, string | number | null>
@@ -6,6 +7,17 @@ type Binds = Record<string, string | number | null>
 function queryAll(db: Database, sql: string, binds?: Binds): unknown[] {
   const stmt = db.query(sql)
   return binds ? stmt.all(binds as never) : stmt.all()
+}
+
+/** Parse a stored transcript_entries.content JSON blob into a token sample. */
+function parseEntryUsage(content: string): PerMessageTokenSample | null {
+  let entry: { message?: { usage?: Parameters<typeof sampleFromMessageUsage>[0]; model?: string } }
+  try {
+    entry = JSON.parse(content)
+  } catch {
+    return null
+  }
+  return sampleFromMessageUsage(entry.message?.usage, entry.message?.model, '')
 }
 
 /** Normalise profile to its bucket name. Empty / undefined -> 'default'. */
@@ -102,5 +114,54 @@ export function createSqliteTokenStore(db: Database): TokenStore {
     return stmtPrune.run({ cutoff: cutoffMs }).changes ?? 0
   }
 
-  return { recordSample, queryBuckets, pruneOlderThan }
+  function backfillFromTranscripts(sinceMs: number): number {
+    // conversation -> latest (sentinelId, profile) from the cost `turns` table.
+    // Last write wins as we scan in timestamp order, so we end on the most
+    // recent attribution. Conversations with no turns are absent -> defaults.
+    const attribution = new Map<string, { sentinelId: string; profile: string }>()
+    const turnRows = queryAll(
+      db,
+      'SELECT conversation_id, sentinel_id, profile FROM turns WHERE timestamp >= $since ORDER BY timestamp',
+      { since: sinceMs },
+    ) as Array<Record<string, unknown>>
+    for (const r of turnRows) {
+      attribution.set(r.conversation_id as string, {
+        sentinelId: (r.sentinel_id as string) || '',
+        profile: (r.profile as string) || 'default',
+      })
+    }
+
+    const entryRows = queryAll(
+      db,
+      `SELECT conversation_id, uuid, content, timestamp FROM transcript_entries
+       WHERE type = 'assistant' AND timestamp >= $since`,
+      { since: sinceMs },
+    ) as Array<Record<string, unknown>>
+
+    let inserted = 0
+    const run = db.transaction(() => {
+      for (const row of entryRows) {
+        const sample = parseEntryUsage(row.content as string)
+        if (!sample) continue
+        const attr = attribution.get(row.conversation_id as string)
+        const ok = recordSample({
+          uuid: row.uuid as string,
+          timestamp: row.timestamp as number,
+          conversationId: row.conversation_id as string,
+          sentinelId: attr?.sentinelId ?? '',
+          profile: attr?.profile ?? 'default',
+          model: sample.model,
+          inputTokens: sample.inputTokens,
+          outputTokens: sample.outputTokens,
+          cacheReadTokens: sample.cacheReadTokens,
+          cacheWriteTokens: sample.cacheWriteTokens,
+        })
+        if (ok) inserted++
+      }
+    })
+    run()
+    return inserted
+  }
+
+  return { recordSample, queryBuckets, pruneOlderThan, backfillFromTranscripts }
 }

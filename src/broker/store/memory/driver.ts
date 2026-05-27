@@ -1074,6 +1074,12 @@ function createTokenStore(): TokenStore {
       }
       return before - samples.length
     },
+
+    // Memory driver has no transcript_entries table to scan -- backfill is a
+    // sqlite/prod concern. Tests exercise recordSample directly.
+    backfillFromTranscripts() {
+      return 0
+    },
   }
 }
 
