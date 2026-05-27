@@ -164,7 +164,7 @@ function ProfilePill({ profile, active, disabled, onClick, usage }: ProfilePillP
       style={active ? undefined : colorStyle}
     >
       <User className={cn('w-3 h-3', profile.authed ? '' : 'text-amber-400/80')} style={fgColor} />
-      <span style={fgColor}>{profile.name}</span>
+      <span style={fgColor}>{profile.label ?? profile.name}</span>
       {hasUsage && (
         <span className={cn('text-[9px] tabular-nums', usageTextColor(worstPct))}>{Math.round(worstPct)}%</span>
       )}

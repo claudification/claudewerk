@@ -17,7 +17,8 @@
 
 import type { LaunchConfig } from '@shared/protocol'
 import { Shuffle } from 'lucide-react'
-import { type SentinelStatusInfo, useConversationsStore } from '@/hooks/use-conversations'
+import { useConversationsStore } from '@/hooks/use-conversations'
+import { findProfileMeta, profileDisplayName } from '@/lib/profile-display'
 
 interface SentinelProfileBadgeProps {
   /** Resolved profile NAME the sentinel picked at spawn time. Read from
@@ -29,13 +30,6 @@ interface SentinelProfileBadgeProps {
   /** The user's original intent -- `{ kind: 'profile' | 'pool' }`.
    *  Surfaced as the shuffle icon for `pool`. */
   launchConfig?: LaunchConfig
-}
-
-function findProfileMeta(sentinels: SentinelStatusInfo[], hostSentinelAlias: string | undefined, profileName: string) {
-  if (!hostSentinelAlias) return undefined
-  const alias = hostSentinelAlias.toLowerCase()
-  const match = sentinels.find(s => s.alias.toLowerCase() === alias)
-  return match?.profiles?.find(p => p.name === profileName)
 }
 
 type SentinelProfileIntent = LaunchConfig['sentinelProfile']
@@ -80,7 +74,7 @@ export function SentinelProfileBadge({ resolvedProfile, hostSentinelAlias, launc
       title={title}
     >
       {isShuffleIntent && <Shuffle className="w-2.5 h-2.5" />}
-      {profileMeta?.showLabel === false ? null : profileName}
+      {profileMeta?.showLabel === false ? null : profileDisplayName(profileMeta, profileName)}
     </span>
   )
 }

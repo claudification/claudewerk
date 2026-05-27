@@ -1,7 +1,10 @@
+import { useConversationsStore } from '@/hooks/use-conversations'
+import { findProfileMeta, profileDisplayName } from '@/lib/profile-display'
 import type { Conversation } from '@/lib/types'
 import { cn, formatEffort, formatModel, formatPermissionMode } from '@/lib/utils'
 
 export function StatusRow({ conversation, model }: { conversation: Conversation; model: string | undefined }) {
+  const sentinels = useConversationsStore(s => s.sentinels)
   return (
     <div className="flex items-center gap-3 flex-wrap">
       <span
@@ -41,9 +44,13 @@ export function StatusRow({ conversation, model }: { conversation: Conversation;
       )}
       {conversation.claudeAuth?.email &&
         (() => {
-          const profile = conversation.resolvedProfile ?? 'default'
+          const profileName = conversation.resolvedProfile ?? 'default'
+          const meta = findProfileMeta(sentinels, conversation.hostSentinelAlias, profileName)
+          const display = profileDisplayName(meta, profileName)
           const auth = conversation.claudeAuth
           const tip = [
+            // When a label overrides the raw key, surface the key on hover.
+            meta?.label ? `Profile: ${profileName}` : null,
             auth.email,
             auth.orgName ? `org: ${auth.orgName}` : null,
             auth.subscriptionType ? `[${auth.subscriptionType}]` : null,
@@ -52,7 +59,7 @@ export function StatusRow({ conversation, model }: { conversation: Conversation;
             .join('\n')
           return (
             <span className="text-cyan-400/70 text-[10px] cursor-help" title={tip}>
-              {profile}
+              {display}
             </span>
           )
         })()}
