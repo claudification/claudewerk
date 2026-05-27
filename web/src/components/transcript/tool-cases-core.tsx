@@ -1,4 +1,5 @@
 import { structuredPatch } from 'diff'
+import { memo, useMemo } from 'react'
 import { cleanCdPrefix, shortPath } from './shared'
 import type { ToolCaseInput, ToolCaseResult } from './tool-case-types'
 import { BashOutput, DiffView, ReplResult, ReplView, ShellCommand, WritePreview } from './tool-renderers'
@@ -163,6 +164,33 @@ function renderTextRead(
   return { summary, details }
 }
 
+/** Computes the Edit patch and renders the coloured diff. The structuredPatch
+ *  call is in a useMemo keyed on the (string) inputs, NOT in renderEdit's render
+ *  body -- so a ToolLine re-render (e.g. subagents-ref churn during streaming)
+ *  reuses the cached hunks instead of re-diffing the whole file, and DiffView
+ *  receives a stable `patches` ref so its own memo holds (no Shiki re-tokenize).
+ *  See edit-diff-rerender.test.tsx. */
+const EditDiff = memo(function EditDiff({
+  oldText,
+  newText,
+  originalFile,
+  filePath,
+}: {
+  oldText: string
+  newText: string
+  originalFile?: string
+  filePath?: string
+}) {
+  const patches = useMemo(() => {
+    const patch = originalFile
+      ? structuredPatch('file', 'file', originalFile, originalFile.replace(oldText, newText), '', '', { context: 3 })
+      : structuredPatch('file', 'file', oldText, newText, '', '', { context: 3 })
+    return patch.hunks
+  }, [oldText, newText, originalFile])
+  if (patches.length === 0) return null
+  return <DiffView patches={patches} filePath={filePath} />
+})
+
 export function renderEdit({ input, toolUseResult, isError }: ToolCaseInput): ToolCaseResult {
   const path = input.path as string
   const oldText = input.oldText as string | undefined
@@ -175,19 +203,8 @@ export function renderEdit({ input, toolUseResult, isError }: ToolCaseInput): To
     if (patches?.length) {
       details = <DiffView patches={patches} filePath={path} />
     } else if (oldText && newText) {
-      const oldStr = oldText
-      const newStr = newText
       const originalFile = (toolUseResult as { originalFile?: string })?.originalFile
-      let patch: ReturnType<typeof structuredPatch>
-      if (originalFile) {
-        const modifiedFile = originalFile.replace(oldStr, newStr)
-        patch = structuredPatch('file', 'file', originalFile, modifiedFile, '', '', { context: 3 })
-      } else {
-        patch = structuredPatch('file', 'file', oldStr, newStr, '', '', { context: 3 })
-      }
-      if (patch.hunks.length > 0) {
-        details = <DiffView patches={patch.hunks} filePath={path} />
-      }
+      details = <EditDiff oldText={oldText} newText={newText} originalFile={originalFile} filePath={path} />
     }
   }
   return { summary, details }
