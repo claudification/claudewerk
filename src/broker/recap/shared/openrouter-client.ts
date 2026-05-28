@@ -123,7 +123,7 @@ async function fetchOnce(
       body: JSON.stringify(body),
       signal: ctrl.signal,
     })
-    if (!res.ok) throw errorForStatus(res)
+    if (!res.ok) throw await errorForStatus(res)
     return res
   } catch (err) {
     if ((err as Error).name === 'AbortError') throw new TimeoutError()
@@ -133,13 +133,34 @@ async function fetchOnce(
   }
 }
 
-function errorForStatus(res: Response): Error {
+async function errorForStatus(res: Response): Promise<Error> {
+  // Read the body on EVERY non-2xx -- a bare status code is undebuggable. The
+  // OpenRouter 400 body names the actual reason (bad model slug, param, etc).
+  const body = await safeReadBody(res)
   if (res.status === 429) {
     const retryAfter = res.headers.get('retry-after')
     const retryMs = retryAfter ? Math.max(0, Number(retryAfter)) * 1000 : undefined
     return new RateLimitError(Number.isFinite(retryMs) ? retryMs : undefined)
   }
-  return new OpenRouterError(`OpenRouter returned ${res.status} ${res.statusText}`, res.status)
+  const suffix = body ? `: ${body}` : ''
+  return new OpenRouterError(
+    `OpenRouter returned ${res.status} ${res.statusText}${suffix}`,
+    res.status,
+    undefined,
+    body,
+  )
+}
+
+/** Read the error body defensively -- never let body-reading mask the original
+ *  HTTP error. Truncated so a huge HTML error page can't flood the logs. */
+async function safeReadBody(res: Response): Promise<string | undefined> {
+  try {
+    const text = (await res.text()).trim()
+    if (!text) return undefined
+    return text.length > 1000 ? `${text.slice(0, 1000)}...[truncated]` : text
+  } catch {
+    return undefined
+  }
 }
 
 async function parseResponse(model: string, res: Response): Promise<ChatResponse> {

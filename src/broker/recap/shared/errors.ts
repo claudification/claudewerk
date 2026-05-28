@@ -3,6 +3,9 @@ export class OpenRouterError extends Error {
     message: string,
     public readonly status?: number,
     public readonly retryAfterMs?: number,
+    /** Raw response body from OpenRouter on a non-2xx (the actual reason a
+     *  request was rejected -- a bare status code is undebuggable). */
+    public readonly body?: string,
   ) {
     super(message)
     this.name = 'OpenRouterError'

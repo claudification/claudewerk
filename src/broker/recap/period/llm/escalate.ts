@@ -11,9 +11,15 @@ const OPUS_MODEL = 'anthropic/claude-opus-4.8'
 const HUMAN_MODEL = process.env.CLAUDWERK_RECAP_HUMAN_MODEL || process.env.RCLAUDE_RECAP_HUMAN_MODEL || OPUS_MODEL
 const AGENT_MODEL = process.env.CLAUDWERK_RECAP_AGENT_MODEL || process.env.RCLAUDE_RECAP_AGENT_MODEL || SONNET_MODEL
 
-// Above this input size, fall back to Sonnet regardless of audience: Opus at
-// 600k+ context is needlessly expensive and the marginal quality gain is small.
-const CHUNK_CEILING_CHARS = 600_000
+// Opus 4.8 has a 1M-token context window, so we DON'T downgrade large human
+// recaps -- we eat the cost and use the big-context model (Jonas's call). This
+// ceiling only catches inputs that would blow past ~1M tokens even for Opus:
+// ~3.2M chars leaves headroom for the 8k-token output + tokenizer slack
+// (~3.7 chars/token). Above it we fall back to Sonnet as a best-effort safety
+// valve -- the real fix for genuinely-huge periods is the deferred chunk-and-
+// merge phase (per-chunk verbose recaps -> recap-the-recaps; see
+// plan-recap-2.0.md "Deferred: chunked map-reduce recaps").
+const CHUNK_CEILING_CHARS = 3_200_000
 
 export interface ModelChoice {
   model: string

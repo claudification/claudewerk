@@ -33,16 +33,15 @@ describe('buildPrompt', () => {
     expect(large.inputChars).toBeGreaterThan(medium.inputChars)
   })
 
-  test('large fixture lands in the Sonnet escalation band', () => {
-    // The escalate threshold is 50_000 chars; the large fixture is sized to
-    // sit comfortably above it so escalate.test.ts also exercises the band.
+  test('large fixture produces a substantial prompt (size-growth guard)', () => {
     const out = buildPrompt(makePromptInputs('large'))
     expect(out.inputChars).toBeGreaterThan(50_000)
   })
 
-  test('huge fixture exceeds the chunk-reduce ceiling', () => {
+  test('huge fixture is large but stays under the 1M-ctx ceiling (rides Opus)', () => {
     const out = buildPrompt(makePromptInputs('huge'))
     expect(out.inputChars).toBeGreaterThan(600_000)
+    expect(out.inputChars).toBeLessThan(3_200_000)
   })
 
   test('OUTPUT FORMAT: includes both YAML frontmatter spec and TL;DR section', () => {
