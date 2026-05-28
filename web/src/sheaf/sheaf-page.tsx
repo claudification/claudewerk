@@ -111,7 +111,7 @@ function Header({ windowH, onWindowH, onRefresh, loading, generatedAt }: HeaderP
     <div className="shrink-0 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
       <div className="max-w-[1600px] mx-auto px-4 py-3 flex items-center gap-4">
         <Button variant="ghost" size="sm" onClick={backToDashboard} className="gap-1">
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft className="size-4" />
           <span className="text-xs">Back</span>
         </Button>
         <h1 className="text-lg font-semibold tracking-tight">SHEAF</h1>
@@ -157,7 +157,7 @@ function Totals({ data, windowH }: { data: SheafResponse | null; windowH: number
   if (!data) {
     return (
       <div className="shrink-0 border-b border-border/50 bg-muted/10 px-4 py-2 text-xs text-muted-foreground">
-        <div className="max-w-[1600px] mx-auto">last {windowH}h - loading...</div>
+        <div className="max-w-[1600px] mx-auto">last {windowH}h - loading…</div>
       </div>
     )
   }

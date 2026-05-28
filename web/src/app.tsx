@@ -451,7 +451,7 @@ export function App() {
     return (
       <AuthGate>
         <Suspense
-          fallback={<div className="fixed inset-0 flex items-center justify-center text-muted-foreground">Loading sheaf...</div>}
+          fallback={<div className="fixed inset-0 flex items-center justify-center text-muted-foreground">Loading sheaf…</div>}
         >
           <SheafPage />
         </Suspense>
