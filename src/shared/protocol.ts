@@ -649,6 +649,7 @@ export type AgentHostMessage =
   | ConversationInfoUpdate
   | ConversationNameUpdate
   | CwdChangedMessage
+  | ThinkingProgress
   | SpawnFailed
   | MonitorUpdate
   | ScheduledTaskFire
@@ -684,6 +685,37 @@ export interface CwdChangedMessage {
   conversationId: string
   /** Absolute working directory the agent moved into. */
   cwd: string
+}
+
+/**
+ * Backend-agnostic "the model is currently thinking" live progress ping.
+ *
+ * Emitted while the backend is in an extended-thinking phase (CC's
+ * `system/thinking_tokens` events; equivalent signals from other backends).
+ * Each agent host translates ITS backend's native thinking-progress signal
+ * into this one shape. The broker reads only `tokens` / `delta` -- never a
+ * backend-specific payload -- and forwards to live subscribers.
+ *
+ * EPHEMERAL: this is an explicit, documented deviation from the
+ * EVERYTHING IS A STRUCTURED MESSAGE persist+replay default. Thinking
+ * progress is a pure liveness/presence cue (like a typing indicator),
+ * visible only to currently-watching subscribers. The broker MUST NOT
+ * persist it or add it to any replay buffer; the agent host MUST NOT
+ * buffer it across reconnects. On reload, the transcript shows no trace.
+ *
+ * Terminus: NOT carried by a separate message. The control panel clears
+ * the live indicator when (a) a new `assistant` transcript entry arrives
+ * for the conversation, or (b) no ping has been seen for ~4s.
+ */
+export interface ThinkingProgress {
+  type: 'thinking_progress'
+  conversationId: string
+  /** Cumulative thinking-token estimate from the backend. */
+  tokens: number
+  /** Increment since the previous ping. Optional -- first ping has no delta. */
+  delta?: number
+  /** Wall-clock timestamp at the agent host, ms since epoch. */
+  t: number
 }
 
 // Session info from stream-json init (skills, tools, agents, etc.)
