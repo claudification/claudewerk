@@ -1,12 +1,4 @@
-import {
-  closestCenter,
-  DndContext,
-  type DragEndEvent,
-  MouseSensor,
-  TouchSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core'
+import { closestCenter, DndContext, MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { projectIdentityKey } from '@shared/project-uri'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -17,12 +9,13 @@ import {
   useConversationsStore,
   wsSend,
 } from '@/hooks/use-conversations'
-import type { ProjectOrder, ProjectOrderGroup, ProjectOrderNode } from '@/lib/types'
-import { cn, haptic, parseWorktreeUri } from '@/lib/utils'
+import type { ProjectOrder, ProjectOrderNode } from '@/lib/types'
+import { cn, parseWorktreeUri } from '@/lib/utils'
 import { MaybeProfiler } from './perf-profiler'
 import { ConversationCompactPeek, InactiveProjectItem } from './project-list/conversation-item'
 import { GroupNode, NewGroupDropTarget, SortableNode } from './project-list/conversation-sorting'
 import { PinnedProjectNode, ProjectNode } from './project-list/project-node'
+import { useProjectDragDrop } from './project-list/use-project-drag-drop'
 
 // ─── Main ProjectList ──────────────────────────────────────────────
 
@@ -316,142 +309,7 @@ export function ProjectList() {
   )
   const [isDragging, setIsDragging] = useState(false)
 
-  // Find which group an ID belongs to
-  function findParentGroup(id: string): string | null {
-    for (const node of projectOrder.tree) {
-      if (node.type === 'group') {
-        if (node.children.some(c => c.id === id)) return node.id
-      }
-    }
-    return null
-  }
-
-  function handleDragEnd(event: DragEndEvent) {
-    setIsDragging(false)
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-    haptic('tick')
-
-    const draggedId = active.id as string
-    const overId = over.id as string
-
-    // Drop onto "new group" target
-    if (overId === '__new_group__') {
-      const name = window.prompt('Group name:')
-      if (!name?.trim()) return
-      const groupId = `group-${name.trim().toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`
-      // Remove from current position
-      const newTree = removeFromTree(projectOrder.tree, draggedId)
-      // Add new group with this item
-      const conversationNode = draggedId.startsWith('group-')
-        ? projectOrder.tree.find(n => n.id === draggedId) // dragging a group into a new group? just rename
-        : { id: draggedId, type: 'project' as const }
-      if (conversationNode) {
-        newTree.push({
-          id: groupId,
-          type: 'group',
-          name: name.trim(),
-          children: [conversationNode.type === 'group' ? conversationNode : { id: draggedId, type: 'project' }],
-        })
-      }
-      persistTree(newTree)
-      return
-    }
-
-    // Is the over target a group header?
-    const overIsGroup = overId.startsWith('group-')
-    const draggedIsGroup = draggedId.startsWith('group-')
-    const draggedIsInTree = projectOrder.tree.some(n => n.id === draggedId) || findParentGroup(draggedId) !== null
-    const overIsInTree = projectOrder.tree.some(n => n.id === overId) || findParentGroup(overId) !== null
-
-    if (draggedIsGroup && overIsGroup) {
-      // Reorder groups at root level
-      const newTree = [...projectOrder.tree]
-      const fromIdx = newTree.findIndex(n => n.id === draggedId)
-      const toIdx = newTree.findIndex(n => n.id === overId)
-      if (fromIdx === -1 || toIdx === -1) return
-      const [moved] = newTree.splice(fromIdx, 1)
-      newTree.splice(toIdx, 0, moved)
-      persistTree(newTree)
-    } else if (overIsGroup && !draggedIsGroup) {
-      // Drop conversation into a group
-      const newTree = removeFromTree(projectOrder.tree, draggedId)
-      const targetGroup = newTree.find(n => n.id === overId && n.type === 'group') as ProjectOrderGroup | undefined
-      if (targetGroup) {
-        targetGroup.children.push({
-          id: draggedId,
-          type: 'project',
-        })
-      }
-      persistTree(newTree)
-    } else if (overIsInTree && !draggedIsInTree) {
-      // Drag unorganized onto organized -> pin it (insert near target)
-      const overParent = findParentGroup(overId)
-      const newTree = [...projectOrder.tree]
-      const conversationId = draggedId
-      if (overParent) {
-        const group = newTree.find(n => n.id === overParent && n.type === 'group') as ProjectOrderGroup | undefined
-        if (group) {
-          const idx = group.children.findIndex(c => c.id === overId)
-          group.children.splice(idx >= 0 ? idx : group.children.length, 0, { id: conversationId, type: 'project' })
-        }
-      } else {
-        const idx = newTree.findIndex(n => n.id === overId)
-        newTree.splice(idx >= 0 ? idx : newTree.length, 0, { id: conversationId, type: 'project' })
-      }
-      persistTree(newTree)
-    } else if (draggedIsInTree && !overIsInTree) {
-      // Drag organized onto unorganized -> unpin
-      const newTree = removeFromTree(projectOrder.tree, draggedId)
-      persistTree(newTree)
-    } else if (draggedIsInTree && overIsInTree) {
-      // Reorder within tree
-      const newTree = removeFromTree(projectOrder.tree, draggedId)
-      const draggedNode: ProjectOrderNode = { id: draggedId, type: 'project' }
-      // Find original node data (might be a group)
-      const origNode = findInTree(projectOrder.tree, draggedId)
-      const nodeToInsert = origNode || draggedNode
-
-      const overParent = findParentGroup(overId)
-      if (overParent) {
-        const group = newTree.find(n => n.id === overParent && n.type === 'group') as ProjectOrderGroup | undefined
-        if (group) {
-          const idx = group.children.findIndex(c => c.id === overId)
-          group.children.splice(idx >= 0 ? idx : group.children.length, 0, nodeToInsert)
-        }
-      } else {
-        const idx = newTree.findIndex(n => n.id === overId)
-        newTree.splice(idx >= 0 ? idx : newTree.length, 0, nodeToInsert)
-      }
-      persistTree(newTree)
-    }
-  }
-
-  function removeFromTree(tree: ProjectOrderNode[], id: string): ProjectOrderNode[] {
-    return tree
-      .filter(n => n.id !== id)
-      .map(n => {
-        if (n.type === 'group') return { ...n, children: n.children.filter(c => c.id !== id) }
-        return n
-      })
-  }
-
-  function findInTree(tree: ProjectOrderNode[], id: string): ProjectOrderNode | null {
-    for (const n of tree) {
-      if (n.id === id) return n
-      if (n.type === 'group') {
-        const found = n.children.find(c => c.id === id)
-        if (found) return found
-      }
-    }
-    return null
-  }
-
-  function persistTree(tree: ProjectOrderNode[]) {
-    const newOrder: ProjectOrder = { tree }
-    useConversationsStore.getState().setProjectOrder(newOrder)
-    saveProjectOrder(newOrder)
-  }
+  const handleDragEnd = useProjectDragDrop({ tree: projectOrder.tree, setIsDragging })
 
   if (structure.length === 0) {
     return (

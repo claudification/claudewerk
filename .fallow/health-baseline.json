@@ -3057,6 +3057,56 @@
       "crap_moderate": {
         "count": 1
       }
+    },
+    "web/src/components/project-list/launch-params-section.tsx": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/project-list/conversation-info-dialog.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/project-list/conversation-item-full.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "web/src/components/project-list/conversation-item-helpers.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/project-list/conversation-item-compact.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "web/src/components/spawn-dialog/use-spawn-action.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/project-list/use-project-drag-drop.ts": {
+      "crap_high": {
+        "count": 1
+      }
     }
   },
   "runtime_coverage_findings": [],

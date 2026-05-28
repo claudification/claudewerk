@@ -7,6 +7,7 @@ import type { Conversation, ProjectSettings } from '@/lib/types'
 import { cn, formatAge } from '@/lib/utils'
 import { renderProjectIcon } from '../project-settings-editor'
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog'
+import { BatchBroadcastInput, BatchReassignInputs } from './batch-action-inputs'
 import { ALL_BATCH_ACTIONS, type BatchAction } from './batch-actions'
 import { BatchProgress } from './batch-progress'
 
@@ -615,42 +616,18 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
               </div>
 
               {action.requiresInput === 'broadcast' && (
-                <textarea
-                  value={broadcastMessage}
-                  onChange={e => setBroadcastMessage(e.target.value)}
-                  placeholder="Message to broadcast to all selected conversations..."
-                  rows={3}
-                  className="w-full bg-muted/20 px-2 py-1 border border-border/40 outline-none focus:border-accent text-xs font-mono"
-                />
+                <BatchBroadcastInput value={broadcastMessage} onChange={setBroadcastMessage} />
               )}
               {action.requiresInput === 'reassign' && (
-                <div className="grid grid-cols-3 gap-2 text-xs">
-                  <input
-                    placeholder="target projectUri (optional)"
-                    value={reassignProject}
-                    onChange={e => setReassignProject(e.target.value)}
-                    className="bg-muted/20 px-2 py-1 border border-border/40 outline-none focus:border-accent"
-                  />
-                  <select
-                    value={reassignSentinel}
-                    onChange={e => setReassignSentinel(e.target.value)}
-                    className="bg-muted/20 px-2 py-1 border border-border/40"
-                  >
-                    <option value="">leave sentinel unchanged</option>
-                    <option value="__clear__">clear sentinel (use default)</option>
-                    {sentinels.map(s => (
-                      <option key={s.sentinelId} value={s.sentinelId}>
-                        {s.alias} ({s.sentinelId.slice(0, 8)})
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    placeholder="target profile (blank=unchanged, __clear__=default)"
-                    value={reassignProfile}
-                    onChange={e => setReassignProfile(e.target.value)}
-                    className="bg-muted/20 px-2 py-1 border border-border/40 outline-none focus:border-accent"
-                  />
-                </div>
+                <BatchReassignInputs
+                  project={reassignProject}
+                  sentinel={reassignSentinel}
+                  profile={reassignProfile}
+                  sentinels={sentinels}
+                  onProjectChange={setReassignProject}
+                  onSentinelChange={setReassignSentinel}
+                  onProfileChange={setReassignProfile}
+                />
               )}
 
               {confirmRequired && (

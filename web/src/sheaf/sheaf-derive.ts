@@ -66,6 +66,14 @@ export function sortProjects(projects: SheafProject[], sort: SortKey): SheafProj
   return copy
 }
 
+/** Flatten a spawn forest into a single node list, newest-started first. */
+export function flattenForest(forest: SheafNode[]): SheafNode[] {
+  const out: SheafNode[] = []
+  eachNode(forest, n => out.push(n))
+  out.sort((a, b) => b.startedAt - a.startedAt)
+  return out
+}
+
 export function isEditableTarget(el: EventTarget | null): boolean {
   if (!(el instanceof HTMLElement)) return false
   const tag = el.tagName

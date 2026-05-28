@@ -4,8 +4,8 @@
  */
 
 import type { SheafStatus } from '@shared/sheaf-types'
-import { ChevronsDownUp, ChevronsUpDown, Search, X } from 'lucide-react'
-import type { RefObject } from 'react'
+import { ChevronsDownUp, ChevronsUpDown, GitBranch, Search, Text, X } from 'lucide-react'
+import type { ReactNode, RefObject } from 'react'
 import { Button } from '@/components/ui/button'
 import { SORT_OPTIONS, type SortKey } from './sheaf-derive'
 import { STATUS_COLOR, STATUS_GLYPH, STATUS_ORDER } from './sheaf-tree'
@@ -97,6 +97,54 @@ function StatusChips({
   )
 }
 
+function ToggleBtn({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean
+  onClick: () => void
+  icon: ReactNode
+  label: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      title={`${active ? 'hide' : 'show'} ${label}`}
+      className={`flex items-center gap-1 px-1.5 py-1 rounded border text-[10px] uppercase tracking-wide transition-colors ${
+        active
+          ? 'border-foreground/30 bg-foreground/10 text-foreground'
+          : 'border-transparent text-muted-foreground/60 hover:bg-foreground/5'
+      }`}
+    >
+      {icon}
+      <span className="hidden lg:inline">{label}</span>
+    </button>
+  )
+}
+
+function ViewToggles({ filters }: { filters: SheafFilters }) {
+  return (
+    <div className="flex items-center gap-1">
+      <ToggleBtn
+        active={filters.showLineage}
+        onClick={filters.toggleLineage}
+        icon={<GitBranch className="size-3.5" />}
+        label="lineage"
+      />
+      <ToggleBtn
+        active={filters.showRecaps}
+        onClick={filters.toggleRecaps}
+        icon={<Text className="size-3.5" />}
+        label="recaps"
+      />
+    </div>
+  )
+}
+
 export function SheafControlsRow({
   filters,
   filterRef,
@@ -109,6 +157,7 @@ export function SheafControlsRow({
       <FilterBox filter={filters.filter} setFilter={filters.setFilter} filterRef={filterRef} />
       <SortSelect sort={filters.sort} setSort={filters.setSort} />
       <StatusChips statusFilter={filters.statusFilter} toggleStatus={filters.toggleStatus} />
+      <ViewToggles filters={filters} />
       <div className="ml-auto flex items-center gap-3">
         {filters.filtersActive && (
           <span className="text-[10px] text-muted-foreground/70 font-mono">

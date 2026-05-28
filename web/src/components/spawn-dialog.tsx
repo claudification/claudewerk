@@ -29,7 +29,6 @@ import {
 } from '@/hooks/use-conversations'
 import type { DaemonRosterEntry } from '@/hooks/use-daemon-roster'
 import { useLaunchProgress } from '@/hooks/use-launch-progress'
-import { sendSpawnRequest } from '@/hooks/use-spawn'
 import { parseEnvText } from '@/lib/env-parse'
 import { useKeyLayer } from '@/lib/key-layers'
 import { cwdToProjectUri } from '@/lib/types'
@@ -44,14 +43,7 @@ import { ProfileDropdown } from './launch-profiles/profile-dropdown'
 import { applyProfileToForm, formSnapshotToProfileSpawn } from './launch-profiles/spawn-dialog-apply'
 import { useLaunchProfiles } from './launch-profiles/use-launch-profiles'
 import { type BackendKind, BackendSelect } from './spawn-dialog/backend-select'
-import {
-  blankDaemonForm,
-  buildDaemonSpawnFields,
-  type DaemonMode,
-  type DaemonModeFormValue,
-  validateDaemonAttach,
-  validateDaemonModeForm,
-} from './spawn-dialog/daemon-launch'
+import { blankDaemonForm, type DaemonMode, type DaemonModeFormValue } from './spawn-dialog/daemon-launch'
 import { DaemonModePanel } from './spawn-dialog/daemon-mode-panel'
 import { DaemonRosterBrowser } from './spawn-dialog/daemon-roster-browser'
 import {
@@ -62,6 +54,7 @@ import {
 } from './spawn-dialog/process-model'
 import { ProcessModelSegmented } from './spawn-dialog/process-model-segmented'
 import { SentinelProfileRadio } from './spawn-dialog/sentinel-profile-radio'
+import { useSpawnAction } from './spawn-dialog/use-spawn-action'
 
 /** Mirrors src/broker/backends/opencode.ts deriveOpenCodeSlug -- needed
  *  client-side so the dialog can look up project settings under the same
@@ -422,119 +415,17 @@ export function SpawnDialog() {
       : worktreeCtx.mainPath
     : (state.options?.path ?? '')
 
-  const handleSpawn = useCallback(async () => {
-    if (!state.options || phase !== 'config') return
-
-    // Generate jobId up front -- it correlates the request, the ack and the
-    // per-launch progress events.
-    const newJobId = crypto.randomUUID()
-    let spawnReq: SpawnRequest
-
-    if (isDaemonTransport) {
-      // Daemon launch (transport === 'claude-daemon'): validate the active
-      // mode, then shape the request. NEW/RESUME validate the config form;
-      // ATTACH validates the picked roster worker.
-      const daemonValidation =
-        daemonMode === 'attach'
-          ? validateDaemonAttach(daemonAttach?.short)
-          : validateDaemonModeForm(daemonMode, daemonForm)
-      if (daemonValidation.length) {
-        setDaemonErrors(daemonValidation)
-        haptic('error')
-        return
-      }
-      setDaemonErrors([])
-      const isAttach = daemonMode === 'attach'
-      spawnReq = {
-        // ATTACH takes over an existing worker -- cwd comes from its roster
-        // job; NEW/RESUME use the dialog's target directory.
-        cwd: isAttach && daemonAttach ? daemonAttach.cwd : effectivePath,
-        mkdir: isAttach ? false : state.options.mkdir || false,
-        name: name.trim() || undefined,
-        description: description.trim() || undefined,
-        sentinel: (isAttach ? daemonAttach?.sentinelAlias : undefined) || state.options.sentinel || undefined,
-        profile: sentinelProfile || undefined,
-        pool: sentinelPool || undefined,
-        jobId: newJobId,
-        ...buildDaemonSpawnFields({ mode: daemonMode, form: daemonForm, attachShort: daemonAttach?.short }),
-      }
-    } else {
-      // Validate env before spawning. Errors render inline in LaunchConfigFields
-      // as the user types, so we just block submit here.
-      const [parsedEnv, errors] = parseEnvText(envText)
-      if (errors.length) {
-        setConfigTab('advanced')
-        haptic('error')
-        return
-      }
-      const trimmedResumeId = resumeId.trim()
-      spawnReq = {
-        cwd: effectivePath,
-        mkdir: state.options.mkdir || false,
-        mode: trimmedResumeId ? 'resume' : undefined,
-        resumeId: trimmedResumeId || undefined,
-        headless,
-        bare: bare || undefined,
-        repl: repl || undefined,
-        name: name.trim() || undefined,
-        description: description.trim() || undefined,
-        model: (model || undefined) as SpawnRequest['model'],
-        effort: (effort || undefined) as SpawnRequest['effort'],
-        agent: agent.trim() || undefined,
-        permissionMode: (permissionMode || undefined) as SpawnRequest['permissionMode'],
-        autocompactPct: autocompactPct === '' ? undefined : autocompactPct,
-        maxBudgetUsd: maxBudgetUsd ? Number(maxBudgetUsd) : undefined,
-        worktree: useWorktree && worktreeName.trim() ? worktreeName.trim() : undefined,
-        includePartialMessages: includePartialMessages || undefined,
-        sentinel: state.options.sentinel || undefined,
-        profile: sentinelProfile || undefined,
-        pool: sentinelPool || undefined,
-        env: parsedEnv || undefined,
-        jobId: newJobId,
-        backend: backend !== 'claude' ? backend : undefined,
-        // Write the canonical transport for claude PTY/headless launches
-        // (transport reframe). Other backends resolve their own transport
-        // broker-side, so leave it absent.
-        transport: backend === 'claude' ? transport : undefined,
-        chatConnectionId: backend === 'chat-api' ? chatConnectionId || undefined : undefined,
-        chatConnectionName:
-          backend === 'chat-api' ? chatConnections.find(a => a.id === chatConnectionId)?.name : undefined,
-        openCodeModel: backend === 'opencode' ? openCodeModel.trim() || undefined : undefined,
-        toolPermission: backend === 'opencode' ? openCodeToolPermission : undefined,
-        gatewayId: backend === 'hermes' ? hermesGatewayId || undefined : undefined,
-      }
-    }
-
-    setPhase('launching')
-    conversationAtSpawnRef.current = useConversationsStore.getState().selectedConversationId
-    haptic('tap')
-    setJobId(newJobId)
-    progress.start([{ label: 'Sending spawn request', status: 'active', ts: Date.now() }])
-
-    const result = await sendSpawnRequest(spawnReq)
-    if (result.ok) {
-      haptic('success')
-      setWrapperId(result.conversationId)
-      progress.setSteps(prev => [
-        ...prev.map(s =>
-          s.status === 'active'
-            ? { ...s, status: 'done' as const, detail: `agent-host=${result.conversationId.slice(0, 8)}` }
-            : s,
-        ),
-        { label: 'Waiting for conversation...', status: 'active' as const, ts: Date.now() },
-      ])
-    } else {
-      progress.setError(result.error)
-      haptic('error')
-    }
-  }, [
-    state.options,
-    effectivePath,
+  const handleSpawn = useSpawnAction({
+    state,
     phase,
+    effectivePath,
+    name,
+    description,
+    sentinelProfile,
+    sentinelPool,
     headless,
     bare,
     repl,
-    name,
     model,
     effort,
     agent,
@@ -557,11 +448,14 @@ export function SpawnDialog() {
     daemonMode,
     daemonForm,
     daemonAttach,
-    sentinelProfile,
-    sentinelPool,
     progress,
-    description.trim,
-  ])
+    setPhase,
+    setJobId,
+    setWrapperId,
+    setDaemonErrors,
+    setConfigTab,
+    conversationAtSpawnRef,
+  })
 
   // Keyboard layer: Enter spawns (config) or views conversation (launching). Radix Dialog handles Escape.
   // Config-only quick toggles: h/p/d = Headless/PTY/Daemon, 1/2 = Basic/Advanced tab.
