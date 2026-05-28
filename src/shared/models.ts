@@ -8,7 +8,9 @@
  * - Spawn request validation (`modelEnum`) in `src/shared/spawn-schema.ts`.
  * - Early model validation (`validateModel`) in `src/shared/spawn-defaults.ts`.
  *
- * Model data extracted from CC v2.1.116 binary (2026-04-23). When a new CC
+ * Model data extracted from CC v2.1.154 binary (2026-05-29) for the
+ * `claude-opus-4-8` family; remaining entries still reflect the v2.1.116
+ * extraction (2026-04-23) and need a full refresh next pass. When a new CC
  * version ships, re-extract with:
  *   strings $(readlink -f $(which claude)) | grep -oE \
  *     'key:value' patterns (see extraction notes in docs/ops.md)
@@ -64,13 +66,24 @@ export interface CCModelFamily {
 const CC_MODELS: readonly CCModelFamily[] = [
   // ── Current models ──────────────────────────────────────────────
   {
+    familyId: 'claude-opus-4-8',
+    displayName: 'Opus 4.8',
+    defaultOutputTokens: 64_000,
+    maxOutputTokens: 128_000,
+    supports1M: true,
+    default1M: true,
+    // CC v2.1.154 maps the bare `opus` alias to this family
+    // (i8_={opus:"claude-opus-4-8",...} in the binary).
+    acceptedSlugs: ['claude-opus-4-8', 'claude-opus-4-8[1m]', 'opus'],
+  },
+  {
     familyId: 'claude-opus-4-7',
     displayName: 'Opus 4.7',
     defaultOutputTokens: 64_000,
     maxOutputTokens: 128_000,
     supports1M: true,
     default1M: true,
-    acceptedSlugs: ['claude-opus-4-7', 'claude-opus-4-7[1m]', 'opus'],
+    acceptedSlugs: ['claude-opus-4-7', 'claude-opus-4-7[1m]'],
   },
   {
     familyId: 'claude-opus-4-6',
@@ -262,7 +275,7 @@ export function validateModel(slug: string): ModelValidationResult {
 }
 
 function formatModelError(slug: string): string {
-  const lines = [`Unknown model "${slug}". Valid models (CC v2.1.116):`, '']
+  const lines = [`Unknown model "${slug}". Valid models (CC v2.1.154):`, '']
   const current = CC_MODELS.filter(m => !m.familyId.startsWith('claude-3-'))
   const legacy = CC_MODELS.filter(m => m.familyId.startsWith('claude-3-'))
 
@@ -300,9 +313,9 @@ function formatModelError(slug: string): string {
 const MODEL_CATALOG: readonly ModelEntry[] = [
   // --- "Latest" aliases: prominent, explicit 1M where supported ---
   {
-    id: 'claude-opus-4-7[1m]',
+    id: 'claude-opus-4-8[1m]',
     label: 'Opus (latest, 1M)',
-    info: 'Opus 4.7 · 1M · 128K output',
+    info: 'Opus 4.8 · 1M · 128K output',
     window: 1_000_000,
     showInDropdown: true,
     showInCompleter: true,
@@ -329,6 +342,14 @@ const MODEL_CATALOG: readonly ModelEntry[] = [
   },
 
   // --- Explicit pinned versions ---
+  {
+    id: 'claude-opus-4-8',
+    label: 'Opus 4.8',
+    info: 'Pinned · 1M default · 128K output',
+    window: 1_000_000,
+    showInDropdown: true,
+    showInCompleter: true,
+  },
   {
     id: 'claude-opus-4-7',
     label: 'Opus 4.7',
@@ -442,7 +463,7 @@ const MODEL_CATALOG: readonly ModelEntry[] = [
   {
     id: 'opus',
     label: 'opus',
-    info: 'CC alias -> Opus 4.7 (1M default)',
+    info: 'CC alias -> Opus 4.8 (1M default)',
     window: 1_000_000,
     showInDropdown: false,
     showInCompleter: true,

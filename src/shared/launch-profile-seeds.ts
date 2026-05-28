@@ -36,7 +36,7 @@ const SEED_SPECS: SeedSpec[] = [
     icon: 'Brain',
     color: 'primary',
     chord: 'o',
-    spawn: { backend: 'claude', model: 'claude-opus-4-7', effort: 'high', headless: true },
+    spawn: { backend: 'claude', model: 'claude-opus-4-8', effort: 'high', headless: true },
   },
   {
     idSlug: 'seed-sonnet-pty',
