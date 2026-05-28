@@ -14,11 +14,12 @@
 import type { PeriodRecapDoc } from '@shared/protocol'
 import { Dialog as DialogPrimitive } from 'radix-ui'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Markdown } from '@/components/markdown'
 import { Kbd } from '@/components/ui/kbd'
+import { useConversationsStore } from '@/hooks/use-conversations'
 import { useRecapJobsStore } from '@/hooks/use-recap-jobs'
 import { appendShareParam } from '@/lib/share-mode'
 import { haptic } from '@/lib/utils'
+import { RecapReport } from './recap-report'
 
 const POLL_MS = 2000
 
@@ -233,6 +234,15 @@ export function RecapViewer() {
     }
   }, [])
 
+  // Citation chips + drill-down rows open the conversation, then dismiss the modal.
+  const openConversation = useCallback(
+    (id: string) => {
+      useConversationsStore.getState().selectConversation(id, 'recap-citation')
+      close()
+    },
+    [close],
+  )
+
   const refresh = useCallback(async (id: string) => {
     const doc = await fetchRecap(id)
     if (!doc) {
@@ -291,7 +301,12 @@ export function RecapViewer() {
                     {recap.markdown}
                   </pre>
                 ) : (
-                  <Markdown copyable>{recap.markdown}</Markdown>
+                  <RecapReport
+                    metadata={recap.metadata}
+                    digest={recap.digest}
+                    markdown={recap.markdown}
+                    onOpenConversation={openConversation}
+                  />
                 )}
               </div>
             </>

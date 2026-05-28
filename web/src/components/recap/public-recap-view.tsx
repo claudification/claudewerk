@@ -5,8 +5,9 @@
  * no sidebar, no header.
  */
 
+import type { RecapDigest, RecapMetadata } from '@shared/protocol'
 import { useEffect, useState } from 'react'
-import { Markdown } from '@/components/markdown'
+import { RecapReport } from './recap-report'
 
 interface PublicRecap {
   recapId: string
@@ -18,6 +19,9 @@ interface PublicRecap {
   timeZone: string
   model?: string
   markdown: string
+  // Recap 2.0 structured render data (absent on pre-2.0 shared recaps).
+  metadata?: RecapMetadata
+  digest?: RecapDigest
   llmCostUsd: number
   completedAt?: number
   shareLabel?: string
@@ -83,9 +87,7 @@ export function PublicRecapView({ token }: { token: string }) {
             {r.expiresAt ? ` - share expires ${new Date(r.expiresAt).toISOString().slice(0, 10)}` : ''}
           </p>
         </header>
-        <article className="prose prose-sm max-w-none dark:prose-invert">
-          <Markdown copyable>{r.markdown}</Markdown>
-        </article>
+        <RecapReport metadata={r.metadata} digest={r.digest} markdown={r.markdown} />
       </div>
     </div>
   )
