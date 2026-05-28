@@ -27,7 +27,15 @@ export function installLongTaskLog() {
           }
           const blocking = Math.round(loaf.blockingDuration ?? 0)
           // Name the heaviest script in the frame, if the browser attributed one.
-          const top = (loaf.scripts ?? []).slice().sort((a, b) => (b.duration ?? 0) - (a.duration ?? 0))[0]
+          let top: { name?: string; sourceURL?: string; duration?: number } | undefined
+          let topDur = -Infinity
+          for (const s of loaf.scripts ?? []) {
+            const d = s.duration ?? 0
+            if (d > topDur) {
+              topDur = d
+              top = s
+            }
+          }
           const src = top?.sourceURL?.split('/').pop()?.split('?')[0] || top?.name || ''
           const attr = src ? ` ${src} ${Math.round(top?.duration ?? 0)}ms` : ''
           console.debug(`[longtask] LoAF ${Math.round(e.duration)}ms (blocking ${blocking}ms)${attr}`)

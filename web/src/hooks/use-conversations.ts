@@ -472,11 +472,17 @@ let defaultApplied = false
 const STATUS_PRIORITY: Record<string, number> = { active: 0, idle: 1, starting: 2, ended: 3 }
 
 function findBestConversationForProject(conversations: Conversation[], projectUri: string): Conversation | undefined {
-  return conversations
-    .filter(s => s.project === projectUri)
-    .sort(
-      (a, b) => (STATUS_PRIORITY[a.status] ?? 9) - (STATUS_PRIORITY[b.status] ?? 9) || b.lastActivity - a.lastActivity,
-    )[0]
+  let best: Conversation | undefined
+  let bestPrio = Infinity
+  for (const s of conversations) {
+    if (s.project !== projectUri) continue
+    const prio = STATUS_PRIORITY[s.status] ?? 9
+    if (!best || prio < bestPrio || (prio === bestPrio && s.lastActivity > best.lastActivity)) {
+      best = s
+      bestPrio = prio
+    }
+  }
+  return best
 }
 
 function applyDefaultConversation() {
