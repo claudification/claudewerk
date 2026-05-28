@@ -8,7 +8,7 @@ import { ChevronsDownUp, ChevronsUpDown, Search, X } from 'lucide-react'
 import type { RefObject } from 'react'
 import { Button } from '@/components/ui/button'
 import { SORT_OPTIONS, type SortKey } from './sheaf-derive'
-import { STATUS_COLOR, STATUS_GLYPH, STATUS_ORDER } from './sheaf-tree'
+import { STATUS_COLOR, STATUS_GLYPH, STATUS_ORDER } from './sheaf-status'
 import type { SheafFilters } from './use-sheaf-filters'
 
 function FilterBox({
