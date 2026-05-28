@@ -1,6 +1,6 @@
 import { projectIdentityKey } from '@shared/project-uri'
 import { Save } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import { invalidateWarmStream } from '@/hooks/use-voice-recording'
 import { resolveToolDisplay, type SettingsTab, TOOL_DISPLAY_KEYS } from '@/lib/control-panel-prefs'
@@ -974,13 +974,19 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         <div>
           <GroupHeader label="Tool output" />
           <div className="space-y-1">
-            {TOOL_DISPLAY_KEYS.filter(
-              t => !lowerFilter || t.toLowerCase().includes(lowerFilter) || 'tool output verbose'.includes(lowerFilter),
-            ).map(tool => {
-              const effective = resolveToolDisplay(prefs, tool)
-              const custom = prefs.toolDisplay?.[tool]
-              return (
-                <div key={tool} className="flex items-center gap-2 text-xs font-mono">
+            {(() => {
+              const out: ReactNode[] = []
+              for (const tool of TOOL_DISPLAY_KEYS) {
+                if (
+                  lowerFilter &&
+                  !tool.toLowerCase().includes(lowerFilter) &&
+                  !'tool output verbose'.includes(lowerFilter)
+                )
+                  continue
+                const effective = resolveToolDisplay(prefs, tool)
+                const custom = prefs.toolDisplay?.[tool]
+                out.push(
+                  <div key={tool} className="flex items-center gap-2 text-xs font-mono">
                   <span className="w-20 text-muted-foreground truncate">{tool}</span>
                   <button
                     type="button"
@@ -1014,23 +1020,25 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
                       </option>
                     ))}
                   </select>
-                  {custom && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const td = { ...prefs.toolDisplay }
-                        delete td[tool]
-                        updatePrefs({ toolDisplay: td })
-                      }}
-                      className="text-[8px] text-muted-foreground hover:text-foreground"
-                      title="Reset to default"
-                    >
-                      x
-                    </button>
-                  )}
-                </div>
-              )
-            })}
+                    {custom && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const td = { ...prefs.toolDisplay }
+                          delete td[tool]
+                          updatePrefs({ toolDisplay: td })
+                        }}
+                        className="text-[8px] text-muted-foreground hover:text-foreground"
+                        title="Reset to default"
+                      >
+                        x
+                      </button>
+                    )}
+                  </div>,
+                )
+              }
+              return out
+            })()}
           </div>
         </div>
       )}
@@ -1068,20 +1076,27 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         <div>
           <GroupHeader label="Shortcuts" />
           <div className="space-y-1.5">
-            {SHORTCUTS.filter(
-              ([n, k]) =>
-                !lowerFilter ||
-                n.toLowerCase().includes(lowerFilter) ||
-                k.toLowerCase().includes(lowerFilter) ||
-                'shortcuts keyboard keys hotkey'.includes(lowerFilter),
-            ).map(([name, key]) => (
-              <div key={name} className="flex justify-between text-xs">
-                <span className="text-muted-foreground">{name}</span>
-                <kbd className="px-1.5 py-0.5 bg-muted text-muted-foreground border border-border text-[10px] font-mono">
-                  {key}
-                </kbd>
-              </div>
-            ))}
+            {(() => {
+              const out: ReactNode[] = []
+              for (const [name, key] of SHORTCUTS) {
+                if (
+                  lowerFilter &&
+                  !name.toLowerCase().includes(lowerFilter) &&
+                  !key.toLowerCase().includes(lowerFilter) &&
+                  !'shortcuts keyboard keys hotkey'.includes(lowerFilter)
+                )
+                  continue
+                out.push(
+                  <div key={name} className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">{name}</span>
+                    <kbd className="px-1.5 py-0.5 bg-muted text-muted-foreground border border-border text-[10px] font-mono">
+                      {key}
+                    </kbd>
+                  </div>,
+                )
+              }
+              return out
+            })()}
           </div>
         </div>
       )}

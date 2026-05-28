@@ -67,12 +67,13 @@ export function ShareBanner({ conversationProject, conversationId }: SharePanelP
           conversationId,
           expiresIn: newDuration,
           label: newLabel || undefined,
-          permissions: [
-            'chat:read', // always included (base - can see transcript)
-            ...Object.entries(newPerms)
-              .filter(([, v]) => v)
-              .map(([k]) => k),
-          ],
+          permissions: (() => {
+            const perms: string[] = ['chat:read'] // always included (base - can see transcript)
+            for (const [k, v] of Object.entries(newPerms)) {
+              if (v) perms.push(k)
+            }
+            return perms
+          })(),
           hideUserInput,
         }),
       })

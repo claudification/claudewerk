@@ -3,7 +3,7 @@
  * Tabs: Traffic (WS stats), Cache (LIFO conversation cache), Subscriptions, Debug Log
  */
 
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { lazy, type ReactNode, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 
 const ConnectionsTab = lazy(() => import('./nerd-connections-tab'))
@@ -164,15 +164,17 @@ function CacheTab() {
       <div>
         <div className="text-[10px] uppercase tracking-wider text-comment mb-2">Cached Conversations (MRU order)</div>
         <div className="max-h-48 overflow-y-auto space-y-1">
-          {mru
-            .filter(id => cachedIds.includes(id))
-            .map(id => {
+          {(() => {
+            const cachedSet = new Set(cachedIds)
+            const out: ReactNode[] = []
+            for (const id of mru) {
+              if (!cachedSet.has(id)) continue
               const conversation = conversationsById[id]
               const name =
                 conversation?.title || (conversation ? extractProjectLabel(conversation.project) : '') || id.slice(0, 8)
               const entryCount = transcripts[id]?.length ?? 0
               const isSelected = id === selected
-              return (
+              out.push(
                 <div
                   key={id}
                   className={cn('flex items-center gap-2 py-1 px-2 rounded text-[11px]', isSelected && 'bg-accent/10')}
@@ -180,9 +182,11 @@ function CacheTab() {
                   {isSelected && <span className="size-1.5 rounded-full bg-accent shrink-0" />}
                   <span className={cn('truncate flex-1', isSelected ? 'text-accent' : 'text-foreground')}>{name}</span>
                   <span className="text-comment tabular-nums shrink-0">{entryCount} entries</span>
-                </div>
+                </div>,
               )
-            })}
+            }
+            return out
+          })()}
           {cachedIds.length === 0 && <div className="text-[11px] text-comment">No conversations cached</div>}
         </div>
       </div>
@@ -401,7 +405,11 @@ function PerfTab() {
     )
   }
 
-  const stats = PERF_CATEGORIES.map(cat => ({ cat, ...categoryStats(cat) })).filter(s => s.count > 0)
+  const stats: Array<{ cat: PerfCategory } & ReturnType<typeof categoryStats>> = []
+  for (const cat of PERF_CATEGORIES) {
+    const s = { cat, ...categoryStats(cat) }
+    if (s.count > 0) stats.push(s)
+  }
 
   return (
     <div className="space-y-3">

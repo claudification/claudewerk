@@ -11,7 +11,7 @@ import type { CcSessionEntry, ProfileUsageSnapshot } from '@shared/protocol'
 import { buildSpawnDiagnostics } from '@shared/spawn-diagnostics'
 import { OPENCODE_TOOL_PERMISSION_OPTIONS, type OpenCodeToolPermission, type SpawnRequest } from '@shared/spawn-schema'
 import { ChevronDown, GitBranch, Zap } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   OPENCODE_CURATED_VALUES,
   OPENCODE_CUSTOM_SENTINEL,
@@ -1018,13 +1018,18 @@ export function SpawnDialog() {
                       className="w-full bg-surface-inset border border-border rounded px-2 py-1.5 text-[11px] font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
                     >
                       <option value="">Select connection…</option>
-                      {chatConnections
-                        .filter(a => a.enabled)
-                        .map(a => (
-                          <option key={a.id} value={a.id}>
-                            {a.name}
-                          </option>
-                        ))}
+                      {(() => {
+                        const opts: ReactNode[] = []
+                        for (const a of chatConnections) {
+                          if (!a.enabled) continue
+                          opts.push(
+                            <option key={a.id} value={a.id}>
+                              {a.name}
+                            </option>,
+                          )
+                        }
+                        return opts
+                      })()}
                     </select>
                   </div>
                   <LaunchConfigFields

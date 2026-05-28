@@ -130,14 +130,13 @@ export function ManageProjectLinksDialog() {
 
   const otherProjects = useMemo(() => {
     const lf = filter.toLowerCase()
-    return projects
-      .filter(p => !focusProject || !uriMatches(p.project_uri, focusProject))
-      .filter(p => {
-        if (!lf) return true
-        const name = projectDisplayName(p).toLowerCase()
-        const settingsLabel = projectSettings[projectIdentityKey(p.project_uri)]?.label?.toLowerCase()
-        return name.includes(lf) || p.slug.includes(lf) || settingsLabel?.includes(lf)
-      })
+    return projects.filter(p => {
+      if (focusProject && uriMatches(p.project_uri, focusProject)) return false
+      if (!lf) return true
+      const name = projectDisplayName(p).toLowerCase()
+      const settingsLabel = projectSettings[projectIdentityKey(p.project_uri)]?.label?.toLowerCase()
+      return name.includes(lf) || p.slug.includes(lf) || (settingsLabel?.includes(lf) ?? false)
+    })
   }, [projects, focusProject, filter, projectSettings])
 
   const linkedCount = useMemo(() => {

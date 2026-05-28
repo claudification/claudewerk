@@ -147,10 +147,11 @@ function parseQuery(raw: string): ParsedQuery {
   for (const token of tokens) {
     if (token.startsWith('#')) {
       // Could be #a|#b for OR
-      const orTags = token
-        .split('|')
-        .map(t => t.replace(/^#/, '').toLowerCase())
-        .filter(Boolean)
+      const orTags: string[] = []
+      for (const t of token.split('|')) {
+        const stripped = t.replace(/^#/, '').toLowerCase()
+        if (stripped) orTags.push(stripped)
+      }
       if (orTags.length > 0) tagGroups.push(orTags)
     } else {
       textParts.push(token)
@@ -287,9 +288,13 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [activeStatuses, setActiveStatuses] = useState<Set<TaskStatus>>(
-    () => new Set(STATUS_CHIPS.filter(c => c.defaultOn).map(c => c.status)),
-  )
+  const [activeStatuses, setActiveStatuses] = useState<Set<TaskStatus>>(() => {
+    const out = new Set<TaskStatus>()
+    for (const c of STATUS_CHIPS) {
+      if (c.defaultOn) out.add(c.status)
+    }
+    return out
+  })
   const [templateId, setTemplateId] = useState<TemplateId>('work')
   const [customInstructions, setCustomInstructions] = useState(TEMPLATES[0].instructions)
   const [showSelected, setShowSelected] = useState(false)
