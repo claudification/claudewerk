@@ -450,43 +450,59 @@ export function ConversationItemTasksBlock({
         </div>
       ))}
       {overflow > 0 && <div className="text-[10px] text-muted-foreground pl-1 font-mono">..{overflow} more</div>}
-      {conversation.subagents
-        .filter(a => a.status === 'running')
-        .map(a => (
-          <div
-            key={a.agentId}
-            className={cn(
-              'text-[11px] text-pink-400/80 font-mono truncate pl-1',
-              selectedSubagentId === a.agentId && 'text-pink-300 font-bold',
-            )}
-          >
-            <span className="text-pink-400 mr-1">{'\u25CF'}</span>
-            {a.description || a.agentType} <span className="text-pink-400/50">{a.agentId.slice(0, 6)}</span>
-          </div>
-        ))}
-      {conversation.subagents
-        .filter(a => a.status === 'stopped' && a.stoppedAt && now - a.stoppedAt < 30 * 60 * 1000)
-        .map(a => (
-          <div
-            key={a.agentId}
-            className={cn(
-              'text-[11px] text-pink-400/40 font-mono truncate pl-1',
-              selectedSubagentId === a.agentId && 'text-pink-400/80 font-bold',
-            )}
-          >
-            <span className="mr-1">{'\u25CB'}</span>
-            {a.description || a.agentType} <span className="text-pink-400/30">{a.agentId.slice(0, 6)}</span>
-          </div>
-        ))}
-      {conversation.teammates
-        .filter(t => t.status === 'working')
-        .map(t => (
-          <div key={t.name} className="text-[11px] text-purple-400/80 font-mono truncate pl-1">
-            <span className="text-purple-400 mr-1">{'\u2691'}</span>
-            {t.name}
-            {t.currentTaskSubject ? `: ${t.currentTaskSubject}` : ''}
-          </div>
-        ))}
+      {(() => {
+        const runningNodes: ReactNode[] = []
+        const stoppedNodes: ReactNode[] = []
+        for (const a of conversation.subagents) {
+          if (a.status === 'running') {
+            runningNodes.push(
+              <div
+                key={a.agentId}
+                className={cn(
+                  'text-[11px] text-pink-400/80 font-mono truncate pl-1',
+                  selectedSubagentId === a.agentId && 'text-pink-300 font-bold',
+                )}
+              >
+                <span className="text-pink-400 mr-1">{'\u25CF'}</span>
+                {a.description || a.agentType} <span className="text-pink-400/50">{a.agentId.slice(0, 6)}</span>
+              </div>,
+            )
+          } else if (a.status === 'stopped' && a.stoppedAt && now - a.stoppedAt < 30 * 60 * 1000) {
+            stoppedNodes.push(
+              <div
+                key={a.agentId}
+                className={cn(
+                  'text-[11px] text-pink-400/40 font-mono truncate pl-1',
+                  selectedSubagentId === a.agentId && 'text-pink-400/80 font-bold',
+                )}
+              >
+                <span className="mr-1">{'\u25CB'}</span>
+                {a.description || a.agentType} <span className="text-pink-400/30">{a.agentId.slice(0, 6)}</span>
+              </div>,
+            )
+          }
+        }
+        return (
+          <>
+            {runningNodes}
+            {stoppedNodes}
+          </>
+        )
+      })()}
+      {(() => {
+        const out: ReactNode[] = []
+        for (const t of conversation.teammates) {
+          if (t.status !== 'working') continue
+          out.push(
+            <div key={t.name} className="text-[11px] text-purple-400/80 font-mono truncate pl-1">
+              <span className="text-purple-400 mr-1">{'\u2691'}</span>
+              {t.name}
+              {t.currentTaskSubject ? `: ${t.currentTaskSubject}` : ''}
+            </div>,
+          )
+        }
+        return out
+      })()}
     </div>
   )
 }

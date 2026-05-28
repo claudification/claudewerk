@@ -5,12 +5,13 @@ import type { ProjectOrder, ProjectOrderGroup, ProjectOrderNode } from '@/lib/ty
 import { haptic } from '@/lib/utils'
 
 export function removeFromTree(tree: ProjectOrderNode[], id: string): ProjectOrderNode[] {
-  return tree
-    .filter(n => n.id !== id)
-    .map(n => {
-      if (n.type === 'group') return { ...n, children: n.children.filter(c => c.id !== id) }
-      return n
-    })
+  const out: ProjectOrderNode[] = []
+  for (const n of tree) {
+    if (n.id === id) continue
+    if (n.type === 'group') out.push({ ...n, children: n.children.filter(c => c.id !== id) })
+    else out.push(n)
+  }
+  return out
 }
 
 export function findInTree(tree: ProjectOrderNode[], id: string): ProjectOrderNode | null {

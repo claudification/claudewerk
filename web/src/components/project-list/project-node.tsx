@@ -88,7 +88,14 @@ const ProjectConversationGroup = memo(
     // change keep the same reference -- useShallow short-circuits when none
     // of the elements changed.
     const conversations = useConversationsStore(
-      useShallow(s => conversationIds.map(id => s.conversationsById[id]).filter(Boolean) as Conversation[]),
+      useShallow(s => {
+        const out: Conversation[] = []
+        for (const id of conversationIds) {
+          const c = s.conversationsById[id]
+          if (c) out.push(c)
+        }
+        return out
+      }),
     )
     const { worktrees, adhoc, normal, ended } = partitionConversations(conversations)
     // Project-level rollups: any conversation in this project needing attention?
@@ -110,7 +117,14 @@ const ProjectConversationGroup = memo(
     // own separators; daemon-spawned children land in `normal`.)
     const orphanRootIds = neededOrphanRootIds(normal)
     const orphanRoots = useConversationsStore(
-      useShallow(s => orphanRootIds.map(id => s.conversationsById[id]).filter(Boolean) as Conversation[]),
+      useShallow(s => {
+        const out: Conversation[] = []
+        for (const id of orphanRootIds) {
+          const c = s.conversationsById[id]
+          if (c) out.push(c)
+        }
+        return out
+      }),
     )
     const normalGroups = groupByLineage(normal, orphanRoots)
 

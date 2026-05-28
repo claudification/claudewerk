@@ -57,14 +57,15 @@ function useProjectGroupingActions(project: string) {
     if (!name?.trim()) return
     haptic('tap')
     const groupId = `group-${name.trim().toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`
-    let newTree = projectOrder.tree
-      .filter(n => n.id !== project)
-      .map(node => {
-        if (node.type === 'group') {
-          return { ...node, children: node.children.filter(c => c.id !== project) }
-        }
-        return node
-      })
+    let newTree: typeof projectOrder.tree = []
+    for (const node of projectOrder.tree) {
+      if (node.id === project) continue
+      if (node.type === 'group') {
+        newTree.push({ ...node, children: node.children.filter(c => c.id !== project) })
+      } else {
+        newTree.push(node)
+      }
+    }
     newTree = [
       ...newTree,
       {

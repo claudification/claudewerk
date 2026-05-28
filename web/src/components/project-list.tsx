@@ -191,7 +191,10 @@ export function ProjectList() {
   // conversations rarely tick, and excluding it from the structural selector
   // saves a ProjectList re-render on every WS message.
   const inactive = useMemo(() => {
-    const activeProjects = new Set(structure.filter(s => s.status !== 'ended').map(s => s.project))
+    const activeProjects = new Set<string>()
+    for (const s of structure) {
+      if (s.status !== 'ended') activeProjects.add(s.project)
+    }
     const byProject = new Map<string, ConversationStructure[]>()
     for (const s of structure) {
       const key = s.project

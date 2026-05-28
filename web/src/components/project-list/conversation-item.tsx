@@ -67,7 +67,14 @@ export const InactiveProjectItem = memo(
     const [showSettings, setShowSettings] = useState(false)
     const selectConversation = useConversationsStore(s => s.selectConversation)
     const conversations = useConversationsStore(
-      useShallow(s => conversationIds.map(id => s.conversationsById[id]).filter(Boolean) as Conversation[]),
+      useShallow(s => {
+        const out: Conversation[] = []
+        for (const id of conversationIds) {
+          const c = s.conversationsById[id]
+          if (c) out.push(c)
+        }
+        return out
+      }),
     )
     const latest =
       conversations.length > 0 ? conversations.reduce((a, b) => (a.lastActivity > b.lastActivity ? a : b)) : null
