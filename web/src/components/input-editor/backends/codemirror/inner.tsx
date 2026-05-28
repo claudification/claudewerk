@@ -406,7 +406,7 @@ export default function CodeMirrorBackendInner(props: InputEditorProps) {
             className="flex items-center gap-1.5 text-sm font-bold px-5 py-2 rounded select-none bg-accent text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ touchAction: 'manipulation', WebkitTouchCallout: 'none' } as React.CSSProperties}
           >
-            <Send className="w-4 h-4" />
+            <Send className="size-4" />
             Send
           </button>
         </div>
