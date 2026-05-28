@@ -34,7 +34,7 @@ export function SubagentDetailView({
           onClick={onBack}
           className="flex items-center gap-1 text-xs text-pink-400 hover:text-pink-300 transition-colors"
         >
-          <ArrowLeft className="w-3 h-3" />
+          <ArrowLeft className="size-3" />
           Back
         </button>
         <div className="w-px h-4 bg-border" />
@@ -56,7 +56,7 @@ export function SubagentDetailView({
       <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
         {loading && transcript.length === 0 ? (
           <div className="flex items-center justify-center h-full text-muted-foreground text-xs">
-            Loading transcript...
+            Loading transcript…
           </div>
         ) : transcript.length === 0 ? (
           <div className="flex items-center justify-center h-full text-muted-foreground text-xs">

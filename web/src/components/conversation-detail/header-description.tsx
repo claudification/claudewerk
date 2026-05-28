@@ -67,7 +67,7 @@ export function HeaderDescription({ conversation }: { conversation: Conversation
       >
         {conversation.description || 'add description...'}
       </span>
-      <Pencil className="w-2.5 h-2.5 text-muted-foreground/20 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/desc:opacity-100 transition-opacity" />
+      <Pencil className="size-2.5 text-muted-foreground/20 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/desc:opacity-100 transition-opacity" />
     </div>
   )
 }

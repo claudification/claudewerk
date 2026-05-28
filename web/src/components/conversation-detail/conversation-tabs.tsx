@@ -97,7 +97,7 @@ export function ConversationTabs({
             }
           }}
         >
-          <Terminal className="w-3 h-3" />
+          <Terminal className="size-3" />
           TTY
         </TabButton>
       )}
@@ -111,7 +111,7 @@ export function ConversationTabs({
             onSetActiveTab(activeTab === 'json_stream' ? 'transcript' : 'json_stream')
           }}
         >
-          <Braces className="w-3 h-3" />
+          <Braces className="size-3" />
           JSON
         </TabButton>
       )}
@@ -182,7 +182,7 @@ export function ConversationTabs({
               onCheckedChange={checked => {
                 if (checked !== expandAll) useConversationsStore.getState().toggleExpandAll()
               }}
-              className="h-3.5 w-3.5"
+              className="size-3.5"
             />
             <label htmlFor="verbose" className="text-[10px] text-muted-foreground cursor-pointer select-none">
               verbose

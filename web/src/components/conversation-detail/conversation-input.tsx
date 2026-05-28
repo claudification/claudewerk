@@ -24,10 +24,10 @@ export function ScrollToBottomButton({
     <button
       type="button"
       onClick={onClick}
-      className="absolute bottom-22 right-3 z-50 w-8 h-8 flex items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/80 transition-colors cursor-pointer"
+      className="absolute bottom-22 right-3 z-50 size-8 flex items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/80 transition-colors cursor-pointer"
       title={direction === 'up' ? 'Scroll to top' : 'Scroll to bottom'}
     >
-      <Icon className="h-4 w-4" />
+      <Icon className="size-4" />
     </button>
   )
 }
@@ -208,7 +208,7 @@ export const InputBar = memo(function InputBar({ conversationId }: { conversatio
           onClick={popStash}
           className="mb-2 px-2.5 py-1 flex items-center gap-1.5 rounded text-[11px] font-mono text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted border border-border/50 transition-colors cursor-pointer w-fit"
         >
-          <Layers className="h-3 w-3" />
+          <Layers className="size-3" />
           <span>{stashCount} stashed</span>
           <span className="text-muted-foreground/60 ml-1">Ctrl+S to pop</span>
         </button>

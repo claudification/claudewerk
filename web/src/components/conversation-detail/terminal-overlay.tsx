@@ -12,7 +12,7 @@ export function TerminalOverlay({ conversationId }: TerminalOverlayProps) {
     <Suspense
       fallback={
         <div className="absolute inset-0 flex items-center justify-center bg-background text-muted-foreground">
-          Loading terminal...
+          Loading terminal…
         </div>
       }
     >

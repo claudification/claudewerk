@@ -322,7 +322,7 @@ export function SpawnApprovalBanners() {
                   type="checkbox"
                   checked={persistChecked}
                   onChange={e => setPersistChecked(e.target.checked)}
-                  className="accent-emerald-400 w-3.5 h-3.5"
+                  className="accent-emerald-400 size-3.5"
                 />
                 <span>
                   Allow future spawn calls from <span className="text-amber-300">this conversation</span> (not the whole

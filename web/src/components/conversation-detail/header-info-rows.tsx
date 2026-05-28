@@ -54,7 +54,7 @@ export function ProjectPathRow({ project }: { project: string }) {
         className="shrink-0 text-muted-foreground/30 hover:text-muted-foreground [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/project:opacity-100 transition-opacity"
         title="Copy path"
       >
-        <Copy className="w-3 h-3" />
+        <Copy className="size-3" />
       </button>
     </div>
   )
@@ -81,7 +81,7 @@ export function CurrentPathRow({ conversation }: { conversation: Conversation })
   return (
     <div className="flex items-center gap-1.5 text-[10px] font-mono min-w-0">
       <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded border bg-violet-500/15 text-violet-300 border-violet-500/30 font-bold uppercase tracking-wide">
-        <GitBranch className="w-3 h-3" />
+        <GitBranch className="size-3" />
         {wt ? wt : 'cwd'}
       </span>
       <span className="text-muted-foreground/60 truncate" title={cur}>

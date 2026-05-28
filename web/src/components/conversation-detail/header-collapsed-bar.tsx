@@ -63,7 +63,7 @@ function WorktreeChip({ conversation }: { conversation: Conversation }) {
       className="shrink-0 inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-violet-500/15 text-violet-300 border border-violet-500/30 text-[10px] font-mono max-w-[10rem]"
       title={`Working in ${wt ? `worktree ${wt}` : cur}`}
     >
-      <GitBranch className="w-3 h-3 shrink-0" />
+      <GitBranch className="size-3 shrink-0" />
       <span className="truncate">{label}</span>
     </span>
   )
