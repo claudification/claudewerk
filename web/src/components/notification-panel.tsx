@@ -1,6 +1,6 @@
 import { projectIdentityKey } from '@shared/project-uri'
 import type { ReactNode } from 'react'
-import { renderProjectIcon } from '@/components/project-settings-editor'
+import { renderProjectIcon } from '@/components/project-icons'
 import { BannerButton, ConversationBanner } from '@/components/ui/conversation-banner'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { projectPath } from '@/lib/types'

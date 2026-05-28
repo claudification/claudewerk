@@ -1,7 +1,7 @@
 import type { ProjectSettings } from '@shared/protocol'
 import { GitBranch } from 'lucide-react'
 import { CacheTimer } from '@/components/cache-timer'
-import { renderProjectIcon } from '@/components/project-settings-editor'
+import { renderProjectIcon } from '@/components/project-icons'
 import { formatCost, getConversationCost, getCostColor } from '@/lib/cost-utils'
 import type { Conversation } from '@/lib/types'
 import { projectPath } from '@/lib/types'

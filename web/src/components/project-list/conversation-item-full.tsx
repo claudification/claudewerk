@@ -8,7 +8,7 @@ import { formatCost, getCacheTimerInfo, getConversationCost, getCostBgColor, get
 import type { Conversation } from '@/lib/types'
 import { projectPath } from '@/lib/types'
 import { cn, contextWindowSize, haptic, projectDisplayName } from '@/lib/utils'
-import { renderProjectIcon } from '../project-settings-editor'
+import { renderProjectIcon } from '../project-icons'
 import { ShareIndicator } from '../share-panel'
 import { BackendIcon } from './backend-icon'
 import { ConversationInfoButton } from './conversation-info-dialog'

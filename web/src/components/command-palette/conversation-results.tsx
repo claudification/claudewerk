@@ -1,7 +1,7 @@
 import { projectIdentityKey } from '@shared/project-uri'
 import { type Conversation, canTerminal, projectPath } from '@/lib/types'
 import { cn, formatAge, formatModel, projectDisplayName } from '@/lib/utils'
-import { renderProjectIcon } from '../project-settings-editor'
+import { renderProjectIcon } from '../project-icons'
 import type { ConversationResultsProps } from './types'
 
 function statusIndicator(s: Conversation, selectedConversationId: string | null) {
