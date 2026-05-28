@@ -2,7 +2,7 @@ import { Marked } from 'marked'
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef } from 'react'
 import { record } from '@/lib/perf-metrics'
 import { CopyMenu } from './copy-menu'
-import { filenameFromUrl, type MediaKind, openMediaLightbox } from './media-lightbox'
+import { filenameFromUrl, type MediaKind, openMediaLightbox } from './media-lightbox-bus'
 import { ensureLang, getHighlighter, normalizeLang } from './transcript/syntax'
 
 const marked = new Marked()

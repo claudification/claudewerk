@@ -16,42 +16,8 @@
 import { Copy, Download, ExternalLink } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
 import { useEffect, useState } from 'react'
-import { create } from 'zustand'
 import { cn, haptic } from '@/lib/utils'
-
-export type MediaKind = 'image' | 'video'
-
-interface MediaLightboxState {
-  open: boolean
-  src: string
-  kind: MediaKind
-  alt?: string
-  show: (src: string, kind: MediaKind, alt?: string) => void
-  close: () => void
-}
-
-const useMediaLightbox = create<MediaLightboxState>(set => ({
-  open: false,
-  src: '',
-  kind: 'image',
-  alt: undefined,
-  show: (src, kind, alt) => set({ open: true, src, kind, alt }),
-  close: () => set({ open: false }),
-}))
-
-export function openMediaLightbox(src: string, kind: MediaKind, alt?: string) {
-  useMediaLightbox.getState().show(src, kind, alt)
-}
-
-export function filenameFromUrl(url: string): string {
-  try {
-    const u = new URL(url, 'https://x.invalid')
-    const parts = u.pathname.split('/')
-    return parts[parts.length - 1] || url
-  } catch {
-    return url
-  }
-}
+import { filenameFromUrl, useMediaLightbox } from './media-lightbox-bus'
 
 export function MediaLightbox() {
   const { open, src, kind, alt, close } = useMediaLightbox()
