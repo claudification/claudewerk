@@ -17,9 +17,16 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import * as path from 'node:path'
 import { generateConversationName } from '../shared/conversation-names'
 import { validateModel } from '../shared/models'
-import { cwdToProjectUri, validateProjectUri } from '../shared/project-uri'
+import {
+  buildProjectUri,
+  cwdToProjectUri,
+  isSameProject,
+  tryParseProjectUri,
+  validateProjectUri,
+} from '../shared/project-uri'
 import type { Conversation, LaunchConfig, ProjectSettings, SpawnResult } from '../shared/protocol'
 import { resolveDefaultTransport, resolveSpawnConfig } from '../shared/spawn-defaults'
 import { deriveConversationName, validateConversationName } from '../shared/spawn-naming'
@@ -166,13 +173,57 @@ function spawnTransportLog(
  * the SpawnRequest - callers should have parsed it via spawnRequestSchema
  * already.
  */
+/**
+ * Does `req.cwd` resolve to the same project URI as `callerProject` after the
+ * URI normalisation pass (worktree-folded)? Drives the bypass carve-out in
+ * `evaluateSpawnPermission`. Path resolution rules:
+ *
+ *   - explicit URI in cwd               -> compared directly
+ *   - absolute path                     -> wrapped with caller's scheme +
+ *                                          authority (or `req.sentinel`
+ *                                          override when set)
+ *   - relative path (`./...`/`../...`)  -> resolved against the caller's
+ *                                          project-root path
+ *   - tilde or unresolvable             -> false (carve-out skipped; the
+ *                                          existing trust gates handle it)
+ *   - cross-sentinel via `req.sentinel` -> authorities differ -> false
+ *
+ * Worktree folding lives at the URI layer (`aliasPath` inside
+ * `normalizeProjectUri`), so a target like `<repo>/.claude/worktrees/foo`
+ * naturally collapses back to `<repo>` here.
+ */
+export function computeTargetSameProjectAsCaller(req: SpawnRequest, callerProject: string | null): boolean {
+  if (!callerProject) return false
+  const cwd = req.cwd
+  if (typeof cwd !== 'string' || cwd.length === 0) return false
+  if (cwd.includes('://')) return isSameProject(callerProject, cwd)
+  if (cwd.startsWith('~')) return false
+
+  const callerParsed = tryParseProjectUri(callerProject)
+  if (!callerParsed) return false
+
+  const targetAuthority = req.sentinel ?? callerParsed.authority
+  const scheme = callerParsed.scheme
+
+  const targetPath = cwd.startsWith('/') ? cwd : path.posix.resolve(callerParsed.path, cwd)
+  const targetUri = buildProjectUri({ scheme, authority: targetAuthority, path: targetPath })
+  return isSameProject(callerProject, targetUri)
+}
+
 export async function dispatchSpawn(rawReq: SpawnRequest, deps: SpawnDispatchDeps): Promise<SpawnDispatchResult> {
   // Resolve the transport up front so the permission gate, the approval-queue
   // stash, and the dispatch branch below all act on the resolved request (an
   // agent-spawned conversation adopts the global `defaultTransport` when it
   // named none explicitly).
   const req = applyDefaultTransport(rawReq, deps.getGlobalSettings())
-  const evalResult = evaluateSpawnPermission(deps.callerContext, req)
+  // Enrich the caller context with the precomputed same-project flag so the
+  // shared gate stays pathless. Callers supply `callerProject` +
+  // `callerPermissionMode`; this seam owns the URI resolution.
+  const callerContext: SpawnCallerContext = {
+    ...deps.callerContext,
+    targetSameProjectAsCaller: computeTargetSameProjectAsCaller(req, deps.callerContext.callerProject),
+  }
+  const evalResult = evaluateSpawnPermission(callerContext, req)
   if (!evalResult.ok) {
     if (evalResult.kind === 'reject') {
       // Hard reject -- not waivable by user approval.
@@ -209,7 +260,9 @@ export async function dispatchSpawn(rawReq: SpawnRequest, deps: SpawnDispatchDep
     conversationStore: deps.conversationStore,
     getProjectSettings: deps.getProjectSettings,
     getGlobalSettings: deps.getGlobalSettings,
-    callerContext: deps.callerContext,
+    // Pass the enriched (same-project flag computed) context downstream so any
+    // backend that re-reads it sees the same truth the gate did.
+    callerContext,
     rendezvousCallerConversationId: deps.rendezvousCallerConversationId,
   }
 

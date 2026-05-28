@@ -24,6 +24,22 @@ export type SpawnCallerContext = {
   trustLevel: TrustLevel
   /** Caller's own project URI, for MCP cross-project trust checks. null for dashboard callers. */
   callerProject: string | null
+  /**
+   * Caller conversation's current CC permission mode (e.g. 'bypassPermissions').
+   * Read from `Conversation.permissionMode`. Used by the same-project bypass
+   * carve-out: a caller already running with `bypassPermissions` has been
+   * granted "skip the gates within its scope" by the human, and a spawn into
+   * its own project (or a worktree of it) stays inside that scope.
+   */
+  callerPermissionMode?: string
+  /**
+   * Precomputed by the dispatch seam: does `req.cwd` resolve to the same
+   * project URI as `callerProject` after worktree-folding? `aliasPath`
+   * collapses `/.claude/worktrees/<name>` segments at the URI parse layer,
+   * so a worktree target shares a project URI with its parent repo. Used
+   * exclusively by the bypass carve-out; never set for dashboard callers.
+   */
+  targetSameProjectAsCaller?: boolean
 }
 
 /** Thrown when spawn is denied. Callers map to HTTP 403 / WS error reply. */
@@ -84,6 +100,19 @@ export function evaluateSpawnPermission(ctx: SpawnCallerContext, req: SpawnReque
       reason: 'Spawn permission required',
       required: 'spawn_permission',
     }
+  }
+  // Same-project bypass carve-out. A caller already running with
+  // `permissionMode='bypassPermissions'` that spawns into its own project
+  // (or a worktree of it -- aliasPath folds worktree paths back to the
+  // parent repo in isSameProject) skips every downstream gate: the
+  // benevolent-trust requirement, sensitive-env rejection, AND the MCP
+  // approval prompt. The caller has been granted scope-wide bypass by the
+  // human; a sibling spawn inside that scope changes no trust boundary.
+  // Cross-project, cross-sentinel, and non-bypass callers still hit the
+  // gates below. Dashboard callers leave the new fields undefined and
+  // fall through unchanged.
+  if (ctx.callerPermissionMode === 'bypassPermissions' && ctx.targetSameProjectAsCaller) {
+    return { ok: true }
   }
   // bypassPermissions and sensitive env are HARD rejects -- the human cannot
   // waive these via the approval dialog. They imply the caller wants to do

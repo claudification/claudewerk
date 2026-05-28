@@ -128,7 +128,8 @@ const handleChannelSpawn: MessageHandler = (ctx, data) => {
   }
   const req: SpawnRequest = { ...parsed.data, headless: parsed.data.headless !== false }
 
-  const callerProject = ctx.caller?.project ?? null
+  const callerConv = ctx.conversations.getConversation(callerConversationId)
+  const callerProject = callerConv?.project ?? ctx.caller?.project ?? null
   const callerTrust = callerProject ? mapProjectTrust(getProjectSettings(callerProject)?.trustLevel) : 'trusted'
 
   const callerContext: SpawnCallerContext = {
@@ -136,6 +137,11 @@ const handleChannelSpawn: MessageHandler = (ctx, data) => {
     hasSpawnPermission: true,
     trustLevel: callerTrust,
     callerProject: callerProject,
+    // Drives the same-project bypass carve-out in evaluateSpawnPermission.
+    // When the caller is already running with `bypassPermissions` and the
+    // spawn target normalises to the caller's project (worktree-folded),
+    // all downstream trust gates are waived.
+    callerPermissionMode: callerConv?.permissionMode,
   }
 
   dispatchSpawn(req, {

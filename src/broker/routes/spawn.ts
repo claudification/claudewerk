@@ -39,6 +39,10 @@ export function createSpawnRouter(conversationStore: ConversationStore, helpers:
       hasSpawnPermission: true, // already validated by httpHasPermission above
       trustLevel: callerTrust,
       callerProject,
+      // Drives the same-project bypass carve-out (see evaluateSpawnPermission).
+      // Pure dashboard HTTP calls without an X-Caller-Conversation leave this
+      // undefined and inherit the legacy gate behaviour.
+      callerPermissionMode: callerConv?.permissionMode,
     }
 
     const result = await dispatchSpawn(body, {

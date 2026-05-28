@@ -160,6 +160,65 @@ describe('evaluateSpawnPermission', () => {
   })
 })
 
+describe('same-project bypass carve-out', () => {
+  const project = 'claude://default/repo'
+
+  function bypassCtx(overrides: Partial<SpawnCallerContext> = {}): SpawnCallerContext {
+    return makeCtx({
+      kind: 'mcp',
+      trustLevel: 'trusted',
+      callerProject: project,
+      callerPermissionMode: 'bypassPermissions',
+      targetSameProjectAsCaller: true,
+      ...overrides,
+    })
+  }
+
+  it('passes a non-benevolent MCP caller when same-project + bypass (no approval prompt)', () => {
+    expect(evaluateSpawnPermission(bypassCtx(), baseReq)).toEqual({ ok: true })
+  })
+
+  it('waives the bypassPermissions HARD reject for non-benevolent caller', () => {
+    const req: SpawnRequest = { ...baseReq, permissionMode: 'bypassPermissions' }
+    expect(evaluateSpawnPermission(bypassCtx(), req)).toEqual({ ok: true })
+  })
+
+  it('waives sensitive-env HARD reject for non-benevolent caller', () => {
+    const req: SpawnRequest = { ...baseReq, env: { ANTHROPIC_API_KEY: 'sk-xxx', PATH: '/opt/bin' } }
+    expect(evaluateSpawnPermission(bypassCtx(), req)).toEqual({ ok: true })
+  })
+
+  it('does NOT apply when caller is not bypass (falls through to existing gates)', () => {
+    const ctx = bypassCtx({ callerPermissionMode: 'default' })
+    const result = evaluateSpawnPermission(ctx, baseReq)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.kind).toBe('needs_approval')
+  })
+
+  it('does NOT apply when target is not same-project (falls through)', () => {
+    const ctx = bypassCtx({ targetSameProjectAsCaller: false })
+    const result = evaluateSpawnPermission(ctx, baseReq)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.kind).toBe('needs_approval')
+  })
+
+  it('does NOT apply when target same-project but caller has no spawn permission', () => {
+    const ctx = bypassCtx({ hasSpawnPermission: false })
+    const result = evaluateSpawnPermission(ctx, baseReq)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.kind).toBe('reject')
+      if (result.kind === 'reject') expect(result.required).toBe('spawn_permission')
+    }
+  })
+
+  it('still applies cleanly when caller is also benevolent (no double-gating)', () => {
+    const ctx = bypassCtx({ trustLevel: 'benevolent' })
+    const req: SpawnRequest = { ...baseReq, permissionMode: 'bypassPermissions', env: { HOME: '/x' } }
+    expect(evaluateSpawnPermission(ctx, req)).toEqual({ ok: true })
+  })
+})
+
 describe('mapProjectTrust', () => {
   it('maps benevolent -> benevolent', () => {
     expect(mapProjectTrust('benevolent')).toBe('benevolent')
