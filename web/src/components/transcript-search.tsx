@@ -342,7 +342,9 @@ export function TranscriptSearch() {
 
   // Focus input when dialog opens
   useEffect(() => {
-    if (open) setTimeout(() => inputRef.current?.focus(), 50)
+    if (!open) return
+    const t = setTimeout(() => inputRef.current?.focus(), 50)
+    return () => clearTimeout(t)
   }, [open])
 
   const focusedTitle = useMemo(() => {
