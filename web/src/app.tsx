@@ -173,7 +173,7 @@ function Dashboard() {
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
           <SheetTrigger asChild>
             <Button variant="outline" size="icon" className="lg:hidden shrink-0">
-              <Menu className="h-5 w-5" />
+              <Menu className="size-5" />
               <span className="sr-only">Toggle conversations</span>
             </Button>
           </SheetTrigger>
@@ -190,7 +190,7 @@ function Dashboard() {
                     className="p-1 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
                     title="Scroll to current conversation"
                   >
-                    <Crosshair className="h-3.5 w-3.5" />
+                    <Crosshair className="size-3.5" />
                   </button>
                 </div>
               )}
@@ -214,7 +214,7 @@ function Dashboard() {
             onClick={() => executeCommand('quick-task')}
             title="Quick task"
           >
-            <FileText className="h-4 w-4" />
+            <FileText className="size-4" />
           </Button>
         )}
         {canAdmin && (
@@ -225,7 +225,7 @@ function Dashboard() {
             onClick={() => useConversationsStore.getState().toggleSwitcher()}
             title="Command palette"
           >
-            <Command className="h-4 w-4" />
+            <Command className="size-4" />
           </Button>
         )}
       </div>
@@ -239,7 +239,7 @@ function Dashboard() {
             className="hidden lg:flex absolute left-2 top-1/2 -translate-y-1/2 z-10 items-center justify-center w-5 h-10 rounded-r-md bg-muted/80 hover:bg-muted border border-l-0 border-border text-muted-foreground hover:text-foreground transition-colors"
             title="Expand sidebar (Ctrl+B)"
           >
-            <ChevronRight className="h-3 w-3" />
+            <ChevronRight className="size-3" />
           </button>
         ) : (
           <div className="hidden lg:flex w-[350px] shrink-0 border border-border overflow-hidden flex-col">
@@ -251,7 +251,7 @@ function Dashboard() {
                   className="p-1 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
                   title="Scroll to current conversation"
                 >
-                  <Crosshair className="h-3.5 w-3.5" />
+                  <Crosshair className="size-3.5" />
                 </button>
               )}
               <button
@@ -260,7 +260,7 @@ function Dashboard() {
                 className="p-1 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
                 title="Collapse sidebar (Ctrl+B)"
               >
-                <ChevronLeft className="h-3.5 w-3.5" />
+                <ChevronLeft className="size-3.5" />
               </button>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto p-2 pt-0">
@@ -366,7 +366,7 @@ function PopoutTerminal({ conversationId }: { conversationId: string }) {
     <div className="h-full w-full">
       <Suspense
         fallback={
-          <div className="flex items-center justify-center h-full text-muted-foreground">Loading terminal...</div>
+          <div className="flex items-center justify-center h-full text-muted-foreground">Loading terminal…</div>
         }
       >
         <WebTerminal conversationId={conversationId} onClose={() => window.close()} popout />
