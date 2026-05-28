@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { useKeyLayer } from '@/lib/key-layers'
 import { haptic } from '@/lib/utils'
+import { _terminateConfirmBus } from './terminate-confirm-trigger'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 import { Kbd, KbdGroup } from './ui/kbd'
 
@@ -15,13 +16,6 @@ interface TerminateConfirmState {
   open: boolean
   conversationId: string | null
   conversationName: string | null
-}
-
-// Module-level imperative opener (same pattern as SpawnDialog)
-let _open: ((conversationId: string, conversationName: string | null) => void) | null = null
-
-export function openTerminateConfirm(conversationId: string, conversationName: string | null): void {
-  _open?.(conversationId, conversationName)
 }
 
 export function TerminateConfirmDialog() {
@@ -33,12 +27,12 @@ export function TerminateConfirmDialog() {
   const terminateConversation = useConversationsStore(s => s.terminateConversation)
 
   useEffect(() => {
-    _open = (conversationId, conversationName) => {
+    _terminateConfirmBus.open = (conversationId, conversationName) => {
       haptic('tap')
       setState({ open: true, conversationId, conversationName })
     }
     return () => {
-      _open = null
+      _terminateConfirmBus.open = null
     }
   }, [])
 

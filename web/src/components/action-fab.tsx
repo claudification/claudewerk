@@ -14,8 +14,8 @@ import { useConversationsStore } from '@/hooks/use-conversations'
 import { type Conversation, projectPath } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
 import { openReviveDialog } from './revive-dialog-trigger'
-import { openSpawnDialog } from './spawn-dialog'
-import { openTerminateConfirm } from './terminate-confirm'
+import { openSpawnDialog } from './spawn-dialog-trigger'
+import { openTerminateConfirm } from './terminate-confirm-trigger'
 
 interface FanAction {
   id: string
