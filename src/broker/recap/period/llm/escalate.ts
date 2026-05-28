@@ -1,22 +1,27 @@
 import type { RecapAudience } from '../../../../shared/protocol'
 
-const HAIKU_MODEL = 'anthropic/claude-haiku-4.5'
+// OpenRouter slugs (pinned, like the broker's other recap models). Human recaps
+// default to Opus -- the rich, fully-cited report needs the strongest judgment
+// and prose. Agent briefs stay on Sonnet (good judgment at lower cost). Both are
+// overridable via env for cost tuning without a code change. CLAUDWERK_ is the
+// canonical prefix (RCLAUDE_ legacy fallback).
 const SONNET_MODEL = 'anthropic/claude-sonnet-4'
+const OPUS_MODEL = 'anthropic/claude-opus-4.8'
 
-const ESCALATE_THRESHOLD_CHARS = 50_000
+const HUMAN_MODEL = process.env.CLAUDWERK_RECAP_HUMAN_MODEL || process.env.RCLAUDE_RECAP_HUMAN_MODEL || OPUS_MODEL
+const AGENT_MODEL = process.env.CLAUDWERK_RECAP_AGENT_MODEL || process.env.RCLAUDE_RECAP_AGENT_MODEL || SONNET_MODEL
+
+// Above this input size, fall back to Sonnet regardless of audience: Opus at
+// 600k+ context is needlessly expensive and the marginal quality gain is small.
 const CHUNK_CEILING_CHARS = 600_000
 
 export interface ModelChoice {
   model: string
-  reason: 'small' | 'escalated' | 'too-big' | 'audience-floor'
+  reason: 'human-floor' | 'agent-floor' | 'too-big'
 }
 
 export function pickModel(inputChars: number, audience: RecapAudience = 'human'): ModelChoice {
   if (inputChars > CHUNK_CEILING_CHARS) return { model: SONNET_MODEL, reason: 'too-big' }
-  if (inputChars > ESCALATE_THRESHOLD_CHARS) return { model: SONNET_MODEL, reason: 'escalated' }
-  // The agent brief's whole value is judgment -- separating signal from
-  // noise, fact from inference, spotting dead ends. Haiku misjudges that.
-  // Floor the agent audience at Sonnet regardless of input size.
-  if (audience === 'agent') return { model: SONNET_MODEL, reason: 'audience-floor' }
-  return { model: HAIKU_MODEL, reason: 'small' }
+  if (audience === 'agent') return { model: AGENT_MODEL, reason: 'agent-floor' }
+  return { model: HUMAN_MODEL, reason: 'human-floor' }
 }
