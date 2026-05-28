@@ -4,9 +4,9 @@
 
 import type { SheafNode, SheafStatus } from '@shared/sheaf-types'
 import { useConversationsStore } from '@/hooks/use-conversations'
-import { formatClockTime, formatCost, formatDuration, formatTokens } from './format'
+import { costHeatClass, formatClockTime, formatCost, formatDuration, formatTokens } from './format'
 
-const STATUS_GLYPH: Record<SheafStatus, string> = {
+export const STATUS_GLYPH: Record<SheafStatus, string> = {
   running: '●',
   idle: '◐',
   ended: '◑',
@@ -14,13 +14,15 @@ const STATUS_GLYPH: Record<SheafStatus, string> = {
   crashed: '✕',
 }
 
-const STATUS_COLOR: Record<SheafStatus, string> = {
+export const STATUS_COLOR: Record<SheafStatus, string> = {
   running: 'text-emerald-400',
   idle: 'text-sky-400',
   ended: 'text-zinc-400',
   killed: 'text-orange-400',
   crashed: 'text-rose-400',
 }
+
+export const STATUS_ORDER: SheafStatus[] = ['running', 'idle', 'ended', 'killed', 'crashed']
 
 const STATUS_BG: Record<SheafStatus, string> = {
   running: 'bg-emerald-500/10 border-emerald-500/30',
@@ -84,7 +86,7 @@ function SheafNodeRow({ node, depth, now }: SheafNodeRowProps) {
 
       {/* Row 2: metrics grid */}
       <div className="mt-0.5 grid grid-cols-12 gap-x-3 gap-y-0.5 text-xs">
-        <div className="col-span-3 text-muted-foreground">
+        <div className="col-span-4 text-muted-foreground">
           <span className="font-mono">{startStr}</span>
           {endStr ? (
             <>
@@ -102,16 +104,11 @@ function SheafNodeRow({ node, depth, now }: SheafNodeRowProps) {
             {formatTokens(node.tokens.input)}/{formatTokens(node.tokens.output)} (+{formatTokens(node.tokens.cache)}c)
           </span>
         </div>
-        <div className="col-span-2 font-mono text-foreground">{formatCost(node.cost.amount, node.cost.estimated)}</div>
-        <div className="col-span-2 text-muted-foreground truncate" title={node.model ?? ''}>
-          {node.model ?? '-'}
+        <div className={`col-span-2 font-mono ${costHeatClass(node.cost.amount)}`}>
+          {formatCost(node.cost.amount, node.cost.estimated)}
         </div>
-        <div className="col-span-2 text-right text-muted-foreground">
-          {node.commits > 0 ? (
-            <span className="text-emerald-400">{node.commits} commits</span>
-          ) : (
-            <span className="opacity-50">0 commits</span>
-          )}
+        <div className="col-span-3 text-muted-foreground truncate" title={node.model ?? ''}>
+          {node.model ?? '-'}
         </div>
       </div>
 

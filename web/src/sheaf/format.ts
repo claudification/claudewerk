@@ -16,6 +16,18 @@ export function formatCost(amount: number, estimated: boolean): string {
   return `${tilde}$${amount.toFixed(2)}`
 }
 
+/**
+ * Cost-heat color: brighter/hotter as spend climbs, so the eye lands on the
+ * expensive buckets. Static Tailwind classes (purge-safe -- no interpolation).
+ * Thresholds are USD; tune against real fleet numbers.
+ */
+export function costHeatClass(amount: number): string {
+  if (amount >= 20) return 'text-rose-400'
+  if (amount >= 5) return 'text-amber-400'
+  if (amount >= 1) return 'text-emerald-400'
+  return 'text-muted-foreground'
+}
+
 export function formatDuration(ms: number): string {
   if (ms < 1000) return '<1s'
   const sec = Math.floor(ms / 1000)

@@ -5,18 +5,16 @@
  * over `GET /api/sheaf`. No mutations.
  */
 
-import type { SheafProject, SheafResponse } from '@shared/sheaf-types'
+import type { SheafResponse } from '@shared/sheaf-types'
 import { ArrowLeft, RefreshCw } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { formatAgo, formatCost, formatDateTime, formatDuration, formatTokens } from './format'
-import { SheafTree } from './sheaf-tree'
-
-const WINDOW_OPTIONS: Array<{ label: string; hours: number }> = [
-  { label: '24h', hours: 24 },
-  { label: '48h', hours: 48 },
-  { label: '7d', hours: 168 },
-]
+import { costHeatClass, formatAgo, formatCost, formatDateTime, formatTokens } from './format'
+import { SheafControlsRow } from './sheaf-controls'
+import { WINDOW_OPTIONS } from './sheaf-derive'
+import { ProjectSection } from './sheaf-project-section'
+import { type SheafFilters, useSheafFilters } from './use-sheaf-filters'
+import { useSheafKeyboard } from './use-sheaf-keyboard'
 
 interface SheafState {
   data: SheafResponse | null
@@ -64,15 +62,10 @@ export function SheafPage() {
   const [windowH, setWindowH] = useState(24)
   const { data, loading, error, reload } = useSheaf(windowH)
   const now = data?.generatedAt ?? Date.now()
-
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') backToDashboard()
-      if (e.key === 'r' && !e.metaKey && !e.ctrlKey && !e.altKey) reload()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [reload])
+  const allProjects = data?.projects ?? []
+  const filters = useSheafFilters(allProjects)
+  const filterRef = useRef<HTMLInputElement>(null)
+  useSheafKeyboard({ filterRef, filter: filters.filter, clearFilter: filters.clearFilter, reload })
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background text-foreground overflow-hidden">
@@ -82,22 +75,62 @@ export function SheafPage() {
         onRefresh={reload}
         loading={loading}
         generatedAt={data?.generatedAt}
+        filters={filters}
+        filterRef={filterRef}
       />
       <Totals data={data} windowH={windowH} />
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="max-w-[1600px] mx-auto px-4 py-4">
-          {error && <ErrorBanner error={error} onRetry={reload} />}
-          {!error && loading && !data && <Skeleton />}
-          {!error && data && data.projects.length === 0 && <EmptyState windowH={windowH} />}
-          {!error && data && data.projects.length > 0 && (
-            <div className="space-y-6">
-              {data.projects.map(p => (
-                <ProjectSection key={p.projectUri} project={p} now={now} />
-              ))}
-            </div>
-          )}
+          <SheafBody
+            error={error}
+            loading={loading}
+            data={data}
+            windowH={windowH}
+            now={now}
+            filters={filters}
+            reload={reload}
+          />
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── Body (states + project list) ─────────────────────────────────────
+
+interface SheafBodyProps {
+  error: string | null
+  loading: boolean
+  data: SheafResponse | null
+  windowH: number
+  now: number
+  filters: SheafFilters
+  reload: () => void
+}
+
+// fallow-ignore-next-line complexity
+function SheafBody({ error, loading, data, windowH, now, filters, reload }: SheafBodyProps) {
+  if (error) return <ErrorBanner error={error} onRetry={reload} />
+  if (!data) return loading ? <Skeleton /> : null
+  if (data.projects.length === 0) return <EmptyState windowH={windowH} />
+  if (filters.visibleProjects.length === 0) {
+    return <div className="text-center py-16 text-sm text-muted-foreground">No projects match the current filter.</div>
+  }
+  return <ProjectList filters={filters} now={now} />
+}
+
+function ProjectList({ filters, now }: { filters: SheafFilters; now: number }) {
+  return (
+    <div className="space-y-6">
+      {filters.visibleProjects.map(p => (
+        <ProjectSection
+          key={p.projectUri}
+          project={p}
+          now={now}
+          expanded={filters.expanded.has(p.projectUri)}
+          onToggle={() => filters.toggleProject(p.projectUri)}
+        />
+      ))}
     </div>
   )
 }
@@ -110,9 +143,11 @@ interface HeaderProps {
   onRefresh: () => void
   loading: boolean
   generatedAt: number | undefined
+  filters: SheafFilters
+  filterRef: React.RefObject<HTMLInputElement | null>
 }
 
-function Header({ windowH, onWindowH, onRefresh, loading, generatedAt }: HeaderProps) {
+function Header({ windowH, onWindowH, onRefresh, loading, generatedAt, filters, filterRef }: HeaderProps) {
   return (
     <div className="shrink-0 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
       <div className="max-w-[1600px] mx-auto px-4 py-3 flex items-center gap-4">
@@ -153,6 +188,7 @@ function Header({ windowH, onWindowH, onRefresh, loading, generatedAt }: HeaderP
           </Button>
         </div>
       </div>
+      <SheafControlsRow filters={filters} filterRef={filterRef} />
     </div>
   )
 }
@@ -181,87 +217,23 @@ function Totals({ data, windowH }: { data: SheafResponse | null; windowH: number
           value={formatTokens(totalTokens)}
           sub={`${formatTokens(t.tokens.input)}/${formatTokens(t.tokens.output)} (+${formatTokens(t.tokens.cache)}c)`}
         />
-        <Stat label="cost" value={formatCost(t.cost.amount, t.cost.estimated)} highlight />
+        <Stat
+          label="cost"
+          value={formatCost(t.cost.amount, t.cost.estimated)}
+          heatClass={costHeatClass(t.cost.amount)}
+        />
       </div>
     </div>
   )
 }
 
-function Stat({ label, value, sub, highlight }: { label: string; value: string; sub?: string; highlight?: boolean }) {
+function Stat({ label, value, sub, heatClass }: { label: string; value: string; sub?: string; heatClass?: string }) {
   return (
     <div className="flex items-baseline gap-1.5">
       <span className="text-muted-foreground/60 uppercase tracking-wide text-[10px]">{label}</span>
-      <span className={`font-mono font-semibold ${highlight ? 'text-emerald-400' : 'text-foreground'}`}>{value}</span>
+      <span className={`font-mono font-semibold ${heatClass ?? 'text-foreground'}`}>{value}</span>
       {sub && <span className="text-[10px] text-muted-foreground/60 font-mono">{sub}</span>}
     </div>
-  )
-}
-
-// ─── Project section ──────────────────────────────────────────────────
-
-function ProjectSection({ project, now }: { project: SheafProject; now: number }) {
-  const totals = project.totals
-  const totalTokens = totals.tokens.input + totals.tokens.output + totals.tokens.cache
-  const worktreePills = useMemo(
-    () =>
-      project.worktrees.map(wt => ({
-        key: wt.name ?? '(main)',
-        label: wt.name ? `worktree:${wt.name}` : '(main)',
-        convCount: wt.convCount,
-        tokens: wt.tokens.input + wt.tokens.output + wt.tokens.cache,
-        cost: wt.cost,
-      })),
-    [project.worktrees],
-  )
-
-  return (
-    <section className="space-y-2">
-      <div className="sticky top-0 z-10 -mx-4 px-4 py-2 bg-background/90 backdrop-blur border-b border-border/60 flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <h2 className="text-base font-semibold tracking-tight truncate" title={project.projectUri}>
-          {project.label}
-        </h2>
-        <span className="text-[10px] text-muted-foreground/70 font-mono truncate">{project.projectUri}</span>
-        <div className="ml-auto flex items-baseline gap-x-4 text-xs">
-          <span className="text-muted-foreground">
-            <span className="font-mono font-semibold text-foreground">{totals.convCount}</span> convs
-          </span>
-          <span className="text-muted-foreground">
-            <span className="font-mono font-semibold text-foreground">{totals.treeCount}</span> trees
-          </span>
-          <span className="text-muted-foreground">
-            <span className="font-mono font-semibold text-foreground">{formatTokens(totalTokens)}</span> tok
-          </span>
-          <span className="font-mono font-semibold text-emerald-400">
-            {formatCost(totals.cost.amount, totals.cost.estimated)}
-          </span>
-        </div>
-      </div>
-
-      {worktreePills.length > 1 && (
-        <div className="flex flex-wrap gap-2 px-2 py-1">
-          {worktreePills.map(pill => (
-            <div
-              key={pill.key}
-              className="text-[10px] px-2 py-0.5 rounded border border-border/60 bg-muted/30 flex items-baseline gap-1.5"
-            >
-              <span className="font-mono">{pill.label}</span>
-              <span className="text-muted-foreground/60">·</span>
-              <span className="font-mono text-foreground">{pill.convCount} convs</span>
-              <span className="text-muted-foreground/60">·</span>
-              <span className="font-mono text-muted-foreground">{formatTokens(pill.tokens)}</span>
-              <span className="text-muted-foreground/60">·</span>
-              <span className="font-mono">{formatCost(pill.cost.amount, pill.cost.estimated)}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="space-y-2">
-        {project.forest.map(root => (
-          <SheafTree key={root.id} root={root} now={now} />
-        ))}
-      </div>
-    </section>
   )
 }
 
@@ -302,5 +274,3 @@ function Skeleton() {
     </div>
   )
 }
-
-void formatDuration
