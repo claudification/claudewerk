@@ -6,16 +6,11 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { cn, haptic } from '@/lib/utils'
 import type { ChatApiConnection } from '../../../../src/shared/chat-api-types'
 import type { ProviderPreset } from './chat-provider-presets'
+import { _manageChatConnectionsBus } from './manage-chat-connections-trigger'
 import { ModelPicker } from './model-picker'
 import { ProviderSelect } from './provider-select'
 
 const API_BASE = `${window.location.protocol}//${window.location.host}/api`
-
-let _openManageChatConnections: (() => void) | null = null
-
-export function openManageChatConnections(): void {
-  _openManageChatConnections?.()
-}
 
 type View = 'list' | 'add' | 'edit'
 
@@ -74,12 +69,17 @@ export function ManageChatConnectionsDialog() {
   const [testResult, setTestResult] = useState<{ id: string; ok: boolean; error?: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  _openManageChatConnections = useCallback(() => {
-    setOpen(true)
-    setView('list')
-    setError(null)
-    setTestResult(null)
-    setSourceMode(false)
+  useEffect(() => {
+    _manageChatConnectionsBus.open = () => {
+      setOpen(true)
+      setView('list')
+      setError(null)
+      setTestResult(null)
+      setSourceMode(false)
+    }
+    return () => {
+      _manageChatConnectionsBus.open = null
+    }
   }, [])
 
   const fetchConnections = useCallback(async () => {

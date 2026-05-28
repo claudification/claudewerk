@@ -9,7 +9,7 @@ import { clearCacheAndReload } from '@/lib/utils'
 import { BUILD_VERSION } from '../../../src/shared/version'
 import { ProjectLinksSection } from './settings/conversation-links-section'
 import { KeyCapture } from './settings/key-capture'
-import { openManageProjectLinks } from './settings/manage-project-links-dialog'
+import { openManageProjectLinks } from './settings/manage-project-links-trigger'
 import { NotificationsSection } from './settings/notifications-section'
 import {
   BubbleColorPicker,

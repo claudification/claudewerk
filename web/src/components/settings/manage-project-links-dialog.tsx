@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import type { ProjectOrderGroup } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
+import { _manageProjectLinksBus } from './manage-project-links-trigger'
 
 const API_BASE = `${window.location.protocol}//${window.location.host}/api`
 
@@ -49,12 +50,6 @@ function uriMatches(a: string, b: string): boolean {
   return normalizeUri(a) === normalizeUri(b)
 }
 
-let _openManageLinks: ((projectUri?: string) => void) | null = null
-
-export function openManageProjectLinks(projectUri?: string): void {
-  _openManageLinks?.(projectUri)
-}
-
 export function ManageProjectLinksDialog() {
   const [open, setOpen] = useState(false)
   const [projects, setProjects] = useState<ProjectItem[]>([])
@@ -67,11 +62,16 @@ export function ManageProjectLinksDialog() {
   const rawProjectOrder = useConversationsStore(s => s.projectOrder)
   const projectSettings = useConversationsStore(s => s.projectSettings)
 
-  _openManageLinks = useCallback((projectUri?: string) => {
-    pinned.current = !!projectUri
-    setFocusProject(projectUri || null)
-    setOpen(true)
-    setFilter('')
+  useEffect(() => {
+    _manageProjectLinksBus.open = (projectUri?: string) => {
+      pinned.current = !!projectUri
+      setFocusProject(projectUri || null)
+      setOpen(true)
+      setFilter('')
+    }
+    return () => {
+      _manageProjectLinksBus.open = null
+    }
   }, [])
 
   const fetchData = useCallback(async () => {
