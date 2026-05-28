@@ -9,7 +9,7 @@
 import type { LaunchProfile } from '@shared/launch-profile'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { useCommand } from '@/lib/commands'
-import { pushLaunchToast } from './launch-toast'
+import { pushLaunchToast } from './launch-toast-bus'
 import { resolveProjectCwd } from './pin-reachability'
 import { runProfile } from './run-profile'
 import { useLaunchProfiles } from './use-launch-profiles'

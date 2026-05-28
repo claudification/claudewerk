@@ -1,8 +1,9 @@
 /**
  * Inline launch toasts for profile runs.
  *
- * Module-level pubsub so runProfile() can fire toasts without prop-drilling.
- * Container component subscribes and renders.
+ * The toast bus (pubsub + push helpers) lives in ./launch-toast-bus so
+ * runProfile() can fire toasts without prop-drilling. Only the container +
+ * row component live here.
  *
  * Success is silent -- chord launches auto-focus the new conversation, the
  * sidebar entry is the feedback. Only "blocked" and "failed" surface here.
@@ -10,62 +11,25 @@
 
 import { X } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import {
+  dismissLaunchToast,
+  getLaunchToasts,
+  type LaunchToastItem,
+  reapExpiredToasts,
+  subscribeLaunchToasts,
+  type ToastVariant,
+} from './launch-toast-bus'
 import { openEditProfile } from './run-profile'
 
-const TOAST_TTL_MS = 8000
-
-export type ToastVariant = 'blocked' | 'failed'
-
-export interface LaunchToastItem {
-  id: number
-  variant: ToastVariant
-  title: string
-  body: string
-  profileId?: string
-  expiresAt: number
-}
-
-let nextId = 1
-const listeners = new Set<(toasts: LaunchToastItem[]) => void>()
-let toasts: LaunchToastItem[] = []
-
-function publish() {
-  for (const l of listeners) l(toasts)
-}
-
-export function pushLaunchToast(t: Omit<LaunchToastItem, 'id' | 'expiresAt'>): number {
-  const id = nextId++
-  toasts = [...toasts, { ...t, id, expiresAt: Date.now() + TOAST_TTL_MS }]
-  publish()
-  return id
-}
-
-function dismissLaunchToast(id: number) {
-  toasts = toasts.filter(t => t.id !== id)
-  publish()
-}
-
 export function LaunchToastContainer() {
-  const [items, setItems] = useState<LaunchToastItem[]>(toasts)
+  const [items, setItems] = useState<LaunchToastItem[]>(getLaunchToasts())
 
-  useEffect(() => {
-    listeners.add(setItems)
-    return () => {
-      listeners.delete(setItems)
-    }
-  }, [])
+  useEffect(() => subscribeLaunchToasts(setItems), [])
 
   useEffect(() => {
     if (items.length === 0) return
     const next = Math.min(...items.map(t => t.expiresAt))
-    const handle = window.setTimeout(
-      () => {
-        const now = Date.now()
-        toasts = toasts.filter(t => t.expiresAt > now)
-        publish()
-      },
-      Math.max(0, next - Date.now()),
-    )
+    const handle = window.setTimeout(reapExpiredToasts, Math.max(0, next - Date.now()))
     return () => window.clearTimeout(handle)
   }, [items])
 
