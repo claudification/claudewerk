@@ -22,13 +22,13 @@ export function ChordOverlay() {
 
   // Build list of available chord actions from command registry
   const prefixPlusSpace = `${prefix} `
-  const chords: ChordItem[] = getCommands()
-    .filter(cmd => cmd.shortcut?.startsWith(prefixPlusSpace))
-    .map(cmd => {
-      const secondKey = cmd.shortcut!.slice(prefixPlusSpace.length)
-      return { key: formatShortcut(secondKey), label: cmd.label }
-    })
-    .sort((a, b) => a.key.localeCompare(b.key))
+  const chords: ChordItem[] = []
+  for (const cmd of getCommands()) {
+    if (!cmd.shortcut?.startsWith(prefixPlusSpace)) continue
+    const secondKey = cmd.shortcut.slice(prefixPlusSpace.length)
+    chords.push({ key: formatShortcut(secondKey), label: cmd.label })
+  }
+  chords.sort((a, b) => a.key.localeCompare(b.key))
 
   const formattedPrefix = formatShortcut(prefix)
 

@@ -83,7 +83,12 @@ const SUB_COMMANDS: SubCommandDef[] = [
     completer: q => {
       const levels = ['low', 'medium', 'high', 'max']
       const ql = q.toLowerCase()
-      return levels.filter(l => !ql || l.includes(ql)).map(l => ({ value: l, builtin: true }))
+      const out: Array<{ value: string; builtin: true }> = []
+      for (const l of levels) {
+        if (ql && !l.includes(ql)) continue
+        out.push({ value: l, builtin: true })
+      }
+      return out
     },
   },
   {
