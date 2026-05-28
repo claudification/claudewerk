@@ -351,7 +351,7 @@ interface ConversationsState {
   setPendingTaskEdit: (task: { slug: string; status: string } | null) => void
   inputDrafts: Record<string, string>
   setInputDraft: (conversationId: string, text: string) => void
-  messageStash: Record<string, string[]>
+  messageStash: Record<string, StashEntry[]>
   pushStash: (conversationId: string, text: string) => void
   popStash: (conversationId: string) => string[]
 
@@ -634,6 +634,40 @@ function sanitizeConversations(conversations: Conversation[]): Conversation[] {
   return out
 }
 
+type StashEntry = { text: string; ts: number }
+const STASH_STORAGE_KEY = 'messageStash'
+const STASH_TTL_MS = 5 * 24 * 60 * 60 * 1000
+
+function loadStash(): Record<string, StashEntry[]> {
+  try {
+    const raw = localStorage.getItem(STASH_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const cutoff = Date.now() - STASH_TTL_MS
+    const out: Record<string, StashEntry[]> = {}
+    for (const [id, entries] of Object.entries(parsed)) {
+      if (!Array.isArray(entries)) continue
+      const fresh: StashEntry[] = []
+      for (const e of entries) {
+        if (e && typeof e.text === 'string' && typeof e.ts === 'number' && e.ts >= cutoff) {
+          fresh.push({ text: e.text, ts: e.ts })
+        }
+      }
+      if (fresh.length > 0) out[id] = fresh
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+function saveStash(stash: Record<string, StashEntry[]>) {
+  try {
+    if (Object.keys(stash).length === 0) localStorage.removeItem(STASH_STORAGE_KEY)
+    else localStorage.setItem(STASH_STORAGE_KEY, JSON.stringify(stash))
+  } catch {}
+}
+
 export const useConversationsStore = create<ConversationsState>((set, get) => ({
   conversations: [],
   conversationsById: {},
@@ -875,11 +909,16 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   inputDrafts: {},
   setInputDraft: (conversationId, text) =>
     set(state => ({ inputDrafts: { ...state.inputDrafts, [conversationId]: text } })),
-  messageStash: {},
+  messageStash: loadStash(),
   pushStash: (conversationId, text) =>
     set(state => {
       const stack = state.messageStash[conversationId] || []
-      return { messageStash: { ...state.messageStash, [conversationId]: [...stack, text] } }
+      const next = {
+        ...state.messageStash,
+        [conversationId]: [...stack, { text, ts: Date.now() }],
+      }
+      saveStash(next)
+      return { messageStash: next }
     }),
   popStash: conversationId => {
     const stack = get().messageStash[conversationId] || []
@@ -887,9 +926,10 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
     set(state => {
       const copy = { ...state.messageStash }
       delete copy[conversationId]
+      saveStash(copy)
       return { messageStash: copy }
     })
-    return stack
+    return stack.map(e => e.text)
   },
 
   selectedForBatch: new Set<string>(),
