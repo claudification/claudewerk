@@ -29,6 +29,8 @@ function formToYaml(form: FormState): string {
   return lines.join('\n')
 }
 
+const YAML_FIELDS = new Set(['name', 'url', 'apiKey', 'model'])
+
 function yamlToForm(yaml: string): FormState | string {
   const result: Record<string, string> = {}
   for (const line of yaml.split('\n')) {
@@ -38,7 +40,7 @@ function yamlToForm(yaml: string): FormState | string {
     if (idx === -1) return `Invalid line: ${trimmed}`
     const key = trimmed.slice(0, idx).trim()
     const val = trimmed.slice(idx + 1).trim()
-    if (!['name', 'url', 'apiKey', 'model'].includes(key)) return `Unknown field: ${key}`
+    if (!YAML_FIELDS.has(key)) return `Unknown field: ${key}`
     result[key] = val
   }
   return {

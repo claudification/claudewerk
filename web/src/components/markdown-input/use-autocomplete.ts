@@ -91,8 +91,9 @@ export function useAutocomplete(
           if (score > 0) scored.push({ item, score, builtin: true })
         }
       }
+      const builtinSet = new Set<string>(BUILTIN_NAMES)
       for (const item of conversationInfoData.slashCommands || []) {
-        if (BUILTIN_NAMES.includes(item)) continue
+        if (builtinSet.has(item)) continue
         const score = fuzzyScore(q, item)
         if (score > 0) scored.push({ item, score, builtin: false })
       }

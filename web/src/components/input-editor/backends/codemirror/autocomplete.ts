@@ -74,8 +74,9 @@ function buildCompletions(trigger: '/' | '@', query: string, atDocStart: boolean
     if (atDocStart) {
       for (const name of BUILTIN_COMMAND_NAMES) add(name, 'builtin', BUILTIN_SCORE_BOOST)
     }
+    const builtinSet = new Set<string>(BUILTIN_COMMAND_NAMES)
     for (const name of info.slashCommands) {
-      if (BUILTIN_COMMAND_NAMES.includes(name as (typeof BUILTIN_COMMAND_NAMES)[number])) continue
+      if (builtinSet.has(name)) continue
       add(name, undefined)
     }
   } else {
