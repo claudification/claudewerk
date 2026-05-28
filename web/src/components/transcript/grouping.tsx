@@ -51,7 +51,7 @@ function groupShallowEqual(a: DisplayGroup, b: DisplayGroup): boolean {
 }
 
 // Re-export so existing call sites (`import { DisplayGroup } from '../grouping'`) keep working.
-export type { DisplayGroup, GroupingState, TaskNotification }
+export type { DisplayGroup, TaskNotification }
 
 // Build map of tool_use_id -> result
 export function buildResultMap(entries: TranscriptEntry[]) {

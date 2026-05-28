@@ -2,7 +2,7 @@ import { Fzf } from 'fzf'
 import type { ProjectTaskMeta } from '@/hooks/use-project'
 
 /** Build the <project-task> prompt sent to CC. Re-exported from shared for single-source consistency. */
-export { buildTaskPrompt, type TaskMeta } from '@shared/spawn-prompt'
+export { buildTaskPrompt } from '@shared/spawn-prompt'
 
 function statusBoost(status: string): number {
   return status === 'in-progress' ? 1.5 : status === 'open' ? 1.3 : 1

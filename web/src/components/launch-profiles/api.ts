@@ -1,6 +1,6 @@
 import type { LaunchProfile } from '@shared/launch-profile'
 
-export interface FetchProfilesResponse {
+interface FetchProfilesResponse {
   profiles: LaunchProfile[]
 }
 

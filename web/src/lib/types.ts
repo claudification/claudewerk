@@ -8,15 +8,12 @@ export type {
   ConnectionInfo,
   ConnectionRole,
   ExtraUsage,
-  FileInfo,
-  HookEventType,
   LaunchConfig,
   MonitorInfo,
   ProfileUsageSnapshot,
   ProjectSettings,
   SubagentInfo,
   TaskInfo,
-  TeamInfo,
   UsageUpdate,
   UsageWindow,
 } from '@shared/protocol'
@@ -257,13 +254,9 @@ export interface TranscriptImage {
 // Re-export all typed entry variants from shared protocol
 export type {
   TranscriptAssistantEntry,
-  TranscriptAssistantMessage,
-  TranscriptCompactingEntry,
   TranscriptContentBlock,
   TranscriptEntry,
-  TranscriptProgressEntry,
   TranscriptQueueEntry,
-  TranscriptSystemEntry,
   TranscriptUserEntry,
 } from '@shared/protocol'
 
