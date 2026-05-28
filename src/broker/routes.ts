@@ -22,6 +22,7 @@ import { createMcpRouter } from './routes/mcp-server'
 import { createRecapsRouter } from './routes/recaps'
 import { createSentinelRouter } from './routes/sentinels'
 import { createRouteHelpers } from './routes/shared'
+import { createSheafRouter } from './routes/sheaf'
 import { createSpawnRouter } from './routes/spawn'
 import { createStatsRouter } from './routes/stats'
 import type { SentinelRegistry } from './sentinel-registry'
@@ -237,6 +238,7 @@ export function createRouter(options: RouteOptions): Hono {
     createApiRouter(conversationStore, store, helpers, rclaudeSecret, cacheDir, blobDir, publicOrigin, vapidPublicKey),
   )
   app.route('/', createStatsRouter(conversationStore, store, helpers, serverStartTime))
+  app.route('/', createSheafRouter(store, conversationStore, helpers, terminationLog))
   app.route('/', createAdminRouter(conversationStore, helpers, rclaudeSecret))
   app.route('/', createLaunchProfilesRouter(store, conversationStore))
   if (sentinelRegistry) {
