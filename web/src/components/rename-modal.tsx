@@ -6,10 +6,6 @@ import { haptic, isMobileViewport } from '@/lib/utils'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 import { Kbd } from './ui/kbd'
 
-export function openRenameModal(name?: string) {
-  window.dispatchEvent(new CustomEvent('open-rename-modal', { detail: { name } }))
-}
-
 export function RenameModal() {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')

@@ -4,7 +4,7 @@
  * -- the dispatcher clears the input and skips the normal send path.
  */
 
-import { openRenameModal } from '@/components/rename-modal'
+import { openRenameModal } from '@/components/rename-modal-trigger'
 import { useConversationsStore } from '@/hooks/use-conversations'
 
 /**
