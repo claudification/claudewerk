@@ -1,0 +1,97 @@
+/** Typed section cards (features/bugs/fixes/decisions/dead-ends/gotchas/incidents)
+ *  rendered from the structured frontmatter, plus open-questions + meta chips. */
+
+import type { RecapItem, RecapMetadata } from '@shared/protocol'
+import { ChipRow, Citations } from './recap-bits'
+
+const SECTIONS: Array<{ key: keyof RecapMetadata; title: string }> = [
+  { key: 'features', title: 'Features shipped' },
+  { key: 'bugs', title: 'Bug fixes' },
+  { key: 'fixes', title: 'Refactors / cleanup' },
+  { key: 'decisions', title: 'Decisions' },
+  { key: 'dead_ends', title: 'Dead ends -- do NOT retry' },
+  { key: 'gotchas', title: 'Gotchas' },
+  { key: 'incidents', title: 'Incidents' },
+]
+
+function ItemCard({ item, onOpenConversation }: { item: RecapItem; onOpenConversation?: (id: string) => void }) {
+  return (
+    <li className="rounded border-l-2 border-border bg-muted/20 px-2.5 py-1.5">
+      <div className="text-sm leading-snug">
+        {item.title}
+        <Citations item={item} onOpenConversation={onOpenConversation} />
+      </div>
+      {item.detail && <div className="mt-0.5 text-xs text-muted-foreground">{item.detail}</div>}
+    </li>
+  )
+}
+
+function Section({
+  title,
+  items,
+  onOpenConversation,
+}: {
+  title: string
+  items: RecapItem[]
+  onOpenConversation?: (id: string) => void
+}) {
+  if (!items.length) return null
+  return (
+    <div>
+      <h3 className="mb-1.5 text-sm font-semibold">
+        {title} <span className="text-muted-foreground">{items.length}</span>
+      </h3>
+      <ul className="flex flex-col gap-1.5">
+        {items.map((it, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: static recap list, rendered once, never reordered
+          <ItemCard key={`${it.title}-${i}`} item={it} onOpenConversation={onOpenConversation} />
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function OpenQuestions({ questions }: { questions: string[] }) {
+  if (!questions.length) return null
+  return (
+    <div className="rounded-md border border-warning/40 bg-warning/10 p-3">
+      <h3 className="mb-1.5 text-sm font-semibold text-warning">Open questions / unresolved</h3>
+      <ul className="flex list-disc flex-col gap-1 pl-4 text-sm">
+        {questions.map((q, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: static recap list, rendered once, never reordered
+          <li key={`${q.slice(0, 24)}-${i}`}>{q}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+export function RecapSections({
+  metadata,
+  onOpenConversation,
+}: {
+  metadata: RecapMetadata
+  onOpenConversation?: (id: string) => void
+}) {
+  return (
+    <div className="flex flex-col gap-4">
+      {SECTIONS.map(s => (
+        <Section
+          key={s.key}
+          title={s.title}
+          items={metadata[s.key] as RecapItem[]}
+          onOpenConversation={onOpenConversation}
+        />
+      ))}
+      <OpenQuestions questions={metadata.open_questions} />
+      <div className="flex flex-col gap-1.5">
+        <ChipRow label="hashtags" items={metadata.hashtags} tone="accent" />
+        <ChipRow label="keywords" items={metadata.keywords} />
+        <ChipRow label="goals" items={metadata.goals} />
+        <ChipRow label="discoveries" items={metadata.discoveries} />
+        <ChipRow label="side effects" items={metadata.side_effects} tone="warning" />
+        <ChipRow label="people" items={metadata.stakeholders} />
+      </div>
+    </div>
+  )
+}

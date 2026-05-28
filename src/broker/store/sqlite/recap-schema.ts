@@ -38,6 +38,7 @@ function createRecapsTable(db: Database) {
       signals_hash    TEXT NOT NULL,
       input_hash      TEXT,
       metadata_json   TEXT,
+      digest_json     TEXT,
       audience        TEXT NOT NULL DEFAULT 'human',
       inform_conversation_id TEXT
     )
@@ -52,6 +53,11 @@ function createRecapsTable(db: Database) {
   }
   if (!recapCols.has('inform_conversation_id')) {
     db.run('ALTER TABLE recaps ADD COLUMN inform_conversation_id TEXT')
+  }
+  // Recap 2.0: curated chart/drill-down projection (RecapDigest). Additive --
+  // pre-2.0 rows keep digest_json NULL and degrade to the markdown body.
+  if (!recapCols.has('digest_json')) {
+    db.run('ALTER TABLE recaps ADD COLUMN digest_json TEXT')
   }
   db.run('CREATE INDEX IF NOT EXISTS idx_recaps_project ON recaps(project_uri, created_at DESC)')
   db.run('CREATE INDEX IF NOT EXISTS idx_recaps_status ON recaps(status)')

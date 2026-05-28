@@ -16,6 +16,11 @@ export function denormalizeTags(recapId: string, metadata: RecapMetadata): Denor
 }
 
 export function buildFtsFields(metadata: RecapMetadata, body: string, projectUri: string, title: string) {
+  // Fold the new typed sections (decisions/dead-ends/gotchas) into the body
+  // field so FTS search reaches them even though they render as cards, not prose.
+  const extra = [...metadata.decisions, ...metadata.dead_ends, ...metadata.gotchas]
+    .map(i => (i.detail ? `${i.title} ${i.detail}` : i.title))
+    .join('\n')
   return {
     projectUri,
     title,
@@ -24,7 +29,7 @@ export function buildFtsFields(metadata: RecapMetadata, body: string, projectUri
     goals: metadata.goals.join(' '),
     discoveries: metadata.discoveries.join(' '),
     sideEffects: metadata.side_effects.join(' '),
-    body,
+    body: extra ? `${body}\n\n${extra}` : body,
   }
 }
 

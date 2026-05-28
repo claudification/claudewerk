@@ -5,26 +5,13 @@
  * known fields) so a small hand-rolled parser is enough.
  */
 
-export interface RecapMetadata {
-  subtitle?: string
-  keywords: string[]
-  hashtags: string[]
-  goals: string[]
-  discoveries: string[]
-  side_effects: string[]
-  features: RecapItem[]
-  bugs: RecapItem[]
-  fixes: RecapItem[]
-  incidents: RecapItem[]
-  open_questions: string[]
-  stakeholders: string[]
-}
+// Wire types live in shared/protocol.ts (single source of truth -- they are
+// exposed on PeriodRecapDoc). RecapMetadata is re-exported here so existing
+// broker-side imports (`from './parse-recap'`) keep working; RecapItem is
+// imported for internal use only (consumers import it from shared/protocol).
+export type { RecapMetadata } from '../../../../shared/protocol'
 
-export interface RecapItem {
-  title: string
-  conversations?: string[]
-  commits?: string[]
-}
+import type { RecapItem, RecapMetadata } from '../../../../shared/protocol'
 
 export interface ParsedRecap {
   metadata: RecapMetadata
@@ -63,7 +50,7 @@ const SIMPLE_LIST_FIELDS = [
   'open_questions',
   'stakeholders',
 ] as const
-const ITEM_LIST_FIELDS = ['features', 'bugs', 'fixes', 'incidents'] as const
+const ITEM_LIST_FIELDS = ['features', 'bugs', 'fixes', 'incidents', 'decisions', 'dead_ends', 'gotchas'] as const
 
 // fallow-ignore-next-line complexity
 function parseMetadata(yaml: string): RecapMetadata {
@@ -97,6 +84,9 @@ function makeEmptyMetadata(): RecapMetadata {
     bugs: [],
     fixes: [],
     incidents: [],
+    decisions: [],
+    dead_ends: [],
+    gotchas: [],
     open_questions: [],
     stakeholders: [],
   }
@@ -145,34 +135,56 @@ function parseBulletList(value: string): string[] {
     .map(stripQuotes)
 }
 
+interface PartialItem {
+  title?: string
+  detail?: string
+  conversations?: string[]
+  commits?: string[]
+  inferred?: boolean
+}
+
 // fallow-ignore-next-line complexity
 function parseItemList(value: string): RecapItem[] {
   const items: RecapItem[] = []
   const lines = value.split(/\r?\n/)
-  let current: { title?: string; conversations?: string[]; commits?: string[] } | null = null
+  let current: PartialItem | null = null
   for (const line of lines) {
     const itemStart = line.match(/^\s*-\s+(?:title:\s*)?(.+)$/)
     if (itemStart) {
       if (current?.title) items.push(toItem(current))
-      current = { title: stripQuotes(itemStart[1].trim()) }
+      current = titleToPartial(itemStart[1].trim())
       continue
     }
     if (!current) continue
     const subMatch = line.match(/^\s+([a-zA-Z_]+)\s*:\s*(.+)$/)
     if (!subMatch) continue
-    if (subMatch[1] === 'title') current.title = stripQuotes(subMatch[2].trim())
-    if (subMatch[1] === 'conversations') current.conversations = parseInlineList(subMatch[2].trim())
-    if (subMatch[1] === 'commits') current.commits = parseInlineList(subMatch[2].trim())
+    const [, key, rawVal] = subMatch
+    if (key === 'title') Object.assign(current, titleToPartial(rawVal.trim()))
+    if (key === 'detail') current.detail = stripQuotes(rawVal.trim())
+    if (key === 'conversations') current.conversations = parseInlineList(rawVal.trim())
+    if (key === 'commits') current.commits = parseInlineList(rawVal.trim())
+    if (key === 'inferred') current.inferred = /^(true|yes)$/i.test(stripQuotes(rawVal.trim()))
   }
   if (current?.title) items.push(toItem(current))
   return items
 }
 
-function toItem(p: { title?: string; conversations?: string[]; commits?: string[] }): RecapItem {
+/** Strip a leading `[inferred]` marker off a title and flag the item. */
+function titleToPartial(raw: string): PartialItem {
+  const title = stripQuotes(raw)
+  const m = title.match(/^\[inferred\]\s*(.+)$/i)
+  if (m) return { title: m[1].trim(), inferred: true }
+  return { title }
+}
+
+// fallow-ignore-next-line complexity
+function toItem(p: PartialItem): RecapItem {
   return {
     title: p.title ?? '',
+    ...(p.detail ? { detail: p.detail } : {}),
     ...(p.conversations?.length ? { conversations: p.conversations } : {}),
     ...(p.commits?.length ? { commits: p.commits } : {}),
+    ...(p.inferred ? { inferred: true } : {}),
   }
 }
 

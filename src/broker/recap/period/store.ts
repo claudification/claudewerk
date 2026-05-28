@@ -36,6 +36,7 @@ export interface RecapRow {
   signalsHash: string
   inputHash: string | null
   metadataJson: string | null
+  digestJson: string | null
 }
 
 export interface RecapInsert {
@@ -74,6 +75,7 @@ export type RecapPatch = Partial<
     | 'dismissedAt'
     | 'inputHash'
     | 'metadataJson'
+    | 'digestJson'
   >
 >
 
@@ -431,6 +433,7 @@ interface RawRecapRow {
   signals_hash: string
   input_hash: string | null
   metadata_json: string | null
+  digest_json: string | null
 }
 
 function hydrate(row: RawRecapRow): RecapRow {
@@ -464,6 +467,7 @@ function hydrate(row: RawRecapRow): RecapRow {
     signalsHash: row.signals_hash,
     inputHash: row.input_hash,
     metadataJson: row.metadata_json,
+    digestJson: row.digest_json,
   }
 }
 

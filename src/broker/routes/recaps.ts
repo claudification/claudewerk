@@ -15,11 +15,12 @@
  *     reads the recap's stored markdown directly.
  */
 
-import { Hono } from 'hono'
+import { type Context, Hono } from 'hono'
 import { marked } from 'marked'
 import { getAuthenticatedUser } from '../auth-routes'
 import type { ConversationStore } from '../conversation-store'
-import { getRecapOrchestrator } from '../recap-orchestrator'
+import type { RecapRow } from '../recap/period/store'
+import { getRecapOrchestrator, type RecapOrchestrator } from '../recap-orchestrator'
 import { createShare, validateShare } from '../shares'
 import type { RouteHelpers } from './shared'
 
@@ -36,6 +37,57 @@ function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, m => map[m])
 }
 
+/** Shared server-rendered HTML shell for the markdown-download and public-share
+ *  fallback pages. `title` must already be escaped; `innerHtml` is dropped
+ *  inside `.container` verbatim. (Phase 4 of Recap 2.0 will flip the share page
+ *  to the SPA; this shell remains the no-JS / direct-hit fallback.) */
+function recapHtmlDocument(title: string, innerHtml: string): string {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset=utf-8>
+  <meta name=viewport content="width=device-width, initial-scale=1">
+  <title>${title}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.6; color: #333; background: #f9f9f9; }
+    .container { max-width: 48rem; margin: 0 auto; padding: 2.5rem 1.5rem; background: white; }
+    h1, h2, h3, h4, h5, h6 { margin: 1.5rem 0 0.5rem; font-weight: 600; }
+    h1 { font-size: 2rem; }
+    h2 { font-size: 1.5rem; }
+    h3 { font-size: 1.25rem; }
+    p { margin: 1rem 0; }
+    ul, ol { margin: 1rem 0; padding-left: 2rem; }
+    li { margin: 0.5rem 0; }
+    code { background: #f4f4f4; padding: 0.2rem 0.4rem; border-radius: 3px; font-family: monospace; }
+    pre { background: #f4f4f4; padding: 1rem; border-radius: 5px; overflow-x: auto; margin: 1rem 0; }
+    pre code { background: none; padding: 0; }
+    blockquote { border-left: 4px solid #ddd; padding-left: 1rem; margin: 1rem 0; color: #666; }
+    a { color: #0066cc; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid #ddd; padding: 0.75rem; text-align: left; }
+    th { background: #f4f4f4; font-weight: 600; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #1a1a1a; color: #e0e0e0; }
+      .container { background: #2a2a2a; }
+      code { background: #333; }
+      pre { background: #333; }
+      table { border-color: #444; }
+      th { background: #333; }
+      blockquote { color: #999; }
+      a { color: #66b3ff; }
+    }
+  </style>
+</head>
+<body>
+  <div class=container>
+    ${innerHtml}
+  </div>
+</body>
+</html>`
+}
+
 interface ShareCreateBody {
   expiresIn?: number
   expiresAt?: number
@@ -48,6 +100,16 @@ function badRequest(message: string) {
 
 function notFound() {
   return { error: 'recap not found' }
+}
+
+/** Parse a persisted JSON blob, tolerating null/garbage (pre-2.0 share rows). */
+function safeJson<T>(raw: string | null): T | undefined {
+  if (!raw) return undefined
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return undefined
+  }
 }
 
 function canRead(req: Request, helpers: RouteHelpers, projectUri: string, createdBy: string | undefined): boolean {
@@ -87,6 +149,22 @@ function buildFilename(meta: {
 
 export function createRecapsRouter(_conversationStore: ConversationStore, helpers: RouteHelpers): Hono {
   const app = new Hono()
+
+  /** Shared preamble for the by-id read routes: resolve the orchestrator,
+   *  load the row, and enforce read permission. Returns the loaded triple, or
+   *  a Response the caller must return verbatim (404 / 403). */
+  function loadReadable(c: Context): { orch: RecapOrchestrator; id: string; row: RecapRow } | Response {
+    const orch = getRecapOrchestrator()
+    if (!orch) return c.json(notFound(), 404)
+    const id = c.req.param('id')
+    if (!id) return c.json(notFound(), 404)
+    const row = orch.store.get(id)
+    if (!row) return c.json(notFound(), 404)
+    if (!canRead(c.req.raw, helpers, row.projectUri, row.createdBy ?? undefined)) {
+      return c.json({ error: 'forbidden' }, 403)
+    }
+    return { orch, id, row }
+  }
 
   app.get('/api/recaps', c => {
     const orch = getRecapOrchestrator()
@@ -134,14 +212,9 @@ export function createRecapsRouter(_conversationStore: ConversationStore, helper
   })
 
   app.get('/api/recaps/:id/markdown', c => {
-    const orch = getRecapOrchestrator()
-    if (!orch) return c.json(notFound(), 404)
-    const id = c.req.param('id')
-    const row = orch.store.get(id)
-    if (!row) return c.json(notFound(), 404)
-    if (!canRead(c.req.raw, helpers, row.projectUri, row.createdBy ?? undefined)) {
-      return c.json({ error: 'forbidden' }, 403)
-    }
+    const loaded = loadReadable(c)
+    if (loaded instanceof Response) return loaded
+    const { orch, id, row } = loaded
     if (row.status !== 'done') return c.json({ error: 'recap not done yet' }, 409)
     const markdown = orch.getMarkdown(id)
     if (!markdown) return c.json({ error: 'recap markdown missing' }, 409)
@@ -165,50 +238,10 @@ export function createRecapsRouter(_conversationStore: ConversationStore, helper
 
     // If client wants HTML or wildcard, render markdown to HTML
     if (accept.includes('text/html') || accept.includes('*/*') || !accept) {
-      const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset=utf-8>
-  <meta name=viewport content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(row.title || `Recap ${id.slice(0, 12)}`)}</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.6; color: #333; background: #f9f9f9; }
-    .container { max-width: 48rem; margin: 0 auto; padding: 2.5rem 1.5rem; background: white; }
-    h1, h2, h3, h4, h5, h6 { margin: 1.5rem 0 0.5rem; font-weight: 600; }
-    h1 { font-size: 2rem; }
-    h2 { font-size: 1.5rem; }
-    h3 { font-size: 1.25rem; }
-    p { margin: 1rem 0; }
-    ul, ol { margin: 1rem 0; padding-left: 2rem; }
-    li { margin: 0.5rem 0; }
-    code { background: #f4f4f4; padding: 0.2rem 0.4rem; border-radius: 3px; font-family: monospace; }
-    pre { background: #f4f4f4; padding: 1rem; border-radius: 5px; overflow-x: auto; margin: 1rem 0; }
-    pre code { background: none; padding: 0; }
-    blockquote { border-left: 4px solid #ddd; padding-left: 1rem; margin: 1rem 0; color: #666; }
-    a { color: #0066cc; text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
-    th, td { border: 1px solid #ddd; padding: 0.75rem; text-align: left; }
-    th { background: #f4f4f4; font-weight: 600; }
-    @media (prefers-color-scheme: dark) {
-      body { background: #1a1a1a; color: #e0e0e0; }
-      .container { background: #2a2a2a; }
-      code { background: #333; }
-      pre { background: #333; }
-      table { border-color: #444; }
-      th { background: #333; }
-      blockquote { color: #999; }
-      a { color: #66b3ff; }
-    }
-  </style>
-</head>
-<body>
-  <div class=container>
-    <main>${marked(markdown)}</main>
-  </div>
-</body>
-</html>`
+      const html = recapHtmlDocument(
+        escapeHtml(row.title || `Recap ${id.slice(0, 12)}`),
+        `<main>${marked(markdown)}</main>`,
+      )
       return new Response(html, {
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
@@ -226,27 +259,17 @@ export function createRecapsRouter(_conversationStore: ConversationStore, helper
   })
 
   app.get('/api/recaps/:id/logs', c => {
-    const orch = getRecapOrchestrator()
-    if (!orch) return c.json(notFound(), 404)
-    const id = c.req.param('id')
-    const row = orch.store.get(id)
-    if (!row) return c.json(notFound(), 404)
-    if (!canRead(c.req.raw, helpers, row.projectUri, row.createdBy ?? undefined)) {
-      return c.json({ error: 'forbidden' }, 403)
-    }
+    const loaded = loadReadable(c)
+    if (loaded instanceof Response) return loaded
+    const { orch, id } = loaded
     const result = orch.get(id, true)
     return c.json({ logs: result?.logs ?? [] })
   })
 
   app.post('/api/recaps/:id/share', async c => {
-    const orch = getRecapOrchestrator()
-    if (!orch) return c.json(notFound(), 404)
-    const id = c.req.param('id')
-    const row = orch.store.get(id)
-    if (!row) return c.json(notFound(), 404)
-    if (!canRead(c.req.raw, helpers, row.projectUri, row.createdBy ?? undefined)) {
-      return c.json({ error: 'forbidden' }, 403)
-    }
+    const loaded = loadReadable(c)
+    if (loaded instanceof Response) return loaded
+    const { id, row } = loaded
     if (row.status !== 'done' || !row.markdown) {
       return c.json(badRequest('cannot share a recap that is not done'), 409)
     }
@@ -314,6 +337,10 @@ export function createRecapsRouter(_conversationStore: ConversationStore, helper
       timeZone: row.timeZone,
       model: row.model,
       markdown: row.markdown,
+      // Recap 2.0: structured render data. Absent on pre-2.0 shared recaps;
+      // the React share view degrades to markdown when undefined.
+      metadata: safeJson(row.metadataJson),
+      digest: safeJson(row.digestJson),
       llmCostUsd: row.llmCostUsd,
       completedAt: row.completedAt,
       shareLabel: share.label,
@@ -329,47 +356,7 @@ export function createRecapsRouter(_conversationStore: ConversationStore, helper
 
     // Default for browsers: render as HTML
     if (accept.includes('text/html') || accept.includes('*/*') || !accept) {
-      const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset=utf-8>
-  <meta name=viewport content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(row.title || `Recap ${row.id.slice(0, 12)}`)}</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.6; color: #333; background: #f9f9f9; }
-    .container { max-width: 48rem; margin: 0 auto; padding: 2.5rem 1.5rem; background: white; }
-    h1, h2, h3, h4, h5, h6 { margin: 1.5rem 0 0.5rem; font-weight: 600; }
-    h1 { font-size: 2rem; }
-    h2 { font-size: 1.5rem; }
-    h3 { font-size: 1.25rem; }
-    p { margin: 1rem 0; }
-    ul, ol { margin: 1rem 0; padding-left: 2rem; }
-    li { margin: 0.5rem 0; }
-    code { background: #f4f4f4; padding: 0.2rem 0.4rem; border-radius: 3px; font-family: monospace; }
-    pre { background: #f4f4f4; padding: 1rem; border-radius: 5px; overflow-x: auto; margin: 1rem 0; }
-    pre code { background: none; padding: 0; }
-    blockquote { border-left: 4px solid #ddd; padding-left: 1rem; margin: 1rem 0; color: #666; }
-    a { color: #0066cc; text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
-    th, td { border: 1px solid #ddd; padding: 0.75rem; text-align: left; }
-    th { background: #f4f4f4; font-weight: 600; }
-    @media (prefers-color-scheme: dark) {
-      body { background: #1a1a1a; color: #e0e0e0; }
-      .container { background: #2a2a2a; }
-      code { background: #333; }
-      pre { background: #333; }
-      table { border-color: #444; }
-      th { background: #333; }
-      blockquote { color: #999; }
-      a { color: #66b3ff; }
-    }
-  </style>
-</head>
-<body>
-  <div class=container>
-    <header class="mb-6 pb-4 border-b">
+      const header = `<header class="mb-6 pb-4 border-b">
       <h1>${escapeHtml(row.title || 'Recap')}</h1>
       ${row.subtitle ? `<p class="italic text-muted">${escapeHtml(row.subtitle)}</p>` : ''}
       <p class="text-sm text-muted" style="margin-top: 0.5rem; font-size: 0.875rem; color: #999;">
@@ -377,11 +364,11 @@ export function createRecapsRouter(_conversationStore: ConversationStore, helper
         ${row.model ? ` - ${escapeHtml(row.model)}` : ''}
         ${share.expiresAt ? ` - share expires ${new Date(share.expiresAt).toISOString().slice(0, 10)}` : ''}
       </p>
-    </header>
-    <main>${marked(row.markdown)}</main>
-  </div>
-</body>
-</html>`
+    </header>`
+      const html = recapHtmlDocument(
+        escapeHtml(row.title || `Recap ${row.id.slice(0, 12)}`),
+        `${header}\n    <main>${marked(row.markdown)}</main>`,
+      )
       return new Response(html, {
         headers: { 'Content-Type': 'text/html; charset=utf-8' },
       })
@@ -391,10 +378,13 @@ export function createRecapsRouter(_conversationStore: ConversationStore, helper
     return c.json(data)
   })
 
-  // Pretty shorthand redirect: /r/:token -> /shared/public/recap/:token
+  // Pretty shorthand: /r/:token -> the SPA in recap share mode. The SPA mounts
+  // PublicRecapView, which fetches /shared/public/recap/:token (JSON) and
+  // renders the rich structured report (Recap 2.0). The server-rendered HTML at
+  // /shared/public/recap/:token remains as a no-JS / crawler fallback.
   app.get('/r/:token', c => {
     const token = c.req.param('token')
-    return c.redirect(`/shared/public/recap/${encodeURIComponent(token)}`)
+    return c.redirect(`/?share=${encodeURIComponent(token)}&kind=recap`)
   })
 
   return app

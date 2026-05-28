@@ -56,5 +56,43 @@ body`
     const out = parseRecapOutput(raw)
     expect(out.metadata.keywords).toEqual([])
     expect(out.metadata.features).toEqual([])
+    // Recap 2.0 fields default to empty arrays too.
+    expect(out.metadata.decisions).toEqual([])
+    expect(out.metadata.dead_ends).toEqual([])
+    expect(out.metadata.gotchas).toEqual([])
+  })
+
+  it('parses Recap 2.0 sections: decisions, dead_ends, gotchas with detail + inferred', () => {
+    const raw = `---
+subtitle: rich recap
+decisions:
+  - title: Bearer tokens over cookies
+    detail: SPA simplicity + mobile parity
+    conversations: [conv_aaa111]
+dead_ends:
+  - title: Tried polling list() for /clear detection
+    detail: list never rotates sessionId; switched to transcript-dir watch
+    commits: [1234abc]
+gotchas:
+  - "[inferred] Bun fs.watch is unreliable on macOS"
+  - title: docker cp corrupts WAL
+    inferred: true
+---
+
+## TL;DR
+body`
+    const out = parseRecapOutput(raw)
+    expect(out.metadata.decisions.length).toBe(1)
+    expect(out.metadata.decisions[0].title).toBe('Bearer tokens over cookies')
+    expect(out.metadata.decisions[0].detail).toBe('SPA simplicity + mobile parity')
+    expect(out.metadata.decisions[0].conversations).toContain('conv_aaa111')
+    expect(out.metadata.dead_ends.length).toBe(1)
+    expect(out.metadata.dead_ends[0].commits).toContain('1234abc')
+    expect(out.metadata.gotchas.length).toBe(2)
+    // `[inferred]` title prefix is stripped and flagged.
+    expect(out.metadata.gotchas[0].title).toBe('Bun fs.watch is unreliable on macOS')
+    expect(out.metadata.gotchas[0].inferred).toBe(true)
+    // explicit `inferred: true` sub-key also flags.
+    expect(out.metadata.gotchas[1].inferred).toBe(true)
   })
 })

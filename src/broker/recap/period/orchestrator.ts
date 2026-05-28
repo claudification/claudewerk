@@ -13,9 +13,11 @@ import {
   gatherTranscripts,
   type PeriodScope,
 } from './gather'
+import type { CommitDigest } from './gather/types'
 import { pickModel } from './llm/escalate'
 import { buildPrompt, type PromptInputs } from './llm/prompt-builder'
 import { createProgressEmitter, type ProgressBroadcaster } from './progress'
+import { buildRecapDigest } from './render/digest'
 import { renderFinalMarkdown } from './render/markdown'
 import { buildFtsFields, denormalizeTags } from './render/metadata'
 import { parseRecapOutput, type RecapMetadata, RecapParseError } from './render/parse-recap'
@@ -46,6 +48,10 @@ export interface OrchestratorDeps {
   apiKey?: string
   /** Project label rendering (e.g. last path segment). */
   projectLabel?: (projectUri: string) => string
+  /** Real commit gathering via the sentinel git_log RPC. Injected by the broker
+   *  (which owns the sentinel connections). Absent in tests -> the empty stub
+   *  is used and the recap reports "no git data available". */
+  gatherCommits?: (scope: PeriodScope) => Promise<CommitDigest>
   /** Deliver a recap-completed system channel message into a conversation.
    *  Provided by the broker (inform_on_complete). No-op if absent. */
   informConversation?: (conversationId: string, msg: { recapId: string; text: string }) => void
@@ -160,6 +166,19 @@ async function runRecap(
     deps.projectLabel,
     includeInternals,
   )
+  // Real git gather (async, via sentinel RPC) replaces the empty stub when the
+  // broker injected a gatherer. Failures degrade to the stub commits already in
+  // promptInputs -- a recap without git data still renders.
+  if (deps.gatherCommits) {
+    try {
+      promptInputs.commits = await deps.gatherCommits(scope)
+      const n = promptInputs.commits.perProject.reduce((s, p) => s + p.commits.length, 0)
+      emit.emit('info', 'gather/commits', `git gather: ${n} commit(s) across ${promptInputs.commits.perProject.length} project(s)`)
+    } catch (err) {
+      emit.emit('warn', 'gather/commits', `git gather failed: ${describe(err)}`)
+    }
+  }
+
   emit.emit(
     'info',
     'gather/done',
@@ -194,11 +213,18 @@ async function runRecap(
     body: parsed.body,
   })
 
+  const digest = buildRecapDigest({
+    cost: promptInputs.cost,
+    conversations: promptInputs.conversations,
+    commits: promptInputs.commits,
+  })
+
   finalize(deps, recapId, {
     title: titleTemplate,
     subtitle: parsed.metadata.subtitle,
     markdown: finalMarkdown,
     metadata: parsed.metadata,
+    digestJson: JSON.stringify(digest),
     body: parsed.body,
     projectUri: args.projectUri,
     inputTokens: llmResult.inputTokens,
@@ -328,6 +354,7 @@ interface FinalizeArgs {
   subtitle?: string
   markdown: string
   metadata: RecapMetadata
+  digestJson: string
   body: string
   projectUri: string
   inputTokens: number
@@ -344,6 +371,7 @@ function finalize(deps: OrchestratorDeps, recapId: string, args: FinalizeArgs): 
     subtitle: args.subtitle ?? null,
     markdown: args.markdown,
     metadataJson: JSON.stringify(args.metadata),
+    digestJson: args.digestJson,
     inputTokens: args.inputTokens,
     outputTokens: args.outputTokens,
     llmCostUsd: args.costUsd,

@@ -276,6 +276,10 @@ export interface ConversationStore {
   addCcSessionsListener: (requestId: string, cb: (result: unknown) => void) => void
   removeCcSessionsListener: (requestId: string) => void
   resolveCcSessions: (requestId: string, result: unknown) => void
+  /** Pending `git_log_request` RPCs by requestId (recap grounding). */
+  addGitLogListener: (requestId: string, cb: (result: unknown) => void) => void
+  removeGitLogListener: (requestId: string) => void
+  resolveGitLog: (requestId: string, result: unknown) => void
   /** Pending `sentinel_patch_config` request/response by patchId (Phase 8). */
   addPatchListener: (patchId: string, cb: (result: unknown) => void) => void
   removePatchListener: (patchId: string) => void
@@ -2597,6 +2601,9 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     addCcSessionsListener,
     removeCcSessionsListener,
     resolveCcSessions,
+    addGitLogListener,
+    removeGitLogListener,
+    resolveGitLog,
     addPatchListener,
     removePatchListener,
     resolvePatch,
@@ -2825,6 +2832,9 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     addCcSessionsListener,
     removeCcSessionsListener,
     resolveCcSessions,
+    addGitLogListener,
+    removeGitLogListener,
+    resolveGitLog,
     addPatchListener,
     removePatchListener,
     resolvePatch,

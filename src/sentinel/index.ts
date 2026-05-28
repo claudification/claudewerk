@@ -36,6 +36,8 @@ import { cwdToProjectUri, parseProjectUri } from '../shared/project-uri'
 import type {
   BrokerSentinelMessage,
   CcVersionChanged,
+  GitLogRequest,
+  GitLogResult,
   ListCcSessionsResult,
   ListDirsResult,
   ProfileUsageSnapshot,
@@ -65,6 +67,7 @@ import {
   validateDaemonConfigPaths,
 } from './daemon-dispatch'
 import { registerDaemonSession, startDaemonRosterWatch, stopDaemonRosterWatch } from './daemon-roster'
+import { runGitLog } from './git-log'
 import { type PreflightIssue, preflightSpawn } from './preflight'
 import { runProfileCli } from './profile-cli'
 import { pickProfile } from './selection'
@@ -3428,6 +3431,23 @@ function connect(
             ccSessions,
           }
           ws.send(JSON.stringify(sessResponse))
+          break
+        }
+
+        case 'git_log_request': {
+          const gitMsg = msg as GitLogRequest
+          const expandedCwd = expandPath(gitMsg.cwd, spawnRoot)
+          debug(`Git log for: ${expandedCwd} (${gitMsg.sinceMs}..${gitMsg.untilMs})`, verbose)
+          const outcome = runGitLog(expandedCwd, gitMsg.sinceMs, gitMsg.untilMs)
+          const gitResponse: GitLogResult = {
+            type: 'git_log_result',
+            requestId: gitMsg.requestId,
+            cwd: gitMsg.cwd,
+            success: !outcome.error,
+            commits: outcome.commits,
+            error: outcome.error,
+          }
+          ws.send(JSON.stringify(gitResponse))
           break
         }
 

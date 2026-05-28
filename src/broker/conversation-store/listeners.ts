@@ -11,6 +11,10 @@ export interface ListenerRegistry {
   addCcSessionsListener: (requestId: string, cb: (result: unknown) => void) => void
   removeCcSessionsListener: (requestId: string) => void
   resolveCcSessions: (requestId: string, result: unknown) => void
+  /** Pending `git_log_request` RPCs keyed by requestId (recap grounding). */
+  addGitLogListener: (requestId: string, cb: (result: unknown) => void) => void
+  removeGitLogListener: (requestId: string) => void
+  resolveGitLog: (requestId: string, result: unknown) => void
   /** Pending `sentinel_patch_config` requests keyed by `patchId`. The REST
    *  route registers a listener, sends the patch over the sentinel WS, and the
    *  `sentinel_patch_config_ack` handler resolves it. `resolvePatch` returns
@@ -25,6 +29,7 @@ export function createListenerRegistry(): ListenerRegistry {
   const dirListeners = new Map<string, (result: unknown) => void>()
   const fileListeners = new Map<string, (result: unknown) => void>()
   const ccSessionsListeners = new Map<string, (result: unknown) => void>()
+  const gitLogListeners = new Map<string, (result: unknown) => void>()
   const patchListeners = new Map<string, (result: unknown) => void>()
 
   return {
@@ -79,6 +84,19 @@ export function createListenerRegistry(): ListenerRegistry {
       const cb = ccSessionsListeners.get(requestId)
       if (cb) {
         ccSessionsListeners.delete(requestId)
+        cb(result)
+      }
+    },
+    addGitLogListener(requestId, cb) {
+      gitLogListeners.set(requestId, cb)
+    },
+    removeGitLogListener(requestId) {
+      gitLogListeners.delete(requestId)
+    },
+    resolveGitLog(requestId, result) {
+      const cb = gitLogListeners.get(requestId)
+      if (cb) {
+        gitLogListeners.delete(requestId)
         cb(result)
       }
     },

@@ -49,16 +49,23 @@ const FRONTMATTER_SPEC = `REQUIRED YAML FRONTMATTER (extract from the input, do 
   goals: [<1-5 things being attempted this period>]
   discoveries: [<0-10 notable findings, bugs identified, learnings, architectural insights, surprises>]
   side_effects: [<0-5 unintended consequences, scope creep, broken stuff, technical debt incurred>]
-  features: [<each shipped feature as {title, conversations?, commits?}>]
-  bugs:     [<each bug fixed as {title, conversations?, commits?}>]
-  fixes:    [<refactors/cleanups as {title, conversations?, commits?}>]
+  features: [<each shipped feature as {title, detail?, conversations?, commits?}>]
+  bugs:     [<each bug fixed as {title, detail?, conversations?, commits?}>]
+  fixes:    [<refactors/cleanups as {title, detail?, conversations?, commits?}>]
   incidents: [<production/dev incidents as {title, conversations?, severity}>]
+  decisions: [<non-obvious decisions made + WHY, as {title, detail (the reasoning a diff cannot show), conversations?}>]
+  dead_ends: [<approaches tried then ABANDONED, as {title, detail (why it failed), conversations?, commits?}>]
+  gotchas:  [<constraints/landmines discovered (tool/env quirks, surprising failures), as {title, detail?, conversations?}>]
   open_questions: [<unresolved questions the assistant left for the user; PRIORITISE the OPEN_QUESTIONS section in the input>]
   stakeholders: [<0-5 people involved or mentioned by name>]
 
 OMIT fields where there's nothing to put. NEVER invent items to fill quotas.
-For features/bugs/fixes/incidents: cite conversation ids (short form, 8 chars)
-and commit hashes (short form, 7 chars) where the input mentions them.`
+CITE: every features/bugs/fixes/incidents/decisions/dead_ends item names its
+conversation ids (8-char) and commit hashes (7-char) where the input shows them.
+FACT vs INFERENCE: a claim backed by a commit or task is a FACT -- state it
+plainly. A claim concluded from transcript text only is an INFERENCE -- set
+\`inferred: true\` on the item (or prefix the title with [inferred]). Never
+present inference as fact.`
 
 function humanSystemPrompt(inputs: PromptInputs): string {
   return `You are writing a comprehensive development recap for project ${inputs.projectLabel}
@@ -66,6 +73,16 @@ covering ${inputs.periodHuman} (${inputs.periodIsoRange}).
 
 Output format: a YAML frontmatter block (between --- lines) followed by markdown body.
 The frontmatter is parsed and indexed -- be specific so future searches find this recap.
+
+GROUND RULES:
+  - GROUND EVERY CLAIM. The input includes real COMMITS (with files-changed and
+    +/- line counts) and TASKS. Tie features/bugs/fixes to specific commit
+    hashes (7-char) and conversation ids (8-char), and name real files + project
+    terms verbatim -- "rebuilt admin/files.tsx (a1b2c3d)", NOT "admin work".
+  - FACT vs INFERENCE. A claim backed by a commit/task is a FACT. A claim read
+    from transcript text only is an INFERENCE -- mark it inferred (frontmatter
+    \`inferred: true\`, or [inferred] in prose). Never dress inference as fact.
+  - Vague, abstracted summaries are a failure. Be concrete and specific.
 
 ${FRONTMATTER_SPEC}
 
@@ -75,12 +92,24 @@ MARKDOWN BODY (after the closing --- of frontmatter):
   3-5 bullets, the most important things from the period
 
   ## Features shipped
-  Bulleted, link conversations via [text](/sessions/conv_xxx...)
+  Bulleted, link conversations via [text](/sessions/conv_xxx...), cite commits
 
   ## Bug fixes
   Bulleted, with commit hashes (short form)
 
   ## Refactors / cleanup
+
+  ## Decisions
+  Non-obvious decisions made this period and WHY -- the reasoning a diff cannot
+  show. Cite the conversation where it was decided. Omit the section if none.
+
+  ## Dead ends
+  Approaches tried this period and ABANDONED, each with the reason it failed.
+  git keeps no record of abandoned work -- this is high-value. Omit if none.
+
+  ## Gotchas
+  Constraints or landmines discovered: a tool that misbehaves, an environment
+  quirk, a surprising failure mode. Omit the section if none.
 
   ## Incidents / errors
   (omit section if none)
@@ -275,10 +304,15 @@ function renderCommitsSection(commits: CommitDigest): string {
   const totalCommits = commits.perProject.reduce((sum, p) => sum + p.commits.length, 0)
   if (totalCommits === 0) return 'COMMITS: (no git data available for this recap)'
   const blocks = commits.perProject.map(p => {
-    const lines = p.commits.map(c => `  ${c.sha.slice(0, 7)} ${c.subject}`).join('\n')
+    const lines = p.commits.map(c => `  ${c.sha.slice(0, 7)} ${c.subject}${commitStat(c)}`).join('\n')
     return `  ${p.cwd}:\n${lines}`
   })
-  return `COMMITS (${totalCommits}):\n${blocks.join('\n\n')}`
+  return `COMMITS (${totalCommits}) -- format: <sha> <subject> [<files>f +<ins>/-<del>]:\n${blocks.join('\n\n')}`
+}
+
+function commitStat(c: CommitDigest['perProject'][number]['commits'][number]): string {
+  if (c.filesChanged === undefined) return ''
+  return ` [${c.filesChanged}f +${c.insertions ?? 0}/-${c.deletions ?? 0}]`
 }
 
 function renderCostSummary(cost: CostDigest): string {
