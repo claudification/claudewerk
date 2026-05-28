@@ -37,7 +37,10 @@ export function ProjectList() {
   const structure = useConversationStructure()
   const selectedConversationId = useConversationsStore(s => s.selectedConversationId)
   const rawProjectOrder = useConversationsStore(s => s.projectOrder)
-  const projectOrder = rawProjectOrder?.tree ? rawProjectOrder : { tree: [] }
+  const projectOrder = useMemo(
+    () => (rawProjectOrder?.tree ? rawProjectOrder : { tree: [] }),
+    [rawProjectOrder],
+  )
   const projectSettings = useConversationsStore(s => s.projectSettings)
   const showEnded = useConversationsStore(s => s.controlPanelPrefs.showEndedConversations)
   const showInactive = useConversationsStore(s => s.controlPanelPrefs.showInactiveByDefault)

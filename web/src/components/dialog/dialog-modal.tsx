@@ -247,7 +247,7 @@ export const DialogModal = memo(function DialogModal({ layout, onSubmit, onCance
     setMinimized(false)
   }, [onInteraction])
 
-  const allComponents = currentPage?.body || []
+  const allComponents = useMemo(() => currentPage?.body || [], [currentPage?.body])
   const requiredIds = useMemo(() => collectRequired(allComponents), [allComponents])
   const canProceed = requiredIds.every(id => hasValue(values[id]))
 

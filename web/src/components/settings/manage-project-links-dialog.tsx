@@ -145,7 +145,7 @@ export function ManageProjectLinksDialog() {
     return projects.filter(p => !uriMatches(p.project_uri, focusProject) && isLinkedTo(p.project_uri)).length
   }, [focusProject, projects, isLinkedTo])
 
-  const projectOrder = rawProjectOrder?.tree ?? []
+  const projectOrder = useMemo(() => rawProjectOrder?.tree ?? [], [rawProjectOrder?.tree])
 
   const groupedOtherProjects = useMemo(() => {
     const projectMap = new Map<string, ProjectItem>()

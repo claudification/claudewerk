@@ -40,7 +40,7 @@ export function LaunchProfileManager() {
     }
   }, [open, focusId, profiles])
 
-  const list = draft ?? []
+  const list = useMemo(() => draft ?? [], [draft])
   const selected = useMemo(() => findProfile(list, selectedId), [list, selectedId])
   const validationError = useMemo(() => {
     const dupName = findDuplicateName(list)
