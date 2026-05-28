@@ -46,21 +46,21 @@ export function VoiceFab() {
 
   // Auto-submit when voice_done arrives
   useEffect(() => {
-    if (voice.state === 'submitting' && !cancelled) {
-      const text = voice.refinedText || voice.finalText
-      haptic('tick')
-      if (text.trim()) {
-        const conversationId = useConversationsStore.getState().selectedConversationId
-        if (conversationId) sendInput(conversationId, text)
-        haptic('double')
-      }
-      setTimeout(() => {
-        voice.reset()
-        setDragOffset(0)
-        setCancelled(false)
-        pendingStopRef.current = false
-      }, 300)
+    if (voice.state !== 'submitting' || cancelled) return
+    const text = voice.refinedText || voice.finalText
+    haptic('tick')
+    if (text.trim()) {
+      const conversationId = useConversationsStore.getState().selectedConversationId
+      if (conversationId) sendInput(conversationId, text)
+      haptic('double')
     }
+    const t = setTimeout(() => {
+      voice.reset()
+      setDragOffset(0)
+      setCancelled(false)
+      pendingStopRef.current = false
+    }, 300)
+    return () => clearTimeout(t)
   }, [voice.state, voice.refinedText, voice.finalText, cancelled, voice.reset])
 
   // Auto-dismiss errors

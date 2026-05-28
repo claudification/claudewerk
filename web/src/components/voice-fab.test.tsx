@@ -1,0 +1,71 @@
+/**
+ * Regression test for the setTimeout leak fix at voice-fab.tsx:48.
+ *
+ * Before the fix: when voice.state transitioned to 'submitting', a 300ms
+ * setTimeout was scheduled to reset voice + drag state. If the component
+ * unmounted before the timer fired, the callback still ran and called
+ * voice.reset() and several setState calls on an unmounted component.
+ *
+ * After the fix: the effect captures the timer id and clears it on cleanup.
+ */
+
+import { cleanup, render } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+
+const resetMock = vi.fn()
+let voiceState: 'idle' | 'submitting' | 'recording' | 'error' | 'connecting' | 'refining' = 'idle'
+
+vi.mock('@/hooks/use-voice-recording', () => ({
+  useVoiceRecording: () => ({
+    state: voiceState,
+    refinedText: '',
+    finalText: 'hello world',
+    interimText: '',
+    errorMsg: '',
+    start: vi.fn(),
+    stop: vi.fn(),
+    cancel: vi.fn(),
+    reset: resetMock,
+  }),
+}))
+
+vi.mock('@/hooks/use-conversations', () => ({
+  sendInput: vi.fn(),
+  useConversationsStore: Object.assign(() => ({}), {
+    getState: () => ({ selectedConversationId: null }),
+  }),
+}))
+
+vi.mock('@/lib/utils', async importOriginal => {
+  const actual = (await importOriginal()) as Record<string, unknown>
+  return { ...actual, haptic: vi.fn() }
+})
+
+// Mock navigator.permissions for jsdom
+beforeEach(() => {
+  Object.defineProperty(navigator, 'permissions', {
+    configurable: true,
+    value: { query: vi.fn().mockResolvedValue({ state: 'granted', onchange: null }) },
+  })
+})
+
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+  vi.clearAllMocks()
+  voiceState = 'idle'
+})
+
+describe('VoiceFab setTimeout cleanup', () => {
+  test('does not call voice.reset() if unmounted before 300ms timer fires', async () => {
+    vi.useFakeTimers()
+    voiceState = 'submitting'
+    const { VoiceFab } = await import('./voice-fab')
+    const { unmount } = render(<VoiceFab />)
+    // Effect ran on mount; setTimeout(300) is now pending.
+    unmount()
+    // Advance well past the 300ms timeout; cleanup should have cleared it.
+    vi.advanceTimersByTime(1000)
+    expect(resetMock).not.toHaveBeenCalled()
+  })
+})
