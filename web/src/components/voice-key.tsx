@@ -66,15 +66,15 @@ export function VoiceKey() {
 
   // Auto-submit when voice_done arrives
   useEffect(() => {
-    if (voice.state === 'submitting') {
-      const text = voice.refinedText || voice.finalText
-      if (text.trim()) {
-        const conversationId = useConversationsStore.getState().selectedConversationId
-        if (conversationId) sendInput(conversationId, text)
-        haptic('success')
-      }
-      setTimeout(() => voice.reset(), 300)
+    if (voice.state !== 'submitting') return
+    const text = voice.refinedText || voice.finalText
+    if (text.trim()) {
+      const conversationId = useConversationsStore.getState().selectedConversationId
+      if (conversationId) sendInput(conversationId, text)
+      haptic('success')
     }
+    const t = setTimeout(() => voice.reset(), 300)
+    return () => clearTimeout(t)
   }, [voice.state, voice.refinedText, voice.finalText, voice.reset])
 
   if (voice.state === 'idle' && !micExpired) return null
