@@ -21,7 +21,7 @@
 
 import type { LaunchProfile } from '@shared/launch-profile'
 import type { SpawnRequest } from '@shared/spawn-schema'
-import { openSpawnDialog } from '@/components/spawn-dialog'
+import { openSpawnDialog } from '@/components/spawn-dialog-trigger'
 import { type SentinelStatusInfo, useConversationsStore } from '@/hooks/use-conversations'
 import { sendSpawnRequest } from '@/hooks/use-spawn'
 import { putLaunchProfiles } from './api'

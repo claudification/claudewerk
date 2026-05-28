@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { openSpawnDialog } from '@/components/spawn-dialog'
+import { openSpawnDialog } from '@/components/spawn-dialog-trigger'
 import { type SentinelStatusInfo, useConversationsStore } from '@/hooks/use-conversations'
 
 /** Default sentinel name (mirrors src/shared/project-uri.ts DEFAULT_SENTINEL_NAME).

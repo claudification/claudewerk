@@ -4,9 +4,9 @@ import { useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import type { Conversation } from '@/lib/types'
 import { extractProjectLabel, projectPath } from '@/lib/types'
 import { cn, contextWindowSize, formatModel, haptic } from '@/lib/utils'
-import { renderProjectIcon } from '../project-settings-editor'
+import { renderProjectIcon } from '../project-icons'
 import { openReviveDialog } from '../revive-dialog-trigger'
-import { openSpawnDialog } from '../spawn-dialog'
+import { openSpawnDialog } from '../spawn-dialog-trigger'
 
 function matchesFilter(conversation: Conversation, query: string): boolean {
   const q = query.toLowerCase()

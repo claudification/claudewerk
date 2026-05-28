@@ -34,6 +34,7 @@ import { useKeyLayer } from '@/lib/key-layers'
 import { cwdToProjectUri } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
 import { detectWorktree } from '@/lib/worktree-path'
+import { _spawnDialogBus, type SpawnDialogOptions } from './spawn-dialog-trigger'
 import { LaunchConfigFields, type LaunchFieldsValue } from './launch-config-fields'
 import { LaunchDialogBottom } from './launch-monitor'
 import { putLaunchProfiles } from './launch-profiles/api'
@@ -72,26 +73,6 @@ function deriveOpenCodeSlug(model: string | undefined): string {
   )
 }
 
-interface SpawnDialogOptions {
-  path: string
-  mkdir?: boolean
-  sentinel?: string
-  /** Source project URI -- when scheme is `opencode://`, the dialog defaults
-   *  the backend selector to OpenCode instead of Claude. */
-  projectUri?: string
-  /** Launch profile to pre-apply on open. The dropdown reflects this selection. */
-  profileId?: string
-  /** Sentinel-profile NAME or selection-mode token (`default` | `balanced` |
-   *  `random`). Parsed from the `@sentinel:profile` shorthand or a
-   *  `claude://profile@sentinel/...` URI. Pre-selects the Sentinel-profile
-   *  radio in the launch modal. */
-  profile?: string
-  /** Sentinel-pool name (e.g. `"work"`). Parsed from the `@sentinel#pool`
-   *  shorthand. Pre-selects Balanced + pool in the launch modal when present
-   *  without an explicit `profile`. Mutually exclusive with Fixed profile. */
-  pool?: string
-}
-
 interface HermesGateway {
   gatewayId: string
   alias: string
@@ -103,14 +84,6 @@ interface HermesGateway {
 interface SpawnDialogState {
   open: boolean
   options: SpawnDialogOptions | null
-}
-
-// Module-level state so any component can trigger the dialog
-let _openDialog: ((options: SpawnDialogOptions) => void) | null = null
-
-/** Open the spawn dialog from anywhere */
-export function openSpawnDialog(options: SpawnDialogOptions): void {
-  _openDialog?.(options)
 }
 
 export function SpawnDialog() {
@@ -204,7 +177,7 @@ export function SpawnDialog() {
   // Register the open callback
   const progressReset = progress.reset
   useEffect(() => {
-    _openDialog = (options: SpawnDialogOptions) => {
+    _spawnDialogBus.open = (options: SpawnDialogOptions) => {
       // Settings are project-scoped, not worktree-scoped: when the trigger
       // path is inside `.claude/worktrees/<name>`, normalize the lookup to
       // the main project so worktree launches inherit the project's saved
@@ -326,7 +299,7 @@ export function SpawnDialog() {
       setState({ open: true, options })
     }
     return () => {
-      _openDialog = null
+      _spawnDialogBus.open = null
     }
   }, [projectSettings, globalSettings, progressReset])
 

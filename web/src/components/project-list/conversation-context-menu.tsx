@@ -9,7 +9,7 @@ import { cn, haptic } from '@/lib/utils'
 import { RecapSubmenu } from '../recap-jobs/recap-submenu'
 import { openReviveDialog } from '../revive-dialog-trigger'
 import { openManageProjectLinks } from '../settings/manage-project-links-trigger'
-import { openSpawnDialog } from '../spawn-dialog'
+import { openSpawnDialog } from '../spawn-dialog-trigger'
 
 // ─── Conversation context menu (right-click) ─────────────────────────────
 

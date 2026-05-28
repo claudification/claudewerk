@@ -2,10 +2,10 @@ import type { LaunchProfile } from '@shared/launch-profile'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildSpawnRequest, runProfile } from './run-profile'
 
-vi.mock('@/components/spawn-dialog', () => ({ openSpawnDialog: vi.fn() }))
+vi.mock('@/components/spawn-dialog-trigger', () => ({ openSpawnDialog: vi.fn() }))
 vi.mock('@/hooks/use-spawn', () => ({ sendSpawnRequest: vi.fn(async () => ({ ok: true, conversationId: 'conv_x' })) }))
 
-import { openSpawnDialog } from '@/components/spawn-dialog'
+import { openSpawnDialog } from '@/components/spawn-dialog-trigger'
 import { sendSpawnRequest } from '@/hooks/use-spawn'
 
 const openSpawnDialogMock = vi.mocked(openSpawnDialog)
