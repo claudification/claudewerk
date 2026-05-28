@@ -32,22 +32,28 @@ export function SharedConversationView({ token: _token }: { token: string }) {
 
   // Fetch transcript for selected conversation
   const fetchedRef = useRef(false)
+  const scrollBumpTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     if (!selectedConversationId || !isConnected || fetchedRef.current) return
     fetchedRef.current = true
+    let cancelled = false
     fetchConversationEvents(selectedConversationId).then(events => {
+      if (cancelled) return
       useConversationsStore.getState().setEvents(selectedConversationId, events)
     })
     fetchTranscript(selectedConversationId).then(transcript => {
-      if (transcript) {
-        useConversationsStore.getState().setTranscript(selectedConversationId, transcript.entries)
-        // Bump newDataSeq again after a delay to trigger scroll-to-bottom
-        // after the virtualizer has measured all items
-        setTimeout(() => {
-          useConversationsStore.setState(s => ({ newDataSeq: s.newDataSeq + 1 }))
-        }, 200)
-      }
+      if (cancelled || !transcript) return
+      useConversationsStore.getState().setTranscript(selectedConversationId, transcript.entries)
+      // Bump newDataSeq again after a delay to trigger scroll-to-bottom
+      // after the virtualizer has measured all items
+      scrollBumpTimeoutRef.current = setTimeout(() => {
+        useConversationsStore.setState(s => ({ newDataSeq: s.newDataSeq + 1 }))
+      }, 200)
     })
+    return () => {
+      cancelled = true
+      if (scrollBumpTimeoutRef.current) clearTimeout(scrollBumpTimeoutRef.current)
+    }
   }, [selectedConversationId, isConnected])
 
   // Listen for share_expired from server
