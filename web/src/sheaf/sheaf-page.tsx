@@ -5,9 +5,9 @@
  * over `GET /api/sheaf`. No mutations.
  */
 
+import type { SheafProject, SheafResponse } from '@shared/sheaf-types'
 import { ArrowLeft, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { SheafProject, SheafResponse } from '@shared/sheaf-types'
 import { Button } from '@/components/ui/button'
 import { formatAgo, formatCost, formatDateTime, formatDuration, formatTokens } from './format'
 import { SheafTree } from './sheaf-tree'
@@ -76,7 +76,13 @@ export function SheafPage() {
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background text-foreground overflow-hidden">
-      <Header windowH={windowH} onWindowH={setWindowH} onRefresh={reload} loading={loading} generatedAt={data?.generatedAt} />
+      <Header
+        windowH={windowH}
+        onWindowH={setWindowH}
+        onRefresh={reload}
+        loading={loading}
+        generatedAt={data?.generatedAt}
+      />
       <Totals data={data} windowH={windowH} />
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="max-w-[1600px] mx-auto px-4 py-4">
@@ -225,7 +231,9 @@ function ProjectSection({ project, now }: { project: SheafProject; now: number }
           <span className="text-muted-foreground">
             <span className="font-mono font-semibold text-foreground">{formatTokens(totalTokens)}</span> tok
           </span>
-          <span className="font-mono font-semibold text-emerald-400">{formatCost(totals.cost.amount, totals.cost.estimated)}</span>
+          <span className="font-mono font-semibold text-emerald-400">
+            {formatCost(totals.cost.amount, totals.cost.estimated)}
+          </span>
         </div>
       </div>
 

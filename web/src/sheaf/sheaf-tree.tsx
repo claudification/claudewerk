@@ -76,9 +76,7 @@ function SheafNodeRow({ node, depth, now }: SheafNodeRowProps) {
             wt:{node.worktreeName}
           </span>
         )}
-        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/60 font-mono">
-          {node.id.slice(0, 10)}
-        </span>
+        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/60 font-mono">{node.id.slice(0, 10)}</span>
       </div>
 
       {/* Row 2: metrics grid */}
@@ -123,7 +121,8 @@ function SheafNodeRow({ node, depth, now }: SheafNodeRowProps) {
       {showTree && (
         <div className="mt-1 ml-4 text-[10px] text-muted-foreground/70 font-mono border-l border-foreground/10 pl-2">
           Σ {node.treeTotals.convCount} convs · {formatDuration(node.treeTotals.durationWallMs)} wall ·{' '}
-          {formatTokens(node.treeTotals.tokens.input + node.treeTotals.tokens.output + node.treeTotals.tokens.cache)} tok
+          {formatTokens(node.treeTotals.tokens.input + node.treeTotals.tokens.output + node.treeTotals.tokens.cache)}{' '}
+          tok
           {' · '}
           {formatCost(node.treeTotals.cost.amount, node.treeTotals.cost.estimated)}
         </div>

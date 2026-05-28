@@ -35,7 +35,12 @@ vi.mock('@/hooks/use-conversations', () => ({
     setState: setStateMock,
   }),
   fetchConversationEvents: vi.fn().mockResolvedValue([]),
-  fetchTranscript: vi.fn(() => new Promise(r => { resolveTranscript = r })),
+  fetchTranscript: vi.fn(
+    () =>
+      new Promise(r => {
+        resolveTranscript = r
+      }),
+  ),
 }))
 
 vi.mock('@/hooks/use-websocket', () => ({
