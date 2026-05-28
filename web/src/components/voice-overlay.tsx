@@ -90,15 +90,15 @@ export function VoiceOverlay({ onResult, onClose, holdMode = false, onMicGranted
       <div className="shrink-0 flex items-center justify-center gap-2 pt-4 pb-2">
         {voice.state === 'connecting' && (
           <>
-            <Loader2 className="w-4 h-4 animate-spin text-accent" />
-            <span className="text-xs text-muted-foreground font-mono uppercase tracking-wider">Connecting...</span>
+            <Loader2 className="size-4 animate-spin text-accent" />
+            <span className="text-xs text-muted-foreground font-mono uppercase tracking-wider">Connecting…</span>
           </>
         )}
         {voice.state === 'recording' && (
           <>
-            <span className="relative flex h-3 w-3">
+            <span className="relative flex size-3">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+              <span className="relative inline-flex rounded-full size-3 bg-red-500" />
             </span>
             <span className="text-xs text-red-400 font-mono uppercase tracking-wider">
               {holdMode ? 'Release to send...' : 'Listening...'}
@@ -107,19 +107,19 @@ export function VoiceOverlay({ onResult, onClose, holdMode = false, onMicGranted
         )}
         {voice.state === 'refining' && (
           <>
-            <Loader2 className="w-4 h-4 animate-spin text-accent" />
-            <span className="text-xs text-accent font-mono uppercase tracking-wider">Refining...</span>
+            <Loader2 className="size-4 animate-spin text-accent" />
+            <span className="text-xs text-accent font-mono uppercase tracking-wider">Refining…</span>
           </>
         )}
         {isDone && (
           <>
-            <Check className="w-4 h-4 text-green-400" />
+            <Check className="size-4 text-green-400" />
             <span className="text-xs text-green-400 font-mono uppercase tracking-wider">Done</span>
           </>
         )}
         {voice.state === 'error' && (
           <>
-            <X className="w-4 h-4 text-red-400" />
+            <X className="size-4 text-red-400" />
             <span className="text-xs text-red-400 font-mono uppercase tracking-wider">{voice.errorMsg}</span>
           </>
         )}
@@ -162,7 +162,7 @@ export function VoiceOverlay({ onResult, onClose, holdMode = false, onMicGranted
               className="flex items-center justify-center gap-3 px-8 py-4 bg-red-500/20 border-2 border-red-500/50 text-red-400 text-base font-bold uppercase tracking-wider hover:bg-red-500/30 active:bg-red-500/40 transition-colors rounded-xl min-w-[180px]"
               style={{ touchAction: 'manipulation' }}
             >
-              <Square className="w-5 h-5 fill-current" />
+              <Square className="size-5 fill-current" />
               Stop
             </button>
           )}
@@ -178,12 +178,12 @@ export function VoiceOverlay({ onResult, onClose, holdMode = false, onMicGranted
               className="flex items-center justify-center gap-2 px-6 py-3 border-2 border-border text-muted-foreground text-sm font-bold uppercase tracking-wider hover:text-foreground hover:border-foreground/30 active:bg-muted/20 transition-colors rounded-lg min-w-[140px]"
               style={{ touchAction: 'manipulation' }}
             >
-              <X className="w-4 h-4" />
+              <X className="size-4" />
               Cancel
             </button>
           )}
           {(voice.state === 'refining' || voice.state === 'connecting') && holdMode && (
-            <span className="text-xs text-muted-foreground/60 font-mono uppercase tracking-wider">Processing...</span>
+            <span className="text-xs text-muted-foreground/60 font-mono uppercase tracking-wider">Processing…</span>
           )}
           {isDone && !holdMode && (
             <>
@@ -193,7 +193,7 @@ export function VoiceOverlay({ onResult, onClose, holdMode = false, onMicGranted
                 className="flex items-center justify-center gap-2 px-5 py-3 border-2 border-border text-muted-foreground text-sm font-bold uppercase tracking-wider hover:text-foreground hover:border-foreground/30 active:bg-muted/20 transition-colors rounded-lg"
                 style={{ touchAction: 'manipulation' }}
               >
-                <X className="w-4 h-4" />
+                <X className="size-4" />
                 Discard
               </button>
               <button
@@ -202,13 +202,13 @@ export function VoiceOverlay({ onResult, onClose, holdMode = false, onMicGranted
                 className="flex items-center justify-center gap-2 px-6 py-3 bg-accent/20 border-2 border-accent/50 text-accent text-sm font-bold uppercase tracking-wider hover:bg-accent/30 active:bg-accent/40 transition-colors rounded-lg min-w-[140px]"
                 style={{ touchAction: 'manipulation' }}
               >
-                <Check className="w-4 h-4" />
+                <Check className="size-4" />
                 Use
               </button>
             </>
           )}
           {isDone && holdMode && (
-            <span className="text-xs text-green-400/60 font-mono uppercase tracking-wider">Sending...</span>
+            <span className="text-xs text-green-400/60 font-mono uppercase tracking-wider">Sending…</span>
           )}
           {voice.state === 'error' && (
             <button
@@ -217,7 +217,7 @@ export function VoiceOverlay({ onResult, onClose, holdMode = false, onMicGranted
               className="flex items-center justify-center gap-2 px-6 py-3 border-2 border-border text-muted-foreground text-sm font-bold uppercase tracking-wider hover:text-foreground hover:border-foreground/30 active:bg-muted/20 transition-colors rounded-lg min-w-[140px]"
               style={{ touchAction: 'manipulation' }}
             >
-              <X className="w-4 h-4" />
+              <X className="size-4" />
               Close
             </button>
           )}

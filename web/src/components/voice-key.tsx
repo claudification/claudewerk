@@ -94,15 +94,13 @@ export function VoiceKey() {
           {/* Status line */}
           <div className="flex items-center gap-2 mb-1">
             {voice.state === 'connecting' && (
-              <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider">
-                Connecting...
-              </span>
+              <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider">Connecting…</span>
             )}
             {voice.state === 'recording' && (
               <>
-                <span className="relative flex h-2 w-2">
+                <span className="relative flex size-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+                  <span className="relative inline-flex rounded-full size-2 bg-red-500" />
                 </span>
                 <span className="text-[10px] text-red-400 font-mono uppercase tracking-wider">
                   Recording - release{' '}
@@ -111,7 +109,7 @@ export function VoiceKey() {
               </>
             )}
             {voice.state === 'refining' && (
-              <span className="text-[10px] text-accent font-mono uppercase tracking-wider">Refining...</span>
+              <span className="text-[10px] text-accent font-mono uppercase tracking-wider">Refining…</span>
             )}
             {voice.state === 'submitting' && (
               <span className="text-[10px] text-green-400 font-mono uppercase tracking-wider">Sent!</span>
@@ -137,7 +135,7 @@ export function VoiceKey() {
           )}
 
           {!displayText && !displayInterim && voice.state === 'recording' && (
-            <span className="text-sm text-muted-foreground/40 italic font-mono">Speak now...</span>
+            <span className="text-sm text-muted-foreground/40 italic font-mono">Speak now…</span>
           )}
         </div>
       </div>
