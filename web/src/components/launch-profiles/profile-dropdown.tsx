@@ -11,9 +11,9 @@ import {
 } from '@/components/ui/select'
 import { formatShortcut } from '@/lib/commands'
 
-export const CUSTOM_VALUE = '__custom__'
-export const MANAGE_VALUE = '__manage__'
-export const NEW_VALUE = '__new__'
+const CUSTOM_VALUE = '__custom__'
+const MANAGE_VALUE = '__manage__'
+const NEW_VALUE = '__new__'
 
 interface Props {
   selectedId: string | undefined

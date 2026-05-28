@@ -40,7 +40,7 @@ export function pushLaunchToast(t: Omit<LaunchToastItem, 'id' | 'expiresAt'>): n
   return id
 }
 
-export function dismissLaunchToast(id: number) {
+function dismissLaunchToast(id: number) {
   toasts = toasts.filter(t => t.id !== id)
   publish()
 }

@@ -158,18 +158,3 @@ export function cacheLookupBefore(
   return { entries: slice, oldestSeq, hasMoreInCache }
 }
 
-/** Test/debug helper. Returns a snapshot of cache shape -- never the entries. */
-export function cacheDebugInfo(): {
-  conversations: number
-  totalEntries: number
-  perConv: Array<{ id: string; entries: number }>
-} {
-  const perConv: Array<{ id: string; entries: number }> = []
-  for (const [id, arr] of cache.entries()) perConv.push({ id, entries: arr.length })
-  return { conversations: cache.size, totalEntries: totalEntries(), perConv }
-}
-
-/** Test-only. Drops all cache state. */
-export function clearTranscriptPageCache(): void {
-  cache.clear()
-}

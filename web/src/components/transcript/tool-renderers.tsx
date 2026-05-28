@@ -75,6 +75,8 @@ function buildDiffLines(patches: Array<{ oldStart: number; lines: string[] }>): 
  *  rehydrated on every transcript tick) are considered equal -- which keeps
  *  DiffView's memo + its Shiki tokenize useEffect from firing. O(total lines),
  *  bails on first mismatch, no allocation. */
+// fallow-ignore-next-line unused-export
+// Re-exported to edit-diff-rerender.test.tsx via vi.mock's importOriginal -- not a static import.
 export function patchesEqual(
   a: Array<{ oldStart: number; lines: string[] }>,
   b: Array<{ oldStart: number; lines: string[] }>,

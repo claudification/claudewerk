@@ -25,7 +25,7 @@ export interface UseLaunchProfilesResult {
  */
 const EMPTY_PROFILES: LaunchProfile[] = []
 
-export async function ensureLaunchProfilesLoaded(): Promise<LaunchProfile[]> {
+async function ensureLaunchProfilesLoaded(): Promise<LaunchProfile[]> {
   if (getLaunchProfilesSnapshot() !== null) return getLaunchProfilesSnapshot() as LaunchProfile[]
   if (isLaunchProfilesLoading()) {
     return new Promise(resolve => {
