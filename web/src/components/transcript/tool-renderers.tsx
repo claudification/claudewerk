@@ -76,7 +76,6 @@ function buildDiffLines(patches: Array<{ oldStart: number; lines: string[] }>): 
  *  DiffView's memo + its Shiki tokenize useEffect from firing. O(total lines),
  *  bails on first mismatch, no allocation. */
 // Re-exported to edit-diff-rerender.test.tsx via vi.mock's importOriginal -- not a static import.
-// fallow-ignore-next-line unused-export
 export function patchesEqual(
   a: Array<{ oldStart: number; lines: string[] }>,
   b: Array<{ oldStart: number; lines: string[] }>,

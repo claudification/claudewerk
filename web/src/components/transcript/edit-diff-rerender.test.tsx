@@ -32,6 +32,9 @@ import { memo } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TranscriptContentBlock } from '@/lib/types'
 import { MemoizedToolLine } from './tool-line'
+// Static import so fallow sees the patchesEqual export consumed.
+// The vi.mock factory below re-uses the same function via `actual.patchesEqual`.
+import { patchesEqual } from './tool-renderers'
 
 // Count diff recomputes. Arrow form (not bare `vi.fn(actual.structuredPatch)`):
 // the bare form invokes the impl with a mangled `this` and throws under render.
@@ -101,6 +104,15 @@ function line(subagents?: unknown[]) {
     />
   )
 }
+
+describe('patchesEqual', () => {
+  it('treats fresh array refs with identical content as equal (DiffView memo invariant)', () => {
+    const a = [{ oldStart: 1, lines: ['+ const a = 1'] }]
+    const b = [{ oldStart: 1, lines: ['+ const a = 1'] }]
+    expect(patchesEqual(a, b)).toBe(true)
+    expect(patchesEqual(a, [{ oldStart: 1, lines: ['+ const a = 2'] }])).toBe(false)
+  })
+})
 
 describe('Edit diff recompute on re-render', () => {
   it('computes + colours the diff once on initial render', () => {

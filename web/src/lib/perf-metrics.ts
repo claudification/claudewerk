@@ -66,8 +66,6 @@ export function clearEntries() {
   notify()
 }
 
-// Standard useSyncExternalStore subscribe surface -- intentionally per-store.
-// fallow-ignore-next-line duplicate-export
 export function subscribe(fn: () => void): () => void {
   listeners.add(fn)
   return () => listeners.delete(fn)
