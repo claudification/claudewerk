@@ -129,6 +129,8 @@ function ProjectList({ filters, now }: { filters: SheafFilters; now: number }) {
           now={now}
           expanded={filters.expanded.has(p.projectUri)}
           onToggle={() => filters.toggleProject(p.projectUri)}
+          showLineage={filters.showLineage}
+          showRecaps={filters.showRecaps}
         />
       ))}
     </div>

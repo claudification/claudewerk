@@ -9,7 +9,8 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useMemo } from 'react'
 import { accentFor } from './accent'
 import { costHeatClass, formatCost, formatTokens } from './format'
-import { SheafTree } from './sheaf-tree'
+import { flattenForest } from './sheaf-derive'
+import { SheafNodeRow, SheafTree } from './sheaf-tree'
 
 interface ProjectSectionProps {
   project: SheafProject
@@ -96,19 +97,55 @@ function WorktreePills({ project }: { project: SheafProject }) {
   )
 }
 
-export function ProjectSection({ project, now, expanded, onToggle }: ProjectSectionProps) {
+interface ProjectViewProps {
+  project: SheafProject
+  now: number
+  showRecaps: boolean
+  tint: string
+}
+
+function ProjectForest({ project, now, showRecaps, tint }: ProjectViewProps) {
+  return (
+    <div className="space-y-2 border-l-2 pl-2 ml-1" style={{ borderLeftColor: tint }}>
+      {project.forest.map(root => (
+        <SheafTree key={root.id} root={root} now={now} showRecaps={showRecaps} />
+      ))}
+    </div>
+  )
+}
+
+function ProjectFlatList({ project, now, showRecaps, tint }: ProjectViewProps) {
+  const nodes = useMemo(() => flattenForest(project.forest), [project.forest])
+  return (
+    <div className="border-l-2 pl-2 ml-1" style={{ borderLeftColor: tint }}>
+      <div className="border border-border/50 rounded">
+        {nodes.map(n => (
+          <SheafNodeRow key={n.id} node={n} depth={0} now={now} showRecaps={showRecaps} flat />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export function ProjectSection({
+  project,
+  now,
+  expanded,
+  onToggle,
+  showLineage,
+  showRecaps,
+}: ProjectSectionProps & { showLineage: boolean; showRecaps: boolean }) {
   const accent = useMemo(() => accentFor(project.label), [project.label])
   return (
     <section className="space-y-2">
       <ProjectHeader project={project} expanded={expanded} onToggle={onToggle} />
       {expanded && <WorktreePills project={project} />}
-      {expanded && (
-        <div className="space-y-2 border-l-2 pl-2 ml-1" style={{ borderLeftColor: accent.tint }}>
-          {project.forest.map(root => (
-            <SheafTree key={root.id} root={root} now={now} />
-          ))}
-        </div>
-      )}
+      {expanded &&
+        (showLineage ? (
+          <ProjectForest project={project} now={now} showRecaps={showRecaps} tint={accent.tint} />
+        ) : (
+          <ProjectFlatList project={project} now={now} showRecaps={showRecaps} tint={accent.tint} />
+        ))}
     </section>
   )
 }
