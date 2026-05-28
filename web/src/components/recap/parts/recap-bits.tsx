@@ -21,7 +21,7 @@ export function fmtCompact(n: number): string {
 }
 
 /** Short citation form: conversation ids -> 12 chars, anything else -> 8. */
-export function shortConv(id: string): string {
+function shortConv(id: string): string {
   return id.startsWith('conv_') ? id.slice(0, 12) : id.slice(0, 8)
 }
 
@@ -35,7 +35,7 @@ const TONES: Record<Tone, string> = {
   danger: 'bg-destructive/15 text-destructive',
 }
 
-export function Chip({ children, tone = 'muted', title }: { children: React.ReactNode; tone?: Tone; title?: string }) {
+function Chip({ children, tone = 'muted', title }: { children: React.ReactNode; tone?: Tone; title?: string }) {
   return (
     <span
       title={title}
@@ -46,7 +46,7 @@ export function Chip({ children, tone = 'muted', title }: { children: React.Reac
   )
 }
 
-export function InferredBadge() {
+function InferredBadge() {
   return (
     <Chip tone="warning" title="Inferred from transcript text -- not backed by a commit or task">
       inferred

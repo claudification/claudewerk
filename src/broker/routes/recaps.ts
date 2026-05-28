@@ -378,10 +378,13 @@ export function createRecapsRouter(_conversationStore: ConversationStore, helper
     return c.json(data)
   })
 
-  // Pretty shorthand redirect: /r/:token -> /shared/public/recap/:token
+  // Pretty shorthand: /r/:token -> the SPA in recap share mode. The SPA mounts
+  // PublicRecapView, which fetches /shared/public/recap/:token (JSON) and
+  // renders the rich structured report (Recap 2.0). The server-rendered HTML at
+  // /shared/public/recap/:token remains as a no-JS / crawler fallback.
   app.get('/r/:token', c => {
     const token = c.req.param('token')
-    return c.redirect(`/shared/public/recap/${encodeURIComponent(token)}`)
+    return c.redirect(`/?share=${encodeURIComponent(token)}&kind=recap`)
   })
 
   return app

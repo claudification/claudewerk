@@ -43,7 +43,9 @@ export function PublicRecapView({ token }: { token: string }) {
 
   useEffect(() => {
     let cancelled = false
-    fetch(`/shared/public/recap/${encodeURIComponent(token)}`)
+    // Explicit JSON Accept: the endpoint serves server-rendered HTML for */*
+    // (the no-JS fallback), so we must ask for JSON to get metadata + digest.
+    fetch(`/shared/public/recap/${encodeURIComponent(token)}`, { headers: { Accept: 'application/json' } })
       .then(async res => {
         if (cancelled) return
         if (!res.ok) {
