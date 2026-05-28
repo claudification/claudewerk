@@ -66,13 +66,15 @@ export function SubagentView({ conversationId }: { conversationId: string }) {
 
     setSubagents(prev => {
       const updated = [...prev]
+      const byId = new Map(updated.map((a, i) => [a.agentId, i]))
       for (const evt of agentEvents) {
         const data = evt.data as Record<string, unknown>
         const agentId = String(data.agent_id || '')
         if (!agentId) continue
 
         if (evt.hookEvent === 'SubagentStart') {
-          if (!updated.find(a => a.agentId === agentId)) {
+          if (!byId.has(agentId)) {
+            byId.set(agentId, updated.length)
             updated.push({
               agentId,
               agentType: String(data.agent_type || 'unknown'),
@@ -82,8 +84,9 @@ export function SubagentView({ conversationId }: { conversationId: string }) {
             })
           }
         } else if (evt.hookEvent === 'SubagentStop') {
-          const agent = updated.find(a => a.agentId === agentId)
-          if (agent) {
+          const idx = byId.get(agentId)
+          if (idx !== undefined) {
+            const agent = updated[idx]
             agent.stoppedAt = evt.timestamp
             agent.status = 'stopped'
           }

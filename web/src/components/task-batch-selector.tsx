@@ -383,9 +383,10 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
 
   // Get selected task objects (preserving selection order)
   const selectedTasks = useMemo(() => {
+    const bySlug = new Map(tasks.map(t => [t.slug, t]))
     const selectedArray: ProjectTaskMeta[] = []
     for (const slug of selected) {
-      const task = tasks.find(t => t.slug === slug)
+      const task = bySlug.get(slug)
       if (task) selectedArray.push(task)
     }
     return selectedArray
