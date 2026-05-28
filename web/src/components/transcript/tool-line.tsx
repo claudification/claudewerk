@@ -22,7 +22,6 @@ export function ToolLine({
   toolUseResult,
   isError,
   expandAll: expandAllProp,
-  subagents,
   renderAgentInline,
   planContent,
   planPath,
@@ -34,16 +33,6 @@ export function ToolLine({
   expandAll?: boolean
   planContent?: string
   planPath?: string
-  subagents?: Array<{
-    agentId: string
-    agentType: string
-    description?: string
-    status: 'running' | 'stopped'
-    startedAt: number
-    stoppedAt?: number
-    eventCount: number
-    tokenUsage?: { totalInput: number; totalOutput: number; cacheCreation: number; cacheRead: number }
-  }>
   renderAgentInline?: (agentId: string, toolId?: string) => ReactNode
 }) {
   // Synthesize canonical fields (kind / canonicalInput) for legacy entries
@@ -64,6 +53,20 @@ export function ToolLine({
     const conversation = sid ? s.conversationsById[sid] : undefined
     return conversation ? projectPath(conversation.project) : undefined
   })
+  // Resolve the inline-rendered subagent's id with a NARROW selector that
+  // returns the agentId STRING (or undefined for non-Agent tools / no match).
+  // A primitive return means this subscription only re-renders the row when
+  // the match itself changes (rare: an agent appears) -- NOT on every status/
+  // token poll. Those frequent updates are absorbed by the self-subscribing
+  // AgentTaskBadge instead. This replaces the churning `subagents` array prop
+  // that used to bust MemoizedToolLine for every tool row fleet-wide.
+  const matchedAgentId = useConversationsStore(s => {
+    if (name !== 'Agent') return undefined
+    const sid = s.selectedConversationId
+    if (!sid) return undefined
+    const desc = input.description as string
+    return s.conversationsById[sid]?.subagents?.find(a => a.description === desc)?.agentId
+  })
 
   const ctx: ToolCaseInput = {
     input,
@@ -72,14 +75,13 @@ export function ToolLine({
     isError,
     conversationPath,
     expandAll,
-    subagents,
     planContent,
     planPath,
   }
 
   const caseResult = dispatchToolCase(name, ctx, tool.kind)
   let { summary, details } = caseResult
-  const { inlineContent, agentBadge, matchedAgentId } = caseResult
+  const { inlineContent, agentBadge } = caseResult
 
   if (isError && !details && result) {
     details = renderErrorFallback(result)

@@ -352,55 +352,18 @@ describe('dispatchToolCase - Agent/Task', () => {
     expect(r.details).not.toBeNull()
   })
 
-  it('Agent matches subagent and provides badge + matchedAgentId', () => {
-    const subagents = [
-      {
-        agentId: 'sub-123',
-        agentType: 'Explore',
-        description: 'Find the config',
-        status: 'stopped' as const,
-        startedAt: 1000,
-        stoppedAt: 5000,
-        eventCount: 12,
-        tokenUsage: { totalInput: 5000, totalOutput: 2000, cacheCreation: 0, cacheRead: 0 },
-      },
-    ]
-    const r = dispatchToolCase('Agent', makeCtx({ input: { description: 'Find the config', prompt: 'p' }, subagents }))
-    expect(r.matchedAgentId).toBe('sub-123')
+  it('Agent emits a badge element (subagent match resolved at render time)', () => {
+    // The badge is now a self-subscribing component (AgentTaskBadge). renderAgentTask
+    // always emits it for Agent tools regardless of current subagent state; the
+    // component renders null when no subagent matches by description. The match +
+    // matchedAgentId behaviour is covered by the render test in subagents-decouple.test.tsx.
+    const r = dispatchToolCase('Agent', makeCtx({ input: { description: 'Find the config', prompt: 'p' } }))
     expect(r.agentBadge).not.toBeNull()
   })
 
-  it('Agent with no matching subagent has no badge', () => {
-    const subagents = [
-      {
-        agentId: 'sub-999',
-        agentType: 'Explore',
-        description: 'Different description',
-        status: 'running' as const,
-        startedAt: 1000,
-        eventCount: 0,
-      },
-    ]
-    const r = dispatchToolCase('Agent', makeCtx({ input: { description: 'My unique desc', prompt: 'p' }, subagents }))
-    expect(r.matchedAgentId).toBeNull()
-    expect(r.agentBadge).toBeNull()
-  })
-
-  it('Task tool does not attempt subagent matching', () => {
-    const subagents = [
-      {
-        agentId: 'sub-1',
-        agentType: 'x',
-        description: 'Same desc',
-        status: 'stopped' as const,
-        startedAt: 0,
-        stoppedAt: 1,
-        eventCount: 0,
-      },
-    ]
-    const r = dispatchToolCase('Task', makeCtx({ input: { description: 'Same desc', prompt: 'p' }, subagents }))
-    expect(r.matchedAgentId).toBeNull()
-    expect(r.agentBadge).toBeNull()
+  it('Task tool emits no agent badge', () => {
+    const r = dispatchToolCase('Task', makeCtx({ input: { description: 'Same desc', prompt: 'p' } }))
+    expect(r.agentBadge ?? null).toBeNull()
   })
 })
 

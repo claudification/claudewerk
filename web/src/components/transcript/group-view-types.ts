@@ -30,17 +30,6 @@ export interface TranscriptSettings {
   bubbleColor: string
 }
 
-export type SubagentRef = Array<{
-  agentId: string
-  agentType: string
-  description?: string
-  status: 'running' | 'stopped'
-  startedAt: number
-  stoppedAt?: number
-  eventCount: number
-  tokenUsage?: { totalInput: number; totalOutput: number; cacheCreation: number; cacheRead: number }
-}>
-
 export type ResultLookup = (
   id: string,
 ) => { result: string; extra?: Record<string, unknown>; isError?: boolean } | undefined

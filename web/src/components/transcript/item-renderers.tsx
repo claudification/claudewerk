@@ -3,7 +3,7 @@ import { CopyMenu } from '../copy-menu'
 import { JsonInspector } from '../json-inspector'
 import { Markdown } from '../markdown'
 import { AgentTranscriptInline } from './agent-views'
-import type { RenderItem, SubagentRef } from './group-view-types'
+import type { RenderItem } from './group-view-types'
 import { MemoizedToolLine } from './tool-line'
 import { BashOutput } from './tool-renderers'
 
@@ -151,12 +151,10 @@ export function ImagesItem({ item }: { item: Extract<RenderItem, { kind: 'images
 export function ToolItem({
   item,
   expandAll,
-  subagents,
   planContext,
 }: {
   item: Extract<RenderItem, { kind: 'tool' }>
   expandAll: boolean
-  subagents?: SubagentRef
   planContext?: { content: string; path?: string }
 }) {
   return (
@@ -166,7 +164,6 @@ export function ToolItem({
       toolUseResult={item.extra}
       isError={item.isError}
       expandAll={expandAll}
-      subagents={subagents}
       renderAgentInline={renderAgentInline}
       {...(item.tool.name === 'ExitPlanMode' && planContext
         ? { planContent: planContext.content, planPath: planContext.path }

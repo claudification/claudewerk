@@ -5,7 +5,6 @@ export interface ToolCaseResult {
   details: ReactNode
   inlineContent?: ReactNode
   agentBadge?: ReactNode
-  matchedAgentId?: string | null
 }
 
 export interface ToolCaseInput {
@@ -15,16 +14,6 @@ export interface ToolCaseInput {
   isError?: boolean
   conversationPath?: string
   expandAll: boolean
-  subagents?: Array<{
-    agentId: string
-    agentType: string
-    description?: string
-    status: 'running' | 'stopped'
-    startedAt: number
-    stoppedAt?: number
-    eventCount: number
-    tokenUsage?: { totalInput: number; totalOutput: number; cacheCreation: number; cacheRead: number }
-  }>
   planContent?: string
   planPath?: string
 }

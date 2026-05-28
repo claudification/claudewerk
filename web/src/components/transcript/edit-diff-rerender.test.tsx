@@ -87,18 +87,21 @@ const toolUseResult = { originalFile: ORIGINAL_FILE }
 
 const noop = () => null
 
-/** A ToolLine element for the Edit above. `subagents` is the only varying prop
- *  -- swapping its ref is exactly what the live subagents selector does on a
- *  subagent-state update, and it busts ToolLine's shallow memo. */
-function line(subagents?: unknown[]) {
+/** A ToolLine element for the Edit above. To force a memo-busting re-render we
+ *  swap `renderAgentInline` to a fresh function ref -- ToolLine's shallow memo
+ *  breaks on the new identity, exactly as a parent re-render passing an unstable
+ *  callback would. (The former subagents-array prop was the original vector;
+ *  it was removed when subagent state stopped being prop-drilled -- a churning
+ *  subagent poll can no longer bust this memo at all. See
+ *  subagents-decouple.test.tsx.) */
+function line(renderAgentInline: (agentId: string, toolId?: string) => null = noop) {
   return (
     <MemoizedToolLine
       tool={editTool}
       toolUseResult={toolUseResult}
       isError={false}
       expandAll={false}
-      subagents={subagents as never}
-      renderAgentInline={noop}
+      renderAgentInline={renderAgentInline}
     />
   )
 }
@@ -127,14 +130,14 @@ describe('Edit diff recompute on re-render', () => {
     expect(diffViewRender).toHaveBeenCalledTimes(1)
   })
 
-  it('does NOT recompute or re-colour when a memo-busting prop (subagents ref) changes', () => {
-    const { rerender } = render(line(undefined))
+  it('does NOT recompute or re-colour when a memo-busting prop (unstable callback ref) changes', () => {
+    const { rerender } = render(line())
     expect(structuredPatchSpy).toHaveBeenCalledTimes(1)
     expect(diffViewRender).toHaveBeenCalledTimes(1)
-    // subagents undefined -> new [] ref busts the memo, forcing a real ToolLine
-    // re-render. The diff must NOT recompute and DiffView must NOT re-render
-    // (pre-fix both were 2).
-    rerender(line([]))
+    // A fresh renderAgentInline ref busts ToolLine's shallow memo, forcing a
+    // real ToolLine re-render. The diff must NOT recompute and DiffView must
+    // NOT re-render (pre-fix both were 2).
+    rerender(line(() => null))
     expect(structuredPatchSpy).toHaveBeenCalledTimes(1)
     expect(diffViewRender).toHaveBeenCalledTimes(1)
   })

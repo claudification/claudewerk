@@ -479,21 +479,10 @@ export const TranscriptView = memo(function TranscriptView({
     return next
   }, [entries])
 
-  // Lift subagents selector here (once) instead of per-GroupView (N times)
-  // Return a primitive string so Zustand's Object.is check works - avoids re-renders
-  // from session_update creating new array references with identical content
-  const subagentsSummary = useConversationsStore(state => {
-    const conversation = state.selectedConversationId
-      ? state.conversationsById[state.selectedConversationId]
-      : undefined
-    if (!conversation?.subagents?.length) return ''
-    return conversation.subagents.map(a => `${a.agentId}:${a.status}:${a.description || ''}`).join('|')
-  })
-  // biome-ignore lint/correctness/useExhaustiveDependencies: subagentsSummary is a serialized primitive dep key that triggers recompute when subagent state changes
-  const subagents = useMemo(() => {
-    const state = useConversationsStore.getState()
-    return state.selectedConversationId ? state.conversationsById[state.selectedConversationId]?.subagents : undefined
-  }, [subagentsSummary])
+  // Subagent state is no longer drilled down as a prop. Each Agent tool row's
+  // badge (AgentTaskBadge) and inline-transcript wiring subscribe to their own
+  // matching subagent directly, so a subagent poll re-renders only those rows
+  // -- not every GroupView. See tool-cases-agent.tsx / tool-line.tsx.
 
   const selectedConversationId = useConversationsStore(state => state.selectedConversationId)
   const perfEnabled = useConversationsStore(state => state.controlPanelPrefs.showPerfMonitor)
@@ -884,7 +873,6 @@ export const TranscriptView = memo(function TranscriptView({
                     getResult={getResult}
                     settings={transcriptSettings}
                     showThinking={showThinking}
-                    subagents={subagents}
                     planContext={planContext}
                   />
                 )
@@ -925,7 +913,6 @@ export const TranscriptView = memo(function TranscriptView({
                 getResult={getResult}
                 settings={transcriptSettings}
                 showThinking={showThinking}
-                subagents={subagents}
               />
             ))}
           </div>

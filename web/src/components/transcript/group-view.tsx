@@ -2,7 +2,7 @@ import { memo } from 'react'
 import { cn } from '@/lib/utils'
 import { BootTimeline } from './boot-timeline'
 import { ChatBubble } from './chat-bubble'
-import type { RenderItem, ResultLookup, SubagentRef, TranscriptSettings } from './group-view-types'
+import type { RenderItem, ResultLookup, TranscriptSettings } from './group-view-types'
 import type { DisplayGroup } from './grouping'
 import { BashItem, ChannelItem, ImagesItem, ProjectTaskItem, TextItem, ThinkingItem, ToolItem } from './item-renderers'
 import { LaunchTimeline } from './launch-timeline'
@@ -21,14 +21,12 @@ function GroupView({
   getResult,
   settings,
   showThinking = false,
-  subagents,
   planContext,
 }: {
   group: DisplayGroup
   getResult: ResultLookup
   settings: TranscriptSettings
   showThinking?: boolean
-  subagents?: SubagentRef
   planContext?: { content: string; path?: string }
 }) {
   const { expandAll, userLabel, agentLabel, userColor, agentColor, userSize, agentSize } = settings
@@ -125,7 +123,6 @@ function GroupView({
             item={item}
             showThinking={showThinking}
             expandAll={expandAll}
-            subagents={subagents}
             planContext={planContext}
           />
         ))}
@@ -192,13 +189,11 @@ function GroupItem({
   item,
   showThinking,
   expandAll,
-  subagents,
   planContext,
 }: {
   item: RenderItem
   showThinking: boolean
   expandAll: boolean
-  subagents?: SubagentRef
   planContext?: { content: string; path?: string }
 }) {
   switch (item.kind) {
@@ -216,7 +211,7 @@ function GroupItem({
     case 'bash':
       return <BashItem item={item} />
     case 'tool':
-      return <ToolItem item={item} expandAll={expandAll} subagents={subagents} planContext={planContext} />
+      return <ToolItem item={item} expandAll={expandAll} planContext={planContext} />
     case 'system':
       return <SystemLineInline entry={item.entry} subtype={item.subtype} ts={item.timestamp} />
     default:
