@@ -45,7 +45,7 @@ describe('DaemonRosterBrowser', () => {
   test('shows a loading state before any roster arrives', () => {
     useConversationsStore.setState({ daemonRosters: {} })
     render(<DaemonRosterBrowser selectedShort={undefined} onSelect={vi.fn()} />)
-    expect(screen.getByText('Loading daemon roster...')).toBeDefined()
+    expect(screen.getByText('Loading daemon roster…')).toBeDefined()
   })
 
   test('shows a no-daemon hint when the sentinel reports daemonPresent false', () => {
