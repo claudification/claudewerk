@@ -92,7 +92,7 @@ describe('worktree-create.sh', () => {
 
     const r = runHook(repo, 'feat-d')
     expect(r.exit).toBe(1)
-    expect(r.stderr).toContain("ERROR")
+    expect(r.stderr).toContain('ERROR')
     expect(r.stderr).toContain("'worktree-other'")
     expect(r.stderr).toContain("'worktree-feat-d'")
   })

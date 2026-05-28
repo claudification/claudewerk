@@ -50,7 +50,6 @@ import type {
 } from '../shared/protocol'
 import { DEFAULT_BROKER_URL, HEARTBEAT_INTERVAL_MS } from '../shared/protocol'
 import { getAcpRecipe, listAcpRecipes } from './acp-recipes'
-import { headlessNdjsonPath, parseHookStage, RingBuffer, tailHeadlessNdjson } from './spawn-error'
 import { type CcVersionWatcher, createCcVersionWatcher, type LastSeenCcVersion } from './cc-version-watcher'
 import {
   applyPatchInPlace,
@@ -81,6 +80,7 @@ import {
   resolveProfile,
   type SentinelConfig,
 } from './sentinel-config'
+import { headlessNdjsonPath, parseHookStage, RingBuffer, tailHeadlessNdjson } from './spawn-error'
 import { buildSentinelUsageReport, pollProfileUsage, snapshotToLegacyUsageUpdate } from './usage-poller'
 
 /** Pre-flight warnings stashed per-conversation. Surfaced when CC dies early
@@ -872,7 +872,12 @@ function spawnOpenCodeHostDirect(opts: {
         `opencode-host FAILED: PID ${pid} exit=${exitCode} elapsed=${elapsedMs}ms conv=${opts.conversationId.slice(0, 8)}${earlyFailure ? ' (EARLY)' : ''}`,
       )
       if (activeWs?.readyState === WebSocket.OPEN) {
-        const errCtx = collectSpawnErrorContext(stderrSnapshot, opts.cwd, opts.conversationId, /*includeHeadlessLog*/ false)
+        const errCtx = collectSpawnErrorContext(
+          stderrSnapshot,
+          opts.cwd,
+          opts.conversationId,
+          /*includeHeadlessLog*/ false,
+        )
         let detail = earlyFailure
           ? `opencode-host exited in ${elapsedMs}ms (exit ${exitCode}) - check OPENCODE_MODEL and provider API keys`
           : `opencode-host exited with code ${exitCode} after ${Math.round(elapsedMs / 1000)}s`
@@ -1019,7 +1024,12 @@ function spawnAcpHostDirect(opts: {
         `acp-host FAILED: PID ${pid} exit=${exitCode} elapsed=${elapsedMs}ms conv=${opts.conversationId.slice(0, 8)}${earlyFailure ? ' (EARLY)' : ''}`,
       )
       if (activeWs?.readyState === WebSocket.OPEN) {
-        const errCtx = collectSpawnErrorContext(stderrSnapshot, opts.cwd, opts.conversationId, /*includeHeadlessLog*/ false)
+        const errCtx = collectSpawnErrorContext(
+          stderrSnapshot,
+          opts.cwd,
+          opts.conversationId,
+          /*includeHeadlessLog*/ false,
+        )
         let detail = earlyFailure
           ? `acp-host (${recipe.name}) exited in ${elapsedMs}ms (exit ${exitCode}) -- check that ${recipe.cmd[0]} is installed and provider API keys are set`
           : `acp-host (${recipe.name}) exited with code ${exitCode} after ${Math.round(elapsedMs / 1000)}s`
@@ -1252,7 +1262,12 @@ function spawnDaemonHostDirect(opts: {
         `daemon-host FAILED: PID ${pid} exit=${exitCode} elapsed=${elapsedMs}ms conv=${opts.conversationId.slice(0, 8)}${earlyFailure ? ' (EARLY)' : ''}`,
       )
       if (activeWs?.readyState === WebSocket.OPEN) {
-        const errCtx = collectSpawnErrorContext(stderrSnapshot, opts.cwd, opts.conversationId, /*includeHeadlessLog*/ false)
+        const errCtx = collectSpawnErrorContext(
+          stderrSnapshot,
+          opts.cwd,
+          opts.conversationId,
+          /*includeHeadlessLog*/ false,
+        )
         let detail = earlyFailure
           ? `daemon-host exited in ${elapsedMs}ms (exit ${exitCode}) -- check the Claude Code daemon is running`
           : `daemon-host exited with code ${exitCode} after ${Math.round(elapsedMs / 1000)}s`
