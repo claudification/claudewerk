@@ -59,6 +59,7 @@ const GatewayManagerDialog = lazy(() =>
 const SearchIndexManagerDialog = lazy(() =>
   import('@/components/search-index-manager').then(m => ({ default: m.SearchIndexManagerDialog })),
 )
+const SheafPage = lazy(() => import('@/sheaf/sheaf-page').then(m => ({ default: m.SheafPage })))
 
 function Dashboard() {
   const [sheetOpen, setSheetOpen] = useState(
@@ -410,8 +411,20 @@ function ShareGate({ token }: { token: string }) {
   return <SharedConversationView token={token} />
 }
 
+function useHash(): string {
+  const [hash, setHash] = useState(() => window.location.hash.slice(1))
+  useEffect(() => {
+    function update() {
+      setHash(window.location.hash.slice(1))
+    }
+    window.addEventListener('hashchange', update)
+    return () => window.removeEventListener('hashchange', update)
+  }, [])
+  return hash
+}
+
 export function App() {
-  const hash = window.location.hash.slice(1)
+  const hash = useHash()
 
   // Phase 11: /r/:token redirected here as ?share=TOKEN&kind=recap. The SPA
   // serves a standalone public recap viewer (no project chrome, no auth gate).
@@ -430,6 +443,18 @@ export function App() {
     return (
       <AuthGate>
         <PopoutTerminal conversationId={popoutMatch[1]} />
+      </AuthGate>
+    )
+  }
+
+  if (hash === '/sheaf' || hash === 'sheaf') {
+    return (
+      <AuthGate>
+        <Suspense
+          fallback={<div className="fixed inset-0 flex items-center justify-center text-muted-foreground">Loading sheaf...</div>}
+        >
+          <SheafPage />
+        </Suspense>
       </AuthGate>
     )
   }

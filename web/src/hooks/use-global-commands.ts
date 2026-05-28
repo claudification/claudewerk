@@ -55,6 +55,14 @@ export function useGlobalCommands(toggleSidebar: () => void) {
 
   useCommand('toggle-sidebar', toggleSidebar, { label: 'Toggle sidebar', shortcut: 'mod+b', group: 'View' })
 
+  useCommand(
+    'open-sheaf',
+    () => {
+      window.location.hash = '/sheaf'
+    },
+    { label: 'Sheaf (24/48h fleet overview)', group: 'Navigation' },
+  )
+
   useChordCommand(
     'toggle-debug',
     () => {
