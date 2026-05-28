@@ -295,25 +295,24 @@ function SwTab() {
       }
       try {
         const keys = await caches.keys()
-        let total = 0
-        const infos: typeof cacheInfo = []
-        for (const name of keys) {
-          const cache = await caches.open(name)
-          const entries = await cache.keys()
-          let sizeKB = 0
-          for (const req of entries) {
-            try {
-              const res = await cache.match(req)
-              if (res) {
-                const blob = await res.clone().blob()
-                sizeKB += blob.size / 1024
-              }
-            } catch {}
-          }
-          sizeKB = Math.round(sizeKB)
-          total += sizeKB
-          infos.push({ name, count: entries.length, sizeKB })
-        }
+        const infos = await Promise.all(
+          keys.map(async name => {
+            const cache = await caches.open(name)
+            const entries = await cache.keys()
+            const sizes = await Promise.all(
+              entries.map(async req => {
+                try {
+                  const res = await cache.match(req)
+                  if (res) return (await res.clone().blob()).size / 1024
+                } catch {}
+                return 0
+              }),
+            )
+            const sizeKB = Math.round(sizes.reduce((a, b) => a + b, 0))
+            return { name, count: entries.length, sizeKB }
+          }),
+        )
+        const total = infos.reduce((s, i) => s + i.sizeKB, 0)
         setCacheInfo(infos)
         setTotalKB(Math.round(total))
       } catch {}
