@@ -9,6 +9,14 @@ const marked = new Marked()
 const renderer = new marked.Renderer()
 
 renderer.link = ({ href, text }) => `<a href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`
+renderer.codespan = ({ text }) => {
+  const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const escapedAttr = escaped.replace(/"/g, '&quot;')
+  if (/^https?:\/\/\S+$/.test(text)) {
+    return `<a href="${escapedAttr}" target="_blank" rel="noopener noreferrer"><code>${escaped}</code></a>`
+  }
+  return `<code>${escaped}</code>`
+}
 renderer.code = ({ text, lang }) => {
   const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   const cls = lang ? `shiki language-${lang}` : 'shiki'
@@ -445,5 +453,46 @@ describe('real-world transcript patterns', () => {
   test('multiple generics: Dict<string, List<int>>', () => {
     const html = render('Uses Dict<string, List<int>> for caching')
     expect(html).toContain('&lt;string, List&lt;int&gt;&gt;')
+  })
+})
+
+describe('codespan URL linkification', () => {
+  test('https URL inside inline code becomes clickable', () => {
+    const html = renderInline('see `https://example.com/api/v1/`')
+    expect(html).toContain('<a href="https://example.com/api/v1/"')
+    expect(html).toContain('<code>https://example.com/api/v1/</code>')
+    expect(html).toContain('target="_blank"')
+    expect(html).toContain('rel="noopener noreferrer"')
+  })
+
+  test('http URL inside inline code becomes clickable', () => {
+    const html = renderInline('try `http://localhost:3000/foo`')
+    expect(html).toContain('<a href="http://localhost:3000/foo"')
+    expect(html).toContain('<code>http://localhost:3000/foo</code>')
+  })
+
+  test('non-URL inline code stays as plain code', () => {
+    const html = renderInline('call `fetch()` here')
+    expect(html).toContain('<code>fetch()</code>')
+    expect(html).not.toContain('<a href')
+  })
+
+  test('inline code with URL-like prefix but trailing text is NOT linkified', () => {
+    const html = renderInline('`https://example.com extra`')
+    expect(html).not.toContain('<a href')
+    expect(html).toContain('<code>https://example.com extra</code>')
+  })
+
+  test('non-http protocols (file:, javascript:) are NOT linkified', () => {
+    const html1 = renderInline('`file:///etc/passwd`')
+    expect(html1).not.toContain('<a href')
+    const html2 = renderInline('`javascript:alert(1)`')
+    expect(html2).not.toContain('<a href')
+  })
+
+  test('URLs in fenced code blocks are not linkified (code-block path, not codespan)', () => {
+    const html = render('```\nhttps://example.com\n```')
+    // Fenced blocks go through renderer.code, not renderer.codespan
+    expect(html).not.toContain('<a href="https://example.com"')
   })
 })

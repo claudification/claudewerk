@@ -131,6 +131,19 @@ renderer.blockquote = ({ text }) => {
   return `<blockquote>${marked.parseInline(text)}</blockquote>`
 }
 
+// Inline code containing a bare http(s) URL -> wrap the `<code>` in an anchor
+// so the URL is clickable. Models love to wrap URLs in backticks
+// (e.g. `https://example.com/api`); without this, those are unreachable
+// without copy/paste. Marked 18 hands us the raw text and expects the
+// renderer to escape -- match the default's behavior, then add the anchor.
+renderer.codespan = ({ text }) => {
+  const escaped = escapeHtml(text)
+  if (/^https?:\/\/\S+$/.test(text)) {
+    return `<a href="${escapeAttr(text)}" target="_blank" rel="noopener noreferrer"><code>${escaped}</code></a>`
+  }
+  return `<code>${escaped}</code>`
+}
+
 renderer.code = ({ text, lang }) => {
   // Mermaid blocks: emit placeholder, rendered post-mount via useEffect
   if (lang === 'mermaid') {
