@@ -49,6 +49,7 @@ function GroupView({
       <div className="mb-2 space-y-1">
         {group.notifications.map((n, i) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: notifications are ordered display items, no stable IDs
+          // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
           <TaskNotificationLine key={i} notification={n} ts={ts} />
         ))}
       </div>
@@ -119,6 +120,7 @@ function GroupView({
         {items.map((item, i) => (
           <GroupItem
             // biome-ignore lint/suspicious/noArrayIndexKey: content blocks without stable IDs
+            // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
             key={i}
             item={item}
             showThinking={showThinking}

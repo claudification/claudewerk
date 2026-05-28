@@ -153,6 +153,7 @@ export const DiffView = memo(
             if (line.hunkHeader) {
               return (
                 // biome-ignore lint/suspicious/noArrayIndexKey: diff lines are positional, no stable IDs
+                // react-doctor-disable-next-line react-doctor/no-array-index-key
                 <div key={j} className="text-muted-foreground">
                   {line.hunkHeader}
                 </div>
@@ -162,6 +163,7 @@ export const DiffView = memo(
             return (
               <div
                 // biome-ignore lint/suspicious/noArrayIndexKey: diff lines are positional, no stable IDs
+                // react-doctor-disable-next-line react-doctor/no-array-index-key
                 key={j}
                 className={cn(line.prefix === '+' && 'bg-green-500/10', line.prefix === '-' && 'bg-red-500/10')}
               >
@@ -298,6 +300,7 @@ const WordDiffLine = memo(function WordDiffLine({
         {merged.map((seg, i) => (
           <span
             // biome-ignore lint/suspicious/noArrayIndexKey: merged segments are positional
+            // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
             key={i}
             style={seg.color ? { color: seg.color } : undefined}
             className={
@@ -318,6 +321,7 @@ const WordDiffLine = memo(function WordDiffLine({
         return (
           <span
             // biome-ignore lint/suspicious/noArrayIndexKey: word diff parts are positional
+            // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
             key={i}
             className={
               isHighlighted ? (mode === 'add' ? 'bg-green-500/30 rounded-sm' : 'bg-red-500/30 rounded-sm') : undefined
@@ -423,6 +427,7 @@ export function WritePreview({ content, filePath }: { content: string; filePath?
           <code>
             {htmlLines.slice(0, visibleLines).map((lineHtml, i) => (
               // biome-ignore lint/suspicious/noArrayIndexKey: file lines are positional, no stable IDs
+              // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
               <div key={i} className="hover:bg-muted/20">
                 <span
                   className="text-muted-foreground/40 select-none inline-block text-right mr-3"
@@ -438,6 +443,7 @@ export function WritePreview({ content, filePath }: { content: string; filePath?
           <code className="text-foreground/70">
             {lines.slice(0, visibleLines).map((line, i) => (
               // biome-ignore lint/suspicious/noArrayIndexKey: file lines are positional, no stable IDs
+              // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
               <div key={i} className="hover:bg-muted/20">
                 <span
                   className="text-muted-foreground/40 select-none inline-block text-right mr-3"
@@ -592,6 +598,7 @@ export function ReplView({ code, isError }: { code: string; isError?: boolean })
           <code>
             {htmlLines.slice(0, visibleCodeLines).map((lineHtml, i) => (
               // biome-ignore lint/suspicious/noArrayIndexKey: code lines are positional
+              // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
               <div key={i} className="hover:bg-muted/20" dangerouslySetInnerHTML={{ __html: lineHtml }} />
             ))}
           </code>
@@ -599,6 +606,7 @@ export function ReplView({ code, isError }: { code: string; isError?: boolean })
           <code className="text-foreground/70">
             {codeLines.slice(0, visibleCodeLines).map((line, i) => (
               // biome-ignore lint/suspicious/noArrayIndexKey: code lines are positional
+              // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
               <div key={i} className="hover:bg-muted/20">
                 {line}
               </div>

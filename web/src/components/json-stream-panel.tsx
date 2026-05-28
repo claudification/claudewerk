@@ -362,6 +362,7 @@ export function JsonStreamPanel({ conversationId }: JsonStreamPanelProps) {
         ) : (
           filtered.map((line, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: stream lines have no stable ID
+            // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
             <StreamLine key={i} line={line} index={i} />
           ))
         )}

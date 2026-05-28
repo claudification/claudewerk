@@ -90,9 +90,9 @@ export function ChipRow({ label, items, tone = 'muted' }: { label: string; items
   return (
     <div className="flex flex-wrap items-baseline gap-1.5">
       <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</span>
-      {items.map(i => (
-        <Chip key={i} tone={tone}>
-          {i}
+      {items.map(item => (
+        <Chip key={item} tone={tone}>
+          {item}
         </Chip>
       ))}
     </div>

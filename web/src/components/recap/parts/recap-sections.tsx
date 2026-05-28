@@ -59,6 +59,7 @@ function OpenQuestions({ questions }: { questions: string[] }) {
       <ul className="flex list-disc flex-col gap-1 pl-4 text-sm">
         {questions.map((q, i) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: static recap list, rendered once, never reordered
+          // react-doctor-disable-next-line react-doctor/no-array-index-as-key
           <li key={`${q.slice(0, 24)}-${i}`}>{q}</li>
         ))}
       </ul>

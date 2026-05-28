@@ -40,6 +40,7 @@ export function renderAskUserQuestion({ input }: ToolCaseInput): ToolCaseResult 
       <div className="text-[10px] font-mono space-y-1 mt-1">
         {questions.map((q, qi) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: question list items are positional, no stable IDs
+          // react-doctor-disable-next-line react-doctor/no-array-index-key
           <div key={qi}>
             {q.header && <span className="text-amber-400/70">[{q.header}] </span>}
             <span className="text-foreground/80">{q.question}</span>
@@ -47,6 +48,7 @@ export function renderAskUserQuestion({ input }: ToolCaseInput): ToolCaseResult 
               <div className="ml-2 text-muted-foreground">
                 {q.options.map((o, oi) => (
                   // biome-ignore lint/suspicious/noArrayIndexKey: option list items are positional, no stable IDs
+                  // react-doctor-disable-next-line react-doctor/no-array-index-key
                   <div key={oi} className="text-amber-400/50">
                     {'>'} {o.label}
                   </div>

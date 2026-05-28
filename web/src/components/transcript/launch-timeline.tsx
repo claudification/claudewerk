@@ -106,6 +106,7 @@ export function LaunchTimeline({ group }: { group: DisplayGroup }) {
       <div className="space-y-0.5">
         {entries.map((entry, i) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: launch entries are a fixed ordered timeline
+          // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
           <LaunchLine key={i} entry={entry} startTs={startTs} />
         ))}
       </div>

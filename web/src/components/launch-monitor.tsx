@@ -23,6 +23,7 @@ export function LaunchStepList({ steps }: { steps: LaunchProgressStep[] }) {
     <div className="space-y-2">
       {steps.map((step, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: steps have no stable ID
+        // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
         <div key={i} className="flex items-start gap-2 font-mono">
           <span className="mt-0.5 w-3 flex-shrink-0 text-center">
             {step.status === 'pending' && <span className="size-2 rounded-full bg-primary/20 inline-block" />}

@@ -33,6 +33,7 @@ export function ChatBubble({
               return (
                 <div
                   // biome-ignore lint/suspicious/noArrayIndexKey: content blocks without stable IDs
+                  // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
                   key={i}
                   className="text-sm [&_a]:text-primary-foreground/85 [&_a]:underline [&_a]:decoration-primary-foreground/40 [&_code]:!bg-black/25 [&_code]:!px-1.5 [&_code]:!py-0.5 [&_code]:!rounded-sm [&_code]:!text-primary-foreground/80 [&_code]:!text-[0.85em]"
                 >
@@ -43,6 +44,7 @@ export function ChatBubble({
             if (item.kind === 'images') {
               return (
                 // biome-ignore lint/suspicious/noArrayIndexKey: content blocks without stable IDs
+                // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
                 <div key={i} className="flex gap-1 flex-wrap mt-1">
                   {item.images.map(img => (
                     <img key={img.hash} src={img.url} alt="" className="max-h-24 rounded" />

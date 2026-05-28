@@ -335,6 +335,7 @@ export const ConversationItemFull = memo(function ConversationItemFull({
         return (
           <div className="mt-1.5 flex items-center gap-1.5 text-[9px]">
             {items.map((node, i) => (
+              // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
               <span key={i} className="contents">
                 {i > 0 && <span className="text-muted-foreground/30">·</span>}
                 {node}

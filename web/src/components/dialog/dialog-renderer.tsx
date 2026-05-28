@@ -418,6 +418,7 @@ function StackLayout({
     <div className={cn(direction === 'horizontal' ? 'flex flex-wrap gap-2 items-start' : 'flex flex-col gap-3')}>
       {items.map((child, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: dialog layout children are positional, no stable IDs
+        // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
         <ComponentRenderer key={i} component={child} form={form} onAction={onAction} />
       ))}
     </div>
@@ -439,6 +440,7 @@ function GridLayout({
     <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(columns, 4)}, minmax(0, 1fr))` }}>
       {items.map((child, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: grid layout children are positional, no stable IDs
+        // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
         <ComponentRenderer key={i} component={child} form={form} onAction={onAction} />
       ))}
     </div>
@@ -479,6 +481,7 @@ function GroupLayout({
         <div className="p-3 space-y-3">
           {items.map((child, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: group layout children are positional, no stable IDs
+            // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
             <ComponentRenderer key={i} component={child} form={form} onAction={onAction} />
           ))}
         </div>

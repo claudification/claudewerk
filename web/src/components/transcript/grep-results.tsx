@@ -332,6 +332,7 @@ export function GrepContentResults({
               {g.matches.map((m, i) => (
                 <div
                   // biome-ignore lint/suspicious/noArrayIndexKey: ordered match list, no stable id
+                  // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
                   key={i}
                   className="flex gap-2 hover:bg-muted/20 leading-tight"
                 >

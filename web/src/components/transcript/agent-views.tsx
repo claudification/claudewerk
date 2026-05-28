@@ -66,6 +66,7 @@ function AgentTranscriptEntries({ entries }: { entries: TranscriptEntry[] }) {
     <div className="space-y-2 border-l-2 border-pink-400/30 pl-3">
       {groups.map((group, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: transcript groups are ordered, no stable IDs
+        // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
         <AgentGroupView key={i} group={group} resultMap={resultMap} />
       ))}
     </div>
@@ -153,6 +154,7 @@ function AgentGroupView({
             const estBytes = isEncrypted ? Math.round((item.encryptedBytes as number) * 0.75) : 0
             return (
               // biome-ignore lint/suspicious/noArrayIndexKey: content blocks without stable IDs
+              // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
               <div key={i} className="border-l-2 border-purple-400/40 pl-2 py-1">
                 <div className="text-[10px] text-purple-400/70 uppercase font-bold tracking-wider flex items-center gap-1.5">
                   <span>thinking</span>
@@ -182,6 +184,7 @@ function AgentGroupView({
           if (item.kind === 'text') {
             return (
               // biome-ignore lint/suspicious/noArrayIndexKey: content blocks without stable IDs
+              // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
               <div key={i} className="text-[11px]">
                 <Markdown>{item.text}</Markdown>
               </div>
@@ -189,6 +192,7 @@ function AgentGroupView({
           }
           if (item.kind === 'tool') {
             // biome-ignore lint/suspicious/noArrayIndexKey: content blocks without stable IDs
+            // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
             return <ToolLine key={i} tool={item.tool} result={item.result} toolUseResult={item.extra} />
           }
           return null
