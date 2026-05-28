@@ -257,7 +257,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { PermissionRulesEditor } from '@/components/settings/permission-rules-editor'
+import { SecurityPanel } from '@/components/project-settings/security-panel'
 import { GroupHeader, SettingRow } from '@/components/settings/settings-inputs'
 import { SettingsShell, type SettingsShellTab } from '@/components/settings/settings-shell'
 import {
@@ -1039,44 +1039,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
 
         {/* ── Security tab ─────────────────────────────────────────── */}
         {activeTab === 'security' && (
-          <>
-            <GroupHeader label="Trust" />
-
-            <SettingRow label="Trust level" description="Controls inter-conversation messaging approval">
-              <div className="flex gap-1">
-                {[
-                  { value: 'default', label: 'Default' },
-                  { value: 'open', label: 'Open' },
-                  { value: 'benevolent', label: 'Benevolent' },
-                ].map(opt => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setTrustLevel(opt.value)}
-                    className={cn(
-                      'px-2 py-1 text-[10px] font-mono border rounded transition-colors',
-                      trustLevel === opt.value
-                        ? opt.value === 'open'
-                          ? 'border-green-500 bg-green-500/20 text-green-400'
-                          : opt.value === 'benevolent'
-                            ? 'border-amber-500 bg-amber-500/20 text-amber-400'
-                            : 'border-border bg-muted text-foreground'
-                        : 'border-border/50 text-muted-foreground hover:text-foreground',
-                    )}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </SettingRow>
-
-            <GroupHeader label="Permission Rules" />
-            <div className="text-[9px] text-muted-foreground mb-2">
-              Auto-approve permission requests. Use Allow All for full trust, or fine-tune per tool. Stored in
-              .rclaude/rclaude.json.
-            </div>
-            <PermissionRulesEditor project={project} />
-          </>
+          <SecurityPanel project={project} trustLevel={trustLevel} onTrustLevelChange={setTrustLevel} />
         )}
       </div>
     </SettingsShell>
