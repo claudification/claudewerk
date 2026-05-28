@@ -2421,6 +2421,41 @@ export interface ListCcSessionsResult {
   error?: string
 }
 
+/** Broker -> Sentinel: gather git commits in `cwd` between two timestamps.
+ *  The broker never touches the host FS (boundary rule) -- the sentinel runs
+ *  `git log` and returns the parsed result. Backs the recap "grounding" data. */
+export interface GitLogRequest {
+  type: 'git_log_request'
+  requestId: string
+  /** Absolute path on the sentinel's filesystem. */
+  cwd: string
+  /** Period bounds (unix ms). Mapped to git --since / --until. */
+  sinceMs: number
+  untilMs: number
+}
+
+export interface GitLogCommit {
+  sha: string
+  isoDate: string
+  author: string
+  subject: string
+  body: string
+  filesChanged: number
+  insertions: number
+  deletions: number
+}
+
+/** Sentinel -> Broker: parsed git log. `success:false` + `error` when the cwd
+ *  is not a git repo or git failed; `commits:[]` is a valid empty result. */
+export interface GitLogResult {
+  type: 'git_log_result'
+  requestId: string
+  cwd: string
+  success: boolean
+  commits: GitLogCommit[]
+  error?: string
+}
+
 /** Agent or agent host reports a spawn failure (headless child exit, PTY crash, or early exit) */
 export interface SpawnFailed {
   type: 'spawn_failed'
@@ -2877,6 +2912,7 @@ export type SentinelMessage =
   | SpawnFailed
   | ListDirsResult
   | ListCcSessionsResult
+  | GitLogResult
   | UsageUpdate
   | SentinelUsageReport
   | LaunchLog
@@ -3153,6 +3189,7 @@ export type BrokerSentinelMessage =
   | SpawnConversation
   | ListDirs
   | ListCcSessions
+  | GitLogRequest
   | SentinelPatchConfig
   | SentinelQuit
   | SentinelReject

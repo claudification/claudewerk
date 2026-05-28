@@ -13,6 +13,7 @@ import {
   gatherTranscripts,
   type PeriodScope,
 } from './gather'
+import type { CommitDigest } from './gather/types'
 import { pickModel } from './llm/escalate'
 import { buildPrompt, type PromptInputs } from './llm/prompt-builder'
 import { createProgressEmitter, type ProgressBroadcaster } from './progress'
@@ -47,6 +48,10 @@ export interface OrchestratorDeps {
   apiKey?: string
   /** Project label rendering (e.g. last path segment). */
   projectLabel?: (projectUri: string) => string
+  /** Real commit gathering via the sentinel git_log RPC. Injected by the broker
+   *  (which owns the sentinel connections). Absent in tests -> the empty stub
+   *  is used and the recap reports "no git data available". */
+  gatherCommits?: (scope: PeriodScope) => Promise<CommitDigest>
   /** Deliver a recap-completed system channel message into a conversation.
    *  Provided by the broker (inform_on_complete). No-op if absent. */
   informConversation?: (conversationId: string, msg: { recapId: string; text: string }) => void
@@ -161,6 +166,19 @@ async function runRecap(
     deps.projectLabel,
     includeInternals,
   )
+  // Real git gather (async, via sentinel RPC) replaces the empty stub when the
+  // broker injected a gatherer. Failures degrade to the stub commits already in
+  // promptInputs -- a recap without git data still renders.
+  if (deps.gatherCommits) {
+    try {
+      promptInputs.commits = await deps.gatherCommits(scope)
+      const n = promptInputs.commits.perProject.reduce((s, p) => s + p.commits.length, 0)
+      emit.emit('info', 'gather/commits', `git gather: ${n} commit(s) across ${promptInputs.commits.perProject.length} project(s)`)
+    } catch (err) {
+      emit.emit('warn', 'gather/commits', `git gather failed: ${describe(err)}`)
+    }
+  }
+
   emit.emit(
     'info',
     'gather/done',

@@ -51,6 +51,7 @@ import { initProjectOrder } from './project-order'
 import { getAllProjectSettings, getProjectSettings, initProjectSettings, setProjectSettings } from './project-settings'
 import { closeProjectStore, initProjectStore } from './project-store'
 import { initPush, isPushConfigured, sendPushToAll } from './push'
+import { makeCommitGatherer } from './recap/commit-gather'
 import { initRecapOrchestrator } from './recap-orchestrator'
 import { createRouter } from './routes'
 import { createSentinelRegistry } from './sentinel-registry'
@@ -434,6 +435,9 @@ async function main() {
     broadcaster: {
       broadcast: msg => conversationStore.broadcastConversationScoped(msg as Record<string, unknown>, '*'),
     },
+    // Recap grounding: gather real commits via the sentinel git_log RPC. The
+    // broker owns sentinel connections; the recap module stays FS-agnostic.
+    gatherCommits: makeCommitGatherer(conversationStore),
     // inform_on_complete: push a recap-completed system channel message into
     // the requesting conversation. Connected-only -- if the conversation is
     // offline the push is skipped (the caller can still poll recap_get).

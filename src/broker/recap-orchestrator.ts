@@ -8,6 +8,7 @@ import type {
   RecapStatus,
   RecapSummary,
 } from '../shared/protocol'
+import type { CommitDigest, PeriodScope } from './recap/period/gather/types'
 import { type StartArgs, type StartResult, startRecap } from './recap/period/orchestrator'
 import type { ProgressBroadcaster } from './recap/period/progress'
 import { createPeriodRecapStore, type PeriodRecapStore, type RecapRow, rowToRecapMeta } from './recap/period/store'
@@ -33,6 +34,9 @@ export interface InitOptions {
   /** Deliver a recap-completed channel message into a conversation
    *  (inform_on_complete). Wired by the broker; no-op if absent. */
   informConversation?: (conversationId: string, msg: { recapId: string; text: string }) => void
+  /** Real commit gathering via the sentinel git_log RPC (recap grounding).
+   *  Wired by the broker (which owns sentinel connections). */
+  gatherCommits?: (scope: PeriodScope) => Promise<CommitDigest>
 }
 
 export function initRecapOrchestrator(opts: InitOptions): RecapOrchestrator {
@@ -45,6 +49,7 @@ export function initRecapOrchestrator(opts: InitOptions): RecapOrchestrator {
           brokerStore: opts.brokerStore,
           broadcaster: opts.broadcaster,
           informConversation: opts.informConversation,
+          gatherCommits: opts.gatherCommits,
         },
         args,
       ),
