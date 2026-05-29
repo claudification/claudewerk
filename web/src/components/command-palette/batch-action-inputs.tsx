@@ -6,6 +6,7 @@ import type { SentinelStatusInfo } from '@/hooks/use-conversations'
 export function BatchBroadcastInput({ value, onChange }: { value: string; onChange: (next: string) => void }) {
   return (
     <textarea
+      aria-label="Broadcast message text"
       value={value}
       onChange={e => onChange(e.target.value)}
       placeholder="Message to broadcast to all selected conversations..."
@@ -39,12 +40,14 @@ export function BatchReassignInputs({
   return (
     <div className="grid grid-cols-3 gap-2 text-xs">
       <input
+        aria-label="Target project URI"
         placeholder="target projectUri (optional)"
         value={project}
         onChange={e => onProjectChange(e.target.value)}
         className="bg-muted/20 px-2 py-1 border border-border/40 outline-none focus:border-accent"
       />
       <select
+        aria-label="Target sentinel"
         value={sentinel}
         onChange={e => onSentinelChange(e.target.value)}
         className="bg-muted/20 px-2 py-1 border border-border/40"
@@ -58,6 +61,7 @@ export function BatchReassignInputs({
         ))}
       </select>
       <input
+        aria-label="Target profile"
         placeholder="target profile (blank=unchanged, __clear__=default)"
         value={profile}
         onChange={e => onProfileChange(e.target.value)}

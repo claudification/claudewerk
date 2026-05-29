@@ -280,6 +280,7 @@ export function TaskEditor({
         {/* Header */}
         <div className="flex items-center gap-2 px-4 py-3 border-b border-primary/20 shrink-0">
           <input
+            aria-label="Task title"
             type="text"
             value={title}
             onChange={e => setTitle(e.target.value)}
@@ -343,6 +344,7 @@ export function TaskEditor({
             </span>
           ))}
           <input
+            aria-label="Add tag to task"
             type="text"
             value={tagInput}
             onChange={e => setTagInput(e.target.value)}
@@ -1480,6 +1482,7 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
             <div className="flex items-center gap-2">
               <input
                 ref={searchRef}
+                aria-label="Filter tasks by title"
                 type="text"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}

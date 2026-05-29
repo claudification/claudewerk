@@ -210,6 +210,7 @@ function GrantEditor({ grants, onChange }: GrantEditorProps) {
           {editingIdx === i && (
             <div className="px-3 pb-3 pt-1 border-t border-border/50 space-y-2">
               <input
+                aria-label="Project path for permission grant"
                 type="text"
                 value={g.project}
                 onChange={e => updateGrant(i, { project: e.target.value })}
@@ -228,6 +229,7 @@ function GrantEditor({ grants, onChange }: GrantEditorProps) {
                   </label>
                   <input
                     id={`grant-from-${i}`}
+                    aria-label="Grant active from date"
                     type="date"
                     value={g.notBefore ? new Date(g.notBefore).toISOString().split('T')[0] : ''}
                     onChange={e =>
@@ -244,6 +246,7 @@ function GrantEditor({ grants, onChange }: GrantEditorProps) {
                   </label>
                   <input
                     id={`grant-until-${i}`}
+                    aria-label="Grant active until date"
                     type="date"
                     value={g.notAfter ? new Date(g.notAfter).toISOString().split('T')[0] : ''}
                     onChange={e =>
@@ -263,6 +266,7 @@ function GrantEditor({ grants, onChange }: GrantEditorProps) {
       {/* Add new grant */}
       <div className="border border-dashed border-border rounded p-3 space-y-2">
         <input
+          aria-label="New grant CWD path"
           type="text"
           placeholder="CWD path or * for all"
           value={newCwd}

@@ -35,6 +35,7 @@ export function ColorInput({
           <button
             key={hex}
             type="button"
+            aria-label={`Select color ${hex}`}
             onClick={() => pickColor(hex)}
             className={`w-5 h-5 border transition-transform hover:scale-125 ${
               currentHex === hex ? 'border-white scale-110' : 'border-border/50'
@@ -194,6 +195,7 @@ export function BubbleColorPicker({ value, onChange }: { value: string; onChange
         <button
           key={color}
           type="button"
+          aria-label={`Select bubble color ${color}`}
           onClick={() => onChange(color)}
           className={cn(
             'w-5 h-5 rounded-full transition-all',

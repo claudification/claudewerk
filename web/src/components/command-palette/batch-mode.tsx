@@ -443,12 +443,14 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
           <>
             <div className="grid grid-cols-4 gap-2 px-3 py-2 border-b border-border text-xs">
               <input
+                aria-label="Filter conversations by project"
                 placeholder="project filter"
                 value={filterProject}
                 onChange={e => setFilterProject(e.target.value)}
                 className="bg-muted/20 px-2 py-1 border border-border/40 outline-none focus:border-accent"
               />
               <select
+                aria-label="Filter conversations by status"
                 value={filterStatus}
                 onChange={e => setFilterStatus(e.target.value as FilterState['status'])}
                 className="bg-muted/20 px-2 py-1 border border-border/40 outline-none"
@@ -458,12 +460,14 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
                 <option value="idle">idle</option>
               </select>
               <input
+                aria-label="Filter conversations by sentinel"
                 placeholder="sentinel filter"
                 value={filterSentinel}
                 onChange={e => setFilterSentinel(e.target.value)}
                 className="bg-muted/20 px-2 py-1 border border-border/40 outline-none focus:border-accent"
               />
               <input
+                aria-label="Filter conversations by text search"
                 placeholder="text search"
                 value={filterText}
                 onChange={e => setFilterText(e.target.value)}
@@ -526,6 +530,7 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
                 {convRows.length > SELECT_ALL_CAP && (
                   <>
                     <input
+                      aria-label="Type select confirmation to select all conversations"
                       placeholder={`type "select ${convRows.length}"`}
                       value={confirmText}
                       onChange={e => setConfirmText(e.target.value)}
@@ -635,6 +640,7 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
 
               {confirmRequired && (
                 <input
+                  aria-label="Type confirmation phrase to enable Run button"
                   placeholder={`type "confirm ${selectedIds.length}" to enable Run`}
                   value={confirmText}
                   onChange={e => setConfirmText(e.target.value)}

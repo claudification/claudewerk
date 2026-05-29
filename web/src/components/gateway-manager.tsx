@@ -159,6 +159,7 @@ function GatewayList() {
         <div className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mb-2">Create Gateway</div>
         <div className="flex items-center gap-2">
           <input
+            aria-label="New gateway alias"
             type="text"
             value={newAlias}
             onChange={e => setNewAlias(e.target.value)}
@@ -169,6 +170,7 @@ function GatewayList() {
             }}
           />
           <input
+            aria-label="New gateway type"
             type="text"
             value={newType}
             onChange={e => setNewType(e.target.value)}

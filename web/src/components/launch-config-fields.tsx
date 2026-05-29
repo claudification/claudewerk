@@ -202,6 +202,7 @@ export function LaunchConfigFields({
         <Row label="Agent" subtitle="Named agent from agents.md or --agents config" htmlFor="lcf-agent">
           <input
             id="lcf-agent"
+            aria-label="Agent name"
             type="text"
             value={value.agent ?? ''}
             onChange={e => onChange({ agent: e.target.value })}
@@ -283,6 +284,7 @@ export function LaunchConfigFields({
         >
           <input
             id="lcf-budget"
+            aria-label="Maximum budget in USD"
             type="number"
             min={0}
             step={0.01}
@@ -315,6 +317,7 @@ export function LaunchConfigFields({
         <Row label="Name" subtitle="Display label in sidebar" htmlFor="lcf-name">
           <input
             id="lcf-name"
+            aria-label="Conversation display name"
             type="text"
             value={value.name ?? ''}
             onChange={e => onChange({ name: e.target.value })}
@@ -327,6 +330,7 @@ export function LaunchConfigFields({
         <Row label="Description" subtitle="What this conversation is about" htmlFor="lcf-description">
           <input
             id="lcf-description"
+            aria-label="Conversation description"
             type="text"
             value={value.description ?? ''}
             onChange={e => onChange({ description: e.target.value })}
@@ -356,6 +360,7 @@ export function LaunchConfigFields({
           />
           {value.useWorktree && (
             <input
+              aria-label="Worktree branch name"
               type="text"
               value={value.worktreeName ?? ''}
               onChange={e => onChange({ worktreeName: e.target.value })}

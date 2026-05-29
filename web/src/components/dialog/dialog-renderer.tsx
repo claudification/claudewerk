@@ -160,6 +160,7 @@ function OptionsInput({
                 )}
                 {selected && (
                   <input
+                    aria-label="Add a note for this option"
                     type="text"
                     placeholder="Add a note..."
                     value={(form.values[`${id}_note_${opt.value}`] as string) || ''}
@@ -344,6 +345,7 @@ function SliderInput({
         </div>
       )}
       <input
+        aria-label={label || id}
         type="range"
         min={min}
         max={max}

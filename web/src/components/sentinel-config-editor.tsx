@@ -150,6 +150,7 @@ function ProfileEditRow({
         </select>
       </label>
       <input
+        aria-label="Sentinel label"
         type="text"
         value={draft.label}
         placeholder="label"
@@ -157,6 +158,7 @@ function ProfileEditRow({
         className="w-24 px-1 py-0.5 bg-muted border border-border text-foreground placeholder:text-muted-foreground/40 rounded text-[10px]"
       />
       <input
+        aria-label="Sentinel color"
         type="text"
         value={draft.color}
         placeholder="#color"

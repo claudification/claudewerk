@@ -377,6 +377,7 @@ export function MarkdownInput({
       />
       <textarea
         ref={textareaRef}
+        aria-label={placeholder || 'Message input'}
         value={value}
         onChange={updateValueFromTextarea}
         onKeyDown={handleKeyDown}
@@ -427,6 +428,7 @@ export function MarkdownInput({
       </div>
       <input
         ref={fileInputRef}
+        aria-label="Attach file"
         type="file"
         accept="image/*,application/pdf,.txt,.md,.json,.csv,.xml,.yaml,.yml,.toml"
         onChange={handleFileInput}

@@ -214,6 +214,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
             <GroupHeader label="Identity" />
             <SettingRow label="Label" description="Display name for this project">
               <input
+                aria-label="Project label"
                 type="text"
                 value={label}
                 onChange={e => setLabel(e.target.value)}
@@ -228,6 +229,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
                 <span />
               </SettingRow>
               <textarea
+                aria-label="Project description"
                 value={description}
                 onChange={e => setDescription(e.target.value)}
                 placeholder="e.g. Send all music generation requests here"
@@ -245,6 +247,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
               <div className="relative mb-1.5">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-muted-foreground pointer-events-none" />
                 <input
+                  aria-label="Search icons"
                   type="text"
                   value={iconSearch}
                   onChange={e => setIconSearch(e.target.value)}
@@ -357,6 +360,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
               </div>
               <div className="flex gap-1">
                 <input
+                  aria-label="Add keyterm for voice transcription"
                   type="text"
                   value={keytermInput}
                   onChange={e => setKeytermInput(e.target.value)}
@@ -450,6 +454,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
 
             <SettingRow label="Model" description="Passed as --model flag when launching conversations">
               <input
+                aria-label="Default model for launches"
                 type="text"
                 value={model}
                 onChange={e => setModel(e.target.value)}
@@ -464,6 +469,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
               description="Default for OpenCode spawns from this project (empty = use global, then opencode-go/glm-5.1)"
             >
               <input
+                aria-label="Default OpenCode model for this project"
                 type="text"
                 value={openCodeModel}
                 onChange={e => setOpenCodeModel(e.target.value)}

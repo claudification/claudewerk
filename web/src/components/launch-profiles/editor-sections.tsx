@@ -141,6 +141,7 @@ export function AppendSystemPromptSection({ value, onChange }: { value: string; 
       subtitle="Appended to CC's generated system prompt. CC: --append-system-prompt"
     >
       <textarea
+        aria-label="System prompt suffix"
         value={value}
         onChange={e => onChange(e.target.value)}
         rows={6}
@@ -308,6 +309,7 @@ function TextInput({
 }) {
   return (
     <input
+      aria-label={placeholder || 'text input'}
       type="text"
       value={value}
       onChange={e => onChange(e.target.value)}

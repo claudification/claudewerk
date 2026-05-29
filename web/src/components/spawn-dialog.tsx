@@ -958,6 +958,7 @@ export function SpawnDialog() {
                     </select>
                     {openCodeModelCustom ? (
                       <input
+                        aria-label="Custom OpenCode model"
                         type="text"
                         value={openCodeModel}
                         onChange={e => setOpenCodeModel(e.target.value)}
@@ -1220,6 +1221,7 @@ function ResumeSessionField({
       {expanded && (
         <div className="space-y-1.5 pl-4">
           <input
+            aria-label="CC session ID to resume"
             type="text"
             value={resumeId}
             onChange={e => onResumeIdChange(e.target.value)}

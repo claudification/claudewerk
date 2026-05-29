@@ -87,6 +87,7 @@ export function ExpandedCompose({
     >
       <input
         ref={fileInputRef}
+        aria-label="Attach file"
         type="file"
         accept="image/*,application/pdf,.txt,.md,.json,.csv,.xml,.yaml,.yml,.toml"
         onChange={onFileInput}
@@ -106,6 +107,7 @@ export function ExpandedCompose({
         />
         <textarea
           ref={expandedTextareaRef}
+          aria-label="Message input (expanded)"
           value={value}
           onChange={onInput}
           onKeyDown={onKeyDown}

@@ -499,6 +499,7 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
             <Search className="size-3.5 text-muted-foreground/40 shrink-0" />
             <input
               ref={searchRef}
+              aria-label="Search tasks"
               type="text"
               value={query}
               onChange={e => setQuery(e.target.value)}
@@ -683,6 +684,7 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
               {/* Editable instructions textarea */}
               <textarea
                 ref={textareaRef}
+                aria-label="Custom instructions for batch task launch"
                 value={customInstructions}
                 onChange={e => setCustomInstructions(e.target.value)}
                 rows={4}

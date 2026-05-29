@@ -251,6 +251,7 @@ export function InlineRename({ conversation }: { conversation: Conversation }) {
   return (
     <input
       ref={inputRef}
+      aria-label="Rename conversation"
       value={value}
       onChange={e => setValue(e.target.value)}
       onKeyDown={e => {
@@ -297,6 +298,7 @@ export function InlineDescription({ conversation }: { conversation: Conversation
   return (
     <input
       ref={inputRef}
+      aria-label="Edit conversation description"
       value={value}
       onChange={e => setValue(e.target.value)}
       onKeyDown={e => {

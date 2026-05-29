@@ -41,6 +41,7 @@ function TextField({
     <div className="space-y-1">
       <div className="text-[10px] font-mono text-muted-foreground">{label}</div>
       <input
+        aria-label={label}
         type="text"
         value={value}
         onChange={e => onChange(e.target.value)}
@@ -83,6 +84,7 @@ function PromptField({
         Prompt <span className="text-comment">(optional)</span>
       </div>
       <textarea
+        aria-label="First turn prompt (optional)"
         value={value}
         onChange={e => onChange(e.target.value)}
         rows={3}

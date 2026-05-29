@@ -474,6 +474,7 @@ function MaskedField({
     <div className="flex items-center gap-2">
       <span className="text-[10px] font-mono text-muted-foreground w-12 shrink-0 text-right">{label}</span>
       <input
+        aria-label={label}
         type="text"
         value={display}
         onChange={e => onChange(e.target.value)}
@@ -502,6 +503,7 @@ function FormField({
     <div className="flex items-center gap-2">
       <span className="text-[10px] font-mono text-muted-foreground w-12 shrink-0 text-right">{label}</span>
       <input
+        aria-label={label}
         type="text"
         value={value}
         onChange={e => onChange(e.target.value)}
