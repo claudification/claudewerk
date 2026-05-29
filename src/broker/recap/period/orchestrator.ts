@@ -173,7 +173,11 @@ async function runRecap(
     try {
       promptInputs.commits = await deps.gatherCommits(scope)
       const n = promptInputs.commits.perProject.reduce((s, p) => s + p.commits.length, 0)
-      emit.emit('info', 'gather/commits', `git gather: ${n} commit(s) across ${promptInputs.commits.perProject.length} project(s)`)
+      emit.emit(
+        'info',
+        'gather/commits',
+        `git gather: ${n} commit(s) across ${promptInputs.commits.perProject.length} project(s)`,
+      )
     } catch (err) {
       emit.emit('warn', 'gather/commits', `git gather failed: ${describe(err)}`)
     }
@@ -302,12 +306,23 @@ interface LlmResult {
   costUsd: number
 }
 
+// A full human recap is a large YAML frontmatter (every features/bugs/fixes/
+// decisions/dead_ends/gotchas item) PLUS the markdown body. The old 8k cap
+// truncated big multi-day recaps mid-frontmatter -- the closing `---` and body
+// never arrived, so parseRecapOutput threw "missing YAML frontmatter block".
+// 32k is Opus 4.8's max output; it leaves comfortable headroom. Pair it with a
+// generous timeout: a 32k-token generation easily exceeds the client's 30s
+// default. Recaps run async (background), so the higher ceiling costs no UX.
+const RECAP_MAX_TOKENS = 32_000
+const RECAP_TIMEOUT_MS = 240_000
+
 async function callLlm(prompt: { system: string; user: string }, model: string, apiKey?: string): Promise<LlmResult> {
   const res = await chat({
     model,
     system: prompt.system,
     user: prompt.user,
-    maxTokens: 8_000,
+    maxTokens: RECAP_MAX_TOKENS,
+    timeoutMs: RECAP_TIMEOUT_MS,
     temperature: 0.2,
     retries: 2,
     apiKey,
@@ -329,7 +344,8 @@ async function parseOrRetry(content: string, built: { system: string; user: stri
       model,
       apiKey,
       retries: 1,
-      maxTokens: 8_000,
+      maxTokens: RECAP_MAX_TOKENS,
+      timeoutMs: RECAP_TIMEOUT_MS,
       temperature: 0.1,
       messages: [
         { role: 'system', content: built.system },
