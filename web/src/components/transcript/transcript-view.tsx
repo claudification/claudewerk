@@ -582,7 +582,7 @@ export const TranscriptView = memo(function TranscriptView({
     // scrolled up = no pull-down). Replaces all manual scroll-to-bottom and
     // prepend-anchor machinery.
     anchorTo: 'end',
-    followOnAppend: 'smooth',
+    followOnAppend: true,
     scrollEndThreshold: 80,
     // Safari fix: ResizeObserver can fire mid-layout before paint completes,
     // causing the virtualizer to read intermediate/partial element heights and
@@ -691,24 +691,12 @@ export const TranscriptView = memo(function TranscriptView({
     onReachedBottom?.()
   }, [cacheKey])
 
-  // Pin when transcript data changes (covers: initial load after switch,
-  // incremental appends). One synchronous trigger -- no setTimeout cascade.
-  const followRef = useRef(follow)
-  followRef.current = follow
-  useEffect(() => {
-    let lastRef = (() => {
-      const s = useConversationsStore.getState()
-      return s.selectedConversationId ? s.transcripts[s.selectedConversationId] : undefined
-    })()
-    return useConversationsStore.subscribe(state => {
-      const current = state.selectedConversationId ? state.transcripts[state.selectedConversationId] : undefined
-      if (current !== lastRef) {
-        lastRef = current
-        if (followRef.current) scrollToEnd()
-      }
-    })
-  }, [scrollToEnd])
-  // Re-pin when follow is toggled on (ScrollToBottomButton click).
+  // anchorTo:'end' + followOnAppend handle all pinning natively:
+  //   - New items appended (count increases) → followOnAppend scrolls to end
+  //   - Existing items grow (streaming, tool entries) → anchor adjusts by size delta
+  //   - Prepends (history load) → anchor keeps visible item stable
+  // No manual transcript-ref subscription needed. The only manual scrollToEnd()
+  // is the cacheKey effect above (conversation switch) and the follow toggle below.
   useLayoutEffect(() => {
     if (follow) scrollToEnd()
   }, [follow, scrollToEnd])
