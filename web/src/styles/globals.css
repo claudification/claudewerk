@@ -449,28 +449,3 @@ body:has([data-mobile-compose-panel]) [data-voice-fab] {
 .conversation-pulse {
 	animation: conversation-pulse-glow 0.5s ease-in-out 3;
 }
-
-/* Transcript entry enter: slide up + fade in. Applied (in transcript-view.tsx)
-   ONLY to a genuinely-new tail group on a live update -- never on conversation
-   switch, history load, or streaming token ticks. Only opacity + transform
-   animate (both composited), so the virtualizer's measureElement still reads the
-   final box height -- no layout/measure thrash. */
-@keyframes transcript-entry-enter {
-	from {
-		opacity: 0;
-		transform: translateY(10px);
-	}
-	to {
-		opacity: 1;
-		transform: translateY(0);
-	}
-}
-.transcript-entry-enter {
-	animation: transcript-entry-enter 0.22s cubic-bezier(0.22, 1, 0.36, 1);
-	will-change: transform, opacity;
-}
-@media (prefers-reduced-motion: reduce) {
-	.transcript-entry-enter {
-		animation: none;
-	}
-}

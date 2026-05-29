@@ -371,13 +371,6 @@ export const TranscriptView = memo(function TranscriptView({
   // a backgrounded tab can leave the virtualizer's cached scrollRect stale and
   // no ResizeObserver fires on return when the box didn't actually resize.
   const rectCbRef = useRef<((rect: { width: number; height: number }) => void) | null>(null)
-  // Wrapper around the FULL scrollable content (virtualized spacer + streaming +
-  // spinners + banners). A single ResizeObserver on it is the sole follow-pin
-  // authority (see the effect below). Held here so the JSX wires the ref.
-  const contentRef = useRef<HTMLDivElement>(null)
-  // follow mirror for the stable RO closure + the enter-animation gate.
-  const followRef = useRef(follow)
-  followRef.current = follow
 
   // Progressive load window (Phase 1a). windowStart is an ABSOLUTE index into
   // `entries`: set to the last-N default on open, only ever REDUCED by "Load
@@ -501,6 +494,32 @@ export const TranscriptView = memo(function TranscriptView({
   const selectedConversationId = useConversationsStore(state => state.selectedConversationId)
   const perfEnabled = useConversationsStore(state => state.controlPanelPrefs.showPerfMonitor)
 
+  // Count pending permissions for the selected conversation. Used as a scroll-to-bottom
+  // trigger so a newly-arrived permission pins into view when follow is active.
+  const pendingPermissionCount = useConversationsStore(state =>
+    state.selectedConversationId
+      ? state.pendingPermissions.filter(p => p.conversationId === state.selectedConversationId).length
+      : 0,
+  )
+
+  // Pending project-link requests: both inbound (ALLOW/BLOCK) and outbound (waiting)
+  const pendingLinkCount = useConversationsStore(state =>
+    state.selectedConversationId
+      ? state.pendingProjectLinks.filter(
+          r =>
+            r.toConversation === state.selectedConversationId ||
+            (r.fromConversation === state.selectedConversationId && r.toConversation !== state.selectedConversationId),
+        ).length
+      : 0,
+  )
+
+  // Pending ask questions for the selected conversation -- scroll trigger
+  const pendingAskCount = useConversationsStore(state =>
+    state.selectedConversationId
+      ? state.pendingAskQuestions.filter(q => q.conversationId === state.selectedConversationId).length
+      : 0,
+  )
+
   // Cache measured sizes so estimateSize can use real heights for groups that
   // have been rendered before. Sourced from a module-level per-conversation
   // cache. useMemo re-selects the right Map when cacheKey changes (Phase 2 of
@@ -603,17 +622,8 @@ export const TranscriptView = memo(function TranscriptView({
     virtualizer.measure()
   }, [transcriptRemeasureSeq])
 
-  // Follow turned on -- clear the "scrolled away" intent AND snap to the bottom.
-  // The ScrollToBottomButton (and onReachedBottom) only flip `follow` to true;
-  // the actual jump used to ride on the entries.length scrollToBottom effect,
-  // which the unified-pin consolidation removed. The RO pin only reacts to
-  // content growth, not to a follow toggle, so the snap has to live here.
-  // useLayoutEffect = pre-paint, no flash of the old scroll offset.
-  useLayoutEffect(() => {
-    if (!follow) return
-    followKilledRef.current = false
-    const el = parentRef.current
-    if (el) el.scrollTop = el.scrollHeight
+  useEffect(() => {
+    if (follow) followKilledRef.current = false
   }, [follow])
 
   // Phase 2 reset on conversation switch.
@@ -666,42 +676,24 @@ export const TranscriptView = memo(function TranscriptView({
     // react-doctor-disable-next-line react-doctor/exhaustive-deps
   }, [cacheKey])
 
-  // UNIFIED FOLLOW-PIN -- single authority for sticking to the bottom.
-  //
-  // One ResizeObserver on the content wrapper catches EVERY source of height
-  // growth in one place: committed groups (totalSize), live streaming text, the
-  // thinking/verb spinners, and the permission/link/ask banners. On any growth,
-  // while following and drifted, re-pin in ONE scrollTop write. RO callbacks are
-  // delivered after layout but before paint, so the write lands in the same
-  // frame -- no flash, no late snap.
-  //
-  // This REPLACES six staggered triggers that used to each fire their own
-  // scrollTop write at different times against a still-settling scrollHeight --
-  // the transcript-ref subscribe, the entries.length setTimeout(50), the three
-  // banner setTimeout(50)s, and the totalSize layout effect. Their overlapping
-  // writes to a moving target were the visible JERK on new updates, and none of
-  // them pinned during pure token streaming (streaming text lives below the
-  // virtualizer and never changes totalSize) -- so the view silently drifted off
-  // the bottom mid-turn, then snapped back at commit. The RO fixes both.
-  //
-  // follow=false (history / scrollback reading) is untouched: the gate bails, and
-  // the prepend-anchor path keeps owning the viewport there.
-  useEffect(() => {
-    const content = contentRef.current
+  // Pin-to-bottom on dynamic measurement. When the virtualizer re-measures rows
+  // after first paint and totalSize changes, re-pin in ONE write -- and only if
+  // actually drifted from the bottom. Replaces the old scrollToBottom rAF poll
+  // loop (3 blind scrollTop writes per call, scrollHeight polled every frame)
+  // that pumped a scroll-event feedback loop into the virtualizer and cost
+  // 200-1100ms per switch. See .claude/docs/plan-transcript-switch-perf.md.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: totalSize is an intentional trigger dep -- the effect re-pins when the virtualizer's measured total changes; it is not read in the body
+  useLayoutEffect(() => {
+    if (!follow || followKilledRef.current) return
     const el = parentRef.current
-    if (!content || !el) return
-    const ro = new ResizeObserver(() => {
-      if (!followRef.current || followKilledRef.current) return
-      const t0 = performance.now()
-      const drift = el.scrollHeight - el.scrollTop - el.clientHeight
-      if (drift > 4) {
-        el.scrollTop = el.scrollHeight
-        record('scroll', 'followPin', performance.now() - t0, `drift ${drift.toFixed(0)}px`)
-      }
-    })
-    ro.observe(content)
-    return () => ro.disconnect()
-  }, [])
+    if (!el) return
+    const t0 = performance.now()
+    const drift = el.scrollHeight - el.scrollTop - el.clientHeight
+    if (drift > 4) {
+      el.scrollTop = el.scrollHeight
+      record('scroll', 'scrollRepin', performance.now() - t0, `drift ${drift.toFixed(0)}px`)
+    }
+  }, [totalSize, follow])
 
   // Scroll-anchor for prepend ("Load earlier" + infinite scrollback ?before=).
   //
@@ -881,44 +873,84 @@ export const TranscriptView = memo(function TranscriptView({
     return () => el.removeEventListener('scroll', handleScroll)
   }, [follow, onReachedBottom, loadEarlier, fetchOlder])
 
-  // ENTER ANIMATION -- slide + fade the newest group in, ONLY for a live new
-  // entry (never on conversation switch, history load, or streaming ticks).
-  //
-  // Detected during RENDER (not an effect) so the new row carries the animation
-  // class on its FIRST paint -- adding the class post-paint would flash the row
-  // at full opacity for a frame before snapping back to start. We mark the key
-  // in a ref Set so subsequent re-renders (streaming deltas) keep the class for
-  // the animation's full duration; onAnimationEnd removes it (and a scroll-away/
-  // back can't replay it). Only opacity + transform animate -- both composited,
-  // so measureElement still reads the final box height. No measure thrash.
-  //
-  // Eligibility (all must hold): the LAST group's key changed, the conversation
-  // is the same (not a switch), the window is unchanged (not a head prepend /
-  // "load earlier"), there was a previous tail (not the first paint of a
-  // conversation), and we are following (the bottom is in view).
-  const enteringKeysRef = useRef<Set<string>>(new Set())
-  const [, bumpEnter] = useState(0)
-  const prevTailKeyRef = useRef<string | null>(null)
-  const enterCacheKeyRef = useRef(cacheKey)
-  const enterWindowStartRef = useRef(windowStart)
-  const tailKey = mainGroups.length > 0 ? stableGroupKey(mainGroups[mainGroups.length - 1]) : null
-  if (
-    tailKey &&
-    tailKey !== prevTailKeyRef.current &&
-    prevTailKeyRef.current !== null &&
-    cacheKey === enterCacheKeyRef.current &&
-    windowStart === enterWindowStartRef.current &&
-    followRef.current &&
-    !followKilledRef.current
-  ) {
-    enteringKeysRef.current.add(tailKey)
-  }
-  prevTailKeyRef.current = tailKey
-  enterCacheKeyRef.current = cacheKey
-  enterWindowStartRef.current = windowStart
-  const clearEntering = useCallback((key: string) => {
-    if (enteringKeysRef.current.delete(key)) bumpEnter(v => v + 1)
+  // Scroll to bottom: a single write. The dynamic-measurement settle (rows
+  // measuring taller than estimated after first paint) is handled by the
+  // totalSize-keyed layout effect above -- NOT by an rAF poll loop. scrollTop
+  // is set against scrollHeight (the whole scroll container, including the
+  // streaming + banner region below the virtualizer), so the true bottom is
+  // pinned, not just the last virtualized row.
+  const scrollToBottom = useCallback(() => {
+    if (followKilledRef.current) return
+    const el = parentRef.current
+    if (!el) return
+    // Explicit jump-to-bottom -- release any pending prepend anchor so the
+    // layout effect doesn't immediately yank us back.
+    prependAnchorRef.current = null
+    anchorAppliedRef.current = false
+    const t0 = performance.now()
+    el.scrollTop = el.scrollHeight
+    record('scroll', 'scrollToBottom', performance.now() - t0, 'single write')
   }, [])
+
+  // Subscribe to selected conversation's transcript changes for scroll-to-bottom.
+  // IMPORTANT: track the transcript array REFERENCE for the selected conversation, not the global
+  // newDataSeq counter. newDataSeq increments for ANY conversation's data (events, transcripts),
+  // which caused scrollToBottom -> virtualizer.scrollToIndex -> TranscriptView re-render on
+  // every store update from any conversation. By comparing the specific transcript reference,
+  // we only scroll when the viewed conversation's data actually changes.
+  const followRef = useRef(follow)
+  followRef.current = follow
+  useEffect(() => {
+    const getTranscriptRef = (state: {
+      selectedConversationId: string | null
+      transcripts: Record<string, unknown>
+    }) => (state.selectedConversationId ? state.transcripts[state.selectedConversationId] : undefined)
+    let lastRef = getTranscriptRef(useConversationsStore.getState())
+
+    return useConversationsStore.subscribe(state => {
+      const current = getTranscriptRef(state)
+      if (current !== lastRef) {
+        lastRef = current
+        if (followRef.current && !followKilledRef.current) scrollToBottom()
+      }
+    })
+  }, [scrollToBottom])
+
+  // Scroll to bottom on initial mount, follow toggle, and entry count changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: entries.length is used as a dep key to trigger scroll on new entries, not to access entries directly
+  useEffect(() => {
+    if (!follow) return
+    // Delay slightly to allow virtualizer to process new items and measure
+    const timer = setTimeout(scrollToBottom, 50)
+    return () => clearTimeout(timer)
+  }, [follow, entries.length, scrollToBottom])
+
+  // Also scroll to bottom when a new pending permission arrives -- permissions
+  // render after the virtualized content as a blocking UI gate, so the user
+  // needs to see them immediately when follow is active.
+  useEffect(() => {
+    if (!follow) return
+    if (pendingPermissionCount === 0) return
+    const timer = setTimeout(scrollToBottom, 50)
+    return () => clearTimeout(timer)
+  }, [follow, pendingPermissionCount, scrollToBottom])
+
+  // Same for link requests -- when another conversation asks to link, pin the
+  // inline approve/block card into view if follow is active.
+  useEffect(() => {
+    if (!follow) return
+    if (pendingLinkCount === 0) return
+    const timer = setTimeout(scrollToBottom, 50)
+    return () => clearTimeout(timer)
+  }, [follow, pendingLinkCount, scrollToBottom])
+
+  // Same for ask questions -- pin the interactive card into view.
+  useEffect(() => {
+    if (!follow) return
+    if (pendingAskCount === 0) return
+    const timer = setTimeout(scrollToBottom, 50)
+    return () => clearTimeout(timer)
+  }, [follow, pendingAskCount, scrollToBottom])
 
   if (mainGroups.length === 0 && queuedGroups.length === 0) {
     // Ghost (unattached daemon worker) -> live peek + attach. Else NO TRANSCRIPT.
@@ -938,123 +970,100 @@ export const TranscriptView = memo(function TranscriptView({
       {/* Infinite scrollback (Phase 1b): older entries auto-prepend on scroll-up
           (see the scroll handler) -- no button. The synchronous scroll-anchor
           keeps the viewport pinned across the prepend. */}
-      {/* contentRef wraps the FULL scrollable content so the unified follow-pin
-          ResizeObserver sees growth from BOTH the virtualized groups and the
-          streaming/spinner/banner region below them. */}
-      <div ref={contentRef}>
-        <div
-          style={{
-            height: `${totalSize}px`,
-            width: '100%',
-            position: 'relative',
-          }}
-        >
-          <MaybeProfiler enabled={perfEnabled} id="TranscriptGroups">
-            {(() => {
-              lastVirtualItemCount = virtualItems.length
-              lastTotalGroupCount = mainGroups.length
-              return virtualItems
-            })().map(virtualItem => {
-              const itemKey = String(virtualItem.key)
-              const isEntering = enteringKeysRef.current.has(itemKey)
-              return (
-                <div
-                  key={virtualItem.key}
-                  data-index={virtualItem.index}
-                  ref={virtualizer.measureElement}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    transform: `translateY(${virtualItem.start}px)`,
-                  }}
-                >
-                  {/* Enter animation lives on an INNER element: the outer div owns the
-                    virtualizer's positioning transform, and opacity/transform here are
-                    composited so measureElement still reads the final box height. */}
-                  <div
-                    className={isEntering ? 'transcript-entry-enter' : undefined}
-                    onAnimationEnd={
-                      isEntering
-                        ? e => {
-                            if (e.animationName === 'transcript-entry-enter') clearEntering(itemKey)
-                          }
-                        : undefined
+      <div
+        style={{
+          height: `${totalSize}px`,
+          width: '100%',
+          position: 'relative',
+        }}
+      >
+        <MaybeProfiler enabled={perfEnabled} id="TranscriptGroups">
+          {(() => {
+            lastVirtualItemCount = virtualItems.length
+            lastTotalGroupCount = mainGroups.length
+            return virtualItems
+          })().map(virtualItem => (
+            <div
+              key={virtualItem.key}
+              data-index={virtualItem.index}
+              ref={virtualizer.measureElement}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualItem.start}px)`,
+              }}
+            >
+              {(() => {
+                const group = mainGroups[virtualItem.index]
+                if (group.type === 'compacted') return <CompactedDivider />
+                if (group.type === 'compacting') return <CompactingBanner />
+                if (group.type === 'skill') {
+                  const entry = group.entries[0] as {
+                    message?: { content?: string | Array<{ type: string; text?: string }> }
+                  }
+                  let content = ''
+                  if (Array.isArray(entry?.message?.content)) {
+                    const parts: string[] = []
+                    for (const b of entry.message.content) {
+                      if (b.type === 'text') parts.push(b.text || '')
                     }
-                  >
-                    {(() => {
-                      const group = mainGroups[virtualItem.index]
-                      if (group.type === 'compacted') return <CompactedDivider />
-                      if (group.type === 'compacting') return <CompactingBanner />
-                      if (group.type === 'skill') {
-                        const entry = group.entries[0] as {
-                          message?: { content?: string | Array<{ type: string; text?: string }> }
-                        }
-                        let content = ''
-                        if (Array.isArray(entry?.message?.content)) {
-                          const parts: string[] = []
-                          for (const b of entry.message.content) {
-                            if (b.type === 'text') parts.push(b.text || '')
-                          }
-                          content = parts.join('')
-                        }
-                        return <SkillDivider name={group.skillName || 'skill'} content={content} />
-                      }
-                      return (
-                        <MemoizedGroupView
-                          group={group}
-                          getResult={getResult}
-                          settings={transcriptSettings}
-                          showThinking={showThinking}
-                          planContext={planContext}
-                        />
-                      )
-                    })()}
-                  </div>
-                </div>
-              )
-            })}
-          </MaybeProfiler>
-        </div>
-        {/* Streaming/queued region: wrapped in its own Profiler so perf reports
-          attribute stream-delta re-renders correctly (they used to fall outside
-          TranscriptGroups and silently cost frames). */}
-        <MaybeProfiler enabled={perfEnabled} id="TranscriptStreaming">
-          {/* Headless streaming text - isolated component so token updates don't re-render the virtualizer */}
-          <StreamingBlock conversationId={selectedConversationId} />
-          {/* Live thinking-token pill: ephemeral, renders only while pings arrive.
-            Sits ABOVE the verb spinner so the thinking phase reads top-to-bottom. */}
-          <ThinkingPill conversationId={selectedConversationId} />
-          {/* Fun verb spinner while conversation is working */}
-          <ThinkingSpinner conversationId={selectedConversationId} />
-          {/* Pending permission + link requests: rendered inline at the bottom as
-            blocking UI gates. Both follow the same pattern -- structured wire
-            message -> store -> inline banner -> user response over WS. */}
-          <div className="mt-2">
-            <LinkRequestBanners />
-            <PermissionBanners />
-            <SpawnApprovalBanners />
-            <AskQuestionBanners />
-          </div>
-          {/* Queued messages: rendered inline at the bottom of the transcript */}
-          {queuedGroups.length > 0 && (
-            <div className="mt-2 border-t border-dashed border-amber-500/30 pt-2">
-              <div className="text-[10px] font-mono text-amber-500/60 px-1 mb-1">QUEUED</div>
-              {queuedGroups.map((group, i) => (
-                <MemoizedGroupView
-                  // biome-ignore lint/suspicious/noArrayIndexKey: queued groups may share timestamp, index disambiguates
-                  key={`queued-${group.timestamp}-${i}`}
-                  group={group}
-                  getResult={getResult}
-                  settings={transcriptSettings}
-                  showThinking={showThinking}
-                />
-              ))}
+                    content = parts.join('')
+                  }
+                  return <SkillDivider name={group.skillName || 'skill'} content={content} />
+                }
+                return (
+                  <MemoizedGroupView
+                    group={group}
+                    getResult={getResult}
+                    settings={transcriptSettings}
+                    showThinking={showThinking}
+                    planContext={planContext}
+                  />
+                )
+              })()}
             </div>
-          )}
+          ))}
         </MaybeProfiler>
       </div>
+      {/* Streaming/queued region: wrapped in its own Profiler so perf reports
+          attribute stream-delta re-renders correctly (they used to fall outside
+          TranscriptGroups and silently cost frames). */}
+      <MaybeProfiler enabled={perfEnabled} id="TranscriptStreaming">
+        {/* Headless streaming text - isolated component so token updates don't re-render the virtualizer */}
+        <StreamingBlock conversationId={selectedConversationId} />
+        {/* Live thinking-token pill: ephemeral, renders only while pings arrive.
+            Sits ABOVE the verb spinner so the thinking phase reads top-to-bottom. */}
+        <ThinkingPill conversationId={selectedConversationId} />
+        {/* Fun verb spinner while conversation is working */}
+        <ThinkingSpinner conversationId={selectedConversationId} />
+        {/* Pending permission + link requests: rendered inline at the bottom as
+            blocking UI gates. Both follow the same pattern -- structured wire
+            message -> store -> inline banner -> user response over WS. */}
+        <div className="mt-2">
+          <LinkRequestBanners />
+          <PermissionBanners />
+          <SpawnApprovalBanners />
+          <AskQuestionBanners />
+        </div>
+        {/* Queued messages: rendered inline at the bottom of the transcript */}
+        {queuedGroups.length > 0 && (
+          <div className="mt-2 border-t border-dashed border-amber-500/30 pt-2">
+            <div className="text-[10px] font-mono text-amber-500/60 px-1 mb-1">QUEUED</div>
+            {queuedGroups.map((group, i) => (
+              <MemoizedGroupView
+                // biome-ignore lint/suspicious/noArrayIndexKey: queued groups may share timestamp, index disambiguates
+                key={`queued-${group.timestamp}-${i}`}
+                group={group}
+                getResult={getResult}
+                settings={transcriptSettings}
+                showThinking={showThinking}
+              />
+            ))}
+          </div>
+        )}
+      </MaybeProfiler>
     </div>
   )
 })
