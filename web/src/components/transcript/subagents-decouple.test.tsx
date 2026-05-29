@@ -22,10 +22,10 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { act, Profiler } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useConversationsStore } from '@/hooks/use-conversations'
-import { AgentTaskBadge } from './agent-task-badge'
+import { AgentTaskBadge, shortModel } from './agent-task-badge'
 
 type Status = 'running' | 'stopped'
-function sub(description: string, status: Status) {
+function sub(description: string, status: Status, model?: string) {
   return {
     agentId: `id-${description}`,
     agentType: 'Explore',
@@ -34,6 +34,7 @@ function sub(description: string, status: Status) {
     startedAt: 1000,
     stoppedAt: status === 'stopped' ? 3000 : undefined,
     eventCount: 2,
+    ...(model && { model }),
   }
 }
 
@@ -68,6 +69,54 @@ describe('AgentTaskBadge -- self-subscription', () => {
     setSubagents([sub('Some other task', 'running')])
     const { container } = render(<AgentTaskBadge description="My unique desc" />)
     expect(container.querySelector('button')).toBeNull()
+  })
+})
+
+describe('AgentTaskBadge -- Tier-0 roster enrichment (model)', () => {
+  it('surfaces the launch model on the card when present', () => {
+    setSubagents([sub('Find the config', 'running', 'claude-opus-4-8[1m]')])
+    render(<AgentTaskBadge description="Find the config" />)
+    // The big launch prompt never rides the card; only the terse model does.
+    expect(screen.getByTitle('View agent transcript').textContent).toContain('opus-4-8')
+  })
+
+  it('omits the model chip when the roster card has none', () => {
+    setSubagents([sub('Find the config', 'running')])
+    render(<AgentTaskBadge description="Find the config" />)
+    const text = screen.getByTitle('View agent transcript').textContent ?? ''
+    expect(text).toContain('running')
+    expect(text).not.toContain('opus')
+  })
+})
+
+// The 52b5f3ec regression: an agent-heavy parent must show the running
+// reference (this badge, driven by conv.subagents[]) rather than rendering
+// empty from leaked agent chatter. The badge is the parent-grouping reference
+// card -- present whenever a matching subagent exists, clickable into the
+// agent detail view, and independent of any agent transcript content.
+describe('AgentTaskBadge -- parent reference card (52b5f3ec regression)', () => {
+  it('renders the running reference straight from conv.subagents[], no transcript content', () => {
+    setSubagents([sub('Investigate the empty render', 'running')])
+    render(<AgentTaskBadge description="Investigate the empty render" />)
+    const badge = screen.getByTitle('View agent transcript')
+    expect(badge.textContent).toContain('running')
+  })
+
+  it('still shows the reference after the agent stops (was-running)', () => {
+    setSubagents([sub('Investigate the empty render', 'stopped')])
+    render(<AgentTaskBadge description="Investigate the empty render" />)
+    expect(screen.getByTitle('View agent transcript').textContent).toContain('done')
+  })
+})
+
+describe('shortModel', () => {
+  it.each([
+    ['claude-opus-4-8[1m]', 'opus-4-8'],
+    ['claude-haiku-4-5-20251001', 'haiku-4-5'],
+    ['claude-sonnet-4-6', 'sonnet-4-6'],
+    ['opus', 'opus'],
+  ])('%s -> %s', (input, expected) => {
+    expect(shortModel(input)).toBe(expected)
   })
 })
 

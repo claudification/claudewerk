@@ -6,9 +6,10 @@ import { cn } from '@/lib/utils'
 // transcript/index re-exports TranscriptView; collapsing this import keeps the file tidy
 // react-doctor-disable-next-line react-doctor/no-barrel-import
 import { TranscriptView } from '../transcript'
+import { shortModel } from '../transcript/agent-task-badge'
 
 interface SubagentDetailViewProps {
-  subagent: { agentId: string; description?: string; agentType?: string; status: string } | undefined
+  subagent: { agentId: string; description?: string; agentType?: string; model?: string; status: string } | undefined
   subagentId: string
   transcript: TranscriptEntry[]
   loading: boolean
@@ -46,6 +47,11 @@ export function SubagentDetailView({
           {subagent?.description || subagent?.agentType || 'agent'}
         </span>
         <span className="text-[10px] text-pink-400/50 font-mono">{subagentId.slice(0, 8)}</span>
+        {subagent?.model && (
+          <span className="text-[10px] text-pink-400/40 font-mono" title={`model: ${subagent.model}`}>
+            {shortModel(subagent.model)}
+          </span>
+        )}
         {subagent && (
           <span
             className={cn(

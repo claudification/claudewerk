@@ -14,6 +14,7 @@ const batch: (fn: () => void) => void = batchUpdates ?? (fn => fn())
 import { isPerfEnabled, record as perfRecord } from '@/lib/perf-metrics'
 import { buildWsUrl } from '@/lib/share-mode'
 import { cachePushEntries } from '@/lib/transcript-page-cache'
+import { resubscribeAgentScopes, subscribeAgentScope, unsubscribeAgentScope } from './agent-scope-subscription'
 import {
   fetchTranscript,
   handleBgTaskOutputMessage,
@@ -250,8 +251,7 @@ export function useWebSocket() {
         // Single batched setState for ALL onopen state changes.
         // Multiple separate setState calls fire Zustand subscribers individually,
         // causing useSyncExternalStore tearing detection to loop (React #310).
-        const { selectedConversationId, selectedSubagentId, transcripts, events, connectSeq } =
-          useConversationsStore.getState()
+        const { selectedConversationId, transcripts, events, connectSeq } = useConversationsStore.getState()
 
         // Evict stale conversations from LIFO cache (non-selected conversations may have missed WS entries)
         const evictedSids = Object.keys(transcripts).filter(sid => sid !== selectedConversationId)
@@ -286,15 +286,14 @@ export function useWebSocket() {
             send({ type: 'channel_subscribe', channel: ch, conversationId: selectedConversationId })
           }
           _subscribedConversations.add(selectedConversationId)
-          if (selectedSubagentId) {
-            send({
-              type: 'channel_subscribe',
-              channel: 'conversation:subagent_transcript',
-              conversationId: selectedConversationId,
-              agentId: selectedSubagentId,
-            })
-          }
         }
+
+        // Re-send channel_subscribe for every held agent scope. The broker forgot
+        // our subscriptions across the drop, but the refcounts still describe what
+        // the client is showing (selected agent view + any future PiP tiles). Goes
+        // through the seam so counts are preserved. `selectedSubagentId` is implied
+        // by a held scope, so this subsumes the old single-agent re-subscribe.
+        resubscribeAgentScopes(send)
 
         // Sync check after re-subscribing: detect transcript entries missed during
         // the disconnect gap (between subscribe and channel_subscribe, or entries
@@ -554,30 +553,26 @@ export function useWebSocket() {
       _subscribedConversations = desired
     })
 
-    // Watch for subagent selection and subscribe to its transcript channel
-    let lastSubagentKey: string | null = null
+    // Watch for the selected-agent view (open/close) and acquire/release its
+    // transcript scope through the refcounted seam. Releasing the previous scope
+    // and acquiring the next on the same tick is the open/close race the seam's
+    // refcounting absorbs -- a future PiP tile holding the same scope keeps it
+    // alive across a detail-view close. Tracks the previous scope's PARTS (not a
+    // joined key) so an agentId containing ':' round-trips cleanly.
+    let prevScope: { conversationId: string; agentId: string } | null = null
     const unsubAgent = useConversationsStore.subscribe(state => {
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
       const conversationId = state.selectedConversationId
       const agentId = state.selectedSubagentId
-      const key = conversationId && agentId ? `${conversationId}:${agentId}` : null
+      const next = conversationId && agentId ? { conversationId, agentId } : null
 
-      if (key === lastSubagentKey) return
-      const prevKey = lastSubagentKey
-      lastSubagentKey = key
+      const same =
+        next && prevScope && next.conversationId === prevScope.conversationId && next.agentId === prevScope.agentId
+      if (same || (!next && !prevScope)) return
 
-      if (prevKey) {
-        const [prevSid, prevAid] = prevKey.split(':')
-        send({
-          type: 'channel_unsubscribe',
-          channel: 'conversation:subagent_transcript',
-          conversationId: prevSid,
-          agentId: prevAid,
-        })
-      }
-      if (key && conversationId && agentId) {
-        send({ type: 'channel_subscribe', channel: 'conversation:subagent_transcript', conversationId, agentId })
-      }
+      if (prevScope) unsubscribeAgentScope(send, prevScope.conversationId, prevScope.agentId)
+      if (next) subscribeAgentScope(send, next.conversationId, next.agentId)
+      prevScope = next
     })
 
     // Periodic sync check: detect silently dropped transcript entries.

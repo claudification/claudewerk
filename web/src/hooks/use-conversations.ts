@@ -1362,7 +1362,16 @@ export async function fetchTranscript(
   sinceSeq?: number,
 ): Promise<TranscriptFetchResult | null> {
   try {
-    const qs = sinceSeq !== undefined ? `?sinceSeq=${sinceSeq}&limit=1000` : `?limit=${INITIAL_TRANSCRIPT_LIMIT}`
+    // Cold-open defense-in-depth (Phase C, last): `filter=display` makes the
+    // broker drop noise system rows -- task_progress/task_notification among them,
+    // the exact inline-agent chatter that rendered conv 52b5f3ec empty. Phase A
+    // already diverts agent-scoped entries out of the parent at the broker; this
+    // is belt-and-suspenders against a stale host binary leaking them back in.
+    // Cold open only: delta (sinceSeq) stays unfiltered so sync recovery never
+    // perceives a seq gap. `lastSeq` is computed pre-filter, so seq tracking is
+    // unaffected either way.
+    const qs =
+      sinceSeq !== undefined ? `?sinceSeq=${sinceSeq}&limit=1000` : `?limit=${INITIAL_TRANSCRIPT_LIMIT}&filter=display`
     const res = await fetch(appendShareParam(`${API_BASE}/conversations/${conversationId}/transcript${qs}`))
     if (!res.ok) return null
     const body = await res.json()

@@ -7,6 +7,16 @@ function formatTokenCount(tokens: number): string {
   return `${tokens} tok`
 }
 
+// Terse model label for the roster badge: drop the `claude-` vendor prefix and
+// any trailing date / context-window suffix so "claude-opus-4-8[1m]" reads as
+// "opus-4-8". Short Agent-tool names ("opus") pass through unchanged.
+export function shortModel(model: string): string {
+  return model
+    .replace(/^claude-/, '')
+    .replace(/-\d{8}$/, '')
+    .replace(/\[.*\]$/, '')
+}
+
 // Self-subscribing live badge for an Agent tool row. Subscribes ONLY to its
 // one matching subagent (by description) in the selected conversation -- so a
 // subagent status/event/token update re-renders THIS badge alone, never the
@@ -43,6 +53,11 @@ export function AgentTaskBadge({ description }: { description: string }) {
       title="View agent transcript"
     >
       {isRunning ? 'running' : 'done'}
+      {subagent.model && (
+        <span className="text-muted-foreground font-normal" title={`model: ${subagent.model}`}>
+          {shortModel(subagent.model)}
+        </span>
+      )}
       {subagent.eventCount > 0 && (
         <span className="text-muted-foreground font-normal">{subagent.eventCount} events</span>
       )}

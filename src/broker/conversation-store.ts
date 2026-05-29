@@ -600,6 +600,9 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
         agentId: a.agentId,
         agentType: a.agentType,
         description: a.description,
+        // Cheap Tier-0 roster field (Phase B): the big launch prompt stays in the
+        // agent sub-stream, only `model` rides the broadcast card.
+        ...(a.model && { model: a.model }),
         status: a.status,
         startedAt: a.startedAt,
         stoppedAt: a.stoppedAt,

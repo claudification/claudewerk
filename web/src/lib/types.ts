@@ -69,6 +69,9 @@ export interface Conversation {
     agentId: string
     agentType: string
     description?: string
+    /** Cheap Tier-0 roster field (Phase B). Big launch prompt lives in the agent
+     *  sub-stream, never on this broadcast card. */
+    model?: string
     status: 'running' | 'stopped'
     startedAt: number
     stoppedAt?: number
