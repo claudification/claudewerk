@@ -15,15 +15,18 @@ import type { PeriodRecapDoc } from '@shared/protocol'
 import { Dialog as DialogPrimitive } from 'radix-ui'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Kbd } from '@/components/ui/kbd'
+import { Markdown } from '@/components/markdown'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { useRecapJobsStore } from '@/hooks/use-recap-jobs'
 import { appendShareParam } from '@/lib/share-mode'
-import { haptic } from '@/lib/utils'
+import { cn, haptic } from '@/lib/utils'
 import { RecapReport } from './recap-report'
 
 const POLL_MS = 2000
 
-type Mode = 'rendered' | 'raw'
+// Report = the data-driven structured render (the star). Write-up = the LLM
+// narrative markdown (copyable). Raw = the markdown source verbatim.
+type Mode = 'report' | 'writeup' | 'raw'
 
 interface RecapDocResponse {
   recap?: PeriodRecapDoc
@@ -106,7 +109,7 @@ async function shareRecap(recapId: string): Promise<string | null> {
   return body.shareUrl ?? (body.token ? `${window.location.origin}/r/${body.token}` : null)
 }
 
-function RecapHeader({ recap, mode, setMode }: { recap: PeriodRecapDoc; mode: Mode; setMode: (m: Mode) => void }) {
+function RecapHeader({ recap }: { recap: PeriodRecapDoc }) {
   const [isShareLoading, setIsShareLoading] = useState(false)
 
   const handleShare = async () => {
@@ -183,13 +186,41 @@ function RecapHeader({ recap, mode, setMode }: { recap: PeriodRecapDoc; mode: Mo
         >
           Share link
         </ActionButton>
-        <ActionButton
-          onClick={() => setMode(mode === 'raw' ? 'rendered' : 'raw')}
-          title={mode === 'raw' ? 'Show rendered markdown' : 'Show raw markdown source'}
-        >
-          {mode === 'raw' ? 'View rendered' : 'View raw'}
-        </ActionButton>
       </div>
+    </div>
+  )
+}
+
+const TABS: Array<{ id: Mode; label: string; title: string }> = [
+  { id: 'report', label: 'Report', title: 'Data-driven structured report' },
+  { id: 'writeup', label: 'Write-up', title: 'Full narrative write-up & timeline' },
+  { id: 'raw', label: 'Raw', title: 'Raw markdown source' },
+]
+
+function RecapTabs({ mode, setMode }: { mode: Mode; setMode: (m: Mode) => void }) {
+  return (
+    <div className="flex gap-1 px-4 pt-2 border-b border-border shrink-0" role="tablist">
+      {TABS.map(t => (
+        <button
+          key={t.id}
+          type="button"
+          role="tab"
+          aria-selected={mode === t.id}
+          title={t.title}
+          onClick={() => {
+            haptic('tap')
+            setMode(t.id)
+          }}
+          className={cn(
+            'px-3 py-1.5 text-xs font-medium rounded-t border-b-2 -mb-px transition-colors',
+            mode === t.id
+              ? 'border-accent text-foreground'
+              : 'border-transparent text-muted-foreground hover:text-foreground',
+          )}
+        >
+          {t.label}
+        </button>
+      ))}
     </div>
   )
 }
@@ -220,14 +251,14 @@ export function RecapViewer() {
   const [recapId, setRecapId] = useState<string | null>(null)
   const [recap, setRecap] = useState<PeriodRecapDoc | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [mode, setMode] = useState<Mode>('rendered')
+  const [mode, setMode] = useState<Mode>('report')
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const close = useCallback(() => {
     setRecapId(null)
     setRecap(null)
     setError(null)
-    setMode('rendered')
+    setMode('report')
     if (pollRef.current) {
       clearInterval(pollRef.current)
       pollRef.current = null
@@ -260,7 +291,7 @@ export function RecapViewer() {
       setRecapId(detail.recapId)
       setRecap(null)
       setError(null)
-      setMode('rendered')
+      setMode('report')
       void refresh(detail.recapId)
     }
     window.addEventListener('rclaude-recap-open', onOpen)
@@ -294,12 +325,19 @@ export function RecapViewer() {
             <div className="p-6 text-sm text-muted-foreground">Loading…</div>
           ) : isTerminal(recap.status) && recap.markdown ? (
             <>
-              <RecapHeader recap={recap} mode={mode} setMode={setMode} />
+              <RecapHeader recap={recap} />
+              <RecapTabs mode={mode} setMode={setMode} />
               <div className="flex-1 overflow-y-auto px-4 py-3">
                 {mode === 'raw' ? (
                   <pre className="text-xs whitespace-pre-wrap break-words bg-muted/30 p-3 rounded">
                     {recap.markdown}
                   </pre>
+                ) : mode === 'writeup' ? (
+                  recap.markdown ? (
+                    <Markdown copyable>{recap.markdown}</Markdown>
+                  ) : (
+                    <div className="text-sm text-muted-foreground">No write-up for this recap.</div>
+                  )
                 ) : (
                   <RecapReport
                     metadata={recap.metadata}
@@ -307,13 +345,14 @@ export function RecapViewer() {
                     markdown={recap.markdown}
                     costLedger={recap.costLedger}
                     onOpenConversation={openConversation}
+                    hideWriteup
                   />
                 )}
               </div>
             </>
           ) : (
             <>
-              <RecapHeader recap={recap} mode={mode} setMode={setMode} />
+              <RecapHeader recap={recap} />
               <StreamingState recap={recap} />
             </>
           )}

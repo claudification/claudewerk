@@ -23,6 +23,10 @@ interface RecapReportProps {
   costLedger?: RecapCostLedger
   /** Provided in-app (opens the conversation); absent on the public share. */
   onOpenConversation?: (id: string) => void
+  /** When true, omit the embedded "Full write-up" <details> -- the in-app viewer
+   *  surfaces the write-up as its own tab instead. The public share leaves it
+   *  inline (no tab chrome there). */
+  hideWriteup?: boolean
 }
 
 /** Pull the `## TL;DR` block out of the markdown body so it stays visible even
@@ -32,7 +36,14 @@ function extractTldr(md: string): string | null {
   return m ? m[1].trim() : null
 }
 
-export function RecapReport({ metadata, digest, markdown, costLedger, onOpenConversation }: RecapReportProps) {
+export function RecapReport({
+  metadata,
+  digest,
+  markdown,
+  costLedger,
+  onOpenConversation,
+  hideWriteup = false,
+}: RecapReportProps) {
   // Pre-2.0 recaps (no structured data) degrade to the markdown body verbatim.
   if (!metadata && !digest) {
     return markdown ? <Markdown copyable>{markdown}</Markdown> : null
@@ -55,7 +66,7 @@ export function RecapReport({ metadata, digest, markdown, costLedger, onOpenConv
         <RecapConversationDrilldown conversations={digest.conversations} onOpenConversation={onOpenConversation} />
       )}
       <RecapEngineCost ledger={costLedger} />
-      {markdown && (
+      {markdown && !hideWriteup && (
         <details className="rounded-md border border-border">
           <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-muted-foreground">
             Full write-up &amp; timeline
