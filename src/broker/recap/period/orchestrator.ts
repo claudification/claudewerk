@@ -543,7 +543,15 @@ async function runRecap(
   // ONESHOT for small periods (one Opus pass), CHUNKED map-reduce for big ones
   // (parallel cheap extraction -> code merge -> one Opus synthesis). Both feed
   // the SAME parseRecapOutput/finalize downstream.
-  const { parsed, model } = await produceRecap(deps, recapId, ledger, emit, { built, promptInputs, audience, args })
+  const { parsed, model, partial } = await produceRecap(deps, recapId, ledger, emit, {
+    built,
+    promptInputs,
+    audience,
+    args,
+  })
+  const partialReason = partial
+    ? `${partial.failed} of ${partial.total} chunk(s) failed -- recap is partial`
+    : undefined
   const baseTitle = `${promptInputs.projectLabel} - ${period.human}`
   const titleTemplate = args.tuning?.variantLabel ? `${baseTitle} [${args.tuning.variantLabel}]` : baseTitle
   const finalMarkdown = renderFinalMarkdown({
@@ -578,10 +586,16 @@ async function runRecap(
     digestJson: JSON.stringify(digest),
     body: parsed.body,
     projectUri: args.projectUri,
+    status: partial ? 'partial' : 'done',
+    partialReason,
   })
   emit.setProgress(100, 'persist')
-  emit.setStatus('done')
-  emit.emit('info', 'persist', `recap stored as ${recapId}`)
+  emit.setStatus(partial ? 'partial' : 'done')
+  emit.emit(
+    'info',
+    'persist',
+    partial ? `recap stored as ${recapId} (PARTIAL: ${partialReason})` : `recap stored as ${recapId}`,
+  )
   deps.broadcaster.broadcast({
     type: 'recap_complete',
     recapId,
@@ -602,6 +616,7 @@ async function runRecap(
         periodHuman: period.human,
         conversationCount: promptInputs.conversations.length,
         body: parsed.body,
+        partialReason,
       }),
     })
   }
@@ -658,6 +673,11 @@ const RECAP_MAX_TOKENS = 32_000
 // call the old 240s timeout never aborted -- see plan-recap-resilience B1).
 const RECAP_TIMEOUT_MS = 240_000
 const RECAP_MAP_TIMEOUT_MS = 120_000
+/** Per-map-call timeout, env-overridable (ops tuning + test seam). */
+function mapCallTimeoutMs(): number {
+  const override = Number(process.env.CLAUDWERK_RECAP_MAP_TIMEOUT_MS)
+  return Number.isFinite(override) && override > 0 ? override : RECAP_MAP_TIMEOUT_MS
+}
 // A hung call must not draw the full rate-limit retry budget (240s x 3 = 12min of
 // dead air). One timeout retry, then degrade -- the stage deadline backstops it.
 const RECAP_TIMEOUT_RETRIES = 1
@@ -818,11 +838,141 @@ async function parseOrRetry(
 // of chunks; firing them all at once would hammer OpenRouter + risk 429s.
 const MAP_CONCURRENCY = Number(process.env.CLAUDWERK_RECAP_MAP_CONCURRENCY) || 4
 
+// Overall map-stage deadline. Per-call timeouts (Phase 1) bound a SINGLE call,
+// but with bounded concurrency a big all-slow recap is still sum-of-waves; this
+// caps the TOTAL so one pathological run can't hold the barrier for ~an hour.
+// Scales with chunk count (a proxy for conversation count -- chunks are char-
+// bounded), per Jonas's "deadline should scale with conversations" note. Floor
+// is the dialog's 10min; ceil keeps even a huge month-recap bounded.
+const MAP_STAGE_FLOOR_MS = 10 * 60_000
+const MAP_STAGE_CEIL_MS = 45 * 60_000
+export function mapStageDeadlineMs(chunkCount: number): number {
+  // Test/ops override -- a tiny value lets tests exercise the degrade path.
+  const override = Number(process.env.CLAUDWERK_RECAP_MAP_STAGE_DEADLINE_MS)
+  if (Number.isFinite(override) && override > 0) return override
+  const waves = Math.max(1, Math.ceil(chunkCount / MAP_CONCURRENCY))
+  const perWaveMs = RECAP_MAP_TIMEOUT_MS * (RECAP_TIMEOUT_RETRIES + 1)
+  const raw = Math.ceil(waves * perWaveMs * 1.2)
+  return Math.min(MAP_STAGE_CEIL_MS, Math.max(MAP_STAGE_FLOOR_MS, raw))
+}
+
+export interface MapStageResult {
+  metas: RecapMetadata[]
+  /** Chunks that errored/timed-out/tripped the deadline (drive 'partial'). */
+  failed: number
+  /** Chunks skipped by the G8 empty-input gate (NOT failures). */
+  skippedEmpty: number
+  /** True if the overall stage deadline fired. */
+  stageTimedOut: boolean
+}
+
+/**
+ * MAP stage: parallel extraction with a per-call timeout (Phase 1) AND an overall
+ * stage deadline (a backstop so one pathological run can't hold the barrier). A
+ * chunk that errors/times-out/trips the deadline degrades to empty metadata and
+ * counts as `failed`; an EMPTY chunk (G8) is skipped without a call and is NOT a
+ * failure. Extracted from runChunked for testability + lower complexity.
+ */
+// fallow-ignore-next-line complexity
+export async function runMapStage(
+  deps: OrchestratorDeps,
+  recapId: string,
+  ledger: RecapLedger,
+  emit: ProgressEmitter,
+  chunks: ReturnType<typeof splitIntoChunks>,
+  mapModel: string,
+  t: RecapTuning,
+): Promise<MapStageResult> {
+  const stageDeadlineMs = mapStageDeadlineMs(chunks.length)
+  const state = { failed: 0, skippedEmpty: 0, stageTimedOut: false }
+  let stageTimer: ReturnType<typeof setTimeout> | undefined
+  const stageDeadline = new Promise<never>((_, reject) => {
+    stageTimer = setTimeout(() => {
+      state.stageTimedOut = true
+      reject(new Error(`map stage deadline exceeded (${Math.round(stageDeadlineMs / 1000)}s)`))
+    }, stageDeadlineMs)
+  })
+  stageDeadline.catch(() => {}) // no unhandled rejection once the stage is past it
+
+  const metas = await parallelMap(chunks, MAP_CONCURRENCY, async chunk => {
+    const phase = `render/map ${chunk.index + 1}/${chunks.length}`
+    // G8 empty-input gate: nothing to send -> skip the call. An empty/whitespace
+    // prompt wastes spend and can hang a provider; a content-free chunk is just
+    // "done, no evidence" (Jonas's instinct -- defensive, not this incident's bug).
+    if (chunk.chars <= 0 || chunk.transcripts.length === 0) {
+      emit.emit('info', phase, `chunk ${chunk.index + 1} has no content -- skipping map call (empty)`)
+      state.skippedEmpty++
+      return makeEmptyMetadata()
+    }
+    const prompt = buildMapPrompt(chunk)
+    emit.emit(
+      'info',
+      phase,
+      `mapping chunk ${chunk.index + 1}/${chunks.length} (${chunk.chars} chars, ${chunk.transcripts.length} conv)`,
+    )
+    let content: string
+    try {
+      content = await Promise.race([
+        runLlmCall(
+          deps,
+          recapId,
+          ledger,
+          'map',
+          {
+            model: mapModel,
+            system: prompt.system,
+            user: prompt.user,
+            responseFormat: { type: 'json_object' },
+            maxTokens: t.maxTokens?.map ?? RECAP_MAX_TOKENS,
+            timeoutMs: mapCallTimeoutMs(),
+            timeoutRetries: RECAP_TIMEOUT_RETRIES,
+            temperature: t.temperature?.map ?? 0.1,
+            retries: 2,
+            apiKey: deps.apiKey,
+          },
+          chunk.index,
+        ),
+        stageDeadline,
+      ])
+    } catch (err) {
+      state.failed++
+      const reason = state.stageTimedOut
+        ? `map stage deadline (${Math.round(stageDeadlineMs / 1000)}s) hit`
+        : describe(err)
+      emit.emit('warn', phase, `chunk ${chunk.index + 1} map call failed: ${reason}`)
+      return makeEmptyMetadata()
+    }
+    try {
+      const parsedChunk = parseMapOutput(content)
+      // Pillar C+: persist the per-chunk extraction so a resume can re-merge
+      // without re-paying the (expensive) map stage.
+      deps.bundle?.recordMapParsed(recapId, chunk.index, parsedChunk)
+      return parsedChunk
+    } catch (err) {
+      if (!(err instanceof MapParseError)) throw err
+      state.failed++
+      emit.emit('warn', phase, `chunk ${chunk.index + 1} map JSON unparseable: ${describe(err)}`)
+      return makeEmptyMetadata()
+    }
+  })
+  if (stageTimer) clearTimeout(stageTimer) // disarm before reduce so it can't fire late
+  return { metas, ...state }
+}
+
 interface ProduceArgs {
   built: { system: string; user: string; inputChars: number }
   promptInputs: PromptInputs
   audience: RecapAudience
   args: StartArgs
+}
+
+interface ProduceResult {
+  parsed: ParsedRecap
+  model: string
+  /** Present iff the chunked map stage DROPPED >=1 chunk (timeout / truncation /
+   *  stage-deadline). Drives the 'partial' terminal status + banner. Skipped
+   *  empty chunks (G8) do NOT count -- they carried no evidence to lose. */
+  partial?: { failed: number; total: number }
 }
 
 /**
@@ -836,7 +986,7 @@ async function produceRecap(
   ledger: RecapLedger,
   emit: ProgressEmitter,
   p: ProduceArgs,
-): Promise<{ parsed: ParsedRecap; model: string }> {
+): Promise<ProduceResult> {
   const { built, promptInputs, audience } = p
   const t = p.args.tuning ?? {}
   deps.store.update(recapId, { inputChars: built.inputChars })
@@ -875,7 +1025,7 @@ async function runChunked(
   ledger: RecapLedger,
   emit: ProgressEmitter,
   p: ProduceArgs,
-): Promise<{ parsed: ParsedRecap; model: string }> {
+): Promise<ProduceResult> {
   const { built, promptInputs, audience } = p
   const t = p.args.tuning ?? {}
   const models = chunkModels({ mapModel: t.mapModel, reduceModel: t.reduceModel })
@@ -892,62 +1042,29 @@ async function runChunked(
   )
   emit.setProgress(45, 'render/map')
 
-  // MAP -- parallel extraction. A chunk that fails to call or parse degrades to
-  // empty metadata (logged); the run only fails if EVERY chunk failed, so we
-  // never silently drop the whole period over one bad chunk.
-  let failed = 0
-  const metas = await parallelMap(chunks, MAP_CONCURRENCY, async chunk => {
-    const prompt = buildMapPrompt(chunk)
-    const phase = `render/map ${chunk.index + 1}/${chunks.length}`
-    emit.emit(
-      'info',
-      phase,
-      `mapping chunk ${chunk.index + 1}/${chunks.length} (${chunk.chars} chars, ${chunk.transcripts.length} conv)`,
-    )
-    let content: string
-    try {
-      content = await runLlmCall(
-        deps,
-        recapId,
-        ledger,
-        'map',
-        {
-          model: models.mapModel,
-          system: prompt.system,
-          user: prompt.user,
-          responseFormat: { type: 'json_object' },
-          maxTokens: t.maxTokens?.map ?? RECAP_MAX_TOKENS,
-          timeoutMs: RECAP_MAP_TIMEOUT_MS,
-          timeoutRetries: RECAP_TIMEOUT_RETRIES,
-          temperature: t.temperature?.map ?? 0.1,
-          retries: 2,
-          apiKey: deps.apiKey,
-        },
-        chunk.index,
-      )
-    } catch (err) {
-      failed++
-      emit.emit('warn', phase, `chunk ${chunk.index + 1} map call failed: ${describe(err)}`)
-      return makeEmptyMetadata()
-    }
-    try {
-      const parsedChunk = parseMapOutput(content)
-      // Pillar C+: persist the per-chunk extraction so a resume can re-merge
-      // without re-paying the (expensive) map stage.
-      deps.bundle?.recordMapParsed(recapId, chunk.index, parsedChunk)
-      return parsedChunk
-    } catch (err) {
-      if (!(err instanceof MapParseError)) throw err
-      failed++
-      emit.emit('warn', phase, `chunk ${chunk.index + 1} map JSON unparseable: ${describe(err)}`)
-      return makeEmptyMetadata()
-    }
-  })
+  // MAP -- parallel extraction with per-call timeout + overall stage deadline +
+  // the G8 empty gate. Degrades dropped chunks rather than hanging the barrier.
+  const { metas, failed, skippedEmpty, stageTimedOut } = await runMapStage(
+    deps,
+    recapId,
+    ledger,
+    emit,
+    chunks,
+    models.mapModel,
+    t,
+  )
   if (failed === chunks.length) {
     throw new Error(`chunked map stage failed: all ${chunks.length} chunk(s) errored`)
   }
   if (failed > 0) {
-    emit.emit('warn', 'render/map-done', `${failed}/${chunks.length} chunk(s) failed; synthesizing from the rest`)
+    emit.emit(
+      'warn',
+      'render/map-done',
+      `${failed}/${chunks.length} chunk(s) failed${stageTimedOut ? ' (stage deadline hit)' : ''}; synthesizing from the rest`,
+    )
+  }
+  if (skippedEmpty > 0) {
+    emit.emit('info', 'render/map-done', `${skippedEmpty}/${chunks.length} chunk(s) skipped (empty -- no content)`)
   }
 
   // MERGE -- pure deterministic dedup, no LLM.
@@ -982,7 +1099,11 @@ async function runChunked(
   emit.setProgress(88, 'render/synthesize-done')
   deps.bundle?.recordFinalResponse(recapId, content)
   const parsed = await parseOrRetry(deps, recapId, ledger, content, synth, models.reduceModel, deps.apiKey)
-  return { parsed, model: models.reduceModel }
+  return {
+    parsed,
+    model: models.reduceModel,
+    ...(failed > 0 ? { partial: { failed, total: chunks.length } } : {}),
+  }
 }
 
 /** Run `fn` over items with bounded concurrency, preserving input order. */
@@ -1152,8 +1273,10 @@ function buildInformText(args: {
   periodHuman: string
   conversationCount: number
   body: string
+  partialReason?: string
 }): string {
-  const head = `Recap ${args.recapId} ready -- ${args.projectLabel}, ${args.periodHuman}, ${args.conversationCount} conversation(s).`
+  const ready = args.partialReason ? `ready (PARTIAL -- ${args.partialReason})` : 'ready'
+  const head = `Recap ${args.recapId} ${ready} -- ${args.projectLabel}, ${args.periodHuman}, ${args.conversationCount} conversation(s).`
   // The agent brief is short by design -- inline it, saving a recap_get
   // round-trip. The human recap is long; send only the pointer.
   if (args.audience === 'agent') return `${head}\n\n${args.body}`
