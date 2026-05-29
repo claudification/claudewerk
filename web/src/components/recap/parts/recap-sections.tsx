@@ -109,7 +109,7 @@ export function RecapSections({
         <Section
           key={s.key}
           title={s.title}
-          items={metadata[s.key] as RecapItem[]}
+          items={(metadata[s.key] as RecapItem[] | undefined) ?? []}
           onOpenConversation={onOpenConversation}
         />
       ))}
