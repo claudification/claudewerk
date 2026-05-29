@@ -1,0 +1,188 @@
+---
+subtitle: Daemon-as-transport reframe, fleet command UX, and chunked recap engine
+keywords: [daemon-transport, sentinelProfile, projectIdentityKey, profile-url-strip, transcript-recycle, infinite-scrollback, batch-command-palette, spawn-lineage, Smart Balance v2, Sheaf, token-flow, recap-v2.1, chunked-map-reduce, RecapCostLedger, frontend-health, ghost-sessions, daemon-roster, cwd_changed, Opus 4.8, teamwerk, voicefab, FTS5, Zustand]
+hashtags: [#daemon-transport-reframe, #transcript-perf, #fleet-coordination, #spawn-lineage, #recap-2.1, #orphan-recovery, #profile-url-strip, #frontend-health, #multi-agent-coordination, #cost-tracking]
+goals:
+  - Reframe daemon from a peer backend into a transport mode of the claude backend and cut over default transport
+  - Remove profile from project URIs and canonicalize project identity across broker/web
+  - Kill conversation-switch CPU/paint stalls via transcript windowing + infinite scrollback
+  - Build fleet-command UX (batch palette, spawn lineage, Sheaf overview, token flow)
+  - Ship chunked map-reduce Recap v2.1 with real cost ledger and agent-host trigger
+  - Stop chronic orphan/ghost/flapping conversation bugs in broker + daemon roster
+discoveries:
+  - "profile@ in URIs fragments identity, breaks permission rules and resume/revive; canonicalization needed everywhere"
+  - "Daemon is the Claude backend on daemon transport, not a separate agent; daemon:// scheme split sidebar grouping from claude://"
+  - "Conversation-switch stalls are browser layout/paint of full 500-entry transcript DOM (~1.3s), not fetch or JS; ~8 huge groups defeat group-level virtualization"
+  - "Reaper (28-day TTL + 200-cap) is the dominant orphan source: deletes conversations rows without cascade; 648 orphans live, chronic not migration-induced"
+  - "Per-message usage already captured in transcript_entries; token_samples table makes per-message granularity efficient"
+  - "Daemon backend has ZERO MCP wiring for dialog/ask/permission/plan, causing WAITING regression when defaultTransport=daemon"
+  - "FTS5 treats unquoted hyphen as NOT operator (war-council -> war NOT council)"
+  - "daemon_launch_event (8 step enum) and DaemonPermissionResponse were dead wire contracts with zero producers/handlers"
+  - "Recap truncation: Opus 4.8 hit 8k max_tokens mid-frontmatter; retry path capped identically; OpenRouter real cost available via usage.include but never requested"
+  - "git cherry lies on squash/rebase merges; git merge-tree --write-tree is reliable for integration status"
+side_effects:
+  - "Profile-strip / daemon-URI unification are breaking changes requiring data migration across multiple tables and irreversible legacy-key deletion"
+  - "Hard daemon cutover requires all four components (broker, web, agent-host, sentinel) rebuilt; running agent-host processes keep old bundle until respawn"
+  - "Zustand object-returning selectors cause infinite re-renders (React #185); documented gotcha recurred several times"
+  - "Biome --write auto-reformats unrelated files during lint, polluting commits and creating rebase conflict surface"
+  - "Broker rebuild/deploy recreates container and drops all live WebSocket connections (auto-reconnect expected)"
+features:
+  - {title: "Profile-URL-strip refactor", detail: "Removed profile@ from project URIs; moved to LaunchConfig.sentinelProfile tagged union; added Conversation.resolvedProfile", conversations: ["4a0318fc-d7a"], commits: ["c8704b8d"]}
+  - {title: "projectIdentityKey + broker write-side key normalizer", detail: "projectIdentityKey() strips profile/legacy forms across 35 web lookup sites; broker normalizes project_settings/project_order at write boundary with migrateToCanonicalKeys() boot pass", conversations: ["52835091-675"], commits: ["42773a93", "15036bb8"]}
+  - {title: "Weighted/Smart Balance v2 profile selection", detail: "Dead-band + time-normalized burn ranker; under-75% balance by live-load, near-cap drain by time-to-reset", conversations: ["a3cd5456-5d2", "5e2b70ca"], commits: ["901cd03a", "657fd08"], inferred: true}
+  - {title: "Transport abstraction (claude-pty / claude-headless / claude-daemon)", detail: "Unified backend × transport replacing separate backend enum; defaultTransport cutover from pty to daemon; typed dispatch()/awaitAck(); /effort,/model,/permissions via reply; promptless NEW via dispatch", conversations: ["78b962fe-788", "8ee9accb-a4e", "bad58324-aad", "b7bab93e-b3a", "68beafb5-370", "af1a4b2d-9dc", "91272363-e9a", "1fac0ba2-266"], commits: ["26943858", "10270f5c", "c4c5f13d", "c0893f13", "004e5567", "e52e11e1", "c04bd85d", "86b392b2"]}
+  - {title: "Transcript window format optimization", detail: "Compact text renderer, per-entry byte cap, base64 elision, next/prev pointers; JSON opt-in", conversations: ["0fd47a01-daa"], commits: ["4fa51609"]}
+  - {title: "Transcript live cap + passive prune + page cache + infinite scrollback", detail: "Live array capped at 100, initial fetch 50, global LRU 5000-entry page cache; ?before= pagination; tail-stable virtualizer keys; index-based scroll re-pin; events fetched on-demand", conversations: ["2cc3e683", "576c695f-e5c", "37410213"], commits: ["315d0f83", "6bfb0db7", "5c79b37d", "422d5895", "4cac6c0f"]}
+  - {title: "Batch command palette", detail: "Multi-select via checkbox/row-click/Shift+range; terminate/recap/interrupt/broadcast/reassign; group-by-project; HOST+RECAP columns auto-hide; admin-gated; conversation_reassign with batchId logging", conversations: ["197bc1a4", "e34f87a4"], commits: ["535925aa", "460ea2b4", "04e2889d", "001bd470", "4c23e094"]}
+  - {title: "Spawn parent/root lineage tracking (5-phase)", detail: "X-Caller-Conversation header -> rendezvousCallerConversationId; addRendezvous moved into dispatchSpawn for daemon transport; parent/root IDs in REST/MCP/WS; list_conversations lineage filters + format:tree; cross-project lineage stubs", conversations: ["807269d9", "3352290f", "7962726d", "8e456f9f", "36c46c4e", "14619ad9"], commits: ["de2815a9", "19aec3fc", "5ac8da41", "b784bcc3", "2c6cb7ef"]}
+  - {title: "Selection pulse suppression on click/touch", detail: "Pulse only on programmatic selection (CMD+P, spawn, revive, deep-link) via lastSelectReason; scroll always", conversations: ["2f1fc438"], commits: ["f5c55da4"]}
+  - {title: "Ghost daemon sessions: peek panel, attach, profile chip", detail: "Click ghost shows roster state + attach button; static glyph not spinner; solidifies in place on attach; profile name/color plumbed through DaemonRosterJob wire (NAME only)", conversations: ["e7d87779", "0e7dd367"], commits: ["d4c2da89", "33d010ae", "9faebee4"]}
+  - {title: "Daemon permission relay + launch-event producers", detail: "Wire permission_response broker->daemon-host calling reply('1'|'2'|'3'); wire all 8 daemon_launch_event steps", conversations: ["bbd5b5e0-c4d"], commits: ["9bff936c", "e66cf22c"]}
+  - {title: "Token flow stats dashboard (6 phases)", detail: "Per-message token tracking, header TokenFlowBar with popover, 5m/30m/2h/5h/1d windows, global+per-profile; cache-read excluded from live bar", conversations: ["a72310b8", "ba65fe46"], commits: ["35b4dc57", "4e92943e", "31c8ac25"]}
+  - {title: "Sheaf 24/48h fleet overview", detail: "Project bucketing, spawn-tree rollups, status glyphs, metrics, collapsible projects, filter/sort/status, lineage+recaps toggles; real per-conversation away-summary", conversations: ["fecbb90a-ca", "9a2579ef", "a4b434c8"], commits: ["98a4a495", "a5e3e52", "467d507", "70192bd"]}
+  - {title: "Recap 2.0 data model + git grounding", detail: "decisions/dead_ends/gotchas in metadata, digest_json with cost/conversation/commit stats, /api/recaps/:id; sentinel RPC git_log commit grounding; React components not LLM-HTML", conversations: ["a4b434c8"], commits: ["bc51532", "bcf4246"]}
+  - {title: "Recap v2.1 (Pillars A-F, C+, C++)", detail: "Chunked map-reduce (Sonnet map / Opus synth / code merge); benevolent agent-host trigger + requestId echo; per-call cost ledger with record-on-failure; eval-harness tuning params; run-artifact bundle; recap_regenerate; two-cost analytics; retrospect mode; raised max_tokens 8k->32k; real OpenRouter cost via usage.include", conversations: ["220627c6", "a135e015"], commits: ["1fd03fe5", "49e7bbb1", "f9d2c573", "5c831561", "40bc0b17", "3c9a2b2c", "5ec7d8d2", "ac4dfd98"]}
+  - {title: "frontend-health 7-phase chain (react-doctor 59->86)", detail: "Giant-component teardowns, a11y sweep, perf, state-rule cleanups across ~175 files; merged incrementally per-phase", conversations: ["87f16e52"], commits: ["a2bb5d21"]}
+  - {title: "teamwerk meta-skill", detail: "6 multi-agent patterns mapped to spawn_conversation + send_message; team-patterns.md, spawn-recipes.md, supervisor-prompt.md; runtime replaced, design borrowed from Harness", conversations: ["5194ff48", "ad37a8c8", "527e6ca6"], commits: ["8a0e6a4", "19e3c3b"]}
+  - {title: "Opus 4.8 model support", detail: "claude-opus-4-8 (1M context, 128K output); bare 'opus' alias moved 4-7 -> 4-8; extracted from CC 2.1.154 binary not guessed", conversations: ["32dc1f55"], commits: ["ddcb333c"]}
+  - {title: "Agnostic cwd_changed protocol + worktree metadata display", detail: "Backend-neutral wire signal; agent-host translates native cwd; currentPath serialized to ConversationSummary and rendered in header", conversations: ["c9ca9297"], commits: ["fe5e13ac"]}
+  - {title: "Orphan conversation recovery + cascade-delete fix", detail: "445 conversations recovered from turns.project_uri (meta.recovered=true); removeConversation now cascade-deletes children; write-path orphan guard; MAX_ENDED 200->500; 90-day clean-cascade TTL", conversations: ["beba12c1", "b60edb95"], commits: ["efcdb1e3", "3b8ef864"]}
+  - {title: "Voicefab target pinning", detail: "Capture target conversation at record time not submit time; prevents misroute during transcription delay", conversations: ["82ef937b"], commits: ["35d33bd4"]}
+  - {title: "Conversation rename + former-slug aliases for benevolent agents", detail: "rename_conversation gated on trust not role; former_slugs column with 24h decay for send_message routing through old names", conversations: ["23281bf0"], inferred: true}
+  - {title: "Unified perf report with debug-log timeline", detail: "Single chronological timeline merging perf + debug-log entries; rAF-suspension artifacts tagged; longtask observer added", conversations: ["3860a533"], commits: ["27767991", "adfae3f5"]}
+bugs:
+  - {title: "180% CPU spike + scroll-jump on conversation switch", detail: "TranscriptView remount on key= change forced virtualizer reflow loop; fixed by dropping key= with explicit reset effects", conversations: ["27eada0f-88a"], commits: ["5803c615"]}
+  - {title: "lastActivity overwritten on every reconnect", detail: "resumeConversation unconditionally stamped now(); moved into wasEnded branch; reaper now primary-signals on liveSockets===0", conversations: ["197bc1a4", "c27e0ef1"], commits: ["ce0ce3b5"]}
+  - {title: "Zustand infinite re-render (BatchSelectedPill / UsageBar)", detail: "Object-returning selector fails Object.is; split into per-field selectors; UsageBar popover unanchored via missing ref forward", conversations: ["e34f87a4", "b5e47b7a", "a1b1f4c2"], commits: ["9fbefba8", "88ad15a0"]}
+  - {title: "FTS5 transcript search fails on hyphenated OR terms", detail: "sanitizeFtsQuery quotes hyphenated tokens individually while preserving operators", conversations: ["cc78179a"], commits: ["efdd346f"]}
+  - {title: "Phantom/flapping conversations (daemon roster vs reaper)", detail: "Daemon mirrors have no socket by design; reaper skips them; orphaned WS closed on socket-replace; daemon:// stripped to claude://", conversations: ["02ce729d", "5a7e6074", "814a7df6", "7370a1ee"], commits: ["78d735cb", "2427318b", "621f6a69", "3745d1f9"]}
+  - {title: "ccSessionId collision + daemon identity drift", detail: "session-observer cross-wired via shared project-dir mtime; switched to lsof -p worker.pid; register claudewerk spawns in sentinel daemon-map at dispatch; broker hosted-conversation guard; tempo:idle now mapped to idle status", conversations: ["7370a1ee", "1cb88e4f-024", "e604b901"], commits: ["3745d1f9", "131ddf1c", "b76f4c9c", "27e1fdfc"]}
+  - {title: "Worktree children appear as separate phantom projects", detail: "partition.ts re-split worktrees; added aliasPath()/worktreeToParentUris v7 migration to canonicalize back to parent repo", conversations: ["14619ad9"], commits: ["e8bd9ed5"]}
+  - {title: "Pending spawn approval reported as hard failure + lost on restart", detail: "MCP tool now discloses approval wait; cwd defaults to caller dir; pendingSpawnApproval persisted to SQLite meta", conversations: ["46d18463"], commits: ["1354a586", "c2dbb6b1"]}
+  - {title: "Cold-fetched conversations don't window to last-50", detail: "windowStart never reset when fetched data arrived; caused full-transcript paint on cold open", conversations: ["576c695f-e5c"], commits: ["87cd1799"]}
+  - {title: "Tool blocks / DiffView re-render on every streaming tail-append", detail: "renderAgentInline arrow recreation busted MemoizedToolLine; DiffView Path A passed fresh array refs; fixed via hoisting + patchesEqual custom equality; root cause of residual was virtualizer key remount", conversations: ["b17b0e45", "78d26e30-a4", "7d97fc6a"], commits: ["aa1dc24b", "c3b528ef", "9dfcad5"]}
+  - {title: "Token-flow sparkline jumpy", detail: "Seed samples (2-min aggregates) mixed with per-message; re-normalization every render; fixed via synthetic exclusion + p90 scaling + wallclock-anchored buckets", conversations: ["ba65fe46"], commits: ["31c8ac25"]}
+  - {title: "WAITING indicator regression on daemon transport", detail: "daemon-agent-host has no dialog/ask/permission/plan MCP server; pendingAttention never set; fix deferred", conversations: ["7e0cb2ee"], inferred: true}
+  - {title: "share_file fails silently outside CWD", detail: "Returns structured error string now instead of null", conversations: ["5b9da5cc"], commits: ["eb732c03"]}
+  - {title: "Conversation switch yields zero entries", detail: "Removed HIT short-circuit that skipped fetch when partial WS-pushed cache existed; always fetch with debounce + no-shrink guard", conversations: ["7389976a"], commits: ["05e26556"]}
+  - {title: "Worktree spawn fails on duplicate branch / rendezvous timeout masks errors", detail: "WorktreeCreate hook now idempotent (probe before add); SpawnFailed extended with stderrTail + hookStage; stale rclaude binary rebuilt", conversations: ["e3cf0e71", "05396458-5c"], commits: ["ea746ef3", "b725b6a7", "40bc0b17"]}
+  - {title: "Transcript pruning deleted entries user was reading", detail: "Gated prune on scrollbackActive state; collapse deferred to return-to-bottom", conversations: ["4dd22abc"], commits: ["724b811"]}
+  - {title: "Recap output truncation at 8k tokens", detail: "Opus 4.8 hit max_tokens mid-frontmatter; raised to 32k + 240s timeout; both call sites fixed", commits: ["40bc0b17"]}
+fixes:
+  - {title: "Docker build context bloat", detail: "Added backups/, .rclaude/, *.tar.gz to .dockerignore; 6.3GB -> 29.91MB (99.3% cut)", conversations: ["a3cd5456-5d2"], commits: ["12bb0bf4"]}
+  - {title: "Delete 67 legacy claude:/// settings keys + profile-strip migration", detail: "Jonas: 'kill them, don't rewrite'; rewrote 23 scope rows + 8 turn rows to canonical, backfilled resolvedProfile", conversations: ["52835091-675", "a3cd5456-5d2"], inferred: true}
+  - {title: "Project tasks per-project cache (manifest + lazy hydration)", detail: "project_manifest (readdir+stat), project_get (batched), project_changed (diff broadcast); fixes 3.5s freeze from 216KB project_list_response", conversations: ["436acd21"], commits: ["894e886", "e3818e9"]}
+  - {title: "Remove profile inheritance from spawn_conversation", detail: "Uses sentinel defaultSelection when omitted; callers must set profile explicitly for 'spawn another like me'", conversations: ["36c46c4e"], commits: ["e770ff33"]}
+  - {title: "Channel card / user text grouping split", detail: "isInterConversationContent check prevents channel cards merging into user text bubble", conversations: ["c7acfbb1"], commits: ["8c69d853"]}
+  - {title: "Exclude .claude/** and .rclaude/** from biome + fallow linting", conversations: ["21c8f49c-d7b"], commits: ["6bbdcdb3"]}
+  - {title: "Recover chunk size from SW Cache API when PerformanceResourceTiming opaque", conversations: ["192e6adb-d84"], commits: ["236e0441"]}
+  - {title: "Cleaned up 8 merged inactive worktrees", detail: "Removed transport-reframe, daemon-fix, daemon-status-attach-fix, daemon-uri-strip, transcript-load-earlier, project-tasks-incremental, orphan-conversations, recap-2.0", conversations: ["87f16e52"]}
+  - {title: "Recap v2.1 merged to main via clean --ff-only", detail: "recap-chunked, no conflicts with frontend-health chain, main fast-forwarded to ac4dfd98", conversations: ["a135e015"], commits: ["ac4dfd98"]}
+incidents:
+  - {title: "Flapping conversations (5a7e6074 + 8 others)", conversations: ["814a7df6"], severity: high}
+  - {title: "Daemon conversation phantom-resurrection loop (conv_x4XorOuniLKE)", conversations: ["7370a1ee"], severity: high}
+  - {title: "Missing historical conversations (NSF project, 445 orphans)", conversations: ["beba12c1"], severity: high}
+  - {title: "chain-fh-p2-correctness spawn failures (4 ghost conversations)", conversations: ["e3cf0e71"], severity: medium}
+  - {title: "Recap qs5pmdtjz4wh truncation failure (684k input, 8k ceiling)", severity: medium, inferred: true}
+  - {title: "Agent self-terminated via exit_conversation (no target param)", severity: low, inferred: true}
+  - {title: "Broker deploys (perf4 315d0f83, orphan-fix 49f89874) - WS reconnect, live convs preserved", conversations: ["c9ca9297", "b60edb95"], severity: low}
+decisions:
+  - {title: "Daemon is a transport, not a backend", detail: "URI must be claude://; agentHostType:daemon carries the distinction. Same lesson as profile-url-strip. Forces headless-vs-daemon gaps into the open and cleans the data model.", conversations: ["78b962fe-788", "5a7e6074"]}
+  - {title: "Hard cutover on daemon + profile-strip, no back-compat", detail: "We control all first-party clients; zod enum error is sufficient for externals. Branches predating the URI flip-flop were superseded, not merged.", conversations: ["8ee9accb-a4e", "1fac0ba2-266", "4a0318fc-d7a"]}
+  - {title: "Profile moved to LaunchConfig.sentinelProfile tagged union", detail: "URI identifies location (stable); profile is execution context (negotiable). Mixing them broke pools/resume/permission rules. Random selection mode dropped (only profile|pool).", conversations: ["4a0318fc-d7a"]}
+  - {title: "Instrument before optimizing (PRIME DIRECTIVE)", detail: "WS fanout and transcript-switch stalls were diagnosed with markers/debug-log timelines before any fix; ruled out fetch latency and ProjectList/InputEditor as primary culprits.", conversations: ["1d2c167a-7ef", "3860a533"]}
+  - {title: "Reaper primary signal is liveSockets===0, not lastActivity", detail: "Reconnects are legitimate; lastActivity is secondary stale-agent check.", conversations: ["c27e0ef1"]}
+  - {title: "90-day clean-cascade TTL + full in-memory mirror", detail: "TTL bounds memory; cascade-delete cleans reaper orphans; decoupling read-path adds routing-critical risk with no benefit at current scale. Deploy orphan fix BEFORE backup recovery to stop bleeding.", conversations: ["b60edb95"]}
+  - {title: "Token flow at per-message granularity, cache-read excluded from live bar", detail: "Per-message gives near-continuous flow vs spiky per-turn; cache-read dwarfs other categories (90%+) but is cheapest, so it lives in the popover only.", conversations: ["a72310b8"]}
+  - {title: "Recap renders React components, not LLM-HTML", detail: "Model emits frontmatter + markdown; web renders typed cards. Type-safe, no XSS, same tree drives in-app + public share.", conversations: ["a4b434c8"]}
+  - {title: "Recap v2.1 chunking: Sonnet map / Opus synthesize / code-only merge", detail: "Sonnet ~5x cheaper for JSON extraction; code dedup keys by norm(title)+first commit; bundle keyed by recapId; retrospect is opt-in Opus-only layer with RecapItem[] citation grounding; record cost on failure.", conversations: ["220627c6"], inferred: true}
+  - {title: "Stay on Biome, drop oxc ecosystem for now", detail: "oxfmt 0.52 beta; oxlint missing exhaustive-deps + jsx-a11y; whole-tree reformat would conflict-storm ~15 active worktrees.", conversations: ["87f16e52"]}
+  - {title: "Profile NAME only across the wire, never env/keys", detail: "Sentinel knows the profile but propagates only the name to preserve the Profile-Env Boundary.", conversations: ["0e7dd367"]}
+dead_ends:
+  - {title: "profile-observability / project-identity-key / purge-session-terminology branches", detail: "Superseded by profile-url-strip; their entire reason (URI-userinfo breaks lookups) vanished; re-ported fresh or deleted as dead references.", conversations: ["a3cd5456-5d2"], inferred: true}
+  - {title: "Headless-via-daemon (stream-json over daemon socket)", detail: "Deferred; Anthropic must add stream-json attach + control-channel op first.", conversations: ["78b962fe-788"], inferred: true}
+  - {title: "Daemon permission-response schema recovery by black-box probing", detail: "12 candidate request shapes live-fired against CC 2.1.145, all refuted; required string field not discoverable without binary schema extraction.", conversations: ["b72f22ec"]}
+  - {title: "Agent-host MCP caller header (Phase 1 plan)", detail: "Investigation found agent-host constructs no outbound MCP HTTP calls; fix belongs in broker /mcp endpoint, not agent-host.", conversations: ["807269d9"], inferred: true}
+  - {title: "Tab-hidden rAF suspension as cause of 3s stalls", detail: "Disproven by debug log showing active nav spree; real cause is layout/paint of full 500-entry DOM, not fetch.", conversations: ["3860a533"], inferred: true}
+  - {title: "Group-level virtualization for transcripts", detail: "Useless: 500 entries collapse to ~8 huge groups, so the whole transcript stays in DOM. Entry-level windowing (last-50) is the lever.", conversations: ["576c695f-e5c"], inferred: true}
+  - {title: "Memo/patchesEqual fixes for Edit re-renders", detail: "Isolated test passed but re-renders continued; root cause was virtualizer key remount, not memo miss.", conversations: ["7d97fc6a"], inferred: true}
+  - {title: "Revive-based spawn recovery for chain phase 2", detail: "Revive minted a new conversationId each call because the underlying WorktreeCreate hook was crashing; switched to fresh spawn with corrected cwd.", conversations: ["05396458-5c"]}
+  - {title: "Harness in-process runtime (TeamCreate + ephemeral coordination)", detail: "Abandoned; CLAUDEWERK already has stricter primitives (real isolated conversations, broker-routed messaging, persistent threads). Borrow the 6 patterns, replace the runtime.", conversations: ["5194ff48"], inferred: true}
+  - {title: "Stochastic weighted-headroom profile selection", detail: "Rejected for dead-band + time-normalized burn; deterministic within-budget balancing is more predictable.", conversations: ["5e2b70ca"], inferred: true}
+  - {title: "Agent-initiated recap_create validation via MCP", detail: "Three calls timed out silently due to role rejection with no requestId echo; switched to broker-cli query and fixed the echo.", inferred: true}
+  - {title: "SOTU as single mutable document / hourly distill cron / TTL decay", detail: "Single doc = write-contention machine; hourly cron wastes money on no-op distills; TTL is wrong for integrated work. Replaced with per-conversation slots + activity-driven debounce + integration-status (git merge-base) decay.", conversations: ["1f0bd0ba"], inferred: true}
+open_questions:
+  - "[4a0318fc-d7a] Does launchData replace LaunchConfig.sentinelProfile or live alongside? Does random selection survive as a mode?"
+  - "[1d2c167a-7ef] Should ProjectList virtualization be considered if Phase 2 doesn't fully solve fanout?"
+  - "[197bc1a4] Cap on Select-all? Broadcast = N independent sends? Reassign permission model (admin on both source AND target)?"
+  - "[1a9c2e83] Quest/Universe open design Qs: territory granularity, advisory vs hard locks, parley spam, lore staleness, Scribe interject timing, checkpoint fatigue vs runaway autonomy."
+  - "[7e0cb2ee] How should daemon-backend dialog/ask/permission/plan MCP wiring be architected (root of WAITING regression)?"
+  - "[ffafbe95] What daemon test do you want exercised?"
+  - "[7370a1ee] Proceed with surgical kill-switch + plan? Should running sentinel/daemon-host processes be killed to pick up new binaries?"
+  - "[576c695f-e5c] Per-entry virtualization inside groups vs progressive loading sufficient? Cold-open: last-50 (Phase 3) or keep 500?"
+  - "[5b9da5cc] Should share_file path restriction relax to $HOME instead of CWD only?"
+  - "[a72310b8] Cache-read tokens in live bar or popover only? Ship token-flow incrementally or all-in-one?"
+  - "[5fa3bf7d] Why did daemon silently reuse an existing worker for mode=new dispatch instead of minting fresh?"
+  - "[78d26e30-a4] Is the real DiffView re-render bug upstream (key=index in GroupItem)?"
+  - "[301dbe47] Should a same-project bypass spawn auto-inherit bypassPermissions from caller, or stay at resolved default?"
+  - "[220627c6] When complete C+/C++/E/F pillars (now vs fresh session)? recap_regenerate: overwrite in place or fork new recapId?"
+  - "[1f0bd0ba] Budget default per project for SOTU distills? Callout tag name (callout/whisper/rumor)? When to lift recap/shared/ into neutral llm-engine/?"
+  - "[1aadb461] Why is recap_list timing out in the test conversation (likely transport buffering)?"
+stakeholders: [Jonas, "wild-mission-control (peer agent)", "ultra-disco (peer agent)", "raging-mammoth (peer agent)", Anthropic]
+---
+
+## TL;DR
+Two major reframes shipped this week and are now **live in main**: daemon is a *transport* of the claude backend (not a separate backend — URIs are `claude://`), and the chunked map-reduce **Recap v2.1** engine (merged at `ac4dfd98`, deployed). Profile no longer lives in project URIs — always canonicalize via `projectIdentityKey()`. Transcript performance is now driven by last-50 windowing + infinite scrollback, not full-DOM render.
+
+## State
+- **Daemon-as-transport is fully cut over.** `claude-pty`/`claude-headless`/`claude-daemon` replace the old backend enum; `defaultTransport` flipped to daemon. `backend:'daemon'` is gone (hard cutover) — any external caller sending it gets a zod enum error. Spawn dialog, conversation-item, launch-profile editor all key off transport.
+- **Recap v2.1 is merged (`ac4dfd98`) and deployed** with broker rebuilt, web built, agent-host packages rebuilt. Existing conversations keep old MCP tools until respawn; **new conversations get the new tools** (recap_create benevolent trigger, recap_regenerate, tuning params). Test fresh-spawned, not on a stale conversation.
+- **frontend-health chain merged (`a2bb5d21`, react-doctor 59→86)** incrementally per-phase. Its worktree still has ~20 live processes (chain-fh p4-p7) — do not remove the dir until they exit.
+- **Profile URIs are canonical.** Use `projectIdentityKey()`/`normalizeProjectUri` for ALL `projectSettings[conv.project]` lookups — raw dict access misses legacy/leaked keys. Broker normalizes at the write boundary on boot.
+- **Orphan bleed stopped.** `removeConversation` now cascade-deletes children; 90-day clean-cascade TTL; `MAX_ENDED_CONVERSATIONS` 200→500; 445 orphans recovered (`meta.recovered=true`). Broker restart needed for full cache/DB consistency after recovery.
+- **Daemon roster bugs largely resolved**: phantom-flapping fixed (reaper skips daemon mirrors), ccSessionId collision fixed (lsof -p worker.pid), identity drift fixed (register spawns in sentinel daemon-map at dispatch), `tempo:idle` now maps to idle status.
+- **[inferred]** SOTU (State of the Union) is design-only — not built. Several Quest/Universe/Commons mission-control concepts are exploratory mockups, not shipped code.
+
+## Decisions
+- **Daemon is a transport, not a backend** — URIs stay `claude://`; this is the same lesson as profile-url-strip. It forces headless-vs-daemon feature gaps into the open and cleans the data model. (`78b962fe-788`, `5a7e6074`)
+- **Hard cutover, no back-compat** on both daemon and profile-strip — we control all first-party clients; a zod enum error is enough for externals. (`8ee9accb-a4e`, `4a0318fc-d7a`)
+- **Reaper's primary signal is `liveSockets===0`, not `lastActivity`** — reconnects are legitimate and were corrupting idle tracking. (`c27e0ef1`)
+- **Recap renders React components, not LLM-emitted HTML** — type-safe, themed, no XSS; one tree drives in-app + public share. Chunking uses cheap Sonnet for map / Opus for synthesis / code-only dedup; retrospect is an opt-in Opus-only layer. (`a4b434c8`, `220627c6`)
+- **Stay on Biome; oxc not yet** — oxfmt 0.52 beta, oxlint missing exhaustive-deps/jsx-a11y, and a whole-tree reformat would conflict-storm the ~15 active worktrees. (`87f16e52`)
+- **Profile NAME only crosses the wire** — sentinel knows the profile but never propagates env/keys, preserving the Profile-Env boundary. (`0e7dd367`)
+
+## Dead ends — do NOT retry
+- **Group-level virtualization for transcripts** — 500 entries collapse into ~8 huge groups, so the whole transcript stays in DOM. The lever is entry-level last-50 windowing. (`576c695f-e5c`)
+- **Fetch latency / ProjectList / InputEditor as the switch-stall culprit** — disproven; warm (cached) switches still stalled 1.3s. The cost is browser layout/paint of the full DOM. (`3860a533`)
+- **Memo/patchesEqual to stop Edit re-renders** — the real cause is virtualizer-key remount, not memo miss. Fix the key (stable group.id), not the equality. (`7d97fc6a`)
+- **Black-box probing daemon permission-response schema** — 12 shapes live-fired against CC 2.1.145, all refuted; needs binary schema extraction. (`b72f22ec`)
+- **Revive-based spawn recovery** — revive mints a new conversationId each call when the original never reached `agent_host_booted`; the real bug was a crashing WorktreeCreate hook. (`05396458-5c`)
+- **Harness in-process runtime** — CLAUDEWERK already has stricter primitives; borrow the 6 patterns, replace the runtime. (`5194ff48`)
+- **SOTU as a single mutable doc / hourly distill cron / TTL decay** — all abandoned for per-conversation slots + activity-driven debounce + integration-status (git merge-base) decay. (`1f0bd0ba`)
+
+## Open questions
+- **`7e0cb2ee`**: How should daemon-backend dialog/ask/permission/plan MCP wiring be architected? This is the root of the WAITING-indicator regression and is currently the biggest unfinished daemon gap.
+- **`220627c6` / `a135e015`**: When to complete C+/C++/E/F pillars; should `recap_regenerate` overwrite in place or fork a new recapId?
+- **`576c695f-e5c`**: Per-entry virtualization inside groups vs progressive loading? Cold-open last-50 (Phase 3) or keep 500?
+- **`1f0bd0ba`**: SOTU budget defaults, callout tag name, and when to lift `recap/shared/` into a neutral `llm-engine/`.
+- **`5b9da5cc`**: Relax `share_file` path restriction to `$HOME` instead of CWD only?
+- **`1aadb461`**: Why is `recap_list` timing out in the test conversation (likely transport buffering, not a real failure)?
+
+## Gotchas
+- **Zustand object-returning selectors cause infinite re-renders** (React #185) — Object.is fails on fresh objects. Use per-field selectors or `useShallow`. This recurred multiple times; documented in `.claude/topics/gotchas-frontend.md`.
+- **Biome `--write` reformats the whole tree, not just changed files** — `bun run lint` pollutes commits and creates rebase conflict surface. Stage by explicit path; revert collateral before committing.
+- **`projectSettings[conv.project]` raw lookup misses legacy/leaked keys** — always go through `normalizeProjectUri`/`projectIdentityKey`.
+- **FTS5 treats unquoted hyphen as NOT** — `war-council` becomes `war NOT council`; quote hyphenated terms (`sanitizeFtsQuery` handles this).
+- **`git cherry` lies on squash/rebase merges** — use `git merge-tree --write-tree` for reliable integration status.
+- **Broker deploy recreates the container and drops all live WebSocket connections** — `bun run deploy` is irreversible; requires explicit authorization. Web-only changes deploy via bind-mounted `web/dist` with no restart.
+- **Agent-host binary lags broker by days** — already-running processes keep the old bundle after deploy; only new spawns get the new binary. Tests of new MCP tools must spawn fresh.
+- **Worktree Edit/Write paths must be absolute under the worktree dir** — shell `cd` does not redirect tool paths; you'll edit MAIN's tree by accident.
+- **`exit_conversation` has no target param** — calling it terminates the *calling* agent; use `control_conversation {action: quit}` for peers.
+- **SW Cache-API responses make `PerformanceResourceTiming` opaque** (all size fields zeroed); probe `caches.match()` for real byte size.
+
+## Pick up here
+1. **Wire daemon-backend MCP dialog/ask/permission/plan** — the WAITING regression (`7e0cb2ee`) is the largest remaining hole now that the transport reframe is done. daemon-agent-host has *zero* MCP wiring for these flows.
+2. **Validate Recap v2.1 live** against a freshly-spawned conversation (new MCP tools only reach new conversations); resolve the `recap_list` timeout (`1aadb461`).
+3. **Finish remaining recap pillar polish** (C+/C++/E/F) if not yet fully verified post-merge.
+4. **Cherry-pick the infinite-scrollback scroll-anchor refinement** (`4cac6c0f`) into main if not already landed — the feature itself already shipped.
+5. **Clean up the frontend-health worktree** once its ~20 live processes exit (do not force-remove the dir before then).

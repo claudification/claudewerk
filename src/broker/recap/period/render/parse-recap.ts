@@ -162,11 +162,26 @@ function parseItemList(value: string): RecapItem[] {
   const items: RecapItem[] = []
   const lines = value.split(/\r?\n/)
   let current: PartialItem | null = null
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
     const itemStart = line.match(/^\s*-\s+(?:title:\s*)?(.+)$/)
     if (itemStart) {
       if (current?.title) items.push(toItem(current))
-      current = titleToPartial(itemStart[1].trim())
+      const head = itemStart[1].trim()
+      // FLOW-MAP form: `- {title: X, detail: "...", conversations: [...]}`. This is
+      // what the reduce/oneshot LLM actually emits (FRONTMATTER_SPEC shows items as
+      // `{title, detail?, ...}`), NOT the block form the rest of this loop handles.
+      // A flow-map may wrap across lines, so accumulate until the braces balance.
+      if (head.startsWith('{')) {
+        let buf = head
+        while (!flowMapBalanced(buf) && i + 1 < lines.length) {
+          i++
+          buf += `\n${lines[i]}`
+        }
+        current = parseFlowMapItem(buf)
+        continue
+      }
+      current = titleToPartial(head)
       continue
     }
     if (!current) continue
@@ -181,6 +196,86 @@ function parseItemList(value: string): RecapItem[] {
   }
   if (current?.title) items.push(toItem(current))
   return items
+}
+
+/** True once `s` holds a complete, brace-balanced flow-map (quote/bracket aware). */
+function flowMapBalanced(s: string): boolean {
+  return splitTopLevel(stripBraces(s)) !== null
+}
+
+/** Strip the outermost {...} wrapper, returning the inner content. Returns the
+ *  input unchanged when it is not yet a closed brace pair. */
+function stripBraces(s: string): string {
+  const open = s.indexOf('{')
+  const close = s.lastIndexOf('}')
+  if (open === -1 || close <= open) return s
+  return s.slice(open + 1, close)
+}
+
+/**
+ * Parse one YAML flow-map item: `{title: X, detail: "...", conversations: [a, b]}`.
+ * Values are YAML-flow (unquoted scalars, quoted strings, inline `[...]` lists),
+ * NOT strict JSON, so we split on TOP-LEVEL commas (ignoring commas inside quotes /
+ * brackets / nested braces) and parse each `key: value` pair.
+ */
+function parseFlowMapItem(raw: string): PartialItem {
+  const fields = splitTopLevel(stripBraces(raw)) ?? []
+  const item: PartialItem = {}
+  for (const field of fields) {
+    const idx = field.indexOf(':')
+    if (idx === -1) continue
+    const key = field.slice(0, idx).trim()
+    const val = field.slice(idx + 1).trim()
+    if (key === 'title') Object.assign(item, titleToPartial(val))
+    else if (key === 'detail') item.detail = stripQuotes(val)
+    else if (key === 'conversations') item.conversations = parseInlineList(val)
+    else if (key === 'commits') item.commits = parseInlineList(val)
+    else if (key === 'inferred') item.inferred = /^(true|yes)$/i.test(stripQuotes(val))
+  }
+  return item
+}
+
+/**
+ * Split `s` on top-level commas, respecting quotes, [], and nested {}. Returns
+ * null when the structure is unbalanced (an unclosed bracket/brace/quote) -- the
+ * signal flowMapBalanced uses to keep accumulating wrapped lines.
+ */
+// fallow-ignore-next-line complexity
+function splitTopLevel(s: string): string[] | null {
+  const out: string[] = []
+  let depth = 0
+  let inString: '"' | "'" | null = null
+  let escaped = false
+  let cur = ''
+  for (const ch of s) {
+    if (escaped) {
+      cur += ch
+      escaped = false
+      continue
+    }
+    if (inString) {
+      cur += ch
+      if (ch === '\\') escaped = true
+      else if (ch === inString) inString = null
+      continue
+    }
+    if (ch === '"' || ch === "'") {
+      inString = ch
+      cur += ch
+      continue
+    }
+    if (ch === '[' || ch === '{') depth++
+    else if (ch === ']' || ch === '}') depth--
+    if (ch === ',' && depth === 0) {
+      out.push(cur.trim())
+      cur = ''
+      continue
+    }
+    cur += ch
+  }
+  if (depth !== 0 || inString) return null
+  if (cur.trim()) out.push(cur.trim())
+  return out
 }
 
 /** Strip a leading `[inferred]` marker off a title and flag the item. */

@@ -1,0 +1,337 @@
+---
+subtitle: Daemon becomes a transport, plus a chunked recap engine
+keywords: [claude-daemon, transport, profile, projectUri, phantom-reaper, spawn-parent-tracking, MCP, list_conversations, FTS5, batch-command-palette, infinite-scrollback, react-doctor, recap-2.1, OpenRouter, sheaf, teamwerk, rootConversationId, parentConversationId, sqlite-migration, biome]
+hashtags: [#transport-reframe, #profile-url-strip, #phantom-reaper, #spawn-parent-tracking, #recap-system, #performance-optimization, #multi-agent-coordination, #mcp-tools]
+goals:
+  - Remove profile from project URIs and treat it as launch metadata
+  - Reframe daemon from a separate backend into a claude-daemon transport
+  - Ship batch command palette and spawn parent/lineage tracking
+  - Stop conversation flapping caused by the phantom reaper
+  - Fix transcript/project-list performance regressions
+  - Build a chunked map-reduce recap system with cost tracking and retrospect mode
+discoveries:
+  - Profile-in-URI creates identity fragmentation and a permission-matrix explosion
+  - 216KB WebSocket fanout messages cause 1.8s paint stalls
+  - Conversation-switch stalls are browser layout/paint (~1.3s), not fetch or JS
+  - Group-level virtualization renders all 8 groups for 500-entry conversations (full DOM)
+  - 648 conversations have transcript data but missing index rows; turns table recovers 445
+  - FTS5 tokenizer treats hyphens as a NOT operator unless quoted
+  - Daemon mirrors have no socket by design, so liveSockets===0 is normal, not phantom
+  - daemon:// vs claude:// scheme mismatch splits projectIdentityKey buckets and breaks grouping
+  - React-doctor found 30 fixable issues (24 only-export-components, 6 effect cleanup)
+  - Recap truncation was caused by an 8k max_tokens ceiling
+  - OpenRouter real billed cost is only available via usage.include
+  - git cherry lies on squash merges; merge-base + merge-tree is accurate
+  - Thinking token count exists in the protocol but is not persisted to the cost rollup
+  - Transport buffering/lag produces false timeout alarms (output arrives batched)
+  - recap_create schema enum is 'last_7', not 'last_7_days'
+side_effects:
+  - URI format change is breaking and requires migration
+  - React #185 infinite render took out the header on every page load
+  - Biome reformats the entire tree on lint, creating noise commits in worktrees
+  - Multiple agents on the same repo required explicit handoffs and caused worktree collisions
+  - A $10+ recap failed but recorded $0 cost (tracking gap on failed runs)
+  - Broker container recreation required for transport deploy
+  - New MCP tools require a fresh conversation spawn to access (old agent bundle cached)
+features:
+  - {title: Profile URL strip, detail: "Removed profile@ from project URIs, moved to launch metadata", conversations: [4a0318fc], commits: [c8704b8d]}
+  - {title: Transport reframe, detail: "Daemon becomes claude-daemon transport instead of a separate backend", conversations: [8ee9accb, bad58324, bc2fbde9, 91272363, b7bab93e, 320ef1b1, 1fac0ba2, 68beafb5, af1a4b2d], commits: [26943858, 10270f5c, c4c5f13d, c0893f13, 004e5567, e52e11e1, ea004d6d, 15eb4110]}
+  - {title: Batch command palette, detail: "Multi-select operations for conversations: terminate, recap, broadcast, reassign", conversations: [197bc1a4, e34f87a4], commits: [15eb4110, e4b0b545, 337784f4]}
+  - {title: Daemon control surface, detail: "set_model, set_effort, interrupt, clear via daemon protocol", conversations: [68beafb5], commits: [86b392b2, 83788b9e, 49edc6ef, ea004d6d]}
+  - {title: Mission control mockups, detail: "Fleet command interface with attention-state routing and quest system", conversations: [1a9c2e83], commits: [4dd2de3, 3f6503b, 2b0b9fc, ad3ccde]}
+  - {title: Spawn parent tracking, detail: "Track parent/root conversation relationships for spawned conversations", conversations: [807269d9, 3352290f, 7962726d, c3e65af9, 8e456f9f, b58f5e76], commits: [de2815a9, 19aec3fc, 8430ba98, 5ac8da41, cdc98b4e]}
+  - {title: Ghost conversations, detail: "Show unattached daemon workers as ghost conversations (transport=daemon) in UI", conversations: [e7d87779], commits: [185f585d]}
+  - {title: MCP lineage tools, detail: "rootConversationId/parentConversationId filters and tree format on list_conversations", conversations: [36c46c4e], commits: [b1c020be, f96a1231]}
+  - {title: Project tasks incremental loading, detail: "Lazy loading and caching for project tasks", conversations: [436acd21], inferred: true}
+  - {title: CMD+P pinned projects, detail: "Include pinned projects in command palette search", conversations: [2e90ba1e], inferred: true}
+  - {title: Progressive transcript loading, detail: "Renders last 50 entries by default, Load Earlier on demand", conversations: [576c695f], commits: [ab6db708, 87cd1799]}
+  - {title: Token usage sparkline in header, detail: "Live token-flow visualization with hover popover", conversations: [a72310b8], commits: [cf0adae9]}
+  - {title: Profile label display support, detail: "Uses label field instead of profile name for display", conversations: [2f001277], commits: [cf0adae9]}
+  - {title: Infinite scrollback with memory bounds, detail: "100-entry live cap with LRU cache; index-based anchor prevents jumping", conversations: [2cc3e683, 37410213, 87f16e52], commits: [6bfb0db7, 4cac6c0f]}
+  - {title: Worktree detection in launch modal, detail: "Amber nudge when launching from worktree path, one-click toggle to main project", conversations: [84228b9d], inferred: true}
+  - {title: Fleet sheaf overview page, detail: "24/48h conversation tree with project grouping, status, and cost rollups", conversations: [fecbb90a]}
+  - {title: Claude Opus 4.8 model support, detail: "Added claude-opus-4-8 to model registry and profiles", conversations: [32dc1f55], commits: [ddcb333c]}
+  - {title: Teamwerk meta-skill system, detail: "6-pattern team coordination with spawn recipes and supervisor mode", conversations: [ad37a8c8, b7eee0d2, 880c30e6, 527e6ca6]}
+  - {title: Conversation stash localStorage persistence, detail: "Auto-evicting 5-day localStorage for conversation input stash", conversations: [2f48ac4a], commits: [e3e94505]}
+  - {title: Chunked map-reduce recap engine, detail: "Parallel extraction + merge for large recaps", conversations: [389972df, 220627c6], inferred: true}
+  - {title: Real OpenRouter cost tracking, detail: "usage.include captures actual billed cost vs estimates", conversations: [9d206f82], commits: [3c9a2b2c]}
+  - {title: Voice-fab conversation targeting fix, detail: "Pin target conversation at record time to prevent misrouting", conversations: [82ef937b], commits: [35d33bd4]}
+  - {title: State-of-union chronicle system, detail: "Live project narrative with git-fabric integration", conversations: [1f0bd0ba], inferred: true}
+  - {title: "Recap v2.1 Pillar C+ run-artifact bundle", detail: "Directory per recapId with manifest.json, progress.ndjson, call artifacts, chunks, merged JSON, final markdown", conversations: [a135e015], commits: [ac4dfd98]}
+  - {title: "Recap v2.1 Pillar C++ recap_regenerate MCP tool", detail: "Replay from synthesize/render/html with fork/in-place modes", conversations: [a135e015], commits: [ac4dfd98]}
+  - {title: "Recap v2.1 Pillar E cost analytics", detail: "Activity breakdown, context buckets, cache write tokens in RecapDigest", conversations: [a135e015], commits: [ac4dfd98]}
+  - {title: "Recap v2.1 Pillar F retrospect mode", detail: "went_well/went_badly/recommendations frontmatter plus retrospective section", conversations: [a135e015], commits: [ac4dfd98]}
+bugs:
+  - {title: WebSocket fanout performance, detail: "216KB messages cause 1.8s paint stalls; instrumented for diagnosis", conversations: [78b962fe], commits: [f5c55da4]}
+  - {title: React #185 infinite render crash, detail: "BatchSelectedPill used an object-returning Zustand selector causing a render loop", conversations: [b5e47b7a], commits: [9fbefba8]}
+  - {title: Conversation flapping, detail: "Phantom reaper incorrectly ending daemon conversations; resumeConversation also stamped lastActivity on reconnect", conversations: [02ce729d, 814a7df6, c27e0ef1], commits: [78d735cb, ce0ce3b5]}
+  - {title: FTS5 hyphen search failure, detail: "Transcript search fails on hyphenated terms due to tokenizer treating - as NOT", conversations: [cc78179a], commits: [78d735cb]}
+  - {title: daemon-host binary missing, detail: "Binary not built or symlinked, causing spawn timeouts", conversations: [f17c0496], commits: [b1c020be, f96a1231]}
+  - {title: Mobile sidebar scroll position, detail: "Sidebar scrolls to top instead of current conversation", conversations: [51477520], commits: [185f585d]}
+  - {title: Channel message rendering, detail: "User message after channel message merges strangely in UI", conversations: [c7acfbb1], inferred: true}
+  - {title: Group creation placement, detail: "New groups added to top instead of bottom of list", conversations: [ad10acfa], inferred: true}
+  - {title: Usage reporting popover broken, detail: "Sentinel usage data not displaying in web UI", conversations: [a1b1f4c2], inferred: true}
+  - {title: Daemon conversation unusable, detail: "Can't write to or terminate daemon conversations", conversations: [7370a1ee], inferred: true}
+  - {title: PTY spawn prompt not passed, detail: "Initial prompt not passed through when spawning with PTY mode", conversations: [fd308e75], inferred: true}
+  - {title: Daemon conversation title not passed on spawn, detail: "titleUserSet not set when name provided in spawn dialog", conversations: [5fa3bf7d], commits: [5bfc0e0b]}
+  - {title: Ghost daemon conversations show wrong profile, detail: "resolvedProfile not set for daemon roster mirrors", conversations: [0e7dd367], commits: [1b3c6dac, d4c2da89]}
+  - {title: Missing task titles in transcript, detail: "Task references show IDs instead of subject/title", conversations: [89927c55], commits: [89927c55]}
+  - {title: Transcript re-rendering on new entries, detail: "Edit/read blocks re-tokenize due to group identity loss / virtualizer key instability", conversations: [b17b0e45, 7d97fc6a], commits: [b17b0e45, 9dfcad57]}
+  - {title: setTimeout leaks in useEffect hooks, detail: "6 components missing cleanup causing memory leaks", conversations: [05396458]}
+  - {title: Sheaf conversation click not dismissing overlay, detail: "Selection worked but sheaf modal stayed visible", conversations: [6391412d], commits: [ccbdecb0]}
+  - {title: Spawn failures due to duplicate worktree branch, detail: "WorktreeCreate hook crashes when branch already exists", conversations: [e3cf0e71]}
+  - {title: Spawn with existing worktree broken, detail: "Child lands outside intended worktree directory", conversations: [0b78b579], inferred: true}
+  - {title: Recap output truncation at 8k tokens, detail: "Large recaps hit max_tokens ceiling mid-generation", conversations: [9d206f82], commits: [40bc0b17]}
+  - {title: Agent rename_conversation forbidden, detail: "agent-host role blocked from renaming conversations", conversations: [23281bf0]}
+  - {title: Invalid period label in recap_create calls, detail: "Used 'last_7_days' instead of correct enum 'last_7'", conversations: [1aadb461], inferred: true}
+fixes:
+  - {title: Conversation pulse animation, detail: "Suppress pulse on direct click/touch, only on programmatic selection", conversations: [2f1fc438], commits: [f5c55da4]}
+  - {title: Transcript context efficiency, detail: "Optimized get_transcript_context to reduce payload size", conversations: [0fd47a01], commits: [f5c55da4]}
+  - {title: Docker build context, detail: "Added backups/ and .rclaude/ to .dockerignore to fix 6GB context", conversations: [a3cd5456], commits: [12bb0bf4]}
+  - {title: Zustand per-field selectors, detail: "Replaced object-returning selectors with individual store calls to stop render loops", conversations: [b5e47b7a], commits: [9fbefba8]}
+  - {title: Phantom reaper daemon skip, detail: "Skip daemon mirrors (no socket by design) in phantom reaper", conversations: [02ce729d, 814a7df6], commits: [78d735cb]}
+  - {title: lastActivity preservation on reconnect, detail: "Only update on legitimate un-end, not meta-arrival reconnects", conversations: [c27e0ef1], commits: [ce0ce3b5]}
+  - {title: FTS5 hyphen query sanitization, detail: "Quote hyphenated terms to prevent NOT-operator parsing", conversations: [cc78179a], commits: [78d735cb]}
+  - {title: "daemon:// to claude:// URI normalization", detail: "Normalize daemon scheme to claude for consistent project grouping", conversations: [5a7e6074], commits: [185f585d]}
+  - {title: MCP spawn profile inheritance removal, detail: "Use sentinel selection instead of inheriting profile from spawner", conversations: [36c46c4e], commits: [b1c020be]}
+  - {title: Duplicate agent-host boot prevention, detail: "Prevent multiple agent-host connections for the same conversation", conversations: [814a7df6], commits: [ce0ce3b5]}
+  - {title: Worktree project URI stripping, detail: "Strip .claude/worktrees/ from project URIs for grouping", conversations: [14619ad9], inferred: true}
+  - {title: Database orphan conversation recovery, detail: "445 conversations recovered from turns table; 90-day clean cascade TTL", conversations: [beba12c1, b60edb95], commits: [b60edb95]}
+  - {title: Perf monitor visibility artifact filtering, detail: "Exclude suspended-tab artifacts from commit->paint timing", conversations: [3860a533], commits: [27767991]}
+  - {title: Biome config ignore .claude directory, detail: "Added .claude/** to biome ignore patterns", conversations: [21c8f49c], commits: [21c8f49c]}
+  - {title: React performance cleanup, detail: "Fixed 30 react-doctor violations (export mixing, effect cleanup)", conversations: [b508e739]}
+  - {title: Stable group IDs for transcript rendering, detail: "Reconciled group.id to prevent remounting on tail-sequence changes", conversations: [7d97fc6a], commits: [9dfcad57]}
+  - {title: Scroll anchor preservation during pruning, detail: "Index-based anchoring prevents transcript jumping during history load", conversations: [4dd22abc], commits: [724b8117]}
+  - {title: Raised recap output limit to 32k tokens, detail: "Prevents truncation on large Opus responses", conversations: [9d206f82], commits: [40bc0b17]}
+  - {title: Frontend health quality chain integration, detail: "175-file refactor with react-doctor improvements", conversations: [87f16e52], commits: [a2bb5d21]}
+incidents:
+  - {title: Profile strip deploy, conversations: [52835091, a3cd5456], severity: medium}
+  - {title: Transport reframe deploy, conversations: [eb91fd37], severity: high}
+  - {title: Broker header crash (React #185), conversations: [b5e47b7a], severity: high}
+  - {title: Conversation flapping storm, conversations: [02ce729d, 814a7df6], severity: high}
+  - {title: Project tasks performance bomb (3.5s freeze), conversations: [436acd21], severity: medium}
+  - {title: Daemon spawn timeout cascade (missing daemon-host binary), conversations: [f17c0496], severity: high}
+  - {title: 648 orphaned conversations in database, conversations: [beba12c1], severity: medium}
+  - {title: Waiting indicators not triggering, conversations: [7e0cb2ee], severity: low}
+  - {title: Chain spawn failures with ghost conversations, conversations: [05396458, e3cf0e71], severity: medium}
+  - {title: Agent killed itself with exit_conversation, conversations: [0b78b579], severity: medium}
+  - {title: Failed recap cost unrecorded ($10+ at $0), conversations: [9d206f82], severity: low}
+  - {title: Broker RPC timeout on recap_list (15000ms x3), conversations: [1aadb461], severity: low}
+decisions:
+  - {title: Profile as launch metadata, detail: "Profile must not be part of URI identity; becomes a launch-time hint to avoid permission-matrix explosion", conversations: [4a0318fc]}
+  - {title: Hard cutover for daemon backend, detail: "Remove backend:'daemon' entirely with no backward compatibility; daemon is a transport, not a backend", conversations: [8ee9accb]}
+  - {title: Quest as work atom, detail: "Work becomes the primary unit with adaptive conversation topology", conversations: [1a9c2e83]}
+  - {title: Scribe/Worker architecture, detail: "Split the quest brain: expensive Worker does the work, cheap Scribe handles coordination to control cost", conversations: [1a9c2e83]}
+  - {title: Attention-state machine, detail: "Broker computes conversation states relative to user attention needs", conversations: [1a9c2e83]}
+  - {title: MCP tools live on broker side, detail: "Agent hosts are dumb pipes; broker owns all MCP tool schemas and handlers", conversations: [36c46c4e], commits: [b1c020be, f96a1231]}
+  - {title: Ghost conversations keyed by transport=daemon, detail: "Use transport field to distinguish ghost vs attached daemon conversations", conversations: [e7d87779], commits: [185f585d]}
+  - {title: "Normalize daemon:// to claude://", detail: "Daemon is transport not project, so group under claude:// scheme", conversations: [5a7e6074], commits: [185f585d]}
+  - {title: Use turns table for orphan recovery, detail: "project_uri in turns is the authoritative source for 445 of 648 orphans", conversations: [beba12c1]}
+  - {title: Passive pruning for transcript memory bounds, detail: "Prune on next live append rather than aggressive timer-based pruning", conversations: [2cc3e683]}
+  - {title: 90-day clean cascade retention, detail: "Replace 28-day cap with 90-day TTL plus CASCADE delete to prevent orphans", conversations: [b60edb95]}
+  - {title: Main project as default in worktree modal, detail: "Worktree path is an option, not default, to preserve branch-context awareness", conversations: [84228b9d], inferred: true}
+  - {title: Chain protocol continuous integration, detail: "Each phase merges to main before spawning the next link to avoid big-bang conflicts", conversations: [05396458]}
+  - {title: Same-project spawn permission bypass, detail: "bypassPermissions callers can spawn in same project without approval gates", conversations: [301dbe47]}
+  - {title: Stay on Biome toolchain, detail: "oxfmt too early (0.x beta) and oxlint has rule gaps", conversations: [87f16e52]}
+  - {title: RecapId-keyed artifact bundles, detail: "More stable than batchId for a resumable pipeline", conversations: [389972df], inferred: true}
+  - {title: Retrospect as optional recap mode, detail: "Adds an evaluation layer without forcing it on every recap", conversations: [1f0bd0ba, 220627c6], inferred: true}
+  - {title: SOTU as broker-side chronicle, detail: "Scribe-fold pattern with git-fabric integration; freshness by integration status not TTL", conversations: [1f0bd0ba], inferred: true}
+  - {title: Hand off testing to fresh spawn, detail: "Required to access new MCP tools since existing conversations cache the old agent bundle", conversations: [a135e015], inferred: true}
+  - {title: Defer thinking-token analytics to v2.2, detail: "Signal exists in protocol but cost-rollup migration not prioritized", conversations: [a135e015], inferred: true}
+dead_ends:
+  - {title: Profile in URI approach, detail: "Created identity fragmentation and permission-matrix explosion", conversations: [4a0318fc]}
+  - {title: Daemon as separate backend, detail: "Wrong abstraction level; reframed as transport mode instead", conversations: [78becbbf]}
+  - {title: Agent-host MCP HTTP client modification, detail: "Agent host receives MCP calls, never makes outbound ones", conversations: [3352290f]}
+  - {title: Tmux send-keys for PTY prompt, detail: "Rejected approach for passing initial prompt to PTY spawns", conversations: [fd308e75]}
+  - {title: CWD scanning from transcript content, detail: "Broker can't derive project URIs from transcript JSON; cwd only exists as agent metadata", conversations: [beba12c1]}
+  - {title: Per-entry virtualization inside groups, detail: "Complex refactor with high regression risk; progressive loading was simpler", conversations: [576c695f]}
+  - {title: Auto-recap on conversation termination, detail: "Too noisy without evidence binding to filter meaningful sessions", conversations: [fecbb90a], inferred: true}
+  - {title: Ghost entries in thinking progress, detail: "No real UX value, adds complexity", conversations: [40305938], inferred: true}
+  - {title: git cherry for integration detection, detail: "Lies on squash merges; use merge-base + merge-tree", conversations: [87f16e52]}
+  - {title: TTL for SOTU freshness, detail: "Decay based on integration status is more accurate than time", conversations: [1f0bd0ba]}
+gotchas:
+  - {title: Worktree path confusion, detail: "Edit/Write tools use absolute paths; shell cd doesn't redirect them", conversations: [bc2fbde9, 91272363]}
+  - {title: Web vitest separation, detail: "Web tests must run separately from server tests due to bunfig root", conversations: [320ef1b1]}
+  - {title: git commit auto-captures tracked files, detail: "Commit captures modified tracked files; add only for new files", conversations: [1a9c2e83]}
+  - {title: Daemon protocol version gates, detail: "Dispatch op requires a protocol version gate not present in all CC versions", conversations: [68beafb5]}
+  - {title: Zustand object selector render loops, detail: "Object-returning selectors fail Object.is equality, causing infinite renders", conversations: [b5e47b7a], commits: [9fbefba8]}
+  - {title: FTS5 hyphen as NOT operator, detail: "FTS5 treats - as NOT unless quoted", conversations: [cc78179a], commits: [78d735cb]}
+  - {title: Daemon conversations have no socket by design, detail: "liveSockets===0 is normal for mirrors, not phantom", conversations: [02ce729d], commits: [78d735cb]}
+  - {title: "daemon:// vs claude:// breaks grouping", detail: "Different schemes create separate projectIdentityKey buckets", conversations: [5a7e6074], commits: [185f585d]}
+  - {title: Multi-daemon profile routing, detail: "Each profile runs a separate daemon with its own roster; sentinel must route correctly", conversations: [e604b901], inferred: true}
+  - {title: Worktree paths create phantom projects, detail: ".claude/worktrees/ paths treated as separate projects instead of same repo", conversations: [14619ad9], inferred: true}
+  - {title: MCP tool schema cached at client init, detail: "Running conversations don't see new MCP params until reconnect / fresh spawn", conversations: [36c46c4e, a135e015], commits: [b1c020be, f96a1231]}
+  - {title: Group-level virtualization renders entire transcript, detail: "500 entries collapse to 8 groups; virtualizer shows all 8 = full DOM layout", conversations: [576c695f]}
+  - {title: commit->paint timing includes tab suspension, detail: "requestAnimationFrame suspension creates false 3s+ stalls", conversations: [3860a533]}
+  - {title: Tables linked by convention not constraint, detail: "No foreign key between conversations and transcript_entries allows orphaning", conversations: [beba12c1]}
+  - {title: Worktree deploy requires main repo coordination, detail: "Global binaries symlinked to main repo; compose project roots there", conversations: [1cb88e4f]}
+  - {title: Worktree branch collision in spawn hooks, detail: "git worktree add fails when branch exists; needs idempotent detection", conversations: [e3cf0e71]}
+  - {title: Web bundle deploy separate from broker, detail: "Web-only changes need bun run build:web, not full deploy", conversations: [6391412d]}
+  - {title: Biome reformats entire tree on lint, detail: "Creates noise commits across unrelated files", conversations: [389972df, 87f16e52]}
+  - {title: OpenRouter usage.include required for real costs, detail: "Without it you only get LiteLLM estimates", conversations: [9d206f82]}
+  - {title: Agent role restrictions on MCP tools, detail: "agent-host is blocked from many operations vs control-panel", conversations: [9d206f82, 23281bf0]}
+  - {title: Transport buffering causes false timeout appearance, detail: "Output arrives batched after apparent failure", conversations: [1aadb461], inferred: true}
+open_questions:
+  - "Mission control (1a9c2e83): how to handle a worker outliving its host in MCP; optimal interject timing for Scribe; visual-language standardization across mockups; horizon planning vs destination clarity"
+  - "Orphan recovery (beba12c1, b60edb95): should we add foreign-key constraints with CASCADE; how to handle the 614 remaining orphan conversations"
+  - "Token sparkline (a72310b8): what causes sporadic token-usage sparkline changes"
+  - "Daemon UI (7e0cb2ee): why are waiting indicators not showing for daemon conversations"
+  - "Launch modal (84228b9d): should worktree toggle state persist across modal opens"
+  - "Spawn permissions (301dbe47): how to handle relative cwd resolution in spawn permissions"
+  - "Thinking progress (40305938): should it show a sparkline of token generation rate; what is the right overscan value for the transcript virtualizer"
+  - "Teamwerk (ad37a8c8): how to handle cross-project teamwerk spawning"
+  - "Recap roles (9d206f82): should agent-host be added to recap_create allowed roles"
+  - "Recap engine (389972df, a135e015): what is the right chunking threshold; how to version-gate for resume; should regenerate overwrite or fork"
+  - "SOTU (1f0bd0ba): what budget cap for SOTU distillation"
+stakeholders: [Jonas]
+went_well:
+  - {title: Daemon transport reframe landed end-to-end, detail: "Profile pulled out of URIs, daemon collapsed into a transport, deployed with recovery docs", conversations: [8ee9accb, eb91fd37], commits: [15eb4110]}
+  - {title: Flapping storm root-caused and killed, detail: "Phantom reaper now skips socket-less daemon mirrors; lastActivity preserved on reconnect", conversations: [02ce729d, c27e0ef1], commits: [78d735cb, ce0ce3b5]}
+  - {title: Real performance wins on transcript and project list, detail: "Progressive loading, stable group IDs, and artifact-filtered perf monitor turned ~1.3s stalls actionable", conversations: [576c695f, 7d97fc6a, 3860a533], commits: [9dfcad57, 27767991]}
+  - {title: Recap v2.1 shipped four pillars in one push, detail: "Artifact bundles, recap_regenerate, cost analytics, and retrospect mode landed together", conversations: [a135e015], commits: [ac4dfd98]}
+  - {title: Database orphan recovery, detail: "Recovered 445 of 648 orphans from the turns table and set a 90-day cascade policy", conversations: [beba12c1, b60edb95], commits: [b60edb95]}
+went_badly:
+  - {title: React #185 crash shipped to the header, detail: "An object-returning Zustand selector took out the header on every load before being caught", conversations: [b5e47b7a], commits: [9fbefba8]}
+  - {title: Spawn/worktree fragility recurred, detail: "Branch collisions, children landing outside worktrees, and an agent killing itself via exit_conversation", conversations: [e3cf0e71, 0b78b579]}
+  - {title: Multi-agent coordination overhead, detail: "Shared repo edits and worktree collisions forced explicit handoffs and produced biome reformat noise", conversations: [5ae005b8, 389972df, 87f16e52]}
+  - {title: Recap cost-tracking gap, detail: "A $10+ failed recap recorded $0; failed runs aren't billed-accurate yet", conversations: [9d206f82], inferred: true}
+  - {title: Wasted cycles on schema/role mismatches, detail: "'last_7_days' vs 'last_7' enum and agent-host role blocks slowed recap testing", conversations: [1aadb461, 23281bf0]}
+recommendations:
+  - {title: Add a lint/CI guard against object-returning Zustand selectors, detail: "The React #185 crash is recurrent enough to deserve a rule; ban inline object selectors or require shallow-equality. Cheaper than another header outage.", conversations: [b5e47b7a]}
+  - {title: Make WorktreeCreate spawn hooks idempotent, detail: "Detect existing branch/worktree and reuse it rather than crashing; spawn fragility burned multiple sessions this period.", conversations: [e3cf0e71, 0b78b579]}
+  - {title: Document the fresh-spawn requirement for new MCP tools in CLAUDE.md, detail: "Tool schemas cache at client init, so new tools need a fresh conversation. Capture this to stop re-discovering it.", conversations: [36c46c4e, a135e015]}
+  - {title: Record cost on failed recap runs, detail: "Persist usage even when generation fails so $10+ failures don't show $0; close the tracking gap from pillar E.", conversations: [9d206f82]}
+  - {title: Add the recap_create period enum and allowed roles to docs, detail: "Codify 'last_7' (not 'last_7_days') and which roles can call recap_create to avoid wasted calls.", conversations: [1aadb461, 23281bf0]}
+  - {title: Adopt a multi-agent file-ownership / pathspec convention, detail: "Shared-repo edits and biome tree-wide reformats created noise and collisions; define per-agent pathspecs and a no-mass-format rule.", conversations: [5ae005b8, 389972df, 87f16e52]}
+---
+
+## TL;DR
+- **Daemon is now a transport, not a backend.** Profile was stripped out of project URIs and moved to launch metadata, and `backend:'daemon'` was removed in a hard cutover ([4a0318fc](/sessions/conv_4a0318fc), [8ee9accb](/sessions/conv_8ee9accb), commits `c8704b8d`, `15eb4110`).
+- **The conversation flapping storm is fixed.** Root cause was the phantom reaper ending socket-less daemon mirrors plus `resumeConversation` re-stamping `lastActivity` on reconnect ([02ce729d](/sessions/conv_02ce729d), [c27e0ef1](/sessions/conv_c27e0ef1), commits `78d735cb`, `ce0ce3b5`).
+- **Spawn lineage + MCP lineage tools landed.** Parent/root tracking with a sqlite migration, plus `rootConversationId`/`parentConversationId` filters and tree format on `list_conversations` ([807269d9](/sessions/conv_807269d9), [36c46c4e](/sessions/conv_36c46c4e), commits `de2815a9`, `b1c020be`).
+- **Transcript and project-list performance got real fixes**, after discovering the stalls were browser paint, not fetch: progressive loading, stable group IDs, infinite scrollback with memory bounds ([576c695f](/sessions/conv_576c695f), [7d97fc6a](/sessions/conv_7d97fc6a), commits `87cd1799`, `9dfcad57`, `6bfb0db7`).
+- **Recap v2.1 shipped four pillars at once** — artifact bundles, `recap_regenerate`, cost analytics, and retrospect mode — alongside real OpenRouter cost tracking ([a135e015](/sessions/conv_a135e015), [9d206f82](/sessions/conv_9d206f82), commits `ac4dfd98`, `3c9a2b2c`).
+
+## Features shipped
+- **Profile URL strip** — removed `profile@` from project URIs, moved to launch metadata ([4a0318fc](/sessions/conv_4a0318fc), `c8704b8d`).
+- **Transport reframe** — daemon collapsed into a `claude-daemon` transport instead of a separate backend ([8ee9accb](/sessions/conv_8ee9accb), [bad58324](/sessions/conv_bad58324), `26943858`, `15eb4110`).
+- **Batch command palette** — multi-select terminate / recap / broadcast / reassign ([197bc1a4](/sessions/conv_197bc1a4), [e34f87a4](/sessions/conv_e34f87a4), `e4b0b545`, `337784f4`).
+- **Daemon control surface** — `set_model`, `set_effort`, `interrupt`, `clear` over the daemon protocol ([68beafb5](/sessions/conv_68beafb5), `86b392b2`, `ea004d6d`).
+- **Spawn parent tracking** — parent/root relationships for spawned conversations ([807269d9](/sessions/conv_807269d9), `de2815a9`, `cdc98b4e`).
+- **Ghost conversations** — unattached daemon workers surface as `transport=daemon` ghosts ([e7d87779](/sessions/conv_e7d87779), `185f585d`).
+- **MCP lineage tools** — root/parent filters + tree format on `list_conversations` ([36c46c4e](/sessions/conv_36c46c4e), `b1c020be`, `f96a1231`).
+- **Progressive transcript loading** + **infinite scrollback with memory bounds** — last 50 entries by default, Load Earlier, 100-entry live cap with LRU and index-based anchor ([576c695f](/sessions/conv_576c695f), [2cc3e683](/sessions/conv_2cc3e683), [37410213](/sessions/conv_37410213), `ab6db708`, `6bfb0db7`, `4cac6c0f`).
+- **Token usage sparkline** in the header with hover popover, and **profile label display** ([a72310b8](/sessions/conv_a72310b8), [2f001277](/sessions/conv_2f001277), `cf0adae9`).
+- **Fleet sheaf overview** — 24/48h conversation tree with project grouping and cost rollups ([fecbb90a](/sessions/conv_fecbb90a)).
+- **Claude Opus 4.8 support** ([32dc1f55](/sessions/conv_32dc1f55), `ddcb333c`); **Teamwerk meta-skill system** ([ad37a8c8](/sessions/conv_ad37a8c8)); **conversation stash localStorage** ([2f48ac4a](/sessions/conv_2f48ac4a), `e3e94505`).
+- **Recap v2.1** — Pillar C+ run-artifact bundles, Pillar C++ `recap_regenerate`, Pillar E cost analytics, Pillar F retrospect mode ([a135e015](/sessions/conv_a135e015), `ac4dfd98`); **real OpenRouter cost tracking** via `usage.include` ([9d206f82](/sessions/conv_9d206f82), `3c9a2b2c`).
+- *Inferred:* project tasks incremental loading ([436acd21](/sessions/conv_436acd21)), CMD+P pinned projects ([2e90ba1e](/sessions/conv_2e90ba1e)), worktree detection in launch modal ([84228b9d](/sessions/conv_84228b9d)), chunked map-reduce recap engine ([389972df](/sessions/conv_389972df)), state-of-union chronicle ([1f0bd0ba](/sessions/conv_1f0bd0ba)).
+
+## Bug fixes
+- React #185 infinite render from an object-returning Zustand selector (`9fbefba8`).
+- Conversation flapping — phantom reaper skips daemon mirrors; `lastActivity` preserved on reconnect (`78d735cb`, `ce0ce3b5`).
+- FTS5 hyphen search failure — quote hyphenated terms (`78d735cb`).
+- `daemon-host` binary missing / spawn timeouts (`b1c020be`, `f96a1231`).
+- Mobile sidebar scroll position (`185f585d`).
+- Daemon conversation title not passed on spawn — `titleUserSet` (`5bfc0e0b`).
+- Ghost daemon conversations showing wrong profile — `resolvedProfile` not set (`1b3c6dac`, `d4c2da89`).
+- Transcript re-rendering / diff re-tokenizing from group-identity loss and virtualizer key instability (`b17b0e45`, `9dfcad57`).
+- WebSocket fanout instrumentation for 216KB / 1.8s paint stalls (`f5c55da4`).
+- Recap output truncation at 8k tokens — raised to 32k (`40bc0b17`).
+- *Inferred:* channel message rendering ([c7acfbb1](/sessions/conv_c7acfbb1)), group creation placement ([ad10acfa](/sessions/conv_ad10acfa)), usage popover ([a1b1f4c2](/sessions/conv_a1b1f4c2)), PTY spawn prompt ([fd308e75](/sessions/conv_fd308e75)), spawn with existing worktree ([0b78b579](/sessions/conv_0b78b579)), invalid `last_7_days` enum ([1aadb461](/sessions/conv_1aadb461)).
+
+## Refactors / cleanup
+- Zustand per-field selectors to stop render loops (`9fbefba8`).
+- Docker build context — `.dockerignore` fix for a 6GB context (`12bb0bf4`).
+- Biome ignore `.claude/**` (`21c8f49c`); 30 react-doctor violations fixed ([b508e739](/sessions/conv_b508e739)); 175-file frontend-health quality chain (`a2bb5d21`).
+- Database orphan recovery + 90-day clean cascade (`b60edb95`).
+- Perf monitor visibility-artifact filtering (`27767991`); scroll-anchor preservation during pruning (`724b8117`).
+- `daemon://`→`claude://` URI normalization and worktree URI stripping for grouping (`185f585d`).
+
+## Decisions
+- **Profile as launch metadata, not URI identity** — keeping profile in the URI caused identity fragmentation and a permission-matrix explosion ([4a0318fc](/sessions/conv_4a0318fc)).
+- **Hard cutover for the daemon backend** — daemon is a transport; removing `backend:'daemon'` outright avoids carrying a wrong abstraction forward ([8ee9accb](/sessions/conv_8ee9accb)).
+- **MCP tools live on the broker; agent hosts are dumb pipes** — broker owns all schemas/handlers so heterogeneous clients evolve without touching the wire ([36c46c4e](/sessions/conv_36c46c4e), `b1c020be`, `f96a1231`).
+- **Skip daemon conversations in the phantom reaper** — mirrors are socket-less by design, so `liveSockets===0` is normal, not phantom ([02ce729d](/sessions/conv_02ce729d), `78d735cb`).
+- **Recover orphans from the `turns` table** — `project_uri` there is authoritative for 445 of 648 orphans, since the broker can't derive URIs from transcript JSON ([beba12c1](/sessions/conv_beba12c1)).
+- **Stay on Biome** — oxfmt is too early (0.x beta) and oxlint has rule gaps ([87f16e52](/sessions/conv_87f16e52)).
+- **Scribe/Worker split** — an expensive Worker does the work while a cheap Scribe handles coordination, addressing cost ([1a9c2e83](/sessions/conv_1a9c2e83)).
+- *Inferred:* RecapId-keyed artifact bundles for resumability ([389972df](/sessions/conv_389972df)); retrospect as an optional recap mode ([1f0bd0ba](/sessions/conv_1f0bd0ba)); defer thinking-token analytics to v2.2 ([a135e015](/sessions/conv_a135e015)).
+
+## Dead ends
+- **Profile in URI** — abandoned for identity fragmentation and permission explosion ([4a0318fc](/sessions/conv_4a0318fc)).
+- **Daemon as a separate backend** — wrong abstraction level, reframed as transport ([78becbbf](/sessions/conv_78becbbf)).
+- **Modifying the agent-host MCP HTTP client** — the agent host only receives MCP calls, it never makes outbound ones ([3352290f](/sessions/conv_3352290f)).
+- **Tmux send-keys for the PTY initial prompt** — rejected ([fd308e75](/sessions/conv_fd308e75)).
+- **CWD scanning from transcript content** — broker can't derive project URIs from transcript JSON; cwd only exists as agent metadata ([beba12c1](/sessions/conv_beba12c1)).
+- **Per-entry virtualization inside groups** — high regression risk; progressive loading was simpler ([576c695f](/sessions/conv_576c695f)).
+- **`git cherry` for integration detection** — lies on squash merges; use `merge-base` + `merge-tree` ([87f16e52](/sessions/conv_87f16e52)).
+- **TTL-based SOTU freshness** — decay by integration status is more accurate than time ([1f0bd0ba](/sessions/conv_1f0bd0ba)).
+
+## Gotchas
+- **Zustand object selectors** fail `Object.is` equality and loop infinitely ([b5e47b7a](/sessions/conv_b5e47b7a)).
+- **FTS5 treats `-` as NOT** unless the term is quoted ([cc78179a](/sessions/conv_cc78179a)).
+- **Daemon mirrors have no socket by design** — don't treat `liveSockets===0` as phantom ([02ce729d](/sessions/conv_02ce729d)).
+- **`daemon://` vs `claude://`** split `projectIdentityKey` buckets and break grouping ([5a7e6074](/sessions/conv_5a7e6074)).
+- **Group-level virtualization renders the whole transcript** — 500 entries collapse to 8 groups, all 8 lay out at once ([576c695f](/sessions/conv_576c695f)).
+- **commit→paint timing includes tab-suspension artifacts**, producing false 3s+ stalls ([3860a533](/sessions/conv_3860a533)).
+- **Tables linked by convention not constraint** — no FK between `conversations` and `transcript_entries` allows orphaning ([beba12c1](/sessions/conv_beba12c1)).
+- **New MCP tool schemas cache at client init** — running conversations need a reconnect / fresh spawn to see new params ([36c46c4e](/sessions/conv_36c46c4e), [a135e015](/sessions/conv_a135e015)).
+- **Worktree edits use absolute paths** (shell `cd` doesn't redirect them); branch collisions crash spawn hooks; deploy requires main-repo coordination ([bc2fbde9](/sessions/conv_bc2fbde9), [e3cf0e71](/sessions/conv_e3cf0e71), [1cb88e4f](/sessions/conv_1cb88e4f)).
+- **Biome reformats the whole tree on lint**, producing noise commits ([389972df](/sessions/conv_389972df)).
+- **OpenRouter `usage.include` is required** for real billed costs vs estimates; **agent-host role is blocked** from many MCP operations ([9d206f82](/sessions/conv_9d206f82), [23281bf0](/sessions/conv_23281bf0)).
+
+## Incidents / errors
+- **Broker header crash** — React #185 took out the header on every load ([b5e47b7a](/sessions/conv_b5e47b7a), `9fbefba8`).
+- **Conversation flapping storm** — UI instability and log spam ([02ce729d](/sessions/conv_02ce729d), [814a7df6](/sessions/conv_814a7df6), `78d735cb`, `ce0ce3b5`).
+- **Daemon spawn timeout cascade** — missing `daemon-host` binary ([f17c0496](/sessions/conv_f17c0496), `b1c020be`).
+- **Transport reframe deploy** — required broker container recreation, with recovery docs ([eb91fd37](/sessions/conv_eb91fd37), `15eb4110`).
+- **648 orphaned conversations** in the database ([beba12c1](/sessions/conv_beba12c1)) *(inferred)*.
+- **Project tasks performance bomb** — 3.5s freeze on switch ([436acd21](/sessions/conv_436acd21)) *(inferred)*.
+- **Agent killed itself with `exit_conversation`**, tearing down MCP routing ([0b78b579](/sessions/conv_0b78b579)) *(inferred)*.
+- **Failed recap recorded $0** despite $10+ spend ([9d206f82](/sessions/conv_9d206f82)) *(inferred)*; **`recap_list` RPC timeout** 3× at 15000ms ([1aadb461](/sessions/conv_1aadb461)) *(inferred)*.
+
+## Open questions / unresolved
+- **Mission control ([1a9c2e83](/sessions/conv_1a9c2e83)):** how does a worker outlive its host in MCP; optimal Scribe interject timing; visual-language standardization across mockups; horizon planning vs destination clarity.
+- **Orphan recovery ([beba12c1](/sessions/conv_beba12c1), [b60edb95](/sessions/conv_b60edb95)):** should we add FK constraints with CASCADE; how to handle the 614 remaining orphans.
+- **Token sparkline ([a72310b8](/sessions/conv_a72310b8)):** what causes the sporadic sparkline changes.
+- **Daemon UI ([7e0cb2ee](/sessions/conv_7e0cb2ee)):** why are waiting indicators not showing for daemon conversations.
+- **Launch modal ([84228b9d](/sessions/conv_84228b9d)):** should worktree toggle state persist across modal opens.
+- **Spawn permissions ([301dbe47](/sessions/conv_301dbe47)):** how to resolve relative cwd in spawn permissions.
+- **Thinking progress ([40305938](/sessions/conv_40305938)):** sparkline of token generation rate? right overscan value for the transcript virtualizer?
+- **Teamwerk ([ad37a8c8](/sessions/conv_ad37a8c8)):** how to handle cross-project teamwerk spawning.
+- **Recap roles ([9d206f82](/sessions/conv_9d206f82)):** should agent-host be added to `recap_create` allowed roles.
+- **Recap engine ([389972df](/sessions/conv_389972df), [a135e015](/sessions/conv_a135e015)):** right chunking threshold; how to version-gate resume; should regenerate overwrite or fork.
+- **SOTU ([1f0bd0ba](/sessions/conv_1f0bd0ba)):** what budget cap for distillation.
+
+## Tasks completed
+- Profile stripped from project URIs; daemon reframed as transport and deployed.
+- Batch command palette, daemon control surface, ghost conversations, MCP lineage tools.
+- Spawn parent/root tracking with sqlite migration.
+- Flapping storm fixed (phantom reaper skip + lastActivity preservation).
+- Transcript progressive loading, stable group IDs, infinite scrollback; React-doctor / frontend-health chain merged.
+- Database orphan recovery (445 of 648) + 90-day cascade policy.
+- Recap v2.1 pillars C+/C++/E/F built, merged to main, and deployed; real OpenRouter cost tracking.
+
+## Notable conversations
+- [a135e015](/sessions/conv_a135e015) — Recap v2.1 pillars build, merge, deploy, and fresh-spawn testing handoff.
+- [1a9c2e83](/sessions/conv_1a9c2e83) — Mission control / quest / Scribe-Worker architecture design.
+- [9d206f82](/sessions/conv_9d206f82) — OpenRouter real cost tracking, recap truncation, role restrictions.
+- [87f16e52](/sessions/conv_87f16e52) — Frontend-health quality chain, toolchain comparison, scrollback anchoring.
+- [02ce729d](/sessions/conv_02ce729d) / [814a7df6](/sessions/conv_814a7df6) — Conversation flapping storm diagnosis and fix.
+
+## Retrospective
+
+### What went well
+The big architectural bet of this period — collapsing the daemon into a transport and pulling profile out of URI identity — actually shipped end-to-end with a coordinated deploy and recovery docs, rather than stalling as a design ([8ee9accb](/sessions/conv_8ee9accb), [eb91fd37](/sessions/conv_eb91fd37)). The flapping storm got a genuine root cause (socket-less mirrors + reconnect re-stamping) instead of a band-aid ([02ce729d](/sessions/conv_02ce729d), [c27e0ef1](/sessions/conv_c27e0ef1)). Performance work was disciplined: the team first proved the stalls were browser paint and tab-suspension artifacts before changing code ([3860a533](/sessions/conv_3860a533), [576c695f](/sessions/conv_576c695f)). And Recap v2.1 landed four pillars plus real cost tracking in a single coherent push ([a135e015](/sessions/conv_a135e015), [9d206f82](/sessions/conv_9d206f82)).
+
+### What went badly
+The React #185 selector crash reached the header and broke every page load — a recurring Zustand footgun that should have been caught by tooling ([b5e47b7a](/sessions/conv_b5e47b7a)). Spawn/worktree handling was fragile all week: branch collisions, children landing in the wrong directory, and an agent that killed itself with `exit_conversation` ([e3cf0e71](/sessions/conv_e3cf0e71), [0b78b579](/sessions/conv_0b78b579)). Multi-agent work on a shared repo created coordination overhead, worktree collisions, and tree-wide biome reformat noise ([5ae005b8](/sessions/conv_5ae005b8), [389972df](/sessions/conv_389972df)). Recap testing also burned cycles on avoidable mismatches — the `last_7_days` vs `last_7` enum and agent-host role blocks — and a failed $10+ recap recorded $0 cost ([1aadb461](/sessions/conv_1aadb461), [23281bf0](/sessions/conv_23281bf0), [9d206f82](/sessions/conv_9d206f82)).
+
+### Recommendations
+1. **Add a lint/CI rule banning object-returning Zustand selectors** — the #185 crash is recurrent and a header outage is high-cost; require shallow-equality or per-field selectors ([b5e47b7a](/sessions/conv_b5e47b7a)).
+2. **Make WorktreeCreate spawn hooks idempotent** — detect and reuse existing branches/worktrees instead of crashing, which repeatedly broke spawns ([e3cf0e71](/sessions/conv_e3cf0e71), [0b78b579](/sessions/conv_0b78b579)).
+3. **Document the fresh-spawn requirement for new MCP tools in CLAUDE.md** — tool schemas cache at client init, and this was rediscovered mid-test ([36c46c4e](/sessions/conv_36c46c4e), [a135e015](/sessions/conv_a135e015)).
+4. **Record cost on failed recap runs** — close the pillar-E gap so $10+ failures don't report $0 ([9d206f82](/sessions/conv_9d206f82)).
+5. **Pin `recap_create` enum (`last_7`) and allowed roles in docs** — stop wasted calls from wrong period labels and role blocks ([1aadb461](/sessions/conv_1aadb461), [23281bf0](/sessions/conv_23281bf0)).
+6. **Adopt a per-agent pathspec / no-mass-format convention** — to cut biome reformat noise and worktree edit conflicts in multi-agent builds ([5ae005b8](/sessions/conv_5ae005b8), [389972df](/sessions/conv_389972df), [87f16e52](/sessions/conv_87f16e52)).
