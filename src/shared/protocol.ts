@@ -3462,6 +3462,9 @@ export interface RecapMeta {
   createdAt: number
   startedAt?: number
   completedAt?: number
+  /** COST 2 -- per-call engine-cost ledger (oneshot/map/reduce/retry).
+   *  Absent on pre-ledger recaps; llmCostUsd remains the aggregate. */
+  costLedger?: RecapCostLedger
 }
 
 export interface RecapSummary {
@@ -3564,6 +3567,60 @@ export interface RecapDigest {
   }
   conversations: RecapDigestConversation[]
   commits?: RecapDigestCommits
+}
+
+/** Which LLM cost source a ledger entry's cost came from. Mirrors the
+ *  broker-side NormalizedUsage.costSource (openrouter = real billed cost via
+ *  usage.include; litellm = price-table estimate; unknown = no pricing). */
+export type RecapLedgerCostSource = 'openrouter' | 'litellm' | 'unknown'
+
+/** The pipeline stage that issued one LLM call. */
+export type RecapLedgerStage = 'oneshot' | 'map' | 'reduce' | 'retry'
+
+/** One LLM call in a recap run -- COST 2 (what the recap ENGINE spent),
+ *  distinct from COST 1 (what the project spent, in RecapDigest.cost).
+ *  Recorded for EVERY call including failures, so a failed recap shows the
+ *  tokens it burned instead of $0. */
+export interface RecapLedgerEntry {
+  stage: RecapLedgerStage
+  /** Map-stage chunk index (0-based); omitted for non-map stages. */
+  chunkIndex?: number
+  model: string
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  /** Billed input/output cost split when OpenRouter cost_details was present. */
+  inputCostUsd?: number
+  outputCostUsd?: number
+  costUsd: number
+  costSource: RecapLedgerCostSource
+  /** Wall-clock duration of the call in ms. */
+  ms: number
+  /** False if the call threw (timeout/4xx/5xx); cost may still be 0 then. */
+  ok: boolean
+  error?: string
+}
+
+export interface RecapLedgerSummary {
+  totalCostUsd: number
+  totalInputTokens: number
+  totalOutputTokens: number
+  totalCacheReadTokens: number
+  totalCacheWriteTokens: number
+  callCount: number
+  /** Distinct models used across the run, in first-seen order. */
+  models: string[]
+  /** Per-stage rollup (calls + cost) for the "where did the money go" view. */
+  byStage: Partial<Record<RecapLedgerStage, { calls: number; costUsd: number }>>
+}
+
+/** COST 2 ledger persisted as ledger_json + surfaced on the recap. */
+export interface RecapCostLedger {
+  /** Bumped when the entry shape changes; lets readers degrade gracefully. */
+  version: number
+  entries: RecapLedgerEntry[]
+  summary: RecapLedgerSummary
 }
 
 export interface PeriodRecapDoc extends RecapMeta {

@@ -18,6 +18,13 @@ export interface OpenRouterUsage {
     cached_tokens?: number
   }
   cache_creation_input_tokens?: number
+  /** OpenRouter's billed-cost breakdown (only present with usage.include).
+   *  The input-vs-output split is the real optimization signal for chunking:
+   *  it shows how much of the spend was raw-input bulk vs generation. */
+  cost_details?: {
+    upstream_inference_prompt_cost?: number
+    upstream_inference_completions_cost?: number
+  }
 }
 
 export interface TokenCounts {
@@ -34,12 +41,33 @@ export interface NormalizedUsage {
   cacheWriteTokens: number
   costUsd: number
   costSource: 'openrouter' | 'litellm' | 'unknown'
+  /** Billed cost split into input (prompt) vs output (completion) when
+   *  OpenRouter's cost_details is present. Undefined for litellm-estimated
+   *  or older responses. The chunking thesis ("stop paying the expensive
+   *  model for raw input bulk") is measured here. */
+  inputCostUsd?: number
+  outputCostUsd?: number
 }
 
 export function normalizeUsage(model: string, usage: OpenRouterUsage | undefined): NormalizedUsage {
   const counts = extractTokenCounts(usage)
   const cost = pickCost(model, counts, usage)
-  return { ...counts, costUsd: cost.amount, costSource: cost.source }
+  const split = extractCostSplit(usage)
+  return { ...counts, costUsd: cost.amount, costSource: cost.source, ...split }
+}
+
+/** Pull the input/output cost split out of OpenRouter's cost_details, when
+ *  present. Returns an empty object otherwise so the fields stay undefined. */
+// fallow-ignore-next-line complexity
+function extractCostSplit(usage: OpenRouterUsage | undefined): { inputCostUsd?: number; outputCostUsd?: number } {
+  const d = usage?.cost_details
+  if (!d) return {}
+  const input = d.upstream_inference_prompt_cost
+  const output = d.upstream_inference_completions_cost
+  return {
+    ...(typeof input === 'number' ? { inputCostUsd: input } : {}),
+    ...(typeof output === 'number' ? { outputCostUsd: output } : {}),
+  }
 }
 
 type FullCounts = Required<TokenCounts>

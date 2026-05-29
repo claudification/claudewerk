@@ -51,5 +51,29 @@ describe('normalizeUsage', () => {
     expect(r.outputTokens).toBe(0)
     expect(r.costUsd).toBe(0)
     expect(r.costSource).toBe('unknown')
+    expect(r.inputCostUsd).toBeUndefined()
+    expect(r.outputCostUsd).toBeUndefined()
+  })
+
+  it('extracts the input/output cost split from cost_details when present', () => {
+    const r = normalizeUsage('anything', {
+      prompt_tokens: 1000,
+      completion_tokens: 200,
+      cost: 0.012,
+      cost_details: {
+        upstream_inference_prompt_cost: 0.009,
+        upstream_inference_completions_cost: 0.003,
+      },
+    })
+    expect(r.costUsd).toBe(0.012)
+    expect(r.costSource).toBe('openrouter')
+    expect(r.inputCostUsd).toBe(0.009)
+    expect(r.outputCostUsd).toBe(0.003)
+  })
+
+  it('leaves the split undefined when cost_details is absent', () => {
+    const r = normalizeUsage('anything', { prompt_tokens: 100, completion_tokens: 50, cost: 0.001 })
+    expect(r.inputCostUsd).toBeUndefined()
+    expect(r.outputCostUsd).toBeUndefined()
   })
 })
