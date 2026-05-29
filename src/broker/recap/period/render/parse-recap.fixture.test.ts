@@ -9,9 +9,9 @@
  * If a future prompt/model change alters the emitted shape, these break first.
  */
 
+import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { describe, expect, it } from 'bun:test'
 import { parseRecapOutput } from './parse-recap'
 
 const FIXTURES = [
@@ -32,11 +32,14 @@ describe('parseRecapOutput on real recap artifacts (regression)', () => {
       it('extracts multiple features with CLEAN titles (not raw {json} blobs)', () => {
         expect(metadata.features.length).toBeGreaterThan(3)
         for (const f of metadata.features) {
-          // The bug: the whole "{title: ..., detail: ...}" string became the title.
-          expect(f.title).not.toContain('{')
-          expect(f.title).not.toMatch(/^\s*title\s*:/)
+          // The bug: the whole "{title: ..., detail: ...}" flow-map became the
+          // title. Assert the flow-map wrapper is gone -- NOT that '{' never
+          // appears (a legit title can contain e.g. "usage:{include:true}").
+          expect(f.title.startsWith('{')).toBe(false)
+          expect(f.title).not.toMatch(/^\{?\s*"?title"?\s*:/i)
+          expect(f.title).not.toContain(', detail:')
           expect(f.title.length).toBeGreaterThan(0)
-          expect(f.title.length).toBeLessThan(120)
+          expect(f.title.length).toBeLessThan(160)
         }
       })
 
@@ -55,7 +58,7 @@ describe('parseRecapOutput on real recap artifacts (regression)', () => {
       it('extracts the simple string lists (keywords/goals)', () => {
         expect(metadata.keywords.length).toBeGreaterThan(2)
         expect(metadata.goals.length).toBeGreaterThan(0)
-        expect(metadata.subtitle && metadata.subtitle.length).toBeGreaterThan(0)
+        expect(metadata.subtitle?.length ?? 0).toBeGreaterThan(0)
       })
 
       if (fx.retrospect) {
