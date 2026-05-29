@@ -610,21 +610,23 @@ export const TranscriptView = memo(function TranscriptView({
   })
 
   // Supplementary pin for the streaming/banner region below the virtualizer.
-  // anchorTo:'end' only tracks virtualizer items; streaming text, spinners,
-  // permission banners, and queued messages grow outside it. This RO watches
-  // that region and re-pins when it grows while we're at the end.
+  // anchorTo:'end' only tracks virtualizer items; streaming text, thinking
+  // blocks, spinners, permission banners, and queued messages grow outside it.
+  // This RO watches that region and re-pins when it grows while we're near the
+  // actual scroll bottom. Uses a direct scrollHeight check instead of
+  // virtualizer.isAtEnd() because isAtEnd() only knows about the virtualizer's
+  // own content, not the extra height from the tail region.
   useEffect(() => {
     const tail = tailRegionRef.current
     const el = parentRef.current
     if (!tail || !el) return
     const ro = new ResizeObserver(() => {
-      if (!virtualizer.isAtEnd()) return
       const drift = el.scrollHeight - el.scrollTop - el.clientHeight
-      if (drift > 4) el.scrollTop = el.scrollHeight
+      if (drift > 4 && drift < 300) el.scrollTop = el.scrollHeight
     })
     ro.observe(tail)
     return () => ro.disconnect()
-  }, [virtualizer])
+  }, [])
 
   // Track measured sizes: visible items have real DOM measurements from ResizeObserver.
   // Cache these so estimateSize returns accurate heights when items re-enter the viewport.
@@ -670,21 +672,26 @@ export const TranscriptView = memo(function TranscriptView({
     virtualizer.measure()
   }, [transcriptRemeasureSeq])
 
+  // scrollToEnd: snap the scroll container to its actual bottom (scrollHeight),
+  // which includes both the virtualizer spacer AND the tail region (streaming,
+  // spinners, banners). virtualizer.scrollToEnd() only knows its own spacer.
+  const scrollToEnd = useCallback(() => {
+    const el = parentRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [])
+
   // Conversation switch: snap to the end of the new transcript.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: follow is read at switch time; virtualizer is stable
+  // biome-ignore lint/correctness/useExhaustiveDependencies: follow is read at switch time
   useLayoutEffect(() => {
-    if (follow) virtualizer.scrollToEnd()
+    if (follow) scrollToEnd()
     else {
       const el = parentRef.current
       if (el) el.scrollTop = 0
     }
   }, [cacheKey])
 
-  // Pin-to-bottom: anchorTo:'end' + followOnAppend handle the VIRTUALIZER items,
-  // but we also need to pin when (a) the transcript first loads after a switch,
-  // (b) streaming text grows below the virtualizer, and (c) the follow prop
-  // toggles on (ScrollToBottomButton click). This single subscription + the
-  // tail-region RO (below) cover all three without the old 6-trigger cascade.
+  // Pin when transcript data changes (covers: initial load after switch,
+  // incremental appends). One synchronous trigger -- no setTimeout cascade.
   const followRef = useRef(follow)
   followRef.current = follow
   useEffect(() => {
@@ -696,14 +703,14 @@ export const TranscriptView = memo(function TranscriptView({
       const current = state.selectedConversationId ? state.transcripts[state.selectedConversationId] : undefined
       if (current !== lastRef) {
         lastRef = current
-        if (followRef.current) virtualizer.scrollToEnd()
+        if (followRef.current) scrollToEnd()
       }
     })
-  }, [virtualizer])
+  }, [scrollToEnd])
   // Re-pin when follow is toggled on (ScrollToBottomButton click).
   useLayoutEffect(() => {
-    if (follow) virtualizer.scrollToEnd()
-  }, [follow, virtualizer])
+    if (follow) scrollToEnd()
+  }, [follow, scrollToEnd])
 
   // Re-entrancy guard for the scroll-up auto-trigger.
   const loadingEarlierRef = useRef(false)
