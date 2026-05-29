@@ -769,9 +769,12 @@ export const TranscriptView = memo(function TranscriptView({
         fetchOlder()
       }
       // Signal follow state to parent (drives ScrollToBottomButton).
-      const atEnd = virtualizer.isAtEnd()
+      // Use direct scroll math, not virtualizer.isAtEnd() -- the tail region
+      // (streaming, spinners, banners) sits outside the virtualizer.
+      const drift = el.scrollHeight - el.scrollTop - el.clientHeight
+      const atEnd = drift < 80
       if (atEnd && !wasAtEnd) onReachedBottomRef.current?.()
-      if (!atEnd && wasAtEnd && movedUp) onUserScrollRef.current?.()
+      if (!atEnd && wasAtEnd) onUserScrollRef.current?.()
       wasAtEnd = atEnd
     }
     el.addEventListener('scroll', handleScroll, { passive: true })
