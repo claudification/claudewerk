@@ -36,11 +36,20 @@ export interface ConversationLike {
  * Falls back to a 6-char id slice when two conversations in the same project would
  * slug to the same value (so siblings stay disambiguable).
  */
-export function computeConversationSlug(target: ConversationLike, siblingConversations: ConversationLike[]): string {
+export function computeConversationSlug(
+  target: ConversationLike,
+  siblingConversations: ConversationLike[],
+  now: number = Date.now(),
+): string {
   const conversationSlug = slugify(target.title || target.id.slice(0, 8))
-  const collides = siblingConversations.some(
-    other => other.id !== target.id && slugify(other.title || other.id.slice(0, 8)) === conversationSlug,
-  )
+  // A name collides if a sibling CURRENTLY answers to it OR still holds it as an
+  // in-window former slug (rename-alias retention) -- otherwise a fresh/renamed
+  // conversation could grab a name that is still forwarding to someone else.
+  const collides = siblingConversations.some(other => {
+    if (other.id === target.id) return false
+    if (slugify(other.title || other.id.slice(0, 8)) === conversationSlug) return true
+    return (other.formerSlugs ?? []).some(f => f.slug === conversationSlug && isAliasLive(f, now))
+  })
   return collides ? `${conversationSlug}-${target.id.slice(0, 6)}` : conversationSlug
 }
 
