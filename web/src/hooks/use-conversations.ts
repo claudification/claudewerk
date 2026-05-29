@@ -297,6 +297,13 @@ interface ConversationsState {
   requestedTabSeq: number
   pendingFilePath: string | null
   newDataSeq: number
+  /** Bumped to force every mounted TranscriptView to re-read its live scroll
+   *  rect into the virtualizer. Manual escape hatch for a stuck/collapsed
+   *  viewport (the "empty transcript, only last line" render bug) -- a data
+   *  refetch alone can't recover it because the bug is the cached scrollRect,
+   *  not the data. Fired by the reload-transcript chord. */
+  transcriptRemeasureSeq: number
+  requestTranscriptRemeasure: () => void
   expandAll: boolean
   /** @deprecated Use SW update detection instead */
   versionMismatch: boolean
@@ -968,6 +975,8 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
     return id
   },
   newDataSeq: 0,
+  transcriptRemeasureSeq: 0,
+  requestTranscriptRemeasure: () => set(state => ({ transcriptRemeasureSeq: state.transcriptRemeasureSeq + 1 })),
   shares: [],
   setShares: shares => set({ shares }),
   expandAll: localStorage.getItem('expandAll') === 'true',

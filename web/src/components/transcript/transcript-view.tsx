@@ -258,7 +258,7 @@ const ThinkingSpinner = memo(function ThinkingSpinner({ conversationId }: { conv
   // biome-ignore lint/correctness/useExhaustiveDependencies: totalOutput intentionally omitted - only capture baseline on status transition, not every token update
   useEffect(() => {
     if (isActive) baselineRef.current = totalOutput
-  // react-doctor-disable-next-line react-doctor/exhaustive-deps
+    // react-doctor-disable-next-line react-doctor/exhaustive-deps
   }, [isActive]) // only on status transition, not on every token update
 
   const turnTokens = isActive ? Math.max(0, totalOutput - baselineRef.current) : 0
@@ -276,7 +276,7 @@ const ThinkingSpinner = memo(function ThinkingSpinner({ conversationId }: { conv
       clearInterval(verbInterval)
       clearInterval(dotInterval)
     }
-  // react-doctor-disable-next-line react-doctor/exhaustive-deps
+    // react-doctor-disable-next-line react-doctor/exhaustive-deps
   }, [isActive])
 
   if (!isActive) return null
@@ -366,6 +366,11 @@ export const TranscriptView = memo(function TranscriptView({
 }: TranscriptViewProps) {
   const parentRef = useRef<HTMLDivElement>(null)
   const followKilledRef = useRef(false)
+  // Latest virtualizer scroll-rect callback (set by observeElementRect below).
+  // Held so the visibility-restore effect can re-push the LIVE element size --
+  // a backgrounded tab can leave the virtualizer's cached scrollRect stale and
+  // no ResizeObserver fires on return when the box didn't actually resize.
+  const rectCbRef = useRef<((rect: { width: number; height: number }) => void) | null>(null)
 
   // Progressive load window (Phase 1a). windowStart is an ABSOLUTE index into
   // `entries`: set to the last-N default on open, only ever REDUCED by "Load
@@ -538,16 +543,38 @@ export const TranscriptView = memo(function TranscriptView({
     observeElementRect: (instance, cb) => {
       const el = instance.scrollElement
       if (!el) return
+      rectCbRef.current = cb
+      // Seed with the live size so the first range calc has a real viewport
+      // instead of waiting on the first ResizeObserver tick (guarded >0).
+      const seed = el.getBoundingClientRect()
+      if (seed.height > 0) cb({ width: seed.width, height: seed.height })
       const observer = new ResizeObserver(entries => {
         const entry = entries[0]
         if (entry) {
           requestAnimationFrame(() => {
-            cb({ width: entry.contentRect.width, height: entry.contentRect.height })
+            const { width, height } = entry.contentRect
+            // NEVER feed a collapsed (0-height) viewport to the virtualizer.
+            // virtual-core sets calculateRange() -> [] when outerSize <= 0, so
+            // a single 0-height observation (backgrounded tab, display:none
+            // pane, or a contentRect captured right before hide whose rAF
+            // callback flushes on return) renders the transcript EMPTY except
+            // the floating bottom line -- and it stays empty because the cached
+            // scrollRect=0 persists until another (non-zero) resize fires, which
+            // never comes if the box didn't actually change size. Keep the last
+            // good size; a genuine visible resize will update it.
+            if (height <= 0) {
+              console.debug(`[transcript-rect] ignored 0-height resize ${cacheKey?.slice(0, 8) ?? '-'}`)
+              return
+            }
+            cb({ width, height })
           })
         }
       })
       observer.observe(el)
-      return () => observer.disconnect()
+      return () => {
+        rectCbRef.current = null
+        observer.disconnect()
+      }
     },
   })
 
@@ -562,6 +589,38 @@ export const TranscriptView = memo(function TranscriptView({
   // layout effect below -- it changes only when the virtualizer re-measures
   // rows, i.e. on a real measurement delta.
   const totalSize = virtualizer.getTotalSize()
+
+  // Recover from a stale/collapsed scroll-rect on tab return. While the tab is
+  // hidden, rAF is suspended and a 0-height resize can get cached (see the
+  // observeElementRect guard above); a ResizeObserver may not fire on return if
+  // the element's box is unchanged. Re-push the LIVE element size so outerSize
+  // is non-zero and calculateRange() renders the full window again. Belt-and-
+  // suspenders for the "empty transcript, only last line on return" bug.
+  useEffect(() => {
+    function onVisible() {
+      if (document.hidden) return
+      const el = parentRef.current
+      if (!el) return
+      const r = el.getBoundingClientRect()
+      if (r.height > 0) rectCbRef.current?.({ width: r.width, height: r.height })
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
+
+  // Manual escape hatch: the reload-transcript chord bumps transcriptRemeasureSeq.
+  // Re-push the live element size so a stuck/collapsed virtualizer recovers even
+  // while the tab is visible (the visibility handler above won't fire then).
+  const transcriptRemeasureSeq = useConversationsStore(state => state.transcriptRemeasureSeq)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: transcriptRemeasureSeq is the intentional trigger; the body reads refs/DOM only
+  useEffect(() => {
+    if (transcriptRemeasureSeq === 0) return
+    const el = parentRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    if (r.height > 0) rectCbRef.current?.({ width: r.width, height: r.height })
+    virtualizer.measure()
+  }, [transcriptRemeasureSeq])
 
   useEffect(() => {
     if (follow) followKilledRef.current = false
@@ -614,7 +673,7 @@ export const TranscriptView = memo(function TranscriptView({
     if (!el) return
     if (follow) el.scrollTop = el.scrollHeight
     else el.scrollTop = 0
-  // react-doctor-disable-next-line react-doctor/exhaustive-deps
+    // react-doctor-disable-next-line react-doctor/exhaustive-deps
   }, [cacheKey])
 
   // Pin-to-bottom on dynamic measurement. When the virtualizer re-measures rows

@@ -177,6 +177,10 @@ export function useGlobalCommands(toggleSidebar: () => void) {
       }
       console.log(`[reload] ${sid.slice(0, 8)}: got ${result.entries.length} entries lastSeq=${result.lastSeq}`)
       useConversationsStore.getState().setTranscript(sid, result.entries)
+      // Also force a virtualizer rect re-read: if the transcript was stuck
+      // rendering empty (collapsed scrollRect), refetching data alone won't
+      // recover it -- the viewport measurement has to be re-pushed too.
+      useConversationsStore.getState().requestTranscriptRemeasure()
     },
     { label: 'Reload current transcript', key: 'u', group: 'Conversation' },
   )
