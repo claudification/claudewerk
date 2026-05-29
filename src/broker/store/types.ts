@@ -213,22 +213,33 @@ export interface RebuildResult {
 }
 
 export interface TranscriptStore {
+  /** Append entries, assigning each a monotonic `seq` scoped to its
+   *  `(conversationId, agentId)` partition. Parent entries (agentId absent) and
+   *  each agent's sub-stream get independent seq spaces, so diverting agent
+   *  chatter out of the parent stream never punches gaps in either. */
   append(conversationId: string, syncEpoch: string, entries: TranscriptEntryInput[]): void
   getPage(conversationId: string, opts: PageOpts & { agentId?: string | null }): TranscriptPage
   getLatest(conversationId: string, limit: number, agentId?: string | null): TranscriptEntryRecord[]
+  /** Delta sync within a scope. `agentId` selects the scope: undefined = all
+   *  scopes (legacy), null = parent stream only, a string = that agent's
+   *  sub-stream. Seq is monotonic PER SCOPE (see append), so a subscriber to one
+   *  scope passes that scope's lastSeq and never sees gaps from another scope. */
   getSinceSeq(
     conversationId: string,
     sinceSeq: number,
     limit?: number,
+    agentId?: string | null,
   ): { entries: TranscriptEntryRecord[]; lastSeq: number; gap: boolean }
   /** Backward pagination for infinite scrollback: the `limit` entries with
    *  seq < beforeSeq, returned OLDEST-first (prepend-ready). `oldestSeq` is the
    *  smallest seq returned (the cursor for the next older page); `hasMore` is
-   *  true when entries older than `oldestSeq` still exist. */
+   *  true when entries older than `oldestSeq` still exist. `agentId` scopes the
+   *  page (undefined = all, null = parent, string = that agent's sub-stream). */
   getBeforeSeq(
     conversationId: string,
     beforeSeq: number,
     limit: number,
+    agentId?: string | null,
   ): { entries: TranscriptEntryRecord[]; oldestSeq: number; hasMore: boolean }
   getLastSeq(conversationId: string): number
   find(conversationId: string, filter: TranscriptFilter): TranscriptEntryRecord[]

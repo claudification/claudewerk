@@ -182,10 +182,13 @@ export function createConversationsRouter(
     if (!conv) return c.json({ error: 'Conversation not found' }, 404)
     if (!httpHasPermission(c.req.raw, 'chat:read', conv.project, conv.id)) return c.json({ error: 'Forbidden' }, 403)
     const limit = parseInt(c.req.query('limit') || '100', 10)
-    if (!conversationStore.hasSubagentTranscriptCache(conversationId, agentId)) {
-      return c.json({ error: 'No subagent transcript in cache' }, 404)
-    }
-    const entries = conversationStore.getSubagentTranscriptEntries(conversationId, agentId, limit)
+    let entries = conversationStore.getSubagentTranscriptEntries(conversationId, agentId, limit)
+    // Durable fallback (Checkpoint B): the in-memory cache is evicted on reap and
+    // empty after a broker restart, but the agent sub-stream is persisted. Read
+    // from the store and prefer it when it has more than the cache.
+    const stored = conversationStore.loadSubagentTranscriptFromStore(conversationId, agentId, Math.max(limit, 500))
+    if (stored && stored.length > entries.length) entries = stored
+    if (entries.length === 0) return c.json({ error: 'No subagent transcript' }, 404)
     return c.json(entries.map(e => processImagesInEntry(e as Record<string, unknown>)))
   })
 

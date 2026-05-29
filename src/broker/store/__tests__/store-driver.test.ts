@@ -207,6 +207,84 @@ function runStoreTests(name: string, createDriver: () => StoreDriver) {
         expect(seqs).toEqual([1, 2, 3])
       })
 
+      it('append assigns independent monotonic seq per (conversation, agent) scope', () => {
+        // Interleave parent + two agent scopes in a single batch -- each scope
+        // must number from 1 independently, not share one counter.
+        store.transcripts.append(SESSION, EPOCH, [
+          makeTranscriptEntry('user', 'pa-1'),
+          makeTranscriptEntry('assistant', 'ag-x-1', { agentId: 'agent-x' }),
+          makeTranscriptEntry('assistant', 'ag-x-2', { agentId: 'agent-x' }),
+          makeTranscriptEntry('assistant', 'pa-2'),
+          makeTranscriptEntry('assistant', 'ag-y-1', { agentId: 'agent-y' }),
+        ])
+        // A later append continues each scope from where it left off.
+        store.transcripts.append(SESSION, EPOCH, [makeTranscriptEntry('assistant', 'ag-x-3', { agentId: 'agent-x' })])
+
+        expect(store.transcripts.getLatest(SESSION, 10, null).map(e => e.seq)).toEqual([1, 2])
+        expect(store.transcripts.getLatest(SESSION, 10, 'agent-x').map(e => e.seq)).toEqual([1, 2, 3])
+        expect(store.transcripts.getLatest(SESSION, 10, 'agent-y').map(e => e.seq)).toEqual([1])
+      })
+
+      it('getSinceSeq scoped to an agent stream ignores other scopes', () => {
+        store.transcripts.append(SESSION, EPOCH, [
+          makeTranscriptEntry('user', 'gs-pa-1'),
+          makeTranscriptEntry('assistant', 'gs-ax-1', { agentId: 'agent-x' }),
+          makeTranscriptEntry('assistant', 'gs-ax-2', { agentId: 'agent-x' }),
+          makeTranscriptEntry('assistant', 'gs-pa-2'),
+        ])
+
+        // Parent scope: seq 1,2 -- since 1 -> just seq 2.
+        const parent = store.transcripts.getSinceSeq(SESSION, 1, undefined, null)
+        expect(parent.entries.map(e => e.uuid)).toEqual(['gs-pa-2'])
+        expect(parent.lastSeq).toBe(2)
+        expect(parent.gap).toBe(false)
+
+        // Agent scope: independent seq 1,2 -- since 1 -> agent's own seq 2.
+        const agent = store.transcripts.getSinceSeq(SESSION, 1, undefined, 'agent-x')
+        expect(agent.entries.map(e => e.uuid)).toEqual(['gs-ax-2'])
+        expect(agent.entries[0].seq).toBe(2)
+        expect(agent.lastSeq).toBe(2)
+      })
+
+      it('getBeforeSeq scoped to an agent stream', () => {
+        store.transcripts.append(SESSION, EPOCH, [
+          makeTranscriptEntry('assistant', 'bx-1', { agentId: 'agent-x' }),
+          makeTranscriptEntry('user', 'bp-1'),
+          makeTranscriptEntry('assistant', 'bx-2', { agentId: 'agent-x' }),
+          makeTranscriptEntry('assistant', 'bx-3', { agentId: 'agent-x' }),
+        ])
+
+        // Agent-x seq 1,2,3 -- before its seq 3, limit 5 -> seq 1,2, none older.
+        const page = store.transcripts.getBeforeSeq(SESSION, 3, 5, 'agent-x')
+        expect(page.entries.map(e => e.uuid)).toEqual(['bx-1', 'bx-2'])
+        expect(page.oldestSeq).toBe(1)
+        expect(page.hasMore).toBe(false)
+      })
+
+      it('search (FTS) finds agent-stream content', () => {
+        store.transcripts.append(SESSION, EPOCH, [
+          makeTranscriptEntry('assistant', 'fts-ag-1', {
+            agentId: 'agent-x',
+            content: { text: 'liftoff sequence nominal' },
+          }),
+        ])
+        const hits = store.transcripts.search('liftoff', { conversationId: SESSION })
+        expect(hits.some(h => h.content.text === 'liftoff sequence nominal')).toBe(true)
+      })
+
+      it('deleteForConversation cascades across all scopes (parent + agents)', () => {
+        const CONV = 'cascade-sess'
+        store.conversations.create({ id: CONV, scope: 'p', agentType: 'claude' })
+        store.transcripts.append(CONV, EPOCH, [
+          makeTranscriptEntry('user', 'cd-1'),
+          makeTranscriptEntry('assistant', 'cd-2', { agentId: 'agent-x' }),
+        ])
+        const removed = store.transcripts.deleteForConversation(CONV)
+        expect(removed).toBe(2)
+        expect(store.transcripts.getLatest(CONV, 10, null)).toHaveLength(0)
+        expect(store.transcripts.getLatest(CONV, 10, 'agent-x')).toHaveLength(0)
+      })
+
       it('getPage with cursor-based pagination (forward)', () => {
         const entries = Array.from({ length: 10 }, (_, i) =>
           makeTranscriptEntry('user', `pg-${i}`, { timestamp: 1000 + i }),

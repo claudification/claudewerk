@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import type {
   Conversation,
   TranscriptAgentNameEntry,
@@ -10,10 +9,10 @@ import type {
   TranscriptSystemEntry,
   TranscriptUserEntry,
 } from '../../shared/protocol'
-import type { TranscriptEntryInput } from '../store/types'
 import { agentScopeOf } from './agent-scope'
 import { MAX_TRANSCRIPT_ENTRIES } from './constants'
 import { assignTranscriptSeqs, type ConversationStoreContext } from './event-context'
+import { persistTranscriptEntries, resolveEntryTimestamp } from './persist-transcript'
 import { handleAssistantEntry, perMessageTokenSample } from './transcript-handlers/assistant-entry'
 import { detectBgTaskNotifications } from './transcript-handlers/bg-task-notifications'
 import { handleMentionNotifications } from './transcript-handlers/mention-notify'
@@ -270,60 +269,11 @@ const entryHandlers: Record<string, TranscriptEntryHandler> = {
   'pr-link': dispatchPrLinkEntry,
 }
 
-/**
- * Persist transcript entries to the StoreDriver so they're queryable via the
- * FTS5 search index. The append uses INSERT OR IGNORE on (conversation_id, uuid)
- * so re-reading the same JSONL on hydrate / reconnect skips duplicates without
- * blowing up. Entries without a uuid get one synthesized -- the live wire
- * format makes uuid optional, but the store treats it as the dedup key.
- *
- * Failures are swallowed: if the store is misconfigured or the underlying DB
- * is in a weird state, transcript ingest must keep working for the dashboard.
- * Search just won't find these entries until things recover.
- */
-/** Resolve a transcript entry's timestamp (ISO string or absent) to epoch ms. */
-function resolveEntryTimestamp(raw: unknown): number {
-  const ts = typeof raw === 'string' ? Date.parse(raw) : Date.now()
-  return Number.isFinite(ts) ? ts : Date.now()
-}
-
+/** Persist parent-scope (`agent_id IS NULL`) transcript entries. The shared
+ *  helper does the orphan guard, uuid synthesis, scope tagging, and error
+ *  swallowing -- this thin wrapper just supplies the orphan-guard predicate. */
 function persistToStore(ctx: ConversationStoreContext, conversationId: string, entries: TranscriptEntry[]): void {
-  if (!ctx.store || entries.length === 0) return
-  // Orphan guard: never persist transcript rows for a conversation that is not
-  // registered in the in-memory Map. addTranscriptEntries already no-ops its
-  // metadata derivation for unregistered conversations (the `if (!conv) return`
-  // in the caller), but persistence historically ran first and still hit the
-  // store -- stranding invisible orphan transcript_entries when entries raced
-  // ahead of conversation registration, or arrived after the reaper evicted the
-  // conversation. getAllConversations serves only the Map, so a store row with
-  // no Map entry is unreachable. Skipping keeps store and Map consistent.
-  // See .claude/docs/plan-orphan-conversations.md (Phase 1, write-path source).
-  if (!ctx.conversations.has(conversationId)) {
-    console.warn(
-      `[transcript-store] skipped ${entries.length} entries for unregistered conversation ${conversationId.slice(0, 8)} (orphan-prevented)`,
-    )
-    return
-  }
-  const inputs: TranscriptEntryInput[] = []
-  for (const e of entries) {
-    inputs.push({
-      type: e.type,
-      subtype:
-        typeof (e as Record<string, unknown>).subtype === 'string'
-          ? ((e as Record<string, unknown>).subtype as string)
-          : undefined,
-      uuid: e.uuid || randomUUID(),
-      content: e as unknown as Record<string, unknown>,
-      timestamp: resolveEntryTimestamp(e.timestamp),
-    })
-  }
-  try {
-    ctx.store.transcripts.append(conversationId, 'live', inputs)
-  } catch (err) {
-    // Don't break ingest if the store is unhappy. Log via console so it shows up
-    // in broker stderr without dragging in the broker logger here.
-    console.error('[transcript-store] append failed:', err instanceof Error ? err.message : err)
-  }
+  persistTranscriptEntries(ctx.store, ctx.conversations.has(conversationId), conversationId, entries)
 }
 
 function appendToCache(

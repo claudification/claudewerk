@@ -441,6 +441,21 @@ export interface TranscriptSpawnNotificationEntry extends TranscriptEntryBase {
   persistChosen: boolean
 }
 
+/** Head / launch entry of an inline agent's transcript sub-stream. Carries the
+ *  big mission/prompt + bulky launch args that must NOT ride the broadcast
+ *  roster card (per plan-agent-transcript-separation 3b). Durable + FTS-searchable
+ *  ("find an old agent by its mission"). Synthesized by the broker at
+ *  SubagentStart from the launch metadata captured at PreToolUse(Agent). */
+export interface TranscriptAgentLaunchEntry extends TranscriptEntryBase {
+  type: 'agent_launch'
+  agentId?: string
+  agentType?: string
+  model?: string
+  description?: string
+  prompt?: string
+  args?: Record<string, unknown>
+}
+
 export type TranscriptEntry =
   | TranscriptUserEntry
   | TranscriptAssistantEntry
@@ -455,6 +470,7 @@ export type TranscriptEntry =
   | TranscriptAgentNameEntry
   | TranscriptBootEntry
   | TranscriptLaunchEntry
+  | TranscriptAgentLaunchEntry
   | TranscriptSpawnNotificationEntry
   | (TranscriptEntryBase & Record<string, unknown>) // fallback for unknown types
 
@@ -1835,6 +1851,9 @@ export interface SubagentInfo {
   agentId: string
   agentType: string
   description?: string
+  /** Cheap roster-card field captured at PreToolUse(Agent). The big launch
+   *  prompt/args live in the agent sub-stream's launch entry, never here. */
+  model?: string
   startedAt: number
   stoppedAt?: number
   status: 'running' | 'stopped'

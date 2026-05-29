@@ -1019,3 +1019,70 @@ describe('isEvictableDaemonGhost (dead daemon ghost cleanup)', () => {
     )
   })
 })
+
+// ---------------------------------------------------------------------------
+// Phase B: durable sub-conversations (persist + per-scope seq + store fallback)
+// ---------------------------------------------------------------------------
+
+describe('addSubagentTranscriptEntries durability (Checkpoint B)', () => {
+  function subEntry(uuid: string, text: string): TranscriptEntry {
+    return { type: 'assistant', uuid, message: { role: 'assistant', content: text } } as unknown as TranscriptEntry
+  }
+
+  it('persists agent entries to the store under the agent scope, parent scope untouched', () => {
+    const driver = createStore({ type: 'memory' })
+    driver.init()
+    const s = createConversationStore({ store: driver, enablePersistence: true })
+    s.createConversation('conv-b1', '/cwd')
+
+    s.addTranscriptEntries('conv-b1', [makeTranscriptEntry('user')], true)
+    s.addSubagentTranscriptEntries('conv-b1', 'agent-x', [subEntry('sx-1', 'hello'), subEntry('sx-2', 'world')], true)
+
+    // Agent rows land in their scope; parent scope keeps only the parent entry.
+    expect(driver.transcripts.count('conv-b1', 'agent-x')).toBe(2)
+    expect(driver.transcripts.count('conv-b1', null)).toBe(1)
+    // Per-scope seq isolation: agent stream numbers from 1 independently.
+    expect(driver.transcripts.getLatest('conv-b1', 10, 'agent-x').map(e => e.seq)).toEqual([1, 2])
+    expect(driver.transcripts.getLatest('conv-b1', 10, null).map(e => e.seq)).toEqual([1])
+  })
+
+  it('only the deduped tail is persisted on incremental ingest', () => {
+    const driver = createStore({ type: 'memory' })
+    driver.init()
+    const s = createConversationStore({ store: driver, enablePersistence: true })
+    s.createConversation('conv-b2', '/cwd')
+
+    s.addSubagentTranscriptEntries('conv-b2', 'agent-x', [subEntry('d1', 'a')], false)
+    // d1 repeats (dup), d2 is fresh -- store must end with exactly d1, d2.
+    s.addSubagentTranscriptEntries('conv-b2', 'agent-x', [subEntry('d1', 'a'), subEntry('d2', 'b')], false)
+
+    expect(driver.transcripts.count('conv-b2', 'agent-x')).toBe(2)
+    expect(driver.transcripts.getLatest('conv-b2', 10, 'agent-x').map(e => e.uuid)).toEqual(['d1', 'd2'])
+  })
+
+  it('loadSubagentTranscriptFromStore survives a broker restart (fresh store over same driver)', () => {
+    const driver = createStore({ type: 'memory' })
+    driver.init()
+    const s1 = createConversationStore({ store: driver, enablePersistence: true })
+    s1.createConversation('conv-b3', '/cwd')
+    s1.addSubagentTranscriptEntries('conv-b3', 'agent-x', [subEntry('r1', 'durable')], true)
+
+    // Simulate a broker restart: a brand-new conversation store over the SAME
+    // driver has an empty in-memory cache, so the only path to the agent
+    // sub-stream is the durable store.
+    const s2 = createConversationStore({ store: driver, enablePersistence: true })
+    expect(s2.hasSubagentTranscriptCache('conv-b3', 'agent-x')).toBe(false)
+    const loaded = s2.loadSubagentTranscriptFromStore('conv-b3', 'agent-x', 100)
+    expect(loaded?.map(e => e.uuid)).toEqual(['r1'])
+    expect(loaded?.[0].seq).toBe(1)
+  })
+
+  it('skips persistence for an unregistered conversation (orphan write guard)', () => {
+    const driver = createStore({ type: 'memory' })
+    driver.init()
+    const s = createConversationStore({ store: driver, enablePersistence: true })
+    // 'ghost-b' was never createConversation'd.
+    s.addSubagentTranscriptEntries('ghost-b', 'agent-x', [subEntry('g1', 'x')], true)
+    expect(driver.transcripts.count('ghost-b', 'agent-x')).toBe(0)
+  })
+})

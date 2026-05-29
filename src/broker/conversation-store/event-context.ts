@@ -20,7 +20,10 @@ export interface ConversationStoreContext {
   subagentTranscriptSeqCounters: Map<string, number>
   dirtyTranscripts: Set<string>
   processedClipboardIds: Set<string>
-  pendingAgentDescriptions: Map<string, string[]>
+  /** Launch metadata captured at PreToolUse(Agent), FIFO-queued per conversation
+   *  and consumed by the matching SubagentStart. The queue (not a single slot)
+   *  handles parallel Agent launches whose SubagentStarts interleave. */
+  pendingAgentLaunches: Map<string, AgentLaunchMeta[]>
   lastTranscriptKick: Map<string, number>
   /**
    * Hashes of mention-notifications already fired, keyed by
@@ -51,6 +54,22 @@ export interface ConversationStoreContext {
     entries: TranscriptEntry[],
     isInitial: boolean,
   ) => void
+}
+
+/**
+ * Inline-agent launch metadata, captured from the Agent tool_input at
+ * PreToolUse and consumed at the matching SubagentStart. Split by SIZE: the
+ * cheap fields (subagentType, model, description) enrich the roster card; the
+ * big prompt + bulky args become the agent sub-stream's launch entry and are
+ * NEVER broadcast on the roster (plan-agent-transcript-separation 3b).
+ */
+export interface AgentLaunchMeta {
+  description?: string
+  subagentType?: string
+  model?: string
+  prompt?: string
+  /** Bulky launch args beyond prompt/description (isolation, team_name, ...). */
+  args?: Record<string, unknown>
 }
 
 export function assignTranscriptSeqs(

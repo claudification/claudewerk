@@ -39,8 +39,13 @@ import { addEvent as addEventImpl } from './conversation-store/add-event'
 import { addTranscriptEntries as addTranscriptEntriesImpl } from './conversation-store/add-transcript-entries'
 import { createChannelRegistry, type SubscriberEntry } from './conversation-store/channel-registry'
 import { MAX_TRANSCRIPT_ENTRIES } from './conversation-store/constants'
-import { assignTranscriptSeqs, type ConversationStoreContext } from './conversation-store/event-context'
+import {
+  type AgentLaunchMeta,
+  assignTranscriptSeqs,
+  type ConversationStoreContext,
+} from './conversation-store/event-context'
 import { createListenerRegistry } from './conversation-store/listeners'
+import { persistTranscriptEntries } from './conversation-store/persist-transcript'
 import { createProjectLinkRegistry } from './conversation-store/project-links'
 import {
   applySentinelConfigSnapshot as applySentinelConfigSnapshotImpl,
@@ -179,6 +184,7 @@ export interface ConversationStore {
   ) => void
   getSubagentTranscriptEntries: (conversationId: string, agentId: string, limit?: number) => TranscriptEntry[]
   hasSubagentTranscriptCache: (conversationId: string, agentId: string) => boolean
+  loadSubagentTranscriptFromStore: (conversationId: string, agentId: string, limit: number) => TranscriptEntry[] | null
   // Background task output methods
   addBgTaskOutput: (conversationId: string, taskId: string, data: string, done: boolean) => void
   getBgTaskOutput: (taskId: string) => string | undefined
@@ -496,8 +502,8 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     handleSyncCheckImpl(sync, ws, clientEpoch, clientSeq, clientTranscripts, transcriptSeqCounters)
   }
 
-  // Pending agent descriptions: PreToolUse(Agent) pushes, SubagentStart pops
-  const pendingAgentDescriptions = new Map<string, string[]>()
+  // Pending agent launch metadata: PreToolUse(Agent) pushes, SubagentStart pops
+  const pendingAgentLaunches = new Map<string, AgentLaunchMeta[]>()
 
   // Transcript cache: conversationId -> entries (ring buffer, max 1000 per conversation)
   const transcriptCache = new Map<string, TranscriptEntry[]>()
@@ -554,7 +560,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     subagentTranscriptSeqCounters,
     dirtyTranscripts,
     processedClipboardIds,
-    pendingAgentDescriptions,
+    pendingAgentLaunches,
     lastTranscriptKick,
     notifiedMentions,
     store,
@@ -1686,7 +1692,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     transcriptCache.delete(conversationId)
     transcriptSeqCounters.delete(conversationId)
     dirtyTranscripts.delete(conversationId)
-    pendingAgentDescriptions.delete(conversationId)
+    pendingAgentLaunches.delete(conversationId)
     lastTranscriptKick.delete(conversationId)
     for (const key of subagentTranscriptCache.keys()) {
       if (key.startsWith(`${conversationId}:`)) {
@@ -2488,6 +2494,27 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     return entries
   }
 
+  /** Durable read of an agent sub-stream (`agent_id = agentId`) from the store,
+   *  the cache-miss fallback so a subagent transcript survives host death +
+   *  broker restart. Mirrors loadTranscriptFromStore: maps stored seqs onto the
+   *  entries and seeds the per-scope in-memory counter so live entries continue
+   *  from where SQLite left off (no client lastAppliedSeq false-filtering). */
+  function loadSubagentTranscriptFromStore(
+    conversationId: string,
+    agentId: string,
+    limit: number,
+  ): TranscriptEntry[] | null {
+    if (!store) return null
+    const records = store.transcripts.getLatest(conversationId, limit, agentId)
+    if (records.length === 0) return null
+    const entries = records.map(r => ({ ...r.content, seq: r.seq }) as TranscriptEntry)
+    const key = `${conversationId}:${agentId}`
+    const maxSeq = entries[entries.length - 1].seq ?? 0
+    const currentSeq = subagentTranscriptSeqCounters.get(key) ?? 0
+    if (maxSeq > currentSeq) subagentTranscriptSeqCounters.set(key, maxSeq)
+    return entries
+  }
+
   function loadTranscriptPageBefore(
     conversationId: string,
     beforeSeq: number,
@@ -2512,6 +2539,9 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       // Stamp full batch on initial load -- counter resets to 0.
       assignTranscriptSeqs(subagentTranscriptSeqCounters, key, entries, true)
       subagentTranscriptCache.set(key, entries.slice(-MAX_TRANSCRIPT_ENTRIES))
+      // Durable + FTS-searchable (Checkpoint B): persist into the agent's
+      // sub-stream scope. INSERT OR IGNORE makes the isInitial re-read idempotent.
+      persistTranscriptEntries(store, conversations.has(conversationId), conversationId, entries, agentId)
     } else {
       const existing = subagentTranscriptCache.get(key) || []
       // Deduplicate: agent entries arrive from both the subagent JSONL watcher
@@ -2529,6 +2559,9 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       } else {
         subagentTranscriptCache.set(key, existing)
       }
+      // Persist only the deduped tail -- mirrors the in-memory stamping so the
+      // store's per-scope seq stays in lockstep with subagentTranscriptSeqCounters.
+      persistTranscriptEntries(store, conversations.has(conversationId), conversationId, fresh, agentId)
     }
 
     // Extract token usage from subagent transcript entries
@@ -2815,6 +2848,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     addSubagentTranscriptEntries,
     getSubagentTranscriptEntries,
     hasSubagentTranscriptCache,
+    loadSubagentTranscriptFromStore,
     addBgTaskOutput,
     getBgTaskOutput,
     broadcastConversationUpdate,

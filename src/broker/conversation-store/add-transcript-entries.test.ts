@@ -1,33 +1,13 @@
 import { describe, expect, it } from 'bun:test'
 import type { TranscriptEntry } from '../../shared/protocol'
 import { addTranscriptEntries } from './add-transcript-entries'
-import type { ConversationStoreContext } from './event-context'
+import { makeTestContext } from './test-context'
 
 const e = (o: Record<string, unknown>): TranscriptEntry => o as unknown as TranscriptEntry
 
 /** Minimal in-memory context -- no store, no registered conversation. Exercises
  *  the parent cache + scope guard without the full conversation-store closure. */
-function minimalCtx(): ConversationStoreContext {
-  return {
-    conversations: new Map(),
-    conversationSockets: new Map(),
-    transcriptCache: new Map(),
-    transcriptSeqCounters: new Map(),
-    subagentTranscriptCache: new Map(),
-    subagentTranscriptSeqCounters: new Map(),
-    dirtyTranscripts: new Set(),
-    processedClipboardIds: new Set(),
-    pendingAgentDescriptions: new Map(),
-    lastTranscriptKick: new Map(),
-    notifiedMentions: new Set(),
-    store: undefined,
-    scheduleConversationUpdate: () => {},
-    broadcastToChannel: () => {},
-    broadcastConversationScoped: () => {},
-    addTranscriptEntries: () => {},
-    addSubagentTranscriptEntries: () => {},
-  }
-}
+const minimalCtx = makeTestContext
 
 describe('addTranscriptEntries scope guard (Checkpoint A)', () => {
   it('strips agent-scoped entries from the parent cache, keeps real parent entries', () => {

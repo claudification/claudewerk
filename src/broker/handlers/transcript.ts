@@ -236,10 +236,18 @@ const subagentTranscriptRequest: MessageHandler = (ctx, data) => {
       entries,
       isInitial: true,
     })
-  } else {
-    const conversationSocket = ctx.conversations.getConversationSocket(conversationId)
-    if (conversationSocket) conversationSocket.send(JSON.stringify(data))
+    return
   }
+  // Durable fallback (Checkpoint B): no cache (reaped / broker restart) -- read
+  // the persisted agent sub-stream from the store before falling back to asking
+  // the live host.
+  const stored = ctx.conversations.loadSubagentTranscriptFromStore(conversationId, data.agentId, data.limit || 200)
+  if (stored) {
+    ctx.reply({ type: 'subagent_transcript', conversationId, agentId: data.agentId, entries: stored, isInitial: true })
+    return
+  }
+  const conversationSocket = ctx.conversations.getConversationSocket(conversationId)
+  if (conversationSocket) conversationSocket.send(JSON.stringify(data))
 }
 
 // Conversation info from headless init - store on conversation and broadcast to dashboard
