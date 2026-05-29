@@ -18,6 +18,34 @@ import type { TranscriptDigest } from '../gather/types'
  *  Per-call overridable (Pillar D); env tunes the global default. */
 export const DEFAULT_CHUNK_SIZE_CHARS = Number(process.env.CLAUDWERK_RECAP_CHUNK_SIZE_CHARS) || 150_000
 
+/** Chunk-mode gate: trip when the assembled prompt is big OR there are many
+ *  conversations. Either condition is enough -- a 40-conversation week is worth
+ *  chunking even under the char ceiling, and a single huge conversation is worth
+ *  it even with a low conv count. Both env-tunable + per-call overridable. */
+export const DEFAULT_CHUNK_THRESHOLD_CHARS = Number(process.env.CLAUDWERK_RECAP_CHUNK_THRESHOLD_CHARS) || 300_000
+export const DEFAULT_CHUNK_THRESHOLD_CONVS = Number(process.env.CLAUDWERK_RECAP_CHUNK_THRESHOLD_CONVS) || 40
+
+/** How the recap is rendered. `auto` decides by threshold; `oneshot`/`chunked`
+ *  force it (Pillar D forceMode seam). */
+export type RecapRenderMode = 'auto' | 'oneshot' | 'chunked'
+
+export interface ShouldChunkOpts {
+  thresholdChars?: number
+  thresholdConvs?: number
+  forceMode?: RecapRenderMode
+}
+
+/** Decide whether to take the chunked map-reduce path. `inputChars` is the
+ *  assembled-prompt size (system+user) the oneshot path would send. */
+export function shouldChunk(inputChars: number, convCount: number, opts: ShouldChunkOpts = {}): boolean {
+  const mode = opts.forceMode ?? 'auto'
+  if (mode === 'oneshot') return false
+  if (mode === 'chunked') return true
+  const chars = opts.thresholdChars ?? DEFAULT_CHUNK_THRESHOLD_CHARS
+  const convs = opts.thresholdConvs ?? DEFAULT_CHUNK_THRESHOLD_CONVS
+  return inputChars > chars || convCount > convs
+}
+
 export interface TranscriptChunk {
   index: number
   transcripts: TranscriptDigest[]

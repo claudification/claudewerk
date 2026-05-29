@@ -9,6 +9,7 @@ import type {
   ToolUseDigest,
   TranscriptDigest,
 } from '../gather/types'
+import { renderTranscriptsSection, shortId } from './render-transcripts'
 
 export interface PromptInputs {
   projectLabel: string
@@ -39,9 +40,11 @@ export function buildPrompt(inputs: PromptInputs, audience: RecapAudience = 'hum
 /**
  * YAML frontmatter contract -- IDENTICAL for both audiences. The frontmatter
  * is the search index (parse-recap.ts, recaps_fts); audience swaps only the
- * markdown body shape, never the frontmatter.
+ * markdown body shape, never the frontmatter. EXPORTED: the chunked reduce
+ * stage (chunk/synthesize-prompt.ts) reuses this exact contract so its output
+ * round-trips parseRecapOutput like the oneshot path.
  */
-const FRONTMATTER_SPEC = `REQUIRED YAML FRONTMATTER (extract from the input, do not invent):
+export const FRONTMATTER_SPEC = `REQUIRED YAML FRONTMATTER (extract from the input, do not invent):
 
   subtitle: <single-line theme, 4-12 words>
   keywords: [<5-12 technical terms: feature names, file names, components, libraries, model names, table names>]
@@ -67,26 +70,11 @@ plainly. A claim concluded from transcript text only is an INFERENCE -- set
 \`inferred: true\` on the item (or prefix the title with [inferred]). Never
 present inference as fact.`
 
-function humanSystemPrompt(inputs: PromptInputs): string {
-  return `You are writing a comprehensive development recap for project ${inputs.projectLabel}
-covering ${inputs.periodHuman} (${inputs.periodIsoRange}).
-
-Output format: a YAML frontmatter block (between --- lines) followed by markdown body.
-The frontmatter is parsed and indexed -- be specific so future searches find this recap.
-
-GROUND RULES:
-  - GROUND EVERY CLAIM. The input includes real COMMITS (with files-changed and
-    +/- line counts) and TASKS. Tie features/bugs/fixes to specific commit
-    hashes (7-char) and conversation ids (8-char), and name real files + project
-    terms verbatim -- "rebuilt admin/files.tsx (a1b2c3d)", NOT "admin work".
-  - FACT vs INFERENCE. A claim backed by a commit/task is a FACT. A claim read
-    from transcript text only is an INFERENCE -- mark it inferred (frontmatter
-    \`inferred: true\`, or [inferred] in prose). Never dress inference as fact.
-  - Vague, abstracted summaries are a failure. Be concrete and specific.
-
-${FRONTMATTER_SPEC}
-
-MARKDOWN BODY (after the closing --- of frontmatter):
+/**
+ * Human recap body contract. EXPORTED so the chunked reduce stage emits the
+ * identical body structure for human-audience recaps.
+ */
+export const HUMAN_BODY_SPEC = `MARKDOWN BODY (after the closing --- of frontmatter):
 
   ## TL;DR
   3-5 bullets, the most important things from the period
@@ -130,6 +118,72 @@ MARKDOWN BODY (after the closing --- of frontmatter):
 DO NOT regenerate the cost/token table -- it's inserted programmatically.
 DO NOT include greetings, sign-offs, or the H1 title (templated).
 Be concrete. Use the project's actual terms verbatim.`
+
+/**
+ * Agent orientation-brief body contract. EXPORTED so the chunked reduce stage
+ * emits the identical body structure for agent-audience recaps.
+ */
+export const AGENT_BODY_SPEC = `MARKDOWN BODY (after the closing --- of frontmatter):
+
+  ## TL;DR
+  One or two lines. The single most important thing a fresh agent must know
+  before it touches this project.
+
+  ## State
+  What is TRUE RIGHT NOW. Prioritise: work in flight that is NOT yet
+  committed (a fresh agent may collide with another agent mid-edit),
+  half-finished refactors, which branch is hot, what just shipped that the
+  reader should build ON rather than redo. Facts from commits and closed
+  tasks stated plainly; transcript-derived state tagged [inferred].
+
+  ## Decisions
+  Non-obvious decisions made this period and WHY -- the reasoning a diff
+  cannot show. This is what stops the reader relitigating or contradicting
+  a settled choice. Cite the conversation where it was decided.
+
+  ## Dead ends -- do NOT retry
+  Approaches that were tried and ABANDONED, each with the reason it failed.
+  git keeps no record of abandoned work -- this section is the brief's
+  highest-value content and exists nowhere else. Omit the section only if
+  the input genuinely shows no abandoned approach.
+
+  ## Open questions
+  Unresolved questions the assistant left for the user that never got an
+  answer. Use the OPEN_QUESTIONS input block VERBATIM -- do not invent.
+  Group by conversation.
+
+  ## Gotchas
+  Constraints or landmines discovered this period: a tool that misbehaves,
+  an environment quirk, a non-obvious dependency, a surprising failure
+  mode. Only include something that would actually bite the reader.
+
+  ## Pick up here
+  The obvious next actions, most important first. If there is genuinely
+  nothing pending, say so in a single line.
+
+DO NOT include greetings, sign-offs, an H1 title, or a cost table.
+DO NOT pad. Use the project's actual terms verbatim.`
+
+function humanSystemPrompt(inputs: PromptInputs): string {
+  return `You are writing a comprehensive development recap for project ${inputs.projectLabel}
+covering ${inputs.periodHuman} (${inputs.periodIsoRange}).
+
+Output format: a YAML frontmatter block (between --- lines) followed by markdown body.
+The frontmatter is parsed and indexed -- be specific so future searches find this recap.
+
+GROUND RULES:
+  - GROUND EVERY CLAIM. The input includes real COMMITS (with files-changed and
+    +/- line counts) and TASKS. Tie features/bugs/fixes to specific commit
+    hashes (7-char) and conversation ids (8-char), and name real files + project
+    terms verbatim -- "rebuilt admin/files.tsx (a1b2c3d)", NOT "admin work".
+  - FACT vs INFERENCE. A claim backed by a commit/task is a FACT. A claim read
+    from transcript text only is an INFERENCE -- mark it inferred (frontmatter
+    \`inferred: true\`, or [inferred] in prose). Never dress inference as fact.
+  - Vague, abstracted summaries are a failure. Be concrete and specific.
+
+${FRONTMATTER_SPEC}
+
+${HUMAN_BODY_SPEC}`
 }
 
 /**
@@ -172,46 +226,7 @@ markdown body. The frontmatter is parsed and indexed for search.
 
 ${FRONTMATTER_SPEC}
 
-MARKDOWN BODY (after the closing --- of frontmatter):
-
-  ## TL;DR
-  One or two lines. The single most important thing a fresh agent must know
-  before it touches this project.
-
-  ## State
-  What is TRUE RIGHT NOW. Prioritise: work in flight that is NOT yet
-  committed (a fresh agent may collide with another agent mid-edit),
-  half-finished refactors, which branch is hot, what just shipped that the
-  reader should build ON rather than redo. Facts from commits and closed
-  tasks stated plainly; transcript-derived state tagged [inferred].
-
-  ## Decisions
-  Non-obvious decisions made this period and WHY -- the reasoning a diff
-  cannot show. This is what stops the reader relitigating or contradicting
-  a settled choice. Cite the conversation where it was decided.
-
-  ## Dead ends -- do NOT retry
-  Approaches that were tried and ABANDONED, each with the reason it failed.
-  git keeps no record of abandoned work -- this section is the brief's
-  highest-value content and exists nowhere else. Omit the section only if
-  the input genuinely shows no abandoned approach.
-
-  ## Open questions
-  Unresolved questions the assistant left for the user that never got an
-  answer. Use the OPEN_QUESTIONS input block VERBATIM -- do not invent.
-  Group by conversation.
-
-  ## Gotchas
-  Constraints or landmines discovered this period: a tool that misbehaves,
-  an environment quirk, a non-obvious dependency, a surprising failure
-  mode. Only include something that would actually bite the reader.
-
-  ## Pick up here
-  The obvious next actions, most important first. If there is genuinely
-  nothing pending, say so in a single line.
-
-DO NOT include greetings, sign-offs, an H1 title, or a cost table.
-DO NOT pad. Use the project's actual terms verbatim.`
+${AGENT_BODY_SPEC}`
 }
 
 function userPayload(inputs: PromptInputs): string {
@@ -232,27 +247,6 @@ function renderConversationsSection(convs: ConversationDigest[]): string {
   if (convs.length === 0) return 'CONVERSATIONS: (none in period)'
   const lines = convs.map(c => `- ${shortId(c.id)} "${c.title}" (${c.turnCount} turns, ${c.status})`)
   return `CONVERSATIONS (${convs.length}):\n${lines.join('\n')}`
-}
-
-function renderTranscriptsSection(digests: TranscriptDigest[]): string {
-  if (digests.length === 0) return 'TRANSCRIPTS: (none)'
-  const blocks = digests.map(d => {
-    const turns = d.turns.map((t, i) => renderTurn(t, i)).join('\n')
-    return `### ${shortId(d.conversationId)} "${d.conversationTitle}"\n${turns || '  (no turns)'}`
-  })
-  return `TRANSCRIPTS:\n\n${blocks.join('\n\n')}`
-}
-
-function renderTurn(t: TranscriptDigest['turns'][number], i: number): string {
-  const lines = [`  T${i + 1} USER: ${t.userPrompt}`, `  T${i + 1} ASSISTANT: ${t.assistantFinal}`]
-  if (t.internals) {
-    const indented = t.internals
-      .split('\n')
-      .map(l => `    ${l}`)
-      .join('\n')
-    lines.push(`  T${i + 1} INTERNALS (tool calls + errors):\n${indented}`)
-  }
-  return lines.join('\n')
 }
 
 function renderTasksSection(tasks: TaskDigest): string {
@@ -317,8 +311,4 @@ function commitStat(c: CommitDigest['perProject'][number]['commits'][number]): s
 
 function renderCostSummary(cost: CostDigest): string {
   return `COST SUMMARY (rendered programmatically into the final document; for context only): total=$${cost.totalCostUsd.toFixed(4)} turns=${cost.totalTurns} input=${cost.totalInputTokens} output=${cost.totalOutputTokens}`
-}
-
-function shortId(id: string): string {
-  return id.length > 12 ? id.slice(0, 12) : id
 }

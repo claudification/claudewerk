@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'bun:test'
 import type { TranscriptDigest } from '../gather/types'
-import { splitIntoChunks, transcriptChars } from './split'
+import {
+  DEFAULT_CHUNK_THRESHOLD_CHARS,
+  DEFAULT_CHUNK_THRESHOLD_CONVS,
+  shouldChunk,
+  splitIntoChunks,
+  transcriptChars,
+} from './split'
 
 function turn(chars: number, idx = 0) {
   // userPrompt + assistantFinal split the requested char weight.
@@ -83,5 +89,34 @@ describe('splitIntoChunks', () => {
       turns: [{ turnIndex: 0, userPrompt: 'ab', assistantFinal: 'cd', timestamp: 0, internals: 'ef' }],
     }
     expect(transcriptChars(t)).toBe(6)
+  })
+})
+
+describe('shouldChunk (the chunk-mode gate)', () => {
+  it('stays oneshot when under both thresholds', () => {
+    expect(shouldChunk(DEFAULT_CHUNK_THRESHOLD_CHARS - 1, DEFAULT_CHUNK_THRESHOLD_CONVS - 1)).toBe(false)
+  })
+
+  it('chunks when the char threshold is exceeded (even with few conversations)', () => {
+    expect(shouldChunk(DEFAULT_CHUNK_THRESHOLD_CHARS + 1, 1)).toBe(true)
+  })
+
+  it('chunks when the conversation-count threshold is exceeded (even when small)', () => {
+    expect(shouldChunk(100, DEFAULT_CHUNK_THRESHOLD_CONVS + 1)).toBe(true)
+  })
+
+  it('honours per-call threshold overrides', () => {
+    expect(shouldChunk(500, 2, { thresholdChars: 400 })).toBe(true)
+    expect(shouldChunk(500, 2, { thresholdChars: 600, thresholdConvs: 10 })).toBe(false)
+  })
+
+  it('forceMode=oneshot never chunks; forceMode=chunked always does', () => {
+    expect(shouldChunk(10_000_000, 999, { forceMode: 'oneshot' })).toBe(false)
+    expect(shouldChunk(0, 0, { forceMode: 'chunked' })).toBe(true)
+  })
+
+  it('forceMode=auto falls back to the thresholds', () => {
+    expect(shouldChunk(0, 0, { forceMode: 'auto' })).toBe(false)
+    expect(shouldChunk(DEFAULT_CHUNK_THRESHOLD_CHARS + 1, 0, { forceMode: 'auto' })).toBe(true)
   })
 })

@@ -3,6 +3,10 @@ import type { RecapAudience, RecapCreateMessage, RecapLedgerStage, RecapSignal }
 import type { StoreDriver } from '../../store/types'
 import { type ChatRequest, chat } from '../shared/openrouter-client'
 import type { NormalizedUsage } from '../shared/pricing'
+import { buildMapPrompt, MapParseError, parseMapOutput } from './chunk/map-prompt'
+import { makeEmptyMetadata, mergeMetadata } from './chunk/merge'
+import { type RecapRenderMode, shouldChunk, splitIntoChunks } from './chunk/split'
+import { buildSynthesizePrompt } from './chunk/synthesize-prompt'
 import {
   gatherCommitsStub,
   gatherConversations,
@@ -16,13 +20,13 @@ import {
 } from './gather'
 import type { CommitDigest } from './gather/types'
 import { RecapLedger } from './ledger'
-import { pickModel } from './llm/escalate'
+import { chunkModels, pickModel } from './llm/escalate'
 import { buildPrompt, type PromptInputs } from './llm/prompt-builder'
-import { createProgressEmitter, type ProgressBroadcaster } from './progress'
+import { createProgressEmitter, type ProgressBroadcaster, type ProgressEmitter } from './progress'
 import { buildRecapDigest } from './render/digest'
 import { renderFinalMarkdown } from './render/markdown'
 import { buildFtsFields, denormalizeTags } from './render/metadata'
-import { parseRecapOutput, type RecapMetadata, RecapParseError } from './render/parse-recap'
+import { type ParsedRecap, parseRecapOutput, type RecapMetadata, RecapParseError } from './render/parse-recap'
 import { type ResolvedPeriod, resolvePeriod } from './resolve-period'
 import { type PeriodRecapStore, rowToRecapMeta } from './store'
 
@@ -206,16 +210,11 @@ async function runRecap(
   emit.setProgress(35, 'gather/done')
 
   const built = buildPrompt(promptInputs, audience)
-  const choice = pickModel(built.inputChars, audience)
-  deps.store.update(recapId, { model: choice.model, inputChars: built.inputChars })
-  emit.emit('info', 'render/prompt', `model=${choice.model} (${choice.reason}), prompt=${built.inputChars} chars`)
-
   emit.setStatus('rendering')
-  emit.setProgress(45, 'render/llm')
-  const llmContent = await callLlm(deps, recapId, ledger, built, choice.model, deps.apiKey)
-  emit.setProgress(85, 'render/llm-done')
-
-  const parsed = await parseOrRetry(deps, recapId, ledger, llmContent, built, choice.model, deps.apiKey)
+  // ONESHOT for small periods (one Opus pass), CHUNKED map-reduce for big ones
+  // (parallel cheap extraction -> code merge -> one Opus synthesis). Both feed
+  // the SAME parseRecapOutput/finalize downstream.
+  const { parsed, model } = await produceRecap(deps, recapId, ledger, emit, { built, promptInputs, audience, args })
   const titleTemplate = `${promptInputs.projectLabel} - ${period.human}`
   const finalMarkdown = renderFinalMarkdown({
     title: titleTemplate,
@@ -225,7 +224,7 @@ async function runRecap(
     periodHuman: period.human,
     periodIsoRange: period.isoRange,
     generatedAt: Date.now(),
-    model: choice.model,
+    model,
     recapId,
     audience,
     cost: promptInputs.cost,
@@ -428,6 +427,201 @@ async function parseOrRetry(
     })
     return parseRecapOutput(retry)
   }
+}
+
+// Bounded parallelism for the map stage: a month-long recap can produce dozens
+// of chunks; firing them all at once would hammer OpenRouter + risk 429s.
+const MAP_CONCURRENCY = Number(process.env.CLAUDWERK_RECAP_MAP_CONCURRENCY) || 4
+
+interface ProduceArgs {
+  built: { system: string; user: string; inputChars: number }
+  promptInputs: PromptInputs
+  audience: RecapAudience
+  args: StartArgs
+}
+
+/**
+ * Produce the parsed recap from the assembled prompt, choosing ONESHOT (small
+ * periods -- one Opus pass) or CHUNKED map-reduce (big periods). Both return the
+ * same { parsed, model } shape and feed the same downstream finalize.
+ */
+async function produceRecap(
+  deps: OrchestratorDeps,
+  recapId: string,
+  ledger: RecapLedger,
+  emit: ProgressEmitter,
+  p: ProduceArgs,
+): Promise<{ parsed: ParsedRecap; model: string }> {
+  const { built, promptInputs, audience } = p
+  deps.store.update(recapId, { inputChars: built.inputChars })
+  const chunked = shouldChunk(built.inputChars, promptInputs.conversations.length, { forceMode: forceModeOf(p.args) })
+  if (chunked) return runChunked(deps, recapId, ledger, emit, p)
+
+  const choice = pickModel(built.inputChars, audience)
+  deps.store.update(recapId, { model: choice.model })
+  emit.emit(
+    'info',
+    'render/prompt',
+    `oneshot model=${choice.model} (${choice.reason}), prompt=${built.inputChars} chars`,
+  )
+  emit.setProgress(45, 'render/llm')
+  const content = await callLlm(deps, recapId, ledger, built, choice.model, deps.apiKey)
+  emit.setProgress(85, 'render/llm-done')
+  const parsed = await parseOrRetry(deps, recapId, ledger, content, built, choice.model, deps.apiKey)
+  return { parsed, model: choice.model }
+}
+
+/**
+ * CHUNKED map-reduce path (Pillar A). split -> parallel map (extraction JSON via
+ * the cheap map model) -> code merge/dedup -> one Opus synthesis -> parseRecapOutput.
+ * Every LLM call flows through runLlmCall, so each chunk + the reduce + any retry
+ * lands its own COST-2 ledger entry (stage + chunkIndex), even on failure.
+ */
+// fallow-ignore-next-line complexity
+async function runChunked(
+  deps: OrchestratorDeps,
+  recapId: string,
+  ledger: RecapLedger,
+  emit: ProgressEmitter,
+  p: ProduceArgs,
+): Promise<{ parsed: ParsedRecap; model: string }> {
+  const { built, promptInputs, audience } = p
+  const models = chunkModels({
+    mapModel: overrideOf(p.args, 'mapModel'),
+    reduceModel: overrideOf(p.args, 'reduceModel'),
+  })
+  const chunks = splitIntoChunks(promptInputs.transcripts)
+  deps.store.update(recapId, { model: models.reduceModel })
+  emit.emit(
+    'info',
+    'render/chunk',
+    `chunked map-reduce: ${chunks.length} chunk(s), map=${models.mapModel}, reduce=${models.reduceModel}, prompt=${built.inputChars} chars`,
+  )
+  emit.setProgress(45, 'render/map')
+
+  // MAP -- parallel extraction. A chunk that fails to call or parse degrades to
+  // empty metadata (logged); the run only fails if EVERY chunk failed, so we
+  // never silently drop the whole period over one bad chunk.
+  let failed = 0
+  const metas = await parallelMap(chunks, MAP_CONCURRENCY, async chunk => {
+    const prompt = buildMapPrompt(chunk)
+    const phase = `render/map ${chunk.index + 1}/${chunks.length}`
+    emit.emit(
+      'info',
+      phase,
+      `mapping chunk ${chunk.index + 1}/${chunks.length} (${chunk.chars} chars, ${chunk.transcripts.length} conv)`,
+    )
+    let content: string
+    try {
+      content = await runLlmCall(
+        deps,
+        recapId,
+        ledger,
+        'map',
+        {
+          model: models.mapModel,
+          system: prompt.system,
+          user: prompt.user,
+          responseFormat: { type: 'json_object' },
+          maxTokens: RECAP_MAX_TOKENS,
+          timeoutMs: RECAP_TIMEOUT_MS,
+          temperature: 0.1,
+          retries: 2,
+          apiKey: deps.apiKey,
+        },
+        chunk.index,
+      )
+    } catch (err) {
+      failed++
+      emit.emit('warn', phase, `chunk ${chunk.index + 1} map call failed: ${describe(err)}`)
+      return makeEmptyMetadata()
+    }
+    try {
+      return parseMapOutput(content)
+    } catch (err) {
+      if (!(err instanceof MapParseError)) throw err
+      failed++
+      emit.emit('warn', phase, `chunk ${chunk.index + 1} map JSON unparseable: ${describe(err)}`)
+      return makeEmptyMetadata()
+    }
+  })
+  if (failed === chunks.length) {
+    throw new Error(`chunked map stage failed: all ${chunks.length} chunk(s) errored`)
+  }
+  if (failed > 0) {
+    emit.emit('warn', 'render/map-done', `${failed}/${chunks.length} chunk(s) failed; synthesizing from the rest`)
+  }
+
+  // MERGE -- pure deterministic dedup, no LLM.
+  emit.setProgress(72, 'render/merge')
+  const merged = mergeMetadata(metas)
+  emit.emit('info', 'render/merge', `merged ${chunks.length} chunk(s) -> ${countItems(merged)} item(s) after dedup`)
+
+  // REDUCE -- one synthesis pass on the small merged JSON (not the raw bulk).
+  emit.setProgress(78, 'render/synthesize')
+  const synth = buildSynthesizePrompt(
+    merged,
+    {
+      projectLabel: promptInputs.projectLabel,
+      periodHuman: promptInputs.periodHuman,
+      periodIsoRange: promptInputs.periodIsoRange,
+    },
+    audience,
+  )
+  const content = await runLlmCall(deps, recapId, ledger, 'reduce', {
+    model: models.reduceModel,
+    system: synth.system,
+    user: synth.user,
+    maxTokens: RECAP_MAX_TOKENS,
+    timeoutMs: RECAP_TIMEOUT_MS,
+    temperature: 0.2,
+    retries: 2,
+    apiKey: deps.apiKey,
+  })
+  emit.setProgress(88, 'render/synthesize-done')
+  const parsed = await parseOrRetry(deps, recapId, ledger, content, synth, models.reduceModel, deps.apiKey)
+  return { parsed, model: models.reduceModel }
+}
+
+/** Run `fn` over items with bounded concurrency, preserving input order. */
+async function parallelMap<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let next = 0
+  const workerCount = Math.max(1, Math.min(limit, items.length))
+  const worker = async () => {
+    while (true) {
+      const i = next++
+      if (i >= items.length) return
+      results[i] = await fn(items[i])
+    }
+  }
+  await Promise.all(Array.from({ length: workerCount }, worker))
+  return results
+}
+
+function countItems(m: RecapMetadata): number {
+  return (
+    m.features.length +
+    m.bugs.length +
+    m.fixes.length +
+    m.incidents.length +
+    m.decisions.length +
+    m.dead_ends.length +
+    m.gotchas.length
+  )
+}
+
+/** Pillar-D forceMode seam: read an optional render-mode override off the create
+ *  args (the MCP schema wires this in Pillar D; absent today -> undefined). */
+function forceModeOf(args: StartArgs): RecapRenderMode | undefined {
+  const m = (args as { forceMode?: string }).forceMode
+  return m === 'oneshot' || m === 'chunked' || m === 'auto' ? m : undefined
+}
+
+/** Pillar-D per-call model override seam (string fields on the create args). */
+function overrideOf(args: StartArgs, key: 'mapModel' | 'reduceModel'): string | undefined {
+  const v = (args as unknown as Record<string, unknown>)[key]
+  return typeof v === 'string' && v.trim() ? v.trim() : undefined
 }
 
 interface FinalizeArgs {
