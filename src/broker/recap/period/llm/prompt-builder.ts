@@ -49,10 +49,12 @@ export function buildPrompt(inputs: PromptInputs, audience: RecapAudience = 'hum
  */
 export const RETRO_FRONTMATTER_SPEC = `ADDITIONAL RETROSPECT FRONTMATTER (this recap is also a RETROSPECTIVE -- EVALUATE the period, don't just report it):
 
-  went_well: [<things that went WELL this period, as {title, detail?, conversations?, commits?}>]
-  went_badly: [<things that went BADLY -- friction, relitigated decisions, recurring dead-ends, wasted effort -- as {title, detail?, conversations?}>]
-  recommendations: [<concrete, ACTIONABLE improvements for the NEXT period, PRIORITISING rules / tools / CLAUDE.md / process changes, as {title, detail (what to change and why), conversations?}>]
+  went_well: <things that went WELL this period -- BLOCK-style items (see ITEM FORMAT)>
+  went_badly: <things that went BADLY -- friction, relitigated decisions, recurring dead-ends, wasted effort -- BLOCK-style items>
+  recommendations: <concrete, ACTIONABLE improvements for the NEXT period, PRIORITISING rules / tools / CLAUDE.md / process changes; detail = what to change and why -- BLOCK-style items>
 
+Use the SAME BLOCK ITEM FORMAT as the other item-list fields (one `- title:` per
+item, indented sub-keys, NO inline flow-maps).
 These three are your JUDGMENT, grounded in the period's evidence. They MAY be inferred (set inferred: true). Cite conversations/commits where you can. OMIT a list if there is genuinely nothing for it; never pad.`
 
 export const RETRO_BODY_SPEC = `ADDITIONAL RETROSPECT BODY SECTION (append AFTER the sections above):
@@ -81,15 +83,33 @@ export const FRONTMATTER_SPEC = `REQUIRED YAML FRONTMATTER (extract from the inp
   goals: [<1-5 things being attempted this period>]
   discoveries: [<0-10 notable findings, bugs identified, learnings, architectural insights, surprises>]
   side_effects: [<0-5 unintended consequences, scope creep, broken stuff, technical debt incurred>]
-  features: [<each shipped feature as {title, detail?, conversations?, commits?}>]
-  bugs:     [<each bug fixed as {title, detail?, conversations?, commits?}>]
-  fixes:    [<refactors/cleanups as {title, detail?, conversations?, commits?}>]
-  incidents: [<production/dev incidents as {title, conversations?, severity}>]
-  decisions: [<non-obvious decisions made + WHY, as {title, detail (the reasoning a diff cannot show), conversations?}>]
-  dead_ends: [<approaches tried then ABANDONED, as {title, detail (why it failed), conversations?, commits?}>]
-  gotchas:  [<constraints/landmines discovered (tool/env quirks, surprising failures), as {title, detail?, conversations?}>]
+  features: <each shipped feature -- see ITEM FORMAT below>
+  bugs:     <each bug fixed -- see ITEM FORMAT below>
+  fixes:    <refactors/cleanups -- see ITEM FORMAT below>
+  incidents: <production/dev incidents -- see ITEM FORMAT below>
+  decisions: <non-obvious decisions made + WHY (the reasoning a diff cannot show) -- see ITEM FORMAT below>
+  dead_ends: <approaches tried then ABANDONED (detail = why it failed) -- see ITEM FORMAT below>
+  gotchas:  <constraints/landmines discovered (tool/env quirks, surprising failures) -- see ITEM FORMAT below>
   open_questions: [<unresolved questions the assistant left for the user; PRIORITISE the OPEN_QUESTIONS section in the input>]
   stakeholders: [<0-5 people involved or mentioned by name>]
+
+ITEM FORMAT -- the item-list fields (features/bugs/fixes/incidents/decisions/
+dead_ends/gotchas) MUST use BLOCK style, one field per indented line. Do NOT use
+inline flow-maps ({title: ...}). Example:
+
+  features:
+    - title: Profile URL strip
+      detail: Removed profile@ from project URIs, moved to launch metadata
+      conversations: [4a0318fc]
+      commits: [c8704b8d]
+    - title: Batch command palette
+      detail: Multi-select terminate / recap / broadcast
+      conversations: [197bc1a4, e34f87a4]
+      commits: [e4b0b545]
+
+  Each item starts with `- title:`; detail/conversations/commits/inferred are
+  indented sub-keys. conversations/commits are inline [a, b] lists. Omit a
+  sub-key when empty. Emit `[]` for an item-list field that has no items.
 
 OMIT fields where there's nothing to put. NEVER invent items to fill quotas.
 CITE: every features/bugs/fixes/incidents/decisions/dead_ends item names its

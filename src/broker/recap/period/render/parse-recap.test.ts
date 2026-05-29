@@ -93,6 +93,85 @@ body`
     expect(out.metadata.recommendations?.[0].conversations).toContain('conv_xyz789')
   })
 
+  it('parses inline flow-map items (the form the reduce LLM actually emits)', () => {
+    // Regression for the v2.1 "cards render as raw {json}" bug: the LLM emitted
+    // `- {title: X, detail: "...", conversations: [a], commits: [b]}` but the old
+    // parser only understood block style, so the whole brace string became title.
+    const raw = `---
+subtitle: flow-map form
+features:
+  - {title: Profile URL strip, detail: "Removed profile@ from project URIs", conversations: [4a0318fc], commits: [c8704b8d]}
+  - {title: Transport reframe, detail: "Daemon becomes a transport", conversations: [8ee9accb, bad58324], commits: [26943858, 15eb4110]}
+bugs:
+  - {title: "React #185 infinite render", conversations: [b5e47b7a], inferred: true}
+---
+
+## TL;DR
+body`
+    const out = parseRecapOutput(raw)
+    expect(out.metadata.features.length).toBe(2)
+    expect(out.metadata.features[0].title).toBe('Profile URL strip')
+    expect(out.metadata.features[0].detail).toBe('Removed profile@ from project URIs')
+    expect(out.metadata.features[0].conversations).toEqual(['4a0318fc'])
+    expect(out.metadata.features[0].commits).toEqual(['c8704b8d'])
+    expect(out.metadata.features[1].conversations).toEqual(['8ee9accb', 'bad58324'])
+    expect(out.metadata.features[1].commits).toEqual(['26943858', '15eb4110'])
+    // title with a comma inside quotes must not split the flow-map
+    expect(out.metadata.bugs[0].title).toBe('React #185 infinite render')
+    expect(out.metadata.bugs[0].inferred).toBe(true)
+  })
+
+  it('parses a multi-line wrapped flow-map item', () => {
+    // Long items wrap across lines; the parser must accumulate until braces balance.
+    const raw = `---
+subtitle: wrapped
+features:
+  - {title: Spawn parent tracking,
+     detail: "Track parent/root conversation relationships",
+     conversations: [807269d9, 3352290f],
+     commits: [de2815a9]}
+---
+
+body`
+    const out = parseRecapOutput(raw)
+    expect(out.metadata.features.length).toBe(1)
+    expect(out.metadata.features[0].title).toBe('Spawn parent tracking')
+    expect(out.metadata.features[0].detail).toBe('Track parent/root conversation relationships')
+    expect(out.metadata.features[0].conversations).toEqual(['807269d9', '3352290f'])
+    expect(out.metadata.features[0].commits).toEqual(['de2815a9'])
+  })
+
+  it('parses [inferred]-prefixed flow-map title', () => {
+    const raw = `---
+subtitle: inferred prefix
+gotchas:
+  - {title: "[inferred] Bun fs.watch unreliable on macOS", detail: "watch events drop"}
+---
+
+body`
+    const out = parseRecapOutput(raw)
+    expect(out.metadata.gotchas[0].title).toBe('Bun fs.watch unreliable on macOS')
+    expect(out.metadata.gotchas[0].inferred).toBe(true)
+  })
+
+  it('parses Pillar F retrospect fields in flow-map form', () => {
+    const raw = `---
+subtitle: retro flow
+went_well:
+  - {title: Chunking shipped clean, commits: [abc1234]}
+recommendations:
+  - {title: Add lint rule for ccSessionId, detail: "encode the boundary covenant", conversations: [conv_xyz789]}
+---
+
+## Retrospective
+body`
+    const out = parseRecapOutput(raw)
+    expect(out.metadata.went_well?.[0].title).toBe('Chunking shipped clean')
+    expect(out.metadata.went_well?.[0].commits).toEqual(['abc1234'])
+    expect(out.metadata.recommendations?.[0].title).toContain('lint rule')
+    expect(out.metadata.recommendations?.[0].conversations).toEqual(['conv_xyz789'])
+  })
+
   it('parses Recap 2.0 sections: decisions, dead_ends, gotchas with detail + inferred', () => {
     const raw = `---
 subtitle: rich recap
