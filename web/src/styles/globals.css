@@ -459,7 +459,7 @@ body:has([data-mobile-compose-panel]) [data-voice-fab] {
 @keyframes transcript-entry-enter {
 	from {
 		opacity: 0;
-		transform: translateY(10px);
+		transform: translateY(18px);
 	}
 	to {
 		opacity: 1;
@@ -467,7 +467,7 @@ body:has([data-mobile-compose-panel]) [data-voice-fab] {
 	}
 }
 .transcript-entry-enter {
-	animation: transcript-entry-enter 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+	animation: transcript-entry-enter 0.3s cubic-bezier(0.22, 1, 0.36, 1);
 }
 @media (prefers-reduced-motion: reduce) {
 	.transcript-entry-enter {

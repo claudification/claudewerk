@@ -480,11 +480,14 @@ export const TranscriptView = memo(function TranscriptView({
     tailKey !== prevTailKeyRef.current &&
     prevTailKeyRef.current !== null &&
     cacheKey === enterCacheKeyRef.current &&
-    windowStart === enterWindowStartRef.current &&
-    follow &&
-    !followKilledRef.current
+    windowStart === enterWindowStartRef.current
   ) {
+    // NOTE: no `follow` gate -- a new entry while scrolled up animates off-screen
+    // harmlessly, and gating on follow was an untested condition that could
+    // suppress the animation entirely. The cacheKey/windowStart/tailKey checks
+    // already exclude switches, history loads, and streaming-within-a-group.
     enteringKeysRef.current.add(tailKey)
+    console.debug('[transcript-enter] fire', tailKey.slice(0, 28))
   }
   prevTailKeyRef.current = tailKey
   enterCacheKeyRef.current = cacheKey
