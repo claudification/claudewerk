@@ -70,9 +70,16 @@ describe('recap MCP tools registration', () => {
   beforeEach(() => _resetBrokerRpc())
   afterEach(() => _resetBrokerRpc())
 
-  test('exposes the four expected tool names', () => {
+  test('exposes the five expected tool names', () => {
     const t = tools()
-    expect(Object.keys(t).sort()).toEqual(['recap_create', 'recap_get', 'recap_list', 'recap_search'])
+    // recap_regenerate (Pillar C++) joined the original four in v2.1.
+    expect(Object.keys(t).sort()).toEqual([
+      'recap_create',
+      'recap_get',
+      'recap_list',
+      'recap_regenerate',
+      'recap_search',
+    ])
   })
 
   test('all tools have a description and inputSchema', () => {
