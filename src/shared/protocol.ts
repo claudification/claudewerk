@@ -3696,6 +3696,21 @@ export interface RecapTuning {
   /** Per-stage max output tokens. */
   maxTokens?: RecapStageParam
 }
+/** Pillar C++: re-run a recap from a downstream stage off its on-disk bundle
+ *  (Pillar C+). Benevolent-gated like recap_create. Version-gated server-side. */
+export interface RecapRegenerateMessage {
+  type: 'recap_regenerate'
+  recapId: string
+  /** synthesize = 1 LLM call on the saved merged JSON / oneshot prompt;
+   *  render/html = zero-LLM re-render from the saved final response. */
+  from: 'synthesize' | 'render' | 'html'
+  /** fork (default) = new recapId, copies upstream artifacts; in-place = refine. */
+  mode?: 'fork' | 'in-place'
+  /** Optional synthesize-stage model override (eval-harness lever). */
+  model?: string
+  /** Echoed on recap_regenerated/recap_error so MCP broker-rpc can correlate. */
+  requestId?: string
+}
 export interface RecapCancelMessage {
   type: 'recap_cancel'
   recapId: string

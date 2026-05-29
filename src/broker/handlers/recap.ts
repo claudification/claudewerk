@@ -68,6 +68,52 @@ function recapCreate(ctx: HandlerContext, data: MessageData): void {
     .catch((err: unknown) => ctx.reply({ type: 'recap_error', error: describe(err), ...echo }))
 }
 
+// fallow-ignore-next-line complexity
+function recapRegenerate(ctx: HandlerContext, data: MessageData): void {
+  const requestId = typeof data.requestId === 'string' ? data.requestId : undefined
+  const echo = requestId ? { requestId } : {}
+  // Pillar C++: same trust posture as recap_create -- benevolent agent-host only
+  // (the eval harness re-runs synthesis); dashboards are inherently trusted.
+  if (detectRole(ctx.ws.data) === 'agent-host' && ctx.callerSettings?.trustLevel !== 'benevolent') {
+    ctx.reply({ type: 'recap_error', error: 'Requires benevolent trust level', ...echo })
+    return
+  }
+  const fields = requireStrings(ctx, data, ['recapId', 'from'] as const, 'recap_regenerate')
+  if (!fields) return
+  const from = fields.from
+  if (from !== 'synthesize' && from !== 'render' && from !== 'html') {
+    ctx.reply({ type: 'recap_error', error: `invalid from: ${from} (synthesize|render|html)`, ...echo })
+    return
+  }
+  const mode = data.mode === 'in-place' ? 'in-place' : data.mode === 'fork' ? 'fork' : undefined
+  const model = typeof data.model === 'string' ? data.model : undefined
+  const orchestrator = getRecapOrchestrator()
+  if (!orchestrator) {
+    ctx.reply({ type: 'recap_error', error: 'recap orchestrator not initialised', ...echo })
+    return
+  }
+  try {
+    const result = orchestrator.regenerate({
+      recapId: fields.recapId,
+      from,
+      ...(mode ? { mode } : {}),
+      ...(model ? { model } : {}),
+    })
+    ctx.reply({
+      type: 'recap_regenerated',
+      recapId: result.recapId,
+      sourceRecapId: result.sourceRecapId,
+      mode: result.mode,
+      from: result.from,
+      ...echo,
+    })
+  } catch (err) {
+    // Version-gate / missing-bundle / unreachable-stage errors surface here
+    // synchronously (not a 30s silent MCP timeout) thanks to requestId echo.
+    ctx.reply({ type: 'recap_error', error: describe(err), ...echo })
+  }
+}
+
 function recapCancel(ctx: HandlerContext, data: MessageData): void {
   const fields = requireStrings(ctx, data, ['recapId'] as const, 'recap_cancel')
   if (!fields) return
@@ -165,13 +211,16 @@ function describe(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-// recap_create additionally accepts benevolent agent-host callers (the eval
-// harness); the trust gate lives in recapCreate. Every other recap handler
-// stays dashboard-only.
+// recap_create + recap_regenerate additionally accept benevolent agent-host
+// callers (the eval harness); the trust gate lives in each handler. Every other
+// recap handler stays dashboard-only.
 const RECAP_CREATE_ROLES: WsRole[] = [...DASHBOARD_ROLES, 'agent-host']
 
 export function registerRecapHandlers(): void {
-  registerHandlers({ recap_create: recapCreate } satisfies Record<string, MessageHandler>, RECAP_CREATE_ROLES)
+  registerHandlers(
+    { recap_create: recapCreate, recap_regenerate: recapRegenerate } satisfies Record<string, MessageHandler>,
+    RECAP_CREATE_ROLES,
+  )
   registerHandlers(
     {
       recap_cancel: recapCancel,

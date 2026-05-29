@@ -39,7 +39,7 @@
  *     swallows its error to console.error, exactly like termination-log.
  */
 
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { RecapAudience, RecapLedgerSummary, RecapPeriodLabel, RecapStatus } from '../../../shared/protocol'
 
@@ -114,10 +114,15 @@ export interface RecapBundleManifest {
   cost?: RecapLedgerSummary
   timing: { createdAt: number; startedAt?: number; completedAt?: number; updatedAt: number }
   createdBy?: string
+  /** Pillar C++ provenance: set when this bundle was produced by recap_regenerate. */
+  regenerate?: { from: string; mode: 'fork' | 'in-place'; sourceRecapId: string; at: number }
 }
 
 export type RecapBundleManifestPatch = Partial<
-  Pick<RecapBundleManifest, 'mode' | 'models' | 'chunkCount' | 'recipe' | 'status' | 'error' | 'cost' | 'timing'>
+  Pick<
+    RecapBundleManifest,
+    'mode' | 'models' | 'chunkCount' | 'recipe' | 'status' | 'error' | 'cost' | 'timing' | 'regenerate'
+  >
 > & { startedAt?: number; completedAt?: number }
 
 export interface RecapBundleWriter {
@@ -135,10 +140,26 @@ export interface RecapBundleWriter {
   recordMapParsed(recapId: string, chunkIndex: number, parsed: unknown): void
   /** Deterministic <merge> output. */
   recordMerged(recapId: string, merged: unknown): void
+  /** Raw final-stage response text (CHUNKED:Final / ONESHOT) that parsed. Stored
+   *  under a stable name so Pillar C++ `from:'render'` can re-parse it cheaply. */
+  recordFinalResponse(recapId: string, content: string): void
   /** Final rendered markdown. */
   recordFinalMarkdown(recapId: string, markdown: string): void
   /** Patch + rewrite the manifest (timing, status, models, ledger summary). */
   updateManifest(recapId: string, patch: RecapBundleManifestPatch): void
+
+  // --- Pillar C++ reads (resumable stage replay) ---
+  /** Read the manifest (null if no bundle exists). */
+  readManifest(recapId: string): RecapBundleManifest | null
+  /** Read the merged JSON (<merge> output) -- the synthesize-stage input. */
+  readMerged<T = unknown>(recapId: string): T | null
+  /** Read the saved final-stage raw response (render-stage input). */
+  readFinalResponse(recapId: string): string | null
+  /** Read the first assembled prompt recorded for a stage (e.g. 'oneshot'). */
+  readStagePrompt(recapId: string, stage: string): { system?: string; user?: string } | null
+  /** Copy a source bundle's UPSTREAM artifacts (manifest/merged/chunks/prompts/
+   *  final-response) into a fresh recapId dir for fork-mode regenerate. */
+  forkUpstream(srcRecapId: string, dstRecapId: string): void
 }
 
 /** Create the bundle writer rooted at `<cacheDir>/recaps`. Mirrors
@@ -165,14 +186,17 @@ export function createRecapBundleWriter(cacheDir: string): RecapBundleWriter {
     return join(bundleDir(recapId), 'calls', `${n}-${prompt.stage}${suffix}`)
   }
 
-  function readManifest(recapId: string): RecapBundleManifest | null {
-    const path = join(bundleDir(recapId), 'manifest.json')
+  function readJsonFile<T>(path: string): T | null {
     if (!existsSync(path)) return null
     try {
-      return JSON.parse(readFileSync(path, 'utf8')) as RecapBundleManifest
+      return JSON.parse(readFileSync(path, 'utf8')) as T
     } catch {
       return null
     }
+  }
+
+  function readManifest(recapId: string): RecapBundleManifest | null {
+    return readJsonFile<RecapBundleManifest>(join(bundleDir(recapId), 'manifest.json'))
   }
 
   function writeManifest(recapId: string, manifest: RecapBundleManifest): void {
@@ -282,6 +306,14 @@ export function createRecapBundleWriter(cacheDir: string): RecapBundleWriter {
       }
     },
 
+    recordFinalResponse(recapId, content) {
+      try {
+        writeFileSync(join(bundleDir(recapId), 'final-response.txt'), content)
+      } catch (err) {
+        console.error(`[recap-bundle] final-response write failed for ${recapId}:`, describe(err))
+      }
+    },
+
     recordFinalMarkdown(recapId, markdown) {
       try {
         writeFileSync(join(bundleDir(recapId), 'final.md'), markdown)
@@ -296,6 +328,52 @@ export function createRecapBundleWriter(cacheDir: string): RecapBundleWriter {
       }
     },
 
+    readManifest,
+
+    readMerged<T = unknown>(recapId: string): T | null {
+      return readJsonFile<T>(join(bundleDir(recapId), 'merged.json'))
+    },
+
+    readFinalResponse(recapId) {
+      const path = join(bundleDir(recapId), 'final-response.txt')
+      if (!existsSync(path)) return null
+      try {
+        return readFileSync(path, 'utf8')
+      } catch {
+        return null
+      }
+    },
+
+    readStagePrompt(recapId, stage) {
+      const callsDir = join(bundleDir(recapId), 'calls')
+      if (!existsSync(callsDir)) return null
+      try {
+        // First prompt file for this stage, by seq order (e.g. 001-oneshot.prompt.json).
+        const match = readdirSync(callsDir)
+          .filter(f => f.endsWith('.prompt.json') && f.includes(`-${stage}`))
+          .sort()[0]
+        if (!match) return null
+        const obj = readJsonFile<{ system?: string; user?: string }>(join(callsDir, match))
+        if (!obj) return null
+        return { ...(obj.system ? { system: obj.system } : {}), ...(obj.user ? { user: obj.user } : {}) }
+      } catch {
+        return null
+      }
+    },
+
+    forkUpstream(srcRecapId, dstRecapId) {
+      // Copy the WHOLE source bundle (manifest, merged.json, chunks/, calls/
+      // prompts+responses, final-response). The regenerate then overwrites the
+      // downstream artifacts (manifest, final.md) on the fork -- upstream is
+      // preserved so the eval-harness fork carries the full paid trail.
+      try {
+        cpSync(bundleDir(srcRecapId), bundleDir(dstRecapId), { recursive: true })
+        seqByRecap.set(dstRecapId, 0)
+      } catch (err) {
+        console.error(`[recap-bundle] fork copy ${srcRecapId} -> ${dstRecapId} failed:`, describe(err))
+      }
+    },
+
     updateManifest(recapId, patch) {
       const manifest = readManifest(recapId)
       if (!manifest) return
@@ -306,6 +384,7 @@ export function createRecapBundleWriter(cacheDir: string): RecapBundleWriter {
       if (patch.status !== undefined) manifest.status = patch.status
       if (patch.error !== undefined) manifest.error = patch.error
       if (patch.cost !== undefined) manifest.cost = patch.cost
+      if (patch.regenerate !== undefined) manifest.regenerate = patch.regenerate
       if (patch.startedAt !== undefined) manifest.timing.startedAt = patch.startedAt
       if (patch.completedAt !== undefined) manifest.timing.completedAt = patch.completedAt
       manifest.timing.updatedAt = Date.now()

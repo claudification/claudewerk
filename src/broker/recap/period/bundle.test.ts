@@ -170,4 +170,38 @@ describe('RecapBundleWriter', () => {
     expect(bundle.recordCallPrompt('recap_b', { stage: 'map', model: 'm' })).toBe(1)
     expect(bundle.recordCallPrompt('recap_a', { stage: 'reduce', model: 'm' })).toBe(2)
   })
+
+  // --- Pillar C++ reads ---
+
+  it('reads back manifest / merged / final-response / stage prompt', () => {
+    begin()
+    bundle.recordMerged(RECAP_ID, { features: [{ title: 'x' }] })
+    bundle.recordFinalResponse(RECAP_ID, '---\nsubtitle: s\n---\nbody')
+    const seq = bundle.recordCallPrompt(RECAP_ID, { stage: 'oneshot', model: 'm', system: 'SYS', user: 'USR' })
+    bundle.recordCallResponse(RECAP_ID, seq, { stage: 'oneshot', model: 'm' }, { ok: true, ms: 1, content: 'c' })
+    expect(bundle.readManifest(RECAP_ID)?.recapId).toBe(RECAP_ID)
+    expect(bundle.readMerged<{ features: unknown[] }>(RECAP_ID)?.features).toHaveLength(1)
+    expect(bundle.readFinalResponse(RECAP_ID)).toContain('subtitle: s')
+    expect(bundle.readStagePrompt(RECAP_ID, 'oneshot')).toEqual({ system: 'SYS', user: 'USR' })
+  })
+
+  it('readers return null when nothing was recorded', () => {
+    begin()
+    expect(bundle.readMerged('recap_missing')).toBeNull()
+    expect(bundle.readFinalResponse(RECAP_ID)).toBeNull()
+    expect(bundle.readStagePrompt(RECAP_ID, 'reduce')).toBeNull()
+    expect(bundle.readManifest('recap_missing')).toBeNull()
+  })
+
+  it('forkUpstream copies the source bundle into a new recapId dir', () => {
+    begin('recap_src')
+    bundle.recordMerged('recap_src', { features: [{ title: 'keep' }] })
+    bundle.recordMapParsed('recap_src', 0, { features: [] })
+    bundle.forkUpstream('recap_src', 'recap_fork')
+    // upstream artifacts are present on the fork...
+    expect(bundle.readMerged<{ features: { title: string }[] }>('recap_fork')?.features[0].title).toBe('keep')
+    expect(existsSync(join(bundle.dir('recap_fork'), 'chunks', 'map-0.parsed.json'))).toBe(true)
+    // ...and the fork has its own call counter (starts at 1)
+    expect(bundle.recordCallPrompt('recap_fork', { stage: 'reduce', model: 'm' })).toBe(1)
+  })
 })

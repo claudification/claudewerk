@@ -10,7 +10,14 @@ import type {
 } from '../shared/protocol'
 import { createRecapBundleWriter } from './recap/period/bundle'
 import type { CommitDigest, PeriodScope } from './recap/period/gather/types'
-import { type StartArgs, type StartResult, startRecap } from './recap/period/orchestrator'
+import {
+  type RegenerateArgs,
+  type RegenerateResult,
+  regenerateRecap,
+  type StartArgs,
+  type StartResult,
+  startRecap,
+} from './recap/period/orchestrator'
 import type { ProgressBroadcaster } from './recap/period/progress'
 import { createPeriodRecapStore, type PeriodRecapStore, type RecapRow, rowToRecapMeta } from './recap/period/store'
 import type { StoreDriver } from './store/types'
@@ -19,6 +26,8 @@ let singleton: RecapOrchestrator | null = null
 
 export interface RecapOrchestrator {
   start(args: StartArgs): Promise<StartResult>
+  /** Pillar C++: re-run a recap from a downstream stage off its on-disk bundle. */
+  regenerate(args: RegenerateArgs): RegenerateResult
   cancel(recapId: string): void
   dismiss(recapId: string): void
   list(filter: { projectUri?: string; status?: RecapStatus[]; limit?: number }): RecapSummary[]
@@ -48,6 +57,18 @@ export function initRecapOrchestrator(opts: InitOptions): RecapOrchestrator {
   singleton = {
     start: args =>
       startRecap(
+        {
+          store,
+          brokerStore: opts.brokerStore,
+          broadcaster: opts.broadcaster,
+          informConversation: opts.informConversation,
+          gatherCommits: opts.gatherCommits,
+          bundle,
+        },
+        args,
+      ),
+    regenerate: args =>
+      regenerateRecap(
         {
           store,
           brokerStore: opts.brokerStore,

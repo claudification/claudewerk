@@ -9,7 +9,7 @@ import type {
 import type { StoreDriver } from '../../store/types'
 import { type ChatRequest, chat } from '../shared/openrouter-client'
 import type { NormalizedUsage } from '../shared/pricing'
-import type { RecapBundleCallPrompt, RecapBundleWriter } from './bundle'
+import { RECAP_PIPELINE_VERSION, type RecapBundleCallPrompt, type RecapBundleWriter } from './bundle'
 import { buildMapPrompt, MapParseError, parseMapOutput } from './chunk/map-prompt'
 import { makeEmptyMetadata, mergeMetadata } from './chunk/merge'
 import {
@@ -180,6 +180,288 @@ function scheduleRun(
       }
     })
   })
+}
+
+// ---------------------------------------------------------------------------
+// Pillar C++ -- resumable stage replay (recap_regenerate)
+// ---------------------------------------------------------------------------
+
+export type RegenerateFrom = 'synthesize' | 'render' | 'html'
+export type RegenerateMode = 'fork' | 'in-place'
+
+export interface RegenerateArgs {
+  recapId: string
+  from: RegenerateFrom
+  /** fork (default) -> new recapId, copies upstream artifacts; in-place -> refine
+   *  the same recap. fork never destroys a paid artifact. */
+  mode?: RegenerateMode
+  /** Optional synthesize-stage model override (the eval-harness lever: try a new
+   *  reduce/oneshot model on the SAME merged JSON without re-paying extraction). */
+  model?: string
+  createdBy?: string
+}
+
+export interface RegenerateResult {
+  recapId: string
+  sourceRecapId: string
+  mode: RegenerateMode
+  from: RegenerateFrom
+}
+
+/**
+ * Re-run a recap from a downstream stage using its on-disk bundle (Pillar C+),
+ * skipping the expensive upstream work:
+ *   - from='synthesize': one Opus call on the SAVED merged JSON (chunked) or the
+ *     SAVED oneshot prompt -- the $$ map extraction is NOT re-paid.
+ *   - from='render'/'html': ZERO LLM cost -- re-parse the saved final response and
+ *     re-render markdown + digest (gather is local/cheap, no model call).
+ *
+ * VERSION-GATED: refuses when the bundle's pipelineVersion no longer matches the
+ * current pipeline, rather than silently stitching mismatched stages into garbage.
+ * Validation throws synchronously so the caller sees the error immediately; the
+ * actual re-run is scheduled in the background (like startRecap), returning the
+ * target recapId right away.
+ */
+// fallow-ignore-next-line complexity
+export function regenerateRecap(deps: OrchestratorDeps, args: RegenerateArgs): RegenerateResult {
+  const src = deps.store.get(args.recapId)
+  if (!src) throw new Error(`recap ${args.recapId} not found`)
+  if (!deps.bundle) throw new Error('run-artifact bundles are not enabled on this broker')
+  const manifest = deps.bundle.readManifest(args.recapId)
+  if (!manifest) {
+    throw new Error(`recap ${args.recapId} has no run-artifact bundle (predates Pillar C+); create a fresh recap`)
+  }
+  if (manifest.pipelineVersion !== RECAP_PIPELINE_VERSION) {
+    throw new Error(
+      `pipeline version mismatch for ${args.recapId} (bundle v${manifest.pipelineVersion}, current v${RECAP_PIPELINE_VERSION}); refusing to stitch mismatched stages -- create a fresh recap`,
+    )
+  }
+  // Reachability check up front (synchronous error beats a background failure).
+  if (args.from === 'synthesize') {
+    const haveMerged = deps.bundle.readMerged(args.recapId) != null
+    const haveOneshotPrompt = deps.bundle.readStagePrompt(args.recapId, 'oneshot') != null
+    if (!haveMerged && !haveOneshotPrompt) {
+      throw new Error(`recap ${args.recapId} has no merged JSON or oneshot prompt to synthesize from`)
+    }
+  } else if (deps.bundle.readFinalResponse(args.recapId) == null) {
+    throw new Error(`recap ${args.recapId} has no saved final response to re-render`)
+  }
+
+  const mode: RegenerateMode = args.mode ?? 'fork'
+  const targetId = mode === 'fork' ? `recap_${nanoid(12)}` : src.id
+  if (mode === 'fork') {
+    deps.store.insert({
+      id: targetId,
+      projectUri: src.projectUri,
+      periodLabel: src.periodLabel,
+      periodStart: src.periodStart,
+      periodEnd: src.periodEnd,
+      timeZone: src.timeZone,
+      audience: src.audience,
+      signalsJson: src.signalsJson,
+      signalsHash: src.signalsHash,
+      createdAt: Date.now(),
+      ...(args.createdBy ? { createdBy: args.createdBy } : {}),
+    })
+    deps.bundle.forkUpstream(src.id, targetId)
+  }
+  // Flip the target row to 'rendering' synchronously so observers (and an
+  // in-place refine of an already-'done' recap) see the regenerate in flight
+  // rather than a stale terminal status.
+  deps.store.update(targetId, { status: 'rendering', progress: 0, error: null })
+  deps.bundle.updateManifest(targetId, {
+    status: 'rendering',
+    regenerate: { from: args.from, mode, sourceRecapId: src.id, at: Date.now() },
+  })
+
+  const ledger = new RecapLedger()
+  setImmediate(() => {
+    runRegenerate(deps, targetId, src, manifest, args, ledger).catch(err => {
+      console.error(`[recap] regenerate failed for ${targetId} (from ${src.id}):`, err)
+      const built = ledger.build()
+      deps.store.update(targetId, {
+        status: 'failed',
+        error: describe(err),
+        ledgerJson: JSON.stringify(built),
+        inputTokens: built.summary.totalInputTokens,
+        outputTokens: built.summary.totalOutputTokens,
+        llmCostUsd: built.summary.totalCostUsd,
+      })
+      deps.bundle?.updateManifest(targetId, {
+        status: 'failed',
+        error: describe(err),
+        completedAt: Date.now(),
+        cost: built.summary,
+      })
+      deps.broadcaster.broadcast({
+        type: 'recap_progress',
+        recapId: targetId,
+        status: 'failed',
+        progress: 100,
+        phase: 'failed',
+        log: { level: 'error', message: describe(err), ts: Date.now() },
+      })
+    })
+  })
+
+  return { recapId: targetId, sourceRecapId: src.id, mode, from: args.from }
+}
+
+// fallow-ignore-next-line complexity
+async function runRegenerate(
+  deps: OrchestratorDeps,
+  targetId: string,
+  src: ReturnType<PeriodRecapStore['get']> & object,
+  manifest: NonNullable<ReturnType<RecapBundleWriter['readManifest']>>,
+  args: RegenerateArgs,
+  ledger: RecapLedger,
+): Promise<void> {
+  const startedAt = Date.now()
+  const audience: RecapAudience = src.audience
+  const emit = createProgressEmitter({
+    recapId: targetId,
+    store: deps.store,
+    broadcaster: deps.broadcaster,
+    bundle: deps.bundle,
+  })
+  emit.setStatus('rendering')
+  emit.emit(
+    'info',
+    'regenerate/begin',
+    `regenerate from='${args.from}' mode='${args.mode ?? 'fork'}' (source ${src.id})`,
+  )
+  deps.store.update(targetId, { startedAt })
+
+  // Re-gather COST 1 inputs (cost table + digest). Local SQLite, no model call --
+  // the expensive map/synthesis is what the bundle lets us skip, not the gather.
+  const projectUris = (deps.expandProjectScope ?? defaultExpand)(src.projectUri)
+  const scope: PeriodScope = {
+    projectUris,
+    periodStart: src.periodStart,
+    periodEnd: src.periodEnd,
+    timeZone: src.timeZone,
+  }
+  const period: ResolvedPeriod = {
+    label: manifest.period.label,
+    start: manifest.period.start,
+    end: manifest.period.end,
+    human: manifest.period.human ?? '',
+    isoRange: manifest.period.isoRange ?? '',
+  }
+  const includeInternals = JSON.parse(src.signalsJson || '[]').includes('turn_internals')
+  const { promptInputs } = collectSignals(deps, scope, period, src.projectUri, deps.projectLabel, includeInternals)
+  if (deps.gatherCommits) {
+    try {
+      promptInputs.commits = await deps.gatherCommits(scope)
+    } catch (err) {
+      emit.emit('warn', 'regenerate/commits', `git gather failed: ${describe(err)}`)
+    }
+  }
+
+  // Produce the parsed recap from the requested stage.
+  const { parsed, model } = await replayStage(deps, targetId, ledger, emit, args, manifest, promptInputs, audience)
+
+  const finalMarkdown = renderFinalMarkdown({
+    title: src.title ?? `${promptInputs.projectLabel} - ${period.human}`,
+    subtitle: parsed.metadata.subtitle,
+    projectLabel: promptInputs.projectLabel,
+    projectUri: src.projectUri,
+    periodHuman: period.human,
+    periodIsoRange: period.isoRange,
+    generatedAt: Date.now(),
+    model,
+    recapId: targetId,
+    audience,
+    cost: promptInputs.cost,
+    body: parsed.body,
+  })
+  deps.bundle?.recordFinalMarkdown(targetId, finalMarkdown)
+
+  const digest = buildRecapDigest({
+    cost: promptInputs.cost,
+    conversations: promptInputs.conversations,
+    commits: promptInputs.commits,
+  })
+
+  finalize(deps, targetId, ledger, {
+    title: src.title ?? `${promptInputs.projectLabel} - ${period.human}`,
+    subtitle: parsed.metadata.subtitle,
+    markdown: finalMarkdown,
+    metadata: parsed.metadata,
+    digestJson: JSON.stringify(digest),
+    body: parsed.body,
+    projectUri: src.projectUri,
+  })
+  emit.setProgress(100, 'persist')
+  emit.setStatus('done')
+  emit.emit('info', 'persist', `regenerated recap stored as ${targetId}`)
+  deps.broadcaster.broadcast({
+    type: 'recap_complete',
+    recapId: targetId,
+    title: src.title ?? '',
+    markdown: finalMarkdown,
+    meta: rowToMeta(deps, targetId),
+  })
+}
+
+/** Re-produce the parsed recap for the requested resume stage. render/html never
+ *  call a model; synthesize makes exactly one LLM call on saved upstream input. */
+async function replayStage(
+  deps: OrchestratorDeps,
+  targetId: string,
+  ledger: RecapLedger,
+  emit: ProgressEmitter,
+  args: RegenerateArgs,
+  manifest: NonNullable<ReturnType<RecapBundleWriter['readManifest']>>,
+  promptInputs: PromptInputs,
+  audience: RecapAudience,
+): Promise<{ parsed: ParsedRecap; model: string }> {
+  const sourceId = args.recapId
+  if (args.from === 'render' || args.from === 'html') {
+    emit.setProgress(60, 'regenerate/render')
+    const content = deps.bundle?.readFinalResponse(sourceId)
+    if (!content) throw new Error('saved final response vanished')
+    const parsed = parseRecapOutput(content)
+    return { parsed, model: manifest.models?.reduce ?? manifest.models?.oneshot ?? 'saved' }
+  }
+  // synthesize: prefer the chunked merged JSON; fall back to replaying oneshot.
+  const merged = deps.bundle?.readMerged<RecapMetadata>(sourceId)
+  if (merged) {
+    const model = args.model ?? manifest.models?.reduce ?? 'anthropic/claude-opus-4.8'
+    emit.setProgress(55, 'regenerate/synthesize')
+    const synth = buildSynthesizePrompt(
+      merged,
+      {
+        projectLabel: promptInputs.projectLabel,
+        periodHuman: promptInputs.periodHuman,
+        periodIsoRange: promptInputs.periodIsoRange,
+      },
+      audience,
+    )
+    const content = await runLlmCall(deps, targetId, ledger, 'reduce', {
+      model,
+      system: synth.system,
+      user: synth.user,
+      maxTokens: RECAP_MAX_TOKENS,
+      timeoutMs: RECAP_TIMEOUT_MS,
+      temperature: 0.2,
+      retries: 2,
+      apiKey: deps.apiKey,
+    })
+    deps.bundle?.recordFinalResponse(targetId, content)
+    const parsed = await parseOrRetry(deps, targetId, ledger, content, synth, model, deps.apiKey)
+    return { parsed, model }
+  }
+  // oneshot bundle: replay the saved oneshot prompt verbatim (new model allowed).
+  const prompt = deps.bundle?.readStagePrompt(sourceId, 'oneshot')
+  if (!prompt?.system || !prompt.user) throw new Error('no merged JSON or oneshot prompt available to synthesize')
+  const model = args.model ?? manifest.models?.oneshot ?? 'anthropic/claude-opus-4.8'
+  emit.setProgress(55, 'regenerate/synthesize')
+  const built = { system: prompt.system, user: prompt.user }
+  const content = await callLlm(deps, targetId, ledger, built, model, deps.apiKey)
+  deps.bundle?.recordFinalResponse(targetId, content)
+  const parsed = await parseOrRetry(deps, targetId, ledger, content, built, model, deps.apiKey)
+  return { parsed, model }
 }
 
 // fallow-ignore-next-line complexity
@@ -558,6 +840,7 @@ async function produceRecap(
     maxTokens: t.maxTokens?.oneshot,
   })
   emit.setProgress(85, 'render/llm-done')
+  deps.bundle?.recordFinalResponse(recapId, content)
   const parsed = await parseOrRetry(deps, recapId, ledger, content, built, model, deps.apiKey)
   return { parsed, model }
 }
@@ -677,6 +960,7 @@ async function runChunked(
     apiKey: deps.apiKey,
   })
   emit.setProgress(88, 'render/synthesize-done')
+  deps.bundle?.recordFinalResponse(recapId, content)
   const parsed = await parseOrRetry(deps, recapId, ledger, content, synth, models.reduceModel, deps.apiKey)
   return { parsed, model: models.reduceModel }
 }

@@ -391,11 +391,82 @@ function recapCreateTool(ctx: McpToolContext): ToolDef {
   }
 }
 
+function recapRegenerateTool(_ctx: McpToolContext): ToolDef {
+  return {
+    description:
+      'Re-run an EXISTING recap from a downstream stage using its saved on-disk bundle, ' +
+      'without re-paying the expensive upstream work (BENEVOLENT eval-harness tool).\n\n' +
+      "from='synthesize' -- one Opus call on the SAVED merged JSON (chunked) or the saved " +
+      'oneshot prompt; the $$ map extraction is NOT re-run. Pass `model` to try a different ' +
+      'reduce/oneshot model on identical input.\n' +
+      "from='render' / 'html' -- ZERO LLM cost: re-parse the saved final response and " +
+      're-render markdown + digest (use after a renderer change).\n\n' +
+      "mode='fork' (default) mints a NEW recapId and copies the upstream artifacts, so the " +
+      "original is preserved for comparison; mode='in-place' refines the same recap. " +
+      'Version-gated: refuses if the bundle predates an incompatible pipeline change.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        recapId: { type: 'string', description: 'Source recap id (recap_xxx...) to regenerate from.' },
+        from: {
+          type: 'string',
+          enum: ['synthesize', 'render', 'html'],
+          description: 'Stage to resume from. synthesize = 1 LLM call; render/html = no LLM.',
+        },
+        mode: {
+          type: 'string',
+          enum: ['fork', 'in-place'],
+          description: 'fork (default) = new recapId preserving the original; in-place = overwrite.',
+        },
+        model: {
+          type: 'string',
+          description: 'Optional OpenRouter slug to use for the synthesize stage (eval-harness lever).',
+        },
+      },
+      required: ['recapId', 'from'],
+    },
+    async handle(params) {
+      if (!hasBrokerRpcSender()) return notConnected()
+      const recapId = String(params.recapId || '').trim()
+      if (!recapId) return err('recapId is required')
+      const from = String(params.from || '').trim()
+      if (from !== 'synthesize' && from !== 'render' && from !== 'html') {
+        return err('from must be one of: synthesize, render, html')
+      }
+      const mode = params.mode === 'in-place' ? 'in-place' : params.mode === 'fork' ? 'fork' : undefined
+      const model = typeof params.model === 'string' ? params.model : undefined
+      try {
+        const response = await brokerRpc<{
+          recapId: string
+          sourceRecapId: string
+          mode: string
+          from: string
+          error?: string
+        }>(
+          'recap_regenerate',
+          { recapId, from, ...(mode ? { mode } : {}), ...(model ? { model } : {}) },
+          { timeoutMs: 30_000 },
+        )
+        return jsonResult({
+          recapId: response.recapId,
+          sourceRecapId: response.sourceRecapId,
+          mode: response.mode,
+          from: response.from,
+          hint: 'Regenerate queued. Poll with recap_get({ recapId }) until status="done".',
+        })
+      } catch (caught) {
+        return err(caught instanceof Error ? caught.message : String(caught))
+      }
+    },
+  }
+}
+
 export function registerRecapTools(ctx: McpToolContext): Record<string, ToolDef> {
   return {
     recap_search: recapSearchTool(ctx),
     recap_get: recapGetTool(ctx),
     recap_list: recapListTool(ctx),
     recap_create: recapCreateTool(ctx),
+    recap_regenerate: recapRegenerateTool(ctx),
   }
 }
