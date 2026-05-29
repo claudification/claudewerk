@@ -360,12 +360,11 @@ export const TranscriptView = memo(function TranscriptView({
   entries,
   follow = false,
   showThinking = false,
-  onUserScroll,
+  onUserScroll: _onUserScroll,
   onReachedBottom,
   cacheKey,
 }: TranscriptViewProps) {
   const parentRef = useRef<HTMLDivElement>(null)
-  const followKilledRef = useRef(false)
   // Latest virtualizer scroll-rect callback (set by observeElementRect below).
   // Held so the visibility-restore effect can re-push the LIVE element size --
   // a backgrounded tab can leave the virtualizer's cached scrollRect stale and
@@ -558,6 +557,15 @@ export const TranscriptView = memo(function TranscriptView({
     estimateSize: index => estimateGroupSize(mainGroups[index], measuredSizes, getItemKey(index)),
     overscan: 5,
     getItemKey,
+    // Chat-mode: end-anchored list with auto-follow. anchorTo:'end' handles
+    // prepend stability (scroll offset adjusts to keep the visible item fixed)
+    // and streaming growth (size deltas keep the end pinned). followOnAppend
+    // auto-scrolls to the end on new items only when already pinned (user
+    // scrolled up = no pull-down). Replaces all manual scroll-to-bottom and
+    // prepend-anchor machinery.
+    anchorTo: 'end',
+    followOnAppend: true,
+    scrollEndThreshold: 80,
     // Safari fix: ResizeObserver can fire mid-layout before paint completes,
     // causing the virtualizer to read intermediate/partial element heights and
     // clip content. Deferring to rAF ensures measurements happen after layout.
@@ -644,248 +652,67 @@ export const TranscriptView = memo(function TranscriptView({
     virtualizer.measure()
   }, [transcriptRemeasureSeq])
 
-  useEffect(() => {
-    if (follow) followKilledRef.current = false
-  }, [follow])
-
-  // Phase 2 reset on conversation switch.
-  //
-  // Before Phase 2 the parent passed `key={selectedConversationId}` to this
-  // component, so every switch unmounted + remounted -- which gave us scroll
-  // position, follow-killed state, and the planContext ref all reset to fresh
-  // values "for free", at the cost of a 200-1100ms layout-thrash cascade as
-  // the virtualizer re-measured every row from cold (see
-  // .claude/docs/plan-transcript-switch-perf.md for the root cause and the
-  // Safari Timeline evidence). Phase 2 drops the remount and keeps this
-  // component mounted across switches; cacheKey changes instead.
-  //
-  // That means anything the unmount used to discard for free has to be
-  // discarded here explicitly:
-  //
-  //   - followKilledRef: "user scrolled away" intent is per-conversation. If
-  //     A had follow killed (user scrolled up to read history) and we switch
-  //     to B where follow=true, B must NOT inherit A's killed state -- the
-  //     pin-to-bottom layout effect below checks this ref before re-pinning.
-  //
-  //   - parentRef.current.scrollTop: the scroll container survives the
-  //     switch. Without an explicit snap, B opens at whatever scrollTop A had
-  //     last (e.g. 500px into a transcript B doesn't even have that tall).
-  //     Snap to bottom when follow is on (matches the steady-state UX), to
-  //     top when not (matches the old post-remount initial state, and lets
-  //     the user scroll without fighting an unrelated offset).
-  //
-  // useLayoutEffect runs after commit but before paint, so the snap happens
-  // in the same frame -- no flash of the wrong scroll position. The
-  // totalSize-keyed effect below then fine-tunes once the virtualizer
-  // measures real row heights (typically within the same paint, sometimes a
-  // few frames later for off-screen rows).
-  //
-  // planContextRef is intentionally NOT reset here: its useMemo recomputes on
-  // the new entries array, and the previous-vs-next content check naturally
-  // returns the new conversation's plan (or undefined). No leak.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: follow is read at switch time only; we don't want this to re-fire when follow alone toggles (the [follow] effect above handles that)
+  // Conversation switch: snap to the end of the new transcript.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: follow is read at switch time; virtualizer is stable
   useLayoutEffect(() => {
-    followKilledRef.current = false
-    // Drop any in-flight prepend anchor from the OLD conversation -- the new
-    // one's mainGroups don't share keys with it, and we're about to set
-    // scrollTop explicitly below.
-    prependAnchorRef.current = null
-    anchorAppliedRef.current = false
-    const el = parentRef.current
-    if (!el) return
-    if (follow) el.scrollTop = el.scrollHeight
-    else el.scrollTop = 0
-    // react-doctor-disable-next-line react-doctor/exhaustive-deps
+    if (follow) virtualizer.scrollToEnd()
+    else {
+      const el = parentRef.current
+      if (el) el.scrollTop = 0
+    }
   }, [cacheKey])
 
-  // Pin-to-bottom on dynamic measurement. When the virtualizer re-measures rows
-  // after first paint and totalSize changes, re-pin in ONE write -- and only if
-  // actually drifted from the bottom. Replaces the old scrollToBottom rAF poll
-  // loop (3 blind scrollTop writes per call, scrollHeight polled every frame)
-  // that pumped a scroll-event feedback loop into the virtualizer and cost
-  // 200-1100ms per switch. See .claude/docs/plan-transcript-switch-perf.md.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: totalSize is an intentional trigger dep -- the effect re-pins when the virtualizer's measured total changes; it is not read in the body
-  useLayoutEffect(() => {
-    if (!follow || followKilledRef.current) return
-    const el = parentRef.current
-    if (!el) return
-    const t0 = performance.now()
-    const drift = el.scrollHeight - el.scrollTop - el.clientHeight
-    if (drift > 4) {
-      el.scrollTop = el.scrollHeight
-      record('scroll', 'scrollRepin', performance.now() - t0, `drift ${drift.toFixed(0)}px`)
-    }
-  }, [totalSize, follow])
+  // Pin-to-bottom is handled natively by anchorTo:'end' + followOnAppend.
+  // No manual totalSize layout effect needed.
 
-  // Scroll-anchor for prepend ("Load earlier" + infinite scrollback ?before=).
-  //
-  // Old approach (scrollHeight-delta): on the FIRST layout effect after a
-  // prepend commit, shift scrollTop by `newSH - prevSH` then clear the pending
-  // flag. Worked for local "Load earlier" because those groups were already in
-  // the measuredSizes cache -- one settle pass and done. Broke for server
-  // prepends: new groups land with estimateSize() placeholders, ResizeObserver
-  // later reports real heights (often 5-10x for tool results), totalSize
-  // changes again, but pending was already cleared -- no correction -- content
-  // above the viewport silently grew/shrank and the user saw a hop. Multiple
-  // off-screen settles compounded into the "massive jerk up/down."
-  //
-  // New approach (index re-pin): capture the group at the viewport TOP before
-  // prepend (its stableGroupKey + the pixel offset of scrollTop within it).
-  // After every commit, find the same group by key, read its measurement.start
-  // from the virtualizer, and set scrollTop = start + offsetWithinItem. Idempotent
-  // (skips writes when already at target) and survives any number of height-
-  // settle re-renders. Released on real user input (wheel/touch/keydown) AFTER
-  // the anchor has been applied at least once -- so the wheel that TRIGGERED
-  // the fetch doesn't immediately abandon the anchor it just set.
-  const prependAnchorRef = useRef<{ key: string; offsetWithinItem: number } | null>(null)
-  const anchorAppliedRef = useRef(false)
-  // Re-entrancy guard for the scroll-up auto-trigger: set when a prepend is
-  // kicked off, cleared here once scrollTop has been corrected (moved away from
-  // the top), so a burst of scroll events can't fire multiple loads per chunk.
+  // Re-entrancy guard for the scroll-up auto-trigger.
   const loadingEarlierRef = useRef(false)
   // Re-entrancy guard for the server-side older-history fetch (infinite scrollback).
   const fetchingOlderRef = useRef(false)
-  // Live mirrors so capture/release callbacks (stable closures) read current.
-  const mainGroupsRef = useRef(mainGroups)
-  mainGroupsRef.current = mainGroups
-  const virtualizerRef = useRef(virtualizer)
-  virtualizerRef.current = virtualizer
 
-  const captureAnchor = useCallback(() => {
-    const el = parentRef.current
-    const v = virtualizerRef.current
-    const groups = mainGroupsRef.current
-    if (!el || !v) return
-    const items = v.getVirtualItems()
-    if (items.length === 0) return
-    const scrollTop = el.scrollTop
-    // The item whose tail is past the viewport top = the one containing it.
-    const head = items.find(it => it.end > scrollTop) ?? items[0]
-    const g = groups[head.index]
-    if (!g) return
-    prependAnchorRef.current = {
-      key: stableGroupKey(g),
-      offsetWithinItem: scrollTop - head.start,
-    }
-    anchorAppliedRef.current = false
-  }, [])
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: totalSize is the intentional trigger; mainGroups + virtualizer are read for the re-pin lookup
-  useLayoutEffect(() => {
-    const el = parentRef.current
-    const anchor = prependAnchorRef.current
-    if (!anchor || !el) return
-    const t0 = performance.now()
-    const newIdx = mainGroups.findIndex(g => stableGroupKey(g) === anchor.key)
-    if (newIdx < 0) {
-      // Anchor group merged or disappeared in regroup -- can't re-pin safely.
-      prependAnchorRef.current = null
-      anchorAppliedRef.current = false
-      loadingEarlierRef.current = false
-      return
-    }
-    const m = virtualizer.measurementsCache[newIdx]
-    if (!m) return
-    const target = m.start + anchor.offsetWithinItem
-    if (Math.abs(el.scrollTop - target) > 1) {
-      el.scrollTop = target
-      record('scroll', 'prependAnchor', performance.now() - t0, `idx ${newIdx}`)
-    }
-    anchorAppliedRef.current = true
-    loadingEarlierRef.current = false
-  }, [totalSize, windowStart, mainGroups])
-
-  // Release the anchor on real user scroll input -- but only AFTER it has been
-  // applied at least once. The wheel/touch that triggered the fetch is itself
-  // user input; releasing on it would defeat the anchor before the prepend
-  // even lands.
-  useEffect(() => {
-    const el = parentRef.current
-    if (!el) return
-    const release = () => {
-      if (!anchorAppliedRef.current) return
-      prependAnchorRef.current = null
-      anchorAppliedRef.current = false
-    }
-    el.addEventListener('wheel', release, { passive: true })
-    el.addEventListener('touchstart', release, { passive: true })
-    el.addEventListener('keydown', release)
-    return () => {
-      el.removeEventListener('wheel', release)
-      el.removeEventListener('touchstart', release)
-      el.removeEventListener('keydown', release)
-    }
-  }, [])
-
-  // "Load earlier": prepend a chunk of older entries. Kill follow (this is an
-  // explicit history action) so the pin-to-bottom effect stands down, capture
-  // the viewport-top anchor so the layout effect can re-pin across settles.
+  // "Load earlier": prepend a chunk of older entries from the local window.
+  // anchorTo:'end' handles scroll stability on prepend natively.
   const loadEarlier = useCallback(() => {
-    followKilledRef.current = true
-    captureAnchor()
     setWindowStart(s => Math.max(0, s - LOAD_CHUNK))
-  }, [captureAnchor])
+  }, [])
 
-  // Infinite scrollback past the locally-held window: fetch the next OLDER page
-  // from the broker (?before=) and prepend it to the store. The store array
-  // grows at the head; windowStart stays 0 so the fetched page renders, and the
-  // anchor captured here lets the layout effect re-pin scrollTop across the
-  // multi-phase height-settle that follows. Only for the main transcript view
-  // (cacheKey set), never subagents.
+  // Infinite scrollback: fetch older entries from the broker.
   const fetchOlder = useCallback(() => {
     const cid = cacheKeyRef.current
     const oldestSeq = entriesRef.current[0]?.seq
     if (!cid || oldestSeq === undefined || oldestSeq <= 1) return
     fetchingOlderRef.current = true
-    followKilledRef.current = true
-    captureAnchor()
     fetchTranscriptBefore(cid, oldestSeq, LOAD_CHUNK)
       .then(res => {
         if (res && res.entries.length > 0) {
           useConversationsStore.getState().prependTranscript(cid, res.entries)
-        } else {
-          // Empty response -- no prepend will happen, drop the anchor.
-          prependAnchorRef.current = null
         }
         fetchingOlderRef.current = false
       })
       .catch(() => {
-        prependAnchorRef.current = null
         fetchingOlderRef.current = false
       })
-  }, [captureAnchor])
+  }, [])
 
-  const killFollow = useCallback(
-    (e: React.WheelEvent | React.TouchEvent) => {
-      if (!follow) return
-      if ('deltaY' in e && e.deltaY >= 0) return
-      followKilledRef.current = true
-      onUserScroll?.()
-    },
-    [follow, onUserScroll],
-  )
-
+  // Scroll-up auto-load: reveal local older entries or fetch from broker.
   useEffect(() => {
     const el = parentRef.current
-    if (!el || follow) return
-    // Seed with the position at attach time so the programmatic open snap
-    // (scrollTop -> 0 on a follow=false open) is NOT seen as a user scroll-up.
+    if (!el) return
     let lastScrollTop = el.scrollTop
     function handleScroll() {
       if (!el) return
       const st = el.scrollTop
       const movedUp = st < lastScrollTop
       lastScrollTop = st
-      // Infinite scrollback: a genuine user scroll-UP into the top band reveals
-      // more history. `movedUp` gates out the open snap + scroll-down; the guards
-      // + the post-correction scrollTop shift (away from top) prevent a cascade.
       const nearTop = movedUp && st < LOAD_EARLIER_SCROLL_THRESHOLD
       if (nearTop && windowStartRef.current > 0 && !loadingEarlierRef.current) {
-        // Phase 1b: locally-held older entries -- reveal instantly, no network.
         loadingEarlierRef.current = true
         loadEarlier()
+        // Clear guard after a tick so the next scroll can trigger another load.
+        requestAnimationFrame(() => {
+          loadingEarlierRef.current = false
+        })
       } else if (nearTop && windowStartRef.current === 0 && hasMoreOlderRef.current && !fetchingOlderRef.current) {
-        // Phase 2: local window exhausted -- page older history from the broker.
         fetchOlder()
       }
       const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30
@@ -893,65 +720,7 @@ export const TranscriptView = memo(function TranscriptView({
     }
     el.addEventListener('scroll', handleScroll, { passive: true })
     return () => el.removeEventListener('scroll', handleScroll)
-  }, [follow, onReachedBottom, loadEarlier, fetchOlder])
-
-  // Scroll to bottom: a single write. The dynamic-measurement settle (rows
-  // measuring taller than estimated after first paint) is handled by the
-  // totalSize-keyed layout effect above -- NOT by an rAF poll loop. scrollTop
-  // is set against scrollHeight (the whole scroll container, including the
-  // streaming + banner region below the virtualizer), so the true bottom is
-  // pinned, not just the last virtualized row.
-  const scrollToBottom = useCallback(() => {
-    if (followKilledRef.current) return
-    const el = parentRef.current
-    if (!el) return
-    // Explicit jump-to-bottom -- release any pending prepend anchor so the
-    // layout effect doesn't immediately yank us back.
-    prependAnchorRef.current = null
-    anchorAppliedRef.current = false
-    const t0 = performance.now()
-    el.scrollTop = el.scrollHeight
-    record('scroll', 'scrollToBottom', performance.now() - t0, 'single write')
-  }, [])
-
-  // Subscribe to selected conversation's transcript changes for scroll-to-bottom.
-  // IMPORTANT: track the transcript array REFERENCE for the selected conversation, not the global
-  // newDataSeq counter. newDataSeq increments for ANY conversation's data (events, transcripts),
-  // which caused scrollToBottom -> virtualizer.scrollToIndex -> TranscriptView re-render on
-  // every store update from any conversation. By comparing the specific transcript reference,
-  // we only scroll when the viewed conversation's data actually changes.
-  const followRef = useRef(follow)
-  followRef.current = follow
-  useEffect(() => {
-    const getTranscriptRef = (state: {
-      selectedConversationId: string | null
-      transcripts: Record<string, unknown>
-    }) => (state.selectedConversationId ? state.transcripts[state.selectedConversationId] : undefined)
-    let lastRef = getTranscriptRef(useConversationsStore.getState())
-
-    return useConversationsStore.subscribe(state => {
-      const current = getTranscriptRef(state)
-      if (current !== lastRef) {
-        lastRef = current
-        if (followRef.current && !followKilledRef.current) scrollToBottom()
-      }
-    })
-  }, [scrollToBottom])
-
-  // Pin is handled by two synchronous triggers:
-  //   1. transcript-ref subscribe (above) -- fires immediately on store change
-  //   2. totalSize layout effect (above) -- fires on virtualizer re-measure
-  //
-  // REMOVED: four setTimeout(scrollToBottom, 50) effects that used to fire on
-  // entries.length, pendingPermissionCount, pendingLinkCount, pendingAskCount.
-  // These were added when the virtualizer was slower to process new items (pre-
-  // Phase 2). Post-Phase 2 the virtualizer processes synchronously, so the
-  // immediate triggers already pin correctly. The 50ms-delayed effects fired
-  // AGAIN against a scrollHeight that had shifted (streaming text removed,
-  // heights re-measured) -- each late write snapped to a different position,
-  // causing the visible jerk on every new update. Permissions/links/asks render
-  // below the virtualizer (in normal flow), so their height changes are caught
-  // by the totalSize layout effect like any other content growth.
+  }, [onReachedBottom, loadEarlier, fetchOlder])
 
   if (mainGroups.length === 0 && queuedGroups.length === 0) {
     // Ghost (unattached daemon worker) -> live peek + attach. Else NO TRANSCRIPT.
@@ -965,8 +734,6 @@ export const TranscriptView = memo(function TranscriptView({
       data-perf-region="transcript"
       className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4"
       style={{ overscrollBehavior: 'contain', touchAction: 'pan-y' }}
-      onWheel={killFollow}
-      onTouchStart={killFollow}
     >
       {/* Infinite scrollback (Phase 1b): older entries auto-prepend on scroll-up
           (see the scroll handler) -- no button. The synchronous scroll-anchor
