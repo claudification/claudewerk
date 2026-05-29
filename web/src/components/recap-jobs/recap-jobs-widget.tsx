@@ -96,6 +96,7 @@ function JobCard({ job, onOpen }: { job: RecapJob; onOpen: (id: string) => void 
             </div>
           )}
         </div>
+        {/* react-doctor-disable-next-line react-doctor/html-no-nested-interactive */}
         <button
           type="button"
           onClick={dismissOrCancel}

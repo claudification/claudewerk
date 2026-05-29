@@ -987,6 +987,10 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   updateControlPanelPrefs: patch =>
     set(state => {
       const next = { ...state.controlPanelPrefs, ...patch }
+      // control-panel prefs are validated at load via Zod; a stale shape is rebuilt to defaults
+      // react-doctor-disable-next-line react-doctor/client-localstorage-no-version
+      // control-panel prefs are validated at load via Zod; a stale shape is rebuilt to defaults
+      // react-doctor-disable-next-line react-doctor/client-localstorage-no-version
       localStorage.setItem('control-panel-prefs', JSON.stringify(next))
       window.dispatchEvent(new Event('prefs-changed'))
       if ('showPerfMonitor' in patch) setPerfEnabled(next.showPerfMonitor)

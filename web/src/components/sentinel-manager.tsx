@@ -63,6 +63,7 @@ function ProfileUsageSpan({ usage }: { usage?: ProfileUsageRow }) {
  *  (no file present), so a "no" verdict may actually be an authed profile.
  *  Render the unknown state as a warning, not a hard fail, until we have a
  *  cross-platform auth probe. */
+// react-doctor-disable-next-line react-doctor/no-secrets-in-client-code
 const AUTH_UNKNOWN_TIP =
   "Sentinel couldn't find .credentials.json / .claude.json at the configDir root. The profile may still be authed via the OS keychain (macOS). Run `sentinel profile auth <name>` to (re-)login if needed."
 

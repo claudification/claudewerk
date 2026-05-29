@@ -693,6 +693,10 @@ export function ReplResult({ result, extra }: { result?: string; extra?: Record<
       {hasStderr && (
         <div>
           <div className="text-[9px] font-mono text-red-400/50 uppercase tracking-wider mb-0.5">stderr</div>
+          // intentional visual treatment for the stderr block (UI design call)
+          // react-doctor-disable-next-line react-doctor/no-side-tab-border
+          // intentional visual treatment for the stderr block (UI design call)
+          // react-doctor-disable-next-line react-doctor/no-side-tab-border
           <pre className="text-[10px] font-mono bg-red-500/5 border-l-2 border-red-500/40 rounded px-2.5 py-1.5 overflow-x-auto whitespace-pre-wrap text-red-400/80">
             <AnsiText text={stderr} />
           </pre>

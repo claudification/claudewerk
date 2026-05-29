@@ -62,6 +62,10 @@ export async function* runWithConcurrency<T>(
   }
 
   while (inflight.size > 0) {
+    // intentional custom bounded-concurrency pool -- await Promise.race inside while IS the design
+    // react-doctor-disable-next-line react-doctor/async-await-in-loop
+    // intentional custom bounded-concurrency pool -- await Promise.race inside while IS the design
+    // react-doctor-disable-next-line react-doctor/async-await-in-loop
     const settled = await Promise.race(inflight.values())
     inflight.delete(settled.key)
     yield settled.value

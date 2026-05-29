@@ -16,6 +16,10 @@ const SECTIONS: Array<{ key: keyof RecapMetadata; title: string }> = [
 
 function ItemCard({ item, onOpenConversation }: { item: RecapItem; onOpenConversation?: (id: string) => void }) {
   return (
+    // intentional visual treatment for the per-section card stack (UI design call)
+    // react-doctor-disable-next-line react-doctor/no-side-tab-border
+    // intentional visual treatment for the per-section card stack (UI design call)
+    // react-doctor-disable-next-line react-doctor/no-side-tab-border
     <li className="rounded border-l-2 border-border bg-muted/20 px-2.5 py-1.5">
       <div className="text-sm leading-snug">
         {item.title}

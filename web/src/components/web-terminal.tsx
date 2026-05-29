@@ -292,6 +292,14 @@ export function WebTerminal({ conversationId, onClose, popout }: WebTerminalProp
     function blockTouch(e: TouchEvent) {
       e.preventDefault()
     }
+    // must be passive:false -- handler calls preventDefault to block parent scroll
+    // must be passive:false -- handler calls preventDefault to block parent scroll
+    // react-doctor-disable-next-line react-doctor/client-passive-event-listeners
+    // react-doctor-disable-next-line react-doctor/client-passive-event-listeners
+    // must be passive:false -- handler calls preventDefault to block parent scroll
+    // must be passive:false -- handler calls preventDefault to block parent scroll
+    // react-doctor-disable-next-line react-doctor/client-passive-event-listeners
+    // react-doctor-disable-next-line react-doctor/client-passive-event-listeners
     el.addEventListener('wheel', block, { passive: false })
     el.addEventListener('touchmove', blockTouch, { passive: false })
     return () => {

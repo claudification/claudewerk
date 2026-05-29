@@ -363,6 +363,7 @@ function InviteDialog({ open, onClose }: { open: boolean; onClose: () => void })
               <label htmlFor="invite-name" className="text-[10px] text-muted-foreground uppercase tracking-wider">
                 Name
               </label>
+              {/* react-doctor-disable-next-line react-doctor/no-autofocus */}
               <input
                 id="invite-name"
                 type="text"

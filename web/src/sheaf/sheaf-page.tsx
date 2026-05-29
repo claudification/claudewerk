@@ -181,7 +181,7 @@ function Header({ windowH, onWindowH, onRefresh, loading, generatedAt, filters, 
           </div>
           {generatedAt && (
             <span className="text-[10px] text-muted-foreground/70 hidden md:inline">
-              // react-doctor-disable-next-line react-doctor/rendering-hydration-mismatch-time
+              {/* react-doctor-disable-next-line react-doctor/rendering-hydration-mismatch-time */}
               generated {formatDateTime(generatedAt)} ({formatAgo(Date.now() - generatedAt)})
             </span>
           )}

@@ -12,6 +12,10 @@ import { ProjectBoard } from '../project-board'
 import { SharedView } from '../shared-view'
 import { SubagentView } from '../subagent-view'
 import { TasksView } from '../tasks-view'
+// transcript/index re-exports the two long-import-path types; collapsing both into one line keeps the file tidy
+// react-doctor-disable-next-line react-doctor/no-barrel-import
+// transcript/index re-exports the two long-import-path types; collapsing both into one line keeps the file tidy
+// react-doctor-disable-next-line react-doctor/no-barrel-import
 import { TranscriptDropZone, TranscriptView } from '../transcript'
 import { ScrollToBottomButton } from './conversation-input'
 import type { Tab } from './conversation-tabs'

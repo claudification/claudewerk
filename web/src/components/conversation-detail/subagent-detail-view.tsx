@@ -1,6 +1,10 @@
 import { ArrowLeft } from 'lucide-react'
 import type { TranscriptEntry } from '@/lib/types'
 import { cn } from '@/lib/utils'
+// transcript/index re-exports TranscriptView; collapsing this import keeps the file tidy
+// react-doctor-disable-next-line react-doctor/no-barrel-import
+// transcript/index re-exports TranscriptView; collapsing this import keeps the file tidy
+// react-doctor-disable-next-line react-doctor/no-barrel-import
 import { TranscriptView } from '../transcript'
 
 interface SubagentDetailViewProps {

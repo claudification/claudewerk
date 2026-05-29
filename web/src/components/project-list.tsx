@@ -219,6 +219,10 @@ export function ProjectList() {
       const next = new Set(prev)
       if (next.has(groupId)) next.delete(groupId)
       else next.add(groupId)
+      // collapsed-group set; orphan ids in the set are harmless
+      // react-doctor-disable-next-line react-doctor/client-localstorage-no-version
+      // collapsed-group set; orphan ids in the set are harmless
+      // react-doctor-disable-next-line react-doctor/client-localstorage-no-version
       localStorage.setItem('collapsed-groups', JSON.stringify([...next]))
       return next
     })

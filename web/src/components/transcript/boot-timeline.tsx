@@ -84,6 +84,10 @@ export function BootTimeline({ group }: { group: DisplayGroup }) {
   const startTs = entries[0]?.timestamp ? new Date(entries[0].timestamp).getTime() : 0
 
   return (
+    // intentional visual treatment for the boot-timeline section card (UI design call)
+    // react-doctor-disable-next-line react-doctor/no-side-tab-border
+    // intentional visual treatment for the boot-timeline section card (UI design call)
+    // react-doctor-disable-next-line react-doctor/no-side-tab-border
     <div className="mb-3 border-l-2 border-sky-500/30 pl-3 py-1.5 bg-sky-950/10 rounded-r">
       <div className="flex items-center gap-2 mb-1.5">
         <span className="text-[9px] uppercase tracking-wider text-sky-400/70 font-bold">boot</span>

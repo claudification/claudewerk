@@ -107,6 +107,10 @@ async function fetchAndInjectConversation(resolvedId?: string, slug?: string): P
 
   for (const url of attempts) {
     try {
+      // priority-fallback fetch (try first URL, fall back to next); Promise.any would burn both
+      // react-doctor-disable-next-line react-doctor/async-await-in-loop
+      // priority-fallback fetch (try first URL, fall back to next); Promise.any would burn both
+      // react-doctor-disable-next-line react-doctor/async-await-in-loop
       const res = await fetch(url)
       if (!res.ok) continue
       const data = await res.json()

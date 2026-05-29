@@ -153,7 +153,7 @@ function StatusDot({ status }: { status: Conversation['status'] }) {
 }
 
 function MutedDefault({ value }: { value: string | undefined | null }) {
-  if (!value || value === 'default') return <span className="text-muted-foreground/40">—</span>
+  if (!value || value === 'default') return <span className="text-muted-foreground/40">-</span>
   return <span>{value}</span>
 }
 

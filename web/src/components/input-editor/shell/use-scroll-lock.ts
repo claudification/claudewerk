@@ -65,8 +65,8 @@ export function useScrollLock(active: boolean): ScrollLockResult {
       document.documentElement.style.setProperty('--vv-offset', `${vv.offsetTop}px`)
     }
     update()
-    vv.addEventListener('resize', update)
-    vv.addEventListener('scroll', update)
+    vv.addEventListener('resize', update, { passive: true })
+    vv.addEventListener('scroll', update, { passive: true })
 
     return () => {
       vv.removeEventListener('resize', update)

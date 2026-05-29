@@ -1006,6 +1006,7 @@ function ProjectCard({
       {showActions && (
         <div
           role="toolbar"
+          tabIndex={0}
           className="flex items-center gap-0.5 mt-2 pt-2 border-t border-primary/8"
           onClick={e => e.stopPropagation()}
           onKeyDown={e => e.stopPropagation()}
