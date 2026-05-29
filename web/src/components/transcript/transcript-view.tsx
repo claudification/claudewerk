@@ -542,32 +542,6 @@ export const TranscriptView = memo(function TranscriptView({
   const selectedConversationId = useConversationsStore(state => state.selectedConversationId)
   const perfEnabled = useConversationsStore(state => state.controlPanelPrefs.showPerfMonitor)
 
-  // Count pending permissions for the selected conversation. Used as a scroll-to-bottom
-  // trigger so a newly-arrived permission pins into view when follow is active.
-  const pendingPermissionCount = useConversationsStore(state =>
-    state.selectedConversationId
-      ? state.pendingPermissions.filter(p => p.conversationId === state.selectedConversationId).length
-      : 0,
-  )
-
-  // Pending project-link requests: both inbound (ALLOW/BLOCK) and outbound (waiting)
-  const pendingLinkCount = useConversationsStore(state =>
-    state.selectedConversationId
-      ? state.pendingProjectLinks.filter(
-          r =>
-            r.toConversation === state.selectedConversationId ||
-            (r.fromConversation === state.selectedConversationId && r.toConversation !== state.selectedConversationId),
-        ).length
-      : 0,
-  )
-
-  // Pending ask questions for the selected conversation -- scroll trigger
-  const pendingAskCount = useConversationsStore(state =>
-    state.selectedConversationId
-      ? state.pendingAskQuestions.filter(q => q.conversationId === state.selectedConversationId).length
-      : 0,
-  )
-
   // Cache measured sizes so estimateSize can use real heights for groups that
   // have been rendered before. Sourced from a module-level per-conversation
   // cache. useMemo re-selects the right Map when cacheKey changes (Phase 2 of
@@ -964,41 +938,20 @@ export const TranscriptView = memo(function TranscriptView({
     })
   }, [scrollToBottom])
 
-  // Scroll to bottom on initial mount, follow toggle, and entry count changes
-  // biome-ignore lint/correctness/useExhaustiveDependencies: entries.length is used as a dep key to trigger scroll on new entries, not to access entries directly
-  useEffect(() => {
-    if (!follow) return
-    // Delay slightly to allow virtualizer to process new items and measure
-    const timer = setTimeout(scrollToBottom, 50)
-    return () => clearTimeout(timer)
-  }, [follow, entries.length, scrollToBottom])
-
-  // Also scroll to bottom when a new pending permission arrives -- permissions
-  // render after the virtualized content as a blocking UI gate, so the user
-  // needs to see them immediately when follow is active.
-  useEffect(() => {
-    if (!follow) return
-    if (pendingPermissionCount === 0) return
-    const timer = setTimeout(scrollToBottom, 50)
-    return () => clearTimeout(timer)
-  }, [follow, pendingPermissionCount, scrollToBottom])
-
-  // Same for link requests -- when another conversation asks to link, pin the
-  // inline approve/block card into view if follow is active.
-  useEffect(() => {
-    if (!follow) return
-    if (pendingLinkCount === 0) return
-    const timer = setTimeout(scrollToBottom, 50)
-    return () => clearTimeout(timer)
-  }, [follow, pendingLinkCount, scrollToBottom])
-
-  // Same for ask questions -- pin the interactive card into view.
-  useEffect(() => {
-    if (!follow) return
-    if (pendingAskCount === 0) return
-    const timer = setTimeout(scrollToBottom, 50)
-    return () => clearTimeout(timer)
-  }, [follow, pendingAskCount, scrollToBottom])
+  // Pin is handled by two synchronous triggers:
+  //   1. transcript-ref subscribe (above) -- fires immediately on store change
+  //   2. totalSize layout effect (above) -- fires on virtualizer re-measure
+  //
+  // REMOVED: four setTimeout(scrollToBottom, 50) effects that used to fire on
+  // entries.length, pendingPermissionCount, pendingLinkCount, pendingAskCount.
+  // These were added when the virtualizer was slower to process new items (pre-
+  // Phase 2). Post-Phase 2 the virtualizer processes synchronously, so the
+  // immediate triggers already pin correctly. The 50ms-delayed effects fired
+  // AGAIN against a scrollHeight that had shifted (streaming text removed,
+  // heights re-measured) -- each late write snapped to a different position,
+  // causing the visible jerk on every new update. Permissions/links/asks render
+  // below the virtualizer (in normal flow), so their height changes are caught
+  // by the totalSize layout effect like any other content growth.
 
   if (mainGroups.length === 0 && queuedGroups.length === 0) {
     // Ghost (unattached daemon worker) -> live peek + attach. Else NO TRANSCRIPT.
