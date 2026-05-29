@@ -241,7 +241,11 @@ function recapCreateTool(ctx: McpToolContext): ToolDef {
       'starting cold in a project, or before spawning a worker. That is the default ' +
       '(audience="agent"); audience="human" produces a narrative report instead. ' +
       'Returns the recap id immediately -- set inform_on_complete to be pushed the ' +
-      'result when it finishes, instead of polling recap_get.',
+      'result when it finishes, instead of polling recap_get. ' +
+      'BENEVOLENT EVAL HARNESS: pass `tuning` (per-stage models, thresholds, chunkSize, ' +
+      'forceMode, per-stage temperature/maxTokens) + `tuning.variantLabel` to A/B recipes -- ' +
+      'fire several with different tuning, then compare cost + grounding across the stored ' +
+      'recaps (each persists its resolved recipe).',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -281,6 +285,33 @@ function recapCreateTool(ctx: McpToolContext): ToolDef {
         force: {
           type: 'boolean',
           description: 'Bypass the 5-min input-hash cache and always regenerate.',
+        },
+        tuning: {
+          type: 'object' as const,
+          description:
+            'Eval-harness tuning (benevolent agents only). All optional; the resolved recipe is stored on the recap so variants are comparable.',
+          properties: {
+            variantLabel: { type: 'string', description: 'Label to tell this variant apart in the recap list.' },
+            forceMode: {
+              type: 'string',
+              enum: ['auto', 'oneshot', 'chunked'],
+              description: 'Force the render path regardless of size.',
+            },
+            mapModel: { type: 'string', description: 'OpenRouter slug for the chunked map stage (default Sonnet).' },
+            reduceModel: {
+              type: 'string',
+              description: 'OpenRouter slug for the chunked reduce stage (default Opus).',
+            },
+            oneshotModel: { type: 'string', description: 'OpenRouter slug for the sub-threshold oneshot pass.' },
+            thresholdChars: { type: 'number', description: 'Chunk when the assembled prompt exceeds this many chars.' },
+            thresholdConvs: { type: 'number', description: 'Chunk when the conversation count exceeds this.' },
+            chunkSize: { type: 'number', description: 'Greedy chunk size in chars.' },
+            temperature: {
+              type: 'object' as const,
+              description: 'Per-stage sampling temperature: {map,reduce,oneshot}.',
+            },
+            maxTokens: { type: 'object' as const, description: 'Per-stage max output tokens: {map,reduce,oneshot}.' },
+          },
         },
       },
       required: ['projectUri', 'period'],
@@ -328,6 +359,7 @@ function recapCreateTool(ctx: McpToolContext): ToolDef {
             audience,
             ...(signals ? { signals } : {}),
             ...(force ? { force: true } : {}),
+            ...(raw.tuning && typeof raw.tuning === 'object' ? { tuning: raw.tuning } : {}),
             ...(informOnComplete ? { inform_on_complete: true } : {}),
           },
           { timeoutMs: 30_000 },

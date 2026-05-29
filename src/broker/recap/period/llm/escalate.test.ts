@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { makePromptInputs } from '../../__tests__/synthetic-fixtures'
-import { pickModel } from './escalate'
+import { chunkModels, pickModel } from './escalate'
 import { buildPrompt } from './prompt-builder'
 
 // Ceiling is 3.2M chars (Opus 4.8 1M-token window headroom). Below it, human
@@ -38,5 +38,28 @@ describe('pickModel integrated with fixture sizes', () => {
       expect(out.inputChars).toBeLessThan(OVER_CEILING)
       expect(pickModel(out.inputChars).reason).toBe('human-floor')
     }
+  })
+})
+
+describe('chunkModels (Pillar A/D map+reduce resolution)', () => {
+  test('defaults map to Sonnet, reduce to Opus', () => {
+    expect(chunkModels()).toEqual({
+      mapModel: 'anthropic/claude-sonnet-4',
+      reduceModel: 'anthropic/claude-opus-4.8',
+    })
+  })
+
+  test('honours per-call overrides (Pillar D tuning)', () => {
+    expect(chunkModels({ mapModel: 'x/cheap', reduceModel: 'y/strong' })).toEqual({
+      mapModel: 'x/cheap',
+      reduceModel: 'y/strong',
+    })
+  })
+
+  test('falls back to default when an override is empty/undefined', () => {
+    expect(chunkModels({ mapModel: '' })).toEqual({
+      mapModel: 'anthropic/claude-sonnet-4',
+      reduceModel: 'anthropic/claude-opus-4.8',
+    })
   })
 })

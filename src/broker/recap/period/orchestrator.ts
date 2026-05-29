@@ -1,11 +1,23 @@
 import { createHash } from 'node:crypto'
-import type { RecapAudience, RecapCreateMessage, RecapLedgerStage, RecapSignal } from '../../../shared/protocol'
+import type {
+  RecapAudience,
+  RecapCreateMessage,
+  RecapLedgerStage,
+  RecapSignal,
+  RecapTuning,
+} from '../../../shared/protocol'
 import type { StoreDriver } from '../../store/types'
 import { type ChatRequest, chat } from '../shared/openrouter-client'
 import type { NormalizedUsage } from '../shared/pricing'
 import { buildMapPrompt, MapParseError, parseMapOutput } from './chunk/map-prompt'
 import { makeEmptyMetadata, mergeMetadata } from './chunk/merge'
-import { type RecapRenderMode, shouldChunk, splitIntoChunks } from './chunk/split'
+import {
+  DEFAULT_CHUNK_SIZE_CHARS,
+  DEFAULT_CHUNK_THRESHOLD_CHARS,
+  DEFAULT_CHUNK_THRESHOLD_CONVS,
+  shouldChunk,
+  splitIntoChunks,
+} from './chunk/split'
 import { buildSynthesizePrompt } from './chunk/synthesize-prompt'
 import {
   gatherCommitsStub,
@@ -215,7 +227,8 @@ async function runRecap(
   // (parallel cheap extraction -> code merge -> one Opus synthesis). Both feed
   // the SAME parseRecapOutput/finalize downstream.
   const { parsed, model } = await produceRecap(deps, recapId, ledger, emit, { built, promptInputs, audience, args })
-  const titleTemplate = `${promptInputs.projectLabel} - ${period.human}`
+  const baseTitle = `${promptInputs.projectLabel} - ${period.human}`
+  const titleTemplate = args.tuning?.variantLabel ? `${baseTitle} [${args.tuning.variantLabel}]` : baseTitle
   const finalMarkdown = renderFinalMarkdown({
     title: titleTemplate,
     subtitle: parsed.metadata.subtitle,
@@ -381,14 +394,15 @@ async function callLlm(
   prompt: { system: string; user: string },
   model: string,
   apiKey?: string,
+  opts?: { temperature?: number; maxTokens?: number },
 ): Promise<string> {
   return runLlmCall(deps, recapId, ledger, 'oneshot', {
     model,
     system: prompt.system,
     user: prompt.user,
-    maxTokens: RECAP_MAX_TOKENS,
+    maxTokens: opts?.maxTokens ?? RECAP_MAX_TOKENS,
     timeoutMs: RECAP_TIMEOUT_MS,
-    temperature: 0.2,
+    temperature: opts?.temperature ?? 0.2,
     retries: 2,
     apiKey,
   })
@@ -453,22 +467,27 @@ async function produceRecap(
   p: ProduceArgs,
 ): Promise<{ parsed: ParsedRecap; model: string }> {
   const { built, promptInputs, audience } = p
+  const t = p.args.tuning ?? {}
   deps.store.update(recapId, { inputChars: built.inputChars })
-  const chunked = shouldChunk(built.inputChars, promptInputs.conversations.length, { forceMode: forceModeOf(p.args) })
+  const chunked = shouldChunk(built.inputChars, promptInputs.conversations.length, {
+    thresholdChars: t.thresholdChars,
+    thresholdConvs: t.thresholdConvs,
+    forceMode: t.forceMode,
+  })
   if (chunked) return runChunked(deps, recapId, ledger, emit, p)
 
-  const choice = pickModel(built.inputChars, audience)
-  deps.store.update(recapId, { model: choice.model })
-  emit.emit(
-    'info',
-    'render/prompt',
-    `oneshot model=${choice.model} (${choice.reason}), prompt=${built.inputChars} chars`,
-  )
+  const model = t.oneshotModel || pickModel(built.inputChars, audience).model
+  deps.store.update(recapId, { model })
+  persistRecipe(deps, recapId, 'oneshot', model, t)
+  emit.emit('info', 'render/prompt', `oneshot model=${model}, prompt=${built.inputChars} chars`)
   emit.setProgress(45, 'render/llm')
-  const content = await callLlm(deps, recapId, ledger, built, choice.model, deps.apiKey)
+  const content = await callLlm(deps, recapId, ledger, built, model, deps.apiKey, {
+    temperature: t.temperature?.oneshot,
+    maxTokens: t.maxTokens?.oneshot,
+  })
   emit.setProgress(85, 'render/llm-done')
-  const parsed = await parseOrRetry(deps, recapId, ledger, content, built, choice.model, deps.apiKey)
-  return { parsed, model: choice.model }
+  const parsed = await parseOrRetry(deps, recapId, ledger, content, built, model, deps.apiKey)
+  return { parsed, model }
 }
 
 /**
@@ -486,12 +505,14 @@ async function runChunked(
   p: ProduceArgs,
 ): Promise<{ parsed: ParsedRecap; model: string }> {
   const { built, promptInputs, audience } = p
-  const models = chunkModels({
-    mapModel: overrideOf(p.args, 'mapModel'),
-    reduceModel: overrideOf(p.args, 'reduceModel'),
-  })
-  const chunks = splitIntoChunks(promptInputs.transcripts)
+  const t = p.args.tuning ?? {}
+  const models = chunkModels({ mapModel: t.mapModel, reduceModel: t.reduceModel })
+  const chunks = splitIntoChunks(promptInputs.transcripts, t.chunkSize)
   deps.store.update(recapId, { model: models.reduceModel })
+  persistRecipe(deps, recapId, 'chunked', models.reduceModel, t, {
+    mapModel: models.mapModel,
+    chunkCount: chunks.length,
+  })
   emit.emit(
     'info',
     'render/chunk',
@@ -523,9 +544,9 @@ async function runChunked(
           system: prompt.system,
           user: prompt.user,
           responseFormat: { type: 'json_object' },
-          maxTokens: RECAP_MAX_TOKENS,
+          maxTokens: t.maxTokens?.map ?? RECAP_MAX_TOKENS,
           timeoutMs: RECAP_TIMEOUT_MS,
-          temperature: 0.1,
+          temperature: t.temperature?.map ?? 0.1,
           retries: 2,
           apiKey: deps.apiKey,
         },
@@ -572,9 +593,9 @@ async function runChunked(
     model: models.reduceModel,
     system: synth.system,
     user: synth.user,
-    maxTokens: RECAP_MAX_TOKENS,
+    maxTokens: t.maxTokens?.reduce ?? RECAP_MAX_TOKENS,
     timeoutMs: RECAP_TIMEOUT_MS,
-    temperature: 0.2,
+    temperature: t.temperature?.reduce ?? 0.2,
     retries: 2,
     apiKey: deps.apiKey,
   })
@@ -611,17 +632,33 @@ function countItems(m: RecapMetadata): number {
   )
 }
 
-/** Pillar-D forceMode seam: read an optional render-mode override off the create
- *  args (the MCP schema wires this in Pillar D; absent today -> undefined). */
-function forceModeOf(args: StartArgs): RecapRenderMode | undefined {
-  const m = (args as { forceMode?: string }).forceMode
-  return m === 'oneshot' || m === 'chunked' || m === 'auto' ? m : undefined
-}
-
-/** Pillar-D per-call model override seam (string fields on the create args). */
-function overrideOf(args: StartArgs, key: 'mapModel' | 'reduceModel'): string | undefined {
-  const v = (args as unknown as Record<string, unknown>)[key]
-  return typeof v === 'string' && v.trim() ? v.trim() : undefined
+/**
+ * Pillar D: persist the RESOLVED recipe (actual models/thresholds/sizes used)
+ * to the recap row's args_json, so every recap is self-describing and a
+ * benevolent robot can compare variants by recipe + cost + grounding. Defaults
+ * are baked in (not left implicit) so the stored recipe is reproducible.
+ */
+function persistRecipe(
+  deps: OrchestratorDeps,
+  recapId: string,
+  mode: 'oneshot' | 'chunked',
+  primaryModel: string,
+  t: RecapTuning,
+  extra?: Record<string, unknown>,
+): void {
+  const recipe: Record<string, unknown> = {
+    mode,
+    model: primaryModel,
+    thresholdChars: t.thresholdChars ?? DEFAULT_CHUNK_THRESHOLD_CHARS,
+    thresholdConvs: t.thresholdConvs ?? DEFAULT_CHUNK_THRESHOLD_CONVS,
+    chunkSize: t.chunkSize ?? DEFAULT_CHUNK_SIZE_CHARS,
+    ...(t.forceMode ? { forceMode: t.forceMode } : {}),
+    ...(t.variantLabel ? { variantLabel: t.variantLabel } : {}),
+    ...(t.temperature ? { temperature: t.temperature } : {}),
+    ...(t.maxTokens ? { maxTokens: t.maxTokens } : {}),
+    ...extra,
+  }
+  deps.store.update(recapId, { argsJson: JSON.stringify(recipe) })
 }
 
 interface FinalizeArgs {

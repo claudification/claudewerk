@@ -39,6 +39,12 @@ function recapCreate(ctx: HandlerContext, data: MessageData): void {
   // to 'agent'); undefined -> orchestrator defaults to 'human'.
   const audience: RecapAudience | undefined =
     data.audience === 'agent' || data.audience === 'human' ? data.audience : undefined
+  // Pillar D: eval-harness tuning overrides. Already benevolent-gated -- the
+  // whole recap_create from agent-host required benevolent trust above, and the
+  // dashboard UI never sends these. Passed through verbatim; the orchestrator
+  // reads each field defensively and persists the resolved recipe to args_json.
+  const tuning =
+    data.tuning && typeof data.tuning === 'object' ? (data.tuning as RecapCreateMessage['tuning']) : undefined
   // inform_on_complete: the target conversation is the CALLER's own
   // conversation, derived from the WS connection -- never passed by the agent.
   const informOnComplete = data.inform_on_complete === true
@@ -55,6 +61,7 @@ function recapCreate(ctx: HandlerContext, data: MessageData): void {
       signals: data.signals as RecapCreateMessage['signals'],
       force: Boolean(data.force),
       ...(audience ? { audience } : {}),
+      ...(tuning ? { tuning } : {}),
       ...(informConversationId ? { informConversationId } : {}),
     })
     .then(result => ctx.reply({ type: 'recap_created', recapId: result.recapId, cached: result.cached, ...echo }))

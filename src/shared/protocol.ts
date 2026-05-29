@@ -3662,6 +3662,39 @@ export interface RecapCreateMessage {
   /** Optional batch correlation id for fan-out from batch command palette.
    *  Broker logs it; never interpreted. */
   batchId?: string
+  /** Pillar D: benevolent-gated eval-harness tuning. All optional; each recap
+   *  resolves + persists its full recipe (args_json) so variants are comparable. */
+  tuning?: RecapTuning
+}
+
+/** Per-stage numeric knob (map / reduce / oneshot). */
+export interface RecapStageParam {
+  map?: number
+  reduce?: number
+  oneshot?: number
+}
+
+/** Eval-harness tuning overrides for recap_create. Every field is optional and
+ *  falls back to env/defaults; the RESOLVED values are stored on the recap row
+ *  (args_json) so a benevolent robot can compare variants by recipe + cost. */
+export interface RecapTuning {
+  /** Label to tell variants apart in the recap list (suffixed onto the title). */
+  variantLabel?: string
+  /** Force the render path regardless of input size (A/B chunked vs oneshot). */
+  forceMode?: 'auto' | 'oneshot' | 'chunked'
+  /** Per-stage model slugs (OpenRouter). */
+  mapModel?: string
+  reduceModel?: string
+  oneshotModel?: string
+  /** Chunk-mode gate overrides. */
+  thresholdChars?: number
+  thresholdConvs?: number
+  /** Greedy chunk size (chars). */
+  chunkSize?: number
+  /** Per-stage sampling temperature. */
+  temperature?: RecapStageParam
+  /** Per-stage max output tokens. */
+  maxTokens?: RecapStageParam
 }
 export interface RecapCancelMessage {
   type: 'recap_cancel'
