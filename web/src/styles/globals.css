@@ -459,7 +459,7 @@ body:has([data-mobile-compose-panel]) [data-voice-fab] {
 @keyframes transcript-entry-enter {
 	from {
 		opacity: 0;
-		transform: translateY(18px);
+		transform: translateY(12px);
 	}
 	to {
 		opacity: 1;
@@ -467,7 +467,7 @@ body:has([data-mobile-compose-panel]) [data-voice-fab] {
 	}
 }
 .transcript-entry-enter {
-	animation: transcript-entry-enter 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+	animation: transcript-entry-enter 0.25s cubic-bezier(0.22, 1, 0.36, 1);
 }
 /* NOTE: no prefers-reduced-motion guard. A real-browser harness proved the
    animation fires/runs 11/11 on new groups; the only thing suppressing it in the

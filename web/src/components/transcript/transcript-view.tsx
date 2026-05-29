@@ -499,7 +499,7 @@ export const TranscriptView = memo(function TranscriptView({
     if (key) {
       pendingEnterRef.current = null
       setEnteringKey(key)
-      console.debug('[transcript-enter] SET', key)
+      // console.debug('[transcript-enter] SET', key)
     }
   }, [tailKey])
   const clearEntering = useCallback(() => setEnteringKey(null), [])
@@ -1033,6 +1033,7 @@ export const TranscriptView = memo(function TranscriptView({
           })().map(virtualItem => {
             const itemKey = String(virtualItem.key)
             const isEntering = enteringKey === itemKey
+            // if (isEntering) console.debug('[transcript-enter] CLASS-APPLIED', itemKey)
             return (
               <div
                 key={virtualItem.key}
