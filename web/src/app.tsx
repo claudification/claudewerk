@@ -19,7 +19,7 @@ import { QuickTaskModal } from '@/components/quick-task-modal'
 import { PublicRecapView } from '@/components/recap/public-recap-view'
 import { RecapHistoryModal } from '@/components/recap/recap-history-modal'
 import { RecapViewer } from '@/components/recap/recap-viewer'
-import { RecapCustomRangeDialog } from '@/components/recap-jobs/recap-custom-range-dialog'
+import { RecapConfigDialog } from '@/components/recap-jobs/recap-config-dialog'
 import { RecapJobsWidget } from '@/components/recap-jobs/recap-jobs-widget'
 import { RenameModal } from '@/components/rename-modal'
 import { ReviveDialog } from '@/components/revive-dialog'
@@ -332,7 +332,7 @@ function Dashboard() {
       <ChordOverlay />
       <SpawnDialog />
       <ReviveDialog />
-      <RecapCustomRangeDialog />
+      <RecapConfigDialog />
       <RecapViewer />
       <RecapHistoryModal />
       <ManageProjectLinksDialog />

@@ -1,7 +1,6 @@
 /**
  * Tests for createRecap (the single entry point for all UI surfaces that
- * dispatch a recap_create over WS). Submenu component rendering is exercised
- * implicitly via the dialog tests; this file pins the WS payload format.
+ * dispatch a recap_create over WS). Pins the WS payload format.
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
@@ -14,12 +13,6 @@ vi.mock('@/hooks/use-conversations', () => ({
     sentMessages.push({ type, data: data || {} })
     return true
   },
-}))
-
-// Mock the trigger so importing the submenu module doesn't try to drag in
-// react-dom internals during the test.
-vi.mock('./recap-custom-range-trigger', () => ({
-  openRecapCustomRangeDialog: vi.fn(),
 }))
 
 import { openRecapHistory } from './recap-history-trigger'
@@ -72,6 +65,14 @@ describe('createRecap', () => {
     createRecap({ projectUri: '*', label: 'today', signals: ['user_prompts', 'commits'], force: true })
     expect(sentMessages[0].data.signals).toEqual(['user_prompts', 'commits'])
     expect(sentMessages[0].data.force).toBe(true)
+  })
+
+  test('retrospect is forwarded as a top-level flag only when set', () => {
+    createRecap({ projectUri: '*', label: 'today' })
+    expect(sentMessages[0].data.retrospect).toBeUndefined()
+    sentMessages.length = 0
+    createRecap({ projectUri: '*', label: 'last_7', retrospect: true })
+    expect(sentMessages[0].data.retrospect).toBe(true)
   })
 })
 

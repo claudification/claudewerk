@@ -6,7 +6,7 @@ import { canRespawnStaleDaemon } from '@/lib/daemon-control'
 import type { Conversation, ProjectOrder, ProjectOrderGroup } from '@/lib/types'
 import { projectPath } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
-import { RecapSubmenu } from '../recap-jobs/recap-submenu'
+import { RecapMenuItems } from '../recap-jobs/recap-menu-items'
 import { openReviveDialog } from '../revive-dialog-trigger'
 import { openManageProjectLinks } from '../settings/manage-project-links-trigger'
 import { openSpawnDialog } from '../spawn-dialog-trigger'
@@ -161,7 +161,7 @@ export function ConversationContextMenu({
           >
             Quick recap (this conversation)
           </ContextMenu.Item>
-          <RecapSubmenu projectUri={conversation.project} label="Recap project" />
+          <RecapMenuItems projectUri={conversation.project} />
           {conversation.pendingTaskCount > 0 && (
             <ContextMenu.Item
               className={menuItemClass}
@@ -292,7 +292,7 @@ function ProjectMenuItems({ project, onOpenSettings }: { project: string; onOpen
       >
         Launch new…
       </ContextMenu.Item>
-      <RecapSubmenu projectUri={project} />
+      <RecapMenuItems projectUri={project} />
       <ContextMenu.Item
         className={menuItemClass}
         onSelect={() => {
