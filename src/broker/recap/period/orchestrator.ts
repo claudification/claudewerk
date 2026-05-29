@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
-import type { RecapAudience, RecapCreateMessage, RecapSignal } from '../../../shared/protocol'
+import type { RecapAudience, RecapCreateMessage, RecapLedgerStage, RecapSignal } from '../../../shared/protocol'
 import type { StoreDriver } from '../../store/types'
-import { chat } from '../shared/openrouter-client'
+import { type ChatRequest, chat } from '../shared/openrouter-client'
+import type { NormalizedUsage } from '../shared/pricing'
 import {
   gatherCommitsStub,
   gatherConversations,
@@ -14,6 +15,7 @@ import {
   type PeriodScope,
 } from './gather'
 import type { CommitDigest } from './gather/types'
+import { RecapLedger } from './ledger'
 import { pickModel } from './llm/escalate'
 import { buildPrompt, type PromptInputs } from './llm/prompt-builder'
 import { createProgressEmitter, type ProgressBroadcaster } from './progress'
@@ -117,9 +119,21 @@ function scheduleRun(
   timeZone: string,
 ): void {
   setImmediate(() => {
-    runRecap(deps, recapId, args, period, timeZone).catch(err => {
+    // The ledger lives at this scope so the failure path can persist whatever
+    // cost was already burned (record-on-failure) -- the runLlmCall wrapper
+    // also flushes it incrementally, but this guarantees the final state.
+    const ledger = new RecapLedger()
+    runRecap(deps, recapId, args, period, timeZone, ledger).catch(err => {
       console.error(`[recap] run failed for ${recapId}:`, err)
-      deps.store.update(recapId, { status: 'failed', error: describe(err) })
+      const built = ledger.build()
+      deps.store.update(recapId, {
+        status: 'failed',
+        error: describe(err),
+        ledgerJson: JSON.stringify(built),
+        inputTokens: built.summary.totalInputTokens,
+        outputTokens: built.summary.totalOutputTokens,
+        llmCostUsd: built.summary.totalCostUsd,
+      })
       deps.broadcaster.broadcast({
         type: 'recap_progress',
         recapId,
@@ -147,6 +161,7 @@ async function runRecap(
   args: StartArgs,
   period: ResolvedPeriod,
   timeZone: string,
+  ledger: RecapLedger,
 ): Promise<void> {
   const emit = createProgressEmitter({ recapId, store: deps.store, broadcaster: deps.broadcaster })
   emit.setStatus('gathering')
@@ -197,10 +212,10 @@ async function runRecap(
 
   emit.setStatus('rendering')
   emit.setProgress(45, 'render/llm')
-  const llmResult = await callLlm(built, choice.model, deps.apiKey)
+  const llmContent = await callLlm(deps, recapId, ledger, built, choice.model, deps.apiKey)
   emit.setProgress(85, 'render/llm-done')
 
-  const parsed = await parseOrRetry(llmResult.content, built, choice.model, deps.apiKey)
+  const parsed = await parseOrRetry(deps, recapId, ledger, llmContent, built, choice.model, deps.apiKey)
   const titleTemplate = `${promptInputs.projectLabel} - ${period.human}`
   const finalMarkdown = renderFinalMarkdown({
     title: titleTemplate,
@@ -223,7 +238,7 @@ async function runRecap(
     commits: promptInputs.commits,
   })
 
-  finalize(deps, recapId, {
+  finalize(deps, recapId, ledger, {
     title: titleTemplate,
     subtitle: parsed.metadata.subtitle,
     markdown: finalMarkdown,
@@ -231,9 +246,6 @@ async function runRecap(
     digestJson: JSON.stringify(digest),
     body: parsed.body,
     projectUri: args.projectUri,
-    inputTokens: llmResult.inputTokens,
-    outputTokens: llmResult.outputTokens,
-    costUsd: llmResult.costUsd,
   })
   emit.setProgress(100, 'persist')
   emit.setStatus('done')
@@ -299,13 +311,6 @@ function collectSignals(
   return { promptInputs, inputChars }
 }
 
-interface LlmResult {
-  content: string
-  inputTokens: number
-  outputTokens: number
-  costUsd: number
-}
-
 // A full human recap is a large YAML frontmatter (every features/bugs/fixes/
 // decisions/dead_ends/gotchas item) PLUS the markdown body. The old 8k cap
 // truncated big multi-day recaps mid-frontmatter -- the closing `---` and body
@@ -316,8 +321,69 @@ interface LlmResult {
 const RECAP_MAX_TOKENS = 32_000
 const RECAP_TIMEOUT_MS = 240_000
 
-async function callLlm(prompt: { system: string; user: string }, model: string, apiKey?: string): Promise<LlmResult> {
-  const res = await chat({
+// Usage recorded when a chat() call THROWS (timeout/4xx/5xx): the attempt
+// happened but carries no token/cost data. costSource 'unknown' marks it.
+const ZERO_USAGE: NormalizedUsage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0,
+  costUsd: 0,
+  costSource: 'unknown',
+}
+
+/**
+ * Single LLM-call primitive for the whole pipeline (oneshot/map/reduce/retry).
+ * Times the call, records a ledger entry on BOTH success and failure (COST 2 --
+ * a failed recap still shows the tokens it burned, unlike the old aggregate),
+ * and flushes the ledger to the row incrementally so a crash mid-run leaves the
+ * partial cost trail. Re-throws on error after recording. Returns the content.
+ */
+async function runLlmCall(
+  deps: OrchestratorDeps,
+  recapId: string,
+  ledger: RecapLedger,
+  stage: RecapLedgerStage,
+  req: ChatRequest,
+  chunkIndex?: number,
+): Promise<string> {
+  const t0 = Date.now()
+  const idx = chunkIndex !== undefined ? { chunkIndex } : {}
+  try {
+    const res = await chat(req)
+    ledger.addCall({ stage, model: req.model, usage: res.usage, ms: Date.now() - t0, ...idx })
+    flushLedger(deps, recapId, ledger)
+    return res.content
+  } catch (err) {
+    ledger.addCall({
+      stage,
+      model: req.model,
+      usage: ZERO_USAGE,
+      ms: Date.now() - t0,
+      ok: false,
+      error: describe(err),
+      ...idx,
+    })
+    flushLedger(deps, recapId, ledger)
+    throw err
+  }
+}
+
+/** Persist the ledger snapshot to ledger_json. Cheap (small JSON); called after
+ *  every LLM call for incremental durability. */
+function flushLedger(deps: OrchestratorDeps, recapId: string, ledger: RecapLedger): void {
+  deps.store.update(recapId, { ledgerJson: JSON.stringify(ledger.build()) })
+}
+
+async function callLlm(
+  deps: OrchestratorDeps,
+  recapId: string,
+  ledger: RecapLedger,
+  prompt: { system: string; user: string },
+  model: string,
+  apiKey?: string,
+): Promise<string> {
+  return runLlmCall(deps, recapId, ledger, 'oneshot', {
     model,
     system: prompt.system,
     user: prompt.user,
@@ -327,20 +393,22 @@ async function callLlm(prompt: { system: string; user: string }, model: string, 
     retries: 2,
     apiKey,
   })
-  return {
-    content: res.content,
-    inputTokens: res.usage.inputTokens,
-    outputTokens: res.usage.outputTokens,
-    costUsd: res.usage.costUsd,
-  }
 }
 
-async function parseOrRetry(content: string, built: { system: string; user: string }, model: string, apiKey?: string) {
+async function parseOrRetry(
+  deps: OrchestratorDeps,
+  recapId: string,
+  ledger: RecapLedger,
+  content: string,
+  built: { system: string; user: string },
+  model: string,
+  apiKey?: string,
+) {
   try {
     return parseRecapOutput(content)
   } catch (err) {
     if (!(err instanceof RecapParseError)) throw err
-    const retry = await chat({
+    const retry = await runLlmCall(deps, recapId, ledger, 'retry', {
       model,
       apiKey,
       retries: 1,
@@ -350,10 +418,7 @@ async function parseOrRetry(content: string, built: { system: string; user: stri
       messages: [
         { role: 'system', content: built.system },
         { role: 'user', content: built.user },
-        {
-          role: 'assistant',
-          content,
-        },
+        { role: 'assistant', content },
         {
           role: 'user',
           content:
@@ -361,7 +426,7 @@ async function parseOrRetry(content: string, built: { system: string; user: stri
         },
       ],
     })
-    return parseRecapOutput(retry.content)
+    return parseRecapOutput(retry)
   }
 }
 
@@ -373,12 +438,12 @@ interface FinalizeArgs {
   digestJson: string
   body: string
   projectUri: string
-  inputTokens: number
-  outputTokens: number
-  costUsd: number
 }
 
-function finalize(deps: OrchestratorDeps, recapId: string, args: FinalizeArgs): void {
+function finalize(deps: OrchestratorDeps, recapId: string, ledger: RecapLedger, args: FinalizeArgs): void {
+  // Aggregate token/cost columns + the full ledger now derive from COST 2
+  // (every call this run), so they include the retry call the old code dropped.
+  const built = ledger.build()
   deps.store.update(recapId, {
     status: 'done',
     progress: 100,
@@ -388,9 +453,10 @@ function finalize(deps: OrchestratorDeps, recapId: string, args: FinalizeArgs): 
     markdown: args.markdown,
     metadataJson: JSON.stringify(args.metadata),
     digestJson: args.digestJson,
-    inputTokens: args.inputTokens,
-    outputTokens: args.outputTokens,
-    llmCostUsd: args.costUsd,
+    inputTokens: built.summary.totalInputTokens,
+    outputTokens: built.summary.totalOutputTokens,
+    llmCostUsd: built.summary.totalCostUsd,
+    ledgerJson: JSON.stringify(built),
   })
   const tags = denormalizeTags(recapId, args.metadata)
   deps.store.setTags(recapId, tags)
