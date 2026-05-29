@@ -680,8 +680,30 @@ export const TranscriptView = memo(function TranscriptView({
     }
   }, [cacheKey])
 
-  // Pin-to-bottom is handled natively by anchorTo:'end' + followOnAppend.
-  // No manual totalSize layout effect needed.
+  // Pin-to-bottom: anchorTo:'end' + followOnAppend handle the VIRTUALIZER items,
+  // but we also need to pin when (a) the transcript first loads after a switch,
+  // (b) streaming text grows below the virtualizer, and (c) the follow prop
+  // toggles on (ScrollToBottomButton click). This single subscription + the
+  // tail-region RO (below) cover all three without the old 6-trigger cascade.
+  const followRef = useRef(follow)
+  followRef.current = follow
+  useEffect(() => {
+    let lastRef = (() => {
+      const s = useConversationsStore.getState()
+      return s.selectedConversationId ? s.transcripts[s.selectedConversationId] : undefined
+    })()
+    return useConversationsStore.subscribe(state => {
+      const current = state.selectedConversationId ? state.transcripts[state.selectedConversationId] : undefined
+      if (current !== lastRef) {
+        lastRef = current
+        if (followRef.current) virtualizer.scrollToEnd()
+      }
+    })
+  }, [virtualizer])
+  // Re-pin when follow is toggled on (ScrollToBottomButton click).
+  useLayoutEffect(() => {
+    if (follow) virtualizer.scrollToEnd()
+  }, [follow, virtualizer])
 
   // Re-entrancy guard for the scroll-up auto-trigger.
   const loadingEarlierRef = useRef(false)
