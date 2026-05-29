@@ -681,14 +681,14 @@ export const TranscriptView = memo(function TranscriptView({
     if (el) el.scrollTop = el.scrollHeight
   }, [])
 
-  // Conversation switch: snap to the end of the new transcript.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: follow is read at switch time
+  // Conversation switch: ALWAYS snap to the bottom. The user expects to see
+  // the latest content when entering a conversation, regardless of whether
+  // follow was killed in a previous conversation. Also re-enable follow in
+  // the parent so the ScrollToBottomButton hides and new content pins.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scrollToEnd + onReachedBottom are stable callbacks
   useLayoutEffect(() => {
-    if (follow) scrollToEnd()
-    else {
-      const el = parentRef.current
-      if (el) el.scrollTop = 0
-    }
+    scrollToEnd()
+    onReachedBottom?.()
   }, [cacheKey])
 
   // Pin when transcript data changes (covers: initial load after switch,
