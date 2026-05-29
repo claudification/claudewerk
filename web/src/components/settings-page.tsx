@@ -87,7 +87,7 @@ interface SettingItem {
   server?: boolean
   fullWidth?: boolean
   keywords?: string // extra search terms
-  render: (ctx: SettingsContext) => React.ReactNode
+  render: (ctx: SettingsContext, ariaLabel: string) => React.ReactNode
 }
 
 const DASHBOARD_TABS: SettingsShellTab[] = [
@@ -116,8 +116,9 @@ const SETTINGS: SettingItem[] = [
     description: 'Tag shown next to user messages',
     server: true,
     keywords: 'tag name',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="text"
         maxLength={20}
         value={(ctx.server.userLabel as string) ?? ''}
@@ -133,7 +134,7 @@ const SETTINGS: SettingItem[] = [
     label: 'User tag size',
     description: 'Size of the user label badge',
     server: true,
-    render: ctx => (
+    render: (ctx, _ariaLabel) => (
       <SizePicker value={(ctx.server.userSize as string) ?? ''} onChange={v => ctx.setServer('userSize', v)} />
     ),
   },
@@ -144,7 +145,7 @@ const SETTINGS: SettingItem[] = [
     description: 'Background color for user label',
     server: true,
     keywords: 'colour background',
-    render: ctx => (
+    render: (ctx, _ariaLabel) => (
       <div className="w-full">
         <ColorInput
           value={(ctx.server.userColor as string) ?? ''}
@@ -161,8 +162,9 @@ const SETTINGS: SettingItem[] = [
     description: 'Tag shown next to agent messages',
     server: true,
     keywords: 'tag name',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="text"
         maxLength={20}
         value={(ctx.server.agentLabel as string) ?? ''}
@@ -178,7 +180,7 @@ const SETTINGS: SettingItem[] = [
     label: 'Agent tag size',
     description: 'Size of the agent label badge',
     server: true,
-    render: ctx => (
+    render: (ctx, _ariaLabel) => (
       <SizePicker value={(ctx.server.agentSize as string) ?? ''} onChange={v => ctx.setServer('agentSize', v)} />
     ),
   },
@@ -189,7 +191,7 @@ const SETTINGS: SettingItem[] = [
     description: 'Background color for agent label',
     server: true,
     keywords: 'colour background',
-    render: ctx => (
+    render: (ctx, _ariaLabel) => (
       <div className="w-full">
         <ColorInput
           value={(ctx.server.agentColor as string) ?? ''}
@@ -205,7 +207,7 @@ const SETTINGS: SettingItem[] = [
     label: 'Default conversation',
     description: 'Auto-select this project when opening the dashboard (per-device)',
     keywords: 'startup auto select home',
-    render: ctx => (
+    render: (ctx, _ariaLabel) => (
       <DefaultConversationPicker
         value={ctx.prefs.defaultConversationCwd ?? ''}
         onChange={v => ctx.updatePrefs({ defaultConversationCwd: v })}
@@ -219,7 +221,7 @@ const SETTINGS: SettingItem[] = [
     label: 'Default view',
     description: 'What to show when selecting a conversation (per-device)',
     keywords: 'terminal tty transcript',
-    render: ctx => (
+    render: (ctx, _ariaLabel) => (
       <select
         value={ctx.prefs.defaultView ?? 'transcript'}
         onChange={e => ctx.updatePrefs({ defaultView: e.target.value as 'transcript' | 'tty' })}
@@ -237,7 +239,7 @@ const SETTINGS: SettingItem[] = [
     label: 'Editor backend',
     description: 'Legacy textarea (default) or CodeMirror (experimental, better markdown rendering)',
     keywords: 'codemirror editor markdown input experimental',
-    render: ctx => (
+    render: (ctx, _ariaLabel) => (
       <select
         value={ctx.prefs.inputBackend ?? 'legacy'}
         onChange={e => ctx.updatePrefs({ inputBackend: e.target.value as 'legacy' | 'codemirror' })}
@@ -255,8 +257,9 @@ const SETTINGS: SettingItem[] = [
     description: 'Delay (ms) before carriage return after paste (0 = auto)',
     server: true,
     keywords: 'carriage return paste delay',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="number"
         min={0}
         max={2000}
@@ -274,8 +277,9 @@ const SETTINGS: SettingItem[] = [
     label: 'Voice input',
     description: 'Show microphone button in input bar',
     keywords: 'mic microphone',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="checkbox"
         checked={ctx.prefs.showVoiceInput}
         onChange={e => ctx.updatePrefs({ showVoiceInput: e.target.checked })}
@@ -289,8 +293,9 @@ const SETTINGS: SettingItem[] = [
     label: 'Voice FAB (touch)',
     description: 'Floating hold-to-record button on touch devices',
     keywords: 'mic microphone fab',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="checkbox"
         checked={ctx.prefs.showVoiceFab}
         onChange={e => ctx.updatePrefs({ showVoiceFab: e.target.checked })}
@@ -304,7 +309,7 @@ const SETTINGS: SettingItem[] = [
     label: 'Push-to-talk key',
     description: 'Hold a key to record voice input (desktop)',
     keywords: 'voice key hotkey ptt mic keyboard',
-    render: ctx => (
+    render: (ctx, _ariaLabel) => (
       <KeyCapture value={ctx.prefs.voiceHoldKey} onChange={code => ctx.updatePrefs({ voiceHoldKey: code })} />
     ),
   },
@@ -314,8 +319,9 @@ const SETTINGS: SettingItem[] = [
     label: 'Keep mic open',
     description: 'Keep microphone stream alive permanently to eliminate cold-start latency',
     keywords: 'voice mic latency warm always connected',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="checkbox"
         checked={ctx.prefs.keepMicOpen}
         onChange={e => ctx.updatePrefs({ keepMicOpen: e.target.checked })}
@@ -329,8 +335,9 @@ const SETTINGS: SettingItem[] = [
     label: 'Linger time',
     description: 'Keep recording after releasing push-to-talk to catch trailing words (ms)',
     keywords: 'voice delay linger timeout trailing words',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="number"
         min={0}
         max={5000}
@@ -347,8 +354,9 @@ const SETTINGS: SettingItem[] = [
     label: 'Mic warm stream TTL',
     description: 'How long mic stays warm after recording to avoid cold-start latency (ms, 0 = release immediately)',
     keywords: 'voice mic warm cache timeout stream release',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="number"
         min={0}
         max={120000}
@@ -365,7 +373,7 @@ const SETTINGS: SettingItem[] = [
     label: 'Audio input device',
     description: 'Microphone to use for voice input (change takes effect on next recording)',
     keywords: 'mic microphone device headphones audio input select',
-    render: ctx => (
+    render: (ctx, _ariaLabel) => (
       <VoiceDevicePicker
         value={ctx.prefs.voiceDeviceId ?? ''}
         onChange={v => {
@@ -382,8 +390,9 @@ const SETTINGS: SettingItem[] = [
     description: 'Post-process voice transcripts with Haiku to fix ASR errors',
     server: true,
     keywords: 'speech recognition',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="checkbox"
         checked={(ctx.server.voiceRefinement as boolean) ?? true}
         onChange={e => ctx.setServer('voiceRefinement', e.target.checked)}
@@ -398,9 +407,10 @@ const SETTINGS: SettingItem[] = [
     description: 'Custom system prompt for voice refinement (leave empty for default)',
     server: true,
     keywords: 'speech recognition prompt',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <div className="w-full">
         <textarea
+          aria-label={ariaLabel}
           value={(ctx.server.voiceRefinementPrompt as string) ?? ''}
           onChange={e => ctx.setServer('voiceRefinementPrompt', e.target.value)}
           placeholder="You are an expert ASR post-processor..."
@@ -429,8 +439,9 @@ const SETTINGS: SettingItem[] = [
     label: 'Show ended conversations',
     description: 'Show [ENDED] conversations within CWD groups in sidebar',
     keywords: 'sidebar ended filter',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="checkbox"
         checked={ctx.prefs.showEndedConversations}
         onChange={e => ctx.updatePrefs({ showEndedConversations: e.target.checked })}
@@ -444,8 +455,9 @@ const SETTINGS: SettingItem[] = [
     label: 'Show inactive projects',
     description: 'Show projects with only ended conversations at bottom of sidebar',
     keywords: 'sidebar inactive',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="checkbox"
         checked={ctx.prefs.showInactiveByDefault}
         onChange={e => ctx.updatePrefs({ showInactiveByDefault: e.target.checked })}
@@ -459,8 +471,9 @@ const SETTINGS: SettingItem[] = [
     label: 'Compact mode',
     description: 'Reduce spacing in conversation list',
     keywords: 'dense',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="checkbox"
         checked={ctx.prefs.compactMode}
         onChange={e => ctx.updatePrefs({ compactMode: e.target.checked })}
@@ -474,8 +487,9 @@ const SETTINGS: SettingItem[] = [
     label: 'Show thinking',
     description: 'Display model thinking blocks in transcript',
     keywords: 'reasoning',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="checkbox"
         checked={ctx.prefs.showThinking}
         onChange={e => ctx.updatePrefs({ showThinking: e.target.checked })}
@@ -489,7 +503,7 @@ const SETTINGS: SettingItem[] = [
     label: 'Live thinking indicator',
     description: 'Ephemeral pill on the active turn while the model is thinking',
     keywords: 'reasoning live sparkline tokens-per-second',
-    render: ctx => (
+    render: (ctx, _ariaLabel) => (
       <select
         value={ctx.prefs.thinkingIndicator ?? 'detailed'}
         onChange={e => ctx.updatePrefs({ thinkingIndicator: e.target.value as 'detailed' | 'compact' | 'off' })}
@@ -507,8 +521,9 @@ const SETTINGS: SettingItem[] = [
     label: 'Conversation cache size',
     description: 'Keep N recent conversations in memory for instant switching (0 = disabled)',
     keywords: 'cache lifo mru fast switch',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="number"
         min={0}
         max={10}
@@ -524,8 +539,9 @@ const SETTINGS: SettingItem[] = [
     label: 'Cache timeout (min)',
     description: 'Evict cached non-selected conversations after N minutes (0 = never)',
     keywords: 'cache timeout evict memory',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="number"
         min={0}
         max={60}
@@ -541,8 +557,9 @@ const SETTINGS: SettingItem[] = [
     label: 'Chord timeout (s)',
     description: 'How long to wait for second chord key (⌘K … / ⌘G …) before dismissing',
     keywords: 'chord shortcut keyboard timeout cmd+k cmd+g',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="number"
         min={0.5}
         max={10}
@@ -561,8 +578,9 @@ const SETTINGS: SettingItem[] = [
     label: 'Chat bubbles',
     description: 'iMessage-style bubbles for user messages',
     keywords: 'bubble imessage chat style',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="checkbox"
         checked={ctx.prefs.chatBubbles}
         onChange={e => ctx.updatePrefs({ chatBubbles: e.target.checked })}
@@ -576,7 +594,7 @@ const SETTINGS: SettingItem[] = [
     label: 'Bubble color',
     description: 'Color for user chat bubbles',
     keywords: 'bubble color theme',
-    render: ctx => (
+    render: (ctx, _ariaLabel) => (
       <BubbleColorPicker value={ctx.prefs.chatBubbleColor} onChange={c => ctx.updatePrefs({ chatBubbleColor: c })} />
     ),
   },
@@ -586,8 +604,9 @@ const SETTINGS: SettingItem[] = [
     label: 'Context bar in sidebar',
     description: 'Show context window usage on conversation cards',
     keywords: 'tokens progress percentage',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="checkbox"
         checked={ctx.prefs.showContextInList}
         onChange={e => ctx.updatePrefs({ showContextInList: e.target.checked })}
@@ -601,8 +620,9 @@ const SETTINGS: SettingItem[] = [
     label: 'Recap descriptions in sidebar',
     description: 'Show recap description text on conversation cards (title always visible)',
     keywords: 'recap summary description sidebar',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="checkbox"
         checked={ctx.prefs.showRecapDescInList}
         onChange={e => ctx.updatePrefs({ showRecapDescInList: e.target.checked })}
@@ -616,8 +636,9 @@ const SETTINGS: SettingItem[] = [
     label: 'Cost in sidebar',
     description: 'Show cost badges on conversation cards',
     keywords: 'cost money dollars pricing',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="checkbox"
         checked={ctx.prefs.showCostInList}
         onChange={e => ctx.updatePrefs({ showCostInList: e.target.checked })}
@@ -631,8 +652,9 @@ const SETTINGS: SettingItem[] = [
     label: 'WS traffic stats',
     description: 'Show msg/s and KB/s in header bar',
     keywords: 'websocket bandwidth',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="checkbox"
         checked={ctx.prefs.showWsStats}
         onChange={e => ctx.updatePrefs({ showWsStats: e.target.checked })}
@@ -662,8 +684,9 @@ const SETTINGS: SettingItem[] = [
     label: 'Show Diag tab',
     description: 'Show the Diag tab in conversation detail (debug info)',
     keywords: 'diagnostics debug',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="checkbox"
         checked={ctx.prefs.showDiag}
         onChange={e => ctx.updatePrefs({ showDiag: e.target.checked })}
@@ -677,8 +700,9 @@ const SETTINGS: SettingItem[] = [
     label: 'Performance monitor',
     description: 'Track render times, grouping cost, WS processing. View in nerd modal Perf tab',
     keywords: 'performance profiler perf monitor render',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="checkbox"
         checked={ctx.prefs.showPerfMonitor}
         onChange={e => ctx.updatePrefs({ showPerfMonitor: e.target.checked })}
@@ -693,7 +717,7 @@ const SETTINGS: SettingItem[] = [
     description:
       'Transport for the claude backend on conversations spawned by agents (MCP / inter-conversation) that name no transport. Daemon = a subscription-billed claude --bg worker. The control panel spawn dialog is unaffected -- it always picks a transport.',
     keywords: 'transport daemon pty headless claude agent spawn mcp default cutover backend',
-    render: ctx => (
+    render: (ctx, _ariaLabel) => (
       <select
         value={resolveDefaultTransport(ctx.server)}
         onChange={e => ctx.setServer('defaultTransport', { claude: e.target.value })}
@@ -711,7 +735,7 @@ const SETTINGS: SettingItem[] = [
     label: 'Default launch mode',
     description: 'Default mode when spawning/reviving conversations (per-project overrides this)',
     keywords: 'headless pty terminal launch mode spawn',
-    render: ctx => (
+    render: (ctx, _ariaLabel) => (
       <select
         value={(ctx.server.defaultLaunchMode as string) || 'headless'}
         onChange={e => ctx.setServer('defaultLaunchMode', e.target.value)}
@@ -728,7 +752,7 @@ const SETTINGS: SettingItem[] = [
     label: 'Default effort',
     description: 'Default --effort level for new conversations (per-project overrides this)',
     keywords: 'effort thinking budget low medium high xhigh max',
-    render: ctx => (
+    render: (ctx, _ariaLabel) => (
       <select
         value={(ctx.server.defaultEffort as string) || 'default'}
         onChange={e => ctx.setServer('defaultEffort', e.target.value)}
@@ -749,8 +773,9 @@ const SETTINGS: SettingItem[] = [
     label: 'Default model',
     description: 'Default --model for new conversations (per-project overrides this)',
     keywords: 'model opus sonnet haiku claude',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="text"
         value={(ctx.server.defaultModel as string) || ''}
         onChange={e => ctx.setServer('defaultModel', e.target.value)}
@@ -766,8 +791,9 @@ const SETTINGS: SettingItem[] = [
     description:
       'Default model for new OpenCode conversations (per-project overrides this; empty = opencode-go/glm-5.1)',
     keywords: 'opencode model glm gpt qwen claude haiku openrouter zen go',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="text"
         value={(ctx.server.defaultOpenCodeModel as string) || ''}
         onChange={e => ctx.setServer('defaultOpenCodeModel', e.target.value)}
@@ -784,8 +810,9 @@ const SETTINGS: SettingItem[] = [
     label: 'Show streaming',
     description: 'Show token-by-token streaming block for headless conversations',
     keywords: 'streaming tokens live headless',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="checkbox"
         checked={ctx.prefs.showStreaming !== false}
         onChange={e => ctx.updatePrefs({ showStreaming: e.target.checked })}
@@ -799,8 +826,9 @@ const SETTINGS: SettingItem[] = [
     label: 'Sanitize paths',
     description: 'Strip redundant cd <path> prefixes from displayed commands',
     keywords: 'sanitize paths cd path clean strip',
-    render: ctx => (
+    render: (ctx, ariaLabel) => (
       <input
+        aria-label={ariaLabel}
         type="checkbox"
         checked={ctx.prefs.sanitizePaths !== false}
         onChange={e => ctx.updatePrefs({ sanitizePaths: e.target.checked })}
@@ -901,6 +929,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
       showTabs={!isFiltering}
       headerContent={
         <input
+          aria-label="Search settings"
           ref={filterRef}
           type="text"
           value={filter}
@@ -932,7 +961,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
           <GroupHeader label={group} />
           <div className="space-y-3">
             {items.map(item => {
-              const rendered = item.render(ctx)
+              const rendered = item.render(ctx, item.label)
               // Full-width items (color pickers, textareas) get stacked layout
               const isFullWidth =
                 item.label.includes('color') || item.label.includes('Color') || item.label === 'Refinement prompt'
