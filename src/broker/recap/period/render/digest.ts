@@ -5,13 +5,21 @@
  * chart or a list row needs, never raw transcripts.
  */
 
-import type { RecapDigest, RecapDigestCommits } from '../../../../shared/protocol'
-import type { CommitDigest, ConversationDigest, CostDigest } from '../gather/types'
+import type {
+  RecapDigest,
+  RecapDigestActivity,
+  RecapDigestCommits,
+  RecapDigestContextBucket,
+} from '../../../../shared/protocol'
+import type { CommitDigest, ConversationDigest, CostDigest, ErrorDigest, ToolUseDigest } from '../gather/types'
 
 export function buildRecapDigest(args: {
   cost: CostDigest
   conversations: ConversationDigest[]
   commits?: CommitDigest
+  /** Pillar E COST 1: tool-use + incident rollups (absent in older callers). */
+  tools?: ToolUseDigest
+  errors?: ErrorDigest
 }): RecapDigest {
   const costByConv = new Map(args.cost.perConversation.map(c => [c.conversationId, c.costUsd]))
   const conversations = args.conversations
@@ -27,6 +35,15 @@ export function buildRecapDigest(args: {
     .sort((a, b) => (b.costUsd ?? 0) - (a.costUsd ?? 0) || b.turns - a.turns)
 
   const commits = summarizeCommits(args.commits)
+  const activity = buildActivity(args.conversations, args.tools, args.errors)
+  const contextBuckets: RecapDigestContextBucket[] = args.cost.contextBuckets.map(b => ({
+    bucket: b.bucket,
+    lowerTokens: b.lowerTokens,
+    conversations: b.conversations,
+    costUsd: b.costUsd,
+    cacheWriteTokens: b.cacheWriteTokens,
+    turns: b.turns,
+  }))
   return {
     cost: {
       totalCostUsd: args.cost.totalCostUsd,
@@ -41,6 +58,9 @@ export function buildRecapDigest(args: {
         inputTokens: d.inputTokens,
         outputTokens: d.outputTokens,
         cacheReadTokens: d.cacheReadTokens,
+        // FIX (Pillar E): the old projection dropped cacheWriteTokens, so the
+        // re-warm tax was invisible in the per-day series. Carry it through.
+        cacheWriteTokens: d.cacheWriteTokens,
         turns: d.turns,
       })),
       perModel: args.cost.perModel.map(m => ({
@@ -52,6 +72,50 @@ export function buildRecapDigest(args: {
     },
     conversations,
     ...(commits ? { commits } : {}),
+    activity,
+    ...(contextBuckets.length ? { contextBuckets } : {}),
+  }
+}
+
+/** Classify a CC tool name into the read/edit/write/bash showcase buckets. */
+function classifyTool(tool: string): 'read' | 'edit' | 'write' | 'bash' | 'other' {
+  switch (tool) {
+    case 'Read':
+    case 'Glob':
+    case 'Grep':
+    case 'NotebookRead':
+    case 'LS':
+      return 'read'
+    case 'Edit':
+    case 'MultiEdit':
+    case 'NotebookEdit':
+      return 'edit'
+    case 'Write':
+      return 'write'
+    case 'Bash':
+      return 'bash'
+    default:
+      return 'other'
+  }
+}
+
+function buildActivity(
+  conversations: ConversationDigest[],
+  tools?: ToolUseDigest,
+  errors?: ErrorDigest,
+): RecapDigestActivity {
+  const toolCalls = { total: 0, read: 0, edit: 0, write: 0, bash: 0, other: 0 }
+  for (const conv of tools?.perConversation ?? []) {
+    for (const t of conv.perTool) {
+      toolCalls.total += t.count
+      toolCalls[classifyTool(t.tool)] += t.count
+    }
+  }
+  return {
+    conversations: conversations.length,
+    turns: conversations.reduce((sum, c) => sum + c.turnCount, 0),
+    toolCalls,
+    incidents: errors?.incidents.length ?? 0,
   }
 }
 

@@ -43,6 +43,26 @@ export interface CostDigest {
   perModel: Array<{ model: string; costUsd: number; inputTokens: number; outputTokens: number; turns: number }>
   perConversation: Array<{ conversationId: string; costUsd: number; tokens: number; turns: number }>
   perProject: Array<{ projectUri: string; costUsd: number; tokens: number; turns: number; conversations: number }>
+  /** Pillar E: conversations bucketed by the MAX context window they reached
+   *  (max over turns of input + cacheRead + cacheWrite tokens), with the cost +
+   *  cache-write tax each bucket carries -> the cost-penalty-of-long-context curve.
+   *  Derived from existing per-turn token fields (no new instrumentation). */
+  contextBuckets: ContextBucket[]
+}
+
+export interface ContextBucket {
+  /** Human label, e.g. "<100k", "100-200k", "700k+". */
+  bucket: string
+  /** Lower bound of the bucket in tokens (for ordering / charting). */
+  lowerTokens: number
+  /** How many conversations peaked in this context band. */
+  conversations: number
+  /** Total $ spent by conversations in this band (cost-penalty signal). */
+  costUsd: number
+  /** Total cache-write (re-warm) tokens spent by conversations in this band. */
+  cacheWriteTokens: number
+  /** Total turns across conversations in this band. */
+  turns: number
 }
 
 export interface TaskDigest {

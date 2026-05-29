@@ -381,6 +381,8 @@ async function runRegenerate(
     cost: promptInputs.cost,
     conversations: promptInputs.conversations,
     commits: promptInputs.commits,
+    tools: promptInputs.tools,
+    errors: promptInputs.errors,
   })
 
   finalize(deps, targetId, ledger, {
@@ -562,6 +564,8 @@ async function runRecap(
     cost: promptInputs.cost,
     conversations: promptInputs.conversations,
     commits: promptInputs.commits,
+    tools: promptInputs.tools,
+    errors: promptInputs.errors,
   })
 
   finalize(deps, recapId, ledger, {

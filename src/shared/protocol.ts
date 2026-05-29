@@ -3534,6 +3534,9 @@ export interface RecapDigestDay {
   inputTokens: number
   outputTokens: number
   cacheReadTokens: number
+  /** Cache-write (prompt-cache re-warm) tokens for the day. Pillar E surfaces
+   *  the re-warm tax as a time series; the old projection dropped this. */
+  cacheWriteTokens: number
   turns: number
 }
 
@@ -3549,6 +3552,27 @@ export interface RecapDigestCommits {
   filesChanged: number
   insertions: number
   deletions: number
+}
+
+/** Pillar E COST 1 -- mechanical activity rollups for the customer-facing
+ *  showcase. Tool calls split read/edit/write/bash; incidents from the error
+ *  digest; conversations/turns from the conversation digest. */
+export interface RecapDigestActivity {
+  conversations: number
+  turns: number
+  toolCalls: { total: number; read: number; edit: number; write: number; bash: number; other: number }
+  incidents: number
+}
+
+/** Pillar E -- one context-window band. The cost-penalty-of-long-context curve
+ *  is costUsd/conversations across the ascending bands. */
+export interface RecapDigestContextBucket {
+  bucket: string
+  lowerTokens: number
+  conversations: number
+  costUsd: number
+  cacheWriteTokens: number
+  turns: number
 }
 
 /** Curated, wire-safe projection of the gather digests for chart + drill-down
@@ -3567,6 +3591,11 @@ export interface RecapDigest {
   }
   conversations: RecapDigestConversation[]
   commits?: RecapDigestCommits
+  /** Pillar E COST 1: mechanical activity showcase. Absent on pre-2.1 recaps. */
+  activity?: RecapDigestActivity
+  /** Pillar E: conversations bucketed by peak context + the cost they carried.
+   *  Absent on pre-2.1 recaps. */
+  contextBuckets?: RecapDigestContextBucket[]
 }
 
 /** Which LLM cost source a ledger entry's cost came from. Mirrors the

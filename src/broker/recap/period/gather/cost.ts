@@ -1,5 +1,5 @@
 import type { StoreDriver, TurnRecord } from '../../../store/types'
-import type { CostDigest, PeriodScope } from './types'
+import type { ContextBucket, CostDigest, PeriodScope } from './types'
 
 export function gatherCost(store: StoreDriver, scope: PeriodScope): CostDigest {
   const turns = collectTurns(store, scope)
@@ -27,7 +27,8 @@ function buildDigest(turns: TurnRecord[], timeZone: string): CostDigest {
   const perModel = aggregatePerModel(turns)
   const perConv = aggregatePerConversation(turns)
   const perProject = aggregatePerProject(turns)
-  return { ...totals, perDay, perModel, perConversation: perConv, perProject }
+  const contextBuckets = aggregateContextBuckets(turns)
+  return { ...totals, perDay, perModel, perConversation: perConv, perProject, contextBuckets }
 }
 
 function aggregateTotals(turns: TurnRecord[]) {
@@ -102,6 +103,52 @@ function aggregatePerConversation(turns: TurnRecord[]) {
   return Array.from(byConv.values())
     .sort((a, b) => b.costUsd - a.costUsd)
     .slice(0, 10)
+}
+
+// Context-window bands (tokens). Jonas: no reason to go over 700k. The per-turn
+// "context reached" = input + cacheRead + cacheWrite (the full prompt the model
+// saw, including the cached prefix and the freshly-cached portion).
+const CONTEXT_BANDS: Array<{ bucket: string; lowerTokens: number }> = [
+  { bucket: '<100k', lowerTokens: 0 },
+  { bucket: '100-200k', lowerTokens: 100_000 },
+  { bucket: '200-300k', lowerTokens: 200_000 },
+  { bucket: '300-500k', lowerTokens: 300_000 },
+  { bucket: '500-700k', lowerTokens: 500_000 },
+  { bucket: '700k+', lowerTokens: 700_000 },
+]
+
+function bandIndexFor(contextTokens: number): number {
+  let idx = 0
+  for (let i = 0; i < CONTEXT_BANDS.length; i++) {
+    if (contextTokens >= CONTEXT_BANDS[i].lowerTokens) idx = i
+  }
+  return idx
+}
+
+/** Bucket conversations by the MAX context window they reached, accumulating the
+ *  cost + cache-write tax per band (Pillar E cost-penalty-of-long-context curve).
+ *  Only non-empty bands are returned, in ascending context order. */
+function aggregateContextBuckets(turns: TurnRecord[]): ContextBucket[] {
+  // Per conversation: peak context + its cost / cache-write / turn totals.
+  const byConv = new Map<string, { maxContext: number; costUsd: number; cacheWriteTokens: number; turns: number }>()
+  for (const t of turns) {
+    const context = t.inputTokens + t.cacheReadTokens + t.cacheWriteTokens
+    const cur = byConv.get(t.conversationId) ?? { maxContext: 0, costUsd: 0, cacheWriteTokens: 0, turns: 0 }
+    cur.maxContext = Math.max(cur.maxContext, context)
+    cur.costUsd += t.costUsd
+    cur.cacheWriteTokens += t.cacheWriteTokens
+    cur.turns += 1
+    byConv.set(t.conversationId, cur)
+  }
+  const bands = CONTEXT_BANDS.map(b => ({ ...b, conversations: 0, costUsd: 0, cacheWriteTokens: 0, turns: 0 }))
+  for (const conv of byConv.values()) {
+    const band = bands[bandIndexFor(conv.maxContext)]
+    band.conversations += 1
+    band.costUsd += conv.costUsd
+    band.cacheWriteTokens += conv.cacheWriteTokens
+    band.turns += conv.turns
+  }
+  return bands.filter(b => b.conversations > 0)
 }
 
 function aggregatePerProject(turns: TurnRecord[]) {

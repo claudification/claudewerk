@@ -172,6 +172,16 @@ export function makeCost(convs: ConversationDigest[]): CostDigest {
         turns: convs.length * 10,
       },
     ],
+    contextBuckets: [
+      {
+        bucket: '<100k',
+        lowerTokens: 0,
+        conversations: convs.length,
+        costUsd: total,
+        cacheWriteTokens: convs.length * 100,
+        turns: convs.length * 10,
+      },
+    ],
   }
 }
 
