@@ -469,32 +469,40 @@ export const TranscriptView = memo(function TranscriptView({
   // is the same (not a switch), the window is unchanged (not a head prepend /
   // "load earlier"), there was a previous tail (not the first paint of a
   // conversation), and follow is on and not killed (the bottom is in view).
-  const enteringKeysRef = useRef<Set<string>>(new Set())
-  const [, bumpEnter] = useState(0)
+  // ENTER ANIMATION STATE. Uses a post-render effect (not derived-state-in-render)
+  // because the virtualizer may not include the new tail row in its visible range
+  // on the render where detection fires -- the pin-to-bottom scrolls AFTER paint,
+  // then a second render brings the row into view. A ref mutation is invisible to
+  // that second render; a state update via useEffect ensures React re-renders with
+  // the entering key at a point where the virtualizer has the row visible.
+  const [enteringKey, setEnteringKey] = useState<string | null>(null)
   const prevTailKeyRef = useRef<string | null>(null)
   const enterCacheKeyRef = useRef(cacheKey)
   const enterWindowStartRef = useRef(windowStart)
   const tailKey = mainGroups.length > 0 ? stableGroupKey(mainGroups[mainGroups.length - 1]) : null
-  if (
-    tailKey &&
+  const shouldEnter =
+    tailKey !== null &&
     tailKey !== prevTailKeyRef.current &&
     prevTailKeyRef.current !== null &&
     cacheKey === enterCacheKeyRef.current &&
     windowStart === enterWindowStartRef.current
-  ) {
-    // NOTE: no `follow` gate -- a new entry while scrolled up animates off-screen
-    // harmlessly, and gating on follow was an untested condition that could
-    // suppress the animation entirely. The cacheKey/windowStart/tailKey checks
-    // already exclude switches, history loads, and streaming-within-a-group.
-    enteringKeysRef.current.add(tailKey)
-    console.debug('[transcript-enter] fire', tailKey.slice(0, 28))
-  }
+  const pendingEnterRef = useRef<string | null>(null)
+  if (shouldEnter) pendingEnterRef.current = tailKey
   prevTailKeyRef.current = tailKey
   enterCacheKeyRef.current = cacheKey
   enterWindowStartRef.current = windowStart
-  const clearEntering = useCallback((key: string) => {
-    if (enteringKeysRef.current.delete(key)) bumpEnter(v => v + 1)
-  }, [])
+  // Fire the state update in an effect so it lands AFTER the pin-to-bottom scroll
+  // has brought the new row into the virtualizer's visible range.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: tailKey is the intentional trigger
+  useEffect(() => {
+    const key = pendingEnterRef.current
+    if (key) {
+      pendingEnterRef.current = null
+      setEnteringKey(key)
+      console.debug('[transcript-enter] SET', key)
+    }
+  }, [tailKey])
+  const clearEntering = useCallback(() => setEnteringKey(null), [])
 
   // Extract plan content from entries for ExitPlanMode display.
   // Finds the last Write to a plans/*.md path across all entries.
@@ -1024,7 +1032,7 @@ export const TranscriptView = memo(function TranscriptView({
             return virtualItems
           })().map(virtualItem => {
             const itemKey = String(virtualItem.key)
-            const isEntering = enteringKeysRef.current.has(itemKey)
+            const isEntering = enteringKey === itemKey
             return (
               <div
                 key={virtualItem.key}
@@ -1046,7 +1054,7 @@ export const TranscriptView = memo(function TranscriptView({
                   onAnimationEnd={
                     isEntering
                       ? e => {
-                          if (e.animationName === 'transcript-entry-enter') clearEntering(itemKey)
+                          if (e.animationName === 'transcript-entry-enter') clearEntering()
                         }
                       : undefined
                   }
