@@ -36,6 +36,8 @@ function yamlToForm(yaml: string): FormState | string {
   for (const line of yaml.split('\n')) {
     const trimmed = line.trim()
     if (!trimmed || trimmed.startsWith('#')) continue
+    // rule misclassifies string .includes / .indexOf as Array lookups (already documented in phase 6)
+    // react-doctor-disable-next-line react-doctor/js-set-map-lookups
     const idx = trimmed.indexOf(':')
     if (idx === -1) return `Invalid line: ${trimmed}`
     const key = trimmed.slice(0, idx).trim()

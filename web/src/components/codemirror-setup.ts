@@ -17,7 +17,11 @@ import { markdown } from '@codemirror/lang-markdown'
 import { python } from '@codemirror/lang-python'
 import { yaml } from '@codemirror/lang-yaml'
 import { bracketMatching, HighlightStyle, type LanguageSupport, syntaxTree } from '@codemirror/language'
+// codemirror is the editor backend on the input hot-render path; Suspense fallback flash would degrade UX more than the bundle weight
+// react-doctor-disable-next-line react-doctor/prefer-dynamic-import
 import { type Extension, RangeSetBuilder } from '@codemirror/state'
+// codemirror is the editor backend on the input hot-render path; Suspense fallback flash would degrade UX more than the bundle weight
+// react-doctor-disable-next-line react-doctor/prefer-dynamic-import
 import {
   Decoration,
   type DecorationSet,

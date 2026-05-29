@@ -281,6 +281,7 @@ export const ConversationItemFull = memo(function ConversationItemFull({
           )
           if (!ci || ci.state === 'hot') return null
           if (ci.state === 'expired') {
+            // react-doctor-disable-next-line react-doctor/rendering-hydration-mismatch-time
             const idleMin = Math.floor((Date.now() - (conversation.lastTurnEndedAt || 0)) / 60_000)
             return (
               <div className="mt-1 text-[9px] font-mono text-amber-400/60 truncate">

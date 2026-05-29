@@ -41,6 +41,8 @@ export function PublicRecapView({ token }: { token: string }) {
     loading: true,
   })
 
+  // scoped out of phase 7 PLAN (would need TanStack Query adoption)
+  // react-doctor-disable-next-line react-doctor/no-fetch-in-effect
   useEffect(() => {
     let cancelled = false
     // Explicit JSON Accept: the endpoint serves server-rendered HTML for */*

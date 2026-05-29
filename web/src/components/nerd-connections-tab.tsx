@@ -79,7 +79,7 @@ function ConnectionRow({ conn, now, onKill }: { conn: ConnectionInfo; now: numbe
   return (
     <>
       <div
-        className="grid grid-cols-[auto_1fr_auto_auto_auto_auto_auto_auto_auto] items-center gap-2 py-1 px-1 text-[10px] border-b border-primary/8 hover:bg-surface-inset/50"
+        className="grid grid-cols-[auto_1fr_auto_auto_auto_auto_auto_auto_auto] items-center gap-2 p-1 text-[10px] border-b border-primary/8 hover:bg-surface-inset/50"
         style={{ gridTemplateColumns: 'auto minmax(0,1fr) 120px 130px 70px 50px 90px 36px 16px' }}
       >
         <RoleBadge role={conn.role} />

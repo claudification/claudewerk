@@ -18,6 +18,8 @@ export function findInTree(tree: ProjectOrderNode[], id: string): ProjectOrderNo
   for (const n of tree) {
     if (n.id === id) return n
     if (n.type === 'group') {
+      // tree-traversal helper, not a per-render hot path
+      // react-doctor-disable-next-line react-doctor/js-index-maps
       const found = n.children.find(c => c.id === id)
       if (found) return found
     }

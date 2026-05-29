@@ -85,6 +85,8 @@ const SUB_COMMANDS: SubCommandDef[] = [
       const ql = q.toLowerCase()
       const out: Array<{ value: string; builtin: true }> = []
       for (const l of levels) {
+        // rule misclassifies string .includes / .indexOf as Array lookups (already documented in phase 6)
+        // react-doctor-disable-next-line react-doctor/js-set-map-lookups
         if (ql && !l.includes(ql)) continue
         out.push({ value: l, builtin: true })
       }

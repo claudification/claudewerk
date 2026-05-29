@@ -92,8 +92,8 @@ export function AnsiText({ text, highlight }: { text: string; highlight?: RegExp
   }, [text, highlight])
   return (
     <span
-      // react-doctor-disable-next-line react-doctor/no-danger
       // biome-ignore lint/security/noDangerouslySetInnerHtml: escapeHtml + linkified highlight (trusted output)
+      // react-doctor-disable-next-line react-doctor/no-danger
       dangerouslySetInnerHTML={{ __html: html }}
     />
   )

@@ -237,7 +237,7 @@ export function ProjectActionPanel({ projectUri }: { projectUri: string }) {
         <div className="text-center space-y-1">
           {ps?.icon && (
             <div className="flex justify-center text-2xl" style={displayColor ? { color: displayColor } : undefined}>
-              <ProjectIcon iconId={ps.icon} className="w-6 h-6" />
+              <ProjectIcon iconId={ps.icon} className="size-6" />
             </div>
           )}
           <h2 className="text-lg font-bold text-foreground" style={displayColor ? { color: displayColor } : undefined}>

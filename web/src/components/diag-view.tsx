@@ -83,6 +83,7 @@ export function DiagView({ conversationId }: DiagViewProps) {
 
   const mnemonic = `diag:${conversationId}`
 
+  // react-doctor-disable-next-line react-doctor/no-fetch-in-effect
   useEffect(() => {
     setData(null)
     setError(null)
@@ -152,8 +153,8 @@ export function DiagView({ conversationId }: DiagViewProps) {
         {highlighted ? (
           <div
             className="text-[11px] font-mono [&_pre]:!bg-transparent [&_code]:!bg-transparent"
-            // react-doctor-disable-next-line react-doctor/no-danger
             // biome-ignore lint/security/noDangerouslySetInnerHtml: shiki syntax highlighter output (trusted)
+            // react-doctor-disable-next-line react-doctor/no-danger
             dangerouslySetInnerHTML={{ __html: highlighted }}
           />
         ) : (

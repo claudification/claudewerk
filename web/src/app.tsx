@@ -379,6 +379,8 @@ function PopoutTerminal({ conversationId }: { conversationId: string }) {
 function ShareGate({ token }: { token: string }) {
   const [mode, setMode] = useState<'checking' | 'guest' | 'redirect'>('checking')
 
+  // scoped out of phase 7 PLAN (would need TanStack Query adoption)
+  // react-doctor-disable-next-line react-doctor/no-fetch-in-effect
   useEffect(() => {
     fetch('/auth/status')
       .then(r => r.json())

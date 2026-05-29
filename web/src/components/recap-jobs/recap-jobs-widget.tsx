@@ -141,7 +141,7 @@ export function RecapJobsWidget() {
   }
 
   return (
-    <div className="border-t border-border px-2 py-2 space-y-1.5 shrink-0">
+    <div className="border-t border-border p-2 space-y-1.5 shrink-0">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground px-1">Recap jobs ({jobs.length})</div>
       {/* Newest first -- the column reads naturally bottom-up because the
           sidebar is height-limited and the widget anchors to the bottom. */}

@@ -449,6 +449,7 @@ function PerfTab() {
           <button
             type="button"
             onClick={() => {
+              // react-doctor-disable-next-line react-doctor/rendering-hydration-mismatch-time
               const lines = ['# Perf Report', '', `${new Date().toISOString()}`, '']
               if (stats.length > 0) {
                 lines.push('## Summary', '', '| Category | Count | Avg | P95 | Max |', '|---|---|---|---|---|')

@@ -26,6 +26,8 @@ function InviteRegistration({ token, onSuccess }: { token: string; onSuccess: (n
   const [name, setName] = useState('')
   const [error, setError] = useState('')
 
+  // scoped out of phase 7 PLAN (would need TanStack Query adoption)
+  // react-doctor-disable-next-line react-doctor/no-fetch-in-effect
   useEffect(() => {
     fetch(`${API_BASE}/auth/invite/validate`, {
       method: 'POST',
@@ -153,7 +155,7 @@ function InviteInput({ onSubmit }: { onSubmit: (token: string) => void }) {
           disabled={!value.trim()}
           className="px-3 py-2 bg-muted/50 border border-border text-xs font-bold text-primary hover:bg-muted disabled:opacity-30 transition-colors"
         >
-          GO
+          Use invite
         </button>
       </div>
     </form>

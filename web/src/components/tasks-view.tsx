@@ -80,6 +80,8 @@ export function TasksView({ conversationId, pendingCount }: TasksViewProps) {
   const [loadingArchived, setLoadingArchived] = useState(false)
 
   // Fetch initial tasks via HTTP
+  // scoped out of phase 7 PLAN (would need TanStack Query adoption)
+  // react-doctor-disable-next-line react-doctor/no-fetch-in-effect
   useEffect(() => {
     let cancelled = false
     fetch(`/conversations/${conversationId}/tasks`)

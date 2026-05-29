@@ -14,7 +14,11 @@ import {
   history,
   historyKeymap,
 } from '@codemirror/commands'
+// codemirror is the editor backend on the input hot-render path; Suspense fallback flash would degrade UX more than the bundle weight
+// react-doctor-disable-next-line react-doctor/prefer-dynamic-import
 import { type Extension, RangeSetBuilder } from '@codemirror/state'
+// codemirror is the editor backend on the input hot-render path; Suspense fallback flash would degrade UX more than the bundle weight
+// react-doctor-disable-next-line react-doctor/prefer-dynamic-import
 import {
   Decoration,
   type DecorationSet,

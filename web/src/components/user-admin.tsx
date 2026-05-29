@@ -354,7 +354,7 @@ function InviteDialog({ open, onClose }: { open: boolean; onClose: () => void })
               </Button>
             </div>
             <Button size="sm" onClick={handleClose} className="w-full">
-              Done
+              Close invite
             </Button>
           </div>
         ) : (
@@ -525,7 +525,7 @@ function UserEditPanel({ user, onSave, onClose }: { user: UserSummary; onSave: (
                     disabled={deletingCredential === cred.credentialId}
                     onClick={() => handleDeleteCredential(cred.credentialId)}
                   >
-                    {deletingCredential === cred.credentialId ? '...' : 'Yes'}
+                    {deletingCredential === cred.credentialId ? '...' : 'Delete passkey'}
                   </Button>
                   <Button
                     size="sm"
@@ -533,7 +533,7 @@ function UserEditPanel({ user, onSave, onClose }: { user: UserSummary; onSave: (
                     className="text-[10px] h-5 px-2"
                     onClick={() => setConfirmDelete(null)}
                   >
-                    No
+                    Keep passkey
                   </Button>
                 </div>
               ) : (

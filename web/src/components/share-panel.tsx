@@ -165,6 +165,7 @@ export function ShareBanner({ conversationProject, conversationId }: SharePanelP
         <div className="px-3 pb-3 space-y-2">
           {/* Active shares */}
           {shares.map(share => {
+            // react-doctor-disable-next-line react-doctor/rendering-hydration-mismatch-time
             const timeLeft = share.expiresAt - Date.now()
             const hours = Math.floor(timeLeft / 3600000)
             const mins = Math.floor((timeLeft % 3600000) / 60000)

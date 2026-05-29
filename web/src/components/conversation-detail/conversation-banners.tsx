@@ -598,7 +598,7 @@ function AskQuestionCard({
               : 'bg-muted/20 text-muted-foreground border-border/30 cursor-not-allowed',
           )}
         >
-          SUBMIT
+          Send answers
         </button>
         {hasTty && (
           <button

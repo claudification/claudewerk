@@ -232,6 +232,8 @@ function useDirListing(path: string, sentinel: string): { dirs: string[]; loadin
   const [error, setError] = useState<string | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // scoped out of phase 7 PLAN (would need TanStack Query adoption)
+  // react-doctor-disable-next-line react-doctor/no-fetch-in-effect
   useEffect(() => {
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(() => {

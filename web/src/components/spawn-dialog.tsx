@@ -176,6 +176,8 @@ export function SpawnDialog() {
 
   // Register the open callback
   const progressReset = progress.reset
+  // scoped out of phase 7 PLAN (would need TanStack Query adoption)
+  // react-doctor-disable-next-line react-doctor/no-fetch-in-effect
   useEffect(() => {
     _spawnDialogBus.open = (options: SpawnDialogOptions) => {
       // Settings are project-scoped, not worktree-scoped: when the trigger

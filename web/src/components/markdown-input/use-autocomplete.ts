@@ -87,6 +87,8 @@ export function useAutocomplete(
       const atStart = start === 0
       if (atStart) {
         for (const item of BUILTIN_NAMES) {
+          // rule misclassifies string .includes / .indexOf as Array lookups (already documented in phase 6)
+          // react-doctor-disable-next-line react-doctor/js-set-map-lookups
           const score = !q ? 100 : item.includes(q) ? 100 + (item.startsWith(q) ? 10 : 0) : 0
           if (score > 0) scored.push({ item, score, builtin: true })
         }

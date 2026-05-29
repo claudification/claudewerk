@@ -206,6 +206,8 @@ function parseEnvSimple(text: string): Record<string, string> | undefined {
   for (const line of text.split('\n')) {
     const trimmed = line.trim()
     if (!trimmed || trimmed.startsWith('#')) continue
+    // rule misclassifies string .includes / .indexOf as Array lookups (already documented in phase 6)
+    // react-doctor-disable-next-line react-doctor/js-set-map-lookups
     const eq = trimmed.indexOf('=')
     if (eq <= 0) continue
     env[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim()

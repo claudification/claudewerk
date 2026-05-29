@@ -52,6 +52,8 @@ export function useGhostEntry(conversationId: string): DaemonRosterEntry | null 
   return useMemo(() => {
     if (!rosters) return null
     for (const fwd of Object.values(rosters)) {
+      // tree-traversal helper, not a per-render hot path
+      // react-doctor-disable-next-line react-doctor/js-index-maps
       const job = fwd.jobs.find(j => j.conversationId === conversationId)
       if (job) return { ...job, sentinelId: fwd.sentinelId, sentinelAlias: fwd.sentinelAlias }
     }
@@ -66,6 +68,8 @@ function findGhostEntry(conversationId: string): DaemonRosterEntry | null {
   const rosters = useConversationsStore.getState().daemonRosters
   if (!rosters) return null
   for (const fwd of Object.values(rosters)) {
+    // tree-traversal helper, not a per-render hot path
+    // react-doctor-disable-next-line react-doctor/js-index-maps
     const job = fwd.jobs.find(j => j.conversationId === conversationId)
     if (job) return { ...job, sentinelId: fwd.sentinelId, sentinelAlias: fwd.sentinelAlias }
   }

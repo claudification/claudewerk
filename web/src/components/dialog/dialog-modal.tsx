@@ -402,7 +402,7 @@ export const DialogModal = memo(function DialogModal({ layout, onSubmit, onCance
         )}
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {currentPage?.body.map((component, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: dialog components are positional content blocks
             // react-doctor-disable-next-line react-doctor/no-array-index-as-key

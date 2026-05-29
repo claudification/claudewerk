@@ -680,7 +680,7 @@ function BatchGroupHeader({ row, cols }: { row: GroupRow; cols: number }) {
       <td colSpan={cols} className="px-2 py-1">
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider">
           {row.color && <span className="size-2 rounded-sm shrink-0" style={{ backgroundColor: row.color }} />}
-          {row.icon && <span className="shrink-0 text-muted-foreground"><ProjectIcon iconId={row.icon} className="w-3 h-3" /></span>}
+          {row.icon && <span className="shrink-0 text-muted-foreground"><ProjectIcon iconId={row.icon} className="size-3" /></span>}
           <span className="text-foreground font-bold">{row.label}</span>
           <span className="text-muted-foreground/60">({row.count})</span>
         </div>
@@ -749,7 +749,7 @@ function BatchRow({
       {!groupByProject && (
         <td className="px-2 py-1 truncate max-w-[12rem]" title={conv.project}>
           <span className="inline-flex items-center gap-1.5">
-            {icon && <span className="text-muted-foreground/80"><ProjectIcon iconId={icon} className="w-3 h-3" /></span>}
+            {icon && <span className="text-muted-foreground/80"><ProjectIcon iconId={icon} className="size-3" /></span>}
             <span>{projectLabel}</span>
           </span>
         </td>

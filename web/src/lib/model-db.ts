@@ -49,6 +49,8 @@ export function getModelInfo(modelName: string | undefined): ModelInfo | undefin
   let best: ModelInfo | undefined
   let bestLen = 0
   for (const [name, info] of Object.entries(models)) {
+    // rule misclassifies string .includes / .indexOf as Array lookups (already documented in phase 6)
+    // react-doctor-disable-next-line react-doctor/js-set-map-lookups
     if (lower.includes(name) && name.length > bestLen) {
       best = info
       bestLen = name.length

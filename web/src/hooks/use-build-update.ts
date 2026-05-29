@@ -22,6 +22,8 @@ export function useBuildUpdate() {
   }, [])
 
   // Poll asset-manifest.json to detect new builds (primary update detection)
+  // scoped out of phase 7 PLAN (would need TanStack Query adoption)
+  // react-doctor-disable-next-line react-doctor/no-fetch-in-effect
   useEffect(() => {
     let knownHash: string | null = null
 

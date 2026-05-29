@@ -21,7 +21,7 @@ export function HeaderCollapsedBar({ conversation, projectSettings: ps, model, i
       <span className="inline-flex items-center gap-1.5 min-w-0">
         {ps?.icon && (
           <span className="shrink-0" style={ps?.color ? { color: ps.color } : undefined}>
-            <ProjectIcon iconId={ps.icon} className="w-3.5 h-3.5" />
+            <ProjectIcon iconId={ps.icon} className="size-3.5" />
           </span>
         )}
         <span className="text-sm font-bold truncate" style={ps?.color ? { color: ps.color } : undefined}>

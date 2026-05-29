@@ -31,7 +31,11 @@ import {
   completionStatus,
   startCompletion,
 } from '@codemirror/autocomplete'
+// codemirror is the editor backend on the input hot-render path; Suspense fallback flash would degrade UX more than the bundle weight
+// react-doctor-disable-next-line react-doctor/prefer-dynamic-import
 import { type Extension, Prec } from '@codemirror/state'
+// codemirror is the editor backend on the input hot-render path; Suspense fallback flash would degrade UX more than the bundle weight
+// react-doctor-disable-next-line react-doctor/prefer-dynamic-import
 import { type EditorView, keymap, ViewPlugin, type ViewUpdate } from '@codemirror/view'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { projectPath } from '@/lib/types'

@@ -12,7 +12,11 @@
  * (autocomplete, custom keymaps) need to back off during these sessions.
  */
 
+// codemirror is the editor backend on the input hot-render path; Suspense fallback flash would degrade UX more than the bundle weight
+// react-doctor-disable-next-line react-doctor/prefer-dynamic-import
 import { StateEffect, StateField } from '@codemirror/state'
+// codemirror is the editor backend on the input hot-render path; Suspense fallback flash would degrade UX more than the bundle weight
+// react-doctor-disable-next-line react-doctor/prefer-dynamic-import
 import { EditorView } from '@codemirror/view'
 
 const setComposing = StateEffect.define<boolean>()

@@ -209,6 +209,8 @@ function useLifoCacheTimeout() {
 }
 
 function useAuthCheck() {
+  // scoped out of phase 7 PLAN (would need TanStack Query adoption)
+  // react-doctor-disable-next-line react-doctor/no-fetch-in-effect
   useEffect(() => {
     const AUTH_CHECK_INTERVAL = 4 * 60 * 60 * 1000
     const check = async () => {

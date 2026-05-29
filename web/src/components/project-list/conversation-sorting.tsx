@@ -76,7 +76,7 @@ export function GroupNode({
       <div
         role="button"
         tabIndex={0}
-        className="text-[10px] font-bold uppercase tracking-wider px-1 py-1 mb-1 flex items-center gap-1.5 cursor-pointer select-none text-primary/60"
+        className="text-[10px] font-bold uppercase tracking-wider p-1 mb-1 flex items-center gap-1.5 cursor-pointer select-none text-primary/60"
         onClick={() => {
           haptic('tick')
           onToggle()

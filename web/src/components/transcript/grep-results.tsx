@@ -231,6 +231,8 @@ function parseContentLines(content: string, knownFiles: string[]): ContentFileGr
       if (matched) {
         file = matched
         const rest = raw.slice(matched.length + 1)
+        // rule misclassifies string .includes / .indexOf as Array lookups (already documented in phase 6)
+        // react-doctor-disable-next-line react-doctor/js-set-map-lookups
         const colonIdx = rest.indexOf(':')
         if (colonIdx > 0) {
           const possibleLine = rest.slice(0, colonIdx)
@@ -252,6 +254,8 @@ function parseContentLines(content: string, knownFiles: string[]): ContentFileGr
       if (first > 0) {
         file = raw.slice(0, first)
         const rest = raw.slice(first + 1)
+        // rule misclassifies string .includes / .indexOf as Array lookups (already documented in phase 6)
+        // react-doctor-disable-next-line react-doctor/js-set-map-lookups
         const second = rest.indexOf(':')
         if (second > 0 && /^\d+$/.test(rest.slice(0, second))) {
           line = parseInt(rest.slice(0, second), 10)
@@ -343,8 +347,8 @@ export function GrepContentResults({
                   )}
                   <span
                     className="text-foreground/80 whitespace-pre-wrap break-all min-w-0"
-                    // react-doctor-disable-next-line react-doctor/no-danger
                     // biome-ignore lint/security/noDangerouslySetInnerHtml: highlightLine escapes HTML then wraps matches in <mark>
+                    // react-doctor-disable-next-line react-doctor/no-danger
                     dangerouslySetInnerHTML={{ __html: highlightLine(m.text, highlight) }}
                   />
                 </div>

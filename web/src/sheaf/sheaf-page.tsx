@@ -80,7 +80,7 @@ export function SheafPage() {
       />
       <Totals data={data} windowH={windowH} />
       <div className="flex-1 min-h-0 overflow-y-auto">
-        <div className="max-w-[1600px] mx-auto px-4 py-4">
+        <div className="max-w-[1600px] mx-auto p-4">
           <SheafBody
             error={error}
             loading={loading}
@@ -181,6 +181,7 @@ function Header({ windowH, onWindowH, onRefresh, loading, generatedAt, filters, 
           </div>
           {generatedAt && (
             <span className="text-[10px] text-muted-foreground/70 hidden md:inline">
+              // react-doctor-disable-next-line react-doctor/rendering-hydration-mismatch-time
               generated {formatDateTime(generatedAt)} ({formatAgo(Date.now() - generatedAt)})
             </span>
           )}

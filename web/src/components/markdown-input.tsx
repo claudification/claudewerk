@@ -373,8 +373,8 @@ export function MarkdownInput({
         )}
         style={expandedFontSize}
         aria-hidden="true"
-        // react-doctor-disable-next-line react-doctor/no-danger
         // biome-ignore lint/security/noDangerouslySetInnerHtml: highlightMarkdown escapes input text
+        // react-doctor-disable-next-line react-doctor/no-danger
         dangerouslySetInnerHTML={{ __html: highlightMarkdown(value, enableEffortKeywords) }}
       />
       <textarea

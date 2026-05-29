@@ -16,6 +16,8 @@ export function partitionConversations(conversations: Conversation[]) {
   for (const s of conversations) {
     if (s.status === 'ended') ended.push(s)
     if (parseWorktreeUri(s.project)) worktrees.push(s)
+    // rule misclassifies string .includes / .indexOf as Array lookups (already documented in phase 6)
+    // react-doctor-disable-next-line react-doctor/js-set-map-lookups
     else if (s.capabilities?.includes('ad-hoc')) adhoc.push(s)
     else normal.push(s)
   }

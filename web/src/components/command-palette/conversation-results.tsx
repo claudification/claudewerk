@@ -68,7 +68,7 @@ export function ConversationRow({
                   : undefined
               }
             >
-              <ProjectIcon iconId={projectSettings[projectIdentityKey(conversation.project)]?.icon || ''} className="w-3 h-3 inline" />
+              <ProjectIcon iconId={projectSettings[projectIdentityKey(conversation.project)]?.icon || ''} className="size-3 inline" />
             </span>
           )}
           <span
@@ -140,7 +140,7 @@ export function ProjectRow({ projectUri, projectSettings, active, onSelect, onMo
         <div className="text-xs text-foreground truncate flex items-center gap-1.5">
           {ps?.icon && (
             <span style={ps.color ? { color: ps.color } : undefined}>
-              <ProjectIcon iconId={ps.icon} className="w-3 h-3 inline" />
+              <ProjectIcon iconId={ps.icon} className="size-3 inline" />
             </span>
           )}
           <span style={ps?.color ? { color: ps.color } : undefined}>
