@@ -89,7 +89,7 @@ function CacheWriteSeries({ perDay }: { perDay: RecapDigest['cost']['perDay'] })
         {perDay.map(d => (
           <div
             key={d.day}
-            className="group flex flex-1 flex-col items-center justify-end"
+            className="group flex h-full flex-1 flex-col items-center justify-end"
             title={`${d.day}: ${fmtCompact(d.cacheWriteTokens)} cache-write tok`}
           >
             <div
