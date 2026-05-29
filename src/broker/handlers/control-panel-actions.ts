@@ -13,8 +13,8 @@ import type { SendInput, SubscriptionChannel } from '../../shared/protocol'
 import { resolveBackend } from '../backends'
 import { buildReviveMessage } from '../build-revive'
 import { getGlobalSettings, updateGlobalSettings } from '../global-settings'
-import { GuardError, type MessageHandler, type WsData } from '../handler-context'
-import { DASHBOARD_ROLES, registerHandlers } from '../message-router'
+import { GuardError, type HandlerContext, type MessageHandler, type WsData } from '../handler-context'
+import { DASHBOARD_ROLES, detectRole, registerHandlers } from '../message-router'
 import { resolvePermissions } from '../permissions'
 import { getProjectOrder, type ProjectOrder, setProjectOrder } from '../project-order'
 import {
@@ -341,16 +341,21 @@ const unsubscribeJob: MessageHandler = (ctx, data) => {
 
 // ─── Rename Session ──────────────────────────────────────────────
 
-const renameConversation: MessageHandler = (ctx, data) => {
-  const conversationId = (data.conversationId || data.conversationId) as string
-  const name = (data.name as string)?.trim()
-  const description = typeof data.description === 'string' ? data.description.trim() : undefined
-  if (!conversationId) throw new GuardError('Missing conversationId')
-
-  const conversation = ctx.conversations.getConversation(conversationId)
-  if (!conversation) throw new GuardError('Conversation not found')
-  ctx.requirePermission('chat', conversation.project)
-
+/**
+ * Apply a title/description change to a conversation, then persist + broadcast.
+ * Shared by the dashboard rename path and the agent-host (self / benevolent)
+ * rename path so the mutation rules stay in one place. An empty `name` clears
+ * the user-set title and reverts to the auto-generated name; any non-empty name
+ * (whether set by a human OR a benevolent agent) pins `titleUserSet` so CC's
+ * auto-titler will not clobber it.
+ */
+function applyRename(
+  ctx: HandlerContext,
+  conversation: NonNullable<ReturnType<HandlerContext['conversations']['getConversation']>>,
+  conversationId: string,
+  name: string | undefined,
+  description: string | undefined,
+): void {
   if (name) {
     conversation.title = name
     conversation.titleUserSet = true
@@ -363,6 +368,36 @@ const renameConversation: MessageHandler = (ctx, data) => {
   }
   ctx.conversations.persistConversationById(conversationId)
   ctx.conversations.broadcastConversationUpdate(conversationId)
+}
+
+export const renameConversation: MessageHandler = (ctx, data) => {
+  const conversationId = data.conversationId as string
+  const name = (data.name as string)?.trim()
+  const description = typeof data.description === 'string' ? data.description.trim() : undefined
+  if (!conversationId) throw new GuardError('Missing conversationId')
+
+  const conversation = ctx.conversations.getConversation(conversationId)
+  if (!conversation) throw new GuardError('Conversation not found')
+
+  // Authz splits by caller role. Dashboards/share viewers go through the
+  // project chat-permission check (a no-op for agent-host, which is precisely
+  // why agent-host needs its own gate below). An agent host may rename its OWN
+  // conversation freely (it owns it); renaming ANOTHER conversation is a
+  // cross-conversation mutation and requires benevolent trust, consistent with
+  // configure_conversation / control_conversation.
+  const role = detectRole(ctx.ws.data)
+  if (role === 'agent-host') {
+    const isSelf = ctx.ws.data.conversationId === conversationId
+    if (!isSelf) ctx.requireBenevolent()
+  } else {
+    ctx.requirePermission('chat', conversation.project)
+  }
+
+  applyRename(ctx, conversation, conversationId, name, description)
+  ctx.log.debug(
+    `[rename] ${conversationId.slice(0, 8)} role=${role} self=${ctx.ws.data.conversationId === conversationId} ` +
+      `name="${name || '(cleared)'}"${description !== undefined ? ` desc-set` : ''}`,
+  )
   ctx.reply({ type: 'rename_conversation_result', ok: true })
 }
 
@@ -380,10 +415,15 @@ export function registerDashboardActionHandlers(): void {
       delete_project_settings: deleteProjectSettingsHandler,
       update_project_order: updateProjectOrder,
       revive_conversation: reviveConversation,
-      rename_conversation: renameConversation,
       subscribe_job: subscribeJob,
       unsubscribe_job: unsubscribeJob,
     },
     DASHBOARD_ROLES,
   )
+
+  // rename_conversation is NOT dashboard-only: an agent host may rename its own
+  // conversation (self), and a benevolent agent host may rename any conversation
+  // (gated inside the handler). Dashboards/share viewers keep the chat-permission
+  // path. Hence the wider role allowlist than the bundle above.
+  registerHandlers({ rename_conversation: renameConversation }, ['agent-host', ...DASHBOARD_ROLES])
 }

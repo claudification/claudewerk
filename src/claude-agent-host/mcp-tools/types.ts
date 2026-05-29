@@ -148,7 +148,11 @@ export interface McpChannelCallbacks {
   onDialogShow?: (dialogId: string, layout: DialogLayout) => void
   onDialogDismiss?: (dialogId: string) => void
   onDeliverMessage?: (content: string, meta: Record<string, string>) => void
-  onRenameConversation?: (name: string, description?: string) => Promise<{ ok: boolean; error?: string }>
+  onRenameConversation?: (
+    name: string,
+    description?: string,
+    targetConversationId?: string,
+  ) => Promise<{ ok: boolean; error?: string }>
   onProjectChanged?: () => void
   onExitConversation?: (status: 'success' | 'error', message?: string) => void
 }

@@ -338,8 +338,10 @@ export function buildMcpCallbacksWithRules(
       })
     },
 
-    async onRenameConversation(name, description) {
+    async onRenameConversation(name, description, targetConversationId) {
       if (!ctx.wsClient?.isConnected()) return { ok: false, error: 'Not connected to broker' }
+      // Default to self; a benevolent caller may target another conversation.
+      const conversationId = targetConversationId || ctx.conversationId
       return new Promise(resolve => {
         const timeout = setTimeout(() => resolve({ ok: false, error: 'Timeout' }), 10000)
         pending.pendingRenameResult = result => {
@@ -349,7 +351,7 @@ export function buildMcpCallbacksWithRules(
         }
         ctx.wsClient?.send({
           type: 'rename_conversation',
-          conversationId: ctx.conversationId,
+          conversationId,
           name,
           description,
         } as unknown as AgentHostMessage)

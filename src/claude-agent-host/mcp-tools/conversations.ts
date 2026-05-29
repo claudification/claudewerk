@@ -383,7 +383,7 @@ export function registerConversationTools(ctx: McpToolContext): Record<string, T
 
     rename_conversation: {
       description:
-        'Rename the current conversation and/or set its description. The title is visible in the control panel sidebar. Use slug-formatted names for consistency (e.g. "refactor-auth-middleware"). Pass empty name to clear and revert to auto-generated name. Description is a short line shown in sidebar and list_conversations -- use it to explain what this conversation is working on.',
+        'Rename a conversation and/or set its description. Defaults to the CURRENT conversation; pass `conversation_id` (an exact `id` from list_conversations) to rename ANOTHER conversation -- renaming others requires benevolent trust. The title is visible in the control panel sidebar. Use slug-formatted names for consistency (e.g. "refactor-auth-middleware"). Pass empty name to clear and revert to auto-generated name. Description is a short line shown in sidebar and list_conversations -- use it to explain what the conversation is working on. NOTE: name-based addressing for send_message follows a rename, but peers that cached the OLD name keep working only for a limited window -- store the conversation_id for durable cross-conversation references.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -396,13 +396,19 @@ export function registerConversationTools(ctx: McpToolContext): Record<string, T
             description:
               'Short description of what this conversation is working on. Shown in control panel and list_conversations. Empty string clears.',
           },
+          conversation_id: {
+            type: 'string',
+            description:
+              'Target conversation to rename (exact `id` from list_conversations). Omit to rename the current conversation. Renaming a conversation other than your own requires benevolent trust.',
+          },
         },
         required: ['name'],
       },
       async handle(params) {
         const newName = typeof params.name === 'string' ? params.name : ''
         const newDesc = typeof params.description === 'string' ? params.description : undefined
-        const result = await ctx.callbacks.onRenameConversation?.(newName, newDesc)
+        const target = typeof params.conversation_id === 'string' ? params.conversation_id : undefined
+        const result = await ctx.callbacks.onRenameConversation?.(newName, newDesc, target)
         if (!result?.ok) {
           debug(`[channel] rename_conversation failed: ${result?.error}`)
           return {
@@ -411,8 +417,9 @@ export function registerConversationTools(ctx: McpToolContext): Record<string, T
           }
         }
         const label = newName || '(auto)'
-        debug(`[channel] rename_conversation: "${label}"${newDesc ? ` desc="${newDesc}"` : ''}`)
-        return { content: [{ type: 'text', text: `Conversation renamed to "${label}"` }] }
+        const who = target ? ` (target ${target})` : ''
+        debug(`[channel] rename_conversation: "${label}"${newDesc ? ` desc="${newDesc}"` : ''}${who}`)
+        return { content: [{ type: 'text', text: `Conversation renamed to "${label}"${who}` }] }
       },
     },
 
