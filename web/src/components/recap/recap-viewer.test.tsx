@@ -4,7 +4,7 @@
  *   - loading -> rendered markdown happy path
  *   - 404 fallback shows error
  *   - streaming state when status != done
- *   - View-raw toggle
+ *   - Raw tab shows the markdown source
  */
 
 import type { PeriodRecapDoc } from '@shared/protocol'
@@ -71,7 +71,8 @@ describe('RecapViewer', () => {
     expect(screen.getByText('Copy markdown')).toBeTruthy()
     expect(screen.getByText('Download .md')).toBeTruthy()
     expect(screen.getByText('Share link')).toBeTruthy()
-    expect(screen.getByText('View raw')).toBeTruthy()
+    // Report / Write-up / Raw tabs present
+    expect(screen.getByRole('tab', { name: 'Raw' })).toBeTruthy()
     // Cost in header
     expect(screen.getByText(/0\.0123/)).toBeTruthy()
   })
@@ -95,15 +96,14 @@ describe('RecapViewer', () => {
     expect(screen.getByText('50%')).toBeTruthy()
   })
 
-  test('toggling View raw swaps to raw markdown view', async () => {
+  test('Raw tab swaps to the raw markdown source', async () => {
     mockFetchOnce(doneRecap())
     render(<RecapViewer />)
     dispatchOpen('recap_a')
     await waitFor(() => {
-      expect(screen.getByText('View raw')).toBeTruthy()
+      expect(screen.getByRole('tab', { name: 'Raw' })).toBeTruthy()
     })
-    fireEvent.click(screen.getByText('View raw'))
-    expect(screen.getByText('View rendered')).toBeTruthy()
+    fireEvent.click(screen.getByRole('tab', { name: 'Raw' }))
     // Raw <pre> contains the source string
     expect(screen.getByText(/# TL;DR/)).toBeTruthy()
   })
