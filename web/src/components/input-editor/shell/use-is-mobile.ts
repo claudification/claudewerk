@@ -6,7 +6,6 @@ export function useIsMobile(): boolean {
   const [isMobile, setIsMobile] = useState(isMobileViewport)
   useEffect(() => {
     const check = () => setIsMobile(isMobileViewport())
-    check()
     window.addEventListener('resize', check)
     return () => window.removeEventListener('resize', check)
   }, [])

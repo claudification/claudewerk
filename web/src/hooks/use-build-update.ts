@@ -40,6 +40,7 @@ export function useBuildUpdate() {
       } catch {}
     }
 
+    // react-doctor-disable-next-line react-doctor/no-initialize-state
     checkManifest()
     const timer = setInterval(checkManifest, 5 * 60 * 1000)
     return () => clearInterval(timer)
@@ -74,6 +75,7 @@ export function useBuildUpdate() {
             detail: { title: 'NO UPDATE', body: `Already on latest build (${hash})` },
           }),
         )
+        // react-doctor-disable-next-line react-doctor/no-initialize-state
         setSwUpdate(null)
       }
     } catch {}

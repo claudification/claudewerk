@@ -6,7 +6,7 @@ import { useConversationsStore } from '@/hooks/use-conversations'
 import type { Conversation } from '@/lib/types'
 import { extractProjectLabel, projectPath } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
-import { renderProjectIcon } from '../project-icons'
+import { ProjectIcon } from '../project-icons'
 import { ProjectSettingsButton, ProjectSettingsEditor } from '../project-settings-editor'
 import { ConversationContextMenu, PinnedProjectContextMenu, ProjectContextMenu } from './conversation-context-menu'
 import { ConversationCard, ConversationItemCompact, SpawnRootStub } from './conversation-item'
@@ -153,7 +153,7 @@ const ProjectConversationGroup = memo(
               className="flex items-center gap-1.5 p-3 pb-1 cursor-pointer hover:bg-accent/10 transition-colors"
             >
               {ps?.icon && (
-                <span style={displayColor ? { color: displayColor } : undefined}>{renderProjectIcon(ps.icon)}</span>
+                <span style={displayColor ? { color: displayColor } : undefined}><ProjectIcon iconId={ps.icon} /></span>
               )}
               <span
                 className="font-bold text-sm flex-1 truncate text-primary"
@@ -309,7 +309,7 @@ export function PinnedProjectNode({ project }: { project: string }) {
           <div className="flex items-center gap-1.5">
             {ps?.icon && (
               <span className="text-muted-foreground" style={displayColor ? { color: displayColor } : undefined}>
-                {renderProjectIcon(ps.icon)}
+                <ProjectIcon iconId={ps.icon} />
               </span>
             )}
             <span

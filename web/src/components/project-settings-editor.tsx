@@ -1,7 +1,6 @@
 import { projectIdentityKey } from '@shared/project-uri'
 import { OPENCODE_TOOL_PERMISSION_OPTIONS, type OpenCodeToolPermission } from '@shared/spawn-schema'
 import { Check, Pencil, Search, Trash2, X } from 'lucide-react'
-import { ICONS, renderProjectIcon } from './project-icons'
 import { useEffect, useMemo, useState } from 'react'
 import { SecurityPanel } from '@/components/project-settings/security-panel'
 import { GroupHeader, SettingRow } from '@/components/settings/settings-inputs'
@@ -14,7 +13,7 @@ import {
 } from '@/hooks/use-conversations'
 import { extractProjectLabel, type ProjectSettings } from '@/lib/types'
 import { cn } from '@/lib/utils'
-
+import { ICONS } from './project-icons'
 
 // Color palette - works on dark bg
 const COLOR_OPTIONS = [

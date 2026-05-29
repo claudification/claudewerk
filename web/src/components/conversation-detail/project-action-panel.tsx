@@ -4,7 +4,7 @@ import { useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import type { Conversation } from '@/lib/types'
 import { extractProjectLabel, projectPath } from '@/lib/types'
 import { cn, contextWindowSize, formatModel, haptic } from '@/lib/utils'
-import { renderProjectIcon } from '../project-icons'
+import { ProjectIcon } from '../project-icons'
 import { openReviveDialog } from '../revive-dialog-trigger'
 import { openSpawnDialog } from '../spawn-dialog-trigger'
 
@@ -237,7 +237,7 @@ export function ProjectActionPanel({ projectUri }: { projectUri: string }) {
         <div className="text-center space-y-1">
           {ps?.icon && (
             <div className="flex justify-center text-2xl" style={displayColor ? { color: displayColor } : undefined}>
-              {renderProjectIcon(ps.icon, 'w-6 h-6')}
+              <ProjectIcon iconId={ps.icon} className="w-6 h-6" />
             </div>
           )}
           <h2 className="text-lg font-bold text-foreground" style={displayColor ? { color: displayColor } : undefined}>

@@ -1,7 +1,7 @@
 import { projectIdentityKey } from '@shared/project-uri'
 import { type Conversation, canTerminal, projectPath } from '@/lib/types'
 import { cn, formatAge, formatModel, projectDisplayName } from '@/lib/utils'
-import { renderProjectIcon } from '../project-icons'
+import { ProjectIcon } from '../project-icons'
 import type { ConversationResultsProps } from './types'
 
 function statusIndicator(s: Conversation, selectedConversationId: string | null) {
@@ -68,10 +68,7 @@ export function ConversationRow({
                   : undefined
               }
             >
-              {renderProjectIcon(
-                projectSettings[projectIdentityKey(conversation.project)]?.icon || '',
-                'w-3 h-3 inline',
-              )}
+              <ProjectIcon iconId={projectSettings[projectIdentityKey(conversation.project)]?.icon || ''} className="w-3 h-3 inline" />
             </span>
           )}
           <span
@@ -143,7 +140,7 @@ export function ProjectRow({ projectUri, projectSettings, active, onSelect, onMo
         <div className="text-xs text-foreground truncate flex items-center gap-1.5">
           {ps?.icon && (
             <span style={ps.color ? { color: ps.color } : undefined}>
-              {renderProjectIcon(ps.icon, 'w-3 h-3 inline')}
+              <ProjectIcon iconId={ps.icon} className="w-3 h-3 inline" />
             </span>
           )}
           <span style={ps?.color ? { color: ps.color } : undefined}>

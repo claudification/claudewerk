@@ -29,7 +29,7 @@ function getEventColor(hookEvent: string): string {
   }
 }
 
-function renderEventContent(event: HookEvent) {
+function EventContent({ event }: { event: HookEvent }) {
   const data = (event.data || {}) as Record<string, unknown>
 
   switch (event.hookEvent) {
@@ -223,7 +223,7 @@ export function EventItem({ event }: { event: HookEvent }) {
         <span className="text-muted-foreground text-[10px]">{time}</span>
         <span className={cn('font-bold text-xs', colorClass)}>{event.hookEvent}</span>
       </div>
-      {renderEventContent(event)}
+      <EventContent event={event} />
     </div>
   )
 }

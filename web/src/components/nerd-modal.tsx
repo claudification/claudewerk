@@ -323,6 +323,7 @@ function SwTab() {
       } catch {}
       setLoading(false)
     }
+    // react-doctor-disable-next-line react-doctor/no-initialize-state
     load()
   }, [])
 

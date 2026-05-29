@@ -5,7 +5,7 @@ import { useConversationsStore } from '@/hooks/use-conversations'
 import type { Conversation } from '@/lib/types'
 import { projectPath } from '@/lib/types'
 import { cn, formatAge, haptic, projectDisplayName } from '@/lib/utils'
-import { renderProjectIcon } from '../project-icons'
+import { ProjectIcon } from '../project-icons'
 import { ProjectSettingsButton, ProjectSettingsEditor } from '../project-settings-editor'
 import { ConversationContextMenu } from './conversation-context-menu'
 import { ConversationItemCompact } from './conversation-item-compact'
@@ -100,7 +100,7 @@ export const InactiveProjectItem = memo(
             <div className="flex items-center gap-1.5">
               {ps?.icon && (
                 <span className="text-muted-foreground" style={displayColor ? { color: displayColor } : undefined}>
-                  {renderProjectIcon(ps.icon)}
+                  <ProjectIcon iconId={ps.icon} />
                 </span>
               )}
               <span

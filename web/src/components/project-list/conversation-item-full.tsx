@@ -8,7 +8,7 @@ import { formatCost, getCacheTimerInfo, getConversationCost, getCostBgColor, get
 import type { Conversation } from '@/lib/types'
 import { projectPath } from '@/lib/types'
 import { cn, contextWindowSize, haptic, projectDisplayName } from '@/lib/utils'
-import { renderProjectIcon } from '../project-icons'
+import { ProjectIcon } from '../project-icons'
 import { ShareIndicator } from '../share-panel'
 import { BackendIcon } from './backend-icon'
 import { ConversationInfoButton } from './conversation-info-dialog'
@@ -79,7 +79,7 @@ export const ConversationItemFull = memo(function ConversationItemFull({
         <BackendIcon backend={conversation.backend} transport={conversation.transport} />
         {ps?.icon && (
           <span style={displayColor && !isSelected ? { color: displayColor } : undefined}>
-            {renderProjectIcon(ps.icon)}
+            <ProjectIcon iconId={ps.icon} />
           </span>
         )}
         <span

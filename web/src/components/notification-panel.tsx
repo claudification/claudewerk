@@ -1,6 +1,6 @@
 import { projectIdentityKey } from '@shared/project-uri'
 import type { ReactNode } from 'react'
-import { renderProjectIcon } from '@/components/project-icons'
+import { ProjectIcon } from '@/components/project-icons'
 import { BannerButton, ConversationBanner } from '@/components/ui/conversation-banner'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { projectPath } from '@/lib/types'
@@ -254,7 +254,7 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
             >
               {ps?.icon && (
                 <span className="shrink-0" style={displayColor ? { color: displayColor } : undefined}>
-                  {renderProjectIcon(ps.icon, 'w-3 h-3')}
+                  <ProjectIcon iconId={ps.icon} className="w-3 h-3" />
                 </span>
               )}
               {projectName && (

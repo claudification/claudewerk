@@ -5,7 +5,7 @@ import { useConversationsStore } from '@/hooks/use-conversations'
 import { useKeyLayer } from '@/lib/key-layers'
 import type { Conversation, ProjectSettings } from '@/lib/types'
 import { cn, formatAge } from '@/lib/utils'
-import { renderProjectIcon } from '../project-icons'
+import { ProjectIcon } from '../project-icons'
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog'
 import { BatchBroadcastInput, BatchReassignInputs } from './batch-action-inputs'
 import { ALL_BATCH_ACTIONS, type BatchAction } from './batch-actions'
@@ -556,7 +556,9 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
               <table className="w-full text-[11px] font-mono">
                 <thead className="sticky top-0 bg-surface-inset border-b border-border/40 text-[10px] text-muted-foreground uppercase z-10">
                   <tr>
-                    <th className="w-8 text-left px-2 py-1" aria-label="Selection"> </th>
+                    <th className="w-8 text-left px-2 py-1" aria-label="Selection">
+                      {' '}
+                    </th>
                     <th className="text-left px-2 py-1">title</th>
                     {!groupByProject && <th className="text-left px-2 py-1">project</th>}
                     {showHostCol && <th className="text-left px-2 py-1">host</th>}
@@ -678,7 +680,7 @@ function BatchGroupHeader({ row, cols }: { row: GroupRow; cols: number }) {
       <td colSpan={cols} className="px-2 py-1">
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider">
           {row.color && <span className="size-2 rounded-sm shrink-0" style={{ backgroundColor: row.color }} />}
-          {row.icon && <span className="shrink-0 text-muted-foreground">{renderProjectIcon(row.icon, 'w-3 h-3')}</span>}
+          {row.icon && <span className="shrink-0 text-muted-foreground"><ProjectIcon iconId={row.icon} className="w-3 h-3" /></span>}
           <span className="text-foreground font-bold">{row.label}</span>
           <span className="text-muted-foreground/60">({row.count})</span>
         </div>
@@ -747,7 +749,7 @@ function BatchRow({
       {!groupByProject && (
         <td className="px-2 py-1 truncate max-w-[12rem]" title={conv.project}>
           <span className="inline-flex items-center gap-1.5">
-            {icon && <span className="text-muted-foreground/80">{renderProjectIcon(icon, 'w-3 h-3')}</span>}
+            {icon && <span className="text-muted-foreground/80"><ProjectIcon iconId={icon} className="w-3 h-3" /></span>}
             <span>{projectLabel}</span>
           </span>
         </td>

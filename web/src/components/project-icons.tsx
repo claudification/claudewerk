@@ -535,7 +535,7 @@ export const ICONS: IconEntry[] = [
 
 const ICON_MAP: Record<string, IconEntry> = Object.fromEntries(ICONS.map(e => [e.id, e]))
 
-export function renderProjectIcon(iconId: string, className = 'w-3.5 h-3.5') {
+export function ProjectIcon({ iconId, className = 'w-3.5 h-3.5' }: { iconId: string; className?: string }) {
   const entry = ICON_MAP[iconId]
   if (!entry) return null
   const Icon = entry.icon
