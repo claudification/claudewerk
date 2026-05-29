@@ -40,7 +40,9 @@ function createRecapsTable(db: Database) {
       metadata_json   TEXT,
       digest_json     TEXT,
       audience        TEXT NOT NULL DEFAULT 'human',
-      inform_conversation_id TEXT
+      inform_conversation_id TEXT,
+      ledger_json     TEXT,
+      args_json       TEXT
     )
   `)
   // ALTER ADD COLUMN for upgrades from the pre-audience shape. SQLite ALTER
@@ -58,6 +60,15 @@ function createRecapsTable(db: Database) {
   // pre-2.0 rows keep digest_json NULL and degrade to the markdown body.
   if (!recapCols.has('digest_json')) {
     db.run('ALTER TABLE recaps ADD COLUMN digest_json TEXT')
+  }
+  // Chunked map-reduce spike: COST 2 per-call engine-cost ledger (Pillar C)
+  // and the resolved tuning-param recipe (Pillar D). Both additive -- older
+  // rows keep NULL and degrade to the aggregate llm_cost_usd / no recipe.
+  if (!recapCols.has('ledger_json')) {
+    db.run('ALTER TABLE recaps ADD COLUMN ledger_json TEXT')
+  }
+  if (!recapCols.has('args_json')) {
+    db.run('ALTER TABLE recaps ADD COLUMN args_json TEXT')
   }
   db.run('CREATE INDEX IF NOT EXISTS idx_recaps_project ON recaps(project_uri, created_at DESC)')
   db.run('CREATE INDEX IF NOT EXISTS idx_recaps_status ON recaps(status)')

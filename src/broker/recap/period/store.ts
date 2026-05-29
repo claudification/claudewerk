@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { join } from 'node:path'
-import type { RecapAudience, RecapMeta } from '../../../shared/protocol'
+import type { RecapAudience, RecapCostLedger, RecapMeta } from '../../../shared/protocol'
 
 export type RecapStatus = 'queued' | 'gathering' | 'rendering' | 'done' | 'failed' | 'cancelled'
 export type RecapPeriodLabel = 'today' | 'yesterday' | 'last_7' | 'last_30' | 'this_week' | 'this_month' | 'custom'
@@ -37,6 +37,10 @@ export interface RecapRow {
   inputHash: string | null
   metadataJson: string | null
   digestJson: string | null
+  /** COST 2 per-call engine-cost ledger (RecapCostLedger JSON). NULL pre-ledger. */
+  ledgerJson: string | null
+  /** Resolved tuning-param recipe used to generate this recap (Pillar D). */
+  argsJson: string | null
 }
 
 export interface RecapInsert {
@@ -76,6 +80,8 @@ export type RecapPatch = Partial<
     | 'inputHash'
     | 'metadataJson'
     | 'digestJson'
+    | 'ledgerJson'
+    | 'argsJson'
   >
 >
 
@@ -434,6 +440,8 @@ interface RawRecapRow {
   input_hash: string | null
   metadata_json: string | null
   digest_json: string | null
+  ledger_json: string | null
+  args_json: string | null
 }
 
 function hydrate(row: RawRecapRow): RecapRow {
@@ -468,6 +476,8 @@ function hydrate(row: RawRecapRow): RecapRow {
     inputHash: row.input_hash,
     metadataJson: row.metadata_json,
     digestJson: row.digest_json,
+    ledgerJson: row.ledger_json,
+    argsJson: row.args_json,
   }
 }
 
@@ -490,6 +500,7 @@ function safeParseJson(value: string): unknown {
  */
 // fallow-ignore-next-line complexity
 export function rowToRecapMeta(row: RecapRow): RecapMeta {
+  const costLedger = parseLedger(row.ledgerJson)
   return {
     recapId: row.id,
     projectUri: row.projectUri,
@@ -512,5 +523,17 @@ export function rowToRecapMeta(row: RecapRow): RecapMeta {
     createdAt: row.createdAt,
     startedAt: row.startedAt ?? undefined,
     completedAt: row.completedAt ?? undefined,
+    ...(costLedger ? { costLedger } : {}),
   }
+}
+
+/** Parse the persisted ledger_json into the wire RecapCostLedger, tolerating
+ *  NULL (pre-ledger rows) and malformed JSON (returns undefined, never throws). */
+function parseLedger(json: string | null): RecapCostLedger | undefined {
+  if (!json) return undefined
+  const parsed = safeParseJson(json)
+  if (parsed && typeof parsed === 'object' && Array.isArray((parsed as RecapCostLedger).entries)) {
+    return parsed as RecapCostLedger
+  }
+  return undefined
 }
