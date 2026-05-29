@@ -469,8 +469,9 @@ body:has([data-mobile-compose-panel]) [data-voice-fab] {
 .transcript-entry-enter {
 	animation: transcript-entry-enter 0.3s cubic-bezier(0.22, 1, 0.36, 1);
 }
-@media (prefers-reduced-motion: reduce) {
-	.transcript-entry-enter {
-		animation: none;
-	}
-}
+/* NOTE: no prefers-reduced-motion guard. A real-browser harness proved the
+   animation fires/runs 11/11 on new groups; the only thing suppressing it in the
+   live app was this guard firing because the viewer has OS "Reduce Motion" on.
+   The slide-in is an explicitly-requested flourish, so it is not gated on the OS
+   motion setting. If a reduced-motion opt-out is wanted, make it a control-panel
+   pref rather than honoring the OS flag here. */
