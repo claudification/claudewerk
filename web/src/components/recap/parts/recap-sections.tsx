@@ -2,7 +2,7 @@
  *  rendered from the structured frontmatter, plus open-questions + meta chips. */
 
 import type { RecapItem, RecapMetadata } from '@shared/protocol'
-import { ChipRow, Citations } from './recap-bits'
+import { ChipRow, Citations, MetaList } from './recap-bits'
 
 const SECTIONS: Array<{ key: keyof RecapMetadata; title: string }> = [
   { key: 'features', title: 'Features shipped' },
@@ -113,13 +113,17 @@ export function RecapSections({
       ))}
       <Retrospect metadata={metadata} onOpenConversation={onOpenConversation} />
       <OpenQuestions questions={metadata.open_questions} />
-      <div className="flex flex-col gap-1.5">
-        <ChipRow label="hashtags" items={metadata.hashtags} tone="accent" />
-        <ChipRow label="keywords" items={metadata.keywords} />
-        <ChipRow label="goals" items={metadata.goals} />
-        <ChipRow label="discoveries" items={metadata.discoveries} />
-        <ChipRow label="side effects" items={metadata.side_effects} tone="warning" />
-        <ChipRow label="people" items={metadata.stakeholders} />
+      {/* Sentence-shaped fields render as bullet lists; tag-shaped fields as
+          hash-colored chips so a dense cloud stays scannable. */}
+      <div className="flex flex-col gap-3">
+        <MetaList label="goals" items={metadata.goals} />
+        <MetaList label="discoveries" items={metadata.discoveries} />
+        <MetaList label="side effects" items={metadata.side_effects} tone="warning" />
+        <div className="flex flex-col gap-1.5">
+          <ChipRow label="hashtags" items={metadata.hashtags} hash />
+          <ChipRow label="keywords" items={metadata.keywords} hash />
+          <ChipRow label="people" items={metadata.stakeholders} />
+        </div>
       </div>
     </div>
   )
