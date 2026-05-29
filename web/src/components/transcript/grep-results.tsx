@@ -343,6 +343,8 @@ export function GrepContentResults({
                   )}
                   <span
                     className="text-foreground/80 whitespace-pre-wrap break-all min-w-0"
+                    // react-doctor-disable-next-line react-doctor/no-danger
+                    // biome-ignore lint/security/noDangerouslySetInnerHtml: highlightLine escapes HTML then wraps matches in <mark>
                     dangerouslySetInnerHTML={{ __html: highlightLine(m.text, highlight) }}
                   />
                 </div>

@@ -183,7 +183,11 @@ export const DiffView = memo(
                     syntaxHtml={syntaxHtml}
                   />
                 ) : syntaxHtml ? (
-                  <span dangerouslySetInnerHTML={{ __html: syntaxHtml }} />
+                  <span
+                    // react-doctor-disable-next-line react-doctor/no-danger
+                    // biome-ignore lint/security/noDangerouslySetInnerHtml: shiki syntax-highlighter output (trusted)
+                    dangerouslySetInnerHTML={{ __html: syntaxHtml }}
+                  />
                 ) : (
                   <span
                     className={cn(
@@ -373,7 +377,11 @@ export function ShellCommand({ command, maxLines = 10 }: { command: string; maxL
     <pre className="text-[10px] bg-black/30 p-2 overflow-auto whitespace-pre-wrap font-mono border-l-2 border-green-500/40">
       <span className="text-green-500/60 select-none">$ </span>
       {html ? (
-        <code dangerouslySetInnerHTML={{ __html: html }} />
+        <code
+          // react-doctor-disable-next-line react-doctor/no-danger
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: shiki syntax-highlighter output (trusted)
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
       ) : (
         <span className="text-foreground/80">{display}</span>
       )}
@@ -435,7 +443,11 @@ export function WritePreview({ content, filePath }: { content: string; filePath?
                 >
                   {i + 1}
                 </span>
-                <span dangerouslySetInnerHTML={{ __html: lineHtml }} />
+                <span
+                  // react-doctor-disable-next-line react-doctor/no-danger
+                  // biome-ignore lint/security/noDangerouslySetInnerHtml: shiki syntax-highlighter output (trusted)
+                  dangerouslySetInnerHTML={{ __html: lineHtml }}
+                />
               </div>
             ))}
           </code>
@@ -597,9 +609,14 @@ export function ReplView({ code, isError }: { code: string; isError?: boolean })
         {htmlLines ? (
           <code>
             {htmlLines.slice(0, visibleCodeLines).map((lineHtml, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: code lines are positional
-              // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
-              <div key={i} className="hover:bg-muted/20" dangerouslySetInnerHTML={{ __html: lineHtml }} />
+              <div
+                key={i}
+                className="hover:bg-muted/20"
+                // biome-ignore lint/suspicious/noArrayIndexKey: code lines are positional
+                // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key, react-doctor/no-danger
+                // biome-ignore lint/security/noDangerouslySetInnerHtml: shiki syntax-highlighter output (trusted)
+                dangerouslySetInnerHTML={{ __html: lineHtml }}
+              />
             ))}
           </code>
         ) : (

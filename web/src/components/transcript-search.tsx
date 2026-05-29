@@ -84,7 +84,12 @@ function SnippetText({ html }: { html: string }) {
     .replace(/\x02/g, '</mark>')
 
   return (
-    <span className="text-[11px] text-foreground/70 leading-relaxed" dangerouslySetInnerHTML={{ __html: sanitized }} />
+    <span
+      className="text-[11px] text-foreground/70 leading-relaxed"
+      // react-doctor-disable-next-line react-doctor/no-danger
+      // biome-ignore lint/security/noDangerouslySetInnerHtml: pre-sanitized highlight (HTML-escaped then mark spans inserted)
+      dangerouslySetInnerHTML={{ __html: sanitized }}
+    />
   )
 }
 

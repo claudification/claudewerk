@@ -486,6 +486,8 @@ export const Markdown = memo(function Markdown({ children, inline, copyable }: M
       ref={ref}
       role="document"
       className="prose-hacker [overflow-wrap:break-word]"
+      // react-doctor-disable-next-line react-doctor/no-danger
+      // biome-ignore lint/security/noDangerouslySetInnerHtml: marked-rendered markdown from trusted CC transcript
       dangerouslySetInnerHTML={{ __html: html }}
       onClick={handleMarkdownClick}
       onKeyDown={e => {
