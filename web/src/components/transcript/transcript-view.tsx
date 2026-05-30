@@ -203,8 +203,11 @@ const StreamingTextBlock = memo(function StreamingTextBlock({ conversationId }: 
     state => (conversationId ? state.streamingText[conversationId] : null) || EMPTY_STREAMING,
   )
   if (!showStreaming || !streamingText) return null
+  // pl-4 mirrors GroupView's item container (group-view.tsx) so streaming text
+  // sits at the SAME x as the committed assistant text -- no horizontal jump on
+  // the settle handoff. The emerald ::before bar bleeds into this pl-4 gutter.
   return (
-    <div className="mt-2">
+    <div className="mt-2 pl-4">
       <AssistantText text={streamingText} streaming />
     </div>
   )
