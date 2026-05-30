@@ -40,6 +40,10 @@ function estimateGroupSize(group: DisplayGroup, measuredSizes: Map<string, numbe
   if (cached !== undefined) return cached
 
   switch (group.type) {
+    case 'live':
+      // First-frame estimate only; measureElement reports the real height once
+      // the streaming/spinner content renders. Modest so the initial pin is close.
+      return 80
     case 'compacted':
       return 40
     case 'compacting':
@@ -473,6 +477,19 @@ export const TranscriptView = memo(function TranscriptView({
     return { mainGroups: main, queuedGroups: queued }
   }, [groups])
 
+  // Live-turn state (drives the live tail item + suppresses the enter animation
+  // during streaming so the in-place streaming->committed swap never flashes).
+  const selectedConversationId = useConversationsStore(state => state.selectedConversationId)
+  const convActive = useConversationsStore(state =>
+    selectedConversationId ? state.conversationsById[selectedConversationId]?.status === 'active' : false,
+  )
+  const streamingPresent = useConversationsStore(state =>
+    selectedConversationId
+      ? !!(state.streamingText[selectedConversationId] || state.streamingThinking[selectedConversationId])
+      : false,
+  )
+  const liveActive = convActive || streamingPresent
+
   // ENTER ANIMATION -- slide up + fade in the newest group, ONLY for a live new
   // entry. Detected during RENDER (not an effect) so the new row carries the
   // animation class on its FIRST paint -- adding it post-paint would flash the
@@ -502,7 +519,11 @@ export const TranscriptView = memo(function TranscriptView({
     tailKey !== prevTailKeyRef.current &&
     prevTailKeyRef.current !== null &&
     cacheKey === enterCacheKeyRef.current &&
-    windowStart === enterWindowStartRef.current
+    windowStart === enterWindowStartRef.current &&
+    // Never animate while a turn is live: the streaming itself is the animation,
+    // and the committed entry takes over the live item in place -- a slide-in
+    // there would flash/jerk. Genuine new entries while idle still animate.
+    !liveActive
   const pendingEnterRef = useRef<string | null>(null)
   if (shouldEnter) pendingEnterRef.current = tailKey
   prevTailKeyRef.current = tailKey
@@ -556,8 +577,33 @@ export const TranscriptView = memo(function TranscriptView({
   // matching subagent directly, so a subagent poll re-renders only those rows
   // -- not every GroupView. See tool-cases-agent.tsx / tool-line.tsx.
 
-  const selectedConversationId = useConversationsStore(state => state.selectedConversationId)
   const perfEnabled = useConversationsStore(state => state.controlPanelPrefs.showPerfMonitor)
+
+  // LIVE TAIL ITEM. The in-flight turn (streaming thinking + text + spinner +
+  // thinking-pill) renders INSIDE one persistent virtualizer item so it is part
+  // of the virtualizer's totalSize and anchorTo:'end' tracks it. The committed
+  // assistant entry then takes over this SAME item (same key + index) in place:
+  // no item is appended or removed at completion, so the count never changes and
+  // the 80px end-threshold is never tripped -> no jerk, anchor holds.
+  const lastMainGroup = mainGroups.length > 0 ? mainGroups[mainGroups.length - 1] : null
+  // Append a synthetic live item ONLY while there is no committed assistant group
+  // to host the streaming yet (last committed group is the user prompt etc.).
+  // Once the committed assistant group exists it IS the live slot -- streaming
+  // renders inside it and it keeps the live key, making the synthetic->committed
+  // transition an in-place swap (same key/index, no count change).
+  const appendSyntheticLive = liveActive && lastMainGroup?.type !== 'assistant'
+  const LIVE_GROUP = useMemo<DisplayGroup>(() => ({ type: 'live', timestamp: '', entries: [] }), [])
+  const renderGroups = useMemo(
+    () => (appendSyntheticLive ? [...mainGroups, LIVE_GROUP] : mainGroups),
+    [appendSyntheticLive, mainGroups, LIVE_GROUP],
+  )
+  const liveKey = selectedConversationId ? `live-${selectedConversationId}` : 'live'
+  // The live slot is the last renderGroups item while the turn is live, keyed
+  // liveKey so the synthetic group and the committed assistant group are the
+  // SAME virtualizer item across the transition. When the turn ends it reverts
+  // to the group's normal stable key; the seeded height (below) makes that
+  // remount invisible (same height -> no scroll shift).
+  const liveSlotIndex = liveActive ? renderGroups.length - 1 : -1
 
   // Cache measured sizes so estimateSize can use real heights for groups that
   // have been rendered before. Sourced from a module-level per-conversation
@@ -567,13 +613,16 @@ export const TranscriptView = memo(function TranscriptView({
   // captured once on mount).
   const measuredSizes = useMemo(() => getConvSizeCache(cacheKey ?? null), [cacheKey])
 
-  const getItemKey = useCallback((index: number) => stableGroupKey(mainGroups[index]), [mainGroups])
+  const getItemKey = useCallback(
+    (index: number) => (index === liveSlotIndex ? liveKey : stableGroupKey(renderGroups[index])),
+    [renderGroups, liveSlotIndex, liveKey],
+  )
 
   const virtualizer = useVirtualizer({
-    count: mainGroups.length,
+    count: renderGroups.length,
     getScrollElement: () => parentRef.current,
     estimateSize: index =>
-      index < mainGroups.length ? estimateGroupSize(mainGroups[index], measuredSizes, getItemKey(index)) : 0,
+      index < renderGroups.length ? estimateGroupSize(renderGroups[index], measuredSizes, getItemKey(index)) : 0,
     overscan: 5,
     getItemKey,
     // Chat-mode: end-anchored list with auto-follow. anchorTo:'end' handles
@@ -635,6 +684,14 @@ export const TranscriptView = memo(function TranscriptView({
   const virtualItems = virtualizer.getVirtualItems()
   for (const item of virtualItems) {
     measuredSizes.set(String(item.key), item.size)
+  }
+  // When the committed assistant group IS the live slot (rendered under liveKey),
+  // mirror its measured height onto its own stable key. The moment the turn ends
+  // and the key reverts liveKey -> stableKey, estimateSize returns this seeded
+  // height so the remount keeps the same totalSize -- no scroll shift.
+  if (liveActive && !appendSyntheticLive && lastMainGroup) {
+    const liveSize = measuredSizes.get(liveKey)
+    if (liveSize !== undefined) measuredSizes.set(stableGroupKey(lastMainGroup), liveSize)
   }
 
   // Total virtualized height. Also the dependency that drives the pin-to-bottom
@@ -785,7 +842,7 @@ export const TranscriptView = memo(function TranscriptView({
     }
   }, [])
 
-  const isEmpty = mainGroups.length === 0 && queuedGroups.length === 0
+  const isEmpty = renderGroups.length === 0 && queuedGroups.length === 0
 
   return (
     <div
@@ -805,12 +862,14 @@ export const TranscriptView = memo(function TranscriptView({
         <MaybeProfiler enabled={perfEnabled} id="TranscriptGroups">
           {(() => {
             lastVirtualItemCount = virtualItems.length
-            lastTotalGroupCount = mainGroups.length
+            lastTotalGroupCount = renderGroups.length
             return virtualItems
           })().map(virtualItem => {
             const itemKey = String(virtualItem.key)
             const isEntering = enteringKey === itemKey
-            const isLast = virtualItem.index === mainGroups.length - 1
+            const isLast = virtualItem.index === renderGroups.length - 1
+            const group = renderGroups[virtualItem.index]
+            const isLive = group.type === 'live'
             return (
               <div
                 key={virtualItem.key}
@@ -822,51 +881,60 @@ export const TranscriptView = memo(function TranscriptView({
                   width: '100%',
                 }}
               >
-                {/* Thinking BEFORE group content (chronological order) */}
-                {isLast && <StreamingThinkingBlock conversationId={selectedConversationId} />}
-                <div
-                  className={isEntering ? 'transcript-entry-enter' : undefined}
-                  onAnimationEnd={
-                    isEntering
-                      ? e => {
-                          if (e.animationName === 'transcript-entry-enter') clearEntering()
-                        }
-                      : undefined
-                  }
-                >
-                  {(() => {
-                    const group = mainGroups[virtualItem.index]
-                    if (group.type === 'compacted') return <CompactedDivider />
-                    if (group.type === 'compacting') return <CompactingBanner />
-                    if (group.type === 'skill') {
-                      const entry = group.entries[0] as {
-                        message?: { content?: string | Array<{ type: string; text?: string }> }
-                      }
-                      let content = ''
-                      if (Array.isArray(entry?.message?.content)) {
-                        const parts: string[] = []
-                        for (const b of entry.message.content) {
-                          if (b.type === 'text') parts.push(b.text || '')
-                        }
-                        content = parts.join('')
-                      }
-                      return <SkillDivider name={group.skillName || 'skill'} content={content} />
+                {/* Committed content. The synthetic live group has none -- it is
+                    pure in-flight UI until the committed entry takes it over. */}
+                {!isLive && (
+                  <div
+                    className={isEntering ? 'transcript-entry-enter' : undefined}
+                    onAnimationEnd={
+                      isEntering
+                        ? e => {
+                            if (e.animationName === 'transcript-entry-enter') clearEntering()
+                          }
+                        : undefined
                     }
-                    return (
-                      <MemoizedGroupView
-                        group={group}
-                        getResult={getResult}
-                        settings={transcriptSettings}
-                        showThinking={showThinking}
-                        planContext={planContext}
-                      />
-                    )
-                  })()}
-                </div>
-                {/* Streaming text + spinner AFTER group content (response being built) */}
+                  >
+                    {(() => {
+                      if (group.type === 'compacted') return <CompactedDivider />
+                      if (group.type === 'compacting') return <CompactingBanner />
+                      if (group.type === 'skill') {
+                        const entry = group.entries[0] as {
+                          message?: { content?: string | Array<{ type: string; text?: string }> }
+                        }
+                        let content = ''
+                        if (Array.isArray(entry?.message?.content)) {
+                          const parts: string[] = []
+                          for (const b of entry.message.content) {
+                            if (b.type === 'text') parts.push(b.text || '')
+                          }
+                          content = parts.join('')
+                        }
+                        return <SkillDivider name={group.skillName || 'skill'} content={content} />
+                      }
+                      return (
+                        <MemoizedGroupView
+                          group={group}
+                          getResult={getResult}
+                          settings={transcriptSettings}
+                          showThinking={showThinking}
+                          planContext={planContext}
+                        />
+                      )
+                    })()}
+                  </div>
+                )}
+                {/* In-flight UI lives INSIDE the last measured item so totalSize
+                    includes it and anchorTo:'end' keeps it pinned. Order is
+                    chronological: streaming thinking -> streaming text -> pill
+                    -> spinner, then banners + queued. For a continuation turn these
+                    render after the committed content above. All of these return
+                    null when there is nothing in-flight, so an idle last item
+                    renders only its committed content + any pending banners. */}
                 {isLast && (
                   <>
+                    <StreamingThinkingBlock conversationId={selectedConversationId} />
                     <StreamingTextBlock conversationId={selectedConversationId} />
+                    <ThinkingPill conversationId={selectedConversationId} />
                     <ThinkingSpinner conversationId={selectedConversationId} />
                     <div className="mt-2">
                       <LinkRequestBanners />
@@ -877,11 +945,11 @@ export const TranscriptView = memo(function TranscriptView({
                     {queuedGroups.length > 0 && (
                       <div className="mt-2 border-t border-dashed border-amber-500/30 pt-2">
                         <div className="text-[10px] font-mono text-amber-500/60 px-1 mb-1">QUEUED</div>
-                        {queuedGroups.map((group, i) => (
+                        {queuedGroups.map((qg, i) => (
                           <MemoizedGroupView
                             // biome-ignore lint/suspicious/noArrayIndexKey: queued groups may share timestamp
-                            key={`queued-${group.timestamp}-${i}`}
-                            group={group}
+                            key={`queued-${qg.timestamp}-${i}`}
+                            group={qg}
                             getResult={getResult}
                             settings={transcriptSettings}
                             showThinking={showThinking}
@@ -896,14 +964,6 @@ export const TranscriptView = memo(function TranscriptView({
           })}
         </MaybeProfiler>
       </div>
-      {isEmpty && (
-        <>
-          <StreamingThinkingBlock conversationId={selectedConversationId} />
-          <StreamingTextBlock conversationId={selectedConversationId} />
-          <ThinkingSpinner conversationId={selectedConversationId} />
-        </>
-      )}
-      <ThinkingPill conversationId={selectedConversationId} />
     </div>
   )
 })

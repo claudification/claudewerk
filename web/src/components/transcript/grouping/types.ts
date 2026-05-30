@@ -21,6 +21,11 @@ export interface DisplayGroup {
     | 'boot'
     | 'launch'
     | 'spawn_notification'
+    /** Synthetic tail item that hosts the in-flight turn (streaming thinking +
+     *  text + spinner + thinking-pill). Never produced by grouping; appended by
+     *  TranscriptView so the live turn is a real measured virtualizer item that
+     *  the committed assistant group takes over in place (same key/index). */
+    | 'live'
   /** Stable React/virtualizer key, assigned by useIncrementalGroups and carried
    *  across regroups (tail-append, head-prune, refetch) so a group's DOM subtree
    *  is reused instead of remounted. A remount would give every DiffView/EditDiff

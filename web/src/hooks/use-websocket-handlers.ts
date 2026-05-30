@@ -217,10 +217,19 @@ function handleConversationUpdate(msg: DashboardMessage) {
       conversations,
       conversationsById: buildConversationsById(conversations),
     }
-    // Clear stale streaming text when conversation goes idle or ends
-    if ((updated.status === 'idle' || updated.status === 'ended') && state.streamingText[conversationId]) {
-      const { [conversationId]: _, ...rest } = state.streamingText
-      newState.streamingText = rest
+    // Clear stale streaming buffers when conversation goes idle or ends. Both
+    // text AND thinking are transient in-flight indicators -- the committed
+    // transcript entries carry the real thinking + text blocks (see
+    // parse-entries.ts / ThinkingItem), so there is nothing to preserve here.
+    if (updated.status === 'idle' || updated.status === 'ended') {
+      if (state.streamingText[conversationId]) {
+        const { [conversationId]: _t, ...rest } = state.streamingText
+        newState.streamingText = rest
+      }
+      if (state.streamingThinking[conversationId]) {
+        const { [conversationId]: _k, ...rest } = state.streamingThinking
+        newState.streamingThinking = rest
+      }
     }
     if (prevId && state.selectedConversationId === prevId) {
       console.log(
@@ -400,19 +409,28 @@ function handleTranscriptEntries(msg: DashboardMessage) {
         `[ws] transcript ${sid.slice(0, 8)}: +${newEntries.length} ${initial ? (skipped ? 'INITIAL-SKIP' : 'INITIAL') : 'incremental'} (total=${result.length})`,
       )
     }
-    // Clear streaming TEXT on assistant entry arrival (the committed entry
-    // replaces it). Keep streaming THINKING alive -- committed entries don't
-    // contain thinking blocks, so clearing here makes the thinking text vanish
-    // permanently. Thinking clears on message_stop or status-change-to-idle.
+    // Clear BOTH streaming buffers when a committed assistant entry arrives.
+    // This is the primary, seamless swap point: the committed transcript entry
+    // contains the real thinking + text blocks (parse-entries.ts builds
+    // `thinking` RenderItems incl. the encrypted case; GroupView renders them
+    // via ThinkingItem in correct chronological order, gated by showThinking).
+    // The streaming buffers are PURELY transient in-flight indicators. Keeping
+    // the thinking buffer alive past commit was the root cause of the duplicate
+    // thinking block + the delayed-shrink jerk -- the committed entry already
+    // shows the thinking, so the buffer is redundant the instant it lands.
     const hasAssistant = newEntries.some(e => e.type === 'assistant')
-    const streamingText =
-      hasAssistant && state.streamingText[sid]
-        ? (() => {
-            const { [sid]: _, ...rest } = state.streamingText
-            return rest
-          })()
-        : state.streamingText
-    const streamingThinking = state.streamingThinking
+    let streamingText = state.streamingText
+    let streamingThinking = state.streamingThinking
+    if (hasAssistant) {
+      if (streamingText[sid]) {
+        const { [sid]: _t, ...rest } = streamingText
+        streamingText = rest
+      }
+      if (streamingThinking[sid]) {
+        const { [sid]: _k, ...rest } = streamingThinking
+        streamingThinking = rest
+      }
+    }
     // Update lastAppliedTranscriptSeq. For isInitial, ALWAYS take the snapshot's
     // max seq (even when skipped) so a broker restart that resets the counter
     // doesn't leave a stale high-water mark that filters all future entries.
@@ -491,19 +509,18 @@ function handleStreamDelta(msg: DashboardMessage) {
       })
     }
   } else if (eventType === 'message_start') {
-    // New text/thinking run -- reset streaming buffers. Do NOT reset on
-    // content_block_start: a single assistant message can have multiple
-    // blocks (interleaved with tool_use / thinking) and resetting on each
-    // block wipes earlier deltas before message_stop flushes the final
-    // assistant entry, making the first block look "missed" to the viewer.
-    // Reset streaming text for the new message. Keep thinking -- it persists
-    // on the transcript (committed entries don't include thinking blocks).
+    // New message -- reset BOTH streaming buffers for a clean slate. Do NOT
+    // reset on content_block_start: a single assistant message can have
+    // multiple blocks (interleaved tool_use / thinking / text) and resetting
+    // on each block wipes earlier deltas before the committed entry lands.
+    // Resetting per-message is correct: the prior message's content has
+    // already committed (and cleared these buffers) by the time the next
+    // message_start fires.
     useConversationsStore.setState(state => {
-      const hasText = !!state.streamingText[sid]
-      if (!hasText) return state
-      return {
-        streamingText: { ...state.streamingText, [sid]: '' },
-      }
+      const next: Partial<typeof state> = {}
+      if (state.streamingText[sid]) next.streamingText = { ...state.streamingText, [sid]: '' }
+      if (state.streamingThinking[sid]) next.streamingThinking = { ...state.streamingThinking, [sid]: '' }
+      return next
     })
   } else if (eventType === 'message_stop') {
     // Turn complete -- clear streaming TEXT (committed entry replaces it).
