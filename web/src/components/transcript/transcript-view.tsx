@@ -662,7 +662,11 @@ export const TranscriptView = memo(function TranscriptView({
     // scrolled up = no pull-down). Replaces all manual scroll-to-bottom and
     // prepend-anchor machinery.
     anchorTo: 'end',
-    followOnAppend: true,
+    // followOnAppend OFF (field experiment): its native scroll-on-append is
+    // INSTANT and pre-empts the smooth follow below. With it off, every follow
+    // (append AND in-place growth) routes through the single totalSize effect,
+    // which animates smoothly once the conversation has settled.
+    followOnAppend: false,
     scrollEndThreshold: 80,
     // Safari fix: ResizeObserver can fire mid-layout before paint completes,
     // causing the virtualizer to read intermediate/partial element heights and
@@ -769,11 +773,24 @@ export const TranscriptView = memo(function TranscriptView({
     virtualizer.scrollToEnd()
   }, [virtualizer])
 
-  // Conversation switch: scroll to end + re-enable follow in the parent.
+  // Smooth-follow gate. FALSE during the initial post-switch measurement burst so
+  // entering/switching a conversation snaps INSTANTLY to the bottom (boom, you're
+  // there) -- without this, the totalSize effect below would smooth-crawl through
+  // the content as it measures in. Flipped true a beat after settle so subsequent
+  // growth (streaming/pills/appends) follows SMOOTHLY.
+  const followSmoothRef = useRef(false)
+
+  // Conversation switch: scroll to end + re-enable follow in the parent. Resets
+  // the smooth gate so the entry scroll + initial load stay instant.
   // biome-ignore lint/correctness/useExhaustiveDependencies: virtualizer is stable, onReachedBottom is stable
   useLayoutEffect(() => {
+    followSmoothRef.current = false
     virtualizer.scrollToEnd()
     onReachedBottom?.()
+    const id = setTimeout(() => {
+      followSmoothRef.current = true
+    }, 350)
+    return () => clearTimeout(id)
   }, [cacheKey])
 
   // Re-pin when follow is toggled on (ScrollToBottomButton click).
@@ -794,7 +811,7 @@ export const TranscriptView = memo(function TranscriptView({
   // keeps totalSize constant there), so it does not fire spuriously.
   // biome-ignore lint/correctness/useExhaustiveDependencies: totalSize is the intentional trigger; virtualizer is stable
   useLayoutEffect(() => {
-    if (follow) virtualizer.scrollToEnd()
+    if (follow) virtualizer.scrollToEnd({ behavior: followSmoothRef.current ? 'smooth' : 'auto' })
   }, [totalSize, follow])
 
   // Re-entrancy guard for the scroll-up auto-trigger.
