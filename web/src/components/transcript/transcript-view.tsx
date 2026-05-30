@@ -779,6 +779,21 @@ export const TranscriptView = memo(function TranscriptView({
     if (follow) virtualizer.scrollToEnd()
   }, [follow])
 
+  // Re-pin on ANY measured-height change while following. anchorTo:'end' anchors
+  // the end against jumps but does NOT actively pull the viewport down when the
+  // LAST item grows IN PLACE -- which is exactly what the in-flight bottom UI
+  // does: streaming thinking/text, the verb spinner, and the thinking pill all
+  // render inside the last virtual item, so no new item is appended and
+  // followOnAppend never fires. totalSize captures every such growth (and the
+  // shrink when they vanish), so scroll to end to keep the new bottom content
+  // visible. Gated on `follow` so a scrolled-up user is never yanked; idempotent
+  // when already pinned; stable across the live->committed swap (seeded height
+  // keeps totalSize constant there), so it does not fire spuriously.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: totalSize is the intentional trigger; virtualizer is stable
+  useLayoutEffect(() => {
+    if (follow) virtualizer.scrollToEnd()
+  }, [totalSize, follow])
+
   // Re-entrancy guard for the scroll-up auto-trigger.
   const loadingEarlierRef = useRef(false)
   // Re-entrancy guard for the server-side older-history fetch (infinite scrollback).
