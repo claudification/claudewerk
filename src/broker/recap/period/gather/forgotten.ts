@@ -50,52 +50,72 @@ export interface ForgottenOptions {
  * open-loop probe is bounded to `workingSet` tails; candidateCount reports the
  * full stale+invested pool so the caller can log/​surface what was not shown.
  */
+/** A stale+invested candidate before the open-loop probe. */
+type Candidate = Omit<ForgottenThread, 'lastUserPrompt' | 'finalAssistantText' | 'openQuestions'>
+
 export function gatherForgotten(
   store: StoreDriver,
   scope: PeriodScope,
   opts: ForgottenOptions = {},
 ): ForgottenThreadDigest {
   const now = opts.now ?? Date.now()
-  const floorMs = opts.floorMs ?? 2 * DAY_MS
+  const cutoff = Math.min(scope.periodStart, now - (opts.floorMs ?? 2 * DAY_MS))
   const minTurns = opts.minTurns ?? 4
-  const cap = opts.cap ?? 10
-  const workingSet = opts.workingSet ?? 40
-  const cutoff = Math.min(scope.periodStart, now - floorMs)
 
   const turnCounts = allTimeTurnCounts(store, scope, now)
+  const candidates = collectCandidates(store, scope, { now, cutoff, minTurns }, turnCounts)
+  // Rank: investment primary, abandonment secondary.
+  candidates.sort((a, b) => b.turnCount - a.turnCount || b.idleDays - a.idleDays)
 
-  // Stale + invested candidates across every in-scope project.
-  const candidates: Array<Omit<ForgottenThread, 'lastUserPrompt' | 'finalAssistantText' | 'openQuestions'>> = []
+  const { threads, probed } = filterByOpenLoop(store, candidates, opts.cap ?? 10, opts.workingSet ?? 40)
+  return { threads, candidateCount: candidates.length, probed }
+}
+
+/** Stale + invested conversations across every in-scope project (pre-open-loop). */
+// fallow-ignore-next-line complexity
+function collectCandidates(
+  store: StoreDriver,
+  scope: PeriodScope,
+  gate: { now: number; cutoff: number; minTurns: number },
+  turnCounts: Map<string, number>,
+): Candidate[] {
+  const out: Candidate[] = []
   for (const projectUri of scope.projectUris) {
     for (const s of store.conversations.listByScope(projectUri)) {
       if (s.status === 'active') continue // live, not forgotten
       const created = (s as { createdAt?: number }).createdAt ?? 0
       const lastActivity = (s as { lastActivity?: number }).lastActivity ?? created
-      if (lastActivity >= cutoff) continue // too recent (in/near window)
+      if (lastActivity >= gate.cutoff) continue // too recent (in/near window)
       const turnCount = turnCounts.get(s.id) ?? 0
-      if (turnCount < minTurns) continue // not invested
-      candidates.push({
+      if (turnCount < gate.minTurns) continue // not invested
+      out.push({
         conversationId: s.id,
         conversationTitle: (s as { title?: string }).title ?? '',
         projectUri,
-        idleDays: Math.floor((now - lastActivity) / DAY_MS),
+        idleDays: Math.floor((gate.now - lastActivity) / DAY_MS),
         turnCount,
       })
     }
   }
+  return out
+}
 
-  // Rank: investment primary, abandonment secondary.
-  candidates.sort((a, b) => b.turnCount - a.turnCount || b.idleDays - a.idleDays)
-
-  // Open-loop HARD FILTER, walking the ranked pool until the cap fills or the
-  // working set is exhausted (whichever comes first).
+/** Open-loop HARD FILTER: walk the ranked pool, reading each tail, keeping only
+ *  threads that ended on an unanswered question, until the cap fills or the
+ *  working set is exhausted (whichever comes first). */
+// fallow-ignore-next-line complexity
+function filterByOpenLoop(
+  store: StoreDriver,
+  candidates: Candidate[],
+  cap: number,
+  workingSet: number,
+): { threads: ForgottenThread[]; probed: number } {
   const threads: ForgottenThread[] = []
   let probed = 0
   for (const c of candidates) {
     if (threads.length >= cap || probed >= workingSet) break
     probed++
-    const tail = store.transcripts.getLatest(c.conversationId, TAIL_ENTRIES)
-    const open = detectOpenLoopFromRecords(tail)
+    const open = detectOpenLoopFromRecords(store.transcripts.getLatest(c.conversationId, TAIL_ENTRIES))
     if (!open) continue // ended clean / pruned transcript -> not a loose end
     threads.push({
       ...c,
@@ -104,8 +124,7 @@ export function gatherForgotten(
       openQuestions: open.openQuestions,
     })
   }
-
-  return { threads, candidateCount: candidates.length, probed }
+  return { threads, probed }
 }
 
 /** All-time recorded turns per conversation across in-scope projects (the

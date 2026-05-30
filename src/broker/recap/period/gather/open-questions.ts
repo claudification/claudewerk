@@ -84,7 +84,7 @@ function detectOpenQuestion(
 }
 
 /** Pull any sentence in the trailing third of the assistant text that ends with `?`. */
-export function extractTrailingQuestions(text: string): string[] {
+function extractTrailingQuestions(text: string): string[] {
   if (!text) return []
   const sentences = splitSentences(text)
   if (sentences.length === 0) return []
