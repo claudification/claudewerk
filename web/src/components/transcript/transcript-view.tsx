@@ -1,4 +1,3 @@
-import { projectIdentityKey } from '@shared/project-uri'
 /**
  * TranscriptView - Virtualized transcript renderer.
  * Uses @tanstack/react-virtual for efficient rendering of large transcript streams.
@@ -20,7 +19,7 @@ import {
 } from 'react'
 import { fetchTranscriptBefore, useConversationsStore } from '@/hooks/use-conversations'
 import { record } from '@/lib/perf-metrics'
-import type { TranscriptAssistantEntry, TranscriptEntry } from '@/lib/types'
+import type { TranscriptEntry } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import {
   AskQuestionBanners,
@@ -28,13 +27,12 @@ import {
   PermissionBanners,
   SpawnApprovalBanners,
 } from '../conversation-detail/conversation-banners'
-import { Markdown } from '../markdown'
-import { Collapse } from './collapse'
 import { TranscriptEmptyState } from './ghost-peek'
 import { CompactedDivider, CompactingBanner, MemoizedGroupView, SkillDivider } from './group-view'
 import { type DisplayGroup, useIncrementalGroups } from './grouping'
-import { AssistantText } from './item-renderers'
+import { StreamingTextBlock, StreamingThinkingBlock, ThinkingSpinner } from './in-flight-decorations'
 import { ThinkingPill } from './thinking-pill'
+import { usePlanContext, useTranscriptSettings } from './use-transcript-derivations'
 
 /** Content-aware size estimation to minimize layout shift on first render.
  *  Falls back to measuredSizes cache for groups that have been rendered before. */
@@ -169,164 +167,6 @@ function stableGroupKey(group: DisplayGroup): string {
   return `${group.type}-${id}`
 }
 
-const EMPTY_STREAMING = ''
-
-/** Thinking block -- renders BEFORE group content (chronological order).
- *  Persists after thinking ends; never cleared during the conversation. */
-const StreamingThinkingBlock = memo(function StreamingThinkingBlock({
-  conversationId,
-}: {
-  conversationId: string | null
-}) {
-  const isActive = useConversationsStore(state =>
-    conversationId ? state.conversationsById[conversationId]?.status === 'active' : false,
-  )
-  const streamingThinking = useConversationsStore(
-    state => (conversationId ? state.streamingThinking[conversationId] : null) || EMPTY_STREAMING,
-  )
-  if (!streamingThinking) return null
-  return (
-    <div className="mt-2 pl-4">
-      <div className="border-l-2 border-purple-400/40 pl-3 py-1">
-        <div className="text-[10px] text-purple-400/70 uppercase font-bold tracking-wider mb-1">thinking</div>
-        <div className="text-sm opacity-60 italic">
-          <Markdown>{streamingThinking}</Markdown>
-          {isActive && <span className="inline-block w-1.5 h-4 bg-purple-500 animate-pulse ml-0.5 align-text-bottom" />}
-        </div>
-      </div>
-    </div>
-  )
-})
-
-/** Streaming text -- renders AFTER group content (response being built). Shares
- *  the committed renderer (AssistantText) so the streaming box IS a dimmed,
- *  emerald-accented version of the final text -- no separate "streaming" header,
- *  identical geometry, so the in-place swap to the committed entry doesn't shift.
- *  The settle morph (border/opacity) lives in the committed group's wrapper. */
-const StreamingTextBlock = memo(function StreamingTextBlock({ conversationId }: { conversationId: string | null }) {
-  const showStreaming = useConversationsStore(state => state.controlPanelPrefs.showStreaming !== false)
-  const streamingText = useConversationsStore(
-    state => (conversationId ? state.streamingText[conversationId] : null) || EMPTY_STREAMING,
-  )
-  if (!showStreaming || !streamingText) return null
-  // pl-4 mirrors GroupView's item container (group-view.tsx) so streaming text
-  // sits at the SAME x as the committed assistant text -- no horizontal jump on
-  // the settle handoff. The emerald ::before bar bleeds into this pl-4 gutter.
-  return (
-    <div className="mt-2 pl-4">
-      <AssistantText text={streamingText} streaming />
-    </div>
-  )
-})
-
-const VERBS = [
-  'Thinking',
-  'Reasoning',
-  'Pondering',
-  'Computing',
-  'Processing',
-  'Analyzing',
-  'Cogitating',
-  'Ruminating',
-  'Deliberating',
-  'Contemplating',
-  'Synthesizing',
-  'Evaluating',
-  'Calculating',
-  'Deducing',
-  'Inferring',
-  'Considering',
-  'Brainstorming',
-  'Formulating',
-  'Assembling',
-  'Decoding',
-  'Untangling',
-  'Composing',
-  'Orchestrating',
-  'Channeling',
-  'Manifesting',
-  'Conjuring',
-  'Brewing',
-  'Crafting',
-  'Forging',
-  'Weaving',
-  'Sculpting',
-  'Crunching',
-  'Finugeling',
-  'Machinating',
-  'Scheming',
-  'Plotting',
-]
-
-/** Shows a fun random verb spinner while the conversation is active (between UserPromptSubmit and Stop) */
-const ThinkingSpinner = memo(function ThinkingSpinner({ conversationId }: { conversationId: string | null }) {
-  const isActive = useConversationsStore(state =>
-    conversationId ? state.conversationsById[conversationId]?.status === 'active' : false,
-  )
-  const totalOutput = useConversationsStore(state =>
-    conversationId ? (state.conversationsById[conversationId]?.stats?.totalOutputTokens ?? 0) : 0,
-  )
-  // Custom verbs: project settings override > conversation verbs (from CC settings) > defaults
-  const customVerbs = useConversationsStore(state => {
-    const conversation = conversationId ? state.conversationsById[conversationId] : undefined
-    const projectVerbs = conversation?.project
-      ? state.projectSettings[projectIdentityKey(conversation.project)]?.verbs
-      : undefined
-    return projectVerbs?.length ? projectVerbs : conversation?.spinnerVerbs
-  })
-  const verbList = customVerbs?.length ? customVerbs : VERBS
-
-  const [verb, setVerb] = useState(() => VERBS[Math.floor(Math.random() * VERBS.length)])
-  const [dots, setDots] = useState(0)
-  const baselineRef = useRef(0)
-
-  // Capture baseline when turn starts
-  // biome-ignore lint/correctness/useExhaustiveDependencies: totalOutput intentionally omitted - only capture baseline on status transition, not every token update
-  useEffect(() => {
-    if (isActive) baselineRef.current = totalOutput
-    // react-doctor-disable-next-line react-doctor/exhaustive-deps
-  }, [isActive]) // only on status transition, not on every token update
-
-  const turnTokens = isActive ? Math.max(0, totalOutput - baselineRef.current) : 0
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: verbList intentionally omitted - stable for conversation duration, re-registering interval on every render unnecessary
-  useEffect(() => {
-    if (!isActive) return
-    const verbInterval = setInterval(() => {
-      setVerb(verbList[Math.floor(Math.random() * verbList.length)])
-    }, 3000)
-    const dotInterval = setInterval(() => {
-      setDots(d => (d + 1) % 4)
-    }, 400)
-    return () => {
-      clearInterval(verbInterval)
-      clearInterval(dotInterval)
-    }
-    // react-doctor-disable-next-line react-doctor/exhaustive-deps
-  }, [isActive])
-
-  // Wrapped in Collapse so it fades/collapses out when the turn ends instead of
-  // poofing -- an instant unmount drops scrollHeight and jerks the viewport.
-  return (
-    <Collapse show={isActive}>
-      <div className="mt-2 flex flex-col items-start px-4 py-1.5 text-[11px] font-mono text-muted-foreground/60">
-        <div className="flex items-center gap-2">
-          <span className="inline-block size-2 bg-accent rounded-full animate-pulse" />
-          <span className="text-accent/70">
-            {verb}
-            {'.'.repeat(dots)}
-          </span>
-        </div>
-        {turnTokens > 0 && (
-          <span className="text-muted-foreground/40 tabular-nums pl-4 text-[10px]">
-            {(turnTokens / 1000).toFixed(1)}K tokens
-          </span>
-        )}
-      </div>
-    </Collapse>
-  )
-})
-
 let lastVirtualItemCount = 0
 let lastTotalGroupCount = 0
 
@@ -452,25 +292,8 @@ export const TranscriptView = memo(function TranscriptView({
 
   const { getResult, groups } = useIncrementalGroups(windowed, cacheKey, regroupSignal)
 
-  // Lift settings selectors here (once) instead of per-GroupView (N times)
-  const expandAll = useConversationsStore(state => state.expandAll)
-  const globalSettings = useConversationsStore(state => state.globalSettings)
-  const chatBubbles = useConversationsStore(state => state.controlPanelPrefs.chatBubbles)
-  const bubbleColor = useConversationsStore(state => state.controlPanelPrefs.chatBubbleColor) || 'blue'
-  const transcriptSettings = useMemo(
-    () => ({
-      expandAll,
-      userLabel: (globalSettings.userLabel as string)?.trim() || 'USER',
-      agentLabel: (globalSettings.agentLabel as string)?.trim() || 'CLAUDE',
-      userColor: (globalSettings.userColor as string)?.trim() || '',
-      agentColor: (globalSettings.agentColor as string)?.trim() || '',
-      userSize: (globalSettings.userSize as string) || '',
-      agentSize: (globalSettings.agentSize as string) || '',
-      chatBubbles,
-      bubbleColor,
-    }),
-    [expandAll, globalSettings, chatBubbles, bubbleColor],
-  )
+  // Lift the per-group display settings ONCE (shared, virtualizer-agnostic).
+  const transcriptSettings = useTranscriptSettings()
 
   // Split: queued groups float at the bottom, non-queued in the virtualizer
   const { mainGroups, queuedGroups } = useMemo(() => {
@@ -580,35 +403,8 @@ export const TranscriptView = memo(function TranscriptView({
   }, [streamingTextPresent])
   const clearSettling = useCallback(() => setSettlingKey(null), [])
 
-  // Extract plan content from entries for ExitPlanMode display.
-  // Finds the last Write to a plans/*.md path across all entries.
-  // IMPORTANT: return stable reference when content hasn't changed to avoid busting memo on all GroupViews.
-  const planContextRef = useRef<{ content: string; path?: string } | undefined>(undefined)
-  const planContext = useMemo(() => {
-    let content: string | undefined
-    let path: string | undefined
-    for (const entry of entries) {
-      if (entry.type !== 'assistant') continue
-      const msg = (entry as TranscriptAssistantEntry).message
-      if (!msg) continue
-      const blocks = msg.content
-      if (!Array.isArray(blocks)) continue
-      for (const block of blocks) {
-        if (block.type === 'tool_use' && block.name === 'Write' && block.input) {
-          const filePath = block.input.file_path as string
-          if (filePath && /plans\/[^/]+\.md$/.test(filePath)) {
-            content = block.input.content as string
-            path = filePath
-          }
-        }
-      }
-    }
-    const next = content ? { content, path } : undefined
-    const prev = planContextRef.current
-    if (prev?.content === next?.content && prev?.path === next?.path) return prev
-    planContextRef.current = next
-    return next
-  }, [entries])
+  // Plan content for ExitPlanMode display (shared, virtualizer-agnostic).
+  const planContext = usePlanContext(entries)
 
   // Subagent state is no longer drilled down as a prop. Each Agent tool row's
   // badge (AgentTaskBadge) and inline-transcript wiring subscribe to their own

@@ -1,5 +1,6 @@
 import type { HookEvent } from '@shared/protocol'
 import { lazy, Suspense } from 'react'
+import { useConversationsStore } from '@/hooks/use-conversations'
 import { type Conversation, projectPath, type TranscriptEntry } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { BgTasksView } from '../bg-tasks-view'
@@ -17,6 +18,7 @@ import { TasksView } from '../tasks-view'
 // transcript/index re-exports the two long-import-path types; collapsing both into one line keeps the file tidy
 // react-doctor-disable-next-line react-doctor/no-barrel-import
 import { TranscriptDropZone, TranscriptView } from '../transcript'
+import { TranscriptViewVirtuoso } from '../transcript/transcript-view-virtuoso'
 import { ScrollToBottomButton } from './conversation-input'
 import type { Tab } from './conversation-tabs'
 
@@ -68,6 +70,11 @@ export function TabContentPanels({
   onDisableFollow,
   onEnableFollow,
 }: TabContentPanelsProps) {
+  // SPIKE A/B: react-virtuoso renderer behind a flag (default OFF). Toggle via
+  // Cmd+P "Toggle react-virtuoso transcript". Flag OFF -> the TanStack path is
+  // byte-identical. See plan-virtuoso-spike.md.
+  const useVirtuoso = useConversationsStore(state => state.controlPanelPrefs.virtuosoTranscript)
+  const ActiveTranscriptView = useVirtuoso ? TranscriptViewVirtuoso : TranscriptView
   return (
     <>
       {conversationTarget && (
@@ -95,7 +102,7 @@ export function TabContentPanels({
               PLANNING MODE
             </div>
           )}
-          <TranscriptView
+          <ActiveTranscriptView
             cacheKey={selectedConversationId}
             entries={transcript}
             follow={follow}

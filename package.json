@@ -93,6 +93,7 @@
     "hono": "^4.12.12",
     "lucide-react": "^1.8.0",
     "marked": "18",
+    "react-virtuoso": "^4.18.7",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.2",
     "web-push": "^3.6.7",

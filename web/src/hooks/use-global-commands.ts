@@ -269,6 +269,15 @@ export function useGlobalCommands(toggleSidebar: () => void) {
   )
 
   useCommand(
+    'toggle-virtuoso-transcript',
+    () => {
+      const store = useConversationsStore.getState()
+      store.updateControlPanelPrefs({ virtuosoTranscript: !store.controlPanelPrefs.virtuosoTranscript })
+    },
+    { label: 'Toggle react-virtuoso transcript (experimental A/B)', group: 'View' },
+  )
+
+  useCommand(
     'interrupt',
     () => {
       const store = useConversationsStore.getState()
