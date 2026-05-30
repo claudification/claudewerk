@@ -31,6 +31,7 @@ import { Markdown } from '../markdown'
 import { TranscriptEmptyState } from './ghost-peek'
 import { CompactedDivider, CompactingBanner, MemoizedGroupView, SkillDivider } from './group-view'
 import { type DisplayGroup, useIncrementalGroups } from './grouping'
+import { AssistantText } from './item-renderers'
 import { ThinkingPill } from './thinking-pill'
 
 /** Content-aware size estimation to minimize layout shift on first render.
@@ -190,27 +191,20 @@ const StreamingThinkingBlock = memo(function StreamingThinkingBlock({
   )
 })
 
-/** Streaming text -- renders AFTER group content (response being built). */
+/** Streaming text -- renders AFTER group content (response being built). Shares
+ *  the committed renderer (AssistantText) so the streaming box IS a dimmed,
+ *  emerald-accented version of the final text -- no separate "streaming" header,
+ *  identical geometry, so the in-place swap to the committed entry doesn't shift.
+ *  The settle morph (border/opacity) lives in the committed group's wrapper. */
 const StreamingTextBlock = memo(function StreamingTextBlock({ conversationId }: { conversationId: string | null }) {
   const showStreaming = useConversationsStore(state => state.controlPanelPrefs.showStreaming !== false)
-  const isActive = useConversationsStore(state =>
-    conversationId ? state.conversationsById[conversationId]?.status === 'active' : false,
-  )
   const streamingText = useConversationsStore(
     state => (conversationId ? state.streamingText[conversationId] : null) || EMPTY_STREAMING,
   )
   if (!showStreaming || !streamingText) return null
   return (
-    <div className="mt-2 pl-4">
-      <div className="border-l-2 border-emerald-400/40 pl-3 py-1">
-        <div className="text-[10px] text-emerald-400/70 uppercase font-bold tracking-wider mb-1">streaming</div>
-        <div className="text-sm opacity-75">
-          <Markdown>{streamingText}</Markdown>
-          {isActive && (
-            <span className="inline-block w-1.5 h-4 bg-emerald-500 animate-pulse ml-0.5 align-text-bottom" />
-          )}
-        </div>
-      </div>
+    <div className="mt-2">
+      <AssistantText text={streamingText} streaming />
     </div>
   )
 })

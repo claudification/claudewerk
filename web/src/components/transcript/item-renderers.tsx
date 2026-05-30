@@ -100,28 +100,58 @@ export function ProjectTaskItem({ item }: { item: Extract<RenderItem, { kind: 'p
   )
 }
 
-export function TextItem({ item }: { item: Extract<RenderItem, { kind: 'text' }> }) {
-  const isApiError = /^API Error:\s*\d+\s*\{/.test(item.text)
+/**
+ * Assistant prose -- the SINGLE renderer for both the in-flight streaming text
+ * and the committed assistant entry. `streaming` is the only difference:
+ *   streaming=true  : emerald live-accent + dimmed + caret, NO copy affordances
+ *                     (text is still mutating -- nothing stable to copy yet).
+ *   streaming=false : transparent accent (same geometry, no reflow on handoff) +
+ *                     full opacity + the rich committed chrome (CopyMenu /
+ *                     copy-as-image / hover). The API-error treatment applies to
+ *                     committed text only -- a live stream never settles mid-JSON.
+ *
+ * The left accent keeps a CONSTANT 2px border + pl-3 in both states so the
+ * streaming->committed swap (solar-orca's in-place live-slot takeover) never
+ * shifts geometry -- only border-COLOR + opacity change. The settle morph
+ * (globals.css `assistant-settle`, triggered by the group wrapper in
+ * transcript-view) animates exactly those two composited properties.
+ */
+export function AssistantText({ text, streaming = false }: { text: string; streaming?: boolean }) {
+  const isApiError = !streaming && /^API Error:\s*\d+\s*\{/.test(text)
 
   if (isApiError) {
     return (
       <div className="text-sm px-3 py-2 bg-destructive/15 border border-destructive/40 rounded font-mono">
         <div className="text-destructive font-bold text-xs uppercase mb-1">API Error</div>
-        <pre className="text-[11px] text-destructive/80 whitespace-pre-wrap break-all">{item.text}</pre>
+        <pre className="text-[11px] text-destructive/80 whitespace-pre-wrap break-all">{text}</pre>
       </div>
     )
   }
 
   return (
-    <div className="text-sm group/text relative">
-      <Markdown>{item.text}</Markdown>
-      <CopyMenu
-        text={item.text}
-        copyAsImage
-        className="absolute top-0 right-0 opacity-60 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/text:opacity-60 hover:!opacity-100 transition-opacity"
-      />
+    <div
+      data-assistant-text
+      className={cn(
+        'text-sm group/text relative border-l-2 pl-3',
+        streaming ? 'border-emerald-400/40 opacity-75' : 'border-transparent opacity-100',
+      )}
+    >
+      <Markdown>{text}</Markdown>
+      {streaming ? (
+        <span className="inline-block w-1.5 h-4 bg-emerald-500 animate-pulse ml-0.5 align-text-bottom" />
+      ) : (
+        <CopyMenu
+          text={text}
+          copyAsImage
+          className="absolute top-0 right-0 opacity-60 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/text:opacity-60 hover:!opacity-100 transition-opacity"
+        />
+      )}
     </div>
   )
+}
+
+export function TextItem({ item }: { item: Extract<RenderItem, { kind: 'text' }> }) {
+  return <AssistantText text={item.text} />
 }
 
 export function ImagesItem({ item }: { item: Extract<RenderItem, { kind: 'images' }> }) {
