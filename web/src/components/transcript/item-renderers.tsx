@@ -17,6 +17,47 @@ const renderAgentInline = (agentId: string, toolId?: string) => (
   <AgentTranscriptInline agentId={agentId} toolId={toolId} />
 )
 
+// Encrypted thinking blocks are SEALED thoughts -- the content never lands in
+// the transcript, only its size. So instead of the live "thinking" label we name
+// the ghost of the thought with a random (but per-block stable) wild synonym.
+const THOUGHTS = [
+  'THOUGHT',
+  'BRAINWAVE',
+  'EUREKA',
+  'COGITATION',
+  'MUSING',
+  'NOODLING',
+  'GALAXY BRAIN',
+  'RUMINATION',
+  'EPIPHANY',
+  'BRAIN BLAST',
+  'DEEP THUNK',
+  'THUNK',
+  'MIND PALACE',
+  'INNER MONOLOGUE',
+  'NEURON STORM',
+  'BIG THINK',
+  '5D CHESS',
+  'HOT TAKE',
+  'SYNAPSE FLARE',
+  'HEAD SCRATCHER',
+  'SHOWER THOUGHT',
+  'GREY MATTER',
+  'WETWARE OUTPUT',
+  'CEREBRATION',
+  'PONDERANCE',
+  'BRAINSTORM',
+  'GUT FEELING',
+  'SECOND GUESS',
+]
+// Deterministic per-block pick (seeded on the encrypted size) so a given block
+// always shows the same word -- no flicker on re-render/remount.
+function thoughtFor(seed: number): string {
+  let h = seed | 0
+  h = (h * 2654435761) | 0
+  return THOUGHTS[Math.abs(h) % THOUGHTS.length]
+}
+
 export function ThinkingItem({ item }: { item: Extract<RenderItem, { kind: 'thinking' }> }) {
   const isEncrypted = !item.text && typeof item.encryptedBytes === 'number'
   const estBytes = isEncrypted ? Math.round((item.encryptedBytes as number) * 0.75) : 0
@@ -24,7 +65,7 @@ export function ThinkingItem({ item }: { item: Extract<RenderItem, { kind: 'thin
   return (
     <div className="border-l-2 border-purple-400/40 pl-3 py-1">
       <div className="text-[10px] text-purple-400/70 uppercase font-bold tracking-wider flex items-center gap-1.5">
-        <span>thinking</span>
+        <span>{isEncrypted ? thoughtFor(item.encryptedBytes as number) : 'thinking'}</span>
         {isEncrypted && (
           <>
             <span className="text-purple-400/40 normal-case font-normal tracking-normal">encrypted, ~{estBytes}b</span>
