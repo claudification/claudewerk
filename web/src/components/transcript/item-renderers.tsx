@@ -51,10 +51,17 @@ const THOUGHTS = [
   'INTROSPECTED',
   'SECOND-GUESSED',
 ]
-// Deterministic per-block pick (seeded on the encrypted size) so a given block
-// always shows the same word -- no flicker on re-render/remount.
-function thoughtFor(seed: number): string {
-  let h = seed | 0
+// Deterministic per-block pick so a given block always shows the same word --
+// no flicker, no Math.random. Seed is stable content: the thinking text for
+// readable blocks, the encrypted byte size for sealed ones.
+function hashSeed(seed: string | number): number {
+  if (typeof seed === 'number') return seed | 0
+  let h = 0
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0
+  return h
+}
+function thoughtFor(seed: string | number): string {
+  let h = hashSeed(seed) | 0
   h = (h * 2654435761) | 0
   return THOUGHTS[Math.abs(h) % THOUGHTS.length]
 }
@@ -66,7 +73,10 @@ export function ThinkingItem({ item }: { item: Extract<RenderItem, { kind: 'thin
   return (
     <div className="border-l-2 border-purple-400/40 pl-3 py-1">
       <div className="text-[10px] text-purple-400/70 uppercase font-bold tracking-wider flex items-center gap-1.5">
-        <span>{isEncrypted ? thoughtFor(item.encryptedBytes as number) : 'thinking'}</span>
+        {/* Committed thinking is a COMPLETED thought -> past-tense synonym (the
+            live StreamingThinkingBlock still says "thinking"). Seeded on stable
+            content so it never flickers. */}
+        <span>{thoughtFor(isEncrypted ? (item.encryptedBytes as number) : item.text)}</span>
         {isEncrypted && (
           <>
             <span className="text-purple-400/40 normal-case font-normal tracking-normal">encrypted, ~{estBytes}b</span>
