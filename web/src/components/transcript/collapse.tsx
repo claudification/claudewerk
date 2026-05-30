@@ -1,8 +1,11 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
-/** Reveal (fade + expand) and collapse (fade + shrink) duration for in-flight
- *  decorations. Both directions animate height (grid-template-rows) AND opacity. */
-export const INFLIGHT_COLLAPSE_MS = 250
+/** In-flight decoration motion. Asymmetric on purpose: the pill/spinner fade out
+ *  FAST (opacity) so they visually disappear quickly, while the height collapses
+ *  SLOWLY so the freed space closes gently -- no jerk. Reveal is snappy. */
+export const INFLIGHT_REVEAL_MS = 200 // height expand on enter
+export const INFLIGHT_COLLAPSE_MS = 500 // height collapse on exit
+export const INFLIGHT_OPACITY_MS = 200 // fade, both directions
 
 /**
  * Smoothly collapses its children's height (and fades them) when `show` flips
@@ -20,11 +23,15 @@ export const INFLIGHT_COLLAPSE_MS = 250
  */
 export function Collapse({
   show,
-  durationMs = INFLIGHT_COLLAPSE_MS,
+  inMs = INFLIGHT_REVEAL_MS,
+  outMs = INFLIGHT_COLLAPSE_MS,
+  opacityMs = INFLIGHT_OPACITY_MS,
   children,
 }: {
   show: boolean
-  durationMs?: number
+  inMs?: number
+  outMs?: number
+  opacityMs?: number
   children: ReactNode
 }) {
   const [mounted, setMounted] = useState(show)
@@ -41,18 +48,21 @@ export function Collapse({
       return () => cancelAnimationFrame(id)
     }
     setOpen(false)
-    const id = setTimeout(() => setMounted(false), durationMs)
+    // Unmount only after the LONGEST exit transition (height collapse) finishes.
+    const id = setTimeout(() => setMounted(false), Math.max(outMs, opacityMs))
     return () => clearTimeout(id)
-  }, [show, durationMs])
+  }, [show, outMs, opacityMs])
 
   if (!mounted) return null
+  // Height animates per-direction (fast in, slow out); opacity is symmetric.
+  const heightMs = open ? inMs : outMs
   return (
     <div
-      className="grid transition-[grid-template-rows,opacity] ease-out motion-reduce:transition-none"
+      className="grid ease-out motion-reduce:transition-none"
       style={{
         gridTemplateRows: open ? '1fr' : '0fr',
         opacity: open ? 1 : 0,
-        transitionDuration: `${durationMs}ms`,
+        transition: `grid-template-rows ${heightMs}ms ease-out, opacity ${opacityMs}ms ease-out`,
       }}
     >
       <div className="min-h-0 overflow-hidden">{show ? children : lastShown.current}</div>

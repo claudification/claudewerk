@@ -17,7 +17,7 @@ import {
   type ThinkingSample,
 } from '@/hooks/thinking-progress-store'
 import { useConversationsStore } from '@/hooks/use-conversations'
-import { Collapse, INFLIGHT_COLLAPSE_MS } from './collapse'
+import { Collapse } from './collapse'
 
 const BARS = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█']
 
@@ -85,8 +85,6 @@ export const ThinkingPill = memo(function ThinkingPill({ conversationId }: Think
   }
 
   return (
-    <Collapse show={show} durationMs={INFLIGHT_COLLAPSE_MS}>
-      {content}
-    </Collapse>
+    <Collapse show={show}>{content}</Collapse>
   )
 })
