@@ -84,7 +84,5 @@ export const ThinkingPill = memo(function ThinkingPill({ conversationId }: Think
     }
   }
 
-  return (
-    <Collapse show={show}>{content}</Collapse>
-  )
+  return <Collapse show={show}>{content}</Collapse>
 })

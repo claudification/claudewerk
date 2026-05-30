@@ -53,34 +53,39 @@ function stableGroupKey(group: DisplayGroup): string {
   return `${group.type}-${id}`
 }
 
-/** Oldest seq currently held in `groups` (the head). Drops on a prepend, which
- *  is how we detect head-growth and decrement firstItemIndex. */
-function oldestSeqOf(groups: DisplayGroup[]): number {
-  const first = groups[0]?.entries[0] as { seq?: number } | undefined
-  return first?.seq ?? 0
+// ---------------------------------------------------------------------------
+// In-flight block + EmptyPlaceholder.
+// ---------------------------------------------------------------------------
+
+interface EmptyContext {
+  emptyKey?: string
 }
 
-// ---------------------------------------------------------------------------
-// Virtuoso Footer / EmptyPlaceholder (in-flight UI + queued tail).
-// ---------------------------------------------------------------------------
-
-interface FooterContext {
+/** In-flight turn + banners + queued groups. Rendered INSIDE the LAST list item
+ *  (not as a Virtuoso Footer -- see the comment on the follow effect). Putting it
+ *  inside the last item means its streaming growth counts toward that item's
+ *  MEASURED height, which is what `totalListHeightChanged` reports and what the
+ *  height-follow pins on -- the exact mechanism TranscriptView (TanStack) uses
+ *  via its `isLast` block + totalSize effect. A Footer's height does not feed
+ *  `totalListHeightChanged`, which is why streaming never followed before.
+ *  Order is chronological: streaming thinking -> streaming text -> pill ->
+ *  spinner -> banners -> queued. Each sub-block returns null when nothing is
+ *  in-flight, so an idle last item renders only its committed content. */
+const InFlightBlock = memo(function InFlightBlock({
+  conversationId,
+  queuedGroups,
+  getResult,
+  settings,
+  showThinking,
+}: {
   conversationId: string | null
   queuedGroups: DisplayGroup[]
   getResult: ResultLookup
   settings: TranscriptSettings
   showThinking: boolean
-  emptyKey?: string
-}
-
-/** In-flight turn + banners + queued groups, hosted below the last item as the
- *  Virtuoso Footer. Order is chronological: streaming thinking -> streaming text
- *  -> pill -> spinner -> banners -> queued. Each sub-block returns null when
- *  nothing is in-flight, so an idle transcript renders an empty footer. */
-const InFlightFooter = memo(function InFlightFooter({ context }: { context: FooterContext }) {
-  const { conversationId, queuedGroups, getResult, settings, showThinking } = context
+}) {
   return (
-    <div className="px-3 sm:px-4 pb-3 sm:pb-4">
+    <div className="pb-3 sm:pb-4">
       <StreamingThinkingBlock conversationId={conversationId} />
       <StreamingTextBlock conversationId={conversationId} />
       <ThinkingPill conversationId={conversationId} />
@@ -110,13 +115,13 @@ const InFlightFooter = memo(function InFlightFooter({ context }: { context: Foot
   )
 })
 
-const EmptyPlaceholder = memo(function EmptyPlaceholder({ context }: { context: FooterContext }) {
+const EmptyPlaceholder = memo(function EmptyPlaceholder({ context }: { context: EmptyContext }) {
   return <TranscriptEmptyState conversationId={context.emptyKey} />
 })
 
-// Stable components object -- a new identity here would remount Footer every
-// render and kill the smooth-collapse on the in-flight decorations.
-const VIRTUOSO_COMPONENTS = { Footer: InFlightFooter, EmptyPlaceholder } as const
+// Stable components object -- a new identity here would remount on every render.
+// No Footer: the in-flight block lives inside the last item now.
+const VIRTUOSO_COMPONENTS = { EmptyPlaceholder } as const
 
 interface TranscriptViewVirtuosoProps {
   entries: TranscriptEntry[]
@@ -229,53 +234,101 @@ export const TranscriptViewVirtuoso = memo(function TranscriptViewVirtuoso({
   const clearSettling = useCallback(() => setSettlingKey(null), [])
 
   // -------------------------------------------------------------------------
-  // firstItemIndex prepend anchoring. When older entries are prepended (server
-  // fetchOlder -> prependTranscript), groups grow at the HEAD. Virtuoso keeps
-  // the reading position fixed iff firstItemIndex decrements by exactly the
-  // number of prepended items. Detect head-growth via the oldest seq dropping;
-  // the count delta is the head delta (a prepend never touches the tail).
+  // firstItemIndex maintenance via a single TAIL anchor. Virtuoso's
+  // firstItemIndex is the absolute index of data[0]; its contract requires the
+  // delta to equal the change in HEAD item count -- decrement on prepend,
+  // INCREMENT on head removal (see react-virtuoso dist/index.d.ts). The head
+  // moves in TWO ways here, and the old oldest-seq+count-delta heuristic only
+  // caught the first:
+  //   - prepend: server fetchOlder -> prependTranscript grows the head (pure
+  //              head-grow, no tail change).
+  //   - prune:   TRANSCRIPT_LIVE_CAP eviction (handleTranscriptEntries) drops
+  //              the head DURING a live tail-append -- a single store update
+  //              both appends a tail group AND removes head groups. The count
+  //              delta is then NOT the head delta, so the old code never
+  //              incremented firstItemIndex and the viewport jumped backward.
+  // The previous render's TAIL group survives BOTH (only the head ever moves),
+  // so anchor on it: shift firstItemIndex by the negative of the anchor's index
+  // movement. delta>0 (prepend) -> decrement; delta<0 (prune) -> increment;
+  // delta==0 (pure tail append) -> no-op. Group `id` is reconciliation-stable
+  // across append/prepend (commit 9dfcad57) so the anchor key holds, and this
+  // is immune to the entry-vs-group unit mismatch (prune counts entries; `data`
+  // here is groups).
   // -------------------------------------------------------------------------
   const [firstItemIndex, setFirstItemIndex] = useState(FIRST_INDEX_START)
   const prevCacheKeyRef = useRef(cacheKey)
-  const prevOldestSeqRef = useRef(oldestSeqOf(mainGroups))
-  const prevGroupCountRef = useRef(mainGroups.length)
+  const anchorKeyRef = useRef<string | null>(null)
+  const anchorIdxRef = useRef(-1)
 
   const isSwitch = cacheKey !== prevCacheKeyRef.current
   if (isSwitch) prevCacheKeyRef.current = cacheKey
-  const oldestSeq = oldestSeqOf(mainGroups)
-  if (
-    !isSwitch &&
-    oldestSeq > 0 &&
-    prevOldestSeqRef.current > 0 &&
-    oldestSeq < prevOldestSeqRef.current &&
-    mainGroups.length > prevGroupCountRef.current
-  ) {
-    const headDelta = mainGroups.length - prevGroupCountRef.current
-    setFirstItemIndex(f => f - headDelta)
+  if (!isSwitch && anchorKeyRef.current !== null) {
+    const newIdx = mainGroups.findIndex(g => stableGroupKey(g) === anchorKeyRef.current)
+    if (newIdx >= 0 && newIdx !== anchorIdxRef.current) {
+      setFirstItemIndex(f => f - (newIdx - anchorIdxRef.current))
+    }
   }
-  prevOldestSeqRef.current = oldestSeq
-  prevGroupCountRef.current = mainGroups.length
+  // Re-arm the anchor to the CURRENT tail for the next render's comparison.
+  const anchorIdx = mainGroups.length - 1
+  anchorKeyRef.current = anchorIdx >= 0 ? stableGroupKey(mainGroups[anchorIdx]) : null
+  anchorIdxRef.current = anchorIdx
 
   // -------------------------------------------------------------------------
   // Follow / pin-to-bottom. Instant on switch + cold-open fill; smooth on live
-  // append while at bottom. Virtuoso's followOutput owns the append-follow; the
-  // switch/cold-open pin is imperative (followOutput doesn't fire on a data
-  // wholesale-replace or empty->filled transition).
+  // append while at bottom. We DO NOT rely on Virtuoso's followOutput for the
+  // append-follow: followOutput only fires when the total item COUNT changes
+  // (dist/index.d.ts: "scrolls to bottom if the total count is changed"). While
+  // tailing past TRANSCRIPT_LIVE_CAP every live append also prunes the head, so
+  // the net group count is flat and followOutput never fires -- the view stops
+  // auto-scrolling. So the append-follow is imperative too, driven by the tail
+  // group's identity changing (count-independent). followOutput stays wired as a
+  // cheap backstop for the sub-cap case but is not load-bearing.
   // -------------------------------------------------------------------------
   const atBottomRef = useRef(true)
+  // FALSE during the initial post-switch measurement burst so entering a
+  // conversation SNAPS instantly to the bottom; flipped true a beat after settle
+  // so subsequent growth (streaming/pills) follows SMOOTHLY. Mirrors TranscriptView.
   const followSmoothRef = useRef(false)
   const pinnedForKeyRef = useRef<string | null | undefined>(undefined)
+  // Last measured total list height, for the growth-only follow guard. Reset to
+  // 0 on switch so the first measure of a fresh conversation counts as growth.
+  const prevListHeightRef = useRef(0)
+  // AUTHORITATIVE follow state, driven ENTIRELY by scroll POSITION (see the
+  // scroll handler in scrollerRef), NOT by raw wheel/touch events. The earlier
+  // version detached on any touchmove, which on a touch device killed follow the
+  // moment you touched the screen -- so posting a message (you're touching) never
+  // followed. Now: attach whenever the viewport is near the bottom, detach only
+  // on a genuine UPWARD scroll well clear of the bottom. Content growing below
+  // never moves scrollTop up, and our own pin scrolls DOWN, so neither can
+  // spuriously detach. Mirrors TranscriptView's onScroll drift logic.
+  const followingRef = useRef(true)
+  const lastScrollTopRef = useRef(0)
+  const scrollerElRef = useRef<HTMLElement | null>(null)
   const onUserScrollRef = useRef(onUserScroll)
   onUserScrollRef.current = onUserScroll
   const onReachedBottomRef = useRef(onReachedBottom)
   onReachedBottomRef.current = onReachedBottom
 
-  // Reset the pin + smooth gate on every conversation switch. followSmoothRef
-  // stays false through the initial measurement burst so the entry snaps
-  // INSTANTLY to the bottom instead of smooth-crawling; flipped true a beat
-  // after settle so subsequent growth follows smoothly. Mirrors TranscriptView.
+  // Pin to the TRUE bottom of the scroller (scrollHeight), NOT scrollToIndex
+  // align:'end' -- the latter aligns the item's box and undershoots by the
+  // scroller's bottom padding/footer (the "~20px I have to scroll every time").
+  // scrollHeight reaches the real bottom including all of it. Falls back to the
+  // imperative index scroll only if the scroller element isn't captured yet.
+  const pinToBottom = useCallback((smooth: boolean) => {
+    const el = scrollerElRef.current
+    if (el) {
+      el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+    } else {
+      virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end', behavior: smooth ? 'smooth' : 'auto' })
+    }
+  }, [])
+
+  // Reset the pin on every conversation switch (re-attach follow + recount the
+  // first height measurement of the fresh conversation as growth).
   useEffect(() => {
     pinnedForKeyRef.current = null
+    prevListHeightRef.current = 0
+    followingRef.current = true
     followSmoothRef.current = false
     const id = setTimeout(() => {
       followSmoothRef.current = true
@@ -291,14 +344,16 @@ export const TranscriptViewVirtuoso = memo(function TranscriptViewVirtuoso({
     if (pinnedForKeyRef.current === cacheKey) return
     if (mainGroups.length === 0) return
     pinnedForKeyRef.current = cacheKey
-    virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end', behavior: 'auto' })
+    pinToBottom(false)
     onReachedBottomRef.current?.()
   })
 
-  // Re-pin when the parent toggles follow ON (ScrollToBottomButton click).
+  // Re-pin when the parent toggles follow ON (ScrollToBottomButton click). This
+  // is an explicit user "take me to the bottom", so re-attach the local follow.
   useEffect(() => {
     if (follow && !atBottomRef.current) {
-      virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end', behavior: 'smooth' })
+      followingRef.current = true
+      pinToBottom(true)
     }
   }, [follow])
 
@@ -337,43 +392,98 @@ export const TranscriptViewVirtuoso = memo(function TranscriptViewVirtuoso({
     fetchOlder()
   }, [fetchOlder])
 
-  // Mark genuine user scrolling (wheel/touch) for a short tail so momentum
-  // scroll still counts. Attached to Virtuoso's scroller element.
+  // Scroller wiring. `markScrolling` flags genuine user input (wheel/touch) for a
+  // short tail so the startReached load-gate and the detach below can tell user
+  // scrolls from programmatic ones. The `scroll` handler is the SOLE owner of
+  // follow attach/detach, driven by scroll POSITION (drift from the bottom):
+  //   - drift < 40px              -> at the bottom -> ATTACH (re-follow).
+  //   - moved UP + user + drift>120 -> a real scroll-away -> DETACH.
+  // Content growth never moves scrollTop up (it grows below) and our pin scrolls
+  // DOWN, so neither trips the detach -- only a deliberate scroll-up does. This
+  // is why touching the screen / posting a message no longer kills follow.
   const scrollerRef = useCallback((el: HTMLElement | Window | null) => {
     if (!el || el instanceof Window) return
-    const onUserInput = () => {
+    scrollerElRef.current = el
+    const markScrolling = () => {
       userScrollingRef.current = true
       if (userScrollResetRef.current) clearTimeout(userScrollResetRef.current)
       userScrollResetRef.current = setTimeout(() => {
         userScrollingRef.current = false
       }, 200)
     }
-    el.addEventListener('wheel', onUserInput, { passive: true })
-    el.addEventListener('touchstart', onUserInput, { passive: true })
-    el.addEventListener('touchmove', onUserInput, { passive: true })
+    const onScroll = () => {
+      const st = el.scrollTop
+      const movedUp = st < lastScrollTopRef.current - 1
+      lastScrollTopRef.current = st
+      const drift = el.scrollHeight - st - el.clientHeight
+      if (drift < 40) {
+        if (!followingRef.current) {
+          followingRef.current = true
+          onReachedBottomRef.current?.()
+        }
+      } else if (movedUp && userScrollingRef.current && drift > 120) {
+        if (followingRef.current) {
+          followingRef.current = false
+          onUserScrollRef.current?.()
+        }
+      }
+    }
+    el.addEventListener('wheel', markScrolling, { passive: true })
+    el.addEventListener('touchstart', markScrolling, { passive: true })
+    el.addEventListener('touchmove', markScrolling, { passive: true })
+    el.addEventListener('scroll', onScroll, { passive: true })
   }, [])
 
+  // atBottomStateChange only mirrors Virtuoso's at-bottom flag into a ref (used by
+  // the follow-toggle effect). Follow attach/detach lives in the scroll handler.
   const handleAtBottomStateChange = useCallback((atBottom: boolean) => {
     atBottomRef.current = atBottom
-    if (atBottom) {
-      onReachedBottomRef.current?.()
-    } else if (userScrollingRef.current) {
-      // Only a genuine user scroll-away kills follow -- a programmatic scroll
-      // (pin, prepend) must never flip it off.
-      onUserScrollRef.current?.()
-    }
   }, [])
+
+  // Height-growth follow. Mirrors TranscriptView's totalSize effect: Virtuoso's
+  // `totalListHeightChanged` fires whenever the measured total item height
+  // changes -- which now includes the in-flight block (it lives inside the LAST
+  // item, see InFlightBlock), so this catches BOTH a new committed group AND
+  // streaming text/pills/spinner growing the last item in place. followOutput is
+  // count-based and so misses both the in-place growth and the prune-keeps-count
+  // -flat case; this height signal does not. Pin on GROWTH only (a shrink -- the
+  // in-flight decorations collapsing away -- settles on its own; an extra scroll
+  // would fight the smooth collapse). Gated on being at the bottom / following so
+  // a scrolled-up reader is never yanked, and on the initial pin having run.
+  const handleTotalListHeightChanged = useCallback((height: number) => {
+    const grew = height > prevListHeightRef.current
+    prevListHeightRef.current = height
+    if (!grew) return
+    if (pinnedForKeyRef.current !== cacheKeyRef.current) return
+    // Follow iff the scroll handler says we're attached. (No userScrolling guard:
+    // on touch, every tap sets that flag and would block the follow we want.)
+    if (!followingRef.current) return
+    // SMOOTH once settled (the sweet follow), INSTANT during the post-switch burst
+    // so a conversation switch snaps to the bottom instead of smooth-crawling.
+    // Sticking is owned by the scroll-position follow above, not by the behavior.
+    pinToBottom(followSmoothRef.current)
+  }, [])
+
+  // Latest in-flight inputs, read by itemContent for the LAST item without
+  // widening its dependency list (queuedGroups churns every transcript change).
+  const tailKeyRef = useRef(tailKey)
+  tailKeyRef.current = tailKey
+  const inflightRef = useRef({ conversationId: selectedConversationId, queuedGroups })
+  inflightRef.current = { conversationId: selectedConversationId, queuedGroups }
 
   // -------------------------------------------------------------------------
   // Item renderer. Special-cases compacted/compacting/skill (rendered outside
   // GroupView in the TanStack path too), else MemoizedGroupView. The wrapper
-  // carries the enter/settle animation classes.
+  // carries the enter/settle animation classes. The LAST item also hosts the
+  // in-flight block (streaming/banners/queued) so its growth feeds the
+  // height-follow above -- the TranscriptView `isLast` pattern.
   // -------------------------------------------------------------------------
   const itemContent = useCallback(
     (_index: number, group: DisplayGroup) => {
       const itemKey = stableGroupKey(group)
       const isEntering = enteringKey === itemKey
       const isSettling = settlingKey === itemKey
+      const isLast = itemKey === tailKeyRef.current
       return (
         <div className="px-3 sm:px-4">
           <div
@@ -416,6 +526,15 @@ export const TranscriptViewVirtuoso = memo(function TranscriptViewVirtuoso({
               )
             })()}
           </div>
+          {isLast && (
+            <InFlightBlock
+              conversationId={inflightRef.current.conversationId}
+              queuedGroups={inflightRef.current.queuedGroups}
+              getResult={getResult}
+              settings={transcriptSettings}
+              showThinking={showThinking}
+            />
+          )}
         </div>
       )
     },
@@ -424,35 +543,28 @@ export const TranscriptViewVirtuoso = memo(function TranscriptViewVirtuoso({
 
   const computeItemKey = useCallback((_index: number, group: DisplayGroup) => stableGroupKey(group), [])
 
-  const footerContext = useMemo<FooterContext>(
-    () => ({
-      conversationId: selectedConversationId,
-      queuedGroups,
-      getResult,
-      settings: transcriptSettings,
-      showThinking,
-      emptyKey: cacheKey,
-    }),
-    [selectedConversationId, queuedGroups, getResult, transcriptSettings, showThinking, cacheKey],
-  )
-
-  const followOutput = useCallback((atBottom: boolean) => {
-    if (!atBottom) return false
-    return followSmoothRef.current ? ('smooth' as const) : ('auto' as const)
-  }, [])
+  const emptyContext = useMemo<EmptyContext>(() => ({ emptyKey: cacheKey }), [cacheKey])
 
   return (
-    <div className="flex-1 min-h-0" data-perf-region="transcript-virtuoso">
-      <Virtuoso<DisplayGroup, FooterContext>
+    <div className="flex-1 min-h-0 relative" data-perf-region="transcript-virtuoso">
+      {/* A/B spike marker -- subtle so it never distracts, but lets us tell the
+          two renderers apart at a glance. Only the Virtuoso path renders it; the
+          TanStack path has no badge, so "no badge" == TanStack. */}
+      <div
+        className="pointer-events-none absolute top-1.5 right-2 z-20 rounded bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-emerald-400/60"
+        title="react-virtuoso transcript renderer (experimental A/B). Toggle via Cmd+P."
+      >
+        virtuoso
+      </div>
+      <Virtuoso<DisplayGroup, EmptyContext>
         ref={virtuosoRef}
         data={mainGroups}
-        context={footerContext}
+        context={emptyContext}
         firstItemIndex={firstItemIndex}
-        initialTopMostItemIndex={Math.max(0, mainGroups.length - 1)}
         computeItemKey={computeItemKey}
         itemContent={itemContent}
         components={VIRTUOSO_COMPONENTS}
-        followOutput={followOutput}
+        totalListHeightChanged={handleTotalListHeightChanged}
         atBottomStateChange={handleAtBottomStateChange}
         atBottomThreshold={40}
         startReached={handleStartReached}

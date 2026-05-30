@@ -381,12 +381,20 @@ function handleTranscriptEntries(msg: DashboardMessage) {
       // yank entries out from under their viewport. Deferred-collapse runs
       // on return-to-bottom via setScrollbackActive(sid, false).
       const scrollback = state.scrollbackActive[sid]
-      if (result.length > TRANSCRIPT_LIVE_CAP && scrollback) {
+      // The Virtuoso renderer virtualizes the full loaded transcript and keeps
+      // grouping on the cheap incremental path ONLY while entries grow tail-only.
+      // The head-prune shifts entries[0], which flips the grouping reset signal
+      // AND looks like an array replacement -> a FULL re-group of all ~100 entries
+      // on EVERY append, churning every group identity and snapping the
+      // virtualizer to the top. Virtuoso doesn't need the cap, so suppress the
+      // prune entirely while it's the active renderer. See transcript-view-virtuoso.tsx.
+      const noPrune = state.controlPanelPrefs.virtuosoTranscript === true
+      if (result.length > TRANSCRIPT_LIVE_CAP && scrollback && !noPrune) {
         console.debug(
           `[transcript-prune] ${sid.slice(0, 8)} DEFERRED (scrollback active): live=${result.length} > cap ${TRANSCRIPT_LIVE_CAP}, collapse on return-to-bottom`,
         )
       }
-      if (result.length > TRANSCRIPT_LIVE_CAP && !scrollback) {
+      if (result.length > TRANSCRIPT_LIVE_CAP && !scrollback && !noPrune) {
         const t0 = performance.now()
         const dropCount = result.length - TRANSCRIPT_LIVE_CAP
         const evicted = result.slice(0, dropCount)
