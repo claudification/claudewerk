@@ -191,8 +191,20 @@ export function parseUsageWindows(
 
 export type UsageFetchResult =
   | { ok: true; data: RawUsageResponse }
-  | { ok: false; kind: 'http'; status: number; body?: string }
+  | { ok: false; kind: 'http'; status: number; body?: string; retryAfterMs?: number }
   | { ok: false; kind: 'network'; detail: string }
+
+/** Parse an HTTP `retry-after` header into milliseconds. The header is either
+ *  delta-seconds (e.g. "346") or an HTTP-date. Returns undefined when absent
+ *  or unparseable. */
+export function parseRetryAfter(header: string | null, now: number): number | undefined {
+  if (!header) return undefined
+  const trimmed = header.trim()
+  if (/^\d+$/.test(trimmed)) return Number(trimmed) * 1000
+  const at = Date.parse(trimmed)
+  if (Number.isNaN(at)) return undefined
+  return Math.max(0, at - now)
+}
 
 export type UsageFetcher = (token: string) => Promise<UsageFetchResult>
 
@@ -208,7 +220,8 @@ async function defaultUsageFetcher(token: string): Promise<UsageFetchResult> {
     })
     if (!res.ok) {
       const body = await res.text().catch(() => '')
-      return { ok: false, kind: 'http', status: res.status, body: body.slice(0, 200) }
+      const retryAfterMs = parseRetryAfter(res.headers.get('retry-after'), Date.now())
+      return { ok: false, kind: 'http', status: res.status, body: body.slice(0, 200), retryAfterMs }
     }
     return { ok: true, data: (await res.json()) as RawUsageResponse }
   } catch (err) {
@@ -272,7 +285,7 @@ export async function pollProfileUsage(
       polledAt: now,
       error:
         res.kind === 'http'
-          ? { kind: 'http', status: res.status, detail: res.body }
+          ? { kind: 'http', status: res.status, detail: res.body, retryAfterMs: res.retryAfterMs }
           : { kind: 'network', detail: res.detail },
     }
   }

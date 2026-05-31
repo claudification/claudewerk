@@ -2562,6 +2562,10 @@ export interface ProfileUsageSnapshot {
     kind: 'http' | 'parse' | 'network' | 'no_token'
     detail?: string
     status?: number
+    /** Set on an HTTP 429: ms until the rate-limit window clears, parsed from
+     *  the `retry-after` response header. The sentinel uses this to back off
+     *  polling so it does not keep refreshing the throttle bucket. */
+    retryAfterMs?: number
   }
 }
 

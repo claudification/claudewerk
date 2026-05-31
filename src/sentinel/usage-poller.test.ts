@@ -16,6 +16,7 @@ import {
   getOAuthToken,
   type KeychainProbe,
   keychainServiceFor,
+  parseRetryAfter,
   parseUsageWindows,
   pollProfileUsage,
   type RawUsageResponse,
@@ -51,6 +52,29 @@ describe('keychainServiceFor', () => {
     const b = keychainServiceFor('/some/path/.claude-alt', home)
     expect(a).toBe(b)
     expect(a).toMatch(/^Claude Code-credentials-[0-9a-f]{8}$/)
+  })
+})
+
+// ─── parseRetryAfter ───────────────────────────────────────────────
+
+describe('parseRetryAfter', () => {
+  const NOW = 1_700_000_000_000
+
+  test('delta-seconds -> ms', () => {
+    expect(parseRetryAfter('346', NOW)).toBe(346_000)
+    expect(parseRetryAfter('  0 ', NOW)).toBe(0)
+  })
+
+  test('HTTP-date -> ms until that date (clamped at 0)', () => {
+    const future = new Date(NOW + 120_000).toUTCString()
+    expect(parseRetryAfter(future, NOW)).toBe(120_000)
+    const past = new Date(NOW - 120_000).toUTCString()
+    expect(parseRetryAfter(past, NOW)).toBe(0)
+  })
+
+  test('absent / unparseable -> undefined', () => {
+    expect(parseRetryAfter(null, NOW)).toBeUndefined()
+    expect(parseRetryAfter('soon-ish', NOW)).toBeUndefined()
   })
 })
 
@@ -233,6 +257,25 @@ describe('pollProfileUsage', () => {
     expect(snap.authed).toBe(true)
     expect(snap.fiveHour).toBeUndefined()
     expect(snap.error).toEqual({ kind: 'http', status: 503, detail: 'gateway' })
+  })
+
+  test('429 threads retry-after (ms) onto the snapshot error for backoff', async () => {
+    const fetcher: UsageFetcher = async () => ({
+      ok: false,
+      kind: 'http',
+      status: 429,
+      body: 'Rate limited. Please try again later.',
+      retryAfterMs: 346_000,
+    })
+    const snap = await pollProfileUsage(profile, {
+      readToken: () => 'sk-token',
+      fetcher,
+      now: () => FIXED_NOW,
+    })
+    expect(snap.authed).toBe(true)
+    expect(snap.error?.kind).toBe('http')
+    expect(snap.error?.status).toBe(429)
+    expect(snap.error?.retryAfterMs).toBe(346_000)
   })
 
   test('network error yields an authed snapshot with network error', async () => {

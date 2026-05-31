@@ -2099,11 +2099,28 @@ function listDirs(dirPath: string): { dirs: string[]; error?: string } {
 
 const USAGE_POLL_INTERVAL_MS = 3 * 60 * 1000 // 3 minutes
 
+// Rate-limit backoff. The usage endpoint throttles per-account; re-polling
+// inside an active window keeps the bucket warm and never lets it clear. On a
+// 429 we honor `retry-after` (parsed onto the snapshot) and skip polling that
+// profile until the window expires (+ a small margin so we land just after it).
+const RATE_LIMIT_BACKOFF_MARGIN_MS = 5_000
+const RATE_LIMIT_FALLBACK_BACKOFF_MS = 5 * 60 * 1000 // used when 429 carries no retry-after
+const RATE_LIMIT_MAX_BACKOFF_MS = 30 * 60 * 1000 // cap a garbage/hostile retry-after
+
+/** How long to wait before re-polling a profile that just returned 429. */
+function computeRateLimitBackoffMs(retryAfterMs: number | undefined): number {
+  const base = retryAfterMs && retryAfterMs > 0 ? retryAfterMs : RATE_LIMIT_FALLBACK_BACKOFF_MS
+  return Math.min(RATE_LIMIT_MAX_BACKOFF_MS, base + RATE_LIMIT_BACKOFF_MARGIN_MS)
+}
+
 let usagePollTimer: ReturnType<typeof setInterval> | null = null
 
 /** In-process latest-per-profile snapshots, populated by the polling cycle.
  *  Phase 3 reads this from `pickProfile` for Smart Balance. */
 const latestProfileUsage = new Map<string, ProfileUsageSnapshot>()
+
+/** Profile name -> epoch ms until which polling is suppressed (429 backoff). */
+const profileBackoffUntil = new Map<string, number>()
 
 /** Read-only view of the latest snapshots. Exported for Smart Balance + tests. */
 export function getLatestProfileUsage(): ReadonlyMap<string, ProfileUsageSnapshot> {
@@ -2128,6 +2145,37 @@ function logProfilePollResult(snap: ProfileUsageSnapshot): void {
   })
 }
 
+/** Arm or clear the 429 backoff window for a profile based on its snapshot. */
+function updateBackoff(name: string, cycleStart: number, snap: ProfileUsageSnapshot): void {
+  if (snap.error?.kind === 'http' && snap.error.status === 429) {
+    const backoffMs = computeRateLimitBackoffMs(snap.error.retryAfterMs)
+    profileBackoffUntil.set(name, cycleStart + backoffMs)
+    diag('usage', `[${name}] rate limited, backing off`, {
+      retryAfterMs: snap.error.retryAfterMs,
+      backoffMs,
+      resumeAt: cycleStart + backoffMs,
+    })
+  } else if (profileBackoffUntil.has(name)) {
+    profileBackoffUntil.delete(name)
+    diag('usage', `[${name}] backoff cleared`, { status: snap.error?.status })
+  }
+}
+
+/** Returns the last snapshot to re-emit if the profile is still inside its 429
+ *  backoff window (polling suppressed), else null to poll normally. Re-emitting
+ *  keeps the report complete so the panel keeps showing the throttled row. */
+function takeBackoffSnapshot(name: string, cycleStart: number): ProfileUsageSnapshot | null {
+  const until = profileBackoffUntil.get(name) ?? 0
+  const last = latestProfileUsage.get(name)
+  if (cycleStart >= until || !last) return null
+  diag('usage', `[${name}] throttled, skipping poll`, {
+    retryInMs: until - cycleStart,
+    until,
+    status: last.error?.status,
+  })
+  return last
+}
+
 /** Run one profile's poll + record the result. Never throws -- a poll
  *  failure becomes a structured snapshot so the cycle continues. */
 async function pollOneProfileSafely(
@@ -2138,6 +2186,7 @@ async function pollOneProfileSafely(
     const snap = await pollProfileUsage(profile)
     latestProfileUsage.set(profile.name, snap)
     logProfilePollResult(snap)
+    updateBackoff(profile.name, cycleStart, snap)
     return snap
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -2165,7 +2214,8 @@ function startProfileUsagePolling(ws: WebSocket, verbose: boolean, config: Senti
     const cycleStart = Date.now()
     const snapshots: ProfileUsageSnapshot[] = []
     for (const profile of profiles) {
-      snapshots.push(await pollOneProfileSafely(profile, cycleStart))
+      const throttled = takeBackoffSnapshot(profile.name, cycleStart)
+      snapshots.push(throttled ?? (await pollOneProfileSafely(profile, cycleStart)))
     }
 
     if (ws.readyState !== WebSocket.OPEN) return
@@ -2197,6 +2247,7 @@ function stopUsagePolling() {
     clearInterval(usagePollTimer)
     usagePollTimer = null
   }
+  profileBackoffUntil.clear()
 }
 
 /**
