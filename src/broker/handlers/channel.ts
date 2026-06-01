@@ -983,6 +983,68 @@ const channelLinkResponse: MessageHandler = (ctx, data) => {
   }
 }
 
+// Ad-hoc grant: the user sent a message referencing another conversation (via the
+// `:` completer's <conversation> token). Auto-establish a project-level link so
+// send_message works between them -- no approval banner. Project-scoped + bidirectional,
+// exactly like an approved channel_link_response. Idempotent: a no-op (silent) when
+// already linked or blocked, so resending a reference doesn't re-toast or re-log.
+export const channelLinkGrant: MessageHandler = (ctx, data) => {
+  const fromConversation = data.fromConversation as string
+  const toConversation = data.toConversation as string
+  if (!fromConversation || !toConversation || fromConversation === toConversation) return
+
+  const fromConv = ctx.conversations.getConversation(fromConversation)
+  const toConv = ctx.conversations.getConversation(toConversation)
+  if (!fromConv?.project || !toConv?.project) {
+    ctx.log.debug(
+      `[link-grant] skipped: missing conversation/project from=${fromConversation.slice(0, 8)} to=${toConversation.slice(0, 8)} fromProj=${fromConv?.project ?? 'none'} toProj=${toConv?.project ?? 'none'}`,
+    )
+    return
+  }
+
+  // Same trust gate as an explicit approval: granting cross-project send rights
+  // is a settings-level action on both ends.
+  ctx.requirePermission('settings', fromConv.project)
+  ctx.requirePermission('settings', toConv.project)
+
+  // Only act on a genuinely new link. Already-linked -> nothing to do (avoid
+  // re-toast spam on every message). Blocked -> respect the block, do not grant.
+  const status = ctx.conversations.checkProjectLink(fromConversation, toConversation)
+  if (status !== 'unknown') {
+    ctx.log.debug(
+      `[link-grant] no-op: from=${fromConversation.slice(0, 8)}(${extractProjectLabel(fromConv.project)}) to=${toConversation.slice(0, 8)}(${extractProjectLabel(toConv.project)}) status=${status}`,
+    )
+    return
+  }
+
+  ctx.conversations.linkProjects(fromConversation, toConversation)
+  ctx.links.add(fromConv.project, toConv.project)
+  const toProjectLabel = ctx.getProjectSettings(toConv.project)?.label || extractProjectLabel(toConv.project)
+
+  ctx.log.info(
+    `[link-grant] granted ad-hoc link: from=${fromConversation.slice(0, 8)}(${extractProjectLabel(fromConv.project)}) to=${toConversation.slice(0, 8)}(${toProjectLabel}) scope=project bidirectional source=conversation-reference initiator=control-panel`,
+  )
+
+  // Drain anything that was queued for this pair while it was unlinked.
+  const queued = ctx.conversations.drainProjectMessages(fromConversation, toConversation)
+  if (queued.length > 0) {
+    const targetWs = ctx.conversations.getConversationSocket(toConversation)
+    if (targetWs) for (const msg of queued) targetWs.send(JSON.stringify(msg))
+  }
+
+  // auth_visible: tell the dashboard so the user sees the auto-authorization.
+  ctx.broadcast({
+    type: 'channel_link_granted',
+    fromConversation,
+    fromProject: fromConv.project,
+    toConversation,
+    toProject: toConv.project,
+    toProjectLabel,
+  })
+  ctx.conversations.broadcastConversationUpdate(fromConversation)
+  ctx.conversations.broadcastConversationUpdate(toConversation)
+}
+
 const channelUnlink: MessageHandler = (ctx, data) => {
   // Project-based path (preferred -- projects are the linked entity)
   const projectA = (data.projectA as string | undefined) ?? (data.cwdA as string | undefined)
@@ -1038,6 +1100,7 @@ export function registerChannelHandlers(): void {
       terminate_conversation: quitConversation,
       conversation_viewed: conversationViewed,
       channel_link_response: channelLinkResponse,
+      channel_link_grant: channelLinkGrant,
       channel_unlink: channelUnlink,
     },
     DASHBOARD_ROLES,

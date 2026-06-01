@@ -15,6 +15,7 @@ import {
   type ToolDisplayKey,
   type ToolDisplayPrefs,
 } from '@/lib/control-panel-prefs'
+import { referencedConversationIds } from '@/lib/conversation-refs'
 import { clearExpandedState } from '@/lib/expanded-state'
 import { setPerfEnabled } from '@/lib/perf-metrics'
 import { DEFAULT_PERMISSIONS, type ResolvedPermissions } from '@/lib/permissions'
@@ -1546,6 +1547,16 @@ export function sendInput(conversationId: string, input: string): boolean {
   }
   const crDelay = (useConversationsStore.getState().globalSettings.carriageReturnDelay as number) || 0
   const ok = wsSend('send_input', { conversationId, input, ...(crDelay > 0 && { crDelay }) })
+  // Ad-hoc authorization: if this message references other conversations (via the
+  // `:` completer's <conversation> token), grant a project-level link so the agent
+  // can send_message to them. Broker is idempotent (no-op if already linked/blocked).
+  if (ok) {
+    for (const toConversation of referencedConversationIds(input)) {
+      if (toConversation !== conversationId) {
+        wsSend('channel_link_grant', { fromConversation: conversationId, toConversation })
+      }
+    }
+  }
   // User messages for headless conversations are emitted by the agent host's
   // sendUserMessage() directly to the broker, which persists + broadcasts.
   // No optimistic entry needed -- the broker round-trip is fast enough,

@@ -1024,6 +1024,35 @@ export interface ProjectLinkResponse {
   action: 'approve' | 'block'
 }
 
+/**
+ * Control-panel -> broker: grant an ad-hoc inter-conversation link without the
+ * approval dance. Emitted when the user SENDS a message containing a
+ * `<conversation>` reference token (the `:` completer's output). The grant is
+ * project-level (mirrors channel_link_response approval) and bidirectional.
+ */
+export interface ProjectLinkGrant {
+  type: 'channel_link_grant'
+  /** The conversation the user is messaging FROM (the one referencing). */
+  fromConversation: string
+  /** The referenced conversation (target of the link). */
+  toConversation: string
+}
+
+/**
+ * Broker -> dashboard broadcast: a link was just granted (newly created). The
+ * control panel surfaces a toast so the auto-authorization is visible to the
+ * user (auth_visible). Carries full context for logging/rendering.
+ */
+export interface ProjectLinkGranted {
+  type: 'channel_link_granted'
+  fromConversation: string
+  fromProject: string
+  toConversation: string
+  toProject: string
+  /** Human label for the linked (target) project. */
+  toProjectLabel: string
+}
+
 export interface InterConversationListRequest {
   type: 'channel_list_conversations'
   status?: 'live' | 'inactive' | 'all'
@@ -1268,6 +1297,7 @@ export type BrokerMessage =
   | InterConversationDelivery
   | SystemChannelDelivery
   | ProjectLinkRequest
+  | ProjectLinkGranted
   | InterConversationListResponse
   | SendInterrupt
   | PermissionResponse

@@ -19,8 +19,9 @@ import { projectIdentityKey } from '@shared/project-uri'
  *   - `:` + slug-chars -> popup active, narrows as you type
  *   - `: ` (space after) -> dismisses, natural "foo: bar" prose works
  *   - `::` (double colon) -> dismisses, "::" would never be a conversation ref
- *   - Accepting a conversation replaces the whole `:query` with just the slug
- *     (e.g. typing `:arr<Tab>` yields `arr`, not `:arr`).
+ *   - Accepting a conversation replaces the whole `:query` with a
+ *     `<conversation id="...">project:slug</conversation>` token (rendered as a
+ *     compact pill by the CM6 pill widget; carries the stable id for the agent).
  */
 
 import {
@@ -38,6 +39,7 @@ import { type Extension, Prec } from '@codemirror/state'
 // react-doctor-disable-next-line react-doctor/prefer-dynamic-import
 import { type EditorView, keymap, ViewPlugin, type ViewUpdate } from '@codemirror/view'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import { buildConversationRef } from '@/lib/conversation-refs'
 import { projectPath } from '@/lib/types'
 import { conversationAddressableSlug, lastPathSegments, projectDisplayName } from '@/lib/utils'
 import { BUILTIN_COMMAND_NAMES, BUILTIN_SCORE_BOOST, fuzzyScore } from '../../autocomplete-shared'
@@ -226,8 +228,9 @@ const colonDelayTracker = ViewPlugin.fromClass(
 )
 
 interface ConversationCompletion {
-  label: string // what gets inserted (the conversation id)
-  displayLabel: string // what the user sees (project label or id)
+  convId: string // stable conversation id -- embedded in the inserted <conversation> token
+  label: string // the compound `project:slug` -- the pill's visible text + token body
+  displayLabel: string // what the user sees in the popup (project label or id)
   detail: string // right-aligned: conversation name + status
   info: string // hover tooltip: filesystem path
 }
@@ -271,6 +274,7 @@ function conversationCompletions(query: string): ConversationCompletion[] {
     if (score <= 0) continue
     scored.push({
       opt: {
+        convId: conversation.id,
         label: slug,
         displayLabel,
         detail: name ? `${name} · ${conversation.status}` : conversation.status,
@@ -297,9 +301,11 @@ function conversationArgCompletion(text: string, pos: number): CompletionResult 
   return {
     from: hit.start, // replace the leading `:` too — inserted text is the bare slug
     to: pos,
-    options: options.map(o => ({
-      ...o,
-      apply: `\`${o.label}\``,
+    options: options.map(({ convId, ...rest }) => ({
+      ...rest,
+      // Insert the XML reference token (stable id + human slug) so the receiving
+      // agent has an unambiguous target and the pill renderer has both halves.
+      apply: buildConversationRef(convId, rest.label),
     })),
     filter: false,
   }

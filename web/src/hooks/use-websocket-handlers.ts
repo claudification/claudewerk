@@ -832,6 +832,24 @@ function handleChannelLinkRequest(msg: DashboardMessage) {
   })
 }
 
+// Ad-hoc link granted (a sent message referenced another conversation). Surface
+// a toast so the auto-authorization is visible to the user (auth_visible).
+function handleChannelLinkGranted(msg: DashboardMessage) {
+  const g = msg as DashboardMessage & { toProjectLabel?: string; toProject?: string; toConversation?: string }
+  const label = g.toProjectLabel || g.toProject || g.toConversation
+  if (!label) return
+  window.dispatchEvent(
+    new CustomEvent('rclaude-toast', {
+      detail: {
+        title: 'Conversation linked',
+        body: `Messaging enabled with ${label}.`,
+        variant: 'success',
+        toastId: `link-granted:${g.toConversation}`,
+      },
+    }),
+  )
+}
+
 function handlePermissionRequest(msg: DashboardMessage) {
   const req = msg as DashboardMessage & {
     requestId?: string
@@ -1364,6 +1382,7 @@ export const handlers: Record<string, MessageHandler> = {
   shares_updated: handleSharesUpdated,
   // prompts + dialogs
   channel_link_request: handleChannelLinkRequest,
+  channel_link_granted: handleChannelLinkGranted,
   permission_request: handlePermissionRequest,
   permission_dismiss: handlePermissionDismiss,
   permission_auto_approved: handlePermissionAutoApproved,

@@ -28,7 +28,9 @@ import {
   tooltips,
   ViewPlugin,
   type ViewUpdate,
+  WidgetType,
 } from '@codemirror/view'
+import { parseConversationRefs } from '@/lib/conversation-refs'
 import { record } from '@/lib/perf-metrics'
 import type { SubCommandContext } from '../../sub-commands'
 import { autocompleteExtension } from './autocomplete'
@@ -170,6 +172,74 @@ const effortKeywordPlugin = ViewPlugin.fromClass(
 )
 
 // ---------------------------------------------------------------------------
+// Conversation reference pill
+// ---------------------------------------------------------------------------
+// The `:` completer inserts a `<conversation id="...">project:slug</conversation>`
+// token (see lib/conversation-refs.ts). The raw XML stays in the doc -- that's
+// what gets SENT, so the agent receives the stable id + slug -- but rendering the
+// full tag inline would be hideous. An atomic replace-decoration swaps the whole
+// token for a compact pill showing just the slug. Atomic so arrow keys jump over
+// it and Backspace deletes the whole reference, not one `>` at a time.
+
+class ConversationPillWidget extends WidgetType {
+  constructor(
+    readonly id: string,
+    readonly label: string,
+  ) {
+    super()
+  }
+
+  eq(other: ConversationPillWidget) {
+    return other.id === this.id && other.label === this.label
+  }
+
+  toDOM() {
+    const pill = document.createElement('span')
+    pill.className = 'cm-conversation-pill'
+    pill.textContent = this.label
+    pill.title = `Conversation reference (${this.id})`
+    return pill
+  }
+
+  ignoreEvent() {
+    return false
+  }
+}
+
+function buildConversationPillDecorations(view: EditorView): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>()
+  for (const { from, to } of view.visibleRanges) {
+    const text = view.state.doc.sliceString(from, to)
+    for (const ref of parseConversationRefs(text)) {
+      builder.add(
+        from + ref.start,
+        from + ref.end,
+        Decoration.replace({ widget: new ConversationPillWidget(ref.id, ref.label) }),
+      )
+    }
+  }
+  return builder.finish()
+}
+
+const conversationPillPlugin = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet
+    constructor(view: EditorView) {
+      this.decorations = buildConversationPillDecorations(view)
+    }
+    update(u: ViewUpdate) {
+      if (u.docChanged || u.viewportChanged) this.decorations = buildConversationPillDecorations(u.view)
+    }
+  },
+  {
+    decorations: v => v.decorations,
+    // Make the pills atomic: caret motion and deletion treat each reference as
+    // a single unit instead of stepping through the hidden XML character by char.
+    provide: plugin => EditorView.atomicRanges.of(view => view.plugin(plugin)?.decorations ?? Decoration.none),
+  },
+)
+
+// ---------------------------------------------------------------------------
 // Dark mode base -- replaces @uiw/react-codemirror's built-in "dark" theme
 // which injects an opaque background on its agent host div. This signals dark
 // mode to CM6 without adding any visual styling of its own.
@@ -211,6 +281,23 @@ function inputTheme(fontSize: number, minHeight: string, maxHeight: string): Ext
         textDecoration: 'underline',
         textDecorationColor: 'color-mix(in oklch, var(--color-accent) 40%, transparent)',
         textUnderlineOffset: '2px',
+      },
+      // Conversation reference pill -- compact chip standing in for the full
+      // <conversation ...> token. Tuned to sit on the prose baseline without
+      // bloating line height.
+      '.cm-conversation-pill': {
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '0 6px',
+        borderRadius: '4px',
+        fontSize: '0.92em',
+        lineHeight: '1.35',
+        whiteSpace: 'nowrap',
+        verticalAlign: 'baseline',
+        color: 'var(--color-primary)',
+        backgroundColor: 'color-mix(in oklch, var(--color-primary) 14%, transparent)',
+        border: '1px solid color-mix(in oklch, var(--color-primary) 35%, transparent)',
+        cursor: 'default',
       },
       // Markdown decorator classes -- matches prose-hacker styling in globals.css
       '.cm-md-heading': { color: 'var(--color-primary)', fontWeight: 'bold' },
@@ -390,6 +477,8 @@ export function buildInputExtensions(opts: InputExtensionOptions): Extension[] {
     // Lightweight regex-based markdown decorator (replaces the heavy
     // lang-markdown + tree-walk highlight plugin -- see PERF NOTE above).
     markdownDecoratorPlugin,
+    // Render `<conversation ...>` reference tokens as compact atomic pills.
+    conversationPillPlugin,
     cmUpdateTimer,
     EditorView.lineWrapping,
   ]

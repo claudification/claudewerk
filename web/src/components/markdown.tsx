@@ -1,5 +1,7 @@
 import { Marked } from 'marked'
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef } from 'react'
+import { useConversationsStore } from '@/hooks/use-conversations'
+import { matchLeadingConversationRef } from '@/lib/conversation-refs'
 import { record } from '@/lib/perf-metrics'
 import { CopyMenu } from './copy-menu'
 import { filenameFromUrl, type MediaKind, openMediaLightbox } from './media-lightbox-bus'
@@ -194,8 +196,14 @@ marked.use({
         .map((part, i) => {
           // Odd indices are code blocks/inline code - leave them alone
           if (i % 2 === 1) return part
-          // Escape ALL angle brackets that look like HTML tags
-          let out = part.replace(/<(\/?[a-zA-Z][a-zA-Z0-9_-]*(?:\s[^>]*)?)>/g, '&lt;$1&gt;')
+          // Escape ALL angle brackets that look like HTML tags -- EXCEPT our own
+          // `<conversation ...>` reference tokens, which the inline extension below
+          // consumes and renders as a controlled pill. (Leaving them raw is safe:
+          // the extension emits escaped, controlled HTML; a malformed token just
+          // falls through as visible text.)
+          let out = part.replace(/<(\/?[a-zA-Z][a-zA-Z0-9_-]*(?:\s[^>]*)?)>/g, (full, inner: string) =>
+            /^\/?conversation(?:\s|$)/.test(inner) ? full : `&lt;${inner}&gt;`,
+          )
           // Strip trailing backslash before newline. With `breaks: true`, every `\n`
           // already produces a hard break, so `\\\n` is redundant -- and marked leaks
           // the `\` literally when the next line starts a list or other block.
@@ -240,6 +248,35 @@ marked.use({
       // biome-ignore lint/suspicious/noExplicitAny: marked extension renderer receives generic token
       renderer(token: any) {
         return `<del>${this.parser.parseInline(token.tokens)}</del>`
+      },
+    },
+  ],
+})
+
+// Conversation reference pill: `<conversation id="...">project:slug</conversation>`
+// (the `:` completer's token). Rendered as a clickable inline chip showing the
+// slug. The stable id rides in a data attribute; Markdown's click delegate calls
+// selectConversation(id) -- no slug resolution needed, we already have the id.
+// Token shape is owned by lib/conversation-refs.ts (matchLeadingConversationRef).
+marked.use({
+  extensions: [
+    {
+      name: 'conversation',
+      level: 'inline',
+      start(src: string) {
+        const i = src.indexOf('<conversation ')
+        return i < 0 ? undefined : i
+      },
+      tokenizer(src: string) {
+        const hit = matchLeadingConversationRef(src)
+        if (!hit) return undefined
+        return { type: 'conversation', raw: hit.raw, convId: hit.id, label: hit.label }
+      },
+      // biome-ignore lint/suspicious/noExplicitAny: marked extension renderer receives generic token
+      renderer(token: any) {
+        const id = escapeAttr(token.convId)
+        const label = escapeHtml(token.label)
+        return `<button type="button" class="conversation-pill" data-conversation-id="${id}" title="Open conversation (${id})">${label}</button>`
       },
     },
   ],
@@ -451,6 +488,18 @@ export const Markdown = memo(function Markdown({ children, inline, copyable }: M
 
   const handleMarkdownClick = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement
+
+    // Conversation reference pill -> navigate to that conversation. We hold the
+    // stable id in a data attr, so no slug resolution (unlike ConversationTag).
+    const pill = target.closest('.conversation-pill') as HTMLElement | null
+    if (pill) {
+      const id = pill.getAttribute('data-conversation-id')
+      if (id) {
+        e.preventDefault()
+        useConversationsStore.getState().selectConversation(id)
+      }
+      return
+    }
 
     // Lightbox chip: open the media overlay instead of navigating. Respect
     // modifier-clicks so cmd/ctrl/middle-click still opens in a new tab.
