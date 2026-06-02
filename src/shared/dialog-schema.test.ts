@@ -128,6 +128,58 @@ describe('validateDialogLayout', () => {
     expect(errors).toContain('Image.url is required')
   })
 
+  it('rejects Options whose options omit value (the all-radios-checked bug)', () => {
+    const errors = validateDialogLayout({
+      title: 'Test',
+      body: [
+        {
+          type: 'Options',
+          id: 'how',
+          options: [
+            { label: 'A', description: 'first' },
+            { label: 'B', description: 'second' },
+          ],
+        },
+      ],
+    })
+    expect(errors).toContain('Options.options[0].value is required and must be a non-empty string')
+    expect(errors).toContain('Options.options[1].value is required and must be a non-empty string')
+  })
+
+  it('rejects Options with a missing label', () => {
+    const errors = validateDialogLayout({
+      title: 'Test',
+      body: [{ type: 'Options', id: 'x', options: [{ value: 'a' }] }],
+    })
+    expect(errors).toContain('Options.options[0].label is required and must be a non-empty string')
+  })
+
+  it('rejects Options with duplicate values', () => {
+    const errors = validateDialogLayout({
+      title: 'Test',
+      body: [
+        {
+          type: 'Options',
+          id: 'x',
+          options: [
+            { value: 'a', label: 'A' },
+            { value: 'a', label: 'A again' },
+          ],
+        },
+      ],
+    })
+    expect(errors).toContain('Options.options[1].value "a" is duplicated')
+  })
+
+  it('rejects ImagePicker images missing value or url', () => {
+    const errors = validateDialogLayout({
+      title: 'Test',
+      body: [{ type: 'ImagePicker', id: 'pic', images: [{ label: 'no value or url' }] }],
+    })
+    expect(errors).toContain('ImagePicker.images[0].value is required and must be a non-empty string')
+    expect(errors).toContain('ImagePicker.images[0].url is required and must be a non-empty string')
+  })
+
   it('detects duplicate component IDs', () => {
     const errors = validateDialogLayout({
       title: 'Test',

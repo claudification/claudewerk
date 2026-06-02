@@ -121,7 +121,11 @@ function OptionsInput({
       )}
       <div className="space-y-1">
         {options.map(opt => {
-          const selected = multi ? (Array.isArray(current) ? current : []).includes(opt.value) : current === opt.value
+          // Guard against current==null: `undefined === opt.value` would mark
+          // every option selected when a malformed layout omits option values.
+          const selected = multi
+            ? (Array.isArray(current) ? current : []).includes(opt.value)
+            : current != null && current === opt.value
 
           return (
             // biome-ignore lint/a11y/useKeyWithClickEvents: dialog option
@@ -255,7 +259,9 @@ function ImagePickerInput({
       )}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         {images.map(img => {
-          const selected = multi ? (Array.isArray(current) ? current : []).includes(img.value) : current === img.value
+          const selected =
+            current != null &&
+            (multi ? (Array.isArray(current) ? current : []).includes(img.value) : current === img.value)
           return (
             // biome-ignore lint/a11y/useKeyWithClickEvents: dialog image picker
             // biome-ignore lint/a11y/noStaticElementInteractions: dialog image picker

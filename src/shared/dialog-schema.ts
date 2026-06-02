@@ -339,6 +339,27 @@ function validateComponent(comp: unknown, errors: string[], ids: Set<string>, de
       if (typeof c.id !== 'string') errors.push('Options.id is required')
       if (!Array.isArray(c.options) || (c.options as unknown[]).length === 0) {
         errors.push('Options.options must be a non-empty array')
+      } else {
+        const seen = new Set<string>()
+        ;(c.options as unknown[]).forEach((opt, i) => {
+          if (!opt || typeof opt !== 'object') {
+            errors.push(`Options.options[${i}] must be an object`)
+            return
+          }
+          const o = opt as Record<string, unknown>
+          // value is the identity of the choice -- without it every option
+          // collapses to `undefined`, which the renderer reads as "all selected".
+          if (typeof o.value !== 'string' || o.value === '') {
+            errors.push(`Options.options[${i}].value is required and must be a non-empty string`)
+          } else if (seen.has(o.value)) {
+            errors.push(`Options.options[${i}].value "${o.value}" is duplicated`)
+          } else {
+            seen.add(o.value)
+          }
+          if (typeof o.label !== 'string' || o.label === '') {
+            errors.push(`Options.options[${i}].label is required and must be a non-empty string`)
+          }
+        })
       }
       break
     case 'TextInput':
@@ -348,6 +369,25 @@ function validateComponent(comp: unknown, errors: string[], ids: Set<string>, de
       if (typeof c.id !== 'string') errors.push('ImagePicker.id is required')
       if (!Array.isArray(c.images) || (c.images as unknown[]).length === 0) {
         errors.push('ImagePicker.images must be a non-empty array')
+      } else {
+        const seen = new Set<string>()
+        ;(c.images as unknown[]).forEach((img, i) => {
+          if (!img || typeof img !== 'object') {
+            errors.push(`ImagePicker.images[${i}] must be an object`)
+            return
+          }
+          const im = img as Record<string, unknown>
+          if (typeof im.value !== 'string' || im.value === '') {
+            errors.push(`ImagePicker.images[${i}].value is required and must be a non-empty string`)
+          } else if (seen.has(im.value)) {
+            errors.push(`ImagePicker.images[${i}].value "${im.value}" is duplicated`)
+          } else {
+            seen.add(im.value)
+          }
+          if (typeof im.url !== 'string' || im.url === '') {
+            errors.push(`ImagePicker.images[${i}].url is required and must be a non-empty string`)
+          }
+        })
       }
       break
     case 'Toggle':
