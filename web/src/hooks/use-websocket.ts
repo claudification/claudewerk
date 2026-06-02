@@ -377,7 +377,6 @@ export function useWebSocket() {
             msg.type === 'file_save_response' ||
             msg.type === 'file_history_response' ||
             msg.type === 'file_restore_response' ||
-            msg.type === 'project_quick_add_response' ||
             msg.type === 'file_changed'
           ) {
             const handler = useConversationsStore.getState().fileHandler

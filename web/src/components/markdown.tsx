@@ -1,6 +1,7 @@
 import { Marked } from 'marked'
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import { useMarkdownViewer } from '@/hooks/use-markdown-viewer'
 import { matchLeadingConversationRef } from '@/lib/conversation-refs'
 import { record } from '@/lib/perf-metrics'
 import { CopyMenu } from './copy-menu'
@@ -72,6 +73,18 @@ function renderVideoChip(href: string, label: string): string {
 
 // Custom renderer
 const renderer = new marked.Renderer()
+/**
+ * A project-relative file path (e.g. `docs/hello.md`, `./src/x.ts`) -- NOT an
+ * external URL, anchor, or host-absolute path. These open in the sentinel-backed
+ * markdown viewer instead of navigating.
+ */
+function isProjectRelativeFilePath(href: string): boolean {
+  if (!href) return false
+  if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return false // scheme (http:, mailto:, data:)
+  if (href.startsWith('#') || href.startsWith('//') || href.startsWith('/')) return false
+  return /\.[a-z0-9]{1,8}(\?[^#]*)?(#.*)?$/i.test(href) // relative path ending in a file ext
+}
+
 renderer.link = ({ href, text }) => {
   // `[clip](url.mp4)` / `[pic](url.png)` -> media chip. The chip is an
   // anchor with data-lightbox-* attrs; Markdown's onClick delegate (below)
@@ -80,6 +93,11 @@ renderer.link = ({ href, text }) => {
   const kind = detectMediaKind(href)
   if (kind === 'image') return renderImageChip(href, text)
   if (kind === 'video') return renderVideoChip(href, text)
+  // Project-relative file link -> open the sentinel-backed markdown viewer.
+  if (isProjectRelativeFilePath(href)) {
+    const safe = escapeAttr(href)
+    return `<a href="#" class="file-link" data-file-path="${safe}" title="View ${safe}">${text}</a>`
+  }
   return `<a href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`
 }
 renderer.image = ({ href, text, title }) => {
@@ -560,6 +578,19 @@ export const Markdown = memo(function Markdown({ children, inline, copyable }: M
         e.preventDefault()
         openMediaLightbox(src, kind, alt)
       }
+      return
+    }
+
+    // Project-relative file link -> open the sentinel-backed markdown viewer,
+    // resolved against the selected conversation's project root.
+    const fileLink = target.closest('.file-link') as HTMLAnchorElement | null
+    if (fileLink) {
+      e.preventDefault()
+      const relPath = fileLink.getAttribute('data-file-path')
+      const state = useConversationsStore.getState()
+      const conv = state.selectedConversationId ? state.conversationsById[state.selectedConversationId] : null
+      const projectUri = conv?.project
+      if (relPath && projectUri) useMarkdownViewer.getState().open(projectUri, relPath)
       return
     }
 

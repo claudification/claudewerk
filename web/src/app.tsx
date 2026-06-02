@@ -13,6 +13,7 @@ import { JsonInspectorDialog } from '@/components/json-inspector'
 import { LaunchProfileCommands } from '@/components/launch-profiles/launch-profile-commands'
 import { LaunchToastContainer } from '@/components/launch-profiles/launch-toast'
 import { LaunchProfileManager } from '@/components/launch-profiles/manager'
+import { MarkdownViewerModal } from '@/components/markdown-viewer-modal'
 import { MediaLightbox } from '@/components/media-lightbox'
 import { ProjectList } from '@/components/project-list'
 import { QuickTaskModal } from '@/components/quick-task-modal'
@@ -297,6 +298,7 @@ function Dashboard() {
       <MediaLightbox />
       {canAdmin && <QuickTaskModal />}
       <RenameModal />
+      <MarkdownViewerModal />
       {canAdmin && <TaskBatchSelector />}
       {canAdmin && <ShortcutHelp />}
       {canAdmin && <BatchModeModal open={showBatchPalette} onClose={() => setShowBatchPalette(false)} />}
