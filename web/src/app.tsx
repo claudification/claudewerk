@@ -29,7 +29,7 @@ import { ManageChatConnectionsDialog } from '@/components/settings/manage-chat-c
 import { ManageProjectLinksDialog } from '@/components/settings/manage-project-links-dialog'
 import { SharedConversationView } from '@/components/shared-conversation-view'
 import { ShortcutHelp } from '@/components/shortcut-help'
-import { SpawnDialog } from '@/components/spawn-dialog'
+import { spawnDialogBus } from '@/components/spawn-dialog-trigger'
 import { TaskBatchSelector } from '@/components/task-batch-selector'
 import { TerminateConfirmDialog } from '@/components/terminate-confirm'
 import { TerminateLineageConfirmDialog } from '@/components/terminate-lineage-confirm'
@@ -48,6 +48,7 @@ import { useSyncEffects } from '@/hooks/use-sync-effects'
 import { useWebSocket } from '@/hooks/use-websocket'
 import { executeCommand } from '@/lib/commands'
 import { focusInputEditor } from '@/lib/focus-input'
+import { lazyModule, named } from '@/lib/lazy-module'
 import { clearShareMode, detectShareKind, detectShareMode } from '@/lib/share-mode'
 import { isMobileViewport, isTouchDevice } from '@/lib/utils'
 
@@ -63,6 +64,13 @@ const SearchIndexManagerDialog = lazy(() =>
   import('@/components/search-index-manager').then(m => ({ default: m.SearchIndexManagerDialog })),
 )
 const SheafPage = lazy(() => import('@/sheaf/sheaf-page').then(m => ({ default: m.SheafPage })))
+
+// Lazy modals: code-split out of the eager index chunk, mounted on first open.
+// The gate subscribes to each modal's open signal (see lazyModule / lazy-bus).
+const SpawnDialog = lazyModule(
+  named(() => import('@/components/spawn-dialog'), 'SpawnDialog'),
+  spawnDialogBus.useArmed,
+)
 
 function Dashboard() {
   const [sheetOpen, setSheetOpen] = useState(

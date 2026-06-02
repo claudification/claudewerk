@@ -55,7 +55,7 @@ import {
 import { ProcessModelSegmented } from './spawn-dialog/process-model-segmented'
 import { SentinelProfileRadio } from './spawn-dialog/sentinel-profile-radio'
 import { useSpawnAction } from './spawn-dialog/use-spawn-action'
-import { _spawnDialogBus, type SpawnDialogOptions } from './spawn-dialog-trigger'
+import { type SpawnDialogOptions, spawnDialogBus } from './spawn-dialog-trigger'
 
 /** Mirrors src/broker/backends/opencode.ts deriveOpenCodeSlug -- needed
  *  client-side so the dialog can look up project settings under the same
@@ -179,7 +179,7 @@ export function SpawnDialog() {
   // scoped out of phase 7 PLAN (would need TanStack Query adoption)
   // react-doctor-disable-next-line react-doctor/no-fetch-in-effect
   useEffect(() => {
-    _spawnDialogBus.open = (options: SpawnDialogOptions) => {
+    spawnDialogBus.setHandler((options: SpawnDialogOptions) => {
       // Settings are project-scoped, not worktree-scoped: when the trigger
       // path is inside `.claude/worktrees/<name>`, normalize the lookup to
       // the main project so worktree launches inherit the project's saved
@@ -299,9 +299,9 @@ export function SpawnDialog() {
       // the dialog doesn't show the old "Conversation failed to connect" banner.
       progressReset()
       setState({ open: true, options })
-    }
+    })
     return () => {
-      _spawnDialogBus.open = null
+      spawnDialogBus.setHandler(null)
     }
   }, [projectSettings, globalSettings, progressReset])
 

@@ -1,3 +1,5 @@
+import { createLazyBus } from '@/lib/lazy-bus'
+
 export interface SpawnDialogOptions {
   path: string
   mkdir?: boolean
@@ -18,13 +20,13 @@ export interface SpawnDialogOptions {
   pool?: string
 }
 
-/** Module-level bus for the SpawnDialog. The dialog registers its handler
- *  on mount and clears it on unmount; openers route through this bus. */
-export const _spawnDialogBus: {
-  open: ((options: SpawnDialogOptions) => void) | null
-} = { open: null }
+/** Buffering open bus for the SpawnDialog. The dialog is lazy-mounted, so an
+ *  `openSpawnDialog` call may arrive before its body exists -- the bus buffers
+ *  it, arms the lazy gate (`spawnDialogBus.useArmed`), and replays it once the
+ *  dialog registers its handler on mount. */
+export const spawnDialogBus = createLazyBus<SpawnDialogOptions>()
 
 /** Open the spawn dialog from anywhere */
 export function openSpawnDialog(options: SpawnDialogOptions): void {
-  _spawnDialogBus.open?.(options)
+  spawnDialogBus.open(options)
 }
