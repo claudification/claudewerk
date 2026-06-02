@@ -263,23 +263,6 @@ export function useFileEditor(conversationId: string | null) {
     [conversationId, sendRequest],
   )
 
-  // Quick note append
-  const appendQuickNote = useCallback(
-    async (text: string) => {
-      if (!conversationId) return
-      try {
-        await sendRequest({
-          type: 'project_quick_add',
-          conversationId,
-          text,
-        })
-      } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : String(err))
-      }
-    },
-    [conversationId, sendRequest],
-  )
-
   // Cleanup on conversation change
   // biome-ignore lint/correctness/useExhaustiveDependencies: conversationId is intentionally used as cleanup trigger even though not read in the effect body
   // react-doctor-disable-next-line react-doctor/exhaustive-deps
@@ -312,6 +295,5 @@ export function useFileEditor(conversationId: string | null) {
     resolveConflict,
     loadHistory,
     restoreVersion,
-    appendQuickNote,
   }
 }
