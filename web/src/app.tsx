@@ -30,6 +30,7 @@ import { ShortcutHelp } from '@/components/shortcut-help'
 import { SpawnDialog } from '@/components/spawn-dialog'
 import { TaskBatchSelector } from '@/components/task-batch-selector'
 import { TerminateConfirmDialog } from '@/components/terminate-confirm'
+import { TerminateLineageConfirmDialog } from '@/components/terminate-lineage-confirm'
 import { ToastContainer } from '@/components/toast'
 import { TranscriptSearch } from '@/components/transcript-search'
 import { Button } from '@/components/ui/button'
@@ -341,6 +342,7 @@ function Dashboard() {
       <LaunchProfileCommands />
       <LaunchToastContainer />
       <TerminateConfirmDialog />
+      <TerminateLineageConfirmDialog />
       <ToastContainer />
     </div>
   )

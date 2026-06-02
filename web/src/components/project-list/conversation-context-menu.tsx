@@ -10,6 +10,7 @@ import { RecapMenuItems } from '../recap-jobs/recap-menu-items'
 import { openReviveDialog } from '../revive-dialog-trigger'
 import { openManageProjectLinks } from '../settings/manage-project-links-trigger'
 import { openSpawnDialog } from '../spawn-dialog-trigger'
+import { openTerminateLineageConfirm } from '../terminate-lineage-confirm-trigger'
 
 // ─── Conversation context menu (right-click) ─────────────────────────────
 
@@ -124,6 +125,12 @@ export function ConversationContextMenu({
   const dismissConversation = useConversationsStore(s => s.dismissConversation)
   const selectConversation = useConversationsStore(s => s.selectConversation)
   const ps = useConversationsStore(s => s.projectSettings[projectIdentityKey(conversation.project)])
+  // Has at least one spawned descendant -> offer "Terminate full lineage".
+  // Independent of this conversation's own status: a spawn root can be ended
+  // while its children are still live (the common chain case).
+  const hasLineageChildren = useConversationsStore(s =>
+    s.conversations.some(c => c.parentConversationId === conversation.id),
+  )
 
   return (
     <ContextMenu.Root>
@@ -248,6 +255,17 @@ export function ConversationContextMenu({
               }}
             >
               Terminate conversation
+            </ContextMenu.Item>
+          )}
+          {hasLineageChildren && (
+            <ContextMenu.Item
+              className={cn(menuItemClass, 'text-destructive')}
+              onSelect={() => {
+                haptic('error')
+                openTerminateLineageConfirm(conversation.id)
+              }}
+            >
+              Terminate full lineage…
             </ContextMenu.Item>
           )}
           {conversation.status === 'ended' && (

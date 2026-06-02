@@ -96,3 +96,62 @@ function assembleGroup(
   const newest = Math.max(root?.startedAt ?? 0, ...members.map(c => c.startedAt))
   return { group: { key, members: ordered }, newest }
 }
+
+// ─── Lineage subtree (terminate-full-lineage) ───────────────────────────────
+//
+// "Terminate full lineage" kills a target conversation plus every descendant.
+// This walks the subtree client-side for the confirmation dialog's preview;
+// the broker re-walks authoritatively when the kill actually fires (it sees
+// conversations the dashboard's filtered view may not). depth drives the tree
+// indentation; isActive marks who actually gets terminated (ended members are
+// shown struck-through and skipped).
+
+export interface LineageSubtreeMember {
+  conversation: Conversation
+  /** 0 = the target conversation itself; +1 per spawn generation below it. */
+  depth: number
+  /** status !== 'ended' -- only active members are terminated. */
+  isActive: boolean
+}
+
+/**
+ * Collect the subtree rooted at `targetId`: that conversation plus all
+ * descendants reachable via parentConversationId edges. Breadth-first,
+ * target first, children ordered by startedAt. Cycle-safe. Returns [] if the
+ * target itself is not present in `conversations`.
+ */
+// fallow-ignore-next-line complexity
+export function collectLineageSubtree(conversations: Conversation[], targetId: string): LineageSubtreeMember[] {
+  const byId = new Map(conversations.map(c => [c.id, c]))
+  const childrenByParent = new Map<string, Conversation[]>()
+  for (const c of conversations) {
+    const parent = c.parentConversationId
+    if (!parent) continue
+    const siblings = childrenByParent.get(parent)
+    if (siblings) siblings.push(c)
+    else childrenByParent.set(parent, [c])
+  }
+
+  const out: LineageSubtreeMember[] = []
+  const seen = new Set<string>([targetId])
+  const queue: Array<{ id: string; depth: number }> = [{ id: targetId, depth: 0 }]
+  while (queue.length > 0) {
+    const { id, depth } = queue.shift() as { id: string; depth: number }
+    const conv = byId.get(id)
+    if (conv) out.push({ conversation: conv, depth, isActive: conv.status !== 'ended' })
+    const kids = (childrenByParent.get(id) ?? []).slice().sort((a, b) => a.startedAt - b.startedAt)
+    for (const child of kids) {
+      if (!seen.has(child.id)) {
+        seen.add(child.id)
+        queue.push({ id: child.id, depth: depth + 1 })
+      }
+    }
+  }
+  return out
+}
+
+/** True when `targetId` has at least one descendant in `conversations` -- the
+ *  gate for showing the "terminate full lineage" action. */
+export function hasLineageDescendants(conversations: Conversation[], targetId: string): boolean {
+  return conversations.some(c => c.parentConversationId === targetId)
+}

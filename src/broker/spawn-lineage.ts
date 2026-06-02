@@ -48,3 +48,43 @@ export function computeSpawnLineage(
   )
   return { parentConversationId: callerId, rootConversationId: rootId }
 }
+
+/**
+ * Collect a spawn-lineage subtree: the conversation `rootId` plus every
+ * descendant reachable by walking `parentConversationId` edges downward.
+ *
+ * Pure, cycle-safe (each conversation is visited at most once), and returns
+ * ids in breadth-first order with `rootId` first. `rootId` is always included
+ * even when it is absent from `conversations` -- the caller decides what to do
+ * with a root that no longer exists. Used by the "terminate full lineage"
+ * dashboard action to enumerate everything a subtree-terminate would touch.
+ */
+// fallow-ignore-next-line complexity
+export function collectLineageSubtree(
+  conversations: Array<{ id: string; parentConversationId?: string | null }>,
+  rootId: string,
+): string[] {
+  const childrenByParent = new Map<string, string[]>()
+  for (const c of conversations) {
+    const parent = c.parentConversationId
+    if (!parent) continue
+    const siblings = childrenByParent.get(parent)
+    if (siblings) siblings.push(c.id)
+    else childrenByParent.set(parent, [c.id])
+  }
+
+  const order: string[] = []
+  const seen = new Set<string>([rootId])
+  const queue: string[] = [rootId]
+  while (queue.length > 0) {
+    const id = queue.shift() as string
+    order.push(id)
+    for (const child of childrenByParent.get(id) ?? []) {
+      if (!seen.has(child)) {
+        seen.add(child)
+        queue.push(child)
+      }
+    }
+  }
+  return order
+}

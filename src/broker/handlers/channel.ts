@@ -9,9 +9,10 @@ import type { ChannelSendResultEntry, SubscriptionChannel, TerminationSource } f
 import { slugify } from '../address-book'
 import { getUser } from '../auth'
 import { refreshAliasUse } from '../former-slugs'
-import type { MessageHandler } from '../handler-context'
+import { GuardError, type HandlerContext, type MessageHandler } from '../handler-context'
 import { AGENT_HOST_ONLY, DASHBOARD_ROLES, registerHandlers } from '../message-router'
 import { resolvePermissionFlags } from '../permissions'
+import { collectLineageSubtree } from '../spawn-lineage'
 import { computeConversationSlug, computeLocalId, formatAmbiguityError, resolveSendTarget } from './channel-id'
 
 // ─── Dashboard subscription ────────────────────────────────────────
@@ -892,26 +893,33 @@ const channelSend: MessageHandler = (ctx, data) => {
 
 // ─── Quit conversation relay (dashboard -> agent host) ─────────────────────
 
-const quitConversation: MessageHandler = (ctx, data) => {
-  const conversationId = data.conversationId as string
-  const conversation = conversationId ? ctx.conversations.getConversation(conversationId) : undefined
-  if (!conversation) return
-  ctx.requirePermission('chat', conversation.project)
+/** Outcome of a single conversation termination -- logged by the lineage path
+ *  so the batch summary shows how each member was handled. */
+type TerminateOutcome = 'forwarded' | 'ended' | 'noop'
 
-  // Source tag travels from the web client; fall back to dashboard-other
-  // for legacy callers that haven't been updated yet.
-  const source: TerminationSource = (data.source as TerminationSource) || 'dashboard-other'
-  const initiator =
-    (data.initiator as string | undefined) || (ctx.ws.data.userName ? `user:${ctx.ws.data.userName}` : undefined)
-  const batchId = typeof data.batchId === 'string' ? data.batchId : undefined
-
+/**
+ * Terminate ONE conversation. Mirrors the single-conversation kill path: if a
+ * live agent-host socket exists, forward the terminate (the host kills its
+ * process and ends); otherwise, gateway-backed conversations are notified +
+ * ended directly. A claude-backed conversation with no live socket is left
+ * untouched ('noop') -- there is no process to kill and no socket to relay
+ * through. Caller has already resolved source/initiator and checked permission.
+ */
+function terminateOne(
+  ctx: HandlerContext,
+  conversation: NonNullable<ReturnType<HandlerContext['conversations']['getConversation']>>,
+  source: TerminationSource,
+  initiator: string | undefined,
+  batchId?: string,
+): TerminateOutcome {
+  const conversationId = conversation.id
   const targetWs = ctx.conversations.getConversationSocket(conversationId)
   if (targetWs) {
     targetWs.send(JSON.stringify({ type: 'terminate_conversation', conversationId, source, initiator }))
     ctx.log.debug(
       `Conversation ${conversationId.slice(0, 8)} - terminate forwarded (source=${source}${batchId ? ` batch=${batchId}` : ''})`,
     )
-    return
+    return 'forwarded'
   }
 
   // Gateway-backed conversations (hermes, chat-api) have no per-conversation
@@ -929,7 +937,102 @@ const quitConversation: MessageHandler = (ctx, data) => {
     })
     ctx.conversations.broadcastConversationUpdate(conversationId)
     ctx.log.debug(`Conversation ${conversationId.slice(0, 8)} - ended (${hostType} backend, source=${source})`)
+    return 'ended'
   }
+  return 'noop'
+}
+
+/** Non-throwing variant of requirePermission -- used by the lineage walk to
+ *  SKIP (rather than abort the whole batch on) descendants in a project the
+ *  caller cannot control. */
+function callerCanChat(ctx: HandlerContext, project: string): boolean {
+  try {
+    ctx.requirePermission('chat', project)
+    return true
+  } catch (err) {
+    if (err instanceof GuardError) return false
+    throw err
+  }
+}
+
+const quitConversation: MessageHandler = (ctx, data) => {
+  const conversationId = data.conversationId as string
+  const conversation = conversationId ? ctx.conversations.getConversation(conversationId) : undefined
+  if (!conversation) return
+  ctx.requirePermission('chat', conversation.project)
+
+  // Source tag travels from the web client; fall back to dashboard-other
+  // for legacy callers that haven't been updated yet.
+  const source: TerminationSource = (data.source as TerminationSource) || 'dashboard-other'
+  const initiator =
+    (data.initiator as string | undefined) || (ctx.ws.data.userName ? `user:${ctx.ws.data.userName}` : undefined)
+  const batchId = typeof data.batchId === 'string' ? data.batchId : undefined
+
+  terminateOne(ctx, conversation, source, initiator, batchId)
+}
+
+// ─── Terminate full lineage (dashboard -> broker) ──────────────────────────
+
+/** Per-member result of a lineage terminate, for the batch tally + summary. */
+type LineageMemberOutcome = TerminateOutcome | 'missing' | 'alreadyEnded' | 'denied'
+
+/**
+ * Classify ONE subtree member and terminate it when eligible. Skips members
+ * that no longer exist ('missing'), are already ended ('alreadyEnded'), or live
+ * in a project the caller cannot control ('denied'). Keeps terminateLineage's
+ * loop flat.
+ */
+function terminateLineageMember(
+  ctx: HandlerContext,
+  id: string,
+  source: TerminationSource,
+  initiator: string | undefined,
+): LineageMemberOutcome {
+  const conv = ctx.conversations.getConversation(id)
+  if (!conv) return 'missing'
+  if (conv.status === 'ended') return 'alreadyEnded'
+  if (!callerCanChat(ctx, conv.project)) return 'denied'
+  return terminateOne(ctx, conv, source, initiator)
+}
+
+/**
+ * Terminate a whole spawn-lineage subtree: the target conversation plus every
+ * descendant. The broker is the authority on the tree (the dashboard only sees
+ * a filtered slice), so it re-walks `getAllConversations()` here rather than
+ * trusting a client-supplied id list. Already-ended members are skipped;
+ * members the caller lacks `chat` on are skipped (logged, not fatal).
+ */
+const terminateLineage: MessageHandler = (ctx, data) => {
+  const conversationId = data.conversationId as string
+  const target = conversationId ? ctx.conversations.getConversation(conversationId) : undefined
+  if (!target) return
+  // Gate on the entry-point conversation; per-descendant permission is checked
+  // again in terminateLineageMember so a denied root aborts here, denied
+  // descendants just skip.
+  ctx.requirePermission('chat', target.project)
+
+  const source: TerminationSource = (data.source as TerminationSource) || 'dashboard-other'
+  const initiator =
+    (data.initiator as string | undefined) || (ctx.ws.data.userName ? `user:${ctx.ws.data.userName}` : undefined)
+
+  const subtreeIds = collectLineageSubtree(ctx.conversations.getAllConversations(), conversationId)
+  const counts: Record<LineageMemberOutcome, number> = {
+    forwarded: 0,
+    ended: 0,
+    noop: 0,
+    missing: 0,
+    alreadyEnded: 0,
+    denied: 0,
+  }
+  for (const id of subtreeIds) counts[terminateLineageMember(ctx, id, source, initiator)]++
+
+  // LOG EVERYTHING covenant: one summary line that lets a future reader
+  // reconstruct exactly what the batch touched without re-running anything.
+  ctx.log.info(
+    `[lineage-terminate] target=${conversationId.slice(0, 8)} root=${(target.rootConversationId ?? conversationId).slice(0, 8)} ` +
+      `subtree=${subtreeIds.length} forwarded=${counts.forwarded} ended=${counts.ended} alreadyEnded=${counts.alreadyEnded} ` +
+      `denied=${counts.denied} noop=${counts.noop} missing=${counts.missing} source=${source} initiator=${initiator ?? 'unknown'}`,
+  )
 }
 
 // ─── Conversation viewed (clear notification badge) ────────────────────
@@ -1098,6 +1201,7 @@ export function registerChannelHandlers(): void {
       channel_unsubscribe: channelUnsubscribe,
       channel_unsubscribe_all: channelUnsubscribeAll,
       terminate_conversation: quitConversation,
+      terminate_lineage: terminateLineage,
       conversation_viewed: conversationViewed,
       channel_link_response: channelLinkResponse,
       channel_link_grant: channelLinkGrant,

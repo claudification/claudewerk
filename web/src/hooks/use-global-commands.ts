@@ -7,6 +7,7 @@ import { openManageChatConnections } from '@/components/settings/manage-chat-con
 import { openManageProjectLinks } from '@/components/settings/manage-project-links-trigger'
 import { openSpawnDialog } from '@/components/spawn-dialog-trigger'
 import { openTerminateConfirm } from '@/components/terminate-confirm-trigger'
+import { openTerminateLineageConfirm } from '@/components/terminate-lineage-confirm-trigger'
 import { fetchTranscript, sendInput, useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import { formatShortcut, useChordCommand, useCommand, validateChordBindings } from '@/lib/commands'
 import { canRespawnStaleDaemon } from '@/lib/daemon-control'
@@ -149,6 +150,29 @@ export function useGlobalCommands(toggleSidebar: () => void) {
       openTerminateConfirm(sid, name)
     },
     { label: 'Terminate conversation', key: 'x', group: 'Conversation' },
+  )
+
+  useCommand(
+    'terminate-lineage',
+    () => {
+      const store = useConversationsStore.getState()
+      const sid = store.selectedConversationId
+      if (!sid) return
+      // Only meaningful when the selected conversation has spawned descendants.
+      if (!store.conversations.some((c: { parentConversationId?: string }) => c.parentConversationId === sid)) return
+      openTerminateLineageConfirm(sid)
+    },
+    {
+      label: 'Terminate full lineage',
+      group: 'Conversation',
+      when: () => {
+        const store = useConversationsStore.getState()
+        const sid = store.selectedConversationId
+        return (
+          !!sid && store.conversations.some((c: { parentConversationId?: string }) => c.parentConversationId === sid)
+        )
+      },
+    },
   )
 
   useCommand(

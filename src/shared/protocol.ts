@@ -1303,6 +1303,7 @@ export type BrokerMessage =
   | PermissionResponse
   | AskQuestionResponse
   | QuitConversation
+  | QuitLineage
   | ConversationTerminated
   | ConversationControl
   | ControlDeliver
@@ -1350,6 +1351,7 @@ export type TerminationSource =
   // Dashboard-initiated kills (web client)
   | 'dashboard-context-menu' // sidebar right-click -> Terminate
   | 'dashboard-terminate-dialog' // explicit confirm dialog
+  | 'dashboard-lineage' // "terminate full lineage" subtree kill (per-member tag)
   | 'dashboard-launch-toast' // launch-profile toast "Cancel launch" button
   | 'dashboard-other' // fallback for legacy/unknown dashboard callers
   // Inter-conversation
@@ -1406,6 +1408,26 @@ export interface TerminationDetail {
 
 export interface QuitConversation {
   type: 'terminate_conversation'
+  conversationId: string
+  /** Where the kill came from. Web clients must populate this. */
+  source?: TerminationSource
+  /** Optional override of initiator (defaults to ctx.ws.data principal). */
+  initiator?: string
+}
+
+/**
+ * Terminate a whole spawn-lineage subtree in one shot (dashboard -> broker).
+ * The broker walks `conversationId` plus every descendant (following
+ * `parentConversationId` edges in the store), then terminates each member
+ * that is still alive (status !== 'ended'). Already-ended members are skipped;
+ * members in a project the caller lacks `chat` on are skipped. Each individual
+ * termination still emits its own `conversation_status_transition` /
+ * `conversation_terminated`, so the UI sees the fan-out conversation by
+ * conversation -- this message is just the batch trigger.
+ */
+export interface QuitLineage {
+  type: 'terminate_lineage'
+  /** Subtree root to terminate: this conversation + all its descendants. */
   conversationId: string
   /** Where the kill came from. Web clients must populate this. */
   source?: TerminationSource

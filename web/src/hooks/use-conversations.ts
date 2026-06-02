@@ -363,6 +363,7 @@ interface ConversationsState {
   sendWsMessage: (msg: Record<string, unknown>) => void
   dismissConversation: (conversationId: string) => void
   terminateConversation: (conversationId: string, source: TerminationSource) => void
+  terminateLineage: (conversationId: string, source: TerminationSource) => void
   renamingConversationId: string | null
   setRenamingConversationId: (conversationId: string | null) => void
   renameConversation: (conversationId: string, name: string, description?: string) => void
@@ -1309,6 +1310,12 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
     // the NDJSON termination log + dashboard badge. Distinct values let
     // us tell "right-click Terminate" from "Cancel launch toast" etc.
     wsSend('terminate_conversation', { conversationId, source })
+  },
+  terminateLineage: (conversationId, source) => {
+    // Terminate the whole spawn subtree (this conversation + all descendants).
+    // The broker re-walks the lineage authoritatively and skips already-ended
+    // members; we only send the subtree root.
+    wsSend('terminate_lineage', { conversationId, source })
   },
 
   getSelectedConversation: () => {
