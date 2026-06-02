@@ -34,6 +34,7 @@ import {
   renderSendMessage,
   renderSkill,
   renderTeam,
+  renderWorktree,
 } from './tool-cases-misc'
 import { renderGlobGrep, renderWebFetch, renderWebSearch } from './tool-cases-search'
 import { renderTaskCreate, renderTaskMisc, renderTaskUpdate, renderTodoWrite } from './tool-cases-tasks'
@@ -126,6 +127,8 @@ const namePassthroughHandlers: Record<string, ToolHandlerWithName> = {
   Agent: renderAgentTask,
   EnterPlanMode: renderPlanMode,
   ExitPlanMode: renderPlanMode,
+  EnterWorktree: renderWorktree,
+  ExitWorktree: renderWorktree,
   mcp__rclaude__revive_conversation: renderMcpConversationLifecycle,
   mcp__rclaude__terminate_conversation: renderMcpConversationLifecycle,
   mcp__rclaude__exit_conversation: renderMcpConversationLifecycle,

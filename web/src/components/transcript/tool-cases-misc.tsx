@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { truncate } from '@/lib/utils'
+import { worktreeName } from '../conversation-detail/header-info-helpers'
 import type { ToolCaseInput, ToolCaseResult } from './tool-case-types'
 
 function parseTriggerResult(result?: string): { id: string; nextRun?: string } | null {
@@ -37,6 +38,49 @@ export function renderNotebookEdit({ input }: ToolCaseInput): ToolCaseResult {
   // Canonical: input.cellId (was cell_id in Claude legacy)
   const cellId = input.cellId as string
   return { summary: cellId ? `cell ${cellId}` : 'edit', details: null }
+}
+
+/** Pull a filesystem path out of a worktree tool result. CC attaches a
+ *  `{ worktreePath, message }` sidecar; fall back to parsing the human
+ *  message ("Created worktree at /..." / "now working in /..."). */
+function worktreeResultPath(
+  result: string | undefined,
+  toolUseResult: ToolCaseInput['toolUseResult'],
+): string | undefined {
+  const sidecar = toolUseResult?.worktreePath
+  if (typeof sidecar === 'string' && sidecar) return sidecar
+  const msg = result || (typeof toolUseResult?.message === 'string' ? toolUseResult.message : '')
+  return msg.match(/(?:worktree at|working in) (\/\S+?)\.?(?:\s|$)/)?.[1]
+}
+
+/**
+ * EnterWorktree / ExitWorktree (CC built-ins). Renders a clean
+ * "entered/exited <worktree-name>" line with the resolved path below, instead
+ * of dumping the raw tool JSON. The conversation's live worktree is tracked
+ * separately via `currentPath` (the `cwd_changed` wire message that worktree
+ * enter/exit also drives) and surfaced in the header `CurrentPathRow` badge --
+ * this is the per-call timeline view of the same event.
+ */
+export function renderWorktree(name: string, { input, result, toolUseResult }: ToolCaseInput): ToolCaseResult {
+  const isEnter = name === 'EnterWorktree'
+  const path = worktreeResultPath(result, toolUseResult)
+  const wt = (input.name as string | undefined) || (path ? worktreeName(path) : null) || undefined
+  const summary: ReactNode = (
+    <span className="flex items-center gap-1.5 min-w-0">
+      <span className={isEnter ? 'text-violet-300' : 'text-muted-foreground'}>{isEnter ? 'entered' : 'exited'}</span>
+      {wt ? (
+        <span className="font-bold text-violet-300 truncate">{wt}</span>
+      ) : (
+        <span className="text-muted-foreground/70">worktree</span>
+      )}
+    </span>
+  )
+  const details = path ? (
+    <div className="text-[10px] text-muted-foreground/70 font-mono truncate" title={path}>
+      {path}
+    </div>
+  ) : null
+  return { summary, details }
 }
 
 export function renderSendMessage({ input }: ToolCaseInput): ToolCaseResult {

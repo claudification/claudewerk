@@ -505,6 +505,46 @@ describe('dispatchToolCase - PlanMode', () => {
   })
 })
 
+describe('dispatchToolCase - Worktree', () => {
+  const WT = '/Users/jonas/projects/portal2/.claude/worktrees/anon-form-e2e'
+
+  it('EnterWorktree shows the worktree path from the result sidecar', () => {
+    const r = dispatchToolCase(
+      'EnterWorktree',
+      makeCtx({ input: { name: 'anon-form-e2e' }, toolUseResult: { worktreePath: WT } }),
+    )
+    expect(hasSummary(r)).toBe(true)
+    expect(r.details).not.toBeNull()
+  })
+
+  it('EnterWorktree parses the path out of the result message when no sidecar', () => {
+    const r = dispatchToolCase(
+      'EnterWorktree',
+      makeCtx({
+        input: { name: 'anon-form-e2e' },
+        result: `Created worktree at ${WT}. The session is now working there.`,
+      }),
+    )
+    expect(hasSummary(r)).toBe(true)
+    expect(r.details).not.toBeNull()
+  })
+
+  it('ExitWorktree shows a summary even without a name or path', () => {
+    const r = dispatchToolCase('ExitWorktree', makeCtx({ result: 'Exited worktree.' }))
+    expect(hasSummary(r)).toBe(true)
+    expect(r.details).toBeNull()
+  })
+
+  it('ExitWorktree surfaces the return path when present', () => {
+    const r = dispatchToolCase(
+      'ExitWorktree',
+      makeCtx({ result: 'Exited worktree. Now working in /Users/jonas/projects/portal2' }),
+    )
+    expect(hasSummary(r)).toBe(true)
+    expect(r.details).not.toBeNull()
+  })
+})
+
 describe('dispatchToolCase - NotebookEdit/SendMessage/Team', () => {
   it('NotebookEdit with cell_id', () => {
     const r = dispatchToolCase('NotebookEdit', makeCtx({ input: { cell_id: 'abc123' } }))
