@@ -167,7 +167,7 @@ export interface DialogPage {
 export interface DialogLayout {
   title: string
   description?: string
-  timeout?: number // seconds, default 300, min 10, max 3600
+  timeout?: number // seconds, default 900, min 10, max 3600
   submitLabel?: string // default 'Submit'
   cancelLabel?: string // default 'Cancel'
   /** Optional one-click secondary submit. Unlike the footer cancel button
@@ -396,7 +396,7 @@ export function dialogToolInputSchema(): Record<string, unknown> {
       description: { type: 'string', description: 'Optional subtitle/context (markdown)' },
       timeout: {
         type: 'number',
-        description: 'Timeout in seconds (default 300, min 10, max 3600)',
+        description: 'Timeout in seconds (default 900, min 10, max 3600)',
       },
       submitLabel: { type: 'string', description: 'Submit button label (default "Submit")' },
       cancelLabel: { type: 'string', description: 'Cancel button label (default "Cancel")' },

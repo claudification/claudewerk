@@ -64,6 +64,7 @@ export type RenderItem =
       isDialog?: boolean
       dialogStatus?: string
       dialogAction?: string
+      dialogId?: string
       isSystem?: boolean
       systemKind?: string
       recapId?: string

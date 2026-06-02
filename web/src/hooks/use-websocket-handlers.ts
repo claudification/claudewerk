@@ -965,8 +965,9 @@ function handleDialogDismiss(msg: DashboardMessage) {
   const exId = msg.dialogId as string | undefined
   useConversationsStore.setState(state => {
     const existing = state.pendingDialogs[exSid]
-    // Timeout: keep the dialog re-displayable (expired pill) instead of removing.
-    if (reason === 'timeout' && existing && (!exId || existing.dialogId === exId)) {
+    // Timeout/cancel: keep the dialog re-displayable (expired pill) instead of
+    // removing, so the user can re-trigger it and answer late.
+    if ((reason === 'timeout' || reason === 'cancelled') && existing && (!exId || existing.dialogId === exId)) {
       if (existing.expired) return state
       return { pendingDialogs: { ...state.pendingDialogs, [exSid]: { ...existing, expired: true } } }
     }

@@ -148,9 +148,10 @@ export interface McpChannelCallbacks {
     keyterms?: string[]
   }) => Promise<{ ok: boolean; error?: string }>
   onDialogShow?: (dialogId: string, layout: DialogLayout) => void
-  // reason 'timeout' keeps the dialog re-displayable (expired) on the dashboard;
-  // omitted = hard dismiss (answered/cancelled/conversation ended).
-  onDialogDismiss?: (dialogId: string, reason?: 'timeout') => void
+  // reason 'timeout'/'cancelled' keeps the dialog re-displayable (expired) on the
+  // dashboard so the user can answer it late; omitted = hard dismiss (answered or
+  // conversation ended).
+  onDialogDismiss?: (dialogId: string, reason?: 'timeout' | 'cancelled') => void
   onDeliverMessage?: (content: string, meta: Record<string, string>) => void
   onRenameConversation?: (
     name: string,

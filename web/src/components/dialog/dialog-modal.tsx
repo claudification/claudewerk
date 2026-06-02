@@ -104,7 +104,7 @@ export const DialogModal = memo(function DialogModal({
   const [activePage, setActivePage] = useState(0)
   const [lastAction, setLastAction] = useState<string | null>(null)
   const [minimized, setMinimized] = useState(false)
-  const timeoutSec = layout.timeout ?? 300
+  const timeoutSec = layout.timeout ?? 900
   const [remaining, setRemaining] = useState(timeoutSec)
   const lastInteractionRef = useRef(Date.now())
 

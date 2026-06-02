@@ -264,6 +264,17 @@ export function DialogOverlay({ conversationId }: { conversationId: string }) {
     setReopened(false)
   }, [pending?.dialogId])
 
+  // A "Re-trigger" button on the cancelled/timed-out transcript entry dispatches
+  // this event. Re-open the modal here if it targets our live pending dialog.
+  useEffect(() => {
+    function onReopen(e: Event) {
+      const id = (e as CustomEvent<{ dialogId?: string }>).detail?.dialogId
+      if (id && pending?.dialogId === id) setReopened(true)
+    }
+    window.addEventListener('rclaude-dialog-reopen', onReopen)
+    return () => window.removeEventListener('rclaude-dialog-reopen', onReopen)
+  }, [pending?.dialogId])
+
   if (!pending) return null
 
   // Expired dialog, not re-opened: show the passive pill instead of the modal.

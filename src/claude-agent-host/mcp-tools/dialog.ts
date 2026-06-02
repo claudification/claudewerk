@@ -95,7 +95,7 @@ export function registerDialogTool(ctx: McpToolContext): Record<string, ToolDef>
   return {
     dialog: {
       description:
-        'PREFERRED way to interact with users. Use this PROACTIVELY whenever you need user input, decisions, confirmations, or want to present structured information. Do NOT ask questions in plain text -- use dialog instead for a rich UI experience. Shows an interactive dialog modal in the dashboard and waits for the user to respond. Supports: choices (single/multi select), text inputs, toggles, sliders, image display and selection, markdown content, code blocks, mermaid diagrams, alerts, collapsible groups, grids, and multi-page wizards. The user interacts on their device (phone/desktop) and the result comes back as structured JSON. BLOCKING call -- waits for submit/cancel/timeout (default 5 min, auto-extends on user interaction). Use "body" for single-page or "pages" for multi-step flows.',
+        'PREFERRED way to interact with users. Use this PROACTIVELY whenever you need user input, decisions, confirmations, or want to present structured information. Do NOT ask questions in plain text -- use dialog instead for a rich UI experience. Shows an interactive dialog modal in the dashboard and waits for the user to respond. Supports: choices (single/multi select), text inputs, toggles, sliders, image display and selection, markdown content, code blocks, mermaid diagrams, alerts, collapsible groups, grids, and multi-page wizards. The user interacts on their device (phone/desktop) and the result comes back as structured JSON. BLOCKING call -- waits for submit/cancel/timeout (default 15 min, auto-extends on user interaction). Use "body" for single-page or "pages" for multi-step flows.',
       inputSchema: dialogToolInputSchema(),
       async handle(_params, toolCtx) {
         try {
@@ -136,7 +136,7 @@ export function registerDialogTool(ctx: McpToolContext): Record<string, ToolDef>
             ctx.elog(' file upload complete')
           }
 
-          const timeout = (layout.timeout ?? 300) * 1000
+          const timeout = (layout.timeout ?? 900) * 1000
           const dialogId = randomUUID()
 
           ctx.elog(` "${layout.title}" (${dialogId.slice(0, 8)}, timeout=${timeout / 1000}s)`)

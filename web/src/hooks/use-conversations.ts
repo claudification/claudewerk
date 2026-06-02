@@ -878,6 +878,13 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
       }
     }
     set(state => {
+      const pending = state.pendingDialogs[conversationId]
+      // First cancel of a live MCP dialog: keep it re-displayable (expired pill)
+      // so the user can re-trigger + answer late, mirroring the timeout path.
+      // Plan-approval dialogs and discards of an already-expired dialog clear.
+      if (pending && !pending.expired && pending.source !== 'plan_approval') {
+        return { pendingDialogs: { ...state.pendingDialogs, [conversationId]: { ...pending, expired: true } } }
+      }
       const updated = { ...state.pendingDialogs }
       delete updated[conversationId]
       return { pendingDialogs: updated }

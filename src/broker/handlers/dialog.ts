@@ -79,6 +79,38 @@ const dialogShow: MessageHandler = (ctx, data) => {
   )
 }
 
+// Resolve a dialog result's effect on broker state. A user CANCEL of a still-
+// live dialog keeps it re-displayable (mark expired, like a timeout) so the user
+// can re-trigger it from the transcript / pill and answer late; everything else
+// (a real submit, or a cancel of an ALREADY-expired dialog = the pill's discard)
+// clears it. Returns whether this was that first re-displayable cancel.
+function applyDialogResolution(
+  ctx: DialogHandlerContext,
+  conversationId: string,
+  dialogId: string,
+  result: Record<string, unknown>,
+): boolean {
+  const conversation = ctx.conversations.getConversation(conversationId)
+  const firstCancel =
+    result._cancelled === true &&
+    conversation?.pendingDialog?.dialogId === dialogId &&
+    conversation.pendingDialog.expired !== true
+  if (firstCancel && conversation?.pendingDialog) {
+    conversation.pendingDialog.expired = true
+    if (conversation.pendingAttention?.type === 'dialog') {
+      delete conversation.pendingAttention
+    }
+    ctx.conversations.persistConversationById(conversationId)
+    ctx.conversations.broadcastConversationUpdate(conversationId)
+    ctx.log.info(
+      `[dialog] Cancelled (re-displayable): ${dialogId.slice(0, 8)} conversation=${conversationId.slice(0, 8)}`,
+    )
+  } else {
+    clearDialogState(ctx, conversationId)
+  }
+  return firstCancel
+}
+
 // Dialog result: dashboard -> broker -> agent host (forward)
 const dialogResult: MessageHandler = (ctx, data) => {
   const conversationId = (data.conversationId || data.conversationId) as string
@@ -101,8 +133,7 @@ const dialogResult: MessageHandler = (ctx, data) => {
     result._dialogTitle = (conversation.pendingDialog.layout as { title?: string })?.title || 'Dialog'
   }
 
-  // Clear pending dialog + attention from conversation
-  clearDialogState(ctx, conversationId)
+  const firstCancel = applyDialogResolution(ctx, conversationId, dialogId, result)
 
   cancelDialogNotify(conversationId)
 
@@ -124,9 +155,16 @@ const dialogResult: MessageHandler = (ctx, data) => {
     ctx.log.error(`[dialog] No socket for conversation ${conversationId.slice(0, 8)}`)
   }
 
-  // Broadcast dismiss to other dashboard subscribers (clean up UI)
+  // Broadcast dismiss to other dashboard subscribers (clean up UI). On a first
+  // cancel, carry reason 'cancelled' so their modal collapses to the re-
+  // displayable pill instead of vanishing (mirrors the timeout path).
   if (conversation?.project) {
-    const dismissMsg = { type: 'dialog_dismiss', conversationId: conversationId, dialogId }
+    const dismissMsg = {
+      type: 'dialog_dismiss',
+      conversationId: conversationId,
+      dialogId,
+      ...(firstCancel ? { reason: 'cancelled' as const } : {}),
+    }
     ctx.broadcastScoped(dismissMsg, conversation.project)
   }
 }
@@ -141,11 +179,17 @@ const dialogDismiss: MessageHandler = (ctx, data) => {
   const reason = data.reason as string | undefined
   const conversation = ctx.conversations.getConversation(conversationId)
 
-  // Timeout dismiss: don't destroy the dialog -- mark it expired and keep the
-  // layout so the user can re-display + answer it late. Clear the attention nag
-  // (the agent already received the timeout message). The dashboard renders an
-  // "expired" pill instead of the blocking modal.
-  if (reason === 'timeout' && conversation?.pendingDialog?.dialogId === dialogId) {
+  // Timeout/cancel dismiss: don't destroy the dialog -- mark it expired and keep
+  // the layout so the user can re-display + answer it late. Clear the attention
+  // nag (the agent already received the timeout/cancel message). The dashboard
+  // renders an "expired" pill instead of the blocking modal. (The cancel path
+  // also arrives here as the agent host's follow-up dismiss after it resolves
+  // the cancelled MCP call -- without this it would hard-clear the state that
+  // the dialog_result handler just preserved.)
+  if (
+    (reason === 'timeout' || reason === 'cancelled') &&
+    conversation?.pendingDialog?.dialogId === dialogId
+  ) {
     conversation.pendingDialog.expired = true
     if (conversation.pendingAttention?.type === 'dialog') {
       delete conversation.pendingAttention
@@ -154,10 +198,10 @@ const dialogDismiss: MessageHandler = (ctx, data) => {
     ctx.conversations.broadcastConversationUpdate(conversationId)
     cancelDialogNotify(conversationId)
     if (conversation.project) {
-      ctx.broadcastScoped({ type: 'dialog_dismiss', conversationId, dialogId, reason: 'timeout' }, conversation.project)
+      ctx.broadcastScoped({ type: 'dialog_dismiss', conversationId, dialogId, reason }, conversation.project)
     }
     ctx.log.info(
-      `[dialog] Expired (re-displayable): ${dialogId.slice(0, 8)} conversation=${conversationId.slice(0, 8)}`,
+      `[dialog] Expired (re-displayable, ${reason}): ${dialogId.slice(0, 8)} conversation=${conversationId.slice(0, 8)}`,
     )
     return
   }

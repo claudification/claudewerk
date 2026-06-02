@@ -120,7 +120,11 @@ export function resolveDialog(dialogId: string, result: DialogResult): boolean {
     if (result._action && result._action !== 'submit') meta.action = result._action as string
     callbacks.onDeliverMessage?.(JSON.stringify(dialogUserValues(result), null, 2), meta)
   }
-  callbacks.onDialogDismiss?.(dialogId)
+  // Carry the reason so the broker keeps a cancelled/timed-out dialog re-
+  // displayable (expired) rather than hard-clearing it. A real submit (no
+  // reason) clears it for good.
+  const dismissReason = result._timeout ? 'timeout' : result._cancelled ? 'cancelled' : undefined
+  callbacks.onDialogDismiss?.(dialogId, dismissReason)
   return true
 }
 

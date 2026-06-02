@@ -1,4 +1,6 @@
-import { cn } from '@/lib/utils'
+import { RotateCcw } from 'lucide-react'
+import { useConversationsStore } from '@/hooks/use-conversations'
+import { cn, haptic } from '@/lib/utils'
 import { Markdown } from '../markdown'
 import { ConversationTag } from './conversation-tag'
 import type { RenderItem } from './group-view-types'
@@ -58,6 +60,18 @@ function DialogChannel({ item }: { item: ChannelRenderItem }) {
   }
   const sStyle = statusStyles[item.dialogStatus || 'submitted'] || statusStyles.submitted
 
+  // A cancelled/timed-out dialog whose layout is still held live (the broker
+  // keeps it re-displayable) can be re-triggered: re-open the same modal and
+  // answer it late. Only show the button when this exact dialog is still the
+  // active pending one for the selected conversation -- otherwise it's a dead end.
+  const dialogId = item.dialogId
+  const canReopen = useConversationsStore(s => {
+    if (!dialogId) return false
+    const cid = s.selectedConversationId
+    return !!(cid && s.pendingDialogs[cid]?.dialogId === dialogId)
+  })
+  const reopenable = canReopen && (item.dialogStatus === 'cancelled' || item.dialogStatus === 'timeout')
+
   let userValues: Array<[string, unknown]> = []
   try {
     const parsed = JSON.parse(item.text)
@@ -79,6 +93,20 @@ function DialogChannel({ item }: { item: ChannelRenderItem }) {
           <span className="px-1.5 py-0.5 bg-violet-500/20 text-violet-400 border border-violet-500/30 rounded text-[9px] font-bold">
             {item.dialogAction}
           </span>
+        )}
+        {reopenable && (
+          <button
+            type="button"
+            onClick={() => {
+              haptic('tap')
+              window.dispatchEvent(new CustomEvent('rclaude-dialog-reopen', { detail: { dialogId } }))
+            }}
+            title="Re-display this dialog and answer it (delivered to the agent as a late answer)"
+            className="ml-auto flex items-center gap-1 rounded border border-violet-500/40 bg-violet-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-violet-300 hover:bg-violet-500/25 transition-colors"
+          >
+            <RotateCcw className="size-3" />
+            Re-trigger
+          </button>
         )}
       </div>
       {userValues.length > 0 ? (

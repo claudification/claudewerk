@@ -70,6 +70,7 @@ function parseChannelContent(channelMatch: RegExpMatchArray, items: RenderItem[]
   } else if (sender === 'dialog') {
     const status = getAttr('status') || 'submitted'
     const action = getAttr('action')
+    const dialogId = getAttr('dialog_id')
     items.push({
       kind: 'channel',
       text: msg,
@@ -77,6 +78,7 @@ function parseChannelContent(channelMatch: RegExpMatchArray, items: RenderItem[]
       isDialog: true,
       dialogStatus: status,
       dialogAction: action || undefined,
+      dialogId: dialogId || undefined,
     })
   } else if (source === 'rclaude' && sender === 'system') {
     pushSystemChannelItem(getAttr, msg, items)
