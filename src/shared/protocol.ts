@@ -678,6 +678,8 @@ export type AgentHostMessage =
   | DaemonStatePatch
   | DaemonBlockObserved
   | EffortChanged
+  | DebugTraceEvent
+  | DebugControlResult
 
 export interface ConversationNameUpdate {
   type: 'conversation_name'
@@ -1324,6 +1326,9 @@ export type BrokerMessage =
   | DaemonControlResult
   | DaemonRosterForward
   | DaemonRespawnStaleRequest
+  | DebugControlSend
+  | DebugTraceEvent
+  | DebugControlResult
 
 export interface NotifyConfigUpdated {
   type: 'notify_config_updated'
@@ -2828,6 +2833,77 @@ export interface DaemonControlResult {
   code?: string
   detail?: string
   /** Epoch ms the op settled. */
+  t: number
+}
+
+/**
+ * Universal control-debug envelope (plan-cc-control-debug.md). One generic
+ * message family instead of a wire type per control subtype. The `traceId`
+ * correlates the whole WEB -> BROKER -> AGENT HOST -> CC/daemon round-trip.
+ * Command + payload are validated against the shared registry in
+ * `cc-control-commands.ts`. The broker permission-gates + audits every send;
+ * the agent host dispatches to the stream-json control channel (cc_control) or
+ * the daemon socket (daemon_op) per the target conversation's transport.
+ *
+ * WEB -> BROKER -> AGENT HOST.
+ */
+export interface DebugControlSend {
+  type: 'debug_control_send'
+  traceId: string
+  targetConversation: string
+  channel: 'cc_control' | 'daemon_op'
+  command: string
+  payload: Record<string, unknown>
+}
+
+/**
+ * One breadcrumb per seam of a debug-control round-trip. Emitted by the agent
+ * host (agenthost_* seams) and the broker (broker_* seams), broadcast to the
+ * control panel which renders the waterfall. Persisted to the conversation's
+ * debug ring for post-hoc inspection (LOG-EVERYTHING covenant).
+ *
+ * AGENT HOST -> BROKER (host seams) and BROKER -> control panel (relay).
+ */
+export interface DebugTraceEvent {
+  type: 'debug_trace_event'
+  traceId: string
+  conversationId: string
+  seam:
+    | 'web_send'
+    | 'broker_recv'
+    | 'broker_forward'
+    | 'agenthost_recv'
+    | 'agenthost_to_cc'
+    | 'cc_to_agenthost'
+    | 'agenthost_to_broker'
+    | 'broker_to_web'
+    | 'error'
+  ok?: boolean
+  detail?: string
+  /** Full payload for the (i) JsonInspector expansion. */
+  raw?: Record<string, unknown>
+  /** Epoch ms. */
+  t: number
+}
+
+/**
+ * The terminal response of a debug-control round-trip: CC's control_response
+ * payload, or the daemon op response, or an error. AGENT HOST -> BROKER ->
+ * control panel.
+ */
+export interface DebugControlResult {
+  type: 'debug_control_result'
+  traceId: string
+  conversationId: string
+  channel: 'cc_control' | 'daemon_op'
+  command: string
+  ok: boolean
+  /** CC control_response payload / daemon op response (shape varies by command). */
+  response?: unknown
+  error?: string
+  /** Daemon error code, or 'unsupported_transport' / 'unknown_command' / 'no_agent_host'. */
+  code?: string
+  elapsedMs: number
   t: number
 }
 
