@@ -25,14 +25,7 @@ const fileEditorRequest: MessageHandler = (ctx, data) => {
   if (!ctx.ws.data.isControlPanel || !targetId) return
   // Permission: write ops need 'files', read ops need 'files:read'
   const msgType = data.type as string
-  const isWrite =
-    msgType === 'file_save' ||
-    msgType === 'file_restore' ||
-    msgType === 'project_quick_add' ||
-    msgType === 'project_create' ||
-    msgType === 'project_move' ||
-    msgType === 'project_delete' ||
-    msgType === 'project_update'
+  const isWrite = msgType === 'file_save' || msgType === 'file_restore'
   const conversation = ctx.conversations.getConversation(targetId)
   if (conversation) ctx.requirePermission(isWrite ? 'files' : 'files:read', conversation.project)
   const targetSocket = ctx.conversations.getConversationSocket(targetId)
@@ -80,15 +73,6 @@ export function registerFileHandlers(): void {
       file_unwatch: fileEditorRequest,
       file_history_request: fileEditorRequest,
       file_restore: fileEditorRequest,
-      project_quick_add: fileEditorRequest,
-      project_list: fileEditorRequest,
-      project_manifest: fileEditorRequest,
-      project_get: fileEditorRequest,
-      project_create: fileEditorRequest,
-      project_move: fileEditorRequest,
-      project_delete: fileEditorRequest,
-      project_read: fileEditorRequest,
-      project_update: fileEditorRequest,
       file_request: fileRequest,
     },
     DASHBOARD_ROLES,
@@ -102,17 +86,7 @@ export function registerFileHandlers(): void {
       file_save_response: fileEditorResponse,
       file_history_response: fileEditorResponse,
       file_restore_response: fileEditorResponse,
-      project_quick_add_response: fileEditorResponse,
       file_changed: fileEditorResponse,
-      project_list_response: fileEditorResponse,
-      project_manifest_response: fileEditorResponse,
-      project_get_response: fileEditorResponse,
-      project_create_response: fileEditorResponse,
-      project_move_response: fileEditorResponse,
-      project_delete_response: fileEditorResponse,
-      project_read_response: fileEditorResponse,
-      project_update_response: fileEditorResponse,
-      project_changed: fileEditorResponse,
     },
     AGENT_HOST_ONLY,
   )

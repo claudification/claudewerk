@@ -1314,6 +1314,8 @@ export type BrokerMessage =
   | TranscriptRequest
   | SubagentTranscriptRequest
   | FileRequest
+  | ProjectBoardRequest
+  | ProjectFileRequest
   | TranscriptKick
   | InterConversationDelivery
   | SystemChannelDelivery
@@ -2697,7 +2699,11 @@ export interface ProjectDiff {
  *  views the project; the lease is the failsafe if the broker dies. */
 export interface ProjectWatch {
   type: 'project_watch'
+  /** Absolute project root on the sentinel's filesystem (for the chokidar watch). */
   projectRoot: string
+  /** Canonical project URI -- echoed back in `project_changed` so the broker can
+   *  broadcast-scope by project without re-deriving it from the host path. */
+  project: string
   /** Lease duration in ms; sentinel self-stops if not renewed before expiry. */
   leaseMs: number
 }
@@ -2708,14 +2714,46 @@ export interface ProjectUnwatch {
   projectRoot: string
 }
 
-/** Sentinel -> Broker: project board changed. Tagged with projectRoot (NO
- *  conversationId) -- the broker broadcasts permission-gated by the project URI. */
+/** Sentinel -> Broker: project board changed. Tagged with the project URI (NO
+ *  conversationId) -- the broker broadcasts permission-gated by `project`. */
 export interface ProjectChanged {
   type: 'project_changed'
-  projectRoot: string
+  project: string
   diff: ProjectDiff
   /** Full snapshot (transitional -- diff is the canonical signal). */
   notes: ProjectTaskMeta[]
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard -> Broker project requests. The dashboard never sends a host path;
+// it sends the project URI and the broker resolves it to `projectRoot` + the
+// owning sentinel before forwarding the sentinel-side RPC above.
+// ---------------------------------------------------------------------------
+
+/** Dashboard -> Broker: a project-board op (broker forwards as project_board_op). */
+export interface ProjectBoardRequest {
+  type: 'project_board_request'
+  requestId: string
+  /** Canonical project URI. */
+  project: string
+  op: ProjectBoardOp['op']
+  status?: ProjectTaskStatus
+  slug?: string
+  filterStatus?: ProjectTaskStatus
+  refs?: ProjectTaskRef[]
+  input?: ProjectTaskInputWire
+  patch?: Partial<ProjectTaskInputWire>
+  fromStatus?: ProjectTaskStatus
+  toStatus?: ProjectTaskStatus
+}
+
+/** Dashboard -> Broker: read a project-relative file (markdown viewer). */
+export interface ProjectFileRequest {
+  type: 'project_file_request'
+  requestId: string
+  project: string
+  relPath: string
+  maxBytes?: number
 }
 
 /** Agent or agent host reports a spawn failure (headless child exit, PTY crash, or early exit) */

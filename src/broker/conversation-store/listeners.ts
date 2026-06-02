@@ -8,6 +8,13 @@ export interface ListenerRegistry {
   addFileListener: (requestId: string, cb: (result: unknown) => void) => void
   removeFileListener: (requestId: string) => void
   resolveFile: (requestId: string, result: unknown) => boolean
+  /** Pending project-store RPCs (board ops + file read/write/move) keyed by
+   *  requestId. The dashboard handler registers a listener that replies to the
+   *  requesting socket; the sentinel result handler resolves it. Returns `true`
+   *  when a listener was waiting (a late / unmatched result is a no-op). */
+  addProjectListener: (requestId: string, cb: (result: unknown) => void) => void
+  removeProjectListener: (requestId: string) => void
+  resolveProject: (requestId: string, result: unknown) => boolean
   addCcSessionsListener: (requestId: string, cb: (result: unknown) => void) => void
   removeCcSessionsListener: (requestId: string) => void
   resolveCcSessions: (requestId: string, result: unknown) => void
@@ -28,6 +35,7 @@ export function createListenerRegistry(): ListenerRegistry {
   const spawnListeners = new Map<string, (result: unknown) => void>()
   const dirListeners = new Map<string, (result: unknown) => void>()
   const fileListeners = new Map<string, (result: unknown) => void>()
+  const projectListeners = new Map<string, (result: unknown) => void>()
   const ccSessionsListeners = new Map<string, (result: unknown) => void>()
   const gitLogListeners = new Map<string, (result: unknown) => void>()
   const patchListeners = new Map<string, (result: unknown) => void>()
@@ -69,6 +77,21 @@ export function createListenerRegistry(): ListenerRegistry {
       const cb = fileListeners.get(requestId)
       if (cb) {
         fileListeners.delete(requestId)
+        cb(result)
+        return true
+      }
+      return false
+    },
+    addProjectListener(requestId, cb) {
+      projectListeners.set(requestId, cb)
+    },
+    removeProjectListener(requestId) {
+      projectListeners.delete(requestId)
+    },
+    resolveProject(requestId, result) {
+      const cb = projectListeners.get(requestId)
+      if (cb) {
+        projectListeners.delete(requestId)
         cb(result)
         return true
       }

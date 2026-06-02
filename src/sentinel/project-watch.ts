@@ -47,6 +47,8 @@ function diffManifest(prev: Map<ManifestKey, ProjectTaskManifestEntry>, next: Pr
 const PROJECT_TASK_PATTERN = new RegExp(`\\.rclaude/project/(${TASK_STATUS_PATTERN})/.+\\.md$`)
 
 interface WatchEntry {
+  /** Canonical project URI -- echoed in project_changed for broker broadcast scoping. */
+  project: string
   watcher: FSWatcher
   lastManifest: Map<ManifestKey, ProjectTaskManifestEntry>
   expiryTimer: ReturnType<typeof setTimeout>
@@ -70,7 +72,7 @@ function emitIfChanged(projectRoot: string, entry: WatchEntry, send: SendFn) {
   const diff = diffManifest(entry.lastManifest, next)
   if (diff.added.length === 0 && diff.removed.length === 0 && diff.modified.length === 0) return
   const notes = listProjectTasks(projectRoot)
-  send({ type: 'project_changed', projectRoot, diff, notes })
+  send({ type: 'project_changed', project: entry.project, diff, notes })
   const map = new Map<ManifestKey, ProjectTaskManifestEntry>()
   for (const e of next) map.set(mkey(e), e)
   entry.lastManifest = map
@@ -80,7 +82,7 @@ function emitIfChanged(projectRoot: string, entry: WatchEntry, send: SendFn) {
  * Start a new watch or renew an existing one. Idempotent: a second call for the
  * same projectRoot just re-stamps the lease (and resets the failsafe timer).
  */
-export function watchProject(projectRoot: string, leaseMs: number, send: SendFn, log: LogFn): void {
+export function watchProject(projectRoot: string, project: string, leaseMs: number, send: SendFn, log: LogFn): void {
   const existing = watches.get(projectRoot)
   if (existing) {
     clearTimeout(existing.expiryTimer)
@@ -99,6 +101,7 @@ export function watchProject(projectRoot: string, leaseMs: number, send: SendFn,
   })
 
   const entry: WatchEntry = {
+    project,
     watcher,
     lastManifest: manifestMap(projectRoot),
     expiryTimer: setTimeout(() => {

@@ -295,6 +295,9 @@ export interface ConversationStore {
   addFileListener: (requestId: string, cb: (result: unknown) => void) => void
   removeFileListener: (requestId: string) => void
   resolveFile: (requestId: string, result: unknown) => boolean
+  addProjectListener: (requestId: string, cb: (result: unknown) => void) => void
+  removeProjectListener: (requestId: string) => void
+  resolveProject: (requestId: string, result: unknown) => boolean
   // Launch jobs (request-scoped event channels for spawn/revive progress)
   createJob: (jobId: string, conversationId: string) => void
   recordJobConfig: (jobId: string, config: Record<string, unknown>) => void
@@ -2742,8 +2745,15 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     return name
   }
 
-  // File listeners: from extracted listeners module
-  const { addFileListener, removeFileListener, resolveFile } = listeners
+  // File + project listeners: from extracted listeners module
+  const {
+    addFileListener,
+    removeFileListener,
+    resolveFile,
+    addProjectListener,
+    removeProjectListener,
+    resolveProject,
+  } = listeners
 
   function broadcastConversationUpdate(conversationId: string): void {
     scheduleConversationUpdate(conversationId)
@@ -2892,6 +2902,9 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     addFileListener,
     removeFileListener,
     resolveFile,
+    addProjectListener,
+    removeProjectListener,
+    resolveProject,
     checkProjectLink,
     getLinkedProjects,
     linkProjects,

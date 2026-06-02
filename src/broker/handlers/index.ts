@@ -17,6 +17,7 @@ import { registerInterConversationHandlers } from './inter-conversation'
 import { registerJsonStreamHandlers } from './json-stream'
 import { registerPermissionHandlers } from './permissions'
 import { registerPlanApprovalHandlers } from './plan-approval'
+import { registerProjectHandlers } from './project'
 import { registerRclaudeConfigHandlers } from './rclaude-config'
 import { registerRecapHandlers } from './recap'
 import { registerSentinelHandlers } from './sentinel'
@@ -40,6 +41,7 @@ export function registerAllHandlers(): void {
   registerJsonStreamHandlers()
   registerPermissionHandlers()
   registerPlanApprovalHandlers()
+  registerProjectHandlers()
   registerRclaudeConfigHandlers()
   registerRecapHandlers()
   registerConversationLifecycleHandlers()

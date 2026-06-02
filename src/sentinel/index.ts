@@ -3545,6 +3545,7 @@ function connect(
           const root = expandPath(m.projectRoot, spawnRoot)
           watchProject(
             root,
+            m.project,
             m.leaseMs,
             changed => ws.send(JSON.stringify(changed)),
             l => log(l),
