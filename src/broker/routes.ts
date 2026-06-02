@@ -144,7 +144,25 @@ export function createRouter(options: RouteOptions): Hono {
   })
 
   // ─── Health check ──────────────────────────────────────────────────
-  app.get('/health', c => c.text('ok'))
+  // When a webDir is configured we ALSO verify its index.html is readable.
+  // A bind-mounted web-dir can silently detach (e.g. `vite build` churning
+  // ./web/dist out from under a running container), leaving the broker alive
+  // but serving 404 for the whole UI. Liveness alone would report "healthy"
+  // through that outage -- so we gate health on the assets actually being
+  // servable. `curl -sf .../health` then fails (503) and the container flips
+  // unhealthy instead of lying. No webDir (built-in UI / dev) = liveness only.
+  app.get('/health', async c => {
+    if (webDir) {
+      try {
+        if (!(await Bun.file(`${webDir}/index.html`).exists())) {
+          return c.json({ status: 'degraded', reason: 'web-dir missing index.html', webDir }, 503)
+        }
+      } catch {
+        return c.json({ status: 'degraded', reason: 'web-dir unreadable', webDir }, 503)
+      }
+    }
+    return c.text('ok')
+  })
 
   // ─── File serving by hash ──────────────────────────────────────────
   app.get('/file/:hash', async c => {
