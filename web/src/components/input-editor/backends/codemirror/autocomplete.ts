@@ -305,7 +305,9 @@ function conversationArgCompletion(text: string, pos: number): CompletionResult 
       ...rest,
       // Insert the XML reference token (stable id + human slug) so the receiving
       // agent has an unambiguous target and the pill renderer has both halves.
-      apply: buildConversationRef(convId, rest.label),
+      // Trailing space so the caret lands clear of the atomic pill — keeps typing
+      // flowing instead of stranding the cursor against the widget edge.
+      apply: `${buildConversationRef(convId, rest.label)} `,
     })),
     filter: false,
   }
