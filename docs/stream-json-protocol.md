@@ -2,7 +2,13 @@
 
 > Reverse-engineered from CC v2.1.96 source code (`cli.js`, function `qK7`, class `ffA`, function `EK7`).\
 > Confirmed with live tests. Not an official Anthropic document.\
-> Last updated: 2026-04-08
+> Last updated: 2026-04-08\
+> **Control-subtype catalog re-audited against the 2.1.160 binary (2026-06-02)** -- the
+> control_request union grew substantially since 2.1.96/2.1.114. The catalog tables below
+> ("Other Control Request Subtypes", "Other System Subtypes", "Host-Callback Control Requests")
+> now list the full 2.1.160 surface recovered from the embedded zod `literal(...)` schemas.
+> No new control subtype appeared between 2.1.154 and 2.1.160; the gap was purely doc drift.
+> Method: `docs/headless-mode.md` § "Re-auditing the control surface on a CC bump".
 
 ## Overview
 
@@ -372,7 +378,34 @@ These are sent as `control_request` messages with `request_id`:
 | `mcp_status` | Query MCP server connection status | List of servers with status |
 | `mcp_message` | Forward raw MCP protocol message to a named server | MCP response |
 | `mcp_set_servers` | Hot-reload MCP server configuration (add/remove/update) | Added/removed/errors |
+| `mcp_call` | Call an MCP tool by fully-qualified name (`mcp__server__tool`) | Tool result |
+| `mcp_reconnect` | Reconnect a disconnected/failed MCP server | Success or error |
+| `mcp_toggle` | Enable or disable an MCP server | Success ack |
 | `rewind_files` | Revert file changes to a specific user message checkpoint | Success or error |
+| `reload_plugins` | Reload plugins from disk, return refreshed session components | Refreshed components |
+
+**Added to the catalog in the 2.1.160 re-audit** (present in the binary's control-request
+zod union; not all are wired into rclaude yet -- see
+`.claude/docs/plan-cc-2.1.160-protocol-audit.md` for the adopt/skip shortlist):
+
+| Subtype | Purpose | rclaude status |
+|---------|---------|----------------|
+| `rename_session` | Set CC's user-facing session title | **not used** (could sync `rename_conversation`) |
+| `set_color` | Set the session's UI color | not used |
+| `get_context_usage` | Breakdown of context-window usage by category | **not used** (mission-control / token-flow candidate) |
+| `get_session_cost` | Formatted, ANSI-stripped session cost text | **not used** (exact cost without LiteLLM estimate) |
+| `get_binary_version` | Query the responder's CLI binary version over the wire | **not used** (version tracking candidate) |
+| `get_settings` | Effective merged settings + raw per-source settings | not used |
+| `apply_flag_settings` | Merge settings into the flag-settings layer | not used |
+| `file_suggestions` | At-mention file autocomplete for a partial path prefix | not used |
+| `read_file` | Read a file (`utf-8` or `base64` for images) | not used |
+| `seed_read_state` | Seed the session's read-state | not used |
+| `rewind_files` (see above) | (duplicate of checkpoint rewind) | not used |
+| `cancel_async_message` | Drop a queued async user message by uuid | not used |
+| `stop_task` | Stop a running (sub)task | not used |
+| `background_tasks` | Background one or all foreground tasks (Ctrl+B semantics) | not used |
+| `submit_feedback` | Submit feedback for the session | not used |
+| `message_rated` | Record a thumbs rating on an assistant message | not used |
 
 **Example - interrupt:**
 ```json
@@ -531,12 +564,35 @@ For full hook data, you still need a separate hook HTTP receiver.
 
 #### Other System Subtypes
 
-| Subtype | Description |
-|---------|-------------|
-| `api_retry` | API call being retried (rate limit, transient error) |
-| `status` | Status update (e.g., "Thinking...") |
-| `compact_boundary` | Context compaction occurred |
-| `informational` | Informational message (warnings, notices) |
+| Subtype | Description | rclaude parses? |
+|---------|-------------|-----------------|
+| `api_retry` | API call being retried (rate limit, transient error) | yes |
+| `status` | Status update (e.g., "Thinking...") | yes |
+| `compact_boundary` | Context compaction occurred | yes |
+| `informational` | Informational message (warnings, notices) | yes |
+| `post_turn_summary` | Background per-turn summary (`summarizes_uuid` points at the assistant msg) | yes |
+| `session_state_changed` | Authoritative turn-over signal; `idle` fires after the bg-agent loop exits | yes |
+| `thinking_tokens` | Thinking-token usage for the turn | yes |
+| `task_started` / `task_progress` / `task_notification` | Subagent (Task tool) lifecycle | yes |
+| `local_command_output` | Output from a local slash command (`/usage`, `/voice`, ...) | yes |
+| `hook_started` / `hook_response` | Hook lifecycle (with `--include-hook-events`) | yes |
+
+**Added to the catalog in the 2.1.160 re-audit** (emitted by the binary, NOT yet parsed by
+rclaude's `stream-handlers.ts` -- candidates for new structured wire messages):
+
+| Subtype | Description | rclaude parses? |
+|---------|-------------|-----------------|
+| `task_summary` | Final summary for a completed subagent task | **no** |
+| `task_updated` | Wire-safe subset of changed `TaskState` fields (clients merge) | **no** |
+| `hook_progress` | Mid-execution hook progress (between started/response) | **no** |
+| `model_fallback` | The active model fell back to another (capacity/availability) | **no** |
+| `memory_recall` | How memories were surfaced (`select` full bodies vs `synthesize`) | **no** |
+| `files_persisted` | Files were persisted to durable storage | **no** |
+| `plugin_install` | Headless plugin-install progress (`CLAUDE_CODE_SYNC_PLUGIN_INSTALL`) | **no** |
+| `mirror_error` | Error mirrored from a background channel | **no** |
+| `elicitation_complete` | An MCP URL-mode elicitation finished | **no** |
+| `permission_denied` | A tool call was denied (mirrors `can_use_tool` routing, carries subagent id) | **no** |
+| `notification` | Loop-side text notification (mirrors the REPL notification queue) | **no** |
 
 ---
 
@@ -725,6 +781,23 @@ the turn was interrupted).
 
 When the agent's `abortController` fires (e.g., an `interrupt` control_request was received),
 any pending permission requests are automatically cancelled via `control_cancel_request` on stdout.
+
+#### Host-callback control requests (2.1.160 re-audit)
+
+Beyond `can_use_tool` / `hook_callback` / `mcp_message`, the 2.1.160 binary can send these
+`control_request` subtypes *to the host* (the SDK/controlling process is expected to answer
+with a `control_response`). rclaude does not handle any of these today; they fall through the
+default branch. Listed for completeness so a future handler knows the shape exists:
+
+| Subtype | Direction & purpose | rclaude handles? |
+|---------|--------------------|------------------|
+| `request_user_dialog` | CC asks the host to render a dialog; `dialog_kind` + opaque per-kind data | **no** |
+| `elicitation` | CC requests structured elicitation input from the host | **no** |
+| `oauth_token_refresh` | CLI subprocess asks the SDK host for a fresh OAuth token after a 401 | **no** |
+| `host_auth_token_refresh` | CLI asks the host for a fresh provider token when the host owns the credential (Cowork 3P) | **no** |
+
+> The full per-subtype field shapes were not transcribed here -- recover them with the zod-dump
+> method in `docs/headless-mode.md` when you actually wire one up.
 
 ---
 

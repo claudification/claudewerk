@@ -73,10 +73,21 @@ agent host intercepts -> `ask_question` WS -> dashboard shows banners -> user an
 
 ## Runtime Effort Switching (`set_effort`)
 
-Claude Code's CLI does NOT expose a `set_effort` control request subtype (the
-only setters in the 2.1.114 binary are `set_model`, `set_permission_mode`,
-`set_max_thinking_tokens`). The `/effort` slash command works interactively
-but is NOT reachable through `control_request` in stream-json mode.
+Claude Code's CLI does NOT expose a `set_effort` control request subtype.
+The runtime *setters* remain `set_model`, `set_permission_mode`,
+`set_max_thinking_tokens` (confirmed in the 2.1.160 binary). The `/effort`
+slash command works interactively but is NOT reachable through
+`control_request` in stream-json mode.
+
+> The broader control_request union is much larger than these three setters --
+> 2.1.160 also ships getters (`get_context_usage`, `get_session_cost`,
+> `get_binary_version`, `get_settings`), session controls (`rename_session`,
+> `set_color`), MCP controls (`mcp_call`, `mcp_reconnect`, `mcp_toggle`,
+> `reload_plugins`), file/task controls (`read_file`, `rewind_files`,
+> `stop_task`, `background_tasks`), and host-callbacks (`request_user_dialog`,
+> `elicitation`, `oauth_token_refresh`). None are wired into rclaude yet. The
+> full catalog + which to adopt: `docs/stream-json-protocol.md` and
+> `.claude/docs/plan-cc-2.1.160-protocol-audit.md`.
 
 **But** CC does expose `update_environment_variables` as a top-level message
 type. The handler mutates `process.env[K] = V` on the CC process itself (not
@@ -135,6 +146,38 @@ On Opus 4.7+, `thinking: {type: "enabled", budget_tokens: N}` is a 400 error.
 Use `thinking: {type: "adaptive"}` + `output_config.effort` instead.
 
 **Files:** `src/claude-agent-host/stream-backend.ts`, `docs/stream-json-protocol.md`
+
+## Re-auditing the control surface on a CC bump
+
+The CC binary embeds its control-protocol zod schemas verbatim -- minification
+renames variables but leaves `literal("...")` string literals intact. So a free,
+no-side-effects audit of every control_request subtype is one `strings` pass.
+This is the sibling of the daemon-op method in
+`.claude/docs/cc-daemon-control-protocol.md` § 2.5.
+
+```bash
+BIN=$(readlink -f "$(which claude)")          # ~/.local/share/claude/versions/X.Y.Z (Mach-O)
+
+# Every control / system subtype the binary defines (snake_case zod literals):
+strings -n 5 "$BIN" | grep -aoE 'literal\("[a-z_]+"\)' \
+  | sed -E 's/literal\("(.*)"\)/\1/' | sort -u
+
+# Diff two versions to see exactly what changed:
+strings -n5 OLD | grep -aoE 'literal\("[a-z_]+"\)' | sort -u > /tmp/a
+strings -n5 NEW | grep -aoE 'literal\("[a-z_]+"\)' | sort -u > /tmp/b
+diff /tmp/a /tmp/b
+```
+
+For richer context (the `.describe(...)` text and field shapes), grab a window
+around `subtype:<var>.literal("name")` in the binary with a small Python slice --
+the zod object that follows lists the fields verbatim.
+
+**Last full audit: 2.1.160 (2026-06-02).** Result: no control-subtype changes
+2.1.154 -> 2.1.160; the only new `literal(...)` were a separate remote-projects
+RPC (`create_project`, `list_files`, `finalize_plan`, `register_assets`, ...),
+which is neither the stream-json control protocol nor the daemon socket -- it is
+the `claude --remote` sandbox file/project bridge. The stream-json doc's catalog
+had simply drifted since 2.1.96; it is now current.
 
 ## MCP Channel
 
