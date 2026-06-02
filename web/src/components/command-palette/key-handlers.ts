@@ -1,6 +1,5 @@
 import type React from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
-import type { FileInfo } from '@/hooks/use-file-editor'
 import { recordSwitch } from '@/lib/conversation-frequency'
 import type { Conversation } from '@/lib/types'
 import type { CommandModeState, RegistryCommand } from './use-command-mode'
@@ -11,7 +10,6 @@ import type { ThemeModeState } from './use-theme-mode'
 
 export interface KeyHandlerCallbacks {
   onSelectConversation: (id: string) => void
-  onFileSelect: (conversationId: string, path: string) => void
 }
 
 export interface KeyHandlerContext {
@@ -22,13 +20,11 @@ export interface KeyHandlerContext {
 
   isCommandMode: boolean
   isSpawnMode: boolean
-  isFileMode: boolean
   isTaskMode: boolean
   isThemeMode: boolean
 
   command: CommandModeState
   conversation: ConversationModeState
-  file: { filteredFiles: FileInfo[] }
   spawn: SpawnModeState
   task: TaskModeState
   theme: ThemeModeState
@@ -105,7 +101,6 @@ function handleEnter(e: React.KeyboardEvent, ctx: KeyHandlerContext, callbacks: 
   if (ctx.isThemeMode) submitTheme(ctx)
   else if (ctx.isCommandMode) submitCommand(ctx)
   else if (ctx.isSpawnMode) submitSpawn(ctx)
-  else if (ctx.isFileMode) submitFile(ctx, callbacks)
   else if (ctx.isTaskMode) submitTask(ctx)
   else submitConversation(ctx, callbacks)
 }
@@ -152,13 +147,6 @@ function submitSpawnPath(ctx: KeyHandlerContext): void {
   if (spawn.spawnPath) {
     const cleanPath = spawn.spawnPath.endsWith('/') ? spawn.spawnPath.slice(0, -1) : spawn.spawnPath
     spawn.handleSpawn(cleanPath, spawn.canCreateDir)
-  }
-}
-
-function submitFile(ctx: KeyHandlerContext, callbacks: KeyHandlerCallbacks): void {
-  const file = ctx.file.filteredFiles[ctx.activeIndex]
-  if (file && ctx.selectedConversationId) {
-    callbacks.onFileSelect(ctx.selectedConversationId, file.path)
   }
 }
 

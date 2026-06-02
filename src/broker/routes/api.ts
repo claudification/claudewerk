@@ -374,46 +374,39 @@ export function createApiRouter(
     const projectPath = body.project || body.cwd
     if (!projectPath) return c.json({ error: 'Missing project' }, 400)
 
+    // Read project files THROUGH THE SENTINEL (project-scoped, jailed under the
+    // project root) -- no live conversation required. Resolve the owning sentinel
+    // from any conversation's project URI authority, else the default sentinel.
     const allConversations = conversationStore.getAllConversations()
-    const conversationForCwd = allConversations.find(s => {
-      const parsed = tryParseProjectUri(s.project)
-      return parsed?.path === projectPath && s.status === 'active'
-    })
-    const wrapperSocket = conversationForCwd ? conversationStore.getConversationSocket(conversationForCwd.id) : null
-    if (!wrapperSocket) {
-      return c.json({ error: 'No active conversation connected for this project' }, 503)
+    const convForProject = allConversations.find(s => tryParseProjectUri(s.project)?.path === projectPath)
+    const authority = convForProject ? tryParseProjectUri(convForProject.project)?.authority : undefined
+    const sentinel =
+      (authority ? conversationStore.getSentinelByAlias(authority) : undefined) ?? conversationStore.getSentinel()
+    if (!sentinel) {
+      return c.json({ error: 'No sentinel connected for this project' }, 503)
     }
 
-    const filesToRead = [
-      `${projectPath}/CLAUDE.md`,
-      `${projectPath}/.claude/CLAUDE.md`,
-      `${projectPath}/package.json`,
-      `${projectPath}/README.md`,
-    ]
+    // Project-RELATIVE paths (jailed under projectPath by the sentinel).
+    const filesToRead = ['CLAUDE.md', '.claude/CLAUDE.md', 'package.json', 'README.md']
 
     const fileContents: string[] = []
-    for (const filePath of filesToRead) {
-      try {
-        const content = await new Promise<string | null>((resolve, reject) => {
-          const requestId = randomUUID()
-          const timeout = setTimeout(() => {
-            conversationStore.removeFileListener(requestId)
-            reject(new Error(`File read timed out (5s): ${filePath}`))
-          }, 5000)
-
-          conversationStore.addFileListener(requestId, raw => {
-            clearTimeout(timeout)
-            const msg = raw as { data?: string; error?: string }
-            if (msg.error || !msg.data) resolve(null)
-            else resolve(Buffer.from(msg.data, 'base64').toString('utf-8'))
-          })
-
-          wrapperSocket.send(JSON.stringify({ type: 'file_request', requestId, path: filePath }))
+    for (const relPath of filesToRead) {
+      const content = await new Promise<string | null>(resolve => {
+        const requestId = randomUUID()
+        const timeout = setTimeout(() => {
+          conversationStore.removeProjectListener(requestId)
+          resolve(null)
+        }, 5000)
+        conversationStore.addProjectListener(requestId, raw => {
+          clearTimeout(timeout)
+          const msg = raw as { ok?: boolean; content?: string }
+          resolve(msg.ok && msg.content ? msg.content : null)
         })
-        if (content) fileContents.push(`--- ${filePath} ---\n${content.slice(0, 10000)}`)
-      } catch {
-        // File not found or timeout
-      }
+        sentinel.send(
+          JSON.stringify({ type: 'project_read_file', requestId, projectRoot: projectPath, relPath, maxBytes: 10000 }),
+        )
+      })
+      if (content) fileContents.push(`--- ${relPath} ---\n${content}`)
     }
 
     if (fileContents.length === 0) {

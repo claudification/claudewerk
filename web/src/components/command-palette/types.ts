@@ -1,4 +1,3 @@
-import type { FileInfo } from '@/hooks/use-file-editor'
 import type { Conversation } from '@/lib/types'
 import type { PoolSuggestion, ProfileSuggestion, SentinelSuggestion } from './use-spawn-mode'
 
@@ -10,7 +9,7 @@ export interface PaletteCommand {
   action: () => void
 }
 
-export type PaletteMode = 'conversation' | 'command' | 'file' | 'spawn' | 'task' | 'theme' | 'batch'
+export type PaletteMode = 'conversation' | 'command' | 'spawn' | 'task' | 'theme' | 'batch'
 
 /** Merged result item for the no-prefix palette: conversations + pinned projects + commands fuzzy-matched together. */
 export type MergedItem =
@@ -20,7 +19,6 @@ export type MergedItem =
 
 export interface CommandPaletteProps {
   onSelect: (conversationId: string) => void
-  onFileSelect: (conversationId: string, path: string) => void
   onClose: () => void
 }
 
@@ -38,13 +36,6 @@ export interface ConversationResultsProps extends ResultListProps {
 
 export interface CommandResultsProps extends ResultListProps {
   commands: PaletteCommand[]
-}
-
-export interface FileResultsProps extends ResultListProps {
-  files: FileInfo[]
-  loading: boolean
-  selectedConversationId: string | null
-  onFileSelect: (conversationId: string, path: string) => void
 }
 
 export interface SpawnResultsProps extends ResultListProps {
@@ -69,10 +60,4 @@ export interface SpawnResultsProps extends ResultListProps {
   onProfileSelect: (name: string) => void
   onPoolSelect: (name: string) => void
   onSpawn: (path: string, mkdir?: boolean) => void
-}
-
-export function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes}B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
 }

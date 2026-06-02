@@ -53,7 +53,7 @@ import { buildSystemPrompt } from './prompt-builder'
 import { type PtyProcess, setupTerminalPassthrough, spawnClaude } from './pty-spawn'
 import { writeMergedSettings } from './settings-merge'
 import { spawnStreamClaude } from './stream-backend'
-import { readAndSendTasks, sendProjectChanged, startProjectWatching, startTaskWatching } from './task-watcher'
+import { readAndSendTasks, startTaskWatching } from './task-watcher'
 import {
   sendTranscriptEntriesChunked,
   startSubagentWatcher,
@@ -110,18 +110,15 @@ async function main() {
     syntheticUserUuids: new Map(),
     parentTranscriptPath: null,
     lastTasksJson: '',
-    lastProjectManifest: new Map(),
     planExitApprovedAt: 0,
 
     wsClient: null,
     ptyProcess: null,
     streamProc: null,
-    fileEditor: null,
 
     taskWatcher: null,
     taskCandidateDirs: [],
     transcriptWatcher: null,
-    projectWatcher: null,
     subagentWatchers: new Map(),
     bgTaskOutputWatchers: new Map(),
 
@@ -147,10 +144,6 @@ async function main() {
     startTaskWatching: null!,
     // biome-ignore lint/style/noNonNullAssertion: deferred init
     readTasks: null!,
-    // biome-ignore lint/style/noNonNullAssertion: deferred init
-    startProjectWatching: null!,
-    // biome-ignore lint/style/noNonNullAssertion: deferred init
-    sendProjectChanged: null!,
     startTranscriptWatcher: (path: string) => startTranscriptWatcher(ctx, path),
     startSubagentWatcher: (agentId: string, path: string, live: boolean) =>
       startSubagentWatcher(ctx, agentId, path, live),
@@ -182,11 +175,9 @@ async function main() {
 
   wireDiag(ctx)
 
-  // Wire task/project watching onto context
+  // Wire task watching onto context
   ctx.startTaskWatching = () => startTaskWatching(ctx)
   ctx.readTasks = () => readAndSendTasks(ctx)
-  ctx.startProjectWatching = () => startProjectWatching(ctx)
-  ctx.sendProjectChanged = () => sendProjectChanged(ctx)
 
   // Wire connectToBroker onto context
   const brokerDeps: BrokerConnectionDeps = {

@@ -50,14 +50,13 @@ export const ConversationDetail = memo(function ConversationDetail() {
     setConversationTarget,
   } = useConversationTab(selectedConversationId, conversation?.status)
 
-  const { canAdmin, canChat, canReadTerminal, canReadFiles, canFiles, canSpawn } = useConversationsStore(
+  const { canAdmin, canChat, canReadTerminal, canFiles, canSpawn } = useConversationsStore(
     useShallow(s => {
       const p = (s.selectedConversationId && s.conversationPermissions[s.selectedConversationId]) || s.permissions
       return {
         canAdmin: p.canAdmin,
         canChat: p.canChat,
         canReadTerminal: p.canReadTerminal,
-        canReadFiles: p.canReadFiles,
         canFiles: p.canFiles,
         canSpawn: p.canSpawn,
       }
@@ -166,7 +165,6 @@ export const ConversationDetail = memo(function ConversationDetail() {
             hasJsonStream={hasJsonStream}
             canAdmin={canAdmin}
             canReadTerminal={canReadTerminal}
-            canReadFiles={canReadFiles}
             showDiag={showDiag}
             expandAll={expandAll}
           />

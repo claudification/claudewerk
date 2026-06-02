@@ -299,7 +299,6 @@ interface ConversationsState {
   clearConversationNotifications: (conversationId: string) => void
   requestedTab: string | null
   requestedTabSeq: number
-  pendingFilePath: string | null
   newDataSeq: number
   /** Bumped to force every mounted TranscriptView to re-read its live scroll
    *  rect into the virtualizer. Manual escape hatch for a stuck/collapsed
@@ -357,8 +356,6 @@ interface ConversationsState {
   setWs: (ws: WebSocket | null) => void
   setTerminalHandler: (handler: ((msg: TerminalMessage) => void) | null) => void
   setJsonStreamHandler: (handler: ((msg: JsonStreamMessage) => void) | null) => void
-  fileHandler: ((msg: Record<string, unknown>) => void) | null
-  setFileHandler: (handler: ((msg: Record<string, unknown>) => void) | null) => void
   projectHandler: ((msg: Record<string, unknown>) => void) | null
   sendWsMessage: (msg: Record<string, unknown>) => void
   dismissConversation: (conversationId: string) => void
@@ -370,7 +367,6 @@ interface ConversationsState {
   editingDescriptionConversationId: string | null
   setEditingDescriptionConversationId: (conversationId: string | null) => void
   updateDescription: (conversationId: string, description: string) => void
-  setPendingFilePath: (path: string | null) => void
   pendingTaskEdit: { slug: string; status: string } | null
   setPendingTaskEdit: (task: { slug: string; status: string } | null) => void
   inputDrafts: Record<string, string>
@@ -766,7 +762,6 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   ws: null,
   terminalHandler: null,
   jsonStreamHandler: null,
-  fileHandler: null,
   projectHandler: null,
   showTerminal: false,
   terminalWrapperId: null,
@@ -914,7 +909,6 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
     })),
   requestedTab: null,
   requestedTabSeq: 0,
-  pendingFilePath: null,
   pendingTaskEdit: null,
   setPendingTaskEdit: task => set({ pendingTaskEdit: task }),
   renamingConversationId: null,
@@ -1285,8 +1279,6 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   setWs: ws => set({ ws }),
   setTerminalHandler: handler => set({ terminalHandler: handler }),
   setJsonStreamHandler: handler => set({ jsonStreamHandler: handler }),
-  setFileHandler: handler => set({ fileHandler: handler }),
-  setPendingFilePath: path => set({ pendingFilePath: path }),
   sendWsMessage: msg => {
     const { ws } = get()
     if (ws?.readyState === WebSocket.OPEN) {

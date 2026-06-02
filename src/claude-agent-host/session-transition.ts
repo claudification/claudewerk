@@ -163,7 +163,6 @@ function handleRekey(
     ctx.taskWatcher = null
   }
   ctx.startTaskWatching()
-  ctx.startProjectWatching()
 
   void fromId
 }

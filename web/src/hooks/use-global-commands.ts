@@ -227,18 +227,6 @@ export function useGlobalCommands(toggleSidebar: () => void) {
   )
 
   useChordCommand(
-    'open-notes',
-    () => {
-      const store = useConversationsStore.getState()
-      if (store.selectedConversationId) {
-        store.openTab(store.selectedConversationId, 'files')
-        store.setPendingFilePath('NOTES.md')
-      }
-    },
-    { label: 'Open NOTES.md', key: 'o', group: 'Navigation' },
-  )
-
-  useChordCommand(
     'open-project',
     () => {
       const store = useConversationsStore.getState()

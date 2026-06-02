@@ -58,15 +58,6 @@ export function FooterHints({ mode, sentinelConnected, onPrefixTap }: FooterHint
             <Kbd>esc</Kbd> back
           </span>
         </>
-      ) : mode === 'file' ? (
-        <>
-          <span>
-            <Kbd>⏎</Kbd> open file
-          </span>
-          <span>
-            <Kbd>esc</Kbd> back
-          </span>
-        </>
       ) : mode === 'command' ? (
         <>
           <span>

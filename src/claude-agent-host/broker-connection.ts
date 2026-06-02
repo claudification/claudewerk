@@ -5,7 +5,6 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { DialogResult } from '../shared/dialog-schema'
 import type {
@@ -15,10 +14,9 @@ import type {
   SystemChannelDelivery,
 } from '../shared/protocol'
 import type { AgentHostContext } from './agent-host-context'
-import { extToMediaType } from './cli-args'
 import { debug } from './debug'
+import { dispatchDebugControl } from './debug-dispatch'
 import { executeControl } from './execute-control'
-import { handleFileEditorMessage } from './file-editor-handler'
 import { replayLaunchEvents } from './launch-events'
 import { resolveAskRequest } from './local-server'
 import type { ConversationInfo } from './mcp-channel'
@@ -33,9 +31,8 @@ import { clearBrokerRpcPending, dispatchBrokerRpcResponse, setBrokerRpcSender } 
 import { clearInteraction, replayInteractions } from './pending-interactions'
 import type { RulesEngine } from './permission-rules'
 import { getTerminalSize } from './pty-spawn'
-import { readAndSendTasks, startProjectWatching, startTaskWatching } from './task-watcher'
+import { readAndSendTasks, startTaskWatching } from './task-watcher'
 import { resendTranscriptFromFile, startTranscriptWatcher } from './transcript-manager'
-import { dispatchDebugControl } from './debug-dispatch'
 import { createWsClient } from './ws-client'
 
 export interface BrokerConnectionDeps {
@@ -299,12 +296,6 @@ export function connectToBroker(ctx: AgentHostContext, deps: BrokerConnectionDep
       }
       debug(`Terminal resized to ${cols}x${rows}`)
     },
-    onFileRequest(requestId, path) {
-      handleFileRequest(ctx, deps, requestId, path)
-    },
-    onFileEditorMessage(msg) {
-      handleFileEditorMessage(ctx, msg)
-    },
     onAck() {
       if (ctx.transcriptWatcher) {
         debug('Ack received, re-sending transcript')
@@ -462,7 +453,6 @@ function handleConnected(ctx: AgentHostContext, deps: BrokerConnectionDeps, ccSe
   replayLaunchEvents(ctx)
   replayInteractions(ctx)
   startTaskWatching(ctx)
-  startProjectWatching(ctx)
 }
 
 function handleInput(ctx: AgentHostContext, deps: BrokerConnectionDeps, input: string, crDelay?: number) {
@@ -555,20 +545,6 @@ function writeToPty(ctx: AgentHostContext, input: string, crDelay?: number) {
   debug(
     `Sent to PTY: ${lines.length} lines, ${trimmed.length} chars${crDelay != null ? ` (crDelay=${crDelay}ms)` : ''}`,
   )
-}
-
-function handleFileRequest(ctx: AgentHostContext, _deps: BrokerConnectionDeps, requestId: string, path: string) {
-  readFile(path)
-    .then(buf => {
-      const ext = path.split('.').pop()?.toLowerCase() || ''
-      const mediaType = extToMediaType(ext)
-      ctx.wsClient?.sendFileResponse(requestId, buf.toString('base64'), mediaType)
-      debug(`File response: ${path} (${buf.length} bytes)`)
-    })
-    .catch(err => {
-      ctx.wsClient?.sendFileResponse(requestId, undefined, undefined, String(err))
-      debug(`File request failed: ${path} - ${err}`)
-    })
 }
 
 function handleConfigGet(ctx: AgentHostContext, requestId: string, cwd: string) {

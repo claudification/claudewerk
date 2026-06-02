@@ -1,8 +1,8 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { moveProjectTask } from '../../shared/project-store'
 import { DEFAULT_VISIBLE_STATUSES, TASK_STATUSES, type TaskStatus } from '../../shared/task-statuses'
 import { debug } from '../debug'
-import { moveProjectTask } from '../project-tasks'
 import type { McpToolContext, ToolDef } from './types'
 
 function formatStatus(s: string): string {
@@ -170,7 +170,7 @@ function handleProjectSetStatus(ctx: McpToolContext, params: Record<string, stri
     if (titleMatch?.[1]) taskTitle = titleMatch[1].trim()
   } catch {}
 
-  const newSlug = moveProjectTask(dialogCwd, taskId, fromStatus, targetStatus)
+  const newSlug = moveProjectTask(dialogCwd, taskId, fromStatus, targetStatus, Date.now())
   if (!newSlug) return { content: [{ type: 'text', text: 'Failed to move task' }], isError: true }
   ctx.callbacks.onProjectChanged?.()
   debug(`[channel] set_task_status: ${taskId} ${fromStatus} -> ${targetStatus} (slug: ${newSlug})`)

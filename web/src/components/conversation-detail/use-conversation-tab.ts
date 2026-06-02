@@ -31,7 +31,7 @@ export function useConversationTab(selectedConversationId: string | null, conver
   }, [requestedTab, requestedTabSeq])
 
   useEffect(() => {
-    if (conversationStatus === 'ended' && (activeTab === 'files' || activeTab === 'project')) {
+    if (conversationStatus === 'ended' && activeTab === 'project') {
       setActiveTab('transcript')
     }
   }, [conversationStatus, activeTab])

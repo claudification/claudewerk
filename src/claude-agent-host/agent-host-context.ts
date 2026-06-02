@@ -12,8 +12,6 @@ import type {
   HookEvent,
   TranscriptEntry,
 } from '../shared/protocol'
-import type { FileEditor } from './file-editor'
-import type { ProjectTaskManifestEntry } from './project-tasks'
 import type { PtyProcess } from './pty-spawn'
 import type { StreamProcess } from './stream-backend'
 import type { TranscriptWatcher } from './transcript-watcher'
@@ -72,13 +70,6 @@ export interface AgentHostContext {
    *  emitCwdChanged in worktree-detect.ts. */
   lastEmittedCwd?: string
 
-  /** Last project-task manifest broadcast to the broker, keyed by `${status}/${slug}`.
-   *  Used to compute incremental diffs (added/removed/modified) on every change
-   *  so the wire carries only the delta, not the full task set. Persists across
-   *  reconnects and session transitions -- clients refetch the manifest on
-   *  reconnect to resync. */
-  lastProjectManifest: Map<string, ProjectTaskManifestEntry>
-
   /** Timestamp (ms) of the most recent dashboard-approved ExitPlanMode. Used
    *  to suppress stale `system/status` messages that still carry
    *  `permissionMode: 'plan'` after the user has approved the exit but before
@@ -90,13 +81,11 @@ export interface AgentHostContext {
   wsClient: WsClient | null
   ptyProcess: PtyProcess | null
   streamProc: StreamProcess | null
-  fileEditor: FileEditor | null
 
   // Watchers
   taskWatcher: ChokidarWatcher | null
   taskCandidateDirs: string[]
   transcriptWatcher: TranscriptWatcher | null
-  projectWatcher: ChokidarWatcher | null
   readonly subagentWatchers: Map<string, TranscriptWatcher>
   readonly bgTaskOutputWatchers: Map<string, { stop: () => void }>
 
@@ -139,8 +128,6 @@ export interface AgentHostContext {
   connectToBroker: (ccSessionId: string | null) => void
   startTaskWatching: () => void
   readTasks: () => void
-  startProjectWatching: () => void
-  sendProjectChanged: () => void
   startTranscriptWatcher: (transcriptPath: string) => void
   startSubagentWatcher: (agentId: string, transcriptPath: string, live: boolean) => void
   stopSubagentWatcher: (agentId: string) => void

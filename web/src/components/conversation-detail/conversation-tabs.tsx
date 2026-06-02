@@ -5,17 +5,7 @@ import { useConversationsStore } from '@/hooks/use-conversations'
 import type { Conversation } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
 
-export type Tab =
-  | 'transcript'
-  | 'tty'
-  | 'json_stream'
-  | 'events'
-  | 'agents'
-  | 'tasks'
-  | 'files'
-  | 'shared'
-  | 'project'
-  | 'diag'
+export type Tab = 'transcript' | 'tty' | 'json_stream' | 'events' | 'agents' | 'tasks' | 'shared' | 'project' | 'diag'
 
 interface ConversationTabsProps {
   conversation: Conversation
@@ -25,7 +15,6 @@ interface ConversationTabsProps {
   hasJsonStream: boolean
   canAdmin: boolean
   canReadTerminal: boolean
-  canReadFiles: boolean
   showDiag: boolean
   expandAll: boolean
 }
@@ -72,7 +61,6 @@ export function ConversationTabs({
   hasJsonStream,
   canAdmin,
   canReadTerminal,
-  canReadFiles,
   showDiag,
   expandAll,
 }: ConversationTabsProps) {
@@ -144,12 +132,6 @@ export function ConversationTabs({
               {conversation.pendingTaskCount}
             </span>
           )}
-        </TabButton>
-      )}
-
-      {canReadFiles && conversation.status !== 'ended' && (
-        <TabButton active={activeTab === 'files'} onClick={tabClickHandler('files', onSetActiveTab)}>
-          Files
         </TabButton>
       )}
 

@@ -6,7 +6,6 @@ import { createKeyHandler, type KeyHandlerCallbacks } from './key-handlers'
 import { derivePaletteMode } from './mode-detect'
 import { useCommandMode } from './use-command-mode'
 import { useConversationMode } from './use-conversation-mode'
-import { useFileMode } from './use-file-mode'
 import { useSpawnMode } from './use-spawn-mode'
 import { useTaskMode } from './use-task-mode'
 import { useThemeMode } from './use-theme-mode'
@@ -37,12 +36,10 @@ export function useCommandPalette(onClose: () => void) {
     }
   }, [switcherInitialFilter])
 
-  const { mode, isCommandMode, isFileMode, isSpawnMode, isTaskMode, isThemeMode, isConversationMode } =
-    derivePaletteMode(filter)
+  const { mode, isCommandMode, isSpawnMode, isTaskMode, isThemeMode, isConversationMode } = derivePaletteMode(filter)
 
   const command = useCommandMode(filter, isCommandMode, onClose)
   const conversation = useConversationMode(filter, isConversationMode, command.registryCommands)
-  const file = useFileMode(filter, isFileMode)
   const spawn = useSpawnMode({
     filter,
     isSpawnMode,
@@ -67,11 +64,9 @@ export function useCommandPalette(onClose: () => void) {
             : spawn.isPoolEntry
               ? spawn.filteredPools.length
               : spawn.filteredSpawnDirs.length
-        : isFileMode
-          ? file.filteredFiles.length
-          : isTaskMode
-            ? task.filteredTasks.length
-            : conversation.mergedItems.length
+        : isTaskMode
+          ? task.filteredTasks.length
+          : conversation.mergedItems.length
 
   // Clamp activeIndex when the result count shrinks below it
   useEffect(() => {
@@ -94,12 +89,10 @@ export function useCommandPalette(onClose: () => void) {
         setFilter,
         isCommandMode,
         isSpawnMode,
-        isFileMode,
         isTaskMode,
         isThemeMode,
         command,
         conversation,
-        file: { filteredFiles: file.filteredFiles },
         spawn,
         task,
         theme,
@@ -135,10 +128,6 @@ export function useCommandPalette(onClose: () => void) {
 
     // Command mode
     filteredCommands: command.filteredCommands,
-
-    // File mode
-    filteredFiles: file.filteredFiles,
-    filesLoading: file.filesLoading,
 
     // Spawn mode
     filteredSpawnDirs: spawn.filteredSpawnDirs,

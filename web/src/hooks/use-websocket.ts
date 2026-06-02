@@ -370,20 +370,6 @@ export function useWebSocket() {
             return
           }
 
-          // File editor messages -> direct handler callback
-          if (
-            msg.type === 'file_list_response' ||
-            msg.type === 'file_content_response' ||
-            msg.type === 'file_save_response' ||
-            msg.type === 'file_history_response' ||
-            msg.type === 'file_restore_response' ||
-            msg.type === 'file_changed'
-          ) {
-            const handler = useConversationsStore.getState().fileHandler
-            handler?.(msg as unknown as Record<string, unknown>)
-            return
-          }
-
           // Project board messages -> direct handler callback. The sentinel-backed
           // path replies with `project_*_result` (board ops + file reads); the
           // legacy agent-host path used `project_*_response`. `project_changed` is

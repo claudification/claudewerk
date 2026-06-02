@@ -203,12 +203,8 @@ describe('observeClaudeSessionId', () => {
     let taskWatcherClosed = false
     ctx.taskWatcher = { close: () => (taskWatcherClosed = true) } as never
     let taskRestart = 0
-    let projectRestart = 0
     ctx.startTaskWatching = () => {
       taskRestart++
-    }
-    ctx.startProjectWatching = () => {
-      projectRestart++
     }
 
     observeClaudeSessionId(ctx, 'sess-new', 'hook')
@@ -219,7 +215,6 @@ describe('observeClaudeSessionId', () => {
     expect(taskWatcherClosed).toBe(true)
     expect(ctx.taskWatcher).toBeNull()
     expect(taskRestart).toBe(1)
-    expect(projectRestart).toBe(1)
     expect(wsCalls).toHaveLength(3) // sendConversationReset + sendMetadataUpdate + setSessionId
   })
 

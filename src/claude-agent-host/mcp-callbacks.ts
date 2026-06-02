@@ -15,7 +15,6 @@ import { beginLaunch, emitLaunchEvent } from './launch-events'
 import type { McpChannelCallbacks } from './mcp-channel'
 import { pushChannelMessage, sendPermissionResponse } from './mcp-channel'
 import { clearInteraction, sendInteraction } from './pending-interactions'
-import { sendProjectChanged } from './task-watcher'
 
 export interface McpCallbackDeps {
   brokerUrl: string
@@ -359,10 +358,6 @@ export function buildMcpCallbacksWithRules(
           description,
         } as unknown as AgentHostMessage)
       })
-    },
-
-    onProjectChanged() {
-      sendProjectChanged(ctx)
     },
 
     onExitConversation(status, message) {

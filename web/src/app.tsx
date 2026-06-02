@@ -6,6 +6,7 @@ import { AuthGate } from '@/components/auth-gate'
 import { ChordOverlay } from '@/components/chord-overlay'
 import { CommandPalette } from '@/components/command-palette'
 import { ConversationDetail } from '@/components/conversation-detail'
+import { DebugControlModal } from '@/components/debug/debug-control-modal'
 import { DebugConsole } from '@/components/debug-console'
 import { Header } from '@/components/header'
 import { JsonInspectorDialog } from '@/components/json-inspector'
@@ -21,7 +22,6 @@ import { recapOpenBus } from '@/components/recap/recap-open-trigger'
 import { recapConfigBus } from '@/components/recap-jobs/recap-config-trigger'
 import { recapHistoryBus } from '@/components/recap-jobs/recap-history-trigger'
 import { RecapJobsWidget } from '@/components/recap-jobs/recap-jobs-widget'
-import { DebugControlModal } from '@/components/debug/debug-control-modal'
 import { renameModalBus } from '@/components/rename-modal-trigger'
 import { reviveDialogBus } from '@/components/revive-dialog-trigger'
 import { manageChatConnectionsBus } from '@/components/settings/manage-chat-connections-trigger'
@@ -335,13 +335,6 @@ function Dashboard() {
       {canAdmin && showSwitcher && (
         <CommandPalette
           onSelect={handleSwitcherSelect}
-          onFileSelect={(convId, path) => {
-            const store = useConversationsStore.getState()
-            store.selectConversation(convId)
-            store.setShowSwitcher(false)
-            store.openTab(convId, 'files')
-            store.setPendingFilePath(path)
-          }}
           onClose={() => useConversationsStore.getState().setShowSwitcher(false)}
         />
       )}

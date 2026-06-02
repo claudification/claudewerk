@@ -27,7 +27,6 @@ export function createCleanup(ctx: AgentHostContext, deps: CleanupDeps): () => v
     ctx.subagentWatchers.clear()
     for (const watcher of ctx.bgTaskOutputWatchers.values()) watcher.stop()
     ctx.bgTaskOutputWatchers.clear()
-    ctx.fileEditor?.destroy()
     deps.cleanupTerminal()
     stopLocalServer(deps.localServer)
     ctx.wsClient?.close()

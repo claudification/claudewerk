@@ -1,9 +1,8 @@
-import { FileText, FolderPlus } from 'lucide-react'
+import { FolderPlus } from 'lucide-react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { useKeyLayer } from '@/lib/key-layers'
 import { CommandResults, CommandRow } from './command-results'
 import { ConversationRow, ProjectRow } from './conversation-results'
-import { FileResults } from './file-results'
 import { FooterHints } from './footer-hints'
 import { SpawnResults } from './spawn-results'
 import { ThemeResults } from './theme-results'
@@ -11,7 +10,7 @@ import type { CommandPaletteProps } from './types'
 import { useCommandPalette } from './use-command-palette'
 import { useScrollActiveIntoView } from './use-scroll-active-into-view'
 
-export function CommandPalette({ onSelect, onFileSelect, onClose }: CommandPaletteProps) {
+export function CommandPalette({ onSelect, onClose }: CommandPaletteProps) {
   const palette = useCommandPalette(onClose)
   const resultsRef = useScrollActiveIntoView(palette.activeIndex, palette.mode)
 
@@ -50,7 +49,6 @@ export function CommandPalette({ onSelect, onFileSelect, onClose }: CommandPalet
         {/* Search input */}
         <div className="px-3 py-2 border-b border-primary/20 flex items-center gap-2">
           {palette.mode === 'spawn' && <FolderPlus className="size-4 text-active shrink-0" />}
-          {palette.mode === 'file' && <FileText className="size-4 text-primary shrink-0" />}
           <input
             ref={palette.inputRef}
             aria-label="Command palette filter"
@@ -60,7 +58,7 @@ export function CommandPalette({ onSelect, onFileSelect, onClose }: CommandPalet
               palette.setFilter(e.target.value)
               palette.setActiveIndex(0)
             }}
-            onKeyDown={e => palette.handleKeyDown(e, { onSelectConversation: onSelect, onFileSelect })}
+            onKeyDown={e => palette.handleKeyDown(e, { onSelectConversation: onSelect })}
             placeholder={
               palette.mode === 'theme'
                 ? 'Select theme (arrows to preview, enter to apply, esc to revert)...'
@@ -68,11 +66,9 @@ export function CommandPalette({ onSelect, onFileSelect, onClose }: CommandPalet
                   ? 'Type a command...'
                   : palette.mode === 'spawn'
                     ? 'Path to spawn (e.g. projects/my-app or /absolute/path)...'
-                    : palette.mode === 'file'
-                      ? 'Search files...'
-                      : palette.mode === 'task'
-                        ? 'Search project tasks...'
-                        : 'Search conversations + commands... (>cmd  @tasks  F:files  S:spawn)'
+                    : palette.mode === 'task'
+                      ? 'Search project tasks...'
+                      : 'Search conversations + commands... (>cmd  @tasks  S:spawn)'
             }
             className="w-full bg-transparent text-[19px] sm:text-sm text-foreground placeholder:text-comment outline-none"
             autoComplete="off"
@@ -165,15 +161,6 @@ export function CommandPalette({ onSelect, onFileSelect, onClose }: CommandPalet
                 ))
               )}
             </div>
-          ) : palette.mode === 'file' ? (
-            <FileResults
-              files={palette.filteredFiles}
-              loading={palette.filesLoading}
-              selectedConversationId={palette.selectedConversationId}
-              activeIndex={palette.activeIndex}
-              setActiveIndex={palette.setActiveIndex}
-              onFileSelect={onFileSelect}
-            />
           ) : palette.mergedItems.length === 0 ? (
             <div className="px-3 py-4 text-center text-[10px] text-comment">No matches</div>
           ) : (
