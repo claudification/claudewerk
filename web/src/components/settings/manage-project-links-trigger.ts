@@ -1,10 +1,10 @@
-/** Module-level bus for the ManageProjectLinksDialog. The component registers
- *  its handler on mount; openers route through this bus so the dialog file
- *  stays Fast-Refresh clean. */
-export const _manageProjectLinksBus: {
-  open: ((projectUri?: string) => void) | null
-} = { open: null }
+import { createLazyBus } from '@/lib/lazy-bus'
+
+/** Buffering open bus for the lazy-mounted ManageProjectLinksDialog. The
+ *  component registers via setHandler on mount; a pre-mount open is buffered +
+ *  replayed, and `useArmed` drives the lazy gate. */
+export const manageProjectLinksBus = createLazyBus<string | undefined>()
 
 export function openManageProjectLinks(projectUri?: string): void {
-  _manageProjectLinksBus.open?.(projectUri)
+  manageProjectLinksBus.open(projectUri)
 }

@@ -22,7 +22,7 @@ import { haptic } from '@/lib/utils'
 import { LaunchConfigFields, type LaunchFieldsValue } from './launch-config-fields'
 import { LaunchDialogBottom } from './launch-monitor'
 
-import { _reviveDialogBus, type ReviveDialogOptions } from './revive-dialog-trigger'
+import { type ReviveDialogOptions, reviveDialogBus } from './revive-dialog-trigger'
 
 interface ReviveDialogState {
   open: boolean
@@ -59,7 +59,7 @@ export function ReviveDialog() {
 
   const progressReset = progress.reset
   useEffect(() => {
-    _reviveDialogBus.open = (options: ReviveDialogOptions) => {
+    reviveDialogBus.setHandler((options: ReviveDialogOptions) => {
       const sess = useConversationsStore.getState().conversationsById[options.conversationId]
       const ps = sess ? projectSettings[projectIdentityKey(sess.project)] : undefined
       const gs = globalSettings as Record<string, unknown>
@@ -81,9 +81,9 @@ export function ReviveDialog() {
       setConversationId(null)
       progressReset()
       setState({ open: true, options })
-    }
+    })
     return () => {
-      _reviveDialogBus.open = null
+      reviveDialogBus.setHandler(null)
     }
   }, [projectSettings, globalSettings, progressReset])
 

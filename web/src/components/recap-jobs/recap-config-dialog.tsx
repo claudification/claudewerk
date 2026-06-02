@@ -13,7 +13,7 @@ import { useEffect, useState } from 'react'
 import { Kbd } from '@/components/ui/kbd'
 import { useKeyLayer } from '@/lib/key-layers'
 import { cn, haptic } from '@/lib/utils'
-import { _recapConfigBus, type RecapConfigOptions } from './recap-config-trigger'
+import { type RecapConfigOptions, recapConfigBus } from './recap-config-trigger'
 import { RECAP_PRESETS, retrospectDefault } from './recap-period'
 import { createRecap } from './recap-wire'
 
@@ -47,7 +47,7 @@ export function RecapConfigDialog() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    _recapConfigBus.open = (options: RecapConfigOptions) => {
+    recapConfigBus.setHandler((options: RecapConfigOptions) => {
       const start = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
       const now = new Date()
       setProjectUri(options.projectUri)
@@ -58,9 +58,9 @@ export function RecapConfigDialog() {
       setRetrospectTouched(false)
       setError(null)
       setOpen(true)
-    }
+    })
     return () => {
-      _recapConfigBus.open = null
+      recapConfigBus.setHandler(null)
     }
   }, [])
 

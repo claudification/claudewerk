@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { cn, haptic } from '@/lib/utils'
 import type { ChatApiConnection } from '../../../../src/shared/chat-api-types'
 import type { ProviderPreset } from './chat-provider-presets'
-import { _manageChatConnectionsBus } from './manage-chat-connections-trigger'
+import { manageChatConnectionsBus } from './manage-chat-connections-trigger'
 import { ModelPicker } from './model-picker'
 import { ProviderSelect } from './provider-select'
 
@@ -74,15 +74,15 @@ export function ManageChatConnectionsDialog() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    _manageChatConnectionsBus.open = () => {
+    manageChatConnectionsBus.setHandler(() => {
       setOpen(true)
       setView('list')
       setError(null)
       setTestResult(null)
       setSourceMode(false)
-    }
+    })
     return () => {
-      _manageChatConnectionsBus.open = null
+      manageChatConnectionsBus.setHandler(null)
     }
   }, [])
 

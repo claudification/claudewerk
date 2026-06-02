@@ -1,8 +1,10 @@
-/** Module-level bus for the ManageChatConnectionsDialog. The component
- *  registers its handler on mount; openers route through this bus so the
- *  component file stays Fast-Refresh clean. */
-export const _manageChatConnectionsBus: { open: (() => void) | null } = { open: null }
+import { createLazyBus } from '@/lib/lazy-bus'
+
+/** Buffering open bus for the lazy-mounted ManageChatConnectionsDialog. The
+ *  component registers via setHandler on mount; a pre-mount open is buffered +
+ *  replayed, and `useArmed` drives the lazy gate. (No payload -- open()-only.) */
+export const manageChatConnectionsBus = createLazyBus<void>()
 
 export function openManageChatConnections(): void {
-  _manageChatConnectionsBus.open?.()
+  manageChatConnectionsBus.open(undefined)
 }

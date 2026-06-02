@@ -1,16 +1,16 @@
+import { createLazyBus } from '@/lib/lazy-bus'
+
 export interface RecapConfigOptions {
   /** Project URI to recap, or '*' for all projects. */
   projectUri: string
 }
 
-/** Module-level bus so any surface (context menus, command palette) can open the
- *  recap config modal without importing the component (which would mix
- *  non-component exports into a Fast-Refresh file). RecapConfigDialog registers
- *  its handler on mount and clears it on unmount. */
-export const _recapConfigBus: {
-  open: ((options: RecapConfigOptions) => void) | null
-} = { open: null }
+/** Buffering open bus so any surface (context menus, command palette) can open
+ *  the lazy-mounted recap config modal without importing the component.
+ *  RecapConfigDialog registers via setHandler on mount; a pre-mount open is
+ *  buffered + replayed, and `useArmed` drives the lazy gate. */
+export const recapConfigBus = createLazyBus<RecapConfigOptions>()
 
 export function openRecapConfigDialog(options: RecapConfigOptions): void {
-  _recapConfigBus.open?.(options)
+  recapConfigBus.open(options)
 }

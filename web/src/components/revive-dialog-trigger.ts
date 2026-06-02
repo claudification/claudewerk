@@ -1,15 +1,15 @@
+import { createLazyBus } from '@/lib/lazy-bus'
+
 export interface ReviveDialogOptions {
   conversationId: string
 }
 
-/** Module-level bus so any component can pop the revive dialog. The
- *  ReviveDialog component registers its handler on mount and clears it on
- *  unmount; openers route through this bus. */
-export const _reviveDialogBus: {
-  open: ((options: ReviveDialogOptions) => void) | null
-} = { open: null }
+/** Buffering open bus so any component can pop the (lazy-mounted) revive dialog.
+ *  ReviveDialog registers its handler on mount via setHandler; a pre-mount open
+ *  is buffered and replayed, and `useArmed` drives the lazy gate. */
+export const reviveDialogBus = createLazyBus<ReviveDialogOptions>()
 
 /** Open the revive dialog from anywhere */
 export function openReviveDialog(options: ReviveDialogOptions): void {
-  _reviveDialogBus.open?.(options)
+  reviveDialogBus.open(options)
 }

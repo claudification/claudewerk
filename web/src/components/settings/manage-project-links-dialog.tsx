@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import type { ProjectOrderGroup } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
-import { _manageProjectLinksBus } from './manage-project-links-trigger'
+import { manageProjectLinksBus } from './manage-project-links-trigger'
 
 const API_BASE = `${window.location.protocol}//${window.location.host}/api`
 
@@ -63,14 +63,14 @@ export function ManageProjectLinksDialog() {
   const projectSettings = useConversationsStore(s => s.projectSettings)
 
   useEffect(() => {
-    _manageProjectLinksBus.open = (projectUri?: string) => {
+    manageProjectLinksBus.setHandler((projectUri?: string) => {
       pinned.current = !!projectUri
       setFocusProject(projectUri || null)
       setOpen(true)
       setFilter('')
-    }
+    })
     return () => {
-      _manageProjectLinksBus.open = null
+      manageProjectLinksBus.setHandler(null)
     }
   }, [])
 

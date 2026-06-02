@@ -20,13 +20,13 @@ import { QuickTaskModal } from '@/components/quick-task-modal'
 import { PublicRecapView } from '@/components/recap/public-recap-view'
 import { RecapHistoryModal } from '@/components/recap/recap-history-modal'
 import { RecapViewer } from '@/components/recap/recap-viewer'
-import { RecapConfigDialog } from '@/components/recap-jobs/recap-config-dialog'
+import { recapConfigBus } from '@/components/recap-jobs/recap-config-trigger'
 import { RecapJobsWidget } from '@/components/recap-jobs/recap-jobs-widget'
 import { DebugControlModal } from '@/components/debug/debug-control-modal'
 import { RenameModal } from '@/components/rename-modal'
-import { ReviveDialog } from '@/components/revive-dialog'
-import { ManageChatConnectionsDialog } from '@/components/settings/manage-chat-connections-dialog'
-import { ManageProjectLinksDialog } from '@/components/settings/manage-project-links-dialog'
+import { reviveDialogBus } from '@/components/revive-dialog-trigger'
+import { manageChatConnectionsBus } from '@/components/settings/manage-chat-connections-trigger'
+import { manageProjectLinksBus } from '@/components/settings/manage-project-links-trigger'
 import { SharedConversationView } from '@/components/shared-conversation-view'
 import { ShortcutHelp } from '@/components/shortcut-help'
 import { spawnDialogBus } from '@/components/spawn-dialog-trigger'
@@ -70,6 +70,22 @@ const SheafPage = lazy(() => import('@/sheaf/sheaf-page').then(m => ({ default: 
 const SpawnDialog = lazyModule(
   named(() => import('@/components/spawn-dialog'), 'SpawnDialog'),
   spawnDialogBus.useArmed,
+)
+const ReviveDialog = lazyModule(
+  named(() => import('@/components/revive-dialog'), 'ReviveDialog'),
+  reviveDialogBus.useArmed,
+)
+const RecapConfigDialog = lazyModule(
+  named(() => import('@/components/recap-jobs/recap-config-dialog'), 'RecapConfigDialog'),
+  recapConfigBus.useArmed,
+)
+const ManageProjectLinksDialog = lazyModule(
+  named(() => import('@/components/settings/manage-project-links-dialog'), 'ManageProjectLinksDialog'),
+  manageProjectLinksBus.useArmed,
+)
+const ManageChatConnectionsDialog = lazyModule(
+  named(() => import('@/components/settings/manage-chat-connections-dialog'), 'ManageChatConnectionsDialog'),
+  manageChatConnectionsBus.useArmed,
 )
 
 function Dashboard() {
