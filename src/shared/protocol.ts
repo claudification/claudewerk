@@ -1316,6 +1316,8 @@ export type BrokerMessage =
   | FileRequest
   | ProjectBoardRequest
   | ProjectFileRequest
+  | ProjectSubscribe
+  | ProjectUnsubscribe
   | TranscriptKick
   | InterConversationDelivery
   | SystemChannelDelivery
@@ -2754,6 +2756,19 @@ export interface ProjectFileRequest {
   project: string
   relPath: string
   maxBytes?: number
+}
+
+/** Dashboard -> Broker: this socket is now viewing a project board. The broker
+ *  arms a lease-bound sentinel watch while >=1 dashboard is subscribed. */
+export interface ProjectSubscribe {
+  type: 'project_subscribe'
+  project: string
+}
+
+/** Dashboard -> Broker: this socket stopped viewing a project board. */
+export interface ProjectUnsubscribe {
+  type: 'project_unsubscribe'
+  project: string
 }
 
 /** Agent or agent host reports a spawn failure (headless child exit, PTY crash, or early exit) */

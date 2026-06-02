@@ -10,7 +10,7 @@ checkBunVersion()
 
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { extractProjectLabel } from '../shared/project-uri'
+import { extractProjectLabel, parseProjectUri } from '../shared/project-uri'
 import { DEFAULT_BROKER_PORT } from '../shared/protocol'
 import { getOrAssign, initAddressBook, resolve } from './address-book'
 import { closeAnalyticsStore, initAnalyticsStore } from './analytics-store'
@@ -50,6 +50,7 @@ import {
 import { initProjectOrder } from './project-order'
 import { getAllProjectSettings, getProjectSettings, initProjectSettings, setProjectSettings } from './project-settings'
 import { closeProjectStore, initProjectStore } from './project-store'
+import { dropSocketFromWatches, initProjectWatchRegistry } from './project-watch-registry'
 import { initPush, isPushConfigured, sendPushToAll } from './push'
 import { makeCommitGatherer } from './recap/commit-gather'
 import { initRecapOrchestrator } from './recap-orchestrator'
@@ -613,6 +614,18 @@ async function main() {
     // Register message handlers
     registerAllHandlers()
 
+    // Project board watch registry (LEASE MODEL): resolve a project URI to its
+    // owning sentinel so the broker can arm/renew/unwatch sentinel-side watches.
+    initProjectWatchRegistry({
+      getSentinelForProject: project => {
+        const authority = parseProjectUri(project).authority
+        return (
+          (authority ? conversationStore.getSentinelByAlias(authority) : undefined) ?? conversationStore.getSentinel()
+        )
+      },
+      log: msg => console.log(msg),
+    })
+
     // Spawn approval sweep: reap pending prompts older than the TTL on
     // startup (clears anything stuck across a restart) and on a periodic
     // cadence after that.
@@ -776,6 +789,8 @@ async function main() {
             conversationStore.removeJsonStreamViewerBySocket(ws)
             // Clean up launch job subscriptions
             conversationStore.cleanupJobSubscriber(ws)
+            // Drop any project-board watches this socket was the last viewer of
+            dropSocketFromWatches(ws)
             conversationStore.removeSubscriber(ws)
             if (verbose) {
               console.log(`[dashboard] Subscriber disconnected (total: ${conversationStore.getSubscriberCount()})`)

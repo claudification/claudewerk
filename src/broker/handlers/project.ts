@@ -14,9 +14,17 @@
  */
 
 import { parseProjectUri } from '../../shared/project-uri'
-import type { ProjectBoardOp, ProjectBoardRequest, ProjectFileRequest, ProjectReadFile } from '../../shared/protocol'
+import type {
+  ProjectBoardOp,
+  ProjectBoardRequest,
+  ProjectFileRequest,
+  ProjectReadFile,
+  ProjectSubscribe,
+  ProjectUnsubscribe,
+} from '../../shared/protocol'
 import type { HandlerContext, MessageData, MessageHandler } from '../handler-context'
 import { DASHBOARD_ROLES, registerHandlers, SENTINEL_ONLY } from '../message-router'
+import { subscribeProjectWatch, unsubscribeProjectWatch } from '../project-watch-registry'
 
 const BOARD_WRITE_OPS = new Set<ProjectBoardOp['op']>(['create', 'update', 'move', 'delete'])
 const PROJECT_RPC_TIMEOUT_MS = 10_000
@@ -118,6 +126,21 @@ const projectFileRequest: MessageHandler = (ctx, data) => {
   })
 }
 
+// Dashboard -> broker: started viewing a project board -> arm the lease watch.
+const projectSubscribe: MessageHandler = (ctx, data) => {
+  const d = data as ProjectSubscribe
+  if (!d.project) return
+  ctx.requirePermission('files:read', d.project)
+  subscribeProjectWatch(ctx.ws, d.project)
+}
+
+// Dashboard -> broker: stopped viewing a project board -> disarm if last viewer.
+const projectUnsubscribe: MessageHandler = (ctx, data) => {
+  const d = data as ProjectUnsubscribe
+  if (!d.project) return
+  unsubscribeProjectWatch(ctx.ws, d.project)
+}
+
 // Sentinel -> broker: RPC result -> resolve the pending listener (replies to caller).
 const projectResult: MessageHandler = (ctx, data: MessageData) => {
   if (data.requestId) ctx.conversations.resolveProject(data.requestId as string, data)
@@ -135,6 +158,8 @@ export function registerProjectHandlers(): void {
     {
       project_board_request: projectBoardRequest,
       project_file_request: projectFileRequest,
+      project_subscribe: projectSubscribe,
+      project_unsubscribe: projectUnsubscribe,
     },
     DASHBOARD_ROLES,
   )

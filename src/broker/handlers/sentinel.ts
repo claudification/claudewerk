@@ -14,6 +14,7 @@ import type {
 } from '../../shared/protocol'
 import type { MessageHandler } from '../handler-context'
 import { ANY_ROLE, registerHandlers, SENTINEL_ONLY } from '../message-router'
+import { rearmProjectWatches } from '../project-watch-registry'
 
 /** Validate the sentinel-reported profiles slice. PROFILE-ENV BOUNDARY: any
  *  field other than NAME + display metadata + flags is dropped here. If a
@@ -100,6 +101,9 @@ const sentinelIdentify: MessageHandler = (ctx, data) => {
         ? ` profiles=[${profiles.map(p => `${p.name}${p.authed ? '' : '?'}/${p.pool ?? '-'}`).join(',')}] pools=[${pools?.join(',') ?? '-'}] defaultSelection=${defaultSelection ?? 'default'} defaultPool=${defaultPool ?? 'default'}`
         : ''
     ctx.log.info(`Sentinel connected${label}${aliasLabel}${profilesLabel}`)
+    // Sentinel watches are in-memory; re-arm every open project board so live
+    // updates resume after a sentinel restart/reconnect (LEASE MODEL re-arm).
+    rearmProjectWatches()
   } else {
     ctx.reply({ type: 'sentinel_reject', reason: 'Sentinel rejected' })
     ctx.ws.close(4409, 'Sentinel rejected')
