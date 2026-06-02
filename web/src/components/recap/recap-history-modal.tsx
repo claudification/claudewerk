@@ -11,6 +11,7 @@ import { Dialog as DialogPrimitive } from 'radix-ui'
 import { useCallback, useEffect, useState } from 'react'
 import { Kbd } from '@/components/ui/kbd'
 import { haptic } from '@/lib/utils'
+import { recapHistoryBus } from '../recap-jobs/recap-history-trigger'
 import { fetchRecapList } from './recap-forks'
 
 interface OpenDetail {
@@ -52,14 +53,13 @@ export function RecapHistoryModal() {
   }, [])
 
   useEffect(() => {
-    function onOpen(e: Event) {
-      const detail = ((e as CustomEvent).detail || {}) as OpenDetail
+    function onOpen(detail: OpenDetail = {}) {
       setProjectUri(detail.projectUri)
       setOpen(true)
       void load(detail.projectUri)
     }
-    window.addEventListener('rclaude-recap-history-open', onOpen)
-    return () => window.removeEventListener('rclaude-recap-history-open', onOpen)
+    recapHistoryBus.setHandler(onOpen)
+    return () => recapHistoryBus.setHandler(null)
   }, [load])
 
   function openViewer(recapId: string) {

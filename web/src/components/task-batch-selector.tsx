@@ -22,6 +22,7 @@ import { useProject } from '@/hooks/use-project'
 import { useKeyLayer } from '@/lib/key-layers'
 import { cn, haptic } from '@/lib/utils'
 import { Markdown } from './markdown'
+import { taskBatchBus } from './task-batch-trigger'
 
 // --- Constants ---
 
@@ -376,8 +377,8 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
       setShowSelected(false)
       requestAnimationFrame(() => searchRef.current?.focus())
     }
-    window.addEventListener('open-batch-selector', handleOpen)
-    return () => window.removeEventListener('open-batch-selector', handleOpen)
+    taskBatchBus.setHandler(handleOpen)
+    return () => taskBatchBus.setHandler(null)
   }, [])
 
   // Filter tasks by active status chips, then score

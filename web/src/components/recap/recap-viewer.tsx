@@ -22,6 +22,7 @@ import { useRecapJobsStore } from '@/hooks/use-recap-jobs'
 import { appendShareParam } from '@/lib/share-mode'
 import { cn, haptic } from '@/lib/utils'
 import { fetchRecapList, modelLabel, selectSiblings } from './recap-forks'
+import { recapOpenBus } from './recap-open-trigger'
 import { RecapReport } from './recap-report'
 import { RecapWriteupTab } from './recap-writeup-tab'
 
@@ -355,8 +356,7 @@ export function RecapViewer() {
   )
 
   useEffect(() => {
-    function onOpen(e: Event) {
-      const detail = (e as CustomEvent).detail as { recapId?: string } | undefined
+    function onOpen(detail?: { recapId?: string }) {
       if (!detail?.recapId) return
       setRecapId(detail.recapId)
       setRecap(null)
@@ -364,8 +364,8 @@ export function RecapViewer() {
       setMode('report')
       void refresh(detail.recapId)
     }
-    window.addEventListener('rclaude-recap-open', onOpen)
-    return () => window.removeEventListener('rclaude-recap-open', onOpen)
+    recapOpenBus.setHandler(onOpen)
+    return () => recapOpenBus.setHandler(null)
   }, [refresh])
 
   // Poll while still running.

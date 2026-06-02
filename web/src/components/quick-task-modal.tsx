@@ -10,6 +10,7 @@ import { useProject } from '@/hooks/use-project'
 import { useChordCommand, useCommand } from '@/lib/commands'
 import { haptic } from '@/lib/utils'
 import { InputEditor } from './input-editor'
+import { quickTaskBus } from './quick-task-trigger'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 import { Kbd, KbdGroup } from './ui/kbd'
 
@@ -59,8 +60,8 @@ export function QuickTaskModal() {
         setOpen(true)
       }
     }
-    window.addEventListener('open-quick-task', handleOpen)
-    return () => window.removeEventListener('open-quick-task', handleOpen)
+    quickTaskBus.setHandler(handleOpen)
+    return () => quickTaskBus.setHandler(null)
   }, [selectedConversationId, isActive])
 
   // Radix Dialog handles Escape natively; clear text on close via onOpenChange.

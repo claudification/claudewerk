@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { focusInputEditor } from '@/lib/focus-input'
 import { haptic, isMobileViewport } from '@/lib/utils'
+import { renameModalBus } from './rename-modal-trigger'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 import { Kbd } from './ui/kbd'
 
@@ -19,9 +20,8 @@ export function RenameModal() {
   const renameConversation = useConversationsStore(s => s.renameConversation)
 
   useEffect(() => {
-    function handleOpen(e: Event) {
+    function handleOpen(detail?: { name?: string }) {
       if (!selectedConversationId) return
-      const detail = (e as CustomEvent).detail
       const sess = useConversationsStore.getState().conversationsById[selectedConversationId]
       if (detail?.name) {
         setName(detail.name)
@@ -32,8 +32,8 @@ export function RenameModal() {
       haptic('tap')
       setOpen(true)
     }
-    window.addEventListener('open-rename-modal', handleOpen)
-    return () => window.removeEventListener('open-rename-modal', handleOpen)
+    renameModalBus.setHandler(handleOpen)
+    return () => renameModalBus.setHandler(null)
   }, [selectedConversationId])
 
   useEffect(() => {

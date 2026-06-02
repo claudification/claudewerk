@@ -16,21 +16,21 @@ import { LaunchProfileManager } from '@/components/launch-profiles/manager'
 import { MarkdownViewerModal } from '@/components/markdown-viewer-modal'
 import { MediaLightbox } from '@/components/media-lightbox'
 import { ProjectList } from '@/components/project-list'
-import { QuickTaskModal } from '@/components/quick-task-modal'
+import { quickTaskBus } from '@/components/quick-task-trigger'
 import { PublicRecapView } from '@/components/recap/public-recap-view'
-import { RecapHistoryModal } from '@/components/recap/recap-history-modal'
-import { RecapViewer } from '@/components/recap/recap-viewer'
+import { recapOpenBus } from '@/components/recap/recap-open-trigger'
 import { recapConfigBus } from '@/components/recap-jobs/recap-config-trigger'
+import { recapHistoryBus } from '@/components/recap-jobs/recap-history-trigger'
 import { RecapJobsWidget } from '@/components/recap-jobs/recap-jobs-widget'
 import { DebugControlModal } from '@/components/debug/debug-control-modal'
-import { RenameModal } from '@/components/rename-modal'
+import { renameModalBus } from '@/components/rename-modal-trigger'
 import { reviveDialogBus } from '@/components/revive-dialog-trigger'
 import { manageChatConnectionsBus } from '@/components/settings/manage-chat-connections-trigger'
 import { manageProjectLinksBus } from '@/components/settings/manage-project-links-trigger'
 import { SharedConversationView } from '@/components/shared-conversation-view'
 import { ShortcutHelp } from '@/components/shortcut-help'
 import { spawnDialogBus } from '@/components/spawn-dialog-trigger'
-import { TaskBatchSelector } from '@/components/task-batch-selector'
+import { taskBatchBus } from '@/components/task-batch-trigger'
 import { TerminateConfirmDialog } from '@/components/terminate-confirm'
 import { TerminateLineageConfirmDialog } from '@/components/terminate-lineage-confirm'
 import { ToastContainer } from '@/components/toast'
@@ -86,6 +86,26 @@ const ManageProjectLinksDialog = lazyModule(
 const ManageChatConnectionsDialog = lazyModule(
   named(() => import('@/components/settings/manage-chat-connections-dialog'), 'ManageChatConnectionsDialog'),
   manageChatConnectionsBus.useArmed,
+)
+const RenameModal = lazyModule(
+  named(() => import('@/components/rename-modal'), 'RenameModal'),
+  renameModalBus.useArmed,
+)
+const QuickTaskModal = lazyModule(
+  named(() => import('@/components/quick-task-modal'), 'QuickTaskModal'),
+  quickTaskBus.useArmed,
+)
+const TaskBatchSelector = lazyModule(
+  named(() => import('@/components/task-batch-selector'), 'TaskBatchSelector'),
+  taskBatchBus.useArmed,
+)
+const RecapViewer = lazyModule(
+  named(() => import('@/components/recap/recap-viewer'), 'RecapViewer'),
+  recapOpenBus.useArmed,
+)
+const RecapHistoryModal = lazyModule(
+  named(() => import('@/components/recap/recap-history-modal'), 'RecapHistoryModal'),
+  recapHistoryBus.useArmed,
 )
 
 function Dashboard() {
