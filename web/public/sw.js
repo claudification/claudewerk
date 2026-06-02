@@ -27,13 +27,55 @@ self.addEventListener('install', event => {
       .then(async manifest => {
         installedBuildHash = manifest.buildHash
         const cache = await caches.open(`${PRECACHE}-${manifest.buildHash}`)
-        const urls = []
-        for (const f of manifest.files) {
-          if (!f.url.endsWith('.map')) urls.push(f.url)
-        }
+
+        // Carry unchanged assets forward instead of re-downloading them.
+        // Asset URLs are content-hashed: an identical URL means identical
+        // bytes, so any URL already sitting in a prior precache is safe to
+        // reuse verbatim. Without this, every deploy re-fetched the WHOLE
+        // asset set over the network (CodeMirror, shiki, mermaid, xterm,
+        // react -- ~1MB) even though only the app chunk's hash actually
+        // changed. Now only genuinely new/changed chunks hit the network.
+        const keys = await caches.keys()
+        const oldCaches = await Promise.all(
+          keys.filter(k => k.startsWith(PRECACHE) && k !== `${PRECACHE}-${manifest.buildHash}`).map(k => caches.open(k)),
+        )
+
+        const urls = manifest.files.filter(f => !f.url.endsWith('.map')).map(f => f.url)
         urls.push('/')
-        await cache.addAll(urls)
-        console.log(`[sw] precached ${urls.length} files (build: ${manifest.buildHash})`)
+
+        let reused = 0
+        let fetched = 0
+        await Promise.all(
+          urls.map(async url => {
+            // '/' is the HTML shell -- it references the new hashed chunk
+            // names, so it changes every deploy. Never reuse it.
+            if (url !== '/') {
+              for (const old of oldCaches) {
+                const hit = await old.match(url)
+                if (hit) {
+                  await cache.put(url, hit.clone())
+                  reused++
+                  return
+                }
+              }
+            }
+            // New or changed (or the HTML shell): fetch from network. Failures
+            // are tolerated -- the runtime fetch handler falls back to network,
+            // and a partial precache still beats failing the whole install.
+            try {
+              const res = await fetch(url, { cache: 'no-cache' })
+              if (res.ok) {
+                await cache.put(url, res.clone())
+                fetched++
+              }
+            } catch (e) {
+              console.warn(`[sw] precache fetch failed: ${url}`, e)
+            }
+          }),
+        )
+        console.log(
+          `[sw] precached ${urls.length} files (build: ${manifest.buildHash}) -- reused ${reused}, fetched ${fetched}`,
+        )
       })
       .catch(err => console.warn('[sw] precache failed:', err)),
   )
