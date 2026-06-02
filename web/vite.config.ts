@@ -101,6 +101,34 @@ export default defineConfig(({ mode }) => {
             ) {
               return 'utils-vendor'
             }
+            // Stable vendor libs that otherwise ride inside the eager entry
+            // chunk. The entry rehashes every deploy (app code changes); these
+            // don't, so bucketing them into their own content-hashed chunks
+            // keeps them cached across app-only deploys -- the SW reuses them
+            // instead of re-downloading (see public/sw.js copy-forward).
+            //
+            // EXPLICIT package list ONLY. A blanket `node_modules -> vendor`
+            // rule would pull dynamically-imported deps (mermaid, xterm, the
+            // shiki lang grammars) into an eager chunk and destroy their
+            // lazy-loading. Every package below is already in the eager graph;
+            // anything not listed keeps Rollup's default (incl. lazy) chunking.
+            if (/node_modules\/(@radix-ui|radix-ui|@floating-ui|@dnd-kit|lucide-react)\//.test(id)) {
+              return 'vendor-ui'
+            }
+            if (
+              /node_modules\/(@shikijs\/(core|vscode-textmate|themes|primitive|engine-[^/]+|types)|oniguruma-to-es|oniguruma-parser|regex-recursion|hast-util-to-html|property-information)\//.test(
+                id,
+              )
+            ) {
+              return 'vendor-shiki'
+            }
+            if (
+              /node_modules\/(zod|marked|diff|@tanstack\/virtual-core|ansi-to-html|ua-parser-js|@simplewebauthn|web-haptics|zustand|fzf)\//.test(
+                id,
+              )
+            ) {
+              return 'vendor-misc'
+            }
           },
         },
       },
