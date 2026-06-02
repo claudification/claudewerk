@@ -41,6 +41,12 @@ import type {
   ListCcSessionsResult,
   ListDirsResult,
   ProfileUsageSnapshot,
+  ProjectBoardOp,
+  ProjectMoveFile,
+  ProjectReadFile,
+  ProjectUnwatch,
+  ProjectWatch,
+  ProjectWriteFile,
   ReviveConversation,
   ReviveResult,
   SentinelIdentify,
@@ -70,6 +76,13 @@ import { registerDaemonSession, startDaemonRosterWatch, stopDaemonRosterWatch } 
 import { runGitLog } from './git-log'
 import { type PreflightIssue, preflightSpawn } from './preflight'
 import { runProfileCli } from './profile-cli'
+import {
+  handleProjectBoardOp,
+  handleProjectMoveFile,
+  handleProjectReadFile,
+  handleProjectWriteFile,
+} from './project-handlers'
+import { stopAllWatches, unwatchProject, watchProject } from './project-watch'
 import { pickProfile, type UsageHeadroom } from './selection'
 import {
   configDirFor,
@@ -3499,6 +3512,53 @@ function connect(
           break
         }
 
+        case 'project_read_file': {
+          const m = msg as ProjectReadFile
+          const root = expandPath(m.projectRoot, spawnRoot)
+          ws.send(JSON.stringify(handleProjectReadFile(root, m)))
+          break
+        }
+
+        case 'project_write_file': {
+          const m = msg as ProjectWriteFile
+          const root = expandPath(m.projectRoot, spawnRoot)
+          ws.send(JSON.stringify(handleProjectWriteFile(root, m)))
+          break
+        }
+
+        case 'project_move_file': {
+          const m = msg as ProjectMoveFile
+          const root = expandPath(m.projectRoot, spawnRoot)
+          ws.send(JSON.stringify(handleProjectMoveFile(root, m)))
+          break
+        }
+
+        case 'project_board_op': {
+          const m = msg as ProjectBoardOp
+          const root = expandPath(m.projectRoot, spawnRoot)
+          ws.send(JSON.stringify(handleProjectBoardOp(root, m, Date.now())))
+          break
+        }
+
+        case 'project_watch': {
+          const m = msg as ProjectWatch
+          const root = expandPath(m.projectRoot, spawnRoot)
+          watchProject(
+            root,
+            m.leaseMs,
+            changed => ws.send(JSON.stringify(changed)),
+            l => log(l),
+          )
+          break
+        }
+
+        case 'project_unwatch': {
+          const m = msg as ProjectUnwatch
+          const root = expandPath(m.projectRoot, spawnRoot)
+          unwatchProject(root, l => log(l))
+          break
+        }
+
         case 'sentinel_patch_config': {
           const ack = handleSentinelPatchConfig(msg as SentinelPatchConfig, config, configPath, spawnRoot)
           ws.send(JSON.stringify(ack))
@@ -3515,6 +3575,7 @@ function connect(
     if (heartbeatTimer) clearInterval(heartbeatTimer)
     stopUsagePolling()
     stopDaemonRosterWatch()
+    stopAllWatches(l => log(l))
     if (ccVersionWatcher) {
       ccVersionWatcher.stop()
       ccVersionWatcher = null

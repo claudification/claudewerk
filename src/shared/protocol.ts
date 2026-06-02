@@ -5,6 +5,7 @@
 
 import type { JobRecord } from './cc-daemon/types'
 import type { DialogLayout, DialogResult } from './dialog-schema'
+import type { ProjectTask, ProjectTaskManifestEntry, ProjectTaskMeta, ProjectTaskRef } from './project-task-types'
 import type { SpawnRequest } from './spawn-schema'
 
 export type { LaunchProfile } from './launch-profile'
@@ -2562,6 +2563,161 @@ export interface GitLogResult {
   error?: string
 }
 
+// ===========================================================================
+// Project store RPCs (Broker <-> Sentinel)
+//
+// Project-scoped filesystem access runs on the SENTINEL, keyed by an absolute
+// `projectRoot` (the path segment of the project URI). No conversationId, no
+// live agent host required -- the board + markdown viewer work as long as the
+// sentinel that owns the host is connected. The sentinel jails every path
+// under `projectRoot` (see src/shared/project-store.ts). Mirrors the existing
+// `list_dirs` / `git_log_request` request/result idiom.
+// ===========================================================================
+
+/** Broker -> Sentinel: read a project-relative file (markdown viewer). */
+export interface ProjectReadFile {
+  type: 'project_read_file'
+  requestId: string
+  /** Absolute project root on the sentinel's filesystem. */
+  projectRoot: string
+  /** Project-RELATIVE path (jailed under projectRoot). */
+  relPath: string
+  /** Byte cap; sentinel truncates beyond this. */
+  maxBytes?: number
+}
+
+/** Sentinel -> Broker: file contents (or structured error). */
+export interface ProjectReadFileResult {
+  type: 'project_read_file_result'
+  requestId: string
+  ok: boolean
+  content?: string
+  size?: number
+  truncated?: boolean
+  error?: string
+}
+
+/** Broker -> Sentinel: write (create/overwrite) a project-relative file. */
+export interface ProjectWriteFile {
+  type: 'project_write_file'
+  requestId: string
+  projectRoot: string
+  relPath: string
+  content: string
+}
+
+export interface ProjectWriteFileResult {
+  type: 'project_write_file_result'
+  requestId: string
+  ok: boolean
+  size?: number
+  error?: string
+}
+
+/** Broker -> Sentinel: move/rename a project-relative file. */
+export interface ProjectMoveFile {
+  type: 'project_move_file'
+  requestId: string
+  projectRoot: string
+  fromRel: string
+  toRel: string
+}
+
+export interface ProjectMoveFileResult {
+  type: 'project_move_file_result'
+  requestId: string
+  ok: boolean
+  error?: string
+}
+
+export interface ProjectTaskInputWire {
+  title?: string
+  body: string
+  priority?: 'low' | 'medium' | 'high'
+  tags?: string[]
+  refs?: string[]
+}
+
+/** Broker -> Sentinel: a single project-board operation envelope. One message
+ *  type for all board CRUD; `op` selects the action and which params apply. */
+export interface ProjectBoardOp {
+  type: 'project_board_op'
+  requestId: string
+  projectRoot: string
+  op: 'list' | 'manifest' | 'get' | 'getBatch' | 'create' | 'update' | 'move' | 'delete'
+  /** get / update / delete / move(from) */
+  status?: ProjectTaskStatus
+  /** get / update / delete / move */
+  slug?: string
+  /** list filter */
+  filterStatus?: ProjectTaskStatus
+  /** getBatch */
+  refs?: ProjectTaskRef[]
+  /** create */
+  input?: ProjectTaskInputWire
+  /** update */
+  patch?: Partial<ProjectTaskInputWire>
+  /** move */
+  fromStatus?: ProjectTaskStatus
+  toStatus?: ProjectTaskStatus
+}
+
+/** Sentinel -> Broker: board op result. Populated field depends on `op`. */
+export interface ProjectBoardResult {
+  type: 'project_board_result'
+  requestId: string
+  op: ProjectBoardOp['op']
+  ok: boolean
+  /** list */
+  tasks?: ProjectTaskMeta[]
+  /** manifest */
+  manifest?: ProjectTaskManifestEntry[]
+  /** getBatch */
+  batch?: ProjectTaskMeta[]
+  /** get / update */
+  task?: ProjectTask | null
+  /** create */
+  note?: ProjectTaskMeta
+  /** move (resulting slug) */
+  slug?: string | null
+  /** delete */
+  removed?: boolean
+  error?: string
+}
+
+/** Incremental project-board diff (was local to the agent-host watcher). */
+export interface ProjectDiff {
+  added: ProjectTaskManifestEntry[]
+  removed: { slug: string; status: string }[]
+  modified: ProjectTaskManifestEntry[]
+}
+
+/** Broker -> Sentinel: start OR renew a lease-bound board watch. Idempotent --
+ *  re-sending re-stamps the lease expiry. The broker renews while >=1 dashboard
+ *  views the project; the lease is the failsafe if the broker dies. */
+export interface ProjectWatch {
+  type: 'project_watch'
+  projectRoot: string
+  /** Lease duration in ms; sentinel self-stops if not renewed before expiry. */
+  leaseMs: number
+}
+
+/** Broker -> Sentinel: stop watching immediately (last viewer closed). */
+export interface ProjectUnwatch {
+  type: 'project_unwatch'
+  projectRoot: string
+}
+
+/** Sentinel -> Broker: project board changed. Tagged with projectRoot (NO
+ *  conversationId) -- the broker broadcasts permission-gated by the project URI. */
+export interface ProjectChanged {
+  type: 'project_changed'
+  projectRoot: string
+  diff: ProjectDiff
+  /** Full snapshot (transitional -- diff is the canonical signal). */
+  notes: ProjectTaskMeta[]
+}
+
 /** Agent or agent host reports a spawn failure (headless child exit, PTY crash, or early exit) */
 export interface SpawnFailed {
   type: 'spawn_failed'
@@ -3094,6 +3250,11 @@ export type SentinelMessage =
   | ListDirsResult
   | ListCcSessionsResult
   | GitLogResult
+  | ProjectReadFileResult
+  | ProjectWriteFileResult
+  | ProjectMoveFileResult
+  | ProjectBoardResult
+  | ProjectChanged
   | UsageUpdate
   | SentinelUsageReport
   | LaunchLog
@@ -3371,6 +3532,12 @@ export type BrokerSentinelMessage =
   | ListDirs
   | ListCcSessions
   | GitLogRequest
+  | ProjectReadFile
+  | ProjectWriteFile
+  | ProjectMoveFile
+  | ProjectBoardOp
+  | ProjectWatch
+  | ProjectUnwatch
   | SentinelPatchConfig
   | SentinelQuit
   | SentinelReject
