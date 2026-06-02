@@ -3,9 +3,8 @@ import { projectIdentityKey } from '@shared/project-uri'
  * In-flight turn decorations -- the live UI that renders at the very bottom of
  * the transcript while a turn is streaming: streaming thinking, streaming text,
  * and the verb spinner. These are pure presentational components driven by the
- * conversation store; they are virtualizer-agnostic, so BOTH transcript
- * renderers (TanStack `TranscriptView` and the react-virtuoso
- * `TranscriptViewVirtuoso` A/B spike) share them.
+ * conversation store; they are virtualizer-agnostic, decoupled from the
+ * TanStack `TranscriptView` that renders them.
  *
  * The thinking PILL lives in thinking-pill.tsx and the smooth-collapse motion in
  * collapse.tsx -- both already shared. This module hosts the remaining three.

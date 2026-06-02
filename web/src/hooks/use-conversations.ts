@@ -1229,12 +1229,9 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
       // Returning to live tail: collapse any over-cap excess accumulated during
       // scrollback (live appends were appended without pruning; fetched older
       // pages were prepended). Push the evicted head to the page cache so a
-      // subsequent scroll-up replays locally. SKIPPED for the Virtuoso renderer:
-      // it never prunes (a head-collapse forces a full re-group + virtualizer
-      // snap), so collapsing here would nuke the just-loaded history and trigger
-      // the reload loop. See handleTranscriptEntries / transcript-view-virtuoso.tsx.
+      // subsequent scroll-up replays locally. See handleTranscriptEntries.
       const existing = state.transcripts[conversationId] || []
-      if (existing.length <= LIVE_CAP || state.controlPanelPrefs.virtuosoTranscript === true) {
+      if (existing.length <= LIVE_CAP) {
         return { scrollbackActive: { ...state.scrollbackActive, [conversationId]: false } }
       }
       const dropCount = existing.length - LIVE_CAP

@@ -1,8 +1,7 @@
 /**
- * Shared pure derivations used by BOTH transcript renderers (the TanStack
- * `TranscriptView` and the react-virtuoso `TranscriptViewVirtuoso` A/B spike).
- * These are virtualizer-agnostic: a transcript-settings projection off the
- * store, and the ExitPlanMode plan-content scan over the entries.
+ * Pure derivations for the TanStack `TranscriptView`. Virtualizer-agnostic:
+ * a transcript-settings projection off the store, and the ExitPlanMode
+ * plan-content scan over the entries.
  */
 
 import { useMemo, useRef } from 'react'

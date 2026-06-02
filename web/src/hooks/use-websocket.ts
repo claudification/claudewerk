@@ -176,16 +176,12 @@ function refetchStaleTranscripts(staleTranscripts?: Record<string, number>): voi
         let merged = [...existing, ...fresh]
         const LIVE_CAP = 100
         const scrollback = state.scrollbackActive[sid]
-        // Suppress the head-prune while the Virtuoso renderer is active -- it
-        // virtualizes the full list and a head-prune forces a full re-group +
-        // virtualizer snap on every append. See handleTranscriptEntries.
-        const noPrune = state.controlPanelPrefs.virtuosoTranscript === true
-        if (merged.length > LIVE_CAP && scrollback && !noPrune) {
+        if (merged.length > LIVE_CAP && scrollback) {
           console.debug(
             `[transcript-prune] ${sid.slice(0, 8)} DEFERRED (scrollback active, delta refetch): live=${merged.length} > cap ${LIVE_CAP}`,
           )
         }
-        if (merged.length > LIVE_CAP && !scrollback && !noPrune) {
+        if (merged.length > LIVE_CAP && !scrollback) {
           const t0 = performance.now()
           const dropCount = merged.length - LIVE_CAP
           const evicted = merged.slice(0, dropCount)

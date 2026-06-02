@@ -62,10 +62,6 @@ export interface ControlPanelPrefs {
    *  loaded, so the thumb reflects full conversation length from load. Off by
    *  default -- see plan-transcript-scrollback-reservation.md. */
   scrollbackReservation: boolean
-  /** SPIKE (A/B): render the main transcript with the react-virtuoso renderer
-   *  (TranscriptViewVirtuoso) instead of the TanStack TranscriptView. Off by
-   *  default -- see plan-virtuoso-spike.md. Toggle via Cmd+P. */
-  virtuosoTranscript: boolean
   /** Live "thinking" pill on the active turn (ephemeral, while pings arrive).
    *  detailed = sparkline + tokens/sec + count; compact = spinner + count. */
   thinkingIndicator: 'detailed' | 'compact' | 'off'
@@ -104,7 +100,6 @@ const defaultPrefs: ControlPanelPrefs = {
   showStreaming: true,
   showPerfMonitor: false,
   scrollbackReservation: false,
-  virtuosoTranscript: false,
   thinkingIndicator: 'detailed',
   defaultConversationCwd: '',
   toolDisplay: {},
