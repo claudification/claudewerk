@@ -155,13 +155,31 @@ ok "Sentinel binary: $SENTINEL_BIN"
 ok "Revive script: $REVIVE_SCRIPT"
 
 # --- Clean environment ---
-# Sentinel may be launched from within a Claude Code session (e.g. user runs
-# start-sentinel.sh from Claude). Unset all Claude-inherited and session-scoped
-# RCLAUDE_* vars so they don't leak into spawned sessions.
-# Keep: RCLAUDE_SECRET, RCLAUDE_BROKER, RCLAUDE_SPAWN_ROOT (config vars)
+# The sentinel is the root of every spawned session's environment: whatever it
+# carries here is inherited by every agent host and `claude` child it forks.
+# It is also commonly launched from INSIDE a Claude Code session, and just
+# above we `set -a; source .env` -- which EXPORTS every key in .env. So two
+# classes of garbage would otherwise leak all the way down:
+#   1. Claude-inherited + per-conversation session state from the launching CC.
+#   2. Broker/distribution secrets that live in the shared .env but that the
+#      sentinel itself never needs (NPM_TOKEN, CLAUDEWERK_GHCR_TOKEN, API keys).
+# The sentinel only needs RCLAUDE_SECRET / RCLAUDE_BROKER / RCLAUDE_SPAWN_ROOT.
+# Scrub everything else. Per-profile CLAUDE_CONFIG_DIR / profile.env are
+# injected per-spawn by the sentinel itself -- they MUST NOT be inherited here,
+# or `shouldInjectConfigDir`'s default-profile (~/.claude) Keychain fallback
+# breaks and every default spawn reads the wrong account dir.
+
+# 1. Claude Code session state from the launching process. CLAUDE_CONFIG_DIR
+#    does NOT match CLAUDE_CODE_*, so it must be named explicitly -- it is the
+#    dangerous one (auth/account-dir corruption). ANTHROPIC_* keys would force
+#    every subscription spawn onto API billing, so scrub them too; profiles
+#    re-inject their own per-spawn when needed.
 while IFS='=' read -r name _; do
   [[ "$name" == CLAUDECODE || "$name" == CLAUDE_CODE_* ]] && unset "$name"
 done < <(env)
+unset CLAUDE_CONFIG_DIR ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL 2>/dev/null || true
+
+# 2. rclaude per-conversation session state (must not bleed across spawns).
 for _var in RCLAUDE_HEADLESS RCLAUDE_CONVERSATION_ID RCLAUDE_SESSION_ID \
             CLAUDWERK_CONVERSATION_NAME RCLAUDE_BARE RCLAUDE_ADHOC \
             RCLAUDE_ADHOC_TASK_ID RCLAUDE_CHANNELS RCLAUDE_INITIAL_PROMPT_FILE \
@@ -170,6 +188,24 @@ for _var in RCLAUDE_HEADLESS RCLAUDE_CONVERSATION_ID RCLAUDE_SESSION_ID \
             RCLAUDE_PERMISSION_MODE; do
   unset "$_var"
 done
+
+# 3. Everything sourced from .env EXCEPT the three the sentinel consumes.
+#    Derived from the file so future .env secrets are scrubbed automatically --
+#    no enumeration to keep in sync. RCLAUDE_SPAWN_ROOT is already captured into
+#    SENTINEL_ARGS above, so unsetting it here is harmless; RCLAUDE_SECRET and
+#    RCLAUDE_BROKER are read by the sentinel binary at runtime, so they stay.
+if [[ -f "$ENV_FILE" ]]; then
+  while IFS='=' read -r _name _; do
+    _name="${_name#"${_name%%[![:space:]]*}"}"   # ltrim leading whitespace
+    _name="${_name#export }"                      # drop optional `export ` prefix
+    [[ -z "$_name" || "$_name" == \#* ]] && continue
+    [[ ! "$_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] && continue
+    case "$_name" in
+      RCLAUDE_SECRET|RCLAUDE_BROKER|RCLAUDE_SPAWN_ROOT) continue ;;
+    esac
+    unset "$_name"
+  done < "$ENV_FILE"
+fi
 
 # --- Start ---
 
