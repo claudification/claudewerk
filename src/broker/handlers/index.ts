@@ -21,6 +21,7 @@ import { registerProjectHandlers } from './project'
 import { registerRclaudeConfigHandlers } from './rclaude-config'
 import { registerRecapHandlers } from './recap'
 import { registerSentinelHandlers } from './sentinel'
+import { registerShellHandlers } from './shell'
 import { registerSpawnHandlers } from './spawn'
 import { registerSpawnApprovalHandlers } from './spawn-approval'
 import { registerTerminalHandlers } from './terminal'
@@ -49,6 +50,7 @@ export function registerAllHandlers(): void {
   registerDaemonHandlers()
   registerSpawnApprovalHandlers()
   registerSpawnHandlers()
+  registerShellHandlers()
   registerTerminalHandlers()
   registerThinkingProgressHandlers()
   registerTranscriptHandlers()

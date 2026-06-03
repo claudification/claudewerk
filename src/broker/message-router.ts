@@ -35,7 +35,9 @@ export const ANY_ROLE: WsRole[] = ['agent-host', 'control-panel', 'sentinel', 'g
 export function detectRole(data: WsData): WsRole {
   if (data.isShare) return 'share'
   if (data.isGateway) return 'gateway'
-  if (data.isSentinel || data.sentinelId) return 'sentinel'
+  // The dedicated shell-data socket is a sentinel-originated byte pipe; route its
+  // shell_data/shell_replay frames under the sentinel role.
+  if (data.isSentinel || data.sentinelId || data.isShellData) return 'sentinel'
   if (data.userName || data.isControlPanel) return 'control-panel'
   return 'agent-host'
 }

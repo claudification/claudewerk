@@ -8,7 +8,6 @@
  * on the conversation (the conversationId store key stays the same).
  */
 
-import { createHash } from 'node:crypto'
 import { cwdToProjectUri } from '../../shared/project-uri'
 import type {
   AgentHostCapability,
@@ -21,12 +20,8 @@ import type {
 import type { MessageHandler } from '../handler-context'
 import { AGENT_HOST_ONLY, registerHandlers } from '../message-router'
 import { computeSpawnLineage } from '../spawn-lineage'
+import { deterministicUuid } from './transcript-uuid'
 import { requireProtocolVersion } from './validate'
-
-function deterministicUuid(key: string): string {
-  const h = createHash('sha1').update(key).digest('hex')
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${((Number.parseInt(h[16], 16) & 0x3) | 0x8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`
-}
 
 const agentHostBoot: MessageHandler = (ctx, data) => {
   // Gate: protocol version. wrapper_boot is the very first frame from a

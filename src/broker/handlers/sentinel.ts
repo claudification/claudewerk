@@ -8,6 +8,7 @@ import type {
   CcVersionChanged,
   ProfileUsageSnapshot,
   SelectionMode,
+  SentinelFeatures,
   SentinelIdentify,
   SentinelProfileInfo,
   UsageUpdate,
@@ -63,6 +64,17 @@ function validatedSelectionMode(raw: unknown): SelectionMode | undefined {
   return undefined
 }
 
+/** Sanitise the sentinel-reported `features` slice. Only known boolean host
+ *  capabilities survive (today: `shell`) -- a malformed sentinel cannot smuggle
+ *  arbitrary keys onto the broker's connection record. Undefined when absent. */
+function sanitizeReportedFeatures(raw: unknown): SentinelFeatures | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const rec = raw as Record<string, unknown>
+  const shell = typeof rec.shell === 'boolean' ? rec.shell : undefined
+  if (shell === undefined) return undefined
+  return { shell }
+}
+
 function validatedPoolName(raw: unknown): string | undefined {
   if (typeof raw !== 'string') return undefined
   return /^[a-z0-9-]{1,63}$/.test(raw) ? raw : undefined
@@ -78,6 +90,7 @@ const sentinelIdentify: MessageHandler = (ctx, data) => {
   const defaultSelection = validatedSelectionMode(data.defaultSelection)
   const pools = sanitizeReportedPools(data.pools)
   const defaultPool = validatedPoolName(data.defaultPool)
+  const features = sanitizeReportedFeatures(data.features)
 
   const sentinelMeta = {
     machineId: typeof data.machineId === 'string' ? data.machineId : undefined,
@@ -89,6 +102,7 @@ const sentinelIdentify: MessageHandler = (ctx, data) => {
     defaultSelection,
     pools,
     defaultPool,
+    features,
   }
   const accepted = ctx.conversations.setSentinel(ctx.ws, sentinelMeta)
   if (accepted) {

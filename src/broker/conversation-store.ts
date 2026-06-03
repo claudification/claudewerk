@@ -246,6 +246,14 @@ export interface ConversationStore {
   getSentinel: () => ServerWebSocket<unknown> | undefined
   getSentinelByAlias: (alias: string) => ServerWebSocket<unknown> | undefined
   getSentinelConnection: (sentinelId: string) => SentinelConnection | undefined
+  /** Resolve a sentinel connection by its alias (URI authority). Host-shell
+   *  routing maps `claude://{sentinel}/{path}` -> this connection. */
+  getSentinelConnectionByAlias: (alias: string) => SentinelConnection | undefined
+  /** The default sentinel's live connection, or undefined when none is online. */
+  getDefaultSentinelConnection: () => SentinelConnection | undefined
+  /** The sentinelId owning a live socket (control WS), or undefined. Used by the
+   *  WS close handler to clean up that sentinel's host-shell roster. */
+  getSentinelIdBySocket: (ws: ServerWebSocket<unknown>) => string | undefined
   /** Refresh a sentinel's stored profile registry from a post-patch `applied`
    *  snapshot (Phase 8). Broadcasts a fresh `sentinel_status`. */
   applySentinelConfigSnapshot: (sentinelId: string, snapshot: SentinelIdentify) => boolean
@@ -372,6 +380,10 @@ export interface ConversationStore {
   drainProjectMessages: (from: string, to: string) => Array<Record<string, unknown>>
   broadcastForProject: (project: string) => void
   broadcastConversationScoped: (message: Record<string, unknown>, project: string) => void
+  /** Broadcast a host-shell roster/lifecycle message to control-panel
+   *  subscribers (never share guests) that hold `terminal:read` for the shell's
+   *  project URI. The per-URI visibility gate for the floating shell roster. */
+  broadcastShellScoped: (message: Record<string, unknown>, projectUri: string) => void
   broadcastSharesUpdate: () => void
   recordTraffic: (direction: 'in' | 'out', bytes: number) => void
   getTrafficStats: () => {
@@ -675,6 +687,13 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       recapFresh: conv.recapFresh,
       hostSentinelId: conv.hostSentinelId,
       hostSentinelAlias: conv.hostSentinelAlias,
+      // Host-shell capability: join the owning sentinel's advertised
+      // `features.shell` (plan-host-shell.md 3.1). Undefined when no host
+      // sentinel is known yet; explicit true/false once one is resolved so the
+      // `Cmd+G S` chord can gate on it.
+      shellCapable: conv.hostSentinelId
+        ? (sentinelState.sentinels.get(conv.hostSentinelId)?.features?.shell ?? false)
+        : undefined,
       resolvedProfile: conv.resolvedProfile,
       // The daemon is the claude backend's `claude-daemon` transport, not a
       // backend: a daemon-hosted conversation (agentHostType === 'daemon')
@@ -732,6 +751,32 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
         console.error(
           `[broadcast] Send failed to ${subInfo?.id || 'unknown'}: ${err instanceof Error ? err.message : err}`,
         )
+        controlPanelSubscribers.delete(ws)
+      }
+    }
+  }
+
+  /**
+   * Broadcast a host-shell roster/lifecycle frame to control-panel subscribers
+   * that hold `terminal:read` for the shell's project URI. Share-link guests are
+   * excluded outright -- a raw host shell is RCE as the host user and must never
+   * surface on a scoped guest link (recap-share-leak discipline). Transient: no
+   * sync stamping (clients rebuild the roster from the snapshot on reconnect).
+   */
+  function broadcastShellScoped(message: Record<string, unknown>, projectUri: string): void {
+    const json = JSON.stringify(message)
+    for (const ws of controlPanelSubscribers) {
+      try {
+        const wsData = ws.data as { grants?: UserGrant[]; shareToken?: string; shareConversationId?: string }
+        if (wsData.shareToken || wsData.shareConversationId) continue
+        const grants = wsData.grants
+        if (grants) {
+          const { permissions } = resolvePermissions(grants, projectUri)
+          if (!permissions.has('terminal:read')) continue
+        }
+        ws.send(json)
+        recordTraffic('out', json.length)
+      } catch {
         controlPanelSubscribers.delete(ws)
       }
     }
@@ -2360,6 +2405,24 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     return sentinelState.sentinels.get(sentinelId)
   }
 
+  function getSentinelConnectionByAlias(alias: string): SentinelConnection | undefined {
+    const id = sentinelState.sentinelsByAlias.get(alias)
+    if (!id) return undefined
+    return sentinelState.sentinels.get(id)
+  }
+
+  function getDefaultSentinelConnection(): SentinelConnection | undefined {
+    const id = getDefaultSentinelId()
+    return id ? sentinelState.sentinels.get(id) : undefined
+  }
+
+  function getSentinelIdBySocket(ws: ServerWebSocket<unknown>): string | undefined {
+    for (const [id, conn] of sentinelState.sentinels) {
+      if (conn.ws === ws) return id
+    }
+    return undefined
+  }
+
   function applySentinelConfigSnapshot(sentinelId: string, snapshot: SentinelIdentify): boolean {
     return applySentinelConfigSnapshotImpl(
       sentinelState,
@@ -2826,6 +2889,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     getShareViewerCount,
     broadcastConversationScoped: (message: Record<string, unknown>, project: string) =>
       broadcastConversationScoped(message as unknown as ControlPanelMessage, project),
+    broadcastShellScoped,
     broadcastSharesUpdate,
     subscribeChannel,
     unsubscribeChannel,
@@ -2839,6 +2903,9 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     getSentinel,
     getSentinelByAlias,
     getSentinelConnection,
+    getSentinelConnectionByAlias,
+    getDefaultSentinelConnection,
+    getSentinelIdBySocket,
     applySentinelConfigSnapshot,
     getSentinelInfo,
     getDefaultSentinelId,

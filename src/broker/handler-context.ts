@@ -18,6 +18,13 @@ export interface WsData {
   isSentinel?: boolean
   sentinelId?: string
   sentinelAlias?: string
+  /** Dedicated host-shell DATA socket (sentinel -> broker byte pipe). Tagged at
+   *  upgrade from the `?shellData=1` query flag. detectRole treats it as the
+   *  sentinel role so `shell_data`/`shell_replay` route correctly. */
+  isShellData?: boolean
+  /** machineId of the sentinel that owns this shell-data socket (the pairing key
+   *  back to the control connection). From `?shellDataSentinel=<machineId>`. */
+  shellDataMachineId?: string
   userName?: string
   authToken?: string
   grants?: UserGrant[]

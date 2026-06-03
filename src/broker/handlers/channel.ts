@@ -12,6 +12,7 @@ import { refreshAliasUse } from '../former-slugs'
 import { GuardError, type HandlerContext, type MessageHandler } from '../handler-context'
 import { AGENT_HOST_ONLY, DASHBOARD_ROLES, registerHandlers } from '../message-router'
 import { resolvePermissionFlags } from '../permissions'
+import { buildRosterSnapshot, shellRegistry } from '../shell-registry'
 import { collectLineageSubtree } from '../spawn-lineage'
 import { computeConversationSlug, computeLocalId, formatAmbiguityError, resolveSendTarget } from './channel-id'
 
@@ -40,6 +41,14 @@ const subscribe: MessageHandler = (ctx, data) => {
     ctx.log.error(
       `[channel] subscribe: DEGRADED sentinel_status -- hasSentinel=true but getSentinels()=[] (subscriber will not see launch-dialog profile picker until next sentinel reconnect)`,
     )
+  }
+
+  // Initial host-shell roster snapshot, filtered to what this client may see
+  // (terminal:read per shell URI; share guests get none). The floating shell
+  // dock paints from this on first connect, then stays live via shell_added /
+  // shell_removed / shell_activity.
+  if (shellRegistry.count > 0) {
+    ctx.reply(buildRosterSnapshot(shellRegistry, ctx.ws.data.grants) as unknown as Record<string, unknown>)
   }
 
   // Push current usage data if available

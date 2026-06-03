@@ -5,6 +5,7 @@ import {
   HEARTBEAT_INTERVAL_MS,
   type ProfileUsageSnapshot,
   type SelectionMode,
+  type SentinelFeatures,
   type SentinelProfileInfo,
   type UsageUpdate,
 } from '../../shared/protocol'
@@ -66,6 +67,10 @@ export interface SentinelConnection {
   profileUsage?: Map<string, ProfileUsageSnapshot>
   /** ms epoch of the most recent `sentinel_usage_report` from this sentinel. */
   profileUsagePolledAt?: number
+  /** Host-level capabilities the sentinel advertised at registration (e.g.
+   *  `shell`). Joined onto `ConversationSummary.shellCapable` per conversation
+   *  via `hostSentinelId`. Refreshed on every `sentinel_identify`. */
+  features?: SentinelFeatures
 }
 
 export interface SentinelIdentifyInfo {
@@ -79,6 +84,8 @@ export interface SentinelIdentifyInfo {
   defaultSelection?: SelectionMode
   pools?: string[]
   defaultPool?: string
+  /** Host-level capabilities (e.g. `shell`). Absent = no extra features. */
+  features?: SentinelFeatures
 }
 
 export interface SentinelState {
@@ -132,6 +139,7 @@ export function setSentinel(
     defaultSelection: info?.defaultSelection,
     pools: info?.pools,
     defaultPool: info?.defaultPool,
+    features: info?.features,
   }
   state.sentinels.set(sentinelId, conn)
   state.sentinelsByAlias.set(alias, sentinelId)

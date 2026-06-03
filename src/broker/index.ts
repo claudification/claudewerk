@@ -11,11 +11,12 @@ checkBunVersion()
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { extractProjectLabel, parseProjectUri } from '../shared/project-uri'
-import { DEFAULT_BROKER_PORT } from '../shared/protocol'
+import { DEFAULT_BROKER_PORT, SHELL_DATA_WS_FLAG, SHELL_DATA_WS_SENTINEL } from '../shared/protocol'
 import { getOrAssign, initAddressBook, resolve } from './address-book'
 import { closeAnalyticsStore, initAnalyticsStore } from './analytics-store'
 import { getUser, initAuth, reloadState, validateConversation } from './auth'
 import {
+  type AuthResult,
   getAuthenticatedUser,
   requireAuth,
   resolveAuth,
@@ -32,6 +33,7 @@ import { createGatewayRegistry } from './gateway-registry'
 import { initGlobalSettings } from './global-settings'
 import type { WsData } from './handler-context'
 import { registerAllHandlers } from './handlers'
+import { dropShellViewerSocket, onSentinelDisconnect } from './handlers/shell'
 import { startSpawnApprovalSweep } from './handlers/spawn-approval'
 import { appendMessage, initInterConversationLog } from './inter-conversation-log'
 import { drain, enqueue, getQueueSize, initMessageQueue } from './message-queue'
@@ -62,9 +64,26 @@ import {
   shareToGrants as shareToGrantList,
   validateShare as validateShareToken,
 } from './shares'
+import { shellRegistry } from './shell-registry'
 import { createStore } from './store'
 import { createTerminationLog, startTerminationLogSweep } from './termination-log'
 import { cleanupVoiceForWs } from './voice-stream'
+
+/**
+ * Tag a dedicated host-shell DATA socket (`?shellData=1&shellDataSentinel=<id>`).
+ * It MUST be an infrastructure secret (sentinel or shared-admin) -- never a user
+ * cookie -- or a logged-in user could spoof PTY bytes for any shell. Returns a
+ * 403 Response to reject, or null to continue the upgrade.
+ */
+function tagShellDataSocket(url: URL, authResult: AuthResult | null, wsData: WsData): Response | null {
+  if (!url.searchParams.get(SHELL_DATA_WS_FLAG)) return null
+  if (!authResult || (authResult.role !== 'sentinel' && authResult.role !== 'admin')) {
+    return new Response('Shell-data socket requires sentinel auth', { status: 403 })
+  }
+  wsData.isShellData = true
+  wsData.shellDataMachineId = url.searchParams.get(SHELL_DATA_WS_SENTINEL) ?? undefined
+  return null
+}
 
 interface Args {
   port: number
@@ -706,6 +725,9 @@ async function main() {
             wsData.gatewayId = authResult.gatewayId
             wsData.gatewayAlias = authResult.alias
           }
+          // Tag a dedicated host-shell DATA socket (rejects non-sentinel auth).
+          const shellDataReject = tagShellDataSocket(url, authResult, wsData)
+          if (shellDataReject) return shellDataReject
           const success = server.upgrade(req, { data: wsData })
           if (success) return undefined
           return new Response('WebSocket upgrade failed', { status: 500 })
@@ -718,8 +740,26 @@ async function main() {
         // Keep connections alive through proxies (Cloudflare, nginx, etc.)
         idleTimeout: 120, // seconds - close after 120s of no data
         sendPings: true, // auto-send WebSocket pings to keep alive
-        open(_ws) {
-          // Connection established
+        open(ws) {
+          // Pair a sentinel's dedicated shell-data socket + re-issue shell_attach
+          // for any shell that still has viewers (broker restart recovery).
+          const machineId = ws.data.isShellData ? ws.data.shellDataMachineId : undefined
+          if (machineId) {
+            shellRegistry.setDataSocket(machineId, ws)
+            for (const r of shellRegistry.shellsNeedingReattach(machineId)) {
+              try {
+                ws.send(
+                  JSON.stringify({
+                    type: 'shell_attach',
+                    shellId: r.shellId,
+                    cols: r.cols,
+                    rows: r.rows,
+                    replay: true,
+                  }),
+                )
+              } catch {}
+            }
+          }
         },
         message(ws, message) {
           try {
@@ -762,9 +802,22 @@ async function main() {
             `[ws] Connection closed: role=${role} conv=${hintConv ?? 'none'} conn=${hintConn ?? 'none'} code=${code} reason=${reason || 'none'}`,
           )
 
+          // Dedicated shell-data socket closed: forget the pairing. The control
+          // WS owns shell-roster lifecycle, so we do NOT remove shells here --
+          // the sentinel's own data WS reconnects (wantOpen) and re-pairs.
+          if (ws.data.isShellData) {
+            const machineId = shellRegistry.removeDataSocket(ws)
+            console.log(`[shell] data socket closed machine=${machineId ?? 'unknown'}`)
+            return
+          }
+
           // Handle sentinel disconnection
           if (ws.data.isSentinel) {
+            // Clean up this sentinel's host-shell roster BEFORE removeSentinel
+            // drops the connection (we need its id to scope the removal).
+            const sentinelId = conversationStore.getSentinelIdBySocket(ws)
             conversationStore.removeSentinel(ws)
+            if (sentinelId) onSentinelDisconnect(sentinelId, conversationStore)
             if (verbose) {
               console.log('[sentinel] Sentinel disconnected')
             }
@@ -787,6 +840,9 @@ async function main() {
             // If this dashboard was viewing a terminal or json stream, remove from viewers
             conversationStore.removeTerminalViewerBySocket(ws)
             conversationStore.removeJsonStreamViewerBySocket(ws)
+            // Drop this socket from every host-shell it was watching (detach the
+            // sentinel byte stream when it was the last viewer).
+            dropShellViewerSocket(ws)
             // Clean up launch job subscriptions
             conversationStore.cleanupJobSubscriber(ws)
             // Drop any project-board watches this socket was the last viewer of
