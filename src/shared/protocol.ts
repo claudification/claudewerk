@@ -181,6 +181,153 @@ export interface TerminalError {
   error: string
 }
 
+// ---------------------------------------------------------------------------
+// Host shell messages (browser <-> broker <-> sentinel)
+//
+// A host shell is a raw `$SHELL` PTY owned by the SENTINEL, addressed by the
+// project URI `claude://{sentinel}/{path}` + a `shellId`. Floating, global,
+// permission-filtered by URI. Three planes:
+//   - Roster  (broker -> web): what shells exist + activity blink. No bytes.
+//   - Control (broker <-> sentinel): spawn / kill / exit.
+//   - Data    (sentinel <-> broker <-> web): PTY bytes, lazy per-viewer.
+// All shell routing keys are projectUri / sentinelId / shellId -- NEVER
+// ccSessionId (broker boundary). See plan-host-shell.md.
+// ---------------------------------------------------------------------------
+
+/** A single floating host shell, as advertised on the global roster. The roster
+ *  is broadcast to every permitted web client, filtered per-client by URI
+ *  access. Carries NO PTY bytes -- purely the "what exists" fact. */
+export interface ShellRosterEntry {
+  shellId: string
+  /** `claude://{sentinel}/{path}` -- the permission boundary + addressing key. */
+  projectUri: string
+  sentinelId: string
+  /** Working directory the shell runs in (= URI path / project root). */
+  path: string
+  /** Display title (defaults to basename(path) or user-supplied). */
+  title: string
+  status: 'live' | 'exited'
+  /** Identity (user name) that opened the shell. */
+  createdBy: string
+  createdAt: number
+}
+
+// --- Roster plane: broker -> web (permission-filtered per client) ---
+
+/** Full roster snapshot on web connect / resync. Filtered per client by URI. */
+export interface ShellRoster {
+  type: 'shell_roster'
+  shells: ShellRosterEntry[]
+}
+
+/** A shell opened that this client is permitted to see. */
+export interface ShellAdded {
+  type: 'shell_added'
+  shell: ShellRosterEntry
+}
+
+/** A shell died / was killed / its sentinel went offline. */
+export interface ShellRemoved {
+  type: 'shell_removed'
+  shellId: string
+  /** PTY exit code when known (absent on sentinel-disconnect cleanup). */
+  code?: number
+}
+
+/** Throttled activity blink (coalesced ~4/sec max per shell). Drives the
+ *  top-bar activity light WITHOUT subscribing to bytes. Emitted sentinel ->
+ *  broker over the control WS, then rebroadcast broker -> roster subscribers. */
+export interface ShellActivity {
+  type: 'shell_activity'
+  shellId: string
+  ts: number
+}
+
+// --- Data plane: lazy per-viewer subscription (dedicated shell-data WS) ---
+
+/** Expand a shell tile == subscribe. Broker perm-checks URI read access, adds
+ *  the viewer, triggers ring-buffer replay, starts byte forwarding. cols/rows
+ *  feed the tmux-style min-size policy. (web -> broker) */
+export interface ShellSubscribe {
+  type: 'shell_subscribe'
+  shellId: string
+  cols: number
+  rows: number
+}
+
+/** Minimize / detach-close == unsubscribe. Drops the viewer; bytes stop; the
+ *  roster tile + activity light remain. (web -> broker) */
+export interface ShellUnsubscribe {
+  type: 'shell_unsubscribe'
+  shellId: string
+}
+
+/** PTY output. Broker fans out to subscribed viewers only.
+ *  (sentinel -> broker -> subscribed web) */
+export interface ShellData {
+  type: 'shell_data'
+  shellId: string
+  data: string
+}
+
+/** Keystrokes. Broker perm-checks URI WRITE access before forwarding.
+ *  (web -> broker -> sentinel) */
+export interface ShellInput {
+  type: 'shell_input'
+  shellId: string
+  data: string
+}
+
+/** Per-viewer desired size. Sentinel applies the min-size policy across all
+ *  current subscribers. (web -> broker -> sentinel) */
+export interface ShellResize {
+  type: 'shell_resize'
+  shellId: string
+  cols: number
+  rows: number
+}
+
+/** Ring-buffer dump on subscribe. The client clears + repaints on this. `done`
+ *  marks the final chunk. (sentinel -> broker -> one web) */
+export interface ShellReplay {
+  type: 'shell_replay'
+  shellId: string
+  data: string
+  done: boolean
+}
+
+// --- Control plane: sentinel-targeted (existing sentinel control WS) ---
+
+/** Open a shell. Broker perm-checks URI WRITE access, routes to the sentinel
+ *  derived from `projectUri`. `conversationId` is UI-grouping + transcript
+ *  attachment only -- the shell is NOT owned by the conversation.
+ *  (web -> broker -> sentinel) */
+export interface ShellOpen {
+  type: 'shell_open'
+  projectUri: string
+  shellId: string
+  cols: number
+  rows: number
+  title?: string
+  conversationId?: string
+}
+
+/** Kill a shell. Broker perm-checks URI WRITE access, routes to the sentinel.
+ *  (web -> broker -> sentinel) */
+export interface ShellClose {
+  type: 'shell_close'
+  shellId: string
+}
+
+/** PTY exited. Broker -> `shell_removed` on the roster; also emits a
+ *  `TranscriptShellEntry` when a `conversationId` was attached at open.
+ *  (sentinel -> broker) */
+export interface ShellExit {
+  type: 'shell_exit'
+  shellId: string
+  code: number
+}
+
 export interface DiagLog {
   type: 'diag'
   conversationId: string
@@ -457,6 +604,31 @@ export interface TranscriptAgentLaunchEntry extends TranscriptEntryBase {
   args?: Record<string, unknown>
 }
 
+/** Inline receipt for a host-shell lifecycle event (open / exit), emitted into
+ *  the attached conversation's transcript when `shell_open` carried a
+ *  `conversationId`. Satisfies EVERYTHING-IS-A-STRUCTURED-MESSAGE: live PTY
+ *  bytes stay ephemeral, but the open + exit facts are durable + inspectable.
+ *  The shell itself is sentinel-owned and URI-addressed, NOT conversation-owned;
+ *  this entry is a UI-grouping receipt only. See plan-host-shell.md 4.5. */
+export interface TranscriptShellEntry extends TranscriptEntryBase {
+  type: 'shell'
+  shellId: string
+  /** `open`: shell spawned. `exit`: PTY exited. */
+  event: 'open' | 'exit'
+  /** `claude://{sentinel}/{path}` the shell is bound to. */
+  projectUri?: string
+  /** Working directory the shell runs in (= URI path). */
+  path?: string
+  title?: string
+  /** Exit code, set on `event: 'exit'`. */
+  code?: number
+  /** Identity (user name) that opened the shell. */
+  createdBy?: string
+  detail?: string
+  /** Full underlying payload for click-to-expand in the (i) inspector. */
+  raw?: Record<string, unknown>
+}
+
 export type TranscriptEntry =
   | TranscriptUserEntry
   | TranscriptAssistantEntry
@@ -473,6 +645,7 @@ export type TranscriptEntry =
   | TranscriptLaunchEntry
   | TranscriptAgentLaunchEntry
   | TranscriptSpawnNotificationEntry
+  | TranscriptShellEntry
   | (TranscriptEntryBase & Record<string, unknown>) // fallback for unknown types
 
 // Streaming output from background bash tasks (.output file watching)
@@ -2454,6 +2627,17 @@ export interface JobFailed {
   error: string
 }
 
+/** Optional host capabilities a sentinel advertises at registration. Distinct
+ *  from `AgentHostCapability` (which is agent-host-scoped) -- these are
+ *  HOST-level features the sentinel owns. See plan-host-shell.md 3.1. */
+export interface SentinelFeatures {
+  /** Host can spawn raw `$SHELL` PTYs (the host-shell feature). Off when
+   *  `CLAUDWERK_NO_SHELL=1` / `--no-shell` / a profile-config toggle. The
+   *  broker joins this onto `ConversationSummary.shellCapable` per conversation
+   *  via `hostSentinelId`. */
+  shell?: boolean
+}
+
 // Sentinel -> Broker messages
 export interface SentinelIdentify {
   type: 'sentinel_identify'
@@ -2474,6 +2658,9 @@ export interface SentinelIdentify {
   /** Pool the sentinel uses for Balanced/Random launches that omit a pool.
    *  Defaults to `'default'`. Configured by the sentinel's `sentinel.json`. */
   defaultPool?: string
+  /** Host-level capabilities this sentinel advertises (e.g. `shell`). Absent =
+   *  no extra features. See `SentinelFeatures`. */
+  features?: SentinelFeatures
 }
 
 export interface ReviveResult {
@@ -3316,6 +3503,10 @@ export type SentinelMessage =
   | CcVersionChanged
   | CcMinVersionUnmet
   | SentinelPatchConfigAck
+  | ShellExit
+  | ShellActivity
+  | ShellData
+  | ShellReplay
 
 // Broker -> Sentinel messages
 //
@@ -3594,6 +3785,10 @@ export type BrokerSentinelMessage =
   | SentinelPatchConfig
   | SentinelQuit
   | SentinelReject
+  | ShellOpen
+  | ShellClose
+  | ShellInput
+  | ShellResize
 
 // Dashboard broadcast: sentinel status
 export interface SentinelStatus {
@@ -3693,6 +3888,11 @@ export interface ConversationSummary {
   recapFresh?: boolean
   hostSentinelId?: string
   hostSentinelAlias?: string
+  /** True iff this conversation's host sentinel advertises `features.shell`
+   *  (joined from the sentinel registry via `hostSentinelId`). Gates the
+   *  `Cmd+G S` "open shell" chord. The dock itself is driven by the global
+   *  roster, not this flag. See plan-host-shell.md 3.1. */
+  shellCapable?: boolean
   /** Resolved sentinel-profile name. Absent (or undefined) means the conversation
    *  ran on the implicit default profile. Mirrors `Conversation.resolvedProfile`. */
   resolvedProfile?: string
