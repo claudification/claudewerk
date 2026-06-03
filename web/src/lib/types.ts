@@ -40,6 +40,14 @@ export function canJsonStream(s: Conversation): boolean {
   return s.status !== 'ended' && !!s.capabilities?.includes('json_stream')
 }
 
+/** Check if a host shell can be opened on this conversation's sentinel. Driven by
+ *  the host sentinel's `features.shell` (joined onto `shellCapable` by the
+ *  broker), NOT by the agent-host terminal capability -- shells are a sentinel
+ *  feature, independent of PTY/headless mode. */
+export function canShell(s: Conversation): boolean {
+  return s.status !== 'ended' && !!s.shellCapable
+}
+
 // Client-side conversation model (derived from SessionSummary wire format with defaults applied)
 export interface Conversation {
   id: string
@@ -174,6 +182,9 @@ export interface Conversation {
   }
   hostSentinelId?: string
   hostSentinelAlias?: string
+  /** Host sentinel advertises `features.shell` -- can open a host shell here.
+   *  Joined by the broker via `hostSentinelId`. See [[canShell]]. */
+  shellCapable?: boolean
   /** Agent family (claude / opencode / chat-api / hermes). The daemon is NOT a
    *  backend -- it is the claude `claude-daemon` transport below. */
   backend?: string

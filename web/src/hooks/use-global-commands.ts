@@ -12,7 +12,8 @@ import { fetchTranscript, sendInput, useConversationsStore, wsSend } from '@/hoo
 import { formatShortcut, useChordCommand, useCommand, validateChordBindings } from '@/lib/commands'
 import { canRespawnStaleDaemon } from '@/lib/daemon-control'
 import { focusInputEditor } from '@/lib/focus-input'
-import { canTerminal, projectPath } from '@/lib/types'
+import { openShell } from '@/lib/shell-commands'
+import { canShell, canTerminal, projectPath } from '@/lib/types'
 import { isMobileViewport } from '@/lib/utils'
 
 export function useGlobalCommands(toggleSidebar: () => void) {
@@ -120,6 +121,39 @@ export function useGlobalCommands(toggleSidebar: () => void) {
       useConversationsStore.getState().openSwitcherWithFilter('S:~/')
     },
     { label: 'Spawn new conversation', key: 's', group: 'Conversation' },
+  )
+
+  // Open a host shell on the selected conversation's sentinel + project path.
+  // PLAN spec'd "Cmd+G S", but `s` is already the spawn-conversation chord;
+  // bound to `h` (host shell) to avoid clobbering existing muscle memory. The
+  // dock (conversation-independent) is the primary surface; this is the
+  // keyboard fast-path. Gated on the host sentinel's `features.shell`.
+  useChordCommand(
+    'open-shell',
+    () => {
+      const store = useConversationsStore.getState()
+      const sid = store.selectedConversationId
+      if (!sid) return
+      const conversation = store.conversationsById[sid]
+      if (!conversation || !canShell(conversation)) return
+      openShell({
+        projectUri: conversation.project,
+        cols: 80,
+        rows: 24,
+        conversationId: sid,
+      })
+    },
+    {
+      label: 'Open host shell',
+      key: 'h',
+      group: 'Navigation',
+      when: () => {
+        const store = useConversationsStore.getState()
+        const sid = store.selectedConversationId
+        const conversation = sid ? store.conversationsById[sid] : undefined
+        return !!conversation && canShell(conversation)
+      },
+    },
   )
 
   useChordCommand(

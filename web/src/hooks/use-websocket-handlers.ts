@@ -22,6 +22,7 @@ import type {
   RecapProgressMessage,
   RecapRegeneratedMessage,
   RecapSummary,
+  ShellRosterEntry,
 } from '@shared/protocol'
 import { handleLaunchProfilesUpdatedMessage } from '@/components/launch-profiles/use-launch-profiles'
 import { daemonControlToast } from '@/lib/daemon-control'
@@ -48,6 +49,7 @@ import {
   useConversationsStore,
 } from './use-conversations'
 import { useRecapJobsStore } from './use-recap-jobs'
+import { useShellsStore } from './use-shells'
 import { handleSpawnRequestAck } from './use-spawn'
 
 // Loose WS message type (mirror of use-websocket.ts -- intentionally duplicated
@@ -119,6 +121,7 @@ function toConversation(summary: ConversationSummary): Conversation {
     recapFresh: summary.recapFresh,
     hostSentinelId: summary.hostSentinelId,
     hostSentinelAlias: summary.hostSentinelAlias,
+    shellCapable: summary.shellCapable,
     resolvedProfile: summary.resolvedProfile,
     version: summary.version,
     buildTime: summary.buildTime,
@@ -1277,6 +1280,50 @@ function handleThinkingProgress(msg: DashboardMessage): void {
   })
 }
 
+// ─── host shells (roster plane) ──────────────────────────────────────────────
+// The data plane (shell_data / shell_replay) bypasses this table -- it is routed
+// straight to the mounted ShellPane in use-websocket.ts. Only the low-frequency
+// roster deltas land here. All four are permission-filtered by the broker before
+// they reach this client (terminal:read per-URI), so no client-side gating.
+
+function handleShellRoster(msg: DashboardMessage): void {
+  const shells = msg.shells as ShellRosterEntry[] | undefined
+  if (Array.isArray(shells)) useShellsStore.getState().setRoster(shells)
+}
+
+function handleShellAdded(msg: DashboardMessage): void {
+  const shell = msg.shell as ShellRosterEntry | undefined
+  if (shell?.shellId) useShellsStore.getState().addShell(shell)
+}
+
+function handleShellRemoved(msg: DashboardMessage): void {
+  const shellId = typeof msg.shellId === 'string' ? msg.shellId : undefined
+  if (shellId) useShellsStore.getState().removeShell(shellId)
+}
+
+function handleShellActivity(msg: DashboardMessage): void {
+  const shellId = typeof msg.shellId === 'string' ? msg.shellId : undefined
+  if (!shellId) return
+  useShellsStore.getState().markActivity(shellId, typeof msg.ts === 'number' ? msg.ts : Date.now())
+}
+
+/** `shell_open_result { ok:false, error }` -- the broker's auto-reply when a
+ *  `shell_open` was rejected (perm gate / unknown sentinel / spawn failure).
+ *  Surface it so the failed open is visible. A successful open is silent (the
+ *  tile appears via shell_added). */
+function handleShellOpenResult(msg: DashboardMessage): void {
+  if (msg.ok !== false) return
+  window.dispatchEvent(
+    new CustomEvent('rclaude-toast', {
+      detail: {
+        title: 'Shell could not open',
+        body: typeof msg.error === 'string' ? msg.error : 'unknown error',
+        variant: 'warning',
+      },
+    }),
+  )
+}
+
 function handleActivityPhrase(msg: DashboardMessage): void {
   const conversationId = msg.conversationId as string | undefined
   if (!conversationId) return
@@ -1408,6 +1455,12 @@ export const handlers: Record<string, MessageHandler> = {
   usage_update: handleUsageUpdate,
   sentinel_usage_report: handleSentinelUsageReport,
   token_sample: handleTokenSample,
+  // host shells (roster plane)
+  shell_roster: handleShellRoster,
+  shell_added: handleShellAdded,
+  shell_removed: handleShellRemoved,
+  shell_activity: handleShellActivity,
+  shell_open_result: handleShellOpenResult,
   thinking_progress: handleThinkingProgress,
   activity_phrase: handleActivityPhrase,
   debug_trace_event: handleDebugTraceEvent,

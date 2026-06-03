@@ -27,6 +27,7 @@ import { reviveDialogBus } from '@/components/revive-dialog-trigger'
 import { manageChatConnectionsBus } from '@/components/settings/manage-chat-connections-trigger'
 import { manageProjectLinksBus } from '@/components/settings/manage-project-links-trigger'
 import { SharedConversationView } from '@/components/shared-conversation-view'
+import { ShellDock } from '@/components/shell-dock'
 import { ShortcutHelp } from '@/components/shortcut-help'
 import { spawnDialogBus } from '@/components/spawn-dialog-trigger'
 import { taskBatchBus } from '@/components/task-batch-trigger'
@@ -52,6 +53,7 @@ import { clearShareMode, detectShareKind, detectShareMode } from '@/lib/share-mo
 import { isMobileViewport, isTouchDevice } from '@/lib/utils'
 
 const WebTerminal = lazy(() => import('@/components/web-terminal').then(m => ({ default: m.WebTerminal })))
+const ShellPane = lazy(() => import('@/components/shell-pane').then(m => ({ default: m.ShellPane })))
 const UserAdminDialog = lazy(() => import('@/components/user-admin').then(m => ({ default: m.UserAdminDialog })))
 const SentinelManagerDialog = lazy(() =>
   import('@/components/sentinel-manager').then(m => ({ default: m.SentinelManagerDialog })),
@@ -257,7 +259,7 @@ function Dashboard() {
           </SheetContent>
         </Sheet>
 
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <Header />
         </div>
 
@@ -283,6 +285,11 @@ function Dashboard() {
             <Command className="size-4" />
           </Button>
         )}
+      </div>
+
+      {/* Host-shell dock -- global floating-shell tray. Self-hides when empty. */}
+      <div className="shrink-0">
+        <ShellDock />
       </div>
 
       {/* Main content */}
@@ -430,6 +437,27 @@ function PopoutTerminal({ conversationId }: { conversationId: string }) {
   )
 }
 
+/** Detached host-shell window. Reuses the main session cookie (same origin), so
+ *  the WS authenticates exactly like the dashboard -- a single ShellPane with the
+ *  same subscribe-on-mount mechanics. */
+function PopoutShell({ shellId }: { shellId: string }) {
+  useWebSocket()
+
+  useEffect(() => {
+    document.title = `Shell: ${shellId.slice(0, 8)}`
+  }, [shellId])
+
+  return (
+    <div className="h-full w-full bg-[#0a0a0a]">
+      <Suspense
+        fallback={<div className="flex items-center justify-center h-full text-muted-foreground">Loading shell…</div>}
+      >
+        <ShellPane shellId={shellId} className="h-full w-full p-1" />
+      </Suspense>
+    </div>
+  )
+}
+
 function ShareGate({ token }: { token: string }) {
   const [mode, setMode] = useState<'checking' | 'guest' | 'redirect'>('checking')
 
@@ -499,6 +527,15 @@ export function App() {
     return (
       <AuthGate>
         <PopoutTerminal conversationId={popoutMatch[1]} />
+      </AuthGate>
+    )
+  }
+
+  const popoutShellMatch = hash.match(/^popout-shell\/(.+)$/)
+  if (popoutShellMatch) {
+    return (
+      <AuthGate>
+        <PopoutShell shellId={popoutShellMatch[1]} />
       </AuthGate>
     )
   }

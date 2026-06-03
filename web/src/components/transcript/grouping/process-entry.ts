@@ -316,6 +316,13 @@ export function processEntry(entry: TranscriptEntry, state: GroupingState): void
     state.groups.push({ type: 'spawn_notification', timestamp: entry.timestamp || '', entries: [entry] })
     return
   }
+  if (entry.type === 'shell') {
+    // One card per shell open/exit receipt -- never merged (each is a distinct
+    // lifecycle event, possibly for different shellIds).
+    state.current = null
+    state.groups.push({ type: 'shell', timestamp: entry.timestamp || '', entries: [entry] })
+    return
+  }
   if (entry.type === 'compacting' || entry.type === 'compacted') {
     handleCompact(entry, state)
     return

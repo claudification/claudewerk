@@ -21,6 +21,7 @@ import {
   resolveConfigResponse,
   useConversationsStore,
 } from './use-conversations'
+import { dispatchShellData } from './use-shells'
 import { type DashboardMessage, handlers } from './use-websocket-handlers'
 import { recordIn, recordOut } from './ws-stats'
 
@@ -392,6 +393,19 @@ export function useWebSocket() {
               conversationId: (msg as DashboardMessage & { conversationId?: string }).conversationId || '',
               data: msg.data,
               error: msg.error,
+            })
+            return
+          }
+
+          // Host-shell PTY bytes -> direct per-shell handler (low latency, like
+          // terminal_data). Replay clears+repaints; data streams live. Routed by
+          // shellId so N shell panes can stream concurrently.
+          if (msg.type === 'shell_data' || msg.type === 'shell_replay') {
+            dispatchShellData({
+              type: msg.type,
+              shellId: (msg as DashboardMessage & { shellId?: string }).shellId || '',
+              data: msg.data || '',
+              done: (msg as DashboardMessage & { done?: boolean }).done,
             })
             return
           }
