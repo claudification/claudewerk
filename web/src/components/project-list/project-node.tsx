@@ -198,7 +198,9 @@ const ProjectConversationGroup = memo(
               />
             </div>
           </ProjectContextMenu>
-          <div className="space-y-0.5 pb-1">
+          {/* -mb-px overlaps the last card's bottom border onto the container's
+              bottom border so they read as one line (no doubled/gapped edge). */}
+          <div className="space-y-0.5 -mb-px">
             {crossProjectStubIds && crossProjectStubIds.length > 0 && (
               <>
                 <div className="flex items-center gap-2 px-3 py-1">
