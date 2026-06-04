@@ -65,6 +65,10 @@ export function spawnClaude(options: PtyOptions): PtyProcess {
       // Force xterm-256color regardless of outer shell (tmux sets screen-256color)
       // Remote viewer is xterm.js which IS xterm - must match
       TERM: 'xterm-256color',
+      // Advertise 24-bit color so TUIs (neovim, etc.) emit true-color escapes
+      // instead of down-mapping to the 256 palette. xterm.js renders truecolor
+      // correctly via the DOM renderer.
+      COLORTERM: 'truecolor',
       // Force CC to use OSC 52 for clipboard instead of pbcopy.
       // CC checks SSH_TTY to decide clipboard provider: if set, it writes
       // \x1b]52;c;BASE64\x07 to stdout (the PTY) which rclaude's OSC 52

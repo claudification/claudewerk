@@ -66,11 +66,15 @@ export function InlineTerminal({ conversationId }: InlineTerminalProps) {
 
     terminal.open(terminalRef.current)
 
-    try {
-      const webglAddon = new WebglAddon()
-      webglAddon.onContextLoss(() => webglAddon.dispose())
-      terminal.loadAddon(webglAddon)
-    } catch {}
+    // Opt-in WebGL: the default DOM renderer renders truecolor accurately on
+    // every GPU, while the WebGL addon mis-packs color channels on some drivers.
+    if (settings.rendererId === 'webgl') {
+      try {
+        const webglAddon = new WebglAddon()
+        webglAddon.onContextLoss(() => webglAddon.dispose())
+        terminal.loadAddon(webglAddon)
+      } catch {}
+    }
 
     fitAddon.fit()
     xtermRef.current = terminal
@@ -101,6 +105,14 @@ export function InlineTerminal({ conversationId }: InlineTerminalProps) {
     resizeObserver.observe(terminalRef.current)
 
     terminal.focus()
+
+    // Re-fit once bundled web fonts settle so Nerd Font icon widths align.
+    document.fonts?.ready.then(() => {
+      if (xtermRef.current !== terminal) return
+      fitAddon.fit()
+      const { cols, rows } = terminal
+      sendWsMessage({ type: 'terminal_resize', conversationId, cols, rows })
+    })
 
     return () => {
       resizeObserver.disconnect()

@@ -251,11 +251,15 @@ export const THEMES: Record<string, TerminalTheme> = {
   },
 }
 
-// Nerd Font fallback for special glyphs (status bar icons, powerline, etc.)
+// Nerd Font glyph fallback (status bar icons, powerline, file-tree glyphs, ...).
+// "Symbols Nerd Font Mono" is bundled as a web font (see globals.css), so this
+// fallback now resolves on every device instead of rendering tofu boxes.
 const NF = ', "Symbols Nerd Font Mono", "Symbols Nerd Font", monospace'
 
 export const FONTS = [
   { id: 'geist-mono', name: 'Geist Mono', family: `"Geist Mono"${NF}` },
+  // Bundled patched mono -- icons baked into the font itself (woff2 in globals.css).
+  { id: 'maple-mono-nf', name: 'Maple Mono NF', family: `"Maple Mono NF"${NF}` },
   { id: 'jetbrains', name: 'JetBrains Mono', family: `"JetBrains Mono"${NF}` },
   { id: 'fira-code', name: 'Fira Code', family: `"Fira Code"${NF}` },
   { id: 'cascadia', name: 'Cascadia Code', family: `"Cascadia Code"${NF}` },
@@ -268,18 +272,30 @@ export const FONTS = [
 
 export const FONT_SIZES = [10, 11, 12, 13, 14, 15, 16, 18, 20]
 
+// Renderer backend. DOM is the default because the WebGL addon mis-packs color
+// channels on some GPUs/drivers (navy->olive, blue->lime); the DOM renderer
+// reads CSS colors and renders truecolor correctly everywhere. WebGL stays
+// available for those who want its scrollback throughput on a known-good GPU.
+export type RendererId = 'dom' | 'webgl'
+export const RENDERERS: Array<{ id: RendererId; name: string; description: string }> = [
+  { id: 'dom', name: 'DOM (default)', description: 'Accurate colors on every GPU' },
+  { id: 'webgl', name: 'WebGL', description: 'Faster, but colors may shift on some GPUs' },
+]
+
 const STORAGE_KEY = 'rclaude-terminal-settings'
 
 export interface TerminalSettings {
   themeId: string
   fontId: string
   fontSize: number
+  rendererId: RendererId
 }
 
 const DEFAULTS: TerminalSettings = {
   themeId: 'tokyo-night',
   fontId: 'geist-mono',
   fontSize: 14,
+  rendererId: 'dom',
 }
 
 export function loadTerminalSettings(): TerminalSettings {
@@ -291,6 +307,7 @@ export function loadTerminalSettings(): TerminalSettings {
       themeId: parsed.themeId && THEMES[parsed.themeId] ? parsed.themeId : DEFAULTS.themeId,
       fontId: parsed.fontId && FONTS.find(f => f.id === parsed.fontId) ? parsed.fontId : DEFAULTS.fontId,
       fontSize: FONT_SIZES.includes(parsed.fontSize) ? parsed.fontSize : DEFAULTS.fontSize,
+      rendererId: parsed.rendererId === 'webgl' ? 'webgl' : DEFAULTS.rendererId,
     }
   } catch {
     return DEFAULTS

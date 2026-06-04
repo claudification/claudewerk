@@ -82,6 +82,10 @@ export function scrubShellEnv(env: Record<string, string | undefined> = process.
     out[key] = value
   }
   out.TERM = 'xterm-256color'
+  // Advertise 24-bit color so TUIs (neovim, etc.) emit true-color escapes
+  // instead of down-mapping to the 256 palette. The remote viewer is xterm.js,
+  // which renders truecolor correctly via the DOM renderer.
+  out.COLORTERM = 'truecolor'
   return out
 }
 

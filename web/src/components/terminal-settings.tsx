@@ -1,7 +1,14 @@
 import { X } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
-import { FONT_SIZES, FONTS, saveTerminalSettings, type TerminalSettings, THEMES } from './terminal-settings-storage'
+import {
+  FONT_SIZES,
+  FONTS,
+  RENDERERS,
+  saveTerminalSettings,
+  type TerminalSettings,
+  THEMES,
+} from './terminal-settings-storage'
 
 interface TerminalSettingsPanelProps {
   settings: TerminalSettings
@@ -82,7 +89,7 @@ export function TerminalSettingsPanel({ settings, onChange, onClose }: TerminalS
       </div>
 
       {/* Font Size */}
-      <div className="px-3 py-2">
+      <div className="px-3 py-2 border-b border-primary/20/50">
         <div className="text-[10px] uppercase tracking-wider text-comment mb-2">Size</div>
         <div className="flex items-center gap-1 flex-wrap">
           {FONT_SIZES.map(size => (
@@ -98,6 +105,29 @@ export function TerminalSettingsPanel({ settings, onChange, onClose }: TerminalS
               )}
             >
               {size}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Renderer */}
+      <div className="px-3 py-2">
+        <div className="text-[10px] uppercase tracking-wider text-comment mb-2">Renderer</div>
+        <div className="space-y-0.5">
+          {RENDERERS.map(r => (
+            <button
+              key={r.id}
+              type="button"
+              onClick={() => update({ rendererId: r.id })}
+              className={cn(
+                'w-full px-2 py-1 text-left rounded transition-colors',
+                local.rendererId === r.id
+                  ? 'text-foreground bg-primary/50'
+                  : 'text-comment hover:text-foreground hover:bg-primary/25',
+              )}
+            >
+              {r.name}
+              <span className="block text-[9px] text-comment">{r.description}</span>
             </button>
           ))}
         </div>

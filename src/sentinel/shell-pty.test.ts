@@ -40,6 +40,7 @@ describe('scrubShellEnv', () => {
     expect(out.SHELL).toBe('/bin/zsh')
     // Forced:
     expect(out.TERM).toBe('xterm-256color')
+    expect(out.COLORTERM).toBe('truecolor')
     // Scrubbed (every credential-bearing key gone):
     for (const k of [
       'CLAUDWERK_SECRET',

@@ -121,14 +121,10 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(function Xt
 
     terminal.open(containerRef.current)
 
-    try {
-      const webglAddon = new WebglAddon()
-      webglAddon.onContextLoss(() => webglAddon.dispose())
-      terminal.loadAddon(webglAddon)
-      webglAddonRef.current = webglAddon
-    } catch {
-      // WebGL not available
-    }
+    // WebGL is loaded by the renderer effect below (it syncs the addon to the
+    // current rendererId on mount and whenever the setting changes). Default is
+    // the DOM renderer -- it renders truecolor accurately on every GPU, whereas
+    // the WebGL addon mis-packs color channels on some drivers.
 
     fitAddon.fit()
     xtermRef.current = terminal
@@ -163,6 +159,15 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(function Xt
 
     terminal.focus()
 
+    // Bundled web fonts load async; xterm measures char size at open() with the
+    // fallback font. Re-fit once fonts settle so glyph widths (and Nerd Font
+    // icons) align correctly instead of staying measured against the fallback.
+    document.fonts?.ready.then(() => {
+      if (xtermRef.current !== terminal) return
+      fitAddon.fit()
+      onResizeRef.current(terminal.cols, terminal.rows)
+    })
+
     return () => {
       resizeObserver.disconnect()
       dataDisposable.dispose()
@@ -191,6 +196,30 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(function Xt
     fitAddonRef.current?.fit()
     onResizeRef.current(terminal.cols, terminal.rows)
   }, [settings])
+
+  // Sync the WebGL addon to the renderer setting (load/dispose live, no rebuild).
+  // Runs on mount and whenever rendererId changes. DOM renderer = no addon.
+  useEffect(() => {
+    const terminal = xtermRef.current
+    if (!terminal) return
+    const wantWebgl = settings.rendererId === 'webgl'
+    const haveWebgl = !!webglAddonRef.current
+    if (wantWebgl && !haveWebgl) {
+      try {
+        const webglAddon = new WebglAddon()
+        webglAddon.onContextLoss(() => webglAddon.dispose())
+        terminal.loadAddon(webglAddon)
+        webglAddonRef.current = webglAddon
+      } catch {
+        // WebGL not available -- stay on the DOM renderer.
+      }
+    } else if (!wantWebgl && haveWebgl) {
+      webglAddonRef.current?.dispose()
+      webglAddonRef.current = null
+    }
+    // Re-fit so a renderer swap repaints at the correct size.
+    fitAddonRef.current?.fit()
+  }, [settings.rendererId])
 
   return <div ref={containerRef} className={cn('overflow-hidden', className)} />
 })

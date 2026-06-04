@@ -1,6 +1,26 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
+/* Bundled terminal fonts (self-hosted woff2 -- not installed on the client).
+ * "Symbols Nerd Font Mono" is the icon/glyph fallback for EVERY terminal font
+ * choice (see terminal-settings-storage.ts), so neovim/starship/file-tree
+ * glyphs resolve instead of rendering tofu boxes. "Maple Mono NF" is a
+ * selectable patched mono; its Nerd glyphs come from the Symbols fallback. */
+@font-face {
+	font-family: 'Symbols Nerd Font Mono';
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url('../assets/fonts/SymbolsNerdFontMono-Regular.woff2') format('woff2');
+}
+@font-face {
+	font-family: 'Maple Mono NF';
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url('../assets/fonts/MapleMono-Regular.woff2') format('woff2');
+}
+
 @custom-variant dark (&:is(.dark *));
 
 :root {
