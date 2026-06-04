@@ -10,6 +10,14 @@ import { isRecapInFlight } from '../../../shared/protocol'
 import type { StoreDriver } from '../../store/types'
 import { type ChatRequest, chat } from '../shared/openrouter-client'
 import type { NormalizedUsage } from '../shared/pricing'
+import {
+  DEFAULT_TEMPLATE_ID,
+  loadTemplates,
+  pickTemplate,
+  type RecapTemplate,
+  resolveOptionFlags,
+  resolveTemplateSignals,
+} from '../templates'
 import { RECAP_PIPELINE_VERSION, type RecapBundleCallPrompt, type RecapBundleWriter } from './bundle'
 import { buildMapPrompt, MapParseError, parseMapOutput } from './chunk/map-prompt'
 import { makeEmptyMetadata, mergeMetadata } from './chunk/merge'
@@ -36,7 +44,7 @@ import {
 import type { CommitDigest } from './gather/types'
 import { RecapLedger } from './ledger'
 import { chunkModels, pickModel } from './llm/escalate'
-import { buildPrompt, type PromptInputs } from './llm/prompt-builder'
+import { buildPrompt, type PresentationSelection, type PromptInputs } from './llm/prompt-builder'
 import { createProgressEmitter, type ProgressBroadcaster, type ProgressEmitter } from './progress'
 import { buildRecapDigest } from './render/digest'
 import { renderFinalMarkdown } from './render/markdown'
@@ -96,11 +104,16 @@ export interface StartResult {
 // fallow-ignore-next-line complexity
 export async function startRecap(deps: OrchestratorDeps, args: StartArgs): Promise<StartResult> {
   const period = resolvePeriod(args.period, args.timeZone, deps.now?.())
-  const audience: RecapAudience = args.audience ?? 'human'
-  const signals = resolveSignals(args, audience)
-  // audience + customerFriendly are folded into the cache key: a human vs agent
-  // recap, and a sanitized vs raw recap, for the same project+period+signals are
-  // different documents -- they must not collide in the 5-min cache.
+  // Resolve the full presentation recipe ONCE (template + option flags + signal
+  // set + audience). Deterministic from args, so runRecap re-derives the same
+  // recipe without threading state across the async boundary.
+  const recipe = resolveRecipe(args)
+  const { audience, signals } = recipe
+  // audience + customerFriendly + template + resolved options are folded into the
+  // cache key: a human vs agent recap, a sanitized vs raw recap, and a recap
+  // rendered with a DIFFERENT template OR different option toggles are different
+  // documents for the same project+period+signals -- they must not collide in the
+  // 5-min cache.
   const signalsHash = recapCacheKey({
     projectUri: args.projectUri,
     periodStart: period.start,
@@ -108,6 +121,8 @@ export async function startRecap(deps: OrchestratorDeps, args: StartArgs): Promi
     audience,
     customerFriendly: args.customerFriendly ?? false,
     signals,
+    template: recipe.templateId,
+    options: recipe.optionFlags,
   })
 
   if (!args.force) {
@@ -403,6 +418,13 @@ export function resumeRecap(deps: OrchestratorDeps, recapId: string): ResumeResu
     ...(((jsonParseOr(row.signalsJson) as RecapSignal[] | undefined) ?? undefined) && {
       signals: jsonParseOr(row.signalsJson) as RecapSignal[],
     }),
+    // Restore the presentation recipe from args_json so a resumed run renders the
+    // SAME template + option toggles it was created with (it would otherwise fall
+    // back to the default template + signals are re-derived). Defensive reads.
+    ...(typeof recipe.template === 'string' ? { template: recipe.template } : {}),
+    ...(recipe.options && typeof recipe.options === 'object'
+      ? { options: recipe.options as Record<string, boolean> }
+      : {}),
     // Product modes live in the bundle manifest, not args_json (which is the
     // tuning recipe). Restore them so a resumed run keeps its retrospect layer
     // and its customer-friendly tone -- both were Opus-only and would otherwise
@@ -612,7 +634,10 @@ async function runRecap(
   reuseMap?: (index: number) => RecapMetadata | null,
 ): Promise<void> {
   const startedAt = Date.now()
-  const audience: RecapAudience = args.audience ?? 'human'
+  // Re-derive the SAME recipe startRecap resolved (deterministic from args): the
+  // template owns audience, drives the signal set, and feeds the prompt builders.
+  const recipe = resolveRecipe(args)
+  const audience: RecapAudience = recipe.audience
   // Pillar C+: open the on-disk bundle BEFORE the first progress line so the
   // partial trail captures the whole run (incl. an early gather crash).
   deps.bundle?.begin(recapId, {
@@ -641,7 +666,7 @@ async function runRecap(
   const projectUris = (deps.expandProjectScope ?? defaultExpand)(args.projectUri)
   const scope: PeriodScope = { projectUris, periodStart: period.start, periodEnd: period.end, timeZone }
 
-  const includeInternals = resolveSignals(args, audience).includes('turn_internals')
+  const includeInternals = recipe.signals.includes('turn_internals')
   const { promptInputs, inputChars } = collectSignals(
     deps,
     scope,
@@ -682,7 +707,13 @@ async function runRecap(
   )
   emit.setProgress(35, 'gather/done')
 
-  const built = buildPrompt(promptInputs, audience, args.retrospect ?? false, args.customerFriendly ?? false)
+  const built = buildPrompt(
+    promptInputs,
+    audience,
+    args.retrospect ?? false,
+    args.customerFriendly ?? false,
+    presentationOf(recipe),
+  )
   emit.setStatus('rendering')
   // ONESHOT for small periods (one Opus pass), CHUNKED map-reduce for big ones
   // (parallel cheap extraction -> code merge -> one Opus synthesis). Both feed
@@ -692,6 +723,7 @@ async function runRecap(
     promptInputs,
     audience,
     args,
+    recipe,
     reuseMap,
   })
   const partialReason = partial
@@ -1135,6 +1167,9 @@ interface ProduceArgs {
   promptInputs: PromptInputs
   audience: RecapAudience
   args: StartArgs
+  /** Resolved presentation recipe (template + option flags + signals). Threads
+   *  the selected template into the synthesize prompt + the persisted args_json. */
+  recipe: ResolvedRecipe
   /** Resume-from-map: return a chunk's already-parsed extraction (from the
    *  bundle) to reuse it instead of re-paying the map call. null -> re-map. */
   reuseMap?: (index: number) => RecapMetadata | null
@@ -1173,7 +1208,7 @@ async function produceRecap(
 
   const model = t.oneshotModel || pickModel(built.inputChars, audience).model
   deps.store.update(recapId, { model })
-  persistRecipe(deps, recapId, 'oneshot', model, t)
+  persistRecipe(deps, recapId, 'oneshot', model, t, p.recipe)
   emit.emit('info', 'render/prompt', `oneshot model=${model}, prompt=${built.inputChars} chars`)
   emit.setProgress(45, 'render/llm')
   const content = await callLlm(deps, recapId, ledger, built, model, deps.apiKey, {
@@ -1205,7 +1240,7 @@ async function runChunked(
   const models = chunkModels({ mapModel: t.mapModel, reduceModel: t.reduceModel })
   const chunks = splitIntoChunks(promptInputs.transcripts, t.chunkSize)
   deps.store.update(recapId, { model: models.reduceModel })
-  persistRecipe(deps, recapId, 'chunked', models.reduceModel, t, {
+  persistRecipe(deps, recapId, 'chunked', models.reduceModel, t, p.recipe, {
     mapModel: models.mapModel,
     chunkCount: chunks.length,
   })
@@ -1269,6 +1304,7 @@ async function runChunked(
     audience,
     p.args.retrospect ?? false,
     p.args.customerFriendly ?? false,
+    presentationOf(p.recipe),
   )
   const content = await runLlmCall(deps, recapId, ledger, 'reduce', {
     model: models.reduceModel,
@@ -1332,6 +1368,7 @@ function persistRecipe(
   mode: 'oneshot' | 'chunked',
   primaryModel: string,
   t: RecapTuning,
+  resolved: ResolvedRecipe,
   extra?: Record<string, unknown>,
 ): void {
   const recipe: Record<string, unknown> = {
@@ -1344,6 +1381,12 @@ function persistRecipe(
     ...(t.variantLabel ? { variantLabel: t.variantLabel } : {}),
     ...(t.temperature ? { temperature: t.temperature } : {}),
     ...(t.maxTokens ? { maxTokens: t.maxTokens } : {}),
+    // The resolved presentation recipe (PLAN s7): template id + resolved option
+    // flags + resolved signal set, persisted in the EXISTING args_json column so
+    // every recap is self-describing (no new SQLite column, no migration).
+    template: resolved.templateId,
+    options: resolved.optionFlags,
+    signals: resolved.signals,
     ...extra,
   }
   deps.store.update(recapId, { argsJson: JSON.stringify(recipe) })
@@ -1425,10 +1468,12 @@ function defaultLabel(projectUri: string): string {
 
 /**
  * Cache key for a recap run. Two recaps sharing this key (within the 5-min
- * window) are the same document and dedupe. audience + customerFriendly are part
- * of the key: a human vs agent recap, and a sanitized (customer-friendly) vs raw
- * recap, are DISTINCT documents even for the same project+period+signals, so they
- * must hash differently or one would serve the other from cache.
+ * window) are the same document and dedupe. audience + customerFriendly + the
+ * presentation template + its resolved option toggles are all part of the key: a
+ * human vs agent recap, a sanitized (customer-friendly) vs raw recap, a different
+ * template, OR a different set of option booleans are DISTINCT documents even for
+ * the same project+period+signals, so they must hash differently or one would
+ * serve the other from cache.
  */
 export function recapCacheKey(args: {
   projectUri: string
@@ -1437,7 +1482,15 @@ export function recapCacheKey(args: {
   audience: RecapAudience
   customerFriendly: boolean
   signals: RecapSignal[]
+  /** Resolved template id (after fallback). */
+  template: string
+  /** Resolved option flags (id -> boolean), serialized key-sorted for stability. */
+  options: Record<string, boolean>
 }): string {
+  const optionsPart = Object.keys(args.options)
+    .sort()
+    .map(k => `${k}=${args.options[k] ? 1 : 0}`)
+    .join(',')
   return sha256(
     [
       args.projectUri,
@@ -1446,6 +1499,8 @@ export function recapCacheKey(args: {
       args.audience,
       args.customerFriendly ? 'cf' : 'raw',
       args.signals.join(','),
+      `tmpl:${args.template}`,
+      `opts:${optionsPart}`,
     ].join('|'),
   )
 }
@@ -1467,15 +1522,77 @@ function describe(err: unknown): string {
 }
 
 /**
- * Resolve the effective signal set. Explicit `args.signals` win verbatim.
- * Otherwise default per audience: the agent brief opts `turn_internals` in
- * (it backs the "Dead ends" section); the human recap does not.
+ * Resolve the effective signal set. Explicit `args.signals` win verbatim (a hard
+ * user override). Otherwise the base is the selected template's declared default
+ * signals folded with its resolved option flags (a "technical" option adds/removes
+ * a gather signal); when no template loaded, the base is DEFAULT_SIGNALS (the
+ * untemplated default). The agent audience then opts `turn_internals` in (it backs
+ * the "Dead ends" section) -- preserving the untemplated/default agent behaviour.
+ * The anchor template's `defaults.signals` are byte-equal to DEFAULT_SIGNALS, so
+ * the default path resolves an identical set (no cache-key drift).
  */
-function resolveSignals(args: StartArgs, audience: RecapAudience): RecapSignal[] {
+function resolveSignals(
+  args: StartArgs,
+  audience: RecapAudience,
+  template?: RecapTemplate,
+  optionFlags: Record<string, boolean> = {},
+): RecapSignal[] {
   if (args.signals) return args.signals.slice().sort()
-  const base = DEFAULT_SIGNALS.slice()
-  if (audience === 'agent') base.push('turn_internals')
-  return base.sort()
+  const base = new Set<RecapSignal>(
+    template ? (resolveTemplateSignals(template, optionFlags) as RecapSignal[]) : DEFAULT_SIGNALS,
+  )
+  if (audience === 'agent') base.add('turn_internals')
+  return [...base].sort()
+}
+
+/** The fully resolved presentation recipe for a recap run. */
+export interface ResolvedRecipe {
+  /** Selected template (after fallback), or undefined if the templates dir is
+   *  missing/broken -- the prompt builders then use their in-code fallback. */
+  template?: RecapTemplate
+  /** Resolved template id for the cache key + args_json. Falls back to the
+   *  requested id (or the default) so the stored recipe is always self-describing. */
+  templateId: string
+  audience: RecapAudience
+  /** Resolved option flags (id -> boolean): the `options.<id>` Liquid booleans. */
+  optionFlags: Record<string, boolean>
+  signals: RecapSignal[]
+}
+
+/**
+ * Resolve a recap run's full presentation recipe ONCE: pick the requested template
+ * (re-read per create -- the dir is tiny + read-mostly, PLAN s5), resolve its
+ * option flags against the user overrides, derive the effective signal set, and
+ * settle the audience. Deterministic from `args`, so startRecap (cache key +
+ * signalsJson) and runRecap (prompt build + includeInternals) agree.
+ */
+export function resolveRecipe(args: StartArgs): ResolvedRecipe {
+  const template = pickTemplate(loadTemplates().templates, args.template)
+  const audience = recipeAudience(args, template)
+  const optionFlags = template ? resolveOptionFlags(template, args.options ?? {}) : {}
+  const signals = resolveSignals(args, audience, template, optionFlags)
+  return { template, templateId: recipeTemplateId(args, template), audience, optionFlags, signals }
+}
+
+/** The template OWNS audience (PLAN s4); an explicit caller audience still wins,
+ *  and the anchor template's audience is 'human' so the untemplated default path
+ *  is unchanged. Falls back to 'human' when no template loaded. */
+function recipeAudience(args: StartArgs, template: RecapTemplate | undefined): RecapAudience {
+  return args.audience ?? template?.audience ?? 'human'
+}
+
+/** Resolved template id for the cache key + args_json: the actually-rendered
+ *  template, else the requested id, else the default -- always self-describing. */
+function recipeTemplateId(args: StartArgs, template: RecapTemplate | undefined): string {
+  return template?.id ?? args.template ?? DEFAULT_TEMPLATE_ID
+}
+
+/** Build the prompt-builder presentation selection from a resolved recipe. */
+function presentationOf(recipe: ResolvedRecipe): PresentationSelection {
+  return {
+    ...(recipe.template ? { template: recipe.template } : {}),
+    optionFlags: recipe.optionFlags,
+  }
 }
 
 /** Build the recap-completed channel message text pushed to the caller. */

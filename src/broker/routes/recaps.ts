@@ -22,6 +22,7 @@ import { getAuthenticatedUser } from '../auth-routes'
 import type { ConversationStore } from '../conversation-store'
 import { sanitizeRecapForPublicShare } from '../recap/period/public-share-sanitize'
 import type { RecapRow, RecapStatus } from '../recap/period/store'
+import { DEFAULT_TEMPLATE_ID, loadTemplates } from '../recap/templates'
 import { getRecapOrchestrator, type RecapOrchestrator } from '../recap-orchestrator'
 import { createShare, listShares, validateShare } from '../shares'
 import type { RouteHelpers } from './shared'
@@ -206,6 +207,40 @@ export function createRecapsRouter(_conversationStore: ConversationStore, helper
     const withShared = filtered.map(r => ({ ...r, isShared: sharedRecapIds.has(r.id) }))
 
     return c.json({ recaps: withShared, total: withShared.length, _user: user || null })
+  })
+
+  // List the available presentation templates + their declared options, for a
+  // future UI picker (PLAN s7). Read-only, permission-gated to any authenticated
+  // caller (admin bearer or a logged-in user) -- templates are built-in fleet
+  // metadata, not project data, so no per-project scope applies. The Liquid body
+  // is internal and deliberately NOT exposed. Registered before /api/recaps/:id
+  // so the literal path is never captured by the :id param route.
+  app.get('/api/recap-templates', c => {
+    const req = c.req.raw
+    if (!helpers.httpIsAdmin(req) && !getAuthenticatedUser(req)) {
+      return c.json({ error: 'forbidden' }, 403)
+    }
+    const { templates } = loadTemplates()
+    const list = [...templates.values()]
+      .map(t => ({
+        id: t.id,
+        label: t.label,
+        description: t.description,
+        scope: t.scope,
+        audience: t.audience,
+        sections: t.sections,
+        defaults: t.defaults,
+        options: t.options.map(o => ({
+          id: o.id,
+          label: o.label,
+          default: o.default,
+          ...(o.signal ? { signal: o.signal } : {}),
+        })),
+        isDefault: t.id === DEFAULT_TEMPLATE_ID,
+      }))
+      // Default first, then alphabetical -- a stable order for the picker.
+      .sort((a, b) => (a.id === DEFAULT_TEMPLATE_ID ? -1 : b.id === DEFAULT_TEMPLATE_ID ? 1 : a.id.localeCompare(b.id)))
+    return c.json({ templates: list, defaultTemplateId: DEFAULT_TEMPLATE_ID })
   })
 
   app.get('/api/recaps/:id', c => {

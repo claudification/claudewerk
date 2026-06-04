@@ -19,6 +19,7 @@ import {
   AGENT_SYNTHESIZE_READER,
   applyRetroCf,
   FRONTMATTER_SPEC,
+  type PresentationSelection,
   renderHumanBody,
   synthesizeFraming,
 } from '../llm/prompt-builder'
@@ -45,6 +46,7 @@ export function buildSynthesizePrompt(
   audience: RecapAudience = 'human',
   retrospect = false,
   customerFriendly = false,
+  presentation?: PresentationSelection,
 ): SynthesizePrompt {
   // The HUMAN body is rendered through the SAME template seam the oneshot path
   // uses (renderHumanBody, `path: 'synthesize'`), so the deliverable contract
@@ -62,6 +64,7 @@ export function buildSynthesizePrompt(
           scopeLabel: ctx.projectLabel,
           periodHuman: ctx.periodHuman,
           periodIsoRange: ctx.periodIsoRange,
+          ...presentation,
         })
   const system = applyRetroCf(base, retrospect, customerFriendly)
 

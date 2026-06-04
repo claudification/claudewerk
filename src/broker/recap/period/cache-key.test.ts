@@ -9,6 +9,8 @@ const base = {
   audience: 'human' as const,
   customerFriendly: false,
   signals: ['commits', 'cost'] as RecapSignal[],
+  template: 'project-recap',
+  options: {} as Record<string, boolean>,
 }
 
 describe('recapCacheKey', () => {
@@ -27,5 +29,27 @@ describe('recapCacheKey', () => {
   it('period + signals still differentiate', () => {
     expect(recapCacheKey({ ...base, periodEnd: 3000 })).not.toBe(recapCacheKey(base))
     expect(recapCacheKey({ ...base, signals: ['commits'] as RecapSignal[] })).not.toBe(recapCacheKey(base))
+  })
+
+  it('a different template busts the cache -- a different deliverable shape', () => {
+    expect(recapCacheKey({ ...base, template: 'shipped-report' })).not.toBe(recapCacheKey(base))
+  })
+
+  it('a different option toggle busts the cache', () => {
+    expect(recapCacheKey({ ...base, options: { terse: true } })).not.toBe(recapCacheKey(base))
+    // false vs true for the SAME option are distinct documents.
+    expect(recapCacheKey({ ...base, options: { terse: true } })).not.toBe(
+      recapCacheKey({ ...base, options: { terse: false } }),
+    )
+  })
+
+  it('option-key insertion order does not matter (key-sorted serialization)', () => {
+    const a = recapCacheKey({ ...base, options: { group_by_project: true, include_cost: false } })
+    const b = recapCacheKey({ ...base, options: { include_cost: false, group_by_project: true } })
+    expect(a).toBe(b)
+  })
+
+  it('an empty options map keys identically to the same recipe (stable default path)', () => {
+    expect(recapCacheKey({ ...base, options: {} })).toBe(recapCacheKey(base))
   })
 })

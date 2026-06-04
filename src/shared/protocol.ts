@@ -4347,6 +4347,17 @@ export interface RecapCreateMessage {
   timeZone: string
   signals?: RecapSignal[]
   force?: boolean
+  /** Named presentation template id (recap-templates/<id>.yml). Selects the
+   *  deliverable shape; templates re-present, they NEVER re-extract. Defaults to
+   *  'project-recap' (the byte-identical anchor). A missing id falls back to the
+   *  default. See plan-recap-templates.md. */
+  template?: string
+  /** User overrides of the selected template's declared option defaults
+   *  (option id -> boolean). Unknown keys are ignored; only declared options
+   *  resolve. A "prompt-tweak" option flips a Liquid `options.<id>` boolean; a
+   *  "technical" option (declares a signal) additionally adds/removes a gather
+   *  signal. */
+  options?: Record<string, boolean>
   /** Audience the recap is written for. Defaults to 'human' (narrative report).
    *  The MCP entry point defaults it to 'agent'. */
   audience?: RecapAudience

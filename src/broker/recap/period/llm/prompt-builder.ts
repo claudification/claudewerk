@@ -42,11 +42,24 @@ export interface BuiltPrompt {
   inputChars: number
 }
 
+/**
+ * The resolved presentation a recap run renders with: the selected template +
+ * the already-resolved option flags. Threaded from the orchestrator (which
+ * resolves both ONCE, so the same selection drives the prompt, the signal set,
+ * the cache key, and args_json). Omitted entirely -> the memoized anchor default
+ * (preserves every existing caller + the byte-identical anchor path).
+ */
+export interface PresentationSelection {
+  template?: RecapTemplate
+  optionFlags?: Record<string, boolean>
+}
+
 export function buildPrompt(
   inputs: PromptInputs,
   audience: RecapAudience = 'human',
   retrospect = false,
   customerFriendly = false,
+  presentation?: PresentationSelection,
 ): BuiltPrompt {
   const base =
     audience === 'agent'
@@ -57,6 +70,7 @@ export function buildPrompt(
           periodHuman: inputs.periodHuman,
           periodIsoRange: inputs.periodIsoRange,
           stats: humanStats(inputs),
+          ...presentation,
         })
   const system = applyRetroCf(base, retrospect, customerFriendly)
   const user = userPayload(inputs)
@@ -119,8 +133,17 @@ export interface HumanBodyArgs {
   scopeLabel: string
   periodHuman: string
   periodIsoRange: string
-  /** User option overrides; resolved against the default template's declared
-   *  options before entering the Liquid context (PLAN section 4). */
+  /** The selected presentation template. Defaults to the memoized anchor
+   *  (`project-recap`) when omitted -- this is what keeps the existing callers
+   *  and the byte-identical anchor path unchanged (PLAN phase 3). */
+  template?: RecapTemplate
+  /** Already-resolved option flags (id -> boolean) for the Liquid `options.<id>`
+   *  context. The orchestrator resolves these once (so the same flags drive the
+   *  signal set, the cache key, and args_json) and passes them straight through.
+   *  When omitted, they are resolved from `options` against the chosen template. */
+  optionFlags?: Record<string, boolean>
+  /** Raw user option overrides; used to resolve flags only when `optionFlags`
+   *  is not supplied (resolved against the chosen template's declared options). */
   options?: Record<string, boolean>
   stats?: RenderStats
 }
@@ -156,11 +179,10 @@ function humanRenderContext(args: HumanBodyArgs, optionFlags: Record<string, boo
  * template is absent or fails to render -- a recap must never break on a template error.
  */
 export function renderHumanBody(args: HumanBodyArgs): string {
-  const template = getDefaultTemplate()
+  const template = args.template ?? getDefaultTemplate()
   if (template) {
-    const optionFlags = resolveOptionFlags(template, args.options ?? {})
     try {
-      return renderTemplateBody(template, humanRenderContext(args, optionFlags))
+      return renderTemplateBody(template, humanRenderContext(args, resolveBodyFlags(template, args)))
     } catch (err) {
       console.warn(
         `[recap-templates] render failed for "${template.id}" (${args.path}), using in-code fallback: ${describeError(err)}`,
@@ -168,6 +190,13 @@ export function renderHumanBody(args: HumanBodyArgs): string {
     }
   }
   return humanBodyFallback(args)
+}
+
+/** Resolve the `options.<id>` Liquid booleans for a body render: the orchestrator's
+ *  already-resolved flags when supplied, otherwise resolved from the raw user
+ *  overrides against the chosen template's declared options. */
+function resolveBodyFlags(template: RecapTemplate, args: HumanBodyArgs): Record<string, boolean> {
+  return args.optionFlags ?? resolveOptionFlags(template, args.options ?? {})
 }
 
 /** In-code body for when the template is missing/broken. Mirrors the template's

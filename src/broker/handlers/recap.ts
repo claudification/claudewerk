@@ -58,6 +58,14 @@ function recapCreate(ctx: HandlerContext, data: MessageData): void {
   if (informOnComplete && !informConversationId) {
     ctx.log.debug('[recap_create] inform_on_complete set but caller has no conversationId -- push skipped')
   }
+  // Templates (PLAN phase 3): `template` selects the deliverable shape (default
+  // 'project-recap', the byte-identical anchor); `options` overrides the selected
+  // template's declared option defaults. Both resolved + validated orchestrator-side.
+  const template = typeof data.template === 'string' ? data.template : undefined
+  const options =
+    data.options && typeof data.options === 'object' && !Array.isArray(data.options)
+      ? (data.options as Record<string, boolean>)
+      : undefined
   orchestrator
     .start({
       type: 'recap_create',
@@ -69,6 +77,8 @@ function recapCreate(ctx: HandlerContext, data: MessageData): void {
       ...(audience ? { audience } : {}),
       ...(retrospect ? { retrospect: true } : {}),
       ...(customerFriendly ? { customerFriendly: true } : {}),
+      ...(template ? { template } : {}),
+      ...(options ? { options } : {}),
       ...(tuning ? { tuning } : {}),
       ...(informConversationId ? { informConversationId } : {}),
     })

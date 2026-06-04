@@ -366,3 +366,39 @@ describe('GET /r/:token', () => {
     expect(loc).toBe('/shared/public/recap/abc123')
   })
 })
+
+interface TemplateListItem {
+  id: string
+  label: string
+  description: string
+  audience: string
+  sections: string[]
+  options: Array<{ id: string; label: string; default: boolean; signal?: string }>
+  isDefault?: boolean
+}
+
+describe('GET /api/recap-templates', () => {
+  test('lists the built-in templates + their declared options', async () => {
+    const res = await app.request('/api/recap-templates', { headers: adminHeaders() })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { templates: TemplateListItem[]; defaultTemplateId: string }
+    expect(body.defaultTemplateId).toBe('project-recap')
+    const ids = body.templates.map(t => t.id)
+    expect(ids).toContain('project-recap')
+    // The default is listed first + flagged.
+    expect(body.templates[0].id).toBe('project-recap')
+    expect(body.templates[0].isDefault).toBe(true)
+    // Declared shape is exposed; the Liquid body is NOT.
+    const anchor = body.templates.find(t => t.id === 'project-recap')
+    expect(anchor).toBeDefined()
+    expect(anchor?.audience).toBe('human')
+    expect(Array.isArray(anchor?.sections)).toBe(true)
+    expect(Array.isArray(anchor?.options)).toBe(true)
+    expect(anchor).not.toHaveProperty('body')
+  })
+
+  test('403 for an unauthenticated caller', async () => {
+    const res = await app.request('/api/recap-templates')
+    expect(res.status).toBe(403)
+  })
+})

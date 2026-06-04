@@ -242,6 +242,10 @@ function recapCreateTool(ctx: McpToolContext): ToolDef {
       '(audience="agent"); audience="human" produces a narrative report instead. ' +
       'Returns the recap id immediately -- set inform_on_complete to be pushed the ' +
       'result when it finishes, instead of polling recap_get. ' +
+      'TEMPLATES: pass `template` (a named deliverable, e.g. the default "project-recap" ' +
+      'reflective recap; list them via GET /api/recap-templates) and `options` (a map of ' +
+      "the template's declared option ids -> booleans) to render a different deliverable " +
+      'shape from the same gathered data. ' +
       'BENEVOLENT EVAL HARNESS: pass `tuning` (per-stage models, thresholds, chunkSize, ' +
       'forceMode, per-stage temperature/maxTokens) + `tuning.variantLabel` to A/B recipes -- ' +
       'fire several with different tuning, then compare cost + grounding across the stored ' +
@@ -295,6 +299,21 @@ function recapCreateTool(ctx: McpToolContext): ToolDef {
           items: { type: 'string' },
           description:
             'Optional signal subset. Defaults per audience. Values: user_prompts, assistant_final_turn, commits, task_results, tool_summaries, errors_hooks, cost, open_questions, turn_internals',
+        },
+        template: {
+          type: 'string',
+          description:
+            'Named presentation template id (default "project-recap", the reflective recap). ' +
+            'Selects the deliverable shape; templates re-present, never re-extract. ' +
+            'List available templates + their options via GET /api/recap-templates. ' +
+            'An unknown id falls back to the default.',
+        },
+        options: {
+          type: 'object' as const,
+          description:
+            "Overrides of the selected template's declared option defaults (option id -> boolean). " +
+            'Unknown keys are ignored. A "prompt-tweak" option flips a body toggle; a "technical" ' +
+            'option additionally adds/removes a gather signal.',
         },
         force: {
           type: 'boolean',
@@ -356,6 +375,11 @@ function recapCreateTool(ctx: McpToolContext): ToolDef {
 
       const signalsRaw = raw.signals
       const signals = Array.isArray(signalsRaw) ? (signalsRaw as RecapSignal[]) : undefined
+      const template = typeof raw.template === 'string' ? raw.template : undefined
+      const options =
+        raw.options && typeof raw.options === 'object' && !Array.isArray(raw.options)
+          ? (raw.options as Record<string, boolean>)
+          : undefined
       const force = Boolean(raw.force)
       const timeZone = resolveTimeZone()
       // The caller of an MCP tool is, by definition, an agent -- default the
@@ -376,6 +400,8 @@ function recapCreateTool(ctx: McpToolContext): ToolDef {
             ...(retrospect ? { retrospect: true } : {}),
             ...(customerFriendly ? { customerFriendly: true } : {}),
             ...(signals ? { signals } : {}),
+            ...(template ? { template } : {}),
+            ...(options ? { options } : {}),
             ...(force ? { force: true } : {}),
             ...(raw.tuning && typeof raw.tuning === 'object' ? { tuning: raw.tuning } : {}),
             ...(informOnComplete ? { inform_on_complete: true } : {}),
