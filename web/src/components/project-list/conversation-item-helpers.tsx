@@ -351,7 +351,6 @@ export function ConversationItemShell({
   conversation,
   isSelected,
   displayColor,
-  variant,
   ghost = false,
   onClick,
   children,
@@ -359,7 +358,6 @@ export function ConversationItemShell({
   conversation: Conversation
   isSelected: boolean
   displayColor: string | undefined
-  variant: 'full' | 'compact'
   /** Discovered, not-yet-attached daemon worker -- rendered translucent + dashed. */
   ghost?: boolean
   onClick: () => void
@@ -385,9 +383,7 @@ export function ConversationItemShell({
         // intrinsic-size reserves a height for skipped rows (`auto` remembers
         // the real measured height after first paint) so the scrollbar is stable.
         'w-full text-left border transition-colors group cursor-pointer [content-visibility:auto]',
-        variant === 'compact'
-          ? 'p-2 pl-4 text-[11px] [contain-intrinsic-size:auto_2.25rem]'
-          : 'p-3 [contain-intrinsic-size:auto_4.5rem]',
+        'p-2 pl-4 text-[11px] [contain-intrinsic-size:auto_2.25rem]',
         isSelected && conversation.planMode
           ? 'border-blue-500 bg-blue-500/15 ring-1 ring-blue-500/50 shadow-[0_0_8px_rgba(59,130,246,0.2)]'
           : isSelected

@@ -18,6 +18,7 @@ import {
   DismissButton,
   InlineDescription,
   InlineRename,
+  ResultTextModal,
   SpawnedFromSubtext,
 } from './conversation-item-helpers'
 import { isDaemonTransport } from './conversation-item-internals'
@@ -36,9 +37,11 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
   )
   const selectConversation = useConversationsStore(s => s.selectConversation)
 
+  const openTab = useConversationsStore(s => s.openTab)
   const ps = useConversationsStore(s => s.projectSettings[projectIdentityKey(conversation.project)])
   const showCost = useConversationsStore(s => s.controlPanelPrefs.showCostInList)
   const showContextBar = useConversationsStore(s => s.controlPanelPrefs.showContextInList)
+  const showRecapDesc = useConversationsStore(s => s.controlPanelPrefs.showRecapDescInList)
   const isRenaming = useConversationsStore(s => s.renamingConversationId === conversation.id)
   const isEditingDescription = useConversationsStore(s => s.editingDescriptionConversationId === conversation.id)
   const displayColor = ps?.color
@@ -118,7 +121,6 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
       conversation={conversation}
       isSelected={isSelected}
       displayColor={displayColor}
-      variant="compact"
       ghost={isGhost}
       onClick={selectThisConversation}
     >
@@ -153,7 +155,14 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
           </span>
         )}
         {conversation.compacting && <span className="text-[9px] text-amber-400 font-bold animate-pulse">COMPACT</span>}
-        {conversation.lastError && <span className="text-[9px] text-destructive font-bold">ERROR</span>}
+        {conversation.lastError && (
+          <span
+            className="text-[9px] text-destructive font-bold"
+            title={conversation.lastError.errorMessage || conversation.lastError.errorType || 'API error'}
+          >
+            ERROR
+          </span>
+        )}
         {conversation.rateLimit && !conversation.lastError && (
           <span
             title={`Rate limited: ${conversation.rateLimit.message}${formatResetIn(conversation.rateLimit.resetsAt) ? ` (${formatResetIn(conversation.rateLimit.resetsAt)})` : ''}`}
@@ -168,6 +177,9 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
           <span className={cn('text-[9px] font-mono tabular-nums shrink-0', ctx.color)}>{ctx.pct}%</span>
         )}
         <ConversationInfoButton conversation={conversation} visible={isSelected} />
+        {conversation.resultText && conversation.capabilities?.includes('ad-hoc') && (
+          <ResultTextModal conversation={conversation} />
+        )}
         {conversation.status === 'ended' && <DismissButton conversationId={conversation.id} />}
       </div>
       {conversation.gitBranch && conversation.gitBranch !== 'main' && conversation.gitBranch !== 'master' && (
@@ -237,6 +249,20 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
       )}
       {!isMobile && (conversation.description || conversation.summary) && conversation.recap?.title && (
         <div className="mt-0.5 pl-4 text-[9px] text-zinc-400/80 truncate">{conversation.recap.title}</div>
+      )}
+      {/* Recap body (opt-in) -- the long recap description, shown when there's no summary line. */}
+      {showRecapDesc && !conversation.summary && conversation.recap && (
+        <div
+          className={cn(
+            'mt-1 pl-4 text-[9px] whitespace-pre-wrap overflow-hidden line-clamp-3 transition-all duration-700',
+            conversation.recapFresh
+              ? 'text-zinc-300/80 border-l-2 border-zinc-500/50 pl-2 ml-1 py-0.5 bg-zinc-800/20 rounded-r'
+              : 'text-muted-foreground/50 italic',
+          )}
+          title={conversation.recap.content}
+        >
+          {conversation.recap.content}
+        </div>
       )}
       {/* ── DESKTOP ONLY: progress bar + % flexed to the bar's right edge ── */}
       {!isMobile && ctx && (
@@ -321,6 +347,75 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
             </div>
           )
         })()}
+      {/* Cache-expired detail -- idle age + estimated re-cache cost. */}
+      {conversation.status === 'idle' &&
+        cacheInfo?.state === 'expired' &&
+        (() => {
+          // react-doctor-disable-next-line react-doctor/rendering-hydration-mismatch-time
+          const idleMin = Math.floor((Date.now() - (conversation.lastTurnEndedAt || 0)) / 60_000)
+          return (
+            <div className="mt-1 pl-4 text-[9px] font-mono text-amber-400/60 truncate">
+              cache expired ({idleMin}m idle) -- ~${cacheInfo.reCacheCost.toFixed(2)} re-cache
+            </div>
+          )
+        })()}
+      {/* Background tasks + team membership. */}
+      {(conversation.runningBgTaskCount > 0 || conversation.team) && (
+        <div className="mt-1 pl-4 flex items-center gap-1.5 text-[9px] flex-wrap">
+          {conversation.runningBgTaskCount > 0 && (
+            // nested inside conversation-row interactive; semantic <button> would be invalid HTML
+            // react-doctor-disable-next-line react-doctor/prefer-tag-over-role
+            <span
+              role="button"
+              tabIndex={0}
+              className="px-1 py-0.5 bg-emerald-400/20 text-emerald-400 border border-emerald-400/50 font-bold cursor-pointer hover:bg-emerald-400/30"
+              onClick={e => {
+                e.stopPropagation()
+                openTab(conversation.id, 'agents')
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.stopPropagation()
+                  openTab(conversation.id, 'agents')
+                }
+              }}
+            >
+              [{conversation.runningBgTaskCount}] bg
+            </span>
+          )}
+          {conversation.team && (
+            <span className="px-1 py-0.5 bg-purple-400/20 text-purple-400 border border-purple-400/50 font-bold uppercase">
+              {conversation.team.role === 'lead' ? 'LEAD' : 'TEAM'} {conversation.team.teamName}
+              {conversation.teammates.length > 0 &&
+                ` (${conversation.teammates.filter(t => t.status !== 'stopped').length}/${conversation.teammates.length})`}
+            </span>
+          )}
+        </div>
+      )}
+      {/* PR links. */}
+      {conversation.prLinks && conversation.prLinks.length > 0 && (
+        <div className="mt-1 pl-4 flex items-center gap-1.5 flex-wrap">
+          {conversation.prLinks.map(pr => (
+            <a
+              key={pr.prUrl}
+              href={pr.prUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              className="text-[9px] font-mono text-sky-400 hover:text-sky-300 transition-colors"
+              title={`${pr.prRepository}#${pr.prNumber}`}
+            >
+              PR#{pr.prNumber}
+            </a>
+          ))}
+        </div>
+      )}
+      {/* Linked projects. */}
+      {conversation.linkedProjects && conversation.linkedProjects.length > 0 && (
+        <div className="mt-1 pl-4 text-[9px] text-teal-400/50 font-mono truncate">
+          {'↔'} {conversation.linkedProjects.map(p => p.name).join(', ')}
+        </div>
+      )}
       <ConversationItemTasksBlock conversation={conversation} selectedSubagentId={selectedSubagentId} />
     </ConversationItemShell>
   )

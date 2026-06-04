@@ -10,7 +10,7 @@ import { ProjectIcon } from '../project-icons'
 import { ProjectSettingsButton } from '../project-settings-button'
 import { ProjectSettingsEditor } from '../project-settings-editor-lazy'
 import { ConversationContextMenu, PinnedProjectContextMenu, ProjectContextMenu } from './conversation-context-menu'
-import { ConversationCard, ConversationItemCompact, SpawnRootStub } from './conversation-item'
+import { ConversationItemCompact, SpawnRootStub } from './conversation-item'
 import { InlineConfirmButton } from './inline-confirm-button'
 import { groupByLineage, neededOrphanRootIds } from './lineage'
 import { partitionConversations } from './partition'
@@ -166,7 +166,9 @@ const ProjectConversationGroup = memo(
                 {displayName}
               </span>
               {ps?.pinned && <Pin className="size-2.5 text-muted-foreground/30 shrink-0" />}
-              <span className="text-[10px] text-muted-foreground font-mono">{conversations.length} conversations</span>
+              <span className="text-[10px] text-muted-foreground font-mono">
+                {conversations.length} conversation{conversations.length === 1 ? '' : 's'}
+              </span>
               {hasPendingLink && (
                 <span
                   className="text-[9px] text-teal-400 font-bold animate-pulse"
@@ -330,15 +332,10 @@ export function PinnedProjectNode({ project }: { project: string }) {
   )
 }
 
-// ─── Single-conversation card subscribed by id ───────────────────────────
-
-const ConversationCardById = memo(function ConversationCardById({ conversationId }: { conversationId: string }) {
-  const conversation = useConversationsStore(s => s.conversationsById[conversationId])
-  if (!conversation) return null
-  return <ConversationCard conversation={conversation} />
-})
-
-// ─── Project node renderer (single or multi-conversation) ─────────────
+// ─── Project node renderer ────────────────────────────────────────────
+//
+// Every project renders as a header + conversation list -- including a project
+// with a single conversation. One card, always under a header.
 
 export const ProjectNode = memo(
   function ProjectNode({
@@ -350,18 +347,6 @@ export const ProjectNode = memo(
     conversationIds: string[]
     crossProjectStubIds?: string[]
   }) {
-    const isPinned = useConversationsStore(s => s.projectSettings[projectIdentityKey(project)]?.pinned)
-    // Stubs force the group rendering even for a single native conversation --
-    // the user needs to see the cross-project pointer alongside, which the
-    // single-card path doesn't expose.
-    if (conversationIds.length === 1 && (!crossProjectStubIds || crossProjectStubIds.length === 0)) {
-      return (
-        <div className="relative">
-          <ConversationCardById conversationId={conversationIds[0]} />
-          {isPinned && <Pin className="absolute top-2 right-8 size-2.5 text-muted-foreground/25" />}
-        </div>
-      )
-    }
     return (
       <ProjectConversationGroup
         conversationIds={conversationIds}

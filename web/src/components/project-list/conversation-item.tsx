@@ -4,48 +4,14 @@ import { useShallow } from 'zustand/react/shallow'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import type { Conversation } from '@/lib/types'
 import { projectPath } from '@/lib/types'
-import { cn, formatAge, haptic, projectDisplayName } from '@/lib/utils'
+import { formatAge, haptic, projectDisplayName } from '@/lib/utils'
 import { ProjectIcon } from '../project-icons'
-import { ProjectSettingsButton } from '../project-settings-button'
 import { ProjectSettingsEditor } from '../project-settings-editor-lazy'
 import { ConversationContextMenu } from './conversation-context-menu'
 import { ConversationItemCompact } from './conversation-item-compact'
-import { ConversationItemFull } from './conversation-item-full'
 
 export { ConversationItemCompact } from './conversation-item-compact'
 export { SpawnRootStub } from './conversation-item-helpers'
-
-// ─── Conversation card with settings button ─────────────────────────────
-
-export const ConversationCard = memo(function ConversationCard({ conversation }: { conversation: Conversation }) {
-  const [showSettings, setShowSettings] = useState(false)
-  const isSelected = useConversationsStore(s => s.selectedConversationId === conversation.id)
-  return (
-    <ConversationContextMenu conversation={conversation} onOpenSettings={() => setShowSettings(true)}>
-      <div>
-        <div className="relative group/card">
-          <ConversationItemFull conversation={conversation} />
-          <div
-            className={cn(
-              'absolute top-2 right-2 transition-opacity',
-              isSelected ? 'opacity-100' : 'opacity-0 [@media(hover:hover)]:group-hover/card:opacity-100',
-            )}
-          >
-            <ProjectSettingsButton
-              onClick={e => {
-                e.stopPropagation()
-                setShowSettings(!showSettings)
-              }}
-            />
-          </div>
-        </div>
-        {showSettings && (
-          <ProjectSettingsEditor project={conversation.project} onClose={() => setShowSettings(false)} />
-        )}
-      </div>
-    </ConversationContextMenu>
-  )
-})
 
 // ─── Compact peek (used for the "selected conversation" preview inside a
 // collapsed group). Subscribes to a single conversation by id so the peek
