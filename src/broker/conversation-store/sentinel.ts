@@ -26,6 +26,7 @@ export function buildSentinelList(state: SentinelState): SentinelStatusInfo[] {
       defaultSelection: conn.defaultSelection,
       pools: conn.pools,
       defaultPool: conn.defaultPool,
+      shellCapable: conn.features?.shell ?? false,
     })
   }
   return list

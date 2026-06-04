@@ -1,6 +1,8 @@
 import { projectIdentityKey } from '@shared/project-uri'
 import { useState } from 'react'
 import { useConversationsStore, wsSend } from '@/hooks/use-conversations'
+import { useShellsStore } from '@/hooks/use-shells'
+import { openShell, projectShellCapable } from '@/lib/shell-commands'
 import type { Conversation } from '@/lib/types'
 import { extractProjectLabel, projectPath } from '@/lib/types'
 import { cn, contextWindowSize, formatModel, haptic } from '@/lib/utils'
@@ -210,8 +212,13 @@ export function ProjectActionPanel({ projectUri }: { projectUri: string }) {
   const ps = useConversationsStore(s => s.projectSettings[projectIdentityKey(projectUri)])
   const conversations = useConversationsStore(s => s.conversations)
   const sentinelConnected = useConversationsStore(s => s.sentinelConnected)
+  const sentinels = useConversationsStore(s => s.sentinels)
   const [showAllRecent, setShowAllRecent] = useState(false)
   const [filter, setFilter] = useState('')
+
+  // Host shell is a SENTINEL feature -- openable on this project without any
+  // conversation. Gate on the resolved sentinel's advertised `features.shell`.
+  const shellCapable = projectShellCapable(sentinels, projectUri)
 
   const displayName = ps?.label || extractProjectLabel(projectUri)
   const displayColor = ps?.color
@@ -261,6 +268,22 @@ export function ProjectActionPanel({ projectUri }: { projectUri: string }) {
           >
             LAUNCH
           </button>
+          {shellCapable && (
+            <button
+              type="button"
+              disabled={!sentinelConnected}
+              onClick={() => {
+                haptic('tap')
+                // No conversationId -- the shell is owned by the sentinel + project,
+                // not a conversation. Lands in the global ShellDock; auto-expand it.
+                const shellId = openShell({ projectUri, cols: 80, rows: 24 })
+                useShellsStore.getState().setAutoExpandId(shellId)
+              }}
+              className="px-4 py-1.5 text-xs font-mono border border-emerald-400/50 text-emerald-400 hover:bg-emerald-400/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              TERMINAL
+            </button>
+          )}
         </div>
 
         {/* Recent recaps (last 3 days, finished only) */}

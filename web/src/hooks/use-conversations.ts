@@ -107,6 +107,10 @@ export interface SentinelStatusInfo {
   /** Pool the sentinel uses for Balanced/Random when the launch omits a pool.
    *  Defaults to `'default'`. */
   defaultPool?: string
+  /** Sentinel advertises `features.shell` -- a host shell can be opened on a
+   *  project this sentinel owns WITHOUT a conversation (host shell is a sentinel
+   *  feature). Gates the project-view "open terminal" affordance. */
+  shellCapable?: boolean
 }
 
 interface ConversationsState {

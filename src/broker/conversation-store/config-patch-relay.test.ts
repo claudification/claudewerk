@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'bun:test'
 import type { ServerWebSocket } from 'bun'
 import { createListenerRegistry } from './listeners'
-import { applySentinelConfigSnapshot, createSentinelState, setSentinel } from './sentinel'
+import { applySentinelConfigSnapshot, buildSentinelList, createSentinelState, setSentinel } from './sentinel'
 import type { ControlPanelMessage } from './types'
 
 /** A throwaway ws stand-in -- the registry only stores it by identity. */
@@ -108,5 +108,20 @@ describe('applySentinelConfigSnapshot', () => {
     // profiles + defaultSelection unchanged.
     expect(conn?.defaultSelection).toBe('balanced')
     expect(conn?.profiles?.[0].weight).toBe(1)
+  })
+})
+
+describe('buildSentinelList -- shellCapable advertisement', () => {
+  it('surfaces the sentinel-reported features.shell so the control panel can gate', () => {
+    const state = createSentinelState()
+    setSentinel(state, fakeWs(), () => {}, { sentinelId: 'snt_yes', alias: 'mac', features: { shell: true } })
+    setSentinel(state, fakeWs(), () => {}, { sentinelId: 'snt_no', alias: 'pi', features: { shell: false } })
+    // No features reported at all -> defaults to not shell-capable (never undefined).
+    setSentinel(state, fakeWs(), () => {}, { sentinelId: 'snt_bare', alias: 'box' })
+
+    const byAlias = Object.fromEntries(buildSentinelList(state).map(s => [s.alias, s.shellCapable]))
+    expect(byAlias.mac).toBe(true)
+    expect(byAlias.pi).toBe(false)
+    expect(byAlias.box).toBe(false)
   })
 })

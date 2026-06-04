@@ -8,12 +8,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const wsSend = vi.fn((..._args: unknown[]) => true)
 vi.mock('@/hooks/use-conversations', () => ({ wsSend: (...a: unknown[]) => wsSend(...a) }))
 
+import type { SentinelStatusInfo } from '@/hooks/use-conversations'
 import {
   basename,
   closeShell,
   generateShellId,
   inputShell,
   openShell,
+  projectShellCapable,
   resizeShell,
   shellDisplayPath,
   shellLightClass,
@@ -24,6 +26,10 @@ import {
 } from './shell-commands'
 
 beforeEach(() => wsSend.mockClear())
+
+function sentinel(p: Partial<SentinelStatusInfo> & { alias: string }): SentinelStatusInfo {
+  return { sentinelId: `snt_${p.alias}`, connected: true, ...p }
+}
 
 describe('pure helpers', () => {
   it('generateShellId is sh_-prefixed and unique-ish', () => {
@@ -75,6 +81,31 @@ describe('pure helpers', () => {
     // Esc must reach the PTY -- never a chord.
     expect(chord('Escape')).toBeNull()
     expect(chord('x')).toBeNull()
+  })
+})
+
+describe('projectShellCapable -- conversation-free shell gating', () => {
+  it('resolves the sentinel by the project URI authority (alias) and reads shellCapable', () => {
+    const sentinels = [sentinel({ alias: 'mac', shellCapable: true }), sentinel({ alias: 'pi', shellCapable: false })]
+    expect(projectShellCapable(sentinels, 'claude://mac/Users/j/p')).toBe(true)
+    expect(projectShellCapable(sentinels, 'claude://pi/srv/p')).toBe(false)
+  })
+
+  it('treats an empty authority as the default sentinel', () => {
+    const sentinels = [sentinel({ alias: 'default', isDefault: true, shellCapable: true })]
+    // claude:///path has no authority -> DEFAULT_SENTINEL_NAME ('default')
+    expect(projectShellCapable(sentinels, 'claude:///Users/j/p')).toBe(true)
+  })
+
+  it('falls back to the isDefault sentinel when the default alias is absent', () => {
+    const sentinels = [sentinel({ alias: 'primary', isDefault: true, shellCapable: true })]
+    expect(projectShellCapable(sentinels, 'claude:///Users/j/p')).toBe(true)
+  })
+
+  it('returns false when no sentinel matches or none advertise shell', () => {
+    expect(projectShellCapable([], 'claude://mac/p')).toBe(false)
+    expect(projectShellCapable([sentinel({ alias: 'mac' })], 'claude://other/p')).toBe(false)
+    expect(projectShellCapable([sentinel({ alias: 'mac', shellCapable: false })], 'claude://mac/p')).toBe(false)
   })
 })
 

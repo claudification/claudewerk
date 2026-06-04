@@ -11,7 +11,9 @@
  * sentinelId to drive a shell.
  */
 
+import { DEFAULT_SENTINEL_NAME, tryParseProjectUri } from '@shared/project-uri'
 import type { ShellRosterEntry } from '@shared/protocol'
+import type { SentinelStatusInfo } from '@/hooks/use-conversations'
 import { wsSend } from '@/hooks/use-conversations'
 import { projectPath } from '@/lib/types'
 
@@ -51,6 +53,22 @@ export function shellLightClass(flash: boolean, subscribed: boolean, hasActivity
   if (subscribed) return 'bg-emerald-500/60'
   if (hasActivity) return 'bg-amber-500/50'
   return 'bg-white/20'
+}
+
+/**
+ * Can a host shell be opened on this project, conversation-free? Mirrors the
+ * broker's `resolveSentinelConn`: the project URI's authority IS the sentinel
+ * alias; an empty authority means the `default` sentinel. The host shell is a
+ * SENTINEL feature, so capability lives on the resolved sentinel's `shellCapable`
+ * (joined from its `features.shell`), NOT on any conversation. Pure -- shared by
+ * the project-panel button + the open-shell chord so both gate identically.
+ */
+export function projectShellCapable(sentinels: SentinelStatusInfo[], projectUri: string): boolean {
+  const authority = tryParseProjectUri(projectUri)?.authority || DEFAULT_SENTINEL_NAME
+  const byAlias = sentinels.find(s => s.alias === authority)
+  const resolved =
+    byAlias ?? (authority === DEFAULT_SENTINEL_NAME ? (sentinels.find(s => s.isDefault) ?? sentinels[0]) : undefined)
+  return !!resolved?.shellCapable
 }
 
 // ─── wire senders ─────────────────────────────────────────────────────────────

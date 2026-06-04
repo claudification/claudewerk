@@ -13,7 +13,7 @@ import { useShellsStore } from '@/hooks/use-shells'
 import { formatShortcut, useChordCommand, useCommand, validateChordBindings } from '@/lib/commands'
 import { canRespawnStaleDaemon } from '@/lib/daemon-control'
 import { focusInputEditor } from '@/lib/focus-input'
-import { openShell } from '@/lib/shell-commands'
+import { openShell, projectShellCapable } from '@/lib/shell-commands'
 import { canShell, canTerminal, projectPath } from '@/lib/types'
 import { isMobileViewport } from '@/lib/utils'
 
@@ -129,22 +129,32 @@ export function useGlobalCommands(toggleSidebar: () => void) {
   // bound to `h` (host shell) to avoid clobbering existing muscle memory. The
   // dock (conversation-independent) is the primary surface; this is the
   // keyboard fast-path. Gated on the host sentinel's `features.shell`.
+  //
+  // The host shell is a SENTINEL feature, not an agent-host one -- so it works
+  // with NO conversation too: on a project view, fall back to the selected
+  // project's URI (no conversationId), gated on that sentinel's shellCapable.
   useChordCommand(
     'open-shell',
     () => {
       const store = useConversationsStore.getState()
       const sid = store.selectedConversationId
-      if (!sid) return
-      const conversation = store.conversationsById[sid]
-      if (!conversation || !canShell(conversation)) return
-      const shellId = openShell({
-        projectUri: conversation.project,
-        cols: 80,
-        rows: 24,
-        conversationId: sid,
-      })
-      // Maximize the moment the broker echoes it into the roster (one tick
-      // later). ShellDock watches autoExpandId and expands + clears it.
+      const conversation = sid ? store.conversationsById[sid] : undefined
+      if (conversation && canShell(conversation)) {
+        const shellId = openShell({
+          projectUri: conversation.project,
+          cols: 80,
+          rows: 24,
+          conversationId: sid ?? undefined,
+        })
+        // Maximize the moment the broker echoes it into the roster (one tick
+        // later). ShellDock watches autoExpandId and expands + clears it.
+        useShellsStore.getState().setAutoExpandId(shellId)
+        return
+      }
+      // Conversation-free path: a project is selected on a shell-capable sentinel.
+      const projectUri = store.selectedProjectUri
+      if (!projectUri || !projectShellCapable(store.sentinels, projectUri)) return
+      const shellId = openShell({ projectUri, cols: 80, rows: 24 })
       useShellsStore.getState().setAutoExpandId(shellId)
     },
     {
@@ -155,7 +165,9 @@ export function useGlobalCommands(toggleSidebar: () => void) {
         const store = useConversationsStore.getState()
         const sid = store.selectedConversationId
         const conversation = sid ? store.conversationsById[sid] : undefined
-        return !!conversation && canShell(conversation)
+        if (conversation && canShell(conversation)) return true
+        const projectUri = store.selectedProjectUri
+        return !!projectUri && projectShellCapable(store.sentinels, projectUri)
       },
     },
   )
