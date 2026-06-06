@@ -15,6 +15,7 @@ import { LaunchToastContainer } from '@/components/launch-profiles/launch-toast'
 import { useLaunchProfileManagerState } from '@/components/launch-profiles/manager-state'
 import { MarkdownViewerModal } from '@/components/markdown-viewer-modal'
 import { MediaLightbox } from '@/components/media-lightbox'
+import { PanelBoundary } from '@/components/panel-boundary'
 import { ProjectList } from '@/components/project-list'
 import { quickTaskBus } from '@/components/quick-task-trigger'
 import { PublicRecapView } from '@/components/recap/public-recap-view'
@@ -252,7 +253,9 @@ function Dashboard() {
                 </div>
               )}
               <div className="flex-1 overflow-y-auto p-2">
-                <ProjectList />
+                <PanelBoundary name="Conversation list">
+                  <ProjectList />
+                </PanelBoundary>
               </div>
               <RecapJobsWidget />
             </div>
@@ -260,7 +263,9 @@ function Dashboard() {
         </Sheet>
 
         <div className="flex-1 min-w-0">
-          <Header />
+          <PanelBoundary name="Header">
+            <Header />
+          </PanelBoundary>
         </div>
 
         {canAdmin && (
@@ -326,27 +331,35 @@ function Dashboard() {
               </button>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto p-2 pt-0">
-              <ProjectList />
+              <PanelBoundary name="Conversation list">
+                <ProjectList />
+              </PanelBoundary>
             </div>
             <RecapJobsWidget />
           </div>
         )}
 
         <div className="flex-1 border border-border overflow-hidden flex flex-col min-w-0">
-          <ConversationDetail />
+          <PanelBoundary name="Conversation">
+            <ConversationDetail />
+          </PanelBoundary>
         </div>
       </div>
 
       {showDebugConsole && <DebugConsole onClose={() => useConversationsStore.getState().toggleDebugConsole()} />}
 
       {canAdmin && showSwitcher && (
-        <CommandPalette
-          onSelect={handleSwitcherSelect}
-          onClose={() => useConversationsStore.getState().setShowSwitcher(false)}
-        />
+        <PanelBoundary name="Command palette" variant="modal">
+          <CommandPalette
+            onSelect={handleSwitcherSelect}
+            onClose={() => useConversationsStore.getState().setShowSwitcher(false)}
+          />
+        </PanelBoundary>
       )}
 
-      <JsonInspectorDialog />
+      <PanelBoundary name="JSON inspector" variant="modal">
+        <JsonInspectorDialog />
+      </PanelBoundary>
       <MediaLightbox />
       {canAdmin && <QuickTaskModal />}
       <RenameModal />
@@ -390,11 +403,17 @@ function Dashboard() {
       <VoiceKey />
       <AuthExpiredModal />
       <ChordOverlay />
-      <SpawnDialog />
+      <PanelBoundary name="Spawn dialog" variant="modal">
+        <SpawnDialog />
+      </PanelBoundary>
       <ReviveDialog />
       <RecapConfigDialog />
-      <RecapViewer />
-      <RecapHistoryModal />
+      <PanelBoundary name="Recap viewer" variant="modal">
+        <RecapViewer />
+      </PanelBoundary>
+      <PanelBoundary name="Recap history" variant="modal">
+        <RecapHistoryModal />
+      </PanelBoundary>
       <ManageProjectLinksDialog />
       <ManageChatConnectionsDialog />
       <LaunchProfileManager />
