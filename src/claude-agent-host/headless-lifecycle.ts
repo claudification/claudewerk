@@ -80,6 +80,12 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
   // fire-and-forget from stream-backend. Chaining prevents interleaving.
   let transcriptSendChain = Promise.resolve()
 
+  // Last conversation_info payload sent to the broker (from onInit). The
+  // `commands_changed` push update reuses this to re-send a FULL snapshot with
+  // only slashCommands swapped -- a partial conversation_info would wipe the
+  // other fields, since the broker REPLACES the snapshot rather than merging.
+  let lastConversationInfo: (AgentHostMessage & { slashCommands: string[] }) | null = null
+
   const opts: StreamBackendOptions = {
     args: finalClaudeArgs,
     settingsPath: deps.settingsPath,
@@ -142,7 +148,7 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
       }
       // Forward full init metadata to broker for dashboard autocomplete
       if (ctx.wsClient?.isConnected()) {
-        ctx.wsClient.send({
+        const conversationInfo = {
           type: 'conversation_info',
           conversationId: ctx.claudeSessionId || ctx.conversationId,
           tools: (init.tools as Array<{ name: string } | string>)?.map(t => (typeof t === 'string' ? t : t.name)) || [],
@@ -155,7 +161,9 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
           permissionMode: (init.permissionMode as string) || '',
           claudeCodeVersion: (init.claude_code_version as string) || '',
           fastModeState: (init.fast_mode_state as string) || '',
-        } as AgentHostMessage)
+        } as AgentHostMessage & { slashCommands: string[] }
+        lastConversationInfo = conversationInfo
+        ctx.wsClient.send(conversationInfo)
         ctx.diag(
           'headless',
           `Sent conversation_info: ${(init.tools as unknown[])?.length || 0} tools, ${(init.skills as unknown[])?.length || 0} skills, ${(init.agents as unknown[])?.length || 0} agents`,
@@ -165,6 +173,31 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
       // NOTE: Ad-hoc initial prompt is NOT sent here. CC's init message only fires
       // AFTER the first user message in --print mode. The prompt is sent from
       // sendAdHocPrompt() called after spawnStreamClaude() returns.
+    },
+
+    // CC pushed an updated `/` command-completion catalog mid-session
+    // (system/commands_changed -- fires when skills/commands load lazily or
+    // after a reload). Re-send conversation_info with the fresh slashCommands so
+    // the composer autocomplete updates without waiting for the next turn's
+    // init. We carry forward the rest of the last snapshot because the broker
+    // REPLACES conversation_info wholesale -- a partial would wipe tools/skills/
+    // agents/mcp. If we have no prior snapshot yet (commands_changed before the
+    // first init -- not observed in practice), skip rather than send a payload
+    // that would clear the other fields.
+    onCommandsChanged(names) {
+      if (!ctx.wsClient?.isConnected()) return
+      if (!lastConversationInfo) {
+        debug(`[headless] commands_changed (${names.length}) before init -- skipping, no snapshot to merge`)
+        return
+      }
+      const updated = {
+        ...lastConversationInfo,
+        conversationId: ctx.claudeSessionId || ctx.conversationId,
+        slashCommands: names,
+      }
+      lastConversationInfo = updated
+      ctx.wsClient.send(updated)
+      ctx.diag('headless', `commands_changed: refreshed conversation_info with ${names.length} slash commands`)
     },
 
     onResult(result) {

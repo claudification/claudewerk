@@ -97,6 +97,11 @@ export interface StreamBackendOptions {
    *  EPHEMERAL -- never persist; see ActivityPhrase in src/shared/protocol.ts.
    *  `phrase` is null when CC clears it on idle. */
   onActivityPhrase?: (phrase: string | null) => void
+  /** Backend pushed an updated `/` command-completion catalog (CC:
+   *  `system/commands_changed`). `names` is the full slash-command set; the
+   *  receiver refreshes conversation_info so the composer autocomplete stays
+   *  live mid-session. */
+  onCommandsChanged?: (names: string[]) => void
   onJsonStreamLine?: (line: string) => void
   onExit?: (code: number | null) => void
 }
@@ -202,6 +207,7 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
       onApiStatus: options.onApiStatus,
       onThinkingProgress: options.onThinkingProgress,
       onActivityPhrase: options.onActivityPhrase,
+      onCommandsChanged: options.onCommandsChanged,
     },
   }
 

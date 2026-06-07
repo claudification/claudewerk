@@ -356,3 +356,37 @@ describe('stream-handlers thinking_tokens', () => {
     expect(progress).toEqual([{ tokens: 50, delta: undefined }])
   })
 })
+
+describe('stream-handlers commands_changed', () => {
+  function createCommandsChangedCtx() {
+    const catalogs: string[][] = []
+    const ctx = createTestContext({ onCommandsChanged: names => catalogs.push(names) })
+    return { ...ctx, catalogs }
+  }
+
+  test('system/commands_changed forwards the command names and does NOT persist a transcript entry', () => {
+    const { hctx, entries, catalogs } = createCommandsChangedCtx()
+
+    handleMessage(hctx, {
+      type: 'system',
+      subtype: 'commands_changed',
+      commands: [
+        { name: 'clear', description: 'Start a new session', argumentHint: '[name]' },
+        { name: 'compact', description: 'Free up context' },
+      ],
+    })
+
+    expect(entries).toHaveLength(0)
+    expect(catalogs).toEqual([['clear', 'compact']])
+  })
+
+  test('commands_changed tolerates a missing/garbled commands array', () => {
+    const { hctx, entries, catalogs } = createCommandsChangedCtx()
+
+    handleMessage(hctx, { type: 'system', subtype: 'commands_changed' })
+    handleMessage(hctx, { type: 'system', subtype: 'commands_changed', commands: [{ noName: true }, 'bogus'] })
+
+    expect(entries).toHaveLength(0)
+    expect(catalogs).toEqual([[], []])
+  })
+})

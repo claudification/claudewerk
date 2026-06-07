@@ -59,6 +59,7 @@ export interface HandlerContext {
     | 'onApiStatus'
     | 'onThinkingProgress'
     | 'onActivityPhrase'
+    | 'onCommandsChanged'
   >
 }
 
@@ -150,6 +151,25 @@ function handleSystem(hctx: HandlerContext, msg: Record<string, unknown>) {
   if (subtype === 'task_summary') {
     const detail = typeof msg.detail === 'string' ? msg.detail : null
     callbacks.onActivityPhrase?.(detail)
+    return
+  }
+
+  // CC's mid-session push update for the `/` command-completion catalog (it
+  // fires when skills/commands load lazily or after a reload). The list is the
+  // authoritative `/` menu set; we hand the names to onCommandsChanged so the
+  // agent host can refresh conversation_info. NOT persisted as a transcript
+  // entry -- the raw payload is the full catalog (multi-KB), and the broker
+  // already emits a structured `slash_*` launch entry when the list diffs.
+  //
+  // NOTE: msg.commands carries MORE than names -- each entry has `description`
+  // and `argumentHint`. We only forward names for now (matches today's
+  // autocomplete). Carrying the richer data through to a description-annotated
+  // `/` menu is deliberately out of scope here; wire it later if wanted.
+  if (subtype === 'commands_changed') {
+    const commands = Array.isArray(msg.commands) ? (msg.commands as Array<{ name?: unknown }>) : []
+    const names = commands.map(c => c?.name).filter((n): n is string => typeof n === 'string')
+    debug(`commands_changed: ${names.length} commands`)
+    callbacks.onCommandsChanged?.(names)
     return
   }
 
