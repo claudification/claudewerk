@@ -14,6 +14,8 @@ const batch: (fn: () => void) => void = batchUpdates ?? (fn => fn())
 import { isPerfEnabled, record as perfRecord } from '@/lib/perf-metrics'
 import { buildWsUrl } from '@/lib/share-mode'
 import { cachePushEntries } from '@/lib/transcript-page-cache'
+import { handleWebControlRequest } from '@/lib/web-control-dispatch'
+import { buildWebControlAdvertise } from '@/lib/web-control-grant'
 import { resubscribeAgentScopes, subscribeAgentScope, unsubscribeAgentScope } from './agent-scope-subscription'
 import {
   fetchTranscript,
@@ -296,6 +298,14 @@ export function useWebSocket() {
         // by a held scope, so this subsumes the old single-agent re-subscribe.
         resubscribeAgentScopes(send)
 
+        // Re-advertise the web debug-control grant if one is active. The grant
+        // lives in localStorage so it survives full reload / SW update; on every
+        // (re)connect we re-announce the SAME stable clientId so the agent keeps
+        // targeting this browser across socket churn. No grant -> no advertise
+        // (default-deny: the broker never targets a browser it can't see).
+        const advertise = buildWebControlAdvertise()
+        if (advertise) send({ type: 'web_control_advertise', ...advertise })
+
         // Sync check after re-subscribing: detect transcript entries missed during
         // the disconnect gap (between subscribe and channel_subscribe, or entries
         // that arrived while WS was down). Small delay lets server process the
@@ -490,6 +500,17 @@ export function useWebSocket() {
                 }))
               }
             }
+            return
+          }
+
+          // Web debug-control request -> execute in this browser, reply async.
+          // Bypass the buffer: it is a self-contained command/response, not a
+          // state-update that the transcript renderer needs to batch.
+          if (msg.type === 'web_control_request') {
+            void handleWebControlRequest(
+              msg as unknown as Parameters<typeof handleWebControlRequest>[0],
+              send,
+            )
             return
           }
 

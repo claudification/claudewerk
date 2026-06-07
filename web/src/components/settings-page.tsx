@@ -22,6 +22,7 @@ import {
 import { SettingsShell, type SettingsShellTab } from './settings/settings-shell'
 import { VoiceDevicePicker } from './settings/voice-device-picker'
 import { ThemeSelector } from './theme-selector'
+import { WebControlToggle } from './web-control-toggle'
 
 // --- Default conversation picker ---
 function DefaultConversationPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
@@ -693,6 +694,15 @@ const SETTINGS: SettingItem[] = [
         className="accent-primary size-4"
       />
     ),
+  },
+  {
+    tab: 'system',
+    group: 'Debug',
+    label: 'Allow agent remote-control',
+    description:
+      'Let an AI agent drive THIS browser for 1 hour via MCP web_* tools (screenshot, run command-palette commands, navigate, read transcript, send prompts). Opt-in, default-deny, survives reload, auto-expires after 1h. Each action raises a toast so you see it happen.',
+    keywords: 'debug remote control agent mcp web screenshot puppet debugger drive',
+    render: (_ctx, ariaLabel) => <WebControlToggle ariaLabel={ariaLabel} />,
   },
   {
     tab: 'system',

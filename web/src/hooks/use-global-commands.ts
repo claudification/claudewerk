@@ -14,6 +14,7 @@ import { formatShortcut, useChordCommand, useCommand, validateChordBindings } fr
 import { canRespawnStaleDaemon } from '@/lib/daemon-control'
 import { focusInputEditor } from '@/lib/focus-input'
 import { openShell, projectShellCapable } from '@/lib/shell-commands'
+import { toggleWebControl } from '@/lib/web-control-actions'
 import { canShell, canTerminal, projectPath } from '@/lib/types'
 import { isMobileViewport } from '@/lib/utils'
 
@@ -72,6 +73,23 @@ export function useGlobalCommands(toggleSidebar: () => void) {
       useConversationsStore.getState().toggleDebugConsole()
     },
     { label: 'Toggle debug console', key: 'd', group: 'View' },
+  )
+
+  useCommand(
+    'toggle-web-control',
+    () => {
+      const on = toggleWebControl()
+      window.dispatchEvent(
+        new CustomEvent('rclaude-toast', {
+          detail: {
+            title: 'Agent remote-control',
+            body: on ? 'Enabled for this browser (1h). Agent can now drive it.' : 'Disabled.',
+            variant: on ? 'warning' : 'info',
+          },
+        }),
+      )
+    },
+    { label: 'Toggle agent remote-control (web debugger)', group: 'Debug' },
   )
 
   useCommand(
