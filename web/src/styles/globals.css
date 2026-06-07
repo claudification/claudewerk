@@ -39,17 +39,36 @@
  * glyph ("docker-compose. yml", "package. json"). Confirmed live in Safari:
  * per-glyph advances were a random [8,9] mix instead of a uniform 8.378.
  *
- * Forcing `letter-spacing: normal` removes the nudge. The terminal font is
- * already monospace (every FONTS entry is), so glyphs land on the grid on
- * their own and WebKit's fractional positioning renders them smoothly. This
- * only touches the DOM renderer's row spans -- the WebGL/canvas path
+ * TWO things break the monospace grid in WebKit, and both must be neutralized:
+ *
+ * 1. letter-spacing -- forcing `normal` removes xterm's per-glyph nudge so
+ *    WebKit stops quantizing advances to whole pixels.
+ *
+ * 2. ligatures / contextual shaping -- Geist Mono (and every coding font) ships
+ *    programming ligatures (`->`, `=>`, `...`) and contextual alternates that
+ *    MERGE or TIGHTEN runs of glyphs, so two cells collapse toward one and the
+ *    column grid drifts. xterm's letter-spacing was secretly compensating for
+ *    that; once we remove it (step 1), the ligatures shift widths unchecked.
+ *    Disable them with font-variant-ligatures + font-feature-settings (+
+ *    text-rendering:optimizeSpeed as a belt-and-suspenders kerning kill).
+ *
+ * Verified in a headless WebKit harness measuring the right border of a fixed-
+ * width box (every row must share one x): xterm default = 63px spread (ragged);
+ * letter-spacing alone = 67px (still ragged -- `->` ligated, `...` tightened);
+ * letter-spacing + ligatures-off = 0.56px (ALIGNED). The fonts are all
+ * monospace so once ligatures are off and spacing is normal, every glyph lands
+ * on its own cell and WebKit's fractional positioning renders smoothly.
+ *
+ * Only the DOM renderer's row spans are touched -- the WebGL/canvas path
  * rasterizes glyphs into fixed cells and has no `.xterm-rows` DOM, so colors
- * and that path are untouched. `!important` is required to beat xterm's inline
- * style; the descendant selector is required because the per-glyph correction
- * lives on the spans, not the container. */
+ * and that path are untouched. `!important` beats xterm's inline style; the
+ * descendant selector is required because the corrections live on the spans. */
 .xterm-rows,
 .xterm-rows * {
 	letter-spacing: normal !important;
+	font-variant-ligatures: none !important;
+	font-feature-settings: 'liga' 0, 'calt' 0, 'dlig' 0, 'clig' 0 !important;
+	text-rendering: optimizeSpeed !important;
 }
 
 @custom-variant dark (&:is(.dark *));
