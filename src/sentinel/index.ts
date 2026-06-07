@@ -25,7 +25,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { homedir, hostname as osHostname } from 'node:os'
+import { hostname as osHostname } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import type { Subprocess } from 'bun'
 import { dispatch, has, ping } from '../shared/cc-daemon/ops'
@@ -543,18 +543,26 @@ function cleanSentinelEnv(): Record<string, string | undefined> {
 }
 
 /**
- * The implicit default Claude config dir is `~/.claude`. Setting
- * `CLAUDE_CONFIG_DIR` explicitly -- even to that exact path -- puts CC into
- * "custom configDir" mode, which expects file-based `.credentials.json` and
- * SKIPS the macOS Keychain fallback (`Claude Code-credentials`). Users whose
- * default account auth lives in Keychain therefore lose auth when the default
- * profile injects `CLAUDE_CONFIG_DIR=~/.claude`. So: omit the var entirely
- * when the resolved configDir IS the implicit default. Custom profiles (e.g.
- * `~/.claude-work`) still get it injected.
+ * FILE-AUTH MODE (force file-based credentials for every profile).
+ *
+ * Setting `CLAUDE_CONFIG_DIR` -- even to the implicit default `~/.claude` --
+ * puts CC into "custom configDir" mode: it reads/writes credentials from
+ * `<configDir>/.credentials.json` and SKIPS the macOS Keychain. We WANT that
+ * for every profile, because the file holds the full-scope `/login` token
+ * (`user:profile` + `user:sessions:claude_code` + `user:inference`) -- so
+ * interactive, usage polling, and inference all work, keychain-independent,
+ * one account per configDir.
+ *
+ * REQUIREMENT: every profile's `configDir` MUST contain a valid
+ * `.credentials.json` (run `CLAUDE_CONFIG_DIR=<dir> claude` and `/login`, which
+ * writes the file in this mode). With the var set and NO file present, CC skips
+ * the keychain, finds nothing, and reports "Not logged in" -- so provision the
+ * file first.
+ *
+ * Inject whenever a configDir is resolved (always, incl. the default).
  */
 function shouldInjectConfigDir(configDir: string | undefined): configDir is string {
-  if (!configDir) return false
-  return configDir !== join(homedir(), '.claude')
+  return !!configDir
 }
 
 /**
