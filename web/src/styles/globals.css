@@ -21,6 +21,37 @@
 	src: url('../assets/fonts/MapleMono-Regular.woff2') format('woff2');
 }
 
+/* xterm DOM-renderer letter-spacing fix -- SAFARI / WebKit ONLY symptom.
+ *
+ * xterm's DOM renderer (our default -- the WebGL addon mis-packs colors on
+ * some GPUs, see terminal-settings-storage.ts) nudges every glyph onto its
+ * cell grid with a per-glyph inline `letter-spacing`: it sets a tiny default
+ * on the `.xterm-rows` container and a larger per-span value on any glyph
+ * whose measured width differs from the cell (e.g. narrow `.` / `:` , Nerd
+ * Font icons). See node_modules/@xterm/xterm DomRendererRowFactory:
+ *   spacing = width*cellWidth - widthCache.get(char); span.style.letterSpacing
+ *
+ * Blink ignores sub-pixel letter-spacing and keeps fractional glyph advances,
+ * so Chrome renders perfectly. WebKit does the opposite: ANY non-`normal`
+ * letter-spacing (even -0.0039px, even 0px) makes it quantize/pad each glyph
+ * to a whole pixel. On a fractional-cell monospace (Geist Mono ~8.378px) that
+ * turns into 8/9px-per-glyph stutter and a visible gap after every narrow
+ * glyph ("docker-compose. yml", "package. json"). Confirmed live in Safari:
+ * per-glyph advances were a random [8,9] mix instead of a uniform 8.378.
+ *
+ * Forcing `letter-spacing: normal` removes the nudge. The terminal font is
+ * already monospace (every FONTS entry is), so glyphs land on the grid on
+ * their own and WebKit's fractional positioning renders them smoothly. This
+ * only touches the DOM renderer's row spans -- the WebGL/canvas path
+ * rasterizes glyphs into fixed cells and has no `.xterm-rows` DOM, so colors
+ * and that path are untouched. `!important` is required to beat xterm's inline
+ * style; the descendant selector is required because the per-glyph correction
+ * lives on the spans, not the container. */
+.xterm-rows,
+.xterm-rows * {
+	letter-spacing: normal !important;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 :root {
