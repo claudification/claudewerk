@@ -352,6 +352,33 @@ export interface ShellExit {
   code: number
 }
 
+/** One live shell in a `shell_resync` snapshot. Mirrors the fields the broker
+ *  needs to rebuild a `ShellRosterEntry` it lost (it supplies `sentinelId` from
+ *  the resyncing connection + `status: 'live'`). */
+export interface ShellResyncEntry {
+  shellId: string
+  projectUri: string
+  path: string
+  title: string
+  createdBy: string
+  createdAt: number
+}
+
+/**
+ * Sentinel -> broker (control WS): the sentinel's FULL live host-shell roster,
+ * sent on every control-WS (re)connect. The broker reconciles its in-memory
+ * roster to this authoritative snapshot -- re-adding shells it lost on restart,
+ * pruning ones that died while the control WS was down. This is what makes host
+ * shells survive a broker restart: the PTYs keep running on the sentinel, and
+ * resync resurfaces them. Keyed by the stable `machineId` (the data-WS pairing
+ * key, which survives a sentinelId rekey across reconnects).
+ */
+export interface ShellResync {
+  type: 'shell_resync'
+  machineId: string
+  shells: ShellResyncEntry[]
+}
+
 export interface DiagLog {
   type: 'diag'
   conversationId: string
@@ -3547,6 +3574,7 @@ export type SentinelMessage =
   | ShellActivity
   | ShellData
   | ShellReplay
+  | ShellResync
 
 // Broker -> Sentinel messages
 //

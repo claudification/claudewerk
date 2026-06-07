@@ -228,7 +228,12 @@ export class ShellRegistry {
     return this.shells.get(shellId)?.attached ?? false
   }
 
-  /** Roster snapshot of every live shell (for control-plane registration). */
+  /** Roster snapshot of every live shell (for control-plane resync on a broker
+   *  reconnect -- the sentinel re-announces what it still has running). */
+  list(): ShellInfo[] {
+    return [...this.shells.values()].map(toInfo)
+  }
+
   /**
    * Spawn a scrubbed `$SHELL` PTY at `opts.path`. Output flows to the ring
    * buffer always + `onData` while attached. Throws (synchronously) if the

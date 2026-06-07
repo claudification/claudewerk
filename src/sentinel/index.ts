@@ -56,6 +56,7 @@ import type {
   ShellClose,
   ShellExit,
   ShellOpen,
+  ShellResync,
   SpawnConversation,
   SpawnFailed,
   SpawnResult,
@@ -1560,6 +1561,33 @@ function sendControl(msg: ShellExit | ShellActivity): void {
 }
 
 /**
+ * Re-announce the full live host-shell roster to the broker on a control-WS
+ * (re)connect. After a broker restart the broker's roster is EMPTY and nothing
+ * else tells it these PTYs are still running -- this resync resurfaces them (and
+ * lets the broker prune ones that died while we were disconnected). The data WS
+ * is revived first so the byte plane re-pairs for the subsequent re-attach.
+ * No-op when the shell feature is off or no shells are live.
+ */
+function sendShellResync(brokerUrl: string, secret: string): void {
+  if (!shellFeatureEnabled || shellRegistry.count === 0) return
+  if (activeWs?.readyState !== WebSocket.OPEN) return
+  ensureShellInfra(brokerUrl, secret)
+  const shells = shellRegistry.list().map(s => ({
+    shellId: s.shellId,
+    projectUri: s.projectUri,
+    path: s.path,
+    title: s.title,
+    createdBy: s.createdBy,
+    createdAt: s.createdAt,
+  }))
+  const msg: ShellResync = { type: 'shell_resync', machineId: getMachineId(), shells }
+  try {
+    activeWs.send(JSON.stringify(msg))
+    log(`[shell] resync sent -- ${shells.length} live shell(s) re-announced (machine ${getMachineId()})`)
+  } catch {}
+}
+
+/**
  * Lazily bring up the dedicated shell-data WS + the activity coalescer on the
  * first live shell. The data WS carries the byte firehose (so it never
  * head-of-line-blocks the control WS); the coalescer flushes one
@@ -2543,6 +2571,11 @@ function connect(
 
     // Report any dead PIDs from previous sentinel run
     reportDeadPids(ws)
+
+    // Re-announce live host shells so they survive a broker restart. The PTYs
+    // are FLOATING (sentinel-owned) -- this resync is the ONLY thing that tells
+    // a freshly-restarted broker they still exist (plan-shell-resync.md).
+    sendShellResync(url, secret)
 
     // Start per-profile usage polling. Emits one batched
     // `sentinel_usage_report` per cycle covering every configured profile,

@@ -14,7 +14,7 @@
  * A denied call must produce a deny reply AND no side effect -- both are asserted.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, jest } from 'bun:test'
 import type { ServerWebSocket } from 'bun'
 import type { Conversation } from '../../shared/protocol'
 import type { SentinelConnection } from '../conversation-store/sentinel'
@@ -68,6 +68,7 @@ function makeWorld(opts: { sentinelOnline?: boolean; machineId?: string } = {}):
   const store = {
     getSentinelConnectionByAlias: (a: string) => (online && a === 'default' ? conn : undefined),
     getDefaultSentinelConnection: () => (online ? conn : undefined),
+    getSentinelIdBySocket: () => 'snt_a',
     broadcastShellScoped: (msg: Record<string, unknown>, uri: string) => broadcasts.push({ msg, uri }),
     getConversation: (id: string) => convs.get(id),
     findConversationByConversationId: () => undefined,
@@ -131,6 +132,18 @@ function seedShell(shellId: string, over: { uri?: string; machineId?: string; co
 
 function denied(replies: Record<string, unknown>[], type: string): boolean {
   return replies.some(r => r.type === `${type}_result` && r.ok === false)
+}
+
+/** A `shell_resync.shells[]` entry (sentinel's live-roster wire shape). */
+function resyncEntry(shellId: string, uri = URI) {
+  return {
+    shellId,
+    projectUri: uri,
+    path: '/Users/jonas/projects/x',
+    title: shellId,
+    createdBy: 'jonas',
+    createdAt: 1_700_000_000_000,
+  }
 }
 
 const FULL: Permission[] = ['terminal', 'terminal:read']
@@ -370,30 +383,81 @@ describe('shell lifecycle', () => {
     expect(shellRegistry.has('sh1')).toBe(true)
   })
 
-  it('onSentinelDisconnect removes every shell of that sentinel + broadcasts shell_removed each', () => {
+  it('onSentinelDisconnect DEFERS removal during the grace window (floating shells survive a blip)', () => {
     const w = makeWorld()
     seedShell('a')
     seedShell('b')
-    // a third shell owned by a DIFFERENT sentinel must survive
-    shellRegistry.add(
-      {
-        shellId: 'c',
-        projectUri: URI_Y,
-        sentinelId: 'snt_b',
-        path: '/Users/jonas/projects/y',
-        title: 'y',
-        status: 'live',
-        createdBy: 'jonas',
-        createdAt: 1,
-      },
-      { machineId: 'm2' },
-    )
     onSentinelDisconnect('snt_a', w.store as never)
-    expect(shellRegistry.has('a')).toBe(false)
-    expect(shellRegistry.has('b')).toBe(false)
-    expect(shellRegistry.has('c')).toBe(true)
-    const removed = w.broadcasts.filter(x => x.msg.type === 'shell_removed').map(x => x.msg.shellId)
-    expect(removed.sort()).toEqual(['a', 'b'])
+    // PTYs keep running sentinel-side -> the broker holds the roster, no removal yet.
+    expect(shellRegistry.has('a')).toBe(true)
+    expect(shellRegistry.has('b')).toBe(true)
+    expect(w.broadcasts.filter(x => x.msg.type === 'shell_removed')).toHaveLength(0)
+    // A resync within the window cancels the grace timer (see next tests). Flush
+    // it here so no real timer dangles past the test.
+    const { ctx } = ctxFor(w, { role: 'sentinel-control' })
+    routeMessage(ctx, 'shell_resync', {
+      type: 'shell_resync',
+      machineId: 'm1',
+      shells: [resyncEntry('a'), resyncEntry('b')],
+    })
+  })
+
+  it('grace expiry removes the machine’s shells + broadcasts shell_removed (sentinel never returned)', () => {
+    jest.useFakeTimers()
+    try {
+      const w = makeWorld()
+      seedShell('a')
+      seedShell('b')
+      // a third shell on a DIFFERENT machine must survive (grace is machine-scoped)
+      shellRegistry.add(
+        {
+          shellId: 'c',
+          projectUri: URI_Y,
+          sentinelId: 'snt_b',
+          path: '/Users/jonas/projects/y',
+          title: 'y',
+          status: 'live',
+          createdBy: 'jonas',
+          createdAt: 1,
+        },
+        { machineId: 'm2' },
+      )
+      onSentinelDisconnect('snt_a', w.store as never)
+      expect(shellRegistry.has('a')).toBe(true) // still present during grace
+      jest.advanceTimersByTime(45_000)
+      expect(shellRegistry.has('a')).toBe(false)
+      expect(shellRegistry.has('b')).toBe(false)
+      expect(shellRegistry.has('c')).toBe(true)
+      const removed = w.broadcasts.filter(x => x.msg.type === 'shell_removed').map(x => x.msg.shellId)
+      expect(removed.sort()).toEqual(['a', 'b'])
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
+  it('a resync within the grace window cancels removal -- kept, no flap', () => {
+    jest.useFakeTimers()
+    try {
+      const w = makeWorld()
+      seedShell('a')
+      seedShell('b')
+      onSentinelDisconnect('snt_a', w.store as never)
+      const { ctx } = ctxFor(w, { role: 'sentinel-control' })
+      routeMessage(ctx, 'shell_resync', {
+        type: 'shell_resync',
+        machineId: 'm1',
+        shells: [resyncEntry('a'), resyncEntry('b')],
+      })
+      // Advance well past the grace window -- the canceled timer must NOT fire.
+      jest.advanceTimersByTime(60_000)
+      expect(shellRegistry.has('a')).toBe(true)
+      expect(shellRegistry.has('b')).toBe(true)
+      // Already-present shells -> kept, so no shell_added flap + no removal.
+      expect(w.broadcasts.filter(x => x.msg.type === 'shell_added')).toHaveLength(0)
+      expect(w.broadcasts.filter(x => x.msg.type === 'shell_removed')).toHaveLength(0)
+    } finally {
+      jest.useRealTimers()
+    }
   })
 
   it('dropShellViewerSocket detaches the sentinel when a watcher disconnects (last viewer)', () => {
@@ -403,5 +467,54 @@ describe('shell lifecycle', () => {
     shellRegistry.subscribe('sh1', viewer.ws, 80, 24)
     dropShellViewerSocket(viewer.ws)
     expect(w.data.sent.some(f => f.type === 'shell_detach' && f.shellId === 'sh1')).toBe(true)
+  })
+})
+
+// ── RESYNC RECONCILE (broker-restart recovery) ───────────────────────
+
+describe('shell_resync reconcile', () => {
+  it('re-adds reported shells on an EMPTY roster + broadcasts shell_added (broker restart)', () => {
+    const w = makeWorld()
+    const { ctx } = ctxFor(w, { role: 'sentinel-control' })
+    routeMessage(ctx, 'shell_resync', {
+      type: 'shell_resync',
+      machineId: 'm1',
+      shells: [resyncEntry('a'), resyncEntry('b')],
+    })
+    expect(shellRegistry.has('a')).toBe(true)
+    expect(shellRegistry.has('b')).toBe(true)
+    // The resyncing connection's sentinelId is stamped on the revived entries.
+    expect(shellRegistry.get('a')?.entry.sentinelId).toBe('snt_a')
+    const added = w.broadcasts
+      .filter(x => x.msg.type === 'shell_added')
+      .map(x => (x.msg.shell as { shellId: string }).shellId)
+    expect(added.sort()).toEqual(['a', 'b'])
+  })
+
+  it('prunes shells the sentinel no longer reports + broadcasts shell_removed', () => {
+    const w = makeWorld()
+    seedShell('a')
+    seedShell('b')
+    const { ctx } = ctxFor(w, { role: 'sentinel-control' })
+    routeMessage(ctx, 'shell_resync', { type: 'shell_resync', machineId: 'm1', shells: [resyncEntry('a')] })
+    expect(shellRegistry.has('a')).toBe(true)
+    expect(shellRegistry.has('b')).toBe(false)
+    expect(w.broadcasts.some(x => x.msg.type === 'shell_removed' && x.msg.shellId === 'b')).toBe(true)
+    // 'a' was already present -> kept, not re-added (no flap).
+    expect(w.broadcasts.some(x => x.msg.type === 'shell_added')).toBe(false)
+  })
+
+  it('is REJECTED from a web (control-panel) role -- sentinel-only inbound', () => {
+    const w = makeWorld()
+    const { ctx } = ctxFor(w, { role: 'web', grants: FULL })
+    const handled = routeMessage(ctx, 'shell_resync', {
+      type: 'shell_resync',
+      machineId: 'm1',
+      shells: [resyncEntry('a')],
+    })
+    // A web client must not be able to forge a roster. Either the router refuses
+    // to dispatch it (role gate) or it produces no roster mutation.
+    expect(shellRegistry.has('a')).toBe(false)
+    expect(handled === false || w.broadcasts.length === 0).toBe(true)
   })
 })

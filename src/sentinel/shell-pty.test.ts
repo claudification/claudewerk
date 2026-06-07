@@ -214,4 +214,26 @@ describe('ShellRegistry (real PTY)', () => {
     expect(() => reg.spawn(opts, { onData: () => {}, onExit: () => {} })).toThrow(/already exists/)
     reg.killAll()
   })
+
+  test('list() snapshots every live shell for resync', () => {
+    const reg = new ShellRegistry()
+    const mk = (shellId: string) => ({
+      shellId,
+      projectUri: `claude://s/tmp/${shellId}`,
+      path: '/tmp',
+      title: shellId,
+      cols: 80,
+      rows: 24,
+      createdBy: 'conv_1',
+      argv: ['/bin/sh', '-c', 'sleep 2'],
+    })
+    reg.spawn(mk('one'), { onData: () => {}, onExit: () => {} })
+    reg.spawn(mk('two'), { onData: () => {}, onExit: () => {} })
+    const snapshot = reg.list()
+    expect(snapshot.map(s => s.shellId).sort()).toEqual(['one', 'two'])
+    const one = snapshot.find(s => s.shellId === 'one')
+    expect(one?.projectUri).toBe('claude://s/tmp/one')
+    expect(one?.createdBy).toBe('conv_1')
+    reg.killAll()
+  })
 })

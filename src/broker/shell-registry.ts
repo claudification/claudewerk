@@ -24,7 +24,7 @@
 
 import type { ServerWebSocket } from 'bun'
 import { minSize } from '../sentinel/shell-pty'
-import type { ShellRoster, ShellRosterEntry } from '../shared/protocol'
+import type { ShellResyncEntry, ShellRoster, ShellRosterEntry } from '../shared/protocol'
 import { resolvePermissions, type UserGrant } from './permissions'
 
 /** Default viewport handed to the sentinel when a shell has no live viewer
@@ -147,19 +147,6 @@ export class BrokerShellRegistry {
     return shell
   }
 
-  /** Remove every shell owned by a sentinel (control-WS disconnect). Returns the
-   *  removed records so the caller can broadcast `shell_removed` for each. */
-  removeBySentinel(sentinelId: string): BrokerShell[] {
-    const removed: BrokerShell[] = []
-    for (const [id, shell] of this.shells) {
-      if (shell.entry.sentinelId === sentinelId) {
-        this.shells.delete(id)
-        removed.push(shell)
-      }
-    }
-    return removed
-  }
-
   /** Subscribers currently watching a shell (data fan-out targets). */
   subscribers(shellId: string): ServerWebSocket<unknown>[] {
     const shell = this.shells.get(shellId)
@@ -271,6 +258,101 @@ export class BrokerShellRegistry {
       out.push({ shellId, cols: min.cols, rows: min.rows })
     }
     return out
+  }
+
+  // ── Resync reconciliation (broker-restart / control-WS reconnect) ─────
+
+  /**
+   * Reconcile this machine's shells to the sentinel's authoritative live snapshot
+   * (a `shell_resync`, sent on every control-WS (re)connect). This is what makes
+   * host shells survive a broker restart: the broker rebuilds the roster from the
+   * sentinel's truth. Keyed on the STABLE `machineId` (the `sentinelId` can rekey
+   * across reconnects), so:
+   *   - shells the broker lacks for this machine are ADDED (status live);
+   *   - shells the broker has for this machine the sentinel no longer reports are
+   *     PRUNED (they died while the control WS was down);
+   *   - survivors keep their viewers/size but get `sentinelId` + `machineId`
+   *     refreshed (rekey-safe).
+   * Returns the deltas so the caller can broadcast `shell_added` / `shell_removed`.
+   * Pure of WebSocket concerns -- unit-testable without a socket.
+   */
+  reconcile(
+    machineId: string,
+    sentinelId: string,
+    entries: ShellResyncEntry[],
+  ): { added: ShellRosterEntry[]; removed: BrokerShell[]; kept: number } {
+    const reported = new Set(entries.map(e => e.shellId))
+    const added: ShellRosterEntry[] = []
+    const removed: BrokerShell[] = []
+    for (const [shellId, shell] of this.shells) {
+      if (shell.machineId !== machineId) continue
+      if (!reported.has(shellId)) {
+        this.shells.delete(shellId)
+        removed.push(shell)
+      }
+    }
+    let kept = 0
+    for (const e of entries) {
+      const existing = this.shells.get(e.shellId)
+      if (existing) {
+        existing.entry.sentinelId = sentinelId
+        existing.machineId = machineId
+        kept++
+        continue
+      }
+      const entry: ShellRosterEntry = {
+        shellId: e.shellId,
+        projectUri: e.projectUri,
+        sentinelId,
+        path: e.path,
+        title: e.title,
+        status: 'live',
+        createdBy: e.createdBy,
+        createdAt: e.createdAt,
+      }
+      this.shells.set(e.shellId, {
+        entry,
+        // conversationId is lost on a broker restart (it was UI-grouping metadata
+        // only -- drives the open/exit transcript receipt). A resync-revived shell
+        // simply won't emit an exit receipt. Acceptable post-restart.
+        conversationId: undefined,
+        machineId,
+        viewers: new Map(),
+        sentSize: { ...DEFAULT_SIZE },
+        attached: false,
+      })
+      added.push(entry)
+    }
+    return { added, removed, kept }
+  }
+
+  /** Remove every shell for a machine (grace-timer expiry -- the sentinel never
+   *  came back). Returns the removed records for `shell_removed` broadcasts. */
+  removeByMachine(machineId: string): BrokerShell[] {
+    const removed: BrokerShell[] = []
+    for (const [id, shell] of this.shells) {
+      if (shell.machineId === machineId) {
+        this.shells.delete(id)
+        removed.push(shell)
+      }
+    }
+    return removed
+  }
+
+  /** The machineId of a sentinel's shells (grace-removal key), or undefined when
+   *  it has none. All of a sentinel's shells share one machineId. */
+  machineIdForSentinel(sentinelId: string): string | undefined {
+    for (const shell of this.shells.values()) {
+      if (shell.entry.sentinelId === sentinelId) return shell.machineId
+    }
+    return undefined
+  }
+
+  /** How many shells the broker currently holds for a sentinel (logging). */
+  countForSentinel(sentinelId: string): number {
+    let n = 0
+    for (const shell of this.shells.values()) if (shell.entry.sentinelId === sentinelId) n++
+    return n
   }
 }
 

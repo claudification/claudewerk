@@ -56,15 +56,86 @@ describe('BrokerShellRegistry roster', () => {
     expect(r.remove('missing')).toBeUndefined()
   })
 
-  it('removes every shell owned by a sentinel (disconnect cleanup)', () => {
+  it('removes every shell on a machine (grace-expiry cleanup)', () => {
     const r = new BrokerShellRegistry()
-    r.add(entry({ shellId: 'a', sentinelId: 'snt_a' }))
-    r.add(entry({ shellId: 'b', sentinelId: 'snt_a' }))
-    r.add(entry({ shellId: 'c', sentinelId: 'snt_b' }))
-    const removed = r.removeBySentinel('snt_a')
+    r.add(entry({ shellId: 'a', sentinelId: 'snt_a' }), { machineId: 'm1' })
+    r.add(entry({ shellId: 'b', sentinelId: 'snt_a' }), { machineId: 'm1' })
+    r.add(entry({ shellId: 'c', sentinelId: 'snt_b' }), { machineId: 'm2' })
+    const removed = r.removeByMachine('m1')
     expect(removed.map(s => s.entry.shellId).sort()).toEqual(['a', 'b'])
     expect(r.has('c')).toBe(true)
     expect(r.count).toBe(1)
+  })
+
+  it('resolves a sentinel’s machineId + shell count (grace-removal keying)', () => {
+    const r = new BrokerShellRegistry()
+    r.add(entry({ shellId: 'a', sentinelId: 'snt_a' }), { machineId: 'm1' })
+    r.add(entry({ shellId: 'b', sentinelId: 'snt_a' }), { machineId: 'm1' })
+    expect(r.machineIdForSentinel('snt_a')).toBe('m1')
+    expect(r.countForSentinel('snt_a')).toBe(2)
+    expect(r.machineIdForSentinel('snt_missing')).toBeUndefined()
+    expect(r.countForSentinel('snt_missing')).toBe(0)
+  })
+})
+
+describe('BrokerShellRegistry.reconcile (resync)', () => {
+  function resyncEntry(shellId: string, overrides: Record<string, unknown> = {}) {
+    return {
+      shellId,
+      projectUri: `claude://default/Users/jonas/projects/${shellId}`,
+      path: `/Users/jonas/projects/${shellId}`,
+      title: shellId,
+      createdBy: 'jonas',
+      createdAt: 1_700_000_000_000,
+      ...overrides,
+    }
+  }
+
+  it('adds every reported shell when the broker roster is empty (broker restart)', () => {
+    const r = new BrokerShellRegistry()
+    const { added, removed, kept } = r.reconcile('m1', 'snt_new', [resyncEntry('a'), resyncEntry('b')])
+    expect(added.map(e => e.shellId).sort()).toEqual(['a', 'b'])
+    expect(removed).toHaveLength(0)
+    expect(kept).toBe(0)
+    expect(r.count).toBe(2)
+    // Added entries are stamped with the resyncing sentinelId + machineId.
+    expect(r.get('a')?.entry.sentinelId).toBe('snt_new')
+    expect(r.get('a')?.machineId).toBe('m1')
+    expect(r.get('a')?.entry.status).toBe('live')
+  })
+
+  it('prunes broker shells the sentinel no longer reports (died while disconnected)', () => {
+    const r = new BrokerShellRegistry()
+    r.add(entry({ shellId: 'a', sentinelId: 'snt_a' }), { machineId: 'm1' })
+    r.add(entry({ shellId: 'b', sentinelId: 'snt_a' }), { machineId: 'm1' })
+    const { added, removed, kept } = r.reconcile('m1', 'snt_a', [resyncEntry('a')])
+    expect(added).toHaveLength(0)
+    expect(removed.map(s => s.entry.shellId)).toEqual(['b'])
+    expect(kept).toBe(1)
+    expect(r.has('b')).toBe(false)
+    expect(r.has('a')).toBe(true)
+  })
+
+  it('keeps survivors (with viewers) and refreshes a rekeyed sentinelId', () => {
+    const r = new BrokerShellRegistry()
+    r.add(entry({ shellId: 'a', sentinelId: 'snt_old' }), { machineId: 'm1' })
+    r.subscribe('a', sock(), 100, 30) // a viewer that must survive the reconcile
+    const { added, removed, kept } = r.reconcile('m1', 'snt_rekeyed', [resyncEntry('a')])
+    expect(added).toHaveLength(0)
+    expect(removed).toHaveLength(0)
+    expect(kept).toBe(1)
+    expect(r.get('a')?.entry.sentinelId).toBe('snt_rekeyed')
+    expect(r.subscribers('a')).toHaveLength(1) // viewer preserved
+  })
+
+  it('leaves another machine’s shells untouched', () => {
+    const r = new BrokerShellRegistry()
+    r.add(entry({ shellId: 'other', sentinelId: 'snt_b' }), { machineId: 'm2' })
+    const { removed } = r.reconcile('m1', 'snt_a', [resyncEntry('a')])
+    expect(removed).toHaveLength(0)
+    expect(r.has('other')).toBe(true)
+    expect(r.has('a')).toBe(true)
+    expect(r.count).toBe(2)
   })
 })
 
