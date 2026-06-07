@@ -40,6 +40,14 @@ import '@fontsource/geist/400.css'
 import '@fontsource/geist/500.css'
 import '@fontsource/geist/600.css'
 import '@fontsource/geist-mono/400.css'
+// Terminal bold/italic faces. Without the real 700 face, the DOM renderer's
+// bold text (table headers, TUI emphasis) falls back to browser FAUX-bold,
+// which is wider than the monospace cell -- every row with bold drifts right
+// and tables/box-drawing go ragged (measured: +15px -> 0.6px once 700 loads).
+// font-display:swap means these only download when styled text is first drawn.
+import '@fontsource/geist-mono/700.css'
+import '@fontsource/geist-mono/400-italic.css'
+import '@fontsource/geist-mono/700-italic.css'
 import './styles/globals.css'
 import { loadAndApplyTheme } from './lib/themes'
 
