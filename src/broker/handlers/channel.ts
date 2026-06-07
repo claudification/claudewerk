@@ -731,8 +731,13 @@ function deliverToOne(
     ctx.getProjectSettings(fromConv?.project || '')?.label ||
     (fromConv?.project ? extractProjectLabel(fromConv.project) : fromConversation.slice(0, 8))
 
-  const linkStatus = ctx.conversations.checkProjectLink(fromConversation, toConversation)
-  if (linkStatus === 'blocked') {
+  // Two link layers authorize a send: a conversation-scoped link (the `:` ad-hoc grant --
+  // exactly these two conversations) OR a project-scoped link (the approval banner -- whole
+  // projects). Conv link is the narrower grant and is checked first. A project block only
+  // bites when there is no explicit conv link overriding it.
+  const convStatus = ctx.conversations.checkConvLink(fromConversation, toConversation)
+  const projectStatus = ctx.conversations.checkProjectLink(fromConversation, toConversation)
+  if (convStatus !== 'linked' && projectStatus === 'blocked') {
     return { to: toTarget, ok: false, error: 'Conversation has blocked your messages' }
   }
 
@@ -759,21 +764,35 @@ function deliverToOne(
     !!fromConv?.project && !!toConv.project && isSameProject(fromConv.project, toConv.project)
   const isTrusted = isSisterConversation || targetTrust === 'open' || fromTrust === 'benevolent'
 
-  const effectiveLinkStatus =
-    linkStatus === 'unknown' && isTrusted
-      ? 'trusted'
-      : linkStatus === 'unknown' &&
-          fromConv?.project &&
-          toConv.project &&
-          ctx.links.find(fromConv.project, toConv.project)
-        ? 'persisted'
-        : linkStatus
+  // Resolve which layer authorizes (and whether we matched a persisted link that needs
+  // caching into the in-memory registry). Order: live conv link > live project link >
+  // persisted conv link > trust > persisted project link.
+  let matchedConvLink = false
+  let effectiveLinkStatus: 'linked' | 'persisted' | 'trusted' | 'unknown'
+  if (convStatus === 'linked') {
+    effectiveLinkStatus = 'linked'
+    matchedConvLink = true
+  } else if (projectStatus === 'linked') {
+    effectiveLinkStatus = 'linked'
+  } else if (ctx.convLinks.find(fromConversation, toConversation)) {
+    effectiveLinkStatus = 'persisted'
+    matchedConvLink = true
+  } else if (isTrusted) {
+    effectiveLinkStatus = 'trusted'
+  } else if (fromConv?.project && toConv.project && ctx.links.find(fromConv.project, toConv.project)) {
+    effectiveLinkStatus = 'persisted'
+  } else {
+    effectiveLinkStatus = 'unknown'
+  }
 
   if (effectiveLinkStatus === 'linked' || effectiveLinkStatus === 'persisted' || effectiveLinkStatus === 'trusted') {
     if (effectiveLinkStatus !== 'linked') {
-      ctx.conversations.linkProjects(fromConversation, toConversation)
+      // Cache the authorizing link into the in-memory registry so subsequent sends skip
+      // the persisted lookup. Cache at the SAME granularity we matched.
+      if (matchedConvLink) ctx.conversations.linkConversations(fromConversation, toConversation)
+      else ctx.conversations.linkProjects(fromConversation, toConversation)
       ctx.log.debug(
-        `[links] Auto-linked (${effectiveLinkStatus}): ${fromConversation.slice(0, 8)} <-> ${toConversation.slice(0, 8)}`,
+        `[links] Auto-linked (${effectiveLinkStatus}, ${matchedConvLink ? 'conversation' : 'project'}): ${fromConversation.slice(0, 8)} <-> ${toConversation.slice(0, 8)}`,
       )
     }
     const targetWs = ctx.conversations.getConversationSocket(toConversation)
@@ -781,7 +800,10 @@ function deliverToOne(
       targetWs.send(JSON.stringify(delivery))
       const toProjectName = ctx.getProjectSettings(toConv.project)?.label || extractProjectLabel(toConv.project)
       if (fromConv?.project && toConv.project) {
-        ctx.links.touch(fromConv.project, toConv.project)
+        // Refresh lastUsed on whichever persisted layer authorized (each touch no-ops if
+        // that layer has no persisted row).
+        if (matchedConvLink) ctx.convLinks.touch(fromConversation, toConversation)
+        else ctx.links.touch(fromConv.project, toConv.project)
         ctx.logMessage({
           ts: Date.now(),
           from: { conversationId: fromConversation, project: fromConv.project, name: fromProjectName },
@@ -793,7 +815,7 @@ function deliverToOne(
         })
       }
       ctx.log.debug(
-        `[inter-conversation] ${fromConversation.slice(0, 8)} -> ${toConversation.slice(0, 8)}: ${data.intent} (${linkStatus})`,
+        `[inter-conversation] ${fromConversation.slice(0, 8)} -> ${toConversation.slice(0, 8)}: ${data.intent} (${effectiveLinkStatus}, ${matchedConvLink ? 'conversation' : 'project'})`,
       )
       return {
         to: toTarget,
@@ -820,7 +842,7 @@ function deliverToOne(
     toProject: toProjectName,
   })
   ctx.log.debug(
-    `[inter-conversation] ${fromConversation.slice(0, 8)} -> ${toConversation.slice(0, 8)}: ${data.intent} (${linkStatus})`,
+    `[inter-conversation] ${fromConversation.slice(0, 8)} -> ${toConversation.slice(0, 8)}: ${data.intent} (queued, conv=${convStatus} project=${projectStatus})`,
   )
   return { to: toTarget, ok: true, status: 'queued', targetConversationId: toConversation }
 }
@@ -1096,10 +1118,11 @@ const channelLinkResponse: MessageHandler = (ctx, data) => {
 }
 
 // Ad-hoc grant: the user sent a message referencing another conversation (via the
-// `:` completer's <conversation> token). Auto-establish a project-level link so
-// send_message works between them -- no approval banner. Project-scoped + bidirectional,
-// exactly like an approved channel_link_response. Idempotent: a no-op (silent) when
-// already linked or blocked, so resending a reference doesn't re-toast or re-log.
+// `:` completer's <conversation> token). Auto-establish a CONVERSATION-scoped link so
+// send_message works between exactly these two conversations -- no approval banner, and
+// crucially NOT a project-wide grant (sibling/future conversations in either project do
+// NOT inherit it). Bidirectional. Idempotent: a no-op (silent) when the two are already
+// conv-linked OR already project-linked/blocked, so resending a reference doesn't re-toast.
 export const channelLinkGrant: MessageHandler = (ctx, data) => {
   const fromConversation = data.fromConversation as string
   const toConversation = data.toConversation as string
@@ -1114,27 +1137,33 @@ export const channelLinkGrant: MessageHandler = (ctx, data) => {
     return
   }
 
-  // Same trust gate as an explicit approval: granting cross-project send rights
+  // Same trust gate as an explicit approval: granting cross-conversation send rights
   // is a settings-level action on both ends.
   ctx.requirePermission('settings', fromConv.project)
   ctx.requirePermission('settings', toConv.project)
 
-  // Only act on a genuinely new link. Already-linked -> nothing to do (avoid
-  // re-toast spam on every message). Blocked -> respect the block, do not grant.
-  const status = ctx.conversations.checkProjectLink(fromConversation, toConversation)
-  if (status !== 'unknown') {
+  // Only act on a genuinely new link. Already conv-linked -> nothing to do. A pre-existing
+  // project link or project block already authorizes (or denies) the pair, so don't layer a
+  // redundant conv link on top -- respect it and no-op.
+  const convStatus = ctx.conversations.checkConvLink(fromConversation, toConversation)
+  const projectStatus = ctx.conversations.checkProjectLink(fromConversation, toConversation)
+  if (convStatus !== 'unknown' || projectStatus !== 'unknown') {
     ctx.log.debug(
-      `[link-grant] no-op: from=${fromConversation.slice(0, 8)}(${extractProjectLabel(fromConv.project)}) to=${toConversation.slice(0, 8)}(${extractProjectLabel(toConv.project)}) status=${status}`,
+      `[link-grant] no-op: from=${fromConversation.slice(0, 8)}(${extractProjectLabel(fromConv.project)}) to=${toConversation.slice(0, 8)}(${extractProjectLabel(toConv.project)}) convStatus=${convStatus} projectStatus=${projectStatus}`,
     )
     return
   }
 
-  ctx.conversations.linkProjects(fromConversation, toConversation)
-  ctx.links.add(fromConv.project, toConv.project)
-  const toProjectLabel = ctx.getProjectSettings(toConv.project)?.label || extractProjectLabel(toConv.project)
+  ctx.conversations.linkConversations(fromConversation, toConversation)
+  ctx.convLinks.add(fromConversation, toConversation)
+  const toLabel =
+    toConv.title ||
+    toConv.agentName ||
+    ctx.getProjectSettings(toConv.project)?.label ||
+    extractProjectLabel(toConv.project)
 
   ctx.log.info(
-    `[link-grant] granted ad-hoc link: from=${fromConversation.slice(0, 8)}(${extractProjectLabel(fromConv.project)}) to=${toConversation.slice(0, 8)}(${toProjectLabel}) scope=project bidirectional source=conversation-reference initiator=control-panel`,
+    `[link-grant] granted ad-hoc link: from=${fromConversation.slice(0, 8)}(${extractProjectLabel(fromConv.project)}) to=${toConversation.slice(0, 8)}(${toLabel}) scope=conversation bidirectional source=conversation-reference initiator=control-panel`,
   )
 
   // Drain anything that was queued for this pair while it was unlinked.
@@ -1147,11 +1176,12 @@ export const channelLinkGrant: MessageHandler = (ctx, data) => {
   // auth_visible: tell the dashboard so the user sees the auto-authorization.
   ctx.broadcast({
     type: 'channel_link_granted',
+    scope: 'conversation',
     fromConversation,
     fromProject: fromConv.project,
     toConversation,
     toProject: toConv.project,
-    toProjectLabel,
+    toProjectLabel: toLabel,
   })
   ctx.conversations.broadcastConversationUpdate(fromConversation)
   ctx.conversations.broadcastConversationUpdate(toConversation)
@@ -1171,7 +1201,8 @@ const channelUnlink: MessageHandler = (ctx, data) => {
     ctx.log.debug(`Link severed: ${extractProjectLabel(projectA)} X ${extractProjectLabel(projectB)}`)
     return
   }
-  // Conversation-ID path (kept for callers that have IDs handy)
+  // Conversation-ID path: severs the CONVERSATION-scoped link (the `:` ad-hoc grant)
+  // for exactly this pair, leaving any project-wide link untouched.
   const conversationA = data.conversationA as string
   const conversationB = data.conversationB as string
   if (!conversationA || !conversationB) return
@@ -1183,11 +1214,11 @@ const channelUnlink: MessageHandler = (ctx, data) => {
   }
   ctx.requirePermission('settings', convA.project)
   ctx.requirePermission('settings', convB.project)
-  ctx.conversations.unlinkProjects(conversationA, conversationB)
-  if (convA.project && convB.project) ctx.links.remove(convA.project, convB.project)
+  ctx.conversations.unlinkConversations(conversationA, conversationB)
+  ctx.convLinks.remove(conversationA, conversationB)
   ctx.conversations.broadcastConversationUpdate(conversationA)
   ctx.conversations.broadcastConversationUpdate(conversationB)
-  ctx.log.debug(`Link severed: ${conversationA.slice(0, 8)} X ${conversationB.slice(0, 8)}`)
+  ctx.log.debug(`Conversation link severed: ${conversationA.slice(0, 8)} X ${conversationB.slice(0, 8)}`)
 }
 
 export function registerChannelHandlers(): void {

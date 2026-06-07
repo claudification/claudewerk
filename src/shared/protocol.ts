@@ -1246,7 +1246,8 @@ export interface ProjectLinkResponse {
  * Control-panel -> broker: grant an ad-hoc inter-conversation link without the
  * approval dance. Emitted when the user SENDS a message containing a
  * `<conversation>` reference token (the `:` completer's output). The grant is
- * project-level (mirrors channel_link_response approval) and bidirectional.
+ * CONVERSATION-scoped (only the two conversations, NOT their projects) and
+ * bidirectional. The broker resolves both ids itself; no project info on the wire.
  */
 export interface ProjectLinkGrant {
   type: 'channel_link_grant'
@@ -1263,11 +1264,17 @@ export interface ProjectLinkGrant {
  */
 export interface ProjectLinkGranted {
   type: 'channel_link_granted'
+  /**
+   * Granularity of the link that was created. `conversation` = the `:` ad-hoc grant
+   * (only the two conversations). `project` = a project-wide link. Absent = legacy
+   * (treat as project). The `:` completer path always emits `conversation`.
+   */
+  scope?: 'conversation' | 'project'
   fromConversation: string
   fromProject: string
   toConversation: string
   toProject: string
-  /** Human label for the linked (target) project. */
+  /** Human label for the linked target (conversation title for conv scope, else project). */
   toProjectLabel: string
 }
 
@@ -3896,6 +3903,8 @@ export interface ConversationSummary {
   agentName?: string
   prLinks?: Conversation['prLinks']
   linkedProjects?: Array<{ project: string; name: string }>
+  /** Conversation-scoped links (the `:` ad-hoc grant) -- narrower than linkedProjects. */
+  linkedConversations?: Array<{ conversationId: string; name: string }>
   tokenUsage?: { input: number; cacheCreation: number; cacheRead: number; output: number }
   contextWindow?: number // effective window (200K or 1M) matching Claude Code's current selection
   cacheTtl?: '5m' | '1h'

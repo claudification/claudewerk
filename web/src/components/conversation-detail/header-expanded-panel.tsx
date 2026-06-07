@@ -10,6 +10,7 @@ import {
   DaemonWorkerStatusRow,
   ErrorBanner,
   LaunchConfigRow,
+  LinkedConversations,
   LinkedProjects,
   PrLinksRow,
   ProjectPathRow,
@@ -77,6 +78,7 @@ export function HeaderExpandedPanel({
         projectSettings={projectSettings}
         onSetConversationTarget={onSetConversationTarget}
       />
+      <LinkedConversations conversation={conversation} />
     </div>
   )
 }

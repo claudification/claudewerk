@@ -346,6 +346,10 @@ export function createTestHarness(): TestHarness {
     addLink: () => {},
     removeLink: () => {},
     touchLink: () => {},
+    findConvLink: () => false,
+    addConvLink: () => {},
+    removeConvLink: () => {},
+    touchConvLink: () => {},
     logMessage: () => {},
     addressBook: createMockAddressBook(),
     messageQueue: {

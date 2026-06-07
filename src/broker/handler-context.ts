@@ -114,6 +114,17 @@ export interface HandlerContext {
     remove(projectA: string, projectB: string): void
     touch(projectA: string, projectB: string): void
   }
+  /**
+   * Persisted conversation-pair link operations (survives restarts). Narrower than
+   * `links`: a conv link authorizes messaging between exactly two conversations, not
+   * their whole projects. Created by the `:` ad-hoc grant (channel_link_grant).
+   */
+  convLinks: {
+    find(convA: string, convB: string): boolean
+    add(convA: string, convB: string): void
+    remove(convA: string, convB: string): void
+    touch(convA: string, convB: string): void
+  }
   /** Log an inter-conversation message for history */
   logMessage(entry: {
     ts: number

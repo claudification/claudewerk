@@ -376,6 +376,11 @@ export interface ConversationStore {
   linkProjects: (a: string, b: string) => void
   unlinkProjects: (a: string, b: string) => void
   blockProject: (blocker: string, blocked: string) => void
+  // Inter-conversation link management (narrower than project links)
+  checkConvLink: (from: string, to: string) => 'linked' | 'unknown'
+  getLinkedConversations: (conversationId: string) => Array<{ conversationId: string; name: string }>
+  linkConversations: (a: string, b: string) => void
+  unlinkConversations: (a: string, b: string) => void
   queueProjectMessage: (from: string, to: string, message: Record<string, unknown>) => void
   drainProjectMessages: (from: string, to: string) => Array<Record<string, unknown>>
   broadcastForProject: (project: string) => void
@@ -672,6 +677,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       agentName: conv.agentName,
       prLinks: conv.prLinks,
       linkedProjects: getLinkedProjects(conv.id),
+      linkedConversations: getLinkedConversations(conv.id),
       tokenUsage: conv.tokenUsage,
       contextWindow: resolveContextWindow(deriveModelName(conv.model, conv.configuredModel), conv.contextMode),
       cacheTtl: conv.cacheTtl,
@@ -2832,10 +2838,17 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     queueProjectMessage,
     drainProjectMessages,
     broadcastToConversationsForProject,
+    checkConvLink,
+    linkConversations,
+    unlinkConversations,
   } = projectLinkReg
 
   function getLinkedProjects(conversationId: string): Array<{ project: string; name: string }> {
     return projectLinkReg.getLinkedProjects(conversationId)
+  }
+
+  function getLinkedConversations(conversationId: string): Array<{ conversationId: string; name: string }> {
+    return projectLinkReg.getLinkedConversations(conversationId)
   }
 
   function broadcastForProject(projectOrCwd: string): void {
@@ -2977,6 +2990,10 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     linkProjects,
     unlinkProjects,
     blockProject,
+    checkConvLink,
+    getLinkedConversations,
+    linkConversations,
+    unlinkConversations,
     queueProjectMessage,
     drainProjectMessages,
     broadcastForProject,

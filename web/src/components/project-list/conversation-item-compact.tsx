@@ -423,6 +423,12 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
           {'↔'} {conversation.linkedProjects.map(p => p.name).join(', ')}
         </div>
       )}
+      {/* Linked conversations (the `:` ad-hoc grant -- narrower than project links). */}
+      {conversation.linkedConversations && conversation.linkedConversations.length > 0 && (
+        <div className="mt-1 pl-4 text-[9px] text-teal-400/50 font-mono truncate">
+          {'↔'} {conversation.linkedConversations.map(c => c.name).join(', ')}
+        </div>
+      )}
       <ConversationItemTasksBlock conversation={conversation} selectedSubagentId={selectedSubagentId} />
     </ConversationItemShell>
   )

@@ -149,6 +149,7 @@ export interface Conversation {
   agentName?: string
   prLinks?: Array<{ prNumber: number; prUrl: string; prRepository: string; timestamp: string }>
   linkedProjects?: Array<{ project: string; name: string }>
+  linkedConversations?: Array<{ conversationId: string; name: string }>
   stats?: {
     totalInputTokens: number
     totalOutputTokens: number

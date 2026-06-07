@@ -12,6 +12,10 @@ function projectLinkKey(a: string, b: string): string {
   return [normalizeProjectUri(a), normalizeProjectUri(b)].sort().join('|')
 }
 
+function convLinkKey(a: string, b: string): string {
+  return [a, b].sort().join('|')
+}
+
 export interface ProjectLinkRegistry {
   checkProjectLink: (from: string, to: string) => 'linked' | 'blocked' | 'unknown'
   getLinkedProjects: (conversationId: string) => Array<{ project: string; name: string }>
@@ -22,6 +26,11 @@ export interface ProjectLinkRegistry {
   drainProjectMessages: (from: string, to: string) => Array<Record<string, unknown>>
   broadcastToConversationsForProject: (project: string, message: Record<string, unknown>) => number
   toProjectUri: (cwdOrUri: string) => string
+  // Conversation-scoped links (narrower than project links -- exactly two conversations).
+  checkConvLink: (from: string, to: string) => 'linked' | 'unknown'
+  linkConversations: (a: string, b: string) => void
+  unlinkConversations: (a: string, b: string) => void
+  getLinkedConversations: (conversationId: string) => Array<{ conversationId: string; name: string }>
 }
 
 export function createProjectLinkRegistry(
@@ -31,9 +40,17 @@ export function createProjectLinkRegistry(
   const projectLinks = new Set<string>()
   const projectBlocks = new Map<string, number>()
   const messageQueue = new Map<string, Array<Record<string, unknown>>>()
+  // Conversation-pair links, keyed by sorted conv-id pair. In-memory cache; the
+  // persisted source of truth lives in conversation-links.ts (ctx.convLinks).
+  const convLinks = new Set<string>()
 
   function conversationToProject(conversationId: string): string | undefined {
     return conversations.get(conversationId)?.project
+  }
+
+  function conversationName(conversationId: string): string {
+    const conv = conversations.get(conversationId)
+    return conv?.title || conv?.agentName || conversationId.slice(0, 8)
   }
 
   return {
@@ -128,5 +145,29 @@ export function createProjectLinkRegistry(
     },
 
     toProjectUri,
+
+    checkConvLink(from, to) {
+      return convLinks.has(convLinkKey(from, to)) ? 'linked' : 'unknown'
+    },
+
+    linkConversations(a, b) {
+      if (!a || !b || a === b) return
+      convLinks.add(convLinkKey(a, b))
+    },
+
+    unlinkConversations(a, b) {
+      convLinks.delete(convLinkKey(a, b))
+    },
+
+    getLinkedConversations(conversationId) {
+      const result: Array<{ conversationId: string; name: string }> = []
+      for (const key of convLinks) {
+        const [a, b] = key.split('|')
+        const other = a === conversationId ? b : b === conversationId ? a : null
+        if (!other) continue
+        result.push({ conversationId: other, name: conversationName(other) })
+      }
+      return result
+    },
   }
 }

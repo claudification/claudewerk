@@ -107,6 +107,7 @@ function toConversation(summary: ConversationSummary): Conversation {
     agentName: summary.agentName,
     prLinks: summary.prLinks,
     linkedProjects: summary.linkedProjects,
+    linkedConversations: summary.linkedConversations,
     tokenUsage: summary.tokenUsage,
     contextWindow: summary.contextWindow,
     cacheTtl: summary.cacheTtl,

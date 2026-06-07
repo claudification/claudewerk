@@ -27,6 +27,13 @@ import {
 } from './auth-routes'
 import { buildReviveMessage } from './build-revive'
 import { recordInboundForSocket, registerConnection, unregisterConnection } from './connection-registry'
+import {
+  addPersistedConvLink,
+  findConvLink,
+  initConversationLinks,
+  removePersistedConvLink,
+  touchConvLink,
+} from './conversation-links'
 import { createConversationStore } from './conversation-store'
 import { type ContextDeps, createContext } from './create-context'
 import { startExternalStatusPolling, stopExternalStatusPolling } from './external-status'
@@ -403,6 +410,7 @@ async function main() {
   initGlobalSettings(store.kv)
   initProjectOrder(store.kv)
   initProjectLinks(store.kv)
+  initConversationLinks(store.kv)
   initInterConversationLog(store.messages)
   initAddressBook(store.kv)
   initMessageQueue(store.messages)
@@ -669,6 +677,14 @@ async function main() {
       addLink: addPersistedLink,
       removeLink: removePersistedLink,
       touchLink,
+      findConvLink: (convA: string, convB: string) => !!findConvLink(convA, convB),
+      addConvLink: (convA: string, convB: string) => {
+        addPersistedConvLink(convA, convB)
+      },
+      removeConvLink: (convA: string, convB: string) => {
+        removePersistedConvLink(convA, convB)
+      },
+      touchConvLink,
       logMessage: appendMessage,
       addressBook: { getOrAssign, resolve },
       messageQueue: { enqueue, drain, getQueueSize },

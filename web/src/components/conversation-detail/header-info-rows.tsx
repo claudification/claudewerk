@@ -319,3 +319,42 @@ export function LinkedProjects({
     </div>
   )
 }
+
+// Conversation-scoped links (the `:` ad-hoc grant). Narrower than LinkedProjects: each
+// entry is a single linked conversation, not a whole project. Clicking the name navigates
+// to it; the x severs just this conversation pair.
+export function LinkedConversations({ conversation }: { conversation: Conversation }) {
+  const selectConversation = useConversationsStore(s => s.selectConversation)
+  if (!conversation.linkedConversations || conversation.linkedConversations.length === 0) return null
+  return (
+    <div className="flex items-center gap-2 mt-1 flex-wrap">
+      <span className="text-[10px] text-teal-400/60">conversations:</span>
+      {conversation.linkedConversations.map(lc => (
+        <span key={lc.conversationId} className="inline-flex items-center gap-1 text-[10px] font-mono">
+          <button
+            type="button"
+            className="text-teal-400 hover:text-teal-300 hover:underline cursor-pointer"
+            onClick={() => {
+              haptic('tap')
+              selectConversation(lc.conversationId, 'linked-conversation')
+            }}
+            title={`Go to ${lc.name}`}
+          >
+            {lc.name}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              haptic('error')
+              wsSend('channel_unlink', { conversationA: conversation.id, conversationB: lc.conversationId })
+            }}
+            className="text-red-400/40 hover:text-red-400 transition-colors"
+            title={`Sever link to ${lc.name}`}
+          >
+            x
+          </button>
+        </span>
+      ))}
+    </div>
+  )
+}

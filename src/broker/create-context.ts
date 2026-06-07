@@ -26,6 +26,10 @@ export interface ContextDeps {
   addLink(projectA: string, projectB: string): void
   removeLink(projectA: string, projectB: string): void
   touchLink(projectA: string, projectB: string): void
+  findConvLink(convA: string, convB: string): boolean
+  addConvLink(convA: string, convB: string): void
+  removeConvLink(convA: string, convB: string): void
+  touchConvLink(convA: string, convB: string): void
   logMessage(entry: Parameters<HandlerContext['logMessage']>[0]): void
   addressBook: {
     getOrAssign(callerProject: string, targetProject: string, targetName: string): string
@@ -100,6 +104,12 @@ export function createContext(ws: ServerWebSocket<WsData>, deps: ContextDeps): H
       add: deps.addLink,
       remove: deps.removeLink,
       touch: deps.touchLink,
+    },
+    convLinks: {
+      find: (convA, convB) => deps.findConvLink(convA, convB),
+      add: deps.addConvLink,
+      remove: deps.removeConvLink,
+      touch: deps.touchConvLink,
     },
     logMessage: deps.logMessage,
     addressBook: deps.addressBook,
