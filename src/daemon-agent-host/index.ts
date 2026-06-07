@@ -46,6 +46,7 @@ import { checkBunVersion } from '../shared/bun-version'
 
 checkBunVersion()
 
+import { dispatchHostRpcResult } from '../agent-host-common/host-rpc'
 import type { AttachCloseReason, AttachHandle } from '../shared/cc-daemon/attach'
 import { has } from '../shared/cc-daemon/ops'
 import { resolveControlSocket } from '../shared/cc-daemon/socket-path'
@@ -73,6 +74,7 @@ import { type BrokerBridge, createBrokerBridge } from './broker-bridge'
 import { type DaemonHostConfig, parseDaemonHostConfig } from './cli-args'
 import { createDaemonControl } from './daemon-control'
 import { createDaemonLaunchEvents, type DaemonLaunchEvents } from './launch-events'
+import { type DaemonMcpHandle, startDaemonMcp } from './mcp-server'
 import { classifyVanish, type DaemonSessionObserver, observeDaemonSession } from './session-observer'
 import { createStatusMirror, type StatusMirror } from './status-mirror'
 import { createTranscriptBridge, type TranscriptBridge } from './transcript-bridge'
@@ -180,6 +182,9 @@ async function main(): Promise<void> {
   let transcriptBridge: TranscriptBridge | null = null
   let statusMirror: StatusMirror | null = null
   let observer: DaemonSessionObserver | null = null
+  /** Host MCP server + pending-RPC registry -- null when CLAUDWERK_MCP_ENDPOINT
+   *  is unset (e.g. ATTACH mode / pre-Phase-3 sentinel). */
+  let mcp: DaemonMcpHandle | null = null
   let shuttingDown = false
   /** True while a socket-drop re-attach is in flight -- guards re-entrancy. */
   let reattaching = false
@@ -204,7 +209,7 @@ async function main(): Promise<void> {
     conversationId: cfg.conversationId,
     hostVersion: HOST_VERSION,
     buildInitialMessage: () => (ccSessionId ? buildMeta(cfg, ccSessionId) : buildBoot(cfg)),
-    onMessage: handleInbound,
+    onMessage: dispatchInbound,
     onConnected: () => {
       debug('broker connected')
       lastTransportOkAt = Date.now()
@@ -265,6 +270,34 @@ async function main(): Promise<void> {
   }
 
   emitBoot('agent_host_started', HOST_VERSION)
+
+  // --- host MCP server (the full host toolset, Phase 3c) ----------------------
+  /** Self-terminate this conversation (mcp__rclaude__exit_conversation). */
+  function requestExit(status: 'success' | 'error', message?: string): void {
+    log(`mcp exit_conversation status=${status}${message ? ` -- ${message}` : ''}`)
+    shutdown('mcp-exit-session', true)
+  }
+
+  /** Diag sink for the host MCP machinery -- routed through this host's debug log. */
+  const mcpDiag = (type: string, m: string) => debug(`[${type}] ${m}`)
+
+  // Stand up the same agent-host MCP toolset a claude host serves, bound to the
+  // sentinel-computed endpoint. `mcp` stays null when CLAUDWERK_MCP_ENDPOINT is
+  // unset so legacy daemon spawns (and ATTACH mode) are untouched. The lifted
+  // callbacks register into `mcp.pending`; inbound `*_result` messages resolve
+  // it via dispatchHostRpcResult in dispatchInbound below.
+  mcp = startDaemonMcp({
+    conversationId: cfg.conversationId,
+    cwd: cfg.cwd,
+    brokerUrl: cfg.brokerUrl,
+    brokerSecret: cfg.brokerSecret,
+    transport,
+    getCcSessionId: () => ccSessionId,
+    diag: mcpDiag,
+    log,
+    getAttachHandle: () => attachHandle,
+    requestExit,
+  })
 
   // --- inbound broker message routing ----------------------------------------
   /**
@@ -383,6 +416,18 @@ async function main(): Promise<void> {
     }
     // terminal_data / terminal_resize / terminal_attach / terminal_detach -> PTY
     bridge?.handleMessage(msg)
+  }
+
+  /**
+   * Transport entry point. The host MCP toolset (Phase 3c) intercepts its own
+   * inbound traffic first -- dialog answers + inter-conversation `*_result`
+   * replies resolve the shared pending-RPC registry -- then everything else
+   * falls through to `handleInbound`. Only active when the host MCP server is up
+   * (CLAUDWERK_MCP_ENDPOINT set); otherwise it's a straight pass-through.
+   */
+  function dispatchInbound(msg: BrokerMessage): void {
+    if (mcp && dispatchHostRpcResult(msg as Record<string, unknown>, mcp.pending, mcpDiag)) return
+    handleInbound(msg)
   }
 
   // --- ccSessionId observation (the no-hook derivation) ----------------------
@@ -658,6 +703,7 @@ async function main(): Promise<void> {
       transport.send(end)
     }
     observer?.stop()
+    mcp?.stop()
     bridge?.stop()
     transcriptBridge?.stop()
     statusMirror?.stop()

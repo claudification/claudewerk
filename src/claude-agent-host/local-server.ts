@@ -5,7 +5,7 @@
  */
 
 import type { Server } from 'bun'
-import { handleMcpRequest } from '../agent-host-common/mcp-host/mcp-channel'
+import { handleMcpRoute } from '../agent-host-common/mcp-host/mcp-channel'
 import type { AskQuestionItem, AskQuestionRequest, HookEvent, HookEventData, HookEventType } from '../shared/protocol'
 
 let debugFn: (msg: string) => void = () => {}
@@ -275,14 +275,10 @@ export async function startLocalServer(options: LocalServerOptions): Promise<{ s
           }
         }
 
-        // MCP Streamable HTTP endpoint for channel communication
-        if (mcpEnabled && (url.pathname === '/mcp' || url.pathname.startsWith('/mcp/'))) {
-          try {
-            return await handleMcpRequest(req)
-          } catch {
-            // Swallow MCP errors - never crash the local server
-            return new Response('MCP error', { status: 500 })
-          }
+        // MCP Streamable HTTP endpoint for channel communication (shared route)
+        if (mcpEnabled) {
+          const mcpResponse = await handleMcpRoute(req)
+          if (mcpResponse) return mcpResponse
         }
 
         return new Response('Not found', { status: 404 })

@@ -7,7 +7,11 @@
  *   - broker : the external MCP server (src/broker/routes/mcp-server.ts, `/mcp`)
  *              that chat-api / opencode / acp / external clients connect to.
  *   - host   : the agent-host MCP server (src/agent-host-common/mcp-host/) that
- *              the in-process agent (claude/daemon/...) talks to.
+ *              the in-process agent talks to. Served by BOTH the claude host
+ *              (claude-agent-host/local-server.ts) AND -- as of Phase 3c -- the
+ *              daemon host (daemon-agent-host/mcp-server.ts); both stand it up
+ *              from the one shared `registerAllTools`, so the `host` site is a
+ *              single canonical toolset regardless of which host serves it.
  *
  * Every tool a site exposes MUST appear here, and every catalog tool MUST be
  * bound at each of its intended `sites` -- or be listed in DEFERRED_BINDINGS

@@ -22,6 +22,7 @@ export type {
   PermissionRules,
 } from './context'
 export { senderId } from './context'
+export { dispatchHostRpcResult } from './inbound-results'
 export { createPendingCallbacks, type PendingCallbacks } from './pending-callbacks'
 
 export function buildMcpChannelCallbacks(ctx: HostRpcContext): McpChannelCallbacks {

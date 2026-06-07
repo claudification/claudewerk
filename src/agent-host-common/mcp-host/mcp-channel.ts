@@ -283,7 +283,7 @@ async function connectMcpChannel(): Promise<void> {
   }
 }
 
-export async function handleMcpRequest(req: Request): Promise<Response> {
+async function handleMcpRequest(req: Request): Promise<Response> {
   if (!state) return new Response('MCP channel not initialized', { status: 503 })
   try {
     if (!state.connected) await connectMcpChannel()
@@ -291,6 +291,22 @@ export async function handleMcpRequest(req: Request): Promise<Response> {
   } catch (err) {
     debug(`[channel] handleMcpRequest error: ${err instanceof Error ? err.message : err}`)
     return new Response('MCP request failed', { status: 500 })
+  }
+}
+
+/**
+ * Serve the `/mcp` Streamable-HTTP route, or return null when `req` is not an
+ * MCP path so the caller can route elsewhere. Shared by the claude + daemon host
+ * local servers -- the one place the `/mcp` match + crash-guard lives.
+ */
+export async function handleMcpRoute(req: Request): Promise<Response | null> {
+  const { pathname } = new URL(req.url)
+  if (pathname !== '/mcp' && !pathname.startsWith('/mcp/')) return null
+  try {
+    return await handleMcpRequest(req)
+  } catch {
+    // Swallow MCP errors - never crash the local server
+    return new Response('MCP error', { status: 500 })
   }
 }
 
