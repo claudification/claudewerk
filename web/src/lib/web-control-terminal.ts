@@ -52,7 +52,11 @@ export function terminalList(): TermResult {
 export async function terminalStart(args: Record<string, unknown>): Promise<TermResult> {
   const projectUri = arg(args, 'projectUri')
   if (!projectUri) {
-    return { ok: false, error: 'terminal_start requires projectUri (claude://sentinel/path). Discover via list_hosts / list_conversations.' }
+    return {
+      ok: false,
+      error:
+        'terminal_start requires projectUri (claude://sentinel/path). Discover via list_hosts / list_conversations.',
+    }
   }
   const cols = Number(args.cols) || 120
   const rows = Number(args.rows) || 32
@@ -61,7 +65,10 @@ export async function terminalStart(args: Record<string, unknown>): Promise<Term
   const shellId = openShell({ projectUri, cols, rows, title })
   useAgentShellsStore.getState().attach(shellId)
   await wait(ATTACH_SETTLE_MS)
-  return { ok: true, result: { shellId, title, note: 'Started detached (off-screen). Use terminal_read / terminal_write by shellId.' } }
+  return {
+    ok: true,
+    result: { shellId, title, note: 'Started detached (off-screen). Use terminal_read / terminal_write by shellId.' },
+  }
 }
 
 export async function terminalAttach(args: Record<string, unknown>): Promise<TermResult> {
@@ -96,7 +103,10 @@ export function terminalRead(args: Record<string, unknown>): TermResult {
   if (!shellId) return { ok: false, error: 'terminal_read requires shellId' }
   const entry = getXterm(shellId)
   if (!entry) {
-    return { ok: false, error: `Shell '${shellId}' is not attached/readable. Call terminal_attach (or terminal_start) first.` }
+    return {
+      ok: false,
+      error: `Shell '${shellId}' is not attached/readable. Call terminal_attach (or terminal_start) first.`,
+    }
   }
   const maxLines = Number(args.maxLines) || undefined
   return { ok: true, result: { shellId, text: entry.read({ maxLines }) } }

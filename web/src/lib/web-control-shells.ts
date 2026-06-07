@@ -18,8 +18,7 @@ interface AgentShellsState {
 
 export const useAgentShellsStore = create<AgentShellsState>(set => ({
   attached: {},
-  attach: shellId =>
-    set(s => (s.attached[shellId] ? s : { attached: { ...s.attached, [shellId]: true } })),
+  attach: shellId => set(s => (s.attached[shellId] ? s : { attached: { ...s.attached, [shellId]: true } })),
   detach: shellId =>
     set(s => {
       if (!s.attached[shellId]) return s

@@ -6,10 +6,7 @@
  * and only the URL travels back.
  */
 
-export async function captureNodeToUrl(
-  el: HTMLElement,
-  pixelRatio = 1,
-): Promise<{ url?: string; error?: string }> {
+export async function captureNodeToUrl(el: HTMLElement, pixelRatio = 1): Promise<{ url?: string; error?: string }> {
   // Lazy-load html-to-image (heavy, off the hot path).
   const { toBlob } = await import('html-to-image')
   const bg = getComputedStyle(document.body).backgroundColor || '#0a0a0a'

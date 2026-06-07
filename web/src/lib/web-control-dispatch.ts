@@ -10,17 +10,17 @@
 
 import type { TranscriptContentBlock, TranscriptEntry, WebControlOp } from '@shared/protocol'
 import { sendInput, useConversationsStore } from '@/hooks/use-conversations'
-import { captureNodeToUrl } from './web-control-capture'
 import { executeCommand, getCommands } from './commands'
+import { captureNodeToUrl } from './web-control-capture'
 import { getActiveWebControlGrant } from './web-control-grant'
 import {
+  type TermResult,
   terminalAttach,
   terminalDetach,
   terminalList,
   terminalRead,
   terminalScreenshot,
   terminalStart,
-  type TermResult,
   terminalWrite,
 } from './web-control-terminal'
 

@@ -507,10 +507,7 @@ export function useWebSocket() {
           // Bypass the buffer: it is a self-contained command/response, not a
           // state-update that the transcript renderer needs to batch.
           if (msg.type === 'web_control_request') {
-            void handleWebControlRequest(
-              msg as unknown as Parameters<typeof handleWebControlRequest>[0],
-              send,
-            )
+            void handleWebControlRequest(msg as unknown as Parameters<typeof handleWebControlRequest>[0], send)
             return
           }
 

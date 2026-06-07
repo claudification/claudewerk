@@ -611,7 +611,7 @@ function createMcpServer(
   // ─── web_terminal_attach ─────────────────────────────────────────────
   mcp.tool(
     'web_terminal_attach',
-    'Attach to an EXISTING host shell (by shellId from web_terminal_list) detached/off-screen so you can read and write it without taking over the user\'s screen. Wait ~1.5s after attaching before web_terminal_read.',
+    "Attach to an EXISTING host shell (by shellId from web_terminal_list) detached/off-screen so you can read and write it without taking over the user's screen. Wait ~1.5s after attaching before web_terminal_read.",
     {
       clientId: z.string().optional().describe('Target browser. Omit if exactly one is opted-in.'),
       shellId: z.string().describe('Shell to attach (from web_terminal_list).'),
@@ -633,7 +633,7 @@ function createMcpServer(
   // ─── web_terminal_read ───────────────────────────────────────────────
   mcp.tool(
     'web_terminal_read',
-    'Read a host shell\'s terminal buffer (scrollback + viewport) as plain text. The shell must be attached first (web_terminal_start / web_terminal_attach). Capped to the last maxLines rows (default 2000).',
+    "Read a host shell's terminal buffer (scrollback + viewport) as plain text. The shell must be attached first (web_terminal_start / web_terminal_attach). Capped to the last maxLines rows (default 2000).",
     {
       clientId: z.string().optional().describe('Target browser. Omit if exactly one is opted-in.'),
       shellId: z.string().describe('Shell to read.'),
@@ -657,7 +657,7 @@ function createMcpServer(
   // ─── web_terminal_screenshot ─────────────────────────────────────────
   mcp.tool(
     'web_terminal_screenshot',
-    'Screenshot a host shell\'s terminal surface and return a public image URL. The shell must be attached first. Usually web_terminal_read (text) is more useful; use this for TUIs / rendering issues.',
+    "Screenshot a host shell's terminal surface and return a public image URL. The shell must be attached first. Usually web_terminal_read (text) is more useful; use this for TUIs / rendering issues.",
     {
       clientId: z.string().optional().describe('Target browser. Omit if exactly one is opted-in.'),
       shellId: z.string().describe('Shell to screenshot.'),

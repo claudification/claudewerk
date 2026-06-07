@@ -14,9 +14,9 @@ import { formatShortcut, useChordCommand, useCommand, validateChordBindings } fr
 import { canRespawnStaleDaemon } from '@/lib/daemon-control'
 import { focusInputEditor } from '@/lib/focus-input'
 import { openShell, projectShellCapable } from '@/lib/shell-commands'
-import { toggleWebControl } from '@/lib/web-control-actions'
 import { canShell, canTerminal, projectPath } from '@/lib/types'
 import { isMobileViewport } from '@/lib/utils'
+import { toggleWebControl } from '@/lib/web-control-actions'
 
 export function useGlobalCommands(toggleSidebar: () => void) {
   const openSwitcher = useCallback(() => {
