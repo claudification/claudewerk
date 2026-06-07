@@ -76,6 +76,7 @@ import { shellRegistry } from './shell-registry'
 import { createStore } from './store'
 import { createTerminationLog, startTerminationLogSweep } from './termination-log'
 import { cleanupVoiceForWs } from './voice-stream'
+import { revokeWebControlBySocket } from './web-control'
 
 /**
  * Tag a dedicated host-shell DATA socket (`?shellData=1&shellDataSentinel=<id>`).
@@ -816,6 +817,10 @@ async function main() {
           // Drop from the live-connection registry first -- close() has many
           // early returns below, so this must run before any of them.
           unregisterConnection(ws)
+          // Drop any web-control grant owned by this socket (matched by ws
+          // identity, so a reconnect that already re-advertised is left intact)
+          // and fail its in-flight ops instead of hanging them to a timeout.
+          revokeWebControlBySocket(ws)
           // Always log -- per the LOG EVERYTHING covenant a bare close line
           // hidden behind `verbose` is a bug. Include all routing context we
           // have so the post-mortem grep is one line. Note: ccSessionId is

@@ -1607,9 +1607,78 @@ export type BrokerMessage =
   | DebugControlSend
   | DebugTraceEvent
   | DebugControlResult
+  | WebControlRequest
+  | WebControlAdvertise
+  | WebControlRevoke
+  | WebControlResponse
 
 export interface NotifyConfigUpdated {
   type: 'notify_config_updated'
+}
+
+// ─── Web Debug Control ──────────────────────────────────────────────────
+// Agent-driven remote control of a LIVE control-panel browser (the "web
+// debugger"). An opted-in browser advertises a stable clientId + a time-boxed
+// grant; broker MCP tools (web_*) target that clientId, send a web_control_request
+// over its socket, and await the matching web_control_response. Default-deny:
+// a browser that has not advertised an unexpired grant is never targeted, and
+// the browser itself refuses every op without a live local grant. See
+// .claude/docs/plan-web-debug-control.md.
+
+/** The fixed set of control ops a browser can execute on the agent's behalf. */
+export const WEB_CONTROL_OPS = [
+  'screenshot',
+  'list_commands',
+  'execute_command',
+  'set_conversation',
+  'read_transcript',
+  'send_prompt',
+] as const
+export type WebControlOp = (typeof WEB_CONTROL_OPS)[number]
+
+/** Hard ceiling on a control grant's lifetime. The broker clamps any advertised
+ *  expiresAt to now + this, so a buggy/hostile client cannot extend its window. */
+export const WEB_CONTROL_MAX_GRANT_MS = 60 * 60 * 1000 // 1 hour
+
+/** web -> broker: a browser opts in (or re-advertises after reconnect/reload).
+ *  Sent on every (re)connect while a non-expired grant exists in localStorage. */
+export interface WebControlAdvertise {
+  type: 'web_control_advertise'
+  /** Stable per-browser id (localStorage, survives reload). The agent targets THIS. */
+  clientId: string
+  /** Per-grant id (rotates each opt-in). For audit/correlation only. */
+  grantId: string
+  /** Epoch ms when the grant expires. Broker clamps to now + WEB_CONTROL_MAX_GRANT_MS. */
+  expiresAt: number
+  /** Ops this browser is willing+able to perform. */
+  capabilities: WebControlOp[]
+  /** Human label for the agent's client picker (e.g. "Jonas - MacBook / Chrome"). */
+  label?: string
+}
+
+/** web -> broker: a browser opts out early (toggle off / grant cleared). */
+export interface WebControlRevoke {
+  type: 'web_control_revoke'
+  clientId: string
+}
+
+/** broker -> web: execute one op. The browser must re-check its live local grant
+ *  before acting and reply with a web_control_response carrying the same requestId. */
+export interface WebControlRequest {
+  type: 'web_control_request'
+  requestId: string
+  clientId: string
+  op: WebControlOp
+  args: Record<string, unknown>
+}
+
+/** web -> broker: result of a web_control_request, matched by requestId. */
+export interface WebControlResponse {
+  type: 'web_control_response'
+  requestId: string
+  ok: boolean
+  result?: unknown
+  error?: string
 }
 
 export interface SendInterrupt {

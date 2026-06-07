@@ -28,6 +28,7 @@ import { registerTerminalHandlers } from './terminal'
 import { registerThinkingProgressHandlers } from './thinking-progress'
 import { registerTranscriptHandlers } from './transcript'
 import { registerVoiceHandlers } from './voice'
+import { registerWebControlHandlers } from './web-control'
 
 export function registerAllHandlers(): void {
   registerActivityPhraseHandlers()
@@ -55,4 +56,5 @@ export function registerAllHandlers(): void {
   registerThinkingProgressHandlers()
   registerTranscriptHandlers()
   registerVoiceHandlers()
+  registerWebControlHandlers()
 }

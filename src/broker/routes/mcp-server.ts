@@ -19,6 +19,26 @@ import { getProjectSettings } from '../project-settings'
 import { isPushConfigured, sendPushToAll } from '../push'
 import { dispatchSpawn, type SpawnDispatchDeps } from '../spawn-dispatch'
 import type { StoreDriver } from '../store/types'
+import { listWebControlClients, resolveImplicitClient, sendWebControlRequest } from '../web-control'
+
+type ToolResult = { content: Array<{ type: 'text'; text: string }>; isError?: boolean }
+
+function toolText(text: string, isError = false): ToolResult {
+  return { content: [{ type: 'text', text }], isError }
+}
+
+/** Resolve the explicit-or-implicit web-control target, then run one op. */
+async function runWebControlOp(
+  clientId: string | undefined,
+  op: Parameters<typeof sendWebControlRequest>[1],
+  args: Record<string, unknown>,
+): Promise<ToolResult> {
+  const target = clientId ? { clientId } : resolveImplicitClient()
+  if ('error' in target) return toolText(target.error, true)
+  const r = await sendWebControlRequest(target.clientId, op, args)
+  if (!r.ok) return toolText(r.error ?? `web op '${op}' failed`, true)
+  return toolText(typeof r.result === 'string' ? r.result : JSON.stringify(r.result ?? { ok: true }, null, 2))
+}
 
 export interface LineageRow {
   conversationId: string
@@ -455,6 +475,109 @@ function createMcpServer(
       store.kv.set('project:tasks', tasks)
       return { content: [{ type: 'text', text: `Task "${id}" moved to ${newStatus}` }] }
     },
+  )
+
+  // ─── Web Debug Control (drive a live control-panel browser) ──────────
+  // These tools let you operate a REAL connected control-panel browser to
+  // debug Claudwerk through its eyes: screenshot it, run command-palette
+  // commands, navigate, read the rendered transcript, send a prompt. The
+  // browser must OPT IN first (Settings > System > Debug > "Allow agent
+  // remote-control"); the grant lasts 1h and survives reload. If no browser
+  // is opted-in every call returns an error -- this is default-deny by design.
+  // Always start with web_list_clients to see what's available.
+
+  // ─── web_list_clients ────────────────────────────────────────────────
+  mcp.tool(
+    'web_list_clients',
+    'List control-panel browsers that have opted in to agent remote-control. Returns clientId (stable, pass it to the other web_* tools), label, userName, capabilities, and ttlMs (ms left on the 1h grant). Empty list = nobody opted in; ask the user to enable it in Settings > System > Debug. When exactly one client is opted-in you may omit clientId on the other tools and it is used implicitly.',
+    {},
+    async () => {
+      const clients = listWebControlClients()
+      if (clients.length === 0) {
+        return toolText(
+          'No browser is opted-in to remote control. Ask the user to enable "Allow agent remote-control" in the control panel (Settings > System > Debug).',
+        )
+      }
+      return toolText(JSON.stringify(clients, null, 2))
+    },
+  )
+
+  // ─── web_screenshot ──────────────────────────────────────────────────
+  mcp.tool(
+    'web_screenshot',
+    'Capture a screenshot of the opted-in control-panel browser and return a public image URL (fetch it to view). Optionally pass a CSS `selector` to capture just one element instead of the whole app.',
+    {
+      clientId: z
+        .string()
+        .optional()
+        .describe('Target browser (from web_list_clients). Omit if exactly one is opted-in.'),
+      selector: z
+        .string()
+        .optional()
+        .describe('CSS selector of a single element to capture. Omit to capture the whole viewport.'),
+    },
+    async ({ clientId, selector }) => runWebControlOp(clientId, 'screenshot', { selector }),
+  )
+
+  // ─── web_list_commands ───────────────────────────────────────────────
+  mcp.tool(
+    'web_list_commands',
+    'List the command-palette commands currently registered (and visible) in the opted-in browser. Returns id, label, and group for each. Feed an id into web_execute_command.',
+    {
+      clientId: z.string().optional().describe('Target browser. Omit if exactly one is opted-in.'),
+    },
+    async ({ clientId }) => runWebControlOp(clientId, 'list_commands', {}),
+  )
+
+  // ─── web_execute_command ─────────────────────────────────────────────
+  mcp.tool(
+    'web_execute_command',
+    'Run a command-palette command in the opted-in browser by its id (discover ids via web_list_commands). Opting in grants full palette access, including destructive commands -- the user authorized this by enabling remote-control.',
+    {
+      clientId: z.string().optional().describe('Target browser. Omit if exactly one is opted-in.'),
+      id: z.string().describe('Command id to execute (from web_list_commands).'),
+      args: z.array(z.string()).optional().describe('String arguments passed to the command action.'),
+    },
+    async ({ clientId, id, args }) => runWebControlOp(clientId, 'execute_command', { id, args: args ?? [] }),
+  )
+
+  // ─── web_set_conversation ────────────────────────────────────────────
+  mcp.tool(
+    'web_set_conversation',
+    'Navigate the opted-in browser to a specific conversation (selects it as the active conversation).',
+    {
+      clientId: z.string().optional().describe('Target browser. Omit if exactly one is opted-in.'),
+      conversationId: z.string().describe('Conversation id to select.'),
+    },
+    async ({ clientId, conversationId }) => runWebControlOp(clientId, 'set_conversation', { conversationId }),
+  )
+
+  // ─── web_read_transcript ─────────────────────────────────────────────
+  mcp.tool(
+    'web_read_transcript',
+    "Read the transcript as rendered in the opted-in browser. Defaults to the browser's currently-active conversation; pass conversationId to read a specific one (must be loaded in that browser). format:'text' (default) returns a compact text rendering; format:'json' returns the raw entry array.",
+    {
+      clientId: z.string().optional().describe('Target browser. Omit if exactly one is opted-in.'),
+      conversationId: z
+        .string()
+        .optional()
+        .describe("Conversation to read. Omit for the browser's currently-active conversation."),
+      format: z.enum(['text', 'json']).optional().describe("Output format. Default 'text'."),
+    },
+    async ({ clientId, conversationId, format }) =>
+      runWebControlOp(clientId, 'read_transcript', { conversationId, format: format ?? 'text' }),
+  )
+
+  // ─── web_send_prompt ─────────────────────────────────────────────────
+  mcp.tool(
+    'web_send_prompt',
+    'Type and send a prompt to a conversation through the opted-in browser (same path as a user typing in the input box, including client-side control verbs like /clear or /model).',
+    {
+      clientId: z.string().optional().describe('Target browser. Omit if exactly one is opted-in.'),
+      conversationId: z.string().describe('Conversation id to send the prompt to.'),
+      text: z.string().describe('Prompt text to send.'),
+    },
+    async ({ clientId, conversationId, text }) => runWebControlOp(clientId, 'send_prompt', { conversationId, text }),
   )
 
   return mcp
