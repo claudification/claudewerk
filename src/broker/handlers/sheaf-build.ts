@@ -144,6 +144,7 @@ function pickTopModel(rollup: ConvCostRollup | undefined, fallback: string | und
 const TERMINATION_SOURCE_REASONS: Record<string, { status: SheafStatus; phrase: string }> = {
   'dashboard-context-menu': { status: 'killed', phrase: 'killed via dashboard' },
   'dashboard-terminate-dialog': { status: 'killed', phrase: 'killed via dashboard' },
+  'dashboard-terminate-project': { status: 'killed', phrase: 'killed via project terminate-all' },
   'dashboard-launch-toast': { status: 'killed', phrase: 'launch cancelled' },
   'dashboard-other': { status: 'killed', phrase: 'killed via dashboard' },
   'inter-conversation-restart': { status: 'killed', phrase: 'restarted by peer' },

@@ -1584,6 +1584,7 @@ export type TerminationSource =
   | 'dashboard-context-menu' // sidebar right-click -> Terminate
   | 'dashboard-terminate-dialog' // explicit confirm dialog
   | 'dashboard-lineage' // "terminate full lineage" subtree kill (per-member tag)
+  | 'dashboard-terminate-project' // project context menu "Terminate all" (per-member tag)
   | 'dashboard-launch-toast' // launch-profile toast "Cancel launch" button
   | 'dashboard-other' // fallback for legacy/unknown dashboard callers
   // Inter-conversation

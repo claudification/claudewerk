@@ -106,6 +106,7 @@ TERMINATION COMMANDS (NDJSON log: {cacheDir}/terminations/YYYY-MM-DD.ndjson):
 
   Source enum values:
     dashboard-context-menu, dashboard-terminate-dialog,
+    dashboard-lineage, dashboard-terminate-project,
     dashboard-launch-toast, dashboard-other,
     inter-conversation-restart,
     mcp-exit-session, headless-input,

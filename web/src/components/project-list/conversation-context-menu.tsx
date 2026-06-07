@@ -365,6 +365,20 @@ export function PinnedProjectContextMenu({
   )
 }
 
+// Bulk "cleanup" fan-out for the project menu: kill every running conversation
+// and clear the already-ended ones, leaving the project empty. Each kill/dismiss
+// is its own structured wire message (terminate_conversation / dismiss).
+function terminateAllInProject(active: Conversation[], ended: Conversation[]) {
+  const summary =
+    `Terminate ALL ${active.length} running conversation(s) in this project?` +
+    (ended.length > 0 ? `\n\nAlso dismisses ${ended.length} ended conversation(s).` : '') +
+    '\n\nRunning agents will be killed. This cannot be undone.'
+  if (!confirm(summary)) return
+  const store = useConversationsStore.getState()
+  for (const s of active) store.terminateConversation(s.id, 'dashboard-terminate-project')
+  for (const s of ended) store.dismissConversation(s.id)
+}
+
 export function ProjectContextMenu({
   project,
   conversations,
@@ -378,6 +392,7 @@ export function ProjectContextMenu({
 }) {
   const dismissConversation = useConversationsStore(s => s.dismissConversation)
   const ended = conversations.filter(s => s.status === 'ended')
+  const active = conversations.filter(s => s.status !== 'ended')
 
   return (
     <ContextMenu.Root>
@@ -387,19 +402,28 @@ export function ProjectContextMenu({
           <GroupingMenuItems project={project} />
           <ContextMenu.Separator className="h-px bg-border my-1" />
           <ProjectMenuItems project={project} onOpenSettings={onOpenSettings} />
+          {(active.length > 0 || ended.length > 0) && <ContextMenu.Separator className="h-px bg-border my-1" />}
+          {active.length > 0 && (
+            <ContextMenu.Item
+              className={cn(menuItemClass, 'text-destructive')}
+              onSelect={() => {
+                haptic('error')
+                terminateAllInProject(active, ended)
+              }}
+            >
+              Terminate all ({active.length})…
+            </ContextMenu.Item>
+          )}
           {ended.length > 0 && (
-            <>
-              <ContextMenu.Separator className="h-px bg-border my-1" />
-              <ContextMenu.Item
-                className={cn(menuItemClass, 'text-destructive')}
-                onSelect={() => {
-                  haptic('tap')
-                  for (const s of ended) dismissConversation(s.id)
-                }}
-              >
-                Dismiss {ended.length} ended
-              </ContextMenu.Item>
-            </>
+            <ContextMenu.Item
+              className={cn(menuItemClass, 'text-destructive')}
+              onSelect={() => {
+                haptic('tap')
+                for (const s of ended) dismissConversation(s.id)
+              }}
+            >
+              Dismiss {ended.length} ended
+            </ContextMenu.Item>
           )}
         </ContextMenu.Content>
       </ContextMenu.Portal>
