@@ -32,6 +32,7 @@ import { cwdToProjectUri } from '../shared/project-uri'
 import type { AgentHostMessage, HookEvent, TranscriptEntry } from '../shared/protocol'
 import { writeSecureFile, writeSecureFileSync } from '../shared/secure-temp'
 import { wsToHttpUrl } from '../shared/ws-url'
+import { createPendingCallbacks } from '../agent-host-common/host-rpc'
 import type { AgentHostContext } from './agent-host-context'
 import { type BrokerConnectionDeps, connectToBroker } from './broker-connection'
 import { createCleanup, registerSignalHandlers } from './cleanup'
@@ -186,6 +187,11 @@ async function main() {
   ctx.startTaskWatching = () => startTaskWatching(ctx)
   ctx.readTasks = () => readAndSendTasks(ctx)
 
+  // Shared inter-conversation RPC registry: the MCP callbacks register resolvers
+  // on it; broker-connection's inbound `*_result` handlers invoke them. One
+  // instance, threaded into both.
+  const pendingCallbacks = createPendingCallbacks()
+
   // Wire connectToBroker onto context
   const brokerDeps: BrokerConnectionDeps = {
     brokerUrl: cli.brokerUrl,
@@ -204,6 +210,7 @@ async function main() {
     adHocTaskId: cli.adHocTaskId,
     adHocWorktree: cli.adHocWorktree,
     permissionRules,
+    pending: pendingCallbacks,
   }
   ctx.connectToBroker = (ccSessionId: string | null) => {
     if (cli.noBroker) return
@@ -233,6 +240,7 @@ async function main() {
       headless: cli.headless,
       channelEnabled: cli.channelEnabled,
       cleanup,
+      pending: pendingCallbacks,
     },
     permissionRules,
   )

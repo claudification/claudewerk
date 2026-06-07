@@ -1,17 +1,22 @@
 /**
- * MCP Channel Callbacks
- * Builds the callback object passed to initMcpChannel().
- * These callbacks bridge MCP tool calls to broker WS messages.
+ * MCP Channel Callbacks (claude-agent-host adapter).
+ *
+ * The callback LOGIC is shared -- it lives in `agent-host-common/host-rpc`,
+ * parameterized over a transport + host-local sinks. This file is the thin
+ * claude-specific adapter: it wires the shared builder to this host's wsClient,
+ * PTY/headless stream proc, interaction registry, and launch-event machinery.
  */
 
-import { randomUUID } from 'node:crypto'
-import type { McpChannelCallbacks } from '../agent-host-common/mcp-host/mcp-channel'
+import {
+  buildMcpChannelCallbacks,
+  type HostRpcContext,
+  type HostSinks,
+  type PendingCallbacks,
+} from '../agent-host-common/host-rpc'
 import { pushChannelMessage, sendPermissionResponse } from '../agent-host-common/mcp-host/mcp-channel'
-import { isPathWithinCwd } from '../shared/path-guard'
+import type { McpChannelCallbacks } from '../agent-host-common/mcp-host/mcp-channel'
 import type { AgentHostMessage } from '../shared/protocol'
-import { wsToHttpUrl } from '../shared/ws-url'
 import type { AgentHostContext } from './agent-host-context'
-import { getPendingCallbacks } from './broker-connection'
 import { debug } from './debug'
 import { beginLaunch, emitLaunchEvent } from './launch-events'
 import { clearInteraction, sendInteraction } from './pending-interactions'
@@ -25,133 +30,37 @@ export interface McpCallbackDeps {
   headless: boolean
   channelEnabled: boolean
   cleanup: () => void
+  /** Shared inter-conversation RPC registry (same instance broker-connection dispatches into). */
+  pending: PendingCallbacks
 }
 
-export function buildMcpCallbacksWithRules(
-  ctx: AgentHostContext,
-  deps: McpCallbackDeps,
-  permissionRules: { shouldAutoApprove: (toolName: string, inputPreview: string) => boolean },
-): McpChannelCallbacks {
-  const pending = getPendingCallbacks()
-
+/** The host-local operations the shared callbacks delegate back to this host. */
+function buildSinks(ctx: AgentHostContext, deps: McpCallbackDeps): HostSinks {
   return {
-    onNotify(message, title) {
-      ctx.diag('channel', `Notify: ${title ? `[${title}] ` : ''}${message.slice(0, 80)}`)
-      if (ctx.wsClient?.isConnected()) {
-        ctx.wsClient.send({
-          type: 'notify',
-          conversationId: deps.conversationId,
-          message,
-          title,
+    deliverMessage(content, meta) {
+      if (deps.headless && ctx.streamProc) {
+        const attrs = Object.entries(meta)
+          .map(([k, v]) => `${k}="${v}"`)
+          .join(' ')
+        ctx.streamProc.sendUserMessage(`<channel ${attrs}>\n${content}\n</channel>`)
+        ctx.diag('headless', `Delivered message: ${meta.sender} ${content.slice(0, 60)}`)
+      } else {
+        pushChannelMessage(content, meta)
+        ctx.diag('channel', `Delivered message: ${meta.sender} ${content.slice(0, 60)}`)
+      }
+    },
+
+    permissionAllow(requestId) {
+      if (deps.headless && ctx.streamProc) {
+        ctx.streamProc.sendPermissionResponse(requestId, true)
+      } else {
+        sendPermissionResponse(requestId, 'allow').catch((err: unknown) => {
+          debug(`sendPermissionResponse (auto) error: ${err instanceof Error ? err.message : err}`)
         })
       }
     },
 
-    async onShareFile(filePath) {
-      if (!isPathWithinCwd(filePath, deps.cwd)) {
-        const msg = `Path ${filePath} is outside the conversation working directory (${deps.cwd}). share_file only accepts paths within CWD -- copy the file into the project tree first, or run the conversation from a parent directory.`
-        debug(`[channel] share_file: ${msg}`)
-        return { error: msg }
-      }
-      const httpUrl = deps.noBroker ? null : wsToHttpUrl(deps.brokerUrl)
-      if (!httpUrl) return { error: 'No broker connection -- share_file requires a broker to upload to.' }
-      try {
-        const file = Bun.file(filePath)
-        if (!(await file.exists())) {
-          const msg = `File not found: ${filePath}`
-          debug(`[channel] share_file: ${msg}`)
-          return { error: msg }
-        }
-        const contentType = file.type || 'application/octet-stream'
-        const res = await fetch(`${httpUrl}/api/files`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': contentType,
-            'X-Conversation-Id': ctx.claudeSessionId || deps.conversationId,
-            ...(deps.brokerSecret ? { Authorization: `Bearer ${deps.brokerSecret}` } : {}),
-          },
-          body: file,
-        })
-        if (!res.ok) {
-          const body = await res.text().catch(() => '')
-          const msg = `Broker upload failed: HTTP ${res.status}${body ? ` -- ${body.slice(0, 200)}` : ''}`
-          debug(`[channel] share_file: ${msg}`)
-          return { error: msg }
-        }
-        const data = (await res.json()) as { url?: string }
-        if (!data.url) return { error: 'Broker returned no URL.' }
-        ctx.diag('channel', `Shared: ${filePath} -> ${data.url}`)
-        return { url: data.url }
-      } catch (err) {
-        const msg = `Upload error: ${err instanceof Error ? err.message : String(err)}`
-        debug(`[channel] share_file: ${msg}`)
-        return { error: msg }
-      }
-    },
-
-    async onListConversations(status, showMetadata, fields, include) {
-      if (!ctx.wsClient?.isConnected()) return { conversations: [] }
-      return new Promise(resolve => {
-        const timeout = setTimeout(() => resolve({ conversations: [] }), 5000)
-        pending.pendingListConversations = (conversations, self, issues) => {
-          clearTimeout(timeout)
-          pending.pendingListConversations = null
-          resolve({ conversations, self, issues })
-        }
-        ctx.wsClient?.send({
-          type: 'channel_list_conversations',
-          status,
-          show_metadata: showMetadata,
-          fields,
-          include,
-        } as unknown as AgentHostMessage)
-      })
-    },
-
-    async onSendMessage(to, intent, message, context, conversationId) {
-      if (!ctx.wsClient?.isConnected()) return { ok: false, error: 'Not connected' }
-      return new Promise(resolve => {
-        const timeout = setTimeout(() => resolve({ ok: false, error: 'Timeout' }), 10000)
-        pending.pendingSendResult = result => {
-          clearTimeout(timeout)
-          pending.pendingSendResult = null
-          resolve(result)
-        }
-        ctx.wsClient?.send({
-          type: 'channel_send',
-          fromConversation: ctx.claudeSessionId || deps.conversationId,
-          toConversation: to,
-          intent,
-          message,
-          context,
-          conversationId,
-        } as unknown as AgentHostMessage)
-      })
-    },
-
-    onPermissionRequest(data) {
-      if (permissionRules.shouldAutoApprove(data.toolName, data.inputPreview)) {
-        if (deps.headless && ctx.streamProc) {
-          ctx.streamProc.sendPermissionResponse(data.requestId, true)
-        } else {
-          sendPermissionResponse(data.requestId, 'allow').catch((err: unknown) => {
-            debug(`sendPermissionResponse (auto) error: ${err instanceof Error ? err.message : err}`)
-          })
-        }
-        ctx.diag(deps.headless ? 'headless' : 'channel', `Permission auto-approved: ${data.requestId} ${data.toolName}`)
-        if (ctx.wsClient?.isConnected()) {
-          ctx.wsClient.send({
-            type: 'permission_auto_approved',
-            conversationId: ctx.conversationId,
-            requestId: data.requestId,
-            toolName: data.toolName,
-            description: data.description,
-          } as unknown as AgentHostMessage)
-        }
-        return
-      }
-
-      ctx.diag('channel', `Permission request: ${data.requestId} ${data.toolName}`)
+    registerPermissionRequest(data) {
       sendInteraction(ctx, 'permission_request', data.requestId, {
         type: 'permission_request',
         conversationId: ctx.claudeSessionId || deps.conversationId,
@@ -162,8 +71,7 @@ export function buildMcpCallbacksWithRules(
       })
     },
 
-    onDialogShow(dialogId, layout) {
-      ctx.diag('dialog', `Show: "${layout.title}" (${dialogId.slice(0, 8)})`)
+    dialogShow(dialogId, layout) {
       sendInteraction(ctx, 'dialog_show', dialogId, {
         type: 'dialog_show',
         conversationId: ctx.conversationId,
@@ -172,10 +80,7 @@ export function buildMcpCallbacksWithRules(
       } as unknown as AgentHostMessage)
     },
 
-    onDialogDismiss(dialogId, reason) {
-      ctx.diag('dialog', `Dismiss: ${dialogId.slice(0, 8)}${reason ? ` (${reason})` : ''}`)
-      // Stop replaying dialog_show on reconnect -- the dialog is dead on this
-      // host. On 'timeout' the broker keeps the layout re-displayable (expired).
+    dialogDismiss(dialogId, reason) {
       clearInteraction(ctx, dialogId)
       ctx.wsClient?.send({
         type: 'dialog_dismiss',
@@ -185,25 +90,7 @@ export function buildMcpCallbacksWithRules(
       } as unknown as AgentHostMessage)
     },
 
-    onDeliverMessage(content, meta) {
-      if (deps.headless && ctx.streamProc) {
-        const attrs = Object.entries(meta)
-          .map(([k, v]) => `${k}="${v}"`)
-          .join(' ')
-        const wrapped = `<channel ${attrs}>\n${content}\n</channel>`
-        ctx.streamProc.sendUserMessage(wrapped)
-        ctx.diag('headless', `Delivered message: ${meta.sender} ${content.slice(0, 60)}`)
-      } else {
-        pushChannelMessage(content, meta)
-        ctx.diag('channel', `Delivered message: ${meta.sender} ${content.slice(0, 60)}`)
-      }
-    },
-
-    onDisconnect() {
-      ctx.diag('channel', 'Channel disconnected')
-    },
-
-    onTogglePlanMode() {
+    togglePlanMode() {
       if (deps.headless) {
         if (ctx.streamProc) {
           ctx.diag('channel', 'toggle_plan_mode: sending set_permission_mode via control_request')
@@ -215,158 +102,10 @@ export function buildMcpCallbacksWithRules(
       }
     },
 
-    async onReviveConversation(targetConversationId) {
-      if (!ctx.wsClient?.isConnected()) return { ok: false, error: 'Not connected to broker' }
-      return new Promise(resolve => {
-        const timeout = setTimeout(() => resolve({ ok: false, error: 'Timeout' }), 10000)
-        pending.pendingReviveResult = result => {
-          clearTimeout(timeout)
-          pending.pendingReviveResult = null
-          resolve(result)
-        }
-        ctx.wsClient?.send({
-          type: 'channel_revive',
-          conversationId: targetConversationId,
-        } as unknown as AgentHostMessage)
-      })
-    },
-
-    async onSpawnConversation({ onProgress, ...spawnParams }) {
-      return handleSpawnConversation(ctx, deps, spawnParams, onProgress)
-    },
-
-    async onListHosts() {
-      if (!ctx.wsClient?.isConnected()) return []
-      try {
-        const httpUrl = wsToHttpUrl(deps.brokerUrl)
-        const resp = await fetch(`${httpUrl}/api/sentinels`, {
-          headers: { Authorization: `Bearer ${deps.brokerSecret}` },
-        })
-        if (!resp.ok) return []
-        const data = (await resp.json()) as Array<{
-          alias: string
-          hostname?: string
-          connected: boolean
-        }>
-        return data.map(s => ({
-          alias: s.alias,
-          hostname: s.hostname,
-          connected: s.connected,
-          conversationCount: 0,
-        }))
-      } catch {
-        return []
-      }
-    },
-
-    async onGetSpawnDiagnostics(jobId) {
-      if (!ctx.wsClient?.isConnected()) return { ok: false, error: 'Not connected to broker' }
-      return new Promise(resolve => {
-        const timeout = setTimeout(() => {
-          pending.pendingSpawnDiagnostics.delete(jobId)
-          resolve({ ok: false, error: 'Timeout waiting for diagnostics' })
-        }, 10_000)
-        pending.pendingSpawnDiagnostics.set(jobId, result => {
-          clearTimeout(timeout)
-          resolve(result)
-        })
-        ctx.wsClient?.send({
-          type: 'get_spawn_diagnostics',
-          jobId,
-        } as unknown as AgentHostMessage)
-      })
-    },
-
-    async onRestartConversation(targetConversationId) {
-      if (!ctx.wsClient?.isConnected()) return { ok: false, error: 'Not connected to broker' }
-      return new Promise(resolve => {
-        const timeout = setTimeout(
-          () => resolve({ ok: false, error: 'Timeout waiting for restart confirmation' }),
-          10000,
-        )
-        pending.pendingRestartResult = result => {
-          clearTimeout(timeout)
-          pending.pendingRestartResult = null
-          resolve(result)
-        }
-        ctx.wsClient?.send({
-          type: 'channel_restart',
-          conversationId: targetConversationId,
-        } as unknown as AgentHostMessage)
-      })
-    },
-
-    async onControlConversation({ conversationId: targetConversationId, action, model, effort }) {
-      if (!ctx.wsClient?.isConnected()) return { ok: false, error: 'Not connected to broker' }
-      return new Promise(resolve => {
-        const timeout = setTimeout(
-          () => resolve({ ok: false, error: 'Timeout waiting for control confirmation' }),
-          10000,
-        )
-        pending.pendingControlResult = result => {
-          clearTimeout(timeout)
-          pending.pendingControlResult = null
-          resolve(result)
-        }
-        ctx.wsClient?.send({
-          type: 'conversation_control',
-          targetConversation: targetConversationId,
-          action,
-          ...(model && { model }),
-          ...(effort && { effort }),
-          fromConversation: ctx.claudeSessionId || deps.conversationId,
-        } as unknown as AgentHostMessage)
-      })
-    },
-
-    async onConfigureConversation({ conversationId: targetConversationId, label, icon, color, description, keyterms }) {
-      if (!ctx.wsClient?.isConnected()) return { ok: false, error: 'Not connected to broker' }
-      return new Promise(resolve => {
-        const timeout = setTimeout(() => resolve({ ok: false, error: 'Timeout' }), 10000)
-        pending.pendingConfigureResult = result => {
-          clearTimeout(timeout)
-          pending.pendingConfigureResult = null
-          resolve(result)
-        }
-        ctx.wsClient?.send({
-          type: 'channel_configure',
-          conversationId: targetConversationId,
-          label,
-          icon,
-          color,
-          description,
-          keyterms,
-        } as unknown as AgentHostMessage)
-      })
-    },
-
-    async onRenameConversation(name, description, targetConversationId) {
-      if (!ctx.wsClient?.isConnected()) return { ok: false, error: 'Not connected to broker' }
-      // Default to self; a benevolent caller may target another conversation.
-      const conversationId = targetConversationId || ctx.conversationId
-      return new Promise(resolve => {
-        const timeout = setTimeout(() => resolve({ ok: false, error: 'Timeout' }), 10000)
-        pending.pendingRenameResult = result => {
-          clearTimeout(timeout)
-          pending.pendingRenameResult = null
-          resolve(result)
-        }
-        ctx.wsClient?.send({
-          type: 'rename_conversation',
-          conversationId,
-          name,
-          description,
-        } as unknown as AgentHostMessage)
-      })
-    },
-
-    onExitConversation(status, message) {
+    exit(status, message) {
       const detail = message ? `${status}: ${message}` : status
       beginLaunch(ctx, 'live')
-      emitLaunchEvent(ctx, 'conversation_exit', {
-        detail,
-        raw: { status, message },
-      })
+      emitLaunchEvent(ctx, 'conversation_exit', { detail, raw: { status, message } })
       const endReason = status === 'error' ? `self_exit_error: ${message || 'unknown'}` : 'self_exit'
       if (ctx.claudeSessionId) {
         ctx.wsClient?.sendConversationEnd(endReason, {
@@ -386,93 +125,27 @@ export function buildMcpCallbacksWithRules(
   }
 }
 
-async function handleSpawnConversation(
+export function buildMcpCallbacksWithRules(
   ctx: AgentHostContext,
-  _deps: McpCallbackDeps,
-  spawnParams: Record<string, unknown>,
-  onProgress?: (event: Record<string, unknown>) => void,
-) {
-  if (!ctx.wsClient?.isConnected()) return { ok: false, error: 'Not connected to broker' }
-
-  const pending = getPendingCallbacks()
-  const requestId = randomUUID()
-  const spawnResult = await new Promise<{ ok: boolean; error?: string; conversationId?: string; jobId?: string }>(
-    resolve => {
-      const timeout = setTimeout(() => {
-        if (pending.pendingSpawnRequestId === requestId) {
-          pending.pendingSpawnResult = null
-          pending.pendingSpawnRequestId = null
-        }
-        resolve({ ok: false, error: 'Timeout' })
-      }, 15000)
-      pending.pendingSpawnRequestId = requestId
-      pending.pendingSpawnResult = result => {
-        clearTimeout(timeout)
-        pending.pendingSpawnResult = null
-        pending.pendingSpawnRequestId = null
-        resolve(result)
-      }
-      ctx.wsClient?.send({
-        type: 'channel_spawn',
-        requestId,
-        ...spawnParams,
-      } as unknown as AgentHostMessage)
+  deps: McpCallbackDeps,
+  permissionRules: { shouldAutoApprove: (toolName: string, inputPreview: string) => boolean },
+): McpChannelCallbacks {
+  const rpcCtx: HostRpcContext = {
+    conversationId: deps.conversationId,
+    getCcSessionId: () => ctx.claudeSessionId,
+    cwd: deps.cwd,
+    headless: deps.headless,
+    noBroker: deps.noBroker,
+    brokerUrl: deps.brokerUrl,
+    brokerSecret: deps.brokerSecret,
+    transport: {
+      send: msg => ctx.wsClient?.send(msg),
+      isConnected: () => ctx.wsClient?.isConnected() ?? false,
     },
-  )
-
-  if (!spawnResult.ok) return spawnResult
-
-  const jobId = spawnResult.jobId
-  ctx.diag(
-    'channel',
-    `spawn_session: ${(spawnParams as { cwd?: string }).cwd} mode=${(spawnParams as { mode?: string }).mode || 'default'} conversationId=${spawnResult.conversationId?.slice(0, 8)} job=${jobId?.slice(0, 8)}`,
-  )
-
-  if (jobId && onProgress) {
-    pending.launchJobListeners.set(jobId, onProgress)
-    ctx.wsClient?.send({ type: 'subscribe_job', jobId } as unknown as AgentHostMessage)
+    diag: ctx.diag,
+    pending: deps.pending,
+    permissionRules,
+    sinks: buildSinks(ctx, deps),
   }
-
-  function cleanupJob() {
-    if (!jobId) return
-    pending.launchJobListeners.delete(jobId)
-    ctx.wsClient?.send({ type: 'unsubscribe_job', jobId } as unknown as AgentHostMessage)
-  }
-
-  const SPAWN_RENDEZVOUS_MS = 45_000
-  if (spawnResult.conversationId) {
-    try {
-      const wid = spawnResult.conversationId
-      const result = await new Promise<Record<string, unknown>>((resolve, reject) => {
-        const timer = setTimeout(() => {
-          pending.pendingRendezvous.delete(wid)
-          reject(new Error(`Rendezvous timeout (${SPAWN_RENDEZVOUS_MS / 1000}s)`))
-        }, SPAWN_RENDEZVOUS_MS)
-        pending.pendingRendezvous.set(wid, {
-          resolve: msg => {
-            clearTimeout(timer)
-            resolve(msg)
-          },
-          reject: (e: string) => {
-            clearTimeout(timer)
-            reject(new Error(e))
-          },
-        })
-      })
-      const conversation = result.conversation as Record<string, unknown> | undefined
-      ctx.diag(
-        'channel',
-        `spawn_conversation: rendezvous resolved cc-session=${(result.ccSessionId as string)?.slice(0, 8)}`,
-      )
-      cleanupJob()
-      return { ok: true, conversationId: spawnResult.conversationId, jobId, conversation }
-    } catch (err) {
-      ctx.diag('channel', `spawn_conversation: rendezvous failed: ${err instanceof Error ? err.message : err}`)
-      cleanupJob()
-      return { ok: true, conversationId: spawnResult.conversationId, jobId, timedOut: true }
-    }
-  }
-
-  cleanupJob()
-  return { ok: true, conversationId: spawnResult.conversationId, jobId }
+  return buildMcpChannelCallbacks(rpcCtx)
 }

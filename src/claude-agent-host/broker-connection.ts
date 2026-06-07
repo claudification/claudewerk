@@ -6,7 +6,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { ConversationInfo } from '../agent-host-common/mcp-host/mcp-channel'
+import type { PendingCallbacks } from '../agent-host-common/host-rpc'
 import {
   isMcpChannelReady,
   keepaliveDialog,
@@ -56,128 +56,15 @@ export interface BrokerConnectionDeps {
   adHocTaskId: string | undefined
   adHocWorktree: string | undefined
   permissionRules: RulesEngine
-}
-
-// Pending inter-session request/response callbacks -- module-level state
-let pendingListConversations:
-  | ((
-      sessions: ConversationInfo[],
-      self?: Record<string, unknown>,
-      issues?: Array<{
-        severity: 'error' | 'warning'
-        code: string
-        conversation_id?: string
-        project?: string
-        message: string
-      }>,
-    ) => void)
-  | null = null
-let pendingSendResult:
-  | ((result: {
-      ok: boolean
-      error?: string
-      conversationId?: string
-      targetConversationId?: string
-      status?: 'delivered' | 'queued'
-      canonicalAddress?: string
-      results?: Array<{
-        to: string
-        ok: boolean
-        status?: 'delivered' | 'queued'
-        targetConversationId?: string
-        error?: string
-        canonicalAddress?: string
-      }>
-    }) => void)
-  | null = null
-let pendingReviveResult: ((result: { ok: boolean; error?: string; name?: string }) => void) | null = null
-let pendingRestartResult:
-  | ((result: { ok: boolean; error?: string; name?: string; selfRestart?: boolean; alreadyEnded?: boolean }) => void)
-  | null = null
-let pendingSpawnResult:
-  | ((result: { ok: boolean; error?: string; conversationId?: string; requestId?: string }) => void)
-  | null = null
-let pendingSpawnRequestId: string | null = null
-const pendingSpawnDiagnostics = new Map<
-  string,
-  (result: { ok: boolean; jobId?: string; error?: string; diagnostics?: Record<string, unknown> }) => void
->()
-const launchJobListeners = new Map<string, (event: Record<string, unknown>) => void>()
-let pendingConfigureResult: ((result: { ok: boolean; error?: string }) => void) | null = null
-let pendingRenameResult: ((result: { ok: boolean; error?: string }) => void) | null = null
-let pendingControlResult: ((result: { ok: boolean; error?: string; name?: string }) => void) | null = null
-const pendingRendezvous = new Map<
-  string,
-  { resolve: (msg: Record<string, unknown>) => void; reject: (error: string) => void }
->()
-
-/**
- * Expose pending callbacks for use by mcp-callbacks.ts (inter-session tools).
- */
-export function getPendingCallbacks() {
-  return {
-    get pendingListConversations() {
-      return pendingListConversations
-    },
-    set pendingListConversations(v) {
-      pendingListConversations = v
-    },
-    get pendingSendResult() {
-      return pendingSendResult
-    },
-    set pendingSendResult(v) {
-      pendingSendResult = v
-    },
-    get pendingReviveResult() {
-      return pendingReviveResult
-    },
-    set pendingReviveResult(v) {
-      pendingReviveResult = v
-    },
-    get pendingRestartResult() {
-      return pendingRestartResult
-    },
-    set pendingRestartResult(v) {
-      pendingRestartResult = v
-    },
-    get pendingSpawnResult() {
-      return pendingSpawnResult
-    },
-    set pendingSpawnResult(v) {
-      pendingSpawnResult = v
-    },
-    get pendingSpawnRequestId() {
-      return pendingSpawnRequestId
-    },
-    set pendingSpawnRequestId(v) {
-      pendingSpawnRequestId = v
-    },
-    pendingSpawnDiagnostics,
-    launchJobListeners,
-    get pendingConfigureResult() {
-      return pendingConfigureResult
-    },
-    set pendingConfigureResult(v) {
-      pendingConfigureResult = v
-    },
-    get pendingRenameResult() {
-      return pendingRenameResult
-    },
-    set pendingRenameResult(v) {
-      pendingRenameResult = v
-    },
-    get pendingControlResult() {
-      return pendingControlResult
-    },
-    set pendingControlResult(v) {
-      pendingControlResult = v
-    },
-    pendingRendezvous,
-  }
+  /** Shared inter-conversation RPC registry -- the same instance the MCP
+   *  callbacks register resolvers on. Inbound `*_result` handlers invoke them. */
+  pending: PendingCallbacks
 }
 
 export function connectToBroker(ctx: AgentHostContext, deps: BrokerConnectionDeps, ccSessionId: string | null) {
   if (ctx.wsClient) return
+
+  const pending = deps.pending
 
   const {
     brokerUrl,
@@ -325,47 +212,49 @@ export function connectToBroker(ctx: AgentHostContext, deps: BrokerConnectionDep
       handleTranscriptKick(ctx)
     },
     onChannelConversationsList(conversations, self, issues) {
-      pendingListConversations?.(conversations, self, issues)
+      pending.pendingListConversations?.(conversations, self, issues)
     },
     onChannelSendResult(result) {
-      if (pendingSendResult) pendingSendResult(result as Parameters<typeof pendingSendResult>[0])
+      const resolver = pending.pendingSendResult
+      if (resolver) resolver(result as Parameters<typeof resolver>[0])
     },
     onChannelReviveResult(result) {
-      pendingReviveResult?.(result)
+      pending.pendingReviveResult?.(result)
     },
     onChannelRestartResult(result) {
-      pendingRestartResult?.(result)
+      pending.pendingRestartResult?.(result)
     },
     onChannelSpawnResult(result) {
-      if (result.requestId && pendingSpawnRequestId && result.requestId !== pendingSpawnRequestId) {
+      const expected = pending.pendingSpawnRequestId
+      if (result.requestId && expected && result.requestId !== expected) {
         ctx.diag(
           'channel',
-          `Ignoring stale channel_spawn_result (expected=${pendingSpawnRequestId.slice(0, 8)}, got=${result.requestId.slice(0, 8)})`,
+          `Ignoring stale channel_spawn_result (expected=${expected.slice(0, 8)}, got=${result.requestId.slice(0, 8)})`,
         )
         return
       }
-      pendingSpawnResult?.(result)
+      pending.pendingSpawnResult?.(result)
     },
     onSpawnDiagnosticsResult(result) {
       if (!result.jobId) return
-      const resolver = pendingSpawnDiagnostics.get(result.jobId)
+      const resolver = pending.pendingSpawnDiagnostics.get(result.jobId)
       if (!resolver) return
-      pendingSpawnDiagnostics.delete(result.jobId)
+      pending.pendingSpawnDiagnostics.delete(result.jobId)
       resolver(result)
     },
     onLaunchJobEvent(event) {
       const jobId = typeof event.jobId === 'string' ? event.jobId : undefined
       if (!jobId) return
-      launchJobListeners.get(jobId)?.(event)
+      pending.launchJobListeners.get(jobId)?.(event)
     },
     onChannelConfigureResult(result) {
-      pendingConfigureResult?.(result)
+      pending.pendingConfigureResult?.(result)
     },
     onChannelRenameResult(result) {
-      pendingRenameResult?.(result)
+      pending.pendingRenameResult?.(result)
     },
     onConversationControlResult(result) {
-      pendingControlResult?.(result)
+      pending.pendingControlResult?.(result)
     },
     onChannelDeliver(delivery) {
       handleChannelDeliver(ctx, deps, delivery)
@@ -809,13 +698,13 @@ function handleRendezvousResult(ctx: AgentHostContext, deps: BrokerConnectionDep
     ctx.diag('rendezvous', `${action} timeout: ${error || 'unknown'}`)
   }
 
-  const pending = pendingRendezvous.get(message.conversationId as string)
-  if (pending) {
-    pendingRendezvous.delete(message.conversationId as string)
+  const rendezvous = deps.pending.pendingRendezvous.get(message.conversationId as string)
+  if (rendezvous) {
+    deps.pending.pendingRendezvous.delete(message.conversationId as string)
     if (isReady) {
-      pending.resolve(message)
+      rendezvous.resolve(message)
     } else {
-      pending.reject(error || `${action} timed out`)
+      rendezvous.reject(error || `${action} timed out`)
     }
   }
 
