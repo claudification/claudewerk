@@ -10,8 +10,19 @@
 
 import type { TranscriptContentBlock, TranscriptEntry, WebControlOp } from '@shared/protocol'
 import { sendInput, useConversationsStore } from '@/hooks/use-conversations'
+import { captureNodeToUrl } from './web-control-capture'
 import { executeCommand, getCommands } from './commands'
 import { getActiveWebControlGrant } from './web-control-grant'
+import {
+  terminalAttach,
+  terminalDetach,
+  terminalList,
+  terminalRead,
+  terminalScreenshot,
+  terminalStart,
+  type TermResult,
+  terminalWrite,
+} from './web-control-terminal'
 
 type Send = (msg: Record<string, unknown>) => void
 
@@ -25,6 +36,13 @@ const TRANSCRIPT_TEXT_CAP = 16_000
 
 function respond(send: Send, requestId: string, ok: boolean, result?: unknown, error?: string): void {
   send({ type: 'web_control_response', requestId, ok, result, error })
+}
+
+/** Relay a terminal-op result (TermResult) back, with a visibility toast. */
+function sendTerm(send: Send, requestId: string, op: WebControlOp, r: TermResult): void {
+  const target = (r.result as { shellId?: string } | undefined)?.shellId
+  toast(op, target ? target.slice(0, 12) : '')
+  respond(send, requestId, r.ok, r.result, r.error)
 }
 
 function toast(op: WebControlOp, detail: string): void {
@@ -70,6 +88,27 @@ export async function handleWebControlRequest(msg: WebControlRequestMsg, send: S
       case 'send_prompt':
         opSendPrompt(send, requestId, args)
         break
+      case 'terminal_list':
+        sendTerm(send, requestId, op, terminalList())
+        break
+      case 'terminal_start':
+        sendTerm(send, requestId, op, await terminalStart(args))
+        break
+      case 'terminal_attach':
+        sendTerm(send, requestId, op, await terminalAttach(args))
+        break
+      case 'terminal_detach':
+        sendTerm(send, requestId, op, terminalDetach(args))
+        break
+      case 'terminal_read':
+        sendTerm(send, requestId, op, terminalRead(args))
+        break
+      case 'terminal_write':
+        sendTerm(send, requestId, op, terminalWrite(args))
+        break
+      case 'terminal_screenshot':
+        sendTerm(send, requestId, op, await terminalScreenshot(args))
+        break
       default:
         respond(send, requestId, false, undefined, `Unknown op '${op}'`)
     }
@@ -86,26 +125,12 @@ async function opScreenshot(send: Send, requestId: string, args: Record<string, 
     return
   }
   toast('screenshot', selector ?? 'viewport')
-  // Lazy-load html-to-image (heavy, off the hot path).
-  const { toBlob } = await import('html-to-image')
-  const bg = getComputedStyle(document.body).backgroundColor || '#0a0a0a'
-  const blob = await toBlob(el, { pixelRatio: selector ? 2 : 1, backgroundColor: bg, cacheBust: true })
-  if (!blob) {
-    respond(send, requestId, false, undefined, 'Screenshot capture returned no image')
+  const { url, error } = await captureNodeToUrl(el, selector ? 2 : 1)
+  if (!url) {
+    respond(send, requestId, false, undefined, error ?? 'screenshot failed')
     return
   }
-  // Upload to the broker blob store (same-origin cookie auth, files permission).
-  const res = await fetch('/api/files', { method: 'POST', headers: { 'content-type': 'image/png' }, body: blob })
-  if (!res.ok) {
-    respond(send, requestId, false, undefined, `Upload failed: HTTP ${res.status}`)
-    return
-  }
-  const data = (await res.json()) as { url?: string }
-  if (!data.url) {
-    respond(send, requestId, false, undefined, 'Upload returned no URL')
-    return
-  }
-  respond(send, requestId, true, { url: data.url, width: blob.size })
+  respond(send, requestId, true, { url })
 }
 
 function opListCommands(send: Send, requestId: string): void {

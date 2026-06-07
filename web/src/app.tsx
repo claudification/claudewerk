@@ -29,6 +29,7 @@ import { reviveDialogBus } from '@/components/revive-dialog-trigger'
 import { manageChatConnectionsBus } from '@/components/settings/manage-chat-connections-trigger'
 import { manageProjectLinksBus } from '@/components/settings/manage-project-links-trigger'
 import { SharedConversationView } from '@/components/shared-conversation-view'
+import { AgentShellHost } from '@/components/agent-shell-host'
 import { ShellDock } from '@/components/shell-dock'
 import { ShortcutHelp } from '@/components/shortcut-help'
 import { spawnDialogBus } from '@/components/spawn-dialog-trigger'
@@ -301,6 +302,10 @@ function Dashboard() {
       <div className="shrink-0">
         <ShellDock />
       </div>
+
+      {/* Off-screen host for agent-attached (debug) shells -- mounted + readable
+          without ever popping the fullscreen overlay. Self-hides when empty. */}
+      <AgentShellHost />
 
       {/* Main content */}
       <div className="flex gap-4 flex-1 min-h-0 relative">

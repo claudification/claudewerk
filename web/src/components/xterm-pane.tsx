@@ -17,6 +17,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import '@xterm/xterm/css/xterm.css'
 import { normalizeTruecolorSgr } from '@/lib/normalize-truecolor-sgr'
 import { cn } from '@/lib/utils'
+import { registerXterm, serializeXtermBuffer, unregisterXterm } from '@/lib/xterm-registry'
 import { getFont, getTheme, type TerminalSettings } from './terminal-settings-storage'
 
 export interface XtermPaneHandle {
@@ -46,11 +47,15 @@ interface XtermPaneProps {
    *  its own cursor and primes hidden. Host shells set this so a raw zsh prompt
    *  shows a blinking block immediately, before the shell first repaints. */
   cursorBlink?: boolean
+  /** When set, register this terminal's buffer-reader + node in the global
+   *  xterm registry under this id (host shells pass their shellId) so the web
+   *  debug-control dispatcher can read/screenshot it. Unregistered on unmount. */
+  registryId?: string
   className?: string
 }
 
 export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(function XtermPane(
-  { onData, onResize, settings, customKeyHandler, cursorBlink = false, className },
+  { onData, onResize, settings, customKeyHandler, cursorBlink = false, registryId, className },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -140,6 +145,15 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(function Xt
     // Prime with a clean state before PTY data flows in.
     terminal.write(primeRef.current)
 
+    // Expose this surface to the web debug-control registry (read/screenshot
+    // from outside React). Mount-only; unregistered in cleanup.
+    if (registryId) {
+      registerXterm(registryId, {
+        read: opts => serializeXtermBuffer(terminal, opts?.maxLines),
+        node: () => containerRef.current,
+      })
+    }
+
     const dataDisposable = terminal.onData(d => onDataRef.current(d))
 
     // Cmd/Ctrl+V: preventDefault the native paste (it would double-paste via
@@ -200,6 +214,7 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(function Xt
     document.fonts?.ready.then(remeasureFont)
 
     return () => {
+      if (registryId) unregisterXterm(registryId)
       resizeObserver.disconnect()
       dataDisposable.dispose()
       el?.removeEventListener('keydown', handleKeyPaste)

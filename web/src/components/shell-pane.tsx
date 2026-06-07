@@ -85,6 +85,7 @@ export function ShellPane({ shellId, customKeyHandler, className }: ShellPanePro
       settings={settings}
       customKeyHandler={customKeyHandler}
       cursorBlink
+      registryId={shellId}
       className={className}
     />
   )

@@ -580,6 +580,91 @@ function createMcpServer(
     async ({ clientId, conversationId, text }) => runWebControlOp(clientId, 'send_prompt', { conversationId, text }),
   )
 
+  // ─── Host-shell terminals (driven detached / off-screen) ─────────────
+  // The opted-in browser drives host shells in the background: an agent-
+  // attached shell renders OFF-SCREEN (mounted, subscribed, readable) and never
+  // pops the fullscreen overlay, so the user's view is never hijacked. Shells
+  // started via web_terminal_start get a "[debug] " title prefix. Typical flow:
+  // web_terminal_start (or web_terminal_attach an existing shellId) -> wait a
+  // beat -> web_terminal_read / web_terminal_write -> web_terminal_detach.
+
+  // ─── web_terminal_list ───────────────────────────────────────────────
+  mcp.tool(
+    'web_terminal_list',
+    'List host shells visible to the opted-in browser. Returns shellId, title, path, projectUri, status, agentAttached (driven by you, off-screen) and readable (has a live buffer you can read now). Start a new one with web_terminal_start or attach an existing one with web_terminal_attach.',
+    { clientId: z.string().optional().describe('Target browser. Omit if exactly one is opted-in.') },
+    async ({ clientId }) => runWebControlOp(clientId, 'terminal_list', {}),
+  )
+
+  // ─── web_terminal_start ──────────────────────────────────────────────
+  mcp.tool(
+    'web_terminal_start',
+    'Open a NEW host shell in the given project and attach to it detached (off-screen, never pops the overlay). Title is prefixed "[debug] ". Returns shellId. After ~1.5s the buffer is ready for web_terminal_read. projectUri is claude://sentinel/path -- discover via list_hosts / list_conversations.',
+    {
+      clientId: z.string().optional().describe('Target browser. Omit if exactly one is opted-in.'),
+      projectUri: z.string().describe('claude://sentinel/path -- where to run the shell.'),
+      title: z.string().optional().describe('Label (will be prefixed "[debug] ").'),
+    },
+    async ({ clientId, projectUri, title }) => runWebControlOp(clientId, 'terminal_start', { projectUri, title }),
+  )
+
+  // ─── web_terminal_attach ─────────────────────────────────────────────
+  mcp.tool(
+    'web_terminal_attach',
+    'Attach to an EXISTING host shell (by shellId from web_terminal_list) detached/off-screen so you can read and write it without taking over the user\'s screen. Wait ~1.5s after attaching before web_terminal_read.',
+    {
+      clientId: z.string().optional().describe('Target browser. Omit if exactly one is opted-in.'),
+      shellId: z.string().describe('Shell to attach (from web_terminal_list).'),
+    },
+    async ({ clientId, shellId }) => runWebControlOp(clientId, 'terminal_attach', { shellId }),
+  )
+
+  // ─── web_terminal_detach ─────────────────────────────────────────────
+  mcp.tool(
+    'web_terminal_detach',
+    'Detach from a host shell (unmounts the off-screen pane / unsubscribes). The shell keeps running; you just stop reading it.',
+    {
+      clientId: z.string().optional().describe('Target browser. Omit if exactly one is opted-in.'),
+      shellId: z.string().describe('Shell to detach.'),
+    },
+    async ({ clientId, shellId }) => runWebControlOp(clientId, 'terminal_detach', { shellId }),
+  )
+
+  // ─── web_terminal_read ───────────────────────────────────────────────
+  mcp.tool(
+    'web_terminal_read',
+    'Read a host shell\'s terminal buffer (scrollback + viewport) as plain text. The shell must be attached first (web_terminal_start / web_terminal_attach). Capped to the last maxLines rows (default 2000).',
+    {
+      clientId: z.string().optional().describe('Target browser. Omit if exactly one is opted-in.'),
+      shellId: z.string().describe('Shell to read.'),
+      maxLines: z.number().optional().describe('Cap on rows returned (default 2000, from the bottom).'),
+    },
+    async ({ clientId, shellId, maxLines }) => runWebControlOp(clientId, 'terminal_read', { shellId, maxLines }),
+  )
+
+  // ─── web_terminal_write ──────────────────────────────────────────────
+  mcp.tool(
+    'web_terminal_write',
+    'Write raw bytes to a host shell (keystrokes / input). Text is sent EXACTLY as given -- append "\\n" (or "\\r") yourself to submit a command. Control chars work too (e.g. "\\x03" for Ctrl-C). The shell need not be attached to write, but attach to read the result.',
+    {
+      clientId: z.string().optional().describe('Target browser. Omit if exactly one is opted-in.'),
+      shellId: z.string().describe('Shell to write to.'),
+      data: z.string().describe('Raw bytes to send. Include the trailing newline to submit.'),
+    },
+    async ({ clientId, shellId, data }) => runWebControlOp(clientId, 'terminal_write', { shellId, data }),
+  )
+
+  // ─── web_terminal_screenshot ─────────────────────────────────────────
+  mcp.tool(
+    'web_terminal_screenshot',
+    'Screenshot a host shell\'s terminal surface and return a public image URL. The shell must be attached first. Usually web_terminal_read (text) is more useful; use this for TUIs / rendering issues.',
+    {
+      clientId: z.string().optional().describe('Target browser. Omit if exactly one is opted-in.'),
+      shellId: z.string().describe('Shell to screenshot.'),
+    },
+    async ({ clientId, shellId }) => runWebControlOp(clientId, 'terminal_screenshot', { shellId }),
+  )
+
   return mcp
 }
 

@@ -1633,6 +1633,14 @@ export const WEB_CONTROL_OPS = [
   'set_conversation',
   'read_transcript',
   'send_prompt',
+  // Host-shell terminal control (driven detached / off-screen).
+  'terminal_list',
+  'terminal_start',
+  'terminal_attach',
+  'terminal_detach',
+  'terminal_read',
+  'terminal_write',
+  'terminal_screenshot',
 ] as const
 export type WebControlOp = (typeof WEB_CONTROL_OPS)[number]
 
