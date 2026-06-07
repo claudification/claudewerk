@@ -4,7 +4,8 @@ import { projectIdentityKey } from '@shared/project-uri'
  * Shared by send_message (tool-line) and received inter-conversation messages (group-view).
  */
 
-import { buildConversationsById, useConversationsStore } from '@/hooks/use-conversations'
+import { useConversationsStore } from '@/hooks/use-conversations'
+import { buildSlimIndexWithSelected } from '@/lib/slim-conversation'
 import type { Conversation } from '@/lib/types'
 import { extractProjectLabel, projectPath } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
@@ -94,7 +95,10 @@ function injectConversation(overview: Record<string, unknown>) {
   useConversationsStore.setState(state => {
     if (state.conversationsById[partial.id]) return state
     const conversations = [...state.conversations, partial]
-    return { conversations, conversationsById: buildConversationsById(conversations) }
+    return {
+      conversations,
+      conversationsById: buildSlimIndexWithSelected(conversations, state.selectedConversationId),
+    }
   })
   return partial.id
 }

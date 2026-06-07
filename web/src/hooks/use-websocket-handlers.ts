@@ -27,6 +27,7 @@ import type {
 import { handleLaunchProfilesUpdatedMessage } from '@/components/launch-profiles/use-launch-profiles'
 import { daemonControlToast } from '@/lib/daemon-control'
 import { record } from '@/lib/perf-metrics'
+import { buildSlimIndexWithSelected, forgetFull, rememberFull, slimConversation } from '@/lib/slim-conversation'
 import { cachePushEntries } from '@/lib/transcript-page-cache'
 import type {
   ClaudeEfficiencyUpdate,
@@ -41,13 +42,7 @@ import { recordActivityPhrase } from './activity-phrase-store'
 import { addDebugTraceEvent, setDebugTraceResult } from './debug-control-store'
 import { clearThinkingProgress, recordThinkingProgress } from './thinking-progress-store'
 import { recordTokenSample } from './token-flow-store'
-import {
-  applyHashRoute,
-  buildConversationsById,
-  fetchTranscript,
-  type ProjectSettingsMap,
-  useConversationsStore,
-} from './use-conversations'
+import { applyHashRoute, fetchTranscript, type ProjectSettingsMap, useConversationsStore } from './use-conversations'
 import { useRecapJobsStore } from './use-recap-jobs'
 import { useShellsStore } from './use-shells'
 import { handleSpawnRequestAck } from './use-spawn'
@@ -185,15 +180,20 @@ function handleConversationsList(msg: DashboardMessage) {
 
 function handleConversationCreated(msg: DashboardMessage) {
   if (!msg.conversation) return
-  const newConversation = toConversation(msg.conversation)
+  const fullConversation = toConversation(msg.conversation)
   useConversationsStore.setState(state => {
+    rememberFull(fullConversation, state.selectedConversationId)
+    const slim = slimConversation(fullConversation)
     let conversations: Conversation[]
-    if (state.conversations.some(s => s.id === newConversation.id)) {
-      conversations = state.conversations.map(s => (s.id === newConversation.id ? { ...s, ...newConversation } : s))
+    if (state.conversations.some(s => s.id === slim.id)) {
+      conversations = state.conversations.map(s => (s.id === slim.id ? { ...s, ...slim } : s))
     } else {
-      conversations = [...state.conversations, newConversation]
+      conversations = [...state.conversations, slim]
     }
-    return { conversations, conversationsById: buildConversationsById(conversations) }
+    return {
+      conversations,
+      conversationsById: buildSlimIndexWithSelected(conversations, state.selectedConversationId),
+    }
   })
 }
 
@@ -211,7 +211,18 @@ function handleConversationUpdate(msg: DashboardMessage) {
     // (merge any duplicates into the first occurrence) so the sidebar
     // doesn't render ghost rows. Without dedupe, a double-spawn shows as
     // two identical conversation rows sharing a short-id.
-    const replaced = state.conversations.map(s => (s.id === matchId ? { ...s, ...updated } : s))
+    //
+    // The merge `{ ...s, ...updated }` (slim base + full update) yields the new
+    // full payload; remember it in the side-map, then slim it for list residency.
+    const selectedId = state.selectedConversationId
+    // On rekey, the old prevId full payload in the side-map is now orphaned.
+    if (prevId && prevId !== conversationId) forgetFull(prevId)
+    const replaced = state.conversations.map(s => {
+      if (s.id !== matchId) return s
+      const merged = { ...s, ...updated }
+      rememberFull(merged, selectedId)
+      return slimConversation(merged)
+    })
     const seen = new Set<string>()
     const conversations: Conversation[] = []
     for (const s of replaced) {
@@ -221,7 +232,7 @@ function handleConversationUpdate(msg: DashboardMessage) {
     }
     const newState: Partial<typeof state> = {
       conversations,
-      conversationsById: buildConversationsById(conversations),
+      conversationsById: buildSlimIndexWithSelected(conversations, selectedId),
     }
     // Clear stale streaming buffers when conversation goes idle or ends. Both
     // text AND thinking are transient in-flight indicators -- the committed
@@ -1084,15 +1095,17 @@ function handleClipboardCapture(msg: DashboardMessage) {
 
 function handleConversationDismissed(msg: DashboardMessage) {
   if (!msg.conversationId) return
+  forgetFull(msg.conversationId)
   useConversationsStore.setState(state => {
     const conversations = state.conversations.filter(s => s.id !== msg.conversationId)
     if (state.selectedConversationId === msg.conversationId) {
       console.log(`[nav] session_dismissed: clearing selection (WS dismissed ${msg.conversationId.slice(0, 8)})`)
     }
+    const nextSelected = state.selectedConversationId === msg.conversationId ? null : state.selectedConversationId
     return {
       conversations,
-      conversationsById: buildConversationsById(conversations),
-      selectedConversationId: state.selectedConversationId === msg.conversationId ? null : state.selectedConversationId,
+      conversationsById: buildSlimIndexWithSelected(conversations, nextSelected),
+      selectedConversationId: nextSelected,
     }
   })
 }

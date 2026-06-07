@@ -20,6 +20,14 @@ import { clearExpandedState } from '@/lib/expanded-state'
 import { setPerfEnabled } from '@/lib/perf-metrics'
 import { DEFAULT_PERMISSIONS, type ResolvedPermissions } from '@/lib/permissions'
 import { appendShareParam } from '@/lib/share-mode'
+import {
+  buildSlimIndexWithSelected,
+  forgetFull,
+  getFull,
+  ingestConversations,
+  rehydrateSelectedIndex,
+  rememberFull,
+} from '@/lib/slim-conversation'
 import { cacheLookupBefore, cachePushEntries } from '@/lib/transcript-page-cache'
 import {
   type ClaudeEfficiencyUpdate,
@@ -563,13 +571,6 @@ export function processHash() {
   }
 }
 
-/** Build an O(1) lookup index from a conversation array */
-export function buildConversationsById(conversations: Conversation[]): Record<string, Conversation> {
-  const map: Record<string, Conversation> = {}
-  for (const s of conversations) map[s.id] = s
-  return map
-}
-
 // Slim shape containing only the fields ProjectList uses to compute
 // groupings, sorting, filtering, and rollups. Anything outside this set
 // (token counts, recap, stats, gitBranch, etc.) is consumed by leaf
@@ -920,16 +921,19 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   renameConversation: (conversationId, name, description) => {
     wsSend('rename_conversation', { conversationId, name, ...(description !== undefined ? { description } : {}) })
     set(state => {
-      const conversations = state.conversations.map(s =>
-        s.id === conversationId
-          ? {
-              ...s,
-              title: name || undefined,
-              ...(description !== undefined ? { description: description || undefined } : {}),
-            }
-          : s,
-      )
-      return { renamingConversationId: null, conversations, conversationsById: buildConversationsById(conversations) }
+      const patch = {
+        title: name || undefined,
+        ...(description !== undefined ? { description: description || undefined } : {}),
+      }
+      const conversations = state.conversations.map(s => (s.id === conversationId ? { ...s, ...patch } : s))
+      // Keep the side-map full payload in sync so a later re-hydrate has the new title.
+      const full = getFull(conversationId)
+      if (full) rememberFull({ ...full, ...patch }, state.selectedConversationId)
+      return {
+        renamingConversationId: null,
+        conversations,
+        conversationsById: buildSlimIndexWithSelected(conversations, state.selectedConversationId),
+      }
     })
   },
   editingDescriptionConversationId: null,
@@ -942,10 +946,12 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
       const conversations = state.conversations.map(s =>
         s.id === conversationId ? { ...s, description: description || undefined } : s,
       )
+      const full = getFull(conversationId)
+      if (full) rememberFull({ ...full, description: description || undefined }, state.selectedConversationId)
       return {
         editingDescriptionConversationId: null,
         conversations,
-        conversationsById: buildConversationsById(conversations),
+        conversationsById: buildSlimIndexWithSelected(conversations, state.selectedConversationId),
       }
     })
   },
@@ -1026,7 +1032,11 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
 
   setConversations: conversations => {
     const clean = sanitizeConversations(conversations)
-    set({ conversations: clean, conversationsById: buildConversationsById(clean) })
+    // Slim each conversation for list residency (heavy fields -> side-map),
+    // then re-hydrate the selected one to full fidelity in the index.
+    const selectedId = get().selectedConversationId
+    const slim = ingestConversations(clean, selectedId)
+    set({ conversations: slim, conversationsById: buildSlimIndexWithSelected(slim, selectedId) })
   },
   selectConversation: (id: string | null, reason?: string) => {
     const prev = get().selectedConversationId
@@ -1088,6 +1098,13 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
       // Close terminal on conversation switch - PTY is tied to a conversationId,
       // keeping it open would stream the old conversation's terminal
       const closeTerminal = state.showTerminal ? { showTerminal: false, terminalWrapperId: null } : {}
+
+      // Re-hydrate the newly-selected conversation to its full payload (heavy
+      // fields live in the side-map) and re-slim the previously-selected one so
+      // exactly one full conversation is resident at a time.
+      const nextById = rehydrateSelectedIndex(state.conversationsById, prev, id)
+      const hydration = nextById === state.conversationsById ? {} : { conversationsById: nextById }
+
       return {
         selectedConversationId: id,
         lastSelectReason: reason ?? null,
@@ -1098,6 +1115,7 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
         conversationMru: mru,
         ...evictedData,
         ...closeTerminal,
+        ...hydration,
       }
     })
     updateHash(id ? `conversation/${id}` : '')
@@ -1293,15 +1311,17 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   },
   dismissConversation: conversationId => {
     wsSend('dismiss_conversation', { conversationId })
+    forgetFull(conversationId)
     set(state => {
       const conversations = state.conversations.filter(s => s.id !== conversationId)
       if (state.selectedConversationId === conversationId) {
         console.log(`[nav] dismissConversation: clearing selection (dismissed ${conversationId.slice(0, 8)})`)
       }
+      const nextSelected = state.selectedConversationId === conversationId ? null : state.selectedConversationId
       return {
         conversations,
-        conversationsById: buildConversationsById(conversations),
-        selectedConversationId: state.selectedConversationId === conversationId ? null : state.selectedConversationId,
+        conversationsById: buildSlimIndexWithSelected(conversations, nextSelected),
+        selectedConversationId: nextSelected,
       }
     })
   },
