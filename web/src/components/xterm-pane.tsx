@@ -159,14 +159,38 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(function Xt
 
     terminal.focus()
 
-    // Bundled web fonts load async; xterm measures char size at open() with the
-    // fallback font. Re-fit once fonts settle so glyph widths (and Nerd Font
-    // icons) align correctly instead of staying measured against the fallback.
-    document.fonts?.ready.then(() => {
+    // Bundled web fonts load async (font-display: swap), so xterm measures the
+    // glyph cell + per-glyph WidthCache against the FALLBACK font at open(). When
+    // the real font swaps in, those metrics are stale and punctuation drifts
+    // off-grid (e.g. a gap after every '.', while ':' happens to line up).
+    //
+    // fitAddon.fit() does NOT fix this -- it only re-divides the container by the
+    // already-cached cell size; it never re-measures the glyph. The only thing
+    // that re-measures is a font OPTION change (CharSizeService.measure() ->
+    // handleCharSizeChanged() -> WidthCache.clear()). The OptionsService setter
+    // diffs values, so re-setting the SAME family is a no-op -- bounce through a
+    // sentinel to force the re-measure.
+    const remeasureFont = () => {
       if (xtermRef.current !== terminal) return
+      const fam = getFont(settings.fontId).family
+      if (terminal.options.fontFamily === fam) {
+        terminal.options.fontFamily = 'monospace'
+        terminal.options.fontFamily = fam
+      }
       fitAddon.fit()
       onResizeRef.current(terminal.cols, terminal.rows)
-    })
+    }
+    // Explicitly load the primary family to close the race where fonts.ready
+    // resolves before xterm's first use has kicked off the download; fonts.ready
+    // stays as a catch-all for any remaining face (e.g. Nerd Font icons).
+    const primaryFamily = getFont(settings.fontId).family.split(',')[0]?.trim()
+    if (primaryFamily) {
+      document.fonts
+        ?.load(`${settings.fontSize}px ${primaryFamily}`)
+        .then(remeasureFont)
+        .catch(() => {})
+    }
+    document.fonts?.ready.then(remeasureFont)
 
     return () => {
       resizeObserver.disconnect()

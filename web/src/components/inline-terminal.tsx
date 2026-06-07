@@ -106,13 +106,31 @@ export function InlineTerminal({ conversationId }: InlineTerminalProps) {
 
     terminal.focus()
 
-    // Re-fit once bundled web fonts settle so Nerd Font icon widths align.
-    document.fonts?.ready.then(() => {
+    // Bundled web fonts load async (font-display: swap), so xterm measures the
+    // glyph cell + per-glyph WidthCache against the FALLBACK font at open(). Once
+    // the real font swaps in those metrics are stale and punctuation drifts
+    // off-grid. fitAddon.fit() does NOT re-measure -- it only re-divides the
+    // container by the cached cell. Force a real re-measure via a font OPTION
+    // change; the OptionsService setter diffs values, so bounce through a
+    // sentinel to set the SAME family.
+    const remeasureFont = () => {
       if (xtermRef.current !== terminal) return
+      if (terminal.options.fontFamily === font.family) {
+        terminal.options.fontFamily = 'monospace'
+        terminal.options.fontFamily = font.family
+      }
       fitAddon.fit()
       const { cols, rows } = terminal
       sendWsMessage({ type: 'terminal_resize', conversationId, cols, rows })
-    })
+    }
+    const primaryFamily = font.family.split(',')[0]?.trim()
+    if (primaryFamily) {
+      document.fonts
+        ?.load(`${settings.fontSize}px ${primaryFamily}`)
+        .then(remeasureFont)
+        .catch(() => {})
+    }
+    document.fonts?.ready.then(remeasureFont)
 
     return () => {
       resizeObserver.disconnect()
