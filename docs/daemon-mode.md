@@ -30,7 +30,9 @@ honest, live-verified inventory of what works, what is reduced, and why.**
 
 Verdicts are LIVE-VERIFIED against CC 2.1.150 (transport-reframe Phase 7 spikes,
 2026-05-23). Where a hypothesis from the original inventory was wrong, the spike
-result is authoritative and noted.
+result is authoritative and noted. The permission + streaming rows were
+re-verified against CC 2.1.168 (2026-06-07) -- see those rows for the corrected
+findings.
 
 | Feature                                   | Daemon-mode verdict | Notes |
 | ----------------------------------------- | ------------------- | ----- |
@@ -43,12 +45,12 @@ result is authoritative and noted.
 | **Effort level** (`set_effort`)           | **REGRESSION (recorded-for-respawn)** | `/effort` is NOT a CC slash command; effort is the `CLAUDE_CODE_EFFORT_LEVEL` env var read at **process start** (spike 3a: a live `reply('/effort high')` is a no-op). claudewerk records the requested level (`effort_changed`, `appliedVia: 'next_dispatch'`) and surfaces a toast; **it takes effect on the next worker (re)spawn, not the current turn.** Headless mode applies effort live via `update_environment_variables`; daemon mode cannot. |
 | **`update_environment_variables`** (live env mutation) | REGRESSION | A running daemon worker's env is fixed at dispatch. Env changes (including effort) apply only on the next (re)spawn. |
 | **`set_permission_mode`** (live)          | REGRESSION          | A running daemon worker's permission mode is fixed at dispatch. Not live-controllable; the daemon-agent-host logs the unsupported verb rather than pretending. |
-| **Tool-use permission gates** (`permission_request`) | REGRESSION (dormant) | claudewerk's `source:'fleet'` spare-pool workers **auto-accept tool permissions** -- a Bash gate did not fire across the Phase 7 spikes (3d). So there is usually nothing to approve. The `daemon_block_observed` observer is wired DEFENSIVELY: if a worker ever reports `state:'blocked'` or a `block` patch, the panel surfaces it (with the `requestId` for `permission-response` when present), but in the common config it is dormant. |
+| **Tool-use permission gates** (`permission_request`) | REDUCED (free-text reply) | **Re-verified 2.1.168 (2026-06-07).** A `source:'fleet'` worker DOES gate: a Write to `/etc` surfaced `state:'blocked'` + a human `needs` string + `detail`, cleanly observable via `subscribe` (`daemon_block_observed` -> the panel's amber `Waiting` banner). What does NOT fire is CC's numbered 1/2/3 tool-permission menu -- the gate is a *conversational* question answered by a **FREE-TEXT `reply`** typed into the chat box (the `input` path), NOT an allow/deny choice. The dedicated daemon `permission-response` op is **DEAD**: its required `requestId` correlator is never surfaced in the JobRecord, so no candidate request shape ever ACKs (re-confirmed 2.1.168). The old allow/deny -> `reply('1'\|'2'\|'3')` mapping was removed (2026-06-07) -- a bare menu number reads as an unrelated instruction and confuses the worker (live-verified). |
 | **AskUserQuestion approvals**             | **MAJOR REGRESSION** | Daemon spare-pool workers did not surface `state:'blocked'` for AskUserQuestion in the Phase 7 spikes (3e). An AskUserQuestion gate inside a daemon worker is not reliably observable as a structured block, and the `updatedInput` round-trip is lossy. **If a workflow depends on AskUserQuestion approvals, use PTY mode.** |
 | **`/permissions` picker**                 | REGRESSION (PTY-attach only) | `reply('/permissions')` is accepted by the daemon but surfaces no structured handle (spike 3c). The picker renders in the PTY; driving it requires raw keystroke navigation through the attach (`terminal_data`) -- fragile, no typed verb. |
 | **Exact `total_cost_usd` per turn**       | REGRESSION (estimated) | Headless reports exact per-turn cost; daemon cost is estimated from tokens + LiteLLM pricing. Moot in practice -- daemon workers are subscription-billed, not API-billed. |
 | **`rate_limit_status`**                   | REGRESSION (coarser) | Profile-scoped, coarser than the headless `rate_limit_event`. |
-| **Partial-message streaming**             | REGRESSION (for the structured transcript) | Headless gives token-by-token `stream_delta`s; daemon mode streams the raw PTY byte stream (the web terminal) but not structured partial-message deltas into the transcript renderer. |
+| **Partial-message streaming**             | REGRESSION (permanent) | Headless gives token-by-token `stream_delta`s. Daemon mode has **no structured partial-message source**: the JSONL transcript holds complete turns only, and both `subscribe` (`stream` frames) and `attach` carry raw PTY/ANSI bytes. Token-by-token output is visible in the **web terminal** (raw PTY); the structured transcript renderer receives the final entry per turn from the JSONL. Closing this would require fragile ANSI reconstruction -- **accepted as a permanent daemon limitation** (2026-06-07), same class as live effort/env. |
 | **Plan Mode**                             | REGRESSION (lossy round-trip) | Same lossy round-trip as AskUserQuestion. |
 | **OSC 52 clipboard / slash-command autocomplete** | PARITY | Same PTY byte stream / JSONL `system/init`. |
 
@@ -56,9 +58,13 @@ result is authoritative and noted.
 
 - **Default to daemon for autonomous / agent-spawned work** (subscription
   billing, survives the agent-host crash, native respawn-stale, richer status).
-- **Use PTY for interactive workflows that need live approvals** -- anything
-  that relies on AskUserQuestion, live permission gates, Plan Mode, or driving
-  the `/permissions` picker. These are the documented daemon-mode regressions.
+- **Ordinary tool-permission gates DO work in daemon mode.** A blocked worker
+  shows an amber `Waiting` banner with its `needs` question; answer it by typing
+  a normal (free-text) reply in the chat box -- there is no allow/deny button
+  because the daemon surfaces a conversational gate, not CC's numbered menu.
+- **Use PTY for the structured-approval UIs** -- AskUserQuestion and Plan Mode
+  round-trips are lossy over daemon, and the `/permissions` picker has no typed
+  handle. These remain the documented daemon-mode regressions.
 - **Effort is a launch-time setting in daemon mode.** Set it when you spawn (it
   rides the worker env); a mid-conversation `set_effort` is queued for the next
   (re)spawn, not applied to the current turn. The control panel toast says so.

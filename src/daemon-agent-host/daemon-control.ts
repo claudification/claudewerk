@@ -14,11 +14,13 @@
  *   broker `terminate_conversation`-> daemon `kill`          (terminate worker)
  *   broker `daemon_respawn_stale`  -> daemon `respawn-stale`  (sleep/wake fix)
  *
- * `permission-response` is handled via the generic PermissionResponse wire
- * message (broker forwards to daemon-agent-host handleInbound -> reply '1' /
- * '2' / '3'). The dedicated DaemonPermissionResponse contract + daemon
- * `permission-response` op were removed 2026-05-27 (sweep P1-2). See
- * src/shared/permission-decision.ts + plan-daemon-launch-ux.md § 8 spike 5.
+ * `permission-response` is NOT applicable to a daemon worker: the dedicated
+ * DaemonPermissionResponse contract + daemon `permission-response` op were
+ * removed 2026-05-27 (sweep P1-2), and the op is dead-confirmed on 2.1.168
+ * (no `requestId` is ever surfaced, so it can never be satisfied). Daemon
+ * gates are conversational `state:blocked` questions answered by a free-text
+ * reply via the chat box (the `input` -> `reply` path above). See
+ * docs/daemon-mode.md + plan-daemon-launch-ux.md § 8 spike 5.
  *
  * Every op LOGS full context (op, conversationId, short, outcome, daemon
  * error code) per the LOG EVERYTHING covenant.

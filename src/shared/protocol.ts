@@ -3458,11 +3458,15 @@ export interface DaemonSessionRetired {
 }
 
 // DaemonPermissionResponse was removed 2026-05-27 (sweep finding P1-2). The
-// daemon's `permission-response` op is a stub in 2.1.150 -- the verified
-// path is `reply()` with a "1"/"2"/"3" numbered-menu choice (see
-// src/shared/permission-decision.ts + plan-daemon-launch-ux.md § 8). The
-// generic `permission_response` wire message (PermissionResponse), forwarded
-// by the broker to the daemon-agent-host's handleInbound, is the live path.
+// daemon's `permission-response` op is DEAD -- confirmed against 2.1.168: the
+// required `requestId` correlator is never surfaced in the JobRecord, so the
+// op can never be satisfied. Daemon (fleet) workers do not raise CC's numbered
+// tool-permission menu either; they surface gates as conversational
+// `state:blocked` questions (the `needs` text) answered by a FREE-TEXT reply
+// via the chat box (the generic `input` wire -> daemon `reply`). The generic
+// `permission_response` wire (PermissionResponse) is the live path for
+// headless/PTY only and is NOT applicable to daemon workers (see
+// docs/daemon-mode.md + the daemon-agent-host handleInbound no-op).
 
 /**
  * Sentinel -> Broker: the Claude Code daemon version or control-protocol

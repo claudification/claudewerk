@@ -50,7 +50,6 @@ import type { AttachCloseReason, AttachHandle } from '../shared/cc-daemon/attach
 import { has } from '../shared/cc-daemon/ops'
 import { resolveControlSocket } from '../shared/cc-daemon/socket-path'
 import { createHostTransport, type HostTransport } from '../shared/host-transport'
-import { permissionDecisionToText } from '../shared/permission-decision'
 import { cwdToProjectUri } from '../shared/project-uri'
 import {
   AGENT_HOST_PROTOCOL_VERSION,
@@ -65,7 +64,6 @@ import {
   type DaemonControlResult,
   type DaemonSessionRetired,
   type EffortChanged,
-  type PermissionResponse,
   type SendInput,
   type UpdateConversationMetadata,
 } from '../shared/protocol'
@@ -361,19 +359,22 @@ async function main(): Promise<void> {
       return
     }
     if (t === 'permission_response') {
-      // The control panel answered a tool-use permission gate. The daemon has
-      // no typed permission-response op (2.1.150 stub); the verified path is
-      // `reply()` with the numbered menu choice -- the worker resolves its own
-      // active gate when it sees text on the rendezvous socket. Mapping lives
-      // in src/shared/permission-decision.ts; see plan-daemon-launch-ux.md § 8.
-      const resp = msg as PermissionResponse
-      const text = permissionDecisionToText(resp.behavior)
+      // NOT applicable to a daemon worker. A daemon worker has no CC numbered
+      // tool-permission menu and no typed permission-response op (confirmed
+      // dead on 2.1.168: the required `requestId` correlator is never surfaced
+      // in the JobRecord). Fleet workers surface gates as conversational
+      // `state:blocked` questions (the `needs` text), answered by a FREE-TEXT
+      // reply via the chat box (the `input` path above) -- NOT an allow/deny
+      // menu choice. The control panel does not emit permission_response for
+      // daemon conversations; if one ever arrives we log it rather than typing
+      // a bogus menu number (a bare '1'/'3' reads as an unrelated instruction
+      // and confuses the worker -- live-verified). See docs/daemon-mode.md.
+      const resp = msg as { behavior?: string; requestId?: string }
       log(
-        `[permission] response received behavior=${resp.behavior} -> reply='${text}' requestId=${resp.requestId.slice(0, 12)}`,
+        `[permission] permission_response is not applicable to a daemon worker ` +
+          `(behavior=${resp.behavior} requestId=${resp.requestId?.slice(0, 12) ?? '?'}); ` +
+          `daemon gates are answered by a free-text reply via the chat box`,
       )
-      void daemonControl
-        .reply(text)
-        .catch((err: unknown) => log(`permission reply op error: ${(err as Error).message}`))
       return
     }
     if (t === 'transcript_request' || t === 'transcript_kick') {
