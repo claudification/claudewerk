@@ -8,6 +8,7 @@
 import { Clock, Link2Off } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { ConversationDetail } from '@/components/conversation-detail'
+import { LinkPreviewPane } from '@/components/link-preview-pane'
 import { MediaLightbox } from '@/components/media-lightbox'
 import { fetchConversationEvents, fetchTranscript, useConversationsStore } from '@/hooks/use-conversations'
 import { useWebSocket } from '@/hooks/use-websocket'
@@ -163,6 +164,8 @@ export function SharedConversationView({ token: _token }: { token: string }) {
 
       {/* Global media lightbox -- transcript markdown emits chips that open this */}
       <MediaLightbox />
+      {/* Mobile in-app link preview -- markdown intercepts external taps */}
+      <LinkPreviewPane />
     </div>
   )
 }

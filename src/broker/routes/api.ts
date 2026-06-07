@@ -22,6 +22,7 @@ import {
 import { addSubscription, getSubscriptionCount, isPushConfigured, removeSubscription, sendPushToAll } from '../push'
 import type { StoreDriver } from '../store/types'
 import { appendSharedFile, dismissSharedFile, mediaTypeToExt, readSharedFiles, storeBlobStreaming } from './blob-store'
+import { fetchLinkPreview, isSafePreviewUrl } from './link-preview'
 import type { RouteHelpers } from './shared'
 import { broadcastToSubscribers } from './shared'
 
@@ -53,6 +54,28 @@ export function createApiRouter(
 
   // ─── Server capabilities ───────────────────────────────────────────
   app.get('/api/capabilities', c => c.json({ voice: !!process.env.DEEPGRAM_API_KEY }))
+
+  // ─── Link preview (mobile in-app pane) ───────────────────────────
+  // Server-side fetch of an external URL's framing headers + OG metadata so the
+  // control panel can show a contained preview pane (frameable -> iframe, else a
+  // rich card) instead of letting a tap navigate the PWA webview away. Behind
+  // requireAuth (global middleware); isSafePreviewUrl blocks private/loopback.
+  app.get('/api/link-preview', async c => {
+    const url = c.req.query('url')
+    if (!url) return c.json({ error: 'Missing url query param' }, 400)
+    if (!isSafePreviewUrl(url)) return c.json({ error: 'URL not allowed' }, 400)
+    try {
+      return c.json(await fetchLinkPreview(url))
+    } catch (err) {
+      // A fetch failure (timeout, DNS, refused) is not fatal -- the pane still
+      // shows CLOSE + SHARE so the user is never trapped. Report non-frameable.
+      return c.json({
+        url,
+        frameable: false,
+        error: err instanceof Error ? err.message : 'fetch failed',
+      })
+    }
+  })
 
   // ─── Transcript search (FTS5) ──────────────────────────────────────
   // Free-form search across conversation transcripts. Supports filtering by

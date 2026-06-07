@@ -4,7 +4,9 @@ import { useConversationsStore } from '@/hooks/use-conversations'
 import { useMarkdownViewer } from '@/hooks/use-markdown-viewer'
 import { matchLeadingConversationRef } from '@/lib/conversation-refs'
 import { record } from '@/lib/perf-metrics'
+import { isMobileViewport } from '@/lib/utils'
 import { CopyMenu } from './copy-menu'
+import { openLinkPreview } from './link-preview-bus'
 import { filenameFromUrl, type MediaKind, openMediaLightbox } from './media-lightbox-bus'
 import { ensureLang, getHighlighter, normalizeLang } from './transcript/syntax'
 
@@ -614,6 +616,26 @@ export const Markdown = memo(function Markdown({ children, inline, copyable }: M
       const projectUri = conv?.project
       if (relPath && projectUri) useMarkdownViewer.getState().open(projectUri, relPath)
       return
+    }
+
+    // Plain external web link on MOBILE -> open in the in-app preview pane
+    // instead of navigating. A standalone PWA has no back button, so letting the
+    // tap navigate the webview traps the user with no way back to CLAUDEWERK.
+    // preventDefault() is the load-bearing line: it cancels the browser's
+    // default navigation. Desktop keeps native new-tab behavior (target=_blank).
+    // The special chips above already returned, so any anchor reaching here is a
+    // genuine external link. Modifier-clicks still fall through to the browser.
+    const anchor = target.closest('a[href]') as HTMLAnchorElement | null
+    if (anchor && isMobileViewport()) {
+      const me = e as unknown as MouseEvent
+      if (!(me.metaKey || me.ctrlKey || me.shiftKey || me.button === 1)) {
+        const href = anchor.getAttribute('href') || ''
+        if (/^https?:\/\//i.test(href)) {
+          e.preventDefault()
+          openLinkPreview(href)
+          return
+        }
+      }
     }
 
     const btn = target.closest('.code-copy-btn') as HTMLButtonElement | null

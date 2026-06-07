@@ -55,6 +55,10 @@ vi.mock('@/components/media-lightbox', () => ({
   MediaLightbox: () => null,
 }))
 
+vi.mock('@/components/link-preview-pane', () => ({
+  LinkPreviewPane: () => null,
+}))
+
 vi.mock('@/lib/types', () => ({
   extractProjectLabel: () => 'p',
 }))

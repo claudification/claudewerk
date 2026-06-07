@@ -13,6 +13,7 @@ import { JsonInspectorDialog } from '@/components/json-inspector'
 import { LaunchProfileCommands } from '@/components/launch-profiles/launch-profile-commands'
 import { LaunchToastContainer } from '@/components/launch-profiles/launch-toast'
 import { useLaunchProfileManagerState } from '@/components/launch-profiles/manager-state'
+import { LinkPreviewPane } from '@/components/link-preview-pane'
 import { MarkdownViewerModal } from '@/components/markdown-viewer-modal'
 import { MediaLightbox } from '@/components/media-lightbox'
 import { PanelBoundary } from '@/components/panel-boundary'
@@ -361,6 +362,7 @@ function Dashboard() {
         <JsonInspectorDialog />
       </PanelBoundary>
       <MediaLightbox />
+      <LinkPreviewPane />
       {canAdmin && <QuickTaskModal />}
       <RenameModal />
       {canAdmin && <DebugControlModal />}
