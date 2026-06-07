@@ -256,9 +256,11 @@ export function readRawConfigObject(configPath: string): Record<string, unknown>
  * as `io_error` and rolls back in-memory.
  */
 export function atomicWriteRawConfig(configPath: string, obj: Record<string, unknown>): void {
-  mkdirSync(dirname(configPath), { recursive: true })
+  // sentinel.json can hold long-lived OAuth tokens -- owner-only dir (0700) and
+  // file (0600). The tmp file is created 0600 and rename preserves the mode.
+  mkdirSync(dirname(configPath), { recursive: true, mode: 0o700 })
   const tmpPath = join(dirname(configPath), `.${basename(configPath)}.${process.pid}.tmp`)
   const text = `${JSON.stringify(obj, null, 2)}\n`
-  writeFileSync(tmpPath, text)
+  writeFileSync(tmpPath, text, { mode: 0o600 })
   renameSync(tmpPath, configPath)
 }

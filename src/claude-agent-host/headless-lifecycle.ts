@@ -8,6 +8,7 @@ import { readFileSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { claudeConfigDir } from '../shared/claude-config-dir'
 import type { AgentHostMessage } from '../shared/protocol'
+import { writeSecureFile } from '../shared/secure-temp'
 import type { AgentHostContext } from './agent-host-context'
 import { debug as _debug } from './debug'
 import { emitLaunchEvent, filterRelevantEnv } from './launch-events'
@@ -788,7 +789,7 @@ async function respawnHeadless(deps: HeadlessCallbackDeps, args: string[]) {
     debug(`[respawn] Failed to regenerate settings: ${e}`)
   }
   try {
-    await Bun.write(
+    await writeSecureFile(
       mcpConfigPath,
       JSON.stringify({ mcpServers: { rclaude: { type: 'http', url: `http://localhost:${localServerPort}/mcp` } } }),
     )

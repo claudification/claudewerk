@@ -6,6 +6,7 @@
 import { join } from 'node:path'
 import { claudeConfigDir } from '../shared/claude-config-dir'
 import { resolveScript } from '../shared/resolve-script'
+import { ensureSecureDir, secureTmpPath, writeSecureFile } from '../shared/secure-temp'
 
 interface CommandHook {
   type: 'command'
@@ -328,11 +329,14 @@ export async function writeMergedSettings(
     claudeVersion,
     process.env.CLAUDWERK_SETTINGS_PATH,
   )
+  // Ensure the 0700 target dir exists. Node's writeFile (unlike Bun.write) does
+  // not create parent dirs, and this keeps us self-sufficient even if the
+  // caller skipped ensureRclaudeDir.
   const settingsPath = dir
-    ? `${dir}/settings/settings-${conversationId}.json`
-    : `/tmp/rclaude-settings-${conversationId}.json`
+    ? join(ensureSecureDir(join(dir, 'settings')), `settings-${conversationId}.json`)
+    : secureTmpPath(`rclaude-settings-${conversationId}.json`)
 
-  await Bun.write(settingsPath, JSON.stringify(settings, null, 2))
+  await writeSecureFile(settingsPath, JSON.stringify(settings, null, 2))
   console.log(
     `[settings] Written ${settingsPath} (port=${port} conversation=${conversationId.slice(0, 8)} hooks=${Object.keys(settings.hooks || {}).length})`,
   )
@@ -390,7 +394,7 @@ async function _cleanupMcpConfig(cwd: string): Promise<void> {
 export async function cleanupSettings(conversationId: string, dir?: string): Promise<void> {
   const settingsPath = dir
     ? `${dir}/settings/settings-${conversationId}.json`
-    : `/tmp/rclaude-settings-${conversationId}.json`
+    : secureTmpPath(`rclaude-settings-${conversationId}.json`)
   try {
     ;(await Bun.file(settingsPath).exists()) && (await Bun.$`rm ${settingsPath}`.quiet())
   } catch {

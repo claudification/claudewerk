@@ -7,8 +7,9 @@
  */
 
 import { randomBytes, randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { writeSecureFileSync } from '../shared/secure-temp'
 
 const GATEWAY_SECRET_PREFIX = 'gw_'
 
@@ -85,7 +86,8 @@ export function createGatewayRegistry(cacheDir: string): GatewayRegistry {
   function save(): void {
     try {
       mkdirSync(cacheDir, { recursive: true })
-      writeFileSync(filePath, JSON.stringify(data, null, 2))
+      // Holds gateway secrets -- 0600.
+      writeSecureFileSync(filePath, JSON.stringify(data, null, 2))
     } catch (err) {
       console.error(`[gateway-registry] Failed to save: ${err}`)
     }

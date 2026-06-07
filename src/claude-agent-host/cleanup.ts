@@ -3,8 +3,9 @@
  * Handles graceful shutdown, resource cleanup, and crash logging.
  */
 
-import { readdirSync, unlinkSync } from 'node:fs'
+import { appendFileSync, readdirSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
+import { secureTmpPath } from '../shared/secure-temp'
 import type { AgentHostContext } from './agent-host-context'
 import { debug } from './debug'
 import { type HttpServer, stopLocalServer } from './local-server'
@@ -66,7 +67,7 @@ export function registerSignalHandlers(cleanup: () => void) {
     const msg = `[FATAL] Uncaught exception: ${error instanceof Error ? error.stack || error.message : error}`
     debug(msg)
     try {
-      require('node:fs').appendFileSync('/tmp/rclaude-crash.log', `${new Date().toISOString()} ${msg}\n`)
+      appendFileSync(secureTmpPath('rclaude-crash.log'), `${new Date().toISOString()} ${msg}\n`)
     } catch {
       /* ignore */
     }
@@ -76,7 +77,7 @@ export function registerSignalHandlers(cleanup: () => void) {
     const msg = `[FATAL] Unhandled rejection: ${reason instanceof Error ? reason.stack || reason.message : reason}`
     debug(msg)
     try {
-      require('node:fs').appendFileSync('/tmp/rclaude-crash.log', `${new Date().toISOString()} ${msg}\n`)
+      appendFileSync(secureTmpPath('rclaude-crash.log'), `${new Date().toISOString()} ${msg}\n`)
     } catch {
       /* ignore */
     }

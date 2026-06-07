@@ -28,7 +28,7 @@ import { checkBunVersion } from '../shared/bun-version'
 checkBunVersion()
 
 import { randomUUID } from 'node:crypto'
-import { appendFileSync, mkdirSync, readFileSync } from 'node:fs'
+import { appendFileSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { createHostTransport, type HostTransport } from '../shared/host-transport'
@@ -44,6 +44,7 @@ import {
   type TranscriptEntry,
   type TranscriptUserEntry,
 } from '../shared/protocol'
+import { ensureSecureDir, tightenFile } from '../shared/secure-temp'
 import { extractTodoTasksFromEntries } from '../shared/task-extract'
 import { BUILD_VERSION } from '../shared/version'
 import {
@@ -143,7 +144,9 @@ async function main() {
     traceFile =
       process.env.ACP_HOST_TRACE_FILE || join(homedir(), '.rclaude', 'settings', `acp-${cfg.conversationId}.ndjsonl`)
     try {
-      mkdirSync(dirname(traceFile), { recursive: true })
+      // The trace holds full JSON-RPC conversation content -- owner-only dir
+      // (0700) + 0600 file, not world-readable like the old default.
+      ensureSecureDir(dirname(traceFile))
       appendFileSync(
         traceFile,
         `${JSON.stringify({
@@ -152,6 +155,7 @@ async function main() {
           msg: { type: 'host_start', conversationId: cfg.conversationId, agent: cfg.recipe.agentName },
         })}\n`,
       )
+      tightenFile(traceFile)
     } catch (e) {
       log(`could not open trace file ${traceFile}: ${(e as Error).message}`)
       traceFile = null

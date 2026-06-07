@@ -5,6 +5,7 @@
 
 import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { ensureSecureDir } from '../shared/secure-temp'
 
 export function ensureRclaudeDir(cwd: string): string {
   const dir = join(cwd, '.rclaude')
@@ -16,7 +17,10 @@ export function ensureRclaudeDir(cwd: string): string {
     renameSync(oldTasks, newProject)
   }
 
-  mkdirSync(join(dir, 'settings'), { recursive: true })
+  // `settings/` holds secrets + transcript content (MCP configs, merged
+  // settings, system prompts, headless stream logs) -- owner-only (0700).
+  // `project/` is the git-committed board, so it stays group/world-readable.
+  ensureSecureDir(join(dir, 'settings'))
   mkdirSync(join(dir, 'project'), { recursive: true })
 
   const gitignorePath = join(dir, '.gitignore')

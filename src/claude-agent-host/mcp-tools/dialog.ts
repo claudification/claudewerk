@@ -3,6 +3,7 @@ import { resolve as resolvePath } from 'node:path'
 import type { DialogLayout } from '../../shared/dialog-schema'
 import { dialogToolInputSchema, validateDialogLayout } from '../../shared/dialog-schema'
 import { isPathWithinCwd } from '../../shared/path-guard'
+import { secureTmpPath, writeSecureFile } from '../../shared/secure-temp'
 import { debug } from '../debug'
 import type { McpToolContext, ToolDef } from './types'
 
@@ -180,8 +181,8 @@ export function registerDialogTool(ctx: McpToolContext): Record<string, ToolDef>
           const msg = exploreErr instanceof Error ? exploreErr.stack || exploreErr.message : String(exploreErr)
           ctx.elog(` CRASH: ${msg}`)
           try {
-            const crashFile = `/tmp/rclaude-dialog-crash-${Date.now()}.log`
-            await Bun.write(crashFile, `${new Date().toISOString()}\n${msg}\n`)
+            const crashFile = secureTmpPath(`rclaude-dialog-crash-${Date.now()}.log`)
+            await writeSecureFile(crashFile, `${new Date().toISOString()}\n${msg}\n`)
             ctx.elog(` crash log: ${crashFile}`)
           } catch {
             /* ignore write failure */

@@ -19,10 +19,11 @@ import { checkBunVersion } from '../shared/bun-version'
 checkBunVersion()
 
 import { randomUUID } from 'node:crypto'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { cwdToProjectUri } from '../shared/project-uri'
 import type { AgentHostMessage, HookEvent, TranscriptEntry } from '../shared/protocol'
+import { writeSecureFile, writeSecureFileSync } from '../shared/secure-temp'
 import type { AgentHostContext } from './agent-host-context'
 import { type BrokerConnectionDeps, connectToBroker } from './broker-connection'
 import { createCleanup, registerSignalHandlers } from './cleanup'
@@ -286,9 +287,9 @@ async function main() {
 
   setTerminalTitle(cwd)
 
-  // Write system prompt
+  // Write system prompt (0600 -- contains the full system prompt)
   const promptFile = join(rclaudeDir, 'settings', `prompt-${conversationId}.txt`)
-  writeFileSync(
+  writeSecureFileSync(
     promptFile,
     buildSystemPrompt({
       channelEnabled: cli.channelEnabled,
@@ -300,7 +301,7 @@ async function main() {
   // Prepare final claude args
   const brokerHttpUrl = cli.noBroker ? undefined : wsToHttpUrl(cli.brokerUrl)
   const mcpConfigPath = join(rclaudeDir, 'settings', `mcp-${conversationId}.json`)
-  await Bun.write(
+  await writeSecureFile(
     mcpConfigPath,
     JSON.stringify({
       mcpServers: { rclaude: { type: 'http', url: `http://localhost:${localServerPort}/mcp` } },

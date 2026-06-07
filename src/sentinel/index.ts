@@ -64,6 +64,7 @@ import type {
   SpawnResult,
 } from '../shared/protocol'
 import { DEFAULT_BROKER_URL, HEARTBEAT_INTERVAL_MS } from '../shared/protocol'
+import { secureTmpPath, writeSecureFile } from '../shared/secure-temp'
 import { getAcpRecipe, listAcpRecipes } from './acp-recipes'
 import { BUILTIN_ARTIFACT_PATTERNS, handleFetchArtifact } from './artifact-handlers'
 import { type CcVersionWatcher, createCcVersionWatcher, type LastSeenCcVersion } from './cc-version-watcher'
@@ -2120,9 +2121,9 @@ async function spawnConversation(
   }
   let promptFile: string | undefined
   if (prompt) {
-    promptFile = `/tmp/rclaude-adhoc-${conversationId}`
+    promptFile = secureTmpPath(`rclaude-adhoc-${conversationId}`)
     try {
-      await Bun.write(promptFile, prompt)
+      await writeSecureFile(promptFile, prompt)
       launchLog(jobId, 'Prompt file written', 'ok', `${prompt.length} chars`)
       diag('spawn', 'Wrote prompt file', { path: promptFile, length: prompt.length })
     } catch (e: unknown) {
@@ -2223,9 +2224,9 @@ async function spawnConversation(
   // prompt uses. The agent host reads CLAUDWERK_APPEND_SYSTEM_PROMPT_FILE.
   let appendSystemPromptFile: string | undefined
   if (appendSystemPrompt) {
-    appendSystemPromptFile = `/tmp/rclaude-append-sysprompt-${conversationId}`
+    appendSystemPromptFile = secureTmpPath(`rclaude-append-sysprompt-${conversationId}`)
     try {
-      await Bun.write(appendSystemPromptFile, appendSystemPrompt)
+      await writeSecureFile(appendSystemPromptFile, appendSystemPrompt)
       launchLog(jobId, 'Append-system-prompt file written', 'ok', `${appendSystemPrompt.length} chars`)
     } catch (e: unknown) {
       diag('spawn', 'Failed to write append-system-prompt file', { error: (e as Error).message })
@@ -3233,9 +3234,9 @@ function connect(
             }
             let promptFile: string | undefined
             if (spawnMsg.prompt) {
-              promptFile = `/tmp/acp-prompt-${spawnMsg.conversationId}`
+              promptFile = secureTmpPath(`acp-prompt-${spawnMsg.conversationId}`)
               try {
-                await Bun.write(promptFile, spawnMsg.prompt)
+                await writeSecureFile(promptFile, spawnMsg.prompt)
               } catch {
                 promptFile = undefined
               }
@@ -3347,9 +3348,9 @@ function connect(
             // Optional initial prompt -- write to file (avoids shell escaping).
             let promptFile: string | undefined
             if (spawnMsg.prompt) {
-              promptFile = `/tmp/opencode-prompt-${spawnMsg.conversationId}`
+              promptFile = secureTmpPath(`opencode-prompt-${spawnMsg.conversationId}`)
               try {
-                await Bun.write(promptFile, spawnMsg.prompt)
+                await writeSecureFile(promptFile, spawnMsg.prompt)
               } catch {
                 promptFile = undefined
               }

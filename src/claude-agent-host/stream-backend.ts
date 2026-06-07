@@ -5,10 +5,11 @@
  */
 
 import { createHash } from 'node:crypto'
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
+import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Subprocess } from 'bun'
 import type { TranscriptEntry } from '../shared/protocol'
+import { ensureSecureDir, writeSecureFileSync } from '../shared/secure-temp'
 import { debug as _debug } from './debug'
 import { type HandlerContext, handleMessage } from './stream-handlers'
 import { createMonitorTracker } from './stream-monitors'
@@ -299,11 +300,12 @@ function initDiagLog(
   conversationId: string,
   pid: number,
 ): (prefix: string, line: string) => void {
-  const diagDir = join(cwd || process.cwd(), '.rclaude', 'settings')
-  const diagPath = join(diagDir, `headless-${conversationId}.ndjsonl`)
+  // `.rclaude/settings/` holds transcript content -- keep it owner-only (0700)
+  // and the log itself 0600.
+  const diagPath = join(cwd || process.cwd(), '.rclaude', 'settings', `headless-${conversationId}.ndjsonl`)
   try {
-    mkdirSync(diagDir, { recursive: true })
-    writeFileSync(diagPath, `# headless stream log - ${new Date().toISOString()}\n# pid=${pid}\n`)
+    ensureSecureDir(join(cwd || process.cwd(), '.rclaude', 'settings'))
+    writeSecureFileSync(diagPath, `# headless stream log - ${new Date().toISOString()}\n# pid=${pid}\n`)
     debug(`Diagnostic log: ${diagPath}`)
   } catch {
     debug('Failed to create diagnostic log')

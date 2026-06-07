@@ -6,8 +6,9 @@
  */
 
 import { randomBytes, randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { writeSecureFileSync } from '../shared/secure-temp'
 
 const SENTINEL_SECRET_PREFIX = 'snt_'
 
@@ -103,7 +104,8 @@ export function createSentinelRegistry(cacheDir: string): SentinelRegistry {
   function save(): void {
     try {
       mkdirSync(cacheDir, { recursive: true })
-      writeFileSync(filePath, JSON.stringify(data, null, 2))
+      // Holds per-sentinel secrets (snt_) -- 0600.
+      writeSecureFileSync(filePath, JSON.stringify(data, null, 2))
     } catch (err) {
       console.error(`[sentinel-registry] Failed to save: ${err}`)
     }

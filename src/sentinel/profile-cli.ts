@@ -35,9 +35,10 @@
  * `CLAUDE_CONFIG_DIR`.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname } from 'node:path'
+import { writeSecureFileSync } from '../shared/secure-temp'
 import {
   DEFAULT_POOL_NAME,
   DEFAULT_PROFILE_NAME,
@@ -538,9 +539,10 @@ function readRawConfig(configPath: string): SentinelConfigFile {
 }
 
 function writeRawConfig(configPath: string, file: SentinelConfigFile): void {
-  mkdirSync(dirname(configPath), { recursive: true })
+  // sentinel.json can hold long-lived OAuth tokens -- owner-only dir + 0600 file.
+  mkdirSync(dirname(configPath), { recursive: true, mode: 0o700 })
   const text = `${JSON.stringify(file, null, 2)}\n`
-  writeFileSync(configPath, text)
+  writeSecureFileSync(configPath, text)
 }
 
 // `homedir` import kept for future tilde-defaults; reference it so the

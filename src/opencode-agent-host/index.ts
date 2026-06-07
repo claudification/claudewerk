@@ -38,9 +38,8 @@ import { checkBunVersion } from '../shared/bun-version'
 checkBunVersion()
 
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { readFileSync, rmSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { createHostTransport, type HostTransport } from '../shared/host-transport'
 import {
   brokerMcpUrlFromWs,
@@ -60,6 +59,7 @@ import {
   type TranscriptEntry,
   type TranscriptUserEntry,
 } from '../shared/protocol'
+import { secureTmpSubdir, writeSecureFileSync } from '../shared/secure-temp'
 import { extractTodoTasksFromEntries } from '../shared/task-extract'
 import { BUILD_VERSION } from '../shared/version'
 import { createParserState, flushTurn, type OpenCodeEvent, parseNdjsonChunk, translateEvent } from './ndjson-parser'
@@ -142,12 +142,10 @@ function writeOpenCodeConfigIfNeeded(
 ): string | null {
   const cfg = buildOpenCodeConfig(tier, mcp)
   if (!cfg) return null
-  const dir = join(tmpdir(), 'opencode-host', conversationId)
-  try {
-    mkdirSync(dir, { recursive: true })
-  } catch {}
+  // The config can embed the broker MCP secret -- owner-only dir (0700) + 0600.
+  const dir = secureTmpSubdir(join('opencode-host', conversationId))
   const path = join(dir, 'opencode.json')
-  writeFileSync(path, JSON.stringify(cfg, null, 2), 'utf-8')
+  writeSecureFileSync(path, JSON.stringify(cfg, null, 2))
   return path
 }
 
@@ -378,7 +376,9 @@ async function main() {
     transport.close()
     if (cfg.opencodeConfigPath) {
       try {
-        rmSync(join(tmpdir(), 'opencode-host', cfg.conversationId), { recursive: true, force: true })
+        // Remove the per-conversation config dir (now under the secure per-uid
+        // base); derive it from the file path so it tracks wherever it lands.
+        rmSync(dirname(cfg.opencodeConfigPath), { recursive: true, force: true })
       } catch {}
     }
     setTimeout(() => process.exit(0), 200)

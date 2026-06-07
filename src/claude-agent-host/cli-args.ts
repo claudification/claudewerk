@@ -2,7 +2,7 @@
  * CLI argument parsing and early environment resolution for rclaude.
  */
 
-import { readFileSync, realpathSync } from 'node:fs'
+import { readFileSync, realpathSync, unlinkSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { claudeConfigDir } from '../shared/claude-config-dir'
 import { DEFAULT_BROKER_URL } from '../shared/protocol'
@@ -170,7 +170,7 @@ ENVIRONMENT:
   RCLAUDE_SECRET         Shared secret for broker auth
   RCLAUDE_BROKER   Broker WebSocket URL
   RCLAUDE_CHANNELS=0     Disable MCP channel (enabled by default)
-  RCLAUDE_DEBUG=1        Enable debug logging to /tmp/rclaude-debug.log
+  RCLAUDE_DEBUG=1        Enable debug logging (to <tmpdir>/rclaude-<uid>/rclaude-debug.log, or $RCLAUDE_DEBUG_LOG)
 
 All other arguments are passed through to claude.
 
@@ -322,8 +322,16 @@ export async function parseCliArgs(args: string[]): Promise<CliConfig> {
   if (process.env.CLAUDWERK_APPEND_SYSTEM_PROMPT) {
     claudeArgs.push('--append-system-prompt', process.env.CLAUDWERK_APPEND_SYSTEM_PROMPT)
   } else if (process.env.CLAUDWERK_APPEND_SYSTEM_PROMPT_FILE) {
+    const sysPromptFile = process.env.CLAUDWERK_APPEND_SYSTEM_PROMPT_FILE
     try {
-      claudeArgs.push('--append-system-prompt', readFileSync(process.env.CLAUDWERK_APPEND_SYSTEM_PROMPT_FILE, 'utf-8'))
+      claudeArgs.push('--append-system-prompt', readFileSync(sysPromptFile, 'utf-8'))
+      // Consumed once at boot -- unlink so the (now in-memory) system prompt
+      // doesn't linger on disk. Best-effort; security comes from the 0700 dir.
+      try {
+        unlinkSync(sysPromptFile)
+      } catch {
+        /* already gone / racing reaper */
+      }
     } catch (err) {
       debug(`Failed to read CLAUDWERK_APPEND_SYSTEM_PROMPT_FILE, ignoring: ${err instanceof Error ? err.message : err}`)
     }

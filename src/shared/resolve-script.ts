@@ -9,13 +9,14 @@
  * Resolution order:
  *   1. $RCLAUDE_SCRIPTS/{name}         -- env override (dev, custom installs)
  *   2. $XDG_DATA_HOME/rclaude/scripts/{name}  -- XDG data dir (~/.local/share/rclaude/scripts/)
- *   3. Extract embedded script to /tmp/rclaude-scripts/{name}
+ *   3. Extract embedded script to an owner-only per-uid dir (secureTmpSubdir('scripts'))
  */
 
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { secureTmpSubdir } from './secure-temp'
 
 // Embedded script contents (inlined at build time)
 // These are the fallback when no external script is found.
@@ -262,7 +263,7 @@ export function resolveScript(name: string): string | null {
   const xdgPath = join(xdgScriptsDir(), name)
   if (existsSync(xdgPath)) return xdgPath
 
-  // 3. Extract embedded fallback to /tmp/rclaude-scripts/
+  // 3. Extract embedded fallback to an owner-only per-uid dir.
   const embedded = EMBEDDED_SCRIPTS[name]
   if (!embedded) return null
 
@@ -270,11 +271,15 @@ export function resolveScript(name: string): string | null {
   // processes) never collide or stomp each other's scripts.
   const hash = createHash('sha256').update(embedded).digest('hex').slice(0, 12)
   const base = name.replace(/\.sh$/, '')
-  const tmpDir = '/tmp/rclaude-scripts'
+  // SECURITY: the old `/tmp/rclaude-scripts` was a predictable, world-writable
+  // path holding EXECUTABLE files -- an attacker could pre-create the
+  // hash-named file (the embedded content is public, so its hash is known) and
+  // we would happily exec it. `secureTmpSubdir` gives us a 0700 dir we own and
+  // verify, so no other user can plant a file inside.
+  const tmpDir = secureTmpSubdir('scripts')
   const tmpPath = join(tmpDir, `${base}-${hash}.sh`)
 
   if (!existsSync(tmpPath)) {
-    mkdirSync(tmpDir, { recursive: true })
     writeFileSync(tmpPath, embedded, { mode: 0o755 })
   }
 
