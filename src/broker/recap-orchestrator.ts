@@ -176,6 +176,15 @@ export function getRecapOrchestrator(): RecapOrchestrator | null {
   return singleton
 }
 
+/** Test-only: clear the module-level orchestrator singleton. The orchestrator is
+ *  a process-global, so any test that calls initRecapOrchestrator() leaks it into
+ *  later test files in the same `bun test` run. Tests that depend on a KNOWN
+ *  orchestrator state (e.g. the recap-roles trust-gate tests, which rely on it
+ *  being uninitialised) must reset it to avoid cross-file pollution. */
+export function resetRecapOrchestratorForTests(): void {
+  singleton = null
+}
+
 function rowToSummary(row: RecapRow): RecapSummary {
   return {
     id: row.id,

@@ -1,6 +1,7 @@
-import { beforeAll, describe, expect, it } from 'bun:test'
+import { beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 import type { HandlerContext, MessageData, WsData } from '../../handler-context'
 import { routeMessage } from '../../message-router'
+import { resetRecapOrchestratorForTests } from '../../recap-orchestrator'
 import { registerRecapHandlers } from '../recap'
 
 // Pillar B: benevolent agent-host conversations may trigger recap_create (the
@@ -9,6 +10,17 @@ import { registerRecapHandlers } from '../recap'
 
 beforeAll(() => {
   registerRecapHandlers()
+})
+
+// These tests prove the role + benevolent trust gates by checking what a caller
+// lands on AFTER clearing them: with the orchestrator uninitialised, the next
+// step is a synchronous 'recap orchestrator not initialised' recap_error. The
+// orchestrator is a process-global singleton, so a sibling test file that calls
+// initRecapOrchestrator() (e.g. routes/recaps.test.ts) leaks it into this run and
+// makes recap_create dispatch ASYNC (no synchronous reply). Reset it before each
+// test so this file owns its precondition regardless of execution order.
+beforeEach(() => {
+  resetRecapOrchestratorForTests()
 })
 
 function settings(trustLevel: 'default' | 'open' | 'benevolent'): HandlerContext['callerSettings'] {

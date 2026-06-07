@@ -120,18 +120,6 @@ describe('role gating: dashboard-only messages', () => {
     expect(replies.length).toBe(1)
     expect(replies[0].ok).toBe(false)
   })
-
-  it('rejects rename_conversation from an agent host', () => {
-    const convId = testId('conv')
-    const agent = h.bootAgentHost({ conversationId: convId, project: 'claude:///home/user/project' })
-    agent.clearMessages()
-
-    h.agentSend(agent, { type: 'rename_conversation', conversationId: convId, name: 'spoofed' })
-
-    const replies = agent.messagesOfType('rename_conversation_result')
-    expect(replies.length).toBe(1)
-    expect(replies[0].ok).toBe(false)
-  })
 })
 
 describe('role gating: positive cases (no regressions)', () => {
@@ -161,5 +149,22 @@ describe('role gating: positive cases (no regressions)', () => {
     const dashboard = h.connectDashboard()
     // connectDashboard already sent subscribe -- it should NOT have received a rejection
     expect(dashboard.messagesOfType('subscribe_result').filter(m => m.ok === false).length).toBe(0)
+  })
+
+  it('accepts rename_conversation of its OWN conversation from an agent host', () => {
+    // rename_conversation is NOT dashboard-only: an agent host owns its own
+    // conversation and may rename it without benevolent trust (shipped in
+    // 41376d81 -- "rename_conversation opened to self(any)/benevolent(others)").
+    // Cross-conversation renames still require benevolent trust; that gate is
+    // covered by the dedicated rename-conversation.test.ts unit test.
+    const convId = testId('conv')
+    const agent = h.bootAgentHost({ conversationId: convId, project: 'claude:///home/user/project' })
+    agent.clearMessages()
+
+    h.agentSend(agent, { type: 'rename_conversation', conversationId: convId, name: 'self-renamed' })
+
+    const replies = agent.messagesOfType('rename_conversation_result')
+    expect(replies.length).toBe(1)
+    expect(replies[0].ok).toBe(true)
   })
 })

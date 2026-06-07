@@ -359,11 +359,15 @@ describe('GET /shared/public/recap/:token', () => {
 })
 
 describe('GET /r/:token', () => {
-  test('redirects to canonical /shared/public/recap/:token endpoint', async () => {
+  test('redirects to the SPA recap-share view (Recap 2.0 rich report)', async () => {
+    // Phase 4 (commit 8b6f2c06) flipped /r/:token to the SPA, which mounts
+    // PublicRecapView and fetches /shared/public/recap/:token (JSON) for the rich
+    // structured report. The server-rendered /shared/public/recap/:token HTML
+    // remains as the no-JS / crawler fallback.
     const res = await app.request('/r/abc123')
     expect(res.status).toBe(302)
     const loc = res.headers.get('location') || ''
-    expect(loc).toBe('/shared/public/recap/abc123')
+    expect(loc).toBe('/?share=abc123&kind=recap')
   })
 })
 
