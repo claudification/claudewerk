@@ -380,15 +380,9 @@ export function replaceEditorDoc(view: EditorView, text: string) {
   })
 }
 
-/**
- * Fire-and-forget bridge for non-CM code (e.g. InputBar) to set the CM
- * editor's content instantly. The CM backend listens for this event and
- * calls replaceEditorDoc. Falls through silently when no CM is mounted
- * (legacy textarea handles it via React state).
- */
-export function requestEditorSetValue(text: string) {
-  window.dispatchEvent(new CustomEvent('editor-set-value', { detail: text }))
-}
+// NOTE: requestEditorSetValue moved to the CM-free ./editor-bridge module so
+// the input hot path can import it WITHOUT dragging all of @codemirror into
+// the eager index chunk. Import it from './editor-bridge', not from here.
 
 export function submitFromEditor(view: EditorView, onSubmit: () => void) {
   clearEditorDoc(view)

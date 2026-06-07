@@ -5,14 +5,23 @@
 
 import { createHighlighterCore, type HighlighterCore } from 'shiki/core'
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
-import langJavascript from 'shiki/langs/javascript'
-import langJsx from 'shiki/langs/jsx'
-import langShellscript from 'shiki/langs/shellscript'
-import langTsx from 'shiki/langs/tsx'
-import langTypescript from 'shiki/langs/typescript'
 import tokyoNight from 'shiki/themes/tokyo-night'
 
-const EAGER_LANGS = [langJavascript, langTypescript, langTsx, langJsx, langShellscript].flat()
+// LAZY-LOAD COVENANT: the default ("eager") grammar packs (js/ts/tsx/jsx/sh)
+// are ~775KB of grammar JSON. Statically importing them parked that data in
+// the eager index chunk even though `getHighlighter()` -- already an async
+// deferred singleton -- is the only consumer, and it never runs until the
+// first code block paints. Loading them via dynamic import() moves the whole
+// blob to an async chunk that travels with the highlighter. No new UX cost:
+// every call site already awaits getHighlighter(), so the await already exists.
+const loadDefaultLangs = () =>
+  Promise.all([
+    import('shiki/langs/javascript'),
+    import('shiki/langs/typescript'),
+    import('shiki/langs/tsx'),
+    import('shiki/langs/jsx'),
+    import('shiki/langs/shellscript'),
+  ]).then(mods => mods.flatMap(m => m.default))
 
 // Lazy singleton highlighter
 let highlighterPromise: Promise<HighlighterCore> | null = null
@@ -96,11 +105,13 @@ export function normalizeLang(lang: string | undefined | null): string | undefin
 
 export function getHighlighter(): Promise<HighlighterCore> {
   if (!highlighterPromise) {
-    highlighterPromise = createHighlighterCore({
-      themes: [tokyoNight],
-      langs: EAGER_LANGS,
-      engine: createJavaScriptRegexEngine(),
-    })
+    highlighterPromise = loadDefaultLangs().then(langs =>
+      createHighlighterCore({
+        themes: [tokyoNight],
+        langs,
+        engine: createJavaScriptRegexEngine(),
+      }),
+    )
   }
   return highlighterPromise
 }
