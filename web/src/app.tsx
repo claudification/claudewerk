@@ -7,7 +7,6 @@ import { AuthGate } from '@/components/auth-gate'
 import { ChordOverlay } from '@/components/chord-overlay'
 import { CommandPalette } from '@/components/command-palette'
 import { ConversationDetail } from '@/components/conversation-detail'
-import { DebugControlModal } from '@/components/debug/debug-control-modal'
 import { DebugConsole } from '@/components/debug-console'
 import { Header } from '@/components/header'
 import { JsonInspectorDialog } from '@/components/json-inspector'
@@ -68,6 +67,10 @@ const SearchIndexManagerDialog = lazy(() =>
   import('@/components/search-index-manager').then(m => ({ default: m.SearchIndexManagerDialog })),
 )
 const SheafPage = lazy(() => import('@/sheaf/sheaf-page').then(m => ({ default: m.SheafPage })))
+// Admin-only debug tool -- kept out of the index bundle (incl. its lazy YAML view).
+const DebugControlModal = lazy(() =>
+  import('@/components/debug/debug-control-modal').then(m => ({ default: m.DebugControlModal })),
+)
 
 // Lazy modals: code-split out of the eager index chunk, mounted on first open.
 // The gate subscribes to each modal's open signal (see lazyModule / lazy-bus).
@@ -367,7 +370,11 @@ function Dashboard() {
       <AudioPlayerHost />
       {canAdmin && <QuickTaskModal />}
       <RenameModal />
-      {canAdmin && <DebugControlModal />}
+      {canAdmin && (
+        <Suspense fallback={null}>
+          <DebugControlModal />
+        </Suspense>
+      )}
       <MarkdownViewerModal />
       {canAdmin && <TaskBatchSelector />}
       {canAdmin && <ShortcutHelp />}

@@ -5,6 +5,7 @@
 
 import type { DebugTrace } from '@/hooks/debug-control-store'
 import { JsonInspector } from '../json-inspector'
+import { StructuredView } from '../structured-view'
 
 const SEAM_COLOR: Record<string, string> = {
   web_send: 'text-cyan-400/80',
@@ -51,18 +52,21 @@ export function DebugTraceWaterfall({ trace }: { trace: DebugTrace }) {
       </div>
 
       {trace.result && (
-        <div className="px-2 py-1 border-t border-border/40 flex items-start gap-2">
-          <span className="text-muted-foreground/50 shrink-0">result</span>
+        <div className="px-2 py-1 border-t border-border/40 flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground/50 shrink-0">result</span>
+            <span className="flex-1" />
+            <JsonInspector
+              title={`${trace.channel}:${trace.command} result`}
+              data={trace as unknown as Record<string, unknown>}
+              raw={trace.result}
+            />
+          </div>
           {trace.result.error ? (
-            <span className="text-red-400/80 flex-1 break-words">{trace.result.error}</span>
+            <span className="text-red-400/80 break-words">{trace.result.error}</span>
           ) : (
-            <span className="flex-1 break-words text-foreground/80">
-              {typeof trace.result.response === 'string'
-                ? trace.result.response
-                : JSON.stringify(trace.result.response ?? null)}
-            </span>
+            <StructuredView value={trace.result.response ?? null} maxHeight="16rem" />
           )}
-          <JsonInspector title="result" data={trace as unknown as Record<string, unknown>} raw={trace.result} />
         </div>
       )}
     </div>

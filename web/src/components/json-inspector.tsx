@@ -1,9 +1,9 @@
 import { Copy, Info } from 'lucide-react'
-import { useState } from 'react'
+import { type ReactNode, useState } from 'react'
 import { create } from 'zustand'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { haptic } from '@/lib/utils'
-import JsonHighlight from './json-highlight'
+import { FormatToggle, StructuredBody, useStructuredFormat } from './structured-view'
 
 // Global store so dialog state survives virtualizer remounts
 interface InspectorStore {
@@ -66,12 +66,14 @@ function CopyBar({
   result,
   extra,
   raw,
+  children,
 }: {
   title: string
   data: Record<string, unknown> | null
   result?: string
   extra?: Record<string, unknown>
   raw?: unknown
+  children?: ReactNode
 }) {
   const [copied, setCopied] = useState(false)
   function handleCopy() {
@@ -88,6 +90,7 @@ function CopyBar({
   return (
     <div className="p-4 border-b border-border flex items-center gap-2">
       <DialogTitle className="flex-1">{title}</DialogTitle>
+      {children}
       <button
         type="button"
         onClick={handleCopy}
@@ -103,7 +106,7 @@ function CopyBar({
 /** Render once at the top level - dialog is global, not per-item */
 export function JsonInspectorDialog() {
   const { open, title, data, result, extra, raw, close } = useInspectorStore()
-  const rawIsObject = raw !== undefined && raw !== null && typeof raw === 'object'
+  const [fmt, setFmt] = useStructuredFormat()
 
   return (
     <Dialog
@@ -113,40 +116,34 @@ export function JsonInspectorDialog() {
       }}
     >
       <DialogContent>
-        <CopyBar title={title} data={data} result={result} extra={extra} raw={raw} />
+        <CopyBar title={title} data={data} result={result} extra={extra} raw={raw}>
+          <FormatToggle fmt={fmt} onChange={setFmt} />
+        </CopyBar>
         <div className="flex-1 overflow-y-auto p-4 font-mono text-xs">
           {open && (
             <div className="space-y-4">
               {raw !== undefined && (
                 <section>
                   <div className="text-muted-foreground text-[10px] uppercase tracking-wider mb-2">Raw</div>
-                  {rawIsObject ? (
-                    <JsonHighlight data={raw as Record<string, unknown>} />
-                  ) : (
-                    <pre className="whitespace-pre-wrap text-foreground/80 bg-black/20 p-3 max-h-60 overflow-auto">
-                      {String(raw)}
-                    </pre>
-                  )}
+                  <StructuredBody value={raw} fmt={fmt} maxHeight="60vh" />
                 </section>
               )}
               {data && (
                 <section>
                   <div className="text-muted-foreground text-[10px] uppercase tracking-wider mb-2">Input</div>
-                  <JsonHighlight data={data} />
+                  <StructuredBody value={data} fmt={fmt} maxHeight="60vh" />
                 </section>
               )}
               {result && (
                 <section>
                   <div className="text-muted-foreground text-[10px] uppercase tracking-wider mb-2">Result</div>
-                  <pre className="whitespace-pre-wrap text-foreground/80 bg-black/20 p-3 max-h-60 overflow-auto">
-                    {result}
-                  </pre>
+                  <StructuredBody value={result} fmt={fmt} maxHeight="60vh" />
                 </section>
               )}
               {extra && Object.keys(extra).length > 0 && (
                 <section>
                   <div className="text-muted-foreground text-[10px] uppercase tracking-wider mb-2">Extra</div>
-                  <JsonHighlight data={extra} />
+                  <StructuredBody value={extra} fmt={fmt} maxHeight="60vh" />
                 </section>
               )}
             </div>

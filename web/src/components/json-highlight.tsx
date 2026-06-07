@@ -65,9 +65,11 @@ function colorize(value: unknown, depth = 0): ReactElement {
   return <span className="text-foreground">{String(value)}</span>
 }
 
-export default function JsonHighlight({ data }: { data: unknown }) {
+export default function JsonHighlight({ data, maxHeight = '50vh' }: { data: unknown; maxHeight?: string }) {
   const rendered = useMemo(() => colorize(data), [data])
   return (
-    <pre className="whitespace-pre-wrap bg-black/20 p-3 overflow-auto max-h-[50vh] leading-relaxed">{rendered}</pre>
+    <pre className="whitespace-pre-wrap bg-black/20 p-3 overflow-auto leading-relaxed" style={{ maxHeight }}>
+      {rendered}
+    </pre>
   )
 }
