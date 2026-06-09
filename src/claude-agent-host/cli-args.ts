@@ -3,6 +3,7 @@
  */
 
 import { readFileSync, realpathSync, unlinkSync } from 'node:fs'
+import { hostname } from 'node:os'
 import { basename, join } from 'node:path'
 import { claudeConfigDir } from '../shared/claude-config-dir'
 import { DEFAULT_BROKER_URL } from '../shared/protocol'
@@ -161,6 +162,9 @@ OPTIONS:
   --channels             Enable MCP channel (already default, for explicitness)
   --rclaude-version      Show rclaude build version
   --rclaude-check-update Check if a newer version is available on GitHub
+  --rclaude-import-history [--sentinel <name>] [--since <YYYY-MM-DD>] [--dry-run]
+                         Upload this machine's local Claude history (~/.claude/projects)
+                         to the broker so it's searchable across machines. Idempotent.
   --rclaude-help         Show this help message
 
 ENVIRONMENT:
@@ -256,6 +260,27 @@ export async function parseCliArgs(args: string[]): Promise<CliConfig> {
       const result = await checkForUpdate()
       console.log(formatUpdateResult(result, detectClaudeVersion()))
       process.exit(0)
+    } else if (arg === '--rclaude-import-history') {
+      // Terminal action: backfill this machine's local Claude history to the
+      // broker, then exit. Sub-flags are scanned from the whole argv so order
+      // relative to --broker/--rclaude-secret doesn't matter.
+      const flagValue = (name: string): string | undefined => {
+        const idx = args.indexOf(name)
+        return idx >= 0 ? args[idx + 1] : undefined
+      }
+      const sentinel =
+        flagValue('--sentinel') ?? process.env.CLAUDWERK_SENTINEL_NAME ?? hostname().split('.')[0].toLowerCase()
+      const sinceRaw = flagValue('--since')
+      const sinceMs = sinceRaw ? Date.parse(sinceRaw) : Number.NaN
+      const { runImportHistory } = await import('./import-history')
+      const uploaded = await runImportHistory({
+        brokerUrl: flagValue('--broker') ?? brokerUrl,
+        brokerSecret: flagValue('--rclaude-secret') ?? brokerSecret,
+        sentinel,
+        dryRun: args.includes('--dry-run'),
+        since: Number.isNaN(sinceMs) ? undefined : sinceMs,
+      })
+      process.exit(uploaded >= 0 ? 0 : 1)
     } else if (arg === '--broker') {
       brokerUrl = args[++i] || DEFAULT_BROKER_URL
     } else if (arg === '--rclaude-secret') {
