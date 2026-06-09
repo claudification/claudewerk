@@ -472,6 +472,32 @@ export function useGlobalCommands(toggleSidebar: () => void) {
     group: 'Launch',
   })
 
+  // Quick task opener. Registered HERE (eager, app-shell level) and NOT inside
+  // the lazy QuickTaskModal body: the modal only mounts once the bus is armed,
+  // so an opener buried in it is dead on cold load. The action just dispatches
+  // the same `open-quick-task` window event the FAB uses, arming the lazy bus.
+  const quickTaskEnabled = () => {
+    const s = useConversationsStore.getState()
+    if (!s.permissions.canAdmin) return false
+    const conv = s.selectedConversationId ? s.conversationsById[s.selectedConversationId] : undefined
+    return conv != null && conv.status !== 'ended'
+  }
+  const openQuickTask = () => {
+    if (quickTaskEnabled()) window.dispatchEvent(new Event('open-quick-task'))
+  }
+  useChordCommand('quick-task', openQuickTask, {
+    label: 'Quick task',
+    key: 'n',
+    group: 'Navigation',
+    when: quickTaskEnabled,
+  })
+  useCommand('quick-task-direct', openQuickTask, {
+    label: 'Quick task',
+    shortcut: 'ctrl+shift+n',
+    group: 'Navigation',
+    when: quickTaskEnabled,
+  })
+
   // ─── Recap commands ───────────────────────────────────────────────────
   // Resolves the "this project" target for project-scoped recaps. Falls back
   // to '*' (cross-project) when no conversation is selected.

@@ -7,7 +7,6 @@ import { AlertTriangle, FileText } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { useProject } from '@/hooks/use-project'
-import { useChordCommand, useCommand } from '@/lib/commands'
 import { haptic } from '@/lib/utils'
 import { InputEditor } from './input-editor'
 import { quickTaskBus } from './quick-task-trigger'
@@ -28,31 +27,10 @@ export function QuickTaskModal() {
 
   const { createTask } = useProject(selectedConversationId && isActive ? selectedConversationId : null)
 
-  // Open via command (registered here so it has access to selectedConversationId/isActive)
-  useChordCommand(
-    'quick-task',
-    () => {
-      if (selectedConversationId && isActive) {
-        haptic('tap')
-        setOpen(true)
-      }
-    },
-    { label: 'Quick task', key: 'n', group: 'Navigation' },
-  )
-
-  // Also register direct Ctrl+Shift+N shortcut
-  useCommand(
-    'quick-task-direct',
-    () => {
-      if (selectedConversationId && isActive) {
-        haptic('tap')
-        setOpen(true)
-      }
-    },
-    { label: 'Quick task', shortcut: 'ctrl+shift+n', group: 'Navigation' },
-  )
-
-  // Also listen for window event (from action FAB + command palette)
+  // Opener keybindings + palette command live EAGERLY in use-global-commands.ts
+  // (the modal is lazy-mounted, so an opener registered here would be dead until
+  // first armed). All open paths -- FAB, palette, Ctrl+Shift+N -- converge on the
+  // `open-quick-task` window event handled below.
   useEffect(() => {
     function handleOpen() {
       if (selectedConversationId && isActive) {
