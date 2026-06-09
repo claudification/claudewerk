@@ -1720,6 +1720,7 @@ export type TerminationSource =
   // Agent host -- intentional shutdown
   | 'mcp-exit-session' // agent self-terminated via mcp__rclaude__exit_session
   | 'headless-input' // user typed /exit /quit :q :q! into headless stdin
+  | 'history-import' // end-of-batch-upload marker (rclaude --rclaude-import-history); not a real kill
   // Agent host -- CC process events
   | 'cc-exit-normal' // CC exited code 0
   | 'cc-exit-crash' // CC exited non-zero or by signal

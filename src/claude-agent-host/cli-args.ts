@@ -3,7 +3,6 @@
  */
 
 import { readFileSync, realpathSync, unlinkSync } from 'node:fs'
-import { hostname } from 'node:os'
 import { basename, join } from 'node:path'
 import { claudeConfigDir } from '../shared/claude-config-dir'
 import { DEFAULT_BROKER_URL } from '../shared/protocol'
@@ -162,9 +161,13 @@ OPTIONS:
   --channels             Enable MCP channel (already default, for explicitness)
   --rclaude-version      Show rclaude build version
   --rclaude-check-update Check if a newer version is available on GitHub
-  --rclaude-import-history [--sentinel <name>] [--since <YYYY-MM-DD>] [--dry-run]
+  --rclaude-import-history --sentinel <alias> [--since <YYYY-MM-DD>] [--dry-run] [--include-agents]
                          Upload this machine's local Claude history (~/.claude/projects)
                          to the broker so it's searchable across machines. Idempotent.
+                         <alias> must be this machine's registered sentinel alias
+                         (validated against the broker registry). Sub-agent
+                         (agent-*.jsonl) transcripts and sessions already live on
+                         the broker are skipped by default.
   --rclaude-help         Show this help message
 
 ENVIRONMENT:
@@ -268,19 +271,34 @@ export async function parseCliArgs(args: string[]): Promise<CliConfig> {
         const idx = args.indexOf(name)
         return idx >= 0 ? args[idx + 1] : undefined
       }
-      const sentinel =
-        flagValue('--sentinel') ?? process.env.CLAUDWERK_SENTINEL_NAME ?? hostname().split('.')[0].toLowerCase()
+      // No hostname fallback: the alias becomes the project-URI authority and
+      // is validated against the broker's sentinel registry -- a guessed name
+      // would either fail validation or mint a phantom machine.
+      const sentinel = flagValue('--sentinel') ?? process.env.CLAUDWERK_SENTINEL_NAME
+      if (!sentinel) {
+        console.error(
+          'ERROR: --sentinel <alias> is required (or set CLAUDWERK_SENTINEL_NAME).\n' +
+            'Use the alias this machine is registered under on the broker (see broker-cli sentinel list).',
+        )
+        process.exit(1)
+      }
       const sinceRaw = flagValue('--since')
       const sinceMs = sinceRaw ? Date.parse(sinceRaw) : Number.NaN
       const { runImportHistory } = await import('./import-history')
-      const uploaded = await runImportHistory({
-        brokerUrl: flagValue('--broker') ?? brokerUrl,
-        brokerSecret: flagValue('--rclaude-secret') ?? brokerSecret,
-        sentinel,
-        dryRun: args.includes('--dry-run'),
-        since: Number.isNaN(sinceMs) ? undefined : sinceMs,
-      })
-      process.exit(uploaded >= 0 ? 0 : 1)
+      try {
+        await runImportHistory({
+          brokerUrl: flagValue('--broker') ?? brokerUrl,
+          brokerSecret: flagValue('--rclaude-secret') ?? brokerSecret,
+          sentinel,
+          dryRun: args.includes('--dry-run'),
+          includeAgents: args.includes('--include-agents'),
+          since: Number.isNaN(sinceMs) ? undefined : sinceMs,
+        })
+      } catch (err) {
+        console.error(`ERROR: ${err instanceof Error ? err.message : err}`)
+        process.exit(1)
+      }
+      process.exit(0)
     } else if (arg === '--broker') {
       brokerUrl = args[++i] || DEFAULT_BROKER_URL
     } else if (arg === '--rclaude-secret') {
