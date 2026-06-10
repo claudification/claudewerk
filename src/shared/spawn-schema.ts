@@ -9,7 +9,7 @@
  */
 
 import { z } from 'zod'
-import { ALL_CC_SLUGS, DROPDOWN_MODEL_ENTRIES } from './models'
+import { ALL_CC_SLUGS, DROPDOWN_MODEL_ENTRIES, resolveModelFamily } from './models'
 
 export const DEFAULT_SENTINEL = '__default__'
 
@@ -23,8 +23,10 @@ export const MODEL_OPTION_GROUPS: ModelOptionGroup[] = (() => {
 
   for (const m of DROPDOWN_MODEL_ENTRIES) {
     const opt = { value: m.id, label: m.label, info: m.info }
-    if (m.id.startsWith('claude-3-')) legacy.push(opt)
-    else if (/claude-(opus|sonnet)-4-[0-5]/.test(m.id)) previous.push(opt)
+    // Group by the registry's `tier` field (models.ts) -- no id regexes.
+    const tier = resolveModelFamily(m.id)?.tier ?? 'current'
+    if (tier === 'legacy') legacy.push(opt)
+    else if (tier === 'previous') previous.push(opt)
     else current.push(opt)
   }
 

@@ -8,13 +8,18 @@
  * - Spawn request validation (`modelEnum`) in `src/shared/spawn-schema.ts`.
  * - Early model validation (`validateModel`) in `src/shared/spawn-defaults.ts`.
  *
- * Model data extracted from CC v2.1.154 binary (2026-05-29) for the
- * `claude-opus-4-8` family; remaining entries still reflect the v2.1.116
- * extraction (2026-04-23) and need a full refresh next pass. When a new CC
- * version ships, re-extract with:
+ * THE registry: `CC_MODELS` below is the single source of truth for model
+ * capabilities (token limits, 1M behavior, tier, accepted slugs). Everything
+ * else derives from it -- the UI catalog, the spawn-dropdown grouping
+ * (`spawn-schema.ts`), and the runtime context-window resolver
+ * (`context-window.ts`). Adding a model = ONE new object in `CC_MODELS`.
+ *
+ * Model data extracted from the CC v2.1.170 binary (2026-06-10) for the
+ * `claude-fable-5` / `claude-mythos-5` / `claude-opus-4-8` families; older
+ * entries reflect earlier extractions. When a new CC version ships, re-extract:
  *   strings $(readlink -f $(which claude)) | grep -oE \
  *     'key:value' patterns (see extraction notes in docs/ops.md)
- * and update the catalog + CC_MODELS below.
+ * and add/update the family in `CC_MODELS` below.
  */
 
 export type ContextWindow = 200_000 | 1_000_000
@@ -53,18 +58,47 @@ export interface CCModelFamily {
   maxOutputTokens: number
   /** Whether this model supports 1M context (via [1m] suffix or by default). */
   supports1M: boolean
-  /** Whether 1M is the default (no suffix needed). Only opus-4-7+ today. */
+  /** Whether 1M is the default (no suffix needed). Opus 4.7+ and Fable/Mythos 5. */
   default1M: boolean
+  /** Generation bucket -- drives the spawn-dropdown grouping (no id regexes). */
+  tier: ModelTier
   /** All input slugs CC accepts that resolve to this family. */
   acceptedSlugs: string[]
 }
 
+export type ModelTier = 'current' | 'previous' | 'legacy'
+
 /**
- * Every model family CC v2.1.116 recognizes, with token limits extracted
+ * Every model family CC v2.1.170 recognizes, with token limits extracted
  * from the binary. Ordered newest-first within each tier.
  */
 const CC_MODELS: readonly CCModelFamily[] = [
   // ── Current models ──────────────────────────────────────────────
+  {
+    familyId: 'claude-fable-5',
+    displayName: 'Fable 5',
+    defaultOutputTokens: 64_000,
+    maxOutputTokens: 128_000,
+    supports1M: true,
+    // CC's `KJ_()` strips a trailing [1m] then matches the bare id -- 1M is the
+    // default, suffix optional (like Opus 4.7+). The `fable` bare alias resolves
+    // here (i8_={...fable5:claude-fable-5}); `fable[1m]` is the explicit form.
+    default1M: true,
+    tier: 'current',
+    acceptedSlugs: ['claude-fable-5', 'claude-fable-5[1m]', 'fable', 'fable[1m]'],
+  },
+  {
+    familyId: 'claude-mythos-5',
+    displayName: 'Mythos 5',
+    defaultOutputTokens: 64_000,
+    maxOutputTokens: 128_000,
+    supports1M: true,
+    // `OJ_()` mirrors `KJ_()` for mythos -- also default-1M. Mythos is the
+    // underlying class label; Fable 5 is the GA product name. Same token limits.
+    default1M: true,
+    tier: 'current',
+    acceptedSlugs: ['claude-mythos-5', 'claude-mythos-preview'],
+  },
   {
     familyId: 'claude-opus-4-8',
     displayName: 'Opus 4.8',
@@ -72,7 +106,8 @@ const CC_MODELS: readonly CCModelFamily[] = [
     maxOutputTokens: 128_000,
     supports1M: true,
     default1M: true,
-    // CC v2.1.154 maps the bare `opus` alias to this family
+    tier: 'current',
+    // CC v2.1.170 maps the bare `opus` alias to this family
     // (i8_={opus:"claude-opus-4-8",...} in the binary).
     acceptedSlugs: ['claude-opus-4-8', 'claude-opus-4-8[1m]', 'opus'],
   },
@@ -83,6 +118,7 @@ const CC_MODELS: readonly CCModelFamily[] = [
     maxOutputTokens: 128_000,
     supports1M: true,
     default1M: true,
+    tier: 'current',
     acceptedSlugs: ['claude-opus-4-7', 'claude-opus-4-7[1m]'],
   },
   {
@@ -92,6 +128,7 @@ const CC_MODELS: readonly CCModelFamily[] = [
     maxOutputTokens: 128_000,
     supports1M: true,
     default1M: false,
+    tier: 'current',
     acceptedSlugs: ['claude-opus-4-6', 'claude-opus-4-6[1m]', 'claude-opus-4-6-20251101', 'claude-opus-4-6-fast'],
   },
   {
@@ -101,6 +138,7 @@ const CC_MODELS: readonly CCModelFamily[] = [
     maxOutputTokens: 128_000,
     supports1M: true,
     default1M: false,
+    tier: 'current',
     acceptedSlugs: ['claude-sonnet-4-6', 'claude-sonnet-4-6[1m]', 'sonnet'],
   },
   {
@@ -110,6 +148,7 @@ const CC_MODELS: readonly CCModelFamily[] = [
     maxOutputTokens: 64_000,
     supports1M: false,
     default1M: false,
+    tier: 'current',
     acceptedSlugs: ['claude-haiku-4-5', 'claude-haiku-4-5-20251001', 'haiku'],
   },
 
@@ -121,6 +160,7 @@ const CC_MODELS: readonly CCModelFamily[] = [
     maxOutputTokens: 64_000,
     supports1M: false,
     default1M: false,
+    tier: 'previous',
     acceptedSlugs: ['claude-opus-4-5', 'claude-opus-4-5-20251101'],
   },
   {
@@ -130,6 +170,7 @@ const CC_MODELS: readonly CCModelFamily[] = [
     maxOutputTokens: 64_000,
     supports1M: true,
     default1M: false,
+    tier: 'previous',
     acceptedSlugs: ['claude-sonnet-4-5', 'claude-sonnet-4-5-20250929', 'claude-sonnet-4-5-20250929[1m]'],
   },
   {
@@ -139,6 +180,7 @@ const CC_MODELS: readonly CCModelFamily[] = [
     maxOutputTokens: 64_000,
     supports1M: false,
     default1M: false,
+    tier: 'previous',
     acceptedSlugs: ['claude-sonnet-4-0', 'claude-sonnet-4-20250514'],
   },
   {
@@ -148,6 +190,7 @@ const CC_MODELS: readonly CCModelFamily[] = [
     maxOutputTokens: 32_000,
     supports1M: false,
     default1M: false,
+    tier: 'previous',
     acceptedSlugs: ['claude-opus-4-1', 'claude-opus-4-1-20250805'],
   },
   {
@@ -157,6 +200,7 @@ const CC_MODELS: readonly CCModelFamily[] = [
     maxOutputTokens: 32_000,
     supports1M: false,
     default1M: false,
+    tier: 'previous',
     acceptedSlugs: ['claude-opus-4-0', 'claude-opus-4-20250514'],
   },
 
@@ -168,6 +212,7 @@ const CC_MODELS: readonly CCModelFamily[] = [
     maxOutputTokens: 64_000,
     supports1M: false,
     default1M: false,
+    tier: 'legacy',
     acceptedSlugs: ['claude-3-7-sonnet', 'claude-3-7-sonnet-20250219'],
   },
   {
@@ -177,6 +222,7 @@ const CC_MODELS: readonly CCModelFamily[] = [
     maxOutputTokens: 8_192,
     supports1M: false,
     default1M: false,
+    tier: 'legacy',
     acceptedSlugs: ['claude-3-5-sonnet', 'claude-3-5-sonnet-20241022'],
   },
   {
@@ -186,12 +232,21 @@ const CC_MODELS: readonly CCModelFamily[] = [
     maxOutputTokens: 8_192,
     supports1M: false,
     default1M: false,
+    tier: 'legacy',
     acceptedSlugs: ['claude-3-5-haiku', 'claude-3-5-haiku-20241022'],
   },
 ] as const
 
+/**
+ * Dynamic meta-aliases CC accepts that do NOT map to a single family -- they
+ * resolve at runtime. `best` picks the strongest available model (Fable today);
+ * `opusplan` runs Opus while planning and Sonnet otherwise. We accept them for
+ * validation but cannot attach a family/context-window to them.
+ */
+const DYNAMIC_ALIASES: readonly string[] = ['best', 'opusplan']
+
 /** Every slug CC accepts as a flat array -- drives zod schema validation. */
-export const ALL_CC_SLUGS: readonly string[] = CC_MODELS.flatMap(m => m.acceptedSlugs)
+export const ALL_CC_SLUGS: readonly string[] = [...CC_MODELS.flatMap(m => m.acceptedSlugs), ...DYNAMIC_ALIASES]
 
 /** Set of every slug CC accepts -- for fast lookup. */
 const ALL_ACCEPTED_SLUGS: ReadonlySet<string> = new Set(ALL_CC_SLUGS)
@@ -200,6 +255,20 @@ const ALL_ACCEPTED_SLUGS: ReadonlySet<string> = new Set(ALL_CC_SLUGS)
 export function resolveModelFamily(slug: string): CCModelFamily | undefined {
   const lower = slug.toLowerCase()
   return CC_MODELS.find(m => m.acceptedSlugs.some(s => s.toLowerCase() === lower))
+}
+
+/**
+ * Whether a slug resolves to a model whose 1M context window is the DEFAULT
+ * (no `[1m]` suffix needed). Registry-driven -- the SINGLE place this is decided.
+ * Handles exact slugs, the `[1m]`/`-1m` suffix, bare aliases, and forward
+ * date-pinned/variant slugs (e.g. `claude-fable-5-20260610`) via family prefix.
+ * `context-window.ts` calls this instead of carrying its own model regex.
+ */
+export function isDefault1MFamily(slug: string): boolean {
+  const bare = slug.toLowerCase().replace(/(\[1m\]|-1m)$/i, '')
+  const exact = resolveModelFamily(bare)
+  if (exact) return exact.default1M
+  return CC_MODELS.some(m => m.default1M && bare.startsWith(m.familyId))
 }
 
 /**
@@ -275,7 +344,7 @@ export function validateModel(slug: string): ModelValidationResult {
 }
 
 function formatModelError(slug: string): string {
-  const lines = [`Unknown model "${slug}". Valid models (CC v2.1.154):`, '']
+  const lines = [`Unknown model "${slug}". Valid models (CC v2.1.170):`, '']
   const current = CC_MODELS.filter(m => !m.familyId.startsWith('claude-3-'))
   const legacy = CC_MODELS.filter(m => m.familyId.startsWith('claude-3-'))
 
@@ -292,7 +361,7 @@ function formatModelError(slug: string): string {
   }
 
   lines.push('')
-  lines.push('  Aliases: opus, sonnet, haiku')
+  lines.push('  Aliases: opus, sonnet, haiku, fable, best, opusplan')
   return lines.join('\n')
 }
 
@@ -311,6 +380,26 @@ function formatModelError(slug: string): string {
  * Bump the pinned id when Anthropic releases a newer one.
  */
 const MODEL_CATALOG: readonly ModelEntry[] = [
+  // --- Current flagship: Fable 5 (Mythos-class, default 1M) ---
+  {
+    id: 'claude-fable-5',
+    label: 'Fable 5',
+    info: 'Fable 5 · 1M default · 128K output',
+    window: 1_000_000,
+    showInDropdown: true,
+    showInCompleter: true,
+  },
+  {
+    // Mythos is the underlying class label for Fable 5 -- same limits. Kept
+    // completer-only (typeable) so it doesn't double up Fable in the dropdown.
+    id: 'claude-mythos-5',
+    label: 'Mythos 5',
+    info: 'Mythos 5 · 1M default · 128K output (class label for Fable 5)',
+    window: 1_000_000,
+    showInDropdown: false,
+    showInCompleter: true,
+  },
+
   // --- "Latest" aliases: prominent, explicit 1M where supported ---
   {
     id: 'claude-opus-4-8[1m]',
@@ -460,6 +549,30 @@ const MODEL_CATALOG: readonly ModelEntry[] = [
   },
 
   // --- Bare CC aliases ---
+  {
+    id: 'fable',
+    label: 'fable',
+    info: 'CC alias -> Fable 5 (1M default)',
+    window: 1_000_000,
+    showInDropdown: false,
+    showInCompleter: true,
+  },
+  {
+    id: 'best',
+    label: 'best',
+    info: 'CC alias -> strongest available model (Fable today)',
+    window: 1_000_000,
+    showInDropdown: false,
+    showInCompleter: true,
+  },
+  {
+    id: 'opusplan',
+    label: 'opusplan',
+    info: 'CC alias -> Opus while planning, else Sonnet',
+    window: 1_000_000,
+    showInDropdown: false,
+    showInCompleter: true,
+  },
   {
     id: 'opus',
     label: 'opus',
