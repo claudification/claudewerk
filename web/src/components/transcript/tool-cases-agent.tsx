@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { truncate } from '@/lib/utils'
-import { AgentTaskBadge } from './agent-task-badge'
+import { AgentTaskBadge, shortModel } from './agent-task-badge'
 import type { ToolCaseInput, ToolCaseResult } from './tool-case-types'
 
 export function renderAgentTask(name: string, ctx: ToolCaseInput): ToolCaseResult {
@@ -9,7 +9,11 @@ export function renderAgentTask(name: string, ctx: ToolCaseInput): ToolCaseResul
   // Canonical: input.agent (was subagent_type in Claude legacy)
   const agentType = input.agent as string
   const prompt = input.prompt as string
-  const summary = agentType ? `${agentType}: ${desc}` : desc
+  // Surface the requested model on the card label when the spawn pinned one
+  // (input.model). Omitted == inherited from the parent, so we show nothing.
+  const model = input.model as string | undefined
+  const base = agentType ? `${agentType}: ${desc}` : desc
+  const summary = model ? `${base} (${shortModel(model)})` : base
   let details = null
   if (prompt) {
     details = (
