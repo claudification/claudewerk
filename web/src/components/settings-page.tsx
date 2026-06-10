@@ -702,6 +702,9 @@ const SETTINGS: SettingItem[] = [
     description:
       'Let an AI agent drive THIS browser for 1 hour via MCP web_* tools (screenshot, run command-palette commands, navigate, read transcript, send prompts). Opt-in, default-deny, survives reload, auto-expires after 1h. Each action raises a toast so you see it happen.',
     keywords: 'debug remote control agent mcp web screenshot puppet debugger drive',
+    // Full-width: the control is a multi-row stack (grant + share + script
+    // consent) -- side-by-side would crush the label column to zero.
+    fullWidth: true,
     render: (_ctx, ariaLabel) => <WebControlToggle ariaLabel={ariaLabel} />,
   },
   {

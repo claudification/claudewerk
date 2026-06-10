@@ -7,52 +7,50 @@
  * the grant gate + routing; these are the bodies.
  */
 
-import type { WebControlOp } from '@shared/protocol'
 import { sendInput, useConversationsStore } from '@/hooks/use-conversations'
 import { executeCommand, getCommands } from './commands'
 import { isPerfEnabled } from './perf-metrics'
 import { buildPerfReport } from './perf-report'
+import { captureNodeToUrl } from './web-control-capture'
 import { isScriptEnabled } from './web-control-grant'
-import { captureScreenToUrl } from './web-control-screen-capture'
+import { respond, type Send, toast } from './web-control-reply'
+import { captureScreenToUrl, hasScreenShare, isScreenShareSupported } from './web-control-screen-capture'
 import { runScript } from './web-control-script'
-import type { TermResult } from './web-control-terminal'
 import { serializeTranscript } from './web-control-transcript'
 
-export type Send = (msg: Record<string, unknown>) => void
+export { respond, type Send, sendTerm } from './web-control-reply'
 
-export function respond(send: Send, requestId: string, ok: boolean, result?: unknown, error?: string): void {
-  send({ type: 'web_control_response', requestId, ok, result, error })
-}
-
-function toast(op: WebControlOp, detail: string): void {
-  window.dispatchEvent(
-    new CustomEvent('rclaude-toast', {
-      detail: { title: 'Agent remote-control', body: `${op}${detail ? `: ${detail}` : ''}`, variant: 'info' },
-    }),
-  )
-}
-
-/** Relay a terminal-op result (TermResult) back, with a visibility toast. */
-export function sendTerm(send: Send, requestId: string, op: WebControlOp, r: TermResult): void {
-  const target = (r.result as { shellId?: string } | undefined)?.shellId
-  toast(op, target ? target.slice(0, 12) : '')
-  respond(send, requestId, r.ok, r.result, r.error)
+async function captureForScreenshot(
+  selector: string | undefined,
+  el: HTMLElement | null,
+): Promise<{ url?: string; error?: string }> {
+  // Preferred: getDisplayMedia (freeze-free, real pixels). Needs the user to have
+  // armed Share-screen (a gesture the agent can't make).
+  if (isScreenShareSupported()) {
+    if (!hasScreenShare()) {
+      return {
+        error: 'Screen sharing is not armed. Ask the user to click "Share screen" in Settings > System > Debug.',
+      }
+    }
+    return captureScreenToUrl(el)
+  }
+  // Fallback (Safari standalone PWA: no getDisplayMedia): DOM rasterizer. No
+  // cacheBust, so it no longer hangs. Whole-app captures can still be heavy.
+  return captureNodeToUrl(el ?? document.body, selector ? 2 : 1)
 }
 
 export async function opScreenshot(send: Send, requestId: string, args: Record<string, unknown>): Promise<void> {
-  // getDisplayMedia capture: freeze-free + Safari-correct. A selector crops the
-  // captured frame to that element's viewport rect; omit for the whole viewport.
   const selector = typeof args.selector === 'string' ? args.selector : undefined
-  let cropEl: HTMLElement | null = null
+  let el: HTMLElement | null = null
   if (selector) {
-    cropEl = document.querySelector<HTMLElement>(selector)
-    if (!cropEl) {
+    el = document.querySelector<HTMLElement>(selector)
+    if (!el) {
       respond(send, requestId, false, undefined, `No element matched selector '${selector}'`)
       return
     }
   }
   toast('screenshot', selector ?? 'viewport')
-  const { url, error } = await captureScreenToUrl(cropEl)
+  const { url, error } = await captureForScreenshot(selector, el)
   if (!url) {
     respond(send, requestId, false, undefined, error ?? 'screenshot failed')
     return

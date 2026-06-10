@@ -35,6 +35,13 @@ export function hasScreenShare(): boolean {
   return !!stream && stream.getVideoTracks().some(t => t.readyState === 'live')
 }
 
+/** Whether getDisplayMedia exists at all. FALSE in a Safari standalone PWA (WebKit
+ *  does not expose screen capture to installed web apps) -- the caller then falls
+ *  back to a DOM rasterizer instead of offering a Share-screen button that errors. */
+export function isScreenShareSupported(): boolean {
+  return typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia
+}
+
 function describeMediaError(e: unknown): string {
   if (e instanceof Error) {
     if (e.name === 'NotAllowedError') return 'Screen-share permission was denied or dismissed.'

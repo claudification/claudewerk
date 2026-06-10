@@ -8,6 +8,7 @@ import {
 } from '@/lib/web-control-grant'
 import {
   hasScreenShare,
+  isScreenShareSupported,
   startScreenShare,
   stopScreenShare,
   subscribeScreenShare,
@@ -41,6 +42,7 @@ export function WebControlToggle({ ariaLabel }: { ariaLabel?: string }) {
   const active = !!grant && Date.now() < grant.expiresAt
   const msLeft = active && grant ? grant.expiresAt - Date.now() : 0
   const minsLeft = Math.max(0, Math.ceil(msLeft / 60000))
+  const shareSupported = isScreenShareSupported()
 
   async function onShare() {
     setShareErr(null)
@@ -71,8 +73,8 @@ export function WebControlToggle({ ariaLabel }: { ariaLabel?: string }) {
           </span>
         )}
       </div>
-      {active && (
-        <div className="flex items-center gap-2 pl-6 text-[11px] text-muted-foreground">
+      {active && shareSupported && (
+        <div className="flex flex-wrap items-center gap-2 pl-6 text-[11px] text-muted-foreground">
           {sharing ? (
             <>
               <span className="flex items-center gap-1 text-success">
@@ -97,6 +99,12 @@ export function WebControlToggle({ ariaLabel }: { ariaLabel?: string }) {
             </button>
           )}
           {shareErr && <span className="text-destructive">{shareErr}</span>}
+        </div>
+      )}
+      {active && !shareSupported && (
+        <div className="pl-6 text-[11px] text-muted-foreground">
+          Screenshots fall back to a DOM rasterizer here -- this browser blocks screen capture (Safari installed-app
+          mode). Open the panel in a normal browser tab for true screen capture.
         </div>
       )}
       {active && (
