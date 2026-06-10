@@ -33,6 +33,7 @@ import { type DisplayGroup, useIncrementalGroups } from './grouping'
 import { detectReportArtifactRelPath } from './grouping/report-artifact'
 import { StreamingTextBlock, StreamingThinkingBlock, ThinkingSpinner } from './in-flight-decorations'
 import { ThinkingPill } from './thinking-pill'
+import { useFollowSignals } from './use-follow-signals'
 import { usePlanContext, useTranscriptSettings } from './use-transcript-derivations'
 
 /** Content-aware size estimation to minimize layout shift on first render.
@@ -320,16 +321,23 @@ export const TranscriptView = memo(function TranscriptView({
     setWindowAnchorSeq(defaultAnchorSeq(entries))
   } else if (
     follow &&
-    windowAnchorSeq !== null &&
     entries.length > WINDOW_THRESHOLD &&
-    windowStart < WINDOW_REANCHOR_MARGIN
+    (windowAnchorSeq === null || windowStart < WINDOW_REANCHOR_MARGIN)
   ) {
-    // The window grew (tail-append + head-prune) until the anchor entry drifted
-    // within WINDOW_REANCHOR_MARGIN of the pruned head. Re-default the anchor
-    // forward to the last WINDOW_SIZE so the boundary sits safely above the prune
-    // line again. Gated on `follow` (viewport at the bottom) so dropping the
-    // now-offscreen older entries is invisible -- and so a scrollback reader, where
-    // the prune is deferred and windowStart wouldn't shrink anyway, is never yanked.
+    // The window boundary is at (or has drifted near) the pruned head. Two ways
+    // to get here: (a) tail-append + head-prune walked the anchor entry to within
+    // WINDOW_REANCHOR_MARGIN of the head; (b) a deep scrollback hit the local top,
+    // where loadEarlier sets the anchor to NULL ("show all") -- previously null was
+    // excluded here, so the window stayed show-all forever and EVERY post-cap
+    // head-prune changed windowed[0] -> regroupSignal -> a full cold regroup on
+    // every posted message (observed 2026-06-10). Re-default the anchor forward to
+    // the last WINDOW_SIZE so the boundary sits safely above the prune line again.
+    // Gated on `follow` (viewport at the bottom) so dropping the now-offscreen
+    // older entries is invisible -- and so a scrollback reader, where the prune is
+    // deferred and windowStart wouldn't shrink anyway, is never yanked.
+    console.debug(
+      `[window] re-anchor reason=${windowAnchorSeq === null ? 'post-scrollback-show-all' : 'near-pruned-head'} entries=${entries.length} windowStart=${windowStart} -> last-${WINDOW_SIZE}`,
+    )
     setWindowAnchorSeq(defaultAnchorSeq(entries))
   }
   const windowed = useMemo(() => (windowStart > 0 ? entries.slice(windowStart) : entries), [entries, windowStart])
@@ -524,6 +532,17 @@ export const TranscriptView = memo(function TranscriptView({
   }, [SCROLLBACK_SPACER, appendSyntheticLive, mainGroups, LIVE_GROUP])
   const hasSpacer = !!SCROLLBACK_SPACER
   phantomHeightRef.current = hasSpacer ? spacerHeight : 0
+  // [scrollback] diagnostics (flag-gated path): every spacer height transition is
+  // a scrollHeight shift the follow gate must absorb -- log it so a misbehaving
+  // session shows WHICH layout change drove the scroll events. Bucketed height
+  // means this fires on real transitions, not sub-pixel avg drift.
+  const prevSpacerHeightRef = useRef(phantomHeightRef.current)
+  if (reserveScrollback && phantomHeightRef.current !== prevSpacerHeightRef.current) {
+    console.debug(
+      `[scrollback] spacer ${prevSpacerHeightRef.current}px -> ${phantomHeightRef.current}px (olderCount=${olderCount} avgPerEntry=${avgPerEntryRef.current.toFixed(1)} windowStart=${windowStart})`,
+    )
+  }
+  prevSpacerHeightRef.current = phantomHeightRef.current
   const spacerKey = selectedConversationId ? `scrollback-${selectedConversationId}` : 'scrollback'
   const liveKey = selectedConversationId ? `live-${selectedConversationId}` : 'live'
   // The live slot is the last renderGroups item while the turn is live, keyed
@@ -876,63 +895,20 @@ export const TranscriptView = memo(function TranscriptView({
     return () => el.removeEventListener('scroll', handleScroll)
   }, [loadEarlier, fetchOlder])
 
-  // Follow state signaling: only react to REAL user input (wheel/touch),
-  // not programmatic scroll adjustments from the virtualizer's anchor system.
-  // Those adjustments can cause small scrollTop changes that the scroll handler
-  // misreads as "user scrolled away" -- breaking follow unexpectedly.
-  const onUserScrollRef = useRef(onUserScroll)
-  onUserScrollRef.current = onUserScroll
-  const onReachedBottomRef = useRef(onReachedBottom)
-  onReachedBottomRef.current = onReachedBottom
-  // Mirror of the `follow` prop so the scroll handler can log only the genuine
-  // ENGAGE/DISENGAGE transitions (not every qualifying scroll frame).
-  const followStateRef = useRef(follow)
-  followStateRef.current = follow
-  useEffect(() => {
-    const el = parentRef.current
-    if (!el) return
-    let userScrolling = false
-    function onWheelOrTouch() {
-      userScrolling = true
-      requestAnimationFrame(() => {
-        userScrolling = false
-      })
-      // Wider window for the load-trigger gate so momentum/inertia scroll still
-      // counts as user-driven. Programmatic scrolls never call this handler.
-      userScrollingRef.current = true
-      if (userScrollResetRef.current) clearTimeout(userScrollResetRef.current)
-      userScrollResetRef.current = setTimeout(() => {
-        userScrollingRef.current = false
-      }, 200)
-    }
-    function onScroll() {
-      const drift = el!.scrollHeight - el!.scrollTop - el!.clientHeight
-      if (drift < 40) {
-        if (!followStateRef.current) {
-          console.debug(
-            `[follow] ENGAGE reason=reached-bottom drift=${drift.toFixed(0)} userScrolling=${userScrolling} cacheKey=${cacheKeyRef.current?.slice(0, 8) ?? '-'}`,
-          )
-        }
-        onReachedBottomRef.current?.()
-      } else if (userScrolling && drift > 120) {
-        if (followStateRef.current) {
-          console.debug(
-            `[follow] DISENGAGE reason=user-scroll-up drift=${drift.toFixed(0)} cacheKey=${cacheKeyRef.current?.slice(0, 8) ?? '-'}`,
-          )
-        }
-        onUserScrollRef.current?.()
-      }
-    }
-    el.addEventListener('wheel', onWheelOrTouch, { passive: true })
-    el.addEventListener('touchstart', onWheelOrTouch, { passive: true })
-    el.addEventListener('scroll', onScroll, { passive: true })
-    return () => {
-      el.removeEventListener('wheel', onWheelOrTouch)
-      el.removeEventListener('touchstart', onWheelOrTouch)
-      el.removeEventListener('scroll', onScroll)
-      if (userScrollResetRef.current) clearTimeout(userScrollResetRef.current)
-    }
-  }, [])
+  // Follow state signaling (wheel/touch intent + layout-stability gate) lives
+  // in use-follow-signals.ts -- see its header for the 2026-06-10 oscillator
+  // incident that motivated the suppression logic.
+  useFollowSignals({
+    parentRef,
+    follow,
+    onUserScroll,
+    onReachedBottom,
+    cacheKeyRef,
+    loadingEarlierRef,
+    fetchingOlderRef,
+    userScrollingRef,
+    userScrollResetRef,
+  })
 
   const isEmpty = renderGroups.length === 0 && queuedGroups.length === 0
 
