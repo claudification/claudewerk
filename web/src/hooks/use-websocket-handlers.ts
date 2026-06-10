@@ -58,6 +58,99 @@ export interface DashboardMessage {
   [key: string]: any
 }
 
+// ─── stream-delta batching (W-H2) ───────────────────────────────────────────
+// Token deltas used to write Zustand on EVERY token: an object spread (per
+// buffer) plus a full store notify, for each token. With several conversations
+// streaming at ~20 tok/s that is a torrent of short-lived allocations and
+// subscriber notifications -- the dominant streaming GC churn. We now
+// accumulate deltas in a module-level buffer and flush to the store once per
+// animation frame (a 100ms timer is the fallback for when the tab is hidden and
+// rAF is suspended), coalescing every pending token across every conversation
+// into a single store write. Force-flushed on message_stop so the final text is
+// never late, and drained whenever a committed entry supersedes the buffer.
+type PendingStreamDelta = { text: string; thinking: string }
+const pendingStreamDeltas = new Map<string, PendingStreamDelta>()
+let streamFlushRaf: number | null = null
+let streamFlushTimer: ReturnType<typeof setTimeout> | null = null
+
+function scheduleStreamFlush() {
+  if (streamFlushRaf !== null || streamFlushTimer !== null) return
+  // rAF aligns the flush with paint when the tab is visible; the timer is the
+  // fallback for the hidden-tab case where rAF is suspended. Whichever fires
+  // first runs flushStreamDeltas, which cancels the other.
+  if (typeof requestAnimationFrame === 'function') {
+    streamFlushRaf = requestAnimationFrame(flushStreamDeltas)
+  }
+  streamFlushTimer = setTimeout(flushStreamDeltas, 100)
+}
+
+/**
+ * Drain the pending stream-delta buffer into Zustand in ONE setState: append
+ * each conversation's buffered text/thinking onto its committed streaming
+ * buffer, cloning a buffer object only if it actually changed, and bump
+ * `newDataSeq` once if any conversation crossed a 500-char boundary (the
+ * auto-scroll nudge). Exported so tests can flush deterministically.
+ */
+export function flushStreamDeltas() {
+  if (streamFlushRaf !== null) {
+    cancelAnimationFrame(streamFlushRaf)
+    streamFlushRaf = null
+  }
+  if (streamFlushTimer !== null) {
+    clearTimeout(streamFlushTimer)
+    streamFlushTimer = null
+  }
+  if (pendingStreamDeltas.size === 0) return
+  const entries = [...pendingStreamDeltas.entries()]
+  pendingStreamDeltas.clear()
+  useConversationsStore.setState(state => {
+    let streamingText = state.streamingText
+    let streamingThinking = state.streamingThinking
+    let textCloned = false
+    let thinkingCloned = false
+    let bumpScroll = false
+    for (const [sid, pend] of entries) {
+      if (pend.text) {
+        const prev = streamingText[sid] || ''
+        const updated = prev + pend.text
+        if (Math.floor(updated.length / 500) > Math.floor(prev.length / 500)) bumpScroll = true
+        if (!textCloned) {
+          streamingText = { ...streamingText }
+          textCloned = true
+        }
+        streamingText[sid] = updated
+      }
+      if (pend.thinking) {
+        const prev = streamingThinking[sid] || ''
+        const updated = prev + pend.thinking
+        if (Math.floor(updated.length / 500) > Math.floor(prev.length / 500)) bumpScroll = true
+        if (!thinkingCloned) {
+          streamingThinking = { ...streamingThinking }
+          thinkingCloned = true
+        }
+        streamingThinking[sid] = updated
+      }
+    }
+    if (!(textCloned || thinkingCloned || bumpScroll)) return state
+    const patch: Partial<typeof state> = {}
+    if (textCloned) patch.streamingText = streamingText
+    if (thinkingCloned) patch.streamingThinking = streamingThinking
+    if (bumpScroll) patch.newDataSeq = state.newDataSeq + 1
+    return patch
+  })
+}
+
+function bufferStreamDelta(sid: string, text: string, thinking: string) {
+  const pend = pendingStreamDeltas.get(sid)
+  if (pend) {
+    pend.text += text
+    pend.thinking += thinking
+  } else {
+    pendingStreamDeltas.set(sid, { text, thinking })
+  }
+  scheduleStreamFlush()
+}
+
 /** Task-roster fields with their empty-state fallbacks, lifted out of
  *  toConversation to keep that mapper under the complexity bar. */
 function toTaskFields(summary: ConversationSummary) {
@@ -451,6 +544,10 @@ function handleTranscriptEntries(msg: DashboardMessage) {
     let streamingText = state.streamingText
     let streamingThinking = state.streamingThinking
     if (hasAssistant) {
+      // The committed entry supersedes the buffer -- drop any not-yet-flushed
+      // deltas so a scheduled flush can't repopulate the buffers we just cleared
+      // (orphan streaming bubble below the committed text).
+      pendingStreamDeltas.delete(sid)
       if (streamingText[sid]) {
         const { [sid]: _t, ...rest } = streamingText
         streamingText = rest
@@ -524,29 +621,11 @@ function handleStreamDelta(msg: DashboardMessage) {
     // buffer and must run regardless of status.
     if (useConversationsStore.getState().conversationsById[sid]?.status !== 'active') return
     const delta = event.delta as Record<string, unknown> | undefined
+    // Buffer the delta -- the actual store write is coalesced in flushStreamDeltas.
     if (delta?.type === 'text_delta' && typeof delta.text === 'string') {
-      const text = delta.text as string
-      useConversationsStore.setState(state => {
-        const updated = (state.streamingText[sid] || '') + text
-        // Bump newDataSeq every ~500 chars to trigger auto-scroll without thrashing
-        const prevLen = (state.streamingText[sid] || '').length
-        const bumpScroll = Math.floor(updated.length / 500) > Math.floor(prevLen / 500)
-        return {
-          streamingText: { ...state.streamingText, [sid]: updated },
-          ...(bumpScroll ? { newDataSeq: state.newDataSeq + 1 } : {}),
-        }
-      })
+      bufferStreamDelta(sid, delta.text as string, '')
     } else if (delta?.type === 'thinking_delta' && typeof delta.thinking === 'string') {
-      const text = delta.thinking as string
-      useConversationsStore.setState(state => {
-        const updated = (state.streamingThinking[sid] || '') + text
-        const prevLen = (state.streamingThinking[sid] || '').length
-        const bumpScroll = Math.floor(updated.length / 500) > Math.floor(prevLen / 500)
-        return {
-          streamingThinking: { ...state.streamingThinking, [sid]: updated },
-          ...(bumpScroll ? { newDataSeq: state.newDataSeq + 1 } : {}),
-        }
-      })
+      bufferStreamDelta(sid, '', delta.thinking as string)
     }
   } else if (eventType === 'message_start') {
     // New message -- reset BOTH streaming buffers for a clean slate. Do NOT
@@ -555,7 +634,10 @@ function handleStreamDelta(msg: DashboardMessage) {
     // on each block wipes earlier deltas before the committed entry lands.
     // Resetting per-message is correct: the prior message's content has
     // already committed (and cleared these buffers) by the time the next
-    // message_start fires.
+    // message_start fires. Drop buffered deltas too so a late flush can't
+    // repopulate the fresh buffer (W-L5: bounds streamingThinking retention to
+    // a single turn).
+    pendingStreamDeltas.delete(sid)
     useConversationsStore.setState(state => {
       const next: Partial<typeof state> = {}
       if (state.streamingText[sid]) next.streamingText = { ...state.streamingText, [sid]: '' }
@@ -563,10 +645,14 @@ function handleStreamDelta(msg: DashboardMessage) {
       return next
     })
   } else if (eventType === 'message_stop') {
-    // Turn complete -- clear streaming TEXT (committed entry replaces it).
-    // Keep streaming THINKING: committed entries don't contain thinking
-    // blocks, so this is the only copy. It persists until message_start
-    // resets it (next turn) or conversation switch clears it.
+    // Turn complete -- force-flush buffered deltas so the final text/thinking is
+    // never late, then clear streaming TEXT (committed entry replaces it).
+    // flushStreamDeltas drains the pending buffer, so no scheduled flush can
+    // repopulate streamingText after the clear (orphan-bubble race). Keep
+    // streaming THINKING: committed entries don't contain thinking blocks, so
+    // this is the only copy until message_start resets it or a committed entry
+    // / conversation switch clears it.
+    flushStreamDeltas()
     useConversationsStore.setState(state => {
       const hasText = !!state.streamingText[sid]
       if (!hasText) return state
