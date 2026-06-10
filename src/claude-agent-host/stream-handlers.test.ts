@@ -410,6 +410,17 @@ describe('advisor tool events', () => {
     expect(e.raw).toBeDefined()
   })
 
+  test('camelCase advisorModel is captured (CC binary uses camelCase)', () => {
+    const { hctx, entries } = createTestContext()
+    handleMessage(hctx, {
+      type: 'system',
+      subtype: 'advisor_result',
+      advisorModel: 'claude-fable-5',
+      content: { text: 'ship it' },
+    })
+    expect((entries[0] as Extract<TranscriptEntry, { type: 'advisor' }>).advisorModel).toBe('claude-fable-5')
+  })
+
   test('advisor_redacted_result flags redacted; advisor_tool_result_error flags error', () => {
     const { hctx, entries } = createTestContext()
     handleMessage(hctx, { type: 'system', subtype: 'advisor_redacted_result', content: { text: '' } })

@@ -229,7 +229,10 @@ function handleAdvisorEvent(hctx: HandlerContext, msg: Record<string, unknown>, 
     type: 'advisor' as const,
     advisorSubtype: subtype.replace(/^advisor_/, '') || subtype,
     text: extractAdvisorText(msg),
-    advisorModel: pickString(msg.advisor_model, msg.model),
+    // CC's binary carries the advisor model as camelCase `advisorModel`; accept
+    // both casings (+ the generic `model`) since the exact stream-json envelope
+    // is unverified pending a live Fable advisor run.
+    advisorModel: pickString(msg.advisor_model, msg.advisorModel, msg.model),
     redacted: subtype === 'advisor_redacted_result' || undefined,
     isError: subtype === 'advisor_tool_result_error' || undefined,
     timestamp: ts,
