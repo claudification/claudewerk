@@ -325,16 +325,19 @@ function handleChannelAck(msg: DashboardMessage) {
   }
 }
 
+const EVENTS_CAP = 500
+
 function handleEvent(msg: DashboardMessage) {
   if (!(msg.event && msg.conversationId)) return
   const sid = msg.conversationId
   const evt = msg.event
   useConversationsStore.setState(state => {
     const currentEvents = state.events[sid] || []
+    const next = [...currentEvents, evt]
     return {
       events: {
         ...state.events,
-        [sid]: [...currentEvents, evt],
+        [sid]: next.length > EVENTS_CAP ? next.slice(-EVENTS_CAP) : next,
       },
     }
   })
@@ -584,10 +587,11 @@ function handleSubagentTranscript(msg: DashboardMessage) {
   const key = `${sid}:${agentId}`
   useConversationsStore.setState(state => {
     const existing = state.subagentTranscripts[key] || []
+    const merged = initial ? newEntries : [...existing, ...newEntries]
     return {
       subagentTranscripts: {
         ...state.subagentTranscripts,
-        [key]: initial ? newEntries : [...existing, ...newEntries],
+        [key]: merged.length > TRANSCRIPT_LIVE_CAP ? merged.slice(-TRANSCRIPT_LIVE_CAP) : merged,
       },
     }
   })

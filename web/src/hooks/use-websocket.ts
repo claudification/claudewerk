@@ -486,18 +486,24 @@ export function useWebSocket() {
               const store = useConversationsStore.getState()
               const isViewing = store.selectedConversationId === convId
               if (!isViewing) {
-                useConversationsStore.setState(state => ({
-                  notifications: [
-                    ...state.notifications,
+                useConversationsStore.setState(state => {
+                  const now = Date.now()
+                  const NOTIFICATIONS_CAP = 100
+                  const NOTIFICATIONS_MAX_AGE_MS = 24 * 60 * 60 * 1000
+                  const next = [
+                    ...state.notifications.filter(n => now - n.timestamp < NOTIFICATIONS_MAX_AGE_MS),
                     {
-                      id: `toast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                      id: `toast-${now}-${Math.random().toString(36).slice(2, 8)}`,
                       conversationId: convId,
                       title,
                       message: body,
-                      timestamp: Date.now(),
+                      timestamp: now,
                     },
-                  ],
-                }))
+                  ]
+                  return {
+                    notifications: next.length > NOTIFICATIONS_CAP ? next.slice(-NOTIFICATIONS_CAP) : next,
+                  }
+                })
               }
             }
             return

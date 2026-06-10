@@ -29,34 +29,37 @@ import type { TranscriptEntry } from './types'
 const TRANSCRIPT_CACHE_TOTAL_MAX = 5000
 
 const cache = new Map<string, TranscriptEntry[]>()
+// Running total -- O(1) vs the old O(conversations * entries) full scan.
+let cachedEntryCount = 0
 
 function totalEntries(): number {
-  let n = 0
-  for (const arr of cache.values()) n += arr.length
-  return n
+  return cachedEntryCount
 }
 
 function touch(conversationId: string, arr: TranscriptEntry[]) {
+  const old = cache.get(conversationId)
   cache.delete(conversationId)
   cache.set(conversationId, arr)
+  cachedEntryCount += arr.length - (old?.length ?? 0)
 }
 
 function evictIfOverCap() {
-  let total = totalEntries()
+  if (cachedEntryCount <= TRANSCRIPT_CACHE_TOTAL_MAX) return
   let droppedConvs = 0
   let droppedEntries = 0
-  while (total > TRANSCRIPT_CACHE_TOTAL_MAX) {
+  while (cachedEntryCount > TRANSCRIPT_CACHE_TOTAL_MAX) {
     const oldest = cache.keys().next()
     if (oldest.done) break
     const dropped = cache.get(oldest.value)
-    if (dropped) droppedEntries += dropped.length
+    const count = dropped?.length ?? 0
     cache.delete(oldest.value)
+    cachedEntryCount -= count
     droppedConvs++
-    total -= dropped?.length ?? 0
+    droppedEntries += count
   }
   if (droppedConvs > 0) {
     console.debug(
-      `[transcript-cache] evict global cap: dropped ${droppedConvs} convs (${droppedEntries} entries), total now ${total}`,
+      `[transcript-cache] evict global cap: dropped ${droppedConvs} convs (${droppedEntries} entries), total now ${cachedEntryCount}`,
     )
   }
 }

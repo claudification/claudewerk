@@ -703,6 +703,61 @@ function saveStash(stash: Record<string, StashEntry[]>) {
   } catch {}
 }
 
+/**
+ * Builds the eviction data for selectConversation's LIFO cache purge.
+ * Returns null when no keys fall outside cachedIds (fast path, no rebuild needed).
+ * Extracted to keep the store's set() arrow function below the complexity gate.
+ */
+function buildEvictedConvData(state: ConversationsState, cachedIds: Set<string>): Partial<ConversationsState> | null {
+  const hasStale = (dict: Record<string, unknown>) => Object.keys(dict).some(sid => !cachedIds.has(sid))
+  if (
+    !hasStale(state.events) &&
+    !hasStale(state.transcripts) &&
+    !hasStale(state.conversationInfo) &&
+    !hasStale(state.daemonStatus)
+  ) {
+    return null
+  }
+  const events: ConversationsState['events'] = {}
+  const transcripts: ConversationsState['transcripts'] = {}
+  const subagentTranscripts: ConversationsState['subagentTranscripts'] = {}
+  const conversationInfo: ConversationsState['conversationInfo'] = {}
+  const daemonStatus: ConversationsState['daemonStatus'] = {}
+  const tasks: ConversationsState['tasks'] = {}
+  const inputDrafts: ConversationsState['inputDrafts'] = {}
+  const lastAppliedTranscriptSeq: ConversationsState['lastAppliedTranscriptSeq'] = {}
+  const scrollbackActive: ConversationsState['scrollbackActive'] = {}
+  const conversationPermissions: ConversationsState['conversationPermissions'] = {}
+  for (const sid of cachedIds) {
+    if (state.events[sid]) events[sid] = state.events[sid]
+    if (state.transcripts[sid]) transcripts[sid] = state.transcripts[sid]
+    if (state.conversationInfo[sid]) conversationInfo[sid] = state.conversationInfo[sid]
+    if (state.daemonStatus[sid]) daemonStatus[sid] = state.daemonStatus[sid]
+    if (state.tasks[sid]) tasks[sid] = state.tasks[sid]
+    if (state.inputDrafts[sid]) inputDrafts[sid] = state.inputDrafts[sid]
+    if (state.lastAppliedTranscriptSeq[sid] !== undefined)
+      lastAppliedTranscriptSeq[sid] = state.lastAppliedTranscriptSeq[sid]
+    if (state.scrollbackActive[sid]) scrollbackActive[sid] = state.scrollbackActive[sid]
+    if (state.conversationPermissions[sid]) conversationPermissions[sid] = state.conversationPermissions[sid]
+  }
+  for (const key of Object.keys(state.subagentTranscripts)) {
+    const sid = key.split(':')[0]
+    if (cachedIds.has(sid)) subagentTranscripts[key] = state.subagentTranscripts[key]
+  }
+  return {
+    events,
+    transcripts,
+    subagentTranscripts,
+    conversationInfo,
+    daemonStatus,
+    tasks,
+    inputDrafts,
+    lastAppliedTranscriptSeq,
+    scrollbackActive,
+    conversationPermissions,
+  }
+}
+
 export const useConversationsStore = create<ConversationsState>((set, get) => ({
   conversations: [],
   conversationsById: {},
@@ -1056,44 +1111,7 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
       const cachedIds = new Set(mru.slice(0, Math.max(1, sessionCacheSize)))
       if (id) cachedIds.add(id)
 
-      // Only rebuild dicts if we actually need to evict conversations.
-      // Check if any currently cached keys are NOT in the new cachedIds set.
-      let needsEviction = false
-      for (const sid of Object.keys(state.events)) {
-        if (!cachedIds.has(sid)) {
-          needsEviction = true
-          break
-        }
-      }
-      if (!needsEviction) {
-        for (const sid of Object.keys(state.transcripts)) {
-          if (!cachedIds.has(sid)) {
-            needsEviction = true
-            break
-          }
-        }
-      }
-
-      let evictedData: {
-        events: Record<string, HookEvent[]>
-        transcripts: Record<string, TranscriptEntry[]>
-        subagentTranscripts: Record<string, TranscriptEntry[]>
-      } | null = null
-
-      if (needsEviction) {
-        const events: Record<string, HookEvent[]> = {}
-        const transcripts: Record<string, TranscriptEntry[]> = {}
-        const subagentTranscripts: Record<string, TranscriptEntry[]> = {}
-        for (const sid of cachedIds) {
-          if (state.events[sid]) events[sid] = state.events[sid]
-          if (state.transcripts[sid]) transcripts[sid] = state.transcripts[sid]
-        }
-        for (const key of Object.keys(state.subagentTranscripts)) {
-          const sid = key.split(':')[0]
-          if (cachedIds.has(sid)) subagentTranscripts[key] = state.subagentTranscripts[key]
-        }
-        evictedData = { events, transcripts, subagentTranscripts }
-      }
+      const evictedData = buildEvictedConvData(state, cachedIds)
 
       // Close terminal on conversation switch - PTY is tied to a conversationId,
       // keeping it open would stream the old conversation's terminal

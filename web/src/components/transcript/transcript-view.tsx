@@ -123,6 +123,10 @@ function estimateGroupSize(group: DisplayGroup, measuredSizes: Map<string, numbe
 // return accurate sizes immediately, so the scroll lands without thrashing
 // the layout/measure feedback loop that defined the switch-lag beach ball.
 const CONV_SIZE_CACHE_MAX = 25
+// Inner cap: prevent one long-scrolled conversation from accumulating unbounded
+// height entries. At 2000 measured groups the cache is already warm for any
+// realistic window; entries beyond this are just dead weight.
+const CONV_SIZE_CACHE_INNER_MAX = 2000
 const convSizeCaches = new Map<string, Map<string, number>>()
 
 function getConvSizeCache(conversationId: string | null): Map<string, number> {
@@ -624,6 +628,17 @@ export const TranscriptView = memo(function TranscriptView({
   if (liveActive && !appendSyntheticLive && lastMainGroup) {
     const liveSize = measuredSizes.get(liveKey)
     if (liveSize !== undefined) measuredSizes.set(stableGroupKey(lastMainGroup), liveSize)
+  }
+  // Inner cap: drop oldest entries (insertion-order) when the per-conversation
+  // size cache exceeds CONV_SIZE_CACHE_INNER_MAX. LRU trim keeps recently-visible
+  // groups warm while preventing unbounded growth on long scrollback sessions.
+  if (measuredSizes.size > CONV_SIZE_CACHE_INNER_MAX) {
+    const excess = measuredSizes.size - CONV_SIZE_CACHE_INNER_MAX
+    let trimmed = 0
+    for (const key of measuredSizes.keys()) {
+      measuredSizes.delete(key)
+      if (++trimmed >= excess) break
+    }
   }
   // Refine the per-entry height average from currently-measured REAL groups
   // (exclude the synthetic spacer + live slot). Drives the scrollback spacer's

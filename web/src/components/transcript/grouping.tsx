@@ -175,6 +175,11 @@ function freshGroupingCache(): GroupingCache {
 // conversation's cache. LRU bump on every fetch keeps the most-recently-used
 // conversation warmest.
 const GROUPING_CACHE_MAX = 25
+// Inner cap on resultMap: bounds the `new Map(cache.resultMap)` clone cost.
+// In practice the live transcript is capped at 100 entries so resultMap grows
+// to at most ~hundreds of tool_use_ids, but a safety ceiling prevents runaway
+// growth on edge-case agent conversations with many tool calls before a reset.
+const RESULT_MAP_CAP = 1000
 const groupingCaches = new Map<string, GroupingCache>()
 
 function getGroupingCache(key: string): GroupingCache {
@@ -295,6 +300,15 @@ export function useIncrementalGroups(entries: TranscriptEntry[], cacheKey?: stri
             isError: block.is_error === true,
           })
         }
+      }
+    }
+    // Trim oldest entries (insertion-order) when the map exceeds the inner cap.
+    if (newResultMap.size > RESULT_MAP_CAP) {
+      const excess = newResultMap.size - RESULT_MAP_CAP
+      let trimmed = 0
+      for (const key of newResultMap.keys()) {
+        newResultMap.delete(key)
+        if (++trimmed >= excess) break
       }
     }
     cache.resultMap = newResultMap
