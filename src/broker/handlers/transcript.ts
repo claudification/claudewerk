@@ -344,14 +344,50 @@ const conversationInfo: MessageHandler = (ctx, data) => {
   )
 }
 
-// Headless stream deltas - forward raw API SSE events to dashboard subscribers
-const streamDelta: MessageHandler = (ctx, data) => {
+// Headless stream deltas -- forward raw API SSE events to subscribers WATCHING
+// this conversation's transcript only.
+//
+// EPHEMERAL by design (same class as thinking_progress): token deltas are a pure
+// liveness signal -- never persisted, never replayed. Two deliberate changes from
+// the old project-wide `broadcastScoped` (T-2, B-H2):
+//   1. CHANNEL-GATE to `conversation:transcript`. The web client subscribes that
+//      channel for the conversation it is viewing (use-websocket.ts:287), so a
+//      live viewer still gets token streaming; a project subscriber NOT viewing
+//      this conversation no longer receives its deltas.
+//   2. STOP ring-stamping. `broadcastToChannel` uses `syncStamp` (current seq, no
+//      buffer write), whereas `broadcastScoped` used `stampAndBuffer` which wrote
+//      every ephemeral delta into the 500-slot sync ring -- the deltas were what
+//      overflowed it and triggered spurious `sync_stale` under load. Deltas are
+//      worthless on replay, so they have no business in the ring.
+const STREAM_GATE_LOG_THROTTLE_MS = 5000
+// conversationId -> last gate-log timestamp. Mirrors lastTranscriptKick: one
+// timestamp per conversation that has ever streamed; not pruned (bounded by the
+// live conversation count).
+const lastStreamGateLog = new Map<string, number>()
+
+export const streamDelta: MessageHandler = (ctx, data) => {
   const conversationId = (data.conversationId || ctx.ws.data.conversationId) as string
   if (!conversationId) return
   const conversation = ctx.conversations.getConversation(conversationId)
-  if (conversation?.project) {
-    ctx.broadcastScoped({ type: 'stream_delta', conversationId, event: data.event }, conversation.project)
+  if (!conversation?.project) return
+
+  // LOG EVERYTHING covenant: the gate is non-silent. Throttled to <=1 line / 5s
+  // per conversation -- stream deltas are the highest-frequency wire message, so
+  // per-delta logging would itself be the fan-out cost this phase removes.
+  const transcriptSubs = ctx.conversations.getChannelSubscribers('conversation:transcript', conversationId).size
+  const now = Date.now()
+  if (now - (lastStreamGateLog.get(conversationId) ?? 0) >= STREAM_GATE_LOG_THROTTLE_MS) {
+    lastStreamGateLog.set(conversationId, now)
+    ctx.log.debug(
+      `[stream_delta gate] ${conversationId.slice(0, 8)} project=${conversation.project} transcriptSubs=${transcriptSubs} -> ${transcriptSubs > 0 ? 'delivering' : 'dropped(no viewer)'}`,
+    )
   }
+
+  ctx.conversations.broadcastToChannel('conversation:transcript', conversationId, {
+    type: 'stream_delta',
+    conversationId,
+    event: data.event,
+  })
 }
 
 function formatRateLimitMessage(opts: {

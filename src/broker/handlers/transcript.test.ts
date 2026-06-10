@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import type { TranscriptEntry } from '../../shared/protocol'
 import type { HandlerContext, MessageData } from '../handler-context'
-import { transcriptEntries } from './transcript'
+import { streamDelta, transcriptEntries } from './transcript'
 
 const e = (o: Record<string, unknown>): TranscriptEntry => o as unknown as TranscriptEntry
 
@@ -87,5 +87,77 @@ describe('transcriptEntries divert (Checkpoint A)', () => {
     expect(parentAdds).toHaveLength(0)
     expect(subAdds).toHaveLength(1)
     expect(broadcasts.some(b => b.channel === 'conversation:transcript')).toBe(false)
+  })
+})
+
+interface ScopedCall {
+  message: Record<string, unknown>
+  project: string
+}
+
+function fakeStreamCtx(transcriptSubs: number) {
+  const channelBroadcasts: BroadcastCall[] = []
+  const scopedBroadcasts: ScopedCall[] = []
+  const debugLogs: string[] = []
+  const ctx = {
+    ws: { data: {} },
+    log: {
+      debug: (msg: string) => debugLogs.push(msg),
+      info: () => {},
+      error: () => {},
+      warn: () => {},
+    },
+    // broadcastScoped MUST NOT be called for stream_delta anymore -- record so
+    // the test can assert it stayed untouched (no project-wide fan-out, no ring stamp).
+    broadcastScoped: (message: Record<string, unknown>, project: string) => scopedBroadcasts.push({ message, project }),
+    conversations: {
+      getConversation: (_id: string) => ({ project: 'proj://x' }),
+      getChannelSubscribers: (_channel: string, _conversationId: string) => new Set(Array(transcriptSubs).fill(0)),
+      broadcastToChannel: (channel: string, _conversationId: string, message: unknown, agentId?: string) =>
+        channelBroadcasts.push({ channel, agentId, message }),
+    },
+  } as unknown as HandlerContext
+  return { ctx, channelBroadcasts, scopedBroadcasts, debugLogs }
+}
+
+describe('streamDelta gate (T-2, B-H2)', () => {
+  it('routes deltas to the conversation:transcript channel, never project-wide broadcastScoped', () => {
+    const { ctx, channelBroadcasts, scopedBroadcasts } = fakeStreamCtx(2)
+    streamDelta(ctx, {
+      conversationId: 'conv1',
+      event: { type: 'content_block_delta', delta: { text: 'hi' } },
+    } as unknown as MessageData)
+
+    expect(scopedBroadcasts).toHaveLength(0)
+    expect(channelBroadcasts).toHaveLength(1)
+    expect(channelBroadcasts[0].channel).toBe('conversation:transcript')
+    expect(channelBroadcasts[0].message).toMatchObject({
+      type: 'stream_delta',
+      conversationId: 'conv1',
+      event: { type: 'content_block_delta' },
+    })
+  })
+
+  it('still channel-broadcasts when there are zero transcript viewers (the channel just has no subscribers)', () => {
+    // The gate is the channel subscription itself, enforced inside broadcastToChannel.
+    // The handler always hands the delta to the channel; with no viewers it fans out to nobody.
+    // Distinct conversationId so the module-level per-conversation log throttle
+    // (5s) doesn't suppress the line after the earlier test's 'conv1' delta.
+    const { ctx, channelBroadcasts, debugLogs } = fakeStreamCtx(0)
+    streamDelta(ctx, { conversationId: 'conv-zero', event: { type: 'ping' } } as unknown as MessageData)
+    expect(channelBroadcasts).toHaveLength(1)
+    expect(debugLogs.some(l => l.includes('dropped(no viewer)'))).toBe(true)
+  })
+
+  it('ignores a delta with no resolvable conversation project', () => {
+    const { channelBroadcasts, scopedBroadcasts } = fakeStreamCtx(1)
+    const ctx = {
+      ws: { data: {} },
+      log: { debug: () => {} },
+      conversations: { getConversation: () => undefined },
+    } as unknown as HandlerContext
+    streamDelta(ctx, { conversationId: 'gone', event: { type: 'ping' } } as unknown as MessageData)
+    expect(channelBroadcasts).toHaveLength(0)
+    expect(scopedBroadcasts).toHaveLength(0)
   })
 })

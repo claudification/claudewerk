@@ -102,10 +102,22 @@ export const chatApiBackend: ConversationBackend = {
         return { ok: false, error }
       }
 
-      const broadcast = deps.broadcastScoped
+      // Channel-gate stream deltas to transcript viewers (same gate as the
+      // headless path in handlers/transcript.ts -- T-2, B-H2). broadcastToChannel
+      // uses syncStamp (no sync-ring write), so ephemeral deltas never overflow
+      // the ring. Fall back to project-wide broadcastScoped only if the channel
+      // broadcaster wasn't wired into this backend's deps.
+      const broadcast = deps.broadcastToChannel
         ? (event: Record<string, unknown>) =>
-            deps.broadcastScoped!({ type: 'stream_delta', conversationId, event }, conv.project)
-        : undefined
+            deps.broadcastToChannel!('conversation:transcript', conversationId, {
+              type: 'stream_delta',
+              conversationId,
+              event,
+            })
+        : deps.broadcastScoped
+          ? (event: Record<string, unknown>) =>
+              deps.broadcastScoped!({ type: 'stream_delta', conversationId, event }, conv.project)
+          : undefined
       const fullText = await streamChatApiResponse(resp, conversationId, conversationStore, broadcast)
 
       const assistantEntry: TranscriptAssistantEntry = {
