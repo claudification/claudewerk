@@ -601,6 +601,8 @@ function buildHeadlessEnv(opts: {
   worktree?: string
   effort?: string
   model?: string
+  /** Advisor model (CC 2.1.170 server-side advisor tool). Presence enables it. */
+  advisor?: string
   bare?: boolean
   repl?: boolean
   includePartialMessages?: boolean
@@ -648,6 +650,12 @@ function buildHeadlessEnv(opts: {
   if (opts.promptFile) env.RCLAUDE_INITIAL_PROMPT_FILE = opts.promptFile
   if (opts.worktree) env.RCLAUDE_WORKTREE = opts.worktree
   if (opts.agent) env.RCLAUDE_AGENT = opts.agent
+  if (opts.advisor) {
+    // cli-args turns RCLAUDE_ADVISOR into `--advisor <model>`; the experimental
+    // gate must be a real env on the child for CC to expose the advisor tool.
+    env.RCLAUDE_ADVISOR = opts.advisor
+    env.CLAUDE_CODE_ENABLE_EXPERIMENTAL_ADVISOR_TOOL = '1'
+  }
   if (opts.includePartialMessages === false) env.RCLAUDE_INCLUDE_PARTIAL_MESSAGES = '0'
   if (opts.appendSystemPrompt) env.CLAUDWERK_APPEND_SYSTEM_PROMPT = opts.appendSystemPrompt
   if (opts.settingsPath) env.CLAUDWERK_SETTINGS_PATH = opts.settingsPath
@@ -1839,6 +1847,7 @@ async function reviveConversation(
   env?: Record<string, string>,
   agent?: string,
   profile?: ResolvedProfile,
+  advisor?: string,
 ): Promise<ReviveResult & { tmuxPaneId?: string }> {
   const result: ReviveResult = {
     type: 'revive_result',
@@ -1891,6 +1900,7 @@ async function reviveConversation(
       autocompactPct,
       maxBudgetUsd,
       agent,
+      advisor,
       effort,
       model,
       worktree: adHocWorktree,
@@ -2077,6 +2087,8 @@ async function spawnConversation(
   settingsPath?: string,
   /** Backend-general `--mcp-config` path (transport-reframe Phase 2). */
   mcpConfigPath?: string,
+  /** Advisor model (CC 2.1.170 server-side advisor tool). */
+  advisor?: string,
 ): Promise<{ success: boolean; error?: string; tmuxSession?: string; tmuxPaneId?: string }> {
   launchLog(jobId, 'Validating directory', 'info', cwd)
 
@@ -2186,6 +2198,7 @@ async function spawnConversation(
       autocompactPct,
       maxBudgetUsd,
       agent,
+      advisor,
       adHoc,
       adHocTaskId,
       leaveRunning,
@@ -3004,6 +3017,7 @@ function connect(
             reviveMsg.env,
             reviveMsg.agent,
             resolvedReviveProfile,
+            reviveMsg.advisor,
           )
           // Strip sentinel-internal tmuxPaneId before sending over WS. Echo the
           // resolved profile NAME (not configDir / env -- Profile-Env Boundary).
@@ -3686,6 +3700,7 @@ function connect(
             resolvedSpawnProfile,
             spawnMsg.settingsPath,
             spawnMsg.mcpConfigPath,
+            spawnMsg.advisor,
           )
           const response: SpawnResult = {
             type: 'spawn_result',

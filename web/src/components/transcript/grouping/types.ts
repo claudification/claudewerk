@@ -22,6 +22,7 @@ export interface DisplayGroup {
     | 'launch'
     | 'spawn_notification'
     | 'shell'
+    | 'advisor'
     /** Synthetic tail item that hosts the in-flight turn (streaming thinking +
      *  text + spinner + thinking-pill). Never produced by grouping; appended by
      *  TranscriptView so the live turn is a real measured virtualizer item that

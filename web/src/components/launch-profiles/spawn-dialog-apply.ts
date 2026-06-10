@@ -21,6 +21,7 @@ export interface SpawnFormSetters {
   setModel: (v: string) => void
   setEffort: (v: string) => void
   setAgent: (v: string) => void
+  setAdvisor: (v: string) => void
   setBare: (v: boolean) => void
   setRepl: (v: boolean) => void
   setPermissionMode: (v: string) => void
@@ -64,6 +65,7 @@ export function applyProfileToForm(profile: LaunchProfile, setters: SpawnFormSet
   setters.setModel(s.model ?? '')
   setters.setEffort(s.effort ?? '')
   setters.setAgent(s.agent ?? '')
+  setters.setAdvisor(s.advisor ?? '')
   setters.setBare(s.bare ?? false)
   setters.setRepl(s.repl ?? false)
   setters.setPermissionMode(s.permissionMode ?? '')
@@ -137,6 +139,7 @@ export interface FormSnapshotInput {
   model: string
   effort: string
   agent: string
+  advisor: string
   permissionMode: string
   autocompactPct: number | ''
   maxBudgetUsd: string
@@ -180,6 +183,7 @@ export function formSnapshotToProfileSpawn(snap: FormSnapshotInput): LaunchProfi
   if (snap.model) out.model = snap.model as LaunchProfile['spawn']['model']
   if (snap.effort) out.effort = snap.effort as LaunchProfile['spawn']['effort']
   if (snap.agent) out.agent = snap.agent
+  if (snap.advisor) out.advisor = snap.advisor
   if (snap.permissionMode) {
     out.permissionMode = snap.permissionMode as LaunchProfile['spawn']['permissionMode']
   }

@@ -41,6 +41,7 @@ export interface SpawnActionContext {
   model: string
   effort: string
   agent: string
+  advisor: string
   permissionMode: string
   autocompactPct: number | ''
   maxBudgetUsd: string
@@ -128,6 +129,7 @@ function buildStandardSpawnRequest(
     model,
     effort,
     agent,
+    advisor,
     permissionMode,
     autocompactPct,
     maxBudgetUsd,
@@ -162,6 +164,7 @@ function buildStandardSpawnRequest(
       model: (model || undefined) as SpawnRequest['model'],
       effort: (effort || undefined) as SpawnRequest['effort'],
       agent: agent.trim() || undefined,
+      advisor: advisor.trim() || undefined,
       permissionMode: (permissionMode || undefined) as SpawnRequest['permissionMode'],
       autocompactPct: autocompactPct === '' ? undefined : autocompactPct,
       maxBudgetUsd: maxBudgetUsd ? Number(maxBudgetUsd) : undefined,

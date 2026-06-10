@@ -390,3 +390,42 @@ describe('stream-handlers commands_changed', () => {
     expect(catalogs).toEqual([[], []])
   })
 })
+
+describe('advisor tool events', () => {
+  test('advisor_result folds into a dedicated advisor entry with text + model', () => {
+    const { hctx, entries } = createTestContext()
+    handleMessage(hctx, {
+      type: 'system',
+      subtype: 'advisor_result',
+      timestamp: '2026-06-10T12:00:00.000Z',
+      advisor_model: 'claude-fable-5',
+      content: { text: 'Your plan looks sound; verify the edge case in step 3.' },
+    })
+    expect(entries).toHaveLength(1)
+    const e = entries[0] as Extract<TranscriptEntry, { type: 'advisor' }>
+    expect(e.type).toBe('advisor')
+    expect(e.advisorSubtype).toBe('result')
+    expect(e.advisorModel).toBe('claude-fable-5')
+    expect(e.text).toBe('Your plan looks sound; verify the edge case in step 3.')
+    expect(e.raw).toBeDefined()
+  })
+
+  test('advisor_redacted_result flags redacted; advisor_tool_result_error flags error', () => {
+    const { hctx, entries } = createTestContext()
+    handleMessage(hctx, { type: 'system', subtype: 'advisor_redacted_result', content: { text: '' } })
+    handleMessage(hctx, { type: 'system', subtype: 'advisor_tool_result_error', text: 'boom' })
+    const redacted = entries[0] as Extract<TranscriptEntry, { type: 'advisor' }>
+    const errored = entries[1] as Extract<TranscriptEntry, { type: 'advisor' }>
+    expect(redacted.redacted).toBe(true)
+    expect(errored.isError).toBe(true)
+    expect(errored.text).toBe('boom')
+  })
+
+  test('advisor_message with a string content still extracts text', () => {
+    const { hctx, entries } = createTestContext()
+    handleMessage(hctx, { type: 'system', subtype: 'advisor_message', content: 'thinking it over' })
+    const e = entries[0] as Extract<TranscriptEntry, { type: 'advisor' }>
+    expect(e.advisorSubtype).toBe('message')
+    expect(e.text).toBe('thinking it over')
+  })
+})

@@ -589,6 +589,24 @@ export interface TranscriptLaunchEntry extends TranscriptEntryBase {
   raw?: Record<string, unknown>
 }
 
+/** Agent Host-normalized advisor event (CC 2.1.170 server-side advisor tool).
+ *  A worker can call advisor() to consult a stronger model (Fable); CC streams
+ *  advisor_* subtypes which the agent host folds into one entry per event. */
+export interface TranscriptAdvisorEntry extends TranscriptEntryBase {
+  type: 'advisor'
+  /** The advisor_* subtype that produced this (message | result | tool_result | ...). */
+  advisorSubtype: string
+  /** The advisor's text / verdict, when present (from content.text or text). */
+  text?: string
+  /** Model that produced the advice (e.g. claude-fable-5), when CC reports it. */
+  advisorModel?: string
+  /** Whether CC redacted the advice (advisor_redacted_result) or it errored. */
+  redacted?: boolean
+  isError?: boolean
+  /** Full original CC payload for the JsonInspector (i) expansion. */
+  raw?: Record<string, unknown>
+}
+
 export interface TranscriptSystemEntry extends TranscriptEntryBase {
   type: 'system'
   subtype?: 'stop_hook_summary' | 'turn_duration' | 'compact_boundary' | 'local_command' | string
@@ -718,6 +736,7 @@ export type TranscriptEntry =
   | TranscriptAgentNameEntry
   | TranscriptBootEntry
   | TranscriptLaunchEntry
+  | TranscriptAdvisorEntry
   | TranscriptAgentLaunchEntry
   | TranscriptSpawnNotificationEntry
   | TranscriptShellEntry
@@ -2681,6 +2700,7 @@ export interface LaunchConfig {
   model?: string
   effort?: string
   agent?: string
+  advisor?: string
   bare?: boolean
   repl?: boolean
   permissionMode?: string
@@ -3740,6 +3760,7 @@ export interface ReviveConversation {
   effort?: string
   model?: string
   agent?: string
+  advisor?: string
   bare?: boolean
   repl?: boolean
   permissionMode?: string
@@ -3786,6 +3807,7 @@ export interface SpawnConversation {
   effort?: string
   model?: string
   agent?: string
+  advisor?: string
   bare?: boolean
   repl?: boolean
   permissionMode?: string

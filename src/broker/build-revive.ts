@@ -5,6 +5,7 @@ export interface ReviveOverrides {
   effort?: string
   model?: string
   agent?: string
+  advisor?: string
   bare?: boolean
   repl?: boolean
   permissionMode?: string
@@ -51,6 +52,7 @@ export function buildReviveMessage(
     effort: overrides?.effort ?? lc?.effort ?? undefined,
     model: overrides?.model ?? lc?.model ?? conversation.model ?? undefined,
     agent: overrides?.agent ?? lc?.agent ?? conversation.agentName ?? undefined,
+    advisor: overrides?.advisor ?? lc?.advisor ?? undefined,
     bare: overrides?.bare ?? lc?.bare ?? undefined,
     repl: overrides?.repl ?? lc?.repl ?? undefined,
     permissionMode: overrides?.permissionMode ?? lc?.permissionMode ?? undefined,

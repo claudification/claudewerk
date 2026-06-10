@@ -20,6 +20,7 @@ const DEFAULT_FIELDS_SHOW: LaunchFieldsShow = {
   effort: true,
   permissionMode: true,
   agent: true,
+  advisor: true,
   autocompactPct: true,
   maxBudgetUsd: true,
 }

@@ -310,6 +310,14 @@ export async function parseCliArgs(args: string[]): Promise<CliConfig> {
     claudeArgs.push('--agent', process.env.RCLAUDE_AGENT)
   }
 
+  // Advisor tool (CC 2.1.170): `--advisor <model>` enables the server-side advisor
+  // tool with that model (a cheap worker can call advisor() to consult Fable). The
+  // CLAUDE_CODE_ENABLE_EXPERIMENTAL_ADVISOR_TOOL gate is set as a real env by the
+  // sentinel alongside RCLAUDE_ADVISOR.
+  if (process.env.RCLAUDE_ADVISOR && !claudeArgs.includes('--advisor')) {
+    claudeArgs.push('--advisor', process.env.RCLAUDE_ADVISOR)
+  }
+
   // Append-system-prompt injection (transport-reframe Phase 2). Headless passes
   // the text inline via CLAUDWERK_APPEND_SYSTEM_PROMPT (real env, safe at any
   // size). The PTY path can't put 16 KiB of arbitrary text through the tmux

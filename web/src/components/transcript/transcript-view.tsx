@@ -69,6 +69,11 @@ function estimateGroupSize(group: DisplayGroup, measuredSizes: Map<string, numbe
     case 'shell':
       // Single compact receipt card (open/exit) -- one row plus optional detail.
       return 48
+    case 'advisor': {
+      // Header row + optional advice text body (virtualizer re-measures anyway).
+      const text = (group.entries[0] as { text?: string })?.text ?? ''
+      return Math.min(56 + Math.ceil(text.length / 60) * 16, 320)
+    }
     case 'user': {
       const entries = group.entries
       let textLen = 0

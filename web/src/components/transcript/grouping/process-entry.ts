@@ -346,6 +346,12 @@ export function processEntry(entry: TranscriptEntry, state: GroupingState): void
     state.groups.push({ type: 'shell', timestamp: entry.timestamp || '', entries: [entry] })
     return
   }
+  if (entry.type === 'advisor') {
+    // One card per advisor() consult event (message / result / tool_result).
+    state.current = null
+    state.groups.push({ type: 'advisor', timestamp: entry.timestamp || '', entries: [entry] })
+    return
+  }
   if (entry.type === 'compacting' || entry.type === 'compacted') {
     handleCompact(entry, state)
     return

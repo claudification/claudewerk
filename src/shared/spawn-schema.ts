@@ -135,6 +135,13 @@ export const spawnRequestSchema = z.object({
     .optional()
     .describe('Include partial message chunks (token streaming). Default: true for normal, false for ad-hoc'),
   agent: z.string().optional().describe('Agent name (passed as --agent to claude CLI)'),
+  advisor: z
+    .string()
+    .optional()
+    .describe(
+      'Advisor model (CC 2.1.170 server-side advisor tool). When set, the worker can call advisor() to ' +
+        'consult this model (e.g. "fable") mid-task. Passed as --advisor <model>; enables the experimental tool.',
+    ),
   worktree: z.string().optional().describe('Branch name - creates isolated git worktree'),
   env: z.record(z.string(), z.string()).optional().describe('Env var overrides'),
   prompt: z.string().optional().describe('Initial prompt (headless only)'),

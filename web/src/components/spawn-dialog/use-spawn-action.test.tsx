@@ -16,6 +16,7 @@ function makeCtx(overrides: Partial<SpawnActionContext> = {}): SpawnActionContex
     model: '',
     effort: '',
     agent: '',
+    advisor: '',
     permissionMode: '',
     autocompactPct: '' as number | '',
     maxBudgetUsd: '',

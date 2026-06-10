@@ -93,6 +93,7 @@ export function SpawnDialog() {
   const [model, setModel] = useState('')
   const [effort, setEffort] = useState('')
   const [agent, setAgent] = useState('')
+  const [advisor, setAdvisor] = useState('')
   const [bare, setBare] = useState(false)
   const [repl, setRepl] = useState(false)
   const [useWorktree, setUseWorktree] = useState(false)
@@ -195,6 +196,7 @@ export function SpawnDialog() {
       setModel('')
       setEffort('')
       setAgent('')
+      setAdvisor('')
       setBare(ps?.defaultBare ?? (gs.defaultBare as boolean) ?? false)
       setRepl(ps?.defaultRepl ?? (gs.defaultRepl as boolean) ?? false)
       setUseWorktree(false)
@@ -263,6 +265,7 @@ export function SpawnDialog() {
           setModel,
           setEffort,
           setAgent,
+          setAdvisor,
           setBare,
           setRepl,
           setPermissionMode,
@@ -407,6 +410,7 @@ export function SpawnDialog() {
     model,
     effort,
     agent,
+    advisor,
     permissionMode,
     autocompactPct,
     maxBudgetUsd,
@@ -540,6 +544,7 @@ export function SpawnDialog() {
     setModel('')
     setEffort('')
     setAgent('')
+    setAdvisor('')
     setBare(false)
     setRepl(false)
     setPermissionMode('')
@@ -593,6 +598,7 @@ export function SpawnDialog() {
     if ('model' in patch) setModel(patch.model ?? '')
     if ('effort' in patch) setEffort(patch.effort ?? '')
     if ('agent' in patch) setAgent(patch.agent ?? '')
+    if ('advisor' in patch) setAdvisor(patch.advisor ?? '')
     if ('permissionMode' in patch) setPermissionMode(patch.permissionMode ?? '')
     if ('autocompactPct' in patch) setAutocompactPct(patch.autocompactPct ?? '')
     if ('maxBudgetUsd' in patch) setMaxBudgetUsd(patch.maxBudgetUsd ?? '')
@@ -636,6 +642,7 @@ export function SpawnDialog() {
     model,
     effort,
     agent,
+    advisor: advisor || undefined,
     permissionMode,
     autocompactPct,
     maxBudgetUsd,
@@ -736,6 +743,7 @@ export function SpawnDialog() {
                       setModel,
                       setEffort,
                       setAgent,
+                      setAdvisor,
                       setBare,
                       setRepl,
                       setPermissionMode,
@@ -760,6 +768,7 @@ export function SpawnDialog() {
                       model,
                       effort,
                       agent,
+                      advisor,
                       permissionMode,
                       autocompactPct,
                       maxBudgetUsd,
@@ -1067,6 +1076,7 @@ export function SpawnDialog() {
                           onChange={applyFieldsPatch}
                           show={{
                             agent: true,
+                            advisor: true,
                             permissionMode: true,
                             autocompactPct: true,
                             maxBudgetUsd: headless,

@@ -27,6 +27,7 @@ type LaunchFieldKey =
   | 'model'
   | 'effort'
   | 'agent'
+  | 'advisor'
   | 'permissionMode'
   | 'autocompactPct'
   | 'includePartialMessages'
@@ -47,6 +48,8 @@ export type LaunchFieldsValue = {
   model?: string
   effort?: string
   agent?: string
+  /** Advisor model (SpawnRequest.advisor). Rendered as a toggle that sets 'fable'. */
+  advisor?: string
   permissionMode?: string
   autocompactPct?: number | ''
   maxBudgetUsd?: string
@@ -214,6 +217,15 @@ export function LaunchConfigFields({
             className="flex-1 max-w-[220px] text-[10px] font-mono bg-surface-inset border border-primary/20 text-foreground px-2 py-1 outline-none"
           />
         </Row>
+      )}
+      {show.advisor && (
+        <TileToggleRow
+          title="Advisor (Fable)"
+          subtitle="Worker can call advisor() to consult Fable 5 mid-task (CC experimental tool)"
+          checked={!!value.advisor}
+          onToggle={() => onChange({ advisor: value.advisor ? undefined : 'fable' })}
+          disabled={disabled.advisor}
+        />
       )}
       {show.permissionMode && (
         <div className="space-y-1.5">

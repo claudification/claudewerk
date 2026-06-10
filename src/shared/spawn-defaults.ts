@@ -232,6 +232,7 @@ export function profileToSpawnPartial(profile: LaunchProfile | null | undefined)
   const partial: Partial<SpawnRequest> = {}
   if (spawn.backend !== undefined) partial.backend = spawn.backend
   if (spawn.agent !== undefined) partial.agent = spawn.agent
+  if (spawn.advisor !== undefined) partial.advisor = spawn.advisor
   if (spawn.env !== undefined) partial.env = spawn.env
   if (spawn.appendSystemPrompt !== undefined) partial.appendSystemPrompt = spawn.appendSystemPrompt
   if (spawn.openCodeModel !== undefined) partial.openCodeModel = spawn.openCodeModel

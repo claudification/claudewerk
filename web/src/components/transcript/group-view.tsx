@@ -1,6 +1,7 @@
 import { memo } from 'react'
 import type { TranscriptAssistantEntry } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { AdvisorCard } from './advisor-card'
 import { BootTimeline } from './boot-timeline'
 import { ChatBubble } from './chat-bubble'
 import type { RenderItem, ResultLookup, TranscriptSettings } from './group-view-types'
@@ -48,6 +49,10 @@ function GroupView({
 
   if (group.type === 'shell') {
     return <ShellReceipt group={group} />
+  }
+
+  if (group.type === 'advisor') {
+    return <AdvisorCard group={group} />
   }
 
   if (group.type === 'system' && group.notifications?.length) {
