@@ -29,6 +29,22 @@ import { handleTaskCompleted, handleTeammateIdle } from './event-handlers/team'
  * lives here; per-hook-event behavior is delegated to typed helpers in
  * `event-handlers/`, dispatched through the `eventHandlers` table below.
  */
+/**
+ * Resolve the subagent that a hook event originated from, or undefined for a
+ * parent-originated event. The agent host stamps subagent-originated hooks with
+ * `subagentId` (the SubagentStart agent_id) -- in the current CC version every
+ * subagent hook otherwise carries the PARENT session id and no subagent marker,
+ * so this explicit field is the only reliable signal. Legacy fallback: a
+ * CC-populated `data.conversation_id` that differs from the parent, kept for
+ * older/future CC builds that might set it.
+ */
+function detectSubagentOrigin(conv: Conversation, event: HookEvent): string | undefined {
+  if (typeof event.subagentId === 'string') return event.subagentId
+  const legacyHookConvId = (event.data as { conversation_id?: unknown }).conversation_id
+  if (typeof legacyHookConvId === 'string' && legacyHookConvId !== conv.id) return legacyHookConvId
+  return undefined
+}
+
 export function addEvent(ctx: ConversationStoreContext, conversationId: string, event: HookEvent): void {
   const conv = ctx.conversations.get(conversationId)
   if (!conv) return
@@ -47,14 +63,15 @@ export function addEvent(ctx: ConversationStoreContext, conversationId: string, 
     projectLabel: getProjectSettings(conv.project)?.label,
   })
 
-  // Correlate hook events to subagents: if the hook's conversation_id differs
-  // from the parent conversation ID, it came from a subagent context.
-  // MUST happen BEFORE status transitions so subagent activity doesn't
-  // flip the parent from idle -> active (spinner stays on after Stop).
-  const hookConversationId = (event.data as { conversation_id?: unknown }).conversation_id
-  const isSubagentEvent = typeof hookConversationId === 'string' && hookConversationId !== conv.id
+  // Correlate hook events to subagents (see detectSubagentOrigin). When
+  // subagent-originated we push the event to the subagent's bucket and suppress
+  // EVERY parent-level side effect below: no idle->active status flip (spinner
+  // staying on after Stop was a symptom), no model clobber via SessionStart, no
+  // compaction-state flip via Pre/PostCompact, no parent tool tracking.
+  const subagentId = detectSubagentOrigin(conv, event)
+  const isSubagentEvent = subagentId !== undefined
   if (isSubagentEvent) {
-    const subagent = conv.subagents.find(a => a.agentId === hookConversationId && a.status === 'running')
+    const subagent = conv.subagents.find(a => a.agentId === subagentId && a.status === 'running')
     if (subagent) subagent.events.push(event)
   }
 
@@ -85,12 +102,19 @@ export function addEvent(ctx: ConversationStoreContext, conversationId: string, 
     }
   }
 
-  // Per-event-type dispatch. Stop/StopFailure are handled above as part of
-  // the status-transition block (they're conditional on !isSubagentEvent &&
-  // !isRecap). Everything else fires unconditionally regardless of subagent
-  // origin or recap classification.
-  const handler = eventHandlers[event.hookEvent]
-  if (handler) handler(ctx, conversationId, conv, event)
+  // Per-event-type dispatch. Stop/StopFailure are handled above as part of the
+  // status-transition block (conditional on !isSubagentEvent && !isRecap).
+  // Subagent-originated hooks are CONTAINED: skipping the dispatch keeps every
+  // parent-level side effect off the parent (model clobber via SessionStart,
+  // compaction-state flip via Pre/PostCompact, parent tool tracking) -- their
+  // only effects are the subagent.events push above + the broadcast below. The
+  // roster/lifecycle hooks the broker needs (SubagentStart/Stop, TeammateIdle,
+  // TaskCompleted) are never tagged subagent-originated by the agent host, so
+  // they still reach their handlers here.
+  if (!isSubagentEvent) {
+    const handler = eventHandlers[event.hookEvent]
+    if (handler) handler(ctx, conversationId, conv, event)
+  }
 
   // Broadcast event to dashboard subscribers (channel-filtered for v2)
   ctx.broadcastToChannel('conversation:events', conversationId, {

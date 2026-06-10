@@ -55,6 +55,21 @@ export interface HookEvent {
   hookEvent: HookEventType
   timestamp: number
   data: HookEventData
+  /** Subagent attribution stamped by the agent host. In the current CC version
+   *  EVERY subagent (Task tool) hook carries the PARENT session id and no
+   *  subagent identifier, so the broker cannot tell subagent hooks apart from
+   *  the wire payload alone. The agent host -- which brackets each subagent
+   *  between SubagentStart/SubagentStop -- tags subagent-originated hooks with
+   *  the running subagent's agent_id here. Presence of this field means
+   *  "this hook came from a subagent, NOT the parent": the broker routes it to
+   *  the subagent's event bucket and MUST NOT apply parent-level side effects
+   *  (status flip, model write, compaction state). Absent = parent-originated.
+   *  Value is the SubagentStart `agent_id` (matches the conv.subagents roster
+   *  key); with multiple subagents in flight it is the most-recently-started
+   *  one (containment over exact attribution -- see
+   *  plan-subagent-hook-containment.md). NOT to be confused with the
+   *  CC-controlled `data.conversation_id`, which we never overload. */
+  subagentId?: string
 }
 
 // Capabilities that rclaude declares on connect

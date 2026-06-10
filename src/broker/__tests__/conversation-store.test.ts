@@ -674,7 +674,7 @@ describe('conversation.model derivation', () => {
     expect(store.getConversation('model-1')!.model).toBe('claude-opus-4-7')
   })
 
-  it('second SessionStart DOES overwrite model (init is ground truth)', () => {
+  it('second SessionStart does NOT overwrite an established model (SessionStart is fallback, not ground truth)', () => {
     store.createConversation('model-2', '/cwd')
     store.addEvent(
       'model-2',
@@ -682,12 +682,18 @@ describe('conversation.model derivation', () => {
     )
     expect(store.getConversation('model-2')!.model).toBe('claude-opus-4-7')
 
-    // Re-emission (e.g. /model switch) arrives with a different model -- must update
+    // A later SessionStart carrying a DIFFERENT model must NOT clobber the
+    // established one. The real model-update paths are stream-json init /
+    // conversation_info (transcript.ts) and explicit set_model/reset, which run
+    // unconditionally; SessionStart is a last-resort fallback (mirrors the
+    // assistant-entry rule). This is what contains the subagent-compaction
+    // SessionStart that used to overwrite the parent's model with the
+    // subagent's -- see plan-subagent-hook-containment.md.
     store.addEvent(
       'model-2',
       makeHookEvent('model-2', 'SessionStart', { data: { conversation_id: 'model-2', model: 'claude-sonnet-4-6' } }),
     )
-    expect(store.getConversation('model-2')!.model).toBe('claude-sonnet-4-6')
+    expect(store.getConversation('model-2')!.model).toBe('claude-opus-4-7')
   })
 
   it('assistant transcript entry sets conversation.model when absent', () => {

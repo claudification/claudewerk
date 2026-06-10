@@ -128,6 +128,7 @@ async function main() {
     taskCandidateDirs: [],
     transcriptWatcher: null,
     subagentWatchers: new Map(),
+    runningSubagents: new Set(),
     bgTaskOutputWatchers: new Map(),
 
     pendingEditInputs: new Map(),

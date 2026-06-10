@@ -161,7 +161,7 @@ instantly (~8ms). They bypass the normal user message queue path.
 |---|---|---|---|
 | `internalId` | `randomUUID()` at rclaude start | Entire agent host process | Local server validation, settings file naming, PTY routing |
 | `claudeSessionId` | `data.session_id` from SessionStart | Until `/clear` or restart | Canonical identity for broker, transcript path |
-| `data.session_id` in hooks | Each hook payload | Per-event | Parent session = `claudeSessionId`; subagent hooks = subagent's own ID |
+| `data.session_id` in hooks | Each hook payload | Per-event | The PARENT session id on EVERY hook -- subagent hooks included (see warning below) |
 
 **Flow:**
 1. rclaude boots -> generates `internalId` -> starts local HTTP server
@@ -170,8 +170,20 @@ instantly (~8ms). They bypass the normal user message queue path.
 4. Opens WS to broker using `claudeSessionId`
 5. On `/clear`: new `SessionStart` with different `session_id` -> rekey
 
-**Subagent hooks carry the subagent's session_id, not the parent's.** The
-broker correlates by checking `hookSessionId !== session.id`.
+**Subagent hooks carry the PARENT's `session_id`, NOT the subagent's** (verified
+empirically on build `d4401ed`, CC current). Only `SubagentStart`/`SubagentStop`
+carry a subagent identifier (`agent_id`); every in-between hook (PreToolUse,
+PostToolUse, PreCompact, PostCompact, SessionStart-after-compact) is stamped with
+the parent session id and `data.conversation_id` is ABSENT. So the broker cannot
+tell a subagent hook apart from the payload alone -- a stale earlier claim that it
+correlates via `hookSessionId !== session.id` was wrong and caused the systemic
+subagent mis-attribution bug (model clobber + compaction leak). The fix: the
+agent host brackets each subagent between SubagentStart/SubagentStop and tags
+subagent-originated hooks with the running subagent's `agent_id` in the explicit
+`HookEvent.subagentId` wire field; the broker honors that field to keep subagent
+side effects off the parent. See `src/claude-agent-host/hook-forward.ts`,
+`src/broker/conversation-store/add-event.ts`, and
+`.claude/docs/plan-subagent-hook-containment.md`.
 
 ## Transcript File Management
 

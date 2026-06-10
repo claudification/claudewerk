@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import type { HookEvent } from '../shared/protocol'
 import type { AgentHostContext } from './agent-host-context'
 import { debug as _debug } from './debug'
+import { forwardOrQueueHookEvent } from './hook-forward'
 import { emitLaunchEvent } from './launch-events'
 import { observeClaudeSessionId } from './session-transition'
 import {
@@ -19,8 +20,6 @@ import {
 import { emitCwdChanged } from './worktree-detect'
 
 const debug = (msg: string) => _debug(msg)
-
-const MAX_EVENT_QUEUE = 200
 
 /**
  * Process a hook event from Claude Code.
@@ -120,6 +119,9 @@ export function processHookEvent(ctx: AgentHostContext, event: HookEvent) {
   if (event.hookEvent === 'SubagentStart' && event.data) {
     const data = event.data as Record<string, unknown>
     const agentId = String(data.agent_id || '')
+    // Open the subagent's containment window: hooks forwarded while this id is
+    // in flight get tagged subagent-originated (see resolveSubagentAttribution).
+    if (agentId) ctx.runningSubagents.add(agentId)
     if (agentId && ctx.parentTranscriptPath) {
       // Derive subagent transcript path: {sessionDir}/subagents/agent-{agentId}.jsonl
       const sessionDir = ctx.parentTranscriptPath.replace(/\.jsonl$/, '')
@@ -144,6 +146,8 @@ export function processHookEvent(ctx: AgentHostContext, event: HookEvent) {
     const agentId = String(data.agent_id || '')
     const transcriptPath = typeof data.agent_transcript_path === 'string' ? data.agent_transcript_path : undefined
     debug(`SubagentStop: agent=${agentId.slice(0, 7)} transcript=${transcriptPath || 'NONE'}`)
+    // Close the containment window for this subagent.
+    if (agentId) ctx.runningSubagents.delete(agentId)
     // Stop live watcher first
     stopSubagentWatcher(ctx, agentId)
     // Then do a final read of the complete transcript
@@ -167,18 +171,8 @@ export function processHookEvent(ctx: AgentHostContext, event: HookEvent) {
     emitCwdChanged(ctx, cwd)
   }
 
-  // Forward to broker, or queue until session ID + WS are ready
-  if (ctx.claudeSessionId && ctx.wsClient?.isConnected()) {
-    ctx.wsClient.sendHookEvent({ ...event, conversationId: ctx.conversationId })
-    debug(`Hook: ${event.hookEvent} -> forwarded (sid=${ctx.claudeSessionId.slice(0, 8)})`)
-  } else {
-    if (ctx.eventQueue.length >= MAX_EVENT_QUEUE) {
-      const dropped = ctx.eventQueue.shift()
-      debug(`Event queue full (${MAX_EVENT_QUEUE}), dropping oldest: ${dropped?.hookEvent}`)
-    }
-    ctx.eventQueue.push(event)
-    debug(
-      `Hook: ${event.hookEvent} -> QUEUED (claudeSessionId=${ctx.claudeSessionId?.slice(0, 8) || 'null'} ws=${ctx.wsClient?.isConnected() || false} queue=${ctx.eventQueue.length})`,
-    )
-  }
+  // Stamp subagent attribution + the stable conversationId, then forward (or
+  // queue). Attribution is computed inside, at observation time, so the broker
+  // can keep subagent side effects off the parent (see hook-forward.ts).
+  forwardOrQueueHookEvent(ctx, event)
 }

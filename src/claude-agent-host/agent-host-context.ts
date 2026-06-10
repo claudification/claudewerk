@@ -87,6 +87,12 @@ export interface AgentHostContext {
   taskCandidateDirs: string[]
   transcriptWatcher: TranscriptWatcher | null
   readonly subagentWatchers: Map<string, TranscriptWatcher>
+  /** agent_ids of subagents currently in flight (added on SubagentStart, removed
+   *  on SubagentStop). Insertion-ordered. Used by the hook seam to tag
+   *  subagent-originated hooks with a running subagent's id so the broker keeps
+   *  their side effects off the parent conversation -- see HookEvent.subagentId
+   *  and plan-subagent-hook-containment.md. */
+  readonly runningSubagents: Set<string>
   readonly bgTaskOutputWatchers: Map<string, { stop: () => void }>
 
   // Caches
