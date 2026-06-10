@@ -7,7 +7,8 @@
  * see perf-message-context). Sorted by total attributed cost, heaviest first.
  */
 
-import { durationColor, type MessageImpact, messageImpactStats, type PerfEntry } from '@/lib/perf-metrics'
+import { durationColor, type PerfEntry } from '@/lib/perf-metrics'
+import { type MessageImpact, messageImpactStats } from '@/lib/perf-rollup'
 import { cn } from '@/lib/utils'
 
 type NumKey = Exclude<keyof MessageImpact, 'msgType'>

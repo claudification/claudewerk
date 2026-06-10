@@ -1657,6 +1657,9 @@ export const WEB_CONTROL_OPS = [
   'terminal_read',
   'terminal_write',
   'terminal_screenshot',
+  // Performance monitor (the "Details for Nerds" perf HUD).
+  'perf_report',
+  'set_perf_monitor',
 ] as const
 export type WebControlOp = (typeof WEB_CONTROL_OPS)[number]
 

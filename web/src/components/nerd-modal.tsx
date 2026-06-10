@@ -17,11 +17,11 @@ import {
   durationColor,
   getEntries as getPerfEntries,
   isPerfEnabled,
-  messageImpactStats,
   type PerfCategory,
   type PerfEntry,
   subscribe as subscribePerfMetrics,
 } from '@/lib/perf-metrics'
+import { buildPerfReport, PERF_CATEGORIES, SIGNIFICANT_THRESHOLD_MS } from '@/lib/perf-report'
 import { formatStoreReport, humanBytes, measureStore, type StoreReport } from '@/lib/store-sizeof'
 import { extractProjectLabel } from '@/lib/types'
 import { clearCacheAndReload, cn } from '@/lib/utils'
@@ -375,7 +375,6 @@ function SwTab() {
   )
 }
 
-const PERF_CATEGORIES: PerfCategory[] = ['render', 'grouping', 'ws', 'scroll', 'transcript', 'message', 'other']
 const CAT_COLORS: Record<PerfCategory, string> = {
   render: 'text-primary',
   grouping: 'text-event-prompt',
@@ -385,8 +384,6 @@ const CAT_COLORS: Record<PerfCategory, string> = {
   message: 'text-event-prompt',
   other: 'text-muted-foreground',
 }
-
-const SIGNIFICANT_THRESHOLD_MS = 2.5
 
 function PerfTab() {
   const entries = useSyncExternalStore(subscribePerfMetrics, getPerfEntries) as PerfEntry[]
@@ -456,54 +453,7 @@ function PerfTab() {
           <button
             type="button"
             onClick={() => {
-              // react-doctor-disable-next-line react-doctor/rendering-hydration-mismatch-time
-              const lines = ['# Perf Report', '', `${new Date().toISOString()}`, '']
-              if (stats.length > 0) {
-                lines.push('## Summary', '', '| Category | Count | Avg | P95 | Max |', '|---|---|---|---|---|')
-                for (const s of stats) {
-                  lines.push(
-                    `| ${s.cat} | ${s.count} | ${s.avg.toFixed(1)}ms | ${s.p95.toFixed(1)}ms | ${s.max.toFixed(1)}ms |`,
-                  )
-                }
-                lines.push('')
-              }
-              const impact = messageImpactStats(visibleEntries)
-              if (impact.length > 0) {
-                lines.push(
-                  '## By message',
-                  '',
-                  '| Message | n | Apply | Render | Paint | Group | Total |',
-                  '|---|---|---|---|---|---|---|',
-                )
-                for (const r of impact) {
-                  lines.push(
-                    `| ${r.msgType} | ${r.applies} | ${r.applyMs.toFixed(1)}ms | ${r.renderMs.toFixed(1)}ms | ${r.paintMs.toFixed(1)}ms | ${r.groupingMs.toFixed(1)}ms | ${r.totalMs.toFixed(1)}ms |`,
-                  )
-                }
-                lines.push('')
-              }
-              // Unified timeline: perf entries + debug-log entries interleaved by
-              // timestamp, so chunk loads / nav / sync / long tasks sit right next
-              // to the commit->paint spikes they explain. A perf number is only
-              // trustworthy with this context -- see the rAF-suspension misread.
-              const iso = (t: number) => new Date(t).toISOString().slice(11, 23)
-              type Row = { t: number; line: string }
-              const perfRows: Row[] = visibleEntries.slice(-300).map(e => ({
-                t: e.t,
-                line: `${iso(e.t)}  ${e.category.padEnd(9)} ${e.label} ${e.durationMs.toFixed(1)}ms${e.msgType ? ` <${e.msgType}>` : ''}${e.detail ? ` ${e.detail}` : ''}`,
-              }))
-              const logRows: Row[] = getLogEntries()
-                .slice(-400)
-                .map(l => ({
-                  t: l.t,
-                  line: `${iso(l.t)}  ${l.level.toUpperCase().padEnd(9)} ${l.args.replace(/\s+/g, ' ').slice(0, 240)}`,
-                }))
-              const merged = [...perfRows, ...logRows].sort((a, b) => a.t - b.t).slice(-500)
-              const heading = significantOnly
-                ? `## Timeline (perf \u2265${SIGNIFICANT_THRESHOLD_MS}ms + debug log, chronological)`
-                : '## Timeline (perf + debug log, chronological)'
-              lines.push(heading, '', '```', ...merged.map(r => r.line), '```')
-              navigator.clipboard.writeText(lines.join('\n'))
+              navigator.clipboard.writeText(buildPerfReport({ significantOnly }))
             }}
             className="text-[10px] text-comment hover:text-foreground transition-colors"
           >

@@ -6,7 +6,8 @@ import {
   endMessage,
   setFlushBatch,
 } from './perf-message-context'
-import { clearEntries, getEntries, messageImpactStats, type PerfEntry, record, setPerfEnabled } from './perf-metrics'
+import { clearEntries, getEntries, type PerfEntry, record, setPerfEnabled } from './perf-metrics'
+import { messageImpactStats } from './perf-rollup'
 
 describe('perf-message-context', () => {
   beforeEach(() => {
@@ -79,6 +80,20 @@ describe('messageImpactStats', () => {
     expect(te?.totalMs).toBe(25)
     // heaviest first
     expect(rows[0]?.msgType).toBe('transcript_entries')
+  })
+
+  it('excludes the ws flush entry so Total does not double-count apply', () => {
+    // The flush wall-time is measured around the apply loop, so it already
+    // contains the apply span -- summing both would double-count.
+    const entries: PerfEntry[] = [
+      mk('message', 'apply:conversation_update', 4, 'conversation_update'),
+      mk('ws', 'flush', 4, 'conversation_update'),
+    ]
+    const rows = messageImpactStats(entries)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.applyMs).toBe(4)
+    expect(rows[0]?.otherMs).toBe(0) // ws NOT folded into otherMs
+    expect(rows[0]?.totalMs).toBe(4) // apply only, not 8
   })
 
   it('ignores untagged entries and tab-hidden artifacts', () => {

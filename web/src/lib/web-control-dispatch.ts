@@ -11,6 +11,8 @@
 import type { TranscriptContentBlock, TranscriptEntry, WebControlOp } from '@shared/protocol'
 import { sendInput, useConversationsStore } from '@/hooks/use-conversations'
 import { executeCommand, getCommands } from './commands'
+import { isPerfEnabled } from './perf-metrics'
+import { buildPerfReport } from './perf-report'
 import { captureNodeToUrl } from './web-control-capture'
 import { getActiveWebControlGrant } from './web-control-grant'
 import {
@@ -108,6 +110,12 @@ export async function handleWebControlRequest(msg: WebControlRequestMsg, send: S
         break
       case 'terminal_screenshot':
         sendTerm(send, requestId, op, await terminalScreenshot(args))
+        break
+      case 'perf_report':
+        opPerfReport(send, requestId, args)
+        break
+      case 'set_perf_monitor':
+        opSetPerfMonitor(send, requestId, args)
         break
       default:
         respond(send, requestId, false, undefined, `Unknown op '${op}'`)
@@ -207,6 +215,34 @@ function opSendPrompt(send: Send, requestId: string, args: Record<string, unknow
   toast('send_prompt', `${conversationId.slice(0, 8)}: ${text.slice(0, 40)}`)
   const ok = sendInput(conversationId, text)
   respond(send, requestId, ok, { sent: ok, conversationId }, ok ? undefined : 'Send failed (socket not open?)')
+}
+
+function opPerfReport(send: Send, requestId: string, args: Record<string, unknown>): void {
+  if (!isPerfEnabled()) {
+    respond(
+      send,
+      requestId,
+      false,
+      undefined,
+      'Perf monitor is OFF, so no samples are being recorded. Turn it on with set_perf_monitor {enabled:true}, reproduce the activity, then grab the report.',
+    )
+    return
+  }
+  const significantOnly = args.significantOnly === true
+  toast('perf_report', significantOnly ? 'significant only' : 'full')
+  respond(send, requestId, true, { report: buildPerfReport({ significantOnly }) })
+}
+
+function opSetPerfMonitor(send: Send, requestId: string, args: Record<string, unknown>): void {
+  if (typeof args.enabled !== 'boolean') {
+    respond(send, requestId, false, undefined, 'set_perf_monitor requires { enabled: boolean }')
+    return
+  }
+  toast('set_perf_monitor', args.enabled ? 'ON' : 'OFF')
+  // Mirror the Settings toggle exactly: updateControlPanelPrefs persists the
+  // pref AND calls setPerfEnabled() to start/stop the ring buffer.
+  useConversationsStore.getState().updateControlPanelPrefs({ showPerfMonitor: args.enabled })
+  respond(send, requestId, true, { showPerfMonitor: args.enabled })
 }
 
 // ── Transcript text serialization (bounded) ──────────────────────────────

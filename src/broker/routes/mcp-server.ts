@@ -670,6 +670,32 @@ export function createMcpServer(
     async ({ clientId, shellId }) => runWebControlOp(clientId, 'terminal_screenshot', { shellId }),
   )
 
+  // ─── web_set_perf_monitor ────────────────────────────────────────────
+  mcp.tool(
+    'web_set_perf_monitor',
+    'Turn the control-panel performance monitor (the "Details for Nerds" perf HUD) ON or OFF in the opted-in browser. It is OFF by default and records nothing until enabled. Turn it ON, ask the user to reproduce the slow activity (switch conversations, stream a turn, etc.), THEN call web_perf_report. Turn it OFF when done -- the Profiler wrappers add per-commit overhead while on.',
+    {
+      clientId: z.string().optional().describe('Target browser. Omit if exactly one is opted-in.'),
+      enabled: z.boolean().describe('true = start recording, false = stop and clear the ring buffer.'),
+    },
+    async ({ clientId, enabled }) => runWebControlOp(clientId, 'set_perf_monitor', { enabled }),
+  )
+
+  // ─── web_perf_report ─────────────────────────────────────────────────
+  mcp.tool(
+    'web_perf_report',
+    'Grab the performance report from the opted-in browser as markdown: a per-category Summary (count/avg/p95/max), a By-message impact rollup (apply vs render vs paint vs grouping cost per wire-message type), and a chronological Timeline of perf samples interleaved with debug-log lines. Requires the perf monitor to be ON (web_set_perf_monitor {enabled:true}) and some activity to have occurred since. See docs/perf-monitor.md for what each metric means.',
+    {
+      clientId: z.string().optional().describe('Target browser. Omit if exactly one is opted-in.'),
+      significantOnly: z
+        .boolean()
+        .optional()
+        .describe('Only include samples >= 2.5ms in By-message + Timeline (cuts sub-ms noise). Default false.'),
+    },
+    async ({ clientId, significantOnly }) =>
+      runWebControlOp(clientId, 'perf_report', { significantOnly: significantOnly ?? false }),
+  )
+
   return mcp
 }
 
