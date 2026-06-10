@@ -17,6 +17,7 @@ import {
   durationColor,
   getEntries as getPerfEntries,
   isPerfEnabled,
+  messageImpactStats,
   type PerfCategory,
   type PerfEntry,
   subscribe as subscribePerfMetrics,
@@ -24,6 +25,7 @@ import {
 import { formatStoreReport, humanBytes, measureStore, type StoreReport } from '@/lib/store-sizeof'
 import { extractProjectLabel } from '@/lib/types'
 import { clearCacheAndReload, cn } from '@/lib/utils'
+import { MessageImpactTable } from './nerd-modal-message-impact'
 
 interface ServerStats {
   uptime: number
@@ -373,13 +375,14 @@ function SwTab() {
   )
 }
 
-const PERF_CATEGORIES: PerfCategory[] = ['render', 'grouping', 'ws', 'scroll', 'transcript', 'other']
+const PERF_CATEGORIES: PerfCategory[] = ['render', 'grouping', 'ws', 'scroll', 'transcript', 'message', 'other']
 const CAT_COLORS: Record<PerfCategory, string> = {
   render: 'text-primary',
   grouping: 'text-event-prompt',
   ws: 'text-info',
   scroll: 'text-success',
   transcript: 'text-warning',
+  message: 'text-event-prompt',
   other: 'text-muted-foreground',
 }
 
@@ -432,6 +435,9 @@ function PerfTab() {
         </div>
       )}
 
+      {/* Per-message impact rollup */}
+      <MessageImpactTable entries={entries} />
+
       {/* Controls */}
       <div className="flex items-center justify-between">
         <span className="text-[10px] text-comment">
@@ -461,6 +467,21 @@ function PerfTab() {
                 }
                 lines.push('')
               }
+              const impact = messageImpactStats(visibleEntries)
+              if (impact.length > 0) {
+                lines.push(
+                  '## By message',
+                  '',
+                  '| Message | n | Apply | Render | Paint | Group | Total |',
+                  '|---|---|---|---|---|---|---|',
+                )
+                for (const r of impact) {
+                  lines.push(
+                    `| ${r.msgType} | ${r.applies} | ${r.applyMs.toFixed(1)}ms | ${r.renderMs.toFixed(1)}ms | ${r.paintMs.toFixed(1)}ms | ${r.groupingMs.toFixed(1)}ms | ${r.totalMs.toFixed(1)}ms |`,
+                  )
+                }
+                lines.push('')
+              }
               // Unified timeline: perf entries + debug-log entries interleaved by
               // timestamp, so chunk loads / nav / sync / long tasks sit right next
               // to the commit->paint spikes they explain. A perf number is only
@@ -469,7 +490,7 @@ function PerfTab() {
               type Row = { t: number; line: string }
               const perfRows: Row[] = visibleEntries.slice(-300).map(e => ({
                 t: e.t,
-                line: `${iso(e.t)}  ${e.category.padEnd(9)} ${e.label} ${e.durationMs.toFixed(1)}ms${e.detail ? ` ${e.detail}` : ''}`,
+                line: `${iso(e.t)}  ${e.category.padEnd(9)} ${e.label} ${e.durationMs.toFixed(1)}ms${e.msgType ? ` <${e.msgType}>` : ''}${e.detail ? ` ${e.detail}` : ''}`,
               }))
               const logRows: Row[] = getLogEntries()
                 .slice(-400)

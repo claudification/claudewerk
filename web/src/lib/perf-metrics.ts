@@ -3,7 +3,9 @@
  * Opt-in via dashboard prefs (showPerfMonitor). When disabled, record() is a no-op.
  */
 
-export type PerfCategory = 'render' | 'grouping' | 'ws' | 'scroll' | 'transcript' | 'other'
+import { currentMessageTag } from './perf-message-context'
+
+export type PerfCategory = 'render' | 'grouping' | 'ws' | 'scroll' | 'transcript' | 'message' | 'other'
 
 export interface PerfEntry {
   t: number // timestamp ms
@@ -11,6 +13,9 @@ export interface PerfEntry {
   label: string
   durationMs: number
   detail?: string
+  // Wire-message (or flush-batch) this cost is attributed to, when known.
+  // Stamped from perf-message-context at record() time -- see that module.
+  msgType?: string
 }
 
 const MAX_ENTRIES = 500
@@ -52,7 +57,7 @@ export function isPerfEnabled(): boolean {
 
 export function record(category: PerfCategory, label: string, durationMs: number, detail?: string) {
   if (!enabled) return
-  buffer.push({ t: Date.now(), category, label, durationMs, detail })
+  buffer.push({ t: Date.now(), category, label, durationMs, detail, msgType: currentMessageTag() })
   if (buffer.length > MAX_ENTRIES) buffer.splice(0, buffer.length - MAX_ENTRIES)
   notify()
 }
@@ -142,4 +147,51 @@ export function categoryStats(cat: PerfCategory): { count: number; avg: number; 
     max: durations[durations.length - 1],
     p95: durations[Math.floor(durations.length * 0.95)],
   }
+}
+
+export interface MessageImpact {
+  msgType: string
+  applies: number // count of synchronous apply spans (category 'message')
+  applyMs: number // total synchronous handler cost
+  renderMs: number // total React commit cost (category 'render', excl. commit->paint)
+  paintMs: number // total commit->paint cost
+  groupingMs: number // total transcript grouping cost
+  otherMs: number // any other attributed cost
+  totalMs: number // sum of all attributed cost
+}
+
+/**
+ * Roll the ring buffer up by attributed message type -- the "per-message
+ * impact" view. Apply cost is exact (one span per message); render / paint /
+ * grouping cost is credited to the batch's dominant message type (see
+ * perf-message-context), so a mixed flush approximates. Tab-hidden artifacts
+ * are excluded (their commit->paint gap is wall-clock idle, not work).
+ */
+export function messageImpactStats(entries: readonly PerfEntry[]): MessageImpact[] {
+  const map = new Map<string, MessageImpact>()
+  const get = (k: string): MessageImpact => {
+    let v = map.get(k)
+    if (!v) {
+      v = { msgType: k, applies: 0, applyMs: 0, renderMs: 0, paintMs: 0, groupingMs: 0, otherMs: 0, totalMs: 0 }
+      map.set(k, v)
+    }
+    return v
+  }
+  for (const e of entries) {
+    if (!e.msgType || e.detail?.includes('suspended')) continue
+    const v = get(e.msgType)
+    v.totalMs += e.durationMs
+    if (e.category === 'message') {
+      v.applies += 1
+      v.applyMs += e.durationMs
+    } else if (e.category === 'render') {
+      if (e.label.endsWith('.commit->paint')) v.paintMs += e.durationMs
+      else v.renderMs += e.durationMs
+    } else if (e.category === 'grouping') {
+      v.groupingMs += e.durationMs
+    } else {
+      v.otherMs += e.durationMs
+    }
+  }
+  return [...map.values()].sort((a, b) => b.totalMs - a.totalMs)
 }

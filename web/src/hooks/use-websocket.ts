@@ -11,6 +11,7 @@ import { unstable_batchedUpdates as batchUpdates } from 'react-dom'
 // Graceful fallback if unstable_batchedUpdates is ever removed
 const batch: (fn: () => void) => void = batchUpdates ?? (fn => fn())
 
+import { beginMessage, endMessage, setFlushBatch } from '@/lib/perf-message-context'
 import { isPerfEnabled, record as perfRecord } from '@/lib/perf-metrics'
 import { buildWsUrl } from '@/lib/share-mode'
 import { cachePushEntries } from '@/lib/transcript-page-cache'
@@ -78,25 +79,58 @@ function flushMessages() {
   }
 
   const flushT0 = isPerfEnabled() ? performance.now() : 0
+  // Credit the render this flush triggers to the batch's dominant message type
+  // BEFORE batch() runs: unstable_batchedUpdates flushes its coalesced setState
+  // synchronously at return, so the React commit (and its Profiler/render
+  // records) fires while we're still inside flushMessages -- the tag has to be
+  // live by then. The per-message sync span (beginMessage) takes precedence
+  // inside the loop, then clears, leaving the batch tag for the commit.
+  if (flushT0) setFlushBatch(dominantFlushType(pending))
   batch(() => {
     for (const msg of pending) {
-      processMessage(msg)
+      if (!flushT0) {
+        processMessage(msg)
+        continue
+      }
+      const type = (msg as { type?: string }).type ?? 'unknown'
+      const t0 = performance.now()
+      beginMessage(type)
+      try {
+        processMessage(msg)
+      } finally {
+        // Recorded while the span is still open, so the apply entry itself
+        // carries msgType=type. This is handler compute only -- the Zustand
+        // notify is deferred to batch() return (credited to the batch tag).
+        perfRecord('message', `apply:${type}`, performance.now() - t0)
+        endMessage()
+      }
     }
   })
   if (flushT0) perfRecord('ws', 'flush', performance.now() - flushT0, summarizeFlush(pending))
 }
 
-function summarizeFlush(pending: DashboardMessage[]): string {
+function flushTypeCounts(pending: DashboardMessage[]): Array<[string, number]> {
   const types: Record<string, number> = {}
   for (const msg of pending) {
     const t = (msg as { type?: string }).type ?? 'unknown'
     types[t] = (types[t] ?? 0) + 1
   }
-  const detail = Object.entries(types)
-    .sort((a, b) => b[1] - a[1])
+  return Object.entries(types).sort((a, b) => b[1] - a[1])
+}
+
+function summarizeFlush(pending: DashboardMessage[]): string {
+  const detail = flushTypeCounts(pending)
     .map(([t, n]) => (n === 1 ? t : `${t}x${n}`))
     .join(',')
   return `n=${pending.length} ${detail}`
+}
+
+// The single message type that most drove this flush -- the render attribution
+// key. A pure-streaming batch (all transcript_entries) is exact; a mixed batch
+// credits its render cost to the heaviest contributor (documented approximation
+// in perf-message-context). Full composition stays visible in the 'flush' entry.
+function dominantFlushType(pending: DashboardMessage[]): string {
+  return flushTypeCounts(pending)[0]?.[0] ?? 'unknown'
 }
 
 // Server now reports staleTranscripts as { [sid]: serverLastSeq }. Compare
