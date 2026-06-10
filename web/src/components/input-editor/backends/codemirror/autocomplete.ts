@@ -174,14 +174,33 @@ function applySubCommandSelection(
 }
 
 /**
+ * Alphanumeric emoticon "mouths" that survive the punctuation guard below but
+ * read as smileys, not mentions: `:D` `:P` `:p` `:O` `:o` `:3` `:x` `:X`. A
+ * run of a single such char (`:D`, `:DD`, `:DDD`, `:ppp`) is treated as a
+ * smiley and never opens the popup. Two distinct chars (`:Da`) is a genuine
+ * query and completes — so a one-letter smiley only costs the next keystroke
+ * to resume a mention. Lowercase `d` is intentionally absent (`:daemon` etc.
+ * are common slugs; the canonical grin is uppercase `:D`).
+ */
+const SMILEY_MOUTHS = 'DPpOo3xX'
+
+function isSmileyQuery(query: string): boolean {
+  if (query.length === 0 || !SMILEY_MOUTHS.includes(query[0])) return false
+  // The whole query is a run of its first char (`D`, `DD`, `ooo`).
+  return /^(.)\1*$/.test(query)
+}
+
+/**
  * Scan backwards for a `:` conversation trigger. Uses a stricter char class than
  * the /-and-@ scanner (no `:`, no `.`) so that `::` and `foo:bar` don't
  * accidentally activate the conversation popup — only `:slug` does.
  *
  * First char after `:` must be alphanumeric — blocks emoticons like `:-)`,
- * `:_)`, and other punctuation-led prose from triggering the popup.
+ * `:_)`, and other punctuation-led prose from triggering the popup. A run of a
+ * single emoticon mouth char (`:D`, `:P`, `:ooo`) is likewise treated as a
+ * smiley and stays inert.
  */
-function scanColonTrigger(text: string, pos: number): { start: number; query: string } | null {
+export function scanColonTrigger(text: string, pos: number): { start: number; query: string } | null {
   let start = pos - 1
   while (start >= 0 && /[a-zA-Z0-9_-]/.test(text[start])) start--
   if (start < 0) return null
@@ -192,6 +211,8 @@ function scanColonTrigger(text: string, pos: number): { start: number; query: st
   if (query.includes(' ') || query.includes('\n')) return null
   // Block non-alphanumeric first char (emoticons, punctuation): `:-)`, `:_x`, etc.
   if (query.length > 0 && !/^[a-zA-Z0-9]/.test(query)) return null
+  // Block alphanumeric-mouth smileys (`:D`, `:P`, `:ooo`) — see SMILEY_MOUTHS.
+  if (isSmileyQuery(query)) return null
   return { start, query }
 }
 
