@@ -173,6 +173,16 @@ function handleSystem(hctx: HandlerContext, msg: Record<string, unknown>) {
     return
   }
 
+  // Advisor tool events (CC 2.1.170 server-side advisor tool). A worker can call
+  // advisor() to consult a stronger model (Fable); CC streams advisor_message /
+  // advisor_result / advisor_tool_result / advisor_redacted_result /
+  // advisor_tool_result_error. Fold each into a dedicated 'advisor' transcript
+  // entry (a card) rather than the raw system blob the generic fallback emits.
+  if (typeof subtype === 'string' && subtype.startsWith('advisor')) {
+    handleAdvisorEvent(hctx, msg, subtype, ts)
+    return
+  }
+
   if (!replay.done) flushReplayBuffer(replay, callbacks.onTranscriptEntries)
 
   const systemEntry = {
@@ -193,6 +203,45 @@ function handleSystem(hctx: HandlerContext, msg: Record<string, unknown>) {
   if (!routedToSubagent) {
     callbacks.onTranscriptEntries?.([systemEntry], false)
   }
+}
+
+/** Normalize a CC advisor_* event into a dedicated 'advisor' transcript entry.
+ *  Defensive about the payload shape (live-verification pending): pulls the
+ *  advice text from content.text / content / text, the model from
+ *  advisor_model / model, and preserves the raw payload for the inspector. */
+function pickString(...values: unknown[]): string | undefined {
+  for (const v of values) if (typeof v === 'string' && v) return v
+  return undefined
+}
+
+function extractAdvisorText(msg: Record<string, unknown>): string | undefined {
+  const content = msg.content
+  if (typeof content === 'string') return content
+  const nested = (content as { text?: unknown } | null | undefined)?.text
+  return pickString(nested, msg.text)
+}
+
+function handleAdvisorEvent(hctx: HandlerContext, msg: Record<string, unknown>, subtype: string, ts: string) {
+  const { replay, callbacks } = hctx
+  if (!replay.done) flushReplayBuffer(replay, callbacks.onTranscriptEntries)
+
+  const advisorEntry = {
+    type: 'advisor' as const,
+    advisorSubtype: subtype.replace(/^advisor_/, '') || subtype,
+    text: extractAdvisorText(msg),
+    advisorModel: pickString(msg.advisor_model, msg.model),
+    redacted: subtype === 'advisor_redacted_result' || undefined,
+    isError: subtype === 'advisor_tool_result_error' || undefined,
+    timestamp: ts,
+    raw: extractSystemFields(msg),
+  } as TranscriptEntry
+
+  const parentToolUseId = msg.parent_tool_use_id as string | null
+  if (parentToolUseId && callbacks.onSubagentEntry) {
+    callbacks.onSubagentEntry(resolveAgentScope(hctx, parentToolUseId), advisorEntry)
+    return
+  }
+  callbacks.onTranscriptEntries?.([advisorEntry], false)
 }
 
 function handleTaskStarted(hctx: HandlerContext, msg: Record<string, unknown>) {

@@ -7,6 +7,7 @@ export function launchFieldsFromProfile(p: LaunchProfile): LaunchFieldsValue {
     effort: p.spawn.effort ?? '',
     permissionMode: p.spawn.permissionMode ?? '',
     agent: p.spawn.agent ?? '',
+    advisor: p.spawn.advisor ?? undefined,
     autocompactPct: p.spawn.autocompactPct ?? '',
     maxBudgetUsd: p.spawn.maxBudgetUsd != null ? String(p.spawn.maxBudgetUsd) : '',
     headless: p.spawn.headless ?? true,
@@ -18,12 +19,10 @@ export function launchFieldsFromProfile(p: LaunchProfile): LaunchFieldsValue {
 
 export function spawnPatchFromLaunchFields(patch: Partial<LaunchFieldsValue>): Partial<LaunchProfile['spawn']> {
   const out: Partial<LaunchProfile['spawn']> = {}
-  if (patch.model !== undefined) out.model = patch.model || undefined
-  if (patch.effort !== undefined) out.effort = (patch.effort || undefined) as LaunchProfile['spawn']['effort']
-  if (patch.permissionMode !== undefined) {
-    out.permissionMode = (patch.permissionMode || undefined) as LaunchProfile['spawn']['permissionMode']
+  // Plain string fields: copy through, empty string -> undefined (clears it).
+  for (const key of ['model', 'effort', 'permissionMode', 'agent', 'advisor'] as const) {
+    if (patch[key] !== undefined) (out as Record<string, unknown>)[key] = patch[key] || undefined
   }
-  if (patch.agent !== undefined) out.agent = patch.agent || undefined
   if (patch.autocompactPct !== undefined) {
     out.autocompactPct = patch.autocompactPct === '' ? undefined : Number(patch.autocompactPct)
   }
