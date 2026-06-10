@@ -20,7 +20,7 @@ import type {
 } from '@shared/project-task-types'
 import type { TaskStatus } from '@shared/task-statuses'
 import { useEffect, useSyncExternalStore } from 'react'
-import { useConversationsStore } from './use-conversations'
+import { useConversations, useConversationsStore } from './use-conversations'
 
 export type {
   ProjectTaskManifestEntry as ManifestEntry,
@@ -302,7 +302,7 @@ export function useProjectTasks(projectUri: string | null): ProjectTasksApi {
 
   // Re-trigger fetch when connectivity changes (conversations list churns as
   // the WS (re)connects, unblocking a deferred manifest fetch).
-  const conversations = useConversationsStore(s => s.conversations)
+  const conversations = useConversations()
 
   const snapshot = useSyncExternalStore<ProjectTasksApi>(
     onChange => {

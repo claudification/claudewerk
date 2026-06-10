@@ -5,7 +5,7 @@ import { projectIdentityKey } from '@shared/project-uri'
  */
 
 import { useConversationsStore } from '@/hooks/use-conversations'
-import { buildSlimIndexWithSelected } from '@/lib/slim-conversation'
+import { selectConversations } from '@/lib/slim-conversation'
 import type { Conversation } from '@/lib/types'
 import { extractProjectLabel, projectPath } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
@@ -28,9 +28,9 @@ function stripProjectPrefix(slug: string): string {
 
 /** Find a conversation matching an address book slug (best-effort client-side match). */
 function findConversationBySlug(slug: string) {
-  const { conversations, projectSettings } = useConversationsStore.getState()
+  const { conversationsById, projectSettings } = useConversationsStore.getState()
   const normalizedSlug = slug.toLowerCase()
-  for (const s of conversations) {
+  for (const s of selectConversations(conversationsById)) {
     const ps = projectSettings[projectIdentityKey(s.project)]
     if (ps?.label && slugify(ps.label) === normalizedSlug) return s
     if (s.title && slugify(s.title) === normalizedSlug) return s
@@ -96,11 +96,9 @@ function injectConversation(overview: Record<string, unknown>) {
   }
   useConversationsStore.setState(state => {
     if (state.conversationsById[partial.id]) return state
-    const conversations = [...state.conversations, partial]
-    return {
-      conversations,
-      conversationsById: buildSlimIndexWithSelected(conversations, state.selectedConversationId),
-    }
+    // Insert the lightweight placeholder into the index (source of truth); it is
+    // never the selected conversation, so it stays slim-by-construction.
+    return { conversationsById: { ...state.conversationsById, [partial.id]: partial } }
   })
   return partial.id
 }

@@ -34,6 +34,7 @@ vi.mock('@/hooks/use-conversations', () => ({
     getState: () => STORE_STATE,
     setState: setStateMock,
   }),
+  useConversations: () => STORE_STATE.conversations,
   fetchConversationEvents: vi.fn().mockResolvedValue([]),
   fetchTranscript: vi.fn(
     () =>

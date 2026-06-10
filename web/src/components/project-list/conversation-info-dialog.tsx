@@ -3,6 +3,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { formatCost, getConversationCost, getCostColor } from '@/lib/cost-utils'
 import { useKeyLayer } from '@/lib/key-layers'
+import { selectConversations } from '@/lib/slim-conversation'
 import type { Conversation } from '@/lib/types'
 import { cn, contextWindowSize, formatDurationMs, formatEffort, formatModel, haptic, truncate } from '@/lib/utils'
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog'
@@ -29,7 +30,7 @@ function ConversationLineageSection({
     conversation.parentConversationId ? s.conversationsById[conversation.parentConversationId] : undefined,
   )
   const children = useConversationsStore(
-    useShallow(s => s.conversations.filter(c => c.parentConversationId === conversation.id)),
+    useShallow(s => selectConversations(s.conversationsById).filter(c => c.parentConversationId === conversation.id)),
   )
   const hasParent = !!conversation.parentConversationId
   if (!hasParent && children.length === 0) return null

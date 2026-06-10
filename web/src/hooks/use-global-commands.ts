@@ -14,6 +14,7 @@ import { formatShortcut, useChordCommand, useCommand, validateChordBindings } fr
 import { canRespawnStaleDaemon } from '@/lib/daemon-control'
 import { focusInputEditor } from '@/lib/focus-input'
 import { openShell, projectShellCapable } from '@/lib/shell-commands'
+import { selectConversations } from '@/lib/slim-conversation'
 import { canShell, canTerminal, projectPath } from '@/lib/types'
 import { isMobileViewport } from '@/lib/utils'
 import { toggleWebControl } from '@/lib/web-control-actions'
@@ -227,7 +228,7 @@ export function useGlobalCommands(toggleSidebar: () => void) {
       const sid = store.selectedConversationId
       if (!sid) return
       // Only meaningful when the selected conversation has spawned descendants.
-      if (!store.conversations.some((c: { parentConversationId?: string }) => c.parentConversationId === sid)) return
+      if (!selectConversations(store.conversationsById).some(c => c.parentConversationId === sid)) return
       openTerminateLineageConfirm(sid)
     },
     {
@@ -236,9 +237,7 @@ export function useGlobalCommands(toggleSidebar: () => void) {
       when: () => {
         const store = useConversationsStore.getState()
         const sid = store.selectedConversationId
-        return (
-          !!sid && store.conversations.some((c: { parentConversationId?: string }) => c.parentConversationId === sid)
-        )
+        return !!sid && selectConversations(store.conversationsById).some(c => c.parentConversationId === sid)
       },
     },
   )
@@ -381,8 +380,8 @@ export function useGlobalCommands(toggleSidebar: () => void) {
   useCommand(
     'switch-conversation',
     () => {
-      const { conversationMru, conversations, selectConversation } = useConversationsStore.getState()
-      const prev = conversationMru.slice(1).find((id: string) => conversations.some((s: { id: string }) => s.id === id))
+      const { conversationMru, conversationsById, selectConversation } = useConversationsStore.getState()
+      const prev = conversationMru.slice(1).find((id: string) => id in conversationsById)
       if (prev) selectConversation(prev, 'ctrl-tab')
     },
     { label: 'Switch to previous conversation', shortcut: 'ctrl+Tab', group: 'Navigation' },
@@ -503,8 +502,7 @@ export function useGlobalCommands(toggleSidebar: () => void) {
   // to '*' (cross-project) when no conversation is selected.
   function selectedProjectOrCross(): string {
     const sid = useConversationsStore.getState().selectedConversationId
-    const conversations = useConversationsStore.getState().conversations
-    const selected = conversations.find((s: { id: string; project?: string }) => s.id === sid)
+    const selected = sid ? useConversationsStore.getState().conversationsById[sid] : undefined
     return selected?.project ?? '*'
   }
 
@@ -525,8 +523,7 @@ export function useGlobalCommands(toggleSidebar: () => void) {
     'manage-project-links',
     () => {
       const sid = useConversationsStore.getState().selectedConversationId
-      const conversations = useConversationsStore.getState().conversations
-      const selected = conversations.find((s: { id: string; project?: string }) => s.id === sid)
+      const selected = sid ? useConversationsStore.getState().conversationsById[sid] : undefined
       openManageProjectLinks(selected?.project)
     },
     { label: 'Manage project links', group: 'System' },

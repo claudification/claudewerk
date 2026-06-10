@@ -16,7 +16,7 @@ import { CheckSquare, Copy, Info, ListChecks, Search, Send, X } from 'lucide-rea
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Kbd } from '@/components/ui/kbd'
-import { sendInput, useConversationsStore } from '@/hooks/use-conversations'
+import { sendInput, useConversations, useConversationsStore } from '@/hooks/use-conversations'
 import type { ProjectTask, ProjectTaskMeta, TaskStatus } from '@/hooks/use-project'
 import { useProject } from '@/hooks/use-project'
 import { useKeyLayer } from '@/lib/key-layers'
@@ -304,7 +304,7 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
 
   // Get a conversation ID for useProject -- use the first active conversations's agent host
   const selectedConversationId = useConversationsStore(s => s.selectedConversationId)
-  const conversations = useConversationsStore(s => s.conversations)
+  const conversations = useConversations()
   // Find a connected conversation to relay project requests through
   const relayConversationId = useMemo(() => {
     // Prefer selected conversation, fall back to any active conversations

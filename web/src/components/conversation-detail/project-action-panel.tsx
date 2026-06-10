@@ -1,6 +1,6 @@
 import { projectIdentityKey } from '@shared/project-uri'
 import { useState } from 'react'
-import { useConversationsStore, wsSend } from '@/hooks/use-conversations'
+import { useConversations, useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import { useShellsStore } from '@/hooks/use-shells'
 import { openShell, projectShellCapable } from '@/lib/shell-commands'
 import type { Conversation } from '@/lib/types'
@@ -210,7 +210,7 @@ function RecapAllButton({ conversations }: { conversations: Conversation[] }) {
 
 export function ProjectActionPanel({ projectUri }: { projectUri: string }) {
   const ps = useConversationsStore(s => s.projectSettings[projectIdentityKey(projectUri)])
-  const conversations = useConversationsStore(s => s.conversations)
+  const conversations = useConversations()
   const sentinelConnected = useConversationsStore(s => s.sentinelConnected)
   const sentinels = useConversationsStore(s => s.sentinels)
   const [showAllRecent, setShowAllRecent] = useState(false)

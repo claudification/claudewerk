@@ -90,7 +90,7 @@ export class ErrorBoundary extends Component<Props, State> {
         : undefined
       const lines = [
         `  selectedConversation: ${store.selectedConversationId?.slice(0, 8) || '(none)'}`,
-        `  conversationCount: ${store.conversations.length}`,
+        `  conversationCount: ${Object.keys(store.conversationsById).length}`,
         `  expandAll: ${store.expandAll}`,
         `  showTerminal: ${store.showTerminal}`,
         `  wsConnected: ${store.isConnected}`,

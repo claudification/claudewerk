@@ -1,7 +1,7 @@
 import { projectIdentityKey } from '@shared/project-uri'
 import { Fzf } from 'fzf'
 import { useMemo } from 'react'
-import { useConversationsStore } from '@/hooks/use-conversations'
+import { useConversations, useConversationsStore } from '@/hooks/use-conversations'
 import { getFrequencyMap } from '@/lib/conversation-frequency'
 import { type Conversation, projectPath } from '@/lib/types'
 import type { MergedItem } from './types'
@@ -26,7 +26,7 @@ export function useConversationMode(
   isConversationMode: boolean,
   registryCommands: RegistryCommand[],
 ): ConversationModeState {
-  const conversations = useConversationsStore(state => state.conversations)
+  const conversations = useConversations()
   const selectedConversationId = useConversationsStore(state => state.selectedConversationId)
   const conversationMru = useConversationsStore(state => state.conversationMru)
   const projectSettings = useConversationsStore(state => state.projectSettings)

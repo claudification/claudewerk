@@ -7,6 +7,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { selectConversations } from '@/lib/slim-conversation'
 import type { Conversation } from '@/lib/types'
 import { haptic } from '@/lib/utils'
 import { useConversationsStore } from './use-conversations'
@@ -89,8 +90,9 @@ export function useLaunchProgress({
       state => {
         if (!effectiveWrapperId) return null
         return (
-          state.conversations.find(s => s.id === effectiveWrapperId || s.connectionIds?.includes(effectiveWrapperId)) ||
-          null
+          selectConversations(state.conversationsById).find(
+            s => s.id === effectiveWrapperId || s.connectionIds?.includes(effectiveWrapperId),
+          ) || null
         )
       },
       [effectiveWrapperId],

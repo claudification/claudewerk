@@ -1,7 +1,7 @@
 import { projectIdentityKey } from '@shared/project-uri'
 import { Save } from 'lucide-react'
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
-import { useConversationsStore, wsSend } from '@/hooks/use-conversations'
+import { useConversations, useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import { invalidateWarmStream } from '@/hooks/use-voice-recording'
 import { resolveToolDisplay, type SettingsTab, TOOL_DISPLAY_KEYS } from '@/lib/control-panel-prefs'
 import { extractProjectLabel } from '@/lib/types'
@@ -26,7 +26,7 @@ import { WebControlToggle } from './web-control-toggle'
 
 // --- Default conversation picker ---
 function DefaultConversationPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const conversations = useConversationsStore(s => s.conversations)
+  const conversations = useConversations()
   const projectSettings = useConversationsStore(s => s.projectSettings)
   // Unique projects by project URI
   const options = useMemo(() => {

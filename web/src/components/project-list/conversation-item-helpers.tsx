@@ -1,6 +1,7 @@
 import { memo, type ReactNode, useEffect, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import { selectConversations } from '@/lib/slim-conversation'
 import type { Conversation } from '@/lib/types'
 import { projectPath } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
@@ -19,7 +20,7 @@ function useDirectChildCount(conversation: Conversation): number {
   return useConversationsStore(s => {
     if (typeof conversation.directChildCount === 'number') return conversation.directChildCount
     let n = 0
-    for (const c of s.conversations) if (c.parentConversationId === conversation.id) n++
+    for (const c of selectConversations(s.conversationsById)) if (c.parentConversationId === conversation.id) n++
     return n
   })
 }

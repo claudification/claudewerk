@@ -40,6 +40,7 @@ import { type Extension, Prec } from '@codemirror/state'
 import { type EditorView, keymap, ViewPlugin, type ViewUpdate } from '@codemirror/view'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { buildConversationRef } from '@/lib/conversation-refs'
+import { selectConversations } from '@/lib/slim-conversation'
 import { projectPath } from '@/lib/types'
 import { conversationAddressableSlug, lastPathSegments, projectDisplayName } from '@/lib/utils'
 import { BUILTIN_COMMAND_NAMES, BUILTIN_SCORE_BOOST, fuzzyScore } from '../../autocomplete-shared'
@@ -237,7 +238,8 @@ interface ConversationCompletion {
 
 function conversationCompletions(query: string): ConversationCompletion[] {
   const state = useConversationsStore.getState()
-  const { conversations, projectSettings } = state
+  const { projectSettings } = state
+  const conversations = selectConversations(state.conversationsById)
   const q = query.toLowerCase()
   const scored: Array<{ opt: ConversationCompletion; score: number }> = []
 

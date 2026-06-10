@@ -150,8 +150,8 @@ export function ActionFab() {
       }
       haptic('double')
       setExpanded(false)
-      const { conversationMru, conversations, selectConversation } = useConversationsStore.getState()
-      const prev = conversationMru.slice(1).find(id => conversations.some(s => s.id === id))
+      const { conversationMru, conversationsById, selectConversation } = useConversationsStore.getState()
+      const prev = conversationMru.slice(1).find(id => id in conversationsById)
       if (prev) selectConversation(prev)
       lastTapRef.current = 0
       return

@@ -27,7 +27,7 @@ import type {
 import { handleLaunchProfilesUpdatedMessage } from '@/components/launch-profiles/use-launch-profiles'
 import { daemonControlToast } from '@/lib/daemon-control'
 import { record } from '@/lib/perf-metrics'
-import { buildSlimIndexWithSelected, forgetFull, rememberFull, slimConversation } from '@/lib/slim-conversation'
+import { forgetFull, rememberFull, slimConversation } from '@/lib/slim-conversation'
 import { cachePushEntries } from '@/lib/transcript-page-cache'
 import type {
   ClaudeEfficiencyUpdate,
@@ -284,17 +284,15 @@ function handleConversationCreated(msg: DashboardMessage) {
   if (!msg.conversation) return
   const fullConversation = toConversation(msg.conversation)
   useConversationsStore.setState(state => {
+    const id = fullConversation.id
     rememberFull(fullConversation, state.selectedConversationId)
-    const slim = slimConversation(fullConversation)
-    let conversations: Conversation[]
-    if (state.conversations.some(s => s.id === slim.id)) {
-      conversations = state.conversations.map(s => (s.id === slim.id ? { ...s, ...slim } : s))
-    } else {
-      conversations = [...state.conversations, slim]
-    }
+    // Source of truth is the index; upsert ONE key. Selected stays full, others
+    // slim (residency invariant). Merge over any prior placeholder entry.
+    const isSelected = state.selectedConversationId === id
+    const entry = isSelected ? fullConversation : slimConversation(fullConversation)
+    const prev = state.conversationsById[id]
     return {
-      conversations,
-      conversationsById: buildSlimIndexWithSelected(conversations, state.selectedConversationId),
+      conversationsById: { ...state.conversationsById, [id]: prev ? { ...prev, ...entry } : entry },
     }
   })
 }
@@ -307,35 +305,32 @@ function handleConversationUpdate(msg: DashboardMessage) {
   const matchId = prevId || conversationId
   useConversationsStore.setState(state => {
     const updated = toConversation(conversation)
-    // Rekey collision: if two booting placeholders (different conversationIds)
-    // both get rekeyed to the same real conversation id, the map-replace leaves
-    // two entries in the array with identical `updated.id`. Dedupe by id
-    // (merge any duplicates into the first occurrence) so the sidebar
-    // doesn't render ghost rows. Without dedupe, a double-spawn shows as
-    // two identical conversation rows sharing a short-id.
-    //
-    // The merge `{ ...s, ...updated }` (slim base + full update) yields the new
-    // full payload; remember it in the side-map, then slim it for list residency.
+    // W-H3: conversationsById is the source of truth -- patch ONE key instead of
+    // rebuilding a parallel array on every fleet message. The map upsert also makes
+    // the rekey-collision dedupe FREE: two booting placeholders rekeying to the same
+    // real id can never coexist (the second write overwrites the first key), so the
+    // sidebar never shows ghost rows. The `{ ...prev, ...updated }` merge (slim/full
+    // base + full update) yields the new full payload; remember it in the side-map,
+    // then slim it for non-selected list residency.
     const selectedId = state.selectedConversationId
     // On rekey, the old prevId full payload in the side-map is now orphaned.
     if (prevId && prevId !== conversationId) forgetFull(prevId)
-    const replaced = state.conversations.map(s => {
-      if (s.id !== matchId) return s
-      const merged = { ...s, ...updated }
-      rememberFull(merged, selectedId)
-      return slimConversation(merged)
-    })
-    const seen = new Set<string>()
-    const conversations: Conversation[] = []
-    for (const s of replaced) {
-      if (seen.has(s.id)) continue
-      seen.add(s.id)
-      conversations.push(s)
+    const prev = state.conversationsById[matchId]
+    const merged = prev ? { ...prev, ...updated } : updated
+    rememberFull(merged, selectedId)
+    // Keep the OPEN conversation full (others slim). `matchId` covers a rekey of
+    // the selected conversation (selectedId === prevId) so it doesn't flash slim
+    // mid-rekey; the normal case is selectedId === conversationId === matchId.
+    const entry = selectedId === conversationId || selectedId === matchId ? merged : slimConversation(merged)
+    let conversationsById: Record<string, Conversation>
+    if (prevId && prevId !== conversationId) {
+      // Rekey: drop the old placeholder key, upsert under the real id.
+      const { [prevId]: _old, [conversationId]: _existing, ...rest } = state.conversationsById
+      conversationsById = { ...rest, [conversationId]: entry }
+    } else {
+      conversationsById = { ...state.conversationsById, [conversationId]: entry }
     }
-    const newState: Partial<typeof state> = {
-      conversations,
-      conversationsById: buildSlimIndexWithSelected(conversations, selectedId),
-    }
+    const newState: Partial<typeof state> = { conversationsById }
     // Clear stale streaming buffers when conversation goes idle or ends. Both
     // text AND thinking are transient in-flight indicators -- the committed
     // transcript entries carry the real thinking + text blocks (see
@@ -1194,16 +1189,16 @@ function handleClipboardCapture(msg: DashboardMessage) {
 
 function handleConversationDismissed(msg: DashboardMessage) {
   if (!msg.conversationId) return
-  forgetFull(msg.conversationId)
+  const conversationId = msg.conversationId
+  forgetFull(conversationId)
   useConversationsStore.setState(state => {
-    const conversations = state.conversations.filter(s => s.id !== msg.conversationId)
-    if (state.selectedConversationId === msg.conversationId) {
-      console.log(`[nav] session_dismissed: clearing selection (WS dismissed ${msg.conversationId.slice(0, 8)})`)
+    if (state.selectedConversationId === conversationId) {
+      console.log(`[nav] session_dismissed: clearing selection (WS dismissed ${conversationId.slice(0, 8)})`)
     }
-    const nextSelected = state.selectedConversationId === msg.conversationId ? null : state.selectedConversationId
+    const nextSelected = state.selectedConversationId === conversationId ? null : state.selectedConversationId
+    const { [conversationId]: _dropped, ...conversationsById } = state.conversationsById
     return {
-      conversations,
-      conversationsById: buildSlimIndexWithSelected(conversations, nextSelected),
+      conversationsById,
       selectedConversationId: nextSelected,
     }
   })

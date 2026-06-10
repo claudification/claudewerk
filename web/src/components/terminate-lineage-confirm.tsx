@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { useConversationsStore } from '@/hooks/use-conversations'
+import { useConversations, useConversationsStore } from '@/hooks/use-conversations'
 import { useKeyLayer } from '@/lib/key-layers'
 import { cn, haptic } from '@/lib/utils'
 import { collectLineageSubtree, type LineageSubtreeMember } from './project-list/lineage'
@@ -64,7 +64,7 @@ function IntroLine({ activeCount, endedCount }: { activeCount: number; endedCoun
 
 export function TerminateLineageConfirmDialog() {
   const [conversationId, setConversationId] = useState<string | null>(null)
-  const conversations = useConversationsStore(s => s.conversations)
+  const conversations = useConversations()
   const terminateLineage = useConversationsStore(s => s.terminateLineage)
 
   useEffect(() => {

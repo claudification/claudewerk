@@ -27,6 +27,7 @@ import {
   ingestConversations,
   rehydrateSelectedIndex,
   rememberFull,
+  selectConversations,
 } from '@/lib/slim-conversation'
 import { cacheLookupBefore, cachePushEntries } from '@/lib/transcript-page-cache'
 import {
@@ -122,8 +123,11 @@ export interface SentinelStatusInfo {
 }
 
 interface ConversationsState {
-  conversations: Conversation[]
-  /** O(1) lookup index maintained alongside conversations[] */
+  /** SOURCE OF TRUTH for the fleet (W-H3). A `conversation_update` patches ONE
+   *  key here instead of rebuilding a parallel array on every fleet message. The
+   *  ordered `conversations[]` array is DERIVED via the memoized
+   *  `selectConversations(byId)` selector / `useConversations()` hook -- it is no
+   *  longer stored, so a single-conversation update no longer reallocates the list. */
   conversationsById: Record<string, Conversation>
   selectedConversationId: string | null
   /** Reason passed to the last selectConversation call. Drives the locate pulse: a
@@ -519,7 +523,7 @@ function applyDefaultConversation() {
   // Try configured default conversation project
   const defaultProject = store.controlPanelPrefs.defaultConversationCwd
   if (defaultProject) {
-    const best = findBestConversationForProject(store.conversations, defaultProject)
+    const best = findBestConversationForProject(selectConversations(store.conversationsById), defaultProject)
     if (best) {
       store.selectConversation(best.id, 'default-conversation-project')
       return
@@ -534,7 +538,7 @@ function applyDefaultConversation() {
   }
 
   // Auto-select if only one non-ended conversations visible (common for restricted users)
-  const activeConversations = store.conversations.filter(s => s.status !== 'ended')
+  const activeConversations = selectConversations(store.conversationsById).filter(s => s.status !== 'ended')
   if (activeConversations.length === 1) {
     store.selectConversation(activeConversations[0].id, 'default-conversation-only-active')
   }
@@ -629,6 +633,17 @@ function structureArrayEqual(a: ConversationStructure[], b: ConversationStructur
   return true
 }
 
+/**
+ * Subscribe to the ordered `conversations[]` array, derived from the
+ * `conversationsById` source of truth (W-H3). The selector is memoized on the
+ * index reference, so this returns a STABLE array instance until the index
+ * actually changes -- no React #185 churn. Use this everywhere the old
+ * `useConversationsStore(s => s.conversations)` subscription was used.
+ */
+export function useConversations(): Conversation[] {
+  return useConversationsStore(s => selectConversations(s.conversationsById))
+}
+
 // Caller subscribes to the structural shape only -- skips re-renders when
 // conversation updates touch fields outside ConversationStructure. Mirrors
 // useShallow's pattern (component-scoped useRef cache, selector closes
@@ -636,7 +651,7 @@ function structureArrayEqual(a: ConversationStructure[], b: ConversationStructur
 export function useConversationStructure(): ConversationStructure[] {
   const prevRef = useRef<ConversationStructure[] | null>(null)
   return useConversationsStore(s => {
-    const next = s.conversations.map(toStructure)
+    const next = selectConversations(s.conversationsById).map(toStructure)
     const prev = prevRef.current
     if (prev && structureArrayEqual(prev, next)) return prev
     prevRef.current = next
@@ -759,7 +774,6 @@ function buildEvictedConvData(state: ConversationsState, cachedIds: Set<string>)
 }
 
 export const useConversationsStore = create<ConversationsState>((set, get) => ({
-  conversations: [],
   conversationsById: {},
   selectedConversationId: null,
   lastSelectReason: null,
@@ -855,8 +869,9 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
       const sess = state.conversationsById[conversationId]
       if (!sess?.pendingSpawnApproval) return state
       const next: Conversation = { ...sess, pendingSpawnApproval: undefined }
+      // Patch ONE key (sess is already full when selected / slim otherwise, so the
+      // residency invariant is preserved without a full index rebuild).
       return {
-        conversations: state.conversations.map(s => (s.id === conversationId ? next : s)),
         conversationsById: { ...state.conversationsById, [conversationId]: next },
       }
     })
@@ -980,14 +995,13 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
         title: name || undefined,
         ...(description !== undefined ? { description: description || undefined } : {}),
       }
-      const conversations = state.conversations.map(s => (s.id === conversationId ? { ...s, ...patch } : s))
       // Keep the side-map full payload in sync so a later re-hydrate has the new title.
       const full = getFull(conversationId)
       if (full) rememberFull({ ...full, ...patch }, state.selectedConversationId)
+      const cur = state.conversationsById[conversationId]
       return {
         renamingConversationId: null,
-        conversations,
-        conversationsById: buildSlimIndexWithSelected(conversations, state.selectedConversationId),
+        ...(cur ? { conversationsById: { ...state.conversationsById, [conversationId]: { ...cur, ...patch } } } : {}),
       }
     })
   },
@@ -998,15 +1012,13 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
     const name = conversation?.title || ''
     wsSend('rename_conversation', { conversationId, name, description })
     set(state => {
-      const conversations = state.conversations.map(s =>
-        s.id === conversationId ? { ...s, description: description || undefined } : s,
-      )
       const full = getFull(conversationId)
       if (full) rememberFull({ ...full, description: description || undefined }, state.selectedConversationId)
+      const cur = state.conversationsById[conversationId]
+      const patch = { description: description || undefined }
       return {
         editingDescriptionConversationId: null,
-        conversations,
-        conversationsById: buildSlimIndexWithSelected(conversations, state.selectedConversationId),
+        ...(cur ? { conversationsById: { ...state.conversationsById, [conversationId]: { ...cur, ...patch } } } : {}),
       }
     })
   },
@@ -1091,7 +1103,7 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
     // then re-hydrate the selected one to full fidelity in the index.
     const selectedId = get().selectedConversationId
     const slim = ingestConversations(clean, selectedId)
-    set({ conversations: slim, conversationsById: buildSlimIndexWithSelected(slim, selectedId) })
+    set({ conversationsById: buildSlimIndexWithSelected(slim, selectedId) })
   },
   selectConversation: (id: string | null, reason?: string) => {
     const prev = get().selectedConversationId
@@ -1183,7 +1195,9 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   toggleDebugConsole: () => set(state => ({ showDebugConsole: !state.showDebugConsole })),
   openTerminal: conversationId => {
     // Find the conversation that owns this agent host so we can select it in the main panel too
-    const ownerConversation = get().conversations.find(s => s.connectionIds?.includes(conversationId))
+    const ownerConversation = selectConversations(get().conversationsById).find(s =>
+      s.connectionIds?.includes(conversationId),
+    )
     const prev = get().selectedConversationId
     const next = ownerConversation?.id ?? null
     if (next !== prev) {
@@ -1331,14 +1345,13 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
     wsSend('dismiss_conversation', { conversationId })
     forgetFull(conversationId)
     set(state => {
-      const conversations = state.conversations.filter(s => s.id !== conversationId)
       if (state.selectedConversationId === conversationId) {
         console.log(`[nav] dismissConversation: clearing selection (dismissed ${conversationId.slice(0, 8)})`)
       }
       const nextSelected = state.selectedConversationId === conversationId ? null : state.selectedConversationId
+      const { [conversationId]: _dropped, ...conversationsById } = state.conversationsById
       return {
-        conversations,
-        conversationsById: buildSlimIndexWithSelected(conversations, nextSelected),
+        conversationsById,
         selectedConversationId: nextSelected,
       }
     })

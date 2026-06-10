@@ -185,6 +185,46 @@ export function rehydrateSelectedIndex(
   return changed ? next : byId
 }
 
+// ─── derived ordered list (conversationsById is the source of truth) ─────────
+
+/** Memo cell for `selectConversations`. The store keeps `conversationsById` as
+ *  the authoritative index (W-H3); the ordered `conversations[]` array is DERIVED
+ *  here, not stored, so a single-conversation `conversation_update` patches ONE
+ *  map key instead of rebuilding the whole array on every fleet message. */
+const EMPTY_CONVERSATIONS: Conversation[] = []
+let convArrCacheById: Record<string, Conversation> | null = null
+let convArrCache: Conversation[] = EMPTY_CONVERSATIONS
+
+/**
+ * Derive the ordered `conversations[]` array from the `conversationsById` index.
+ * Memoized on the `byId` REFERENCE: returns the identical array instance until
+ * the index object itself changes, so Zustand selectors built on it stay stable
+ * (no React #185 churn -- this is NOT a fresh-literal-per-render selector).
+ *
+ * Order is `Object.values` insertion order, which matches the broker's bulk-list
+ * order (the index is built by iterating that list). Raw order is not
+ * load-bearing anyway: every list surface (sidebar `partitionConversations`,
+ * command-palette `sortConversationsForPalette`) re-sorts before render.
+ *
+ * The selected conversation's entry is the full payload (others are slim); the
+ * list renders the same fields from either, so a full entry in the array is
+ * harmless (and avoids a duplicate slim clone). Callers MUST NOT mutate the
+ * returned array in place (it is shared) -- sort via `.toSorted()` / copy first.
+ */
+export function selectConversations(byId: Record<string, Conversation>): Conversation[] {
+  if (byId === convArrCacheById) return convArrCache
+  const arr = Object.values(byId)
+  convArrCacheById = byId
+  convArrCache = arr
+  return arr
+}
+
+/** Test-only: reset the derived-list memo between cases. */
+export function _resetConversationsMemoForTests(): void {
+  convArrCacheById = null
+  convArrCache = EMPTY_CONVERSATIONS
+}
+
 /**
  * Slim a batch of full conversations for list residency while remembering each
  * full payload in the side-map. Returns the slim array; callers build the index

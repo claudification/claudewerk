@@ -6,6 +6,7 @@ import {
   saveRclaudeConfig,
   useConversationsStore,
 } from '@/hooks/use-conversations'
+import { selectConversations } from '@/lib/slim-conversation'
 import { projectPath } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -223,7 +224,9 @@ function ToolSection({
 
 export function PermissionRulesEditor({ project }: PermissionRulesEditorProps) {
   const hasConfigRw = useConversationsStore(s =>
-    s.conversations.some(sess => sess.project === project && sess.capabilities?.includes('config_rw')),
+    selectConversations(s.conversationsById).some(
+      sess => sess.project === project && sess.capabilities?.includes('config_rw'),
+    ),
   )
   const [rules, setRules] = useState<Record<Tool, string[]>>({ Write: [], Edit: [], Read: [] })
   const [allowAll, setAllowAll] = useState(false)

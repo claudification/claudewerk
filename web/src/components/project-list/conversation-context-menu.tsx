@@ -3,6 +3,7 @@ import { ContextMenu } from 'radix-ui'
 import type { ReactNode } from 'react'
 import { saveProjectOrder, updateProjectSettings, useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import { canRespawnStaleDaemon } from '@/lib/daemon-control'
+import { selectConversations } from '@/lib/slim-conversation'
 import type { Conversation, ProjectOrder, ProjectOrderGroup } from '@/lib/types'
 import { projectPath } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
@@ -129,7 +130,7 @@ export function ConversationContextMenu({
   // Independent of this conversation's own status: a spawn root can be ended
   // while its children are still live (the common chain case).
   const hasLineageChildren = useConversationsStore(s =>
-    s.conversations.some(c => c.parentConversationId === conversation.id),
+    selectConversations(s.conversationsById).some(c => c.parentConversationId === conversation.id),
   )
 
   return (

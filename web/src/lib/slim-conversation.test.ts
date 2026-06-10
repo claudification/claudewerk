@@ -9,6 +9,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
+  _resetConversationsMemoForTests,
   _resetFullForTests,
   buildSlimIndexWithSelected,
   forgetFull,
@@ -17,6 +18,7 @@ import {
   LIST_RECAP_PREVIEW,
   rehydrateSelectedIndex,
   rememberFull,
+  selectConversations,
   slimConversation,
 } from './slim-conversation'
 import type { Conversation } from './types'
@@ -45,6 +47,7 @@ function makeConversation(overrides: Partial<Conversation> = {}): Conversation {
 
 beforeEach(() => {
   _resetFullForTests()
+  _resetConversationsMemoForTests()
 })
 
 describe('slimConversation', () => {
@@ -210,5 +213,45 @@ describe('LRU bounding', () => {
       rememberFull(makeConversation({ id: `filler_${i}` }))
     }
     expect(getFull('keep')).toBeDefined()
+  })
+})
+
+describe('selectConversations (derived ordered list)', () => {
+  it('returns the index values in insertion order', () => {
+    const byId = {
+      conv_a: makeConversation({ id: 'conv_a' }),
+      conv_b: makeConversation({ id: 'conv_b' }),
+      conv_c: makeConversation({ id: 'conv_c' }),
+    }
+    expect(selectConversations(byId).map(c => c.id)).toEqual(['conv_a', 'conv_b', 'conv_c'])
+  })
+
+  it('returns the SAME array reference for the same byId reference (memoized)', () => {
+    const byId = { conv_a: makeConversation({ id: 'conv_a' }) }
+    const first = selectConversations(byId)
+    const second = selectConversations(byId)
+    expect(second).toBe(first)
+  })
+
+  it('returns a NEW array only when the byId reference changes', () => {
+    const byId1 = { conv_a: makeConversation({ id: 'conv_a' }) }
+    const arr1 = selectConversations(byId1)
+    // single-key patch produces a new index object -> new array
+    const byId2 = { ...byId1, conv_a: makeConversation({ id: 'conv_a', status: 'active' }) }
+    const arr2 = selectConversations(byId2)
+    expect(arr2).not.toBe(arr1)
+    expect(arr2[0].status).toBe('active')
+    // ...but querying the old reference again still returns its cached array's content
+    expect(selectConversations(byId2)).toBe(arr2)
+  })
+
+  it('reflects a removed key after a delete patch', () => {
+    const byId1 = {
+      conv_a: makeConversation({ id: 'conv_a' }),
+      conv_b: makeConversation({ id: 'conv_b' }),
+    }
+    selectConversations(byId1)
+    const { conv_a: _dropped, ...byId2 } = byId1
+    expect(selectConversations(byId2).map(c => c.id)).toEqual(['conv_b'])
   })
 })

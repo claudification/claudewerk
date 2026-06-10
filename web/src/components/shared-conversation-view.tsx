@@ -11,12 +11,17 @@ import { AudioPlayerHost } from '@/components/audio-player-host'
 import { ConversationDetail } from '@/components/conversation-detail'
 import { LinkPreviewPane } from '@/components/link-preview-pane'
 import { MediaLightbox } from '@/components/media-lightbox'
-import { fetchConversationEvents, fetchTranscript, useConversationsStore } from '@/hooks/use-conversations'
+import {
+  fetchConversationEvents,
+  fetchTranscript,
+  useConversations,
+  useConversationsStore,
+} from '@/hooks/use-conversations'
 import { useWebSocket } from '@/hooks/use-websocket'
 import { extractProjectLabel } from '@/lib/types'
 
 export function SharedConversationView({ token: _token }: { token: string }) {
-  const conversations = useConversationsStore(s => s.conversations)
+  const conversations = useConversations()
   const selectedConversationId = useConversationsStore(s => s.selectedConversationId)
   const isConnected = useConversationsStore(s => s.isConnected)
   const [expired, setExpired] = useState(false)

@@ -21,6 +21,7 @@ vi.mock('@/hooks/use-conversations', () => ({
   useConversationsStore: Object.assign((selector: (s: unknown) => unknown) => selector(STORE_STATE), {
     getState: () => STORE_STATE,
   }),
+  useConversations: () => STORE_STATE.conversations,
   wsSend: vi.fn(),
 }))
 

@@ -1,7 +1,7 @@
 import { projectIdentityKey } from '@shared/project-uri'
 import { Settings, WifiOff, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { type TerminalMessage, useConversationsStore } from '@/hooks/use-conversations'
+import { type TerminalMessage, useConversations, useConversationsStore } from '@/hooks/use-conversations'
 import { extractProjectLabel, projectPath } from '@/lib/types'
 import { lastPathSegments } from '@/lib/utils'
 import { TerminalSettingsPanel } from './terminal-settings'
@@ -49,7 +49,7 @@ function scanTerminalData(d: string) {
 
 export function WebTerminal({ conversationId, onClose, popout }: WebTerminalProps) {
   const paneRef = useRef<XtermPaneHandle | null>(null)
-  const conversations = useConversationsStore(state => state.conversations)
+  const conversations = useConversations()
   const sendWsMessage = useConversationsStore(state => state.sendWsMessage)
   const setTerminalHandler = useConversationsStore(state => state.setTerminalHandler)
   const isConnected = useConversationsStore(state => state.isConnected)

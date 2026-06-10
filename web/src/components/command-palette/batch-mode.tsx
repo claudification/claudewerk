@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { useKeyLayer } from '@/lib/key-layers'
+import { selectConversations } from '@/lib/slim-conversation'
 import type { Conversation, ProjectSettings } from '@/lib/types'
 import { cn, formatAge } from '@/lib/utils'
 import { ProjectIcon } from '../project-icons'
@@ -188,7 +189,7 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
   const { conversations, projectSettings, selectedForBatch, currentBatchId, sentinels, isAdmin } =
     useConversationsStore(
       useShallow(s => ({
-        conversations: s.conversations,
+        conversations: selectConversations(s.conversationsById),
         projectSettings: s.projectSettings,
         selectedForBatch: s.selectedForBatch,
         currentBatchId: s.currentBatchId,
