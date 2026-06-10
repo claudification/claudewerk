@@ -554,9 +554,21 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
 
   // Subagent transcript cache: `${conversationId}:${agentId}` -> entries
   const subagentTranscriptCache = new Map<string, TranscriptEntry[]>()
+  // UUID dedup set per subagent -- rebuilt incrementally rather than from scratch each ingest (B-H6).
+  const subagentSeenUuids = new Map<string, Set<string>>()
   /** Per-subagent transcript seq counter. Same semantics as
    *  `transcriptSeqCounters` above, but keyed by `${conversationId}:${agentId}`. */
   const subagentTranscriptSeqCounters = new Map<string, number>()
+
+  function clearSubagentCachesForConversation(conversationId: string): void {
+    for (const key of subagentTranscriptCache.keys()) {
+      if (key.startsWith(`${conversationId}:`)) {
+        subagentTranscriptCache.delete(key)
+        subagentTranscriptSeqCounters.delete(key)
+        subagentSeenUuids.delete(key)
+      }
+    }
+  }
   // Transcript kick tracking: conversationId -> last kick timestamp (debounce 60s)
   const lastTranscriptKick = new Map<string, number>()
   /** Hashes of fired mention-notifications (`${conversationId}:${uuid}:${userName}`).
@@ -835,6 +847,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
   const ENDED_EVICTION_TTL_MS = 90 * 24 * 60 * 60 * 1000 // 90 days after ending, then cascade-deleted (retention)
   const ZOMBIE_EVICTION_TTL_MS = 30 * 24 * 60 * 60 * 1000 // 30 days for stale STARTING conversations
 
+  // fallow-ignore-next-line complexity
   function runMaintenancePass(): void {
     const now = Date.now()
     const STALE_AGENT_MS = 10 * 60 * 1000 // 10 minutes
@@ -954,6 +967,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     60 * 60 * 1000,
   )
 
+  // fallow-ignore-next-line complexity
   function loadFromStore(): void {
     if (!store) return
     try {
@@ -1514,12 +1528,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     transcriptCache.delete(conversationId)
     transcriptSeqCounters.delete(conversationId)
     dirtyTranscripts.delete(conversationId)
-    for (const key of subagentTranscriptCache.keys()) {
-      if (key.startsWith(`${conversationId}:`)) {
-        subagentTranscriptCache.delete(key)
-        subagentTranscriptSeqCounters.delete(key)
-      }
-    }
+    clearSubagentCachesForConversation(conversationId)
 
     // No socket or channel migration needed -- conversationId didn't change.
     // Clear subagent channel subscriptions (subagents are gone after /clear).
@@ -1759,12 +1768,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     dirtyTranscripts.delete(conversationId)
     pendingAgentLaunches.delete(conversationId)
     lastTranscriptKick.delete(conversationId)
-    for (const key of subagentTranscriptCache.keys()) {
-      if (key.startsWith(`${conversationId}:`)) {
-        subagentTranscriptCache.delete(key)
-        subagentTranscriptSeqCounters.delete(key)
-      }
-    }
+    clearSubagentCachesForConversation(conversationId)
     if (store) {
       // Cascade-delete child rows BEFORE the parent so an intentional delete
       // (90d TTL, ghost eviction, explicit user delete) never leaves orphans --
@@ -2087,7 +2091,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
         `[reaper] consider ${convId.slice(0, 8)} status=${conversation.status} liveBefore=${liveBefore} liveAfter=${live} lastActivityAgoMs=${lastActivityAgoMs} ccSession=${ccSessionIdHint?.slice(0, 8) ?? 'none'} hostVersion=${conversation.version ?? 'unknown'} willEnd=${willEnd}`,
       )
 
-      if (conversation.project) {
+      if (willEnd && conversation.project) {
         broadcastConversationScoped(
           {
             type: 'phantom_reap_candidate',
@@ -2617,6 +2621,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     return { entries, oldestSeq: page.oldestSeq, hasMore: page.hasMore }
   }
 
+  // fallow-ignore-next-line complexity
   function addSubagentTranscriptEntries(
     conversationId: string,
     agentId: string,
@@ -2628,6 +2633,8 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       // Stamp full batch on initial load -- counter resets to 0.
       assignTranscriptSeqs(subagentTranscriptSeqCounters, key, entries, true)
       subagentTranscriptCache.set(key, entries.slice(-MAX_TRANSCRIPT_ENTRIES))
+      // Seed the seen-uuid set from the initial batch (B-H6).
+      subagentSeenUuids.set(key, new Set(entries.map(e => e.uuid).filter(Boolean) as string[]))
       // Durable + FTS-searchable (Checkpoint B): persist into the agent's
       // sub-stream scope. INSERT OR IGNORE makes the isInitial re-read idempotent.
       persistTranscriptEntries(store, conversations.has(conversationId), conversationId, entries, agentId)
@@ -2635,9 +2642,17 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       const existing = subagentTranscriptCache.get(key) || []
       // Deduplicate: agent entries arrive from both the subagent JSONL watcher
       // AND extracted from parent transcript progress entries. Use uuid to filter.
-      const seen = new Set(existing.map(e => e.uuid).filter(Boolean))
+      // Maintained incrementally (B-H6) -- no O(n) rebuild per ingest.
+      let seen = subagentSeenUuids.get(key)
+      if (!seen) {
+        seen = new Set()
+        subagentSeenUuids.set(key, seen)
+      }
       const fresh = entries.filter(e => !e.uuid || !seen.has(e.uuid))
       if (fresh.length === 0) return
+      for (const e of fresh) {
+        if (e.uuid) seen.add(e.uuid)
+      }
       // Only stamp the deduped tail. Skipped duplicates already had their seq
       // from the prior ingest; re-stamping would renumber them and break
       // client's lastAppliedSeq comparison.

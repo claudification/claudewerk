@@ -26,25 +26,11 @@ export function enqueue(
 ): void {
   if (!store) return
 
-  // Cap queue size per target -- drop oldest if over limit
+  // Cap queue size per target -- drop the single oldest message if at limit.
+  // Replaces the O(n) dequeue-all + re-enqueue-n-1 pattern with one SQL DELETE.
   const count = store.countFor(targetProject)
   if (count >= MAX_QUEUE_PER_TARGET) {
-    const oldest = store.dequeueFor(targetProject)
-    if (oldest.length > 0) {
-      // Re-enqueue all but the oldest
-      for (let i = 1; i < oldest.length; i++) {
-        store.enqueue({
-          fromScope: oldest[i].fromScope,
-          toScope: oldest[i].toScope,
-          fromName: oldest[i].fromName,
-          targetName: oldest[i].targetName,
-          content: oldest[i].content,
-          intent: oldest[i].intent,
-          conversationId: oldest[i].conversationId,
-          expiresAt: oldest[i].createdAt + MESSAGE_TTL_MS,
-        })
-      }
-    }
+    store.dropOldest(targetProject)
   }
 
   store.enqueue({

@@ -353,6 +353,8 @@ export interface MessageLogEntry {
 export interface MessageStore {
   enqueue(msg: EnqueueMessage): void
   dequeueFor(scope: string, targetName?: string): QueuedMessage[]
+  /** Drop the single oldest non-expired message for a target scope. O(1) vs dequeueFor+re-enqueue. */
+  dropOldest(scope: string): void
   countFor(scope: string): number
   log(entry: MessageLogEntry): void
   queryLog(opts?: {

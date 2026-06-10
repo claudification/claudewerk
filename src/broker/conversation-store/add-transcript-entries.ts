@@ -289,10 +289,9 @@ function appendToCache(
   const existing = ctx.transcriptCache.get(conversationId) || []
   existing.push(...entries)
   if (existing.length > MAX_TRANSCRIPT_ENTRIES) {
-    ctx.transcriptCache.set(conversationId, existing.slice(-MAX_TRANSCRIPT_ENTRIES))
-  } else {
-    ctx.transcriptCache.set(conversationId, existing)
+    existing.splice(0, existing.length - MAX_TRANSCRIPT_ENTRIES)
   }
+  ctx.transcriptCache.set(conversationId, existing)
 }
 
 function resetConversationMetadataAndStats(

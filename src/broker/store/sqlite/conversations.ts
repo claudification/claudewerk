@@ -55,6 +55,11 @@ function rowToSummary(row: Params): ConversationSummaryRecord {
   }
 }
 
+// Columns returned by list()/listByScope() -- drops meta/stats JSON blobs that
+// rowToSummary never reads (B-M6: these can be hundreds of KB per conversation).
+const LIST_COLS =
+  'id, scope, agent_type, status, model, title, label, icon, color, created_at, ended_at, last_activity, parent_conversation_id, root_conversation_id'
+
 export function createSqliteConversationStore(db: Database): ConversationStore {
   const stmtGet = db.prepare('SELECT * FROM conversations WHERE id = $id')
   const stmtInsert = db.prepare(`
@@ -68,6 +73,20 @@ export function createSqliteConversationStore(db: Database): ConversationStore {
     )
   `)
   const stmtDelete = db.prepare('DELETE FROM conversations WHERE id = $id')
+  const stmtUpdateStats = db.prepare('UPDATE conversations SET stats = $stats WHERE id = $id')
+  // Cache UPDATE statements keyed by their SET clause -- avoids re-parsing
+  // the same dynamic SQL on every persistConversation call (B-H4).
+  // Statement<unknown> (default) -- run() accepts any param via any[] spread.
+  const updateStmtCache = new Map<string, ReturnType<typeof db.prepare>>()
+
+  function getUpdateStmt(setSql: string): ReturnType<typeof db.prepare> {
+    let stmt = updateStmtCache.get(setSql)
+    if (!stmt) {
+      stmt = db.prepare(`UPDATE conversations SET ${setSql} WHERE id = $id`)
+      updateStmtCache.set(setSql, stmt)
+    }
+    return stmt
+  }
 
   return {
     get(id) {
@@ -167,7 +186,7 @@ export function createSqliteConversationStore(db: Database): ConversationStore {
       }
 
       if (sets.length > 0) {
-        db.prepare(`UPDATE conversations SET ${sets.join(', ')} WHERE id = $id`).run(params)
+        getUpdateStmt(sets.join(', ')).run(params)
       }
     },
 
@@ -198,7 +217,7 @@ export function createSqliteConversationStore(db: Database): ConversationStore {
       const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
       const limit = filter?.limit ?? -1
       const offset = filter?.offset ?? 0
-      const sql = `SELECT * FROM conversations ${where} ORDER BY created_at DESC LIMIT $limit OFFSET $offset`
+      const sql = `SELECT ${LIST_COLS} FROM conversations ${where} ORDER BY created_at DESC LIMIT $limit OFFSET $offset`
       const rows = db.prepare(sql).all({ ...params, limit, offset }) as Params[]
       return rows.map(rowToSummary)
     },
@@ -216,7 +235,7 @@ export function createSqliteConversationStore(db: Database): ConversationStore {
       }
 
       const where = `WHERE ${conditions.join(' AND ')}`
-      const sql = `SELECT * FROM conversations ${where} ORDER BY created_at DESC`
+      const sql = `SELECT ${LIST_COLS} FROM conversations ${where} ORDER BY created_at DESC`
       const rows = db.prepare(sql).all(params) as Params[]
       return rows.map(rowToSummary)
     },
@@ -227,10 +246,7 @@ export function createSqliteConversationStore(db: Database): ConversationStore {
 
       const existing: ConversationStats = row.stats ? JSON.parse(row.stats as string) : {}
       const merged = { ...existing, ...stats }
-      db.prepare('UPDATE conversations SET stats = $stats WHERE id = $id').run({
-        id,
-        stats: JSON.stringify(merged),
-      })
+      stmtUpdateStats.run({ id, stats: JSON.stringify(merged) })
     },
   }
 }

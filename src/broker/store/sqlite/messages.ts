@@ -23,6 +23,9 @@ export function createSqliteMessageStore(db: Database): MessageStore {
   const stmtCountFor = db.prepare(
     'SELECT count(*) as cnt FROM message_queue WHERE to_scope = $toScope AND expires_at > $now',
   )
+  const stmtDropOldest = db.prepare(
+    'DELETE FROM message_queue WHERE id = (SELECT MIN(id) FROM message_queue WHERE to_scope = $toScope AND expires_at > $now)',
+  )
 
   const stmtLogInsert = db.prepare(`
     INSERT INTO message_log (from_scope, to_scope, from_conversation_id, to_conversation_id, from_name, to_name, content, intent, conversation_id, full_length, created_at)
@@ -98,6 +101,10 @@ export function createSqliteMessageStore(db: Database): MessageStore {
         return rows.map(mapQueueRow)
       })
       return doDequeue()
+    },
+
+    dropOldest(scope) {
+      stmtDropOldest.run({ toScope: scope, now: Date.now() })
     },
 
     countFor(scope) {

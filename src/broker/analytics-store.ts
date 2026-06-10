@@ -516,15 +516,27 @@ export function clearConversation(conversationId: string): void {
 
 type Binds = Record<string, string | number | null>
 
+// Prepared statement cache keyed by SQL string. Cleared on close so stale
+// statements from an old db handle never survive into a re-initialized store.
+const analyticsStmtCache = new Map<string, Statement<Record<string, unknown>>>()
+
 function queryAll(sql: string, binds?: Binds): unknown[] {
   if (!db) return []
-  const stmt = db.query(sql)
+  let stmt = analyticsStmtCache.get(sql) as Statement<Record<string, unknown>> | undefined
+  if (!stmt) {
+    stmt = db.prepare<Record<string, unknown>, []>(sql)
+    analyticsStmtCache.set(sql, stmt)
+  }
   return binds ? stmt.all(binds as never) : stmt.all()
 }
 
 function queryGet(sql: string, binds?: Binds): unknown {
   if (!db) return null
-  const stmt = db.query(sql)
+  let stmt = analyticsStmtCache.get(sql) as Statement<Record<string, unknown>> | undefined
+  if (!stmt) {
+    stmt = db.prepare<Record<string, unknown>, []>(sql)
+    analyticsStmtCache.set(sql, stmt)
+  }
   return binds ? stmt.get(binds as never) : stmt.get()
 }
 
@@ -740,7 +752,14 @@ function cleanup(): void {
 
     if (deleted > 0) {
       console.log(`[analytics] Cleanup: removed ${deleted} expired turns (>30d)`)
-      db.run('VACUUM')
+      // Only VACUUM when freelist fraction > 20% -- unconditional VACUUM acquires
+      // an exclusive lock and can freeze the event loop for seconds on large DBs.
+      const pageCount = (db.prepare('PRAGMA page_count').get() as { page_count: number }).page_count
+      const freelistCount = (db.prepare('PRAGMA freelist_count').get() as { freelist_count: number }).freelist_count
+      if (pageCount > 0 && freelistCount / pageCount > 0.2) {
+        console.log(`[analytics] VACUUM (freelist ${freelistCount}/${pageCount} pages)`)
+        db.run('VACUUM')
+      }
     }
   } catch (err) {
     console.error('[analytics] Cleanup failed:', err)
@@ -766,6 +785,7 @@ export function closeAnalyticsStore(): void {
     stmtInsertTurn = null
     stmtInsertToolUse = null
     stmtLastRowid = null
+    analyticsStmtCache.clear()
   }
 }
 
