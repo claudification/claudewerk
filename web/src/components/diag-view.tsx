@@ -1,67 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
+import { toYaml } from './diag-yaml'
 import { ensureLang, getHighlighter } from './transcript/syntax'
 
 interface DiagViewProps {
   conversationId: string
-}
-
-// Simple JSON -> YAML-ish string (no dependency needed)
-function toYaml(obj: unknown, indent = 0): string {
-  const pad = '  '.repeat(indent)
-  if (obj === null || obj === undefined) return `${pad}~`
-  if (typeof obj === 'boolean' || typeof obj === 'number') return `${pad}${obj}`
-  if (typeof obj === 'string') {
-    if (obj.includes('\n'))
-      return `${pad}|\n${obj
-        .split('\n')
-        .map(l => `${pad}  ${l}`)
-        .join('\n')}`
-    if (obj.match(/[:#{}[\],&*?|>!%@`]/)) return `${pad}"${obj.replace(/"/g, '\\"')}"`
-    return `${pad}${obj}`
-  }
-  if (Array.isArray(obj)) {
-    if (obj.length === 0) return `${pad}[]`
-    // Compact arrays of primitives
-    if (obj.every(v => typeof v !== 'object' || v === null)) {
-      const inline = `[${obj.map(v => (typeof v === 'string' ? `"${v}"` : String(v))).join(', ')}]`
-      if (inline.length < 80) return `${pad}${inline}`
-    }
-    return obj
-      .map(item => {
-        if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
-          const entries = Object.entries(item)
-          const first = entries[0]
-          const rest = entries.slice(1)
-          const firstLine = first ? `${pad}- ${first[0]}: ${toYaml(first[1], 0).trimStart()}` : `${pad}-`
-          const restLines = rest.map(([k, v]) => {
-            const val = toYaml(v, indent + 2).trimStart()
-            return `${pad}  ${k}: ${val}`
-          })
-          return [firstLine, ...restLines].join('\n')
-        }
-        return `${pad}- ${toYaml(item, 0).trimStart()}`
-      })
-      .join('\n')
-  }
-  if (typeof obj === 'object') {
-    const entries = Object.entries(obj as Record<string, unknown>)
-    if (entries.length === 0) return `${pad}{}`
-    return entries
-      .map(([k, v]) => {
-        if (typeof v === 'object' && v !== null && (Array.isArray(v) ? v.length > 0 : Object.keys(v).length > 0)) {
-          // Check if it's a compact array
-          if (Array.isArray(v) && v.every(x => typeof x !== 'object' || x === null)) {
-            const inline = `[${v.map(x => (typeof x === 'string' ? `"${x}"` : String(x))).join(', ')}]`
-            if (inline.length < 80) return `${pad}${k}: ${inline}`
-          }
-          return `${pad}${k}:\n${toYaml(v, indent + 1)}`
-        }
-        const val = toYaml(v, 0).trimStart()
-        return `${pad}${k}: ${val}`
-      })
-      .join('\n')
-  }
-  return `${pad}${String(obj)}`
 }
 
 // Shiki highlighter singleton (shared with transcript via static import)
@@ -75,7 +17,14 @@ function getDiagHighlighter() {
   return highlightPromise
 }
 
-export function DiagView({ conversationId }: DiagViewProps) {
+// Memoized: the diag bundle is a one-shot fetch keyed on conversationId and never
+// consumes the live transcript/event stream. Without memo, every conversation_update
+// (token samples, status flips during active work) re-renders the parent
+// (ConversationDetail -> TabContentPanels) and cascades into here, re-running the Shiki
+// highlight reconciliation and clobbering the user's text selection -- making the
+// panel impossible to copy from. conversationId is a stable string, so memo fully
+// isolates this panel from the per-message render storm.
+export const DiagView = memo(function DiagView({ conversationId }: DiagViewProps) {
   const [data, setData] = useState<Record<string, unknown> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [highlighted, setHighlighted] = useState<string | null>(null)
@@ -129,26 +78,7 @@ export function DiagView({ conversationId }: DiagViewProps) {
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      {/* Toolbar */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
-        <button
-          type="button"
-          onClick={handleCopyMnemonic}
-          className="font-mono text-[11px] text-muted-foreground hover:text-accent transition-colors cursor-pointer select-all"
-          title="Click to copy mnemonic"
-        >
-          {mnemonic}
-        </button>
-        <div className="flex-1" />
-        <button
-          type="button"
-          onClick={handleCopy}
-          className="px-2 py-1 text-[10px] font-mono border border-border hover:border-accent hover:text-accent text-muted-foreground transition-colors"
-        >
-          {copied ? 'Copied!' : 'Copy'}
-        </button>
-      </div>
-      {/* Content */}
+      <DiagToolbar mnemonic={mnemonic} copied={copied} onCopy={handleCopy} onCopyMnemonic={handleCopyMnemonic} />
       <div className="flex-1 min-h-0 overflow-y-auto p-3">
         {highlighted ? (
           <div
@@ -161,6 +91,36 @@ export function DiagView({ conversationId }: DiagViewProps) {
           <pre className="text-[11px] font-mono text-foreground/90 whitespace-pre-wrap">{yaml}</pre>
         )}
       </div>
+    </div>
+  )
+})
+
+interface DiagToolbarProps {
+  mnemonic: string
+  copied: boolean
+  onCopy: () => void
+  onCopyMnemonic: () => void
+}
+
+function DiagToolbar({ mnemonic, copied, onCopy, onCopyMnemonic }: DiagToolbarProps) {
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
+      <button
+        type="button"
+        onClick={onCopyMnemonic}
+        className="font-mono text-[11px] text-muted-foreground hover:text-accent transition-colors cursor-pointer select-all"
+        title="Click to copy mnemonic"
+      >
+        {mnemonic}
+      </button>
+      <div className="flex-1" />
+      <button
+        type="button"
+        onClick={onCopy}
+        className="px-2 py-1 text-[10px] font-mono border border-border hover:border-accent hover:text-accent text-muted-foreground transition-colors"
+      >
+        {copied ? 'Copied!' : 'Copy'}
+      </button>
     </div>
   )
 }
