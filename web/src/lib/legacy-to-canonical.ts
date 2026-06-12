@@ -124,6 +124,8 @@ export function canonicalizeToolUse(name: string, input: Record<string, unknown>
         agent: v('subagent_type', 'agent', 'subagentType') ?? '',
         prompt: v('prompt') ?? '',
         ...(v('description') !== undefined ? { description: v('description') } : {}),
+        ...(v('model') !== undefined ? { model: v('model') } : {}),
+        ...(v('name') !== undefined ? { name: v('name') } : {}),
       })
     case 'todowrite':
     case 'todo_write':

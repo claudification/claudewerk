@@ -46,6 +46,27 @@ describe('canonicalizeToolUse -- Claude legacy (PascalCase + snake_case)', () =>
     })
   })
 
+  test('Agent preserves model and name through canonicalization', () => {
+    expect(
+      canonicalizeToolUse('Agent', {
+        subagent_type: 'general-purpose',
+        prompt: 'go',
+        description: 'Overlay VFS',
+        model: 'fable',
+        name: 'slice-h-overlay',
+      }),
+    ).toEqual({
+      kind: 'task.spawn',
+      canonicalInput: {
+        agent: 'general-purpose',
+        prompt: 'go',
+        description: 'Overlay VFS',
+        model: 'fable',
+        name: 'slice-h-overlay',
+      },
+    })
+  })
+
   test('mcp__rclaude__notify -> mcp.claudewerk.notify', () => {
     const res = canonicalizeToolUse('mcp__rclaude__notify', { title: 't' })
     expect(res.kind).toBe('mcp.claudewerk.notify')

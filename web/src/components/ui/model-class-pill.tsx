@@ -1,5 +1,6 @@
 /**
- * Model-class pill for the conversation list / sidebar.
+ * Model-class pill, shared by the conversation list and the transcript's
+ * Agent tool rows.
  *
  * Renders the model CLASS (Opus / Sonnet / Haiku / Fable / Mythos) for a
  * conversation as a subtle tinted pill, derived from the raw model id on
@@ -44,7 +45,7 @@ function resolveModelClass(model: string): { label: string; key: string } | null
   return { label, key: label.toLowerCase() }
 }
 
-export function ModelClassPill({ model }: { model?: string }) {
+export function ModelClassPill({ model, className }: { model?: string; className?: string }) {
   if (!model) return null
   const resolved = resolveModelClass(model)
   if (!resolved) return null
@@ -53,6 +54,7 @@ export function ModelClassPill({ model }: { model?: string }) {
       className={cn(
         'inline-flex items-center px-1 py-0.5 text-[8px] rounded border font-medium',
         MODEL_PILL[resolved.key] ?? NEUTRAL_PILL,
+        className,
       )}
       title={`Model: ${model}`}
     >

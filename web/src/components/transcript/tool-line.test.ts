@@ -336,17 +336,32 @@ describe('dispatchToolCase - Glob/Grep', () => {
 })
 
 describe('dispatchToolCase - Agent/Task', () => {
-  it('Agent with subagent_type prefixes summary', () => {
+  it('Agent leads with description, agent type dimmed after', () => {
     const r = dispatchToolCase(
       'Agent',
       makeCtx({ input: { description: 'Search codebase', subagent_type: 'code-archaeologist', prompt: 'find bugs' } }),
     )
-    expect(r.summary).toBe('code-archaeologist: Search codebase')
+    const html = renderToStaticMarkup(r.summary as ReactElement)
+    // Description renders first and prominent; the type follows, de-emphasized.
+    expect(html.indexOf('Search codebase')).toBeLessThan(html.indexOf('code-archaeologist'))
+    expect(html).toContain('text-foreground')
+  })
+
+  it('Agent shows the agent name when the spawn set one', () => {
+    const r = dispatchToolCase(
+      'Agent',
+      makeCtx({
+        input: { description: 'Overlay VFS', subagent_type: 'general-purpose', name: 'slice-h-overlay', prompt: 'p' },
+      }),
+    )
+    const html = renderToStaticMarkup(r.summary as ReactElement)
+    expect(html).toContain('slice-h-overlay')
   })
 
   it('Task without subagent_type uses bare description', () => {
     const r = dispatchToolCase('Task', makeCtx({ input: { description: 'Build project', prompt: 'bun run build' } }))
-    expect(r.summary).toBe('Build project')
+    const html = renderToStaticMarkup(r.summary as ReactElement)
+    expect(html).toContain('Build project')
   })
 
   it('Agent provides prompt as details', () => {

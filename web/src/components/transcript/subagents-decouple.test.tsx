@@ -22,7 +22,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { act, Profiler } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useConversationsStore } from '@/hooks/use-conversations'
-import { AgentTaskBadge, shortModel } from './agent-task-badge'
+import { AgentModelPill, AgentTaskBadge, shortModel } from './agent-task-badge'
 
 type Status = 'running' | 'stopped'
 function sub(description: string, status: Status, model?: string) {
@@ -72,16 +72,28 @@ describe('AgentTaskBadge -- self-subscription', () => {
   })
 })
 
-describe('AgentTaskBadge -- Tier-0 roster enrichment (model)', () => {
-  it('surfaces the launch model on the card when present', () => {
+describe('AgentModelPill -- Tier-0 roster enrichment (model)', () => {
+  it('surfaces the launch model as a class pill when present', () => {
     setSubagents([sub('Find the config', 'running', 'claude-opus-4-8[1m]')])
-    render(<AgentTaskBadge description="Find the config" />)
-    // The big launch prompt never rides the card; only the terse model does.
-    expect(screen.getByTitle('View agent transcript').textContent).toContain('opus-4-8')
+    const { container } = render(<AgentModelPill description="Find the config" />)
+    // The big launch prompt never rides the pill; only the model class does.
+    expect(container.textContent).toContain('Opus')
   })
 
-  it('omits the model chip when the roster card has none', () => {
+  it('falls back to the pinned model when no subagent matches yet', () => {
+    setSubagents([])
+    const { container } = render(<AgentModelPill description="Find the config" pinnedModel="fable" />)
+    expect(container.textContent).toContain('Fable')
+  })
+
+  it('renders nothing when neither live nor pinned model exists', () => {
     setSubagents([sub('Find the config', 'running')])
+    const { container } = render(<AgentModelPill description="Find the config" />)
+    expect(container.textContent).toBe('')
+  })
+
+  it('badge itself no longer carries the model text', () => {
+    setSubagents([sub('Find the config', 'running', 'claude-opus-4-8[1m]')])
     render(<AgentTaskBadge description="Find the config" />)
     const text = screen.getByTitle('View agent transcript').textContent ?? ''
     expect(text).toContain('running')

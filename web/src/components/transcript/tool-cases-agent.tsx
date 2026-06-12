@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { truncate } from '@/lib/utils'
-import { AgentTaskBadge, shortModel } from './agent-task-badge'
+import { AgentModelPill, AgentTaskBadge } from './agent-task-badge'
 import type { ToolCaseInput, ToolCaseResult } from './tool-case-types'
 
 export function renderAgentTask(name: string, ctx: ToolCaseInput): ToolCaseResult {
@@ -9,11 +9,19 @@ export function renderAgentTask(name: string, ctx: ToolCaseInput): ToolCaseResul
   // Canonical: input.agent (was subagent_type in Claude legacy)
   const agentType = input.agent as string
   const prompt = input.prompt as string
-  // Surface the requested model on the card label when the spawn pinned one
-  // (input.model). Omitted == inherited from the parent, so we show nothing.
+  // Model the spawn pinned (input.model). Omitted == inherited from the
+  // parent; the pill then falls back to the live subagent's resolved model.
   const model = input.model as string | undefined
-  const base = agentType ? `${agentType}: ${desc}` : desc
-  const summary = model ? `${base} (${shortModel(model)})` : base
+  const agentName = input.name as string | undefined
+  // The description says what the agent is FOR -- it leads. The agent name
+  // (addressable handle) and type are secondary, dimmed context.
+  const summary = (
+    <>
+      <span className="text-foreground font-medium">{desc}</span>
+      {agentName && <span className="text-muted-foreground"> {agentName}</span>}
+      {agentType && <span className="text-muted-foreground/60"> {agentType}</span>}
+    </>
+  )
   let details = null
   if (prompt) {
     details = (
@@ -22,10 +30,16 @@ export function renderAgentTask(name: string, ctx: ToolCaseInput): ToolCaseResul
       </pre>
     )
   }
-  // The badge subscribes to its own subagent; the inline agent transcript is
-  // wired by ToolLine, which resolves the matched agentId via its own narrow
-  // selector. renderAgentTask no longer needs the subagents list at all.
-  const agentBadge: ReactNode = name === 'Agent' ? <AgentTaskBadge description={desc} /> : null
+  // The pill + badge each subscribe to their own subagent; the inline agent
+  // transcript is wired by ToolLine, which resolves the matched agentId via
+  // its own narrow selector. renderAgentTask needs no subagents list at all.
+  const agentBadge: ReactNode =
+    name === 'Agent' ? (
+      <>
+        <AgentModelPill description={desc} pinnedModel={model} />
+        <AgentTaskBadge description={desc} />
+      </>
+    ) : null
   return { summary, details, agentBadge }
 }
 

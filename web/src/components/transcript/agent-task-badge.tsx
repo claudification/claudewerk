@@ -1,3 +1,5 @@
+import { resolveModelFamily } from '@shared/models'
+import { ModelClassPill } from '@/components/ui/model-class-pill'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { cn } from '@/lib/utils'
 
@@ -15,6 +17,27 @@ export function shortModel(model: string): string {
     .replace(/^claude-/, '')
     .replace(/-\d{8}$/, '')
     .replace(/\[.*\]$/, '')
+}
+
+// Self-subscribing model pill for an Agent tool row, tinted with the same
+// class colors as the conversation-list pill. Prefers the live subagent's
+// resolved model (covers inherited models) and falls back to the model the
+// spawn pinned in the tool input. Same narrow primitive-returning selector
+// pattern as AgentTaskBadge below.
+export function AgentModelPill({ description, pinnedModel }: { description: string; pinnedModel?: string }) {
+  const liveModel = useConversationsStore(s => {
+    const sid = s.selectedConversationId
+    if (!sid) return undefined
+    return s.conversationsById[sid]?.subagents?.find(a => a.description === description)?.model
+  })
+  const model = liveModel ?? pinnedModel
+  if (!model) return null
+  // Unknown ids (no family match) fall back to plain muted text so the
+  // information never disappears entirely.
+  if (!resolveModelFamily(model)) {
+    return <span className="text-[10px] text-muted-foreground shrink-0">{shortModel(model)}</span>
+  }
+  return <ModelClassPill model={model} className="shrink-0" />
 }
 
 // Self-subscribing live badge for an Agent tool row. Subscribes ONLY to its
@@ -53,11 +76,6 @@ export function AgentTaskBadge({ description }: { description: string }) {
       title="View agent transcript"
     >
       {isRunning ? 'running' : 'done'}
-      {subagent.model && (
-        <span className="text-muted-foreground font-normal" title={`model: ${subagent.model}`}>
-          {shortModel(subagent.model)}
-        </span>
-      )}
       {subagent.eventCount > 0 && (
         <span className="text-muted-foreground font-normal">{subagent.eventCount} events</span>
       )}
