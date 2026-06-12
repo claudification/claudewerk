@@ -2682,7 +2682,7 @@ export interface Conversation {
   launchConfig?: LaunchConfig // resolved launch configuration -- reused on revive
   modelMismatch?: { requested: string; actual: string; detectedAt: number }
   resultText?: string // final result text from headless conversation (captured from stream-json result message)
-  recap?: { content: string; title?: string; timestamp: number } // away_summary from CC recaps
+  recap?: { content: string; title?: string; name?: string; timestamp: number } // away_summary recaps; name = suggested conversation name
   recapFresh?: boolean // true when no meaningful activity has occurred after the recap
   hostSentinelId?: string // which sentinel owns this conversation (from sentinel registry)
   hostSentinelAlias?: string // denormalized display alias of the sentinel

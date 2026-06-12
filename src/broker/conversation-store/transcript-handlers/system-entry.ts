@@ -1,5 +1,6 @@
 import type { Conversation, TranscriptSystemEntry } from '../../../shared/protocol'
 import { parseRecapContent } from '../../../shared/recap'
+import { sanitizeSuggestedName } from '../../recap/away-summary/name'
 import type { ConversationStoreContext } from '../event-context'
 import { detectContextModeFromStdout } from '../parsers'
 
@@ -104,7 +105,15 @@ function handleAwaySummaryEntry(conv: Conversation, entry: TranscriptSystemEntry
   if (typeof content !== 'string' || !content.trim()) return false
   const parsed = parseRecapContent(content)
   const recapTs = new Date(entry.timestamp || 0).getTime()
-  conv.recap = { content: parsed.recap, title: parsed.title || undefined, timestamp: recapTs }
+  // Re-sanitize the suggested name at this seam: persistResult writes it
+  // sanitized, but any away_summary entry in a transcript flows through here.
+  const suggestedName = sanitizeSuggestedName(parsed.name)
+  conv.recap = {
+    content: parsed.recap,
+    title: parsed.title || undefined,
+    name: suggestedName || undefined,
+    timestamp: recapTs,
+  }
   conv.recapFresh = conv.lastActivity <= recapTs + 10_000
   if (conv.status === 'active') {
     conv.status = 'idle'

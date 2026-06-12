@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { focusInputEditor } from '@/lib/focus-input'
 import { haptic, isMobileViewport } from '@/lib/utils'
+import { RenameField } from './rename-field'
 import { renameModalBus } from './rename-modal-trigger'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 import { Kbd } from './ui/kbd'
@@ -23,10 +24,13 @@ export function RenameModal() {
     function handleOpen(detail?: { name?: string }) {
       if (!selectedConversationId) return
       const sess = useConversationsStore.getState().conversationsById[selectedConversationId]
+      // Default priority: explicit caller value > current title > the
+      // recap-suggested name (so an unnamed conversation opens pre-filled
+      // with the suggestion -- enter accepts it, typing replaces it).
       if (detail?.name) {
         setName(detail.name)
       } else {
-        setName(sess?.title || '')
+        setName(sess?.title || sess?.recap?.name || '')
       }
       setDescription(sess?.description || '')
       haptic('tap')
@@ -82,54 +86,27 @@ export function RenameModal() {
         </div>
 
         <div className="p-3 flex flex-col gap-3">
-          <div className="flex flex-col gap-1">
-            <label
-              htmlFor="rename-name"
-              className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider"
-            >
-              Name
-            </label>
-            <input
-              ref={nameRef}
-              id="rename-name"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              onKeyDown={handleKeyDown}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              data-1p-ignore
-              data-lpignore="true"
-              data-form-type="other"
-              className="w-full bg-muted/50 border border-border text-sm font-mono px-2 py-1.5 outline-none text-foreground focus:border-accent transition-colors"
-              placeholder="conversation name"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label
-              htmlFor="rename-desc"
-              className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider"
-            >
-              Description <span className="text-muted-foreground/50">(optional)</span>
-            </label>
-            <input
-              id="rename-desc"
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              onKeyDown={handleKeyDown}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              data-1p-ignore
-              data-lpignore="true"
-              data-form-type="other"
-              className="w-full bg-muted/50 border border-border text-sm font-mono px-2 py-1.5 outline-none text-foreground focus:border-accent transition-colors"
-              placeholder="short description"
-            />
-          </div>
+          <RenameField
+            id="rename-name"
+            label="Name"
+            value={name}
+            placeholder="conversation name"
+            onChange={setName}
+            onKeyDown={handleKeyDown}
+            inputRef={nameRef}
+          />
+          <RenameField
+            id="rename-desc"
+            label={
+              <>
+                Description <span className="text-muted-foreground/50">(optional)</span>
+              </>
+            }
+            value={description}
+            placeholder="short description"
+            onChange={setDescription}
+            onKeyDown={handleKeyDown}
+          />
         </div>
 
         <div className="flex items-center justify-between px-3 py-2 border-t border-border shrink-0">

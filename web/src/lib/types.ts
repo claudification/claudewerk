@@ -175,7 +175,7 @@ export interface Conversation extends ConversationTaskFields {
   adHocWorktree?: string
   launchConfig?: LaunchConfig
   resultText?: string
-  recap?: { content: string; title?: string; timestamp: number }
+  recap?: { content: string; title?: string; name?: string; timestamp: number }
   recapFresh?: boolean
   lastEvent?: {
     hookEvent: string
