@@ -1,6 +1,6 @@
-// The pan/zoom graph itself: React Flow with the conversation + project-space
-// node types, dotted background, controls, and a status-colored minimap.
-// Read-only -- nodes aren't draggable; clicking a card opens the conversation.
+// The pan/zoom graph itself: React Flow with conversation / project-space /
+// sentinel node types, hover-accentuated edges, and transient message pulses.
+// Read-only topology -- nodes aren't draggable; clicking a card expands it.
 import {
   Background,
   BackgroundVariant,
@@ -12,14 +12,20 @@ import {
   ReactFlow,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
+import { useMemo, useState } from 'react'
 import type { ConversationCardData } from './canvas-types'
 import { ConversationNode } from './conversation-node'
+import { styleEdges } from './edge-style'
 import type { CanvasNode } from './layout'
 import { ProjectSpaceNode } from './project-space-node'
+import { PulseEdge } from './pulse-edge'
+import { SentinelNode } from './sentinel-node'
+import { useMessagePulses } from './use-message-pulses'
 
-const nodeTypes = { conversation: ConversationNode, projectSpace: ProjectSpaceNode }
+const nodeTypes = { conversation: ConversationNode, projectSpace: ProjectSpaceNode, sentinel: SentinelNode }
+const edgeTypes = { pulse: PulseEdge }
 
-const MINIMAP_COLORS: Record<string, string> = {
+const MINIMAP_STATUS_COLORS: Record<string, string> = {
   active: 'var(--color-active)',
   idle: 'var(--color-idle)',
   starting: 'var(--color-info)',
@@ -27,18 +33,38 @@ const MINIMAP_COLORS: Record<string, string> = {
   ended: 'var(--color-ended)',
 }
 
+const MINIMAP_TYPE_COLORS: Record<string, string> = {
+  projectSpace: 'oklch(0.4 0.02 260 / 0.3)',
+  sentinel: 'oklch(0.6 0.1 250 / 0.6)',
+}
+
 function minimapColor(n: Node): string {
-  if (n.type === 'projectSpace') return 'oklch(0.4 0.02 260 / 0.3)'
-  return MINIMAP_COLORS[(n.data as ConversationCardData)?.status] ?? 'var(--color-ended)'
+  const byType = MINIMAP_TYPE_COLORS[n.type as string]
+  if (byType) return byType
+  const status = String((n.data as ConversationCardData).status)
+  return MINIMAP_STATUS_COLORS[status] || 'var(--color-ended)'
 }
 
-function openConversation(id: string) {
-  window.location.hash = `conversation/${id}`
+interface CanvasGraphProps {
+  nodes: CanvasNode[]
+  edges: Edge[]
+  presentIds: ReadonlySet<string>
+  showEnded: boolean
+  onExpandConversation: (id: string) => void
 }
 
-export function CanvasGraph({ nodes, edges, showEnded }: { nodes: CanvasNode[]; edges: Edge[]; showEnded: boolean }) {
+export function CanvasGraph({ nodes, edges, presentIds, showEnded, onExpandConversation }: CanvasGraphProps) {
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const pulses = useMessagePulses(presentIds)
+
+  const styledEdges = useMemo(() => [...styleEdges(edges, hoveredId), ...pulses], [edges, hoveredId, pulses])
+
   function handleNodeClick(...[, node]: Parameters<NodeMouseHandler>) {
-    if (node.type === 'conversation') openConversation(node.id)
+    // Click expands a collapsed card; expanded cards collapse via their own
+    // button (clicks inside them select text / hit controls instead).
+    if (node.type === 'conversation' && !(node.data as ConversationCardData).expanded) {
+      onExpandConversation(node.id)
+    }
   }
 
   if (nodes.length === 0) {
@@ -52,9 +78,12 @@ export function CanvasGraph({ nodes, edges, showEnded }: { nodes: CanvasNode[]; 
   return (
     <ReactFlow
       nodes={nodes}
-      edges={edges}
+      edges={styledEdges}
       nodeTypes={nodeTypes}
+      edgeTypes={edgeTypes}
       onNodeClick={handleNodeClick}
+      onNodeMouseEnter={(_, node) => setHoveredId(node.type === 'projectSpace' ? null : node.id)}
+      onNodeMouseLeave={() => setHoveredId(null)}
       colorMode="dark"
       nodesDraggable={false}
       nodesConnectable={false}

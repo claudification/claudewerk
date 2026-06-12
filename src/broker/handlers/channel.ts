@@ -590,6 +590,72 @@ type HandlerCtx = Parameters<MessageHandler>[0]
 type ConvRecord = ReturnType<HandlerCtx['conversations']['getConversation']>
 
 /**
+ * Surface an inter-conversation send to control-panel clients (THE CANVAS
+ * animates these as pulses between cards). Scoped to the SENDER's project:
+ * chat:read there already exposes the send + target id via the sender's own
+ * transcript, so this broadcast reveals nothing new. No message content rides
+ * along -- ids, intent, and delivery status only.
+ */
+function broadcastInterConversationActivity(
+  ctx: HandlerCtx,
+  fromConversation: string,
+  fromProject: string | undefined,
+  toConversationId: string,
+  intent: string,
+  status: 'delivered' | 'queued',
+): void {
+  if (!fromProject) return
+  ctx.conversations.broadcastConversationScoped(
+    {
+      type: 'inter_conversation_activity',
+      conversationId: fromConversation,
+      toConversationId,
+      intent,
+      status,
+      at: Date.now(),
+    },
+    fromProject,
+  )
+}
+
+interface QueuedSender {
+  fromConversation: string
+  fromConv: ConvRecord | undefined
+  callerProject: string | undefined
+}
+
+/** Sender naming + the channel_deliver envelope for an offline/pending queue. */
+function buildQueuedDelivery(
+  ctx: HandlerCtx,
+  s: QueuedSender,
+  targetProject: string,
+  data: Record<string, unknown>,
+  conversationId: unknown,
+): { fromProjectName: string; delivery: Record<string, unknown> } {
+  const fromProjectName =
+    ctx.getProjectSettings(s.callerProject || '')?.label ||
+    (s.callerProject ? extractProjectLabel(s.callerProject) : s.fromConversation.slice(0, 8))
+  const { routable: fromSlug, project: fromProjectSlug } = computeSenderRoutableId(
+    ctx,
+    s.fromConv && { id: s.fromConv.id, project: s.fromConv.project, title: s.fromConv.title },
+    targetProject,
+    fromProjectName,
+  )
+  return {
+    fromProjectName,
+    delivery: {
+      type: 'channel_deliver',
+      fromConversation: fromSlug,
+      fromProject: fromProjectSlug,
+      intent: data.intent,
+      message: data.message,
+      context: data.context,
+      conversationId,
+    },
+  }
+}
+
+/**
  * Resolve and deliver to ONE target. Returns a per-target result entry instead
  * of replying directly -- the multicast orchestrator aggregates entries and
  * sends a single `channel_send_result` envelope at the end. Synchronous so
@@ -604,6 +670,7 @@ function deliverToOne(
   toTarget: string,
   conversationId: string,
 ): ChannelSendResultEntry {
+  const sender = (): QueuedSender => ({ fromConversation, fromConv, callerProject })
   const colonIdx = toTarget.indexOf(':')
   const projectSlug = colonIdx >= 0 ? toTarget.slice(0, colonIdx) : toTarget
   const conversationSlug = colonIdx >= 0 ? toTarget.slice(colonIdx + 1) : undefined
@@ -670,24 +737,7 @@ function deliverToOne(
   const toConversation = toConv?.id
 
   if (targetProject && !toConv) {
-    const fromProjectName =
-      ctx.getProjectSettings(callerProject || '')?.label ||
-      (callerProject ? extractProjectLabel(callerProject) : fromConversation.slice(0, 8))
-    const { routable: fromSlug, project: fromProjectSlug } = computeSenderRoutableId(
-      ctx,
-      fromConv && { id: fromConv.id, project: fromConv.project, title: fromConv.title },
-      targetProject,
-      fromProjectName,
-    )
-    const delivery = {
-      type: 'channel_deliver',
-      fromConversation: fromSlug,
-      fromProject: fromProjectSlug,
-      intent: data.intent,
-      message: data.message,
-      context: data.context,
-      conversationId,
-    }
+    const { fromProjectName, delivery } = buildQueuedDelivery(ctx, sender(), targetProject, data, conversationId)
     ctx.messageQueue.enqueue(targetProject, callerProject || '', fromProjectName, delivery, conversationSlug)
     ctx.log.debug(`[inter-conversation] ${fromConversation.slice(0, 8)} -> ${toTarget} (queued, target offline)`)
     return { to: toTarget, ok: true, status: 'queued' }
@@ -696,24 +746,13 @@ function deliverToOne(
   if (!toConv || !toConversation) {
     const pendingMatch = findPendingSpawnTarget(ctx, toTarget)
     if (pendingMatch) {
-      const fromProjectName =
-        ctx.getProjectSettings(callerProject || '')?.label ||
-        (callerProject ? extractProjectLabel(callerProject) : fromConversation.slice(0, 8))
-      const { routable: fromSlug, project: fromProjectSlug } = computeSenderRoutableId(
+      const { fromProjectName, delivery } = buildQueuedDelivery(
         ctx,
-        fromConv && { id: fromConv.id, project: fromConv.project, title: fromConv.title },
+        sender(),
         pendingMatch.project,
-        fromProjectName,
-      )
-      const delivery = {
-        type: 'channel_deliver',
-        fromConversation: fromSlug,
-        fromProject: fromProjectSlug,
-        intent: data.intent,
-        message: data.message,
-        context: data.context,
+        data,
         conversationId,
-      }
+      )
       ctx.messageQueue.enqueue(pendingMatch.project, callerProject || '', fromProjectName, delivery, pendingMatch.name)
       ctx.log.debug(
         `[inter-conversation] ${fromConversation.slice(0, 8)} -> ${toTarget} (queued for spawning job ${pendingMatch.jobId.slice(0, 8)})`,
@@ -814,6 +853,14 @@ function deliverToOne(
           fullLength: ((data.message as string) || '').length,
         })
       }
+      broadcastInterConversationActivity(
+        ctx,
+        fromConversation,
+        fromConv?.project,
+        toConversation,
+        (data.intent as string) || 'notify',
+        'delivered',
+      )
       ctx.log.debug(
         `[inter-conversation] ${fromConversation.slice(0, 8)} -> ${toConversation.slice(0, 8)}: ${data.intent} (${effectiveLinkStatus}, ${matchedConvLink ? 'conversation' : 'project'})`,
       )
@@ -843,6 +890,14 @@ function deliverToOne(
   })
   ctx.log.debug(
     `[inter-conversation] ${fromConversation.slice(0, 8)} -> ${toConversation.slice(0, 8)}: ${data.intent} (queued, conv=${convStatus} project=${projectStatus})`,
+  )
+  broadcastInterConversationActivity(
+    ctx,
+    fromConversation,
+    fromConv?.project,
+    toConversation,
+    (data.intent as string) || 'notify',
+    'queued',
   )
   return { to: toTarget, ok: true, status: 'queued', targetConversationId: toConversation }
 }

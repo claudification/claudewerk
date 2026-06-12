@@ -65,6 +65,10 @@ export interface ControlPanelMessage {
     | 'phantom_reap_candidate'
     // Live per-message token sample (powers the token-flow widget)
     | 'token_sample'
+    // Inter-conversation send observed (powers THE CANVAS message pulses).
+    // Scoped to the SENDER's project -- chat:read there already exposes the
+    // send + target id via the sender's transcript, so this leaks nothing new.
+    | 'inter_conversation_activity'
   conversationId?: string
   previousConversationId?: string
   conversation?: ConversationSummary
@@ -87,6 +91,11 @@ export interface ControlPanelMessage {
   sentinelId?: string
   profileUsage?: ProfileUsageSnapshot[]
   polledAt?: number
+  // Inter-conversation activity (inter_conversation_activity): conversationId
+  // above carries the SENDER (doubles as the share-scope key); status reuses
+  // the shared field ('delivered' | 'queued'); `at` is the broker send time.
+  toConversationId?: string
+  intent?: string
   // Termination metadata (only on conversation_terminated)
   source?: TerminationSource | string
   initiator?: string

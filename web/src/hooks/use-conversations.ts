@@ -122,6 +122,51 @@ export interface SentinelStatusInfo {
   shellCapable?: boolean
 }
 
+/** One observed inter-conversation send (from `inter_conversation_activity`).
+ *  THE CANVAS animates these as pulses between conversation cards. */
+export interface InterConvActivity {
+  from: string
+  to: string
+  intent: string
+  status: 'delivered' | 'queued'
+  at: number
+  /** Client-side monotonic key -- identical sends still animate separately. */
+  key: number
+}
+
+let nextInterConvKey = 1
+
+/** One share link as the broker reports it (`shares_updated` / REST). */
+interface ShareInfo {
+  token: string
+  project: string
+  conversationId?: string
+  targetKind?: 'conversation' | 'recap'
+  targetId?: string
+  createdAt: number
+  expiresAt: number
+  createdBy: string
+  label?: string
+  permissions: string[]
+  hideUserInput?: boolean
+  viewerCount: number
+}
+
+/** Drop a conversation from the store, clearing selection if it was selected.
+ *  Shared by the local dismiss action and the WS `session_dismissed` handler. */
+export function dropConversationPatch(
+  state: { selectedConversationId: string | null; conversationsById: Record<string, Conversation> },
+  conversationId: string,
+  source: string,
+): { conversationsById: Record<string, Conversation>; selectedConversationId: string | null } {
+  if (state.selectedConversationId === conversationId) {
+    console.log(`[nav] ${source}: clearing selection (dismissed ${conversationId.slice(0, 8)})`)
+  }
+  const nextSelected = state.selectedConversationId === conversationId ? null : state.selectedConversationId
+  const { [conversationId]: _dropped, ...conversationsById } = state.conversationsById
+  return { conversationsById, selectedConversationId: nextSelected }
+}
+
 interface ConversationsState {
   /** SOURCE OF TRUTH for the fleet (W-H3). A `conversation_update` patches ONE
    *  key here instead of rebuilding a parallel array on every fleet message. The
@@ -216,6 +261,11 @@ interface ConversationsState {
    *  back-compat with single-profile pre-Phase-1 sentinels. See
    *  `.claude/docs/plan-sentinel-profile-usage.md`. */
   profileUsage: Record<string, ProfileUsageSnapshot & { sentinelId: string; polledAt: number }>
+  /** Recent inter-conversation sends from the `inter_conversation_activity`
+   *  broadcast (sender-project scoped). Ring of the last 50; THE CANVAS
+   *  animates these as pulses between conversation cards. */
+  interConvActivity: InterConvActivity[]
+  pushInterConvActivity: (activity: Omit<InterConvActivity, 'key'>) => void
   claudeHealth: ClaudeHealthUpdate | null
   claudeEfficiency: ClaudeEfficiencyUpdate | null
   error: string | null
@@ -404,36 +454,8 @@ interface ConversationsState {
   /** Generate and return a new batch id, also storing it on the store. */
   startBatch: () => string
 
-  shares: Array<{
-    token: string
-    project: string
-    conversationId?: string
-    targetKind?: 'conversation' | 'recap'
-    targetId?: string
-    createdAt: number
-    expiresAt: number
-    createdBy: string
-    label?: string
-    permissions: string[]
-    hideUserInput?: boolean
-    viewerCount: number
-  }>
-  setShares: (
-    shares: Array<{
-      token: string
-      project: string
-      conversationId?: string
-      targetKind?: 'conversation' | 'recap'
-      targetId?: string
-      createdAt: number
-      expiresAt: number
-      createdBy: string
-      label?: string
-      permissions: string[]
-      hideUserInput?: boolean
-      viewerCount: number
-    }>,
-  ) => void
+  shares: ShareInfo[]
+  setShares: (shares: ShareInfo[]) => void
 
   getSelectedConversation: () => Conversation | undefined
   getSelectedEvents: () => HookEvent[]
@@ -829,6 +851,11 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
     })),
   planUsage: null,
   profileUsage: {},
+  interConvActivity: [],
+  pushInterConvActivity: activity =>
+    set(state => ({
+      interConvActivity: [...state.interConvActivity.slice(-49), { ...activity, key: nextInterConvKey++ }],
+    })),
   claudeHealth: null,
   claudeEfficiency: null,
   error: null,
@@ -1344,17 +1371,7 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   dismissConversation: conversationId => {
     wsSend('dismiss_conversation', { conversationId })
     forgetFull(conversationId)
-    set(state => {
-      if (state.selectedConversationId === conversationId) {
-        console.log(`[nav] dismissConversation: clearing selection (dismissed ${conversationId.slice(0, 8)})`)
-      }
-      const nextSelected = state.selectedConversationId === conversationId ? null : state.selectedConversationId
-      const { [conversationId]: _dropped, ...conversationsById } = state.conversationsById
-      return {
-        conversationsById,
-        selectedConversationId: nextSelected,
-      }
-    })
+    set(state => dropConversationPatch(state, conversationId, 'dismissConversation'))
   },
   terminateConversation: (conversationId, source) => {
     // Source MUST be tagged at each call site -- the broker uses it for

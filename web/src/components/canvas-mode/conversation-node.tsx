@@ -1,9 +1,11 @@
 // One conversation on THE CANVAS: status dot, name, model, live counters.
-// Dumb -- renders the flat ConversationCardData layout.ts computed.
+// Click expands it in place into a live mini-transcript card (expanded-card).
 import { Handle, type NodeProps, Position } from '@xyflow/react'
 import { cn } from '@/lib/utils'
 import { formatAgo, formatCost, formatTokens } from '@/sheaf/format'
 import { type ConversationCardData, STATUS_ACCENT } from './canvas-types'
+import { ExpandedCard } from './expanded-card'
+import { useCanvasActions } from './use-expanded'
 
 function cardClass(d: ConversationCardData, selected: boolean | undefined): string {
   return cn(
@@ -71,14 +73,22 @@ function StatsRow({ d }: { d: ConversationCardData }) {
   )
 }
 
-export function ConversationNode({ data, selected }: NodeProps) {
+export function ConversationNode({ id, data, selected }: NodeProps) {
   const d = data as ConversationCardData
+  const { toggleExpand } = useCanvasActions()
   return (
-    <div className={cardClass(d, selected)}>
+    <div className="relative">
       <Handle type="target" position={Position.Top} className="!bg-border !border-border" />
-      <TitleRow d={d} />
-      <ModelRow d={d} />
-      <StatsRow d={d} />
+      <Handle type="target" position={Position.Left} id="host" className="!bg-border !border-border opacity-40" />
+      {d.expanded ? (
+        <ExpandedCard id={id} d={d} selected={selected} onCollapse={toggleExpand} />
+      ) : (
+        <div className={cardClass(d, selected)}>
+          <TitleRow d={d} />
+          <ModelRow d={d} />
+          <StatsRow d={d} />
+        </div>
+      )}
       <Handle type="source" position={Position.Bottom} className="!bg-border !border-border" />
     </div>
   )

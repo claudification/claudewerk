@@ -14,7 +14,29 @@ export interface ConversationCardData {
   agoMs: number
   childCount: number
   compacting: boolean
+  /** Expanded in place: the card grows and hosts a live mini-transcript. */
+  expanded: boolean
   [k: string]: unknown // React Flow node data is an open record
+}
+
+/** One profile row on a sentinel node, pre-joined with its usage snapshot. */
+export interface SentinelProfileRow {
+  name: string
+  pool?: string
+  authed: boolean
+  fiveHourPct?: number
+  sevenDayPct?: number
+  error?: string
+}
+
+export interface SentinelNodeData {
+  sentinelId: string
+  alias: string
+  hostname?: string
+  connected: boolean
+  conversationCount: number
+  profiles: SentinelProfileRow[]
+  [k: string]: unknown
 }
 
 export interface ProjectSpaceData {

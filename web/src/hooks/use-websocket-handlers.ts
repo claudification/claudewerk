@@ -41,7 +41,13 @@ import { formatRateBucketName, haptic } from '@/lib/utils'
 import { addDebugTraceEvent, setDebugTraceResult } from './debug-control-store'
 import { clearThinkingProgress, recordThinkingProgress } from './thinking-progress-store'
 import { recordTokenSample } from './token-flow-store'
-import { applyHashRoute, fetchTranscript, type ProjectSettingsMap, useConversationsStore } from './use-conversations'
+import {
+  applyHashRoute,
+  dropConversationPatch,
+  fetchTranscript,
+  type ProjectSettingsMap,
+  useConversationsStore,
+} from './use-conversations'
 import { useRecapJobsStore } from './use-recap-jobs'
 import { useShellsStore } from './use-shells'
 import { handleSpawnRequestAck } from './use-spawn'
@@ -1191,17 +1197,7 @@ function handleConversationDismissed(msg: DashboardMessage) {
   if (!msg.conversationId) return
   const conversationId = msg.conversationId
   forgetFull(conversationId)
-  useConversationsStore.setState(state => {
-    if (state.selectedConversationId === conversationId) {
-      console.log(`[nav] session_dismissed: clearing selection (WS dismissed ${conversationId.slice(0, 8)})`)
-    }
-    const nextSelected = state.selectedConversationId === conversationId ? null : state.selectedConversationId
-    const { [conversationId]: _dropped, ...conversationsById } = state.conversationsById
-    return {
-      conversationsById,
-      selectedConversationId: nextSelected,
-    }
-  })
+  useConversationsStore.setState(state => dropConversationPatch(state, conversationId, 'session_dismissed'))
 }
 
 // Server-pushed permissions (resolved from grants)
@@ -1371,6 +1367,21 @@ function handleTokenSample(msg: DashboardMessage): void {
     output: (msg.outputTokens as number | undefined) || 0,
     cacheRead: (msg.cacheReadTokens as number | undefined) || 0,
     cacheWrite: (msg.cacheWriteTokens as number | undefined) || 0,
+  })
+}
+
+// Inter-conversation send observed (sender-project scoped broadcast). Pushed
+// into the store's small activity ring; THE CANVAS animates these as pulses.
+function handleInterConversationActivity(msg: DashboardMessage): void {
+  const from = msg.conversationId as string | undefined
+  const to = msg.toConversationId as string | undefined
+  if (!from || !to) return
+  useConversationsStore.getState().pushInterConvActivity({
+    from,
+    to,
+    intent: (msg.intent as string | undefined) || 'notify',
+    status: msg.status === 'queued' ? 'queued' : 'delivered',
+    at: (msg.at as number | undefined) || Date.now(),
   })
 }
 
@@ -1556,6 +1567,7 @@ export const handlers: Record<string, MessageHandler> = {
   usage_update: handleUsageUpdate,
   sentinel_usage_report: handleSentinelUsageReport,
   token_sample: handleTokenSample,
+  inter_conversation_activity: handleInterConversationActivity,
   // host shells (roster plane)
   shell_roster: handleShellRoster,
   shell_added: handleShellAdded,
