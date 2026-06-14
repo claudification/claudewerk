@@ -44,13 +44,7 @@ export function transcriptJsonlPath(cwd: string, ccSessionId: string): string {
   return join(transcriptProjectDir(cwd), `${ccSessionId}.jsonl`)
 }
 
-/**
- * The `ccSessionId` encoded in a transcript JSONL file name, or `null` if the
- * name is not a `<id>.jsonl`. The id IS the file's base name -- a daemon
- * worker's live ccSessionId is exactly the name of the JSONL it is writing.
- */
-export function ccSessionIdFromJsonl(fileName: string): string | null {
-  if (!fileName.endsWith('.jsonl')) return null
-  const id = fileName.slice(0, -'.jsonl'.length)
-  return id.length > 0 ? id : null
-}
+// ccSessionIdFromJsonl moved to src/shared/transcript-path.ts (the history
+// import needs the filename <-> id mapping too); re-exported so existing
+// daemon-side imports keep working unchanged.
+export { ccSessionIdFromJsonl } from '../shared/transcript-path'

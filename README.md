@@ -697,6 +697,13 @@ OPTIONS:
   --channels               Enable MCP channel (already default, for explicitness)
   --rclaude-version        Show build version
   --rclaude-check-update   Check if a newer version is available on GitHub
+  --rclaude-import-history --sentinel <alias> [--since <YYYY-MM-DD>] [--dry-run] [--include-agents]
+                           Upload this machine's local Claude history
+                           (~/.claude/projects) to the broker so it's searchable
+                           across machines. Idempotent (safe to re-run). <alias>
+                           must be a registered sentinel alias; sub-agent
+                           transcripts and sessions already live on the broker
+                           are skipped by default
   --rclaude-help           Show rclaude help
 
 All other arguments pass through to claude CLI.

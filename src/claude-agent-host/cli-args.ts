@@ -161,6 +161,13 @@ OPTIONS:
   --channels             Enable MCP channel (already default, for explicitness)
   --rclaude-version      Show rclaude build version
   --rclaude-check-update Check if a newer version is available on GitHub
+  --rclaude-import-history --sentinel <alias> [--since <YYYY-MM-DD>] [--dry-run] [--include-agents]
+                         Upload this machine's local Claude history (~/.claude/projects)
+                         to the broker so it's searchable across machines. Idempotent.
+                         <alias> must be this machine's registered sentinel alias
+                         (validated against the broker registry). Sub-agent
+                         (agent-*.jsonl) transcripts and sessions already live on
+                         the broker are skipped by default.
   --rclaude-help         Show this help message
 
 ENVIRONMENT:
@@ -255,6 +262,42 @@ export async function parseCliArgs(args: string[]): Promise<CliConfig> {
     } else if (arg === '--rclaude-check-update') {
       const result = await checkForUpdate()
       console.log(formatUpdateResult(result, detectClaudeVersion()))
+      process.exit(0)
+    } else if (arg === '--rclaude-import-history') {
+      // Terminal action: backfill this machine's local Claude history to the
+      // broker, then exit. Sub-flags are scanned from the whole argv so order
+      // relative to --broker/--rclaude-secret doesn't matter.
+      const flagValue = (name: string): string | undefined => {
+        const idx = args.indexOf(name)
+        return idx >= 0 ? args[idx + 1] : undefined
+      }
+      // No hostname fallback: the alias becomes the project-URI authority and
+      // is validated against the broker's sentinel registry -- a guessed name
+      // would either fail validation or mint a phantom machine.
+      const sentinel = flagValue('--sentinel') ?? process.env.CLAUDWERK_SENTINEL_NAME
+      if (!sentinel) {
+        console.error(
+          'ERROR: --sentinel <alias> is required (or set CLAUDWERK_SENTINEL_NAME).\n' +
+            'Use the alias this machine is registered under on the broker (see broker-cli sentinel list).',
+        )
+        process.exit(1)
+      }
+      const sinceRaw = flagValue('--since')
+      const sinceMs = sinceRaw ? Date.parse(sinceRaw) : Number.NaN
+      const { runImportHistory } = await import('./import-history')
+      try {
+        await runImportHistory({
+          brokerUrl: flagValue('--broker') ?? brokerUrl,
+          brokerSecret: flagValue('--rclaude-secret') ?? brokerSecret,
+          sentinel,
+          dryRun: args.includes('--dry-run'),
+          includeAgents: args.includes('--include-agents'),
+          since: Number.isNaN(sinceMs) ? undefined : sinceMs,
+        })
+      } catch (err) {
+        console.error(`ERROR: ${err instanceof Error ? err.message : err}`)
+        process.exit(1)
+      }
       process.exit(0)
     } else if (arg === '--broker') {
       brokerUrl = args[++i] || DEFAULT_BROKER_URL

@@ -72,10 +72,12 @@ the turn is classified and pushed to a batch queue. Flushed every 5s or 50 recor
 
 All endpoints accept `?project=` (slug or integer ID) for per-project filtering.
 
-**Mass import:** `bun scripts/import-analytics.ts` parses historical JSONL
-transcripts from `~/.claude/projects/`. Idempotent (skips already-imported sessions).
+**Mass import:** the old `scripts/import-analytics.ts` was deleted as dead code.
+Historical-transcript backfill (FTS/transcripts, not analytics) now lives in the
+agent host: `rclaude --rclaude-import-history --sentinel <alias>` -- see the
+README CLI reference. Analytics turns are NOT retro-filled.
 
-Files: `analytics-store.ts`, `scripts/import-analytics.ts`
+Files: `analytics-store.ts`
 
 ## Cost Reporting (SQLite)
 
