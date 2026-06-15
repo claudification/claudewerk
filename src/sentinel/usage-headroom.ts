@@ -32,19 +32,40 @@ export function snapshotHasWindows(
 }
 
 /** Derive the picker headroom from a snapshot known to have windows. Staleness
- *  is measured from THAT snapshot's `polledAt` against the supplied window. */
+ *  is measured from THAT snapshot's `polledAt` against the supplied window.
+ *
+ *  POST-RESET DECAY: a window whose `resetAt` has already passed has refreshed,
+ *  so its utilisation is back to 0 -- regardless of what the (possibly carried-
+ *  forward) snapshot recorded. Without this, a profile that was CAPPED when last
+ *  measured (e.g. 5h=100%) and then went idle + auth-failed would stay wrongly
+ *  GATED forever on the stale 100%, never getting the traffic that would refresh
+ *  its token and let us measure it again. Decaying past the reset lets it return
+ *  to the eligible band once its window genuinely refreshes -- the crux of the
+ *  auth-error self-heal (see `deriveUsageHeadroom`). */
 function headroomFromSnapshot(
   snap: ProfileUsageSnapshot & Required<Pick<ProfileUsageSnapshot, 'fiveHour' | 'sevenDay'>>,
   now: number,
   staleMs: number,
 ): UsageHeadroom {
+  const fiveReset = new Date(snap.fiveHour.resetAt).getTime()
+  const sevenReset = new Date(snap.sevenDay.resetAt).getTime()
   return {
-    fiveHourUsedPercent: snap.fiveHour.usedPercent,
-    sevenDayUsedPercent: snap.sevenDay.usedPercent,
-    msUntilFiveHourReset: Math.max(0, new Date(snap.fiveHour.resetAt).getTime() - now),
-    msUntilSevenDayReset: Math.max(0, new Date(snap.sevenDay.resetAt).getTime() - now),
+    fiveHourUsedPercent: now > fiveReset ? 0 : snap.fiveHour.usedPercent,
+    sevenDayUsedPercent: now > sevenReset ? 0 : snap.sevenDay.usedPercent,
+    msUntilFiveHourReset: Math.max(0, fiveReset - now),
+    msUntilSevenDayReset: Math.max(0, sevenReset - now),
     stale: now - snap.polledAt > staleMs,
   }
+}
+
+/** An HTTP 401 on the usage probe means the profile's OAuth token is expired /
+ *  revoked -- we couldn't AUTHENTICATE, which says nothing about capacity. It is
+ *  also self-reinforcing: an idle profile's token only refreshes when CC runs
+ *  under it, and that traffic won't come if we demote the profile to UNKNOWN.
+ *  So a 401 gets a far more generous carry-forward window than a 429 (whose
+ *  backoff self-clears in minutes). */
+function isAuthError(snap: ProfileUsageSnapshot | undefined): boolean {
+  return snap?.error?.kind === 'http' && snap.error.status === 401
 }
 
 export interface HeadroomStaleness {
@@ -55,6 +76,14 @@ export interface HeadroomStaleness {
    *  max 429 backoff so a healthy profile keeps ranking on real headroom for
    *  the entire throttle window instead of blanking out partway through. */
   carryForwardStaleMs: number
+  /** Carry-forward window when the LATEST poll failed with an AUTH error (401).
+   *  Much longer than `carryForwardStaleMs`: a revoked/expired token won't self-
+   *  heal in minutes (it needs traffic to refresh), so the profile must keep a
+   *  ranking foothold long enough to win a spawn and re-auth. Combined with the
+   *  post-reset decay above, a stale-but-carried reading self-corrects toward
+   *  eligible rather than pinning a profile gated. Falls back to
+   *  `carryForwardStaleMs` when unset. */
+  authErrorCarryForwardMs?: number
 }
 
 /**
@@ -74,6 +103,13 @@ export function deriveUsageHeadroom(
   staleness: HeadroomStaleness,
 ): UsageHeadroom | undefined {
   if (snapshotHasWindows(latest)) return headroomFromSnapshot(latest, now, staleness.staleMs)
-  if (snapshotHasWindows(lastGood)) return headroomFromSnapshot(lastGood, now, staleness.carryForwardStaleMs)
+  if (snapshotHasWindows(lastGood)) {
+    // A 401 on the latest poll gets the long auth-error window; everything else
+    // (notably 429) uses the shorter throttle-sized window.
+    const window = isAuthError(latest)
+      ? (staleness.authErrorCarryForwardMs ?? staleness.carryForwardStaleMs)
+      : staleness.carryForwardStaleMs
+    return headroomFromSnapshot(lastGood, now, window)
+  }
   return undefined
 }

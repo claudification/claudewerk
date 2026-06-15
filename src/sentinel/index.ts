@@ -328,6 +328,15 @@ function liveLoadForProfile(profileName: string): number {
  *  to live-host count. Poll interval is 3min, so 3.3 missed cycles = stale. */
 const USAGE_STALE_MS = 10 * 60 * 1000
 
+/** Carry-forward window for a profile whose latest usage poll failed with a 401
+ *  (expired/revoked token). Far longer than the 429 backoff: an idle profile's
+ *  token only refreshes when CC runs under it, so it needs a ranking foothold
+ *  long enough to win a spawn and re-auth. 6h comfortably spans a couple of 5h
+ *  window resets (post-reset decay then lets it climb back into the eligible
+ *  band); past 6h with no successful poll it falls to UNKNOWN (load-based), so a
+ *  permanently-dead profile stops attracting traffic rather than pinning forever. */
+const AUTH_ERROR_CARRY_FORWARD_MS = 6 * 60 * 60 * 1000
+
 /** Headroom source for `pickProfile` -- reads the latest per-profile poll
  *  result and exposes the 5h and 7d windows SEPARATELY so the ranker can
  *  treat the 5h as a hard gate and the 7d as a soft drain-pressure
@@ -345,7 +354,11 @@ function usageHeadroomForProfile(profileName: string): UsageHeadroom | undefined
     getLatestProfileUsage().get(profileName),
     getLastGoodProfileUsage().get(profileName),
     Date.now(),
-    { staleMs: USAGE_STALE_MS, carryForwardStaleMs: RATE_LIMIT_MAX_BACKOFF_MS },
+    {
+      staleMs: USAGE_STALE_MS,
+      carryForwardStaleMs: RATE_LIMIT_MAX_BACKOFF_MS,
+      authErrorCarryForwardMs: AUTH_ERROR_CARRY_FORWARD_MS,
+    },
   )
 }
 

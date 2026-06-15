@@ -7,130 +7,19 @@
  * sentinel's own Balanced picker reads from the same in-process map to
  * pick the profile with the most headroom.
  *
- * Token discovery -- darwin uses the macOS Keychain. Claude Code keys
- * profile credentials by service name:
- *   default profile (~/.claude)       -> "Claude Code-credentials"
- *   alt profile (~/.claude-work)      -> "Claude Code-credentials-0be8b895"
- *   where 0be8b895 = sha256("/Users/jonas/.claude-work").hexdigest()[:8]
- * Non-default profiles also fall through to `<configDir>/.credentials.json`
- * for hosts that don't use the keychain.
- *
- * All side-effecting paths (keychain shell-out, fetch, fs) accept
- * dependency-injection seams so the unit tests stay hermetic.
+ * Token discovery (keychain / `.credentials.json` / legacy, freshest-wins)
+ * lives in `oauth-token.ts`. All side-effecting paths (fetch, token read)
+ * accept dependency-injection seams so the unit tests stay hermetic.
  *
  * See `.claude/docs/plan-sentinel-profile-usage.md` (Phase 1).
  */
 
-import { createHash } from 'node:crypto'
-import { existsSync as existsSyncReal, readFileSync as readFileSyncReal } from 'node:fs'
-import { join, resolve } from 'node:path'
 import type { ExtraUsage, ProfileUsageSnapshot, SentinelUsageReport, UsageWindow } from '../shared/protocol'
+import { getOAuthToken } from './oauth-token'
 import type { ResolvedProfile } from './sentinel-config'
 
 const USAGE_API_URL = 'https://api.anthropic.com/api/oauth/usage'
-const KEYCHAIN_SERVICE_DEFAULT = 'Claude Code-credentials'
 const USAGE_FETCH_TIMEOUT_MS = 15_000
-
-/**
- * Service name Claude Code uses for a profile's keychain credentials.
- * Default profile: bare service name. Alt profile: hyphen-suffixed with
- * the first 8 hex chars of sha256(configDir).
- */
-export function keychainServiceFor(configDir: string, home: string): string {
-  if (configDir === join(home, '.claude')) return KEYCHAIN_SERVICE_DEFAULT
-  const hash = createHash('sha256').update(configDir).digest('hex').slice(0, 8)
-  return `${KEYCHAIN_SERVICE_DEFAULT}-${hash}`
-}
-
-/** Returns the raw stdout of `security find-generic-password -s <service> -w`,
- *  or `null` when no entry exists / the call failed. */
-export type KeychainProbe = (service: string) => string | null
-
-export interface OAuthTokenDeps {
-  home?: string
-  platform?: NodeJS.Platform
-  keychain?: KeychainProbe
-  fs?: { existsSync: typeof existsSyncReal; readFileSync: typeof readFileSyncReal }
-}
-
-/**
- * Read the OAuth bearer for a profile's configDir.
- * Lookup order:
- *   1. macOS Keychain at the profile-derived service name (darwin only)
- *   2. <configDir>/.credentials.json
- *   3. ~/.claude.json legacy single-file format (default profile only)
- */
-// fallow-ignore-next-line complexity
-export function getOAuthToken(configDir: string, deps: OAuthTokenDeps = {}): string | null {
-  const home = deps.home ?? process.env.HOME ?? '/root'
-  const platform = deps.platform ?? process.platform
-  const fs = deps.fs ?? { existsSync: existsSyncReal, readFileSync: readFileSyncReal }
-  const isDefaultProfile = configDir === join(home, '.claude')
-
-  if (platform === 'darwin') {
-    const probe = deps.keychain ?? defaultKeychainProbe
-    const raw = probe(keychainServiceFor(configDir, home))
-    if (raw) {
-      const token = extractTokenFromKeychainBlob(raw)
-      if (token) return token
-    }
-  }
-
-  const credPath = resolve(configDir, '.credentials.json')
-  try {
-    if (fs.existsSync(credPath)) {
-      const data = JSON.parse(fs.readFileSync(credPath, 'utf8'))
-      const token = data?.claudeAiOauth?.accessToken || data?.accessToken || data?.access_token
-      if (typeof token === 'string' && token.length > 0) return token
-    }
-  } catch {
-    // Unreadable / unparsable -- fall through to next source.
-  }
-
-  if (isDefaultProfile) {
-    const legacyPath = resolve(home, '.claude.json')
-    try {
-      if (fs.existsSync(legacyPath)) {
-        const data = JSON.parse(fs.readFileSync(legacyPath, 'utf8'))
-        const token = data?.oauthAccount?.accessToken || data?.primaryApiKey
-        if (typeof token === 'string' && token.length > 0) return token
-      }
-    } catch {
-      // Same as above -- best-effort discovery.
-    }
-  }
-
-  return null
-}
-
-// fallow-ignore-next-line complexity
-function extractTokenFromKeychainBlob(raw: string): string | null {
-  try {
-    const data = JSON.parse(raw) as Record<string, unknown> | null
-    const oauth = data?.claudeAiOauth as Record<string, unknown> | undefined
-    const token = oauth?.accessToken ?? data?.accessToken ?? data?.access_token
-    if (typeof token === 'string' && token.length > 0) return token
-  } catch {
-    // Non-JSON blob -- treat as no token.
-  }
-  return null
-}
-
-function defaultKeychainProbe(service: string): string | null {
-  try {
-    const result = Bun.spawnSync(['security', 'find-generic-password', '-s', service, '-w'], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    if (result.success) {
-      const out = result.stdout.toString().trim()
-      return out.length > 0 ? out : null
-    }
-  } catch {
-    // Keychain unavailable (non-darwin or sandboxed).
-  }
-  return null
-}
 
 // ─── Wire-shape parsers ────────────────────────────────────────────
 
