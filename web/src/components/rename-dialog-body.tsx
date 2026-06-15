@@ -15,7 +15,6 @@ export function RenameDialogBody({ state }: { state: RenameModalState }) {
     headerLabel,
     suggestion,
     showSuggestion,
-    showFetchHint,
     nameRef,
     setName,
     setDescription,
@@ -57,7 +56,7 @@ export function RenameDialogBody({ state }: { state: RenameModalState }) {
         />
       </div>
 
-      <RenameFooter showSuggestion={showSuggestion} showFetchHint={showFetchHint} onSubmit={handleSubmit} />
+      <RenameFooter onSubmit={handleSubmit} />
     </DialogContent>
   )
 }

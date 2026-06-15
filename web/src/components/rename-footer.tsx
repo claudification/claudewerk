@@ -1,30 +1,15 @@
 import { Kbd } from './ui/kbd'
 
 interface RenameFooterProps {
-  showSuggestion: boolean
-  showFetchHint: boolean
   onSubmit: () => void
 }
 
-/** Bottom bar of the rename modal: key hints + the Save button. The Ctrl+Shift+R
- *  hint adapts: accept the suggestion when one's on offer, otherwise it closes
- *  the modal and auto-names the conversation from a background recap. */
-export function RenameFooter({ showSuggestion, showFetchHint, onSubmit }: RenameFooterProps) {
+/** Bottom bar of the rename modal: key hints + the Save button. */
+export function RenameFooter({ onSubmit }: RenameFooterProps) {
   return (
     <div className="flex items-center justify-between px-3 py-2 border-t border-border shrink-0">
       <span className="text-[10px] text-muted-foreground flex items-center gap-1.5">
         <Kbd>Enter</Kbd> save
-        {showSuggestion ? (
-          <>
-            <span className="text-muted-foreground/40">·</span>
-            <Kbd>Ctrl+Shift+R</Kbd> accept suggestion
-          </>
-        ) : showFetchHint ? (
-          <>
-            <span className="text-muted-foreground/40">·</span>
-            <Kbd>Ctrl+Shift+R</Kbd> auto-name in background
-          </>
-        ) : null}
         <span className="text-muted-foreground/40">·</span>
         <Kbd>Esc</Kbd> cancel
       </span>

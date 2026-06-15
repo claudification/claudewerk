@@ -105,10 +105,6 @@ export function useRenameModal() {
     [handleSubmit],
   )
 
-  // When there's no recap suggestion, the chord fetches + auto-applies a name in
-  // the background (and closes the modal) -- advertise that in the footer.
-  const showFetchHint = suggestion.length === 0
-
   return {
     open,
     name,
@@ -117,7 +113,6 @@ export function useRenameModal() {
     headerLabel,
     suggestion,
     showSuggestion,
-    showFetchHint,
     nameRef,
     setName,
     setDescription,
