@@ -1,108 +1,22 @@
 import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react'
-import { renameModalBus } from '@/components/rename-modal-trigger'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import {
+  focusAndSelect,
+  headerLabelFor,
+  type LiveState,
+  suggestedName,
+  useOpenSync,
+  useRecapNameRequest,
+} from '@/hooks/use-rename-modal-internals'
 import { focusInputEditor } from '@/lib/focus-input'
-import type { Conversation } from '@/lib/types'
 import { haptic, isMobileViewport } from '@/lib/utils'
-
-/** First value with non-whitespace content, else ''. */
-function firstNonEmpty(...vals: (string | undefined)[]) {
-  for (const v of vals) if (v?.trim()) return v
-  return ''
-}
-
-/** The recap-suggested name for a conversation, trimmed, or '' if none. */
-function suggestedName(conversation: Conversation | undefined) {
-  const name = conversation?.recap?.name
-  return name ? name.trim() : ''
-}
-
-/** Label shown next to the modal title: current name, agent name, or a short id. */
-function headerLabelFor(conversation: Conversation | undefined, conversationId: string | null) {
-  if (conversation) {
-    const label = firstNonEmpty(conversation.title, conversation.agentName)
-    if (label) return label
-  }
-  return conversationId ? conversationId.slice(0, 12) : ''
-}
-
-/** Initial field values when opening fresh: an explicit caller name wins, else
- *  the current title, else the recap-suggested name. */
-function seedFields(sess: Conversation | undefined, override: string | undefined) {
-  if (!sess) return { name: firstNonEmpty(override), description: '' }
-  return {
-    name: firstNonEmpty(override, sess.title, sess.recap?.name),
-    description: sess.description ?? '',
-  }
-}
-
-/** rAF-deferred focus + select of the name input (runs after the dialog paints).
- *  Shared by open and apply-suggestion. */
-function focusAndSelect(ref: { current: HTMLInputElement | null }) {
-  requestAnimationFrame(() => {
-    ref.current?.focus()
-    ref.current?.select()
-  })
-}
-
-/** Live state the open handler reads without stale closures. */
-interface LiveState {
-  open: boolean
-  name: string
-  description: string
-  suggestion: string
-  selectedConversationId: string | null
-}
-
-/** What the chord accepts while open: the suggestion if present, else the field. */
-function acceptName(cur: LiveState) {
-  return cur.suggestion || cur.name
-}
-
-/** Seed the fields from the conversation and open the modal. */
-function seedAndOpen(
-  conversationId: string,
-  override: string | undefined,
-  setFields: (name: string, desc: string) => void,
-  setOpen: (v: boolean) => void,
-) {
-  const sess = useConversationsStore.getState().conversationsById[conversationId]
-  const seed = seedFields(sess, override)
-  setFields(seed.name, seed.description)
-  haptic('tap')
-  setOpen(true)
-}
-
-/** Bridges the `open-rename-modal` bus event into local state. When fired while
- *  already open it acts as "accept": saves the suggestion (or current value) via
- *  `submit` -- this is what makes a second Ctrl+Shift+R a one-chord accept.
- *  Otherwise it seeds the fields and opens. */
-function useOpenSync(
-  live: { current: LiveState },
-  submit: (name: string, desc: string) => void,
-  setFields: (name: string, desc: string) => void,
-  setOpen: (v: boolean) => void,
-) {
-  useEffect(() => {
-    function handleOpen(detail?: { name?: string }) {
-      const cur = live.current
-      if (!cur.selectedConversationId) return
-      if (cur.open) {
-        submit(acceptName(cur), cur.description)
-        return
-      }
-      seedAndOpen(cur.selectedConversationId, detail?.name, setFields, setOpen)
-    }
-    renameModalBus.setHandler(handleOpen)
-    return () => renameModalBus.setHandler(null)
-  }, [live, submit, setFields, setOpen])
-}
 
 export type RenameModalState = ReturnType<typeof useRenameModal>
 
 /** State + behavior for the rename modal, lifted out of the component so the
  *  .tsx stays presentational. Owns the open/seed lifecycle, the recap-name
- *  suggestion, and the "press the rename chord again to accept" gesture. */
+ *  suggestion, and the "press the rename chord again to accept" gesture. The
+ *  open/seed + recap-fetch plumbing lives in use-rename-modal-internals. */
 export function useRenameModal() {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
@@ -140,7 +54,15 @@ export function useRenameModal() {
     setDescription(desc)
   }, [])
 
-  useOpenSync(live, submitWith, setFields, setOpen)
+  const { requestingName, requestRecapName, clearRequestingName } = useRecapNameRequest({
+    live,
+    suggestion,
+    name,
+    setName,
+    nameRef,
+  })
+
+  useOpenSync(live, submitWith, requestRecapName, setFields, setOpen)
 
   useEffect(() => {
     if (open) focusAndSelect(nameRef)
@@ -151,9 +73,10 @@ export function useRenameModal() {
       setOpen(next)
       if (next) return
       setFields('', '')
+      clearRequestingName()
       if (!isMobileViewport()) requestAnimationFrame(() => focusInputEditor())
     },
-    [setFields],
+    [setFields, clearRequestingName],
   )
 
   const handleSubmit = useCallback(() => {
@@ -174,6 +97,10 @@ export function useRenameModal() {
     [handleSubmit],
   )
 
+  // The Ctrl+Shift+R chord fetches a name only when there's nothing to accept
+  // (no suggestion, empty field) -- surface that affordance in the footer.
+  const showFetchHint = !showSuggestion && !requestingName && name.trim() === ''
+
   return {
     open,
     name,
@@ -182,6 +109,8 @@ export function useRenameModal() {
     headerLabel,
     suggestion,
     showSuggestion,
+    requestingName,
+    showFetchHint,
     nameRef,
     setName,
     setDescription,
