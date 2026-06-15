@@ -6,9 +6,9 @@ import {
   type LiveState,
   suggestedName,
   useOpenSync,
-  useRecapNameRequest,
 } from '@/hooks/use-rename-modal-internals'
 import { focusInputEditor } from '@/lib/focus-input'
+import { requestRecapAutoName } from '@/lib/recap-auto-name'
 import { haptic, isMobileViewport } from '@/lib/utils'
 
 export type RenameModalState = ReturnType<typeof useRenameModal>
@@ -54,13 +54,21 @@ export function useRenameModal() {
     setDescription(desc)
   }, [])
 
-  const { requestingName, requestRecapName, clearRequestingName } = useRecapNameRequest({
-    live,
-    suggestion,
-    name,
-    setName,
-    nameRef,
-  })
+  const resetAndClose = useCallback(() => {
+    setOpen(false)
+    setFields('', '')
+    if (!isMobileViewport()) requestAnimationFrame(() => focusInputEditor())
+  }, [setFields])
+
+  // The async chord: minimize the modal immediately, then fire a background
+  // recap that auto-applies the generated name when it lands. No spinner, no
+  // waiting -- the title just updates itself.
+  const requestRecapName = useCallback(() => {
+    const sid = live.current.selectedConversationId
+    if (!sid) return
+    requestRecapAutoName(sid)
+    resetAndClose()
+  }, [resetAndClose])
 
   useOpenSync(live, submitWith, requestRecapName, setFields, setOpen)
 
@@ -70,13 +78,13 @@ export function useRenameModal() {
 
   const handleOpenChange = useCallback(
     (next: boolean) => {
-      setOpen(next)
-      if (next) return
-      setFields('', '')
-      clearRequestingName()
-      if (!isMobileViewport()) requestAnimationFrame(() => focusInputEditor())
+      if (next) {
+        setOpen(true)
+        return
+      }
+      resetAndClose()
     },
-    [setFields, clearRequestingName],
+    [resetAndClose],
   )
 
   const handleSubmit = useCallback(() => {
@@ -97,9 +105,9 @@ export function useRenameModal() {
     [handleSubmit],
   )
 
-  // The Ctrl+Shift+R chord fetches a name whenever there's no recap suggestion
-  // to accept -- surface that affordance in the footer.
-  const showFetchHint = suggestion.length === 0 && !requestingName
+  // When there's no recap suggestion, the chord fetches + auto-applies a name in
+  // the background (and closes the modal) -- advertise that in the footer.
+  const showFetchHint = suggestion.length === 0
 
   return {
     open,
@@ -109,7 +117,6 @@ export function useRenameModal() {
     headerLabel,
     suggestion,
     showSuggestion,
-    requestingName,
     showFetchHint,
     nameRef,
     setName,

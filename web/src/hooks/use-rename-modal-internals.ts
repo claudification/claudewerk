@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect } from 'react'
 import { renameModalBus } from '@/components/rename-modal-trigger'
-import { useConversationsStore, wsSend } from '@/hooks/use-conversations'
+import { useConversationsStore } from '@/hooks/use-conversations'
 import type { Conversation } from '@/lib/types'
 import { haptic } from '@/lib/utils'
 
@@ -54,9 +54,10 @@ export interface LiveState {
 }
 
 /** The chord pressed while already open: accept the recap suggestion if there is
- *  one, else fetch one via a background recap. Gated on the SUGGESTION, not the
- *  field -- the field is pre-seeded with the current title, so it's almost never
- *  empty and can't be the trigger. Enter remains the save-the-field gesture. */
+ *  one, else fire a background recap that auto-applies a name (`requestName`,
+ *  which also closes the modal). Gated on the SUGGESTION, not the field -- the
+ *  field is pre-seeded with the current title, so it's almost never empty and
+ *  can't be the trigger. Enter remains the save-the-field gesture. */
 function acceptOrFetch(cur: LiveState, submit: (name: string, desc: string) => void, requestName: () => void) {
   if (cur.suggestion.trim()) submit(cur.suggestion, cur.description)
   else requestName()
@@ -98,56 +99,4 @@ export function useOpenSync(
     renameModalBus.setHandler(handleOpen)
     return () => renameModalBus.setHandler(null)
   }, [live, submit, requestName, setFields, setOpen])
-}
-
-/** The "suggest a name" concern: fire a background away-summary recap, then drop
- *  the resulting `conversation.recap.name` into the field when it arrives. The
- *  field is pre-seeded with the current title, so we overwrite that seed -- but
- *  only if the user hasn't typed over it since we asked (baseline check). Times
- *  out the spinner if the recap never lands. Lifted out to keep the main hook
- *  small. */
-export function useRecapNameRequest(args: {
-  live: { current: LiveState }
-  suggestion: string
-  name: string
-  setName: (v: string) => void
-  nameRef: { current: HTMLInputElement | null }
-}) {
-  const { live, suggestion, name, setName, nameRef } = args
-  const [requestingName, setRequestingName] = useState(false)
-  // The field value at request time. We overwrite it with the suggestion only if
-  // it's unchanged when the recap lands -- so a freshly typed name is preserved.
-  const baselineRef = useRef('')
-
-  const requestRecapName = useCallback(() => {
-    const sid = live.current.selectedConversationId
-    if (!sid) return
-    baselineRef.current = live.current.name
-    haptic('tap')
-    setRequestingName(true)
-    wsSend('recap_request', { conversationId: sid })
-  }, [live])
-
-  // Land the suggestion when it arrives. Overwrite the seeded title, but never
-  // clobber what the user typed while waiting; either way, stop the spinner (the
-  // suggestion chip then offers manual accept).
-  useEffect(() => {
-    if (!requestingName || !suggestion) return
-    if (name === baselineRef.current) {
-      setName(suggestion)
-      focusAndSelect(nameRef)
-      haptic('success')
-    }
-    setRequestingName(false)
-  }, [requestingName, suggestion, name, setName, nameRef])
-
-  // Drop the spinner if the recap fails / never comes back.
-  useEffect(() => {
-    if (!requestingName) return
-    const t = setTimeout(() => setRequestingName(false), 20_000)
-    return () => clearTimeout(t)
-  }, [requestingName])
-
-  const clearRequestingName = useCallback(() => setRequestingName(false), [])
-  return { requestingName, requestRecapName, clearRequestingName }
 }
