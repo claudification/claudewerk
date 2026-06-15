@@ -9,6 +9,7 @@ import { cn, contextWindowSize, formatModel, haptic } from '@/lib/utils'
 import { ProjectIcon } from '../project-icons'
 import { openReviveDialog } from '../revive-dialog-trigger'
 import { openSpawnDialog } from '../spawn-dialog-trigger'
+import { ProjectReadmeSection } from './project-readme-section'
 import { ProjectRecapsSection } from './project-recaps-section'
 
 function matchesFilter(conversation: Conversation, query: string): boolean {
@@ -344,6 +345,9 @@ export function ProjectActionPanel({ projectUri }: { projectUri: string }) {
         {hasAny && filteredActive.length === 0 && filteredRecent.length === 0 && filter && (
           <div className="text-center text-xs text-muted-foreground/40">No matches for "{filter}"</div>
         )}
+
+        {/* Project README (sentinel-fetched, no live conversation needed) */}
+        <ProjectReadmeSection projectUri={projectUri} />
       </div>
     </div>
   )
