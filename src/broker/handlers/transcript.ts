@@ -500,18 +500,20 @@ function emitRateLimitEntry(
 // per-account per-profile (each profile's configDir holds different creds), so
 // the UI can show per-profile headroom and the v2 balancer can consume it.
 /** Fold inference-derived plan utilization (from a turn's rate_limit_event)
- *  into the per-profile usage store, attributed ONLY to the conversation's REAL
- *  resolved profile -- never the 'default' fallback, so a conversation whose
- *  profile we couldn't resolve never pollutes another profile's bars. This is
- *  the truth source that survives the /api/oauth/usage 429s. See usage-merge.ts. */
+ *  into the per-profile usage store, attributed via the SAME profile key the
+ *  rate-limit banner uses (`resolvedProfile || 'default'`). The sentinel ALWAYS
+ *  stamps `resolvedProfile` for a non-default pick and OMITS it for the default
+ *  pick, so an absent value means the conversation genuinely ran on the default
+ *  account -- folding it under 'default' is correct, not a misattribution. Needs
+ *  a sentinelId to key the store. See usage-merge.ts. */
 function recordInferenceUsageFromRateLimit(
   ctx: Parameters<MessageHandler>[0],
-  conversation: { resolvedProfile?: string; hostSentinelId?: string },
+  tags: RateLimitTags,
   data: Parameters<MessageHandler>[1],
 ): void {
   const utilization = data.utilization as number | undefined
-  if (typeof utilization !== 'number' || !conversation.resolvedProfile || !conversation.hostSentinelId) return
-  ctx.conversations.recordInferenceUsage(conversation.hostSentinelId, conversation.resolvedProfile, {
+  if (typeof utilization !== 'number' || !tags.sentinelId) return
+  ctx.conversations.recordInferenceUsage(tags.sentinelId, tags.profile, {
     rateLimitType: data.rateLimitType as string | undefined,
     utilization,
     resetsAtMs: data.resetsAt as number | undefined,
@@ -529,8 +531,8 @@ const rateLimitStatusHandler: MessageHandler = (ctx, data) => {
   const tags = rateLimitTagsFor(conversation)
 
   // Inference-derived plan utilization rides on EVERY turn -- fold it in before
-  // the allowed-early-return (see helper for the REAL-profile attribution rule).
-  recordInferenceUsageFromRateLimit(ctx, conversation, data)
+  // the allowed-early-return (see helper for the profile-attribution rule).
+  recordInferenceUsageFromRateLimit(ctx, tags, data)
 
   if (status === 'allowed') {
     if (!conversation.rateLimit) return
