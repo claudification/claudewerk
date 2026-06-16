@@ -23,13 +23,30 @@ const KEYCHAIN_SERVICE_DEFAULT = 'Claude Code-credentials'
 
 /**
  * Service name Claude Code uses for a profile's keychain credentials.
- * Default profile: bare service name. Alt profile: hyphen-suffixed with
- * the first 8 hex chars of sha256(configDir).
+ *
+ * CC hash-suffixes EVERY config dir -- including the default `~/.claude` -- with
+ * the first 8 hex chars of sha256(configDir). (It did NOT always: older CC
+ * stored the default profile under the bare `Claude Code-credentials`. When CC
+ * switched to suffixing the default too, the sentinel kept reading the bare
+ * entry -- which goes stale/dead the moment CC writes a refreshed token to the
+ * suffixed one -- so the default profile's usage probe 401'd forever while alt
+ * profiles, already suffixed, worked. The bare name lives on as a LEGACY
+ * fallback candidate in `getOAuthToken`, never as the primary.)
  */
 export function keychainServiceFor(configDir: string, home: string): string {
-  if (configDir === join(home, '.claude')) return KEYCHAIN_SERVICE_DEFAULT
   const hash = createHash('sha256').update(configDir).digest('hex').slice(0, 8)
   return `${KEYCHAIN_SERVICE_DEFAULT}-${hash}`
+}
+
+/** All keychain services to probe for a profile, in priority order. The
+ *  hash-suffixed service (CC's current scheme) is primary; the default profile
+ *  additionally probes the bare legacy name so older CC installs still resolve.
+ *  Freshest stored expiry wins across the results, so a live suffixed entry
+ *  always beats a stale bare one. `home` distinguishes the default profile. */
+export function keychainServicesFor(configDir: string, home: string): string[] {
+  const services = [keychainServiceFor(configDir, home)]
+  if (configDir === join(home, '.claude')) services.push(KEYCHAIN_SERVICE_DEFAULT)
+  return services
 }
 
 /** Returns the raw stdout of `security find-generic-password -s <service> -w`,
@@ -94,9 +111,13 @@ export function getOAuthToken(configDir: string, deps: OAuthTokenDeps = {}): str
 
   if (platform === 'darwin') {
     const probe = deps.keychain ?? defaultKeychainProbe
-    const raw = probe(keychainServiceFor(configDir, home))
-    const c = raw ? parseTokenBlob(raw) : null
-    if (c) candidates.push(c)
+    // Probe the hash-suffixed service (current CC) plus the bare legacy name for
+    // the default profile; freshest-wins below picks the live one.
+    for (const service of keychainServicesFor(configDir, home)) {
+      const raw = probe(service)
+      const c = raw ? parseTokenBlob(raw) : null
+      if (c) candidates.push(c)
+    }
   }
 
   const credPath = resolve(configDir, '.credentials.json')
