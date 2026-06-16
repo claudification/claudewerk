@@ -59,6 +59,7 @@ import {
 } from './project-links'
 import { initProjectOrder } from './project-order'
 import { getAllProjectSettings, getProjectSettings, initProjectSettings, setProjectSettings } from './project-settings'
+import { closeChecklistStore, initChecklistStore } from './checklist-store'
 import { closeProjectStore, initProjectStore } from './project-store'
 import { dropSocketFromWatches, initProjectWatchRegistry } from './project-watch-registry'
 import { initPush, isPushConfigured, sendPushToAll } from './push'
@@ -298,6 +299,9 @@ async function main() {
   // Initialize project registry (must be before analytics -- migration depends on it)
   initProjectStore(authCacheDir)
 
+  // Initialize per-project checklist store (broker-local config DB)
+  initChecklistStore(authCacheDir)
+
   // Initialize analytics store (SQLite, non-critical)
   initAnalyticsStore(authCacheDir)
 
@@ -521,6 +525,7 @@ async function main() {
     clearInterval(costCleanupTimer)
     closeAnalyticsStore()
     closeProjectStore()
+    closeChecklistStore()
     store.close()
     process.exit(0)
   })
@@ -529,6 +534,7 @@ async function main() {
     clearInterval(costCleanupTimer)
     closeAnalyticsStore()
     closeProjectStore()
+    closeChecklistStore()
     store.close()
     process.exit(0)
   })

@@ -5,6 +5,7 @@
 
 import { registerBootLifecycleHandlers } from './boot-lifecycle'
 import { registerChannelHandlers } from './channel'
+import { registerChecklistHandlers } from './checklist'
 import { registerDashboardActionHandlers } from './control-panel-actions'
 import { registerConversationLifecycleHandlers } from './conversation-lifecycle'
 import { registerConversationReassignHandlers } from './conversation-reassign'
@@ -34,6 +35,7 @@ export function registerAllHandlers(): void {
   registerSentinelHandlers()
   registerBootLifecycleHandlers()
   registerChannelHandlers()
+  registerChecklistHandlers()
   registerDashboardActionHandlers()
   registerDialogHandlers()
   registerGatewayHandlers()

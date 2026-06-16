@@ -1647,6 +1647,13 @@ export type BrokerMessage =
   | WebControlRevoke
   | WebControlResponse
   | WebControlRelayResponse
+  | ChecklistListRequest
+  | ChecklistCreateRequest
+  | ChecklistToggleRequest
+  | ChecklistUpdateRequest
+  | ChecklistDeleteRequest
+  | ChecklistArchiveRequest
+  | ChecklistPurgeRequest
 
 export interface NotifyConfigUpdated {
   type: 'notify_config_updated'
@@ -3233,6 +3240,86 @@ export interface ProjectSubscribe {
 export interface ProjectUnsubscribe {
   type: 'project_unsubscribe'
   project: string
+}
+
+// ─── Project Checklists ─────────────────────────────────────────────────
+// Per-project personal checklist ("notes from me to me") shown in the
+// conversation list above a project's conversations. Broker-local data
+// (checklists.db); the control panel drives every mutation over WS. Open items
+// (`resolvedAt === null`) show inline; resolved items live in the archive view.
+// `text` is stored raw; the panel renders a limited inline-markdown subset.
+
+export interface ChecklistItem {
+  id: string
+  text: string
+  createdAt: number
+  updatedAt: number
+  /** null = open; epoch ms when checked off. */
+  resolvedAt: number | null
+}
+
+/** Dashboard -> Broker: seed the inline block with current open items. */
+export interface ChecklistListRequest {
+  type: 'checklist_list'
+  project: string
+  requestId: string
+}
+
+/** Dashboard -> Broker: create N items (single add or multi-line paste). A
+ *  `resolved` item is stamped resolved_at=now and lands straight in the archive. */
+export interface ChecklistCreateRequest {
+  type: 'checklist_create'
+  project: string
+  requestId: string
+  items: Array<{ text: string; resolved?: boolean }>
+}
+
+/** Dashboard -> Broker: resolve (check) or re-open an item. */
+export interface ChecklistToggleRequest {
+  type: 'checklist_toggle'
+  project: string
+  requestId: string
+  id: string
+  resolved: boolean
+}
+
+/** Dashboard -> Broker: edit an item's raw text. */
+export interface ChecklistUpdateRequest {
+  type: 'checklist_update'
+  project: string
+  requestId: string
+  id: string
+  text: string
+}
+
+/** Dashboard -> Broker: delete one item outright. */
+export interface ChecklistDeleteRequest {
+  type: 'checklist_delete'
+  project: string
+  requestId: string
+  id: string
+}
+
+/** Dashboard -> Broker: list resolved items for the completed/archive view. */
+export interface ChecklistArchiveRequest {
+  type: 'checklist_archive'
+  project: string
+  requestId: string
+}
+
+/** Dashboard -> Broker: bulk-delete resolved items older than `olderThanMs`. */
+export interface ChecklistPurgeRequest {
+  type: 'checklist_purge'
+  project: string
+  requestId: string
+  olderThanMs: number
+}
+
+/** Broker -> Dashboards (scoped by project): the fresh open list after any change. */
+export interface ChecklistChanged {
+  type: 'checklist_changed'
+  project: string
+  open: ChecklistItem[]
 }
 
 /** Agent or agent host reports a spawn failure (headless child exit, PTY crash, or early exit) */

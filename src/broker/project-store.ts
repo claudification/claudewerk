@@ -32,9 +32,10 @@
  * Integer `id` is what every other table references.
  */
 
-import { Database, type Statement } from 'bun:sqlite'
+import type { Database, Statement } from 'bun:sqlite'
 import { resolve } from 'node:path'
 import { cwdToProjectUri, parseProjectUri } from '../shared/project-uri'
+import { openWalDatabase } from './sqlite-open'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -83,11 +84,7 @@ const ALL_COLUMNS = 'id, scope, slug, label, project_uri'
 
 export function initProjectStore(cacheDir: string): void {
   const dbPath = resolve(cacheDir, 'projects.db')
-  db = new Database(dbPath, { strict: true })
-
-  db.run('PRAGMA journal_mode = WAL')
-  db.run('PRAGMA synchronous = NORMAL')
-  db.run('PRAGMA cache_size = -2000') // 2MB -- small table
+  db = openWalDatabase(dbPath)
 
   db.run(`
     CREATE TABLE IF NOT EXISTS projects (
