@@ -182,6 +182,7 @@ export interface WsClient {
     retryAfterMs?: number
     rateLimitType?: string
     resetsAt?: number
+    utilization?: number
     raw: Record<string, unknown>
   }) => void
   sendConversationStatus: (status: 'active' | 'idle') => void
@@ -763,6 +764,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
       retryAfterMs?: number
       rateLimitType?: string
       resetsAt?: number
+      utilization?: number
       raw: Record<string, unknown>
     }) {
       send({
@@ -772,6 +774,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
         retryAfterMs: info.retryAfterMs,
         rateLimitType: info.rateLimitType,
         resetsAt: info.resetsAt,
+        utilization: info.utilization,
         raw: info.raw,
       } as AgentHostMessage)
     },

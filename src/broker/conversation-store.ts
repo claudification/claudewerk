@@ -59,6 +59,7 @@ import {
   removeSentinel as removeSentinelImpl,
   type SentinelConnection,
   type SentinelIdentifyInfo,
+  recordInferenceUsage as recordInferenceUsageImpl,
   setClaudeEfficiency as setClaudeEfficiencyImpl,
   setClaudeHealth as setClaudeHealthImpl,
   setSentinel as setSentinelImpl,
@@ -276,6 +277,13 @@ export interface ConversationStore {
   getUsage: () => UsageUpdate | undefined
   // Per-sentinel per-profile usage (batched sentinel_usage_report)
   setSentinelProfileUsage: (ws: ServerWebSocket<unknown>, profiles: ProfileUsageSnapshot[], polledAt: number) => boolean
+  /** Fold an inference-derived utilization reading (from a conversation's
+   *  rate_limit_event) into the sentinel's per-profile usage + re-broadcast. */
+  recordInferenceUsage: (
+    sentinelId: string,
+    profile: string,
+    args: { rateLimitType: string | undefined; utilization: number; resetsAtMs: number | undefined; observedAt: number },
+  ) => boolean
   getSentinelProfileUsage: (sentinelId: string) => { profiles: ProfileUsageSnapshot[]; polledAt: number } | undefined
   // External status data (broker polls clanker.watch + usage.report)
   setClaudeHealth: (health: ClaudeHealthUpdate) => void
@@ -2614,6 +2622,13 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
   ): boolean {
     return setSentinelProfileUsageImpl(sentinelState, ws, profiles, polledAt, broadcast)
   }
+  function recordInferenceUsage(
+    sentinelId: string,
+    profile: string,
+    args: { rateLimitType: string | undefined; utilization: number; resetsAtMs: number | undefined; observedAt: number },
+  ): boolean {
+    return recordInferenceUsageImpl(sentinelState, sentinelId, profile, args, broadcast)
+  }
   function getSentinelProfileUsage(
     sentinelId: string,
   ): { profiles: ProfileUsageSnapshot[]; polledAt: number } | undefined {
@@ -3074,6 +3089,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     setUsage,
     getUsage,
     setSentinelProfileUsage,
+    recordInferenceUsage,
     getSentinelProfileUsage,
     setClaudeHealth,
     getClaudeHealth,

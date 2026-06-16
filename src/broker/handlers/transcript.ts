@@ -499,6 +499,26 @@ function emitRateLimitEntry(
 // Phase 5 -- profile-tag + sentinel-tag the broadcast. Rate-limit telemetry is
 // per-account per-profile (each profile's configDir holds different creds), so
 // the UI can show per-profile headroom and the v2 balancer can consume it.
+/** Fold inference-derived plan utilization (from a turn's rate_limit_event)
+ *  into the per-profile usage store, attributed ONLY to the conversation's REAL
+ *  resolved profile -- never the 'default' fallback, so a conversation whose
+ *  profile we couldn't resolve never pollutes another profile's bars. This is
+ *  the truth source that survives the /api/oauth/usage 429s. See usage-merge.ts. */
+function recordInferenceUsageFromRateLimit(
+  ctx: Parameters<MessageHandler>[0],
+  conversation: { resolvedProfile?: string; hostSentinelId?: string },
+  data: Parameters<MessageHandler>[1],
+): void {
+  const utilization = data.utilization as number | undefined
+  if (typeof utilization !== 'number' || !conversation.resolvedProfile || !conversation.hostSentinelId) return
+  ctx.conversations.recordInferenceUsage(conversation.hostSentinelId, conversation.resolvedProfile, {
+    rateLimitType: data.rateLimitType as string | undefined,
+    utilization,
+    resetsAtMs: data.resetsAt as number | undefined,
+    observedAt: Date.now(),
+  })
+}
+
 const rateLimitStatusHandler: MessageHandler = (ctx, data) => {
   const conversationId = (data.conversationId || ctx.ws.data.conversationId) as string
   if (!conversationId) return
@@ -507,6 +527,10 @@ const rateLimitStatusHandler: MessageHandler = (ctx, data) => {
 
   const status = data.status as string
   const tags = rateLimitTagsFor(conversation)
+
+  // Inference-derived plan utilization rides on EVERY turn -- fold it in before
+  // the allowed-early-return (see helper for the REAL-profile attribution rule).
+  recordInferenceUsageFromRateLimit(ctx, conversation, data)
 
   if (status === 'allowed') {
     if (!conversation.rateLimit) return

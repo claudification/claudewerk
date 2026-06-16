@@ -72,6 +72,7 @@ export interface StreamBackendOptions {
     retryAfterMs?: number
     rateLimitType?: string
     resetsAt?: number
+    utilization?: number
     raw: Record<string, unknown>
   }) => void
   onTaskStarted?: (task: { taskId: string; toolUseId: string; taskType: string; description: string }) => void

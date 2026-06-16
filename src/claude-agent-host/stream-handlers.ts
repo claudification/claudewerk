@@ -680,9 +680,15 @@ function handleRateLimitEvent(hctx: HandlerContext, msg: Record<string, unknown>
   // Pass retry_after_ms through if CC sent it. NO synthetic default -- absence
   // means this is a NOTICE (e.g. 7-day soft warning), not an actual block.
   const retryMs = isAllowed ? undefined : (msg.retry_after_ms as number | undefined)
+  // Plan utilization (0-1) for the REPRESENTATIVE window named by rateLimitType.
+  // Rides on inference traffic for FREE -- the broker folds it into the per-profile
+  // usage store so the bars stay truthful even when the dedicated /api/oauth/usage
+  // poll is 429'd (a per-token throttle on the shared default login). See
+  // `src/broker/conversation-store/usage-merge.ts`.
+  const utilization = typeof info?.utilization === 'number' ? info.utilization : undefined
 
   debug(
-    `Rate limit status: ${isAllowed ? 'allowed' : 'limited'}${rateLimitType ? ` (${rateLimitType})` : ''}${retryMs ? ` retry=${retryMs}ms` : ' (notice)'}`,
+    `Rate limit status: ${isAllowed ? 'allowed' : 'limited'}${rateLimitType ? ` (${rateLimitType})` : ''}${utilization != null ? ` util=${Math.round(utilization * 100)}%` : ''}${retryMs ? ` retry=${retryMs}ms` : ' (notice)'}`,
   )
 
   hctx.callbacks.onRateLimitStatus?.({
@@ -690,6 +696,7 @@ function handleRateLimitEvent(hctx: HandlerContext, msg: Record<string, unknown>
     retryAfterMs: retryMs,
     rateLimitType,
     resetsAt,
+    utilization,
     raw: msg,
   })
 }

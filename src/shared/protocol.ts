@@ -1125,6 +1125,12 @@ export interface AgentHostRateLimitStatus {
   rateLimitType?: string
   /** Epoch ms when the bucket resets. Agent host normalizes CC's seconds-resolution value. */
   resetsAt?: number
+  /** Plan utilization (0-1) for the REPRESENTATIVE window named by `rateLimitType`,
+   *  read off the `anthropic-ratelimit-unified-*` data CC surfaces on every inference
+   *  turn. The broker folds this into the per-(sentinel, profile) usage store so the
+   *  control-panel bars stay truthful even when the dedicated /api/oauth/usage poll is
+   *  429'd. See `src/broker/conversation-store/usage-merge.ts`. */
+  utilization?: number
   raw?: Record<string, unknown>
 }
 

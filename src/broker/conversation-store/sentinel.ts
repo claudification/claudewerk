@@ -10,6 +10,12 @@ import {
   type UsageUpdate,
 } from '../../shared/protocol'
 import type { ControlPanelMessage, SentinelStatusInfo } from './types'
+import {
+  applyInferenceReading,
+  type InferenceUsageEntry,
+  mergeProfileUsage,
+  rateLimitTypeToWindow,
+} from './usage-merge'
 
 const SENTINEL_DIAG_MAX = 200
 const SENTINEL_STALE_MS = HEARTBEAT_INTERVAL_MS * 2.5
@@ -68,6 +74,11 @@ export interface SentinelConnection {
   profileUsage?: Map<string, ProfileUsageSnapshot>
   /** ms epoch of the most recent `sentinel_usage_report` from this sentinel. */
   profileUsagePolledAt?: number
+  /** Inference-derived per-window utilisation, keyed by profile name. Folded
+   *  with `profileUsage` (poll) per-window-freshest in `buildMergedProfiles` so
+   *  the bars stay truthful when the /api/oauth/usage poll is 429'd. Populated
+   *  from each conversation's `rate_limit_event`. See `usage-merge.ts`. */
+  inferenceUsage?: Map<string, InferenceUsageEntry>
   /** Host-level capabilities the sentinel advertised at registration (e.g.
    *  `shell`). Joined onto `ConversationSummary.shellCapable` per conversation
    *  via `hostSentinelId`. Refreshed on every `sentinel_identify`. */
@@ -270,7 +281,7 @@ export function setSentinelProfileUsage(
     broadcast({
       type: 'sentinel_usage_report',
       sentinelId: conn.sentinelId,
-      profileUsage: profiles,
+      profileUsage: buildMergedProfiles(conn, polledAt),
       polledAt,
     })
     return true
@@ -278,18 +289,67 @@ export function setSentinelProfileUsage(
   return false
 }
 
-/** Read-only view of a sentinel's latest per-profile usage. Returns `undefined`
- *  when the sentinel is offline or hasn't reported yet. */
+/**
+ * Fold an inference-derived utilization reading (from a conversation's
+ * `rate_limit_event`) into the sentinel's per-profile usage, then re-broadcast
+ * the merged view. The reading covers ONE window (named by `rateLimitType`);
+ * unknown types and missing reset times are ignored. Returns false when the
+ * sentinel is unknown or the reading isn't usable.
+ */
+export function recordInferenceUsage(
+  state: SentinelState,
+  sentinelId: string,
+  profile: string,
+  args: { rateLimitType: string | undefined; utilization: number; resetsAtMs: number | undefined; observedAt: number },
+  broadcast: (msg: ControlPanelMessage) => void,
+): boolean {
+  const conn = state.sentinels.get(sentinelId)
+  if (!conn) return false
+  const windowKey = rateLimitTypeToWindow(args.rateLimitType)
+  if (!windowKey || !args.resetsAtMs) return false
+
+  if (!conn.inferenceUsage) conn.inferenceUsage = new Map<string, InferenceUsageEntry>()
+  const entry = conn.inferenceUsage.get(profile) ?? {}
+  applyInferenceReading(entry, windowKey, {
+    usedPercent: Math.max(0, Math.min(100, args.utilization * 100)),
+    resetAt: new Date(args.resetsAtMs).toISOString(),
+    observedAt: args.observedAt,
+  })
+  conn.inferenceUsage.set(profile, entry)
+
+  broadcast({
+    type: 'sentinel_usage_report',
+    sentinelId: conn.sentinelId,
+    profileUsage: buildMergedProfiles(conn, args.observedAt),
+    polledAt: args.observedAt,
+  })
+  return true
+}
+
+/** Merge a connection's poll + inference usage into the broadcast/serve view,
+ *  per-window freshest-wins across the union of profiles both sources know. */
+function buildMergedProfiles(conn: SentinelConnection, now: number): ProfileUsageSnapshot[] {
+  const names = new Set<string>([...(conn.profileUsage?.keys() ?? []), ...(conn.inferenceUsage?.keys() ?? [])])
+  const merged: ProfileUsageSnapshot[] = []
+  for (const name of names) {
+    merged.push(mergeProfileUsage(name, conn.profileUsage?.get(name), conn.inferenceUsage?.get(name), now))
+  }
+  return merged.sort((a, b) => a.profile.localeCompare(b.profile))
+}
+
+/** Read-only view of a sentinel's latest per-profile usage (poll + inference
+ *  merged). Returns `undefined` when the sentinel is offline or has no readings. */
 export function getSentinelProfileUsage(
   state: SentinelState,
   sentinelId: string,
 ): { profiles: ProfileUsageSnapshot[]; polledAt: number } | undefined {
   const conn = state.sentinels.get(sentinelId)
-  if (!conn?.profileUsage || conn.profileUsagePolledAt === undefined) return undefined
-  return {
-    profiles: [...conn.profileUsage.values()].sort((a, b) => a.profile.localeCompare(b.profile)),
-    polledAt: conn.profileUsagePolledAt,
-  }
+  if (!conn) return undefined
+  const hasPoll = !!conn.profileUsage && conn.profileUsagePolledAt !== undefined
+  const hasInference = !!conn.inferenceUsage && conn.inferenceUsage.size > 0
+  if (!hasPoll && !hasInference) return undefined
+  const now = Date.now()
+  return { profiles: buildMergedProfiles(conn, now), polledAt: conn.profileUsagePolledAt ?? now }
 }
 
 export function setClaudeHealth(
