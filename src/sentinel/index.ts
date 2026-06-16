@@ -114,7 +114,8 @@ import { ShellDataWs } from './shell-data-ws'
 import { ACTIVITY_COALESCE_MS, ShellRegistry } from './shell-pty'
 import { headlessNdjsonPath, parseHookStage, RingBuffer, tailHeadlessNdjson } from './spawn-error'
 import { buildCarriedSnapshot, defaultUsageCachePath, loadUsageCache, saveUsageCache } from './usage-cache'
-import { deriveUsageHeadroom, snapshotHasWindows } from './usage-headroom'
+import { snapshotHasWindows } from './usage-headroom'
+import { resolveBalancedHeadrooms } from './usage-lean'
 import { buildSentinelUsageReport, pollProfileUsage, snapshotToLegacyUsageUpdate } from './usage-poller'
 
 /** Pre-flight warnings stashed per-conversation. Surfaced when CC dies early
@@ -338,29 +339,37 @@ const USAGE_STALE_MS = 10 * 60 * 1000
  *  permanently-dead profile stops attracting traffic rather than pinning forever. */
 const AUTH_ERROR_CARRY_FORWARD_MS = 6 * 60 * 60 * 1000
 
-/** Headroom source for `pickProfile` -- reads the latest per-profile poll
- *  result and exposes the 5h and 7d windows SEPARATELY so the ranker can
- *  treat the 5h as a hard gate and the 7d as a soft drain-pressure
- *  preference (Smart Balance v3, see `rankCandidate`).
+/** Build the `pickProfile` headroom source for the WHOLE pool in one pass,
+ *  applying the unmeasurable-profile lean: a probe-unmeasurable BUT credentialed
+ *  profile (401/429 -- expired idle token or a rate-limited shared usage meter)
+ *  is treated OPTIMISTICALLY (assumed recently reset) instead of collapsing into
+ *  the UNKNOWN band and losing every balanced spawn. This breaks the starvation
+ *  deadlock for the shared default login: its inference works without the usage
+ *  scope, so leaning toward it is safe AND is the best way to wake its token (a
+ *  spawn refreshes it; the next successful poll then takes over). Per-profile
+ *  carry-forward of the last error-free reading still applies first. See
+ *  `resolveBalancedHeadrooms` in `usage-lean.ts`.
  *
- *  CARRY-FORWARD: when the latest poll is errored (notably an HTTP 429 from
- *  the per-account usage API, which says nothing about the account's actual
- *  capacity), fall back to the last error-free snapshot so a healthy profile
- *  keeps ranking on real headroom instead of collapsing into the UNKNOWN band
- *  and losing every balanced spawn to a sibling. See `usage-headroom.ts`.
- *  `undefined` only when neither the latest nor a recent last-good snapshot has
- *  usable windows -- then the picker falls through to live-load. */
-function usageHeadroomForProfile(profileName: string): UsageHeadroom | undefined {
-  return deriveUsageHeadroom(
-    getLatestProfileUsage().get(profileName),
-    getLastGoodProfileUsage().get(profileName),
-    Date.now(),
-    {
-      staleMs: USAGE_STALE_MS,
-      carryForwardStaleMs: RATE_LIMIT_MAX_BACKOFF_MS,
-      authErrorCarryForwardMs: AUTH_ERROR_CARRY_FORWARD_MS,
-    },
-  )
+ *  Returns the resolved source plus the names that were SUBSTITUTED, for the
+ *  LOG-EVERYTHING covenant (the picker log surfaces the lean decisions). */
+function buildPickerUsageSource(config: SentinelConfig): {
+  usage: (name: string) => UsageHeadroom | undefined
+  substituted: string[]
+} {
+  const latest = getLatestProfileUsage()
+  const lastGood = getLastGoodProfileUsage()
+  const entries = Object.keys(config.profiles).map(name => ({
+    name,
+    latest: latest.get(name),
+    lastGood: lastGood.get(name),
+  }))
+  const resolved = resolveBalancedHeadrooms(entries, Date.now(), {
+    staleMs: USAGE_STALE_MS,
+    carryForwardStaleMs: RATE_LIMIT_MAX_BACKOFF_MS,
+    authErrorCarryForwardMs: AUTH_ERROR_CARRY_FORWARD_MS,
+  })
+  const substituted = [...resolved.entries()].filter(([, r]) => r.substituted).map(([name]) => name)
+  return { usage: name => resolved.get(name)?.headroom, substituted }
 }
 
 /** Dead PIDs discovered from registry on startup (reported once WS connects) */
@@ -2433,7 +2442,7 @@ const latestProfileUsage = new Map<string, ProfileUsageSnapshot>()
 
 /** Last ERROR-FREE snapshot per profile (has both windows). Survives a 429 so
  *  the Balanced picker can carry forward real headroom while the usage API
- *  throttles the probe -- see `usage-headroom.ts` / `usageHeadroomForProfile`. */
+ *  throttles the probe -- see `usage-headroom.ts` / `buildPickerUsageSource`. */
 const lastGoodProfileUsage = new Map<string, ProfileUsageSnapshot>()
 
 /** Profile name -> epoch ms until which polling is suppressed (429 backoff). */
@@ -3180,12 +3189,15 @@ function connect(
           let spawnPickerCandidates: string[] = []
           let spawnPickerPool = ''
           let spawnPickerReason = ''
+          let spawnPickerLeaned: string[] = []
           try {
+            const pickerUsage = buildPickerUsageSource(config)
+            spawnPickerLeaned = pickerUsage.substituted
             const picked = pickProfile(config, {
               input: spawnMsg.profile,
               pool: typeof spawnMsg.pool === 'string' ? spawnMsg.pool : undefined,
               liveLoad: liveLoadForProfile,
-              usage: usageHeadroomForProfile,
+              usage: pickerUsage.usage,
             })
             resolvedSpawnProfile = picked.profile
             spawnPicker = picked.picker
@@ -3212,7 +3224,7 @@ function connect(
           // engineer can reconstruct why a given conversation landed on a
           // given profile from sentinel logs + diag alone.
           log(
-            `[picker] mode=${spawnMsg.profile ?? '<absent>'} pool=${spawnMsg.pool ?? '<absent>'} -> picked=${resolvedSpawnProfile.name} via=${spawnPicker} reason=${spawnPickerReason} requestedPool=${spawnPickerPool || '<n/a>'} candidates=[${spawnPickerCandidates.join(',')}] conv=${spawnMsg.conversationId.slice(0, 8)}`,
+            `[picker] mode=${spawnMsg.profile ?? '<absent>'} pool=${spawnMsg.pool ?? '<absent>'} -> picked=${resolvedSpawnProfile.name} via=${spawnPicker} reason=${spawnPickerReason} requestedPool=${spawnPickerPool || '<n/a>'} candidates=[${spawnPickerCandidates.join(',')}] leaned=[${spawnPickerLeaned.join(',')}] conv=${spawnMsg.conversationId.slice(0, 8)}`,
           )
           diag('spawn', 'profile picked', {
             input: spawnMsg.profile ?? null,
@@ -3222,6 +3234,10 @@ function connect(
             reason: spawnPickerReason,
             requestedPool: spawnPickerPool || null,
             candidates: spawnPickerCandidates,
+            // Profiles whose usage probe was unreadable (401/429) and were leaned
+            // toward via the optimistic recently-reset assumption -- see
+            // `buildPickerUsageSource` / `resolveBalancedHeadrooms`.
+            leanedUnmeasurable: spawnPickerLeaned,
             conversationId: spawnMsg.conversationId.slice(0, 8),
             liveLoadSnapshot: Object.fromEntries(profileLoad),
           })
