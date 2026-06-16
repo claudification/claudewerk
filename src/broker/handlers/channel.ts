@@ -14,7 +14,14 @@ import { AGENT_HOST_ONLY, DASHBOARD_ROLES, registerHandlers } from '../message-r
 import { resolvePermissionFlags } from '../permissions'
 import { buildRosterSnapshot, shellRegistry } from '../shell-registry'
 import { collectLineageSubtree } from '../spawn-lineage'
-import { computeConversationSlug, computeLocalId, formatAmbiguityError, resolveSendTarget } from './channel-id'
+import {
+  computeConversationSlug,
+  computeLocalId,
+  formatAmbiguityError,
+  formatCrossProjectAmbiguityError,
+  resolveByConversationName,
+  resolveSendTarget,
+} from './channel-id'
 
 // ─── Dashboard subscription ────────────────────────────────────────
 
@@ -732,6 +739,52 @@ function deliverToOne(
     }
   } else {
     toConv = ctx.conversations.findConversationByConversationId(toTarget) || ctx.conversations.getConversation(toTarget)
+  }
+
+  // Conversation-name fallback. The project slug never resolved (stale/wrong
+  // address-book slug, or a bare conversation name that is not a project) and the
+  // raw-id lookup missed too. The conversation NAME is the stable handle, so
+  // match it across ALL projects -- this is what makes send_message recover
+  // without a prior list_conversations. Gated on `!targetProject` so a correctly
+  // addressed but merely-offline target still queues normally below (it is not
+  // hijacked by a same-named conversation elsewhere).
+  if (!toConv && !targetProject) {
+    const byName = resolveByConversationName(
+      conversationSlug ?? projectSlug,
+      Array.from(ctx.conversations.getAllConversations()),
+      Date.now(),
+    )
+    if (byName.kind === 'ambiguous') {
+      return { to: toTarget, ok: false, error: formatCrossProjectAmbiguityError(byName.candidates) }
+    }
+    if (byName.kind === 'resolved') {
+      const matched = ctx.conversations.getConversation(byName.conversation.id)
+      toConv = matched
+      if (matched) {
+        const conversationsAtProject = Array.from(ctx.conversations.getAllConversations()).filter(s =>
+          isSameProject(s.project, matched.project),
+        )
+        const projSettings = ctx.getProjectSettings(matched.project)
+        const projectName = projSettings?.label || extractProjectLabel(matched.project)
+        // Hand the sender the canonical compound address it should cache going
+        // forward (its own address-book slug for the now-known target project).
+        const canonProjectSlug = callerProject
+          ? ctx.addressBook.getOrAssign(callerProject, matched.project, projectName)
+          : slugify(projectName)
+        canonicalAddress = `${canonProjectSlug}:${computeConversationSlug(matched, conversationsAtProject)}`
+        if (byName.viaAlias) {
+          const refreshed = refreshAliasUse(matched.formerSlugs, byName.viaAlias, Date.now())
+          if (refreshed !== matched.formerSlugs) {
+            matched.formerSlugs = refreshed
+            ctx.conversations.persistConversationById(matched.id)
+          }
+        }
+        ctx.log.debug(
+          `[inter-conversation] ${toTarget} resolved by conversation-name fallback -> ${matched.id.slice(0, 8)} ` +
+            `(canonical=${canonicalAddress}${byName.viaAlias ? `; viaAlias=${byName.viaAlias}` : ''})`,
+        )
+      }
+    }
   }
 
   const toConversation = toConv?.id

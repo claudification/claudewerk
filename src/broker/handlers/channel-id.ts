@@ -154,6 +154,64 @@ export function formatAmbiguityError(canonicalProject: string, candidates: Conve
   return `Ambiguous target: ${candidates.length} conversations at "${canonicalProject}". Use compound address: ${ids}`
 }
 
+// ─── Cross-project conversation-name fallback ───────────────────────
+
+/**
+ * Last-resort resolver: the PROJECT slug (left of `:`) never resolved -- the
+ * caller's address-book slug was stale, wrong, or the caller addressed bare by a
+ * conversation name that is not a project. The conversation NAME is the stable,
+ * user-facing handle (the project slug is volatile per-caller address-book
+ * cruft that drifts on rename / re-label), so match `name` against EVERY
+ * conversation's current title across ALL projects -- exact first, then prefix,
+ * then in-window former-slug aliases. A unique hit routes; 2+ is ambiguous
+ * (never a silent guess); none is not_found.
+ *
+ * Runs ONLY after project-slug resolution has already failed, so it can never
+ * hijack a correctly-addressed (but merely offline) target -- it is strictly
+ * additive recovery for an otherwise-dead send.
+ */
+export function resolveByConversationName(
+  name: string,
+  allConversations: ConversationLike[],
+  now: number = Date.now(),
+): ResolveSendTarget {
+  const slug = slugify(name)
+  const titleOf = (s: ConversationLike) => slugify(s.title || s.id.slice(0, 8))
+
+  const decide = (hits: ConversationLike[], viaAlias?: string): ResolveSendTarget | undefined => {
+    if (hits.length === 1) return { kind: 'resolved', conversation: hits[0], ...(viaAlias ? { viaAlias } : {}) }
+    if (hits.length > 1) return { kind: 'ambiguous', canonicalProject: '*', candidates: hits }
+    return undefined
+  }
+
+  const exact = decide(allConversations.filter(s => titleOf(s) === slug))
+  if (exact) return exact
+  const prefix = decide(allConversations.filter(s => titleOf(s).startsWith(slug)))
+  if (prefix) return prefix
+  const alias = decide(
+    allConversations.filter(s => (s.formerSlugs ?? []).some(f => f.slug === slug && isAliasLive(f, now))),
+    slug,
+  )
+  if (alias) return alias
+  return { kind: 'not_found' }
+}
+
+/**
+ * Ambiguity error for the cross-project name fallback. Unlike
+ * `formatAmbiguityError` (single project), candidates here span projects, so
+ * each suggested id carries its own canonical project slug.
+ */
+export function formatCrossProjectAmbiguityError(candidates: ConversationLike[]): string {
+  const ids = candidates
+    .map(c => {
+      const projectSlug = slugify(extractProjectLabel(c.project))
+      const siblings = candidates.filter(o => isSameProject(o.project, c.project))
+      return computeLocalId(c, projectSlug, siblings)
+    })
+    .join(', ')
+  return `Ambiguous conversation name: ${candidates.length} conversations match. Use a compound project:name address: ${ids}`
+}
+
 // ─── Shared target resolution ──────────────────────────────────────
 
 export type ResolveConversationResult =
@@ -224,5 +282,15 @@ export function resolveConversationTarget(targetId: string, deps: ResolveConvers
   // Fallback: try raw internal ID / conversation ID
   const fallback = deps.findConversationByConversationId(targetId) || deps.getConversation(targetId)
   if (fallback) return { kind: 'resolved', conversation: fallback }
+
+  // Last resort: the project slug never resolved, but the caller may still hold
+  // the conversation NAME. Match it across all projects (see
+  // resolveByConversationName). This is what makes a stale project slug recover
+  // without a prior list_conversations.
+  const byName = resolveByConversationName(conversationSlug ?? projectSlug, deps.getAllConversations())
+  if (byName.kind === 'resolved')
+    return { kind: 'resolved', conversation: byName.conversation, viaAlias: byName.viaAlias }
+  if (byName.kind === 'ambiguous')
+    return { kind: 'ambiguous', error: formatCrossProjectAmbiguityError(byName.candidates) }
   return { kind: 'not_found', error: 'Target not connected. Use list_conversations to find current sessions.' }
 }

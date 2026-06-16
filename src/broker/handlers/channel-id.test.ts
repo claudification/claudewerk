@@ -4,6 +4,8 @@ import {
   computeConversationSlug,
   computeLocalId,
   formatAmbiguityError,
+  formatCrossProjectAmbiguityError,
+  resolveByConversationName,
   resolveSendTarget,
 } from './channel-id'
 
@@ -194,6 +196,97 @@ describe('resolveSendTarget', () => {
       })
       expect(r.kind).toBe('not_found')
     })
+  })
+})
+
+// ─── resolveByConversationName (cross-project name fallback) ─────────
+
+describe('resolveByConversationName', () => {
+  const A = 'claude:///projects/alpha'
+  const B = 'claude:///projects/beta'
+
+  it('resolves a uniquely-named conversation regardless of project slug', () => {
+    // The whole point: a stale/wrong project slug should not block delivery when
+    // the conversation NAME is unique. (The reported incident: nsf-brain:fluffy-puffin.)
+    const target = s('t', 'fluffy-puffin', B)
+    const other = s('o', 'grumpy-otter', A)
+    const r = resolveByConversationName('fluffy-puffin', [target, other])
+    expect(r.kind).toBe('resolved')
+    if (r.kind === 'resolved') expect(r.conversation.id).toBe('t')
+  })
+
+  it('normalizes a non-slug name before matching', () => {
+    const target = s('t', 'Fluffy Puffin', B)
+    const r = resolveByConversationName('Fluffy Puffin', [target])
+    expect(r.kind).toBe('resolved')
+    if (r.kind === 'resolved') expect(r.conversation.id).toBe('t')
+  })
+
+  it('falls back to a prefix match when no exact title', () => {
+    const target = s('t', 'fluffy-puffin', B)
+    const r = resolveByConversationName('fluffy', [target])
+    expect(r.kind).toBe('resolved')
+    if (r.kind === 'resolved') expect(r.conversation.id).toBe('t')
+  })
+
+  it('is ambiguous when the same name exists in two projects', () => {
+    const a = s('a', 'twin', A)
+    const b = s('b', 'twin', B)
+    const r = resolveByConversationName('twin', [a, b])
+    expect(r.kind).toBe('ambiguous')
+    if (r.kind === 'ambiguous') expect(r.candidates).toHaveLength(2)
+  })
+
+  it('prefers an exact match over a prefix match', () => {
+    const exact = s('e', 'build', A)
+    const longer = s('l', 'build-tooling', B)
+    const r = resolveByConversationName('build', [exact, longer])
+    expect(r.kind).toBe('resolved')
+    if (r.kind === 'resolved') expect(r.conversation.id).toBe('e')
+  })
+
+  it('returns not_found when nothing matches', () => {
+    const r = resolveByConversationName('ghost', [s('a', 'real', A)])
+    expect(r.kind).toBe('not_found')
+  })
+
+  it('resolves via an in-window former slug when no current title matches', () => {
+    const now = 1_000_000_000
+    const renamed: ConversationLike = {
+      id: 'r',
+      title: 'new-name',
+      project: B,
+      formerSlugs: [{ slug: 'old-name', retiredAt: now - 1000, lastUsedAt: now - 1000 }],
+    }
+    const r = resolveByConversationName('old-name', [renamed], now)
+    expect(r.kind).toBe('resolved')
+    if (r.kind === 'resolved') {
+      expect(r.conversation.id).toBe('r')
+      expect(r.viaAlias).toBe('old-name')
+    }
+  })
+
+  it('does NOT resolve an expired former slug', () => {
+    const now = 1_000_000_000
+    const renamed: ConversationLike = {
+      id: 'r',
+      title: 'new-name',
+      project: B,
+      formerSlugs: [{ slug: 'old-name', retiredAt: now - 26 * 60 * 60 * 1000, lastUsedAt: now - 26 * 60 * 60 * 1000 }],
+    }
+    const r = resolveByConversationName('old-name', [renamed], now)
+    expect(r.kind).toBe('not_found')
+  })
+})
+
+describe('formatCrossProjectAmbiguityError', () => {
+  it('lists per-project compound ids the caller should retry with', () => {
+    const a = s('aaaaaa1111', 'twin', 'claude:///projects/alpha')
+    const b = s('bbbbbb2222', 'twin', 'claude:///projects/beta')
+    const msg = formatCrossProjectAmbiguityError([a, b])
+    expect(msg).toContain('Ambiguous conversation name: 2 conversations match')
+    expect(msg).toContain('alpha:twin')
+    expect(msg).toContain('beta:twin')
   })
 })
 

@@ -295,6 +295,83 @@ describe('inter-conversation messaging', () => {
       expect(sendResult[0].error).toBeTruthy()
     })
 
+    it('recovers via conversation-name fallback when the project slug is wrong', async () => {
+      // The reported incident: a caller held a STALE project slug
+      // (nsf-brain:fluffy-puffin) but the right conversation NAME. Project-slug
+      // resolution fails, but the unique conversation name still routes it --
+      // without requiring a list_conversations first.
+      const convA = testId('conv-a')
+      const convB = testId('conv-b')
+
+      const agentA = bootAndPromote({
+        conversationId: convA,
+        ccSessionId: testId('sess-a'),
+        project: 'claude:///home/user/project-alpha',
+      })
+      const agentB = bootAndPromote({
+        conversationId: convB,
+        ccSessionId: testId('sess-b'),
+        project: 'claude:///home/user/project-beta',
+      })
+      // Give B a unique, stable name.
+      h.agentSend(agentB, { type: 'conversation_name', conversationId: convB, name: 'fluffy-puffin' })
+
+      await h.flushUpdates()
+
+      // Wrong project slug ("does-not-exist") + correct conversation name.
+      h.agentSend(agentA, {
+        type: 'channel_send',
+        toConversation: 'does-not-exist:fluffy-puffin',
+        intent: 'request',
+        message: 'Found you by name',
+      })
+
+      const sendResult = agentA.messagesOfType('channel_send_result')
+      const lastResult = sendResult[sendResult.length - 1]
+      expect(lastResult.ok).toBe(true)
+      expect(lastResult.status).toBe('delivered')
+      // The sender is handed the canonical address to cache going forward.
+      expect(lastResult.canonicalAddress).toContain('fluffy-puffin')
+
+      const delivered = agentB.messagesOfType('channel_deliver')
+      expect(delivered.length).toBe(1)
+      expect(delivered[0].message).toBe('Found you by name')
+    })
+
+    it('bare conversation name (no project) resolves uniquely across projects', async () => {
+      const convA = testId('conv-a')
+      const convB = testId('conv-b')
+
+      const agentA = bootAndPromote({
+        conversationId: convA,
+        ccSessionId: testId('sess-a'),
+        project: 'claude:///home/user/project-alpha',
+      })
+      const agentB = bootAndPromote({
+        conversationId: convB,
+        ccSessionId: testId('sess-b'),
+        project: 'claude:///home/user/project-beta',
+      })
+      h.agentSend(agentB, { type: 'conversation_name', conversationId: convB, name: 'grumpy-otter' })
+
+      await h.flushUpdates()
+
+      h.agentSend(agentA, {
+        type: 'channel_send',
+        toConversation: 'grumpy-otter',
+        intent: 'notify',
+        message: 'Bare name routing',
+      })
+
+      const sendResult = agentA.messagesOfType('channel_send_result')
+      const lastResult = sendResult[sendResult.length - 1]
+      expect(lastResult.ok).toBe(true)
+
+      const delivered = agentB.messagesOfType('channel_deliver')
+      expect(delivered.length).toBe(1)
+      expect(delivered[0].message).toBe('Bare name routing')
+    })
+
     it('delivers to compound project:session-slug target', async () => {
       const ccSessionA = testId('sess-a')
       const ccSessionB = testId('sess-b')
