@@ -511,13 +511,14 @@ function recordInferenceUsageFromRateLimit(
   tags: RateLimitTags,
   data: Parameters<MessageHandler>[1],
 ): void {
+  // CC only includes `utilization` on the rate_limit_event when a window crosses
+  // its warning threshold (~90%, status "allowed_warning"); below that the field
+  // is absent (status "allowed"). So inference data lands exactly when a profile
+  // is near its cap -- the high-usage case where the /api/oauth/usage poll is
+  // 429'd and we'd otherwise be blind. Below ~90% we fall back to poll + the
+  // carry-forward band-aid. Nothing to record when the number is absent.
   const utilization = data.utilization as number | undefined
-  if (typeof utilization !== 'number' || !tags.sentinelId) {
-    ctx.log.debug(
-      `[usage-inf] skip: util=${utilization} sentinelId=${tags.sentinelId?.slice(0, 8) || '<none>'} profile=${tags.profile}`,
-    )
-    return
-  }
+  if (typeof utilization !== 'number' || !tags.sentinelId) return
   const ok = ctx.conversations.recordInferenceUsage(tags.sentinelId, tags.profile, {
     rateLimitType: data.rateLimitType as string | undefined,
     utilization,
@@ -525,7 +526,7 @@ function recordInferenceUsageFromRateLimit(
     observedAt: Date.now(),
   })
   ctx.log.debug(
-    `[usage-inf] record profile=${tags.profile} sid=${tags.sentinelId.slice(0, 8)} type=${data.rateLimitType} util=${utilization} reset=${data.resetsAt} -> ok=${ok}`,
+    `[usage-inf] record profile=${tags.profile} sid=${tags.sentinelId.slice(0, 8)} ${data.rateLimitType}=${Math.round(utilization * 100)}% -> ok=${ok}`,
   )
 }
 
