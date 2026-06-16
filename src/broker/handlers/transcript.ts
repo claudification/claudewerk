@@ -512,13 +512,21 @@ function recordInferenceUsageFromRateLimit(
   data: Parameters<MessageHandler>[1],
 ): void {
   const utilization = data.utilization as number | undefined
-  if (typeof utilization !== 'number' || !tags.sentinelId) return
-  ctx.conversations.recordInferenceUsage(tags.sentinelId, tags.profile, {
+  if (typeof utilization !== 'number' || !tags.sentinelId) {
+    ctx.log.debug(
+      `[usage-inf] skip: util=${utilization} sentinelId=${tags.sentinelId?.slice(0, 8) || '<none>'} profile=${tags.profile}`,
+    )
+    return
+  }
+  const ok = ctx.conversations.recordInferenceUsage(tags.sentinelId, tags.profile, {
     rateLimitType: data.rateLimitType as string | undefined,
     utilization,
     resetsAtMs: data.resetsAt as number | undefined,
     observedAt: Date.now(),
   })
+  ctx.log.debug(
+    `[usage-inf] record profile=${tags.profile} sid=${tags.sentinelId.slice(0, 8)} type=${data.rateLimitType} util=${utilization} reset=${data.resetsAt} -> ok=${ok}`,
+  )
 }
 
 const rateLimitStatusHandler: MessageHandler = (ctx, data) => {
