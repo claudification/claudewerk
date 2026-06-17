@@ -1,7 +1,9 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import { buildErrorReport, copyTextToClipboard, getAppState, getLocalStorageDump } from '@/lib/error-report'
 import { clearCacheAndReload } from '@/lib/utils'
 import { BUILD_VERSION } from '../../../src/shared/version'
+import { CrashScreen } from './crash-screen'
 
 interface Props {
   children: ReactNode
@@ -50,8 +52,8 @@ export class ErrorBoundary extends Component<Props, State> {
         body: JSON.stringify({
           error: { name: error.name, message: error.message, stack: error.stack },
           componentStack: errorInfo.componentStack,
-          appState: this.getAppState(),
-          localStorage: this.getLocalStorageDump(),
+          appState: getAppState(),
+          localStorage: getLocalStorageDump(),
           version: BUILD_VERSION.gitHashShort,
           buildTime: BUILD_VERSION.buildTime,
           url: this.state.crashUrl || window.location.href,
@@ -65,233 +67,30 @@ export class ErrorBoundary extends Component<Props, State> {
     } catch {}
   }
 
-  getLocalStorageDump(): string {
-    try {
-      const keys = ['control-panel-prefs', 'rclaude-terminal-settings']
-      const entries: string[] = []
-      for (const key of keys) {
-        const val = localStorage.getItem(key)
-        if (val) entries.push(`  ${key}: ${val}`)
-      }
-      return entries.length > 0 ? entries.join('\n') : '  (none)'
-    } catch {
-      return '  (localStorage unavailable)'
-    }
-  }
-
-  getAppState(): string {
-    try {
-      const store = useConversationsStore.getState()
-      const conversation = store.selectedConversationId
-        ? store.conversationsById[store.selectedConversationId]
-        : undefined
-      const transcriptEntries = store.selectedConversationId
-        ? store.transcripts[store.selectedConversationId]
-        : undefined
-      const lines = [
-        `  selectedConversation: ${store.selectedConversationId?.slice(0, 8) || '(none)'}`,
-        `  conversationCount: ${Object.keys(store.conversationsById).length}`,
-        `  expandAll: ${store.expandAll}`,
-        `  showTerminal: ${store.showTerminal}`,
-        `  wsConnected: ${store.isConnected}`,
-        `  viewport: ${window.innerWidth}x${window.innerHeight} @${window.devicePixelRatio}x`,
-        `  touch: ${navigator.maxTouchPoints > 0}`,
-      ]
-      if (conversation) {
-        lines.push(
-          `  conversation.status: ${conversation.status}`,
-          `  conversation.project: ${conversation.project}`,
-          `  conversation.eventCount: ${conversation.eventCount}`,
-          `  conversation.connectionIds: [${(conversation.connectionIds || []).map((w: string) => w.slice(0, 8)).join(', ')}]`,
-          `  transcriptEntries: ${transcriptEntries?.length ?? 0}`,
-          `  subagentCount: ${conversation.subagents?.length ?? 0}`,
-          `  taskCount: ${conversation.taskCount ?? 0}`,
-        )
-      }
-      return lines.join('\n')
-    } catch (e) {
-      return `  (failed to read store: ${e})`
-    }
-  }
-
-  getErrorText(): string {
-    const { error, errorInfo } = this.state
-    const lines = [
-      '═══════════════════════════════════════════════════════════════',
-      '  CLAUDE CONCENTRATOR - ERROR REPORT',
-      '═══════════════════════════════════════════════════════════════',
-      '',
-      `Timestamp: ${new Date().toISOString()}`,
-      `User Agent: ${navigator.userAgent}`,
-      `URL: ${this.state.crashUrl || window.location.href}`,
-      `Version: ${BUILD_VERSION.gitHashShort} (${BUILD_VERSION.buildTime})`,
-      '',
-      '─── RECENT COMMITS ──────────────────────────────────────────────',
-      '',
-      ...(BUILD_VERSION.recentCommits || []).map(c => `  ${c.hash} ${c.message}`),
-      '',
-      '─── ERROR ───────────────────────────────────────────────────────',
-      '',
-      `Name: ${error?.name || 'Unknown'}`,
-      `Message: ${error?.message || 'No message'}`,
-      '',
-      '─── STACK TRACE ─────────────────────────────────────────────────',
-      '',
-      error?.stack || 'No stack trace available',
-      '',
-    ]
-
-    if (errorInfo?.componentStack) {
-      lines.push('─── COMPONENT STACK ─────────────────────────────────────────────', '', errorInfo.componentStack, '')
-    }
-
-    lines.push(
-      '─── APP STATE ───────────────────────────────────────────────────',
-      '',
-      this.getAppState(),
-      '',
-      '─── LOCAL SETTINGS ──────────────────────────────────────────────',
-      '',
-      this.getLocalStorageDump(),
-      '',
-      '═══════════════════════════════════════════════════════════════',
-    )
-
-    return lines.join('\n')
-  }
-
   async copyError() {
-    try {
-      await navigator.clipboard.writeText(this.getErrorText())
+    const ok = await copyTextToClipboard(
+      buildErrorReport({
+        error: this.state.error,
+        componentStack: this.state.errorInfo?.componentStack,
+        url: this.state.crashUrl,
+      }),
+    )
+    if (ok) {
       this.setState({ copied: true })
       setTimeout(() => this.setState({ copied: false }), 2000)
-    } catch (err) {
-      console.error('Failed to copy:', err)
     }
   }
 
   render() {
     if (this.state.hasError) {
-      const { error, copied } = this.state
-
       return (
-        <div className="min-h-screen bg-background p-8 font-mono">
-          <div className="max-w-4xl mx-auto">
-            {/* Header */}
-            <pre className="text-destructive text-sm mb-6">
-              {`
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│   ███████╗██████╗ ██████╗  ██████╗ ██████╗ ██╗                              │
-│   ██╔════╝██╔══██╗██╔══██╗██╔═══██╗██╔══██╗██║                              │
-│   █████╗  ██████╔╝██████╔╝██║   ██║██████╔╝██║                              │
-│   ██╔══╝  ██╔══██╗██╔══██╗██║   ██║██╔══██╗╚═╝                              │
-│   ███████╗██║  ██║██║  ██║╚██████╔╝██║  ██║██╗                              │
-│   ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚═╝                              │
-│                                                                             │
-│   Something went wrong. But hey, at least it's not a BSOD!                  │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-`.trim()}
-            </pre>
-
-            {/* Error Summary */}
-            <div className="border border-destructive bg-destructive/10 p-4 mb-6">
-              <div className="text-destructive font-bold mb-2">[ {error?.name || 'Error'} ]</div>
-              <div className="text-foreground">{error?.message || 'An unknown error occurred'}</div>
-            </div>
-
-            {/* Version + Recent Commits */}
-            <div className="border border-border mb-6">
-              <div className="p-3 border-b border-border bg-card text-primary font-bold text-sm">[ BUILD INFO ]</div>
-              <div className="p-4 text-xs text-muted-foreground space-y-1">
-                <div>
-                  <span className="text-foreground/60">version:</span>{' '}
-                  <span className="text-accent">{BUILD_VERSION.gitHashShort}</span>{' '}
-                  <span className="text-foreground/40">({BUILD_VERSION.buildTime})</span>
-                </div>
-                {BUILD_VERSION.recentCommits?.length > 0 && (
-                  <div className="mt-2 space-y-0.5">
-                    {BUILD_VERSION.recentCommits.map(c => (
-                      <div key={c.hash}>
-                        <span className="text-accent/70">{c.hash}</span>{' '}
-                        <span className="text-foreground/60">{c.message}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="flex gap-4 mb-6">
-              <button
-                type="button"
-                onClick={() => this.copyError()}
-                className="px-4 py-2 bg-primary text-primary-foreground font-bold text-sm hover:bg-primary/80 transition-colors"
-              >
-                {copied ? '✓ COPIED!' : '⎘ COPY ERROR'}
-              </button>
-              <button
-                type="button"
-                onClick={() => clearCacheAndReload({ toRoot: true })}
-                className="px-4 py-2 bg-secondary text-secondary-foreground font-bold text-sm hover:bg-secondary/80 transition-colors"
-              >
-                ↻ RELOAD
-              </button>
-            </div>
-
-            {/* Stack Trace */}
-            <div className="border border-border">
-              <div className="p-3 border-b border-border bg-card text-primary font-bold text-sm">[ STACK TRACE ]</div>
-              <pre className="p-4 text-xs text-muted-foreground overflow-x-auto max-h-64 overflow-y-auto">
-                {error?.stack || 'No stack trace available'}
-              </pre>
-            </div>
-
-            {/* Component Stack */}
-            {this.state.errorInfo?.componentStack && (
-              <div className="border border-border mt-4">
-                <div className="p-3 border-b border-border bg-card text-primary font-bold text-sm">
-                  [ COMPONENT STACK ]
-                </div>
-                <pre className="p-4 text-xs text-muted-foreground overflow-x-auto max-h-48 overflow-y-auto">
-                  {this.state.errorInfo.componentStack}
-                </pre>
-              </div>
-            )}
-
-            {/* App State */}
-            <div className="border border-border mt-4">
-              <div className="p-3 border-b border-border bg-card text-primary font-bold text-sm">[ APP STATE ]</div>
-              <pre className="p-4 text-xs text-muted-foreground overflow-x-auto max-h-48 overflow-y-auto">
-                {this.getAppState()}
-              </pre>
-            </div>
-
-            {/* Local Settings */}
-            <div className="border border-border mt-4">
-              <div className="p-3 border-b border-border bg-card text-primary font-bold text-sm">
-                [ LOCAL SETTINGS ]
-              </div>
-              <pre className="p-4 text-xs text-muted-foreground overflow-x-auto max-h-48 overflow-y-auto">
-                {this.getLocalStorageDump()}
-              </pre>
-            </div>
-
-            {/* Footer */}
-            <div className="mt-6 text-muted-foreground text-xs">
-              <pre>
-                {`
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  Pro tip: Copy the error and share it with someone who can help.            │
-│  Blame Zuckerberg if this was caused by a Meta library.                     │
-└─────────────────────────────────────────────────────────────────────────────┘
-`.trim()}
-              </pre>
-            </div>
-          </div>
-        </div>
+        <CrashScreen
+          error={this.state.error}
+          errorInfo={this.state.errorInfo}
+          copied={this.state.copied}
+          onCopy={() => this.copyError()}
+          onReload={() => clearCacheAndReload({ toRoot: true })}
+        />
       )
     }
 

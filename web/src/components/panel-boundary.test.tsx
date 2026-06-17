@@ -57,6 +57,27 @@ describe('PanelBoundary', () => {
     expect(payload.error.message).toBe('kaboom in panel')
   })
 
+  it('copies a markdown error report to the clipboard', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true, writable: true })
+
+    render(
+      <PanelBoundary name="Copyable">
+        <Boom shouldThrow={true} />
+      </PanelBoundary>,
+    )
+    fireEvent.click(screen.getByText(/Copy details/i))
+
+    // Button flips to "Copied" once the async clipboard write resolves.
+    expect(await screen.findByText(/Copied/i)).toBeTruthy()
+    expect(writeText).toHaveBeenCalledTimes(1)
+    const report = writeText.mock.calls[0][0] as string
+    expect(report).toContain('# Control Panel -- Error Report')
+    expect(report).toContain('kaboom in panel')
+    expect(report).toContain('| Boundary | Copyable (scoped) |')
+    expect(report).toContain('## Component Stack')
+  })
+
   it('retry recovers the subtree once the error condition clears', () => {
     // Module-level flag controls whether the child throws; Retry resets the
     // boundary, the re-render no longer throws, and the child comes back.

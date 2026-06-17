@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import { buildErrorReport, copyTextToClipboard } from '@/lib/error-report'
 import { BUILD_VERSION } from '../../../src/shared/version'
 
 interface Props {
@@ -13,6 +14,8 @@ interface Props {
 interface State {
   hasError: boolean
   error: Error | null
+  errorInfo: ErrorInfo | null
+  copied: boolean
 }
 
 /**
@@ -29,7 +32,7 @@ interface State {
 export class PanelBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props)
-    this.state = { hasError: false, error: null }
+    this.state = { hasError: false, error: null, errorInfo: null, copied: false }
   }
 
   static getDerivedStateFromError(error: Error): Partial<State> {
@@ -37,6 +40,7 @@ export class PanelBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    this.setState({ errorInfo })
     console.error(`PanelBoundary[${this.props.name}] caught:`, error, errorInfo)
     try {
       const store = useConversationsStore.getState()
@@ -58,7 +62,22 @@ export class PanelBoundary extends Component<Props, State> {
   }
 
   retry = () => {
-    this.setState({ hasError: false, error: null })
+    this.setState({ hasError: false, error: null, errorInfo: null, copied: false })
+  }
+
+  copyDetails = async () => {
+    const ok = await copyTextToClipboard(
+      buildErrorReport({
+        error: this.state.error,
+        componentStack: this.state.errorInfo?.componentStack,
+        boundary: this.props.name,
+        scoped: true,
+      }),
+    )
+    if (ok) {
+      this.setState({ copied: true })
+      globalThis.setTimeout(() => this.setState({ copied: false }), 2000)
+    }
   }
 
   render() {
@@ -73,13 +92,22 @@ export class PanelBoundary extends Component<Props, State> {
           {name} failed to render
         </div>
         <div className="text-muted-foreground text-xs max-w-md break-words">{message}</div>
-        <button
-          type="button"
-          onClick={this.retry}
-          className="mt-1 rounded border border-border bg-muted/60 px-3 py-1 text-xs font-bold hover:bg-muted transition-colors"
-        >
-          ↻ Retry
-        </button>
+        <div className="mt-1 flex gap-2">
+          <button
+            type="button"
+            onClick={this.retry}
+            className="rounded border border-border bg-muted/60 px-3 py-1 text-xs font-bold hover:bg-muted transition-colors"
+          >
+            ↻ Retry
+          </button>
+          <button
+            type="button"
+            onClick={this.copyDetails}
+            className="rounded border border-border bg-muted/60 px-3 py-1 text-xs font-bold hover:bg-muted transition-colors"
+          >
+            {this.state.copied ? '✓ Copied' : '⎘ Copy details'}
+          </button>
+        </div>
         <div className="text-muted-foreground/40 text-[10px]">The rest of the app is still working.</div>
       </div>
     )
