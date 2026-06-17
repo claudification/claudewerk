@@ -32,7 +32,7 @@ export function isCardChannelEntry(e: TranscriptEntry): boolean {
   const fromProject = attr('from_project')
   // Inter-conversation (sender=conversation|session + from_project), dialog, or system notice.
   if ((sender === 'conversation' || sender === 'session') && fromProject) return true
-  if (sender === 'dialog') return true
+  if (sender === 'dialog' || sender === 'dialog-untrusted') return true
   if (source === 'rclaude' && sender === 'system') return true
   return false
 }

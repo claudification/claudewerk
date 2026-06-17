@@ -62,6 +62,8 @@ export type RenderItem =
       intent?: string
       isInterConversation?: boolean
       isDialog?: boolean
+      /** A live (persistent) dialog the user just submitted -- rendered rich, not raw. */
+      isDialogSubmit?: boolean
       dialogStatus?: string
       dialogAction?: string
       dialogId?: string
@@ -75,7 +77,7 @@ export type RenderItem =
   // renderer can dispatch on subtype just like the standalone SystemLine.
   | { kind: 'system'; entry: Record<string, unknown>; subtype: string; timestamp?: string }
 
-// fallow-ignore-next-line duplication
+// fallow-ignore-next-line dupes
 export function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`
   const s = ms / 1000

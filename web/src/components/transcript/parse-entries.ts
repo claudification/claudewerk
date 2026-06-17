@@ -43,6 +43,12 @@ function parseStringContent(content: string, items: RenderItem[]): void {
   }
 }
 
+/** Pull the first ```json ... ``` fenced block out of a framed dialog body. */
+function extractFencedJson(body: string): string | null {
+  const m = body.match(/```json\s*\n([\s\S]*?)\n```/)
+  return m ? m[1].trim() : null
+}
+
 function parseChannelContent(channelMatch: RegExpMatchArray, items: RenderItem[]): void {
   const attrs = channelMatch[1]
   const msg = channelMatch[2].trim()
@@ -68,18 +74,9 @@ function parseChannelContent(channelMatch: RegExpMatchArray, items: RenderItem[]
       isInterConversation: true,
     })
   } else if (sender === 'dialog') {
-    const status = getAttr('status') || 'submitted'
-    const action = getAttr('action')
-    const dialogId = getAttr('dialog_id')
-    items.push({
-      kind: 'channel',
-      text: msg,
-      source: 'dialog',
-      isDialog: true,
-      dialogStatus: status,
-      dialogAction: action || undefined,
-      dialogId: dialogId || undefined,
-    })
+    pushDialogResult(getAttr, msg, items)
+  } else if (sender === 'dialog-untrusted') {
+    pushDialogSubmit(getAttr, msg, items)
   } else if (source === 'rclaude' && sender === 'system') {
     pushSystemChannelItem(getAttr, msg, items)
   } else if (source === 'rclaude') {
@@ -88,6 +85,36 @@ function parseChannelContent(channelMatch: RegExpMatchArray, items: RenderItem[]
   } else {
     items.push({ kind: 'channel', text: msg, source })
   }
+}
+
+type AttrFn = (name: string) => string | undefined
+
+/** A one-shot dialog RESULT (sender="dialog"). */
+function pushDialogResult(getAttr: AttrFn, msg: string, items: RenderItem[]): void {
+  items.push({
+    kind: 'channel',
+    text: msg,
+    source: 'dialog',
+    isDialog: true,
+    dialogStatus: getAttr('status') || 'submitted',
+    dialogAction: getAttr('action') || undefined,
+    dialogId: getAttr('dialog_id') || undefined,
+  })
+}
+
+/** A live (persistent) dialog SUBMIT (sender="dialog-untrusted"). The framed body
+ *  wraps the form state in a ```json fence; pull it out so the renderer shows the
+ *  values, not the untrusted wrapper. */
+function pushDialogSubmit(getAttr: AttrFn, msg: string, items: RenderItem[]): void {
+  const on = getAttr('on')
+  items.push({
+    kind: 'channel',
+    text: extractFencedJson(msg) ?? msg,
+    source: 'dialog',
+    isDialogSubmit: true,
+    dialogStatus: on === 'submit' ? 'sent' : on || 'sent',
+    dialogId: getAttr('dialog_id') || undefined,
+  })
 }
 
 /** A `<channel source="rclaude" sender="system">` notice (spawn result, recap-completed, ...). */

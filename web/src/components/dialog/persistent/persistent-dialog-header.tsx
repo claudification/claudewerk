@@ -38,6 +38,12 @@ export function PersistentDialogHeader({
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2">
+        {status === 'open' && !readOnly && (
+          <span className="relative flex size-2" aria-hidden>
+            <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary/70" />
+            <span className="relative inline-flex size-2 rounded-full bg-primary" />
+          </span>
+        )}
         <span className="text-[10px] font-mono uppercase tracking-wider text-primary/60">live dialog</span>
         <span
           className={cn(

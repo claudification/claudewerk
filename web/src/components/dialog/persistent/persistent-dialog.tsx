@@ -25,6 +25,16 @@ const READONLY_NOTE: Record<string, string> = {
   closed: 'Closed by the agent. It can be reopened from the agent side.',
 }
 
+// Per-status container tone. `open` stands out hard (primary border + ring +
+// glow) so a waiting dialog is impossible to miss against the transcript; closed
+// recedes (dimmed + slightly shrunk). The transition-* on the container tweens
+// between these, so closing animates the card away instead of snapping.
+const STATUS_TONE: Record<string, string> = {
+  open: 'border-primary/60 ring-2 ring-primary/20 shadow-xl shadow-primary/10',
+  closed: 'border-border/50 opacity-75 scale-[0.985] shadow-sm',
+  orphaned: 'border-amber-500/50 ring-1 ring-amber-500/20 opacity-90 shadow-sm',
+}
+
 function FooterNote({ text }: { text: string }) {
   return (
     <div className="rounded border border-border/40 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">{text}</div>
@@ -84,7 +94,12 @@ export function PersistentDialog({ conversationId, entry }: { conversationId: st
   return (
     <div
       className={cn(
-        'mx-2 my-2 w-auto rounded-lg border border-primary/30 bg-card/95 p-3 shadow-lg backdrop-blur',
+        'mx-2 my-2 w-auto rounded-xl border-2 bg-card p-3 backdrop-blur',
+        // entrance: slide+fade in so a freshly-shown (or replayed) dialog draws the eye
+        'animate-in fade-in slide-in-from-top-2 duration-300',
+        // tween status changes (open -> closed/orphaned) so close animates away
+        'transition-[opacity,transform,box-shadow,border-color] duration-300 ease-out',
+        STATUS_TONE[status] ?? STATUS_TONE.open,
         dialogWidthClass(layout.width),
       )}
     >
