@@ -8,6 +8,9 @@
  * user interacts, result flows back as a single structured response.
  */
 
+import type { DialogWidth, EventHandler } from './dialog-live'
+import { validateLiveExtensions } from './dialog-live'
+
 // ─── Design Tokens ─────────────────────────────────────────────────
 
 export type DialogColor = 'primary' | 'secondary' | 'muted' | 'accent' | 'destructive' | 'success' | 'warning' | 'info'
@@ -21,6 +24,7 @@ export type AlertIntent = 'info' | 'warning' | 'error' | 'success'
 
 export interface MarkdownComponent {
   type: 'Markdown'
+  id?: string
   content?: string // inline markdown text
   file?: string // path to a markdown/text file (resolved by agent host, mutually exclusive with content)
   color?: DialogColor
@@ -28,23 +32,27 @@ export interface MarkdownComponent {
 
 export interface DiagramComponent {
   type: 'Diagram'
+  id?: string
   content: string
 }
 
 export interface ImageComponent {
   type: 'Image'
+  id?: string
   url: string
   alt?: string
 }
 
 export interface AlertComponent {
   type: 'Alert'
+  id?: string
   intent?: AlertIntent
   content: string
 }
 
 export interface DividerComponent {
   type: 'Divider'
+  id?: string
 }
 
 // Rich plan blocks (display only, no result data) — shared by dialogs and
@@ -53,6 +61,7 @@ export interface DividerComponent {
 
 export interface DiffComponent {
   type: 'Diff'
+  id?: string
   /** Unified diff text (rendered via a `diff` syntax fence). */
   content: string
   /** Optional file path / heading shown above the diff. */
@@ -71,6 +80,7 @@ export interface FileTreeEntry {
 
 export interface FileTreeComponent {
   type: 'FileTree'
+  id?: string
   label?: string
   entries: FileTreeEntry[]
 }
@@ -84,6 +94,7 @@ export interface DataModelField {
 
 export interface DataModelComponent {
   type: 'DataModel'
+  id?: string
   /** Model / table name. */
   name: string
   fields: DataModelField[]
@@ -91,6 +102,7 @@ export interface DataModelComponent {
 
 export interface ApiEndpointComponent {
   type: 'ApiEndpoint'
+  id?: string
   method: string
   path: string
   description?: string
@@ -108,6 +120,7 @@ export interface CodeAnnotation {
 
 export interface AnnotatedCodeComponent {
   type: 'AnnotatedCode'
+  id?: string
   code: string
   language?: string
   filename?: string
@@ -183,24 +196,29 @@ export interface ButtonComponent {
   label: string
   variant?: ButtonVariant
   intent?: ButtonIntent
+  /** Live dialogs: bind a click to an agent round-trip / client-side action. */
+  onClick?: EventHandler
 }
 
 // Layout components (structural, contain children)
 
 export interface StackComponent {
   type: 'Stack'
+  id?: string
   direction?: 'vertical' | 'horizontal'
   children: DialogComponent[]
 }
 
 export interface GridComponent {
   type: 'Grid'
+  id?: string
   columns?: number
   children: DialogComponent[]
 }
 
 export interface GroupComponent {
   type: 'Group'
+  id?: string
   label: string
   collapsed?: boolean
   children: DialogComponent[]
@@ -239,6 +257,10 @@ export interface DialogPage {
 export interface DialogLayout {
   title: string
   description?: string
+  /** Opt-in width for larger designs (side-by-side, mermaid, multi-column). Default 'normal'. */
+  width?: DialogWidth
+  /** Live dialogue: persists, is reopenable, and is patched in place across turns. */
+  persistent?: boolean
   timeout?: number // seconds, default 900, min 10, max 3600
   submitLabel?: string // default 'Submit'
   cancelLabel?: string // default 'Cancel'
@@ -369,6 +391,9 @@ export function validateDialogLayout(layout: unknown): string[] {
       }
     }
   }
+
+  // Live/persistent extensions (width, persistent, inline handlers, stable ids).
+  errors.push(...validateLiveExtensions(layout))
 
   return errors
 }
@@ -550,6 +575,12 @@ export function dialogToolInputSchema(): Record<string, unknown> {
     properties: {
       title: { type: 'string', description: 'Dialog title (required)' },
       description: { type: 'string', description: 'Optional subtitle/context (markdown)' },
+      width: {
+        type: 'string',
+        enum: ['normal', 'wide', 'full'],
+        description:
+          "Opt-in width for larger designs. 'normal' (default) for forms/choices; 'wide' for side-by-side comparisons, mermaid diagrams, or multi-column block layouts; 'full' for the largest designs.",
+      },
       timeout: {
         type: 'number',
         description: 'Timeout in seconds (default 900, min 10, max 3600)',

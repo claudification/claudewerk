@@ -19,6 +19,13 @@ import { cn, haptic } from '@/lib/utils'
 import { ComponentRenderer, type DialogFormState } from './dialog-renderer'
 import type { DialogComponent, DialogLayout, DialogResult } from './types'
 
+// Opt-in width for larger designs (side-by-side, mermaid, multi-column blocks).
+const DIALOG_WIDTH_CLASS: Record<string, string> = {
+  normal: 'sm:w-[560px]',
+  wide: 'sm:w-[min(900px,92vw)]',
+  full: 'sm:w-[96vw] sm:max-w-[1400px]',
+}
+
 // Initialize form state from component defaults (recursively)
 function collectDefaults(components: DialogComponent[], values: Record<string, unknown>): void {
   for (const comp of components) {
@@ -345,7 +352,8 @@ export const DialogModal = memo(function DialogModal({
       <div
         className={cn(
           'relative flex flex-col bg-background border border-border/50 shadow-2xl',
-          'w-full h-full sm:w-[560px] sm:max-h-[85vh] sm:h-auto sm:rounded-lg',
+          'w-full h-full sm:max-h-[85vh] sm:h-auto sm:rounded-lg',
+          DIALOG_WIDTH_CLASS[layout.width ?? 'normal'],
         )}
       >
         {/* Countdown bar (solid amber when expired -- no live deadline) */}
