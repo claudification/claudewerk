@@ -120,7 +120,7 @@ export function registerDialogTool(ctx: McpToolContext): Record<string, ToolDef>
   return {
     dialog: {
       description:
-        'PREFERRED way to interact with users. Use this PROACTIVELY whenever you need user input, decisions, confirmations, or want to present structured information. Do NOT ask questions in plain text -- use dialog instead for a rich UI experience. Shows an interactive dialog modal in the dashboard and waits for the user to respond. Supports: choices (single/multi select), text inputs, toggles, sliders, image display and selection, markdown content, code blocks, mermaid diagrams, alerts, collapsible groups, grids, and multi-page wizards. The user interacts on their device (phone/desktop) and the result comes back as structured JSON. BLOCKING call -- waits for submit/cancel/timeout (default 15 min, auto-extends on user interaction). Use "body" for single-page or "pages" for multi-step flows.',
+        'PREFERRED way to interact with users. Use this PROACTIVELY whenever you need user input, decisions, confirmations, or want to present structured information. Do NOT ask questions in plain text -- use dialog instead for a rich UI experience. Shows an interactive dialog modal in the dashboard and waits for the user to respond. Supports: choices (single/multi select), text inputs, toggles, sliders, image display and selection, markdown content, code blocks, mermaid diagrams, alerts, collapsible groups, grids, and multi-page wizards. The user interacts on their device (phone/desktop) and the result comes back as structured JSON. One-shot by default -- the answer arrives once as a channel message. Set "persistent": true for a LIVE dialog that stays open across turns (patch it with update_dialog, close/reopen with close_dialog/reopen_dialog) -- see the persistent field for when to use it. Use "body" for single-page or "pages" for multi-step flows.',
       inputSchema: dialogToolInputSchema(),
       async handle(_params, toolCtx) {
         try {
@@ -141,7 +141,8 @@ export function registerDialogTool(ctx: McpToolContext): Record<string, ToolDef>
           if (fileErr) return { content: [{ type: 'text', text: `Dialog file error: ${fileErr}` }], isError: true }
 
           const dialogId = randomUUID()
-          // THE DIALOGUE: persistent dialogs are no-op-safe groundwork (D2 renderer).
+          // THE DIALOGUE: live dialog -- host owns the snapshot, panel renders it
+          // inline + persistently, patched via update_dialog (D2).
           if (layout.persistent === true) return showPersistentDialog(ctx, dialogId, layout)
 
           const timeout = (layout.timeout ?? 900) * 1000

@@ -17,6 +17,7 @@ import type {
   ConversationEnd,
   ConversationMeta,
   ConversationReset,
+  DialogEventMessage,
   FileResponse,
   HookEvent,
   InterConversationDelivery,
@@ -122,6 +123,9 @@ export interface WsClientOptions {
   ) => void
   onDialogResult?: (dialogId: string, result: DialogResult) => void
   onDialogKeepalive?: (dialogId: string) => void
+  /** THE DIALOGUE (D2): a user interaction on a live dialog, broker-authorized,
+   *  seq-stamped, and forwarded here to become an earned agent turn. */
+  onDialogEvent?: (event: DialogEventMessage) => void
   onPlanApprovalResponse?: (
     requestId: string,
     action: 'approve' | 'reject',
@@ -250,6 +254,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
     onAskAnswer,
     onDialogResult,
     onDialogKeepalive,
+    onDialogEvent,
     onPlanApprovalResponse,
     onQuitConversation,
     onInterrupt,
@@ -408,6 +413,9 @@ export function createWsClient(options: WsClientOptions): WsClient {
         break
       case 'dialog_result':
         onDialogResult?.(message.dialogId, message.result)
+        break
+      case 'dialog_event':
+        onDialogEvent?.(message)
         break
       case 'plan_approval_response':
         onPlanApprovalResponse?.(message.requestId, message.action, message.feedback, message.toolUseId)

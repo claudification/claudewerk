@@ -2,9 +2,8 @@
  * THE DIALOGUE — live-dialog control tools (update / close / reopen).
  *
  * These operate on a persistent dialog's host-authoritative snapshot
- * (`ctx.openDialogs`). They are HIDDEN in D1b (not listed to the agent) because
- * the persistent renderer lands in D2 — patches would otherwise be invisible.
- * The plumbing is exercised by unit tests now; D2 unhides them.
+ * (`ctx.openDialogs`). Visible to the agent as of D2 (the persistent renderer
+ * now reflects every patch); D1b shipped them hidden until the UI existed.
  */
 
 import type { DialogOp, DialogSnapshot } from '../../../shared/dialog-live'
@@ -42,7 +41,6 @@ function patchSummary(dialogId: string, snapshot: DialogSnapshot, conflicts: OpC
 
 function registerUpdate(ctx: McpToolContext): ToolDef {
   return {
-    hidden: true,
     description:
       'Patch a live (persistent) dialog in place. Pass the dialogId and an ordered list of ops: replace/append/remove blocks (by stable id), setState/unsetState values, busy (wait hint), or close. Optional baseSeq guards against applying onto a stale snapshot.',
     inputSchema: {
@@ -78,7 +76,6 @@ function registerUpdate(ctx: McpToolContext): ToolDef {
 
 function registerClose(ctx: McpToolContext): ToolDef {
   return {
-    hidden: true,
     description:
       'Close a live (persistent) dialog. It becomes terminal but reopenable; its final state is kept as a record.',
     inputSchema: {
@@ -105,7 +102,6 @@ function registerClose(ctx: McpToolContext): ToolDef {
 
 function registerReopen(ctx: McpToolContext): ToolDef {
   return {
-    hidden: true,
     description: 'Reopen a previously-closed live (persistent) dialog into its persisted state.',
     inputSchema: {
       type: 'object' as const,

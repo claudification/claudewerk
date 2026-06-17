@@ -32,7 +32,7 @@ export const dialogEvent: MessageHandler = (ctx, data) => {
   if (!conversationId || !dialogId) return
 
   const reject = (reason: string): void => {
-    ctx.reply({ type: 'dialog_event_result', ok: false, dialogId, error: reason, ...echo(data) })
+    ctx.reply({ type: 'dialog_event_result', ok: false, conversationId, dialogId, error: reason, ...echo(data) })
     ctx.log.info(
       `[dialog-live] event REJECTED (${reason}) dialog=${dialogId.slice(0, 8)} conv=${conversationId.slice(0, 8)} principal=${ctx.ws.data.userName ?? ctx.ws.data.shareToken?.slice(0, 8) ?? 'bearer'}`,
     )
@@ -81,7 +81,7 @@ export const dialogEvent: MessageHandler = (ctx, data) => {
     )
   }
 
-  ctx.reply({ type: 'dialog_event_result', ok: true, dialogId, seq, ...echo(data) })
+  ctx.reply({ type: 'dialog_event_result', ok: true, conversationId, dialogId, seq, ...echo(data) })
   ctx.log.info(
     `[dialog-live] event dialog=${dialogId.slice(0, 8)} conv=${conversationId.slice(0, 8)} on=${on} handler=${String(data.handlerId)} seq=${seq} principal=${guard.principal} forwarded=${!!targetWs}`,
   )

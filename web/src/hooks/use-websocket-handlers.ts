@@ -10,6 +10,7 @@
  * subscribed selector -- so handler reorganization has no React #310 risk.
  */
 
+import type { DialogOp, DialogSnapshot } from '@shared/dialog-live'
 import type { DialogLayout } from '@shared/dialog-schema'
 import { formatResetIn } from '@shared/format-reset-time'
 import type { LaunchProfile } from '@shared/launch-profile'
@@ -48,6 +49,7 @@ import {
   type ProjectSettingsMap,
   useConversationsStore,
 } from './use-conversations'
+import { useLiveDialogsStore } from './use-live-dialogs'
 import { useRecapJobsStore } from './use-recap-jobs'
 import { useShellsStore } from './use-shells'
 import { handleSpawnRequestAck } from './use-spawn'
@@ -1072,6 +1074,13 @@ function handleDialogShow(msg: DashboardMessage) {
   const exId = msg.dialogId as string
   const exLayout = msg.layout as DialogLayout
   if (!(exSid && exId && exLayout)) return
+  // THE DIALOGUE: a persistent dialog renders inline + live (not the blocking
+  // modal). Synthesize the initial host snapshot (seq 0 / open / empty state)
+  // and route it to the live store; the modal path is for one-shot dialogs.
+  if (exLayout.persistent === true) {
+    useLiveDialogsStore.getState().show(exSid, { dialogId: exId, layout: exLayout, state: {}, seq: 0, status: 'open' })
+    return
+  }
   // Dedup: the agent host replays dialog_show on reconnect. If we already
   // have this exact dialog open, preserve any in-progress user input.
   const existing = useConversationsStore.getState().pendingDialogs[exSid]
@@ -1101,6 +1110,45 @@ function handleDialogDismiss(msg: DashboardMessage) {
     delete updated[exSid]
     return { pendingDialogs: updated }
   })
+}
+
+// ─── THE DIALOGUE — live/persistent dialog (host -> broker -> panel) ─────────
+
+/** Parse the (conversationId, snapshot) pair shared by every live handler. */
+function liveSnapshot(msg: DashboardMessage): { sid: string; snapshot: DialogSnapshot } | null {
+  const sid = msg.conversationId as string
+  const snapshot = msg.snapshot as DialogSnapshot | undefined
+  return sid && snapshot ? { sid, snapshot } : null
+}
+
+function handleDialogPatch(msg: DashboardMessage) {
+  const a = liveSnapshot(msg)
+  if (!a) return
+  const ops = (Array.isArray(msg.ops) ? msg.ops : []) as DialogOp[]
+  const rationale = typeof msg.rationale === 'string' ? msg.rationale : undefined
+  useLiveDialogsStore.getState().applyPatch(a.sid, a.snapshot, ops, rationale, msg.replay === true)
+}
+
+function handleDialogReopen(msg: DashboardMessage) {
+  const a = liveSnapshot(msg)
+  if (a) useLiveDialogsStore.getState().applyReopen(a.sid, a.snapshot)
+}
+
+function handleDialogOrphaned(msg: DashboardMessage) {
+  const a = liveSnapshot(msg)
+  if (a)
+    useLiveDialogsStore
+      .getState()
+      .applyOrphaned(a.sid, a.snapshot, typeof msg.reason === 'string' ? msg.reason : 'orphaned')
+}
+
+// Broker ack for a dialog_event we emitted. ok:false (rate-limited / denied /
+// not-interactor) surfaces an error so the panel re-enables controls.
+function handleDialogEventResult(msg: DashboardMessage) {
+  if (msg.ok !== false) return
+  const sid = msg.conversationId as string
+  if (!sid) return
+  useLiveDialogsStore.getState().setError(sid, typeof msg.error === 'string' ? msg.error : 'rejected')
 }
 
 function handlePlanApproval(msg: DashboardMessage) {
@@ -1595,6 +1643,10 @@ export const handlers: Record<string, MessageHandler> = {
   ask_dismiss: handleAskDismiss,
   dialog_show: handleDialogShow,
   dialog_dismiss: handleDialogDismiss,
+  dialog_patch: handleDialogPatch,
+  dialog_reopen: handleDialogReopen,
+  dialog_orphaned: handleDialogOrphaned,
+  dialog_event_result: handleDialogEventResult,
   plan_approval: handlePlanApproval,
   plan_approval_dismissed: handlePlanApprovalDismissed,
   clipboard_capture: handleClipboardCapture,

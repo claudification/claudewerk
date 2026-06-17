@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { PendingCallbacks } from '../agent-host-common/host-rpc'
 import {
+  deliverDialogEvent,
   isMcpChannelReady,
   keepaliveDialog,
   pushChannelMessage,
@@ -276,6 +277,15 @@ export function connectToBroker(ctx: AgentHostContext, deps: BrokerConnectionDep
     },
     onDialogKeepalive(dialogId) {
       keepaliveDialog(dialogId)
+    },
+    onDialogEvent(event) {
+      const delivered = deliverDialogEvent(event)
+      ctx.diag(
+        'dialog',
+        delivered
+          ? `Event delivered: ${event.dialogId.slice(0, 8)} handler=${event.handlerId} seq=${event.seq}`
+          : `Event dropped (dialog not open): ${event.dialogId.slice(0, 8)}`,
+      )
     },
     onPlanApprovalResponse(requestId, action, feedback, toolUseId) {
       handlePlanApproval(ctx, deps, requestId, action, feedback, toolUseId)

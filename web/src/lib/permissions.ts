@@ -18,6 +18,8 @@ export interface ResolvedPermissions {
   canSettings: boolean
   canVoice: boolean
   canNotifications: boolean
+  /** THE DIALOGUE: may interact with a live dialog. False = read-only view. */
+  canDialogInteract: boolean
 }
 
 /** Default permissions (admin -- everything enabled) */
@@ -34,4 +36,5 @@ export const DEFAULT_PERMISSIONS: ResolvedPermissions = {
   canSettings: true,
   canVoice: true,
   canNotifications: true,
+  canDialogInteract: true,
 }

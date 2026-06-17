@@ -581,9 +581,14 @@ export function dialogToolInputSchema(): Record<string, unknown> {
         description:
           "Opt-in width for larger designs. 'normal' (default) for forms/choices; 'wide' for side-by-side comparisons, mermaid diagrams, or multi-column block layouts; 'full' for the largest designs.",
       },
+      persistent: {
+        type: 'boolean',
+        description:
+          'Make this a LIVE dialog that survives across turns instead of a one-shot. The user interacts locally (instant, no agent turns) and hits one "Send to agent" button; you receive the full form state in ONE turn and patch the dialog in place with update_dialog(dialogId, ops) -- it stays open. Reopen a closed one with reopen_dialog. Use ONLY when the artifact must persist AND you will re-derive content from interaction (e.g. comment-on-a-design -> redraw); for plain multi-step collection use "pages" (instant). Every block MUST have a stable "id" so patches reconcile without losing input.',
+      },
       timeout: {
         type: 'number',
-        description: 'Timeout in seconds (default 900, min 10, max 3600)',
+        description: 'Timeout in seconds (default 900, min 10, max 3600). Ignored when persistent (no timeout).',
       },
       submitLabel: { type: 'string', description: 'Submit button label (default "Submit")' },
       cancelLabel: { type: 'string', description: 'Cancel button label (default "Cancel")' },

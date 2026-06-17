@@ -20,6 +20,7 @@ import { appendFileSync } from 'node:fs'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
+import { type DialogEventLike, resolveDialogEventDelivery } from '../../shared/dialog-event-frame'
 import type { DialogResult } from '../../shared/dialog-schema'
 import { secureTmpPath } from '../../shared/secure-temp'
 import { debug } from './debug'
@@ -156,6 +157,27 @@ export function resolveDialog(dialogId: string, result: DialogResult): boolean {
   // reason) clears it for good.
   const dismissReason = result._timeout ? 'timeout' : result._cancelled ? 'cancelled' : undefined
   callbacks.onDialogDismiss?.(dialogId, dismissReason)
+  return true
+}
+
+/**
+ * THE DIALOGUE (D2) — deliver an inbound dialog_event as an EARNED agent turn.
+ *
+ * The broker already authorized + rate-limited + seq-stamped the event and
+ * forwarded it here. We only deliver it if the dialog is still OPEN in the
+ * host-authoritative registry (a stale/closed/orphaned dialog drops it). The
+ * dialog STAYS OPEN across the turn — no dismiss; the agent patches it in place
+ * via update_dialog. Content is framed UNTRUSTED (sender="dialog-untrusted",
+ * fenced form-data), never as instructions.
+ */
+export function deliverDialogEvent(event: DialogEventLike): boolean {
+  const decision = resolveDialogEventDelivery(openDialogs.get(event.dialogId), event)
+  if (!decision.deliver) {
+    elog(`event for ${decision.reason} dialog ${event.dialogId.slice(0, 8)} — dropped`)
+    return false
+  }
+  callbacks.onDeliverMessage?.(decision.content, decision.meta)
+  elog(`event delivered ${event.dialogId.slice(0, 8)} handler=${event.handlerId} on=${event.on} seq=${event.seq}`)
   return true
 }
 

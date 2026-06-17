@@ -16,73 +16,10 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Markdown } from '@/components/markdown'
 import { Button } from '@/components/ui/button'
 import { cn, haptic } from '@/lib/utils'
+import { collectRequired, getInitialValues, hasValue } from './dialog-form-init'
 import { ComponentRenderer, type DialogFormState } from './dialog-renderer'
-import type { DialogComponent, DialogLayout, DialogResult } from './types'
-
-// Opt-in width for larger designs (side-by-side, mermaid, multi-column blocks).
-const DIALOG_WIDTH_CLASS: Record<string, string> = {
-  normal: 'sm:w-[560px]',
-  wide: 'sm:w-[min(900px,92vw)]',
-  full: 'sm:w-[96vw] sm:max-w-[1400px]',
-}
-
-// Initialize form state from component defaults (recursively)
-function collectDefaults(components: DialogComponent[], values: Record<string, unknown>): void {
-  for (const comp of components) {
-    switch (comp.type) {
-      case 'Options':
-        if (comp.default !== undefined) values[comp.id] = comp.default
-        break
-      case 'TextInput':
-        if (comp.default !== undefined) values[comp.id] = comp.default
-        break
-      case 'Toggle':
-        values[comp.id] = comp.default ?? false
-        break
-      case 'Slider':
-        values[comp.id] = comp.default ?? comp.min ?? 0
-        break
-      case 'ImagePicker':
-        break
-      case 'Stack':
-      case 'Grid':
-      case 'Group':
-        collectDefaults(comp.children, values)
-        break
-    }
-  }
-}
-
-function getInitialValues(layout: DialogLayout): Record<string, unknown> {
-  const values: Record<string, unknown> = {}
-  if (layout.body) {
-    collectDefaults(layout.body, values)
-  } else if (layout.pages) {
-    for (const page of layout.pages) {
-      collectDefaults(page.body, values)
-    }
-  }
-  return values
-}
-
-function collectRequired(components: DialogComponent[]): string[] {
-  const ids: string[] = []
-  for (const comp of components) {
-    if ('required' in comp && comp.required && 'id' in comp) {
-      ids.push(comp.id)
-    }
-    if ('children' in comp) {
-      ids.push(...collectRequired(comp.children))
-    }
-  }
-  return ids
-}
-
-function hasValue(val: unknown): boolean {
-  if (val === undefined || val === null || val === '') return false
-  if (Array.isArray(val)) return val.length > 0
-  return true
-}
+import { DIALOG_WIDTH_CLASS } from './dialog-width'
+import type { DialogLayout, DialogResult } from './types'
 
 function formatCountdown(seconds: number): string {
   const m = Math.floor(seconds / 60)

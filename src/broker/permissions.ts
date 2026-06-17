@@ -157,6 +157,9 @@ export interface ResolvedPermissions {
   canSettings: boolean
   canVoice: boolean
   canNotifications: boolean
+  /** THE DIALOGUE: may interact with a live dialog (emit dialog_event). Off for
+   *  default shares; the panel shows the dialog read-only when false. */
+  canDialogInteract: boolean
 }
 
 export function resolvePermissionFlags(
@@ -178,6 +181,7 @@ export function resolvePermissionFlags(
     canSettings: permissions.has('settings'),
     canVoice: permissions.has('voice'),
     canNotifications: permissions.has('notifications'),
+    canDialogInteract: permissions.has('dialog:interact'),
   }
 }
 
