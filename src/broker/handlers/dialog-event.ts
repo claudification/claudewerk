@@ -12,7 +12,8 @@
 import { guardDialogEvent } from '../dialog-interact-guard'
 import { withinEventStateCap } from '../dialog-live-store'
 import { DIALOG_EVENT_RATE, SlidingWindowRateLimiter } from '../dialog-rate-limit'
-import type { MessageData, MessageHandler } from '../handler-context'
+import { recordDialogTurn } from '../dialog-telemetry'
+import type { HandlerContext, MessageData, MessageHandler } from '../handler-context'
 
 const EVENT_KINDS = new Set(['click', 'change', 'submit', 'close'])
 const eventLimiter = new SlidingWindowRateLimiter(DIALOG_EVENT_RATE)
@@ -24,6 +25,42 @@ export function resetDialogEventLimiter(): void {
 
 function echo(data: MessageData): { requestId?: string } {
   return typeof data.requestId === 'string' ? { requestId: data.requestId } : {}
+}
+
+interface ForwardEvent {
+  conversationId: string
+  dialogId: string
+  on: string
+  seq: number
+  principal: string
+}
+
+/** Forward an authorized event to the host, count earned turns, then ack the panel. */
+function forwardEvent(ctx: HandlerContext, data: MessageData, ev: ForwardEvent): void {
+  const { conversationId, dialogId, on, seq } = ev
+  const targetWs = ctx.conversations.getConversationSocket(conversationId)
+  if (targetWs) {
+    targetWs.send(
+      JSON.stringify({
+        type: 'dialog_event',
+        conversationId,
+        dialogId,
+        seq,
+        handlerId: data.handlerId,
+        on,
+        value: data.value,
+        state: withinEventStateCap(data.state) ? (data.state ?? {}) : {},
+      }),
+    )
+  }
+
+  // A `submit` is one earned agent round-trip — count it for overuse telemetry.
+  if (on === 'submit') recordDialogTurn(conversationId, dialogId, Date.now(), ctx.log)
+
+  ctx.reply({ type: 'dialog_event_result', ok: true, conversationId, dialogId, seq, ...echo(data) })
+  ctx.log.info(
+    `[dialog-live] event dialog=${dialogId.slice(0, 8)} conv=${conversationId.slice(0, 8)} on=${on} handler=${String(data.handlerId)} seq=${seq} principal=${ev.principal} forwarded=${!!targetWs}`,
+  )
 }
 
 export const dialogEvent: MessageHandler = (ctx, data) => {
@@ -64,25 +101,6 @@ export const dialogEvent: MessageHandler = (ctx, data) => {
   slot.lastEventSeq = seq
   ctx.conversations.persistConversationById(conversationId)
 
-  // Forward to the host (routing only; host turn delivery is D2).
-  const targetWs = ctx.conversations.getConversationSocket(conversationId)
-  if (targetWs) {
-    targetWs.send(
-      JSON.stringify({
-        type: 'dialog_event',
-        conversationId,
-        dialogId,
-        seq,
-        handlerId: data.handlerId,
-        on,
-        value: data.value,
-        state: withinEventStateCap(data.state) ? (data.state ?? {}) : {},
-      }),
-    )
-  }
-
-  ctx.reply({ type: 'dialog_event_result', ok: true, conversationId, dialogId, seq, ...echo(data) })
-  ctx.log.info(
-    `[dialog-live] event dialog=${dialogId.slice(0, 8)} conv=${conversationId.slice(0, 8)} on=${on} handler=${String(data.handlerId)} seq=${seq} principal=${guard.principal} forwarded=${!!targetWs}`,
-  )
+  // Forward to the host (routing only; host turn delivery is D2) + ack the panel.
+  forwardEvent(ctx, data, { conversationId, dialogId, on, seq, principal: guard.principal })
 }
