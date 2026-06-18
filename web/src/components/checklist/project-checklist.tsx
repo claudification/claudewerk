@@ -5,13 +5,18 @@
  * one per line with markdown-task parsing), and links to the completed archive
  * + the bulk markdown editor. Lives on the eager hot path, so it stays light.
  *
- * Empty state: with no open items the whole block stays hidden until the
- * project HEADER is hovered (so an empty project -- including one with no active
+ * Narrow screens: the whole feature is hidden below the `sm` breakpoint
+ * (`hidden sm:block`) -- notes are a desktop/tablet affordance, not something
+ * to crowd a phone's conversation list with. iPad and up (>= 640px) still get
+ * it, regardless of touch vs cursor.
+ *
+ * Empty state: with no open items the block stays hidden until the project
+ * HEADER is hovered (so an empty project -- including one with no active
  * conversations -- shows no editor at rest, only a reveal-on-hover affordance).
- * On touch devices (no `hover:hover`) it stays visible, since there is no hover
- * to reveal it. The project node wraps the header + this block in a
- * `group/projhead` marker -- scoped to the header, NOT the whole card, so
- * hovering a conversation row does not pop the empty block open.
+ * On touch devices (no `hover:hover`, e.g. an iPad) it stays visible once past
+ * the `sm` gate, since there is no hover to reveal it. The project node wraps
+ * the header + this block in a `group/projhead` marker -- scoped to the header,
+ * NOT the whole card, so hovering a conversation row does not pop it open.
  */
 
 import { ListChecks, Pencil, Plus } from 'lucide-react'
@@ -82,7 +87,7 @@ export function ProjectChecklist({ project }: { project: string }) {
   // devices (no hover:hover) skip the clamp and keep it visible.
   if (!hasItems) {
     return (
-      <div className="overflow-hidden transition-[max-height] duration-150 [@media(hover:hover)]:max-h-0 [@media(hover:hover)]:group-hover/projhead:max-h-16">
+      <div className="hidden sm:block overflow-hidden transition-[max-height] duration-150 [@media(hover:hover)]:max-h-0 [@media(hover:hover)]:group-hover/projhead:max-h-16">
         <div className="border-t border-border/40 bg-muted/10 py-1">
           {addField}
           {footer}
@@ -92,7 +97,7 @@ export function ProjectChecklist({ project }: { project: string }) {
   }
 
   return (
-    <div className="border-t border-border/40 bg-muted/10 py-1">
+    <div className="hidden sm:block border-t border-border/40 bg-muted/10 py-1">
       {open.map(item => (
         <ChecklistRow key={item.id} project={project} item={item} />
       ))}
