@@ -159,79 +159,84 @@ const ProjectConversationGroup = memo(
     const normalGroups = useMemo(() => groupByLineage(normal, orphanRoots), [normal, orphanRoots])
 
     return (
-      <div className="group/project">
+      <div>
         <div
           className="border border-border"
           style={displayColor ? { borderLeftColor: displayColor, borderLeftWidth: '3px' } : undefined}
         >
-          <ProjectContextMenu
-            project={project}
-            conversations={conversations}
-            onOpenSettings={() => setShowSettings(true)}
-          >
-            {/* contains nested interactive children (settings/dismiss buttons); cannot be a native <button> */}
-            {/* react-doctor-disable-next-line react-doctor/prefer-tag-over-role */}
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => {
-                haptic('tap')
-                selectProject(project)
-              }}
-              onKeyDown={e => {
-                if (e.key === 'Enter' || e.key === ' ') {
+          {/* group/projhead scopes the checklist's reveal-on-hover to the header
+              (+ the checklist itself), NOT the whole card -- hovering a
+              conversation row must not pop the empty notes block open. */}
+          <div className="group/projhead">
+            <ProjectContextMenu
+              project={project}
+              conversations={conversations}
+              onOpenSettings={() => setShowSettings(true)}
+            >
+              {/* contains nested interactive children (settings/dismiss buttons); cannot be a native <button> */}
+              {/* react-doctor-disable-next-line react-doctor/prefer-tag-over-role */}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => {
                   haptic('tap')
                   selectProject(project)
-                }
-              }}
-              className="flex items-center gap-1.5 p-3 pb-1 cursor-pointer hover:bg-accent/10 transition-colors"
-            >
-              {ps?.icon && (
-                <span style={displayColor ? { color: displayColor } : undefined}>
-                  <ProjectIcon iconId={ps.icon} />
-                </span>
-              )}
-              <span
-                className="font-bold text-sm flex-1 truncate text-primary"
-                style={displayColor ? { color: displayColor } : undefined}
-                title={projectPath(project)}
-              >
-                {displayName}
-              </span>
-              {ps?.pinned && <Pin className="size-2.5 text-muted-foreground/30 shrink-0" />}
-              <span className="text-[10px] text-muted-foreground font-mono">
-                {conversations.length} conversation{conversations.length === 1 ? '' : 's'}
-              </span>
-              {hasPendingLink && (
-                <span
-                  className="text-[9px] text-teal-400 font-bold animate-pulse"
-                  title="A conversation in this project has a pending link request"
-                >
-                  LINK
-                </span>
-              )}
-              {hasPendingPermission && (
-                <span
-                  className="text-[9px] text-amber-400 font-bold animate-pulse"
-                  title="A conversation in this project has a pending permission request"
-                >
-                  PERM
-                </span>
-              )}
-              {hasPendingAttention && !hasPendingPermission && (
-                <span className="text-[9px] text-amber-400 font-bold animate-pulse">WAITING</span>
-              )}
-              {hasNotification && <span className="text-[9px] text-teal-400 font-bold">NOTIFY</span>}
-              {ended.length > 0 && <DismissAllEndedButton endedIds={ended.map(s => s.id)} />}
-              <ProjectSettingsButton
-                onClick={e => {
-                  e.stopPropagation()
-                  setShowSettings(!showSettings)
                 }}
-              />
-            </div>
-          </ProjectContextMenu>
-          <ProjectChecklist project={project} />
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    haptic('tap')
+                    selectProject(project)
+                  }
+                }}
+                className="flex items-center gap-1.5 p-3 pb-1 cursor-pointer hover:bg-accent/10 transition-colors"
+              >
+                {ps?.icon && (
+                  <span style={displayColor ? { color: displayColor } : undefined}>
+                    <ProjectIcon iconId={ps.icon} />
+                  </span>
+                )}
+                <span
+                  className="font-bold text-sm flex-1 truncate text-primary"
+                  style={displayColor ? { color: displayColor } : undefined}
+                  title={projectPath(project)}
+                >
+                  {displayName}
+                </span>
+                {ps?.pinned && <Pin className="size-2.5 text-muted-foreground/30 shrink-0" />}
+                <span className="text-[10px] text-muted-foreground font-mono">
+                  {conversations.length} conversation{conversations.length === 1 ? '' : 's'}
+                </span>
+                {hasPendingLink && (
+                  <span
+                    className="text-[9px] text-teal-400 font-bold animate-pulse"
+                    title="A conversation in this project has a pending link request"
+                  >
+                    LINK
+                  </span>
+                )}
+                {hasPendingPermission && (
+                  <span
+                    className="text-[9px] text-amber-400 font-bold animate-pulse"
+                    title="A conversation in this project has a pending permission request"
+                  >
+                    PERM
+                  </span>
+                )}
+                {hasPendingAttention && !hasPendingPermission && (
+                  <span className="text-[9px] text-amber-400 font-bold animate-pulse">WAITING</span>
+                )}
+                {hasNotification && <span className="text-[9px] text-teal-400 font-bold">NOTIFY</span>}
+                {ended.length > 0 && <DismissAllEndedButton endedIds={ended.map(s => s.id)} />}
+                <ProjectSettingsButton
+                  onClick={e => {
+                    e.stopPropagation()
+                    setShowSettings(!showSettings)
+                  }}
+                />
+              </div>
+            </ProjectContextMenu>
+            <ProjectChecklist project={project} />
+          </div>
           {/* -mb-px overlaps the last card's bottom border onto the container's
               bottom border so they read as one line (no doubled/gapped edge). */}
           <div className="space-y-0.5 -mb-px">
@@ -337,11 +342,13 @@ export function PinnedProjectNode({ project }: { project: string }) {
 
   return (
     <PinnedProjectContextMenu project={project} onOpenSettings={() => setShowSettings(true)}>
-      {/* group/project drives the checklist's reveal-on-hover empty state. The
+      {/* group/projhead drives the checklist's reveal-on-hover empty state. For
+          a pinned node the group spans only the header button + checklist (no
+          conversation list), so hovering the header is the reveal trigger. The
           checklist sits OUTSIDE the button (it has its own interactive input +
           buttons, which cannot nest inside a <button>). */}
       <div
-        className={cn('group/project border border-border hover:border-primary', isSelected && 'border-primary')}
+        className={cn('group/projhead border border-border hover:border-primary', isSelected && 'border-primary')}
         style={displayColor ? { borderLeftColor: displayColor, borderLeftWidth: '3px' } : undefined}
       >
         <button
