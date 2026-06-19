@@ -30,7 +30,14 @@ const CLAUDE_SHORTCUTS: ShortcutButton[] = [
   { label: 'M-o fast', data: '\x1bo', title: 'Toggle fast mode (Alt+O)' },
 ]
 
-type Modifier = 'ctrl' | 'alt' | 'meta'
+// Shift transforms special keys into distinct escape sequences (not a simple prefix).
+const SHIFT_MAP: Record<string, string> = {
+  '\t': '\x1b[Z', // Shift+Tab  -> back-tab (Claude Code: cycle modes)
+  '\x1b[A': '\x1b[1;2A', // Shift+Up
+  '\x1b[B': '\x1b[1;2B', // Shift+Down
+}
+
+type Modifier = 'ctrl' | 'alt' | 'meta' | 'shift'
 
 export function TerminalToolbar({ onSend }: TerminalToolbarProps) {
   const [showClaude, setShowClaude] = useState(false)
@@ -44,6 +51,11 @@ export function TerminalToolbar({ onSend }: TerminalToolbarProps) {
       } catch {
         // Clipboard permission denied or unavailable
       }
+      return
+    }
+    if (activeModifier === 'shift') {
+      onSend(SHIFT_MAP[data] ?? data)
+      setActiveModifier(null)
       return
     }
     onSend(data)
@@ -67,6 +79,9 @@ export function TerminalToolbar({ onSend }: TerminalToolbarProps) {
         break
       case 'meta':
         data = `\x1b${key}`
+        break
+      case 'shift':
+        data = key.toUpperCase()
         break
       default:
         return
@@ -102,7 +117,7 @@ export function TerminalToolbar({ onSend }: TerminalToolbarProps) {
         <div className="w-px h-5 bg-border mx-1" />
 
         {/* Modifier locks */}
-        {(['ctrl', 'alt', 'meta'] as Modifier[]).map(mod => (
+        {(['ctrl', 'alt', 'meta', 'shift'] as Modifier[]).map(mod => (
           <button
             key={mod}
             type="button"
