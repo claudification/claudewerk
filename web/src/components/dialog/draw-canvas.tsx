@@ -11,6 +11,13 @@ import { type Editor, getSnapshot, loadSnapshot, type TLEditorSnapshot, Tldraw }
 import 'tldraw/tldraw.css'
 import { utf8Bytes } from '@shared/draw'
 
+// tldraw 5.x is license-enforced: on a production domain WITHOUT a key it paints
+// for ~2s, runs its license check, then blanks the canvas (the container survives
+// but its only child is `data-testid="tl-license-expired"`, display:none). The key
+// is public + domain-bound (safe to ship in the client bundle); it comes from
+// web/.env at build time. Undefined => eval mode (watermark on localhost only).
+const LICENSE_KEY = import.meta.env.VITE_TLDRAW_LICENSE_KEY as string | undefined
+
 export interface DrawCanvasProps {
   /** Parsed tldraw snapshot to seed the canvas (null = blank). */
   initialSnapshot?: unknown
@@ -54,5 +61,5 @@ export default function DrawCanvas({ initialSnapshot, readOnly, onSnapshot }: Dr
     [initialSnapshot, readOnly, onSnapshot],
   )
 
-  return <Tldraw onMount={handleMount} hideUi={readOnly} />
+  return <Tldraw licenseKey={LICENSE_KEY} onMount={handleMount} hideUi={readOnly} />
 }
