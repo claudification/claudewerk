@@ -39,8 +39,10 @@ import {
 import { createConversationStore } from './conversation-store'
 import { type ContextDeps, createContext } from './create-context'
 import { closeDispatchAudit, initDispatchAudit } from './desk/audit'
+import { startDeskMemoryService, stopDeskMemoryService } from './desk/desk-memory-service'
 import { emitDeskEvent } from './desk/event-registry'
 import { initDispatchMemory } from './desk/memory'
+import { closeProjectMemory, initProjectMemory } from './desk/project-memory'
 import { closeDispatchThreads, initDispatchThreads } from './desk/threads'
 import { startExternalStatusPolling, stopExternalStatusPolling } from './external-status'
 import { createGatewayRegistry } from './gateway-registry'
@@ -81,6 +83,7 @@ import { dropSocketFromWatches, initProjectWatchRegistry } from './project-watch
 import { initPush, isPushConfigured, sendPushToAll } from './push'
 import { makeCommitGatherer } from './recap/commit-gather'
 import { gatherConversations } from './recap/period/gather'
+import { chat } from './recap/shared/openrouter-client'
 import { initRecapOrchestrator } from './recap-orchestrator'
 import { createRouter } from './routes'
 import { createSentinelRegistry } from './sentinel-registry'
@@ -314,6 +317,10 @@ async function main() {
   initDispatchAudit(authCacheDir)
   initDispatchThreads(authCacheDir)
   initDispatchMemory(authCacheDir)
+  // Per-project condensed memory (the dispatcher BRAIN's durable store). The
+  // always-on desk-memory SERVICE that feeds it is started after recap init
+  // (it backfills from recaps).
+  initProjectMemory(authCacheDir)
 
   // Initialize analytics store (SQLite, non-critical)
   initAnalyticsStore(authCacheDir)
@@ -523,6 +530,15 @@ async function main() {
     },
   })
 
+  // Start the always-on dispatcher memory service (P2+P3): it subscribes to the
+  // in-process event bus and maintains per-project condensed briefs in the
+  // BACKGROUND, backfilling each project from its recaps on first sight.
+  startDeskMemoryService({
+    chat: req => chat(req),
+    listRecaps: (projectUri, limit) =>
+      recapOrch.list({ projectUri, status: ['done'], limit }).map(r => ({ title: r.title, subtitle: r.subtitle })),
+  })
+
   // G2 boot sweep: a recap whose async run was mid-flight when this broker last
   // stopped is now orphaned (the process took the run with it). Reclaim every
   // such row to 'interrupted' (resumable, manual-only) so it can't sit forever
@@ -598,6 +614,8 @@ async function main() {
     closeChecklistStore()
     closeDispatchAudit()
     closeDispatchThreads()
+    stopDeskMemoryService()
+    closeProjectMemory()
     store.close()
     process.exit(0)
   })
@@ -609,6 +627,8 @@ async function main() {
     closeChecklistStore()
     closeDispatchAudit()
     closeDispatchThreads()
+    stopDeskMemoryService()
+    closeProjectMemory()
     store.close()
     process.exit(0)
   })
