@@ -1,18 +1,16 @@
 import { useEffect } from 'react'
-import { DispatchConsole } from './dispatch-console'
+import { DispatchFlow } from './dispatch-flow'
 import { DispatchHeader } from './dispatch-header'
-import { DispatchRightPane } from './dispatch-right-pane'
-import { DispatchRoster } from './dispatch-roster'
-import { DispatchScopeBar } from './dispatch-scope-bar'
+import { DispatchIntentInput } from './dispatch-intent-input'
+import { DispatchScopeNote } from './dispatch-scope-note'
 import { useDispatchStore } from './dispatch-store'
 import './dispatch.css'
 
 /**
- * The dispatch cockpit -- a per-user command deck that floats over the control
- * panel. Lazy-mounted via the arming bus (dispatch-bus); visibility is the
- * store's `open` flag. Three columns: fleet roster (attention-first), the
- * dispatch console (intent -> decision), and a switchable memory/conversation/
- * workspace rail. Esc or the scrim dismisses it.
+ * The dispatch desk -- a light-touch concierge that fronts everything. You tell
+ * it what you need in plain words; it figures out who and takes you there. A
+ * calm centred column (works on a phone), not a fleet dashboard. Lazy-mounted
+ * via the arming bus; Esc or the scrim dismisses it.
  */
 export default function DispatchOverlay() {
   const open = useDispatchStore(s => s.open)
@@ -34,17 +32,13 @@ export default function DispatchOverlay() {
   if (!open) return null
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Dispatch cockpit">
+    <div role="dialog" aria-modal="true" aria-label="Dispatch">
       <button type="button" aria-label="Close dispatch" tabIndex={-1} className="dispatch-scrim" onClick={close} />
       <div className="dispatch-deck">
-        <div className="dispatch-grid-texture pointer-events-none absolute inset-0" />
         <DispatchHeader />
-        <DispatchScopeBar />
-        <div className="relative flex min-h-0 flex-1">
-          <DispatchRoster />
-          <DispatchConsole />
-          <DispatchRightPane />
-        </div>
+        <DispatchFlow />
+        <DispatchIntentInput />
+        <DispatchScopeNote />
       </div>
     </div>
   )

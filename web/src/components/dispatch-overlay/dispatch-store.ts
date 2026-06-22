@@ -15,7 +15,7 @@
 
 import type { DispatchCandidate, DispatchDecision, DispatchThread } from '@shared/protocol'
 import { create } from 'zustand'
-import { wsSend } from '@/hooks/use-conversations'
+import { useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import { dispatchBus } from './dispatch-bus'
 
 export type RightPane = 'memory' | 'conversation' | 'workspace'
@@ -47,6 +47,8 @@ interface DispatchState {
   closeOverlay(): void
   selectConv(id: string | null): void
   setRightPane(pane: RightPane): void
+  /** "Take me here": hand off to the conversation in the app, close the desk. */
+  routeTo(id: string): void
 
   // inbound (called by the WS handlers)
   onRequestResult(msg: { ok?: boolean; error?: string; decision?: DispatchDecision }): void
@@ -125,6 +127,10 @@ export const useDispatchStore = create<DispatchState>((set, get) => ({
   closeOverlay: () => set({ open: false }),
   selectConv: id => set({ activeConvId: id, rightPane: id ? 'conversation' : 'memory' }),
   setRightPane: pane => set({ rightPane: pane }),
+  routeTo: id => {
+    useConversationsStore.getState().selectConversation(id, 'dispatch')
+    set({ open: false })
+  },
 
   onRequestResult: msg => {
     if (msg.ok && msg.decision) {
