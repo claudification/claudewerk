@@ -1,5 +1,5 @@
 import { formatAge, truncate } from '@/lib/utils'
-import { MemorySection } from './dispatch-memory-section'
+import { MemorySection, WorkspaceSection } from './dispatch-memory-section'
 import { useDispatchStore } from './dispatch-store'
 
 /** What the concierge is holding right now: the LIVE roster it covers ("active
@@ -68,6 +68,7 @@ export function DispatchDesk() {
       )}
 
       <MemorySection />
+      <WorkspaceSection />
     </div>
   )
 }

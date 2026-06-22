@@ -1,5 +1,20 @@
-/** Dispatcher agent-loop model catalog + the streamed tool-event shape.
- *  Split out of dispatch-store.ts to keep the store under the size bar. */
+/** Dispatcher agent-loop model catalog + the streamed tool-event shape + pure
+ *  store reducers. Split out of dispatch-store.ts to keep the store under the bar. */
+
+import type { DispatchDecision } from '@shared/protocol'
+
+/** A virtual-fs scratch workspace the dispatcher uses (/work/<x>). */
+export interface WorkspaceInfo {
+  workspace: string
+  files: string[]
+}
+
+/** Merge a decision into the feed, de-duping by decisionId (a confirm/resolve
+ *  replaces the held card rather than stacking a duplicate). */
+export function mergeDecision(feed: DispatchDecision[], decision: DispatchDecision): DispatchDecision[] {
+  const without = feed.filter(d => d.decisionId !== decision.decisionId)
+  return [decision, ...without].slice(0, 40)
+}
 
 /** Models the dispatcher agent loop can run on (user-switchable). Haiku by
  *  design -- tiny-context thin router (plan-dispatcher-build.md §9). */

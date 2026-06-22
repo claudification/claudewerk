@@ -18,6 +18,7 @@ import { appendMemoryFacts, digestTurn, readMemory } from './memory'
 import type { DispatchRuntime } from './runtime'
 import { listThreads, upsertThread } from './threads'
 import { defineTool, type Toolset } from './tool-def'
+import { buildWorkspaceToolset } from './workspace'
 
 const DISPATCHER_SYSTEM = [
   'You are the front desk -- the live CONTROLLER for the user`s fleet of coding',
@@ -31,6 +32,8 @@ const DISPATCHER_SYSTEM = [
   '  use the tools (inject / interrupt / terminate / spawn / revive / configure /',
   '  link). Do not just describe what you would do -- do it.',
   '- terminate is IRREVERSIBLE: confirm with the user first unless they were explicit.',
+  '- You have a scratch WORKSPACE (a virtual fs, workspace_* tools) to draft or',
+  '  stage simple work yourself before acting. It is scratch, not storage.',
   '- Keep replies short and plain-spoken, like a good assistant talking out loud.',
   '  After acting, say what you did in one line. No markdown headers or lists.',
 ].join('\n')
@@ -65,7 +68,7 @@ function threadTools(): Toolset {
 }
 
 function buildAgentToolset(rt: DispatchRuntime): Toolset {
-  return { ...buildControlToolset(buildControlDeps(rt)), ...threadTools() }
+  return { ...buildControlToolset(buildControlDeps(rt)), ...threadTools(), ...buildWorkspaceToolset() }
 }
 
 export interface RunDispatchAgentOpts {

@@ -1,16 +1,11 @@
 /**
  * Dispatch overlay state (the per-user cockpit's brain).
  *
- * Eager + light by design: the heavy UI is lazy, but this store must be live
- * before the overlay first opens so broadcast `dispatch_decision` frames are
- * captured. It owns the intent draft, the session decision feed, the near-memory
- * threads, and the selected conversation. All WS traffic goes through `wsSend`
- * (client->broker) and the inbound handlers wired into use-websocket-handlers.
- *
- * Per-user scoping: the broker WS seam stamps `userId` (the authed connection)
- * on every decision/threads reply; we surface it so the cockpit shows whose
- * dispatch this is. When the backend store gains a user_id column the same
- * field filters server-side -- drop-in, no client change.
+ * Eager + light: must be live before the overlay first opens so broadcast frames
+ * are captured. Owns the intent draft, decision feed, streamed tool gears, model
+ * choice, near-memory threads, durable memory, and scratch workspaces. All WS
+ * traffic goes through `wsSend` + the inbound handlers in use-websocket-handlers.
+ * `userId` (stamped by the broker WS seam) scopes everything per user.
  */
 
 import type {
@@ -23,7 +18,14 @@ import type {
 import { create } from 'zustand'
 import { useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import { dispatchBus } from './dispatch-bus'
-import { appendToolCall, DISPATCH_MODELS, type DispatchToolEvent, resolveToolResult } from './dispatch-models'
+import {
+  appendToolCall,
+  DISPATCH_MODELS,
+  type DispatchToolEvent,
+  mergeDecision,
+  resolveToolResult,
+  type WorkspaceInfo,
+} from './dispatch-models'
 
 export type RightPane = 'memory' | 'conversation' | 'workspace'
 
@@ -49,6 +51,8 @@ interface DispatchState {
   showThreads: boolean
   /** The dispatcher's durable memory file (markdown), for inspection. */
   memory: string
+  /** The dispatcher's virtual-fs scratch workspaces (/work/<x>). */
+  workspaces: WorkspaceInfo[]
 
   // intent / submission
   setIntent(intent: string): void
@@ -75,6 +79,7 @@ interface DispatchState {
     threads?: DispatchThread[]
     roster?: DispatchCandidate[]
     memory?: string
+    workspaces?: WorkspaceInfo[]
     userId?: string | null
   }): void
   onDecisionBroadcast(decision: DispatchDecision): void
@@ -84,13 +89,6 @@ interface DispatchState {
 
 let reqSeq = 0
 const nextRequestId = () => `dreq_${Date.now().toString(36)}_${++reqSeq}`
-
-/** Merge a decision into the feed, de-duping by decisionId (a confirm/resolve
- *  replaces the held card rather than stacking a duplicate). */
-function mergeDecision(feed: DispatchDecision[], decision: DispatchDecision): DispatchDecision[] {
-  const without = feed.filter(d => d.decisionId !== decision.decisionId)
-  return [decision, ...without].slice(0, 40)
-}
 
 export const useDispatchStore = create<DispatchState>((set, get) => ({
   open: false,
@@ -108,6 +106,7 @@ export const useDispatchStore = create<DispatchState>((set, get) => ({
   toolEvents: {},
   showThreads: true,
   memory: '',
+  workspaces: [],
 
   setIntent: intent => set({ intent }),
   setModel: slug => set({ model: slug }),
@@ -187,6 +186,7 @@ export const useDispatchStore = create<DispatchState>((set, get) => ({
       threads: msg.threads ?? [],
       roster: msg.roster ?? [],
       memory: msg.memory ?? '',
+      workspaces: msg.workspaces ?? [],
       userId: msg.userId ?? s.userId,
     })),
 

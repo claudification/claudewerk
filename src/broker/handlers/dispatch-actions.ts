@@ -20,6 +20,7 @@ import { readMemory } from '../desk/memory'
 import type { DispatchCommand } from '../desk/orchestrate'
 import { type DispatchRuntime, listDispatchRosterCandidates, runDispatch } from '../desk/runtime'
 import { listThreads } from '../desk/threads'
+import { workspaceSnapshot } from '../desk/workspace'
 import { GuardError, type HandlerContext, type MessageData, type MessageHandler } from '../handler-context'
 import { CONTROL_PANEL_ONLY, registerHandlers } from '../message-router'
 
@@ -143,7 +144,8 @@ const dispatchListThreads: MessageHandler = (ctx: HandlerContext, data: MessageD
   const threads = listThreadsForUser(userId, limit)
   const roster = listDispatchRosterCandidates(ctx.conversations)
   const memory = readMemory(userId)
-  ctx.reply({ type: 'dispatch_threads_result', requestId, threads, roster, memory, userId })
+  const workspaces = workspaceSnapshot()
+  ctx.reply({ type: 'dispatch_threads_result', requestId, threads, roster, memory, workspaces, userId })
 }
 
 export function registerDispatchHandlers(): void {

@@ -1621,6 +1621,8 @@ export interface DispatchThreadsResult {
   /** The dispatcher's durable memory file (markdown), so the overlay can show
    *  what it remembers long-term. Absent on older brokers. */
   memory?: string
+  /** The dispatcher's virtual-fs scratch workspaces (/work/<x>), for inspection. */
+  workspaces?: { workspace: string; files: string[] }[]
   /** The authed user the threads were scoped to (null when single-user). */
   userId?: string | null
 }
