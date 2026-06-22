@@ -134,6 +134,17 @@ function DialogValues({ values }: { values: Array<[string, unknown]> }) {
               </span>
             ) : typeof val === 'string' && val.length > 0 ? (
               <span className="text-foreground/90">{val}</span>
+            ) : val !== null && typeof val === 'object' ? (
+              // Nested object value, e.g. a commentable diagram's per-node notes
+              // (`{ nodeId: note }`). Render as a sub-list instead of [object Object].
+              <span className="flex flex-col gap-0.5">
+                {Object.entries(val as Record<string, unknown>).map(([k, v]) => (
+                  <span key={k} className="flex items-start gap-1.5">
+                    <span className="text-violet-300/70 shrink-0">{k}:</span>
+                    <span className="text-foreground/80 break-all">{String(v)}</span>
+                  </span>
+                ))}
+              </span>
             ) : (
               <span className="text-muted-foreground/50">{String(val)}</span>
             )}
