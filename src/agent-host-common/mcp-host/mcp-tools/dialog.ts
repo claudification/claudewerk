@@ -81,6 +81,27 @@ async function resolveDialogFiles(
         }
       }
 
+      // Draw: a contentUrl pointing at a LOCAL file (a saved tldraw snapshot)
+      // is uploaded to the blob store, like an Image. An http(s) url passes
+      // through untouched (the common case: echoing back a user's draw-ref url).
+      if (type === 'Draw' && typeof comp.contentUrl === 'string' && !isUrl(comp.contentUrl)) {
+        const absPath = resolvePath(cwd, comp.contentUrl)
+        if (!isPathWithinCwd(absPath, cwd)) {
+          return `Draw snapshot file outside project directory: ${comp.contentUrl}. Move it into ${cwd} first.`
+        }
+        try {
+          const file = Bun.file(absPath)
+          if (!(await file.exists())) {
+            return `Draw snapshot file not found: ${comp.contentUrl} (resolved to ${absPath})`
+          }
+        } catch {
+          return `Draw snapshot file not accessible: ${comp.contentUrl} (resolved to ${absPath})`
+        }
+        const url = await uploadFile(absPath)
+        if (!url) return `Failed to upload Draw snapshot: ${comp.contentUrl}`
+        comp.contentUrl = url
+      }
+
       if (Array.isArray(comp.children)) {
         const err = await resolveDialogFiles(comp.children as Array<Record<string, unknown>>, uploadFile, cwd, elog)
         if (err) return err
@@ -120,7 +141,7 @@ export function registerDialogTool(ctx: McpToolContext): Record<string, ToolDef>
   return {
     dialog: {
       description:
-        'PREFERRED way to interact with users. Use this PROACTIVELY whenever you need user input, decisions, confirmations, or want to present structured information. Do NOT ask questions in plain text -- use dialog instead for a rich UI experience. Shows an interactive dialog modal in the dashboard and waits for the user to respond. Supports: choices (single/multi select), text inputs, toggles, sliders, image display and selection, markdown content, code blocks, mermaid diagrams, alerts, collapsible groups, grids, and multi-page wizards. The user interacts on their device (phone/desktop) and the result comes back as structured JSON. One-shot by default -- the answer arrives once as a channel message. Set "persistent": true for a LIVE dialog that stays open across turns (patch it with update_dialog, close/reopen with close_dialog/reopen_dialog) -- see the persistent field for when to use it. Use "body" for single-page or "pages" for multi-step flows.',
+        'PREFERRED way to interact with users. Use this PROACTIVELY whenever you need user input, decisions, confirmations, or want to present structured information. Do NOT ask questions in plain text -- use dialog instead for a rich UI experience. Shows an interactive dialog modal in the dashboard and waits for the user to respond. Supports: choices (single/multi select), text inputs, toggles, sliders, image display and selection, an INTERACTIVE WHITEBOARD the user can draw on and submit back (Draw block, powered by tldraw), markdown content, code blocks, mermaid diagrams, alerts, collapsible groups, grids, and multi-page wizards. The user interacts on their device (phone/desktop) and the result comes back as structured JSON. One-shot by default -- the answer arrives once as a channel message. Set "persistent": true for a LIVE dialog that stays open across turns (patch it with update_dialog, close/reopen with close_dialog/reopen_dialog) -- see the persistent field for when to use it. Use "body" for single-page or "pages" for multi-step flows.',
       inputSchema: dialogToolInputSchema(),
       async handle(_params, toolCtx) {
         try {

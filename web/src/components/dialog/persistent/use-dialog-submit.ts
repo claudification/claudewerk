@@ -17,6 +17,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { LiveDialogEntry } from '@/hooks/use-live-dialogs'
 import { useLiveDialogsStore } from '@/hooks/use-live-dialogs'
 import { haptic } from '@/lib/utils'
+import { materializeDrawValues } from '../draw-spill'
 
 export interface DialogSubmit {
   pending: boolean
@@ -75,17 +76,24 @@ export function usePersistentDialogSubmit(
 
   const canSubmit = !pending && gateOpen
 
-  const send = (final: boolean) => {
+  const send = async (final: boolean) => {
     if (!canSubmit) return
     haptic('success')
-    const state: Record<string, unknown> = { ...values }
+    // Lock the UI while any oversize drawing spills to a blob (async upload),
+    // so a double-tap can't fire two turns mid-upload. Stamp submitRev FIRST so
+    // the "new apply clears pending" effect doesn't misfire during the upload.
+    submitRev.current = entry.rev
+    setPending(true)
+    const materialized = await materializeDrawValues(values, conversationId)
+    const state: Record<string, unknown> = { ...materialized }
     if (activeAction) state._action = activeAction
     if (final) state._final = true
-    submitRev.current = entry.rev
-    if (!emit(conversationId, entry.dialogId, '__submit__', 'submit', undefined, state)) return
+    if (!emit(conversationId, entry.dialogId, '__submit__', 'submit', undefined, state)) {
+      setPending(false)
+      return
+    }
     // Hard terminal: close in the same gesture so the dialog stops immediately.
     if (final) emit(conversationId, entry.dialogId, '__close__', 'close', undefined, {})
-    setPending(true)
     markSubmitted(conversationId, entry.rev)
   }
 

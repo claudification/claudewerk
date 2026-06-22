@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import { dialogPrincipal, guardDialogEvent, hasDialogInteract } from './dialog-interact-guard'
+import { MAX_EVENT_STATE_BYTES } from './dialog-live-store'
 import type { WsData } from './handler-context'
 
 const DEFAULT_SHARE_PERMS = ['chat', 'chat:read', 'files:read', 'terminal:read']
@@ -114,7 +115,7 @@ describe('guardDialogEvent', () => {
       liveDialog: liveOpen,
       dialogId: 'd1',
       handlerId: 'h',
-      state: { blob: 'x'.repeat(200 * 1024) },
+      state: { blob: 'x'.repeat(MAX_EVENT_STATE_BYTES + 1) },
     })
     expect(r).toMatchObject({ ok: false, reason: 'too_large' })
   })

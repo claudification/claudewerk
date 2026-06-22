@@ -379,3 +379,51 @@ describe('rich plan blocks', () => {
     )
   })
 })
+
+describe('Draw block', () => {
+  it('accepts a minimal Draw block (id only)', () => {
+    const layout: DialogLayout = { title: 'Sketch', body: [{ type: 'Draw', id: 'canvas' }] }
+    expect(validateDialogLayout(layout)).toEqual([])
+  })
+
+  it('accepts Draw with inline content, contentUrl, readOnly and height', () => {
+    const layout: DialogLayout = {
+      title: 'Sketch',
+      body: [{ type: 'Draw', id: 'canvas', content: '{"document":{}}', readOnly: true, height: 600 }],
+    }
+    expect(validateDialogLayout(layout)).toEqual([])
+  })
+
+  it('rejects Draw without an id', () => {
+    const errors = validateDialogLayout({ title: 'x', body: [{ type: 'Draw' }] })
+    expect(errors).toContain('Draw.id is required')
+  })
+
+  it('rejects Draw with non-string content / contentUrl / non-number height', () => {
+    const errors = validateDialogLayout({
+      title: 'x',
+      body: [{ type: 'Draw', id: 'c', content: 42, contentUrl: {}, height: 'tall' }],
+    })
+    expect(errors).toContain('Draw.content must be a string (tldraw snapshot JSON)')
+    expect(errors).toContain('Draw.contentUrl must be a string URL')
+    expect(errors).toContain('Draw.height must be a number')
+  })
+
+  it('flags duplicate Draw ids (input component id-dedup)', () => {
+    const errors = validateDialogLayout({
+      title: 'x',
+      body: [
+        { type: 'Draw', id: 'dup' },
+        { type: 'Draw', id: 'dup' },
+      ],
+    })
+    expect(errors).toContain('Duplicate component id: "dup"')
+  })
+
+  it('documents the Draw block to the model in the tool schema', () => {
+    const schema = dialogToolInputSchema() as { properties: { body: { description: string } } }
+    const desc = schema.properties.body.description
+    expect(desc).toContain('Draw (')
+    expect(desc.toLowerCase()).toContain('tldraw')
+  })
+})

@@ -20,6 +20,22 @@ function isImageFile(file: File): boolean {
   const m = (file.name || '').toLowerCase().match(/\.([a-z0-9]+)$/)
   return m ? IMAGE_EXT.has(m[1]) : false
 }
+/**
+ * Bare upload: POST a File to the broker blob store and return its public URL.
+ * The single chokepoint for `/api/files` from the browser -- reuse it, never
+ * re-hand-roll the fetch (e.g. the Draw block spills its tldraw snapshot here).
+ */
+export async function uploadFile(file: File, conversationId?: string): Promise<{ url: string; filename: string }> {
+  const formData = new FormData()
+  formData.append('file', file, file.name || 'paste.png')
+  const headers: Record<string, string> = {}
+  if (conversationId) headers['x-conversation-id'] = conversationId
+  const res = await fetch('/api/files', { method: 'POST', body: formData, headers })
+  if (!res.ok) throw new Error(`Upload failed: ${res.status}`)
+  const { url, filename } = await res.json()
+  return { url, filename }
+}
+
 export async function uploadFileWithPlaceholder(
   file: File,
   insert: (placeholder: string) => void,
@@ -31,13 +47,7 @@ export async function uploadFileWithPlaceholder(
   const placeholder = `${bang}[uploading ${file.name || 'file'}...]`
   insert(placeholder)
   try {
-    const formData = new FormData()
-    formData.append('file', file, file.name || 'paste.png')
-    const headers: Record<string, string> = {}
-    if (conversationId) headers['x-conversation-id'] = conversationId
-    const res = await fetch('/api/files', { method: 'POST', body: formData, headers })
-    if (!res.ok) throw new Error(`Upload failed: ${res.status}`)
-    const { url, filename } = await res.json()
+    const { url, filename } = await uploadFile(file, conversationId)
     replace(placeholder, `${bang}[${filename}](${url})`)
   } catch {
     replace(placeholder, '![upload failed]')

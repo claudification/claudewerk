@@ -13,6 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { cn, haptic } from '@/lib/utils'
 import { isPlanBlock, PlanBlock } from './blocks'
 import { DiagramCommentPopover } from './diagram-comment-popover'
+import { DrawBlock } from './draw-block'
 import { applySelect, FieldLabel } from './field-helpers'
 import type { AlertIntent, ButtonIntent, ButtonVariant, DialogColor, DialogComponent } from './types'
 import { useDiagramComments } from './use-diagram-comments'
@@ -531,6 +532,18 @@ export const ComponentRenderer = memo(function ComponentRenderer({
         <CommentableDiagram content={component.content} id={component.id} form={form} />
       ) : (
         <DiagramBlock content={component.content} />
+      )
+    case 'Draw':
+      return (
+        <DrawBlock
+          id={component.id}
+          content={component.content}
+          contentUrl={component.contentUrl}
+          readOnly={component.readOnly}
+          height={component.height}
+          label={component.label}
+          form={form}
+        />
       )
     case 'Image':
       return <ImageBlock url={component.url} alt={component.alt} />

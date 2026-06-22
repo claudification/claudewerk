@@ -12,10 +12,21 @@
 import type { DialogSnapshot } from '../shared/dialog-live'
 import type { DialogLayout } from '../shared/dialog-schema'
 
-/** Max bytes of a persisted host snapshot (R2#3 — refuse oversize blobs). */
-export const MAX_SNAPSHOT_BYTES = 256 * 1024
-/** Max bytes of an inbound dialog_event `state` payload (R2#3). */
-export const MAX_EVENT_STATE_BYTES = 128 * 1024
+/**
+ * Max bytes of a persisted host snapshot (R2#3 — refuse oversize blobs).
+ * Headroom for one inline Draw block (tldraw snapshot up to DRAW_INLINE_MAX,
+ * 256KB) plus the surrounding layout chrome. Larger drawings ride as a
+ * contentUrl reference, so the persisted layout stays well under this.
+ */
+export const MAX_SNAPSHOT_BYTES = 512 * 1024
+/**
+ * Max bytes of an inbound dialog_event `state` payload (R2#3).
+ * Raised for the Draw block: a single drawing may ride inline up to
+ * DRAW_INLINE_MAX (256KB); above that the client spills it to a blob and sends
+ * only a URL reference, so realistic states stay far below this ceiling. This
+ * is the hard last-resort guard, not the expected size.
+ */
+export const MAX_EVENT_STATE_BYTES = 1024 * 1024
 
 /** The single per-conversation live-dialog slot the broker persists. */
 export interface LiveDialogSlot {

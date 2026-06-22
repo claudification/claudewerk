@@ -10,6 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import type { DialogSnapshot } from '../../../shared/dialog-live'
+import { MAX_SNAPSHOT_BYTES } from '../../dialog-live-store'
 import { resetDialogEventLimiter } from '../../handlers/dialog-event'
 import { bootActiveAgent } from './dialog-test-helpers'
 import { createTestHarness, type MockWs, type TestHarness, testId } from './test-harness'
@@ -101,7 +102,7 @@ describe('the dialogue — host patch/reopen/orphaned', () => {
     sendPatch(agent, convId, snap('d1', { seq: 1 }))
     dash.clearMessages()
 
-    sendPatch(agent, convId, snap('d1', { seq: 2, state: { blob: 'x'.repeat(300 * 1024) } }))
+    sendPatch(agent, convId, snap('d1', { seq: 2, state: { blob: 'x'.repeat(MAX_SNAPSHOT_BYTES + 1) } }))
     const conv = h.conversationStore.getConversation(convId)!
     expect(conv.liveDialog?.snapshot.seq).toBe(1) // unchanged
     expect(dash.messagesOfType('dialog_patch').length).toBe(0)

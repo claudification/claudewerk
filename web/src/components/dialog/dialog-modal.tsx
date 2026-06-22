@@ -20,6 +20,7 @@ import { cn, haptic } from '@/lib/utils'
 import { collectRequired, getInitialValues, hasValue } from './dialog-form-init'
 import { ComponentRenderer, type DialogFormState } from './dialog-renderer'
 import { DIALOG_WIDTH_CLASS } from './dialog-width'
+import { materializeDrawValues } from './draw-spill'
 import type { DialogLayout, DialogResult } from './types'
 
 function formatCountdown(seconds: number): string {
@@ -152,14 +153,17 @@ export const DialogModal = memo(function DialogModal({
       for (const [id, notes] of Object.entries(optionNotes)) {
         cleaned[`${id}_notes`] = notes
       }
-      onSubmit({
-        ...cleaned,
-        _action: lastAction || actionId,
-        _timeout: false,
-        _cancelled: false,
+      // Spill any oversize drawing to a blob (URL ref) before the result goes out.
+      void materializeDrawValues(cleaned, conversationId ?? undefined).then(materialized => {
+        onSubmit({
+          ...materialized,
+          _action: lastAction || actionId,
+          _timeout: false,
+          _cancelled: false,
+        })
       })
     },
-    [values, lastAction, pages, onSubmit],
+    [values, lastAction, pages, onSubmit, conversationId],
   )
 
   // Buttons record their action but don't dismiss

@@ -43,6 +43,33 @@ export interface DiagramComponent {
   commentable?: boolean
 }
 
+/**
+ * Interactive whiteboard canvas, backed by tldraw. The user can draw, edit, and
+ * (unless readOnly) submit the modified drawing back. The drawing payload is a
+ * tldraw STORE SNAPSHOT (the JSON shape returned by tldraw's `getSnapshot()`).
+ *
+ * Provide the initial drawing via `content` (inline snapshot JSON) OR `contentUrl`
+ * (a blob URL holding that JSON, used for large / spilled drawings). On submit the
+ * user's drawing arrives in the form state keyed by `id`:
+ *   - small drawing:  values[id] = { kind: 'draw', snapshot: <json string>, bytes }
+ *   - large drawing:  values[id] = { kind: 'draw-ref', url: <blob url>, bytes }
+ * For draw-ref, fetch the url to read the snapshot JSON. To redraw it, feed the
+ * same snapshot/url back as content/contentUrl.
+ */
+export interface DrawComponent {
+  type: 'Draw'
+  id: string
+  /** Inline tldraw store snapshot (JSON string). Mutually exclusive with contentUrl. */
+  content?: string
+  /** URL to a blob holding the tldraw snapshot JSON (large / spilled drawings). */
+  contentUrl?: string
+  /** View-only: render the canvas but disable drawing/editing. */
+  readOnly?: boolean
+  /** Canvas height in px (default 420). */
+  height?: number
+  label?: string
+}
+
 export interface ImageComponent {
   type: 'Image'
   id?: string
@@ -236,6 +263,7 @@ export interface GroupComponent {
 export type DialogComponent =
   | MarkdownComponent
   | DiagramComponent
+  | DrawComponent
   | ImageComponent
   | AlertComponent
   | DividerComponent
@@ -331,6 +359,7 @@ export interface DialogDismiss {
 const VALID_COMPONENT_TYPES = new Set([
   'Markdown',
   'Diagram',
+  'Draw',
   'Image',
   'Alert',
   'Divider',
@@ -350,7 +379,7 @@ const VALID_COMPONENT_TYPES = new Set([
   'Group',
 ])
 
-const INPUT_COMPONENT_TYPES = new Set(['Options', 'TextInput', 'ImagePicker', 'Toggle', 'Slider', 'Button'])
+const INPUT_COMPONENT_TYPES = new Set(['Options', 'TextInput', 'ImagePicker', 'Toggle', 'Slider', 'Button', 'Draw'])
 
 /** Validate an DialogLayout, returns array of error messages (empty = valid) */
 export function validateDialogLayout(layout: unknown): string[] {
@@ -445,6 +474,18 @@ function validateComponent(comp: unknown, errors: string[], ids: Set<string>, de
       break
     case 'Diagram':
       if (typeof c.content !== 'string') errors.push('Diagram.content is required')
+      break
+    case 'Draw':
+      if (typeof c.id !== 'string' || c.id === '') errors.push('Draw.id is required')
+      if (c.content !== undefined && typeof c.content !== 'string') {
+        errors.push('Draw.content must be a string (tldraw snapshot JSON)')
+      }
+      if (c.contentUrl !== undefined && typeof c.contentUrl !== 'string') {
+        errors.push('Draw.contentUrl must be a string URL')
+      }
+      if (c.height !== undefined && typeof c.height !== 'number') {
+        errors.push('Draw.height must be a number')
+      }
       break
     case 'Image':
       if (typeof c.url !== 'string') errors.push('Image.url is required')
@@ -615,7 +656,7 @@ export function dialogToolInputSchema(): Record<string, unknown> {
       body: {
         type: 'array',
         description:
-          'Single-page layout. Array of components. Mutually exclusive with "pages". Component types: Markdown (content OR file -- use file to reference a local path instead of inlining text, saves context tokens; color?), Diagram (content, id?, commentable? -- live dialogs: with id+commentable the user clicks a node to attach a note; notes arrive as values[id]={nodeId:note}, redraw to address them), Image (url, alt?), Alert (intent?: info|warning|error|success, content), Divider, Diff (content: unified diff text, filename?), FileTree (entries[{path, status?: added|modified|removed|unchanged, note?}], label?), DataModel (name, fields[{name, type, note?, status?}]), ApiEndpoint (method, path, description?, request?: JSON string, response?: JSON string), AnnotatedCode (code, language?, filename?, annotations[{line, note}]), Options (id, options[{value,label,description?}], label?, multi?, required?, default?), TextInput (id, label?, placeholder?, required?, multiline?, default?), ImagePicker (id, images[{value,url,label?}], label?, multi?, allowUpload?), Toggle (id, label, default?), Slider (id, label?, min?, max?, step?, default?), Button (id, label, variant?: default|primary|outline|ghost, intent?: neutral|destructive|success), Stack (direction?: vertical|horizontal, children[]), Grid (columns?, children[]), Group (label, collapsed?, children[]). Colors: primary|secondary|muted|accent|destructive|success|warning|info. All text/label fields support markdown.',
+          'Single-page layout. Array of components. Mutually exclusive with "pages". Component types: Markdown (content OR file -- use file to reference a local path instead of inlining text, saves context tokens; color?), Diagram (content, id?, commentable? -- live dialogs: with id+commentable the user clicks a node to attach a note; notes arrive as values[id]={nodeId:note}, redraw to address them), Draw (id, content?, contentUrl?, readOnly?, height?, label? -- an INTERACTIVE WHITEBOARD canvas powered by tldraw; the user draws/edits freely and submits the result back. The drawing payload is a tldraw STORE SNAPSHOT, i.e. the exact JSON that tldraw getSnapshot() returns; seed it via content [inline snapshot JSON string] OR contentUrl [blob URL holding that JSON, for large drawings]. On submit you receive values[id]={kind:"draw",snapshot,bytes} for small drawings or values[id]={kind:"draw-ref",url,bytes} for large ones -- fetch the url to get the snapshot JSON. To redraw their edit, feed the same snapshot/url back as content/contentUrl. Best in a persistent dialog with width "wide"/"full"), Image (url, alt?), Alert (intent?: info|warning|error|success, content), Divider, Diff (content: unified diff text, filename?), FileTree (entries[{path, status?: added|modified|removed|unchanged, note?}], label?), DataModel (name, fields[{name, type, note?, status?}]), ApiEndpoint (method, path, description?, request?: JSON string, response?: JSON string), AnnotatedCode (code, language?, filename?, annotations[{line, note}]), Options (id, options[{value,label,description?}], label?, multi?, required?, default?), TextInput (id, label?, placeholder?, required?, multiline?, default?), ImagePicker (id, images[{value,url,label?}], label?, multi?, allowUpload?), Toggle (id, label, default?), Slider (id, label?, min?, max?, step?, default?), Button (id, label, variant?: default|primary|outline|ghost, intent?: neutral|destructive|success), Stack (direction?: vertical|horizontal, children[]), Grid (columns?, children[]), Group (label, collapsed?, children[]). Colors: primary|secondary|muted|accent|destructive|success|warning|info. All text/label fields support markdown.',
         items: { type: 'object' },
       },
       pages: {
