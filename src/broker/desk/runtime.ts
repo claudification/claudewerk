@@ -13,6 +13,7 @@
 
 import type { Conversation, DispatchDecision, ProjectSettings } from '../../shared/protocol'
 import type { SpawnCallerContext } from '../../shared/spawn-permissions'
+import { buildReviveMessage } from '../build-revive'
 import type { ConversationStore } from '../conversation-store'
 import { getGlobalSettings } from '../global-settings'
 import { getProjectSettings, setProjectSettings } from '../project-settings'
@@ -107,15 +108,39 @@ function buildExecutor(rt: DispatchRuntime): DispatchExecutor {
       )
       return { conversationId: req.conversationId }
     },
-    revive: async () => {
-      // Reviving an ENDED conversation needs a benevolent + sentinel HandlerCtx
-      // (handleChannelRevive). That ctx is not available from the MCP entry, so
-      // revive is DECIDED + audited here but executed via the existing
-      // channel_revive path. Wiring revive execution behind this seam is the
-      // one follow-up (it needs the WS handler ctx).
-      throw new Error('revive execution requires the benevolent channel_revive path (decision recorded, not executed)')
-    },
+    revive: async req => executeRevive(req.conversationId, rt),
   }
+}
+
+/**
+ * Revive an ended conversation. Mirrors the dashboard's reviveConversation core
+ * (control-panel-actions.ts): guard not-already-alive, pick a connected sentinel,
+ * reuse the SAME conversation id (transcript + sidebar entry persist), send the
+ * revive RPC. The sentinel boots it asynchronously; we return immediately (same
+ * fire-and-forget shape the dashboard uses). The dispatcher is a trusted MCP
+ * caller (parallel to dispatchSpawn's trusted callerContext), so no extra
+ * per-call permission gate beyond the /mcp auth.
+ */
+export function executeRevive(conversationId: string, rt: DispatchRuntime): { conversationId: string } {
+  const conv = rt.store.getConversation(conversationId)
+  if (!conv) throw new Error(`revive target ${conversationId} not found`)
+  if (conv.status === 'active') throw new Error('conversation is already active')
+  if (rt.store.getActiveConversationCount(conversationId) > 0) {
+    throw new Error('conversation has a live agent host socket (already alive)')
+  }
+  const sentinel = rt.store.getSentinel()
+  if (!sentinel) throw new Error('no sentinel connected')
+
+  const projSettings = getProjectSettings(conv.project)
+  const global = getGlobalSettings()
+  const headless = (projSettings?.defaultLaunchMode || global.defaultLaunchMode) !== 'pty'
+  const effortRaw = projSettings?.defaultEffort || global.defaultEffort
+  const effort = effortRaw && effortRaw !== 'default' ? effortRaw : undefined
+  const model = projSettings?.defaultModel || global.defaultModel || undefined
+
+  rt.store.resumeConversation(conversationId)
+  sentinel.send(JSON.stringify(buildReviveMessage(conv, conversationId, { headless, effort, model })))
+  return { conversationId }
 }
 
 // ─── Orchestration entry ────────────────────────────────────────────
