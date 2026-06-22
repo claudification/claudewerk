@@ -19,6 +19,7 @@
  */
 
 import type { DispatchDecision, DispatchDisposition } from '../../shared/protocol'
+import { briefFallback } from './brief'
 import { type ChatFn, classifyDispatch, type DispatchRosterEntry } from './classify'
 import { requiresConfirmation } from './cost'
 import { assertWorktreeCorrectSpawn, computeWorktreeCwd } from './worktree'
@@ -81,6 +82,9 @@ export interface OrchestrateDeps {
   now: () => number
   newId: () => string
   traceId: string
+  /** Generate the concierge's reply for a `converse` decision (briefing over the
+   *  roster + near-memory threads). Optional: absent -> a deterministic fallback. */
+  brief?: (input: { intent: string; roster: DispatchRosterEntry[] }) => Promise<string>
 }
 
 export async function orchestrateDispatch(cmd: DispatchCommand, deps: OrchestrateDeps): Promise<DispatchDecision> {
@@ -107,6 +111,13 @@ export async function orchestrateDispatch(cmd: DispatchCommand, deps: Orchestrat
 
   // Unsure -> surface the candidate cards, do not execute.
   if (result.disposition === 'ask') return record(decision, deps)
+
+  // Conversational / status intent -> the concierge ANSWERS; nothing is spawned
+  // or routed. This is the front desk's "just talk to me" path.
+  if (result.disposition === 'converse') {
+    decision.reply = deps.brief ? await deps.brief({ intent: cmd.intent, roster }) : briefFallback(roster)
+    return record(decision, deps)
+  }
 
   // Cost-confirmation gate: hold a very-expensive route until confirmed.
   if (requiresConfirmation(result.cost) && !cmd.confirmedExpensive) {

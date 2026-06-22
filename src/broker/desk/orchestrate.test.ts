@@ -119,6 +119,32 @@ describe('orchestrateDispatch', () => {
     expect(d.disposition).toBe('revive')
     expect(spy.revived).toHaveLength(1)
   })
+
+  it('converse -> answers with a reply, spawns/routes nothing (uses the brief fn)', async () => {
+    const { deps, spy } = makeDeps({
+      roster: rosterOf(liveRoster),
+      chat: chatReturning({ disposition: 'converse', confidence: 0.9, reasoning: 'greeting' }),
+    })
+    deps.brief = async ({ intent, roster }) => `you said "${intent}"; ${roster.length} on the desk`
+    const d = await orchestrateDispatch({ intent: "what's going on today?" }, deps)
+    expect(d.disposition).toBe('converse')
+    expect(d.executed).toBe(false)
+    expect(d.reply).toBe('you said "what\'s going on today?"; 1 on the desk')
+    expect(spy.spawned).toHaveLength(0)
+    expect(spy.routed).toHaveLength(0)
+    expect(spy.emitted).toHaveLength(1)
+    expect(spy.audited).toHaveLength(1)
+  })
+
+  it('converse -> deterministic fallback reply when no brief fn is wired', async () => {
+    const { deps } = makeDeps({
+      roster: rosterOf([]),
+      chat: chatReturning({ disposition: 'converse', confidence: 0.9, reasoning: 'greeting' }),
+    })
+    const d = await orchestrateDispatch({ intent: 'hey' }, deps)
+    expect(d.disposition).toBe('converse')
+    expect(d.reply).toContain("Nothing's on my desk")
+  })
 })
 
 describe('HOT-PATH worktree guard on spawn', () => {

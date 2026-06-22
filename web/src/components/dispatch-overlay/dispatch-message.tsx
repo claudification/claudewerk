@@ -45,7 +45,9 @@ export function DispatchMessage({ decision: d }: { decision: DispatchDecision })
       <div className="flex gap-2.5">
         <Mark />
         <div className="flex min-w-0 flex-1 flex-col gap-3">
-          <p className="text-[14px] leading-relaxed text-foreground/90">{d.reasoning}</p>
+          {/* converse -> the concierge's actual answer (d.reply); otherwise the
+              one-line human rationale. The routing gears stay hidden. */}
+          <p className="text-[14px] leading-relaxed text-foreground/90">{d.reply ?? d.reasoning}</p>
 
           {d.disposition === 'ask' && d.candidates && d.candidates.length > 0 && (
             <div className="flex flex-col gap-2.5">

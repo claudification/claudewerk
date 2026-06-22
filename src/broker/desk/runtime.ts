@@ -21,6 +21,7 @@ import { chat } from '../recap/shared/openrouter-client'
 import { broadcastToSubscribers } from '../routes/shared'
 import { dispatchSpawn, type SpawnDispatchDeps } from '../spawn-dispatch'
 import { getDecision, recordDecision } from './audit'
+import { generateBriefing } from './brief'
 import type { DispatchRosterEntry } from './classify'
 import { type DispatchCommand, type DispatchExecutor, orchestrateDispatch, type RosterSource } from './orchestrate'
 import { listThreads, upsertThread } from './threads'
@@ -155,6 +156,8 @@ export function runDispatch(cmd: DispatchCommand, rt: DispatchRuntime): Promise<
     roster: dispatchRoster(rt.store),
     chat: req => chat(req),
     executor: buildExecutor(rt),
+    // Converse: brief the user over the live roster + near-memory threads.
+    brief: ({ intent, roster }) => generateBriefing({ intent, roster, threads: listThreads() }, req => chat(req)),
     emit: d => broadcastToSubscribers(rt.store, d as unknown as Record<string, unknown>),
     audit: d => recordDecision(d),
     now: () => Date.now(),

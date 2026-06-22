@@ -128,3 +128,22 @@ describe('classifyDispatch -- LLM path', () => {
     expect(r.disposition).toBe('new')
   })
 })
+
+describe('classifyDispatch -- converse', () => {
+  it('passes a converse decision through (the concierge answers directly)', async () => {
+    const r = await classifyDispatch(
+      { intent: "what's going on today?", roster },
+      mockChat({ disposition: 'converse', target: null, confidence: 0.9, reasoning: 'greeting' }),
+    )
+    expect(r.disposition).toBe('converse')
+    expect(r.candidates).toBeUndefined()
+  })
+
+  it('does NOT gate converse to ask on low confidence (a greeting is not a routing ambiguity)', async () => {
+    const r = await classifyDispatch(
+      { intent: 'hey', roster },
+      mockChat({ disposition: 'converse', target: null, confidence: 0.1, reasoning: 'chit-chat' }),
+    )
+    expect(r.disposition).toBe('converse')
+  })
+})

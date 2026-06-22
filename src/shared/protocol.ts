@@ -1399,9 +1399,13 @@ export interface SystemChannelDelivery {
 // is broadcast as a `dispatch_decision` (the structured-message backbone) and
 // audited. `desk.dispatch` is the verb; see .claude/docs/plan-dispatcher-build.md.
 
-/** Disposition the dispatcher chose for an intent. `ask` = unsure, surface
- *  candidate cards for one-click select (rich conversation_select UX). */
-export type DispatchDisposition = 'new' | 'route' | 'revive' | 'ask'
+/** Disposition the dispatcher chose for an intent.
+ *  - `new`/`route`/`revive` push work to a conversation (spawn / inject / reopen).
+ *  - `ask` = unsure, surface candidate cards for one-click select.
+ *  - `converse` = the user is talking TO the concierge (greeting, "what's going
+ *    on?", a quick status question). Answer directly via `DispatchDecision.reply`;
+ *    nothing is spawned or routed. This is the front desk's "just talk to me" path. */
+export type DispatchDisposition = 'new' | 'route' | 'revive' | 'ask' | 'converse'
 
 /** Relative cost reading for a route/spawn target -- the confirmation-gate input.
  *  Metrics are read off the existing Conversation record (token_samples /
@@ -1495,6 +1499,10 @@ export interface DispatchDecision {
   reasoning: string
   /** Populated when disposition === 'ask' (the conversation_select cards). */
   candidates?: DispatchCandidate[]
+  /** The concierge's spoken/written answer, populated when disposition ===
+   *  'converse'. A direct reply to the user (briefing / status / chit-chat) --
+   *  nothing was spawned or routed. The overlay renders this as the desk's reply. */
+  reply?: string
   /** Cost reading for the chosen target; drives the confirmation gate. */
   cost?: DispatchCostSignal
   /** True once the disposition was executed via the underlying handler. */

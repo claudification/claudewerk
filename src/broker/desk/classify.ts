@@ -128,15 +128,20 @@ interface LlmDecision {
 }
 
 const SYSTEM_PROMPT = [
-  'You are the dispatcher for a fleet of coding conversations. Decide where an',
-  'incoming intent should go. Reply ONLY with JSON:',
-  '{ "disposition": "new"|"route"|"revive"|"ask", "target": <conversationId or null>,',
-  '  "confidence": 0..1, "reasoning": <one sentence> }.',
+  'You are the front desk concierge for a fleet of coding conversations. Decide',
+  'what an incoming message needs. Reply ONLY with JSON:',
+  '{ "disposition": "converse"|"new"|"route"|"revive"|"ask",',
+  '  "target": <conversationId or null>, "confidence": 0..1, "reasoning": <one sentence> }.',
   'Rules:',
-  '- SPAWN-BIAS: prefer "new" unless the intent clearly continues an in-progress',
-  '  topic AND a candidate conversation is fresh (low idle) AND matches well.',
+  "- CONVERSE FIRST: if the user is talking TO you -- a greeting, \"what's going on\",",
+  '  a status/overview question, thanks, or any chit-chat that does NOT ask to start',
+  '  or continue actual coding work -- use "converse". You answer them directly; no',
+  '  conversation is spawned or routed.',
+  '- Otherwise it is WORK. SPAWN-BIAS: prefer "new" unless the intent clearly',
+  '  continues an in-progress topic AND a candidate conversation is fresh (low idle)',
+  '  AND matches well.',
   '- "route" targets a LIVE conversation; "revive" targets an ENDED one.',
-  '- If two candidates are close, or nothing matches well, use "ask".',
+  '- If two work candidates are close, or nothing matches well, use "ask".',
   '- Never invent a target id; use one from the roster or null.',
 ].join('\n')
 
@@ -167,7 +172,13 @@ function extractJson(content: string): string {
 function parseDecision(content: string): LlmDecision {
   const raw = JSON.parse(extractJson(content)) as Partial<LlmDecision>
   const disposition = raw.disposition
-  if (disposition !== 'new' && disposition !== 'route' && disposition !== 'revive' && disposition !== 'ask') {
+  if (
+    disposition !== 'new' &&
+    disposition !== 'route' &&
+    disposition !== 'revive' &&
+    disposition !== 'ask' &&
+    disposition !== 'converse'
+  ) {
     throw new Error(`bad disposition: ${String(disposition)}`)
   }
   const confidence = typeof raw.confidence === 'number' ? Math.max(0, Math.min(1, raw.confidence)) : 0
@@ -180,6 +191,12 @@ function parseDecision(content: string): LlmDecision {
 }
 
 function finalize(input: ClassifyInput, d: LlmDecision): ClassifyResult {
+  // Conversational / status intent -> the concierge answers directly. Never gate
+  // to candidate cards; a greeting isn't a routing ambiguity.
+  if (d.disposition === 'converse') {
+    return { disposition: 'converse', confidence: d.confidence, reasoning: d.reasoning }
+  }
+
   // Ambiguity gate: low confidence OR the model asked -> surface cards.
   if (d.disposition === 'ask' || d.confidence < AMBIGUITY_THRESHOLD) {
     return askResult(input, d.reasoning || 'low confidence -- asking the user')
