@@ -16,6 +16,7 @@
  */
 
 import { runDispatchAgent } from '../desk/agent-runtime'
+import { projectOverviewRows } from '../desk/dispatch-tools'
 import { readMemory } from '../desk/memory'
 import type { DispatchCommand } from '../desk/orchestrate'
 import { type DispatchRuntime, listDispatchRosterCandidates, runDispatch } from '../desk/runtime'
@@ -143,9 +144,15 @@ const dispatchListThreads: MessageHandler = (ctx: HandlerContext, data: MessageD
   const userId = ctx.ws.data.userName ?? null
   const threads = listThreadsForUser(userId, limit)
   const roster = listDispatchRosterCandidates(ctx.conversations)
+  // The project-anchored memory view: every project + its condensed brief +
+  // live counts. Only projects with a brief OR a live conversation are useful
+  // to surface; cap so the overlay stays light.
+  const projects = projectOverviewRows({ store: ctx.conversations })
+    .filter(p => p.brief || p.live > 0)
+    .slice(0, 12)
   const memory = readMemory(userId)
   const workspaces = workspaceSnapshot()
-  ctx.reply({ type: 'dispatch_threads_result', requestId, threads, roster, memory, workspaces, userId })
+  ctx.reply({ type: 'dispatch_threads_result', requestId, threads, projects, roster, memory, workspaces, userId })
 }
 
 export function registerDispatchHandlers(): void {

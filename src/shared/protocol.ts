@@ -1611,10 +1611,27 @@ export interface DispatchToolResult {
 /** broker -> the requesting control panel: the user's near-memory threads PLUS
  *  the live roster (active conversations the desk currently covers), so the
  *  overlay can SHOW what the concierge is holding -- not just route into it. */
+/** One project as the dispatcher's BRAIN sees it: its condensed memory brief +
+ *  live counts. The overlay renders these as the project-anchored memory view. */
+export interface DispatchProjectMemory {
+  project: string
+  projectUri: string
+  /** The condensed durable brief (may be '' if not yet learned). */
+  brief: string
+  live: number
+  working: number
+  needsYou: number
+  /** Minutes since the most recent activity, if any. */
+  idleMin?: number
+}
+
 export interface DispatchThreadsResult {
   type: 'dispatch_threads_result'
   requestId?: string
   threads: DispatchThread[]
+  /** The fleet BY PROJECT, with each project's condensed memory brief + live
+   *  counts (the dispatcher's project-anchored memory). Absent on older brokers. */
+  projects?: DispatchProjectMemory[]
   /** Active conversations in dispatch-covered projects, as selectable cards.
    *  Absent on older brokers -> the overlay just shows threads. */
   roster?: DispatchCandidate[]

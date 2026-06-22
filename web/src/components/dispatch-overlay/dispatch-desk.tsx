@@ -1,5 +1,6 @@
 import { formatAge, truncate } from '@/lib/utils'
 import { MemorySection, WorkspaceSection } from './dispatch-memory-section'
+import { ProjectsSection } from './dispatch-projects-section'
 import { useDispatchStore } from './dispatch-store'
 
 /** What the concierge is holding right now: the LIVE roster it covers ("active
@@ -8,14 +9,18 @@ import { useDispatchStore } from './dispatch-store'
 export function DispatchDesk() {
   const roster = useDispatchStore(s => s.roster)
   const threads = useDispatchStore(s => s.threads)
+  const projects = useDispatchStore(s => s.projects)
   const routeTo = useDispatchStore(s => s.routeTo)
   const showThreads = useDispatchStore(s => s.showThreads)
   const toggleThreads = useDispatchStore(s => s.toggleThreads)
   const memory = useDispatchStore(s => s.memory)
-  if (roster.length === 0 && threads.length === 0 && !memory.trim()) return null
+  if (projects.length === 0 && roster.length === 0 && threads.length === 0 && !memory.trim()) return null
 
   return (
     <div className="flex flex-col gap-7 px-6 pt-8">
+      {/* PROJECTS first -- the dispatcher is a project-anchored brain. */}
+      <ProjectsSection />
+
       {roster.length > 0 && (
         <div>
           <span className="text-[11px] uppercase tracking-[0.2em] text-comment">active right now</span>

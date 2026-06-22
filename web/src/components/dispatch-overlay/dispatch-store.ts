@@ -11,6 +11,7 @@
 import type {
   DispatchCandidate,
   DispatchDecision,
+  DispatchProjectMemory,
   DispatchThread,
   DispatchToolCall,
   DispatchToolResult,
@@ -38,6 +39,8 @@ interface DispatchState {
   pending: boolean
   lastError: string | null
   threads: DispatchThread[]
+  /** The fleet by project + condensed memory (the project-anchored brain view). */
+  projects: DispatchProjectMemory[]
   /** Live conversations the desk currently covers (shown as "active right now"). */
   roster: DispatchCandidate[]
   threadsLoading: boolean
@@ -77,6 +80,7 @@ interface DispatchState {
   onRequestResult(msg: { ok?: boolean; error?: string; decision?: DispatchDecision }): void
   onThreadsResult(msg: {
     threads?: DispatchThread[]
+    projects?: DispatchProjectMemory[]
     roster?: DispatchCandidate[]
     memory?: string
     workspaces?: WorkspaceInfo[]
@@ -98,6 +102,7 @@ export const useDispatchStore = create<DispatchState>((set, get) => ({
   pending: false,
   lastError: null,
   threads: [],
+  projects: [],
   roster: [],
   threadsLoading: false,
   activeConvId: null,
@@ -184,6 +189,7 @@ export const useDispatchStore = create<DispatchState>((set, get) => ({
     set(s => ({
       threadsLoading: false,
       threads: msg.threads ?? [],
+      projects: msg.projects ?? [],
       roster: msg.roster ?? [],
       memory: msg.memory ?? '',
       workspaces: msg.workspaces ?? [],
