@@ -1499,6 +1499,9 @@ export interface DispatchRequest {
   disposition?: DispatchDisposition
   /** Set once the user confirmed an expensive route (the cost gate). */
   confirmedExpensive?: boolean
+  /** Override the model that drives the dispatcher agent loop for this turn
+   *  (user-switchable in the overlay). Omitted -> the desk default. */
+  model?: string
   /** Correlation id so the resulting decision can be matched back. */
   requestId?: string
 }
@@ -1529,6 +1532,11 @@ export interface DispatchDecision {
   awaitingConfirmation?: boolean
   /** The conversation the decision produced/targeted, once known. */
   resultConversationId?: string
+  /** The model that drove the agent loop for this decision (so the overlay can
+   *  show "talking to X"). Resolved from the request override or the desk default. */
+  model?: string
+  /** How many tool calls the agent loop ran this turn (the gears count). */
+  toolCallCount?: number
   traceId: string
   ts: number
   /**
@@ -1562,6 +1570,42 @@ export interface DispatchRequestResult {
   ok: boolean
   decision?: DispatchDecision
   error?: string
+}
+
+/** broker -> web (streamed DURING an agent-loop turn): one tool the dispatcher
+ *  agent invoked. The overlay renders these DIMMED inline so the user sees the
+ *  gears turn (list/inject/interrupt/terminate/spawn/configure/...). Correlated
+ *  to its result by `callId`. (EVERYTHING-IS-A-STRUCTURED-MESSAGE.) */
+export interface DispatchToolCall {
+  type: 'dispatch_tool_call'
+  requestId?: string
+  traceId: string
+  /** Unique per call within the turn; pairs with DispatchToolResult.callId. */
+  callId: string
+  /** Tool name, e.g. 'list_conversations'. */
+  name: string
+  /** One-line human summary of the call (NOT the raw payload). */
+  summary?: string
+  /** The validated args, for the JsonInspector (i) expansion. */
+  args?: Record<string, unknown>
+  ts: number
+  userId?: string | null
+}
+
+/** broker -> web (streamed): the outcome of a DispatchToolCall. */
+export interface DispatchToolResult {
+  type: 'dispatch_tool_result'
+  requestId?: string
+  traceId: string
+  callId: string
+  ok: boolean
+  /** One-line human summary of the outcome. */
+  summary?: string
+  /** Structured result for the JsonInspector (i) expansion. */
+  result?: unknown
+  error?: string
+  ts: number
+  userId?: string | null
 }
 
 /** broker -> the requesting control panel: the user's near-memory threads PLUS
@@ -1954,6 +1998,8 @@ export type BrokerMessage =
   | SystemChannelDelivery
   | DispatchDecision
   | DispatchRequestResult
+  | DispatchToolCall
+  | DispatchToolResult
   | DispatchThreadsResult
   | ProjectLinkRequest
   | ProjectLinkGranted
