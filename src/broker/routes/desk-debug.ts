@@ -33,6 +33,40 @@ interface ToolFrame {
   error?: string
 }
 
+interface QuestSpawnCapture {
+  cwd: string
+  model?: string
+  intent: string
+}
+
+/** Run one dispatcher turn capturing every tool frame + (dry-run) the quest spawns
+ *  it WOULD make, so the route handler stays a thin parse-and-respond shell. */
+async function runCapturedDispatch(
+  rt: DispatchRuntime,
+  intent: string,
+  opts: { userId: string; dryRun: boolean; systemOverride?: string },
+): Promise<{
+  decision: Awaited<ReturnType<typeof runDispatchAgent>>
+  frames: ToolFrame[]
+  spawns: QuestSpawnCapture[]
+}> {
+  const frames: ToolFrame[] = []
+  const spawns: QuestSpawnCapture[] = []
+  const dryRunSpawn: QuestSpawn = async req => {
+    spawns.push({ cwd: req.cwd, model: req.model, intent: req.intent })
+    return { conversationId: `dryrun_${spawns.length}` }
+  }
+  const decision = await runDispatchAgent(intent, rt, {
+    userId: opts.userId,
+    questSpawn: opts.dryRun ? dryRunSpawn : undefined,
+    systemOverride: opts.systemOverride,
+    onToolCall: e => frames.push({ phase: 'call', callId: e.callId, name: e.name, args: e.args }),
+    onToolResult: e =>
+      frames.push({ phase: 'result', callId: e.callId, name: e.summary, ok: e.ok, result: e.result, error: e.error }),
+  })
+  return { decision, frames, spawns }
+}
+
 export function createDeskDebugRouter(
   conversationStore: ConversationStore,
   store: StoreDriver,
@@ -76,31 +110,12 @@ export function createDeskDebugRouter(
     const dryRun = body.dryRun !== false // default true -- safe by default
     const systemOverride = typeof body.system === 'string' && body.system ? body.system : undefined
 
-    const frames: ToolFrame[] = []
-    const spawns: Array<{ cwd: string; model?: string; intent: string }> = []
-    // DRY-RUN: capture what the dispatcher WOULD spawn (cwd + model) without
-    // launching a real worker. This is the whole point -- see the routing decision.
-    const dryRunSpawn: QuestSpawn = async req => {
-      spawns.push({ cwd: req.cwd, model: req.model, intent: req.intent })
-      return { conversationId: `dryrun_${spawns.length}` }
-    }
-
     const started = Date.now()
     try {
-      const decision = await runDispatchAgent(intent, buildRuntime(), {
+      const { decision, frames, spawns } = await runCapturedDispatch(buildRuntime(), intent, {
         userId,
-        questSpawn: dryRun ? dryRunSpawn : undefined,
+        dryRun,
         systemOverride,
-        onToolCall: e => frames.push({ phase: 'call', callId: e.callId, name: e.name, args: e.args }),
-        onToolResult: e =>
-          frames.push({
-            phase: 'result',
-            callId: e.callId,
-            name: e.summary,
-            ok: e.ok,
-            result: e.result,
-            error: e.error,
-          }),
       })
       return c.json({
         ok: true,
@@ -112,7 +127,7 @@ export function createDeskDebugRouter(
         history: dumpUserHistory(userId),
       })
     } catch (e) {
-      return c.json({ ok: false, error: (e as Error).message, toolFrames: frames, questSpawns: spawns }, 500)
+      return c.json({ ok: false, error: (e as Error).message }, 500)
     }
   })
 
