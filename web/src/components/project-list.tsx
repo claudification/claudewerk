@@ -228,6 +228,19 @@ export function ProjectList() {
     })
   }
 
+  // Find the on-screen instance of a conversation row. Two ProjectLists are
+  // mounted at once: the desktop sidebar (hidden lg:flex -> display:none on
+  // mobile) AND the mobile sheet (Radix-portaled to body end). A bare
+  // document.querySelector hits the FIRST in DOM order -- the hidden desktop
+  // copy -- and scrollIntoView()/pulse on a display:none node is a no-op, which
+  // is why the mobile slider always stuck to the top. offsetParent is null for
+  // display:none elements, so this returns whichever copy is actually visible.
+  function findVisibleConversationEl(id: string): HTMLElement | null {
+    const els = document.querySelectorAll<HTMLElement>(`[data-conversation-id="${id}"]`)
+    for (const el of els) if (el.offsetParent !== null) return el
+    return els[0] ?? null
+  }
+
   // Scroll the selected conversation into view. Always safe to call -- block:'nearest'
   // is a no-op when the item is already fully visible (e.g. you just clicked it).
   // Pass {block:'center', behavior:'auto'} for explicit "locate" (mobile sheet open,
@@ -235,7 +248,7 @@ export function ProjectList() {
   function scrollSelectedIntoView(opts?: ScrollIntoViewOptions) {
     if (!selectedConversationId) return
     requestAnimationFrame(() => {
-      const el = document.querySelector(`[data-conversation-id="${selectedConversationId}"]`)
+      const el = findVisibleConversationEl(selectedConversationId)
       el?.scrollIntoView({ behavior: 'smooth', block: 'nearest', ...opts })
     })
   }
@@ -244,7 +257,7 @@ export function ProjectList() {
   function pulseSelected() {
     if (!selectedConversationId) return
     requestAnimationFrame(() => {
-      const el = document.querySelector(`[data-conversation-id="${selectedConversationId}"]`)
+      const el = findVisibleConversationEl(selectedConversationId)
       if (el) {
         el.classList.remove('conversation-pulse')
         // Force reflow so re-adding the class restarts the animation

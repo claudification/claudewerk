@@ -45,6 +45,16 @@ import { registerAllHandlers } from './handlers'
 import { dropShellViewerSocket, onSentinelDisconnect } from './handlers/shell'
 import { startSpawnApprovalSweep } from './handlers/spawn-approval'
 import { appendMessage, initInterConversationLog } from './inter-conversation-log'
+import { startLessonsCompaction } from './lessons-compaction'
+import { startLessonsScavenger } from './lessons-scavenger'
+import {
+  LESSONS_TEMPLATE_ID,
+  loadLedger,
+  loadNightlies,
+  reapNightlies,
+  SCAVENGER_CREATED_BY,
+  saveLedger,
+} from './lessons-store'
 import { drain, enqueue, getQueueSize, initMessageQueue } from './message-queue'
 import { routeMessage } from './message-router'
 import { initModelPricing } from './model-pricing'
@@ -60,10 +70,11 @@ import {
 } from './project-links'
 import { initProjectOrder } from './project-order'
 import { getAllProjectSettings, getProjectSettings, initProjectSettings, setProjectSettings } from './project-settings'
-import { closeProjectStore, initProjectStore } from './project-store'
+import { closeProjectStore, initProjectStore, listProjects } from './project-store'
 import { dropSocketFromWatches, initProjectWatchRegistry } from './project-watch-registry'
 import { initPush, isPushConfigured, sendPushToAll } from './push'
 import { makeCommitGatherer } from './recap/commit-gather'
+import { gatherConversations } from './recap/period/gather'
 import { initRecapOrchestrator } from './recap-orchestrator'
 import { createRouter } from './routes'
 import { createSentinelRegistry } from './sentinel-registry'
@@ -511,6 +522,48 @@ async function main() {
   } catch (err) {
     console.error('[recap] boot sweep failed:', err)
   }
+
+  // Lessons-Learned Scavenger ("Overwatch"). TIER 1: nightly (04:00 local), for
+  // each opted-in project (ProjectSettings.lessonsEnabled), an activity gate then
+  // a rolling-7d lessons recap. TIER 2: weekly (Sun 05:00), fold the nightlies
+  // into a durable per-project ledger + reap them (LLM-free). Cross-project tech
+  // surfaces via recap_search (tech_discovered folds into FTS) + GET /api/lessons/tech.
+  const lessonsTimeZone = process.env.TZ || 'UTC'
+  startLessonsScavenger({
+    now: () => Date.now(),
+    log: msg => console.log(msg),
+    listProjectUris: () => listProjects().map(p => p.project_uri),
+    isEnabled: uri => getProjectSettings(uri)?.lessonsEnabled === true,
+    hasActivitySince: (uri, since) =>
+      gatherConversations(store, {
+        projectUris: [uri],
+        periodStart: since,
+        periodEnd: Date.now(),
+        timeZone: lessonsTimeZone,
+      }).length > 0,
+    startLessons: uri =>
+      recapOrch.start({
+        type: 'recap_create',
+        projectUri: uri,
+        period: { label: 'last_7' },
+        timeZone: lessonsTimeZone,
+        template: LESSONS_TEMPLATE_ID,
+        audience: 'agent',
+        retrospect: true,
+        createdBy: SCAVENGER_CREATED_BY,
+      }),
+    markRun: (uri, ts) => setProjectSettings(uri, { lessonsLastRun: ts }),
+  })
+  startLessonsCompaction({
+    now: () => Date.now(),
+    log: msg => console.log(msg),
+    listProjectUris: () => listProjects().map(p => p.project_uri),
+    isEnabled: uri => getProjectSettings(uri)?.lessonsEnabled === true,
+    loadNightlies: uri => loadNightlies(recapOrch.store, uri),
+    loadLedger: uri => loadLedger(recapOrch.store, uri),
+    saveLedger: (uri, metadata) => saveLedger(recapOrch.store, uri, metadata, Date.now()),
+    reap: ids => reapNightlies(recapOrch.store, ids),
+  })
 
   // External status polling (clanker.watch health + usage.report efficiency)
   startExternalStatusPolling({

@@ -424,6 +424,7 @@ interface ConversationsState {
   setJsonStreamHandler: (handler: ((msg: JsonStreamMessage) => void) | null) => void
   projectHandler: ((msg: Record<string, unknown>) => void) | null
   checklistHandler: ((msg: Record<string, unknown>) => void) | null
+  nightshiftHandler: ((msg: Record<string, unknown>) => void) | null
   sendWsMessage: (msg: Record<string, unknown>) => void
   dismissConversation: (conversationId: string) => void
   terminateConversation: (conversationId: string, source: TerminationSource) => void
@@ -866,6 +867,7 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   jsonStreamHandler: null,
   projectHandler: null,
   checklistHandler: null,
+  nightshiftHandler: null,
   showTerminal: false,
   terminalWrapperId: null,
   showSwitcher: false,

@@ -352,3 +352,42 @@ describe('buildTemplateList', () => {
     expect(rest).toEqual([...rest].sort())
   })
 })
+
+describe('lessons-learned template (Lessons Scavenger)', () => {
+  it('loads, validates, and is an agent retrospect template covering tech_discovered', () => {
+    const { templates, skipped } = loadTemplates(() => {})
+    expect(skipped).toHaveLength(0)
+    const t = templates.get('lessons-learned')
+    expect(t).toBeDefined()
+    expect(t?.audience).toBe('agent')
+    expect(t?.defaults.retrospect).toBe(true)
+    expect(t?.sections).toContain('tech_discovered')
+    expect(t?.sections).toContain('dead_ends')
+  })
+
+  it('renders both oneshot and synthesize paths to a tech-aware, parseable contract', () => {
+    const { templates } = loadTemplates(() => {})
+    const t = templates.get('lessons-learned')
+    if (!t) throw new Error('lessons-learned template missing')
+    const ctx = {
+      options: {},
+      audience: 'agent',
+      scope_label: 'remote-claude',
+      period: { human: 'this week', iso_range: '2026-06-15..2026-06-22' },
+      frontmatter_spec: '',
+      body_spec: '',
+      stats: { conversations: 0, commits: 0, projects: [] },
+    }
+    for (const path of ['oneshot', 'synthesize'] as const) {
+      const out = renderTemplateBody(t, { ...ctx, path })
+      // The new first-class field + its outcome enum must be in the contract.
+      expect(out).toContain('tech_discovered')
+      expect(out).toContain('success | failure | mixed')
+      // It must still ask for a YAML frontmatter block the parser can read.
+      expect(out).toContain('YAML frontmatter')
+      expect(out).toContain('## Dead ends')
+      // Path-specific framing is present.
+      expect(out).toContain(path === 'synthesize' ? 'SYNTHESIZING' : 'FUTURE AGENT')
+    }
+  })
+})

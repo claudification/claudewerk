@@ -42,6 +42,7 @@ import type {
   GitLogResult,
   ListCcSessionsResult,
   ListDirsResult,
+  NightshiftOp,
   ProfileUsageSnapshot,
   ProjectBoardOp,
   ProjectMoveFile,
@@ -86,6 +87,7 @@ import {
 import { writeDaemonMcpConfig } from './daemon-mcp-config'
 import { registerDaemonSession, startDaemonRosterWatch, stopDaemonRosterWatch } from './daemon-roster'
 import { runGitLog } from './git-log'
+import { handleNightshiftOp } from './nightshift-handlers'
 import { applyOAuthToken, applyOAuthTokenDelta } from './oauth-token-env'
 import { type PreflightIssue, preflightSpawn } from './preflight'
 import { runProfileCli } from './profile-cli'
@@ -720,8 +722,19 @@ function buildHeadlessArgs(opts: {
   agent?: string
   worktree?: string
   maxBudgetUsd?: number
+  permissionMode?: string
 }): string[] {
-  const args = ['--dangerously-skip-permissions']
+  // Headless has no human to answer a prompt, so the legacy default is full
+  // bypass (--dangerously-skip-permissions) -- a spawn must never hang waiting
+  // for an approval nobody can give. The two unattended-but-GUARDED modes
+  // (auto = managed classifier, dontAsk = allow-list + read-only bash) are the
+  // nightshift permission model (plan-nightshift.md §10): for those we must NOT
+  // force bypass -- the chosen mode flows through RCLAUDE_PERMISSION_MODE ->
+  // cli-args `--permission-mode`, and the deny-floor still bites. Every other
+  // value (incl. undefined / plan / acceptEdits / bypassPermissions) keeps the
+  // legacy bypass so no existing spawn changes behavior.
+  const unattendedGuarded = opts.permissionMode === 'auto' || opts.permissionMode === 'dontAsk'
+  const args: string[] = unattendedGuarded ? [] : ['--dangerously-skip-permissions']
   if (opts.mode === 'resume') {
     const resumeKey = opts.resumeId || opts.resumeName
     if (resumeKey) args.push('--resume', resumeKey)
@@ -2214,6 +2227,7 @@ async function spawnConversation(
       agent,
       worktree,
       maxBudgetUsd,
+      permissionMode,
     })
     const spawnEnv = buildHeadlessEnv({
       secret,
@@ -3971,6 +3985,13 @@ function connect(
           const m = msg as ProjectBoardOp
           const root = expandPath(m.projectRoot, spawnRoot)
           ws.send(JSON.stringify(handleProjectBoardOp(root, m, Date.now())))
+          break
+        }
+
+        case 'nightshift_op': {
+          const m = msg as NightshiftOp
+          const root = expandPath(m.projectRoot, spawnRoot)
+          ws.send(JSON.stringify(handleNightshiftOp(root, m, Date.now())))
           break
         }
 

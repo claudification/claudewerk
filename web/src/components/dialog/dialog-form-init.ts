@@ -3,6 +3,7 @@
  * modal and the persistent inline renderer so both derive defaults + validate
  * required fields identically (no duplicated traversal).
  */
+import type { DialogOp } from '@shared/dialog-live'
 import type { DialogComponent, DialogLayout } from './types'
 
 /** The default value an input block seeds, or null for non-inputs. */
@@ -45,6 +46,27 @@ export function collectRequired(components: DialogComponent[]): string[] {
     if ('children' in comp) ids.push(...collectRequired(comp.children))
   }
   return ids
+}
+
+/**
+ * Merge a host patch into the current input values: seed defaults for any NEW
+ * blocks the patch introduced, keep everything the user already typed, then
+ * apply the agent's explicit setState/unsetState ops. Shared by the form hook
+ * (mounted, prop-driven) and the live-dialog store (so values stay correct even
+ * while the dialog is unmounted on another conversation). Existing user input is
+ * never clobbered by a structural patch -- only an explicit setState changes it.
+ */
+export function reconcileValues(
+  prev: Record<string, unknown>,
+  layout: DialogLayout,
+  ops: DialogOp[],
+): Record<string, unknown> {
+  const next = { ...getInitialValues(layout), ...prev }
+  for (const op of ops) {
+    if (op.op === 'setState') next[op.key] = op.value
+    else if (op.op === 'unsetState') delete next[op.key]
+  }
+  return next
 }
 
 export function hasValue(val: unknown): boolean {

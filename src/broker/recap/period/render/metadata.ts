@@ -19,7 +19,13 @@ export function buildFtsFields(metadata: RecapMetadata, body: string, projectUri
   // Fold the new typed sections (decisions/dead-ends/gotchas/frustrations) into
   // the body field so FTS search reaches them even though they render as cards,
   // not prose.
-  const extra = [...metadata.decisions, ...metadata.dead_ends, ...metadata.gotchas, ...metadata.frustrations]
+  const extra = [
+    ...metadata.decisions,
+    ...metadata.dead_ends,
+    ...metadata.gotchas,
+    ...metadata.frustrations,
+    ...(metadata.tech_discovered ?? []),
+  ]
     .map(i => (i.detail ? `${i.title} ${i.detail}` : i.title))
     .join('\n')
   return {

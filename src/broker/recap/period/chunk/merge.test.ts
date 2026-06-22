@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import type { RecapItem, RecapMetadata } from '../../../../shared/protocol'
-import { dedupItems, itemDedupKey, makeEmptyMetadata, mergeMetadata, unionStrings } from './merge'
+import { dedupItems, itemDedupKey, makeEmptyMetadata, mergeMetadata, mergeOutcome, unionStrings } from './merge'
 
 function meta(over: Partial<RecapMetadata>): RecapMetadata {
   return { ...makeEmptyMetadata(), ...over }
@@ -102,5 +102,38 @@ describe('mergeMetadata', () => {
   it('returns a fully-formed empty metadata for empty input', () => {
     const merged = mergeMetadata([])
     expect(merged).toEqual(makeEmptyMetadata())
+  })
+})
+
+describe('mergeOutcome (Lessons Scavenger tech registry)', () => {
+  it('returns the other when one side is undefined', () => {
+    expect(mergeOutcome(undefined, 'success')).toBe('success')
+    expect(mergeOutcome('failure', undefined)).toBe('failure')
+    expect(mergeOutcome(undefined, undefined)).toBeUndefined()
+  })
+  it('keeps agreement', () => {
+    expect(mergeOutcome('success', 'success')).toBe('success')
+    expect(mergeOutcome('failure', 'failure')).toBe('failure')
+  })
+  it('collapses disagreement to mixed', () => {
+    expect(mergeOutcome('success', 'failure')).toBe('mixed')
+    expect(mergeOutcome('mixed', 'success')).toBe('mixed')
+  })
+})
+
+describe('dedupItems: outcome reconciliation', () => {
+  it('merges same-title tech items, reconciling outcome to mixed on conflict', () => {
+    const merged = dedupItems([
+      { title: 'redis', outcome: 'success', conversations: ['conv_a'] },
+      { title: 'Redis', outcome: 'failure', conversations: ['conv_b'] },
+    ])
+    expect(merged.length).toBe(1)
+    expect(merged[0].outcome).toBe('mixed')
+    expect(merged[0].conversations).toEqual(['conv_a', 'conv_b'])
+  })
+  it('does not add an outcome when neither item has one', () => {
+    const merged = dedupItems([{ title: 'x' }, { title: 'x' }])
+    expect(merged[0].outcome).toBeUndefined()
+    expect('outcome' in merged[0]).toBe(false)
   })
 })

@@ -4,10 +4,11 @@
  */
 
 import type { DialogStatus } from '@shared/dialog-live'
-import { Undo2, X } from 'lucide-react'
+import { Minus, Undo2, X } from 'lucide-react'
 import { Markdown } from '@/components/markdown'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { decodeEntities } from '../decode-entities'
 
 const STATUS_BADGE: Record<string, string> = {
   open: 'bg-primary/15 text-primary border-primary/30',
@@ -24,6 +25,7 @@ export function PersistentDialogHeader({
   rationale,
   canUndo,
   onUndo,
+  onMinimize,
   onClose,
 }: {
   title: string
@@ -33,6 +35,7 @@ export function PersistentDialogHeader({
   rationale?: string
   canUndo: boolean
   onUndo: () => void
+  onMinimize: () => void
   onClose: () => void
 }) {
   const badge = readOnly && status === 'open' ? 'readonly' : status
@@ -67,6 +70,16 @@ export function PersistentDialogHeader({
             variant="ghost"
             size="icon"
             className="size-6 text-muted-foreground hover:text-foreground"
+            title="Minimize to a bar (keeps it in the conversation)"
+            aria-label="Minimize dialog"
+            onClick={onMinimize}
+          >
+            <Minus className="size-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-6 text-muted-foreground hover:text-foreground"
             title={closeTitle}
             aria-label={closeTitle}
             onClick={onClose}
@@ -75,7 +88,7 @@ export function PersistentDialogHeader({
           </Button>
         </div>
       </div>
-      <h3 className="text-base font-semibold text-foreground">{title}</h3>
+      <h3 className="text-base font-semibold text-foreground">{decodeEntities(title)}</h3>
       {description && (
         <div className="prose prose-sm dark:prose-invert max-w-none text-muted-foreground">
           <Markdown inline>{description}</Markdown>

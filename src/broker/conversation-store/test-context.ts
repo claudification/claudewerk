@@ -1,5 +1,7 @@
 import type { Conversation } from '../../shared/protocol'
+import { NotificationDebouncer } from '../notification-debounce'
 import type { StoreDriver } from '../store/types'
+import { TRANSCRIPT_KICK_DEBOUNCE_MS } from './constants'
 import type { ConversationStoreContext } from './event-context'
 
 /**
@@ -19,7 +21,7 @@ export function makeTestContext(overrides: Partial<ConversationStoreContext> = {
     dirtyTranscripts: new Set(),
     processedClipboardIds: new Set(),
     pendingAgentLaunches: new Map(),
-    lastTranscriptKick: new Map(),
+    transcriptKickDebouncer: new NotificationDebouncer({ windowMs: TRANSCRIPT_KICK_DEBOUNCE_MS }),
     notifiedMentions: new Set(),
     store: undefined,
     scheduleConversationUpdate: () => {},

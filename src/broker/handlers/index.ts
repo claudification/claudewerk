@@ -16,6 +16,7 @@ import { registerDialogLiveHandlers } from './dialog-live'
 import { registerGatewayHandlers } from './gateway'
 import { registerInterConversationHandlers } from './inter-conversation'
 import { registerJsonStreamHandlers } from './json-stream'
+import { registerNightshiftHandlers } from './nightshift'
 import { registerPermissionHandlers } from './permissions'
 import { registerPlanApprovalHandlers } from './plan-approval'
 import { registerProjectHandlers } from './project'
@@ -46,6 +47,7 @@ export function registerAllHandlers(): void {
   registerPermissionHandlers()
   registerPlanApprovalHandlers()
   registerProjectHandlers()
+  registerNightshiftHandlers()
   registerRclaudeConfigHandlers()
   registerRecapHandlers()
   registerConversationLifecycleHandlers()

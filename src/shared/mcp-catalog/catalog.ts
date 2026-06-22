@@ -30,7 +30,7 @@ export interface CatalogTool {
   /** One-line purpose. Canonical identity for drift visibility; not (yet) the
    *  string the servers serve -- those still live at the impl sites. */
   summary: string
-  group: 'core' | 'project' | 'conversation' | 'identity' | 'hosts' | 'files' | 'dialog' | 'recap' | 'web-control'
+  group: 'core' | 'project' | 'conversation' | 'identity' | 'hosts' | 'files' | 'dialog' | 'recap' | 'web-control' | 'nightshift'
   /** Sites where this tool is MEANT to be exposed. */
   sites: readonly McpSite[]
 }
@@ -77,6 +77,12 @@ export const MCP_CATALOG: readonly CatalogTool[] = [
   { name: 'list_hosts', group: 'hosts', sites: HOST_ONLY, summary: 'List connected sentinels + profiles/pools' },
   { name: 'share_file', group: 'files', sites: HOST_ONLY, summary: 'Upload a local file, return a public URL' },
   { name: 'dialog', group: 'dialog', sites: HOST_ONLY, summary: 'Show an interactive dialog and await a response' },
+  { name: 'update_dialog', group: 'dialog', sites: HOST_ONLY, summary: 'Patch a live (persistent) dialog in place' },
+  { name: 'close_dialog', group: 'dialog', sites: HOST_ONLY, summary: 'Close a live (persistent) dialog (terminal but reopenable)' },
+  { name: 'reopen_dialog', group: 'dialog', sites: HOST_ONLY, summary: 'Reopen a previously-closed live (persistent) dialog' },
+
+  // ── nightshift (host) ─────────────────────────────────────────────
+  { name: 'nightshift', group: 'nightshift', sites: HOST_ONLY, summary: 'Write the NIGHTSHIFT morning report for an unattended night run' },
 
   // ── recap (host) ───────────────────────────────────────────────────
   { name: 'recap_create', group: 'recap', sites: HOST_ONLY, summary: 'Create a period recap' },

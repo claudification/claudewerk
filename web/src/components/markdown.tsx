@@ -9,6 +9,7 @@ import { playAudio } from './audio-player-bus'
 import { CopyMenu } from './copy-menu'
 import { openLinkPreview } from './link-preview-bus'
 import { filenameFromUrl, type MediaKind, openMediaLightbox } from './media-lightbox-bus'
+import { openMermaidLightbox } from './mermaid-lightbox-bus'
 import { ensureLang, getHighlighter, normalizeLang } from './transcript/syntax'
 
 const marked = new Marked()
@@ -374,6 +375,11 @@ function processMermaidQueue() {
       }
       const wrapper = document.createElement('div')
       wrapper.className = 'mermaid-container'
+      // Clickable: the markdown onClick delegate pops it into the pan/zoom
+      // lightbox. role/tabindex so keyboard + a11y reach it too.
+      wrapper.setAttribute('role', 'button')
+      wrapper.setAttribute('tabindex', '0')
+      wrapper.setAttribute('title', 'Click to zoom')
       wrapper.innerHTML = svg
       block.replaceWith(wrapper)
     } catch (err) {
@@ -597,6 +603,21 @@ export const Markdown = memo(function Markdown({ children, inline, copyable }: M
     if (audioChip) {
       const src = audioChip.getAttribute('data-audio-src')
       if (src) playAudio(src, audioChip.getAttribute('data-audio-label') || src)
+      return
+    }
+
+    // Mermaid diagram -> pop into the pan/zoom lightbox. Inline diagrams shrink
+    // to column width; this makes complex ones legible. Reads the rendered SVG
+    // markup straight off the container.
+    const mermaid = target.closest('.mermaid-container') as HTMLElement | null
+    if (mermaid) {
+      const me = e as unknown as MouseEvent
+      if (me.metaKey || me.ctrlKey || me.shiftKey || me.button === 1) return
+      const svgEl = mermaid.querySelector('svg')
+      if (svgEl) {
+        e.preventDefault()
+        openMermaidLightbox(svgEl.outerHTML)
+      }
       return
     }
 

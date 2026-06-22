@@ -2,7 +2,7 @@ import type { Conversation, HookEvent, HookEventOf, HookEventType, TranscriptUse
 import { parseRecapContent } from '../../shared/recap'
 import { recordHookEvent } from '../analytics-store'
 import { getProjectSettings } from '../project-settings'
-import { MAX_EVENTS, PASSIVE_HOOKS, TRANSCRIPT_KICK_DEBOUNCE_MS, TRANSCRIPT_KICK_EVENT_THRESHOLD } from './constants'
+import { MAX_EVENTS, PASSIVE_HOOKS, TRANSCRIPT_KICK_EVENT_THRESHOLD } from './constants'
 import type { ConversationStoreContext } from './event-context'
 import { handleCompactEvent } from './event-handlers/compact'
 import { handleNotification } from './event-handlers/notification'
@@ -129,10 +129,7 @@ export function addEvent(ctx: ConversationStoreContext, conversationId: string, 
     !ctx.transcriptCache.has(conversationId) &&
     conv.status !== 'ended'
   ) {
-    const now = Date.now()
-    const lastKick = ctx.lastTranscriptKick.get(conversationId) || 0
-    if (now - lastKick > TRANSCRIPT_KICK_DEBOUNCE_MS) {
-      ctx.lastTranscriptKick.set(conversationId, now)
+    if (ctx.transcriptKickDebouncer.shouldNotify(conversationId)) {
       const wrappers = ctx.conversationSockets.get(conversationId)
       if (wrappers) {
         for (const ws of wrappers.values()) {

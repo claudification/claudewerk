@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { canonicalizeToolUse } from '@/lib/legacy-to-canonical'
+import { renderMcpSendMessage } from './tool-case-send-message'
 import type { ToolCaseInput, ToolCaseResult } from './tool-case-types'
 import { renderAgentTask, renderAskUserQuestion } from './tool-cases-agent'
 import { renderBash, renderEdit, renderRead, renderRepl, renderWrite } from './tool-cases-core'
@@ -20,7 +21,6 @@ import {
   renderMcpDialog,
   renderMcpListConversations,
   renderMcpNotify,
-  renderMcpSendMessage,
   renderPlanMode,
 } from './tool-cases-mcp'
 import { renderMcpSpawnConversation } from './tool-cases-mcp-spawn'

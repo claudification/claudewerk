@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils'
 import { Markdown } from '../markdown'
+import { ChannelBodyCard, DirectionChip, IntentBadge } from './channel-message-parts'
 import { ConversationTag } from './conversation-tag'
 import { DialogChannel, DialogSubmitChannel } from './dialog-channels'
 import type { RenderItem } from './group-view-types'
@@ -27,30 +28,22 @@ export function ChannelItem({ item }: { item: ChannelRenderItem }) {
   )
 }
 
+// INCOMING -- message received from another conversation. Direction "in":
+// teal hue, left edge accent, `◀ IN` chip. See channel-message-parts.tsx for
+// the matching outgoing treatment.
 function InterConversationChannel({ item }: { item: ChannelRenderItem }) {
-  const intentStyles: Record<string, string> = {
-    request: 'bg-yellow-400/15 text-yellow-400 border-yellow-400/30',
-    response: 'bg-green-400/15 text-green-400 border-green-400/30',
-    notify: 'bg-blue-400/15 text-blue-400 border-blue-400/30',
-    progress: 'bg-zinc-400/15 text-zinc-400 border-zinc-400/30',
-  }
-  const iStyle = intentStyles[item.intent || ''] || intentStyles.notify
-
   return (
-    <div className="rounded-lg border border-teal-500/30 bg-teal-500/5 px-3 py-2.5 my-1">
+    <ChannelBodyCard direction="in">
       <div className="flex items-center gap-2 mb-1.5">
+        <DirectionChip direction="in" />
         <span className="text-[10px] font-mono text-teal-400/60">from</span>
         <ConversationTag idOrSlug={item.conversationId || item.source || ''} className="text-xs" />
-        {item.intent && (
-          <span className={cn('px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider border rounded', iStyle)}>
-            {item.intent}
-          </span>
-        )}
+        <IntentBadge intent={item.intent} />
       </div>
       <div className="text-sm">
         <Markdown copyable>{item.text}</Markdown>
       </div>
-    </div>
+    </ChannelBodyCard>
   )
 }
 

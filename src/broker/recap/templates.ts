@@ -46,6 +46,7 @@ const SECTION_VOCABULARY = [
   'dead_ends',
   'gotchas',
   'frustrations',
+  'tech_discovered',
   'open_questions',
   'went_well',
   'went_badly',

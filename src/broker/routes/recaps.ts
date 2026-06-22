@@ -20,6 +20,8 @@ import { marked } from 'marked'
 import type { RecapDigest, RecapMetadata } from '../../shared/protocol'
 import { getAuthenticatedUser } from '../auth-routes'
 import type { ConversationStore } from '../conversation-store'
+import { buildTechRegistry, queryTech } from '../lessons-compaction'
+import { loadAllLedgers } from '../lessons-store'
 import { sanitizeRecapForPublicShare } from '../recap/period/public-share-sanitize'
 import type { RecapRow, RecapStatus } from '../recap/period/store'
 import { buildTemplateList } from '../recap/templates'
@@ -224,6 +226,25 @@ export function createRecapsRouter(_conversationStore: ConversationStore, helper
     // discovery paths can never drift (default-first, then alphabetical).
     const { templates, defaultTemplateId } = buildTemplateList()
     return c.json({ templates, defaultTemplateId })
+  })
+
+  // Cross-project TECH REGISTRY (Lessons Scavenger Tier 2). Aggregates every
+  // per-project ledger's `tech_discovered` so a caller can see "we used X in
+  // project Y, and it worked / didn't" across the fleet. Permission-scoped: only
+  // ledgers for projects the caller can chat:read (admin sees all) are included,
+  // so the registry never leaks a project's tech to someone without access.
+  // Registered before /api/recaps/:id so the literal path wins over the :id param.
+  app.get('/api/lessons/tech', c => {
+    const orch = getRecapOrchestrator()
+    if (!orch) return c.json({ tech: [] })
+    const req = c.req.raw
+    if (!helpers.httpIsAdmin(req) && !getAuthenticatedUser(req)) {
+      return c.json({ error: 'forbidden' }, 403)
+    }
+    const ledgers = loadAllLedgers(orch.store).filter(l => canRead(req, helpers, l.projectUri, l.createdBy))
+    const registry = buildTechRegistry(ledgers)
+    const q = new URL(c.req.url).searchParams.get('q') ?? ''
+    return c.json({ tech: queryTech(registry, q), total: registry.length })
   })
 
   app.get('/api/recaps/:id', c => {

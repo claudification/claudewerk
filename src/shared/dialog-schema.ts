@@ -34,6 +34,13 @@ export interface DiagramComponent {
   type: 'Diagram'
   id?: string
   content: string
+  /**
+   * Live dialogs only: let the user click a diagram NODE and attach a short note.
+   * Requires `id`. Notes ride the form state as `values[id] = { nodeId: note }`,
+   * keyed by the node's source identifier (e.g. `A` in `A[Start]`), and arrive in
+   * the submit payload so you can redraw the diagram addressing each note.
+   */
+  commentable?: boolean
 }
 
 export interface ImageComponent {
@@ -264,6 +271,14 @@ export interface DialogLayout {
   timeout?: number // seconds, default 900, min 10, max 3600
   submitLabel?: string // default 'Submit'
   cancelLabel?: string // default 'Cancel'
+  /** Live dialogue ONLY: a HARD-terminal second submit -- "this is my final
+   *  decision, we're done." Renders next to the normal submit. Clicking it
+   *  submits every field value (like submit) but ALSO carries `_final: true` and
+   *  immediately closes the dialog client-side, so it stops the moment the user
+   *  commits. The agent reads `_final` as "approved, do not reopen". Use it for an
+   *  approval gate (e.g. "Approve all -- let's go" on a visual plan). Gated on the
+   *  same required fields as submit. Ignored on one-shot (non-persistent) dialogs. */
+  finalizeLabel?: string
   /** Optional one-click secondary submit. Unlike the footer cancel button
    *  (which dismisses with NO form values), this SUBMITS the dialog -- the
    *  result carries every field value plus `_action: id`. Use it for a real
@@ -592,10 +607,15 @@ export function dialogToolInputSchema(): Record<string, unknown> {
       },
       submitLabel: { type: 'string', description: 'Submit button label (default "Submit")' },
       cancelLabel: { type: 'string', description: 'Cancel button label (default "Cancel")' },
+      finalizeLabel: {
+        type: 'string',
+        description:
+          'Live (persistent) dialog only: label for a HARD-terminal "final decision" submit (e.g. "Approve all -- let\'s go"). Renders beside submit. Submits every field value, marks the result _final:true, and immediately closes the dialog so it stops the moment the user commits. Use for an approval gate; omit if there is no final-approval outcome.',
+      },
       body: {
         type: 'array',
         description:
-          'Single-page layout. Array of components. Mutually exclusive with "pages". Component types: Markdown (content OR file -- use file to reference a local path instead of inlining text, saves context tokens; color?), Diagram (content), Image (url, alt?), Alert (intent?: info|warning|error|success, content), Divider, Diff (content: unified diff text, filename?), FileTree (entries[{path, status?: added|modified|removed|unchanged, note?}], label?), DataModel (name, fields[{name, type, note?, status?}]), ApiEndpoint (method, path, description?, request?: JSON string, response?: JSON string), AnnotatedCode (code, language?, filename?, annotations[{line, note}]), Options (id, options[{value,label,description?}], label?, multi?, required?, default?), TextInput (id, label?, placeholder?, required?, multiline?, default?), ImagePicker (id, images[{value,url,label?}], label?, multi?, allowUpload?), Toggle (id, label, default?), Slider (id, label?, min?, max?, step?, default?), Button (id, label, variant?: default|primary|outline|ghost, intent?: neutral|destructive|success), Stack (direction?: vertical|horizontal, children[]), Grid (columns?, children[]), Group (label, collapsed?, children[]). Colors: primary|secondary|muted|accent|destructive|success|warning|info. All text/label fields support markdown.',
+          'Single-page layout. Array of components. Mutually exclusive with "pages". Component types: Markdown (content OR file -- use file to reference a local path instead of inlining text, saves context tokens; color?), Diagram (content, id?, commentable? -- live dialogs: with id+commentable the user clicks a node to attach a note; notes arrive as values[id]={nodeId:note}, redraw to address them), Image (url, alt?), Alert (intent?: info|warning|error|success, content), Divider, Diff (content: unified diff text, filename?), FileTree (entries[{path, status?: added|modified|removed|unchanged, note?}], label?), DataModel (name, fields[{name, type, note?, status?}]), ApiEndpoint (method, path, description?, request?: JSON string, response?: JSON string), AnnotatedCode (code, language?, filename?, annotations[{line, note}]), Options (id, options[{value,label,description?}], label?, multi?, required?, default?), TextInput (id, label?, placeholder?, required?, multiline?, default?), ImagePicker (id, images[{value,url,label?}], label?, multi?, allowUpload?), Toggle (id, label, default?), Slider (id, label?, min?, max?, step?, default?), Button (id, label, variant?: default|primary|outline|ghost, intent?: neutral|destructive|success), Stack (direction?: vertical|horizontal, children[]), Grid (columns?, children[]), Group (label, collapsed?, children[]). Colors: primary|secondary|muted|accent|destructive|success|warning|info. All text/label fields support markdown.',
         items: { type: 'object' },
       },
       pages: {

@@ -6,14 +6,16 @@
  */
 
 import { AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Info } from 'lucide-react'
-import { memo, useState } from 'react'
+import { memo, useRef, useState } from 'react'
 import { Markdown } from '@/components/markdown'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn, haptic } from '@/lib/utils'
 import { isPlanBlock, PlanBlock } from './blocks'
+import { DiagramCommentPopover } from './diagram-comment-popover'
 import { applySelect, FieldLabel } from './field-helpers'
 import type { AlertIntent, ButtonIntent, ButtonVariant, DialogColor, DialogComponent } from './types'
+import { useDiagramComments } from './use-diagram-comments'
 import { useDialogPaste } from './use-dialog-paste'
 
 // ─── Color mapping ─────────────────────────────────────────────────
@@ -62,6 +64,30 @@ const DiagramBlock = memo(function DiagramBlock({ content }: { content: string }
     </div>
   )
 })
+
+// Live dialogs: a commentable diagram. The hook delegates node clicks in capture
+// phase (node -> comment popover + stopPropagation; empty space -> zoom delegate)
+// and marks commented nodes. DiagramBlock stays memoized on `content`, so typing
+// a note (which churns `form`) never re-renders -- and never re-paints -- the SVG.
+function CommentableDiagram({ content, id, form }: { content: string; id: string; form: DialogFormState }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const { active, onClickCapture, setNote, close, currentNote } = useDiagramComments(ref, id, form)
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: node interaction is delegated to mermaid <g> elements
+    // react-doctor-disable-next-line react-doctor/no-static-element-interactions
+    <div ref={ref} className="mermaid-commentable" onClickCapture={onClickCapture}>
+      <DiagramBlock content={content} />
+      {active && (
+        <DiagramCommentPopover
+          node={active}
+          initialNote={currentNote}
+          onSave={text => setNote(active.nodeId, text)}
+          onClose={close}
+        />
+      )}
+    </div>
+  )
+}
 
 function ImageBlock({ url, alt }: { url: string; alt?: string }) {
   return (
@@ -501,7 +527,11 @@ export const ComponentRenderer = memo(function ComponentRenderer({
     case 'Markdown':
       return <MarkdownBlock content={component.content || ''} color={component.color} />
     case 'Diagram':
-      return <DiagramBlock content={component.content} />
+      return component.commentable && component.id ? (
+        <CommentableDiagram content={component.content} id={component.id} form={form} />
+      ) : (
+        <DiagramBlock content={component.content} />
+      )
     case 'Image':
       return <ImageBlock url={component.url} alt={component.alt} />
     case 'Alert':

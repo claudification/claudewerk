@@ -20,6 +20,7 @@ import { randomUUID } from 'node:crypto'
 import * as path from 'node:path'
 import { generateConversationName } from '../shared/conversation-names'
 import { validateModel } from '../shared/models'
+import { nightshiftPreamble } from '../shared/nightshift-preamble'
 import {
   buildProjectUri,
   cwdToProjectUri,
@@ -477,6 +478,22 @@ async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): 
       name: req.name,
     })
 
+    // A nightshift spawn always carries the unattended covenant + safe-to-do
+    // gate (plan §10 / directive #2), appended after any caller-supplied prompt
+    // so the worker runs with-no-human-here behaviour regardless of who dispatched.
+    const appendSystemPrompt = req.nightshift
+      ? [
+          req.appendSystemPrompt,
+          nightshiftPreamble({
+            runId: req.nightshift.runId,
+            taskId: req.nightshift.taskId,
+            project: req.name || req.cwd,
+          }),
+        ]
+          .filter(Boolean)
+          .join('\n\n')
+      : req.appendSystemPrompt || undefined
+
     deps.conversationStore.setPendingLaunchConfig(conversationId, {
       headless,
       transport,
@@ -491,7 +508,7 @@ async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): 
       includePartialMessages,
       maxBudgetUsd,
       env: req.env || undefined,
-      appendSystemPrompt: req.appendSystemPrompt || undefined,
+      appendSystemPrompt,
       // Sentinel-profile INTENT (broker-safe NAME / mode / pool only).
       // Profile env stays sentinel-side (PROFILE-ENV BOUNDARY covenant).
       sentinelProfile: intentFromProfileField(req.profile, req.pool),
@@ -536,7 +553,7 @@ async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): 
           leaveRunning: req.leaveRunning || undefined,
           worktree: req.worktree || undefined,
           env: req.env || undefined,
-          appendSystemPrompt: req.appendSystemPrompt || undefined,
+          appendSystemPrompt,
           // Backend-general config injection (transport-reframe Phase 2). The
           // daemon backend reads these via normalizeDaemonReq; the claude
           // PTY/headless path threads them to the agent host (which merges

@@ -6,6 +6,17 @@
 import type { JobRecord } from './cc-daemon/types'
 import type { DialogOp, DialogSnapshot } from './dialog-live'
 import type { DialogLayout, DialogResult } from './dialog-schema'
+import type {
+  NightshiftBlocked,
+  NightshiftConfig,
+  NightshiftFinalizeInput,
+  NightshiftReportInput,
+  NightshiftRun,
+  NightshiftRunSnapshot,
+  NightshiftRunStartInput,
+  NightshiftSkipped,
+  NightshiftTaskMeta,
+} from './nightshift-types'
 import type { ProjectTask, ProjectTaskManifestEntry, ProjectTaskMeta, ProjectTaskRef } from './project-task-types'
 import type { SpawnRequest } from './spawn-schema'
 
@@ -1810,6 +1821,7 @@ export type BrokerMessage =
   | ChecklistReplaceRequest
   | ChecklistArchiveRequest
   | ChecklistPurgeRequest
+  | NightshiftRequest
 
 export interface NotifyConfigUpdated {
   type: 'notify_config_updated'
@@ -2606,6 +2618,14 @@ export interface ProjectSettings {
   allowPlanMode?: boolean // default: true. Set false to auto-deny EnterPlanMode
   verbs?: string[] // custom spinner verbs (merged with defaults)
   pinned?: boolean
+  /** Lessons-Learned Scavenger ("Overwatch") opt-in. When true the nightly
+   *  scavenger produces a lessons-learned recap for this project. Default off
+   *  (opt-in). [[project_lessons_scavenger]] */
+  lessonsEnabled?: boolean
+  /** Epoch ms of the last successful nightly lessons scavenge for this project.
+   *  Used only for activity-gating / observability; the window is a fixed
+   *  rolling 7d, so this is not a strict watermark. */
+  lessonsLastRun?: number
 }
 
 // File metadata for the file editor
@@ -3419,6 +3439,102 @@ export interface ProjectUnsubscribe {
   project: string
 }
 
+// ===========================================================================
+// NIGHTSHIFT RPCs (Dashboard / night-manager <-> Broker <-> Sentinel)
+//
+// The `.nightshift/` artifact tree (plan-nightshift.md §3) is written + read by
+// the SENTINEL -- the same lease-watcher host that owns `.rclaude/project/` --
+// so the morning Result screen works with ZERO live agent hosts. One op-envelope
+// per direction, mirroring the ProjectBoardOp/Result idiom: the dashboard sends
+// a project URI + op, the broker resolves it to an absolute `projectRoot` + the
+// owning sentinel, forwards `nightshift_op`, and relays `nightshift_result` back.
+//
+// THE ARTIFACT IS THE API: writers (run_start / report / run_finalize) and
+// readers (snapshot / config) all route here. The safe-to-do gate (Jonas
+// directive #2) rides the `report` op with kind=skipped + a feasibility reason.
+// ===========================================================================
+
+/** The op selector shared by the dashboard request, the sentinel op, and the result. */
+export type NightshiftOpKind =
+  | 'snapshot' // read a run snapshot (runId omitted = latest) -- the Result screen
+  | 'config_read'
+  | 'config_write'
+  | 'run_start' // create run dir + run.md (status=running) + repoint `latest`
+  | 'report' // write one task / blocked / skipped artifact
+  | 'run_finalize' // recompute totals, flip run.md to done, stamp digest/cost
+
+/** Dashboard / night-manager -> Broker: one nightshift artifact op. */
+export interface NightshiftRequest {
+  type: 'nightshift_request'
+  requestId: string
+  /** Canonical project URI; the broker resolves it to projectRoot + sentinel. */
+  project: string
+  op: NightshiftOpKind
+  /** snapshot (specific run; omit = latest) / run_start / report / run_finalize. */
+  runId?: string
+  /** config_write payload. */
+  config?: NightshiftConfig
+  /** run_start payload. */
+  runStart?: NightshiftRunStartInput
+  /** report payload (task | blocked | skipped). */
+  report?: NightshiftReportInput
+  /** run_finalize payload. */
+  finalize?: NightshiftFinalizeInput
+}
+
+/** Broker -> Sentinel: the same op, with the resolved absolute projectRoot. */
+export interface NightshiftOp {
+  type: 'nightshift_op'
+  requestId: string
+  projectRoot: string
+  op: NightshiftOpKind
+  runId?: string
+  config?: NightshiftConfig
+  runStart?: NightshiftRunStartInput
+  report?: NightshiftReportInput
+  finalize?: NightshiftFinalizeInput
+}
+
+/** Sentinel -> Broker: result of one op. Populated field depends on `op`. */
+export interface NightshiftResult {
+  type: 'nightshift_result'
+  requestId: string
+  op: NightshiftOpKind
+  ok: boolean
+  /** snapshot -- null when the project has no runs yet. */
+  snapshot?: NightshiftRunSnapshot | null
+  /** config_read / config_write -- the effective config. */
+  config?: NightshiftConfig
+  /** run_start / run_finalize -- the run after the write. */
+  run?: NightshiftRun
+  /** report(kind=task) -- the persisted task meta. */
+  task?: NightshiftTaskMeta
+  /** report(kind=blocked) -- the persisted blocked entry. */
+  blocked?: NightshiftBlocked
+  /** report(kind=skipped) -- the persisted skipped entry. */
+  skipped?: NightshiftSkipped
+  error?: string
+}
+
+/**
+ * Broker -> Dashboard broadcast (permission-scoped by project URI): a nightshift
+ * lifecycle beat, fired after the matching write op persists. The §6 event
+ * vocabulary collapsed into one envelope -- the Result screen re-fetches the
+ * snapshot on receipt rather than reconstructing state from the beat. The live
+ * Status screen (P3) will read the richer fields directly.
+ */
+export interface NightshiftEvent {
+  type: 'nightshift_event'
+  /** Canonical project URI -- the broadcast scope key. */
+  project: string
+  event: 'run_started' | 'task_update' | 'task_done' | 'blocked' | 'impulse' | 'run_done'
+  runId: string
+  taskId?: string
+  status?: string
+  verdict?: string
+  digest?: string
+}
+
 // ─── Project Checklists ─────────────────────────────────────────────────
 // Per-project personal checklist ("notes from me to me") shown in the
 // conversation list above a project's conversations. Broker-local data
@@ -3620,6 +3736,40 @@ export interface SentinelUsageReport {
   type: 'sentinel_usage_report'
   profiles: ProfileUsageSnapshot[]
   polledAt: number // ms epoch of the polling cycle start
+}
+
+/** Classified reason a profile's auth is in trouble. Derived from the
+ *  ProfileUsageSnapshot.error the sentinel already reports each poll cycle. */
+export type AuthTroubleReason = 'http_401' | 'http_403' | 'no_token' | 'invalid_grant'
+
+/**
+ * Broker -> control-panel: a profile's OAuth auth has failed and needs a manual
+ * re-login (`claude auth login` -- which CANNOT be automated; only the
+ * inference-only `setup-token` is headless). Detected broker-side from the
+ * per-profile error in `sentinel_usage_report`, debounced once-per-window per
+ * `sentinelId:profile`, and broadcast as a first-class event that also drives a
+ * push notification. Broadcast on the ControlPanelMessage channel.
+ *
+ * PROFILE-ENV BOUNDARY: the broker has no `configDir` (it is redacted from every
+ * snapshot), so neither this message nor the push can carry the real profile
+ * directory -- they name the profile and the generic recovery command only.
+ */
+export interface ProfileAuthTrouble {
+  type: 'profile_auth_trouble'
+  /** Sentinel that owns the profile -- stamped by the broker from the authed
+   *  connection. Part of the debounce key (profiles aren't unique across hosts). */
+  sentinelId: string
+  /** Profile name, e.g. "work". */
+  profile: string
+  reason: AuthTroubleReason
+  /** HTTP status when reason is http_401 / http_403. */
+  status?: number
+  /** Sanitized error snippet -- NEVER contains configDir (Profile-Env Boundary). */
+  detail?: string
+  /** ms epoch of the poll cycle that surfaced the failure. */
+  polledAt: number
+  /** Human recovery hint, e.g. "Run: CLAUDE_CONFIG_DIR=<your dir> claude auth login". */
+  recoveryHint: string
 }
 
 // External status data (broker polls clanker.watch + usage.report)
@@ -4065,6 +4215,7 @@ export type SentinelMessage =
   | FetchArtifactResult
   | ProjectBoardResult
   | ProjectChanged
+  | NightshiftResult
   | UsageUpdate
   | SentinelUsageReport
   | LaunchLog
@@ -4357,6 +4508,7 @@ export type BrokerSentinelMessage =
   | ProjectBoardOp
   | ProjectWatch
   | ProjectUnwatch
+  | NightshiftOp
   | SentinelPatchConfig
   | SentinelQuit
   | SentinelReject
@@ -4722,6 +4874,11 @@ export interface RecapItem {
   conversations?: string[]
   commits?: string[]
   inferred?: boolean
+  /** Outcome of a discovered technology/approach. Populated only for
+   *  `tech_discovered` items (the Lessons Scavenger's cross-project tech
+   *  registry keys on it: "we used X in project Y with success"). Omitted
+   *  elsewhere. 'mixed' = a code-merge saw both a success and a failure. */
+  outcome?: 'success' | 'failure' | 'mixed'
 }
 
 /** Structured frontmatter the LLM emits, parsed and persisted as metadata_json.
@@ -4757,6 +4914,13 @@ export interface RecapMetadata {
   went_badly?: RecapItem[]
   /** Actionable improvements for next period -- the feed into CLAUDE.md/rules/tools. */
   recommendations?: RecapItem[]
+  /** Lessons Scavenger: technologies/libraries/tools/approaches discovered or
+   *  adopted, each with an `outcome` (success/failure/mixed) and citations.
+   *  OPTIONAL + absent from makeEmptyMetadata on purpose -- only the
+   *  lessons-learned template requests it, so every other recap (and the
+   *  byte-pinned prompt goldens) stay unchanged. Aggregated fleet-wide into the
+   *  cross-project tech registry by Tier-2 compaction. */
+  tech_discovered?: RecapItem[]
 }
 
 export interface RecapDigestConversation {
@@ -4765,6 +4929,11 @@ export interface RecapDigestConversation {
   turns: number
   status: string
   costUsd?: number
+  /** Epoch ms the conversation was created / last updated. Deterministic source
+   *  pointers (from gatherConversations) so every recap's source roster is
+   *  timestamped for drill-down into the live transcript. */
+  createdAt?: number
+  updatedAt?: number
 }
 
 export interface RecapDigestDay {

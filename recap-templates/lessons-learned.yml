@@ -1,0 +1,104 @@
+id: lessons-learned
+label: Lessons learned
+description: A durable, searchable lessons-learned record distilled from the period -- what was discovered, decided (and why), abandoned (dead ends), the gotchas, and which technologies were used and whether they worked. Feeds the cross-project tech registry. Audience = a future agent.
+scope: fleet
+audience: agent
+defaults:
+  retrospect: true
+  customerFriendly: false
+  signals: [user_prompts, assistant_final_turn, commits, task_results, tool_summaries, errors_hooks, open_questions]
+sections: [decisions, dead_ends, gotchas, fixes, features, tech_discovered]
+options: []
+
+# SELF-CONTAINED on purpose: this template authors its OWN frontmatter contract
+# (it adds `tech_discovered`, which the shared FRONTMATTER_SPEC does not carry) so
+# the byte-pinned project-recap / agent-handoff goldens stay untouched. It does
+# NOT inject {{ frontmatter_spec }} / {{ body_spec }}. retrospect:true means the
+# orchestrator appends the RETRO frontmatter/body spec (went_well / went_badly /
+# recommendations) AFTER this body -- recommendations are the feed into
+# CLAUDE.md / rules / tooling, so they belong in a lessons record.
+body: |-
+  {%- if path == "synthesize" -%}
+  You are SYNTHESIZING the durable LESSONS-LEARNED record for project {{ scope_label }},
+  covering {{ period.human }} ({{ period.iso_range }}).
+
+  The facts below were already EXTRACTED from the period's transcripts in parallel
+  (map stage) and MERGED + de-duplicated IN CODE. Your job is JUDGMENT and
+  DISTILLATION, not extraction:
+    - REFINE the merged items into REUSABLE lessons; collapse near-duplicates the
+      code merge missed (same thing, different wording), keep the most specific
+      title, merge details.
+    - PRESERVE every citation (conversation ids, commit hashes) and every
+      "inferred" flag exactly as given -- never upgrade an inference to a fact.
+    - DO NOT invent items, citations, or facts that are not in the merged input.
+    - DROP anything that is not a DURABLE lesson (transient status, ephemeral
+      "X is half-done" state). Never pad to fill a section.
+  {%- else -%}
+  You are distilling the durable LESSONS LEARNED for project {{ scope_label }},
+  covering {{ period.human }} ({{ period.iso_range }}).
+
+  THE READER IS A FUTURE AGENT -- working in THIS project or another one -- deciding
+  HOW to do a piece of work. Capture only what would change a future decision:
+  what was DISCOVERED, what was DECIDED and WHY, what was tried and ABANDONED, what
+  bit us (gotchas), and which TECHNOLOGIES were used and whether they worked. This
+  record outlives the period; write it for reuse, not as a status report.
+
+  GROUND RULES:
+    - FACT vs INFERENCE. A claim backed by a commit or a closed task is a FACT --
+      state it plainly. A claim concluded from transcript text only is an
+      INFERENCE -- set `inferred: true`. Never present inference as fact.
+    - CITE EVERYTHING. Every item names its conversation id(s) (8-char) and commit
+      hash(es) (7-char) where the input shows them. An uncited, non-inferred claim
+      is noise -- drop it.
+    - DURABLE ONLY. Skip transient state and one-off chatter. Capture what stays
+      true and would help next time.
+    - OMIT empty sections entirely. Never write a section just to say "none".
+  {%- endif %}
+
+  Output a YAML frontmatter block (between --- lines) followed by a SHORT markdown
+  body. The frontmatter is parsed and indexed for search -- carry the facts into it
+  faithfully.
+
+  REQUIRED YAML FRONTMATTER (extract from the input, do not invent):
+
+    subtitle: <single-line theme, 4-12 words>
+    keywords: [<5-12 technical terms: libraries, tools, files, components, model names, table names>]
+    hashtags: [<3-8 broader themes prefixed with #, e.g. "#sqlite-migration", "#perf">]
+    goals: []
+    discoveries: [<0-12 notable findings, learnings, surprises worth remembering>]
+    side_effects: []
+    decisions: [<non-obvious decisions made + WHY (the reasoning a diff cannot show), as {title, detail, conversations?, commits?}>]
+    dead_ends: [<approaches tried then ABANDONED + why they failed, as {title, detail, conversations?, commits?}>]
+    gotchas: [<constraints/landmines discovered -- tool/env quirks, surprising failure modes -- as {title, detail?, conversations?}>]
+    fixes: [<notable refactors/cleanups worth remembering, as {title, detail?, conversations?, commits?}>]
+    features: [<features shipped this period, as {title, detail?, conversations?, commits?}>]
+    tech_discovered: [<each technology / library / tool / approach used or evaluated this period, as {title, detail?, outcome, conversations?, commits?}. `outcome` is EXACTLY one of: success | failure | mixed -- success = adopted and it worked; failure = tried and rejected or abandoned; mixed = worked but with real caveats. Name the tech PRECISELY (the real package/tool/service name) and be honest about the outcome: this feeds a CROSS-PROJECT registry so a future agent can see "we used X in another project, and it worked / didn't".>]
+    open_questions: [<unresolved questions the assistant left for the user; PRIORITISE the OPEN_QUESTIONS input; do not invent>]
+    stakeholders: []
+
+  OMIT fields with nothing to put. NEVER invent items to fill quotas.
+
+  MARKDOWN BODY (after the closing --- of frontmatter):
+
+    ## Lessons
+    The 3-6 most important DURABLE takeaways from the period, most reusable first.
+
+    ## Tech used
+    Bullet each technology with its outcome (worked / rejected / mixed) and a
+    one-line why. This is what a future agent checks before reaching for -- or
+    deliberately avoiding -- a tool. Omit the section if none.
+
+    ## Decisions
+    Non-obvious decisions made and WHY -- the reasoning a diff cannot show. Cite
+    the conversation where it was decided. Omit if none.
+
+    ## Dead ends -- do NOT retry
+    Approaches tried and ABANDONED, each with the reason it failed. git keeps no
+    record of abandoned work -- this is the highest-value section. Omit if none.
+
+    ## Gotchas
+    Constraints or landmines discovered that would actually bite a future agent.
+    Omit the section if none.
+
+  DO NOT include greetings, sign-offs, an H1 title, or a cost table. Be concrete.
+  Use the project's actual terms verbatim.

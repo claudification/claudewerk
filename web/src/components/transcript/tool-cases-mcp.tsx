@@ -6,64 +6,6 @@ import { extractMcpText, shortPath, TruncatedPre } from './shared'
 import type { ToolCaseInput, ToolCaseResult } from './tool-case-types'
 import { WritePreview } from './tool-renderers'
 
-export function renderMcpSendMessage({ input, result }: ToolCaseInput): ToolCaseResult {
-  // `to` accepts a single id (string) OR an array of ids (multicast, see the
-  // send_message MCP schema). Normalize to a string[] so a multicast call does
-  // not pass an array straight into ConversationTag (which would crash on
-  // `.toLowerCase()` -- the array survives stripProjectPrefix's `.indexOf`).
-  const recipients = (Array.isArray(input.to) ? input.to : [input.to]).filter(
-    (t): t is string => typeof t === 'string' && t.length > 0,
-  )
-  const intent = (input.intent as string) || ''
-  const msg = (input.message as string) || ''
-  // The result only carries a single target_conversation_id; only use it as a
-  // resolution fallback when there is exactly one recipient.
-  const targetIdMatch = result?.match(/target_conversation_id:\s*([0-9a-f-]{36})/)
-  const targetConversationId = recipients.length === 1 ? targetIdMatch?.[1] : undefined
-  const intentStyles: Record<string, string> = {
-    request: 'bg-yellow-400/15 text-yellow-400 border-yellow-400/30',
-    response: 'bg-green-400/15 text-green-400 border-green-400/30',
-    notify: 'bg-blue-400/15 text-blue-400 border-blue-400/30',
-    progress: 'bg-zinc-400/15 text-zinc-400 border-zinc-400/30',
-  }
-  const summary = (
-    <span className="flex items-center gap-1.5 flex-wrap">
-      <span className="text-teal-400/60">to</span>
-      {recipients.length > 0 ? (
-        recipients.map((r, i) => (
-          <span key={r} className="flex items-center gap-1.5">
-            {i > 0 && <span className="text-teal-400/30">·</span>}
-            <ConversationTag idOrSlug={r} resolvedId={targetConversationId} />
-          </span>
-        ))
-      ) : (
-        <span className="text-muted-foreground/50">(no recipient)</span>
-      )}
-      {intent && (
-        <span
-          className={cn(
-            'px-1 py-0.5 text-[8px] font-bold uppercase border rounded',
-            intentStyles[intent] || intentStyles.notify,
-          )}
-        >
-          {intent}
-        </span>
-      )}
-    </span>
-  )
-  let details: ReactNode = null
-  if (msg) {
-    details = (
-      <div className="rounded-lg border border-teal-500/20 bg-teal-500/5 px-3 py-2 my-1">
-        <div className="text-sm prose-sm">
-          <Markdown copyable>{msg}</Markdown>
-        </div>
-      </div>
-    )
-  }
-  return { summary, details }
-}
-
 export function renderMcpConversationLifecycle(name: string, { input, result }: ToolCaseInput): ToolCaseResult {
   const conversationId = (input.session_id as string) || ''
   const action = name.includes('revive') ? 'revive' : 'terminate'

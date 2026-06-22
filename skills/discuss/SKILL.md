@@ -32,9 +32,11 @@ Default interactions to client-side. An agent round-trip must be EARNED -- one p
 
 Pick the rich blocks that fit your artifact (all valid inside a persistent dialog). Every block + the layout is plain JSON.
 
-Display: `Markdown {id,content}` | `Diagram {id,content}` (mermaid) | `FileTree {id,label,entries:[{path,status?,note?}]}` | `Diff {id,content,filename?}` | `DataModel {id,name,fields:[{name,type,note?,status?}]}` | `ApiEndpoint {id,method,path,description?,request?,response?}` | `AnnotatedCode {id,code,language?,filename?,annotations:[{line,note}]}` | `Image {id,url,alt?}` | `Alert {id,intent?,content}` | `Divider` | layout `Stack`/`Grid`/`Group`.
+Display: `Markdown {id,content}` | `Diagram {id,content,commentable?}` (mermaid; `commentable:true` lets the human click a node to attach a note) | `FileTree {id,label,entries:[{path,status?,note?}]}` | `Diff {id,content,filename?}` | `DataModel {id,name,fields:[{name,type,note?,status?}]}` | `ApiEndpoint {id,method,path,description?,request?,response?}` | `AnnotatedCode {id,code,language?,filename?,annotations:[{line,note}]}` | `Image {id,url,alt?}` | `Alert {id,intent?,content}` | `Divider` | layout `Stack`/`Grid`/`Group`.
 
 Comment/steer inputs (keyed by `id`, values return on submit): `TextInput {id,label,multiline?}` | `Options {id,label,options:[{value,label,description?}],multi?}` | `Toggle {id,label}` | `Slider {id,label,min,max}` | `ImagePicker {id,label,images}`. (Text inputs accept pasted screenshots / dropped files -> they upload and insert markdown at the cursor.)
+
+**Comment ON a diagram.** Set `commentable:true` (block needs an `id`) on a `Diagram` so the human clicks a node and attaches a short note -- per-node feedback instead of one text box. Notes ride the local form state and return on submit as `values[<diagramId>] = { <nodeId>: note }`, keyed by the mermaid source id (`A` in `A[Start]`). Read them on the earned turn and redraw the diagram to address each. Still local until submit -- no per-element ->agent handlers.
 
 **Don't double up comment fields.** An `Options` block already shows a per-choice note input under the selected option -- so do NOT also add a separate `comments` TextInput for the same feedback. Use ONE: the per-option note when the comment is tied to a choice (the common case for a verdict), or a standalone `TextInput` only for free-form feedback that isn't about a specific choice. Two comment boxes next to each other is the smell.
 

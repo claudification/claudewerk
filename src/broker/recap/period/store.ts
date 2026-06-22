@@ -135,6 +135,8 @@ export interface PeriodRecapStore {
   list(filter: ListFilter): RecapRow[]
   update(id: string, patch: RecapPatch): void
   delete(id: string): boolean
+  /** Delete a recap row AND its recaps_fts + recap_tags projections (atomic). */
+  purge(id: string): boolean
   appendLog(entry: RecapLogInsert): void
   getLogs(recapId: string): RecapLogRow[]
   insertChunk(chunk: RecapChunkInsert): void
@@ -258,6 +260,19 @@ class SqlitePeriodRecapStore implements PeriodRecapStore {
   delete(id: string): boolean {
     const result = this.db.prepare('DELETE FROM recaps WHERE id = $id').run({ id })
     return result.changes > 0
+  }
+
+  purge(id: string): boolean {
+    // delete the row AND its non-FK-cascaded search/tag projections (recaps_fts
+    // + recap_tags are not FK'd to recaps, so a bare delete() orphans them). Used
+    // by the Lessons Scavenger's Tier-2 reaper to fold nightlies into the ledger
+    // without leaving stale FTS hits.
+    const tx = this.db.transaction(() => {
+      this.db.prepare('DELETE FROM recaps_fts WHERE recap_id = $id').run({ id })
+      this.db.prepare('DELETE FROM recap_tags WHERE recap_id = $id').run({ id })
+      return this.db.prepare('DELETE FROM recaps WHERE id = $id').run({ id }).changes > 0
+    })
+    return tx()
   }
 
   appendLog(entry: RecapLogInsert): void {

@@ -124,11 +124,24 @@ function mergeItem(a: RecapItem, b: RecapItem): RecapItem {
   const conversations = unionStrings([...(a.conversations ?? []), ...(b.conversations ?? [])])
   const commits = unionStrings([...(a.commits ?? []), ...(b.commits ?? [])])
   const inferred = Boolean(a.inferred) && Boolean(b.inferred)
+  const outcome = mergeOutcome(a.outcome, b.outcome)
   return {
     title: a.title,
     ...(detail ? { detail } : {}),
     ...(conversations.length ? { conversations } : {}),
     ...(commits.length ? { commits } : {}),
     ...(inferred ? { inferred: true } : {}),
+    ...(outcome ? { outcome } : {}),
   }
+}
+
+/** Reconcile two tech-discovered outcomes across a dedup merge: agreement keeps
+ *  the verdict; any disagreement (or an existing 'mixed') collapses to 'mixed'.
+ *  Used by the Lessons Scavenger so the cross-project tech registry reflects
+ *  "worked in one place, failed in another" honestly. */
+export function mergeOutcome(a: RecapItem['outcome'], b: RecapItem['outcome']): RecapItem['outcome'] {
+  if (!a) return b
+  if (!b) return a
+  if (a === b) return a
+  return 'mixed'
 }

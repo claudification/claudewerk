@@ -62,6 +62,7 @@ const ITEM_LIST_FIELDS = [
   'dead_ends',
   'gotchas',
   'frustrations',
+  'tech_discovered',
   'went_well',
   'went_badly',
   'recommendations',
@@ -157,6 +158,14 @@ interface PartialItem {
   conversations?: string[]
   commits?: string[]
   inferred?: boolean
+  outcome?: 'success' | 'failure' | 'mixed'
+}
+
+/** Coerce a free-text outcome value to the enum, or undefined. */
+function parseOutcome(raw: string): 'success' | 'failure' | 'mixed' | undefined {
+  const v = stripQuotes(raw.trim()).toLowerCase()
+  if (v === 'success' || v === 'failure' || v === 'mixed') return v
+  return undefined
 }
 
 // fallow-ignore-next-line complexity
@@ -190,11 +199,7 @@ function parseItemList(value: string): RecapItem[] {
     const subMatch = line.match(/^\s+([a-zA-Z_]+)\s*:\s*(.+)$/)
     if (!subMatch) continue
     const [, key, rawVal] = subMatch
-    if (key === 'title') Object.assign(current, titleToPartial(rawVal.trim()))
-    if (key === 'detail') current.detail = stripQuotes(rawVal.trim())
-    if (key === 'conversations') current.conversations = parseInlineList(rawVal.trim())
-    if (key === 'commits') current.commits = parseInlineList(rawVal.trim())
-    if (key === 'inferred') current.inferred = /^(true|yes)$/i.test(stripQuotes(rawVal.trim()))
+    assignItemField(current, key, rawVal.trim())
   }
   if (current?.title) items.push(toItem(current))
   return items
@@ -228,13 +233,35 @@ function parseFlowMapItem(raw: string): PartialItem {
     if (idx === -1) continue
     const key = field.slice(0, idx).trim()
     const val = field.slice(idx + 1).trim()
-    if (key === 'title') Object.assign(item, titleToPartial(val))
-    else if (key === 'detail') item.detail = stripQuotes(val)
-    else if (key === 'conversations') item.conversations = parseInlineList(val)
-    else if (key === 'commits') item.commits = parseInlineList(val)
-    else if (key === 'inferred') item.inferred = /^(true|yes)$/i.test(stripQuotes(val))
+    assignItemField(item, key, val)
   }
   return item
+}
+
+/** Assign one parsed `key: value` pair onto a PartialItem. Shared by the block
+ *  and flow-map item parsers so the field dispatch lives in ONE place. `val` is
+ *  pre-trimmed; unknown keys are ignored. */
+function assignItemField(target: PartialItem, key: string, val: string): void {
+  switch (key) {
+    case 'title':
+      Object.assign(target, titleToPartial(val))
+      break
+    case 'detail':
+      target.detail = stripQuotes(val)
+      break
+    case 'conversations':
+      target.conversations = parseInlineList(val)
+      break
+    case 'commits':
+      target.commits = parseInlineList(val)
+      break
+    case 'inferred':
+      target.inferred = /^(true|yes)$/i.test(stripQuotes(val))
+      break
+    case 'outcome':
+      target.outcome = parseOutcome(val)
+      break
+  }
 }
 
 /**
@@ -296,6 +323,7 @@ function toItem(p: PartialItem): RecapItem {
     ...(p.conversations?.length ? { conversations: p.conversations } : {}),
     ...(p.commits?.length ? { commits: p.commits } : {}),
     ...(p.inferred ? { inferred: true } : {}),
+    ...(p.outcome ? { outcome: p.outcome } : {}),
   }
 }
 

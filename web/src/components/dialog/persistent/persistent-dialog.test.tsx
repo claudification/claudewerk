@@ -5,6 +5,7 @@ import { useConversationsStore } from '@/hooks/use-conversations'
 import type { LiveDialogEntry } from '@/hooks/use-live-dialogs'
 import { DEFAULT_PERMISSIONS } from '@/lib/permissions'
 import { PersistentDialog } from './persistent-dialog'
+import { setupDialogConversation } from './persistent-dialog-test-utils'
 
 const layout: DialogLayout = { title: 'Refine', body: [{ type: 'TextInput', id: 'note', label: 'Note' }] }
 
@@ -19,16 +20,11 @@ function entry(over: Partial<LiveDialogEntry> & { rev: number }): LiveDialogEntr
   }
 }
 
-const sent: unknown[] = []
+const sent: Array<Record<string, unknown>> = []
 
 beforeEach(() => {
   sent.length = 0
-  useConversationsStore.setState({
-    ws: { readyState: 1, send: (m: string) => sent.push(JSON.parse(m)) } as unknown as WebSocket,
-    conversationsById: { c1: { id: 'c1', status: 'idle' } } as never,
-    conversationPermissions: {},
-    permissions: { ...DEFAULT_PERMISSIONS },
-  })
+  setupDialogConversation(sent)
 })
 afterEach(cleanup)
 
