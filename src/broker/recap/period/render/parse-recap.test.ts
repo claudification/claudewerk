@@ -214,3 +214,76 @@ body`
     expect(out.metadata.frustrations[0].conversations).toContain('conv_bbb222')
   })
 })
+
+describe('parseRecapOutput: tech_discovered + outcome (Lessons Scavenger)', () => {
+  it('parses tech_discovered items with outcome in flow-map form', () => {
+    const raw = `---
+subtitle: tech sweep
+keywords: [bun, fts5]
+hashtags: []
+goals: []
+discoveries: []
+side_effects: []
+features: []
+bugs: []
+fixes: []
+incidents: []
+decisions: []
+dead_ends: []
+gotchas: []
+frustrations: []
+tech_discovered:
+  - {title: bun:sqlite, detail: native driver, conversations: [conv_aaa111], outcome: success}
+  - {title: react-virtuoso, detail: parked, outcome: failure}
+  - {title: opentui, outcome: mixed}
+open_questions: []
+stakeholders: []
+---
+
+## body
+`
+    const out = parseRecapOutput(raw)
+    expect(out.metadata.tech_discovered?.length).toBe(3)
+    expect(out.metadata.tech_discovered?.[0]).toMatchObject({
+      title: 'bun:sqlite',
+      detail: 'native driver',
+      outcome: 'success',
+    })
+    expect(out.metadata.tech_discovered?.[0].conversations).toContain('conv_aaa111')
+    expect(out.metadata.tech_discovered?.[1].outcome).toBe('failure')
+    expect(out.metadata.tech_discovered?.[2].outcome).toBe('mixed')
+  })
+
+  it('parses tech_discovered + outcome in block form, ignores bad outcome values', () => {
+    const raw = `---
+subtitle: x
+keywords: []
+hashtags: []
+goals: []
+discoveries: []
+side_effects: []
+features: []
+bugs: []
+fixes: []
+incidents: []
+decisions: []
+dead_ends: []
+gotchas: []
+frustrations: []
+tech_discovered:
+  - title: zod
+    outcome: success
+  - title: axios
+    outcome: nonsense
+open_questions: []
+stakeholders: []
+---
+
+## body
+`
+    const out = parseRecapOutput(raw)
+    expect(out.metadata.tech_discovered?.[0].outcome).toBe('success')
+    // unknown enum value is dropped, not retained
+    expect(out.metadata.tech_discovered?.[1].outcome).toBeUndefined()
+  })
+})

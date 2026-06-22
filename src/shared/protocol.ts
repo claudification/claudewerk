@@ -2521,6 +2521,14 @@ export interface ProjectSettings {
   allowPlanMode?: boolean // default: true. Set false to auto-deny EnterPlanMode
   verbs?: string[] // custom spinner verbs (merged with defaults)
   pinned?: boolean
+  /** Lessons-Learned Scavenger ("Overwatch") opt-in. When true the nightly
+   *  scavenger produces a lessons-learned recap for this project. Default off
+   *  (opt-in). [[project_lessons_scavenger]] */
+  lessonsEnabled?: boolean
+  /** Epoch ms of the last successful nightly lessons scavenge for this project.
+   *  Used only for activity-gating / observability; the window is a fixed
+   *  rolling 7d, so this is not a strict watermark. */
+  lessonsLastRun?: number
 }
 
 // File metadata for the file editor
@@ -4633,6 +4641,11 @@ export interface RecapItem {
   conversations?: string[]
   commits?: string[]
   inferred?: boolean
+  /** Outcome of a discovered technology/approach. Populated only for
+   *  `tech_discovered` items (the Lessons Scavenger's cross-project tech
+   *  registry keys on it: "we used X in project Y with success"). Omitted
+   *  elsewhere. 'mixed' = a code-merge saw both a success and a failure. */
+  outcome?: 'success' | 'failure' | 'mixed'
 }
 
 /** Structured frontmatter the LLM emits, parsed and persisted as metadata_json.
@@ -4668,6 +4681,13 @@ export interface RecapMetadata {
   went_badly?: RecapItem[]
   /** Actionable improvements for next period -- the feed into CLAUDE.md/rules/tools. */
   recommendations?: RecapItem[]
+  /** Lessons Scavenger: technologies/libraries/tools/approaches discovered or
+   *  adopted, each with an `outcome` (success/failure/mixed) and citations.
+   *  OPTIONAL + absent from makeEmptyMetadata on purpose -- only the
+   *  lessons-learned template requests it, so every other recap (and the
+   *  byte-pinned prompt goldens) stay unchanged. Aggregated fleet-wide into the
+   *  cross-project tech registry by Tier-2 compaction. */
+  tech_discovered?: RecapItem[]
 }
 
 export interface RecapDigestConversation {
@@ -4676,6 +4696,11 @@ export interface RecapDigestConversation {
   turns: number
   status: string
   costUsd?: number
+  /** Epoch ms the conversation was created / last updated. Deterministic source
+   *  pointers (from gatherConversations) so every recap's source roster is
+   *  timestamped for drill-down into the live transcript. */
+  createdAt?: number
+  updatedAt?: number
 }
 
 export interface RecapDigestDay {

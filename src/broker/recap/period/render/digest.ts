@@ -29,6 +29,10 @@ export function buildRecapDigest(args: {
       turns: c.turnCount,
       status: c.status,
       costUsd: costByConv.get(c.id),
+      // Timestamped source pointers: every recap's roster links back to the
+      // exact conversation + its time window for drill-down into the transcript.
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
     }))
     // Heaviest conversations first -- the drill-down leads with where the
     // money + work went.

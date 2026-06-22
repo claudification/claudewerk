@@ -62,6 +62,7 @@ const ITEM_LIST_FIELDS = [
   'dead_ends',
   'gotchas',
   'frustrations',
+  'tech_discovered',
   'went_well',
   'went_badly',
   'recommendations',
@@ -157,6 +158,14 @@ interface PartialItem {
   conversations?: string[]
   commits?: string[]
   inferred?: boolean
+  outcome?: 'success' | 'failure' | 'mixed'
+}
+
+/** Coerce a free-text outcome value to the enum, or undefined. */
+function parseOutcome(raw: string): 'success' | 'failure' | 'mixed' | undefined {
+  const v = stripQuotes(raw.trim()).toLowerCase()
+  if (v === 'success' || v === 'failure' || v === 'mixed') return v
+  return undefined
 }
 
 // fallow-ignore-next-line complexity
@@ -195,6 +204,7 @@ function parseItemList(value: string): RecapItem[] {
     if (key === 'conversations') current.conversations = parseInlineList(rawVal.trim())
     if (key === 'commits') current.commits = parseInlineList(rawVal.trim())
     if (key === 'inferred') current.inferred = /^(true|yes)$/i.test(stripQuotes(rawVal.trim()))
+    if (key === 'outcome') current.outcome = parseOutcome(rawVal)
   }
   if (current?.title) items.push(toItem(current))
   return items
@@ -233,6 +243,7 @@ function parseFlowMapItem(raw: string): PartialItem {
     else if (key === 'conversations') item.conversations = parseInlineList(val)
     else if (key === 'commits') item.commits = parseInlineList(val)
     else if (key === 'inferred') item.inferred = /^(true|yes)$/i.test(stripQuotes(val))
+    else if (key === 'outcome') item.outcome = parseOutcome(val)
   }
   return item
 }
@@ -296,6 +307,7 @@ function toItem(p: PartialItem): RecapItem {
     ...(p.conversations?.length ? { conversations: p.conversations } : {}),
     ...(p.commits?.length ? { commits: p.commits } : {}),
     ...(p.inferred ? { inferred: true } : {}),
+    ...(p.outcome ? { outcome: p.outcome } : {}),
   }
 }
 
