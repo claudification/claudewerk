@@ -8,9 +8,9 @@ import type { SendInput, TerminationSource } from '../../shared/protocol'
 import { resolveSpawnConfig } from '../../shared/spawn-defaults'
 import type { SpawnRequest } from '../../shared/spawn-schema'
 import { filterDisplayEntries } from '../../shared/transcript-filter'
-import { slugify } from '../address-book'
 import type { ConversationStore } from '../conversation-store'
 import { getGlobalSettings } from '../global-settings'
+import { resolveConversationBySlug } from '../handlers/channel-id'
 import { getProjectSettings } from '../project-settings'
 import { validateShare } from '../shares'
 import type { TerminationLog } from '../termination-log'
@@ -396,12 +396,12 @@ export function createConversationsRouter(
     const slug = c.req.param('slug')
     const all = conversationStore.getAllConversations()
     const filtered = filterConversationsByHttpGrants(c.req.raw, all)
-    const match = filtered.find(s => {
-      if (s.title && slugify(s.title) === slug) return true
-      const dirname = extractProjectLabel(s.project)
-      if (dirname && slugify(dirname) === slug) return true
-      return slugify(s.id.slice(0, 8)) === slug
-    })
+    // Alias-aware resolution shared with the send path (see
+    // resolveConversationBySlug): a pill addressing a conversation by a name it
+    // shed in a rename used to route on the send path but 404 here, because this
+    // endpoint hand-rolled an alias-blind matcher. One resolver now backs both.
+    const resolved = resolveConversationBySlug(slug, filtered)
+    const match = resolved ? filtered.find(s => s.id === resolved.id) : undefined
     if (!match) return c.json({ error: 'Conversation not found' }, 404)
     const childCount = all.reduce((n, x) => (x.parentConversationId === match.id ? n + 1 : n), 0)
     return c.json(conversationToOverview(match, conversationStore, childCount))

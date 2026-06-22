@@ -1,129 +1,63 @@
-import { projectIdentityKey } from '@shared/project-uri'
 /**
  * ConversationTag - Clickable conversation name badge with hover tooltip showing project/status.
  * Shared by send_message (tool-line) and received inter-conversation messages (group-view).
+ *
+ * Resolution is server-authoritative: a local cache hit renders instantly, and
+ * any miss is resolved against the broker (which alone knows in-window
+ * former-slug aliases). So a pill addressing a conversation by a name it shed in
+ * a rename ("shady-marlin" -> now "monday report") resolves to the CURRENT
+ * conversation, renders its current name, and navigates -- instead of sitting
+ * dead because the web couldn't match the old alias. See conversation-tag-resolve.ts.
  */
 
+import { useEffect, useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
-import { selectConversations } from '@/lib/slim-conversation'
 import type { Conversation } from '@/lib/types'
-import { extractProjectLabel, projectPath } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
-
-function slugify(s: string) {
-  return (
-    s
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '')
-      .slice(0, 24) || 'project'
-  )
-}
-
-/** Strip project prefix from address-book style slugs (e.g. "rclaude:dapper-pretzel" -> "dapper-pretzel"). */
-function stripProjectPrefix(slug: string): string {
-  const colonIdx = slug.indexOf(':')
-  return colonIdx >= 0 ? slug.slice(colonIdx + 1) : slug
-}
-
-/** Find a conversation matching an address book slug (best-effort client-side match). */
-function findConversationBySlug(slug: string) {
-  const { conversationsById, projectSettings } = useConversationsStore.getState()
-  const normalizedSlug = slug.toLowerCase()
-  for (const s of selectConversations(conversationsById)) {
-    const ps = projectSettings[projectIdentityKey(s.project)]
-    if (ps?.label && slugify(ps.label) === normalizedSlug) return s
-    if (s.title && slugify(s.title) === normalizedSlug) return s
-    const dirname = extractProjectLabel(s.project)
-    if (dirname && slugify(dirname) === normalizedSlug) return s
-  }
-  return undefined
-}
-
-/** Resolve a conversation by ID or slug and compute the display name. */
-function resolveConversationDisplay(idOrSlug: string, fallbackId?: string) {
-  const { conversationsById, projectSettings } = useConversationsStore.getState()
-  const bare = stripProjectPrefix(idOrSlug)
-  const conversation =
-    conversationsById[idOrSlug] ||
-    conversationsById[bare] ||
-    (fallbackId ? conversationsById[fallbackId] : undefined) ||
-    findConversationBySlug(bare) ||
-    findConversationBySlug(idOrSlug)
-  const projLabel = conversation?.project ? projectSettings[projectIdentityKey(conversation.project)]?.label : undefined
-  const title = conversation?.title
-  const displayName =
-    projLabel && title
-      ? `${projLabel} :: ${title}`
-      : title || projLabel || (conversation?.project ? extractProjectLabel(conversation.project) : '') || bare
-  return { conversation, projLabel, title, displayName }
-}
+import {
+  displayNameFor,
+  projectPath,
+  resolveLocalConversation,
+  resolveRemoteConversation,
+  stripProjectPrefix,
+} from './conversation-tag-resolve'
 
 function showToast(title: string, body: string, variant = 'warning') {
   window.dispatchEvent(new CustomEvent('rclaude-toast', { detail: { title, body, variant } }))
 }
 
-/** Inject a fetched conversation overview into the Zustand store so it becomes navigable. */
-function injectConversation(overview: Record<string, unknown>) {
-  const partial: Conversation = {
-    id: overview.id as string,
-    project: overview.project as string,
-    model: overview.model as string,
-    status: (overview.status as Conversation['status']) || 'ended',
-    connectionIds: (overview.connectionIds as string[]) || [],
-    startedAt: overview.startedAt as number,
-    lastActivity: overview.lastActivity as number,
-    eventCount: (overview.eventCount as number) || 0,
-    activeSubagentCount: 0,
-    totalSubagentCount: 0,
-    subagents: [],
-    taskCount: 0,
-    pendingTaskCount: 0,
-    activeTasks: [],
-    pendingTasks: [],
-    completedTaskCount: 0,
-    completedTasks: [],
-    archivedTaskCount: 0,
-    archivedTasks: [],
-    runningBgTaskCount: 0,
-    bgTasks: [],
-    monitors: [],
-    runningMonitorCount: 0,
-    teammates: [],
-    summary: overview.summary as string | undefined,
-    title: overview.title as string | undefined,
-    agentName: overview.agentName as string | undefined,
-  }
-  useConversationsStore.setState(state => {
-    if (state.conversationsById[partial.id]) return state
-    // Insert the lightweight placeholder into the index (source of truth); it is
-    // never the selected conversation, so it stays slim-by-construction.
-    return { conversationsById: { ...state.conversationsById, [partial.id]: partial } }
-  })
-  return partial.id
+function buttonClass(navigable: boolean, isEnded: boolean, extra?: string) {
+  return cn(
+    'font-bold hover:underline',
+    navigable ? 'cursor-pointer' : 'cursor-help',
+    isEnded ? 'text-teal-400/50 hover:text-teal-400/70' : 'text-teal-400 hover:text-teal-300',
+    !navigable && 'text-teal-400/40 hover:text-teal-400/60',
+    extra,
+  )
 }
 
-/** Try to fetch a conversation from the server by UUID or slug. Returns the conversation ID on success. */
-async function fetchAndInjectConversation(resolvedId?: string, slug?: string): Promise<string | null> {
-  const attempts: string[] = []
-  if (resolvedId) attempts.push(`/conversations/${resolvedId}`)
-  if (slug) attempts.push(`/conversations/by-slug/${slug}`)
-
-  for (const url of attempts) {
-    try {
-      // priority-fallback fetch (try first URL, fall back to next); Promise.any would burn both
-      // react-doctor-disable-next-line react-doctor/async-await-in-loop
-      // priority-fallback fetch (try first URL, fall back to next); Promise.any would burn both
-      // react-doctor-disable-next-line react-doctor/async-await-in-loop
-      const res = await fetch(url)
-      if (!res.ok) continue
-      const data = await res.json()
-      if (data?.id) return injectConversation(data)
-    } catch {
-      /* network error, try next */
-    }
-  }
-  return null
+function TagTooltip({ conversation, rawAddress }: { conversation: Conversation | undefined; rawAddress: string }) {
+  const status = conversation ? conversation.status : 'unknown'
+  const isEnded = status === 'ended'
+  const resolvedPath = conversation ? projectPath(conversation.project) : undefined
+  const idLine = conversation ? conversation.id : rawAddress
+  return (
+    <span
+      className={cn(
+        'pointer-events-none absolute bottom-full left-0 mb-1.5 z-50',
+        'hidden group-hover/stag:flex flex-col gap-0.5',
+        'rounded border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 shadow-lg',
+        'text-[10px] font-mono whitespace-nowrap',
+      )}
+    >
+      {resolvedPath ? <span className="text-zinc-300">{resolvedPath}</span> : null}
+      <span className={cn('text-zinc-500', isEnded && 'text-zinc-600')}>{status}</span>
+      <span className="text-zinc-600">
+        <span className="text-zinc-700">@</span> {idLine}
+      </span>
+      {conversation ? null : <span className="text-amber-500/80">click to open</span>}
+    </span>
+  )
 }
 
 interface ConversationTagProps {
@@ -140,22 +74,42 @@ export function ConversationTag({ idOrSlug, resolvedId, className }: Conversatio
   // (e.g. an array from a multicast send_message `to`) would crash the whole
   // transcript on `.toLowerCase()`. Coerce to a string at the boundary.
   const safeIdOrSlug = typeof idOrSlug === 'string' ? idOrSlug : String(idOrSlug ?? '')
-  const { conversation, displayName } = resolveConversationDisplay(safeIdOrSlug, resolvedId)
-  const resolvedPath = conversation?.project ? projectPath(conversation.project) : undefined
-  const status = conversation?.status
-  const isEnded = status === 'ended'
+  const bare = stripProjectPrefix(safeIdOrSlug)
+
+  const local = resolveLocalConversation(safeIdOrSlug, resolvedId)
+  // Server-resolved fallback (alias-aware). Held in local state because the
+  // display helper reads the store imperatively (not as a hook subscription),
+  // so injecting alone wouldn't re-render this row.
+  const [remote, setRemote] = useState<Conversation | undefined>()
+  const conversation = local ?? remote
+
+  // Auto-resolve a local miss against the broker once, so the pill shows the
+  // CURRENT name and is clickable rather than a dead alias string.
+  useEffect(() => {
+    if (local || (!resolvedId && !bare)) return
+    let alive = true
+    resolveRemoteConversation(resolvedId, bare).then(conv => {
+      if (alive && conv) setRemote(conv)
+    })
+    return () => {
+      alive = false
+    }
+  }, [local, resolvedId, bare])
+
+  const displayName = displayNameFor(conversation, bare)
+  const isEnded = conversation?.status === 'ended'
+  // Clickable whenever there is anything to navigate to -- a resolved
+  // conversation, a resolved UUID, or a name the server can look up.
+  const navigable = Boolean(conversation || resolvedId || bare)
 
   const openTaggedConversation = () => {
-    if (conversation) {
-      haptic('tap')
-      useConversationsStore.getState().selectConversation(conversation.id)
-      return
-    }
     haptic('tap')
-    const bare = stripProjectPrefix(safeIdOrSlug)
-    fetchAndInjectConversation(resolvedId, bare).then(id => {
-      if (id) {
-        useConversationsStore.getState().selectConversation(id)
+    const select = (id: string) => useConversationsStore.getState().selectConversation(id)
+    if (conversation) return select(conversation.id)
+    resolveRemoteConversation(resolvedId, bare).then(conv => {
+      if (conv) {
+        setRemote(conv)
+        select(conv.id)
       } else {
         haptic('error')
         showToast('Conversation not found', `Could not find conversation "${bare}" on the server.`)
@@ -165,38 +119,11 @@ export function ConversationTag({ idOrSlug, resolvedId, className }: Conversatio
 
   return (
     <span className="relative group/stag inline-block">
-      <button
-        type="button"
-        className={cn(
-          'font-bold hover:underline',
-          conversation ? 'cursor-pointer' : 'cursor-help',
-          isEnded ? 'text-teal-400/50 hover:text-teal-400/70' : 'text-teal-400 hover:text-teal-300',
-          !conversation && 'text-teal-400/40 hover:text-teal-400/60',
-          className,
-        )}
-        onClick={openTaggedConversation}
-      >
+      <button type="button" className={buttonClass(navigable, isEnded, className)} onClick={openTaggedConversation}>
         {displayName}
         {isEnded && <span className="ml-1 text-[9px] text-zinc-500 font-normal">(ended)</span>}
       </button>
-      {/* Hover tooltip */}
-      <span
-        className={cn(
-          'pointer-events-none absolute bottom-full left-0 mb-1.5 z-50',
-          'hidden group-hover/stag:flex flex-col gap-0.5',
-          'rounded border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 shadow-lg',
-          'text-[10px] font-mono whitespace-nowrap',
-        )}
-      >
-        {resolvedPath && <span className="text-zinc-300">{resolvedPath}</span>}
-        <span className={cn('text-zinc-500', isEnded && 'text-zinc-600')}>{status ?? 'unknown'}</span>
-        {(conversation?.id ?? safeIdOrSlug) && (
-          <span className="text-zinc-600">
-            <span className="text-zinc-700">@</span> {conversation?.id ?? safeIdOrSlug}
-          </span>
-        )}
-        {!conversation && <span className="text-amber-500/80">click to search server</span>}
-      </span>
+      <TagTooltip conversation={conversation} rawAddress={safeIdOrSlug} />
     </span>
   )
 }

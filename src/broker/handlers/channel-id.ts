@@ -197,6 +197,36 @@ export function resolveByConversationName(
 }
 
 /**
+ * Resolve a UI slug (from a conversation pill or the click-to-open fallback) to a
+ * single conversation. This is the resolver behind `GET /conversations/by-slug`,
+ * and it deliberately shares `resolveByConversationName` with the send path so
+ * the control panel inherits the broker's in-window former-slug ALIAS awareness:
+ * a pill addressing a conversation by a name it shed in a rename resolves here
+ * exactly as a `send_message` to that old name routes.
+ *
+ *   1. name tier (exact -> prefix -> live former-slug alias), cross-project
+ *   2. project-dirname slug   (a project-label pill, not a conversation name)
+ *   3. bare id-slice slug     (the 8-char id prefix)
+ *
+ * Ambiguous NAME matches (2+ conversations holding the same in-window alias) are
+ * never silently guessed -- they fall through to the dirname/id tiers and, on no
+ * hit, return undefined (caller 404s).
+ */
+export function resolveConversationBySlug(
+  slug: string,
+  conversations: ConversationLike[],
+  now: number = Date.now(),
+): ConversationLike | undefined {
+  const byName = resolveByConversationName(slug, conversations, now)
+  if (byName.kind === 'resolved') return byName.conversation
+  return conversations.find(s => {
+    const dirname = extractProjectLabel(s.project)
+    if (dirname && slugify(dirname) === slug) return true
+    return slugify(s.id.slice(0, 8)) === slug
+  })
+}
+
+/**
  * Ambiguity error for the cross-project name fallback. Unlike
  * `formatAmbiguityError` (single project), candidates here span projects, so
  * each suggested id carries its own canonical project slug.

@@ -6,6 +6,7 @@ import {
   formatAmbiguityError,
   formatCrossProjectAmbiguityError,
   resolveByConversationName,
+  resolveConversationBySlug,
   resolveSendTarget,
 } from './channel-id'
 
@@ -276,6 +277,65 @@ describe('resolveByConversationName', () => {
     }
     const r = resolveByConversationName('old-name', [renamed], now)
     expect(r.kind).toBe('not_found')
+  })
+})
+
+// ─── resolveConversationBySlug (the /conversations/by-slug resolver) ──
+// This is the UI click-to-open / pill resolver. The KEY property under test is
+// alias parity: a name a conversation shed in a rename resolves here exactly as
+// it routes on the send path -- that parity is the whole bug fix.
+describe('resolveConversationBySlug', () => {
+  const A = 'claude:///projects/alpha'
+
+  it('resolves by current title slug', () => {
+    const r = resolveConversationBySlug('fluffy-puffin', [s('t', 'fluffy-puffin', A)])
+    expect(r?.id).toBe('t')
+  })
+
+  it('resolves an in-window former slug (alias parity with the send path)', () => {
+    const now = 1_000_000_000
+    const renamed: ConversationLike = {
+      id: 'r',
+      title: 'monday-report',
+      project: A,
+      formerSlugs: [{ slug: 'shady-marlin', retiredAt: now - 1000, lastUsedAt: now - 1000 }],
+    }
+    const r = resolveConversationBySlug('shady-marlin', [renamed], now)
+    expect(r?.id).toBe('r')
+  })
+
+  it('does NOT resolve an expired former slug', () => {
+    const now = 1_000_000_000
+    const stale = 26 * 60 * 60 * 1000
+    const renamed: ConversationLike = {
+      id: 'r',
+      title: 'monday-report',
+      project: A,
+      formerSlugs: [{ slug: 'shady-marlin', retiredAt: now - stale, lastUsedAt: now - stale }],
+    }
+    expect(resolveConversationBySlug('shady-marlin', [renamed], now)).toBeUndefined()
+  })
+
+  it('falls back to a project-dirname slug (project-label pill)', () => {
+    const r = resolveConversationBySlug('alpha', [s('t', undefined, A)])
+    expect(r?.id).toBe('t')
+  })
+
+  it('falls back to a bare id-slice slug', () => {
+    const r = resolveConversationBySlug('abcdef12', [s('abcdef12xyz', undefined, A)])
+    expect(r?.id).toBe('abcdef12xyz')
+  })
+
+  it('returns undefined when nothing matches', () => {
+    expect(resolveConversationBySlug('ghost', [s('t', 'real', A)])).toBeUndefined()
+  })
+
+  it('does NOT silently guess an ambiguous alias (two conversations, same in-window alias)', () => {
+    const now = 1_000_000_000
+    const former = [{ slug: 'shady-marlin', retiredAt: now - 1000, lastUsedAt: now - 1000 }]
+    const a: ConversationLike = { id: 'a', title: 'one', project: A, formerSlugs: former }
+    const b: ConversationLike = { id: 'b', title: 'two', project: A, formerSlugs: former }
+    expect(resolveConversationBySlug('shady-marlin', [a, b], now)).toBeUndefined()
   })
 })
 
