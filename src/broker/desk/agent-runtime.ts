@@ -16,6 +16,7 @@ import { buildDispatchToolset, projectOverviewRows } from './dispatch-tools'
 import { consolidateIfDue, getUserHistory, refreshLiveBlocks } from './history-store'
 import { appendTurn, toMessages } from './living-history'
 import { readMemory } from './memory'
+import type { QuestSpawn } from './quest-tool'
 import type { DispatchRuntime } from './runtime'
 import { listThreads, upsertThread } from './threads'
 import { defineTool, type Toolset } from './tool-def'
@@ -37,13 +38,23 @@ const DISPATCHER_SYSTEM = [
   'Read the blocks instead of re-asking; they are already current.',
   '',
   'Core rules:',
+  '- "CHECK WITH <project>" / "ask <project>" / "find out from <project>" / any',
+  '  question you need a project to ANSWER -> call dispatch_quest with that exact',
+  '  project name. It spawns a worker IN that project that does the work and reports',
+  '  back to you; you are re-engaged with the result. This is the #1 path for',
+  '  "check with arr what movies released" -- ALWAYS dispatch_quest, NEVER route or',
+  '  spawn_into_project for a question. Pick complexity: simple=a quick lookup,',
+  '  moderate=a real investigation, complex=deep/ambiguous. Then tell the user you',
+  '  dispatched it. NEVER spawn a worker without a resolved project -- if the project',
+  '  name does not resolve, ASK the user which project, do not guess or fall back.',
   '- For "what is going on" / status / overview, call projects_overview -- it gives',
   '  the fleet BY PROJECT with your condensed memory. Prefer it over list_conversations.',
-  '- For one project, call project_brief; to search your memory, call recall.',
-  '- The user`s requests are real impulses -- HONOR them. To start work in a project',
-  '  use spawn_into_project; to place an ambiguous request use route; to act on a',
-  '  conversation use inject / interrupt / terminate / configure / revive.',
-  '  Do not just describe what you would do -- do it.',
+  '- For one project, call project_brief; to search your memory, call recall; to',
+  '  look something up across past conversations, call search_transcripts (cheap,',
+  '  prefer it over waking a conversation).',
+  '- To START NEW long-running work in a project (not a question) use',
+  '  spawn_into_project; to act on an existing conversation use inject / interrupt /',
+  '  terminate / configure / revive. Do not just describe what you would do -- do it.',
   '- terminate is IRREVERSIBLE: confirm with the user first unless they were explicit.',
   '- You have a scratch WORKSPACE (a virtual fs, workspace_* tools) to draft or',
   '  stage simple work yourself before acting. It is scratch, not storage.',
@@ -80,8 +91,8 @@ function threadTools(): Toolset {
   }
 }
 
-function buildAgentToolset(rt: DispatchRuntime, confirmedExpensive: boolean): Toolset {
-  return { ...buildDispatchToolset(rt, confirmedExpensive), ...threadTools(), ...buildWorkspaceToolset() }
+function buildAgentToolset(rt: DispatchRuntime, confirmedExpensive: boolean, questSpawn?: QuestSpawn): Toolset {
+  return { ...buildDispatchToolset(rt, confirmedExpensive, questSpawn), ...threadTools(), ...buildWorkspaceToolset() }
 }
 
 export interface RunDispatchAgentOpts {
@@ -94,6 +105,9 @@ export interface RunDispatchAgentOpts {
   /** The user explicitly authorized expensive actions this turn (cost gate, B5).
    *  When false a very-expensive wake is surfaced for confirmation, not executed. */
   confirmedExpensive?: boolean
+  /** Override the quest worker spawn (debug harness DRY-RUN: capture the cwd/model
+   *  the dispatcher WOULD spawn into, without launching a real worker). */
+  questSpawn?: QuestSpawn
   onToolCall?: (e: AgentToolCallEvent) => void
   onToolResult?: (e: AgentToolResultEvent) => void
 }
@@ -124,7 +138,7 @@ export async function runDispatchAgent(
       system: DISPATCHER_SYSTEM,
       seedMessages: toMessages(history),
       model,
-      toolset: buildAgentToolset(rt, opts.confirmedExpensive ?? false),
+      toolset: buildAgentToolset(rt, opts.confirmedExpensive ?? false, opts.questSpawn),
       signal: opts.signal,
       identity: { userId: opts.userId ?? undefined },
       onToolCall: opts.onToolCall,

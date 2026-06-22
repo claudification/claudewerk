@@ -16,7 +16,14 @@
 
 import type { ChatFn } from './classify'
 import { type ConsolidateResult, consolidate } from './consolidate'
-import { createHistory, type LivingHistory, ONE_HOUR_MS, shouldConsolidate, upsertBlock } from './living-history'
+import {
+  createHistory,
+  estimateTokens,
+  type LivingHistory,
+  ONE_HOUR_MS,
+  shouldConsolidate,
+  upsertBlock,
+} from './living-history'
 import type { ProjectOverviewRow } from './overview'
 
 /** Sentinel key for an unauthenticated/anon dispatcher session. */
@@ -125,4 +132,31 @@ export async function consolidateIfDue(
   const res = await consolidate({ history: h, now }, chat)
   if (res.ran) lastConsolidatedAt.set(key, now)
   return res
+}
+
+export interface HistoryDump {
+  exists: boolean
+  userKey: string
+  blocks: Array<{ id: string; tag: string; content: string; ts: number }>
+  turns: Array<{ role: string; content: string; ts: number }>
+  estimatedTokens: number
+  lastConsolidatedAt: number | null
+}
+
+/** Full, inspectable snapshot of a user's living history (the debug harness reads
+ *  this so the dispatcher's state/context/memory can be dumped over REST). */
+export function dumpUserHistory(userId: string | null | undefined): HistoryDump {
+  const key = userKey(userId)
+  const h = histories.get(key)
+  if (!h) {
+    return { exists: false, userKey: key, blocks: [], turns: [], estimatedTokens: 0, lastConsolidatedAt: null }
+  }
+  return {
+    exists: true,
+    userKey: key,
+    blocks: [...h.blocks.values()].map(b => ({ id: b.id, tag: b.tag, content: b.content, ts: b.ts })),
+    turns: h.turns.map(t => ({ role: t.role, content: t.content, ts: t.ts })),
+    estimatedTokens: estimateTokens(h),
+    lastConsolidatedAt: lastConsolidatedAt.get(key) ?? null,
+  }
 }

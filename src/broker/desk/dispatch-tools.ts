@@ -21,7 +21,7 @@ import type { DispatchCommand } from './orchestrate'
 import { composeProjectsOverview, type OverviewConv, type ProjectOverviewRow } from './overview'
 import { getBrief, recallBriefs } from './project-memory'
 import { listDeskProjects, projectKeyOf, resolveDeskProject } from './projects'
-import { questTools } from './quest-tool'
+import { type QuestSpawn, questTools } from './quest-tool'
 import { type DispatchRuntime, runDispatch } from './runtime'
 import { defineTool, type Toolset } from './tool-def'
 
@@ -163,7 +163,11 @@ function projectTools(rt: DispatchRuntime, confirmedExpensive: boolean): Toolset
  * verbs (actions). The generic `spawn` is dropped -- `spawn_into_project`
  * supersedes it with named-project resolution.
  */
-export function buildDispatchToolset(rt: DispatchRuntime, confirmedExpensive = false): Toolset {
+export function buildDispatchToolset(
+  rt: DispatchRuntime,
+  confirmedExpensive = false,
+  questSpawn?: QuestSpawn,
+): Toolset {
   const { spawn: _omitGenericSpawn, ...control } = buildControlToolset(buildControlDeps(rt, confirmedExpensive))
-  return { ...projectTools(rt, confirmedExpensive), ...questTools(rt), ...lookupTools(rt), ...control }
+  return { ...projectTools(rt, confirmedExpensive), ...questTools(rt, questSpawn), ...lookupTools(rt), ...control }
 }

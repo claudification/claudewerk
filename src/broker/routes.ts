@@ -17,6 +17,7 @@ import { createApiRouter } from './routes/api'
 import { blobDir, initBlobStore, initSharedFilesLog } from './routes/blob-store'
 import { createChatApiRouter } from './routes/chat-api'
 import { createConversationsRouter } from './routes/conversations'
+import { createDeskDebugRouter } from './routes/desk-debug'
 import { createGatewayRouter } from './routes/gateways'
 import { createMcpRouter } from './routes/mcp-server'
 import { createNightshiftRouter } from './routes/nightshift'
@@ -260,6 +261,7 @@ export function createRouter(options: RouteOptions): Hono {
   app.route('/', createStatsRouter(conversationStore, store, helpers, serverStartTime))
   app.route('/', createSheafRouter(store, conversationStore, helpers, terminationLog))
   app.route('/', createAdminRouter(conversationStore, helpers, rclaudeSecret))
+  app.route('/', createDeskDebugRouter(conversationStore, store, rclaudeSecret))
   app.route('/', createLaunchProfilesRouter(store, conversationStore))
   if (sentinelRegistry) {
     app.route('/', createSentinelRouter(sentinelRegistry, conversationStore, helpers))
