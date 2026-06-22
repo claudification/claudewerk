@@ -34,11 +34,18 @@ function shortId(): string {
   return `q_${crypto.randomUUID().slice(0, 6)}`
 }
 
-/** The spawn seam -- the live loop uses spawnDeskConversation; tests inject a stub. */
-export type QuestSpawn = (req: { cwd: string; intent: string; model?: string }) => Promise<{ conversationId: string }>
+/** The spawn seam -- the live loop uses spawnDeskConversation; tests inject a stub.
+ *  We spawn BY PROJECT URI (the canonical identity); the sentinel derives the
+ *  filesystem location. The dispatcher never reasons in raw paths. */
+export type QuestSpawn = (req: { projectUri: string; intent: string; model?: string }) => Promise<{
+  conversationId: string
+}>
 
 export function questTools(rt: DispatchRuntime, spawn?: QuestSpawn): Toolset {
-  const doSpawn: QuestSpawn = spawn ?? (req => spawnDeskConversation(rt, req))
+  // The spawn machinery accepts a project URI as its target (spawn-dispatch wraps
+  // plain paths but passes URIs through). Pass the URI, not a derived path.
+  const doSpawn: QuestSpawn =
+    spawn ?? (req => spawnDeskConversation(rt, { cwd: req.projectUri, intent: req.intent, model: req.model }))
   return {
     dispatch_quest: defineTool({
       description:
@@ -58,13 +65,16 @@ export function questTools(rt: DispatchRuntime, spawn?: QuestSpawn): Toolset {
         }
         const dp = resolveDeskProject(project)
         if (!dp) return { error: `no project matching "${project}"` }
-        if (!dp.cwd) return { error: `project "${dp.label}" has no local filesystem path; cannot dispatch into it` }
+        // A worker needs a filesystem-backed project to run in -- a path-less URI
+        // scheme (agent://, api://) can't host a CC session. cwd here is only the
+        // SPAWNABILITY probe; the URI is what we dispatch by.
+        if (!dp.cwd) return { error: `project "${dp.label}" is not a spawnable project (no host location)` }
 
         const userId = ctx.identity?.userId ?? null
         const model = questModel(complexity)
         let conversationId: string
         try {
-          ;({ conversationId } = await doSpawn({ cwd: dp.cwd, intent: buildQuestPrompt(task), model }))
+          ;({ conversationId } = await doSpawn({ projectUri: dp.projectUri, intent: buildQuestPrompt(task), model }))
         } catch (e) {
           return { error: `dispatch failed: ${(e as Error).message}` }
         }

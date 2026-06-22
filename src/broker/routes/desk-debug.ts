@@ -34,7 +34,7 @@ interface ToolFrame {
 }
 
 interface QuestSpawnCapture {
-  cwd: string
+  projectUri: string
   model?: string
   intent: string
 }
@@ -53,7 +53,7 @@ async function runCapturedDispatch(
   const frames: ToolFrame[] = []
   const spawns: QuestSpawnCapture[] = []
   const dryRunSpawn: QuestSpawn = async req => {
-    spawns.push({ cwd: req.cwd, model: req.model, intent: req.intent })
+    spawns.push({ projectUri: req.projectUri, model: req.model, intent: req.intent })
     return { conversationId: `dryrun_${spawns.length}` }
   }
   const decision = await runDispatchAgent(intent, rt, {

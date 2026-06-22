@@ -37,8 +37,10 @@ describe('dispatch_quest tool', () => {
   test('happy path: spawns on the complexity tier, registers the quest, parks <pending>', async () => {
     resetUserHistory('jonas')
     let sawModel: string | undefined
+    let sawProjectUri: string | undefined
     const spawn: QuestSpawn = async req => {
       sawModel = req.model
+      sawProjectUri = req.projectUri // we dispatch BY URI, never a raw path
       // the worker is told to report back to the dispatcher and exit
       expect(req.intent).toContain('send_message')
       expect(req.intent).toContain('dispatcher')
@@ -46,7 +48,7 @@ describe('dispatch_quest tool', () => {
       return { conversationId: 'conv_worker123' }
     }
     const tools = questTools(fakeRt, spawn)
-    // A full path-backed URI resolves to a routable project (with cwd) without a store.
+    // A full path-backed URI resolves to a routable project without a store.
     const out = (await tools.dispatch_quest.execute(
       {
         project: 'claude://default/Users/jonas/projects/arr',
@@ -57,6 +59,7 @@ describe('dispatch_quest tool', () => {
     )) as { conversationId?: string; pendingId?: string; model?: string }
 
     expect(sawModel).toBe('sonnet') // moderate -> Sonnet
+    expect(sawProjectUri).toBe('claude://default/Users/jonas/projects/arr') // dispatched BY URI
     expect(out.conversationId).toBe('conv_worker123')
     expect(out.model).toBe('sonnet')
     // quest registered against the worker, keyed for the report-back
