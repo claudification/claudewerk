@@ -70,6 +70,9 @@ const SearchIndexManagerDialog = lazy(() =>
 )
 const SheafPage = lazy(() => import('@/sheaf/sheaf-page').then(m => ({ default: m.SheafPage })))
 const CanvasPage = lazy(() => import('@/components/canvas-mode/canvas-page').then(m => ({ default: m.CanvasPage })))
+const NightshiftPage = lazy(() =>
+  import('@/components/nightshift/nightshift-page').then(m => ({ default: m.NightshiftPage })),
+)
 // Admin-only debug tool -- kept out of the index bundle (incl. its lazy YAML view).
 const DebugControlModal = lazy(() =>
   import('@/components/debug/debug-control-modal').then(m => ({ default: m.DebugControlModal })),
@@ -587,6 +590,11 @@ const FULLSCREEN_PAGES: Record<string, () => React.ReactElement> = {
   sheaf: () => (
     <FullscreenRoute fallbackLabel="Loading sheaf…">
       <SheafPage />
+    </FullscreenRoute>
+  ),
+  nightshift: () => (
+    <FullscreenRoute fallbackLabel="Loading the night report…">
+      <NightshiftPage />
     </FullscreenRoute>
   ),
 }

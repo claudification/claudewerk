@@ -67,7 +67,8 @@ export const PERMISSION_MODE_OPTIONS = [
   { value: DEFAULT_SENTINEL, label: 'Default', info: 'CC default prompting behaviour' },
   { value: 'plan', label: 'Plan', info: 'Plan-first mode' },
   { value: 'acceptEdits', label: 'Accept Edits', info: 'Auto-accept file edits' },
-  { value: 'auto', label: 'Auto', info: 'Auto-approve most tools' },
+  { value: 'auto', label: 'Auto', info: 'Auto-approve most tools (managed classifier)' },
+  { value: 'dontAsk', label: "Don't Ask", info: 'Locked-down: allow-list + read-only bash; everything else denied' },
   { value: 'bypassPermissions', label: 'Bypass', info: 'Skip permission prompts (dangerous)' },
 ] as const
 
@@ -84,7 +85,7 @@ const _TIMEOUT_OPTIONS = [
 // dispatchSpawn does the real validation with a helpful error listing valid models.
 const modelEnum = z.enum(ALL_CC_SLUGS as unknown as [string, ...string[]])
 const effortEnum = z.enum(['low', 'medium', 'high', 'xhigh', 'max'])
-const permissionModeEnum = z.enum(['plan', 'acceptEdits', 'auto', 'bypassPermissions'])
+const permissionModeEnum = z.enum(['plan', 'acceptEdits', 'auto', 'dontAsk', 'bypassPermissions'])
 const spawnModeEnum = z.enum(['fresh', 'resume'])
 
 // Transports per backend (the wire mechanism used to drive a member of the
@@ -239,6 +240,17 @@ export const spawnRequestSchema = z.object({
         '"balanced"|"random" to constrain which profiles the sentinel picks from. Ignored when profile is a ' +
         'literal name (Fixed mode wins) or "default". When absent the sentinel substitutes its configured ' +
         '`defaultPool` (which itself defaults to "default").',
+    ),
+  nightshift: z
+    .object({
+      runId: z.string().min(1).describe('Nightshift run id (YYYY-MM-DD) this task belongs to.'),
+      taskId: z.string().min(1).describe('Zero-padded task ordinal within the run, e.g. "002".'),
+    })
+    .optional()
+    .describe(
+      'Tags this spawn as a NIGHTSHIFT task (origin marker). Present => the conversation is an unattended ' +
+        'night-run worker for runId/taskId; the night manager correlates its result back into .nightshift/. ' +
+        'Absent => an ordinary spawn.',
     ),
 })
 export type SpawnRequest = z.infer<typeof spawnRequestSchema>
