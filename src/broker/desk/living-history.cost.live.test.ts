@@ -80,8 +80,11 @@ interface TurnRow {
 /** Run ONE no-tool dispatcher turn over the current history; return usage. We run
  *  WITHOUT tools deliberately -- this isolates the cost of the HISTORY growing,
  *  which is exactly the variable consolidation controls. */
-async function oneTurn(history: LivingHistory): Promise<NormalizedUsage> {
+async function oneTurn(history: LivingHistory, cache = false): Promise<NormalizedUsage> {
   const messages: ChatMessage[] = toMessages(history)
+  // Cache breakpoint: mark everything except the newest user turn as a stable
+  // prefix. The provider bills the matched prefix as cacheRead on the next call.
+  if (cache && messages.length >= 2) messages[messages.length - 2].cacheControl = true
   const res = await chat({
     model: LOOP_MODEL,
     system: SYSTEM,
@@ -102,7 +105,7 @@ function latestTs(history: LivingHistory): number {
 /** Drive the whole session on a COMPRESSED virtual clock so folding actually
  *  fires within the run: 6 min/turn, 30-min horizon, no debounce. With consolidate
  *  enabled, turns older than 30 (sim) minutes fold out; disabled = append-only. */
-async function runSession(consolidateEnabled: boolean): Promise<{ rows: TurnRow[]; totalCost: number }> {
+async function runSession(consolidateEnabled: boolean, cache = false): Promise<{ rows: TurnRow[]; totalCost: number }> {
   const history = createHistory()
   const horizon = 30 * MINUTE
   let now = 1_000_000
@@ -112,7 +115,7 @@ async function runSession(consolidateEnabled: boolean): Promise<{ rows: TurnRow[
   for (let i = 0; i < INTENTS.length; i++) {
     now += 6 * MINUTE
     appendTurn(history, 'user', INTENTS[i], now)
-    const usage = await oneTurn(history)
+    const usage = await oneTurn(history, cache)
     totalCost += usage.costUsd
 
     let folded = false
@@ -208,4 +211,24 @@ live('living-history cost experiment (real tokens)', () => {
       expect(res.ran).toBe(true)
     }
   }, 120_000)
+
+  it('PROMPT CACHING lever: stable-prefix cache breakpoint vs none (append-only)', async () => {
+    // Same append-only session, run twice: cache OFF then cache ON (a breakpoint on
+    // everything-but-the-newest-turn). Quantifies cacheReadTokens + the cost delta.
+    // Caveat the data exposes: the dispatcher is impulse-driven and often idle past
+    // the ~5min Anthropic cache TTL, so real-world hit rate is below this back-to-back
+    // best case -- this is the UPPER bound on what caching buys.
+    const noCache = await runSession(false, false)
+    const cached = await runSession(false, true)
+    const sumCacheRead = (rows: TurnRow[]) => rows.reduce((a, r) => a + r.cacheRead, 0)
+    const sumCacheWrite = (rows: TurnRow[]) => rows.reduce((a, r) => a + r.cacheWrite, 0)
+    printTable('APPEND-ONLY  cache OFF', noCache.rows, noCache.totalCost)
+    printTable('APPEND-ONLY  cache ON', cached.rows, cached.totalCost)
+    console.log(
+      `\n[cache verdict] cacheRead tok: off=${sumCacheRead(noCache.rows)} on=${sumCacheRead(cached.rows)} | ` +
+        `cacheWrite tok: off=${sumCacheWrite(noCache.rows)} on=${sumCacheWrite(cached.rows)} | ` +
+        `total cost: off=$${noCache.totalCost.toFixed(6)} on=$${cached.totalCost.toFixed(6)}`,
+    )
+    expect(cached.rows.length).toBe(INTENTS.length)
+  }, 300_000)
 })

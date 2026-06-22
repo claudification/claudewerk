@@ -24,7 +24,6 @@ export const MEMORY_BLOCK_ID = 'memory'
 
 /** Default fold model. Cheap by design; override per §5 (the digest/dream-cycle
  *  pass may want Opus). The §8 experiments quantify Haiku-vs-Sonnet accuracy. */
-// fallow-ignore-next-line unused-export -- consumed by the runtime model-config (B2)
 export const CONSOLIDATE_MODEL = 'anthropic/claude-haiku-4.5'
 
 /** The rolling memory must stay small -- it rides in the context EVERY turn. */

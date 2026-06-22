@@ -41,6 +41,13 @@ export interface ChatMessage {
   toolCalls?: ToolCall[]
   /** A `tool` message: which call this result answers. */
   toolCallId?: string
+  /** Mark a prompt-CACHE breakpoint at this message (Anthropic ephemeral cache via
+   *  OpenRouter). The provider caches everything UP TO AND INCLUDING this message;
+   *  a later request with the same prefix bills those tokens as cacheRead (~10% of
+   *  input) instead of full input. Set it on the LAST stable message (e.g. the
+   *  leading state block) so only the small mutable tail is re-paid. Backward
+   *  compatible: when unset, content stays a plain string and nothing caches. */
+  cacheControl?: boolean
 }
 
 export interface ChatRequest {
@@ -168,7 +175,12 @@ function toWireTool(t: ChatTool): Record<string, unknown> {
 /** Map our ChatMessage to the OpenAI/OpenRouter wire shape, carrying tool_calls
  *  (assistant) and tool_call_id (tool results) when present. */
 function toWireMessage(m: ChatMessage): Record<string, unknown> {
-  const wire: Record<string, unknown> = { role: m.role, content: m.content }
+  // A cache breakpoint requires the structured content-part shape so the
+  // cache_control marker has somewhere to live; plain string content can't carry it.
+  const content: unknown = m.cacheControl
+    ? [{ type: 'text', text: m.content, cache_control: { type: 'ephemeral' } }]
+    : m.content
+  const wire: Record<string, unknown> = { role: m.role, content }
   if (m.toolCalls && m.toolCalls.length > 0) {
     wire.tool_calls = m.toolCalls.map(c => ({
       id: c.id,

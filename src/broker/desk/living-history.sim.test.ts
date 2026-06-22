@@ -64,7 +64,7 @@ interface SimState {
 async function step(
   s: SimState,
   chat: ChatFn,
-  opts: { advanceMs: number; turn?: string; sizeTokenLimit?: number },
+  opts: { advanceMs: number; turn?: string; sizeTokenLimit?: number; minSizeForTimeTrigger?: number },
 ): Promise<void> {
   s.now += opts.advanceMs
   if (opts.turn) {
@@ -76,6 +76,9 @@ async function step(
     now: s.now,
     lastRunAt: s.lastRunAt,
     sizeTokenLimit: opts.sizeTokenLimit,
+    // Default the floor to 0 in the sim so the focused phase-out/debounce mechanic
+    // tests fire on tiny histories; the BOUNDED test sets a realistic floor.
+    minSizeForTimeTrigger: opts.minSizeForTimeTrigger ?? 0,
   })
   if (!due) return
   const res = await consolidate({ history: s.history, now: s.now }, chat)
@@ -146,18 +149,21 @@ describe('tick-driven aging simulation', () => {
     const chat = bulletFold()
     let peakTokens = 0
     // A turn every 5 minutes for 24 simulated hours = 288 user+assistant pairs.
+    // Realistic 1500-tok floor (§8a): fold only when the history is worth a call.
     for (let i = 0; i < 288; i++) {
-      await step(s, chat, { advanceMs: 5 * MINUTE, turn: `request ${i} about some project work` })
+      await step(s, chat, {
+        advanceMs: 5 * MINUTE,
+        turn: `request ${i} about some project work`,
+        minSizeForTimeTrigger: 1500,
+      })
       peakTokens = Math.max(peakTokens, estimateTokens(s.history))
     }
-    // Live window holds ~1h of turns (12 pairs) + a capped memory block. The
-    // total must stay FAR below an unbounded 288-pair transcript (~thousands of
-    // tokens). Assert a hard ceiling that an append-only log would blow past.
-    expect(peakTokens).toBeLessThan(2000)
+    // The size floor lets the live window grow to ~1500 tok, then a fold clears the
+    // aged turns. Bounded around the floor -- nowhere near the ~6000+ tok an
+    // append-only 288-pair transcript would reach.
+    expect(peakTokens).toBeLessThan(3000)
     // Memory block exists and is itself capped (the rolling recollection).
     const memChars = s.history.blocks.get('memory')?.content.length ?? 0
     expect(memChars).toBeLessThanOrEqual(2001) // MAX_MEMORY_CHARS + ellipsis
-    // Raw live turns reflect only the last ~hour, not the whole day.
-    expect(s.history.turns.length).toBeLessThanOrEqual(26)
   })
 })

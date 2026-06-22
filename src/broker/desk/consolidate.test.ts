@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { ChatFn } from './classify'
-import { consolidate, MAX_MEMORY_CHARS, MEMORY_BLOCK_ID } from './consolidate'
+import { CONSOLIDATE_MODEL, consolidate, MAX_MEMORY_CHARS, MEMORY_BLOCK_ID } from './consolidate'
 import { appendTurn, createHistory, getBlock, ONE_HOUR_MS, toMessages } from './living-history'
 
 /** A stub ChatFn that returns fixed content + records the prompt it saw. */
@@ -97,13 +97,19 @@ describe('consolidate fold', () => {
     expect(mem.length).toBeLessThanOrEqual(MAX_MEMORY_CHARS + 1) // +1 for the … ellipsis
   })
 
-  test('model override is honoured', async () => {
+  test('model override is honoured; default is CONSOLIDATE_MODEL', async () => {
     const h = createHistory()
     const now = 10 * ONE_HOUR_MS
     appendTurn(h, 'user', 'old', now - ONE_HOUR_MS - 1)
     const spy: { model?: string } = {}
     await consolidate({ history: h, now, model: 'anthropic/claude-opus-4' }, stubChat('m', spy))
     expect(spy.model).toBe('anthropic/claude-opus-4')
+    // default model when none passed
+    const h2 = createHistory()
+    appendTurn(h2, 'user', 'old', now - ONE_HOUR_MS - 1)
+    const spy2: { model?: string } = {}
+    await consolidate({ history: h2, now }, stubChat('m', spy2))
+    expect(spy2.model).toBe(CONSOLIDATE_MODEL)
   })
 
   test('after a fold the rendered context is smaller', async () => {

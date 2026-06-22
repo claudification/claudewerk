@@ -104,6 +104,15 @@ export const ONE_HOUR_MS = 60 * 60_000
 export const TEN_MIN_MS = 10 * 60_000
 /** Above this, condense FASTER (bypass the interval) -- cost + context-window. */
 export const DEFAULT_SIZE_TOKEN_LIMIT = 6000
+/**
+ * The time-path FLOOR (§8a, measured 2026-06-23). Below this many tokens the
+ * time trigger does NOT fold even when turns have aged out -- a fold is its own
+ * LLM call (~$0.001) and the input it would save on a tiny history is fractions
+ * of a cent, so eager folding is a NET LOSS. Cheap/quiet sessions just let aged
+ * turns linger (capped by the size valve) until there's enough to be worth a
+ * call. The size valve still bypasses this. Set to 0 to test the pure time path.
+ */
+export const DEFAULT_MIN_SIZE_FOR_TIME_TRIGGER = 1500
 
 /** Turns aged past the phase-out horizon -- these condense into memory + drop. */
 export function agedTurns(h: LivingHistory, now: number, maxAgeMs = ONE_HOUR_MS): Turn[] {
@@ -117,22 +126,29 @@ export interface ConsolidatePolicyInput {
   maxAgeMs?: number
   minIntervalMs?: number
   sizeTokenLimit?: number
+  /** Min history size (tokens) for the TIME path to fire (§8a). Default 1500. */
+  minSizeForTimeTrigger?: number
 }
 
 /**
  * Decide whether to run the (expensive) consolidation fold now.
  *  - SHORT-CIRCUIT: nothing aged out AND not over size -> false (no LLM cost).
  *  - SIZE VALVE: over the token limit -> true, even before the interval elapses.
- *  - TIME: aged-out turns exist AND it's been >= the min interval (≤ once/10min).
+ *  - TIME: aged-out turns exist, the history is big enough to be WORTH a fold
+ *    (>= the size floor, §8a -- eager folding of tiny histories is a net cost
+ *    loss), AND it's been >= the min interval.
  */
 export function shouldConsolidate(input: ConsolidatePolicyInput): boolean {
   const { history, now, lastRunAt } = input
   const minIntervalMs = input.minIntervalMs ?? TEN_MIN_MS
   const sizeTokenLimit = input.sizeTokenLimit ?? DEFAULT_SIZE_TOKEN_LIMIT
+  const minSizeForTime = input.minSizeForTimeTrigger ?? DEFAULT_MIN_SIZE_FOR_TIME_TRIGGER
 
-  const tooBig = estimateTokens(history) > sizeTokenLimit
+  const tokens = estimateTokens(history)
+  const tooBig = tokens > sizeTokenLimit
   const hasAged = agedTurns(history, now, input.maxAgeMs).length > 0
   if (!hasAged && !tooBig) return false // short-circuit: nothing to do, no cost
-  if (tooBig) return true // size valve bypasses the interval
+  if (tooBig) return true // size valve bypasses both the floor and the interval
+  if (tokens < minSizeForTime) return false // too small to be worth an LLM fold
   return now - lastRunAt >= minIntervalMs
 }

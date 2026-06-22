@@ -3,6 +3,7 @@ import {
   agedTurns,
   appendTurn,
   createHistory,
+  DEFAULT_MIN_SIZE_FOR_TIME_TRIGGER,
   DEFAULT_SIZE_TOKEN_LIMIT,
   dropBlock,
   estimateTokens,
@@ -72,10 +73,25 @@ describe('consolidation policy', () => {
     const h = createHistory()
     const now = 10 * ONE_HOUR_MS
     appendTurn(h, 'user', 'old', now - ONE_HOUR_MS - 1)
+    // floor 0 isolates the pure time mechanic (this history is tiny).
     // interval NOT elapsed -> wait
-    expect(shouldConsolidate({ history: h, now, lastRunAt: now - TEN_MIN_MS + 1 })).toBe(false)
+    expect(shouldConsolidate({ history: h, now, lastRunAt: now - TEN_MIN_MS + 1, minSizeForTimeTrigger: 0 })).toBe(
+      false,
+    )
     // interval elapsed -> go
-    expect(shouldConsolidate({ history: h, now, lastRunAt: now - TEN_MIN_MS })).toBe(true)
+    expect(shouldConsolidate({ history: h, now, lastRunAt: now - TEN_MIN_MS, minSizeForTimeTrigger: 0 })).toBe(true)
+  })
+
+  test('SIZE FLOOR: a tiny aged history does NOT fold on the time path (§8a)', () => {
+    const h = createHistory()
+    const now = 10 * ONE_HOUR_MS
+    appendTurn(h, 'user', 'old but small', now - ONE_HOUR_MS - 1)
+    // aged + interval elapsed, but under the 1500-tok floor -> no fold (would be a
+    // net cost loss at Haiku prices). Default floor applies.
+    expect(shouldConsolidate({ history: h, now, lastRunAt: now - ONE_HOUR_MS })).toBe(false)
+    // cross the floor with bulk -> the time path fires.
+    upsertBlock(h, 'bulk', 'memory', 'x'.repeat((DEFAULT_MIN_SIZE_FOR_TIME_TRIGGER + 100) * 4), now - ONE_HOUR_MS)
+    expect(shouldConsolidate({ history: h, now, lastRunAt: now - ONE_HOUR_MS })).toBe(true)
   })
 
   test('SIZE VALVE: over the token limit condenses immediately, bypassing the interval', () => {
