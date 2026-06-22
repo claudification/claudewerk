@@ -935,6 +935,7 @@ export type AgentHostMessage =
   | BgTaskOutput
   | AgentHostNotify
   | InterConversationMessage
+  | DispatchRequest
   | ProjectLinkResponse
   | InterConversationListRequest
   | PermissionRequest
@@ -1326,6 +1327,89 @@ export interface SystemChannelDelivery {
   recapId?: string
 }
 
+// ─── Dispatch (Front Desk routing brain) ────────────────────────────────
+// The dispatcher takes an INTENT and decides a DISPOSITION -- spawn a NEW
+// conversation, ROUTE a message to an existing one, or REVIVE an ended one --
+// then executes via the existing spawn/route/revive handlers. Every decision
+// is broadcast as a `dispatch_decision` (the structured-message backbone) and
+// audited. `desk.dispatch` is the verb; see .claude/docs/plan-dispatcher-build.md.
+
+/** Disposition the dispatcher chose for an intent. `ask` = unsure, surface
+ *  candidate cards for one-click select (rich conversation_select UX). */
+export type DispatchDisposition = 'new' | 'route' | 'revive' | 'ask'
+
+/** Relative cost reading for a route/spawn target -- the confirmation-gate input.
+ *  Metrics are read off the existing Conversation record (token_samples /
+ *  lastActivity / cost), NOT re-emitted by status-tool. */
+export interface DispatchCostSignal {
+  tier: 'cheap' | 'moderate' | 'expensive' | 'very_expensive'
+  contextTokens?: number
+  idleMs?: number
+  /** True when idle past the cache TTL -> a resume re-pays full context. */
+  coldCache?: boolean
+  /** Model/profile expense note, e.g. 'opus'. */
+  model?: string
+  /** Human-facing reason, e.g. 'resumes a 180k-token Opus conv, cold cache'. */
+  note?: string
+}
+
+/** A candidate conversation surfaced for the rich `ask` (conversation_select)
+ *  UX -- rendered as a selectable card with commentary. */
+export interface DispatchCandidate {
+  conversationId: string
+  project?: string
+  title?: string
+  /** One-line commentary: why it matched / what it's doing. */
+  commentary?: string
+  /** status-tool LiveStatus.state when the status feed is available.
+   *  Tighten to `LiveStatus['state']` once that type lands in main. */
+  liveState?: string
+  cost?: DispatchCostSignal
+  /** Classifier score 0..1. */
+  score?: number
+}
+
+/** web/MCP -> broker: ask the dispatcher to route an intent. */
+export interface DispatchRequest {
+  type: 'dispatch_request'
+  /** Natural-language intent. */
+  intent: string
+  /** Explicit target (conversationId or project) -> override-first, no LLM. */
+  target?: string
+  /** Explicit disposition override -> honor without re-deciding. */
+  disposition?: DispatchDisposition
+  /** Set once the user confirmed an expensive route (the cost gate). */
+  confirmedExpensive?: boolean
+  /** Correlation id so the resulting decision can be matched back. */
+  requestId?: string
+}
+
+/** broker -> web (broadcast + audit): the routing decision the dispatcher made.
+ *  Emitted for EVERY decision -- including `ask` (unsure) and decisions held at
+ *  the cost-confirmation gate (`awaitingConfirmation`). */
+export interface DispatchDecision {
+  type: 'dispatch_decision'
+  decisionId: string
+  intent: string
+  disposition: DispatchDisposition
+  /** convId (route/revive) or project/profile id (new). */
+  target?: string
+  confidence: number
+  reasoning: string
+  /** Populated when disposition === 'ask' (the conversation_select cards). */
+  candidates?: DispatchCandidate[]
+  /** Cost reading for the chosen target; drives the confirmation gate. */
+  cost?: DispatchCostSignal
+  /** True once the disposition was executed via the underlying handler. */
+  executed: boolean
+  /** Set when execution is held pending an explicit expensive-route confirm. */
+  awaitingConfirmation?: boolean
+  /** The conversation the decision produced/targeted, once known. */
+  resultConversationId?: string
+  traceId: string
+  ts: number
+}
+
 export interface ProjectLinkRequest {
   type: 'channel_link_request'
   fromConversation: string
@@ -1680,6 +1764,7 @@ export type BrokerMessage =
   | TranscriptKick
   | InterConversationDelivery
   | SystemChannelDelivery
+  | DispatchDecision
   | ProjectLinkRequest
   | ProjectLinkGranted
   | InterConversationListResponse
