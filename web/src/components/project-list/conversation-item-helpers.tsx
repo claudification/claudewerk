@@ -1,5 +1,4 @@
 import { memo, type ReactNode, useEffect, useRef, useState } from 'react'
-import { useShallow } from 'zustand/react/shallow'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { selectConversations } from '@/lib/slim-conversation'
 import type { Conversation } from '@/lib/types'
@@ -324,30 +323,6 @@ export function InlineDescription({ conversation }: { conversation: Conversation
 
 // ─── Conversation card outer agent host (shared by Full + Compact) ────────
 
-function BatchCheckbox({ conversationId }: { conversationId: string }) {
-  const { isAdmin, batchActive, isSelected } = useConversationsStore(
-    useShallow(s => ({
-      isAdmin: s.permissions.canAdmin,
-      batchActive: s.currentBatchId !== null || s.selectedForBatch.size > 0,
-      isSelected: s.selectedForBatch.has(conversationId),
-    })),
-  )
-  const toggle = useConversationsStore(s => s.toggleBatchSelection)
-  if (!isAdmin || !batchActive) return null
-  return (
-    <input
-      type="checkbox"
-      aria-label="Select for batch operation"
-      checked={isSelected}
-      onClick={e => {
-        e.stopPropagation()
-      }}
-      onChange={() => toggle(conversationId)}
-      className="mr-2 shrink-0 cursor-pointer accent-accent"
-    />
-  )
-}
-
 export function ConversationItemShell({
   conversation,
   isSelected,
@@ -416,7 +391,6 @@ export function ConversationItemShell({
       }
     >
       <div className="flex items-start">
-        <BatchCheckbox conversationId={conversation.id} />
         <div className="flex-1 min-w-0">{children}</div>
       </div>
     </div>

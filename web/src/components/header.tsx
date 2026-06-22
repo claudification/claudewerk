@@ -145,52 +145,6 @@ function StatusIndicator() {
   )
 }
 
-function BatchSelectedPill() {
-  // Individual selectors -- a single object-returning selector creates a new
-  // object on every render, fails Zustand's default Object.is equality, and
-  // crashes the header with React #185 (max update depth exceeded).
-  const count = useConversationsStore(s => s.selectedForBatch.size)
-  const batchId = useConversationsStore(s => s.currentBatchId)
-  const isAdmin = useConversationsStore(s => s.permissions.canAdmin)
-  const clear = useConversationsStore(s => s.clearBatchSelection)
-  if (!isAdmin || (count === 0 && !batchId)) return null
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        haptic('tap')
-        window.dispatchEvent(new CustomEvent('open-batch-palette'))
-      }}
-      title={batchId ? `Batch ${batchId} - click to open` : 'Open batch operations'}
-      className="text-[10px] px-2 py-0.5 rounded-full border border-accent/50 bg-accent/10 hover:bg-accent/20 text-accent font-medium cursor-pointer transition-colors"
-    >
-      {count > 0 ? `${count} selected` : 'batch'}
-      {count > 0 && (
-        // nested inside outer batch <button>; native <button> would be invalid HTML
-        // react-doctor-disable-next-line react-doctor/prefer-tag-over-role
-        <span
-          role="button"
-          tabIndex={0}
-          aria-label="Clear batch selection"
-          onClick={e => {
-            e.stopPropagation()
-            clear()
-          }}
-          onKeyDown={e => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.stopPropagation()
-              clear()
-            }
-          }}
-          className="ml-1.5 opacity-60 hover:opacity-100"
-        >
-          {'×'}
-        </span>
-      )}
-    </button>
-  )
-}
-
 export function Header() {
   const [showSettings, setShowSettings] = useState(false)
   const [showStatsModal, setShowStatsModal] = useState(false)
@@ -223,7 +177,6 @@ export function Header() {
         <HealthWidget />
         <EfficiencyWidget />
         <TokenFlowBar />
-        <BatchSelectedPill />
 
         <span className="flex-1" />
 

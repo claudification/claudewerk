@@ -16,7 +16,8 @@ export function VoiceDevicePicker({ value, onChange }: VoiceDevicePickerProps) {
     enumeratingRef.current = true
     try {
       // getUserMedia needed -- browsers hide device labels without a prior grant.
-      await navigator.mediaDevices.getUserMedia({ audio: true }).then(s => {
+      // echoCancellation:false so this label-unlock grant doesn't duck other audio.
+      await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false } }).then(s => {
         for (const t of s.getTracks()) t.stop()
       })
       const all = await navigator.mediaDevices.enumerateDevices()

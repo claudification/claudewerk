@@ -14,6 +14,7 @@ import {
   gatherToolUse,
   gatherTranscripts,
   type PeriodScope,
+  resolveProjectScope,
 } from './index'
 
 describe('Phase 3 gather modules (integration)', () => {
@@ -105,18 +106,60 @@ describe('Phase 3 gather modules (integration)', () => {
     expect(out.perProject[0].cwd).toBe('/Users/test/proj')
     expect(out.perProject[0].commits.length).toBe(0)
   })
+
+  // --- Cross-project ('*') scope regression ------------------------------
+  // The bug: a cross-project recap (projectUri '*') enumerated ZERO
+  // conversations. '*' fell through as a literal `WHERE scope = '*'` filter,
+  // which never matches (the scope column holds real project URIs), so the
+  // whole "all projects this week" recap came back empty even though a
+  // per-project recap found dozens. The fix resolves '*' to the store's
+  // distinct project scopes BEFORE gathering.
+  describe("cross-project '*' scope", () => {
+    const otherProject = 'claude://default/Users/test/other'
+
+    beforeEach(() => {
+      seed(store, otherProject, periodStart, 'conv_seed_other')
+    })
+
+    it('listScopes returns every distinct project scope', () => {
+      expect(new Set(store.conversations.listScopes())).toEqual(new Set([projectUri, otherProject]))
+    })
+
+    it("resolveProjectScope('*') expands to all project scopes (NOT a literal '*')", () => {
+      const resolved = resolveProjectScope(store, '*')
+      expect(resolved).not.toContain('*')
+      expect(new Set(resolved)).toEqual(new Set([projectUri, otherProject]))
+    })
+
+    it('resolveProjectScope(concreteUri) passes the URI through unchanged', () => {
+      expect(resolveProjectScope(store, projectUri)).toEqual([projectUri])
+    })
+
+    it("gatherConversations under resolved '*' scope enumerates BOTH projects", () => {
+      const allScope: PeriodScope = { ...scope, projectUris: resolveProjectScope(store, '*') }
+      const out = gatherConversations(store, allScope)
+      expect(out.length).toBe(2)
+      expect(new Set(out.map(c => c.projectUri))).toEqual(new Set([projectUri, otherProject]))
+    })
+
+    it('gatherConversations under a single concrete scope still returns only its subset', () => {
+      const out = gatherConversations(store, { ...scope, projectUris: resolveProjectScope(store, projectUri) })
+      expect(out.length).toBe(1)
+      expect(out[0].projectUri).toBe(projectUri)
+    })
+  })
 })
 
-function seed(store: StoreDriver, projectUri: string, periodStart: number) {
+function seed(store: StoreDriver, projectUri: string, periodStart: number, convId = 'conv_seed') {
   store.conversations.create({
-    id: 'conv_seed',
+    id: convId,
     scope: projectUri,
     agentType: 'claude',
     title: 'Seed conversation',
     createdAt: periodStart + 1_000,
   })
-  store.conversations.update('conv_seed', { lastActivity: periodStart + 5_000 })
-  store.transcripts.append('conv_seed', 'epoch1', [
+  store.conversations.update(convId, { lastActivity: periodStart + 5_000 })
+  store.transcripts.append(convId, 'epoch1', [
     {
       type: 'user',
       uuid: 'u1',
@@ -137,7 +180,7 @@ function seed(store: StoreDriver, projectUri: string, periodStart: number) {
   ])
   store.costs.recordTurn({
     timestamp: periodStart + 4_000,
-    conversationId: 'conv_seed',
+    conversationId: convId,
     projectUri,
     account: 'a',
     orgId: '',
@@ -149,9 +192,9 @@ function seed(store: StoreDriver, projectUri: string, periodStart: number) {
     costUsd: 0.0042,
     exactCost: true,
   })
-  store.tasks.upsert('conv_seed', {
-    id: 'task_a',
-    conversationId: 'conv_seed',
+  store.tasks.upsert(convId, {
+    id: `task_${convId}`,
+    conversationId: convId,
     kind: 'todo',
     status: 'done',
     name: 'Set up storage',

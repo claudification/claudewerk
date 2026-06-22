@@ -102,11 +102,23 @@ function micConstraints(deviceId: string): MediaStreamConstraints {
     audio: {
       sampleRate: 16000,
       channelCount: 1,
-      echoCancellation: true,
+      // echoCancellation MUST stay off: on macOS, enabling it routes the input
+      // through CoreAudio's VoiceProcessingIO unit, which flips the system into
+      // "communication" mode and ducks/pauses all other media (Jonas's music
+      // stopping). We capture a single close-talk voice, so OS AEC buys nothing.
+      echoCancellation: false,
       noiseSuppression: true,
-      ...(deviceId ? { deviceId } : {}),
+      // `exact` pins THIS physical mic so the same device is reused on every
+      // attach and across reloads -- a bare/ideal deviceId silently falls back
+      // to the OS default when it doesn't match (the "wrong mic" symptom).
+      ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
     },
   }
+}
+
+/** Virtual aggregate device ids that don't pin a real mic -- never persist these. */
+function isPinnableDevice(id: string): boolean {
+  return !!id && id !== 'default' && id !== 'communications'
 }
 
 /** Release the warm stream so the next recording picks up a new device. */
@@ -147,10 +159,30 @@ async function acquireMicStream(): Promise<MediaStream> {
     warmStream = null
   }
   const t0 = performance.now()
-  const stream = await navigator.mediaDevices.getUserMedia(micConstraints(wantDevice))
+  let stream: MediaStream
+  try {
+    stream = await navigator.mediaDevices.getUserMedia(micConstraints(wantDevice))
+  } catch (err) {
+    // Pinned mic gone (unplugged / id rotated after a permission reset): exact
+    // throws OverconstrainedError. Fall back to the OS default this time but keep
+    // the saved preference so the same mic re-pins once it's plugged back in.
+    if (wantDevice && (err as Error)?.name === 'OverconstrainedError') {
+      console.warn(`[voice] pinned mic ${wantDevice.slice(0, 8)} unavailable, falling back to default`)
+      stream = await navigator.mediaDevices.getUserMedia(micConstraints(''))
+    } else {
+      throw err
+    }
+  }
   const ms = performance.now() - t0
-  const gotDevice = stream.getAudioTracks()[0]?.getSettings().deviceId ?? 'unknown'
-  console.log(`[voice] mic acquired in ${ms.toFixed(0)}ms (device=${gotDevice.slice(0, 8)})`)
+  const gotDevice = stream.getAudioTracks()[0]?.getSettings().deviceId ?? ''
+  console.log(`[voice] mic acquired in ${ms.toFixed(0)}ms (device=${(gotDevice || 'unknown').slice(0, 8)})`)
+  // Pin the resolved device the first time we acquire with no explicit choice, so
+  // the SAME physical mic is reused on every later attach and after a reload --
+  // even for users who never opened the device picker.
+  if (!wantDevice && isPinnableDevice(gotDevice) && gotDevice !== preferredDeviceId()) {
+    useConversationsStore.getState().updateControlPanelPrefs({ voiceDeviceId: gotDevice })
+    console.log(`[voice] pinned default mic ${gotDevice.slice(0, 8)} for future attaches`)
+  }
   warmStream = stream
   return stream
 }

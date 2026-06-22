@@ -96,6 +96,14 @@ function runStoreTests(name: string, createDriver: () => StoreDriver) {
         expect(alpha.map(s => s.id)).not.toContain('sb')
       })
 
+      it('listScopes returns every distinct project scope, deduped', () => {
+        store.conversations.create({ id: 'ls1', scope: 'alpha', agentType: 'claude' })
+        store.conversations.create({ id: 'ls2', scope: 'beta', agentType: 'claude' })
+        store.conversations.create({ id: 'ls3', scope: 'alpha', agentType: 'claude' })
+
+        expect(new Set(store.conversations.listScopes())).toEqual(new Set(['alpha', 'beta']))
+      })
+
       it('listByScope with status filter', () => {
         store.conversations.create({ id: 'sf1', scope: 'proj', agentType: 'claude' })
         store.conversations.create({ id: 'sf2', scope: 'proj', agentType: 'claude' })
