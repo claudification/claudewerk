@@ -10,13 +10,58 @@
  */
 
 import { z } from 'zod'
+import { getRecapOrchestrator } from '../recap-orchestrator'
+import { resolveDeskProject } from './projects'
 import type { DispatchRuntime } from './runtime'
 import { defineTool, type Toolset } from './tool-def'
 
 const MAX_HITS = 12
+const MAX_RECAPS = 10
+
+/** The recap LOOKUP tools (B6): read existing period recaps -- already-condensed
+ *  "what happened in this project" memory. Triggering a recap is deferred (it is
+ *  async + needs a full scope payload; the recap_available hook already folds
+ *  finished recaps into project memory). Degrades to nothing if the recap
+ *  subsystem isn't initialized (e.g. in a unit test). */
+function recapTools(): Toolset {
+  const orch = getRecapOrchestrator()
+  if (!orch) return {}
+  return {
+    list_recaps: defineTool({
+      description:
+        'List existing period recaps (already-condensed "what happened here" summaries), most recent first. Optionally scope to a project. Use to catch up on a project cheaply before deciding to wake anything.',
+      inputSchema: z.object({
+        project: z.string().nullable().describe('Project name/slug/uri to scope to, or null for all.'),
+      }),
+      idempotent: true,
+      execute: a => {
+        const { project } = a as { project: string | null }
+        const projectUri = project ? (resolveDeskProject(project)?.projectUri ?? undefined) : undefined
+        return orch.list({ projectUri, limit: MAX_RECAPS }).map(r => ({
+          recapId: r.id,
+          project: r.projectUri,
+          period: r.periodLabel,
+          title: r.title,
+          status: r.status,
+          completedAt: r.completedAt,
+        }))
+      },
+    }),
+    get_recap: defineTool({
+      description: 'Read the full markdown of one recap by its recapId (from list_recaps).',
+      inputSchema: z.object({ recapId: z.string().describe('The recap id from list_recaps.') }),
+      idempotent: true,
+      execute: a => {
+        const { recapId } = a as { recapId: string }
+        const md = orch.getMarkdown(recapId)
+        return md ? { recapId, markdown: md } : { recapId, error: 'no such recap (or not yet complete)' }
+      },
+    }),
+  }
+}
 
 export function lookupTools(rt: DispatchRuntime): Toolset {
-  const tools: Toolset = {}
+  const tools: Toolset = { ...recapTools() }
   if (rt.searchTranscripts) {
     const search = rt.searchTranscripts
     tools.search_transcripts = defineTool({
