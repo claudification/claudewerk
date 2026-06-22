@@ -131,6 +131,32 @@ function createDaemonConversation(
   if (status === 'ended') endDaemonConversation(ctx, conv.id, `daemon job already ${job.state}`)
 }
 
+/**
+ * A previously-ended daemon job is back in the roster (daemon restart / job
+ * resume / post-broker-restart rehydration catch-up). Loud log per the un-end
+ * flap covenant -- a future engineer staring at broker logs must be able to
+ * reconstruct prev endedBy / prev lastActivity / age since end without
+ * re-running anything. Clears endedBy so a future end re-records cleanly.
+ * No-op unless the conversation is currently 'ended'.
+ */
+function logDaemonUnend(conv: Conversation, job: DaemonJobInfo): void {
+  if (conv.status !== 'ended') return
+  const dash = (v: unknown) => (v === null || v === undefined ? '-' : v)
+  const endedBy = conv.endedBy ?? {}
+  const { source, initiator, at } = endedBy as { source?: string; initiator?: string; at?: number }
+  const now = Date.now()
+  const ageSinceEndMs = dash(typeof at === 'number' ? now - at : null)
+  const idleMs = dash(typeof conv.lastActivity === 'number' ? now - conv.lastActivity : null)
+  console.warn(
+    `[daemon-unend] ${conv.id.slice(0, 8)} job reappeared in roster ` +
+      `prevStatus=ended prevEndedBy=${dash(source)}/${dash(initiator)} ` +
+      `ageSinceEndMs=${ageSinceEndMs} lastActivityAgoMs=${idleMs} ` +
+      `newState=${job.state} short=${job.short} cwd=${dash(job.cwd)} ` +
+      `sentinelId=${dash(conv.hostSentinelId)}`,
+  )
+  conv.endedBy = undefined
+}
+
 /** Apply a roster job's current state to an existing daemon conversation. */
 function applyDaemonState(
   ctx: HandlerContext,
@@ -158,28 +184,22 @@ function applyDaemonState(
     endDaemonConversation(ctx, conv.id, `daemon job ${job.state}`)
     return
   }
-  if (conv.status === 'ended') {
-    // A previously-ended daemon job is back in the roster (daemon restart /
-    // job resume). Loud log per the un-end flap covenant -- this is THE
-    // origin-story flap path: a future engineer staring at broker logs must
-    // be able to reconstruct prev endedBy / prev lastActivity / age since end
-    // without re-running anything. (LOG EVERYTHING covenant, sweep P2 top.)
-    const endedAt = conv.endedBy?.at
-    const ageSinceEndMs = endedAt ? Date.now() - endedAt : null
-    const idleMs = conv.lastActivity ? Date.now() - conv.lastActivity : null
-    console.warn(
-      `[daemon-unend] ${conv.id.slice(0, 8)} job reappeared in roster ` +
-        `prevStatus=ended prevEndedBy=${conv.endedBy?.source ?? '-'}/` +
-        `${conv.endedBy?.initiator ?? '-'} ` +
-        `ageSinceEndMs=${ageSinceEndMs ?? '-'} ` +
-        `lastActivityAgoMs=${idleMs ?? '-'} ` +
-        `newState=${job.state} short=${job.short} cwd=${job.cwd} ` +
-        `sentinelId=${conv.hostSentinelId ?? '-'}`,
-    )
-    conv.endedBy = undefined
-  }
+  const prevStatus = conv.status
+  logDaemonUnend(conv, job)
+  // Only treat a LIVE state transition as activity. The sentinel polls this
+  // roster on a fixed cadence; the daemon JobRecord carries no real
+  // last-activity timestamp, so stamping now() on every unchanged poll made
+  // every non-hosted daemon ghost read as perpetually "just active" in the
+  // last-activity column. A state transition observed while we were already
+  // tracking the job (e.g. running->done) is a genuine lifecycle moment. We
+  // explicitly EXCLUDE the ended->* transition: after a broker restart every
+  // ghost rehydrates as 'ended', and the first poll flips it back -- that is
+  // rehydration catching up to reality, not new work, and stamping it would
+  // re-date the whole roster to the restart moment. Preserve the rehydrated
+  // real timestamp instead.
+  const stateChanged = conv.status !== status
   conv.status = status
-  conv.lastActivity = Date.now()
+  if (stateChanged && prevStatus !== 'ended') conv.lastActivity = Date.now()
   conv.currentPath = job.cwd
   // Refresh resolvedProfile -- a job's polled-under profile is authoritative
   // (handles a sentinel restart that flips the active profile). Never clear it

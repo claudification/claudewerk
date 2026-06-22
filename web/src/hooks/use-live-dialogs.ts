@@ -19,7 +19,8 @@
 import type { DialogOp, DialogSnapshot } from '@shared/dialog-live'
 import { create } from 'zustand'
 import { applyHostUpdate, type LiveDialogEntry } from './live-dialog-apply'
-import { clearPref, setPref } from './live-dialog-prefs'
+import { collapseForUpdateView, setCollapsedView } from './live-dialog-collapse'
+import { clearPref } from './live-dialog-prefs'
 import { type DialogViewState, freshView, type ViewMirror } from './live-dialog-view'
 import { wsSend } from './use-conversations'
 
@@ -46,8 +47,12 @@ interface LiveDialogsState {
   syncView: (conversationId: string, patch: Partial<ViewMirror>) => void
   /** Mark a submit in flight (the wait bar) -- store-side so it persists. */
   markSubmitted: (conversationId: string, submitRev: number) => void
-  /** Minimize / restore the dialog (per-viewer client pref, persisted to localStorage). */
+  /** Minimize / restore the dialog (per-viewer client pref, persisted to localStorage).
+   *  A manual toggle DISARMS any pending SHIFT+send auto-restore. */
   setCollapsed: (conversationId: string, collapsed: boolean) => void
+  /** SHIFT+send: minimize NOW and arm auto-restore on the next agent update.
+   *  Transient (NOT persisted) -- it pops back the moment the agent replies. */
+  collapseForUpdate: (conversationId: string) => void
   /** Emit one dialog_event (the batched "send to agent" submit, or a close). */
   emit: (
     conversationId: string,
@@ -144,9 +149,16 @@ export const useLiveDialogsStore = create<LiveDialogsState>(set => ({
     set(state => {
       const prev = state.viewByConversation[conversationId]
       if (!prev) return state
-      // Persist the minimize so a reload restores it (per-viewer, client-side).
-      setPref(conversationId, { dialogId: prev.dialogId, collapsed })
-      return { viewByConversation: { ...state.viewByConversation, [conversationId]: { ...prev, collapsed } } }
+      const next = setCollapsedView(conversationId, prev, collapsed)
+      return { viewByConversation: { ...state.viewByConversation, [conversationId]: next } }
+    }),
+
+  collapseForUpdate: conversationId =>
+    set(state => {
+      const prev = state.viewByConversation[conversationId]
+      if (!prev) return state
+      const next = collapseForUpdateView(prev)
+      return { viewByConversation: { ...state.viewByConversation, [conversationId]: next } }
     }),
 
   emit: (conversationId, dialogId, handlerId, on, value, state) =>

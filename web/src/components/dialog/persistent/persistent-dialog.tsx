@@ -117,7 +117,8 @@ export function PersistentDialog({ conversationId, entry }: { conversationId: st
               size="sm"
               variant={layout.finalizeLabel ? 'outline' : 'default'}
               disabled={!submit.canSubmit}
-              onClick={submit.onSubmit}
+              title="Shift+click to minimize until the agent replies"
+              onClick={e => submit.onSubmit(e.shiftKey)}
             >
               {layout.submitLabel || 'Send to agent'}
             </Button>

@@ -28,6 +28,9 @@ export interface DialogViewState {
   activeAction: string | null
   /** Minimized into the bar (manual) or auto-collapsed (agent closed it). */
   collapsed: boolean
+  /** Armed by a SHIFT+send: this collapse auto-restores on the NEXT real agent
+   *  update. Transient (never persisted) -- any manual minimize/expand disarms it. */
+  restoreOnUpdate: boolean
   /** epoch ms the agent drove the dialog terminal -- drives the decay + hard hide. */
   closedAt?: number
 }
@@ -46,6 +49,7 @@ export function freshView(snapshot: DialogSnapshot): DialogViewState {
     submitRev: -1,
     activeAction: null,
     collapsed: false,
+    restoreOnUpdate: false,
   }
 }
 
@@ -58,21 +62,29 @@ export function transitionView(
   prevStatus: DialogStatus | undefined,
   ops: DialogOp[],
   now: number,
+  replay = false,
 ): DialogViewState {
   const sameDialog = !!prev && prev.dialogId === snapshot.dialogId
   const base = sameDialog ? (prev as DialogViewState) : freshView(snapshot)
   const values = reconcileValues(base.values, snapshot.layout, ops)
-  let { collapsed, closedAt } = base
+  let { collapsed, closedAt, restoreOnUpdate } = base
   if (isTerminal(snapshot.status) && !isTerminal(prevStatus)) {
     // Agent drove it terminal -> auto-collapse into the decaying bar.
     collapsed = true
     closedAt = now
+    restoreOnUpdate = false
   } else if (snapshot.status === 'open' && isTerminal(prevStatus)) {
     // Reopened -> bring it back into full view, cancel the decay clock.
     collapsed = false
     closedAt = undefined
+    restoreOnUpdate = false
+  } else if (restoreOnUpdate && collapsed && !replay) {
+    // SHIFT+send minimized this and the agent just patched it (a real update,
+    // not a reconnect replay) -> pop it back open and disarm.
+    collapsed = false
+    restoreOnUpdate = false
   }
-  return { ...base, values, pending: false, collapsed, closedAt }
+  return { ...base, values, pending: false, collapsed, closedAt, restoreOnUpdate }
 }
 
 /** Fold a persisted per-viewer MINIMIZE pref into a freshly-derived view, so a

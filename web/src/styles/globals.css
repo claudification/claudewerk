@@ -668,3 +668,18 @@ html[data-tab-hidden] *::after {
    The slide-in is an explicitly-requested flourish, so it is not gated on the OS
    motion setting. If a reduced-motion opt-out is wanted, make it a control-panel
    pref rather than honoring the OS flag here. */
+
+/* Draw block chrome-on-hover: on a real pointer device, keep the Excalidraw UI
+   (toolbar, menus, zoom) hidden until the user hovers or focuses inside the canvas,
+   so an idle Draw block reads as a clean sketch, not a busy editor. Touch devices
+   (no hover) always show the chrome -- they have no hover to reveal it. */
+@media (hover: hover) and (pointer: fine) {
+	.draw-chrome-hover .layer-ui__wrapper {
+		opacity: 0;
+		transition: opacity 0.15s ease;
+	}
+	.draw-chrome-hover:hover .layer-ui__wrapper,
+	.draw-chrome-hover:focus-within .layer-ui__wrapper {
+		opacity: 1;
+	}
+}

@@ -25,7 +25,8 @@ export interface DialogSubmit {
   canSubmit: boolean
   activeAction: string | null
   setActiveAction: (id: string) => void
-  onSubmit: () => void
+  /** `collapseAfter` (SHIFT+click): minimize on send + auto-restore on the reply. */
+  onSubmit: (collapseAfter?: boolean) => void
   onFinalize: () => void
   cancel: () => void
 }
@@ -41,6 +42,8 @@ export function usePersistentDialogSubmit(
   const emit = useLiveDialogsStore(s => s.emit)
   const markSubmitted = useLiveDialogsStore(s => s.markSubmitted)
   const syncView = useLiveDialogsStore(s => s.syncView)
+  const collapseForUpdate = useLiveDialogsStore(s => s.collapseForUpdate)
+  const setCollapsed = useLiveDialogsStore(s => s.setCollapsed)
 
   const view = () => useLiveDialogsStore.getState().viewByConversation[conversationId]
   const [pending, setPending] = useState(() => view()?.pending ?? false)
@@ -76,9 +79,13 @@ export function usePersistentDialogSubmit(
 
   const canSubmit = !pending && gateOpen
 
-  const send = async (final: boolean) => {
+  const send = async (final: boolean, collapseAfter = false) => {
     if (!canSubmit) return
     haptic('success')
+    // SHIFT+send: minimize instantly (out of the way) and arm auto-restore for
+    // when the agent's patch lands. Never on finalize (that closes the dialog).
+    const minimize = collapseAfter && !final
+    if (minimize) collapseForUpdate(conversationId)
     // Lock the UI while any oversize drawing spills to a blob (async upload),
     // so a double-tap can't fire two turns mid-upload. Stamp submitRev FIRST so
     // the "new apply clears pending" effect doesn't misfire during the upload.
@@ -90,6 +97,8 @@ export function usePersistentDialogSubmit(
     if (final) state._final = true
     if (!emit(conversationId, entry.dialogId, '__submit__', 'submit', undefined, state)) {
       setPending(false)
+      // Send failed -> no agent reply is coming; restore so the error is visible.
+      if (minimize) setCollapsed(conversationId, false)
       return
     }
     // Hard terminal: close in the same gesture so the dialog stops immediately.
@@ -103,7 +112,7 @@ export function usePersistentDialogSubmit(
     canSubmit,
     activeAction,
     setActiveAction: setActiveActionState,
-    onSubmit: () => send(false),
+    onSubmit: (collapseAfter = false) => send(false, collapseAfter),
     onFinalize: () => send(true),
     cancel: () => setPending(false),
   }

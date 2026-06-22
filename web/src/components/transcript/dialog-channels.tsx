@@ -2,6 +2,7 @@ import { RotateCcw, Send } from 'lucide-react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { cn, haptic } from '@/lib/utils'
 import { Markdown } from '../markdown'
+import { DialogValues } from './dialog-values'
 import type { RenderItem } from './group-view-types'
 
 type ChannelRenderItem = Extract<RenderItem, { kind: 'channel' }>
@@ -96,61 +97,6 @@ export function DialogSubmitChannel({ item }: { item: ChannelRenderItem }) {
           <Markdown>{item.text}</Markdown>
         </div>
       )}
-    </div>
-  )
-}
-
-/** Render a submitted form's values as a compact key/value list. */
-function DialogValues({ values }: { values: Array<[string, unknown]> }) {
-  return (
-    <div className="text-[11px] font-mono space-y-1">
-      {values.map(([key, val]) => (
-        <div key={key} className="flex items-start gap-2">
-          <span className="text-violet-400 font-bold shrink-0">{key}</span>
-          <span className="text-foreground/80 break-all">
-            {typeof val === 'boolean' ? (
-              <span
-                className={cn(
-                  'px-1.5 py-0.5 rounded text-[9px] font-bold border',
-                  val
-                    ? 'bg-green-500/15 text-green-400 border-green-500/30'
-                    : 'bg-zinc-500/15 text-muted-foreground/50 border-zinc-500/20',
-                )}
-              >
-                {String(val)}
-              </span>
-            ) : Array.isArray(val) ? (
-              <span className="flex flex-wrap gap-1">
-                {val.map((v, j) => (
-                  <span
-                    // biome-ignore lint/suspicious/noArrayIndexKey: display-only array values, no stable IDs
-                    // react-doctor-disable-next-line react-doctor/no-array-index-key
-                    key={j}
-                    className="px-1.5 py-0.5 bg-violet-500/15 text-violet-300 border border-violet-500/25 rounded text-[9px]"
-                  >
-                    {String(v)}
-                  </span>
-                ))}
-              </span>
-            ) : typeof val === 'string' && val.length > 0 ? (
-              <span className="text-foreground/90">{val}</span>
-            ) : val !== null && typeof val === 'object' ? (
-              // Nested object value, e.g. a commentable diagram's per-node notes
-              // (`{ nodeId: note }`). Render as a sub-list instead of [object Object].
-              <span className="flex flex-col gap-0.5">
-                {Object.entries(val as Record<string, unknown>).map(([k, v]) => (
-                  <span key={k} className="flex items-start gap-1.5">
-                    <span className="text-violet-300/70 shrink-0">{k}:</span>
-                    <span className="text-foreground/80 break-all">{String(v)}</span>
-                  </span>
-                ))}
-              </span>
-            ) : (
-              <span className="text-muted-foreground/50">{String(val)}</span>
-            )}
-          </span>
-        </div>
-      ))}
     </div>
   )
 }

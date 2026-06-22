@@ -21,6 +21,8 @@ export interface DrawInlineValue {
   /** Excalidraw scene as a JSON string. */
   snapshot: string
   bytes: number
+  /** Blob URL of a PNG render of the scene, attached on submit for the transcript thumbnail. */
+  thumbUrl?: string
 }
 
 /** Large drawing: snapshot spilled to a blob; only the URL rides the wire. */
@@ -29,6 +31,8 @@ export interface DrawRefValue {
   /** Blob URL holding the Excalidraw scene JSON. */
   url: string
   bytes: number
+  /** Blob URL of a PNG render of the scene, attached on submit for the transcript thumbnail. */
+  thumbUrl?: string
 }
 
 export type DrawValue = DrawInlineValue | DrawRefValue

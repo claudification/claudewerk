@@ -48,6 +48,33 @@ describe('transitionView', () => {
     const next = transitionView(prev, snap('open'), 'open', [], 0)
     expect(next.pending).toBe(false)
   })
+
+  it('pops a SHIFT-armed minimize back open on the next agent update', () => {
+    const armed = { ...freshView(snap('open')), collapsed: true, restoreOnUpdate: true }
+    const next = transitionView(armed, snap('open'), 'open', [], 4000)
+    expect(next.collapsed).toBe(false)
+    expect(next.restoreOnUpdate).toBe(false)
+  })
+
+  it('does NOT pop a SHIFT-armed minimize on a reconnect replay', () => {
+    const armed = { ...freshView(snap('open')), collapsed: true, restoreOnUpdate: true }
+    const next = transitionView(armed, snap('open'), 'open', [], 4000, true)
+    expect(next.collapsed).toBe(true)
+    expect(next.restoreOnUpdate).toBe(true)
+  })
+
+  it('leaves a plain (un-armed) manual minimize minimized on an agent update', () => {
+    const minimized = { ...freshView(snap('open')), collapsed: true }
+    const next = transitionView(minimized, snap('open'), 'open', [], 4000)
+    expect(next.collapsed).toBe(true)
+  })
+
+  it('disarms restoreOnUpdate when the agent drives the dialog terminal', () => {
+    const armed = { ...freshView(snap('open')), collapsed: true, restoreOnUpdate: true }
+    const next = transitionView(armed, snap('closed'), 'open', [], 4000)
+    expect(next.collapsed).toBe(true)
+    expect(next.restoreOnUpdate).toBe(false)
+  })
 })
 
 describe('foldPrefs', () => {

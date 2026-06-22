@@ -1,5 +1,5 @@
 import type { DialogLayout } from '@shared/dialog-schema'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import type { LiveDialogEntry } from '@/hooks/use-live-dialogs'
@@ -29,10 +29,11 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('PersistentDialog', () => {
-  it('emits one __submit__ dialog_event and shows the wait bar', () => {
+  it('emits one __submit__ dialog_event and shows the wait bar', async () => {
     render(<PersistentDialog conversationId="c1" entry={entry({ rev: 1 })} />)
     fireEvent.click(screen.getByRole('button', { name: /send to agent/i }))
-    expect(sent).toHaveLength(1)
+    // send() is async (it awaits any draw-blob spill) -> the emit lands a microtask later.
+    await waitFor(() => expect(sent).toHaveLength(1))
     expect(sent[0]).toMatchObject({ type: 'dialog_event', handlerId: '__submit__', on: 'submit' })
     expect(screen.getByText(/waiting for the agent/i)).toBeTruthy()
   })

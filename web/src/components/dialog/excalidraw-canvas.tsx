@@ -17,8 +17,8 @@
  */
 import { Excalidraw, serializeAsJSON } from '@excalidraw/excalidraw'
 import '@excalidraw/excalidraw/index.css'
-import { type ComponentProps, useCallback, useMemo, useRef } from 'react'
 import { utf8Bytes } from '@shared/draw'
+import { type ComponentProps, useCallback, useMemo, useRef } from 'react'
 
 type ExcalidrawProps = ComponentProps<typeof Excalidraw>
 type ChangeHandler = NonNullable<ExcalidrawProps['onChange']>
@@ -44,11 +44,21 @@ export default function ExcalidrawCanvas({ initialSnapshot, readOnly, onSnapshot
 
   // Seed once from the snapshot. collaborators is a Map (non-serializable) so it never
   // survives a round-trip -- drop it defensively before handing appState back to Excalidraw.
+  //
+  // Theme: seeded through appState (the DEFAULT), not the controlled `theme` prop -- the prop
+  // would LOCK the theme and override the user's in-app light/dark toggle on every re-render.
+  // claudewerk is a dark app, so we default the canvas to dark; the user can still flip to
+  // light from Excalidraw's menu, and that choice persists in appState across the snapshot.
   const initialData = useMemo<ExcalidrawProps['initialData']>(() => {
     const s = initialSnapshot as SceneSnapshot | undefined
-    if (!s) return { scrollToContent: true }
+    if (!s) return { appState: { theme: 'dark' }, scrollToContent: true }
     const { collaborators: _drop, ...appState } = s.appState ?? {}
-    return { elements: s.elements, appState, files: s.files, scrollToContent: true } as ExcalidrawProps['initialData']
+    return {
+      elements: s.elements,
+      appState: { theme: 'dark', ...appState },
+      files: s.files,
+      scrollToContent: true,
+    } as ExcalidrawProps['initialData']
     // seed captured once at mount; later edits must not reset the canvas
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

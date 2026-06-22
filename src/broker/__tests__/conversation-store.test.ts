@@ -192,16 +192,56 @@ describe('conversation lifecycle', () => {
     expect(store.getConversation('resume-active')!.lastActivity).toBe(realLastActivity)
   })
 
-  it('resumeConversation on an ENDED conv stamps lastActivity (un-end is real activity)', () => {
+  it('resumeConversation on an ENDED conv PRESERVES lastActivity (un-end is transport, not activity)', () => {
+    // Regression: un-ending must NOT re-stamp lastActivity to now(). The
+    // dominant un-end is a broker restart -- rehydrateFromStore loads every
+    // conversation as 'ended', so the first reconnect of each one un-ends it.
+    // Stamping now() here re-dated the entire roster to the restart moment (the
+    // "3m ago across the board" last-activity bug). Real work re-stamps via
+    // hook events; the un-end itself must keep the true timestamp.
     const conv = store.createConversation('resume-ended', '/cwd')
-    conv.lastActivity = Date.now() - 30 * 60_000
+    const realLastActivity = Date.now() - 30 * 60_000
+    conv.lastActivity = realLastActivity
     store.endConversation('resume-ended', { source: 'cc-exit-normal' })
-    const beforeResume = Date.now()
 
     store.resumeConversation('resume-ended')
 
-    const after = store.getConversation('resume-ended')!.lastActivity
-    expect(after).toBeGreaterThanOrEqual(beforeResume)
+    expect(store.getConversation('resume-ended')!.lastActivity).toBe(realLastActivity)
+  })
+
+  it('broker restart + reconnect preserves each conversation true lastActivity (no uniform re-stamp)', () => {
+    // The real-world repro of the "3m ago across the board" bug. A broker
+    // restart rehydrates the whole roster as 'ended'; the agent hosts then
+    // reconnect and each conversation un-ends. Pre-fix, that re-stamped every
+    // lastActivity to the restart moment, so the batch view's last-activity
+    // column showed the reconnect time for everything. Each conversation must
+    // keep its own true, distinct timestamp.
+    const driver = createStore({ type: 'memory' })
+    driver.init()
+    const before = createConversationStore({ store: driver, enablePersistence: true })
+
+    const now = Date.now()
+    const ages = { a: now - 90 * 60_000, b: now - 5 * 60_000, c: now - 3 * 24 * 60_000 }
+    for (const [id, ts] of Object.entries(ages)) {
+      const c = before.createConversation(id, '/cwd')
+      c.lastActivity = ts
+      before.persistConversationById(id)
+    }
+
+    // Simulate the restart: a fresh store loads from the same driver. Every
+    // conversation comes back as 'ended' with its persisted lastActivity.
+    const after = createConversationStore({ store: driver, enablePersistence: true })
+    for (const id of Object.keys(ages)) {
+      expect(after.getConversation(id)!.status).toBe('ended')
+    }
+
+    // Reconnect: each conversation un-ends. lastActivity must survive verbatim.
+    for (const id of Object.keys(ages)) {
+      after.resumeConversation(id)
+    }
+    expect(after.getConversation('a')!.lastActivity).toBe(ages.a)
+    expect(after.getConversation('b')!.lastActivity).toBe(ages.b)
+    expect(after.getConversation('c')!.lastActivity).toBe(ages.c)
   })
 
   it('maintenance reaper does NOT mark subagents stopped on a long-idle conv that still has a live socket', () => {

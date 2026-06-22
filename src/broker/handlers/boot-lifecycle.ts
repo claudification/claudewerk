@@ -93,7 +93,14 @@ const agentHostBoot: MessageHandler = (ctx, data) => {
     }
 
     existing.status = 'booting'
-    existing.lastActivity = Date.now()
+    // Do NOT stamp lastActivity here. A boot is a TRANSPORT event (the agent
+    // host process connected), not user/agent work. The common case is a host
+    // reconnecting after a broker restart -- rehydrate loaded it as 'ended', so
+    // this branch runs for the whole roster at once and stamping now() re-dated
+    // every conversation to the restart moment (the "3m ago across the board"
+    // bug in the last-activity column). Real work re-stamps lastActivity via
+    // hook events (add-event.ts) the moment CC actually does something; until
+    // then the rehydrated/true timestamp is the honest answer.
     existing.project = resolvedProject
     if (pinnedProfile && !existing.resolvedProfile) existing.resolvedProfile = pinnedProfile
     // Agent host is the source of truth for its own capabilities. A backend

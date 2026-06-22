@@ -55,15 +55,16 @@ export function applyHostUpdate(
     dialogId: snapshot.dialogId,
     rev: (prev?.rev ?? 0) + 1,
   }
-  const derived = transitionView(
-    maps.viewByConversation[conversationId],
-    snapshot,
-    prev?.snapshot.status,
-    ops,
-    Date.now(),
-  )
-  const pref = getPref(conversationId)
-  if (pref && pref.dialogId !== snapshot.dialogId) clearPref(conversationId)
+  const prevView = maps.viewByConversation[conversationId]
+  const derived = transitionView(prevView, snapshot, prev?.snapshot.status, ops, Date.now(), extra.replay ?? false)
+  // A SHIFT+send minimize that just auto-restored must also drop any persisted
+  // minimize pref, else foldPrefs would re-collapse the dialog we just popped back.
+  const restored = !!prevView?.restoreOnUpdate && prevView.collapsed && !derived.collapsed
+  let pref = getPref(conversationId)
+  if (pref && (pref.dialogId !== snapshot.dialogId || restored)) {
+    clearPref(conversationId)
+    pref = undefined
+  }
   const view = foldPrefs(derived, pref)
   return {
     byConversation: { ...maps.byConversation, [conversationId]: entry },

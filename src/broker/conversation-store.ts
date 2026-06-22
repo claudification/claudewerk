@@ -1493,14 +1493,19 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
         }
         // Clear endedBy so a future end re-records cleanly with fresh causality.
         conv.endedBy = undefined
-        // Un-end IS meaningful activity (the conv just came back from the
-        // dead). Stamp lastActivity so reaper liveness checks have a fresh
-        // anchor. For non-ended reconnects (active/idle), preserve the real
-        // last-activity timestamp from prior hook events -- otherwise every
-        // reconnect (broker restart, dashboard reload, network blip)
-        // overwrites it and the dashboard "last activity" column shows the
-        // reconnect time instead of true activity.
-        conv.lastActivity = now
+        // Do NOT re-stamp lastActivity here. Un-ending is a TRANSPORT event
+        // (a socket arrived), not user/agent activity. The dominant un-end is
+        // a broker restart: rehydrateFromStore loads every conversation as
+        // status='ended', so the FIRST reconnect of each one after a restart
+        // hits this wasEnded branch. Stamping now() here re-dated the entire
+        // roster to the restart time -- the "last activity" column showed the
+        // reconnect moment for everything ("3m ago" across the board) instead
+        // of true activity. Preserve the rehydrated/real lastActivity; genuine
+        // activity re-stamps itself via updateActivity() when hook events
+        // arrive. The reaper's primary liveness signal is liveSockets===0 (a
+        // socket just arrived, so it's live) -- it does not need a fabricated
+        // fresh anchor, and lastActivity is only its secondary corroborating
+        // signal (see runMaintenancePass).
       }
 
       conv.status = 'idle'
