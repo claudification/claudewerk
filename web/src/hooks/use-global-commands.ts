@@ -115,13 +115,10 @@ export function useGlobalCommands(toggleSidebar: () => void) {
     useDispatchStore.getState().openOverlay()
   }, [])
 
-  useCommand('open-dispatch', openDispatch, {
-    label: 'DISPATCH (cockpit)',
-    group: 'Navigation',
-  })
-
+  // Chord command already registers a palette entry AND the ⌘K J / ⌘G J
+  // bindings -- a separate plain useCommand here just duplicated the row.
   useChordCommand('open-dispatch-chord', openDispatch, {
-    label: 'DISPATCH cockpit',
+    label: 'DISPATCH (cockpit)',
     key: 'j',
     group: 'Navigation',
   })
