@@ -1,7 +1,12 @@
 import type { NightshiftRunSnapshot } from '@shared/nightshift-types'
+import { lazy, Suspense } from 'react'
 import { BlockedCard } from './blocked-card'
 import { ReadyCard } from './ready-card'
 import { SkippedList } from './skipped-list'
+import { useAct } from './use-act'
+
+// Lazy: the ACT bar (+ its freeform textarea) ships only when a run is rendered.
+const ActBar = lazy(() => import('./act-bar').then(m => ({ default: m.ActBar })))
 
 function StatusBadge({ status }: { status: string }) {
   const color = status === 'done' ? 'text-green-400 border-green-800' : 'text-yellow-400 border-yellow-800'
@@ -17,9 +22,16 @@ function SectionHeading({ label, count }: { label: string; count: number }) {
   )
 }
 
-export function NightshiftReport({ snapshot }: { snapshot: NightshiftRunSnapshot }) {
+export function NightshiftReport({
+  snapshot,
+  projectUri,
+}: {
+  snapshot: NightshiftRunSnapshot
+  projectUri: string | null
+}) {
   const { run, tasks, blocked, skipped } = snapshot
   const readyTasks = tasks.filter(t => t.verdict === 'ready-to-review')
+  const act = useAct(projectUri, run.runId)
 
   return (
     <div className="space-y-8">
@@ -45,12 +57,16 @@ export function NightshiftReport({ snapshot }: { snapshot: NightshiftRunSnapshot
         </div>
       )}
 
+      <Suspense fallback={null}>
+        <ActBar act={act} hasReady={readyTasks.length > 0} />
+      </Suspense>
+
       {readyTasks.length > 0 && (
         <section>
           <SectionHeading label="Ready to review" count={readyTasks.length} />
           <div className="space-y-3">
             {readyTasks.map(t => (
-              <ReadyCard key={t.id} task={t} />
+              <ReadyCard key={t.id} task={t} act={act} />
             ))}
           </div>
         </section>

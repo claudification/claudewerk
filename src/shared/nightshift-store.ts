@@ -33,6 +33,7 @@ import {
   type NightshiftRunTotals,
   type NightshiftSkipped,
   type NightshiftTaskMeta,
+  type NightshiftTaskPatchInput,
   type NightshiftTaskReport,
   type NightshiftTaskStatus,
   type NightshiftTests,
@@ -118,6 +119,8 @@ const TASK_STATUS_VALUES: NightshiftTaskStatus[] = [
   'errored',
   'skipped',
   'spinning',
+  'integrated',
+  'discarded',
 ]
 const VERDICT_VALUES: NightshiftVerdict[] = ['ready-to-review', 'needs-you', 'declined']
 const FEASIBILITY_VALUES: NightshiftFeasibility[] = ['feasible', 'uncertain', 'infeasible']
@@ -261,6 +264,77 @@ export function listRunTasks(root: string, runId: string): NightshiftTaskMeta[] 
     /* no tasks dir yet */
   }
   return out.sort((a, b) => a.id.localeCompare(b.id))
+}
+
+/** Locate the task file for an id (matches the `NNN-` prefix). */
+function findTaskFile(root: string, runId: string, id: string): string | null {
+  const dir = tasksDir(root, runId)
+  const prefix = `${pad3(id)}-`
+  try {
+    for (const f of readdirSync(dir)) {
+      if (f.endsWith('.md') && f.startsWith(prefix)) return join(dir, f)
+    }
+  } catch {
+    /* no tasks dir */
+  }
+  return null
+}
+
+/**
+ * Append a one-line audit note to the body's "Notes / decisions" section,
+ * replacing the `_none_` placeholder if that's all that's there.
+ */
+function appendNote(body: string, note: string): string {
+  const heading = '## Notes / decisions'
+  const idx = body.indexOf(heading)
+  const line = `- ${note.replace(/\n+/g, ' ').trim()}`
+  if (idx === -1) return `${body.trimEnd()}\n\n${heading}\n${line}\n`
+  const after = idx + heading.length
+  const rest = body.slice(after)
+  // The next section heading (if any) bounds this section.
+  const nextIdx = rest.indexOf('\n## ')
+  const section = nextIdx === -1 ? rest : rest.slice(0, nextIdx)
+  const tail = nextIdx === -1 ? '' : rest.slice(nextIdx)
+  const cleaned = section.replace(/^\s*_none_\s*$/m, '').trimEnd()
+  const rebuilt = `${cleaned ? `${cleaned}\n${line}` : `\n${line}`}\n`
+  return `${body.slice(0, after)}${rebuilt}${tail}`
+}
+
+/**
+ * Patch an existing task artifact in place (ACT-ON-RESULTS, plan §4). Reads the
+ * file, merges only the provided frontmatter scalars, optionally appends an audit
+ * note to "Notes / decisions", and rewrites. Returns the updated meta, or null
+ * when no task file matches the id. `nowMs` is accepted for signature symmetry
+ * with the other writers (the patch never resets `created`).
+ */
+export function patchTask(
+  root: string,
+  runId: string,
+  patch: NightshiftTaskPatchInput,
+  _nowMs: number,
+): NightshiftTaskMeta | null {
+  const file = findTaskFile(root, runId, patch.id)
+  if (!file) return null
+  let parsed: { meta: Record<string, unknown>; body: string }
+  try {
+    parsed = parseFrontmatter(readFileSync(file, 'utf8'))
+  } catch {
+    return null
+  }
+  const current = coerceTaskMeta(parsed.meta, patch.id)
+  const merged: NightshiftTaskMeta = {
+    ...current,
+    status: patch.status ?? current.status,
+    verdict: patch.verdict ?? current.verdict,
+    tests: patch.tests ?? current.tests,
+    diffstat: patch.diffstat ?? current.diffstat,
+    commits: patch.commits ?? current.commits,
+    reroutes: patch.reroutes ?? current.reroutes,
+    attempts: patch.attempts ?? current.attempts,
+  }
+  const body = patch.note ? appendNote(parsed.body, patch.note) : parsed.body
+  writeFileSync(file, serializeFrontmatter(taskFrontmatter(merged), body.trimEnd()), 'utf8')
+  return merged
 }
 
 // ---------------------------------------------------------------------------

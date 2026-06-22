@@ -12,6 +12,7 @@
 import {
   appendSkipped,
   finalizeRun,
+  patchTask,
   readLatestSnapshot,
   readNightshiftConfig,
   readRunSnapshot,
@@ -119,6 +120,13 @@ export function handleNightshiftOp(root: string, msg: NightshiftOp, nowMs: numbe
         if (!runId) return { ...base, ok: false, error: 'runId required for report' }
         const r = handleReport(root, runId, msg.report, nowMs)
         return { ...r, requestId: msg.requestId }
+      }
+      case 'task_patch': {
+        if (!msg.taskPatch) return { ...base, ok: false, error: 'taskPatch required' }
+        if (!msg.runId) return { ...base, ok: false, error: 'runId required for task_patch' }
+        const task = patchTask(root, msg.runId, msg.taskPatch, nowMs)
+        if (!task) return { ...base, ok: false, error: `task not found: ${msg.taskPatch.id}` }
+        return { ...base, ok: true, task }
       }
       case 'run_finalize': {
         if (!msg.runId) return { ...base, ok: false, error: 'runId required for run_finalize' }

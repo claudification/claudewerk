@@ -512,6 +512,10 @@ async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): 
       // Sentinel-profile INTENT (broker-safe NAME / mode / pool only).
       // Profile env stays sentinel-side (PROFILE-ENV BOUNDARY covenant).
       sentinelProfile: intentFromProfileField(req.profile, req.pool),
+      // NIGHTSHIFT origin tag -- persisted on the conversation so the broker
+      // watchdog can identify night-run tasks (caps/429/floor) and the Status
+      // screen can filter rows. Mirrors the preamble decision above.
+      nightshift: req.nightshift,
     })
 
     try {

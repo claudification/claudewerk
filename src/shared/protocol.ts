@@ -16,6 +16,7 @@ import type {
   NightshiftRunStartInput,
   NightshiftSkipped,
   NightshiftTaskMeta,
+  NightshiftTaskPatchInput,
 } from './nightshift-types'
 import type { ProjectTask, ProjectTaskManifestEntry, ProjectTaskMeta, ProjectTaskRef } from './project-task-types'
 import type { SpawnRequest } from './spawn-schema'
@@ -2098,6 +2099,7 @@ export type TerminationSource =
   // Broker-driven cleanup
   | 'ws-close' // last live agent host socket closed without explicit `end`
   | 'reaper-phantom' // 30s reaper: no live sockets remaining
+  | 'nightshift-watchdog' // deterministic nightshift watchdog: a per-task cap breach (time/token/idle/turn) or capacity-floor yield
   // Broker-driven RESURRECTION (used with kind='unend' to log a flap signal,
   // not an actual termination -- a previously-ended conversation got
   // un-ended because `meta` or `agent_host_boot` arrived for it).
@@ -3139,6 +3141,16 @@ export interface LaunchConfig {
    * `.claude/docs/plan-sentinel-profiles.md` Profile-Env Boundary covenant.
    */
   sentinelProfile?: { kind: 'profile'; name: string } | { kind: 'pool'; name: string }
+  /**
+   * NIGHTSHIFT origin tag (plan-nightshift.md §6). Present => this conversation
+   * is an unattended night-run worker for `runId`/`taskId`; absent => an
+   * ordinary spawn. Set from the spawn request's `nightshift` field, persisted
+   * on the conversation (and reused on revive -- a revived night task is still a
+   * night task), and surfaced in `ConversationSummary.launchConfig` so the
+   * broker WATCHDOG can identify night tasks and the live Status screen (P3) can
+   * filter rows. Carries NO capacity numbers -- those come from smart-balance.
+   */
+  nightshift?: { runId: string; taskId: string }
 }
 
 // ─── Launch Jobs (request-scoped event channels for spawn/revive) ────
@@ -3603,6 +3615,7 @@ export type NightshiftOpKind =
   | 'config_write'
   | 'run_start' // create run dir + run.md (status=running) + repoint `latest`
   | 'report' // write one task / blocked / skipped artifact
+  | 'task_patch' // ACT-ON-RESULTS: patch an existing task's frontmatter in place (plan §4)
   | 'run_finalize' // recompute totals, flip run.md to done, stamp digest/cost
 
 /** Dashboard / night-manager -> Broker: one nightshift artifact op. */
@@ -3620,6 +3633,8 @@ export interface NightshiftRequest {
   runStart?: NightshiftRunStartInput
   /** report payload (task | blocked | skipped). */
   report?: NightshiftReportInput
+  /** task_patch payload (ACT-ON-RESULTS in-place frontmatter patch). */
+  taskPatch?: NightshiftTaskPatchInput
   /** run_finalize payload. */
   finalize?: NightshiftFinalizeInput
 }
@@ -3634,6 +3649,7 @@ export interface NightshiftOp {
   config?: NightshiftConfig
   runStart?: NightshiftRunStartInput
   report?: NightshiftReportInput
+  taskPatch?: NightshiftTaskPatchInput
   finalize?: NightshiftFinalizeInput
 }
 
@@ -3675,6 +3691,97 @@ export interface NightshiftEvent {
   status?: string
   verdict?: string
   digest?: string
+}
+
+// ===========================================================================
+// NIGHTSHIFT WATCHDOG -- the deterministic control tier (plan-nightshift.md §2.4)
+//
+// A broker reaper-style loop (~1 min, NO LLM) that enforces PURE THRESHOLDS on
+// every live night-run task: per-task wall-clock / token / idle / turn caps,
+// 429-detection, and capacity floors (read from smart-balance telemetry, NEVER
+// re-derived). Honouring the LOG-EVERYTHING covenant, EVERY consideration is
+// recorded -- not just the kills -- so the Status screen's decision log shows
+// the watchdog's full reasoning, timestamped. The IMPULSE (LLM) tier is P5 and
+// is deliberately NOT built here.
+// ===========================================================================
+
+/** Which cap/condition the watchdog evaluated. `capacity-floor` = the task's
+ *  profile crossed the smart-balance interactive gate, so the night task yields. */
+export type WatchdogCapKind = 'time' | 'tokens' | 'idle' | 'turns' | 'rate-limit' | 'capacity-floor'
+
+/**
+ * The watchdog's call for one task this tick:
+ * - `observe` -- within every cap (logged anyway: LOG-EVERYTHING).
+ * - `warn`    -- approaching a cap (>= warn fraction); no action, surfaced.
+ * - `end`     -- a hard cap breached; the task is terminated with a terminal recap.
+ * - `block`   -- transient/capacity reason (429 or floor); parked to the Blocked lane
+ *                to resume another night rather than burning capacity now.
+ */
+export type WatchdogVerdict = 'observe' | 'warn' | 'end' | 'block'
+
+/**
+ * One timestamped watchdog consideration. Flat + JSON-safe (rides the WS, sits
+ * in a broker-local ring). The metric snapshot is whatever the watchdog measured
+ * at decision time; `kind` is the dominant cap when the verdict is warn/end/block
+ * (absent for a clean `observe`).
+ */
+export interface WatchdogDecision {
+  /** Unique id for this record (dedup + React keys). */
+  id: string
+  /** Decision timestamp, epoch ms. */
+  at: number
+  /** Canonical project URI -- the broadcast scope + Status-screen filter key. */
+  project: string
+  runId: string
+  taskId: string
+  conversationId: string
+  /** resolvedProfile the task ran under (capacity truth, not URI userinfo). */
+  profile?: string
+  verdict: WatchdogVerdict
+  /** Dominant cap for a warn/end/block (absent on a clean observe). */
+  kind?: WatchdogCapKind
+  /** Human-readable one-liner -- the "why", logged + shown verbatim. */
+  reason: string
+  // ─ metric snapshot at decision time (present when measured) ─
+  elapsedMin?: number
+  idleMin?: number
+  tokens?: number
+  turns?: number
+  /** Profile 5h utilisation % read from smart-balance (capacity-floor checks). */
+  fiveHourPct?: number
+  /** The caps in force when this decision was made (for the log's context). */
+  caps?: { perTaskMinutes?: number; idleMinutes?: number; perTaskTokens?: number; maxTurns?: number }
+}
+
+/** Control panel -> Broker: backfill the watchdog decision log for a project
+ *  (the Status screen on mount). The live feed arrives via nightshift_watchdog_event. */
+export interface NightshiftWatchdogRequest {
+  type: 'nightshift_watchdog_request'
+  requestId: string
+  /** Canonical project URI -- scope + permission key (files:read). */
+  project: string
+  /** Optional: restrict to one run (omit = all runs in the ring for the project). */
+  runId?: string
+  /** Cap the number of (newest) decisions returned. */
+  limit?: number
+}
+
+/** Broker -> Control panel: the requested slice of the decision-log ring. */
+export interface NightshiftWatchdogResult {
+  type: 'nightshift_watchdog_result'
+  requestId: string
+  ok: boolean
+  decisions?: WatchdogDecision[]
+  error?: string
+}
+
+/** Broker -> Control panel broadcast (project-scoped): one fresh watchdog
+ *  decision, fired the moment the watchdog records it. */
+export interface NightshiftWatchdogEvent {
+  type: 'nightshift_watchdog_event'
+  /** Canonical project URI -- the broadcast scope key. */
+  project: string
+  decision: WatchdogDecision
 }
 
 // ─── Project Checklists ─────────────────────────────────────────────────
@@ -4801,6 +4908,11 @@ export interface ConversationSummary extends ConversationTaskFields {
   /** Topmost ancestor in the spawn chain (mirrors `Conversation.rootConversationId`).
    *  Grouping key for the control panel project list. */
   rootConversationId?: string
+  /** NIGHTSHIFT origin tag (mirrors `Conversation.launchConfig.nightshift`, but
+   *  carries ONLY the run/task ids -- never the full launchConfig, which holds
+   *  env + appendSystemPrompt). Present => an unattended night-run task; lets the
+   *  live Status screen filter night rows without leaking launch internals. */
+  nightshift?: { runId: string; taskId: string }
 }
 
 // Subscription channels (dashboard <-> broker pub/sub)

@@ -13,6 +13,7 @@ import {
   finalizeRun,
   listRunSkipped,
   listRunTasks,
+  patchTask,
   readLatestSnapshot,
   readNightshiftConfig,
   resolveLatestRunId,
@@ -165,6 +166,75 @@ describe('safe-to-do (skipped) lane', () => {
     expect(skipped[0].title).toBe('Rewrite auth')
     expect(skipped[0].reason).toBe('too vague')
     expect(skipped[1].feasibility).toBe('infeasible')
+  })
+})
+
+describe('patchTask (act-on-results, plan §4)', () => {
+  function seedReady() {
+    writeTask(
+      root,
+      '2026-06-19',
+      {
+        id: '2',
+        title: 'Fix worktree-remove silent failure',
+        project: 'remote-claude',
+        status: 'done',
+        verdict: 'ready-to-review',
+        feasibility: 'feasible',
+        branch: 'nightshift/002-worktree-remove-fix',
+        diffstat: '+31 -6',
+        tests: 'pass',
+        report: { recap: 'made it loud', howToVerify: 'bun test worktree' },
+      },
+      NOW,
+    )
+  }
+
+  test('merges scalars in place without clobbering the worker fields', () => {
+    seedReady()
+    const patched = patchTask(root, '2026-06-19', { id: '2', status: 'integrated', commits: 2 }, NOW + 1000)
+    expect(patched?.status).toBe('integrated')
+    expect(patched?.commits).toBe(2)
+    // untouched fields survive
+    expect(patched?.branch).toBe('nightshift/002-worktree-remove-fix')
+    expect(patched?.diffstat).toBe('+31 -6')
+    expect(patched?.tests).toBe('pass')
+    // reflected on disk
+    const [t] = listRunTasks(root, '2026-06-19')
+    expect(t.status).toBe('integrated')
+    expect(t.verdict).toBe('ready-to-review')
+  })
+
+  test('note appends to the Notes / decisions section, replacing the placeholder', () => {
+    seedReady()
+    patchTask(root, '2026-06-19', { id: '2', tests: 'fail', note: 'acceptance regressed on re-run' }, NOW)
+    const raw = readFileSync(
+      join(root, '.nightshift', 'runs', '2026-06-19', 'tasks', '002-fix-worktree-remove-silent-failure.md'),
+      'utf8',
+    )
+    expect(raw).toContain('## Notes / decisions')
+    expect(raw).toContain('- acceptance regressed on re-run')
+    expect(raw).not.toContain('_none_')
+    // body sections preserved
+    expect(raw).toContain('## What it did')
+    expect(raw).toContain('made it loud')
+    expect(raw).toContain('## Open loops')
+  })
+
+  test('discard outcome flips status + verdict', () => {
+    seedReady()
+    const patched = patchTask(
+      root,
+      '2026-06-19',
+      { id: '2', status: 'discarded', verdict: 'declined', note: 'discarded: not worth it' },
+      NOW,
+    )
+    expect(patched?.status).toBe('discarded')
+    expect(patched?.verdict).toBe('declined')
+  })
+
+  test('unknown id returns null', () => {
+    expect(patchTask(root, '2026-06-19', { id: '99', status: 'integrated' }, NOW)).toBeNull()
   })
 })
 

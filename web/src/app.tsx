@@ -76,6 +76,9 @@ const CanvasPage = lazy(() => import('@/components/canvas-mode/canvas-page').the
 const NightshiftPage = lazy(() =>
   import('@/components/nightshift/nightshift-page').then(m => ({ default: m.NightshiftPage })),
 )
+const NightshiftStatusPage = lazy(() =>
+  import('@/components/nightshift/nightshift-status-page').then(m => ({ default: m.NightshiftStatusPage })),
+)
 // Admin-only debug tool -- kept out of the index bundle (incl. its lazy YAML view).
 const DebugControlModal = lazy(() =>
   import('@/components/debug/debug-control-modal').then(m => ({ default: m.DebugControlModal })),
@@ -607,6 +610,11 @@ const FULLSCREEN_PAGES: Record<string, () => React.ReactElement> = {
   nightshift: () => (
     <FullscreenRoute fallbackLabel="Loading the night report…">
       <NightshiftPage />
+    </FullscreenRoute>
+  ),
+  'nightshift-status': () => (
+    <FullscreenRoute fallbackLabel="Loading night ops…">
+      <NightshiftStatusPage />
     </FullscreenRoute>
   ),
 }

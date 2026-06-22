@@ -448,6 +448,16 @@ export function useWebSocket() {
             return
           }
 
+          // Nightshift WATCHDOG decision log (backfill reply + live beat) -> Status screen.
+          if (
+            typeof msg.type === 'string' &&
+            (msg.type === 'nightshift_watchdog_result' || msg.type === 'nightshift_watchdog_event')
+          ) {
+            const handler = useConversationsStore.getState().nightshiftWatchdogHandler
+            handler?.(msg as unknown as Record<string, unknown>)
+            return
+          }
+
           // Terminal data -> direct handler callback (low latency critical)
           if (msg.type === 'terminal_data' || msg.type === 'terminal_error') {
             const handler = useConversationsStore.getState().terminalHandler

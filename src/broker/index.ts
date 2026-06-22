@@ -38,6 +38,7 @@ import {
 } from './conversation-links'
 import { createConversationStore } from './conversation-store'
 import { type ContextDeps, createContext } from './create-context'
+import { startNightshiftWatchdog } from './nightshift-watchdog'
 import { closeDispatchAudit, initDispatchAudit } from './desk/audit'
 import { closeDispatchThreads, initDispatchThreads } from './desk/threads'
 import { startExternalStatusPolling, stopExternalStatusPolling } from './external-status'
@@ -1120,6 +1121,29 @@ async function main() {
       console.error('[broker] Phantom reaper crashed -- swallowing:', err)
     }
   }, 30_000)
+
+  // NIGHTSHIFT WATCHDOG (plan-nightshift.md §2.4): deterministic ~1-min sweep
+  // enforcing per-task time/token/idle/turn caps + 429 + capacity floors on
+  // night-run tasks. Reads smart-balance telemetry, never re-derives it. Acts
+  // only on conversations tagged `launchConfig.nightshift`, disjoint from the
+  // phantom reaper / maintenance pass above.
+  startNightshiftWatchdog({
+    getActiveConversations: () => conversationStore.getActiveConversations(),
+    getConversationSocket: id => conversationStore.getConversationSocket(id),
+    getGatewaySocket: type => conversationStore.getGatewaySocket(type),
+    endConversation: (id, opts) => conversationStore.endConversation(id, opts),
+    broadcastConversationUpdate: id => conversationStore.broadcastConversationUpdate(id),
+    broadcastScoped: (msg, project) =>
+      conversationStore.broadcastConversationScoped(
+        msg as Parameters<typeof conversationStore.broadcastConversationScoped>[0],
+        project,
+      ),
+    getSentinelProfileUsage: id => conversationStore.getSentinelProfileUsage(id),
+    getSentinel: () => conversationStore.getSentinel(),
+    getSentinelByAlias: alias => conversationStore.getSentinelByAlias(alias),
+    addProjectListener: (id, cb) => conversationStore.addProjectListener(id, cb),
+    removeProjectListener: id => conversationStore.removeProjectListener(id),
+  })
 
   // Print status periodically
   if (verbose) {

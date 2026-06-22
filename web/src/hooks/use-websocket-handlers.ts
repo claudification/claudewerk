@@ -243,6 +243,8 @@ function toConversation(summary: ConversationSummary): Conversation {
     // REST-only, so it stays undefined here and the UI walks the local list).
     parentConversationId: summary.parentConversationId,
     rootConversationId: summary.rootConversationId,
+    // Night-task origin tag (drives the live Status screen's per-task rows).
+    nightshift: summary.nightshift,
   }
 }
 

@@ -26,7 +26,7 @@ import type { HandlerContext, MessageData, MessageHandler } from '../handler-con
 import { CONTROL_PANEL_ONLY, registerHandlers, SENTINEL_ONLY } from '../message-router'
 
 const NIGHTSHIFT_RPC_TIMEOUT_MS = 10_000
-const WRITE_OPS = new Set<NightshiftOpKind>(['config_write', 'run_start', 'report', 'run_finalize'])
+const WRITE_OPS = new Set<NightshiftOpKind>(['config_write', 'run_start', 'report', 'task_patch', 'run_finalize'])
 
 /** Resolve a project URI to its host root + owning sentinel socket. */
 function resolveTarget(ctx: HandlerContext, project: string) {
@@ -45,6 +45,17 @@ function beatFor(d: NightshiftRequest, result: NightshiftResult): NightshiftEven
       return { type: 'nightshift_event', project: d.project, event: 'run_started', runId, digest: result.run?.digest }
     case 'run_finalize':
       return { type: 'nightshift_event', project: d.project, event: 'run_done', runId, digest: result.run?.digest }
+    case 'task_patch':
+      // ACT-ON-RESULTS patched a task in place -> nudge the Result screen to refetch.
+      return {
+        type: 'nightshift_event',
+        project: d.project,
+        event: 'task_update',
+        runId,
+        taskId: d.taskPatch?.id,
+        status: result.task?.status,
+        verdict: result.task?.verdict,
+      }
     case 'report': {
       const kind = d.report?.kind
       const event = kind === 'blocked' ? 'blocked' : 'task_done'
@@ -121,6 +132,7 @@ const nightshiftRequest: MessageHandler = (ctx, data) => {
     config: d.config,
     runStart: d.runStart,
     report: d.report,
+    taskPatch: d.taskPatch,
     finalize: d.finalize,
   }
   try {

@@ -772,6 +772,8 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       transport: conv.transport,
       parentConversationId: conv.parentConversationId,
       rootConversationId: conv.rootConversationId,
+      // Night-task origin tag only -- never the full launchConfig (env/prompt).
+      nightshift: conv.launchConfig?.nightshift,
     }
   }
 

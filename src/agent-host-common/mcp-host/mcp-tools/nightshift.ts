@@ -57,6 +57,25 @@ function buildBody(p: Params): Record<string, unknown> | { error: string } {
       finalize: { digest: p.digest || undefined, cost_usd: num(p.cost_usd), runtime_min: num(p.runtime_min) },
     }
   }
+  if (action === 'patch') {
+    // ACT-ON-RESULTS: patch an existing task's frontmatter in place (no clobber).
+    if (!p.run_id) return { error: 'run_id is required for patch' }
+    if (!p.id) return { error: 'id is required for patch' }
+    return {
+      project,
+      op: 'task_patch',
+      runId: p.run_id,
+      taskPatch: {
+        id: p.id,
+        status: p.status || undefined,
+        verdict: p.verdict || undefined,
+        tests: p.tests || undefined,
+        diffstat: p.diffstat || undefined,
+        commits: num(p.commits),
+        note: p.note || undefined,
+      },
+    }
+  }
   // action === 'report'
   if (!p.run_id) return { error: 'run_id is required for report' }
   if (!p.id || !p.title) return { error: 'id + title are required for report' }
@@ -132,6 +151,9 @@ export function registerNightshiftTools(ctx: McpToolContext): Record<string, Too
         'branch, diffstat ("+31 -6"), files (comma-sep), tests (pass|fail|none), risk, recap, how_to_verify, notes, open_loops.\n' +
         '    blocked: question (the crisp async question for Jonas), options (comma-sep A/B).\n' +
         '    skipped: reason, feasibility (usually infeasible).\n' +
+        '- patch: ACT-ON-RESULTS -- update an EXISTING task in place without re-supplying its other fields. ' +
+        'run_id + id required. Set status (integrated|discarded|...), tests, verdict, diffstat, commits, and/or note ' +
+        '(a one-line audit line appended to the task body). Use after integrating/testing/discarding a task.\n' +
         '- run_finalize: close the run. run_id required. digest (the night in one glance), cost_usd, runtime_min.\n' +
         '- snapshot: read back the latest (or run_id) report.',
       inputSchema: {
@@ -140,14 +162,17 @@ export function registerNightshiftTools(ctx: McpToolContext): Record<string, Too
           project: { type: 'string', description: 'Canonical project URI the run belongs to (required).' },
           action: {
             type: 'string',
-            enum: ['run_start', 'report', 'run_finalize', 'snapshot'],
+            enum: ['run_start', 'report', 'patch', 'run_finalize', 'snapshot'],
             description: 'Default: report.',
           },
           run_id: { type: 'string', description: 'Run id, YYYY-MM-DD.' },
           kind: { type: 'string', enum: ['task', 'blocked', 'skipped'], description: 'report lane (default task).' },
           id: { type: 'string', description: 'Task ordinal, e.g. "002".' },
           title: { type: 'string' },
-          status: { type: 'string', enum: ['queued', 'running', 'done', 'blocked', 'errored', 'skipped', 'spinning'] },
+          status: {
+            type: 'string',
+            enum: ['queued', 'running', 'done', 'blocked', 'errored', 'skipped', 'spinning', 'integrated', 'discarded'],
+          },
           verdict: { type: 'string', enum: ['ready-to-review', 'needs-you', 'declined'] },
           feasibility: { type: 'string', enum: ['feasible', 'uncertain', 'infeasible'] },
           branch: { type: 'string' },
@@ -160,6 +185,8 @@ export function registerNightshiftTools(ctx: McpToolContext): Record<string, Too
           profile: { type: 'string', description: 'resolvedProfile the task ran under.' },
           cost_usd: { type: 'string' },
           duration_min: { type: 'string' },
+          commits: { type: 'string', description: 'patch: commit count after an integrate.' },
+          note: { type: 'string', description: 'patch: one-line audit note appended to the task body.' },
           recap: { type: 'string', description: 'task body: one-paragraph what-it-did.' },
           how_to_verify: { type: 'string', description: 'task body: verify command(s).' },
           notes: { type: 'string', description: 'task body: non-obvious decisions.' },

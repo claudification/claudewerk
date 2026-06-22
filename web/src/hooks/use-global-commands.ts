@@ -82,6 +82,14 @@ export function useGlobalCommands(toggleSidebar: () => void) {
     { label: 'NIGHTSHIFT (morning report)', group: 'Navigation' },
   )
 
+  useCommand(
+    'open-nightshift-status',
+    () => {
+      window.location.hash = '/nightshift-status'
+    },
+    { label: 'NIGHTSHIFT (live status)', group: 'Navigation' },
+  )
+
   const openCanvas = useCallback(() => {
     window.location.hash = '/canvas'
   }, [])

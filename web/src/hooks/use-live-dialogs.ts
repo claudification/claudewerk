@@ -18,28 +18,13 @@
 
 import type { DialogOp, DialogSnapshot } from '@shared/dialog-live'
 import { create } from 'zustand'
-import { type DialogViewState, freshView, transitionView, type ViewMirror } from './live-dialog-view'
+import { applyHostUpdate, type LiveDialogEntry } from './live-dialog-apply'
+import { clearPref, setPref } from './live-dialog-prefs'
+import { type DialogViewState, freshView, type ViewMirror } from './live-dialog-view'
 import { wsSend } from './use-conversations'
 
+export type { LiveDialogEntry } from './live-dialog-apply'
 export { CLOSED_DECAY_MS } from './live-dialog-view'
-
-export interface LiveDialogEntry {
-  conversationId: string
-  dialogId: string
-  snapshot: DialogSnapshot
-  /** Ops from the most recent patch -- the component applies setState/unsetState
-   *  to its input values and highlights changed block ids. Empty on show/replay. */
-  lastOps: DialogOp[]
-  rationale?: string
-  /** The last update was a reconnect replay (adopt snapshot; no highlight). */
-  replay: boolean
-  orphanedReason?: string
-  /** Broker rejected the last dialog_event (rate_limited / denied / ...). */
-  error?: string
-  /** Monotonic local revision -- bumps on every apply so the component's
-   *  reconcile/highlight effect re-runs even when seq is unchanged (replay). */
-  rev: number
-}
 
 interface LiveDialogsState {
   byConversation: Record<string, LiveDialogEntry>
@@ -75,50 +60,16 @@ interface LiveDialogsState {
   dismiss: (conversationId: string) => void
 }
 
-type Maps = Pick<LiveDialogsState, 'byConversation' | 'viewByConversation'>
-
-/** Fold a host apply into BOTH maps: bump the authoritative entry (rev++) and run
- *  the view transition (value reconcile + collapse/decay clock). Shared by every
- *  apply path so the entry/view stay in lockstep. */
-function applyHostUpdate(
-  state: LiveDialogsState,
-  conversationId: string,
-  snapshot: DialogSnapshot,
-  extra: Partial<Pick<LiveDialogEntry, 'lastOps' | 'rationale' | 'replay' | 'orphanedReason'>>,
-  ops: DialogOp[],
-): Maps {
-  const prev = state.byConversation[conversationId]
-  const entry: LiveDialogEntry = {
-    snapshot,
-    lastOps: extra.lastOps ?? [],
-    replay: extra.replay ?? false,
-    rationale: extra.rationale,
-    orphanedReason: extra.orphanedReason,
-    conversationId,
-    dialogId: snapshot.dialogId,
-    rev: (prev?.rev ?? 0) + 1,
-  }
-  const view = transitionView(
-    state.viewByConversation[conversationId],
-    snapshot,
-    prev?.snapshot.status,
-    ops,
-    Date.now(),
-  )
-  return {
-    byConversation: { ...state.byConversation, [conversationId]: entry },
-    viewByConversation: { ...state.viewByConversation, [conversationId]: view },
-  }
-}
-
 export const useLiveDialogsStore = create<LiveDialogsState>(set => ({
   byConversation: {},
   viewByConversation: {},
 
   show: (conversationId, snapshot) =>
     set(state => {
+      // A fresh show resets the view outright (new dialog supersedes any prior
+      // minimize/dismiss the user had on the slot).
+      clearPref(conversationId)
       const maps = applyHostUpdate(state, conversationId, snapshot, { lastOps: [], replay: false }, [])
-      // A fresh show resets the view outright (new dialog supersedes any prior).
       return { ...maps, viewByConversation: { ...state.viewByConversation, [conversationId]: freshView(snapshot) } }
     }),
 
@@ -126,7 +77,11 @@ export const useLiveDialogsStore = create<LiveDialogsState>(set => ({
     set(state => applyHostUpdate(state, conversationId, snapshot, { lastOps: ops, rationale, replay }, ops)),
 
   applyReopen: (conversationId, snapshot) =>
-    set(state => applyHostUpdate(state, conversationId, snapshot, { lastOps: [], replay: false }, [])),
+    set(state => {
+      // An explicit agent reopen overrides a user dismiss/minimize -- bring it back.
+      clearPref(conversationId)
+      return applyHostUpdate(state, conversationId, snapshot, { lastOps: [], replay: false }, [])
+    }),
 
   applyOrphaned: (conversationId, snapshot, reason) =>
     set(state => applyHostUpdate(state, conversationId, snapshot, { orphanedReason: reason }, [])),
@@ -173,6 +128,8 @@ export const useLiveDialogsStore = create<LiveDialogsState>(set => ({
     set(state => {
       const prev = state.viewByConversation[conversationId]
       if (!prev) return state
+      // Persist the minimize so a reload restores it (per-viewer, client-side).
+      setPref(conversationId, { dialogId: prev.dialogId, collapsed, dismissed: false, closedAt: prev.closedAt })
       return { viewByConversation: { ...state.viewByConversation, [conversationId]: { ...prev, collapsed } } }
     }),
 
@@ -181,7 +138,13 @@ export const useLiveDialogsStore = create<LiveDialogsState>(set => ({
 
   dismiss: conversationId =>
     set(state => {
-      if (!state.byConversation[conversationId] && !state.viewByConversation[conversationId]) return state
+      const view = state.viewByConversation[conversationId]
+      const entry = state.byConversation[conversationId]
+      if (!entry && !view) return state
+      // Persist the dismiss (keyed to this dialogId) so a reload's replay snapshot
+      // doesn't resurrect it. An agent reopen / a new dialog clears it.
+      const dialogId = view?.dialogId ?? entry?.dialogId
+      if (dialogId) setPref(conversationId, { dialogId, collapsed: false, dismissed: true, closedAt: view?.closedAt })
       const { [conversationId]: _gone, ...rest } = state.byConversation
       const { [conversationId]: _goneView, ...restView } = state.viewByConversation
       return { byConversation: rest, viewByConversation: restView }

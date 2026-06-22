@@ -208,6 +208,10 @@ export interface Conversation extends ConversationTaskFields {
    *  field (set by /conversations + /conversations/:id); WS updates omit it
    *  -- consumers needing live count derive it from the local list (O(N)). */
   directChildCount?: number
+  /** NIGHTSHIFT origin tag (mirrors server `ConversationSummary.nightshift`).
+   *  Present => an unattended night-run task; the live Status screen filters
+   *  night rows on this. Carries only run/task ids, no launch internals. */
+  nightshift?: { runId: string; taskId: string }
 }
 
 // Project order tree types -- each leaf is a project keyed by project URI

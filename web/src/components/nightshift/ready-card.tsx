@@ -1,7 +1,10 @@
 import type { NightshiftTaskMeta } from '@shared/nightshift-types'
+import type { UseAct } from './use-act'
 
 interface Props {
   task: NightshiftTaskMeta
+  /** Run-level act driver (plan §4): per-card merge/reject = single-task acts. */
+  act: UseAct
 }
 
 function RiskBadge({ risk }: { risk?: string }) {
@@ -16,7 +19,8 @@ function TestsBadge({ tests }: { tests?: string }) {
   return <span className={`text-xs font-mono ${color}`}>tests {tests}</span>
 }
 
-export function ReadyCard({ task }: Props) {
+export function ReadyCard({ task, act }: Props) {
+  const { runAct, busy } = act
   return (
     <div className="rounded-md border border-border bg-card p-3 space-y-1.5">
       <div className="flex items-start justify-between gap-2">
@@ -45,25 +49,19 @@ export function ReadyCard({ task }: Props) {
       <div className="flex gap-2 pt-1">
         <button
           type="button"
-          disabled
-          title="coming in P2 act-on-results"
-          className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground cursor-not-allowed opacity-40"
-        >
-          diff
-        </button>
-        <button
-          type="button"
-          disabled
-          title="coming in P2 act-on-results"
-          className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground cursor-not-allowed opacity-40"
+          disabled={busy}
+          onClick={() => runAct('integrate', { taskIds: [task.id] })}
+          title="integrate just this task: re-run acceptance, ff-only merge to main, push"
+          className="text-xs px-2 py-0.5 rounded border border-green-800 text-green-300 hover:bg-green-950/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           merge
         </button>
         <button
           type="button"
-          disabled
-          title="coming in P2 act-on-results"
-          className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground cursor-not-allowed opacity-40"
+          disabled={busy}
+          onClick={() => runAct('discard', { taskIds: [task.id] })}
+          title="reject this task + record why (feeds the Advisor)"
+          className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground hover:text-red-300 hover:border-red-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           reject
         </button>

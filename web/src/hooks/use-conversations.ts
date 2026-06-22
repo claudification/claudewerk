@@ -425,6 +425,7 @@ interface ConversationsState {
   projectHandler: ((msg: Record<string, unknown>) => void) | null
   checklistHandler: ((msg: Record<string, unknown>) => void) | null
   nightshiftHandler: ((msg: Record<string, unknown>) => void) | null
+  nightshiftWatchdogHandler: ((msg: Record<string, unknown>) => void) | null
   sendWsMessage: (msg: Record<string, unknown>) => void
   dismissConversation: (conversationId: string) => void
   terminateConversation: (conversationId: string, source: TerminationSource) => void
@@ -868,6 +869,7 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   projectHandler: null,
   checklistHandler: null,
   nightshiftHandler: null,
+  nightshiftWatchdogHandler: null,
   showTerminal: false,
   terminalWrapperId: null,
   showSwitcher: false,

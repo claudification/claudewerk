@@ -20,8 +20,24 @@
 // Task lifecycle vocabulary
 // ---------------------------------------------------------------------------
 
-/** Terminal (or near-terminal) state of a single nightshift task. */
-export type NightshiftTaskStatus = 'queued' | 'running' | 'done' | 'blocked' | 'errored' | 'skipped' | 'spinning'
+/**
+ * Terminal (or near-terminal) state of a single nightshift task.
+ *
+ * `integrated` / `discarded` are ACT-ON-RESULTS outcomes (plan §4): the morning
+ * act agents patch a `ready-to-review` task to `integrated` once it lands on main,
+ * or to `discarded` when Jonas rejects it. They are post-run states the act layer
+ * writes back, never states a night-run worker reports for itself.
+ */
+export type NightshiftTaskStatus =
+  | 'queued'
+  | 'running'
+  | 'done'
+  | 'blocked'
+  | 'errored'
+  | 'skipped'
+  | 'spinning'
+  | 'integrated'
+  | 'discarded'
 
 /** What the morning report should DO with this task. */
 export type NightshiftVerdict = 'ready-to-review' | 'needs-you' | 'declined'
@@ -230,6 +246,30 @@ export interface NightshiftReportInput {
   reason?: string
 }
 
+/**
+ * Patch an EXISTING task artifact in place (ACT-ON-RESULTS, plan §4). The act
+ * agents need to write an outcome back -- `status: integrated` after a merge,
+ * `tests: pass|fail` after re-running acceptance, `status: discarded` on reject --
+ * WITHOUT clobbering the fields a night-run worker already wrote (branch,
+ * diffstat, recap, ...). Unlike `report` (which rewrites the whole file), a patch
+ * reads the file, merges only the provided scalars, optionally appends a one-line
+ * audit note to the "Notes / decisions" body section, and rewrites. `id` selects
+ * the task; absent fields are left untouched.
+ */
+export interface NightshiftTaskPatchInput {
+  /** Task ordinal selecting the file to patch, e.g. "002". */
+  id: string
+  status?: NightshiftTaskStatus
+  verdict?: NightshiftVerdict
+  tests?: NightshiftTests
+  diffstat?: string
+  commits?: number
+  reroutes?: number
+  attempts?: number
+  /** One-line audit note appended to the task body's "Notes / decisions". */
+  note?: string
+}
+
 /** Flip a run to done + stamp digest/runtime/cost. Totals are recomputed from disk. */
 export interface NightshiftFinalizeInput {
   digest?: string
@@ -254,8 +294,18 @@ export interface NightshiftCaps {
   concurrency?: number
   /** Firehose guard: max tasks dispatched per run. */
   totalTasks?: number
-  /** Per-task wall-clock ceiling in minutes. */
+  /** Per-task wall-clock ceiling in minutes (WATCHDOG `time` cap). */
   perTaskMinutes?: number
+  /** Per-task idle ceiling in minutes -- no hook activity for this long => the
+   *  task hung; the WATCHDOG ends it (`idle` cap). Distinct from the broker's
+   *  5-min liveness `idle` STATUS flag; this is a longer terminal threshold. */
+  idleMinutes?: number
+  /** Per-task token ceiling (input + output) before the WATCHDOG ends it
+   *  (`tokens` cap) -- the firehose/cost guard for a single runaway task. */
+  perTaskTokens?: number
+  /** Per-task turn ceiling before the WATCHDOG ends it (`turns` cap) -- catches
+   *  a task burning turns without converging. */
+  maxTurns?: number
 }
 
 export interface NightshiftConfig {
@@ -281,5 +331,5 @@ export const DEFAULT_NIGHTSHIFT_CONFIG: NightshiftConfig = {
   enabled: false,
   mergePolicy: 'branch-for-review',
   permissionMode: 'dontAsk',
-  caps: { concurrency: 2, totalTasks: 8, perTaskMinutes: 120 },
+  caps: { concurrency: 2, totalTasks: 8, perTaskMinutes: 120, idleMinutes: 20, perTaskTokens: 2_000_000, maxTurns: 80 },
 }

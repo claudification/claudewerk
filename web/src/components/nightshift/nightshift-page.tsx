@@ -60,7 +60,7 @@ export function NightshiftPage() {
         {!snapshot ? (
           <p className="text-muted-foreground text-sm">No nightshift runs yet for this project.</p>
         ) : (
-          <NightshiftReport snapshot={snapshot} />
+          <NightshiftReport snapshot={snapshot} projectUri={projectUri} />
         )}
       </div>
     </div>
