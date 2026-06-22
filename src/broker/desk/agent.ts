@@ -16,8 +16,11 @@
 
 import { z } from 'zod'
 import type { ChatMessage, ChatResponse, ChatTool } from '../recap/shared/openrouter-client'
+import { type AgentToolCallEvent, type AgentToolResultEvent, runOneCall } from './agent-exec'
 import type { ChatFn } from './classify'
 import type { ToolContext, Toolset } from './tool-def'
+
+export type { AgentToolCallEvent, AgentToolResultEvent } from './agent-exec'
 
 /** Default model that drives the loop -- Haiku (tiny-context thin router by
  *  design, §9). User-switchable per request (DispatchRequest.model). */
@@ -26,26 +29,17 @@ export const DISPATCHER_MODEL = 'anthropic/claude-haiku-4.5'
 const MAX_ROUNDS = 6
 const MAX_TOKENS = 1024
 
-export interface AgentToolCallEvent {
-  callId: string
-  name: string
-  summary: string
-  args: Record<string, unknown>
-}
-export interface AgentToolResultEvent {
-  callId: string
-  ok: boolean
-  summary: string
-  result?: unknown
-  error?: string
-}
-
 export interface RunAgentInput {
   intent: string
   /** The dispatcher's role + authority prompt. */
   system: string
   /** Tiny context the loop reads each turn (memory + roster snapshot). */
   context?: string
+  /** Seed the loop with a pre-built message array (the LIVING HISTORY: state
+   *  blocks + dialogue turns, ending with the latest user turn) instead of the
+   *  single `intent`. The loop layers its transient tool rounds on top. When
+   *  unset, the loop starts from `[{role:'user', content: intent}]` (legacy). */
+  seedMessages?: ChatMessage[]
   model: string
   toolset: Toolset
   signal?: AbortSignal
@@ -78,103 +72,16 @@ export function toChatTools(toolset: Toolset): ChatTool[] {
   })
 }
 
-/** One-line human summary of a tool call for the dimmed UI line. */
-function summarizeCall(name: string, args: Record<string, unknown>): string {
-  const head = Object.entries(args)
-    .filter(([, v]) => v != null && v !== '')
-    .slice(0, 2)
-    .map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`)
-    .join(' ')
-  return head ? `${name} ${head}` : name
-}
-
-function collectConversationId(result: unknown, into: Set<string>): void {
-  if (result && typeof result === 'object' && 'conversationId' in result) {
-    const id = (result as { conversationId?: unknown }).conversationId
-    if (typeof id === 'string') into.add(id)
-  }
-}
-
-function parseArgs(raw: string): Record<string, unknown> {
-  try {
-    return JSON.parse(raw || '{}')
-  } catch {
-    return {} // validation below surfaces the shape error
-  }
-}
-
-/** A tool message + the result-event to emit -- the shared shape for every
- *  runOneCall exit (error or success), so the caller does one emit + push. */
-interface CallOutcome {
-  message: ChatMessage
-  ok: boolean
-  summary: string
-  result?: unknown
-  error?: string
-}
-
-function failOutcome(callId: string, error: string): CallOutcome {
-  return { message: { role: 'tool', content: error, toolCallId: callId }, ok: false, summary: error, error }
-}
-
-/** Run one tool call: validate args against its zod schema, execute, summarize. */
-async function runOneCall(
-  toolset: Toolset,
-  call: { id: string; name: string; arguments: string },
-  ctx: ToolContext,
-  touched: Set<string>,
-  input: RunAgentInput,
-): Promise<ChatMessage> {
-  const args = parseArgs(call.arguments)
-  input.onToolCall?.({ callId: call.id, name: call.name, summary: summarizeCall(call.name, args), args })
-  const outcome = await executeCall(toolset, call, args, ctx, touched)
-  input.onToolResult?.({
-    callId: call.id,
-    ok: outcome.ok,
-    summary: outcome.summary,
-    result: outcome.result,
-    error: outcome.error,
-  })
-  return outcome.message
-}
-
-async function executeCall(
-  toolset: Toolset,
-  call: { id: string; name: string },
-  args: Record<string, unknown>,
-  ctx: ToolContext,
-  touched: Set<string>,
-): Promise<CallOutcome> {
-  const def = toolset[call.name]
-  if (!def) return failOutcome(call.id, `unknown tool '${call.name}'`)
-  const parsed = def.inputSchema.safeParse(args)
-  if (!parsed.success) {
-    return failOutcome(call.id, `bad args for ${call.name}: ${parsed.error.issues.map(i => i.message).join('; ')}`)
-  }
-  try {
-    const result = await def.execute(parsed.data, ctx)
-    collectConversationId(result, touched)
-    const content = typeof result === 'string' ? result : JSON.stringify(result ?? { ok: true })
-    return { message: { role: 'tool', content, toolCallId: call.id }, ok: true, summary: `${call.name} ok`, result }
-  } catch (e) {
-    // A tool failure is fed BACK to the model (recoverable), not thrown -- the
-    // dispatcher can apologize / try another path. Cancellation is the exception.
-    if (ctx.signal?.aborted) throw e
-    const error = (e as Error).message
-    return {
-      message: { role: 'tool', content: `error: ${error}`, toolCallId: call.id },
-      ok: false,
-      summary: `${call.name} failed: ${error}`,
-      error,
-    }
-  }
-}
-
 export async function runAgent(input: RunAgentInput, chat: ChatFn): Promise<RunAgentResult> {
   const tools = toChatTools(input.toolset)
   const system = input.context ? `${input.system}\n\n${input.context}` : input.system
   const ctx: ToolContext = { signal: input.signal, identity: input.identity }
-  const messages: ChatMessage[] = [{ role: 'user', content: input.intent }]
+  // The living history (seedMessages) IS the context when provided; otherwise fall
+  // back to a single intent turn. We copy so the loop's transient tool rounds never
+  // mutate the caller's persistent history array.
+  const messages: ChatMessage[] = input.seedMessages
+    ? [...input.seedMessages]
+    : [{ role: 'user', content: input.intent }]
   const touched = new Set<string>()
   const maxRounds = input.maxRounds ?? MAX_ROUNDS
   let toolCallCount = 0

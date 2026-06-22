@@ -12,10 +12,10 @@ import { z } from 'zod'
 import type { DispatchDecision } from '../../shared/protocol'
 import { chat } from '../recap/shared/openrouter-client'
 import { type AgentToolCallEvent, type AgentToolResultEvent, DISPATCHER_MODEL, runAgent } from './agent'
-import { assembleContext } from './context-assembly'
 import { buildDispatchToolset, projectOverviewRows } from './dispatch-tools'
-import { appendMemoryFacts, digestTurn, readMemory } from './memory'
-import { recentTurns, recordDispatchTurn } from './recent-window'
+import { consolidateIfDue, getUserHistory, refreshLiveBlocks } from './history-store'
+import { appendTurn, toMessages } from './living-history'
+import { readMemory } from './memory'
 import type { DispatchRuntime } from './runtime'
 import { listThreads, upsertThread } from './threads'
 import { defineTool, type Toolset } from './tool-def'
@@ -27,6 +27,14 @@ const DISPATCHER_SYSTEM = [
   'in projects first, conversations second. You are NOT a chat agent: you DRIVE',
   'the broker. You hold almost no context, so when you need to know something,',
   'USE A TOOL -- never guess.',
+  '',
+  'Your message history carries live XML STATE BLOCKS you can read directly:',
+  '  <fleet> -- the fleet by project (live/working/needs-you counts), refreshed each turn.',
+  '  <briefs> -- condensed per-project memory (detail via project_brief / recall).',
+  '  <notes> -- durable facts about the user. <memory> -- your rolling recollection.',
+  '  <pending id=..> -- async work you dispatched and are awaiting; when it reports',
+  '  back it becomes <findings id=..>, which is your cue to continue that thread.',
+  'Read the blocks instead of re-asking; they are already current.',
   '',
   'Core rules:',
   '- For "what is going on" / status / overview, call projects_overview -- it gives',
@@ -87,7 +95,14 @@ export interface RunDispatchAgentOpts {
   onToolResult?: (e: AgentToolResultEvent) => void
 }
 
-/** Run the dispatcher agent loop on a free-text intent -> a DispatchDecision. */
+/**
+ * Run ONE dispatcher IMPULSE against the user's persistent LIVING HISTORY.
+ *
+ * The history is OURS to rewrite: refresh the volatile state blocks from the
+ * current fleet, append the user turn, run the bounded tool loop over the whole
+ * rendered history, append the reply, then fold if due. Memory forms by phase-out
+ * (consolidate), NOT a per-turn digest -- so the hot path stays one LLM loop.
+ */
 export async function runDispatchAgent(
   intent: string,
   rt: DispatchRuntime,
@@ -95,20 +110,16 @@ export async function runDispatchAgent(
 ): Promise<DispatchDecision> {
   const model = opts.model || DISPATCHER_MODEL
   const now = Date.now()
-  const durableMemory = readMemory(opts.userId)
-  // ASSEMBLE the per-turn context FRESH (P6): universe (fleet by project) +
-  // condensed project memory + durable notes + the short recent window. The
-  // dispatcher carries almost no raw context; this IS its working knowledge.
-  const context = assembleContext({
-    rows: projectOverviewRows(rt),
-    durableMemory,
-    recent: recentTurns(opts.userId, now),
-  })
+  const history = getUserHistory(opts.userId)
+  // REFRESH the live blocks in place (fleet/briefs/notes), then append the impulse.
+  refreshLiveBlocks(history, { rows: projectOverviewRows(rt), durableNotes: readMemory(opts.userId), now })
+  appendTurn(history, 'user', intent, now)
+
   const result = await runAgent(
     {
       intent,
       system: DISPATCHER_SYSTEM,
-      context: context || undefined,
+      seedMessages: toMessages(history),
       model,
       toolset: buildAgentToolset(rt),
       signal: opts.signal,
@@ -118,15 +129,11 @@ export async function runDispatchAgent(
     },
     req => chat(req),
   )
-  // PRUNE + maintain: keep the dispatch session short-lived -- record this turn
-  // into the rolling recent window (durable load lives in condensed memory).
-  if (result.reply) recordDispatchTurn(opts.userId, { ts: now, intent, reply: result.reply })
-  // Post-turn digest: decide what (if anything) durable to remember, fire-and-
-  // forget so the user's reply is never blocked. Tool calls are NEVER recorded.
+  // Append the reply as the assistant turn, then consolidate-if-due (gated: rarely
+  // fires, §8a). Fire-and-forget so the rare fold never delays the user's reply.
   if (result.reply) {
-    digestTurn({ intent, reply: result.reply, existingMemory: durableMemory }, req => chat(req))
-      .then(facts => appendMemoryFacts(facts, Date.now(), opts.userId))
-      .catch(() => {})
+    appendTurn(history, 'assistant', result.reply, Date.now())
+    consolidateIfDue(history, opts.userId, Date.now(), req => chat(req)).catch(() => {})
   }
   const decision: DispatchDecision = {
     type: 'dispatch_decision',
