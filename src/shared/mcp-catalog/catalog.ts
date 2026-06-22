@@ -54,12 +54,6 @@ export const MCP_CATALOG: readonly CatalogTool[] = [
   // ── dispatch (Front Desk, broker only) ─────────────────────────────
   { name: 'dispatch', group: 'dispatch', sites: BROKER_ONLY, summary: 'Route an intent: spawn / route / revive' },
   { name: 'list_threads', group: 'dispatch', sites: BROKER_ONLY, summary: "Dispatcher's near-memory threads" },
-  {
-    name: 'report_project_context',
-    group: 'dispatch',
-    sites: BROKER_ONLY,
-    summary: "Scout reports a condensed project brief back into the dispatcher's memory",
-  },
 
   // ── core (both sites) ──────────────────────────────────────────────
   { name: 'notify', group: 'core', sites: BOTH, summary: "Push notification to the user's devices" },

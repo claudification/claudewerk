@@ -92,10 +92,11 @@ describe('dispatch tools (project-anchored)', () => {
     expect(tools.list_conversations).toBeDefined() // still available (Jonas)
   })
 
-  test('build_project_context is available and rejects an unknown project cleanly', async () => {
+  test('spawn_into_project rejects an unknown project cleanly', async () => {
     const tools = buildDispatchToolset(fakeRt([]))
-    expect(tools.build_project_context).toBeDefined()
-    const out = (await tools.build_project_context.execute({ project: 'nope-xyz' }, ctx)) as { error?: string }
+    const out = (await tools.spawn_into_project.execute({ project: 'nope-xyz', intent: 'x', profile: null }, ctx)) as {
+      error?: string
+    }
     expect(out.error).toContain('no project matching')
   })
 })

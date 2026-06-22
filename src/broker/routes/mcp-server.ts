@@ -14,9 +14,7 @@ import { formatTranscriptWindow } from '../../shared/transcript-window-format'
 import { BUILD_VERSION } from '../../shared/version'
 import { resolveAuth } from '../auth-routes'
 import type { ConversationStore } from '../conversation-store'
-import { condenseProjectNow } from '../desk/desk-memory-service'
-import { recordRawEvent } from '../desk/project-memory'
-import { resolveDeskProject } from '../desk/projects'
+import { deliverDispatcherReport } from '../desk/async-impulse'
 import { runDispatch } from '../desk/runtime'
 import { listThreads } from '../desk/threads'
 import { getGlobalSettings } from '../global-settings'
@@ -258,30 +256,43 @@ export function createMcpServer(
       const isArrayTarget = Array.isArray(to)
       const targets = (isArrayTarget ? to : [to]).filter(t => typeof t === 'string' && t.length > 0)
       const conversations = conversationStore.getAllConversations()
-      const results = targets.map(t => {
-        const target = conversations.find(c => c.id === t || c.title === t || c.agentName === t)
-        if (!target) {
-          return { to: t, ok: false, error: 'Target not found' }
-        }
-        const ws = conversationStore.getConversationSocket(target.id)
-        if (!ws) {
-          return { to: t, ok: false, error: 'Target not connected' }
-        }
-        ws.send(
-          JSON.stringify({
-            type: 'inter_session_message',
-            from: 'mcp-client',
-            message,
-            intent: intent || 'notification',
-          }),
-        )
-        return { to: t, ok: true, status: 'delivered' as const, targetConversationId: target.id }
-      })
+      const results = await Promise.all(
+        targets.map(async t => {
+          // RESERVED `dispatcher` SINK (plan B3): a dispatched worker reports its
+          // findings back to the user's dispatcher. Intercept BEFORE the normal
+          // conversation lookup -- `dispatcher` is not a conversation.
+          if (t === 'dispatcher') {
+            const res = await deliverDispatcherReport(conversationStore, callerConversationId, message)
+            return { to: t, ok: res.ok, status: 'delivered' as const, error: res.ok ? undefined : res.detail }
+          }
+          const target = conversations.find(c => c.id === t || c.title === t || c.agentName === t)
+          if (!target) {
+            return { to: t, ok: false, error: 'Target not found' }
+          }
+          const ws = conversationStore.getConversationSocket(target.id)
+          if (!ws) {
+            return { to: t, ok: false, error: 'Target not connected' }
+          }
+          ws.send(
+            JSON.stringify({
+              type: 'inter_session_message',
+              from: 'mcp-client',
+              message,
+              intent: intent || 'notification',
+            }),
+          )
+          return { to: t, ok: true, status: 'delivered' as const, targetConversationId: target.id }
+        }),
+      )
 
       if (!isArrayTarget) {
         const r = results[0]
-        if (!r.ok) return { content: [{ type: 'text', text: `Target "${r.to}" not found or not connected` }] }
-        return { content: [{ type: 'text', text: `Message sent to ${r.targetConversationId}` }] }
+        if (!r.ok) {
+          const why = r.error ? `: ${r.error}` : ' not found or not connected'
+          return { content: [{ type: 'text', text: `Target "${r.to}"${why}` }] }
+        }
+        const dest = r.targetConversationId ?? r.to // `dispatcher` has no conv id
+        return { content: [{ type: 'text', text: `Message sent to ${dest}` }] }
       }
       const delivered = results.filter(r => r.ok).length
       const failed = results.length - delivered
@@ -405,34 +416,6 @@ export function createMcpServer(
       } catch (e) {
         return toolText(`dispatch failed: ${(e as Error).message}`, true)
       }
-    },
-  )
-
-  // ─── report_project_context (scout -> dispatcher memory) ─────────────
-  mcp.tool(
-    'report_project_context',
-    "Report a condensed brief about a project back into the dispatcher's per-project memory. Used by a project SCOUT launched via build_project_context: after exploring the project, call this once with the project (name/slug/uri) and a short brief. The brief is folded into the project's durable memory (integrated with what is already known, not blindly overwritten).",
-    {
-      project: z.string().describe('The project this brief is about (name, slug, or uri).'),
-      brief: z
-        .string()
-        .describe('A short condensed brief: what the project is, current goals, key topics, where it stands.'),
-    },
-    async ({ project, brief }) => {
-      const dp = resolveDeskProject(project)
-      if (!dp) return toolText(`report_project_context: no project matching "${project}"`, true)
-      const now = Date.now()
-      recordRawEvent({
-        projectKey: dp.key,
-        projectUri: dp.projectUri,
-        label: dp.label,
-        kind: 'context_report',
-        summary: `SCOUT REPORT: ${brief.trim()}`,
-        ts: now,
-      })
-      // Fold it in immediately so the dispatcher sees the learned context.
-      await condenseProjectNow(dp.key, dp.projectUri, dp.label)
-      return toolText(`Recorded project context for ${dp.label}.`)
     },
   )
 

@@ -13,7 +13,6 @@
 
 import { z } from 'zod'
 import type { Conversation, DispatchDecision } from '../../shared/protocol'
-import { launchProjectScout } from './context-builder'
 import { buildControlDeps } from './control-deps'
 import { buildControlToolset } from './control-tools'
 import { condenseProjectNow } from './desk-memory-service'
@@ -21,7 +20,7 @@ import type { DispatchCommand } from './orchestrate'
 import { composeProjectsOverview, type OverviewConv, type ProjectOverviewRow } from './overview'
 import { getBrief, recallBriefs } from './project-memory'
 import { listDeskProjects, projectKeyOf, resolveDeskProject } from './projects'
-import { type DispatchRuntime, runDispatch, spawnDeskConversation } from './runtime'
+import { type DispatchRuntime, runDispatch } from './runtime'
 import { defineTool, type Toolset } from './tool-def'
 
 function toOverviewConv(c: Conversation): OverviewConv {
@@ -152,28 +151,6 @@ function projectTools(rt: DispatchRuntime): Toolset {
         const d = await runDispatch(cmd, rt)
         if (!d.resultConversationId) return { error: d.reasoning || 'spawn produced no conversation' }
         return { conversationId: d.resultConversationId, project: dp.label }
-      },
-    }),
-
-    build_project_context: defineTool({
-      description:
-        'LEARN a project hands-on: launch a small Haiku scout inside it to skim the README, structure, recent git log and plans, then report a condensed brief back into your memory. Use for an unfamiliar or stale project. Returns the scout conversation id; the brief updates when it finishes.',
-      inputSchema: z.object({ project: z.string().describe('Project name, slug, or uri.') }),
-      execute: async a => {
-        const { project } = a as { project: string }
-        const dp = resolveDeskProject(project)
-        if (!dp) return { error: `no project matching "${project}"` }
-        if (!dp.cwd) return { error: `project "${dp.label}" has no local filesystem path to explore` }
-        try {
-          const { conversationId } = await launchProjectScout(dp, req => spawnDeskConversation(rt, req))
-          return {
-            conversationId,
-            project: dp.label,
-            note: 'scout launched -- it will report context back into memory',
-          }
-        } catch (e) {
-          return { error: (e as Error).message }
-        }
       },
     }),
   }
