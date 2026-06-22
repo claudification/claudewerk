@@ -6,6 +6,14 @@
 import type { JobRecord } from './cc-daemon/types'
 import type { DialogOp, DialogSnapshot } from './dialog-live'
 import type { DialogLayout, DialogResult } from './dialog-schema'
+import type {
+  NightshiftBlocked,
+  NightshiftConfig,
+  NightshiftRunSnapshot,
+  NightshiftSkipped,
+  NightshiftTaskMeta,
+  NightshiftTaskReport,
+} from './nightshift-types'
 import type { ProjectTask, ProjectTaskManifestEntry, ProjectTaskMeta, ProjectTaskRef } from './project-task-types'
 import type { SpawnRequest } from './spawn-schema'
 
