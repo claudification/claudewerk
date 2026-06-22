@@ -81,7 +81,9 @@ export function VoiceFab() {
   async function requestMicPermission() {
     haptic('tap')
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // echoCancellation:false -- even this transient grant must not flip macOS
+      // into communication mode and duck the user's music (see use-voice-recording).
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false } })
       for (const t of stream.getTracks()) t.stop()
       setMicPermission('granted')
       haptic('success')
