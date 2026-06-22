@@ -29,6 +29,8 @@ interface DispatchState {
   pending: boolean
   lastError: string | null
   threads: DispatchThread[]
+  /** Live conversations the desk currently covers (shown as "active right now"). */
+  roster: DispatchCandidate[]
   threadsLoading: boolean
   activeConvId: string | null
   rightPane: RightPane
@@ -52,7 +54,7 @@ interface DispatchState {
 
   // inbound (called by the WS handlers)
   onRequestResult(msg: { ok?: boolean; error?: string; decision?: DispatchDecision }): void
-  onThreadsResult(msg: { threads?: DispatchThread[]; userId?: string | null }): void
+  onThreadsResult(msg: { threads?: DispatchThread[]; roster?: DispatchCandidate[]; userId?: string | null }): void
   onDecisionBroadcast(decision: DispatchDecision): void
 }
 
@@ -74,6 +76,7 @@ export const useDispatchStore = create<DispatchState>((set, get) => ({
   pending: false,
   lastError: null,
   threads: [],
+  roster: [],
   threadsLoading: false,
   activeConvId: null,
   rightPane: 'memory',
@@ -151,6 +154,7 @@ export const useDispatchStore = create<DispatchState>((set, get) => ({
     set(s => ({
       threadsLoading: false,
       threads: msg.threads ?? [],
+      roster: msg.roster ?? [],
       userId: msg.userId ?? s.userId,
     })),
 

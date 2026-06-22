@@ -11,7 +11,7 @@
  * status-tool's LiveStatus feed (when it lands) is a one-line change.
  */
 
-import type { Conversation, DispatchDecision, ProjectSettings } from '../../shared/protocol'
+import type { Conversation, DispatchCandidate, DispatchDecision, ProjectSettings } from '../../shared/protocol'
 import type { SpawnCallerContext } from '../../shared/spawn-permissions'
 import { buildReviveMessage } from '../build-revive'
 import type { ConversationStore } from '../conversation-store'
@@ -62,12 +62,35 @@ function toRosterEntry(c: Conversation): DispatchRosterEntry {
  *  are visible to routing (plan §9.5 per-project opt-in). */
 function dispatchRoster(store: ConversationStore): RosterSource {
   return {
-    list: async () =>
-      store
-        .getAllConversations()
-        .filter(c => getProjectSettings(c.project)?.dispatchSubscribed === true)
-        .map(toRosterEntry),
+    list: async () => coveredConversations(store).map(toRosterEntry),
   }
+}
+
+/** The covered (dispatch-subscribed, non-share) conversations -- the shared
+ *  source for both routing (toRosterEntry) and the visible roster (candidates). */
+function coveredConversations(store: ConversationStore): Conversation[] {
+  return store.getAllConversations().filter(c => getProjectSettings(c.project)?.dispatchSubscribed === true)
+}
+
+/** A live conversation as a selectable roster card for the overlay. Lighter than
+ *  a routing roster entry -- just enough to show "active right now" + tap to open. */
+function toRosterCandidate(c: Conversation): DispatchCandidate {
+  const cand: DispatchCandidate = { conversationId: c.id }
+  if (c.project) cand.project = c.project
+  if (c.title) cand.title = c.title
+  if (c.liveStatus?.state) cand.liveState = c.liveStatus.state
+  const bits: string[] = [c.status === 'ended' ? 'ended' : (c.liveStatus?.state ?? 'live')]
+  if (c.lastActivity) bits.push(`idle ${Math.round((Date.now() - c.lastActivity) / 60000)}m`)
+  cand.commentary = bits.join(' · ')
+  return cand
+}
+
+/** The live roster the desk currently covers, as overlay cards (most-recent
+ *  activity first). Empty when no project has opted in. */
+export function listDispatchRosterCandidates(store: ConversationStore): DispatchCandidate[] {
+  return coveredConversations(store)
+    .sort((a, b) => (b.lastActivity ?? 0) - (a.lastActivity ?? 0))
+    .map(toRosterCandidate)
 }
 
 // ─── Executor (the live spawn/route/revive backends) ────────────────

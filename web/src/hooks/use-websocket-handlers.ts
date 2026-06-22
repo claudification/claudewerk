@@ -16,6 +16,7 @@ import { formatResetIn } from '@shared/format-reset-time'
 import type { LaunchProfile } from '@shared/launch-profile'
 import type {
   ConversationSummary,
+  DispatchCandidate,
   DispatchDecision,
   DispatchThread,
   RecapCompleteMessage,
@@ -1607,7 +1608,9 @@ function handleDispatchRequestResult(msg: DashboardMessage) {
 function handleDispatchThreadsResult(msg: DashboardMessage) {
   useDispatchStore
     .getState()
-    .onThreadsResult(msg as DashboardMessage & { threads?: DispatchThread[]; userId?: string | null })
+    .onThreadsResult(
+      msg as DashboardMessage & { threads?: DispatchThread[]; roster?: DispatchCandidate[]; userId?: string | null },
+    )
 }
 
 function handleDispatchDecision(msg: DashboardMessage) {

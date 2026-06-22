@@ -1546,11 +1546,16 @@ export interface DispatchRequestResult {
   error?: string
 }
 
-/** broker -> the requesting control panel: the user's near-memory threads. */
+/** broker -> the requesting control panel: the user's near-memory threads PLUS
+ *  the live roster (active conversations the desk currently covers), so the
+ *  overlay can SHOW what the concierge is holding -- not just route into it. */
 export interface DispatchThreadsResult {
   type: 'dispatch_threads_result'
   requestId?: string
   threads: DispatchThread[]
+  /** Active conversations in dispatch-covered projects, as selectable cards.
+   *  Absent on older brokers -> the overlay just shows threads. */
+  roster?: DispatchCandidate[]
   /** The authed user the threads were scoped to (null when single-user). */
   userId?: string | null
 }
