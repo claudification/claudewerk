@@ -4,11 +4,16 @@ import { useDispatchStore } from './dispatch-store'
 /** A compact one-line count summary for a project ("2 live · 1 needs-you"). */
 function counts(p: { live: number; working: number; needsYou: number; idleMin?: number }): string {
   if (p.live === 0) return 'idle · in memory'
-  const bits = [`${p.live} live`]
-  if (p.working) bits.push(`${p.working} working`)
-  if (p.needsYou) bits.push(`${p.needsYou} needs-you`)
-  if (p.idleMin !== undefined) bits.push(`idle ${p.idleMin}m`)
-  return bits.join(' · ')
+  const parts: Array<[boolean, string]> = [
+    [true, `${p.live} live`],
+    [p.working > 0, `${p.working} working`],
+    [p.needsYou > 0, `${p.needsYou} needs-you`],
+    [p.idleMin !== undefined, `idle ${p.idleMin}m`],
+  ]
+  return parts
+    .filter(([on]) => on)
+    .map(([, label]) => label)
+    .join(' · ')
 }
 
 /** The dispatcher's project-anchored MEMORY, made visible: every project the
