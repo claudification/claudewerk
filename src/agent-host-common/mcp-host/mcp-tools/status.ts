@@ -24,7 +24,9 @@ The text fields are ALL OPTIONAL and render as MARKDOWN in the control panel (th
 - \`caveats\` — it works, but watch X.
 - \`blocked\` — what you tried and could NOT finish, and why (the error / dead-end). Not "things I chose not to do."
 - \`notes\`   — FYI asides that are NOT todos. Test: "is this still true even though the task IS complete?" e.g. "didn't commit", "didn't deploy", "left the dev server running" → ALWAYS a note, never pending or blocked. Don't nag the user with routine hygiene.
-- \`safe_to_close\` (boolean) — set true ONLY when this conversation is genuinely disposable: no uncommitted/unpushed work, no pending interaction, nothing the user still needs from it. It surfaces as a visible marker so the user can spot which conversations they can just close. When unsure, leave it off.`
+- \`safe_to_close\` (boolean) — set true ONLY when this conversation is genuinely disposable: no uncommitted/unpushed work, no pending interaction, nothing the user still needs from it. It surfaces as a visible marker so the user can spot which conversations they can just close. When unsure, leave it off.
+
+THIS CALL IS THE HANDOFF. When you set \`done\`, the control panel renders it as the conversation's final, user-visible result — you do NOT need to call set_status again, and a separate written summary afterward is redundant noise. Put the substance IN the fields (they're markdown) and let the card speak. At most a single short sign-off line; never re-explain what the card already shows.`
 
 export function registerStatusTool(ctx: McpToolContext): Record<string, ToolDef> {
   return {
@@ -75,7 +77,15 @@ export function registerStatusTool(ctx: McpToolContext): Record<string, ToolDef>
         }
         ctx.callbacks.onSetStatus(status)
         debug(`[channel] set_status: ${state}`)
-        return { content: [{ type: 'text', text: `Status set: ${state}` }] }
+        // The result reinforces that this call IS the handoff — don't keep
+        // re-reporting status or writing a redundant summary after it.
+        const tail =
+          state === 'done'
+            ? " — this is the conversation's handoff and renders as the user-visible result. No further set_status or summary needed."
+            : state === 'working'
+              ? '.'
+              : ' — no further set_status needed this turn unless your state changes.'
+        return { content: [{ type: 'text', text: `Status recorded: ${state}${tail}` }] }
       },
     },
   }
