@@ -34,6 +34,11 @@ export function getTranscriptByKey(key: string): Turn[] {
   return transcripts.get(key) ?? []
 }
 
+/** Replace a user's whole ring (persistence load on boot). */
+export function setTranscriptByKey(key: string, turns: Turn[]): void {
+  transcripts.set(key, turns.slice(-TRANSCRIPT_CAP))
+}
+
 /** Drop a user's ring (explicit reset). */
 export function clearTranscriptByKey(key: string): void {
   transcripts.delete(key)

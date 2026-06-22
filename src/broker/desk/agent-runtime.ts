@@ -13,7 +13,7 @@ import type { DispatchDecision } from '../../shared/protocol'
 import { chat } from '../recap/shared/openrouter-client'
 import { type AgentToolCallEvent, type AgentToolResultEvent, DISPATCHER_MODEL, runAgent } from './agent'
 import { buildDispatchToolset, projectOverviewRows } from './dispatch-tools'
-import { consolidateIfDue, getUserHistory, recordTurn, refreshLiveBlocks } from './history-store'
+import { consolidateIfDue, getUserHistory, markDirty, recordTurn, refreshLiveBlocks } from './history-store'
 import { appendTurn, toMessages } from './living-history'
 import { readMemory } from './memory'
 import type { QuestSpawn } from './quest-tool'
@@ -171,6 +171,9 @@ export async function runDispatchAgent(
     recordTurn(opts.userId, 'assistant', result.reply, replyTs) // viewable transcript (A0)
     consolidateIfDue(history, opts.userId, Date.now(), req => chat(req)).catch(() => {})
   }
+  // Persist the mutated state (turns + refreshed blocks + transcript) -- debounced,
+  // so this survives a broker restart (Slice A). Async folds re-mark inside the store.
+  markDirty(opts.userId)
   const decision: DispatchDecision = {
     type: 'dispatch_decision',
     decisionId: `dec_${crypto.randomUUID()}`,

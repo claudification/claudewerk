@@ -17,6 +17,13 @@
 import type { ChatFn } from './classify'
 import { type ConsolidateResult, consolidate } from './consolidate'
 import {
+  createHistorySaver,
+  type HistorySaver,
+  loadAllHistories,
+  type PersistableState,
+  type PersistenceDeps,
+} from './history-persistence'
+import {
   createHistory,
   estimateTokens,
   type LivingHistory,
@@ -24,19 +31,19 @@ import {
   type Role,
   shouldConsolidate,
   type Turn,
-  upsertBlock,
 } from './living-history'
-import type { ProjectOverviewRow } from './overview'
-import { clearTranscriptByKey, getTranscriptByKey, recordTurnByKey } from './transcript-ring'
+import { clearTranscriptByKey, getTranscriptByKey, recordTurnByKey, setTranscriptByKey } from './transcript-ring'
+
+export { refreshLiveBlocks } from './live-blocks'
 
 /** Sentinel key for an unauthenticated/anon dispatcher session. */
 const ANON_KEY = '__anon__'
-/** Default budget for the condensed project-briefs block (chars). Progressive
- *  memory: detail beyond this is reachable via the project_brief / recall tools. */
-const DEFAULT_BRIEF_BUDGET_CHARS = 2400
 
 const histories = new Map<string, LivingHistory>()
 const lastConsolidatedAt = new Map<string, number>()
+/** The disk-backed saver, wired at boot via initHistoryPersistence. Null in unit
+ *  tests / pre-boot -- markDirty is then a no-op so the store never touches disk. */
+let saver: HistorySaver | null = null
 
 export function userKey(userId: string | null | undefined): string {
   return userId && userId.trim() ? userId : ANON_KEY
@@ -59,6 +66,41 @@ export function resetUserHistory(userId: string | null | undefined): void {
   histories.delete(key)
   lastConsolidatedAt.delete(key)
   clearTranscriptByKey(key)
+  saver?.removeFile(key) // delete the persisted file too (Slice A)
+}
+
+/**
+ * Load all persisted histories into the in-memory maps and arm the debounced
+ * saver (Slice A). Called ONCE at broker boot from the cacheDir. After this,
+ * `markDirty` writes mutations through to disk so the dispatcher survives a
+ * restart. `deps` is injectable for tests (no real disk).
+ */
+export function initHistoryPersistence(cacheDir: string, deps?: PersistenceDeps): void {
+  for (const [key, state] of loadAllHistories(cacheDir, deps)) {
+    histories.set(key, state.history)
+    if (state.lastConsolidatedAt !== null) lastConsolidatedAt.set(key, state.lastConsolidatedAt)
+    setTranscriptByKey(key, state.transcript)
+  }
+  saver = createHistorySaver(cacheDir, deps)
+}
+
+/** Snapshot the current restart-survivable state for a user (the saver reads this
+ *  lazily when the debounce fires, so it always serializes the latest mutation). */
+function currentState(key: string): PersistableState {
+  return {
+    userKey: key,
+    history: histories.get(key) ?? createHistory(),
+    lastConsolidatedAt: lastConsolidatedAt.get(key) ?? null,
+    transcript: getTranscriptByKey(key),
+  }
+}
+
+/** Schedule a debounced persist of this user's state. A no-op until boot wiring
+ *  arms the saver, so unit tests never touch disk. Call from EVERY mutation. */
+export function markDirty(userId: string | null | undefined): void {
+  if (!saver) return
+  const key = userKey(userId)
+  saver.scheduleSave(key, () => currentState(key))
 }
 
 /**
@@ -76,64 +118,6 @@ export function getUserTranscript(userId: string | null | undefined): Turn[] {
   return getTranscriptByKey(userKey(userId))
 }
 
-function fleetLine(r: ProjectOverviewRow): string | null {
-  if (r.live === 0 && !r.brief) return null
-  if (r.live === 0) return `- ${r.project}: idle (in memory)`
-  const bits = [`${r.live} live`]
-  if (r.working) bits.push(`${r.working} working`)
-  if (r.needsYou) bits.push(`${r.needsYou} needs-you`)
-  if (r.idleMin !== undefined) bits.push(`idle ${r.idleMin}m`)
-  return `- ${r.project}: ${bits.join(', ')}`
-}
-
-/** Pack project briefs into a budget, most-relevant first (rows arrive ordered).
- *  Returns the block body + how many were dropped (reachable via tools). */
-function packBriefs(rows: ProjectOverviewRow[], budget: number): { body: string; dropped: number } {
-  const blocks: string[] = []
-  let remaining = budget
-  let dropped = 0
-  for (const r of rows) {
-    if (!r.brief) continue
-    const block = `## ${r.project}\n${r.brief}`
-    if (block.length + 2 <= remaining) {
-      blocks.push(block)
-      remaining -= block.length + 2
-    } else {
-      dropped++
-    }
-  }
-  const tail = dropped ? `\n\n(+${dropped} more in memory -- use project_brief / recall)` : ''
-  return { body: blocks.length ? blocks.join('\n\n') + tail : '', dropped }
-}
-
-export interface RefreshInput {
-  rows: ProjectOverviewRow[]
-  durableNotes: string
-  now: number
-  briefBudgetChars?: number
-}
-
-/**
- * Rewrite the volatile state blocks in place from the current fleet snapshot.
- * Each impulse calls this BEFORE appending the user turn, so the dispatcher
- * always reads a fresh `<fleet>` + `<briefs>` + `<notes>` without the context
- * accumulating -- the upsert REPLACES, never appends.
- */
-export function refreshLiveBlocks(h: LivingHistory, input: RefreshInput): void {
-  const { rows, now } = input
-  const fleet = rows.map(fleetLine).filter((l): l is string => l !== null)
-  if (fleet.length) upsertBlock(h, 'fleet', 'fleet', fleet.join('\n'), now)
-  else h.blocks.delete('fleet')
-
-  const { body } = packBriefs(rows, input.briefBudgetChars ?? DEFAULT_BRIEF_BUDGET_CHARS)
-  if (body) upsertBlock(h, 'briefs', 'briefs', body, now)
-  else h.blocks.delete('briefs')
-
-  const notes = input.durableNotes.trim()
-  if (notes) upsertBlock(h, 'notes', 'notes', notes, now)
-  else h.blocks.delete('notes')
-}
-
 /**
  * Run the consolidation fold IF the gated policy says it's due (§8a: size-floor
  * + interval, size-valve bypass). Tracks the per-user last-run clock so the
@@ -149,7 +133,10 @@ export async function consolidateIfDue(
   const lastRunAt = lastConsolidatedAt.get(key) ?? now - ONE_HOUR_MS
   if (!shouldConsolidate({ history: h, now, lastRunAt })) return null
   const res = await consolidate({ history: h, now }, chat)
-  if (res.ran) lastConsolidatedAt.set(key, now)
+  if (res.ran) {
+    lastConsolidatedAt.set(key, now)
+    markDirty(userId) // the fold mutated blocks/turns -- persist the folded state
+  }
   return res
 }
 

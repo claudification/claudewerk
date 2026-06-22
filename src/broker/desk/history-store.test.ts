@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import type { ChatFn } from './classify'
+import type { PersistenceDeps } from './history-persistence'
 import {
   consolidateIfDue,
   dumpUserHistory,
   getUserHistory,
   getUserTranscript,
+  initHistoryPersistence,
+  markDirty,
   recordTurn,
   refreshLiveBlocks,
   resetUserHistory,
@@ -145,6 +148,70 @@ describe('viewable transcript ring (A0)', () => {
     recordTurn('wipe', 'user', 'x', 1)
     resetUserHistory('wipe')
     expect(getUserTranscript('wipe')).toHaveLength(0)
+  })
+})
+
+describe('persistence wiring (Slice A)', () => {
+  /** A synchronous in-memory fs (schedule fires immediately) for the round-trip. */
+  function syncFs() {
+    const files = new Map<string, string>()
+    const deps: PersistenceDeps = {
+      readdir: dir => [...files.keys()].filter(p => p.startsWith(`${dir}/`)).map(p => p.slice(dir.length + 1)),
+      readFile: path =>
+        files.get(path) ??
+        (() => {
+          throw new Error('ENOENT')
+        })(),
+      writeFile: (path, data) => files.set(path, data),
+      rename: (from, to) => {
+        files.set(to, files.get(from) as string)
+        files.delete(from)
+      },
+      remove: path => files.delete(path),
+      ensureDir: () => {},
+      now: () => 1,
+      schedule: fn => {
+        fn()
+        return 0
+      }, // fire immediately
+      cancel: () => {},
+    }
+    return { files, deps }
+  }
+
+  test('markDirty persists, and a fresh init reloads history + transcript (survives restart)', () => {
+    const { files, deps } = syncFs()
+    resetUserHistory('persist-u')
+    initHistoryPersistence('/cache', deps) // arm the saver against the fake fs
+
+    const h = getUserHistory('persist-u')
+    appendTurn(h, 'user', 'durable turn', 5)
+    recordTurn('persist-u', 'user', 'viewable turn', 5)
+    markDirty('persist-u') // schedule -> fires immediately in syncFs
+
+    expect([...files.keys()].some(k => k.includes('/dispatcher/'))).toBe(true)
+
+    // Simulate a restart: a fresh process has the file on disk but empty memory.
+    // Snapshot the file, wipe state (this also deletes the file), restore it, re-init.
+    const snapshot = new Map(files)
+    resetUserHistory('persist-u')
+    expect(getUserHistory('persist-u').turns).toHaveLength(0)
+    for (const [k, v] of snapshot) files.set(k, v)
+    initHistoryPersistence('/cache', deps)
+
+    expect(getUserHistory('persist-u').turns.map(t => t.content)).toEqual(['durable turn'])
+    expect(getUserTranscript('persist-u').map(t => t.content)).toEqual(['viewable turn'])
+  })
+
+  test('resetUserHistory deletes the persisted file', () => {
+    const { files, deps } = syncFs()
+    initHistoryPersistence('/cache', deps)
+    const h = getUserHistory('wipe-p')
+    appendTurn(h, 'user', 'x', 1)
+    markDirty('wipe-p')
+    expect(files.size).toBe(1)
+    resetUserHistory('wipe-p')
+    expect(files.size).toBe(0) // persisted file deleted
   })
 })
 

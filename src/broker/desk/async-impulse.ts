@@ -16,7 +16,7 @@ import type { DispatchDecision } from '../../shared/protocol'
 import type { ConversationStore } from '../conversation-store'
 import { broadcastToSubscribers } from '../routes/shared'
 import { runDispatchAgent } from './agent-runtime'
-import { getUserHistory } from './history-store'
+import { getUserHistory, markDirty } from './history-store'
 import { dropBlock, upsertBlock } from './living-history'
 import { clearQuest, resolveQuest } from './quest-registry'
 import type { DispatchRuntime } from './runtime'
@@ -81,6 +81,7 @@ export async function deliverDispatcherReport(
     // way so the context never accumulates stale findings, and retire the quest.
     dropBlock(history, link.pendingId)
     if (callerConversationId) clearQuest(callerConversationId)
+    markDirty(link.userId) // persist the post-relay state (findings dropped) -- Slice A
   }
   return { ok: true, detail }
 }

@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { Hono } from 'hono'
 import { handleAuthRoute, requireAuth } from './auth-routes'
 import type { ConversationStore } from './conversation-store'
+import { initHistoryPersistence } from './desk/history-store'
 import { startFileReaper } from './file-reaper'
 import type { GatewayRegistry } from './gateway-registry'
 import { createLaunchProfilesRouter } from './launch-profiles/routes'
@@ -117,6 +118,10 @@ export function createRouter(options: RouteOptions): Hono {
     initBlobStore(cacheDir)
     startFileReaper(blobDir)
     initSharedFilesLog(cacheDir)
+    // Load the per-user dispatcher LIVING HISTORY + viewable transcript off disk
+    // and arm the debounced saver, so the dispatcher (one per user, sole source of
+    // truth) survives a broker restart (plan-dispatcher-persistence.md Slice A).
+    initHistoryPersistence(cacheDir)
   }
 
   const helpers = createRouteHelpers(rclaudeSecret)
