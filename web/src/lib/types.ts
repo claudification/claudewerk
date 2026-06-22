@@ -136,6 +136,8 @@ export interface Conversation extends ConversationTaskFields {
   }
   /** THE STATUS — agent self-reported task state; drives the attention badge. */
   liveStatus?: LiveStatus
+  /** Last user-impulse time (UserPromptSubmit); marks liveStatus superseded. */
+  lastInputAt?: number
   pendingSpawnApproval?: {
     requestId: string
     requestedAt: number

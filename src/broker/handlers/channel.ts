@@ -6,7 +6,7 @@
 import { formatDuration } from '../../shared/format-duration'
 import { deriveModelName } from '../../shared/models'
 import { cwdToProjectUri, extractProjectLabel, isSameProject } from '../../shared/project-uri'
-import type { ChannelSendResultEntry, SubscriptionChannel, TerminationSource } from '../../shared/protocol'
+import type { ChannelSendResultEntry, LiveStatus, SubscriptionChannel, TerminationSource } from '../../shared/protocol'
 import { slugify } from '../address-book'
 import { getUser } from '../auth'
 import { refreshAliasUse } from '../former-slugs'
@@ -297,6 +297,30 @@ function normalizeIncludeList(raw: unknown): string[] {
   return []
 }
 
+/**
+ * THE STATUS row augmentation for list_conversations: the agent's last
+ * self-reported status (state + detail fields + safe_to_close) as `agentStatus`
+ * (never clobbers the lifecycle `status` live/inactive), paired with the AGES --
+ * how old the status is and how long since the last user impulse (the actionable
+ * "where to look"). `statusStale` flags a SUPERSEDED status: a user impulse
+ * landed AFTER it was set, so the report predates what the user did next. Keyed
+ * off lastInputAt (user impulse) ONLY -- never lastActivity, which the agent's
+ * own post-status text always bumps just past updatedAt.
+ */
+function applyAgentStatusFields(
+  row: Record<string, unknown>,
+  s: { liveStatus?: LiveStatus; lastInputAt?: number; startedAt: number },
+): void {
+  const now = Date.now()
+  if (s.liveStatus) {
+    row.agentStatus = s.liveStatus
+    row.statusAge = formatDuration(now - s.liveStatus.updatedAt)
+    if (s.lastInputAt != null && s.lastInputAt > s.liveStatus.updatedAt) row.statusStale = true
+  }
+  const impulseAt = s.lastInputAt ?? s.startedAt
+  if (impulseAt) row.lastInputAge = formatDuration(now - impulseAt)
+}
+
 const channelListConversations: MessageHandler = (ctx, data) => {
   const status = (data.status as string) || 'live'
   const tier = normalizeTier(data.fields)
@@ -415,20 +439,7 @@ const channelListConversations: MessageHandler = (ctx, data) => {
       if (fieldSet.has('capabilities') && s.capabilities) row.capabilities = s.capabilities
       if (fieldSet.has('title') && s.title) row.title = s.title
       if (fieldSet.has('summary') && s.summary) row.summary = s.summary
-      // THE STATUS: the agent's last self-reported status (state + detail fields
-      // + safe_to_close). Emitted as `agentStatus` so it never clobbers the
-      // lifecycle `status` (live/inactive) that every row already carries. Paired
-      // with the AGES: how old the status is, and how long since the last impulse
-      // (a message posted to the conversation) — the actionable "where to look".
-      if (fieldSet.has('agent_status')) {
-        const now = Date.now()
-        if (s.liveStatus) {
-          row.agentStatus = s.liveStatus
-          row.statusAge = formatDuration(now - s.liveStatus.updatedAt)
-        }
-        const impulseAt = s.lastInputAt ?? s.startedAt
-        if (impulseAt) row.lastInputAge = formatDuration(now - impulseAt)
-      }
+      if (fieldSet.has('agent_status')) applyAgentStatusFields(row, s)
       if (fieldSet.has('label') && projSettings?.label && projSettings.label !== conversationName) {
         row.label = projSettings.label
       }

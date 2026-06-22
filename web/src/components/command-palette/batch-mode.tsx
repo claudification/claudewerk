@@ -7,6 +7,7 @@ import { selectConversations } from '@/lib/slim-conversation'
 import type { Conversation, ProjectSettings } from '@/lib/types'
 import { cn, formatAge } from '@/lib/utils'
 import { ProjectIcon } from '../project-icons'
+import { StatusIcon } from '../project-list/status-icon'
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog'
 import { BatchBroadcastInput, BatchReassignInputs } from './batch-action-inputs'
 import { ALL_BATCH_ACTIONS, type BatchAction } from './batch-actions'
@@ -590,6 +591,7 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
                     {!groupByProject && <th className="text-left px-2 py-1">project</th>}
                     {showHostCol && <th className="text-left px-2 py-1">host</th>}
                     {showRecapCol && <th className="text-left px-2 py-1">recap</th>}
+                    <th className="text-left px-2 py-1">status</th>
                     <th className="text-left px-2 py-1">last</th>
                   </tr>
                 </thead>
@@ -827,6 +829,9 @@ function BatchRow({
           <MutedDefault value={recap} />
         </td>
       )}
+      <td className="px-2 py-1">
+        <StatusIcon status={conv.liveStatus} lastInputAt={conv.lastInputAt} />
+      </td>
       <td className="px-2 py-1 text-muted-foreground/80">{formatAge(conv.lastActivity)}</td>
     </tr>
   )

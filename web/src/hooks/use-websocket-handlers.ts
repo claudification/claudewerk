@@ -212,6 +212,7 @@ function toConversation(summary: ConversationSummary): Conversation {
     // whitelist -- omitting it silently drops the field client-side so the card
     // badge never renders even though the broker serializes + broadcasts it.
     liveStatus: summary.liveStatus,
+    lastInputAt: summary.lastInputAt,
     pendingSpawnApproval: summary.pendingSpawnApproval,
     spawnAutoApproved: summary.spawnAutoApproved,
     hasNotification: summary.hasNotification,

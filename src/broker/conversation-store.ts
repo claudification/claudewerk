@@ -732,6 +732,11 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       planMode: conv.planMode || undefined,
       pendingAttention: conv.pendingAttention,
       liveStatus: conv.liveStatus,
+      // Last user-impulse time (UserPromptSubmit). The UI pairs it with
+      // liveStatus.updatedAt to tell when the agent's self-report has been
+      // SUPERSEDED by a later user message -- a stale status must not read as
+      // authoritative. See list_conversations' lastInputAge (channel.ts).
+      lastInputAt: conv.lastInputAt,
       pendingSpawnApproval: conv.pendingSpawnApproval,
       spawnAutoApproved: conv.spawnAutoApproved,
       hasNotification: conv.hasNotification,

@@ -4890,6 +4890,9 @@ export interface ConversationSummary extends ConversationTaskFields {
   pendingAttention?: Conversation['pendingAttention']
   /** THE STATUS — agent self-reported task state; drives the attention badge. */
   liveStatus?: LiveStatus
+  /** Last user-impulse time (UserPromptSubmit). Paired with liveStatus.updatedAt
+   *  so the UI can mark a status SUPERSEDED by a later user message. */
+  lastInputAt?: number
   /** Mirror of caller.pendingSpawnApproval -- drives the in-panel approval banner. */
   pendingSpawnApproval?: Conversation['pendingSpawnApproval']
   /** Sticky bit: caller has been granted standing spawn approval. */

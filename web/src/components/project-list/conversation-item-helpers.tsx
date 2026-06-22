@@ -1,6 +1,7 @@
 import { memo, type ReactNode, useEffect, useRef, useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { selectConversations } from '@/lib/slim-conversation'
+import { isStatusSuperseded } from '@/lib/status-style'
 import type { Conversation } from '@/lib/types'
 import { projectPath } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
@@ -61,7 +62,12 @@ export function ConversationAttentionBadges({ conversation }: { conversation: Co
   const showWaiting = conversation.pendingAttention && conversation.liveStatus?.state !== 'needs_you'
   // A terminal `done` shown while the conversation is active again is stale-in-
   // waiting: dim it (the broker clears it on the first PreToolUse of the new turn).
-  const dimStatus = conversation.status === 'active' && conversation.liveStatus?.state === 'done'
+  // Also dim when SUPERSEDED -- the user posted input after the status was set,
+  // so the report predates what they did next (same signal as the batch list /
+  // list_conversations' statusStale).
+  const dimStatus =
+    (conversation.status === 'active' && conversation.liveStatus?.state === 'done') ||
+    isStatusSuperseded(conversation.liveStatus, conversation.lastInputAt)
   return (
     <>
       {hasPendingLink && <span className="text-[9px] text-teal-400 font-bold animate-pulse">LINK</span>}
