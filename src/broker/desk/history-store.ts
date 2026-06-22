@@ -21,10 +21,13 @@ import {
   estimateTokens,
   type LivingHistory,
   ONE_HOUR_MS,
+  type Role,
   shouldConsolidate,
+  type Turn,
   upsertBlock,
 } from './living-history'
 import type { ProjectOverviewRow } from './overview'
+import { clearTranscriptByKey, getTranscriptByKey, recordTurnByKey } from './transcript-ring'
 
 /** Sentinel key for an unauthenticated/anon dispatcher session. */
 const ANON_KEY = '__anon__'
@@ -55,6 +58,22 @@ export function resetUserHistory(userId: string | null | undefined): void {
   const key = userKey(userId)
   histories.delete(key)
   lastConsolidatedAt.delete(key)
+  clearTranscriptByKey(key)
+}
+
+/**
+ * Record a turn into the VIEWABLE transcript ring (A0) -- the last 100
+ * user/assistant turns kept for the user to scroll, decoupled from the LLM
+ * context window. Call this everywhere a real dialogue turn is produced; it is
+ * SEPARATE from the LivingHistory `appendTurn` that consolidation later prunes.
+ */
+export function recordTurn(userId: string | null | undefined, role: Role, content: string, ts: number): void {
+  recordTurnByKey(userKey(userId), role, content, ts)
+}
+
+/** The user's viewable transcript ring (the last <=100 turns), for the overlay. */
+export function getUserTranscript(userId: string | null | undefined): Turn[] {
+  return getTranscriptByKey(userKey(userId))
 }
 
 function fleetLine(r: ProjectOverviewRow): string | null {
@@ -134,28 +153,50 @@ export async function consolidateIfDue(
   return res
 }
 
+export interface DumpTurn {
+  role: string
+  content: string
+  ts: number
+}
+
 export interface HistoryDump {
   exists: boolean
   userKey: string
   blocks: Array<{ id: string; tag: string; content: string; ts: number }>
-  turns: Array<{ role: string; content: string; ts: number }>
+  /** The LLM context-window turns (consolidation prunes these). */
+  turns: DumpTurn[]
+  /** The VIEWABLE transcript ring (last <=100), decoupled from pruning (A0). */
+  transcript: DumpTurn[]
   estimatedTokens: number
   lastConsolidatedAt: number | null
 }
 
+const dumpTurns = (turns: Turn[]): DumpTurn[] => turns.map(t => ({ role: t.role, content: t.content, ts: t.ts }))
+
 /** Full, inspectable snapshot of a user's living history (the debug harness reads
- *  this so the dispatcher's state/context/memory can be dumped over REST). */
+ *  this so the dispatcher's state/context/memory can be dumped over REST). The
+ *  viewable `transcript` is returned even when the LLM window is empty/absent. */
 export function dumpUserHistory(userId: string | null | undefined): HistoryDump {
   const key = userKey(userId)
+  const transcript = dumpTurns(getTranscriptByKey(key))
   const h = histories.get(key)
   if (!h) {
-    return { exists: false, userKey: key, blocks: [], turns: [], estimatedTokens: 0, lastConsolidatedAt: null }
+    return {
+      exists: false,
+      userKey: key,
+      blocks: [],
+      turns: [],
+      transcript,
+      estimatedTokens: 0,
+      lastConsolidatedAt: null,
+    }
   }
   return {
     exists: true,
     userKey: key,
     blocks: [...h.blocks.values()].map(b => ({ id: b.id, tag: b.tag, content: b.content, ts: b.ts })),
-    turns: h.turns.map(t => ({ role: t.role, content: t.content, ts: t.ts })),
+    turns: dumpTurns(h.turns),
+    transcript,
     estimatedTokens: estimateTokens(h),
     lastConsolidatedAt: lastConsolidatedAt.get(key) ?? null,
   }

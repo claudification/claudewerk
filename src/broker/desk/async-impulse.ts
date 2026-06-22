@@ -28,7 +28,11 @@ export interface DeliverResult {
 
 /** Injectable seams (test). Default to the live impulse loop + WS broadcast. */
 export interface DeliverDeps {
-  runImpulse?: (intent: string, rt: DispatchRuntime, opts: { userId: string | null }) => Promise<DispatchDecision>
+  runImpulse?: (
+    intent: string,
+    rt: DispatchRuntime,
+    opts: { userId: string | null; recordUserTurn?: boolean },
+  ) => Promise<DispatchDecision>
   broadcast?: (store: ConversationStore, message: Record<string, unknown>) => void
 }
 
@@ -66,7 +70,9 @@ export async function deliverDispatcherReport(
 
   let detail: string
   try {
-    const decision = await runImpulse(trigger, rt, { userId: link.userId })
+    // recordUserTurn:false -- the synthetic trigger is not a user-typed turn; only
+    // the dispatcher's relayed reply belongs in the viewable transcript (A0).
+    const decision = await runImpulse(trigger, rt, { userId: link.userId, recordUserTurn: false })
     // Unsolicited async reply -> broadcast to the user's overlay (userId-stamped).
     broadcast(store, { ...decision, userId: link.userId })
     detail = `relayed to ${link.userId ?? 'anon'} (${decision.reply ? 'reply sent' : 'no reply'})`

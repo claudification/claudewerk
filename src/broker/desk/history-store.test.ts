@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 import type { ChatFn } from './classify'
-import { consolidateIfDue, getUserHistory, refreshLiveBlocks, resetUserHistory, userKey } from './history-store'
+import {
+  consolidateIfDue,
+  dumpUserHistory,
+  getUserHistory,
+  getUserTranscript,
+  recordTurn,
+  refreshLiveBlocks,
+  resetUserHistory,
+  userKey,
+} from './history-store'
 import { appendTurn, getBlock, ONE_HOUR_MS, toMessages } from './living-history'
 import type { ProjectOverviewRow } from './overview'
 
@@ -101,6 +110,41 @@ describe('consolidateIfDue', () => {
     appendTurn(h, 'user', 'tiny', now - ONE_HOUR_MS - 1)
     const res2 = await consolidateIfDue(h, 'r', now + 1000, stubFold)
     expect(res2).toBeNull()
+  })
+})
+
+describe('viewable transcript ring (A0)', () => {
+  test('FIFO cap holds the LAST 100 turns; consolidating the LLM window never shrinks it', async () => {
+    resetUserHistory('ring')
+    for (let i = 1; i <= 130; i++) recordTurn('ring', i % 2 ? 'user' : 'assistant', `turn ${i}`, i)
+    const ring = getUserTranscript('ring')
+    expect(ring).toHaveLength(100) // 130 appended, capped to the last 100
+    expect(ring[0].content).toBe('turn 31') // 1..30 evicted
+    expect(ring[99].content).toBe('turn 130')
+
+    // Folding the SEPARATE LLM-window history must not touch the transcript ring.
+    const h = getUserHistory('ring')
+    appendTurn(h, 'user', 'x'.repeat(30_000), 0) // big + aged -> size valve fires
+    const res = await consolidateIfDue(h, 'ring', 2 * ONE_HOUR_MS, stubFold)
+    expect(res?.ran).toBe(true)
+    expect(h.turns).toHaveLength(0) // LLM window pruned
+    expect(getUserTranscript('ring')).toHaveLength(100) // viewable transcript intact
+  })
+
+  test('dumpUserHistory carries the transcript even when the LLM window is absent', () => {
+    resetUserHistory('donly')
+    recordTurn('donly', 'user', 'hello', 1)
+    recordTurn('donly', 'assistant', 'hi there', 2)
+    const dump = dumpUserHistory('donly')
+    expect(dump.exists).toBe(false) // no LivingHistory created
+    expect(dump.transcript.map(t => t.content)).toEqual(['hello', 'hi there'])
+    expect(dump.turns).toHaveLength(0)
+  })
+
+  test('resetUserHistory clears the transcript ring too', () => {
+    recordTurn('wipe', 'user', 'x', 1)
+    resetUserHistory('wipe')
+    expect(getUserTranscript('wipe')).toHaveLength(0)
   })
 })
 

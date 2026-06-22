@@ -13,7 +13,7 @@ import type { DispatchDecision } from '../../shared/protocol'
 import { chat } from '../recap/shared/openrouter-client'
 import { type AgentToolCallEvent, type AgentToolResultEvent, DISPATCHER_MODEL, runAgent } from './agent'
 import { buildDispatchToolset, projectOverviewRows } from './dispatch-tools'
-import { consolidateIfDue, getUserHistory, refreshLiveBlocks } from './history-store'
+import { consolidateIfDue, getUserHistory, recordTurn, refreshLiveBlocks } from './history-store'
 import { appendTurn, toMessages } from './living-history'
 import { readMemory } from './memory'
 import type { QuestSpawn } from './quest-tool'
@@ -117,6 +117,11 @@ export interface RunDispatchAgentOpts {
   /** Override the dispatcher system prompt (debug harness: iterate prompt variants
    *  live via REST without rebuilding the broker). Defaults to DISPATCHER_SYSTEM. */
   systemOverride?: string
+  /** Record the user `intent` into the VIEWABLE transcript ring (A0). Default true.
+   *  The async impulse (deliverDispatcherReport) sets this false: its intent is a
+   *  synthetic "a worker reported back" trigger, not a turn the user typed -- only
+   *  the dispatcher's relayed reply should land in the viewable transcript. */
+  recordUserTurn?: boolean
   onToolCall?: (e: AgentToolCallEvent) => void
   onToolResult?: (e: AgentToolResultEvent) => void
 }
@@ -140,6 +145,9 @@ export async function runDispatchAgent(
   // REFRESH the live blocks in place (fleet/briefs/notes), then append the impulse.
   refreshLiveBlocks(history, { rows: projectOverviewRows(rt), durableNotes: readMemory(opts.userId), now })
   appendTurn(history, 'user', intent, now)
+  // Mirror the real user turn into the viewable transcript ring (A0). The async
+  // impulse opts out -- its intent is a synthetic report-back trigger, not a turn.
+  if (opts.recordUserTurn !== false) recordTurn(opts.userId, 'user', intent, now)
 
   const result = await runAgent(
     {
@@ -158,7 +166,9 @@ export async function runDispatchAgent(
   // Append the reply as the assistant turn, then consolidate-if-due (gated: rarely
   // fires, §8a). Fire-and-forget so the rare fold never delays the user's reply.
   if (result.reply) {
-    appendTurn(history, 'assistant', result.reply, Date.now())
+    const replyTs = Date.now()
+    appendTurn(history, 'assistant', result.reply, replyTs)
+    recordTurn(opts.userId, 'assistant', result.reply, replyTs) // viewable transcript (A0)
     consolidateIfDue(history, opts.userId, Date.now(), req => chat(req)).catch(() => {})
   }
   const decision: DispatchDecision = {
