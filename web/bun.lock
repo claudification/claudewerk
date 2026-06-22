@@ -23,6 +23,7 @@
         "@dnd-kit/sortable": "^10.0.0",
         "@dnd-kit/utilities": "^3.2.2",
         "@excalidraw/excalidraw": "^0.18.1",
+        "@excalidraw/mermaid-to-excalidraw": "2.2.2",
         "@fontsource/geist": "latest",
         "@fontsource/geist-mono": "latest",
         "@lezer/highlight": "^1.2.3",

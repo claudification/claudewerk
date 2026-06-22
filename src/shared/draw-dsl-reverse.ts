@@ -7,8 +7,7 @@
  *   - Group agent elements by `customData.dslId`; rebuild each as a free-positioned node.
  *   - Diff vs the seeded scene's baseline (re-derived via the pure layout half of the
  *     expander): moved / resized / relabeled / removed.
- *   - `added` = live elements with NO dslId = the annotation layer (absence of dslId IS
- *     the signal; no role-tagging UI needed).
+ *   - `added` = live elements with NO dslId = the annotation layer (absence IS the signal).
  */
 import { type Annotation, type DslNode, isContainer, type NodeChange, type Scene, type SceneDiff } from './draw-dsl'
 import { expandScene } from './draw-dsl-expand'
@@ -51,11 +50,8 @@ export function reverseScene(elements: RawElement[], base: Scene): { scene: Scen
   const removed = [...baseline.keys()].filter(id => !id.includes(EDGE) && !groups.has(id))
   const surviving = new Set(nodes.map(n => ('id' in n ? n.id : undefined)))
   const edges = (base.edges ?? []).filter(e => surviving.has(e.from) && surviving.has(e.to))
-
-  return {
-    scene: { v: 1, layout: 'free', nodes, edges },
-    diff: { added: annotations, removed, moved, resized, relabeled },
-  }
+  const diff: SceneDiff = { added: annotations, removed, moved, resized, relabeled }
+  return { scene: { v: 1, layout: 'free', nodes, edges }, diff }
 }
 
 /** Split live elements into agent groups (by dslId) and the annotation layer (no dslId). */
@@ -127,22 +123,26 @@ function primaryDslId(sk: { id?: string }, metaById: Record<string, { dslId: str
   return dslId
 }
 
-/** Current bbox/label/data of a dslId group (prefer the primary element id===dslId). */
+/** Current bbox/label/data of a dslId group. A single-shape macro keys off its primary
+ * (id===dslId); a multi-shape group with none (a mermaid subgraph) uses the union box. */
 function boxOf(dslId: string, els: RawElement[]): Box {
-  const primary = primaryEl(dslId, els)
-  return {
-    x: primary.x ?? 0,
-    y: primary.y ?? 0,
-    w: primary.width ?? 0,
-    h: primary.height ?? 0,
-    text: labelText(els),
-    data: els.find(e => e.customData?.data)?.customData?.data,
-    frame: primary.frameId ?? undefined,
-  }
+  const exact = els.find(e => e.id === dslId)
+  const data = els.find(e => e.customData?.data)?.customData?.data
+  return { ...(exact ? xywh(exact) : unionBox(els)), text: labelText(els), data, frame: frameOf(exact ?? els[0]) }
 }
 
-const primaryEl = (dslId: string, els: RawElement[]): RawElement =>
-  els.find(e => e.id === dslId) ?? els.find(e => e.type !== 'text') ?? els[0]
+const xywh = (e: RawElement) => ({ x: e.x ?? 0, y: e.y ?? 0, w: e.width ?? 0, h: e.height ?? 0 })
+const frameOf = (e?: RawElement): string | undefined => e?.frameId ?? undefined
+
+/** Smallest box enclosing every element in the group (used for mermaid subgraphs). */
+function unionBox(els: RawElement[]): { x: number; y: number; w: number; h: number } {
+  if (!els.length) return { x: 0, y: 0, w: 0, h: 0 }
+  const x = Math.min(...els.map(e => e.x ?? 0))
+  const y = Math.min(...els.map(e => e.y ?? 0))
+  const w = Math.max(...els.map(e => (e.x ?? 0) + (e.width ?? 0))) - x
+  const h = Math.max(...els.map(e => (e.y ?? 0) + (e.height ?? 0))) - y
+  return { x, y, w, h }
+}
 
 /** Prefer the bound text (a shape's label) over a free text element. */
 const labelText = (els: RawElement[]): string | undefined =>

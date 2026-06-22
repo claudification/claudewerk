@@ -10,24 +10,32 @@
  * `convertToExcalidrawElements({regenerateIds:false})`.
  */
 import { type DslNode, type Edge, fontSizePx, type NodeMeta, type Placed, type Skeleton, type Style } from './draw-dsl'
+import { uiMacro } from './draw-dsl-macros'
 
-// Author with Excalidraw's STANDARD light-palette hexes: the dark canvas inverts +
-// hue-rotates them into correct pastels (storing final pastels reads muddy). Verified
-// by the sibling excalidraw-theming work. Theming polish is owned there; we keep the
-// macro palette minimal and lean on Excalidraw defaults for contrast.
-const ACCENT = '#1971c2' // standard blue
-const MUTED = '#868e96' // standard gray
-const BAR = '#f1f3f5' // pale fill -> inverts to a dark bar in dark mode
 const FONT: Record<string, number> = { hand: 1, normal: 2, code: 3 }
 
 export interface Expanded {
   skeletons: Skeleton[]
   metaById: Record<string, NodeMeta>
+  /** Placed mermaid nodes -- expanded asynchronously in the web bind layer (the pure pass
+   * can't run the mermaid runtime). Each carries the absolute box the agent reserved for it. */
+  mermaids: MermaidPlacement[]
+}
+
+/** A `mermaid` DSL node positioned by the layout pass; the web layer parses `def` into it. */
+export interface MermaidPlacement {
+  id: string
+  def: string
+  x: number
+  y: number
+  w: number
+  h: number
+  data?: object
 }
 
 /** Walk the placed tree -> skeletons + meta; append edge arrows last (bind by id). */
 export function buildSkeletons(placed: Placed[], edges: Edge[]): Expanded {
-  const out: Expanded = { skeletons: [], metaById: {} }
+  const out: Expanded = { skeletons: [], metaById: {}, mermaids: [] }
   let auto = 0
   const idOf = (n: DslNode): string => ('id' in n && n.id ? n.id : `auto-${n.kind}-${auto++}`)
   for (const p of placed) walk(p, out, idOf)
@@ -40,6 +48,11 @@ function walk(p: Placed, out: Expanded, idOf: (n: DslNode) => string): string[] 
   const node = p.node
   if (node.kind === 'row' || node.kind === 'col' || node.kind === 'grid') {
     return (p.children ?? []).flatMap(c => walk(c, out, idOf))
+  }
+  if (node.kind === 'mermaid') {
+    // No sync skeleton: the web layer parses `def` and appends the subgraph at (x,y).
+    out.mermaids.push({ id: node.id, def: node.def, x: p.x, y: p.y, w: p.w, h: p.h, data: node.data })
+    return []
   }
   if (node.kind === 'card' || node.kind === 'screen') return [emitFrame(node, p, out, idOf)]
   return [emitLeaf(node, p, out, idOf)]
@@ -101,96 +114,6 @@ function leafSkeletons(node: DslNode, p: Placed, id: string): Skeleton[] {
   }
 }
 
-// A flat per-kind dispatch table (not branching logic) -- complexity is inherent.
-/** Semantic-UI nodes -> a small sketchy wireframe group. */
-// fallow-ignore-next-line complexity
-function uiMacro(node: DslNode, p: Placed, id: string): Skeleton[] {
-  switch (node.kind) {
-    case 'button': {
-      const ghost = node.variant === 'ghost'
-      return [
-        {
-          type: 'rectangle',
-          id,
-          x: p.x,
-          y: p.y,
-          width: p.w,
-          height: p.h,
-          roundness: { type: 3 },
-          backgroundColor: ghost ? 'transparent' : ACCENT,
-          fillStyle: 'solid',
-          strokeColor: ACCENT,
-          label: { text: node.text, strokeColor: ghost ? ACCENT : '#ffffff' },
-        },
-      ]
-    }
-    case 'input': {
-      const sks: Skeleton[] = []
-      let fy = p.y
-      if (node.label) {
-        sks.push({ type: 'text', id: `${id}~lbl`, x: p.x, y: fy, text: node.label, fontSize: 16, strokeColor: MUTED })
-        fy += 22
-      }
-      sks.push({
-        type: 'rectangle',
-        id,
-        x: p.x,
-        y: fy,
-        width: p.w,
-        height: 40,
-        roundness: { type: 3 },
-        ...(node.placeholder ? { label: { text: node.placeholder, strokeColor: MUTED } } : {}),
-      })
-      return sks
-    }
-    case 'checkbox':
-      return [
-        {
-          type: 'rectangle',
-          id,
-          x: p.x,
-          y: p.y,
-          width: 24,
-          height: 24,
-          roundness: { type: 3 },
-          ...(node.checked ? { backgroundColor: ACCENT, fillStyle: 'solid' } : {}),
-        },
-        { type: 'text', id: `${id}~lbl`, x: p.x + 32, y: p.y + 2, text: node.text, fontSize: 16 },
-      ]
-    case 'nav':
-      return [
-        {
-          type: 'rectangle',
-          id,
-          x: p.x,
-          y: p.y,
-          width: p.w,
-          height: p.h,
-          roundness: { type: 3 },
-          backgroundColor: BAR,
-          fillStyle: 'solid',
-          strokeColor: MUTED,
-        },
-        { type: 'text', id: `${id}~items`, x: p.x + 14, y: p.y + 12, text: node.items.join('     '), fontSize: 16 },
-      ]
-    case 'image':
-      return [
-        {
-          type: 'rectangle',
-          id,
-          x: p.x,
-          y: p.y,
-          width: p.w,
-          height: p.h,
-          strokeStyle: 'dashed',
-          label: { text: `image: ${shortUrl(node.url)}`, strokeColor: MUTED },
-        },
-      ]
-    default:
-      return []
-  }
-}
-
 function edgeSkeleton(e: Edge, out: Expanded): Skeleton {
   const id = `${e.from}~edge~${e.to}`
   out.metaById[id] = { dslId: id, role: 'agent' }
@@ -216,9 +139,4 @@ function applyStyle(sk: Skeleton, style?: Style): Skeleton {
   if (style.rough !== undefined) sk.roughness = style.rough
   if (style.font) sk.fontFamily = FONT[style.font]
   return sk
-}
-
-function shortUrl(url: string): string {
-  const tail = url.split('/').pop() || url
-  return tail.length > 24 ? `${tail.slice(0, 21)}...` : tail
 }

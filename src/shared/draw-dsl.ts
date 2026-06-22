@@ -45,6 +45,7 @@ export type DslNode =
   | { id: string; kind: 'card'; title?: string; w?: number; at?: [number, number]; children: DslNode[]; data?: object }
   | { id: string; kind: 'nav'; items: string[]; at?: [number, number]; data?: object }
   | { id: string; kind: 'image'; url: string; w?: number; h?: number; at?: [number, number]; data?: object }
+  | { id: string; kind: 'mermaid'; def: string; w?: number; h?: number; at?: [number, number]; data?: object }
   | {
       id: string
       kind: 'screen'
@@ -96,6 +97,7 @@ export interface Skeleton {
   roundness?: { type: number } | null
   fontFamily?: number
   textAlign?: 'left' | 'center' | 'right'
+  points?: number[][] // line/arrow geometry, relative to x,y
   // arrow binding
   start?: { id: string }
   end?: { id: string }
@@ -122,12 +124,8 @@ export interface Annotation {
   w: number
   h: number
   text?: string
-  /**
-   * Optional explicit marker carried through `customData.role` (e.g. `'comment'`). The
-   * annotation layer is detected by ABSENCE of a dslId (the spec's signal), so this is
-   * forward-compat: if a future affordance stamps deliberate user notes, the diff
-   * surfaces them distinctly without changing the detection mechanism.
-   */
+  /** Optional marker via `customData.role` (e.g. `'comment'`). The annotation layer is
+   * detected by ABSENCE of a dslId (the signal); this is forward-compat for deliberate notes. */
   role?: string
 }
 
@@ -164,7 +162,6 @@ export interface Placed {
 }
 
 // --- intrinsic sizing (no canvas; rough text metrics good enough for wireframes) ---
-
 export const SIZE = {
   box: [160, 60],
   ellipse: [160, 80],
@@ -174,6 +171,7 @@ export const SIZE = {
   checkbox: 24,
   nav: 44,
   image: [220, 140],
+  mermaid: [360, 260],
   gap: 24,
   pad: 20,
   titleBar: 30,
@@ -181,12 +179,10 @@ export const SIZE = {
   lineH: 22,
 } as const
 
-const FONT_PX: Record<'s' | 'm' | 'l', number> = { s: 16, m: 20, l: 28 }
+const FONT_PX = { s: 16, m: 20, l: 28 } as const
 
 /** Font size in px for a text node's `size` (default `m`). */
-export function fontSizePx(size?: 's' | 'm' | 'l'): number {
-  return FONT_PX[size ?? 'm']
-}
+export const fontSizePx = (size?: 's' | 'm' | 'l'): number => FONT_PX[size ?? 'm']
 
 /** Rough rendered width/height of a single-line label at a given font size. */
 export function textExtent(text: string, fontPx = 20): { w: number; h: number } {

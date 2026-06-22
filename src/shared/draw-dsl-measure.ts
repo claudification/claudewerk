@@ -44,6 +44,10 @@ function measureLeaf(node: DslNode): { w: number; h: number } {
       return { w: SIZE.checkbox + 8 + textExtent(node.text).w, h: SIZE.checkbox }
     case 'nav':
       return { w: node.items.reduce<number>((s, it) => s + textExtent(it).w + SIZE.pad, SIZE.pad), h: SIZE.nav }
+    case 'mermaid':
+      // The real subgraph is measured by parseMermaidToExcalidraw in the web layer; here
+      // we reserve the agent's hint (or a default) so neighbours lay out around it.
+      return { w: node.w ?? SIZE.mermaid[0], h: node.h ?? SIZE.mermaid[1] }
     default: // image
       return node.kind === 'image' ? { w: node.w ?? SIZE.image[0], h: node.h ?? SIZE.image[1] } : { w: 0, h: 0 }
   }
