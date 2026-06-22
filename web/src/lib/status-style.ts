@@ -49,10 +49,3 @@ export const STATUS_FIELDS: Array<{ key: keyof LiveStatus; label: string; tone: 
   { key: 'caveats', label: 'caveats', tone: 'text-orange-400' },
   { key: 'notes', label: 'notes', tone: 'text-muted-foreground' },
 ]
-
-/** The single most salient field to show inline next to the state pill. */
-export function statusGistKey(state: LiveStatusState): keyof LiveStatus {
-  if (state === 'blocked') return 'blocked'
-  if (state === 'needs_you') return 'pending'
-  return 'done'
-}

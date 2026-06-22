@@ -18,7 +18,7 @@ const DESCRIPTION = `Report what THIS conversation is doing, so the user can tri
 - \`needs_you\` — you are blocked ON THE USER: a decision, an answer, an approval. Prefer opening a real dialog / AskUserQuestion / ExitPlanMode for this — that's what escalates to the user's phone. A bare \`needs_you\` shows the badge but does not buzz them.
 - \`blocked\`  — you are stuck on something NOT the user's to fix (a failing build, a missing credential, a dead end) and cannot proceed.
 
-The text fields are ALL OPTIONAL. Empty is signal: a fully-finished task is \`state:'done'\` with one line in \`done\` and everything else empty. NEVER manufacture content to fill them.
+The text fields are ALL OPTIONAL and render as MARKDOWN in the control panel (the \`done\`/\`pending\`/etc. values support **bold**, \`code\`, links, and \`- \` bullet lists — use them when they make the handoff clearer, but keep it tight). Empty is signal: a fully-finished task is \`state:'done'\` with one line in \`done\` and everything else empty. NEVER manufacture content to fill them.
 - \`done\`    — what you FINISHED.
 - \`pending\` — what still MUST happen for this to be complete. Test: "does this BLOCK done?" If no, it is NOT pending — it's a note.
 - \`caveats\` — it works, but watch X.
@@ -38,11 +38,11 @@ export function registerStatusTool(ctx: McpToolContext): Record<string, ToolDef>
             enum: STATES,
             description: 'Required triage signal: working | done | needs_you | blocked',
           },
-          done: { type: 'string', description: 'What FINISHED' },
-          pending: { type: 'string', description: 'What still must happen to be COMPLETE (blocks "done")' },
-          caveats: { type: 'string', description: 'Done-but-watch' },
-          blocked: { type: 'string', description: 'What did NOT get done + why (error / dead-end)' },
-          notes: { type: 'string', description: 'FYI asides that are NOT todos (e.g. "did not commit")' },
+          done: { type: 'string', description: 'What FINISHED (markdown)' },
+          pending: { type: 'string', description: 'What still must happen to be COMPLETE, blocks "done" (markdown)' },
+          caveats: { type: 'string', description: 'Done-but-watch (markdown)' },
+          blocked: { type: 'string', description: 'What did NOT get done + why, error / dead-end (markdown)' },
+          notes: { type: 'string', description: 'FYI asides that are NOT todos, e.g. "did not commit" (markdown)' },
           safe_to_close: {
             type: 'boolean',
             description: 'True only when the conversation is disposable: no uncommitted work, nothing pending',
