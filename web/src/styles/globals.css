@@ -505,6 +505,7 @@ pre.mermaid {
 .mermaid-container {
 	margin: 0.75em 0;
 	text-align: center;
+	cursor: zoom-in;
 }
 
 .mermaid-container svg {

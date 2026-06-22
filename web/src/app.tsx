@@ -18,6 +18,7 @@ import { useLaunchProfileManagerState } from '@/components/launch-profiles/manag
 import { LinkPreviewPane } from '@/components/link-preview-pane'
 import { MarkdownViewerModal } from '@/components/markdown-viewer-modal'
 import { MediaLightbox } from '@/components/media-lightbox'
+import { useMermaidLightbox } from '@/components/mermaid-lightbox-bus'
 import { PanelBoundary } from '@/components/panel-boundary'
 import { PinnedSwitchStrip } from '@/components/pinned-switch-strip'
 import { ProjectList } from '@/components/project-list'
@@ -149,6 +150,11 @@ const ChecklistAddNotesModal = lazyModule(
 const LaunchProfileManager = lazyModule(
   named(() => import('@/components/launch-profiles/manager'), 'LaunchProfileManager'),
   () => useLaunchProfileManagerState().open,
+)
+// Mermaid pan/zoom overlay -- chunk loads only when a diagram is first opened.
+const MermaidLightbox = lazyModule(
+  named(() => import('@/components/mermaid-lightbox'), 'MermaidLightbox'),
+  () => useMermaidLightbox(s => s.open),
 )
 // Parent-conditional: gated on showBatchPalette below, so plain React.lazy.
 const BatchModeModal = lazy(() =>
@@ -406,6 +412,7 @@ function Dashboard() {
         <JsonInspectorDialog />
       </PanelBoundary>
       <MediaLightbox />
+      <MermaidLightbox />
       <LinkPreviewPane />
       <AudioPlayerHost />
       {canAdmin && <QuickTaskModal />}
