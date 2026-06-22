@@ -3005,6 +3005,9 @@ function connect(
                 success: acpRes.success,
                 continued: true,
                 error: acpRes.error,
+                // Echo the resolved profile NAME so the broker can refresh a
+                // re-targeted revive (incl. clearing back to 'default').
+                resolvedProfile: resolvedReviveProfile.name,
               }),
             )
             if (acpRes.success) {
@@ -3075,6 +3078,9 @@ function connect(
                 success: ocRes.success,
                 continued: false,
                 error: ocRes.error,
+                // Echo the resolved profile NAME so the broker can refresh a
+                // re-targeted revive (incl. clearing back to 'default').
+                resolvedProfile: resolvedReviveProfile.name,
               }),
             )
             if (ocRes.success) {
@@ -3110,9 +3116,12 @@ function connect(
           )
           // Strip sentinel-internal tmuxPaneId before sending over WS. Echo the
           // resolved profile NAME (not configDir / env -- Profile-Env Boundary).
-          if (resolvedReviveProfile.name !== DEFAULT_PROFILE_NAME) {
-            result.resolvedProfile = resolvedReviveProfile.name
-          }
+          // ALWAYS echo, including the literal 'default': a revive can re-target
+          // the profile (terminate on a named profile, revive on default), and
+          // the broker must be able to CLEAR conv.resolvedProfile back to
+          // default. A non-default-only echo leaves the broker unable to tell
+          // "revived to default" from "no info", so the stale name would stick.
+          result.resolvedProfile = resolvedReviveProfile.name
           const { tmuxPaneId, ...reviveResult } = result
           ws.send(JSON.stringify(reviveResult))
           if (result.success) {

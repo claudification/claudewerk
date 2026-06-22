@@ -21,7 +21,7 @@ export const REASSIGN_ACTION: BatchAction = {
   label: 'Reassign',
   description: 'Move selected conversations to a different sentinel / project / profile (next launch only)',
   requiresInput: 'reassign',
-  needsConfirm: true,
+  // Not destructive: only affects the next launch and can be reassigned back.
 
   async *run({ ids, batchId, input }) {
     if (!isReassignInput(input)) {

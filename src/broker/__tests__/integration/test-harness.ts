@@ -111,6 +111,7 @@ function createMockStoreDriver(): StoreDriver {
     delete: () => false,
     list: () => [],
     listByScope: () => [],
+    listScopes: () => [],
     updateStats: noop,
   }
   const noopKv = {
