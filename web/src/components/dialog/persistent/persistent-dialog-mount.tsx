@@ -18,6 +18,9 @@ const PersistentDialog = lazy(() => import('./persistent-dialog').then(m => ({ d
 export function PersistentDialogMount({ conversationId }: { conversationId: string }) {
   const entry = useLiveDialogsStore(s => s.byConversation[conversationId])
   const collapsed = useLiveDialogsStore(s => s.viewByConversation[conversationId]?.collapsed ?? false)
+  // A reload's replay snapshot recreates the entry; honor a persisted dismiss so
+  // it stays hidden (the store drops it on a fresh show / agent reopen).
+  const dismissed = useLiveDialogsStore(s => s.viewByConversation[conversationId]?.dismissed ?? false)
   const closedAt = useLiveDialogsStore(s => s.viewByConversation[conversationId]?.closedAt)
   const setCollapsed = useLiveDialogsStore(s => s.setCollapsed)
   const dismiss = useLiveDialogsStore(s => s.dismiss)
@@ -35,7 +38,7 @@ export function PersistentDialogMount({ conversationId }: { conversationId: stri
     return () => clearTimeout(t)
   }, [closedAt, conversationId, dismiss])
 
-  if (!entry) return null
+  if (!entry || dismissed) return null
   if (collapsed) {
     return (
       <CollapsedDialogBar
