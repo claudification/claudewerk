@@ -45,7 +45,7 @@ export function questTools(rt: DispatchRuntime, spawn?: QuestSpawn): Toolset {
   // The spawn machinery accepts a project URI as its target (spawn-dispatch wraps
   // plain paths but passes URIs through). Pass the URI, not a derived path.
   const doSpawn: QuestSpawn =
-    spawn ?? (req => spawnDeskConversation(rt, { cwd: req.projectUri, intent: req.intent, model: req.model }))
+    spawn ?? (req => spawnDeskConversation(rt, { target: req.projectUri, intent: req.intent, model: req.model }))
   return {
     dispatch_quest: defineTool({
       description:
@@ -65,11 +65,9 @@ export function questTools(rt: DispatchRuntime, spawn?: QuestSpawn): Toolset {
         }
         const dp = resolveDeskProject(project)
         if (!dp) return { error: `no project matching "${project}"` }
-        // A worker needs a filesystem-backed project to run in -- a path-less URI
-        // scheme (agent://, api://) can't host a CC session. cwd here is only the
-        // SPAWNABILITY probe; the URI is what we dispatch by.
-        if (!dp.cwd) return { error: `project "${dp.label}" is not a spawnable project (no host location)` }
-
+        // Dispatch BY PROJECT URI -- agnostic to scheme. A claude:// project hosts a
+        // CC worker, an agent:// / api:// project a chat worker; the spawn machinery
+        // routes by the URI. The dispatcher never reasons about a filesystem path.
         const userId = ctx.identity?.userId ?? null
         const model = questModel(complexity)
         let conversationId: string

@@ -112,7 +112,10 @@ export function listDispatchRosterCandidates(store: ConversationStore): Dispatch
  *  `new` path AND the project-context scout, P4). Honors an explicit model. */
 export async function spawnDeskConversation(
   rt: DispatchRuntime,
-  req: { cwd: string; intent: string; profile?: string; model?: string },
+  /** `target` is a PROJECT URI (the quest path, scheme-agnostic) or, for the
+   *  deterministic executor, a filesystem location for a worktree-correct spawn.
+   *  dispatchSpawn accepts either; the dispatcher itself only ever passes a URI. */
+  req: { target: string; intent: string; profile?: string; model?: string },
 ): Promise<{ conversationId: string }> {
   const callerContext: SpawnCallerContext = {
     kind: 'mcp',
@@ -128,7 +131,7 @@ export async function spawnDeskConversation(
     rendezvousCallerConversationId: rt.callerConversationId ?? null,
   }
   const result = await dispatchSpawn(
-    { cwd: req.cwd, prompt: req.intent, profile: req.profile, model: req.model, headless: true },
+    { cwd: req.target, prompt: req.intent, profile: req.profile, model: req.model, headless: true },
     deps,
   )
   if (!result.ok) throw new Error(result.error)
@@ -137,7 +140,7 @@ export async function spawnDeskConversation(
 
 function buildExecutor(rt: DispatchRuntime): DispatchExecutor {
   return {
-    spawn: req => spawnDeskConversation(rt, { cwd: req.cwd, intent: req.intent, profile: req.profile }),
+    spawn: req => spawnDeskConversation(rt, { target: req.cwd, intent: req.intent, profile: req.profile }),
     route: async req => {
       const ws = rt.store.getConversationSocket(req.conversationId)
       if (!ws) throw new Error(`route target ${req.conversationId} not connected`)

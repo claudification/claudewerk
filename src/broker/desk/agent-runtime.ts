@@ -111,8 +111,8 @@ export interface RunDispatchAgentOpts {
   /** The user explicitly authorized expensive actions this turn (cost gate, B5).
    *  When false a very-expensive wake is surfaced for confirmation, not executed. */
   confirmedExpensive?: boolean
-  /** Override the quest worker spawn (debug harness DRY-RUN: capture the cwd/model
-   *  the dispatcher WOULD spawn into, without launching a real worker). */
+  /** Override the quest worker spawn (debug harness DRY-RUN: capture the project
+   *  URI + model the dispatcher WOULD dispatch into, without launching a worker). */
   questSpawn?: QuestSpawn
   /** Override the dispatcher system prompt (debug harness: iterate prompt variants
    *  live via REST without rebuilding the broker). Defaults to DISPATCHER_SYSTEM. */
