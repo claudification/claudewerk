@@ -12,8 +12,7 @@ import { z } from 'zod'
 import type { DispatchDecision } from '../../shared/protocol'
 import { chat } from '../recap/shared/openrouter-client'
 import { type AgentToolCallEvent, type AgentToolResultEvent, DISPATCHER_MODEL, runAgent } from './agent'
-import { buildControlDeps } from './control-deps'
-import { buildControlToolset } from './control-tools'
+import { buildDispatchToolset } from './dispatch-tools'
 import { appendMemoryFacts, digestTurn, readMemory } from './memory'
 import type { DispatchRuntime } from './runtime'
 import { listThreads, upsertThread } from './threads'
@@ -21,21 +20,25 @@ import { defineTool, type Toolset } from './tool-def'
 import { buildWorkspaceToolset } from './workspace'
 
 const DISPATCHER_SYSTEM = [
-  'You are the front desk -- the live CONTROLLER for the user`s fleet of coding',
-  'conversations. You are NOT a chat agent: you DRIVE the broker. You hold almost',
-  'no context, so when you need to know something, USE A TOOL -- never guess.',
+  'You are the FRONT DESK -- the routing BRAIN for the user`s fleet of coding',
+  'conversations, spread across PROJECTS. PROJECTS are your #1 anchor: you think',
+  'in projects first, conversations second. You are NOT a chat agent: you DRIVE',
+  'the broker. You hold almost no context, so when you need to know something,',
+  'USE A TOOL -- never guess.',
   '',
   'Core rules:',
-  '- ALWAYS call list_conversations before claiming what is or isn`t running. Never',
-  '  say "nothing is active" without checking. The roster is a tool call away.',
-  '- The user`s requests are real impulses -- HONOR them. To act on a conversation,',
-  '  use the tools (inject / interrupt / terminate / spawn / revive / configure /',
-  '  link). Do not just describe what you would do -- do it.',
+  '- For "what is going on" / status / overview, call projects_overview -- it gives',
+  '  the fleet BY PROJECT with your condensed memory. Prefer it over list_conversations.',
+  '- For one project, call project_brief; to search your memory, call recall.',
+  '- The user`s requests are real impulses -- HONOR them. To start work in a project',
+  '  use spawn_into_project; to place an ambiguous request use route; to act on a',
+  '  conversation use inject / interrupt / terminate / configure / revive.',
+  '  Do not just describe what you would do -- do it.',
   '- terminate is IRREVERSIBLE: confirm with the user first unless they were explicit.',
   '- You have a scratch WORKSPACE (a virtual fs, workspace_* tools) to draft or',
   '  stage simple work yourself before acting. It is scratch, not storage.',
   '- Keep replies short and plain-spoken, like a good assistant talking out loud.',
-  '  After acting, say what you did in one line. No markdown headers or lists.',
+  '  After acting, say what you did in one line.',
 ].join('\n')
 
 /** Near-memory thread tools (the dispatcher`s "what am I working on" board). */
@@ -68,7 +71,7 @@ function threadTools(): Toolset {
 }
 
 function buildAgentToolset(rt: DispatchRuntime): Toolset {
-  return { ...buildControlToolset(buildControlDeps(rt)), ...threadTools(), ...buildWorkspaceToolset() }
+  return { ...buildDispatchToolset(rt), ...threadTools(), ...buildWorkspaceToolset() }
 }
 
 export interface RunDispatchAgentOpts {
