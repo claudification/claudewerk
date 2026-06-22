@@ -139,6 +139,36 @@ describe('the status — survives the user prompt, clears when work resumes', ()
   })
 })
 
+describe('the status — registerImpulse (broker-stamped impulse, immediate supersede)', () => {
+  it('stamps lastInputAt so a prior status reads SUPERSEDED, but KEEPS the status around', () => {
+    const convId = testId('conv')
+    const agent = bootActiveAgent(h, convId, PROJECT)
+    sendStatus(agent, convId, status({ state: 'needs_you', pending: 'pick A or B', seq: 1, updatedAt: 1 }))
+
+    // A real user/outside message routed to the conversation — stamped at the
+    // broker the instant it lands, not after the CC round-trip.
+    h.conversationStore.registerImpulse(convId, 100)
+
+    const conv = h.conversationStore.getConversation(convId)!
+    expect(conv.lastInputAt).toBe(100)
+    // Kept around (not wiped) but no longer authoritative.
+    expect(conv.liveStatus?.state).toBe('needs_you')
+    expect(conv.lastInputAt! > conv.liveStatus!.updatedAt).toBe(true)
+  })
+
+  it('is monotonic — an older timestamp is a no-op (the slower of two stamps loses)', () => {
+    const convId = testId('conv')
+    bootActiveAgent(h, convId, PROJECT)
+    h.conversationStore.registerImpulse(convId, 100)
+    h.conversationStore.registerImpulse(convId, 50) // older -> ignored
+    expect(h.conversationStore.getConversation(convId)!.lastInputAt).toBe(100)
+  })
+
+  it('no-ops on an unknown conversation', () => {
+    expect(() => h.conversationStore.registerImpulse(testId('missing'), 1)).not.toThrow()
+  })
+})
+
 describe('the status — derived needs_you gate', () => {
   it('accepts needs_you and keeps the slot whether or not a pendingAttention corroborates', () => {
     const convId = testId('conv')

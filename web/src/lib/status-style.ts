@@ -1,3 +1,4 @@
+import { isLiveStatusSuperseded } from '@shared/protocol'
 import type { LiveStatus, LiveStatusState } from './types'
 
 /**
@@ -48,18 +49,13 @@ export const STATUS_META: Record<
 export const CLOSEABLE_ICON = '✕'
 
 /**
- * A self-reported status is SUPERSEDED when a user impulse (a message posted to
- * the conversation) arrived AFTER the status was set: the report predates what
- * the user did next, so it no longer reflects reality and must read as stale,
- * not authoritative. Deliberately keyed off `lastInputAt` (user impulse) ONLY,
- * never `lastActivity` -- the agent emits text right after set_status, so
- * lastActivity always edges just past updatedAt and would falsely stale every
- * status. (Mirrors list_conversations' statusAge vs lastInputAge pairing.)
+ * A self-reported status is SUPERSEDED when a user impulse (a message routed to
+ * the conversation) arrived AFTER the status was set. Thin alias over the shared
+ * `isLiveStatusSuperseded` (src/shared/protocol.ts) so the card badge + transcript
+ * block read the SAME rule the broker uses for REST/list_conversations -- one
+ * source of truth, no drift. See that helper for why it keys off lastInputAt only.
  */
-export function isStatusSuperseded(status: LiveStatus | undefined, lastInputAt: number | undefined): boolean {
-  if (!status || lastInputAt == null) return false
-  return lastInputAt > status.updatedAt
-}
+export const isStatusSuperseded = isLiveStatusSuperseded
 
 /** Compact age like "3s" / "4m" / "2h" / "5d" -- for the dense status/age cells. */
 export function formatAgeShort(ts: number): string {

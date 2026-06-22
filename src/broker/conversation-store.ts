@@ -34,6 +34,7 @@ import type {
 } from '../shared/protocol'
 import { BUILD_VERSION } from '../shared/version'
 import { clearConversation as clearAnalyticsConversation } from './analytics-store'
+import { rearmAttentionNotify } from './attention-notify'
 import { resolveBackend } from './backends'
 import { addEvent as addEventImpl } from './conversation-store/add-event'
 import { addTranscriptEntries as addTranscriptEntriesImpl } from './conversation-store/add-transcript-entries'
@@ -144,6 +145,7 @@ export interface ConversationStore {
   getActiveConversations: () => Conversation[]
   addEvent: (conversationId: string, event: HookEvent) => void
   updateActivity: (conversationId: string) => void
+  registerImpulse: (conversationId: string, ts?: number) => void
   endConversation: (conversationId: string, opts: EndConversationOpts) => void
   removeConversation: (conversationId: string) => void
   getConversationEvents: (conversationId: string, limit?: number, since?: number) => HookEvent[]
@@ -1719,6 +1721,43 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     }
   }
 
+  /**
+   * THE STATUS — register a USER IMPULSE on a conversation: a real message was
+   * routed TO it (the user typed in the panel, or another conversation posted via
+   * send_message). Stamps the impulse clock so any prior self-reported `liveStatus`
+   * reads as SUPERSEDED (lastInputAt > liveStatus.updatedAt) — kept around but no
+   * longer authoritative, because there's new data the agent hasn't answered yet.
+   * The agent re-asserts the real state by calling set_status again at the end of
+   * its turn (the Stop nudge enforces this).
+   *
+   * Stamped HERE (at the broker, on delivery) rather than only waiting for the
+   * downstream UserPromptSubmit hook, so the badge de-emphasizes the INSTANT the
+   * impulse lands — even if the agent is busy and the message queues, and even for
+   * inter-conversation messages whose hook round-trip can lag. Monotonic vs the
+   * later hook stamp: lastInputAt only moves forward, so the slower of the two is a
+   * no-op. Deliberately NOT called for the synthetic harness "no visible output"
+   * nag — that only surfaces as a UserPromptSubmit, never as a routed message — so
+   * a terminal `done` set as a turn's final action survives until real input lands.
+   */
+  function registerImpulse(conversationId: string, ts: number = Date.now()): void {
+    const conv = conversations.get(conversationId)
+    if (!conv) return
+    if (conv.lastInputAt != null && ts <= conv.lastInputAt) return
+    const prevState = conv.liveStatus?.state
+    conv.lastInputAt = ts
+    // The next genuine needs_you should buzz immediately now that the user has
+    // re-engaged (mirrors dispatchUserPrompt's rearm on the hook path).
+    rearmAttentionNotify(conversationId)
+    if (prevState && prevState !== 'working') {
+      console.log(
+        `[status] conv=${conversationId.slice(0, 8)} superseded state=${prevState} by impulse (lastInputAt>updatedAt)`,
+      )
+    }
+    // Broadcast so every panel re-derives `superseded` and de-emphasizes the
+    // stale badge at once (push, not poll).
+    scheduleConversationUpdate(conversationId)
+  }
+
   // Intentional complexity: single chokepoint for status->ended. Per the
   // LOG EVERYTHING covenant it captures before-state + log + termination
   // NDJSON + status transition broadcast + sub-resource cleanup in one
@@ -3075,6 +3114,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     getActiveConversations,
     addEvent,
     updateActivity,
+    registerImpulse,
     updateTasks,
     markAllTasksDone,
     endConversation,

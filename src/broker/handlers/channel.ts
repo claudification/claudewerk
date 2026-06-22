@@ -6,7 +6,13 @@
 import { formatDuration } from '../../shared/format-duration'
 import { deriveModelName } from '../../shared/models'
 import { cwdToProjectUri, extractProjectLabel, isSameProject } from '../../shared/project-uri'
-import type { ChannelSendResultEntry, LiveStatus, SubscriptionChannel, TerminationSource } from '../../shared/protocol'
+import {
+  type ChannelSendResultEntry,
+  isLiveStatusSuperseded,
+  type LiveStatus,
+  type SubscriptionChannel,
+  type TerminationSource,
+} from '../../shared/protocol'
 import { slugify } from '../address-book'
 import { getUser } from '../auth'
 import { refreshAliasUse } from '../former-slugs'
@@ -315,7 +321,7 @@ function applyAgentStatusFields(
   if (s.liveStatus) {
     row.agentStatus = s.liveStatus
     row.statusAge = formatDuration(now - s.liveStatus.updatedAt)
-    if (s.lastInputAt != null && s.lastInputAt > s.liveStatus.updatedAt) row.statusStale = true
+    if (isLiveStatusSuperseded(s.liveStatus, s.lastInputAt)) row.statusStale = true
   }
   const impulseAt = s.lastInputAt ?? s.startedAt
   if (impulseAt) row.lastInputAge = formatDuration(now - impulseAt)
@@ -933,6 +939,11 @@ function deliverToOne(
     const targetWs = ctx.conversations.getConversationSocket(toConversation)
     if (targetWs) {
       targetWs.send(JSON.stringify(delivery))
+      // THE STATUS — an outside message is a user impulse for the RECIPIENT:
+      // supersede its prior self-reported liveStatus immediately (kept around but
+      // no longer authoritative) so the badge de-emphasizes the instant the
+      // message lands, not after the recipient's CC round-trip processes it.
+      ctx.conversations.registerImpulse(toConversation)
       const toProjectName = ctx.getProjectSettings(toConv.project)?.label || extractProjectLabel(toConv.project)
       if (fromConv?.project && toConv.project) {
         // Refresh lastUsed on whichever persisted layer authorized (each touch no-ops if

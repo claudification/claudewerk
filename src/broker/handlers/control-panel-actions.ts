@@ -41,6 +41,11 @@ const sendInput: MessageHandler = (ctx, data) => {
   if (conversation.status === 'ended') throw new GuardError('Conversation has ended')
   ctx.requirePermission('chat', conversation.project)
 
+  // THE STATUS — a real user impulse landed: supersede any prior self-reported
+  // liveStatus immediately (kept around but no longer authoritative) so the badge
+  // de-emphasizes the instant the message is posted, not after the CC round-trip.
+  ctx.conversations.registerImpulse(conversationId)
+
   // Backend-proxied conversations (Chat API, future: OpenCode, Pi, etc.)
   const backend = resolveBackend(conversation)
   if (!backend.requiresAgentSocket) {

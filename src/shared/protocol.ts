@@ -827,6 +827,24 @@ export interface LiveStatus {
 export type LiveStatusInput = Omit<LiveStatus, 'seq' | 'updatedAt'>
 
 /**
+ * THE STATUS — a self-reported status is SUPERSEDED when a user impulse (a message
+ * routed to the conversation) landed AFTER the status was set: the report predates
+ * what the user did next, so it's kept around but no longer authoritative and must
+ * read as stale, not active. The single source of truth for the "is this status
+ * still active?" question — shared by the broker (REST overview + list_conversations)
+ * and the control panel (card badge + transcript block) so they never drift.
+ *
+ * Deliberately keyed off `lastInputAt` (user impulse) ONLY, never `lastActivity`:
+ * the agent emits text right after set_status, so lastActivity always edges just
+ * past updatedAt and would falsely stale every status. (Mirrors list_conversations'
+ * statusAge vs lastInputAge pairing.)
+ */
+export function isLiveStatusSuperseded(liveStatus: LiveStatus | undefined, lastInputAt: number | undefined): boolean {
+  if (!liveStatus || lastInputAt == null) return false
+  return lastInputAt > liveStatus.updatedAt
+}
+
+/**
  * Agent self-reported status (agent host -> broker -> dashboard). Single live
  * slot per conversation; a new one REPLACES the slot, full history stays in the
  * transcript. Re-broadcast verbatim to dashboards. AGENT_HOST_ONLY origin.

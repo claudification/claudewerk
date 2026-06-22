@@ -3,7 +3,7 @@
  * used by all route sub-modules.
  */
 
-import type { Conversation, LiveStatus, TeamInfo } from '../../shared/protocol'
+import { type Conversation, isLiveStatusSuperseded, type LiveStatus, type TeamInfo } from '../../shared/protocol'
 import { getUser } from '../auth'
 import { getAuthenticatedUser, resolveAuth } from '../auth-routes'
 import type { ConversationStore } from '../conversation-store'
@@ -191,7 +191,7 @@ export function conversationToOverview(
     directChildCount: directChildCount ?? 0,
     liveStatus: conv.liveStatus,
     lastInputAt: conv.lastInputAt,
-    statusStale: conv.lastInputAt != null && conv.liveStatus != null && conv.lastInputAt > conv.liveStatus.updatedAt,
+    statusStale: isLiveStatusSuperseded(conv.liveStatus, conv.lastInputAt),
   }
 }
 
