@@ -87,6 +87,7 @@ import type { ControlPanelMessage } from './conversation-store/types'
 import { createViewerRegistry } from './conversation-store/viewer-registry'
 import { NotificationDebouncer } from './notification-debounce'
 import type { UserGrant } from './permissions'
+import { emitDeskEvent } from './desk/event-registry'
 import { resolvePermissionFlags, resolvePermissions } from './permissions'
 import { cancelRecap, generateRecapOnEnd, scheduleRecap } from './recap/away-summary'
 import type { SentinelRegistry } from './sentinel-registry'
@@ -1448,6 +1449,16 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       } catch {}
     }
 
+    // Background lifecycle signal into the dispatcher's memory engine (P2).
+    emitDeskEvent({
+      kind: 'lifecycle',
+      conversationId: id,
+      project: conv.project ?? null,
+      ts: Date.now(),
+      transition: 'created',
+      title: conv.title,
+    })
+
     return conv
   }
 
@@ -1562,6 +1573,19 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
         },
         conv.project,
       )
+
+      // Background lifecycle signal -- only a genuine un-end is interesting to
+      // the memory engine (a plain reconnect of a live conv is not).
+      if (wasEnded) {
+        emitDeskEvent({
+          kind: 'lifecycle',
+          conversationId: id,
+          project: conv.project ?? null,
+          ts: now,
+          transition: 'resumed',
+          title: conv.title,
+        })
+      }
     }
   }
 
@@ -1787,6 +1811,15 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       conv.status = 'ended'
       conv.planMode = false
       conv.endedBy = { source: opts.source, initiator: opts.initiator, at: endedAt, detail: opts.detail }
+      // Background lifecycle signal into the dispatcher's memory engine (P2).
+      emitDeskEvent({
+        kind: 'lifecycle',
+        conversationId,
+        project: conv.project ?? null,
+        ts: endedAt,
+        transition: 'ended',
+        title: conv.title,
+      })
       // Spawn approval state must NOT survive a TERMINATE/REVIVE cycle.
       // Termination is the explicit "this conversation is done" signal -- a
       // pending prompt has nobody to satisfy any more, and the sticky

@@ -16,6 +16,7 @@
 
 import type { Conversation, LiveStatus } from '../../shared/protocol'
 import { notifyNeedsYou, rearmAttentionNotify } from '../attention-notify'
+import { emitDeskEvent } from '../desk/event-registry'
 import type { MessageHandler } from '../handler-context'
 import { AGENT_HOST_ONLY, registerHandlers } from '../message-router'
 
@@ -74,6 +75,17 @@ const agentStatus: MessageHandler = (ctx, data) => {
   ctx.conversations.broadcastConversationUpdate(conversationId)
   if (conv.project) {
     ctx.broadcastScoped({ type: 'agent_status', conversationId, status }, conv.project)
+  }
+  // Background live-status signal into the dispatcher's memory engine (P2). Only
+  // on a real state CHANGE -- seq bumps with the same state are noise.
+  if (status.state !== prevState) {
+    emitDeskEvent({
+      kind: 'live_status',
+      conversationId,
+      project: conv.project ?? null,
+      ts: status.updatedAt ?? Date.now(),
+      state: status.state,
+    })
   }
   handleNeedsYouSignal(conv, conversationId, status)
 

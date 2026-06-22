@@ -39,6 +39,7 @@ import {
 import { createConversationStore } from './conversation-store'
 import { type ContextDeps, createContext } from './create-context'
 import { closeDispatchAudit, initDispatchAudit } from './desk/audit'
+import { emitDeskEvent } from './desk/event-registry'
 import { initDispatchMemory } from './desk/memory'
 import { closeDispatchThreads, initDispatchThreads } from './desk/threads'
 import { startExternalStatusPolling, stopExternalStatusPolling } from './external-status'
@@ -479,7 +480,22 @@ async function main() {
     cacheDir: cacheDir ?? '.',
     brokerStore: store,
     broadcaster: {
-      broadcast: msg => conversationStore.broadcastConversationScoped(msg as Record<string, unknown>, '*'),
+      broadcast: msg => {
+        // A completed recap is a PROJECT-anchored memory signal -- feed the
+        // dispatcher's memory engine (P2) so it can backfill/refresh the brief.
+        const m = msg as { type?: string; recapId?: string; title?: string; meta?: { projectUri?: string } }
+        if (m.type === 'recap_complete' && m.meta?.projectUri && m.recapId) {
+          emitDeskEvent({
+            kind: 'recap_available',
+            conversationId: null,
+            project: m.meta.projectUri,
+            ts: Date.now(),
+            recapId: m.recapId,
+            title: m.title,
+          })
+        }
+        conversationStore.broadcastConversationScoped(msg as Record<string, unknown>, '*')
+      },
     },
     // Recap grounding: gather real commits via the sentinel git_log RPC. The
     // broker owns sentinel connections; the recap module stays FS-agnostic.

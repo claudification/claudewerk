@@ -1,4 +1,5 @@
 import type { Conversation, HookEventOf } from '../../../shared/protocol'
+import { emitDeskEvent } from '../../desk/event-registry'
 import { getModelInfo } from '../../model-pricing'
 import type { ConversationStoreContext } from '../event-context'
 
@@ -15,6 +16,17 @@ export function handleStop(
 ): void {
   conv.status = 'idle'
   conv.lastTurnEndedAt = event.timestamp
+
+  // Background signal into the dispatcher's memory engine (P2). Fire-and-forget;
+  // the registry never blocks or throws into this hot path.
+  emitDeskEvent({
+    kind: 'turn_complete',
+    conversationId,
+    project: conv.project ?? null,
+    ts: event.timestamp,
+    failed: event.hookEvent === 'StopFailure',
+    title: conv.title,
+  })
 
   if (event.hookEvent === 'StopFailure') {
     const d = event.data
