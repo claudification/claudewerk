@@ -2,6 +2,7 @@ import { projectIdentityKey } from '@shared/project-uri'
 import { ContextMenu } from 'radix-ui'
 import type { ReactNode } from 'react'
 import { saveProjectOrder, updateProjectSettings, useConversationsStore, wsSend } from '@/hooks/use-conversations'
+import { usePinnedConversations } from '@/lib/conversation-pins'
 import { canRespawnStaleDaemon } from '@/lib/daemon-control'
 import { selectConversations } from '@/lib/slim-conversation'
 import type { Conversation, ProjectOrder, ProjectOrderGroup } from '@/lib/types'
@@ -126,6 +127,7 @@ export function ConversationContextMenu({
   const dismissConversation = useConversationsStore(s => s.dismissConversation)
   const selectConversation = useConversationsStore(s => s.selectConversation)
   const ps = useConversationsStore(s => s.projectSettings[projectIdentityKey(conversation.project)])
+  const isPinnedToSwitch = usePinnedConversations(s => s.pinnedIds.includes(conversation.id))
   // Has at least one spawned descendant -> offer "Terminate full lineage".
   // Independent of this conversation's own status: a spawn root can be ended
   // while its children are still live (the common chain case).
@@ -139,6 +141,15 @@ export function ConversationContextMenu({
       <ContextMenu.Portal>
         <ContextMenu.Content className="min-w-[180px] bg-popover border border-border rounded-md shadow-lg py-1 z-50">
           <GroupingMenuItems project={conversation.project} />
+          <ContextMenu.Item
+            className={menuItemClass}
+            onSelect={() => {
+              haptic('tap')
+              usePinnedConversations.getState().togglePin(conversation.id)
+            }}
+          >
+            {isPinnedToSwitch ? 'Unpin from quick-switch' : 'Pin to quick-switch'}
+          </ContextMenu.Item>
           <ContextMenu.Item
             className={menuItemClass}
             onSelect={() => {

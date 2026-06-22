@@ -19,6 +19,7 @@ import { LinkPreviewPane } from '@/components/link-preview-pane'
 import { MarkdownViewerModal } from '@/components/markdown-viewer-modal'
 import { MediaLightbox } from '@/components/media-lightbox'
 import { PanelBoundary } from '@/components/panel-boundary'
+import { PinnedSwitchStrip } from '@/components/pinned-switch-strip'
 import { ProjectList } from '@/components/project-list'
 import { quickTaskBus } from '@/components/quick-task-trigger'
 import { PublicRecapView } from '@/components/recap/public-recap-view'
@@ -327,6 +328,10 @@ function Dashboard() {
           </Button>
         )}
       </div>
+
+      {/* Mobile quick-switch strip -- pinned + recent-active conversations.
+          Self-hides on desktop (lg:hidden) and when there's nothing to switch to. */}
+      <PinnedSwitchStrip />
 
       {/* Host-shell dock -- global floating-shell tray. Self-hides when empty. */}
       <div className="shrink-0">
