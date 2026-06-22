@@ -306,6 +306,34 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
     [flatRows, selectedForBatch, selectBatch, toggleBatchSelection],
   )
 
+  // Map of project -> visible conv IDs, for the group-header select-all checkbox.
+  const groupConvIds = useMemo(() => {
+    const m = new Map<string, string[]>()
+    for (const r of convRows) {
+      const arr = m.get(r.project)
+      if (arr) arr.push(r.conv.id)
+      else m.set(r.project, [r.conv.id])
+    }
+    return m
+  }, [convRows])
+
+  // Select/deselect every visible conversation in one project. All selected -> clear; else select all.
+  const handleToggleGroup = useCallback(
+    (project: string) => {
+      const ids = groupConvIds.get(project) ?? []
+      // Empty ids never reach here (headers only render for non-empty projects);
+      // a vacuous `every` -> true would no-op the loop regardless.
+      const allSelected = ids.every(id => selectedForBatch.has(id))
+      const next = new Set(selectedForBatch)
+      for (const id of ids) {
+        if (allSelected) next.delete(id)
+        else next.add(id)
+      }
+      selectBatch(Array.from(next))
+    },
+    [groupConvIds, selectedForBatch, selectBatch],
+  )
+
   function handleSelectAllVisible() {
     const visibleIds = convRows.slice(0, SELECT_ALL_CAP).map(r => r.conv.id)
     const next = new Set(selectedForBatch)
@@ -568,11 +596,20 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
                 <tbody>
                   {flatRows.map((row, idx) =>
                     row.kind === 'group' ? (
-                      <BatchGroupHeader
-                        key={`g:${row.project}`}
-                        row={row}
-                        cols={3 + (groupByProject ? 0 : 1) + (showHostCol ? 1 : 0) + (showRecapCol ? 1 : 0)}
-                      />
+                      (() => {
+                        const ids = groupConvIds.get(row.project) ?? []
+                        const sel = ids.filter(id => selectedForBatch.has(id)).length
+                        return (
+                          <BatchGroupHeader
+                            key={`g:${row.project}`}
+                            row={row}
+                            cols={3 + (groupByProject ? 0 : 1) + (showHostCol ? 1 : 0) + (showRecapCol ? 1 : 0)}
+                            checked={ids.length > 0 && sel === ids.length}
+                            indeterminate={sel > 0 && sel < ids.length}
+                            onToggle={() => handleToggleGroup(row.project)}
+                          />
+                        )
+                      })()
                     ) : (
                       <BatchRow
                         key={row.conv.id}
@@ -670,11 +707,33 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
   )
 }
 
-function BatchGroupHeader({ row, cols }: { row: GroupRow; cols: number }) {
+function BatchGroupHeader({
+  row,
+  cols,
+  checked,
+  indeterminate,
+  onToggle,
+}: {
+  row: GroupRow
+  cols: number
+  checked: boolean
+  indeterminate: boolean
+  onToggle: () => void
+}) {
   return (
     <tr className="bg-muted/15 border-y border-border/30">
       <td colSpan={cols} className="px-2 py-1">
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider">
+          <input
+            ref={el => {
+              if (el) el.indeterminate = indeterminate
+            }}
+            type="checkbox"
+            checked={checked}
+            onChange={onToggle}
+            aria-label={`Select all in ${row.label}`}
+            className="cursor-pointer accent-accent"
+          />
           {row.color && <span className="size-2 rounded-sm shrink-0" style={{ backgroundColor: row.color }} />}
           {row.icon && (
             <span className="shrink-0 text-muted-foreground">
