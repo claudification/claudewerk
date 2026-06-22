@@ -8,6 +8,7 @@
  */
 
 import { type RefObject, useCallback, useRef, useState } from 'react'
+import { isPerfEnabled, record } from '@/lib/perf-metrics'
 
 const MIN_SCALE = 0.1
 const MAX_SCALE = 12
@@ -25,6 +26,46 @@ export function usePanZoom(containerRef: RefObject<HTMLElement | null>, contentR
   // Active pointers (id -> client coords) for drag + pinch tracking.
   const pointers = useRef(new Map<number, { x: number; y: number }>())
   const pinchDist = useRef(0)
+
+  // --- PERF DIAGNOSTICS (gated by the perf monitor toggle; zero-cost when off).
+  // A rAF loop that runs only WHILE a gesture is live, recording the real
+  // browser frame cadence (ms between painted frames) under `mermaid.gesture-frame`.
+  // This is the key signal: if frames are 60-120ms apart while React commits stay
+  // cheap (see MaybeProfiler `commit->paint` in the HUD), the cost is browser
+  // re-rasterizing the vector SVG per scale step, NOT React. `moves` counts how
+  // many pan/zoom events fired between two frames -- a high moves-per-frame ratio
+  // means events are coalescing into far fewer paints (we're paint-bound).
+  const lastActiveRef = useRef(0)
+  const rafRef = useRef(0)
+  const lastFrameRef = useRef(0)
+  const moveCountRef = useRef(0)
+  const markActivity = useCallback(() => {
+    if (!isPerfEnabled()) return
+    lastActiveRef.current = performance.now()
+    moveCountRef.current++
+    if (rafRef.current) return
+    lastFrameRef.current = performance.now()
+    const tick = () => {
+      const now = performance.now()
+      const dt = now - lastFrameRef.current
+      lastFrameRef.current = now
+      const moves = moveCountRef.current
+      moveCountRef.current = 0
+      record(
+        'scroll',
+        'mermaid.gesture-frame',
+        dt,
+        `${dt > 0 ? (1000 / dt).toFixed(0) : '-'}fps moves=${moves} scale=${t.scale.toFixed(2)}`,
+      )
+      // Stop the loop ~400ms after the last interaction so it never spins idle.
+      if (now - lastActiveRef.current > 400) {
+        rafRef.current = 0
+        return
+      }
+      rafRef.current = requestAnimationFrame(tick)
+    }
+    rafRef.current = requestAnimationFrame(tick)
+  }, [t.scale])
 
   // Zoom around a container-relative anchor point, keeping it visually fixed.
   const zoomAt = useCallback((nextScaleRaw: number, px: number, py: number) => {
@@ -81,6 +122,7 @@ export function usePanZoom(containerRef: RefObject<HTMLElement | null>, contentR
   const onWheel = useCallback(
     (e: React.WheelEvent) => {
       e.preventDefault()
+      markActivity()
       const cb = containerRef.current?.getBoundingClientRect()
       if (!cb) return
       const factor = Math.exp(-e.deltaY * 0.0015)
@@ -92,7 +134,7 @@ export function usePanZoom(containerRef: RefObject<HTMLElement | null>, contentR
         return { scale: next, tx: px - (px - prev.tx) * k, ty: py - (py - prev.ty) * k }
       })
     },
-    [containerRef],
+    [containerRef, markActivity],
   )
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
@@ -116,6 +158,7 @@ export function usePanZoom(containerRef: RefObject<HTMLElement | null>, contentR
       const pts = pointers.current
       const prevPt = pts.get(e.pointerId)
       if (!prevPt) return
+      markActivity()
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY })
       if (pts.size === 1) {
         setT(prev => ({ ...prev, tx: prev.tx + (e.clientX - prevPt.x), ty: prev.ty + (e.clientY - prevPt.y) }))
@@ -123,7 +166,7 @@ export function usePanZoom(containerRef: RefObject<HTMLElement | null>, contentR
         handlePinch()
       }
     },
-    [handlePinch],
+    [handlePinch, markActivity],
   )
 
   const endPointer = useCallback((e: React.PointerEvent) => {
