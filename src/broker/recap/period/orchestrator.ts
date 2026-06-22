@@ -41,6 +41,7 @@ import {
   gatherToolUse,
   gatherTranscripts,
   type PeriodScope,
+  resolveProjectScope,
 } from './gather'
 import type { CommitDigest } from './gather/types'
 import { RecapLedger } from './ledger'
@@ -488,7 +489,7 @@ async function runRegenerate(
 
   // Re-gather COST 1 inputs (cost table + digest). Local SQLite, no model call --
   // the expensive map/synthesis is what the bundle lets us skip, not the gather.
-  const projectUris = (deps.expandProjectScope ?? defaultExpand)(src.projectUri)
+  const projectUris = resolveProjectScope(deps.brokerStore, src.projectUri, deps.expandProjectScope)
   const scope: PeriodScope = {
     projectUris,
     periodStart: src.periodStart,
@@ -664,7 +665,7 @@ async function runRecap(
   deps.store.update(recapId, { startedAt })
   deps.bundle?.updateManifest(recapId, { startedAt })
 
-  const projectUris = (deps.expandProjectScope ?? defaultExpand)(args.projectUri)
+  const projectUris = resolveProjectScope(deps.brokerStore, args.projectUri, deps.expandProjectScope)
   const scope: PeriodScope = { projectUris, periodStart: period.start, periodEnd: period.end, timeZone }
 
   const includeInternals = recipe.signals.includes('turn_internals')
@@ -1455,10 +1456,6 @@ function rowToMeta(deps: OrchestratorDeps, recapId: string) {
   const row = deps.store.get(recapId)
   if (!row) throw new Error(`recap ${recapId} missing after finalize`)
   return rowToRecapMeta(row)
-}
-
-function defaultExpand(projectUri: string): string[] {
-  return [projectUri]
 }
 
 function defaultLabel(projectUri: string): string {

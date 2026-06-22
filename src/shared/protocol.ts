@@ -3000,11 +3000,15 @@ export interface ReviveResult {
   error?: string
   tmuxSession?: string
   continued: boolean // true if --resume worked, false if fresh session
-  /** The sentinel-profile name the sentinel actually used (echoed back from
-   *  the URI userinfo). Revive never re-rolls balanced/random selection -- it
-   *  pins the profile written into the stored `projectUri` -- so this is
-   *  always the same name the broker sent in `ReviveConversation.profile`.
-   *  Present only when the conversation runs under a non-default profile. */
+  /** The sentinel-profile NAME the sentinel actually resolved for this revive.
+   *  A revive CAN re-target a different profile than the one the conversation
+   *  last ran under (terminate on A, revive on B); the broker overwrites
+   *  `conv.resolvedProfile` from this so the UI + list_conversations stop
+   *  reporting the stale name. ALWAYS sent on a successful revive, INCLUDING
+   *  the literal `'default'` (broker maps that back to `undefined`) so a revive
+   *  to default can clear a previously-named profile. Absent => an un-rebuilt
+   *  sentinel; the broker leaves the value unchanged. PROFILE-ENV BOUNDARY:
+   *  NAME only, never configDir / env. */
   resolvedProfile?: string
 }
 

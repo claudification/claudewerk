@@ -123,6 +123,10 @@ export interface ConversationStore {
   delete(id: string): void
   list(filter?: ConversationFilter): ConversationSummaryRecord[]
   listByScope(scope: string, filter?: { status?: string[] }): ConversationSummaryRecord[]
+  /** Every distinct project scope (URI) that has at least one conversation.
+   *  The canonical "all projects" enumeration -- e.g. a cross-project ('*')
+   *  recap resolves to this list (a literal scope='*' filter matches nothing). */
+  listScopes(): string[]
   updateStats(id: string, stats: Partial<ConversationStats>): void
 }
 

@@ -124,7 +124,7 @@ const sentinelIdentify: MessageHandler = (ctx, data) => {
   }
 }
 
-const reviveResult: MessageHandler = (ctx, data) => {
+export const reviveResult: MessageHandler = (ctx, data) => {
   const ok = data.success ? 'OK' : 'FAIL'
   const ccSessionId = data.ccSessionId as string
   const conversationId = data.conversationId as string | undefined
@@ -135,6 +135,28 @@ const reviveResult: MessageHandler = (ctx, data) => {
 
   // Look up by conversationId (stable key), not ccSessionId
   const conversation = conversationId ? ctx.conversations.getConversation(conversationId) : null
+
+  // Persist the profile the sentinel ACTUALLY resolved on revive. Revive can
+  // re-target a different profile than the one the conversation last ran under
+  // (terminate on A, revive on B): it runs on B but, without this, the UI +
+  // list_conversations keep reporting the stale A. The spawn path captures
+  // spawn_result.resolvedProfile via setPendingResolvedProfile -> boot; revive
+  // had no equivalent and silently dropped the echoed name. We OVERWRITE here
+  // (not fill-if-empty) because the conversation already holds the old name.
+  // PROFILE-ENV BOUNDARY: store the resolved NAME only, never configDir / env.
+  // A rebuilt sentinel always echoes a string on success (including the literal
+  // 'default'); an absent field means an un-rebuilt sentinel -> leave unchanged.
+  if (data.success && conversation && typeof data.resolvedProfile === 'string') {
+    const resolved = data.resolvedProfile === 'default' ? undefined : data.resolvedProfile
+    if (conversation.resolvedProfile !== resolved) {
+      ctx.log.info(
+        `[revive-profile] conv=${conversation.id.slice(0, 8)} resolvedProfile ${conversation.resolvedProfile ?? 'default'} -> ${resolved ?? 'default'}`,
+      )
+      conversation.resolvedProfile = resolved
+      ctx.conversations.broadcastConversationUpdate(conversation.id)
+    }
+  }
+
   const project = conversation?.project || (data.project as string)
   if (project) {
     ctx.broadcastScoped(
