@@ -80,4 +80,38 @@ describe('Phase 3 -- spawn-parent overview surface', () => {
     const overview = conversationToOverview(convA, cs)
     expect(overview.directChildCount).toBe(0)
   })
+
+  it('conversationToOverview surfaces liveStatus + lastInputAt and flips statusStale on superseding input', () => {
+    const cs = createConversationStore({ store: freshStore() })
+    cs.createConversation('conv-A', 'claude://default/proj')
+    const conv = cs.getConversation('conv-A')!
+    conv.liveStatus = { state: 'done', safe_to_close: true, seq: 1, updatedAt: 1000 }
+
+    // No input recorded yet -> status not superseded.
+    const noInput = conversationToOverview(conv, cs)
+    expect(noInput.liveStatus).toEqual(conv.liveStatus)
+    expect(noInput.statusStale).toBeFalsy()
+
+    // Input BEFORE the status was set -> not stale.
+    conv.lastInputAt = 500
+    const before = conversationToOverview(conv, cs)
+    expect(before.lastInputAt).toBe(500)
+    expect(before.statusStale).toBeFalsy()
+
+    // Input AFTER the status was set -> status superseded -> stale.
+    conv.lastInputAt = 2000
+    const after = conversationToOverview(conv, cs)
+    expect(after.lastInputAt).toBe(2000)
+    expect(after.statusStale).toBe(true)
+  })
+
+  it('statusStale stays falsy when there is no liveStatus', () => {
+    const cs = createConversationStore({ store: freshStore() })
+    cs.createConversation('conv-A', 'claude://default/proj')
+    const conv = cs.getConversation('conv-A')!
+    conv.lastInputAt = 5000
+    const overview = conversationToOverview(conv, cs)
+    expect(overview.liveStatus).toBeUndefined()
+    expect(overview.statusStale).toBeFalsy()
+  })
 })

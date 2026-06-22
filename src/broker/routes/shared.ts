@@ -3,7 +3,7 @@
  * used by all route sub-modules.
  */
 
-import type { Conversation, TeamInfo } from '../../shared/protocol'
+import type { Conversation, LiveStatus, TeamInfo } from '../../shared/protocol'
 import { getUser } from '../auth'
 import { getAuthenticatedUser, resolveAuth } from '../auth-routes'
 import type { ConversationStore } from '../conversation-store'
@@ -148,6 +148,17 @@ export interface ConversationOverview {
   /** Count of conversations that have this conversation as their direct parent.
    *  0 = no spawned children. REST-only; WS clients derive from local list. */
   directChildCount?: number
+  /** The agent's last self-reported status (state + detail fields + safe_to_close).
+   *  REST parity with the WS `liveStatus` carried by toConversationSummary. */
+  liveStatus?: LiveStatus
+  /** Last user-impulse time (UserPromptSubmit). Pairs with liveStatus.updatedAt
+   *  to compute statusStale. */
+  lastInputAt?: number
+  /** True when a user impulse landed AFTER the status was set (report superseded).
+   *  Keyed off lastInputAt ONLY -- never lastActivity (the agent's own post-status
+   *  text always bumps lastActivity just past updatedAt). See applyAgentStatusFields
+   *  in handlers/channel.ts for the canonical rule. */
+  statusStale?: boolean
 }
 
 export function conversationToOverview(
@@ -178,6 +189,9 @@ export function conversationToOverview(
     parentConversationId: conv.parentConversationId,
     rootConversationId: conv.rootConversationId,
     directChildCount: directChildCount ?? 0,
+    liveStatus: conv.liveStatus,
+    lastInputAt: conv.lastInputAt,
+    statusStale: conv.lastInputAt != null && conv.liveStatus != null && conv.lastInputAt > conv.liveStatus.updatedAt,
   }
 }
 
