@@ -216,7 +216,12 @@ export function createChannelRegistry(deps: ChannelRegistryDeps): ChannelRegistr
             subs.delete(ws)
             if (subs.size === 0) channelSubscribers.delete(key)
             try {
-              ws.close(1008, 'backpressure')
+              // 4290 (echoes HTTP 429) -- a TRANSIENT "slow down, reconnect" signal,
+              // NOT auth. Must never collide with the auth codes (4401) or the WS
+              // policy code (1008): the control panel maps those to a hard SESSION
+              // EXPIRED lockout, and backpressure is not an expiry. See the close
+              // handler in web/src/hooks/use-websocket.ts.
+              ws.close(4290, 'backpressure')
             } catch {
               /* already closing */
             }

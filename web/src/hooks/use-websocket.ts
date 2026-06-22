@@ -13,7 +13,7 @@ const batch: (fn: () => void) => void = batchUpdates ?? (fn => fn())
 
 import { beginMessage, endMessage, setFlushBatch } from '@/lib/perf-message-context'
 import { isPerfEnabled, record as perfRecord } from '@/lib/perf-metrics'
-import { buildWsUrl } from '@/lib/share-mode'
+import { buildWsUrl, isShareView } from '@/lib/share-mode'
 import { cachePushEntries } from '@/lib/transcript-page-cache'
 import { handleWebControlRequest } from '@/lib/web-control-dispatch'
 import { buildWebControlAdvertise } from '@/lib/web-control-grant'
@@ -367,32 +367,76 @@ export function useWebSocket() {
         }, 500)
       }
 
-      ws.onclose = e => {
-        wsRef.current = null
-
-        if (e.code === 1008 || e.code === 4401) {
-          // Auth failure - don't reconnect, show expiry modal
-          useConversationsStore.setState({
-            isConnected: false,
-            ws: null,
-            authExpired: true,
-            error: 'Conversation expired or unauthorized',
-          })
-          return
-        }
-        // Single setState for disconnect state
-        useConversationsStore.setState({
-          isConnected: false,
-          ws: null,
-          ...(e.code !== 1000 ? { error: `WebSocket closed (${e.code}${e.reason ? `: ${e.reason}` : ''})` } : {}),
-        })
-
+      const scheduleReconnect = () => {
         if (!reconnectTimeoutRef.current) {
           reconnectTimeoutRef.current = setTimeout(() => {
             reconnectTimeoutRef.current = null
             connect()
           }, RECONNECT_DELAY_MS)
         }
+      }
+
+      // An "auth-coded" WS close (4401 from the broker, or a 1008 injected by a
+      // proxy / idle-timeout) is NOT trustworthy proof the session is dead. The
+      // broker bounces sockets on transient conditions too, and the user's own
+      // manual refresh almost always recovers -- which means the cookie is still
+      // valid. So before locking the user out behind the SESSION EXPIRED modal,
+      // prove auth state with a real authed request, exactly what a refresh does.
+      // /auth/status is public (never 401s), reports { authenticated }, AND
+      // silently renews the cookie, so a healthy session self-heals instead of
+      // dead-ending. One retry covers a brief revoke/reload race on the broker.
+      const verifyAuthThenReconnect = async (code: number, reason: string) => {
+        // Share-link guests authenticate with the share token, not a cookie, so
+        // /auth/status would falsely report unauthenticated. Just reconnect.
+        if (isShareView()) {
+          scheduleReconnect()
+          return
+        }
+        for (let attempt = 0; attempt < 2; attempt++) {
+          if (attempt > 0) await new Promise(r => setTimeout(r, 1500))
+          try {
+            const res = await fetch('/auth/status', { credentials: 'include', cache: 'no-store' })
+            const data = (await res.json()) as { authenticated?: boolean }
+            if (data?.authenticated) {
+              console.warn(
+                `[ws] close code=${code}${reason ? ` reason=${reason}` : ''} looked auth-fatal but /auth/status=authenticated -> transient, reconnecting`,
+              )
+              scheduleReconnect()
+              return
+            }
+          } catch (err) {
+            // Probe itself failed (network down) -> not proof of expiry. Reconnect.
+            console.warn(
+              `[ws] auth probe failed (${String(err)}) -> treating close code=${code} as transient, reconnecting`,
+            )
+            scheduleReconnect()
+            return
+          }
+        }
+        // Probe consistently says unauthenticated -> genuine expiry/revoke. Lock down.
+        console.warn(`[ws] close code=${code} confirmed unauthenticated by /auth/status -> session expired`)
+        useConversationsStore.setState({ authExpired: true, error: 'Session expired' })
+      }
+
+      ws.onclose = e => {
+        wsRef.current = null
+
+        // Single setState for disconnect state (regardless of why we closed)
+        useConversationsStore.setState({
+          isConnected: false,
+          ws: null,
+          ...(e.code !== 1000 ? { error: `WebSocket closed (${e.code}${e.reason ? `: ${e.reason}` : ''})` } : {}),
+        })
+
+        if (e.code === 1008 || e.code === 4401) {
+          // Looks like auth death -- but verify before showing the modal. Never
+          // trust the close code alone (backpressure now uses 4290, but proxies
+          // still inject 1008, and a 4401 can fire on a transient broker race).
+          void verifyAuthThenReconnect(e.code, e.reason)
+          return
+        }
+
+        scheduleReconnect()
       }
 
       ws.onerror = () => {
@@ -439,10 +483,7 @@ export function useWebSocket() {
           }
 
           // Nightshift result + live event broadcast -> nightshift handler.
-          if (
-            typeof msg.type === 'string' &&
-            (msg.type === 'nightshift_result' || msg.type === 'nightshift_event')
-          ) {
+          if (typeof msg.type === 'string' && (msg.type === 'nightshift_result' || msg.type === 'nightshift_event')) {
             const handler = useConversationsStore.getState().nightshiftHandler
             handler?.(msg as unknown as Record<string, unknown>)
             return
