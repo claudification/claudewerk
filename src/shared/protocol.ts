@@ -1380,6 +1380,38 @@ export interface DispatchCandidate {
   score?: number
 }
 
+/** A conversation a thread has used, with when it was last used. */
+export interface DispatchThreadConversation {
+  conversationId: string
+  /** Display label cached at usage time (the conv may rename/end later). */
+  label?: string
+  lastUsedAt: number
+}
+
+/**
+ * A dispatcher "thread" -- its near-memory (plan-dispatcher-build.md §9.3).
+ *
+ * A thread is a VIEW of context: a super-local, tiny State-of-the-Union board
+ * for one topic the dispatcher is managing right now. It is the dispatcher's
+ * near memory, kept deliberately small (the dispatcher itself holds almost no
+ * context). Each thread carries free TEXT (title + summary) + JSON metadata,
+ * and the conversations it has used WITH the last-used timestamp per
+ * conversation. Viewable so the user can see what the dispatcher remembers.
+ */
+export interface DispatchThread {
+  id: string
+  /** Short human label for the thread. */
+  title: string
+  /** Free-text near-memory: what this thread is about, current state. */
+  summary: string
+  /** Arbitrary structured metadata (entities, tags, status, ...). */
+  metadata?: Record<string, unknown>
+  /** Conversations this thread has used, most-recently-used first. */
+  conversations: DispatchThreadConversation[]
+  createdAt: number
+  updatedAt: number
+}
+
 /** web/MCP -> broker: ask the dispatcher to route an intent. */
 export interface DispatchRequest {
   type: 'dispatch_request'
