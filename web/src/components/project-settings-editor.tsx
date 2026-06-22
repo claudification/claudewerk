@@ -60,6 +60,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
   const [openCodeToolPermission, setOpenCodeToolPermission] = useState<OpenCodeToolPermission>(
     (current.defaultOpenCodeToolPermission ?? 'safe') as OpenCodeToolPermission,
   )
+  const [lessonsEnabled, setLessonsEnabled] = useState(current.lessonsEnabled ?? false)
   const [keytermInput, setKeytermInput] = useState('')
   const [iconSearch, setIconSearch] = useState('')
   const [saving, setSaving] = useState(false)
@@ -79,6 +80,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
     setModel(c.defaultModel || '')
     setOpenCodeModel(c.defaultOpenCodeModel || '')
     setOpenCodeToolPermission((c.defaultOpenCodeToolPermission ?? 'safe') as OpenCodeToolPermission)
+    setLessonsEnabled(c.lessonsEnabled ?? false)
   }, [projectSettings, project])
 
   const filteredIcons = useMemo(() => {
@@ -101,6 +103,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
       defaultModel: model.trim() || undefined,
       defaultOpenCodeModel: openCodeModel.trim() || undefined,
       defaultOpenCodeToolPermission: openCodeToolPermission === 'safe' ? undefined : openCodeToolPermission,
+      lessonsEnabled: lessonsEnabled || undefined,
     }
     updateProjectSettings(project, settings)
     setSaving(false)
@@ -152,7 +155,8 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
     effort !== (current.defaultEffort || 'default') ||
     model.trim() !== (current.defaultModel || '') ||
     openCodeModel.trim() !== (current.defaultOpenCodeModel || '') ||
-    openCodeToolPermission !== ((current.defaultOpenCodeToolPermission ?? 'safe') as OpenCodeToolPermission)
+    openCodeToolPermission !== ((current.defaultOpenCodeToolPermission ?? 'safe') as OpenCodeToolPermission) ||
+    lessonsEnabled !== (current.lessonsEnabled ?? false)
 
   const hasAnySettings =
     current.label ||
@@ -383,6 +387,35 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
                 </button>
               </div>
             </div>
+
+            <GroupHeader label="Lessons" />
+            <SettingRow
+              label="Lessons scavenger"
+              description="Nightly distill this project's conversations into a searchable lessons-learned recap (tech discovered, decisions, dead ends, gotchas). Off by default."
+            >
+              <div className="flex gap-1">
+                {[
+                  { value: false, label: 'Off' },
+                  { value: true, label: 'On' },
+                ].map(opt => (
+                  <button
+                    key={String(opt.value)}
+                    type="button"
+                    onClick={() => setLessonsEnabled(opt.value)}
+                    className={cn(
+                      'px-2 py-1 text-[10px] font-mono border rounded transition-colors',
+                      lessonsEnabled === opt.value
+                        ? opt.value
+                          ? 'border-green-500 bg-green-500/20 text-green-400'
+                          : 'border-border bg-muted text-foreground'
+                        : 'border-border/50 text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </SettingRow>
           </>
         )}
 
