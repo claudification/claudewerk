@@ -24,7 +24,7 @@ export function MermaidLightbox() {
   const { open, svg, close } = useMermaidLightbox()
   const containerRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
-  const { scale, transform, fit, reset, zoomBy, handlers } = usePanZoom(containerRef, contentRef)
+  const { scale, fit, reset, zoomBy, handlers } = usePanZoom(containerRef, contentRef)
 
   // Fit the diagram to the viewport once it (and the portal) are painted.
   useEffect(() => {
@@ -103,10 +103,11 @@ export function MermaidLightbox() {
                 if (e.target === e.currentTarget) close()
               }}
             >
+              {/* transform is written imperatively by usePanZoom (see its header) --
+                  NOT bound here, so a per-event re-render never reaches this div. */}
               <div
                 ref={contentRef}
                 className="absolute left-0 top-0 origin-top-left will-change-transform [&_svg]:block [&_svg]:max-w-none"
-                style={{ transform }}
                 // biome-ignore lint/security/noDangerouslySetInnerHtml: SVG rendered by beautiful-mermaid from trusted CC transcript
                 // react-doctor-disable-next-line react-doctor/no-danger
                 dangerouslySetInnerHTML={{ __html: svg }}
