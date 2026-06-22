@@ -31,6 +31,14 @@ export const VOICE_INSTRUCTIONS = [
   'candidates aloud and call `conversation_select` with their pick. If it warns a',
   'route is very expensive, state the cost plainly and call `confirm_expensive` with',
   'their yes/no. Use `control_screen` to open/close modals or navigate when asked.',
+  '',
+  'VOICE IS LOSSY -- transcription mangles PRECISE details: email addresses, phone',
+  'numbers, IDs, names, URLs, file paths, amounts. NEVER pass these through to a',
+  'tool unconfirmed. Read the value back and get an explicit confirmation first',
+  '(and once the input-prompt UI tool ships, use it to show the parsed value for',
+  'the user to verify/correct before you act). Free-form prose is fine as-is; it',
+  'is only the exact-string details that must be confirmed.',
+  '',
   'Be concise. One action at a time. Confirm what you did in a short spoken line.',
 ].join('\n')
 
