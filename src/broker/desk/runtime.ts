@@ -158,6 +158,8 @@ export function runDispatch(cmd: DispatchCommand, rt: DispatchRuntime): Promise<
     executor: buildExecutor(rt),
     // Converse: brief the user over the live roster + near-memory threads.
     brief: ({ intent, roster }) => generateBriefing({ intent, roster, threads: listThreads() }, req => chat(req)),
+    // Global-desk spawn with no project picked -> the host's default spawn root.
+    defaultSpawnRoot: () => rt.store.getDefaultSentinelConnection()?.spawnRoot,
     emit: d => broadcastToSubscribers(rt.store, d as unknown as Record<string, unknown>),
     audit: d => recordDecision(d),
     now: () => Date.now(),

@@ -85,6 +85,9 @@ export interface OrchestrateDeps {
   /** Generate the concierge's reply for a `converse` decision (briefing over the
    *  roster + near-memory threads). Optional: absent -> a deterministic fallback. */
   brief?: (input: { intent: string; roster: DispatchRosterEntry[] }) => Promise<string>
+  /** The host's default spawn directory (sentinel spawnRoot), used when a `new`
+   *  decision carries no project/cwd -- the global-desk "no project picked" case. */
+  defaultSpawnRoot?: () => string | undefined
 }
 
 export async function orchestrateDispatch(cmd: DispatchCommand, deps: OrchestrateDeps): Promise<DispatchDecision> {
@@ -152,7 +155,9 @@ async function execute(
   deps: OrchestrateDeps,
 ): Promise<{ conversationId: string }> {
   if (disposition === 'new') {
-    const spawn = buildSpawnExec(cmd)
+    // The global front desk usually carries no project context, so fall back to
+    // the host's default spawn root when the command names neither cwd nor root.
+    const spawn = buildSpawnExec(cmd, deps.defaultSpawnRoot?.())
     // HOT PATH: refuse a worktree spawn whose cwd would land in MAIN.
     assertWorktreeCorrectSpawn({ cwd: spawn.cwd, worktreeName: spawn.worktreeName })
     return deps.executor.spawn(spawn)
@@ -170,8 +175,12 @@ async function execute(
  * incident shape, which the hot-path guard in execute() then REFUSES. We fail
  * loud, not silently auto-fix. When no cwd is given but a worktree is named, the
  * worktree-correct cwd is COMPUTED from projectRoot.
+ *
+ * `fallbackRoot` (the host's default spawn root) is used ONLY for a plain spawn
+ * with no cwd/projectRoot/worktree -- the global-desk "start something new with
+ * no project picked" case. It never participates in worktree derivation.
  */
-export function buildSpawnExec(cmd: DispatchCommand): SpawnExec {
+export function buildSpawnExec(cmd: DispatchCommand, fallbackRoot?: string): SpawnExec {
   const worktreeName = cmd.worktreeName?.trim() || null
   let cwd: string
   if (cmd.cwd) {
@@ -182,8 +191,12 @@ export function buildSpawnExec(cmd: DispatchCommand): SpawnExec {
     }
     cwd = computeWorktreeCwd(cmd.projectRoot, worktreeName)
   } else {
-    if (!cmd.projectRoot) throw new Error('spawn requires a cwd or projectRoot')
-    cwd = cmd.projectRoot
+    // Global desk: no project context -> the host's default spawn root.
+    const root = cmd.projectRoot ?? fallbackRoot
+    if (!root) {
+      throw new Error('no project or default spawn root to start new work in -- open a project first')
+    }
+    cwd = root
   }
   const spawn: SpawnExec = { intent: cmd.intent, cwd, worktreeName }
   if (cmd.project !== undefined) spawn.project = cmd.project

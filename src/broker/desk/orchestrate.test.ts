@@ -136,6 +136,18 @@ describe('orchestrateDispatch', () => {
     expect(spy.audited).toHaveLength(1)
   })
 
+  it('new with no project context -> spawns into the host default spawn root', async () => {
+    const { deps, spy } = makeDeps({
+      roster: rosterOf([]),
+      chat: chatReturning({ disposition: 'new', target: null, confidence: 0.9, reasoning: 'fresh' }),
+    })
+    deps.defaultSpawnRoot = () => '/Users/me/projects'
+    const d = await orchestrateDispatch({ intent: 'build me a quick script' }, deps)
+    expect(d.disposition).toBe('new')
+    expect(d.executed).toBe(true)
+    expect((spy.spawned[0] as { cwd: string }).cwd).toBe('/Users/me/projects')
+  })
+
   it('converse -> deterministic fallback reply when no brief fn is wired', async () => {
     const { deps } = makeDeps({
       roster: rosterOf([]),
@@ -199,5 +211,20 @@ describe('buildSpawnExec', () => {
     const s = buildSpawnExec({ intent: 'x', cwd: '/repo' })
     expect(s.cwd).toBe('/repo')
     expect(s.worktreeName).toBeNull()
+  })
+
+  it('global desk (no cwd/projectRoot) -> falls back to the host spawn root', () => {
+    const s = buildSpawnExec({ intent: 'start a scratch tool' }, '/Users/me/projects')
+    expect(s.cwd).toBe('/Users/me/projects')
+    expect(s.worktreeName).toBeNull()
+  })
+
+  it('projectRoot still wins over the fallback root', () => {
+    const s = buildSpawnExec({ intent: 'x', projectRoot: '/repo' }, '/Users/me/projects')
+    expect(s.cwd).toBe('/repo')
+  })
+
+  it('no cwd, no projectRoot, no fallback -> a friendly refusal (not the old cryptic throw)', () => {
+    expect(() => buildSpawnExec({ intent: 'x' })).toThrow(/open a project first/)
   })
 })
