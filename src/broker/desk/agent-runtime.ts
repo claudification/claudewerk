@@ -80,8 +80,8 @@ function threadTools(): Toolset {
   }
 }
 
-function buildAgentToolset(rt: DispatchRuntime): Toolset {
-  return { ...buildDispatchToolset(rt), ...threadTools(), ...buildWorkspaceToolset() }
+function buildAgentToolset(rt: DispatchRuntime, confirmedExpensive: boolean): Toolset {
+  return { ...buildDispatchToolset(rt, confirmedExpensive), ...threadTools(), ...buildWorkspaceToolset() }
 }
 
 export interface RunDispatchAgentOpts {
@@ -91,6 +91,9 @@ export interface RunDispatchAgentOpts {
   traceId?: string
   signal?: AbortSignal
   userId?: string | null
+  /** The user explicitly authorized expensive actions this turn (cost gate, B5).
+   *  When false a very-expensive wake is surfaced for confirmation, not executed. */
+  confirmedExpensive?: boolean
   onToolCall?: (e: AgentToolCallEvent) => void
   onToolResult?: (e: AgentToolResultEvent) => void
 }
@@ -121,7 +124,7 @@ export async function runDispatchAgent(
       system: DISPATCHER_SYSTEM,
       seedMessages: toMessages(history),
       model,
-      toolset: buildAgentToolset(rt),
+      toolset: buildAgentToolset(rt, opts.confirmedExpensive ?? false),
       signal: opts.signal,
       identity: { userId: opts.userId ?? undefined },
       onToolCall: opts.onToolCall,

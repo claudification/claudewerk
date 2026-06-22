@@ -16,6 +16,7 @@ import type { Conversation, DispatchDecision } from '../../shared/protocol'
 import { buildControlDeps } from './control-deps'
 import { buildControlToolset } from './control-tools'
 import { condenseProjectNow } from './desk-memory-service'
+import { lookupTools } from './lookup-tools'
 import type { DispatchCommand } from './orchestrate'
 import { composeProjectsOverview, type OverviewConv, type ProjectOverviewRow } from './overview'
 import { getBrief, recallBriefs } from './project-memory'
@@ -53,7 +54,7 @@ export function projectOverviewRows(rt: DispatchRuntime): ProjectOverviewRow[] {
 }
 
 /** The project-anchored tools -- the dispatcher's primary surface. */
-function projectTools(rt: DispatchRuntime): Toolset {
+function projectTools(rt: DispatchRuntime, confirmedExpensive: boolean): Toolset {
   return {
     projects_overview: defineTool({
       description:
@@ -146,7 +147,7 @@ function projectTools(rt: DispatchRuntime): Toolset {
           disposition: 'new',
           cwd: dp.cwd,
           project: dp.projectUri,
-          confirmedExpensive: true,
+          confirmedExpensive,
         }
         if (profile) cmd.profile = profile
         const d = await runDispatch(cmd, rt)
@@ -162,7 +163,7 @@ function projectTools(rt: DispatchRuntime): Toolset {
  * verbs (actions). The generic `spawn` is dropped -- `spawn_into_project`
  * supersedes it with named-project resolution.
  */
-export function buildDispatchToolset(rt: DispatchRuntime): Toolset {
-  const { spawn: _omitGenericSpawn, ...control } = buildControlToolset(buildControlDeps(rt))
-  return { ...projectTools(rt), ...questTools(rt), ...control }
+export function buildDispatchToolset(rt: DispatchRuntime, confirmedExpensive = false): Toolset {
+  const { spawn: _omitGenericSpawn, ...control } = buildControlToolset(buildControlDeps(rt, confirmedExpensive))
+  return { ...projectTools(rt, confirmedExpensive), ...questTools(rt), ...lookupTools(rt), ...control }
 }

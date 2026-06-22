@@ -12,7 +12,7 @@
  */
 
 import type { Conversation } from '../../shared/protocol'
-import type { ControlConversationRow, ControlToolDeps } from './control-tools'
+import type { ControlConversationRow, ControlToolDeps, GateHold } from './control-tools'
 import type { DispatchCommand } from './orchestrate'
 import { type DispatchRuntime, runDispatch } from './runtime'
 
@@ -56,34 +56,52 @@ function sendControl(rt: DispatchRuntime, conversationId: string, payload: Recor
   ws.send(JSON.stringify({ type: 'control', ...payload }))
 }
 
-export function buildControlDeps(rt: DispatchRuntime): ControlToolDeps {
+/** Surface a gated decision back to the agent so it can ASK the user instead of
+ *  silently no-op'ing. `requiresConfirmation` fires on a very-expensive wake
+ *  (cold-cache 150k+ context). The agent relays the cost; the user confirms by
+ *  re-issuing the request with confirmedExpensive set (which flows in here). */
+function gatedResult(conversationId: string, d: { awaitingConfirmation?: boolean; cost?: unknown }): GateHold | null {
+  if (d.awaitingConfirmation) {
+    return {
+      conversationId,
+      awaitingConfirmation: true,
+      cost: d.cost,
+      note: 'EXPENSIVE wake -- confirm the cost with the user before proceeding; do not assume it is done',
+    }
+  }
+  return null
+}
+
+/** @param confirmedExpensive the user explicitly authorized expensive actions this
+ *  turn (un-bypassed cost gate, B5). Defaults false: a very-expensive wake is held. */
+export function buildControlDeps(rt: DispatchRuntime, confirmedExpensive = false): ControlToolDeps {
   return {
     listConversations: opts => listRows(rt, opts.status, opts.filter),
 
-    // route/spawn/revive reuse runDispatch's deterministic override path
-    // (confirmedExpensive bypasses the cost gate -- the agent acts on the user's behalf).
+    // route/spawn/revive reuse runDispatch's deterministic override path. The cost
+    // gate is HONORED (B5): a very-expensive wake without confirmation surfaces
+    // awaitingConfirmation to the agent rather than executing.
     inject: async (conversationId, message) => {
       const d = await runDispatch(
-        { intent: message, target: conversationId, disposition: 'route', confirmedExpensive: true },
+        { intent: message, target: conversationId, disposition: 'route', confirmedExpensive },
         rt,
       )
-      return { conversationId, delivered: d.executed }
+      return gatedResult(conversationId, d) ?? { conversationId, delivered: d.executed }
     },
     spawn: async ({ intent, project, profile, worktree }) => {
-      const cmd: DispatchCommand = { intent, disposition: 'new', confirmedExpensive: true }
+      const cmd: DispatchCommand = { intent, disposition: 'new', confirmedExpensive }
       if (project) cmd.project = project
       if (profile) cmd.profile = profile
       if (worktree) cmd.worktreeName = worktree
       const d = await runDispatch(cmd, rt)
+      const gated = gatedResult('', d)
+      if (gated) return gated
       if (!d.resultConversationId) throw new Error(d.reasoning || 'spawn produced no conversation')
       return { conversationId: d.resultConversationId }
     },
     revive: async conversationId => {
-      const d = await runDispatch(
-        { intent: '', target: conversationId, disposition: 'revive', confirmedExpensive: true },
-        rt,
-      )
-      return { conversationId: d.resultConversationId ?? conversationId }
+      const d = await runDispatch({ intent: '', target: conversationId, disposition: 'revive', confirmedExpensive }, rt)
+      return gatedResult(conversationId, d) ?? { conversationId: d.resultConversationId ?? conversationId }
     },
 
     interrupt: async conversationId => {

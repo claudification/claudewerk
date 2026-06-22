@@ -22,9 +22,20 @@ export interface ControlConversationRow {
   ctxK?: number
 }
 
+/** A gated outcome surfaced to the agent when a very-expensive wake needs the
+ *  user's confirmation (B5): the action did NOT run; the agent must ask. */
+export interface GateHold {
+  conversationId: string
+  awaitingConfirmation: true
+  cost?: unknown
+  note: string
+}
+/** Either the action's result, or a cost-gate hold the agent must relay. */
+type GatedOr<T> = T | GateHold
+
 export interface ControlToolDeps {
   listConversations(opts: { status?: 'live' | 'ended' | 'all'; filter?: string }): ControlConversationRow[]
-  inject(conversationId: string, message: string): Promise<{ conversationId: string; delivered: boolean }>
+  inject(conversationId: string, message: string): Promise<GatedOr<{ conversationId: string; delivered: boolean }>>
   interrupt(conversationId: string): Promise<{ conversationId: string }>
   terminate(conversationId: string, reason?: string): Promise<{ conversationId: string }>
   spawn(opts: {
@@ -32,8 +43,8 @@ export interface ControlToolDeps {
     project?: string
     profile?: string
     worktree?: string
-  }): Promise<{ conversationId: string }>
-  revive(conversationId: string): Promise<{ conversationId: string }>
+  }): Promise<GatedOr<{ conversationId: string }>>
+  revive(conversationId: string): Promise<GatedOr<{ conversationId: string }>>
   configure(opts: {
     conversationId: string
     model?: string

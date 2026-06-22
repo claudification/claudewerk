@@ -31,6 +31,17 @@ export interface DispatchRuntime {
   store: ConversationStore
   /** The MCP caller's conversation id, if any (for spawn rendezvous linkage). */
   callerConversationId?: string | null
+  /** Optional transcript FTS search (B5): the dispatcher searches transcripts
+   *  ITSELF -- the cheap "ask an expert" path -- instead of waking a conversation
+   *  behind the cost gate. Bound where the StoreDriver is available. */
+  searchTranscripts?: (query: string, limit: number) => TranscriptHit[]
+}
+
+export interface TranscriptHit {
+  conversationId: string
+  seq: number
+  type?: string
+  snippet: string
 }
 
 // ─── Roster (per-project opt-in gated) ──────────────────────────────

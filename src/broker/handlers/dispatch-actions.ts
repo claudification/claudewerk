@@ -59,7 +59,7 @@ function runAgentTurn(
   ctx: HandlerContext,
   intent: string,
   rt: DispatchRuntime,
-  opts: { model?: string; userId: string | null; requestId?: string },
+  opts: { model?: string; userId: string | null; requestId?: string; confirmedExpensive?: boolean },
 ) {
   const { userId, requestId } = opts
   const traceId = `trc_${crypto.randomUUID()}`
@@ -67,6 +67,7 @@ function runAgentTurn(
     model: opts.model,
     traceId,
     userId,
+    confirmedExpensive: opts.confirmedExpensive ?? false,
     onToolCall: e =>
       ctx.reply({
         type: 'dispatch_tool_call',
@@ -108,7 +109,9 @@ function resolveDecision(
 ) {
   if (cmd.disposition || cmd.target) return runDispatch(cmd, rt)
   const model = typeof data.model === 'string' && data.model ? data.model : undefined
-  return runAgentTurn(ctx, cmd.intent, rt, { model, userId, requestId })
+  // The user confirming an expensive action re-issues the intent with this flag;
+  // it un-bypasses the cost gate for the whole impulse (B5).
+  return runAgentTurn(ctx, cmd.intent, rt, { model, userId, requestId, confirmedExpensive: cmd.confirmedExpensive })
 }
 
 const dispatchRequest: MessageHandler = async (ctx: HandlerContext, data: MessageData) => {
@@ -125,7 +128,18 @@ const dispatchRequest: MessageHandler = async (ctx: HandlerContext, data: Messag
     return
   }
 
-  const rt: DispatchRuntime = { store: ctx.conversations, callerConversationId: null }
+  const rt: DispatchRuntime = {
+    store: ctx.conversations,
+    callerConversationId: null,
+    // B5: let the dispatcher search transcripts itself (the cheap expert path).
+    searchTranscripts: (query, limit) =>
+      ctx.store.transcripts.search(query, { limit }).map(h => ({
+        conversationId: h.conversationId,
+        seq: h.seq,
+        type: h.type,
+        snippet: h.snippet,
+      })),
+  }
   try {
     const decision = await resolveDecision(ctx, data, cmd, rt, userId, requestId)
     // Stamp the per-user owner on the correlated reply (read-layer scoping).
