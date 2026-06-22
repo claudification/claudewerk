@@ -417,8 +417,6 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
       : action.requiresInput === 'reassign'
         ? Boolean(reassignProject || reassignSentinel || reassignProfile)
         : true
-  const confirmRequired = action.needsConfirm && selectedIds.length > 5
-  const confirmOk = !confirmRequired || confirmText.trim() === `confirm ${selectedIds.length}`
 
   return (
     <Dialog open={open} onOpenChange={open => !open && handleClose()}>
@@ -641,16 +639,6 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
                 />
               )}
 
-              {confirmRequired && (
-                <input
-                  aria-label="Type confirmation phrase to enable Run button"
-                  placeholder={`type "confirm ${selectedIds.length}" to enable Run`}
-                  value={confirmText}
-                  onChange={e => setConfirmText(e.target.value)}
-                  className="w-full bg-amber-500/10 px-2 py-1 border border-amber-500/40 outline-none text-xs font-mono"
-                />
-              )}
-
               <div className="flex items-center justify-end gap-2">
                 <span className="text-[10px] text-muted-foreground mr-auto">
                   {visibleSelected.length} of {convRows.length} visible selected
@@ -660,9 +648,16 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
                 </button>
                 <button
                   type="button"
-                  disabled={!canRun || !inputValid || !confirmOk}
+                  disabled={!canRun || !inputValid}
                   onClick={handleRun}
-                  className="px-3 py-1 text-xs font-bold bg-accent/20 text-accent hover:bg-accent/30 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className={cn(
+                    'px-3 py-1 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed',
+                    // Red only for genuinely irreversible actions; terminate/reassign
+                    // are reversible so they keep the neutral accent treatment.
+                    action.destructive
+                      ? 'bg-destructive/20 text-destructive hover:bg-destructive/30'
+                      : 'bg-accent/20 text-accent hover:bg-accent/30',
+                  )}
                 >
                   Run on {selectedIds.length} selected
                 </button>

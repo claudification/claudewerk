@@ -19,6 +19,7 @@ import { createChatApiRouter } from './routes/chat-api'
 import { createConversationsRouter } from './routes/conversations'
 import { createGatewayRouter } from './routes/gateways'
 import { createMcpRouter } from './routes/mcp-server'
+import { createNightshiftRouter } from './routes/nightshift'
 import { createRecapsRouter } from './routes/recaps'
 import { createSentinelRouter } from './routes/sentinels'
 import { createRouteHelpers } from './routes/shared'
@@ -248,6 +249,7 @@ export function createRouter(options: RouteOptions): Hono {
   // ─── Sub-routers ────────────────────────────────────────────────────
   app.route('/', createConversationsRouter(conversationStore, helpers, terminationLog))
   app.route('/', createRecapsRouter(conversationStore, helpers))
+  app.route('/', createNightshiftRouter(conversationStore, helpers))
   app.route('/', createSpawnRouter(conversationStore, helpers))
   app.route('/', createChatApiRouter(conversationStore, store.kv, helpers))
   app.route('/', createMcpRouter(conversationStore, store, rclaudeSecret))

@@ -198,6 +198,13 @@ export function formatPermissionMode(
         color: 'text-emerald-400',
         bgColor: 'bg-emerald-500/10',
       }
+    case 'dontAsk':
+      return {
+        label: 'D',
+        title: "Don't ask -- allow-list + read-only bash; everything else denied",
+        color: 'text-amber-400',
+        bgColor: 'bg-amber-500/10',
+      }
     case 'bypassPermissions':
       return {
         label: 'B',

@@ -31,6 +31,7 @@ function patchSummary(dialogId: string, snapshot: DialogSnapshot, conflicts: OpC
   const lines = [
     `Dialog ${dialogId} patched. New seq=${snapshot.seq}.`,
     `Current state: ${JSON.stringify(snapshot.state)}`,
+    `Reminder: once the work this dialog covers is complete, close it with close_dialog("${dialogId}") -- do not leave a live dialog open at the end of the task.`,
   ]
   if (conflicts.length > 0) {
     lines.push('Conflicts (NOT applied):')

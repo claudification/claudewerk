@@ -14,6 +14,7 @@ backups/
 src/shared/version.ts
 NOTES.md
 .rclaude/
+.nightshift/
 /store.db
 /store.db-shm
 /store.db-wal

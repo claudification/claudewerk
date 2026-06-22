@@ -4,8 +4,10 @@
  */
 
 import type {
+  AuthTroubleReason,
   CcMinVersionUnmet,
   CcVersionChanged,
+  ProfileAuthTrouble,
   ProfileUsageSnapshot,
   SelectionMode,
   SentinelFeatures,
@@ -13,9 +15,80 @@ import type {
   SentinelProfileInfo,
   UsageUpdate,
 } from '../../shared/protocol'
-import type { MessageHandler } from '../handler-context'
+import type { HandlerContext, MessageHandler } from '../handler-context'
 import { ANY_ROLE, registerHandlers, SENTINEL_ONLY } from '../message-router'
+import { DEFAULT_NOTIFY_WINDOW_MS, NotificationDebouncer } from '../notification-debounce'
 import { rearmProjectWatches } from '../project-watch-registry'
+
+/**
+ * Auth-trouble notifications: one push per `${sentinelId}:${profile}` per window
+ * (default 10 min -- "the user cannot be overly disturbed"). Module-level state
+ * mirrors attention-notify; exported only so handler tests can reset it.
+ */
+export const AUTH_TROUBLE_NOTIFY_WINDOW_MS = DEFAULT_NOTIFY_WINDOW_MS
+export const authTroubleDebouncer = new NotificationDebouncer({ windowMs: AUTH_TROUBLE_NOTIFY_WINDOW_MS })
+
+/** Map a per-profile usage error to an auth-trouble reason, or null when it is
+ *  not an auth problem (429 rate-limit, parse/network blips are excluded). */
+export function classifyAuthTrouble(snap: ProfileUsageSnapshot): AuthTroubleReason | null {
+  const e = snap.error
+  if (!e) return null
+  if (e.kind === 'no_token') return 'no_token'
+  if (e.kind === 'http' && e.status === 401) return 'http_401'
+  if (e.kind === 'http' && e.status === 403) return 'http_403'
+  if (typeof e.detail === 'string' && e.detail.includes('invalid_grant')) return 'invalid_grant'
+  return null
+}
+
+const REASON_BLURB: Record<AuthTroubleReason, string> = {
+  http_401: 'auth rejected (401)',
+  http_403: 'auth scope failure (403)',
+  no_token: 'no credentials found',
+  invalid_grant: 'refresh token rejected (invalid_grant)',
+}
+
+/**
+ * Detect + notify per-profile auth death from the usage report the broker
+ * already receives every cycle. Debounced per profile; re-armed the moment a
+ * profile reports healthy again so the next real failure notifies immediately.
+ * Uses the report's `polledAt` as the debounce clock (deterministic + matches
+ * the cycle the failure was observed in). PROFILE-ENV BOUNDARY: no configDir
+ * is available broker-side, so the message/push name the profile only.
+ */
+export function notifyAuthTrouble(ctx: HandlerContext, profiles: ProfileUsageSnapshot[], polledAt: number): void {
+  const sentinelId = ctx.ws.data.sentinelId
+  if (!sentinelId) return
+  for (const snap of profiles) {
+    const key = `${sentinelId}:${snap.profile}`
+    const reason = classifyAuthTrouble(snap)
+    if (!reason) {
+      // Healthy poll -> re-arm. A non-auth error (e.g. 429) leaves the key as-is.
+      if (snap.authed && !snap.error) authTroubleDebouncer.reset(key)
+      continue
+    }
+    if (!authTroubleDebouncer.shouldNotify(key, polledAt)) continue
+
+    ctx.broadcast({
+      type: 'profile_auth_trouble',
+      sentinelId,
+      profile: snap.profile,
+      reason,
+      status: snap.error?.status,
+      detail: snap.error?.detail?.slice(0, 200),
+      polledAt,
+      recoveryHint: `Run: CLAUDE_CONFIG_DIR=<your ${snap.profile} profile dir> claude auth login`,
+    } satisfies ProfileAuthTrouble)
+    ctx.log.info(`[auth-trouble] sentinel=${sentinelId} profile=${snap.profile} reason=${reason} -> notified`)
+
+    if (ctx.push.configured) {
+      ctx.push.sendToAll({
+        title: 'Auth needs attention',
+        body: `Profile \`${snap.profile}\` ${REASON_BLURB[reason]} -- run claude auth login`,
+        tag: `auth-trouble-${key}`,
+      })
+    }
+  }
+}
 
 /** Validate the sentinel-reported profiles slice. PROFILE-ENV BOUNDARY: any
  *  field other than NAME + display metadata + flags is dropped here. If a
@@ -124,7 +197,7 @@ const sentinelIdentify: MessageHandler = (ctx, data) => {
   }
 }
 
-const reviveResult: MessageHandler = (ctx, data) => {
+export const reviveResult: MessageHandler = (ctx, data) => {
   const ok = data.success ? 'OK' : 'FAIL'
   const ccSessionId = data.ccSessionId as string
   const conversationId = data.conversationId as string | undefined
@@ -135,6 +208,28 @@ const reviveResult: MessageHandler = (ctx, data) => {
 
   // Look up by conversationId (stable key), not ccSessionId
   const conversation = conversationId ? ctx.conversations.getConversation(conversationId) : null
+
+  // Persist the profile the sentinel ACTUALLY resolved on revive. Revive can
+  // re-target a different profile than the one the conversation last ran under
+  // (terminate on A, revive on B): it runs on B but, without this, the UI +
+  // list_conversations keep reporting the stale A. The spawn path captures
+  // spawn_result.resolvedProfile via setPendingResolvedProfile -> boot; revive
+  // had no equivalent and silently dropped the echoed name. We OVERWRITE here
+  // (not fill-if-empty) because the conversation already holds the old name.
+  // PROFILE-ENV BOUNDARY: store the resolved NAME only, never configDir / env.
+  // A rebuilt sentinel always echoes a string on success (including the literal
+  // 'default'); an absent field means an un-rebuilt sentinel -> leave unchanged.
+  if (data.success && conversation && typeof data.resolvedProfile === 'string') {
+    const resolved = data.resolvedProfile === 'default' ? undefined : data.resolvedProfile
+    if (conversation.resolvedProfile !== resolved) {
+      ctx.log.info(
+        `[revive-profile] conv=${conversation.id.slice(0, 8)} resolvedProfile ${conversation.resolvedProfile ?? 'default'} -> ${resolved ?? 'default'}`,
+      )
+      conversation.resolvedProfile = resolved
+      ctx.conversations.broadcastConversationUpdate(conversation.id)
+    }
+  }
+
   const project = conversation?.project || (data.project as string)
   if (project) {
     ctx.broadcastScoped(
@@ -444,6 +539,7 @@ const sentinelUsageReport: MessageHandler = (ctx, data) => {
     `sentinel_usage_report: ${profiles.length} profile(s) ` +
       profiles.map(p => `${p.profile}=${p.error ? `err:${p.error.kind}` : `${p.sevenDay?.usedPercent}%`}`).join(' '),
   )
+  notifyAuthTrouble(ctx, profiles, polledAt)
 }
 
 /**

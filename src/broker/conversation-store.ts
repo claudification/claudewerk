@@ -38,7 +38,7 @@ import { resolveBackend } from './backends'
 import { addEvent as addEventImpl } from './conversation-store/add-event'
 import { addTranscriptEntries as addTranscriptEntriesImpl } from './conversation-store/add-transcript-entries'
 import { createChannelRegistry, type SubscriberEntry } from './conversation-store/channel-registry'
-import { MAX_TRANSCRIPT_ENTRIES } from './conversation-store/constants'
+import { MAX_TRANSCRIPT_ENTRIES, TRANSCRIPT_KICK_DEBOUNCE_MS } from './conversation-store/constants'
 import {
   type AgentLaunchMeta,
   assignTranscriptSeqs,
@@ -84,6 +84,7 @@ import { createTerminalRegistry } from './conversation-store/terminal-registry'
 import { createTrafficTracker } from './conversation-store/traffic'
 import type { ControlPanelMessage } from './conversation-store/types'
 import { createViewerRegistry } from './conversation-store/viewer-registry'
+import { NotificationDebouncer } from './notification-debounce'
 import type { UserGrant } from './permissions'
 import { resolvePermissionFlags, resolvePermissions } from './permissions'
 import { cancelRecap, generateRecapOnEnd, scheduleRecap } from './recap/away-summary'
@@ -584,8 +585,8 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       }
     }
   }
-  // Transcript kick tracking: conversationId -> last kick timestamp (debounce 60s)
-  const lastTranscriptKick = new Map<string, number>()
+  // Transcript kick tracking: one nudge per conversation per debounce window (60s)
+  const transcriptKickDebouncer = new NotificationDebouncer({ windowMs: TRANSCRIPT_KICK_DEBOUNCE_MS })
   /** Hashes of fired mention-notifications (`${conversationId}:${uuid}:${userName}`).
    *  Memory-only: a stale binary or restart re-firing a few notifications is
    *  cheaper than persisting per-entry dedup state to disk. */
@@ -608,7 +609,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     dirtyTranscripts,
     processedClipboardIds,
     pendingAgentLaunches,
-    lastTranscriptKick,
+    transcriptKickDebouncer,
     notifiedMentions,
     store,
     scheduleConversationUpdate,
@@ -1864,7 +1865,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     transcriptSeqCounters.delete(conversationId)
     dirtyTranscripts.delete(conversationId)
     pendingAgentLaunches.delete(conversationId)
-    lastTranscriptKick.delete(conversationId)
+    transcriptKickDebouncer.reset(conversationId)
     clearSubagentCachesForConversation(conversationId)
     if (store) {
       // Cascade-delete child rows BEFORE the parent so an intentional delete

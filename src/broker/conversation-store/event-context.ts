@@ -1,5 +1,6 @@
 import type { ServerWebSocket } from 'bun'
 import type { Conversation, HookEvent, TranscriptEntry } from '../../shared/protocol'
+import type { NotificationDebouncer } from '../notification-debounce'
 import type { StoreDriver } from '../store/types'
 import type { ControlPanelMessage } from './types'
 
@@ -24,7 +25,9 @@ export interface ConversationStoreContext {
    *  and consumed by the matching SubagentStart. The queue (not a single slot)
    *  handles parallel Agent launches whose SubagentStarts interleave. */
   pendingAgentLaunches: Map<string, AgentLaunchMeta[]>
-  lastTranscriptKick: Map<string, number>
+  /** Once-per-window debounce for transcript_kick nudges, keyed by
+   *  conversationId (window = TRANSCRIPT_KICK_DEBOUNCE_MS). */
+  transcriptKickDebouncer: NotificationDebouncer
   /**
    * Hashes of mention-notifications already fired, keyed by
    * `${conversationId}:${entryUuid}:${userName}`. Prevents duplicate pushes

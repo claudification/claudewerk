@@ -264,6 +264,14 @@ export interface DialogLayout {
   timeout?: number // seconds, default 900, min 10, max 3600
   submitLabel?: string // default 'Submit'
   cancelLabel?: string // default 'Cancel'
+  /** Live dialogue ONLY: a HARD-terminal second submit -- "this is my final
+   *  decision, we're done." Renders next to the normal submit. Clicking it
+   *  submits every field value (like submit) but ALSO carries `_final: true` and
+   *  immediately closes the dialog client-side, so it stops the moment the user
+   *  commits. The agent reads `_final` as "approved, do not reopen". Use it for an
+   *  approval gate (e.g. "Approve all -- let's go" on a visual plan). Gated on the
+   *  same required fields as submit. Ignored on one-shot (non-persistent) dialogs. */
+  finalizeLabel?: string
   /** Optional one-click secondary submit. Unlike the footer cancel button
    *  (which dismisses with NO form values), this SUBMITS the dialog -- the
    *  result carries every field value plus `_action: id`. Use it for a real
@@ -592,6 +600,11 @@ export function dialogToolInputSchema(): Record<string, unknown> {
       },
       submitLabel: { type: 'string', description: 'Submit button label (default "Submit")' },
       cancelLabel: { type: 'string', description: 'Cancel button label (default "Cancel")' },
+      finalizeLabel: {
+        type: 'string',
+        description:
+          'Live (persistent) dialog only: label for a HARD-terminal "final decision" submit (e.g. "Approve all -- let\'s go"). Renders beside submit. Submits every field value, marks the result _final:true, and immediately closes the dialog so it stops the moment the user commits. Use for an approval gate; omit if there is no final-approval outcome.',
+      },
       body: {
         type: 'array',
         description:

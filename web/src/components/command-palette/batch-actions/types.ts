@@ -15,8 +15,10 @@ export interface BatchActionDescriptor {
   /** Whether the action surfaces a second-step form before run (e.g. broadcast
    *  needs a textarea; reassign needs target dropdowns). Undefined = no form. */
   requiresInput?: 'broadcast' | 'reassign'
-  /** True if the action requires a confirm modal (type-to-confirm when N is large). */
-  needsConfirm?: boolean
+  /** True if the action is irreversible / destroys data that cannot be brought
+   *  back (NOT terminate -- terminated conversations revive). Styles the Run
+   *  button red as a warning. There is no confirm step; we trust the operator. */
+  destructive?: boolean
 }
 
 export interface BatchActionRunContext {

@@ -20,7 +20,7 @@ export function showPersistentDialog(ctx: McpToolContext, dialogId: string, layo
     content: [
       {
         type: 'text',
-        text: `Live dialog "${layout.title}" shown. It persists across turns -- patch it with update_dialog(dialogId, ops), close it with close_dialog(dialogId), reopen with reopen_dialog(dialogId). Dialog ID: ${dialogId}`,
+        text: `Live dialog "${layout.title}" shown. It persists across turns -- patch it with update_dialog(dialogId, ops), close it with close_dialog(dialogId), reopen with reopen_dialog(dialogId). Dialog ID: ${dialogId}. IMPORTANT: when the work this dialog covers is finished (you've delivered the plan/recap/answer and there is nothing left to iterate on), you MUST close it with close_dialog("${dialogId}") -- a live dialog left open keeps demanding the user's attention. Do not leave it open at the end of the task.`,
       },
     ],
   }

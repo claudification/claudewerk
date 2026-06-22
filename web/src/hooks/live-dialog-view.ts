@@ -1,0 +1,75 @@
+/**
+ * THE DIALOGUE (D2) — panel-owned view state for a live dialog, split out of the
+ * store so neither file outgrows the LOC cap. This is the persisted interaction
+ * layer (form values, the in-flight wait bar, the collapsed/decay view) plus the
+ * pure transition that folds a host apply into it.
+ */
+import type { DialogOp, DialogSnapshot, DialogStatus } from '@shared/dialog-live'
+import { getInitialValues, reconcileValues } from '@/components/dialog/dialog-form-init'
+
+/** An agent-closed dialog auto-hides from THIS client's view after this long.
+ *  It collapses into a fading, dismissible bar first (so you see it WAS there),
+ *  then is removed outright. Purely a client-side view decay -- the broker keeps
+ *  the dialog for reopen. */
+export const CLOSED_DECAY_MS = 20 * 60 * 1000
+
+/** Panel-owned interaction state, persisted across the unmount that a
+ *  conversation switch causes. The mounted component mirrors values/pending/
+ *  submitRev/activeAction down here every render; collapsed/closedAt are owned
+ *  here outright (the agent-close transition + the minimize control set them). */
+export interface DialogViewState {
+  dialogId: string
+  values: Record<string, unknown>
+  /** A submit was sent and we're waiting for the agent's patch (the wait bar). */
+  pending: boolean
+  /** entry.rev at submit time -- a later rev means the agent responded. */
+  submitRev: number
+  activeAction: string | null
+  /** Minimized into the bar (manual) or auto-collapsed (agent closed it). */
+  collapsed: boolean
+  /** epoch ms the agent drove the dialog terminal -- drives the decay + hard hide. */
+  closedAt?: number
+}
+
+/** Transient fields the mounted component owns and mirrors down via syncView. */
+export type ViewMirror = Pick<DialogViewState, 'values' | 'pending' | 'submitRev' | 'activeAction'>
+
+const isTerminal = (s: DialogStatus | undefined): boolean => s === 'closed' || s === 'orphaned'
+
+/** A clean view for a brand-new (or replacing) dialog. */
+export function freshView(snapshot: DialogSnapshot): DialogViewState {
+  return {
+    dialogId: snapshot.dialogId,
+    values: getInitialValues(snapshot.layout),
+    pending: false,
+    submitRev: -1,
+    activeAction: null,
+    collapsed: false,
+  }
+}
+
+/** Fold a host apply (patch/reopen/orphan) into the view: reconcile values,
+ *  resolve the wait bar (an apply means the agent acted), and drive the
+ *  collapse/decay clock off the open->terminal / terminal->open transition. */
+export function transitionView(
+  prev: DialogViewState | undefined,
+  snapshot: DialogSnapshot,
+  prevStatus: DialogStatus | undefined,
+  ops: DialogOp[],
+  now: number,
+): DialogViewState {
+  const sameDialog = !!prev && prev.dialogId === snapshot.dialogId
+  const base = sameDialog ? (prev as DialogViewState) : freshView(snapshot)
+  const values = reconcileValues(base.values, snapshot.layout, ops)
+  let { collapsed, closedAt } = base
+  if (isTerminal(snapshot.status) && !isTerminal(prevStatus)) {
+    // Agent drove it terminal -> auto-collapse into the decaying bar.
+    collapsed = true
+    closedAt = now
+  } else if (snapshot.status === 'open' && isTerminal(prevStatus)) {
+    // Reopened -> bring it back into full view, cancel the decay clock.
+    collapsed = false
+    closedAt = undefined
+  }
+  return { ...base, values, pending: false, collapsed, closedAt }
+}

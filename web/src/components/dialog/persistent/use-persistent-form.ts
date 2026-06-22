@@ -1,18 +1,23 @@
 /**
- * THE DIALOGUE (D2) — local state for a persistent dialog: input VALUES, the
- * displayed LAYOUT (with a client-side undo override), the highlight set for the
- * last agent patch, and the undo ring.
+ * THE DIALOGUE (D2) — local view of a persistent dialog's form: input VALUES,
+ * the displayed LAYOUT (with a client-side undo override), the highlight set for
+ * the last agent patch, and the undo ring.
  *
  * The split that kills flicker: the HOST owns structure (layout); the PANEL owns
  * input (values + focus + scroll). A patch never re-seeds an existing value --
  * only an explicit setState op changes one (red/blue-team R1#4). New blocks get
  * their defaults; everything the user typed survives.
+ *
+ * Values SEED from the live-dialog store (so they survive a conversation switch
+ * that unmounts this dialog); the parent mirrors them back down on change. Undo
+ * ring + highlight stay component-local -- they're cosmetic and fine to reset.
  */
 import type { DialogOp } from '@shared/dialog-live'
 import type { DialogLayout } from '@shared/dialog-schema'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { LiveDialogEntry } from '@/hooks/use-live-dialogs'
-import { getInitialValues } from '../dialog-form-init'
+import { useLiveDialogsStore } from '@/hooks/use-live-dialogs'
+import { getInitialValues, reconcileValues } from '../dialog-form-init'
 import type { DialogFormState } from '../dialog-renderer'
 
 const UNDO_RING_MAX = 10
@@ -32,21 +37,6 @@ function changedIds(ops: DialogOp[]): Set<string> {
   return ids
 }
 
-/** Merge a patch into the current values: defaults for NEW blocks, then the
- *  agent's explicit setState/unsetState. Existing user input is never clobbered. */
-function reconcileValues(
-  prev: Record<string, unknown>,
-  layout: DialogLayout,
-  ops: DialogOp[],
-): Record<string, unknown> {
-  const next = { ...getInitialValues(layout), ...prev }
-  for (const op of ops) {
-    if (op.op === 'setState') next[op.key] = op.value
-    else if (op.op === 'unsetState') delete next[op.key]
-  }
-  return next
-}
-
 export interface PersistentForm {
   form: DialogFormState
   values: Record<string, unknown>
@@ -57,7 +47,13 @@ export interface PersistentForm {
 }
 
 export function usePersistentDialogForm(entry: LiveDialogEntry): PersistentForm {
-  const [values, setValues] = useState<Record<string, unknown>>(() => getInitialValues(entry.snapshot.layout))
+  // Seed from the store so a half-filled form survives the unmount a conversation
+  // switch causes; fall back to layout defaults for a fresh dialog.
+  const [values, setValues] = useState<Record<string, unknown>>(
+    () =>
+      useLiveDialogsStore.getState().viewByConversation[entry.conversationId]?.values ??
+      getInitialValues(entry.snapshot.layout),
+  )
   const [highlightIds, setHighlightIds] = useState<Set<string>>(() => new Set())
   const [override, setOverride] = useState<DialogLayout | null>(null)
   const appliedRev = useRef(entry.rev)
@@ -86,6 +82,13 @@ export function usePersistentDialogForm(entry: LiveDialogEntry): PersistentForm 
     const t = setTimeout(() => setHighlightIds(new Set()), HIGHLIGHT_MS)
     return () => clearTimeout(t)
   }, [highlightIds])
+
+  // Mirror input values into the store so a half-filled form survives the
+  // unmount a conversation switch causes (rehydrated by the seed above).
+  const syncView = useLiveDialogsStore(s => s.syncView)
+  useEffect(() => {
+    syncView(entry.conversationId, { values })
+  }, [values, entry.conversationId, syncView])
 
   const form = useMemo<DialogFormState>(
     () => ({

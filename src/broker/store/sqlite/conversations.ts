@@ -240,6 +240,11 @@ export function createSqliteConversationStore(db: Database): ConversationStore {
       return rows.map(rowToSummary)
     },
 
+    listScopes() {
+      const rows = db.prepare('SELECT DISTINCT scope FROM conversations ORDER BY scope').all() as Params[]
+      return rows.map(r => r.scope as string)
+    },
+
     updateStats(id, stats: Partial<ConversationStats>) {
       const row = stmtGet.get({ id }) as Params | null
       if (!row) throw new ConversationNotFound(id)

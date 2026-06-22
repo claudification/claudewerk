@@ -13,7 +13,7 @@ export const TERMINATE_ACTION: BatchAction = {
   id: 'terminate',
   label: 'Terminate',
   description: 'End live conversations + dismiss ended ones',
-  needsConfirm: true,
+  // Not destructive: terminated conversations can be revived (no data lost).
 
   async *run({ ids, conversations, batchId }) {
     const byId = new Map(conversations.map((c: Conversation) => [c.id, c]))

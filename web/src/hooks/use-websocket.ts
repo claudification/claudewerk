@@ -438,6 +438,16 @@ export function useWebSocket() {
             return
           }
 
+          // Nightshift result + live event broadcast -> nightshift handler.
+          if (
+            typeof msg.type === 'string' &&
+            (msg.type === 'nightshift_result' || msg.type === 'nightshift_event')
+          ) {
+            const handler = useConversationsStore.getState().nightshiftHandler
+            handler?.(msg as unknown as Record<string, unknown>)
+            return
+          }
+
           // Terminal data -> direct handler callback (low latency critical)
           if (msg.type === 'terminal_data' || msg.type === 'terminal_error') {
             const handler = useConversationsStore.getState().terminalHandler
