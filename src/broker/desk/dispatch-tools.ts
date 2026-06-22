@@ -20,6 +20,7 @@ import type { DispatchCommand } from './orchestrate'
 import { composeProjectsOverview, type OverviewConv, type ProjectOverviewRow } from './overview'
 import { getBrief, recallBriefs } from './project-memory'
 import { listDeskProjects, projectKeyOf, resolveDeskProject } from './projects'
+import { questTools } from './quest-tool'
 import { type DispatchRuntime, runDispatch } from './runtime'
 import { defineTool, type Toolset } from './tool-def'
 
@@ -163,5 +164,5 @@ function projectTools(rt: DispatchRuntime): Toolset {
  */
 export function buildDispatchToolset(rt: DispatchRuntime): Toolset {
   const { spawn: _omitGenericSpawn, ...control } = buildControlToolset(buildControlDeps(rt))
-  return { ...projectTools(rt), ...control }
+  return { ...projectTools(rt), ...questTools(rt), ...control }
 }
