@@ -53,6 +53,9 @@ export interface DispatchState {
   toolEvents: Record<string, DispatchToolEvent[]>
   /** Whether the near-memory threads board is shown (toggle). */
   showThreads: boolean
+  /** VERBOSE view (Slice D): expose the dispatcher's full internal state -- the
+   *  live XML state blocks, decision metadata, and per-turn tool frames. */
+  verbose: boolean
   /** The dispatcher's durable memory file (markdown), for inspection. */
   memory: string
   /** The dispatcher's virtual-fs scratch workspaces (/work/<x>). */
@@ -62,6 +65,7 @@ export interface DispatchState {
   setIntent(intent: string): void
   setModel(slug: string): void
   toggleThreads(): void
+  toggleVerbose(): void
   submit(override?: { target?: string; disposition?: 'route' | 'revive' | 'new'; confirmedExpensive?: boolean }): void
   confirmExpensive(decision: DispatchDecision): void
   chooseCandidate(candidate: DispatchCandidate, ended?: boolean): void
@@ -107,12 +111,14 @@ export const useDispatchStore = create<DispatchState>((set, get) => ({
   model: DISPATCH_MODELS[0].slug,
   toolEvents: {},
   showThreads: true,
+  verbose: false,
   memory: '',
   workspaces: [],
 
   setIntent: intent => set({ intent }),
   setModel: slug => set({ model: slug }),
   toggleThreads: () => set(s => ({ showThreads: !s.showThreads })),
+  toggleVerbose: () => set(s => ({ verbose: !s.verbose })),
 
   submit: override => {
     const intent = get().intent.trim()

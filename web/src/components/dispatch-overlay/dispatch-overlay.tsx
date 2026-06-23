@@ -1,10 +1,13 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { DispatchFlow } from './dispatch-flow'
 import { DispatchHeader } from './dispatch-header'
 import { DispatchIntentInput } from './dispatch-intent-input'
 import { DispatchScopeNote } from './dispatch-scope-note'
 import { useDispatchStore } from './dispatch-store'
 import './dispatch.css'
+
+// Lazy: the verbose state panel only loads when first toggled on (LAZY LOAD covenant).
+const DispatchVerbose = lazy(() => import('./dispatch-verbose'))
 
 /**
  * The dispatch desk -- a light-touch concierge that fronts everything. You tell
@@ -15,6 +18,7 @@ import './dispatch.css'
 export default function DispatchOverlay() {
   const open = useDispatchStore(s => s.open)
   const close = useDispatchStore(s => s.closeOverlay)
+  const verbose = useDispatchStore(s => s.verbose)
 
   useEffect(() => {
     if (!open) return
@@ -36,6 +40,11 @@ export default function DispatchOverlay() {
       <button type="button" aria-label="Close dispatch" tabIndex={-1} className="dispatch-scrim" onClick={close} />
       <div className="dispatch-deck">
         <DispatchHeader />
+        {verbose && (
+          <Suspense fallback={null}>
+            <DispatchVerbose />
+          </Suspense>
+        )}
         <DispatchFlow />
         <DispatchIntentInput />
         <DispatchScopeNote />
