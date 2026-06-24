@@ -7,6 +7,8 @@
  * explicit orthogonal geometry from the already-placed box skeletons; the start/end bindings
  * still make the arrow follow a box dragged in the live editor.
  */
+
+import { orthogonalConnector, type Rect } from './diagram-geometry'
 import type { Edge, Skeleton } from './draw-dsl'
 import { FONT_FAMILY } from './scheme-variants'
 
@@ -37,34 +39,22 @@ export function edgeSkeletons(e: Edge, placed: Skeleton[], id: string): Skeleton
   return [arrow, ...pillChip(id, path, e.text)]
 }
 
-/** A placed box's centre-x, top and bottom edges -- or null if it has no resolved geometry. */
-function boxEdges(sks: Skeleton[], id: string): { cx: number; top: number; bottom: number } | null {
+/** A placed box's rect, or null if it has no resolved geometry. */
+function rectOf(sks: Skeleton[], id: string): Rect | null {
   const s = sks.find(x => x.id === id)
   if (!s || s.x == null || s.y == null) return null
-  return { cx: s.x + (s.width ?? 0) / 2, top: s.y, bottom: s.y + (s.height ?? 0) }
+  return { x: s.x, y: s.y, w: s.width ?? 0, h: s.height ?? 0 }
 }
 
-/** Explicit orthogonal geometry between two placed boxes (bottom-centre -> top-centre, with a
- * mid elbow when not vertically aligned). */
+/** Explicit orthogonal geometry between two placed boxes, made relative to the arrow's start
+ * (Excalidraw arrow points are origin-relative). Shares the routing with the SVG renderer. */
 function edgePath(sks: Skeleton[], fromId: string, toId: string): Path | null {
-  const f = boxEdges(sks, fromId)
-  const t = boxEdges(sks, toId)
+  const f = rectOf(sks, fromId)
+  const t = rectOf(sks, toId)
   if (!f || !t) return null
-  const dx = t.cx - f.cx
-  const dy = t.top - f.bottom
-  const points =
-    Math.abs(dx) < 4
-      ? [
-          [0, 0],
-          [0, dy],
-        ]
-      : [
-          [0, 0],
-          [0, dy / 2],
-          [dx, dy / 2],
-          [dx, dy],
-        ]
-  return { x: f.cx, y: f.bottom, points }
+  const { points } = orthogonalConnector(f, t)
+  const [ox, oy] = points[0]
+  return { x: ox, y: oy, points: points.map(([px, py]) => [px - ox, py - oy]) }
 }
 
 /** A white rounded chip + centered Nunito label on the connector mid-point. For both the
