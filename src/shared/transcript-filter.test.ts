@@ -41,6 +41,17 @@ describe('isDisplayEntry', () => {
     expect(isDisplayEntry(e)).toBe(false)
   })
 
+  test('keeps Skill-tool invocation tool_result entries (carries commandName)', () => {
+    // Regression: dropping this on cold-open reload loses pendingSkillName, so
+    // the following isMeta skill body renders as a stray user bubble after a
+    // conversation switch. The grouper needs this entry to name the skill chip.
+    const e = entry('user', {
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'x', content: '' }] },
+      toolUseResult: { commandName: 'visual-plan' },
+    })
+    expect(isDisplayEntry(e)).toBe(true)
+  })
+
   test('keeps user entries with mixed content (text + tool_result)', () => {
     const e = entry('user', {
       message: {

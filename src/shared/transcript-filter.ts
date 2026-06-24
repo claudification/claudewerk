@@ -9,6 +9,18 @@ function isToolResultOnly(entry: TranscriptEntry): boolean {
   return content.every(c => c.type === 'tool_result')
 }
 
+// A Skill-tool invocation lands as a tool_result-only user entry carrying the
+// skill name in `toolUseResult.commandName`. The transcript grouper consumes
+// this entry purely to stash `pendingSkillName` (it renders nothing itself), so
+// the *next* entry -- the injected `isMeta` skill body -- can fold into a skill
+// chip instead of a plain user bubble. If `filter=display` drops it as
+// tool_result noise (the cold-open/reload path), the body loses its name gate
+// and renders as a stray user chat bubble after a conversation switch. Keep it.
+function isSkillInvocation(entry: TranscriptEntry): boolean {
+  const meta = (entry as { toolUseResult?: { commandName?: unknown } }).toolUseResult
+  return typeof meta?.commandName === 'string' && meta.commandName.length > 0
+}
+
 function isNoiseSystem(entry: TranscriptEntry): boolean {
   if (entry.type !== 'system') return false
   const sys = entry as TranscriptSystemEntry
@@ -19,7 +31,7 @@ function isNoiseSystem(entry: TranscriptEntry): boolean {
 export function isDisplayEntry(entry: TranscriptEntry): boolean {
   if (entry.type === 'progress') return false
   if (isNoiseSystem(entry)) return false
-  if (isToolResultOnly(entry)) return false
+  if (isToolResultOnly(entry) && !isSkillInvocation(entry)) return false
   return true
 }
 
