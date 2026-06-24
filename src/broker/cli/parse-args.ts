@@ -34,6 +34,9 @@ export interface ParsedArgs {
   daysArg: string
   limitArg: string
   grepArg: string
+  // mint-dev-key command
+  asArg: string
+  ttlArg: string
 }
 
 export function parseArgs(argv: string[], defaultCacheDir: string): ParsedArgs {
@@ -72,6 +75,8 @@ export function parseArgs(argv: string[], defaultCacheDir: string): ParsedArgs {
     daysArg: '',
     limitArg: '',
     grepArg: '',
+    asArg: '',
+    ttlArg: '',
   }
 
   for (let i = 0; i < argv.length; i++) {
@@ -138,6 +143,10 @@ export function parseArgs(argv: string[], defaultCacheDir: string): ParsedArgs {
       result.limitArg = argv[++i]
     } else if (arg === '--grep') {
       result.grepArg = argv[++i]
+    } else if (arg === '--as') {
+      result.asArg = argv[++i]
+    } else if (arg === '--ttl') {
+      result.ttlArg = argv[++i]
     } else if (!arg.startsWith('-')) {
       if (result.command === 'resolve-path' && !result.testPath) {
         result.testPath = arg

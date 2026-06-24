@@ -87,6 +87,11 @@ SENTINEL COMMANDS:
   sentinel set-default --alias <alias>                      Set default sentinel
   sentinel revoke --alias <alias>                           Revoke sentinel secret
 
+DEV-HARNESS COMMANDS (require DEV_HARNESS_ENABLED=1 on the broker):
+  mint-dev-key --as <user> [--ttl <sec>]                   Mint a dev impersonation key (default 1h)
+    Stateless HMAC-signed token; mount one component against the real broker
+    via /dev/harness?mount=<id>&key=<token>. Never available on a prod broker.
+
 GATEWAY COMMANDS:
   gateway create --alias <alias> [--type <type>]           Create gateway with dedicated secret
   gateway list                                              List all registered gateways

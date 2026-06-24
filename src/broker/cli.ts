@@ -7,6 +7,7 @@ checkBunVersion()
 import { existsSync } from 'node:fs'
 import { initAuth } from './auth'
 import { handleBackup } from './cli/backup-commands'
+import { handleMintDevKey } from './cli/dev-key-commands'
 import { handleGateway } from './cli/gateway-commands'
 import { type ParsedArgs, parseArgs } from './cli/parse-args'
 import { handleDeletePasskey, handleListPasskeys } from './cli/passkey-commands'
@@ -140,6 +141,9 @@ async function main(): Promise<void> {
       break
     case 'gateway':
       handleGateway(args)
+      break
+    case 'mint-dev-key':
+      handleMintDevKey(args)
       break
     default:
       console.error(`Unknown command: ${args.command}`)

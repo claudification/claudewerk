@@ -9,6 +9,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { AuthenticatorTransportFuture } from '@simplewebauthn/server'
+import { devHarnessEnabled, devHarnessSecret, verifyDevKey } from './dev-key'
 import { pathToScope, type UserGrant } from './permissions'
 
 // --- Types ---
@@ -422,7 +423,24 @@ export function createAuthToken(name: string): string {
   return `${token}.${sig}`
 }
 
+/** The broker's session HMAC secret. Used by the dev-harness signing path (dev-key.ts). */
+export function getHmacSecret(): string {
+  return hmacSecret
+}
+
 export function validateConversation(signedToken: string): { name: string } | null {
+  // Dev-harness impersonation token. Gated behind DEV_HARNESS_ENABLED (default
+  // OFF) -- a flag-off broker rejects every dev token here, so prod cannot be
+  // impersonated even if the secret leaks. Dev tokens carry a `dvk_` prefix, so
+  // a normal session token skips this branch instantly (zero hot-path impact).
+  const enabled = devHarnessEnabled()
+  const dev = verifyDevKey(signedToken, { secret: devHarnessSecret(hmacSecret), enabled })
+  if (dev) {
+    // Audit every dev-token auth (rail #4: greppable, who/as-whom/when).
+    console.log(`[dev-harness] auth as=${dev.user} (DEV_HARNESS_ENABLED)`)
+    return { name: dev.user }
+  }
+
   const parts = signedToken.split('.')
   if (parts.length !== 2) return null
 
