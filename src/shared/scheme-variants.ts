@@ -36,14 +36,20 @@ export const SCHEME_RECIPE = {
   glyphW: 0.55,
 } as const
 
-/** Per-variant pastel fill (light hexes; the dark filter handles dark mode). */
+/**
+ * Per-variant fill, in LIGHT hexes. Soft enough to read refined in light mode, but NOT
+ * ultra-pale: the dark canvas applies an invert + hue-rotate, and near-white pastels collapse
+ * to muddy near-black under it. These medium-pastels invert to clean deep tones instead.
+ * (Gold is the exception -- yellow always lands a warm brown under invert+hue-rotate; that is
+ * a filter property, not a colour we can pick around.)
+ */
 export const SCHEME_FILLS: Record<SchemeVariant, string> = {
-  blue: '#e7f0ff',
-  gold: '#fdf2d6',
-  green: '#e6f7ec',
-  rose: '#fbe9ee',
-  steel: '#eef1f6',
-  plain: '#ffffff',
+  blue: '#cfe1fb',
+  gold: '#ffe9a8',
+  green: '#caeed4',
+  rose: '#fbd0da',
+  steel: '#d7deea',
+  plain: '#eef0f3',
 }
 
 /** A box renders in the scheme look when it carries any of variant / title / subtitle. */
