@@ -115,7 +115,12 @@ export const useDispatchStore = create<DispatchState>((set, get) => ({
   memory: '',
   workspaces: [],
 
-  setIntent: intent => set({ intent }),
+  // Enforce the `intent: string` invariant at the write boundary. CodeMirror's
+  // onChange always hands us a string, but the `window.__dispatch` debug seam
+  // (setIntent/submit) forwards untrusted args -- a `__dispatch.submit()` with
+  // no argument would otherwise set intent=undefined and hard-crash the overlay
+  // on the next `intent.trim()` (dispatch-intent-input + desk + memory section).
+  setIntent: intent => set({ intent: intent ?? '' }),
   setModel: slug => set({ model: slug }),
   toggleThreads: () => set(s => ({ showThreads: !s.showThreads })),
   toggleVerbose: () => set(s => ({ verbose: !s.verbose })),
