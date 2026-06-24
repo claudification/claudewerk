@@ -3,7 +3,8 @@
  * (containers measure their children). Pure; split out of draw-dsl-layout.ts so the
  * layout file stays small and the per-kind dispatch lives on its own.
  */
-import { type DslNode, fontSizePx, SIZE, textExtent } from './draw-dsl'
+import { type DslNode, fontSizePx, type ShapeNode, SIZE, textExtent } from './draw-dsl'
+import { isSchemeBox, SCHEME_RECIPE, schemeBlock } from './scheme-variants'
 
 const sum = (xs: number[]): number => xs.reduce((a, b) => a + b, 0)
 export const max = (xs: number[]): number => (xs.length ? Math.max(...xs) : 0)
@@ -28,6 +29,7 @@ function measureLeaf(node: DslNode): { w: number; h: number } {
     case 'box':
     case 'ellipse':
     case 'diamond': {
+      if (node.kind === 'box' && isSchemeBox(node)) return measureSchemeBox(node)
       const def = node.kind === 'box' ? SIZE.box : node.kind === 'ellipse' ? SIZE.ellipse : SIZE.diamond
       const t = node.text ? textExtent(node.text).w + SIZE.pad * 2 : 0
       return { w: Math.max(node.w ?? def[0], t), h: node.h ?? def[1] }
@@ -50,6 +52,20 @@ function measureLeaf(node: DslNode): { w: number; h: number } {
       return { w: node.w ?? SIZE.mermaid[0], h: node.h ?? SIZE.mermaid[1] }
     default: // image
       return node.kind === 'image' ? { w: node.w ?? SIZE.image[0], h: node.h ?? SIZE.image[1] } : { w: 0, h: 0 }
+  }
+}
+
+/** Generous box sized to its title/subtitle plus the recipe's breathing room. Uses the same
+ * glyph estimate as the centering pass so text lands centered within the box, never spills. */
+function measureSchemeBox(node: ShapeNode): { w: number; h: number } {
+  const R = SCHEME_RECIPE
+  const title = node.title ?? node.text ?? ''
+  const sub = node.subtitle ?? ''
+  const fit = (t: string, px: number): number => t.length * px * R.glyphW
+  const widest = max([fit(title, R.titlePx), fit(sub, R.subPx)])
+  return {
+    w: node.w ?? Math.max(SIZE.box[0], Math.round(widest + R.padX * 2)),
+    h: node.h ?? Math.round(schemeBlock(title, sub).blockH + R.padY * 2),
   }
 }
 

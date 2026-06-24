@@ -22,22 +22,40 @@ export interface Style {
   fill?: string
   fillStyle?: 'hachure' | 'solid' | 'cross-hatch'
   rough?: 0 | 1 | 2
-  font?: 'hand' | 'normal' | 'code'
+  font?: 'hand' | 'normal' | 'code' | 'nunito' | 'excalifont'
   bold?: boolean
+}
+
+/**
+ * A named "scheme" look for a box -- a polished, presentation-grade preset (soft pastel
+ * fill + ink title + grey subtitle + sketchy border, the recipe in scheme-variants.ts).
+ * Authored in LIGHT hexes; the dark canvas inverts them for free (the `draw.colors` rule).
+ */
+export type SchemeVariant = 'blue' | 'gold' | 'green' | 'rose' | 'steel' | 'plain'
+
+/** A generic shape (rectangle/ellipse/diamond). With title/subtitle/variant it renders in
+ * the polished "scheme" look; otherwise a plain labelled shape. */
+export interface ShapeNode {
+  id: string
+  kind: 'box' | 'ellipse' | 'diamond'
+  /** Single centered label. Mutually exclusive with title/subtitle (those win if set). */
+  text?: string
+  /** Big ink headline -- pairs with `subtitle` for the scheme look. */
+  title?: string
+  /** Small grey strapline under the title. */
+  subtitle?: string
+  /** A polished pastel preset (see SchemeVariant); fills stroke/fill/recipe defaults. */
+  variant?: SchemeVariant
+  w?: number
+  h?: number
+  at?: [number, number]
+  style?: Style
+  data?: object
 }
 
 /** Primitive + semantic-UI + layout-container nodes. `id` addresses a node for the reverse diff. */
 export type DslNode =
-  | {
-      id: string
-      kind: 'box' | 'ellipse' | 'diamond'
-      text?: string
-      w?: number
-      h?: number
-      at?: [number, number]
-      style?: Style
-      data?: object
-    }
+  | ShapeNode
   | { id?: string; kind: 'text'; text: string; at?: [number, number]; size?: 's' | 'm' | 'l'; style?: Style }
   | { id: string; kind: 'button'; text: string; variant?: 'primary' | 'ghost'; at?: [number, number]; data?: object }
   | { id: string; kind: 'input'; label?: string; placeholder?: string; at?: [number, number]; data?: object }
@@ -161,36 +179,9 @@ export interface Placed {
   children?: Placed[]
 }
 
-// --- intrinsic sizing (no canvas; rough text metrics good enough for wireframes) ---
-export const SIZE = {
-  box: [160, 60],
-  ellipse: [160, 80],
-  diamond: [160, 80],
-  button: [140, 44],
-  inputField: [220, 40],
-  checkbox: 24,
-  nav: 44,
-  image: [220, 140],
-  mermaid: [360, 260],
-  gap: 24,
-  pad: 20,
-  titleBar: 30,
-  charW: 8.5,
-  lineH: 22,
-} as const
-
-const FONT_PX = { s: 16, m: 20, l: 28 } as const
-
-/** Font size in px for a text node's `size` (default `m`). */
-export const fontSizePx = (size?: 's' | 'm' | 'l'): number => FONT_PX[size ?? 'm']
-
-/** Rough rendered width/height of a single-line label at a given font size. */
-export function textExtent(text: string, fontPx = 20): { w: number; h: number } {
-  const lines = text.split('\n')
-  const longest = lines.reduce((m, l) => Math.max(m, l.length), 0)
-  const scale = fontPx / 20
-  return { w: Math.max(20, Math.round(longest * SIZE.charW * scale)), h: Math.round(lines.length * SIZE.lineH * scale) }
-}
+// Intrinsic sizing + text metrics live in draw-dsl-size.ts; re-exported so importers of
+// `@shared/draw-dsl` keep their existing surface.
+export { fontSizePx, SIZE, textExtent } from './draw-dsl-size'
 
 /** Structural guard: a DSL Scene (vs a raw Excalidraw serializeAsJSON scene). */
 export function isDslScene(x: unknown): x is Scene {

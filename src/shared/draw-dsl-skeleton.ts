@@ -10,9 +10,10 @@
  * `convertToExcalidrawElements({regenerateIds:false})`.
  */
 import { type DslNode, type Edge, fontSizePx, type NodeMeta, type Placed, type Skeleton, type Style } from './draw-dsl'
+import { edgeSkeletons } from './draw-dsl-edges'
 import { uiMacro } from './draw-dsl-macros'
-
-const FONT: Record<string, number> = { hand: 1, normal: 2, code: 3 }
+import { schemeBox } from './draw-dsl-scheme-box'
+import { FONT_FAMILY, isSchemeBox } from './scheme-variants'
 
 export interface Expanded {
   skeletons: Skeleton[]
@@ -39,7 +40,14 @@ export function buildSkeletons(placed: Placed[], edges: Edge[]): Expanded {
   let auto = 0
   const idOf = (n: DslNode): string => ('id' in n && n.id ? n.id : `auto-${n.kind}-${auto++}`)
   for (const p of placed) walk(p, out, idOf)
-  for (const e of edges) out.skeletons.push(edgeSkeleton(e, out))
+  for (const e of edges) {
+    const id = `${e.from}~edge~${e.to}`
+    out.metaById[id] = { dslId: id, role: 'agent' }
+    for (const sk of edgeSkeletons(e, out.skeletons, id)) {
+      if (sk.id && sk.id !== id) out.metaById[sk.id] = { dslId: id, role: 'agent' }
+      out.skeletons.push(sk)
+    }
+  }
   return out
 }
 
@@ -100,7 +108,7 @@ function shape(type: Skeleton['type'], id: string, p: Placed, label?: string, st
 function leafSkeletons(node: DslNode, p: Placed, id: string): Skeleton[] {
   switch (node.kind) {
     case 'box':
-      return [shape('rectangle', id, p, node.text, node.style)]
+      return isSchemeBox(node) ? schemeBox(node, p, id) : [shape('rectangle', id, p, node.text, node.style)]
     case 'ellipse':
       return [shape('ellipse', id, p, node.text, node.style)]
     case 'diamond':
@@ -114,29 +122,12 @@ function leafSkeletons(node: DslNode, p: Placed, id: string): Skeleton[] {
   }
 }
 
-function edgeSkeleton(e: Edge, out: Expanded): Skeleton {
-  const id = `${e.from}~edge~${e.to}`
-  out.metaById[id] = { dslId: id, role: 'agent' }
-  const line = e.arrow === '--'
-  return {
-    type: line ? 'line' : 'arrow',
-    id,
-    x: 0,
-    y: 0,
-    start: { id: e.from },
-    end: { id: e.to },
-    strokeStyle: e.dashed ? 'dashed' : 'solid',
-    ...(e.text ? { label: { text: e.text } } : {}),
-    ...(line ? {} : { endArrowhead: 'arrow', startArrowhead: e.arrow === '<->' ? 'arrow' : null }),
-  }
-}
-
 function applyStyle(sk: Skeleton, style?: Style): Skeleton {
   if (!style) return sk
   if (style.stroke) sk.strokeColor = style.stroke
   if (style.fill) sk.backgroundColor = style.fill
   if (style.fillStyle) sk.fillStyle = style.fillStyle
   if (style.rough !== undefined) sk.roughness = style.rough
-  if (style.font) sk.fontFamily = FONT[style.font]
+  if (style.font) sk.fontFamily = FONT_FAMILY[style.font]
   return sk
 }

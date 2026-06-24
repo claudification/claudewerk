@@ -48,14 +48,25 @@ describe('expandScene -- flowchart (auto layout + bound arrows)', () => {
     expect(c.y).toBe(d.y) // siblings share a rank
   })
 
-  it('emits id-bound arrows (so they stick to shapes when dragged)', () => {
+  it('emits id-bound arrows with explicit routing (stick to shapes, render statically)', () => {
     const arrows = skeletons.filter(s => s.type === 'arrow')
     expect(arrows).toHaveLength(3)
     const ab = arrows.find(s => s.start?.id === 'a')
     expect(ab?.end?.id).toBe('b')
-    const yes = arrows.find(s => s.label?.text === 'yes')
-    expect(yes?.start?.id).toBe('b')
-    expect(yes?.end?.id).toBe('c')
+    // explicit orthogonal points, not the unrouted convert stub
+    expect((ab?.points?.length ?? 0) >= 2).toBe(true)
+    expect(arrows.find(s => s.start?.id === 'b' && s.end?.id === 'c')).toBeDefined()
+  })
+
+  it('renders an edge label as a pill chip (clean Nunito), not the arrow bound label', () => {
+    const text = byId(skeletons, 'b~edge~c~pilltext')
+    expect(text?.type).toBe('text')
+    expect(text?.text).toBe('yes')
+    expect(byId(skeletons, 'b~edge~c~pill')?.type).toBe('rectangle')
+    // the pill rides the edge's dslId so the round-trip treats it as part of the edge
+    expect(metaById['b~edge~c~pilltext'].dslId).toBe('b~edge~c')
+    // the arrow itself carries no bound label any more
+    expect(skeletons.filter(s => s.type === 'arrow').every(a => a.label === undefined)).toBe(true)
   })
 })
 
