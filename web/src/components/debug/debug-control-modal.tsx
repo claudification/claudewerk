@@ -9,7 +9,7 @@
  */
 
 import { CONTROL_COMMANDS, getControlCommandSpec } from '@shared/cc-control-commands'
-import { Bug, Trash2 } from 'lucide-react'
+import { Bug, Minus, Trash2 } from 'lucide-react'
 import { useMemo, useState, useSyncExternalStore } from 'react'
 import {
   clearDebugTraces,
@@ -19,6 +19,7 @@ import {
   subscribe as subscribeTraces,
 } from '@/hooks/debug-control-store'
 import { useConversationsStore, wsSend } from '@/hooks/use-conversations'
+import { useManagedModal } from '@/hooks/use-modal-manager'
 import { useCommand } from '@/lib/commands'
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog'
 import { DebugTraceWaterfall } from './debug-trace-waterfall'
@@ -28,7 +29,9 @@ function randomTraceId(): string {
 }
 
 export function DebugControlModal() {
-  const [open, setOpen] = useState(false)
+  // Parkable, conversation-scoped (see plan-unified-modals.md). Scope is captured
+  // at open time; restore from the dock warps back to that conversation.
+  const modal = useManagedModal({ id: 'debug-control', kind: 'debug-control', title: 'Debug: control' })
   const [key, setKey] = useState(`${CONTROL_COMMANDS[0]?.channel}:${CONTROL_COMMANDS[0]?.command}`)
   const [payloadText, setPayloadText] = useState('{}')
   const [payloadError, setPayloadError] = useState<string | null>(null)
@@ -47,7 +50,14 @@ export function DebugControlModal() {
     setPayloadError(null)
   }
 
-  useCommand('debug-control', () => setOpen(true), { label: 'Debug: control...', group: 'Developer' })
+  useCommand(
+    'debug-control',
+    () => {
+      const sel = useConversationsStore.getState().selectedConversationId
+      if (sel) modal.open({ type: 'conversation', id: sel })
+    },
+    { label: 'Debug: control...', group: 'Developer' },
+  )
 
   function send() {
     if (!selectedConversationId || !spec) return
@@ -75,12 +85,25 @@ export function DebugControlModal() {
   if (!selectedConversationId) return null
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={modal.phase === 'open'}
+      onOpenChange={o => {
+        if (!o) modal.close()
+      }}
+    >
       <DialogContent className="max-w-3xl flex flex-col p-0 top-[8vh] translate-y-0 max-h-[84vh]">
         <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
           <Bug className="size-4 text-accent" />
           <DialogTitle className="text-xs">Debug: control</DialogTitle>
           <span className="text-[10px] text-muted-foreground ml-1 truncate">{selectedConversationId.slice(0, 12)}</span>
+          <button
+            type="button"
+            onClick={() => modal.minimize()}
+            className="ml-auto mr-6 text-muted-foreground hover:text-foreground transition-colors"
+            title="Minimize to dock"
+          >
+            <Minus className="size-4" />
+          </button>
         </div>
 
         <div className="flex min-h-0 flex-1">

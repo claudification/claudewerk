@@ -19,6 +19,7 @@ import { LinkPreviewPane } from '@/components/link-preview-pane'
 import { MarkdownViewerModal } from '@/components/markdown-viewer-modal'
 import { MediaLightbox } from '@/components/media-lightbox'
 import { useMermaidLightbox } from '@/components/mermaid-lightbox-bus'
+import { ModalDock } from '@/components/modal-dock'
 import { openOrganizeProjects, useOrganizeProjectsOpen } from '@/components/organize-projects/organize-state'
 import { PanelBoundary } from '@/components/panel-boundary'
 import { PinnedSwitchStrip } from '@/components/pinned-switch-strip'
@@ -433,6 +434,11 @@ function Dashboard() {
       {/* Host-shell dock -- global floating-shell tray. Self-hides when empty. */}
       <div className="shrink-0">
         <ShellDock />
+      </div>
+
+      {/* Minimized-modal dock -- global tray of parked modals. Self-hides when empty. */}
+      <div className="shrink-0">
+        <ModalDock />
       </div>
 
       {/* Off-screen host for agent-attached (debug) shells -- mounted + readable
