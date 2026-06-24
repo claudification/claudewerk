@@ -69,6 +69,16 @@ export function useGlobalCommands(toggleSidebar: () => void) {
   useCommand('toggle-sidebar', toggleSidebar, { label: 'Toggle sidebar', shortcut: 'mod+b', group: 'View' })
 
   useCommand(
+    'toggle-list-view',
+    () => {
+      const s = useConversationsStore.getState()
+      const cur = s.controlPanelPrefs.listViewMode
+      s.updateControlPanelPrefs({ listViewMode: cur === 'rail' ? 'default' : 'rail' })
+    },
+    { label: 'List view: rows / status rail', group: 'View' },
+  )
+
+  useCommand(
     'open-sheaf',
     () => {
       window.location.hash = '/sheaf'

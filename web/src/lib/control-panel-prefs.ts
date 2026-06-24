@@ -71,6 +71,10 @@ export interface ControlPanelPrefs {
   inputBackend: 'legacy' | 'codemirror' // editor backend for InputEditor (default legacy)
   settingsTab: SettingsTab // last active settings tab (per-device)
   theme: string // UI theme id (see lib/themes.ts)
+  /** Sidebar conversation-list rendering. 'default' = full compact rows (today);
+   *  'rail' = status-rail: state-colored glyph + project monogram/spine, denser.
+   *  Per-device (localStorage). Toggle via the `> List view` palette command. */
+  listViewMode: 'default' | 'rail'
 }
 
 export type SettingsTab = 'general' | 'display' | 'input' | 'sessions' | 'sentinels' | 'system'
@@ -108,6 +112,7 @@ const defaultPrefs: ControlPanelPrefs = {
   inputBackend: 'legacy',
   settingsTab: 'general',
   theme: 'tokyo-night',
+  listViewMode: 'default',
 }
 
 export function loadPrefs(): ControlPanelPrefs {

@@ -1,14 +1,13 @@
 import { projectIdentityKey } from '@shared/project-uri'
 import { memo, useState } from 'react'
-import { useShallow } from 'zustand/react/shallow'
 import { useConversationsStore } from '@/hooks/use-conversations'
-import type { Conversation } from '@/lib/types'
 import { projectPath } from '@/lib/types'
 import { formatAge, haptic, projectDisplayName } from '@/lib/utils'
 import { ProjectIcon } from '../project-icons'
 import { ProjectSettingsEditor } from '../project-settings-editor-lazy'
 import { ConversationContextMenu } from './conversation-context-menu'
 import { ConversationItemCompact } from './conversation-item-compact'
+import { useHydratedConversations } from './row-hooks'
 
 export { ConversationItemCompact } from './conversation-item-compact'
 export { SpawnRootStub } from './conversation-item-helpers'
@@ -33,16 +32,7 @@ export const InactiveProjectItem = memo(
   function InactiveProjectItem({ conversationIds }: { conversationIds: string[] }) {
     const [showSettings, setShowSettings] = useState(false)
     const selectConversation = useConversationsStore(s => s.selectConversation)
-    const conversations = useConversationsStore(
-      useShallow(s => {
-        const out: Conversation[] = []
-        for (const id of conversationIds) {
-          const c = s.conversationsById[id]
-          if (c) out.push(c)
-        }
-        return out
-      }),
-    )
+    const conversations = useHydratedConversations(conversationIds)
     const latest =
       conversations.length > 0 ? conversations.reduce((a, b) => (a.lastActivity > b.lastActivity ? a : b)) : null
     const ps = useConversationsStore(s => (latest ? s.projectSettings[projectIdentityKey(latest.project)] : undefined))

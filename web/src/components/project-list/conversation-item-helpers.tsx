@@ -333,13 +333,65 @@ export function InlineDescription({ conversation }: { conversation: Conversation
   )
 }
 
-// ─── Conversation card outer agent host (shared by Full + Compact) ────────
+// ─── Conversation card outer agent host (shared by Full + Compact + Rail) ──
+
+/** Default-view row chrome: bordered card + per-row project/plan stripe.
+ *  content-visibility:auto skips render-tree + layout + paint for off-screen
+ *  rows (the sidebar's dominant cost); contain-intrinsic-size reserves a height
+ *  so the scrollbar stays stable. The element stays in the DOM either way. */
+function defaultShellClass(isSelected: boolean, planMode: boolean, ghost: boolean, displayColor: string | undefined) {
+  return cn(
+    'w-full text-left border transition-colors group cursor-pointer [content-visibility:auto]',
+    'p-2 pl-4 text-[11px] [contain-intrinsic-size:auto_2.25rem]',
+    isSelected && planMode
+      ? 'border-blue-500 bg-blue-500/15 ring-1 ring-blue-500/50 shadow-[0_0_8px_rgba(59,130,246,0.2)]'
+      : isSelected
+        ? 'border-accent bg-accent/15 ring-1 ring-accent/50 shadow-[0_0_8px_rgba(122,162,247,0.15)]'
+        : planMode
+          ? 'border-blue-500/40 hover:border-blue-400/60'
+          : displayColor
+            ? 'border-border hover:border-primary'
+            : 'border-border hover:border-primary hover:bg-card',
+    // Ghost: discovered daemon worker not yet attached -- dashed violet, dimmed.
+    ghost && !isSelected && 'border-dashed border-violet-500/40 bg-violet-500/[0.04] opacity-90',
+  )
+}
+
+function defaultShellStyle(isSelected: boolean, planMode: boolean, displayColor: string | undefined) {
+  if (isSelected && planMode) return { borderLeftColor: 'rgb(59 130 246)', borderLeftWidth: '3px' }
+  if (planMode)
+    return {
+      borderLeftColor: 'rgb(59 130 246)',
+      borderLeftWidth: '3px',
+      backgroundColor: 'color-mix(in oklch, rgb(59 130 246) 8%, transparent)',
+    }
+  if (displayColor && !isSelected)
+    return { borderLeftColor: displayColor, borderLeftWidth: '3px', backgroundColor: `${displayColor}15` }
+  return undefined
+}
+
+/** Status-rail row chrome: borderless lean row -- identity comes from the group spine. */
+function railShellClass(isSelected: boolean, planMode: boolean, ghost: boolean) {
+  return cn(
+    'w-full text-left transition-colors group cursor-pointer [content-visibility:auto] rounded',
+    'px-2 py-1.5 text-[11px] [contain-intrinsic-size:auto_2rem]',
+    isSelected && planMode
+      ? 'bg-blue-500/15 ring-1 ring-blue-500/40'
+      : isSelected
+        ? 'bg-accent/15 ring-1 ring-accent/40'
+        : planMode
+          ? 'bg-blue-500/[0.06] hover:bg-blue-500/10'
+          : 'hover:bg-accent/10',
+    ghost && !isSelected && 'bg-violet-500/[0.04] opacity-90',
+  )
+}
 
 export function ConversationItemShell({
   conversation,
   isSelected,
   displayColor,
   ghost = false,
+  rail = false,
   onClick,
   children,
 }: {
@@ -348,9 +400,13 @@ export function ConversationItemShell({
   displayColor: string | undefined
   /** Discovered, not-yet-attached daemon worker -- rendered translucent + dashed. */
   ghost?: boolean
+  /** Status-rail view: borderless lean row -- project identity comes from the
+   *  group spine (drawn by project-node), not a per-row stripe. */
+  rail?: boolean
   onClick: () => void
   children: ReactNode
 }) {
+  const planMode = !!conversation.planMode
   return (
     // shell wraps nested interactives (dismiss/attach/etc); semantic <button> would nest buttons
     <div
@@ -362,45 +418,12 @@ export function ConversationItemShell({
       onKeyDown={e => {
         if (e.key === 'Enter' || e.key === ' ') onClick()
       }}
-      className={cn(
-        // content-visibility:auto skips render-tree + layout + paint + layer
-        // construction for off-screen rows (the sidebar's dominant cost: ~1
-        // SVG icon subtree per conversation x ~1000 rows). The element itself
-        // stays in the DOM (data-conversation-id preserved) so scroll-into-view,
-        // locate, pulse, context menu and DnD all keep working. contain-
-        // intrinsic-size reserves a height for skipped rows (`auto` remembers
-        // the real measured height after first paint) so the scrollbar is stable.
-        'w-full text-left border transition-colors group cursor-pointer [content-visibility:auto]',
-        'p-2 pl-4 text-[11px] [contain-intrinsic-size:auto_2.25rem]',
-        isSelected && conversation.planMode
-          ? 'border-blue-500 bg-blue-500/15 ring-1 ring-blue-500/50 shadow-[0_0_8px_rgba(59,130,246,0.2)]'
-          : isSelected
-            ? 'border-accent bg-accent/15 ring-1 ring-accent/50 shadow-[0_0_8px_rgba(122,162,247,0.15)]'
-            : conversation.planMode
-              ? 'border-blue-500/40 hover:border-blue-400/60'
-              : displayColor
-                ? 'border-border hover:border-primary'
-                : 'border-border hover:border-primary hover:bg-card',
-        // Ghost: discovered daemon worker not yet attached. Dashed violet,
-        // faint tint, slightly dimmed -- reads as "phantom" vs an owned row.
-        ghost && !isSelected && 'border-dashed border-violet-500/40 bg-violet-500/[0.04] opacity-90',
-      )}
-      style={
-        isSelected && conversation.planMode
-          ? {
-              borderLeftColor: 'rgb(59 130 246)',
-              borderLeftWidth: '3px',
-            }
-          : !isSelected && conversation.planMode
-            ? {
-                borderLeftColor: 'rgb(59 130 246)',
-                borderLeftWidth: '3px',
-                backgroundColor: 'color-mix(in oklch, rgb(59 130 246) 8%, transparent)',
-              }
-            : displayColor && !isSelected
-              ? { borderLeftColor: displayColor, borderLeftWidth: '3px', backgroundColor: `${displayColor}15` }
-              : undefined
+      className={
+        rail
+          ? railShellClass(isSelected, planMode, ghost)
+          : defaultShellClass(isSelected, planMode, ghost, displayColor)
       }
+      style={rail ? undefined : defaultShellStyle(isSelected, planMode, displayColor)}
     >
       <div className="flex items-start">
         <div className="flex-1 min-w-0">{children}</div>

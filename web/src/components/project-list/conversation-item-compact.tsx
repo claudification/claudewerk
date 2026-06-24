@@ -1,14 +1,12 @@
 import { formatResetIn } from '@shared/format-reset-time'
-import { projectIdentityKey } from '@shared/project-uri'
 import { Clock } from 'lucide-react'
-import { memo, type ReactNode, useLayoutEffect } from 'react'
+import { memo, type ReactNode } from 'react'
 import { ModelClassPill } from '@/components/ui/model-class-pill'
 import { useConversationsStore } from '@/hooks/use-conversations'
-import { useGhostShort } from '@/hooks/use-ghost-sessions'
-import { formatCost, getCacheTimerInfo, getConversationCost, getCostBgColor } from '@/lib/cost-utils'
-import { tallyListRender } from '@/lib/perf-metrics'
+import { rowSubtitle, rowTitle } from '@/lib/conversation-row'
+import { formatCost } from '@/lib/cost-utils'
 import type { Conversation } from '@/lib/types'
-import { cn, contextWindowSize, formatPermissionMode, haptic } from '@/lib/utils'
+import { cn, formatPermissionMode, haptic } from '@/lib/utils'
 import { useIsMobile } from '../input-editor/shell/use-is-mobile'
 import { ShareIndicator } from '../share-panel'
 import { BackendIcon } from './backend-icon'
@@ -25,6 +23,7 @@ import {
 } from './conversation-item-helpers'
 import { isDaemonTransport } from './conversation-item-internals'
 import { GhostAttachButton, GhostBadge, GhostStatusDot } from './ghost-attach'
+import { useConversationRowData } from './row-hooks'
 import { SentinelProfileBadge } from './sentinel-profile-badge'
 import { StatusIndicator } from './status-indicator'
 
@@ -33,30 +32,16 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
 }: {
   conversation: Conversation
 }) {
-  // Perf instrumentation: tally committed re-renders of this leaf so a capture
-  // can tell a memo leak (rows storm per store update) from selector churn
-  // (rows quiet, store notifies constantly). No-op unless the perf monitor is on.
-  useLayoutEffect(() => {
-    tallyListRender('row')
-  })
-  const isSelected = useConversationsStore(s => s.selectedConversationId === conversation.id)
-  const selectedSubagentId = useConversationsStore(s =>
-    s.selectedConversationId === conversation.id ? s.selectedSubagentId : null,
-  )
+  // Shared subscribe/derive layer (status, ghost, ctx %, cost, cache) -- same
+  // source as the status-rail row. Component-specific selectors stay below.
+  const { isSelected, selectedSubagentId, displayColor, isGhost, ctx, costInfo, cacheInfo } =
+    useConversationRowData(conversation)
   const selectConversation = useConversationsStore(s => s.selectConversation)
-
   const openTab = useConversationsStore(s => s.openTab)
-  const ps = useConversationsStore(s => s.projectSettings[projectIdentityKey(conversation.project)])
-  const showCost = useConversationsStore(s => s.controlPanelPrefs.showCostInList)
-  const showContextBar = useConversationsStore(s => s.controlPanelPrefs.showContextInList)
   const showRecapDesc = useConversationsStore(s => s.controlPanelPrefs.showRecapDescInList)
   const isRenaming = useConversationsStore(s => s.renamingConversationId === conversation.id)
   const isEditingDescription = useConversationsStore(s => s.editingDescriptionConversationId === conversation.id)
-  const displayColor = ps?.color
   const isMobile = useIsMobile()
-  // Ghost: live daemon worker in the roster, not hosted by us (see Full card).
-  const ghostShort = useGhostShort(conversation.id)
-  const isGhost = !!ghostShort && (conversation.connectionIds?.length ?? 0) === 0
 
   function selectThisConversation() {
     haptic('tap')
@@ -74,37 +59,7 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
     !permissionBadge && conversation.planMode
       ? { label: 'P', color: 'text-blue-400', title: 'Plan mode -- requires plan approval' }
       : null
-  const cacheInfo =
-    conversation.status === 'idle'
-      ? getCacheTimerInfo(
-          conversation.lastTurnEndedAt,
-          conversation.tokenUsage,
-          conversation.model,
-          conversation.cacheTtl,
-        )
-      : null
-  const costInfo = (() => {
-    if (!showCost || !conversation.stats) return null
-    const { cost, exact } = getConversationCost(conversation.stats, conversation.model)
-    if (cost < 0.5) return null
-    return { cost, exact, colorClass: getCostBgColor(cost).split(' ')[1] }
-  })()
   const showHostAlias = conversation.hostSentinelAlias && conversation.hostSentinelAlias !== 'default'
-
-  // Context % (used by both layouts on the title row)
-  const ctx = (() => {
-    if (!showContextBar || !conversation.tokenUsage) return null
-    const { input, cacheCreation, cacheRead } = conversation.tokenUsage
-    const total = input + cacheCreation + cacheRead
-    if (total === 0) return null
-    const maxTokens = conversation.contextWindow ?? contextWindowSize(conversation.model)
-    const pct = Math.min(100, Math.round((total / maxTokens) * 100))
-    const threshold = conversation.autocompactPct || 83
-    const warnAt = threshold - 5
-    const color = pct < warnAt ? 'text-emerald-400/60' : pct < threshold ? 'text-amber-400/60' : 'text-red-400/70'
-    const barColor = pct < warnAt ? 'bg-emerald-400/60' : pct < threshold ? 'bg-amber-400/60' : 'bg-red-400/70'
-    return { pct, color, barColor }
-  })()
 
   // Mobile state prefix: small chips/text rendered BEFORE the subtitle.
   // Encoded as renderable nodes so coloring/styling per item is preserved.
@@ -151,7 +106,7 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
               isSelected ? 'text-accent' : 'text-foreground',
             )}
           >
-            {(conversation.title || conversation.agentName || '').slice(0, 24) || conversation.id.slice(0, 8)}
+            {rowTitle(conversation, 24)}
           </span>
         )}
         {/* Model class -- identity marker, right of the name in both layouts */}
@@ -213,7 +168,7 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
         </div>
       ) : (
         (() => {
-          const subtitle = conversation.description || conversation.summary || conversation.recap?.title
+          const subtitle = rowSubtitle(conversation)
           // Mobile chip prefixes -- profile first (identity), then host alias, then state.
           const mobileChips: ReactNode[] = []
           if (isMobile) {

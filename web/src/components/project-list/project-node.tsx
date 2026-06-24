@@ -1,7 +1,6 @@
 import { projectIdentityKey } from '@shared/project-uri'
 import { GitBranch, Pin } from 'lucide-react'
 import { memo, useLayoutEffect, useMemo, useState } from 'react'
-import { useShallow } from 'zustand/react/shallow'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { tallyListRender } from '@/lib/perf-metrics'
 import type { Conversation } from '@/lib/types'
@@ -13,9 +12,11 @@ import { ProjectSettingsButton } from '../project-settings-button'
 import { ProjectSettingsEditor } from '../project-settings-editor-lazy'
 import { ConversationContextMenu, PinnedProjectContextMenu, ProjectContextMenu } from './conversation-context-menu'
 import { ConversationItemCompact, SpawnRootStub } from './conversation-item'
+import { ConversationItemRail } from './conversation-item-rail'
 import { InlineConfirmButton } from './inline-confirm-button'
 import { groupByLineage, neededOrphanRootIds } from './lineage'
 import { partitionConversations } from './partition'
+import { useHydratedConversations } from './row-hooks'
 
 function idsEqual(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false
@@ -114,19 +115,14 @@ const ProjectConversationGroup = memo(
     const selectProject = useConversationsStore(s => s.selectProject)
     const displayName = ps?.label || extractProjectLabel(project)
     const displayColor = ps?.color
-    // Hydrate conversations from the per-id index. Conversations whose identity didn't
-    // change keep the same reference -- useShallow short-circuits when none
-    // of the elements changed.
-    const conversations = useConversationsStore(
-      useShallow(s => {
-        const out: Conversation[] = []
-        for (const id of conversationIds) {
-          const c = s.conversationsById[id]
-          if (c) out.push(c)
-        }
-        return out
-      }),
-    )
+    // Status-rail view: borderless header + a single continuous project-colored
+    // spine down the rows (replaces the per-row stripe). Store subscription, so a
+    // listViewMode flip re-renders this group even past the memo comparator.
+    const railMode = useConversationsStore(s => s.controlPanelPrefs.listViewMode === 'rail')
+    const RowComp = railMode ? ConversationItemRail : ConversationItemCompact
+    // Hydrate conversations from the per-id index (shared hook -- shallow-equal
+    // short-circuits when no referenced conversation's identity changed).
+    const conversations = useHydratedConversations(conversationIds)
     const { worktrees, adhoc, normal, ended } = useMemo(() => partitionConversations(conversations), [conversations])
     // Project-level rollups: any conversation in this project needing attention?
     const hasPendingPermission = useConversationsStore(s => {
@@ -146,23 +142,14 @@ const ProjectConversationGroup = memo(
     // visible. (Walking only `normal` -- ad-hoc / worktree buckets keep their
     // own separators; daemon-spawned children land in `normal`.)
     const orphanRootIds = useMemo(() => neededOrphanRootIds(normal), [normal])
-    const orphanRoots = useConversationsStore(
-      useShallow(s => {
-        const out: Conversation[] = []
-        for (const id of orphanRootIds) {
-          const c = s.conversationsById[id]
-          if (c) out.push(c)
-        }
-        return out
-      }),
-    )
+    const orphanRoots = useHydratedConversations(orphanRootIds)
     const normalGroups = useMemo(() => groupByLineage(normal, orphanRoots), [normal, orphanRoots])
 
     return (
       <div>
         <div
-          className="border border-border"
-          style={displayColor ? { borderLeftColor: displayColor, borderLeftWidth: '3px' } : undefined}
+          className={cn(railMode ? 'border-0' : 'border border-border')}
+          style={!railMode && displayColor ? { borderLeftColor: displayColor, borderLeftWidth: '3px' } : undefined}
         >
           {/* group/projhead scopes the checklist's reveal-on-hover to the header
               (+ the checklist itself), NOT the whole card -- hovering a
@@ -237,9 +224,14 @@ const ProjectConversationGroup = memo(
             </ProjectContextMenu>
             <ProjectChecklist project={project} />
           </div>
-          {/* -mb-px overlaps the last card's bottom border onto the container's
-              bottom border so they read as one line (no doubled/gapped edge). */}
-          <div className="space-y-0.5 -mb-px">
+          {/* default: -mb-px overlaps the last card's bottom border onto the
+              container's bottom border so they read as one line. rail: drop the
+              card borders entirely and draw ONE continuous project-colored spine
+              down the rows (left border on this container). */}
+          <div
+            className={cn('space-y-0.5', railMode ? 'ml-2.5 border-l-2 pl-1.5' : '-mb-px')}
+            style={railMode ? { borderLeftColor: displayColor || 'var(--border)' } : undefined}
+          >
             {crossProjectStubIds && crossProjectStubIds.length > 0 && (
               <>
                 <div className="flex items-center gap-2 px-3 py-1">
@@ -273,7 +265,7 @@ const ProjectConversationGroup = memo(
                       onOpenSettings={() => setShowSettings(true)}
                     >
                       <div className={member.role === 'child' ? 'pl-3' : undefined}>
-                        <ConversationItemCompact conversation={member.conversation} />
+                        <RowComp conversation={member.conversation} />
                       </div>
                     </ConversationContextMenu>
                   ),
@@ -294,7 +286,7 @@ const ProjectConversationGroup = memo(
                 onOpenSettings={() => setShowSettings(true)}
               >
                 <div>
-                  <ConversationItemCompact conversation={conversation} />
+                  <RowComp conversation={conversation} />
                 </div>
               </ConversationContextMenu>
             ))}
@@ -314,7 +306,7 @@ const ProjectConversationGroup = memo(
                   onOpenSettings={() => setShowSettings(true)}
                 >
                   <div>
-                    <ConversationItemCompact conversation={conversation} />
+                    <RowComp conversation={conversation} />
                   </div>
                 </ConversationContextMenu>
               ))}
