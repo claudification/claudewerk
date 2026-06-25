@@ -1653,7 +1653,14 @@ export interface DispatchToolResult {
  *  the live roster (active conversations the desk currently covers), so the
  *  overlay can SHOW what the concierge is holding -- not just route into it. */
 export interface DispatchThreadsResult {
-  type: 'dispatch_threads_result'
+  // Conventional `${request}_result` name so the message-router's auto error reply
+  // for a thrown `dispatch_list_threads` handler (permission gate) reaches the SAME
+  // client handler as success -- otherwise a failure is unmatched and the overlay
+  // wedges on "loading" forever (dead-on-open). Success carries no `ok`; the error
+  // reply carries ok:false + error.
+  type: 'dispatch_list_threads_result'
+  ok?: boolean
+  error?: string
   requestId?: string
   /** Active conversations across ALL projects, as selectable cards ("active right
    *  now"). The dispatcher is GLOBAL -- not project-scoped. Threads are short-term

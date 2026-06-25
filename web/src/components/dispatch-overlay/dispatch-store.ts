@@ -85,6 +85,25 @@ export interface DispatchState {
 let reqSeq = 0
 const nextRequestId = () => `dreq_${Date.now().toString(36)}_${++reqSeq}`
 
+const NOT_CONNECTED = 'Not connected -- your message was not sent. It is still here; try again in a moment.'
+
+/**
+ * Fire a `dispatch_request` and reflect the WIRE OUTCOME in store state.
+ *
+ * The anti-brick invariant (the voice "connected lied" lesson, 2026-06-24):
+ * `pending` is ONLY ever cleared by an INBOUND reply (see dispatch-inbound), so we
+ * must NOT enter `pending: true` unless the frame actually left the socket.
+ * `wsSend` returns `false` and SILENTLY DROPS when the socket isn't OPEN -- doing
+ * the optimistic `pending: true` anyway would wedge it forever (no reply ever
+ * comes) and brick every future submit. That is the dead-input bug. On a drop we
+ * surface `lastError` and stay fully recoverable. Returns whether it went out.
+ */
+function fireRequest(set: (partial: Partial<DispatchState>) => void, payload: Record<string, unknown>): boolean {
+  const sent = wsSend('dispatch_request', payload)
+  set(sent ? { pending: true, lastError: null } : { lastError: NOT_CONNECTED })
+  return sent
+}
+
 export const useDispatchStore = create<DispatchState>((set, get) => ({
   open: false,
   userId: null,
@@ -120,9 +139,10 @@ export const useDispatchStore = create<DispatchState>((set, get) => ({
       const intent = (get().intent ?? '').trim()
       if (!intent || get().pending) return
       const requestId = nextRequestId()
-      // Clear the input the moment we send -- "on ask/Enter the input must clear".
-      set({ pending: true, lastError: null, intent: '' })
-      wsSend('dispatch_request', { intent, requestId, model: get().model, ...override })
+      // Clear the draft ONLY once the frame is really on the wire ("on ask/Enter the
+      // input must clear"). A dropped send keeps the user's text so they can retry --
+      // clearing optimistically lost the message AND wedged the input (see fireRequest).
+      if (fireRequest(set, { intent, requestId, model: get().model, ...override })) set({ intent: '' })
     } catch (err) {
       // Defect #2: never die silently before wsSend. Surface the throw as
       // lastError so a broken submit is visible instead of vanishing.
@@ -131,11 +151,9 @@ export const useDispatchStore = create<DispatchState>((set, get) => ({
   },
 
   confirmExpensive: decision => {
-    const requestId = nextRequestId()
-    set({ pending: true, lastError: null })
-    wsSend('dispatch_request', {
+    fireRequest(set, {
       intent: decision.intent,
-      requestId,
+      requestId: nextRequestId(),
       target: decision.target,
       disposition: decision.disposition === 'ask' ? undefined : decision.disposition,
       confirmedExpensive: true,
@@ -145,11 +163,9 @@ export const useDispatchStore = create<DispatchState>((set, get) => ({
   chooseCandidate: (candidate, ended) => {
     const intent = (get().intent ?? '').trim() || get().decisions[0]?.intent
     if (!intent) return
-    const requestId = nextRequestId()
-    set({ pending: true, lastError: null })
-    wsSend('dispatch_request', {
+    fireRequest(set, {
       intent,
-      requestId,
+      requestId: nextRequestId(),
       target: candidate.conversationId,
       disposition: ended ? 'revive' : 'route',
     })
@@ -157,8 +173,11 @@ export const useDispatchStore = create<DispatchState>((set, get) => ({
 
   fetchThreads: () => {
     if (get().threadsLoading) return
-    set({ threadsLoading: true })
-    wsSend('dispatch_list_threads', { requestId: nextRequestId() })
+    // Same anti-brick rule for the open-load: only enter the loading state if the
+    // request truly left the socket. A dropped send leaves threadsLoading=false so
+    // the reconnect effect (dispatch-overlay) re-fires it -- otherwise the overlay
+    // wedges on "loading" forever and renders nothing (dead-on-open).
+    if (wsSend('dispatch_list_threads', { requestId: nextRequestId() })) set({ threadsLoading: true })
   },
 
   openOverlay: () => {

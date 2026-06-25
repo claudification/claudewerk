@@ -12,7 +12,7 @@
  * store logic stays in desk/ (runDispatch / listThreads). Zero logic duplicated.
  *
  *   dispatch_request       -> runDispatch(cmd, rt) -> dispatch_request_result (+ broadcast DispatchDecision)
- *   dispatch_list_threads  -> listThreadsForUser   -> dispatch_threads_result
+ *   dispatch_list_threads  -> listThreadsForUser   -> dispatch_list_threads_result
  */
 
 import { runDispatchAgent } from '../desk/agent-runtime'
@@ -154,7 +154,11 @@ const dispatchListThreads: MessageHandler = (ctx: HandlerContext, data: MessageD
   // The living conversation itself (transcript + state blocks) so opening the
   // overlay loads the persistent dispatcher, not a blank feed (Slice C).
   const history = dumpUserHistory(userId)
-  ctx.reply({ type: 'dispatch_threads_result', requestId, roster, memory, workspaces, history, userId })
+  // Conventional `${request}_result` name (see DispatchThreadsResult): a thrown
+  // dispatchListThreads (permission gate) is auto-replied by the router as
+  // `dispatch_list_threads_result` ok:false, which must reach the same client
+  // handler -- else the overlay wedges on "loading" forever.
+  ctx.reply({ type: 'dispatch_list_threads_result', requestId, roster, memory, workspaces, history, userId })
 }
 
 export function registerDispatchHandlers(): void {

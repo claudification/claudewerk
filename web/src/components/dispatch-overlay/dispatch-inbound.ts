@@ -23,6 +23,10 @@ type Set = (partial: Partial<DispatchState> | ((s: DispatchState) => Partial<Dis
 type Get = () => DispatchState
 
 export interface ThreadsResultMsg {
+  /** Present (and false) only on a router-level failure reply (a thrown handler,
+   *  e.g. permission denied), which comes back as the same conventional type. */
+  ok?: boolean
+  error?: string
   roster?: DispatchCandidate[]
   memory?: string
   workspaces?: WorkspaceInfo[]
@@ -48,7 +52,14 @@ export function createInbound(set: Set, get: Get) {
       }
     },
 
-    onThreadsResult: (msg: ThreadsResultMsg) =>
+    onThreadsResult: (msg: ThreadsResultMsg) => {
+      // A router-level failure (thrown handler -- e.g. the `spawn` permission gate)
+      // arrives as the SAME conventional `${type}_result` with ok:false and no
+      // payload. Clear the loading flag + surface it; do NOT wipe the desk to blanks.
+      if (msg.ok === false) {
+        set({ threadsLoading: false, lastError: msg.error ?? 'failed to load the desk' })
+        return
+      }
       set(s => ({
         threadsLoading: false,
         roster: msg.roster ?? [],
@@ -56,7 +67,8 @@ export function createInbound(set: Set, get: Get) {
         workspaces: msg.workspaces ?? [],
         history: msg.history ?? s.history, // seed the living conversation on open (Slice C)
         userId: msg.userId ?? s.userId,
-      })),
+      }))
+    },
 
     // The streamed living history -- replace in place so every device stays in
     // lockstep on the same continuously-updating state (Slice B/C).

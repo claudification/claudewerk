@@ -35,7 +35,7 @@ const CONTROL_PANEL: Partial<WsData> = { userName: 'jonas', isControlPanel: true
 describe('dispatch_list_threads handler', () => {
   it('returns the global desk state stamped with the authed user (no threads/projects panel)', () => {
     const replies = run('dispatch_list_threads', { requestId: 'r1' }, CONTROL_PANEL)
-    expect(replies[0]).toMatchObject({ type: 'dispatch_threads_result', requestId: 'r1', userId: 'jonas' })
+    expect(replies[0]).toMatchObject({ type: 'dispatch_list_threads_result', requestId: 'r1', userId: 'jonas' })
     // The live roster rides along so the overlay can show "active right now".
     expect(Array.isArray(replies[0].roster)).toBe(true)
     // Threads are SHORT-TERM memory folded into the dispatcher's context, not a
@@ -46,7 +46,10 @@ describe('dispatch_list_threads handler', () => {
 
   it('is rejected for a non-control-panel caller (role gate, default-deny)', () => {
     const replies = run('dispatch_list_threads', { requestId: 'r2' }, {})
-    expect(replies[0]).toMatchObject({ ok: false, requestId: 'r2' })
+    // The error reply MUST use the conventional `${type}_result` name so it reaches
+    // the SAME client handler as success -- else the overlay wedges on "loading"
+    // forever on any failure (the dead-on-open regression this rename guards).
+    expect(replies[0]).toMatchObject({ type: 'dispatch_list_threads_result', ok: false, requestId: 'r2' })
     expect(String(replies[0].error)).toContain('Forbidden')
   })
 })

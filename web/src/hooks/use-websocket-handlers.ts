@@ -1737,7 +1737,7 @@ export const handlers: Record<string, MessageHandler> = {
   recap_list_result: handleRecapListResult,
   // dispatch cockpit (per-user Front Desk overlay)
   dispatch_request_result: handleDispatchRequestResult,
-  dispatch_threads_result: handleDispatchThreadsResult,
+  dispatch_list_threads_result: handleDispatchThreadsResult,
   dispatch_history: handleDispatchHistory,
   dispatch_decision: handleDispatchDecision,
   dispatch_tool_call: handleDispatchToolCall,

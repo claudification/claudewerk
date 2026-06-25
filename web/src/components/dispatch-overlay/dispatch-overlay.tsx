@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react'
+import { useConversationsStore } from '@/hooks/use-conversations'
 import { DispatchFlow } from './dispatch-flow'
 import { DispatchHeader } from './dispatch-header'
 import { DispatchIntentInput } from './dispatch-intent-input'
@@ -18,6 +19,18 @@ export default function DispatchOverlay() {
   const open = useDispatchStore(s => s.open)
   const close = useDispatchStore(s => s.closeOverlay)
   const verbose = useDispatchStore(s => s.verbose)
+  const fetchThreads = useDispatchStore(s => s.fetchThreads)
+  // Subscribes to connectSeq only (bumps on every WS (re)connect), NOT the data.
+  const connectSeq = useConversationsStore(s => s.connectSeq)
+
+  // Self-heal the open-load: re-fetch the desk when the overlay is open and the
+  // socket (re)connects. Covers cold-open (the overlay armed before the WS was
+  // OPEN, so openOverlay's initial fetchThreads silently dropped and left the desk
+  // blank) and any mid-session reconnect. fetchThreads no-ops while already
+  // loading, so the redundant mount-time call is free. Mirrors project-list.tsx.
+  useEffect(() => {
+    if (open) fetchThreads()
+  }, [open, connectSeq, fetchThreads])
 
   useEffect(() => {
     if (!open) return
