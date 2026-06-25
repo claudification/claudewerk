@@ -35,7 +35,6 @@ import {
   Search,
   Sliders,
   Trash2,
-  X,
   Zap,
 } from 'lucide-react'
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -330,9 +329,6 @@ export function TaskEditor({
             <option value="high">high</option>
           </select>
           <span className="text-[9px] text-muted-foreground/40 font-mono">{taskAge(task.created)}</span>
-          <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground ml-1">
-            <X className="size-4" />
-          </button>
         </div>
 
         {/* Tags */}
