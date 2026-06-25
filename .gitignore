@@ -15,6 +15,8 @@ src/shared/version.ts
 NOTES.md
 .rclaude/
 .nightshift/
+.launchfile/
+.env.local
 /store.db
 /store.db-shm
 /store.db-wal

@@ -24,9 +24,12 @@ RUN bun install --frozen-lockfile && cd web && bun install --frozen-lockfile
 # `docker build .` invocations are deliberately discouraged (see docker-compose.yml).
 COPY . .
 
-# Build server binaries only (web is built locally and volume-mounted).
+# Build web + server binaries fully in-container so the image builds from any
+# clean context (git archive, a fresh clone, or a Launchfile-driven compose
+# build) without host-side prebuild steps. Production still bind-mounts a
+# locally-built web/dist over /srv/web; the baked copy is the offline fallback.
 # build:broker's dirty-tree check no-ops here because .git is not in the context.
-RUN bun run gen-version && bun run build:broker && bun run build:cli
+RUN bun run gen-version && bun run build:web && bun run build:broker && bun run build:cli
 
 # Runtime stage - minimal image
 FROM debian:bookworm-slim
@@ -39,8 +42,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /build/bin/broker /usr/local/bin/broker
 COPY --from=builder /build/bin/broker-cli /usr/local/bin/broker-cli
 
-# Copy pre-built web assets (built locally with Vite 8, volume-mounted in production)
-COPY web/dist /srv/web
+# Copy web assets built in the builder stage (volume-mounted over in production)
+COPY --from=builder /build/web/dist /srv/web
 
 # Data directories
 RUN mkdir -p /data/cache /data/transcripts
