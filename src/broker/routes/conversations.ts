@@ -3,7 +3,7 @@
  */
 
 import { Hono } from 'hono'
-import { extractProjectLabel, parseProjectUri } from '../../shared/project-uri'
+import { extractProjectLabel } from '../../shared/project-uri'
 import type { SendInput, TerminationSource } from '../../shared/protocol'
 import { resolveSpawnConfig } from '../../shared/spawn-defaults'
 import type { SpawnRequest } from '../../shared/spawn-schema'
@@ -323,10 +323,12 @@ export function createConversationsRouter(
     // Resolve defaults: launch config > project > global > undefined
     const projSettings = getProjectSettings(conv.project)
     const globalSettings = getGlobalSettings()
-    const conversationPath = parseProjectUri(conv.project).path
     const resolved = resolveSpawnConfig(
       {
-        cwd: conversationPath,
+        // Pass the project URI through verbatim -- the broker must never resolve
+        // a URI to a raw `cwd` path. `resolveSpawnConfig` reads cwd informationally
+        // only; the sentinel owns path resolution at revive time.
+        cwd: conv.project,
         headless: lc?.headless,
         model: lc?.model as SpawnRequest['model'] | undefined,
         effort: lc?.effort as SpawnRequest['effort'] | undefined,

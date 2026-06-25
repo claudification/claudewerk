@@ -53,6 +53,61 @@ const ALLOWED_CCSESSION_FILES = new Set([
   'conversation-store.ts',
 ])
 
+/**
+ * RULE 4 (CWD-IS-INFORMATIONAL covenant): in the broker, a raw filesystem `cwd`
+ * is INFORMATIONAL ONLY (logs, display labels, opaque passthrough to the
+ * sentinel). It must NEVER drive logic. The project URI (`claude://...`) is the
+ * sole identity; the SENTINEL owns URI<->path resolution. Two patterns are the
+ * tell that the broker is doing path LOGIC and are gated below:
+ *
+ *   4a. `parseProjectUri(x).path` -- extracting a raw path OUT of a URI so the
+ *       broker can use it. The broker should forward the URI and let the
+ *       sentinel resolve it.
+ *   4b. `cwdToProjectUri(x)` -- deriving the canonical identity FROM a raw path
+ *       at runtime. Conversion belongs at the agent-host / sentinel boundary,
+ *       not in broker core.
+ *
+ * Both allowlists are GRANDFATHERED: they freeze the current footprint so NO NEW
+ * file can introduce broker cwd-logic. `.claude/docs/plan-broker-cwd-eradication.md`
+ * drives them to zero. DO NOT ADD to either set -- if you reach for one, the
+ * conversion belongs on the sentinel.
+ */
+const ALLOWED_URI_PATH_EXTRACTION_FILES = new Set([
+  // Sends the path to the sentinel in `project_watch` / `project_unwatch`. The
+  // wire message already carries the URI too; the plan moves extraction
+  // sentinel-side so the broker forwards the URI only.
+  'project-watch-registry.ts',
+])
+const ALLOWED_CWD_TO_URI_FILES = new Set([
+  // --- Legacy one-time migrations: read an OLD persisted `cwd` column / field
+  //     and upgrade it to a URI exactly once. Defensible long-term.
+  'project-store.ts',
+  'project-links.ts',
+  'project-settings.ts',
+  'project-order.ts',
+  'analytics-store.ts',
+  'conversation-store.ts',
+  'conversation-store/project-links.ts',
+  'permissions.ts',
+  // --- Runtime inbound-path conversion at the spawn / boot wire seam. These
+  //     are the real targets of the eradication plan: a raw `cwd` arrives from
+  //     the agent-host / sentinel and is converted in broker core. The plan
+  //     pushes the conversion onto the sentinel so the URI arrives pre-formed.
+  'handlers/boot-lifecycle.ts',
+  'handlers/conversation-lifecycle.ts',
+  'handlers/daemon.ts',
+  'backends/claude-daemon.ts',
+  'backends/opencode.ts',
+  // spawn-dispatch.ts: the spawn-request entry seam. `SpawnRequest.cwd` is the
+  // ONE place a raw path legitimately arrives (MCP `cwd` param) and is converted
+  // for the pre-dispatch project-settings lookup. The architectural root of the
+  // plan -- canonicalize at the sentinel so the URI is formed before dispatch.
+  'spawn-dispatch.ts',
+  // shares.ts: normalizes a share's `project` at ingest. The plan types
+  // `ConversationShare.project` URI-only so this fallback disappears.
+  'shares.ts',
+])
+
 /** Lines that are pure comments or that embed the token only inside a string
  *  literal are documentation, not logic -- never a boundary violation. */
 function isCommentLine(line: string): boolean {
@@ -174,6 +229,37 @@ export function findBrokerBoundaryViolations(): BoundaryViolation[] {
             reason:
               'Broker must not read `profile.env` -- API keys / configDir live sentinel-side ' +
               '(Profile-Env Boundary). Forward NAMES only.',
+          })
+        }
+      }
+
+      // Rule 4a (CWD-IS-INFORMATIONAL): extracting a raw path OUT of a project
+      // URI (`parseProjectUri(x).path`) is path LOGIC -- the broker should
+      // forward the URI and let the sentinel resolve the path.
+      if (/\b(try)?[pP]arseProjectUri\([^)]*\)\.path\b/.test(line) && !ALLOWED_URI_PATH_EXTRACTION_FILES.has(relPath)) {
+        violations.push({
+          file: `src/broker/${relPath}`,
+          line: lineNum,
+          text: line.trim(),
+          reason:
+            'Broker must not extract `.path` from a project URI (CWD-IS-INFORMATIONAL). ' +
+            'Forward the URI; the sentinel owns URI->path resolution.',
+        })
+      }
+
+      // Rule 4b (CWD-IS-INFORMATIONAL): deriving the canonical identity FROM a
+      // raw path at runtime (`cwdToProjectUri(x)`) is path LOGIC -- conversion
+      // belongs at the agent-host / sentinel boundary, not in broker core.
+      if (/\bcwdToProjectUri\(/.test(line) && !ALLOWED_CWD_TO_URI_FILES.has(relPath)) {
+        // String-literal / comment references that merely DOCUMENT the ban are fine.
+        if (!/['"`][^'"`]*cwdToProjectUri[^'"`]*['"`]/.test(line)) {
+          violations.push({
+            file: `src/broker/${relPath}`,
+            line: lineNum,
+            text: line.trim(),
+            reason:
+              'Broker must not call `cwdToProjectUri` (CWD-IS-INFORMATIONAL) -- raw paths must ' +
+              'not reach broker core. Resolve URIs at the sentinel / agent-host boundary.',
           })
         }
       }

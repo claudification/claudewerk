@@ -24,6 +24,7 @@ import { nightshiftPreamble } from '../shared/nightshift-preamble'
 import {
   buildProjectUri,
   cwdToProjectUri,
+  extractProjectLabel,
   isSameProject,
   tryParseProjectUri,
   validateProjectUri,
@@ -405,7 +406,10 @@ async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): 
   deps.conversationStore.createJob(jobId, conversationId)
   emitProgress(deps.conversationStore, jobId, 'job_created', 'done', { conversationId })
 
-  const projectLabel = req.cwd.split('/').pop() || req.cwd
+  // Display label only -- never logic. `extractProjectLabel` is URI-aware so a
+  // `claude://sentinel/path` target yields the last path segment without raw
+  // `cwd` string-surgery (cwd is informational in the broker, never parsed).
+  const projectLabel = extractProjectLabel(req.cwd)
   if (req.adHoc) {
     console.log(
       `[ad-hoc] Spawn request: ${projectLabel} task=${req.adHocTaskId || 'none'} conv=${conversationId.slice(0, 8)} prompt=${req.prompt?.length || 0}chars worktree=${req.worktree || 'none'}`,
@@ -487,7 +491,7 @@ async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): 
           nightshiftPreamble({
             runId: req.nightshift.runId,
             taskId: req.nightshift.taskId,
-            project: req.name || req.cwd,
+            project: req.name || extractProjectLabel(req.cwd),
           }),
         ]
           .filter(Boolean)
