@@ -21,7 +21,15 @@ import type { ConversationStore } from '../conversation-store'
 import type { RouteHelpers } from './shared'
 
 const NIGHTSHIFT_RPC_TIMEOUT_MS = 10_000
-const WRITE_OPS = new Set<NightshiftOpKind>(['config_write', 'run_start', 'report', 'run_finalize'])
+const WRITE_OPS = new Set<NightshiftOpKind>([
+  'config_write',
+  'run_start',
+  'report',
+  'task_patch',
+  'run_finalize',
+  'enqueue',
+  'dequeue',
+])
 
 interface NightshiftHttpBody {
   /** Canonical project URI (the broker resolves it to a host root + sentinel). */
@@ -31,7 +39,10 @@ interface NightshiftHttpBody {
   config?: NightshiftOp['config']
   runStart?: NightshiftOp['runStart']
   report?: NightshiftOp['report']
+  taskPatch?: NightshiftOp['taskPatch']
   finalize?: NightshiftOp['finalize']
+  enqueue?: NightshiftOp['enqueue']
+  dequeueId?: string
 }
 
 /** Resolve the owning sentinel for a project URI; default sentinel as fallback. */
@@ -82,7 +93,10 @@ export function createNightshiftRouter(conversationStore: ConversationStore, hel
         config: body.config,
         runStart: body.runStart,
         report: body.report,
+        taskPatch: body.taskPatch,
         finalize: body.finalize,
+        enqueue: body.enqueue,
+        dequeueId: body.dequeueId,
       }
       sentinel.send(JSON.stringify(op))
     })
