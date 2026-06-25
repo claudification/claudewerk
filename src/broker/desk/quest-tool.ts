@@ -35,17 +35,26 @@ function shortId(): string {
 }
 
 /** The spawn seam -- the live loop uses spawnDeskConversation; tests inject a stub.
- *  We spawn BY PROJECT URI (the canonical identity); the sentinel derives the
- *  filesystem location. The dispatcher never reasons in raw paths. */
-export type QuestSpawn = (req: { projectUri: string; intent: string; model?: string }) => Promise<{
-  conversationId: string
-}>
+ *  `projectUri` is the canonical identity (memory key / label); `cwd` is the
+ *  path-backed filesystem location for claude:// projects (null for agent:// /
+ *  api:// schemes). We spawn BY `cwd` when path-backed -- the sentinel's
+ *  `expandPath` resolves a filesystem path, NOT a `claude://` URI (passing the URI
+ *  yields `resolve(spawnRoot, 'claude:///...')` -> a bogus dir, the live bug this
+ *  fixes) -- and fall back to the URI only for non-path schemes (agent transport
+ *  routes those by URI and never needs a cwd). */
+export type QuestSpawn = (req: {
+  projectUri: string
+  cwd: string | null
+  intent: string
+  model?: string
+}) => Promise<{ conversationId: string }>
 
 export function questTools(rt: DispatchRuntime, spawn?: QuestSpawn): Toolset {
-  // The spawn machinery accepts a project URI as its target (spawn-dispatch wraps
-  // plain paths but passes URIs through). Pass the URI, not a derived path.
+  // Spawn by the path-backed cwd when we have one (the sentinel expands a path);
+  // fall back to the URI for schemeful, non-path projects (agent:// / api://).
   const doSpawn: QuestSpawn =
-    spawn ?? (req => spawnDeskConversation(rt, { target: req.projectUri, intent: req.intent, model: req.model }))
+    spawn ??
+    (req => spawnDeskConversation(rt, { target: req.cwd ?? req.projectUri, intent: req.intent, model: req.model }))
   return {
     dispatch_quest: defineTool({
       description:
@@ -65,14 +74,20 @@ export function questTools(rt: DispatchRuntime, spawn?: QuestSpawn): Toolset {
         }
         const dp = resolveDeskProject(project)
         if (!dp) return { error: `no project matching "${project}"` }
-        // Dispatch BY PROJECT URI -- agnostic to scheme. A claude:// project hosts a
-        // CC worker, an agent:// / api:// project a chat worker; the spawn machinery
-        // routes by the URI. The dispatcher never reasons about a filesystem path.
+        // Spawn into the resolved project. claude:// projects carry a path-backed
+        // `cwd` the sentinel can expand; agent:// / api:// projects have a null cwd
+        // and route by URI. The dispatcher itself still never reasons in raw paths
+        // -- it hands both to the spawn seam, which picks the right target.
         const userId = ctx.identity?.userId ?? null
         const model = questModel(complexity)
         let conversationId: string
         try {
-          ;({ conversationId } = await doSpawn({ projectUri: dp.projectUri, intent: buildQuestPrompt(task), model }))
+          ;({ conversationId } = await doSpawn({
+            projectUri: dp.projectUri,
+            cwd: dp.cwd,
+            intent: buildQuestPrompt(task),
+            model,
+          }))
         } catch (e) {
           return { error: `dispatch failed: ${(e as Error).message}` }
         }

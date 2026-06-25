@@ -38,9 +38,11 @@ describe('dispatch_quest tool', () => {
     resetUserHistory('jonas')
     let sawModel: string | undefined
     let sawProjectUri: string | undefined
+    let sawCwd: string | null | undefined
     const spawn: QuestSpawn = async req => {
       sawModel = req.model
-      sawProjectUri = req.projectUri // we dispatch BY URI, never a raw path
+      sawProjectUri = req.projectUri // canonical identity (memory key / label)
+      sawCwd = req.cwd // path-backed location the sentinel can actually expand
       // the worker is told to report back to the dispatcher and exit
       expect(req.intent).toContain('send_message')
       expect(req.intent).toContain('dispatcher')
@@ -59,7 +61,10 @@ describe('dispatch_quest tool', () => {
     )) as { conversationId?: string; pendingId?: string; model?: string }
 
     expect(sawModel).toBe('sonnet') // moderate -> Sonnet
-    expect(sawProjectUri).toBe('claude://default/Users/jonas/projects/arr') // dispatched BY URI
+    expect(sawProjectUri).toBe('claude://default/Users/jonas/projects/arr') // canonical identity
+    // the SPAWN TARGET is the path-backed cwd (a claude:// URI does NOT expand in
+    // the sentinel) -- the live "Directory not found" regression this guards.
+    expect(sawCwd).toBe('/Users/jonas/projects/arr')
     expect(out.conversationId).toBe('conv_worker123')
     expect(out.model).toBe('sonnet')
     // quest registered against the worker, keyed for the report-back

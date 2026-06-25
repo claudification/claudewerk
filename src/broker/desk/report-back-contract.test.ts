@@ -60,9 +60,11 @@ describe('report-back contract: no fire-and-forget spawn', () => {
 
   test('dispatch_quest spawns into a project with ZERO live conversations + registers a quest + parks <pending>', async () => {
     let sawProjectUri: string | undefined
+    let sawCwd: string | null | undefined
     let sawReportBack = false
     const spawn: QuestSpawn = async req => {
       sawProjectUri = req.projectUri
+      sawCwd = req.cwd
       // the worker is told to report back and exit -- the report-back contract
       sawReportBack =
         req.intent.includes('send_message') &&
@@ -78,6 +80,10 @@ describe('report-back contract: no fire-and-forget spawn', () => {
 
     // resolved the named project + spawned into it despite no live conversation
     expect(sawProjectUri).toBe(ARR)
+    // SPAWN TARGET is the path-backed cwd (the sentinel can't expand a claude:// URI;
+    // passing the URI was the live "Directory not found" bug folding spawn_into_project
+    // into dispatch_quest had left open).
+    expect(sawCwd).toBe('/Users/jonas/projects/arr')
     expect(out.conversationId).toBe('conv_empty_worker')
     // the report-back contract rode along
     expect(sawReportBack).toBe(true)
