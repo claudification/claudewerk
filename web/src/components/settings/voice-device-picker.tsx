@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { openPreferredMicStream } from '@/hooks/voice-mic-stream'
 
 interface VoiceDevicePickerProps {
   value: string
@@ -16,8 +17,10 @@ export function VoiceDevicePicker({ value, onChange }: VoiceDevicePickerProps) {
     enumeratingRef.current = true
     try {
       // getUserMedia needed -- browsers hide device labels without a prior grant.
-      // echoCancellation:false so this label-unlock grant doesn't duck other audio.
-      await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false } }).then(s => {
+      // Unlock via the already-SELECTED mic (not the OS default) so reopening this
+      // picker doesn't flip a Bluetooth headset into HFP; any active grant exposes
+      // all labels. Only first-run (nothing persisted) falls back to the default.
+      await openPreferredMicStream().then(s => {
         for (const t of s.getTracks()) t.stop()
       })
       const all = await navigator.mediaDevices.enumerateDevices()

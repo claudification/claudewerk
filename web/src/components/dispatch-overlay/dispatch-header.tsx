@@ -1,10 +1,44 @@
+import { Maximize2, Minimize2, Minus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useDispatchStore } from './dispatch-store'
 
-/** Minimal desk header: identity + a verbose-state toggle + close. No stats, no
+interface DispatchHeaderProps {
+  maximized: boolean
+  onToggleMax: () => void
+  onMinimize: () => void
+}
+
+/** Maximize-toggle + park-to-dock. Close itself is the Radix X on the dialog. */
+function WindowControls({ maximized, onToggleMax, onMinimize }: DispatchHeaderProps) {
+  return (
+    <div className="flex flex-none items-center gap-0.5 text-comment">
+      <button
+        type="button"
+        onClick={onToggleMax}
+        title={maximized ? 'Restore' : 'Maximize'}
+        aria-label={maximized ? 'Restore dispatch' : 'Maximize dispatch'}
+        className="rounded-md p-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      >
+        {maximized ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+      </button>
+      <button
+        type="button"
+        onClick={onMinimize}
+        title="Minimize to dock"
+        aria-label="Minimize dispatch to dock"
+        // mr-6 keeps clear of the dialog's absolute close (X) button.
+        className="mr-6 rounded-md p-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      >
+        <Minus className="size-4" />
+      </button>
+    </div>
+  )
+}
+
+/** Minimal desk header: identity + a verbose-state toggle + window controls
+ *  (maximize / park-to-dock). Close is the Radix X on the dialog. No stats, no
  *  fleet -- the concierge doesn't greet you with a dashboard. */
-export function DispatchHeader() {
-  const close = useDispatchStore(s => s.closeOverlay)
+export function DispatchHeader({ maximized, onToggleMax, onMinimize }: DispatchHeaderProps) {
   const verbose = useDispatchStore(s => s.verbose)
   const toggleVerbose = useDispatchStore(s => s.toggleVerbose)
 
@@ -26,14 +60,7 @@ export function DispatchHeader() {
       >
         state
       </button>
-      <button
-        type="button"
-        onClick={close}
-        aria-label="Close dispatch (Esc)"
-        className="flex-none rounded-md px-2 py-1 text-[11px] text-comment hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-      >
-        esc
-      </button>
+      <WindowControls maximized={maximized} onToggleMax={onToggleMax} onMinimize={onMinimize} />
     </header>
   )
 }

@@ -121,7 +121,9 @@ function reuseOrDropWarmStream(wantDevice: string): MediaStream | null {
     console.log(`[voice] reusing warm stream (0ms, device=${activeDevice.slice(0, 8) || 'default'})`)
     return warmStream
   }
-  console.log(`[voice] device mismatch (have=${activeDevice.slice(0, 8)}, want=${wantDevice.slice(0, 8)}), re-acquiring`)
+  console.log(
+    `[voice] device mismatch (have=${activeDevice.slice(0, 8)}, want=${wantDevice.slice(0, 8)}), re-acquiring`,
+  )
   for (const t of warmStream.getTracks()) t.stop()
   warmStream = null
   return null
@@ -143,6 +145,18 @@ async function openMicStream(wantDevice: string): Promise<MediaStream> {
     }
     throw err
   }
+}
+
+/**
+ * Open a throwaway stream on the PREFERRED device for a transient grant (mic
+ * permission probe, device-label unlock) -- never the OS default, so a selected
+ * non-default mic is the only device touched and a Bluetooth headset isn't
+ * yanked from A2DP into HFP. Honours the same `exact` pin + fallback as the
+ * record path. Caller owns the stream and MUST stop its tracks. On true
+ * first-run (nothing persisted yet) this opens the default once, unavoidably.
+ */
+export function openPreferredMicStream(): Promise<MediaStream> {
+  return openMicStream(preferredDeviceId())
 }
 
 /**
@@ -169,7 +183,9 @@ export async function acquireMicStream(): Promise<MediaStream> {
   const t0 = performance.now()
   const stream = await openMicStream(wantDevice)
   const gotDevice = stream.getAudioTracks()[0]?.getSettings().deviceId ?? ''
-  console.log(`[voice] mic acquired in ${(performance.now() - t0).toFixed(0)}ms (device=${(gotDevice || 'unknown').slice(0, 8)})`)
+  console.log(
+    `[voice] mic acquired in ${(performance.now() - t0).toFixed(0)}ms (device=${(gotDevice || 'unknown').slice(0, 8)})`,
+  )
   pinResolvedDevice(wantDevice, gotDevice)
   warmStream = stream
   return stream

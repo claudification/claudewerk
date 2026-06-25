@@ -10,6 +10,7 @@ import { Mic, MicOff, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { sendInput } from '@/hooks/use-conversations'
 import { useVoiceRecording } from '@/hooks/use-voice-recording'
+import { openPreferredMicStream } from '@/hooks/voice-mic-stream'
 import { cn, haptic } from '@/lib/utils'
 
 const CANCEL_THRESHOLD = 80 // px drag left to cancel
@@ -79,9 +80,11 @@ export function VoiceFab() {
   async function requestMicPermission() {
     haptic('tap')
     try {
-      // echoCancellation:false -- even this transient grant must not flip macOS
-      // into communication mode and duck the user's music (see use-voice-recording).
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false } })
+      // Probe the SELECTED mic (not the OS default) so this transient grant
+      // doesn't open a different device than recording will -- otherwise a
+      // Bluetooth headset that isn't the chosen mic gets flipped A2DP->HFP on
+      // every permission check. echoCancellation stays off (see micConstraints).
+      const stream = await openPreferredMicStream()
       for (const t of stream.getTracks()) t.stop()
       setMicPermission('granted')
       haptic('success')

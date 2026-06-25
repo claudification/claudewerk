@@ -1,5 +1,4 @@
 import { cn } from '@/lib/utils'
-import { InputEditor } from '../input-editor'
 import { DISPATCH_MODELS } from './dispatch-models'
 import { useDispatchStore } from './dispatch-store'
 
@@ -23,14 +22,19 @@ function ModelSelect() {
   )
 }
 
-/** The one thing you do: tell the concierge what you need, in your own words.
- *  Pinned at the bottom of the desk. Reuses the SAME InputEditor as the main
- *  transcript (Slice E) -- so keybindings, sizing, and PASTE-TO-UPLOAD (an image/
- *  file paste lands as a `![](url)` markdown ref via the CM6 backend) all match.
- *  ⌘↵ / ↵ sends; the CM6 chunk is lazy-loaded only when that backend is enabled. */
+/**
+ * The one thing you do: tell the concierge what you need, in your own words.
+ *
+ * ISOLATION DIAGNOSTIC (2026-06-26): the CM6 `InputEditor` is temporarily ripped out
+ * and replaced with a dumb native <textarea> wired straight to intent/setIntent/submit.
+ * Native onChange is bulletproof, so this proves whether the dead-input bug lives in
+ * the CM6 backend (input works now -> CM6 was it) or downstream in submit/store/wire
+ * (still dead -> not the widget). A live readout under the box shows intent + state.
+ */
 export function DispatchIntentInput() {
   const intent = useDispatchStore(s => s.intent)
   const pending = useDispatchStore(s => s.pending)
+  const lastError = useDispatchStore(s => s.lastError)
   const setIntent = useDispatchStore(s => s.setIntent)
   const submit = useDispatchStore(s => s.submit)
 
@@ -44,16 +48,21 @@ export function DispatchIntentInput() {
             : 'border-border focus-within:border-[color-mix(in_oklch,var(--accent)_45%,transparent)]',
         )}
       >
-        <div className="min-w-0 flex-1">
-          <InputEditor
-            value={intent}
-            onChange={setIntent}
-            onSubmit={submit}
-            placeholder="tell me in your own words…"
-            autoFocus
-            inline
-          />
-        </div>
+        <textarea
+          value={intent}
+          onChange={e => setIntent(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              submit()
+            }
+          }}
+          placeholder="tell me in your own words…"
+          rows={1}
+          // biome-ignore lint/a11y/noAutofocus: the cockpit's single purpose is this box
+          autoFocus
+          className="min-w-0 flex-1 resize-none bg-transparent py-1.5 text-[14px] leading-relaxed text-foreground placeholder:text-comment/50 focus-visible:outline-none"
+        />
         <button
           type="button"
           onClick={() => submit()}
@@ -68,8 +77,12 @@ export function DispatchIntentInput() {
           ask
         </button>
       </div>
-      <div className="mt-1.5 flex items-center px-1">
+      <div className="mt-1.5 flex items-center justify-between gap-2 px-1">
         <ModelSelect />
+        {/* Temporary isolation readout -- remove with the CM6 swap. */}
+        <span className="font-mono text-[10px] text-comment/50">
+          intent:{intent.length} {pending ? '· sending…' : ''} {lastError ? `· err: ${lastError.slice(0, 40)}` : ''}
+        </span>
       </div>
     </div>
   )
