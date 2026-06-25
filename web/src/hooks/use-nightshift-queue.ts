@@ -48,3 +48,25 @@ export async function dequeueNightshiftTask(projectUri: string, id: string): Pro
   await sendNightshiftRpc({ type: 'nightshift_request', project: projectUri, op: 'dequeue', dequeueId: id })
   await resource.refetch(projectUri)
 }
+
+/** Outcome of a manual Run-now trigger. `ok:false` carries why (e.g. empty queue, already running). */
+export interface RunNightshiftResult {
+  ok: boolean
+  reason?: string
+}
+
+/**
+ * Manually trigger the night run for a project's queue NOW. The `run` op is
+ * intercepted in the broker -- it spawns the worker fleet directly (never relayed
+ * to the sentinel). No refetch needed: the broker fans a `run_started` beat that
+ * already refreshes the Result/queue views. A failed trigger (empty queue /
+ * already running) comes back as `ok:false` + the reason via the rejected RPC.
+ */
+export async function runNightshiftNow(projectUri: string): Promise<RunNightshiftResult> {
+  try {
+    await sendNightshiftRpc({ type: 'nightshift_request', project: projectUri, op: 'run' })
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : String(err) }
+  }
+}

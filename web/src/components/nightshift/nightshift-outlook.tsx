@@ -10,6 +10,7 @@ import { useMemo, useState } from 'react'
 import { dequeueNightshiftTask, useNightshiftQueue } from '@/hooks/use-nightshift-queue'
 import { AssignTasksDialog } from './assign-tasks-dialog'
 import { QueueCard } from './queue-card'
+import { RunNowButton } from './run-now-button'
 
 const ORDER: Record<string, number> = { feasible: 0, uncertain: 1, infeasible: 2 }
 
@@ -81,18 +82,21 @@ export function NightshiftOutlook({ projectUri }: { projectUri: string }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
           The mechanical plan -- tasks the night run will work on. {sorted.length > 0 && `(${sorted.length})`}
         </p>
-        <button
-          type="button"
-          onClick={() => setAssignOpen(true)}
-          className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 transition-colors"
-        >
-          <Plus className="size-3.5" />
-          Assign task
-        </button>
+        <div className="flex items-center gap-2">
+          <RunNowButton projectUri={projectUri} disabled={sorted.length === 0} />
+          <button
+            type="button"
+            onClick={() => setAssignOpen(true)}
+            className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 transition-colors"
+          >
+            <Plus className="size-3.5" />
+            Assign task
+          </button>
+        </div>
       </div>
 
       <OutlookBody
