@@ -17,6 +17,7 @@ import type {
 } from '@shared/protocol'
 import { create } from 'zustand'
 import { useConversationsStore, wsSend } from '@/hooks/use-conversations'
+import { useModalManagerStore } from '@/hooks/use-modal-manager'
 import { dispatchBus } from './dispatch-bus'
 import { createInbound, type ThreadsResultMsg } from './dispatch-inbound'
 import { DISPATCH_MODELS, type DispatchToolEvent, type WorkspaceInfo } from './dispatch-models'
@@ -86,6 +87,10 @@ let reqSeq = 0
 const nextRequestId = () => `dreq_${Date.now().toString(36)}_${++reqSeq}`
 
 const NOT_CONNECTED = 'Not connected -- your message was not sent. It is still here; try again in a moment.'
+
+// The dispatcher is a single, per-user GLOBAL managed modal -- parkable + maximizable,
+// folded into the same dock as THE DIALOGUE / Nightshift (see use-modal-manager).
+const DISPATCH_MODAL = { id: 'dispatch', kind: 'dispatch', title: 'Dispatch' }
 
 /**
  * Fire a `dispatch_request` and reflect the WIRE OUTCOME in store state.
@@ -183,14 +188,21 @@ export const useDispatchStore = create<DispatchState>((set, get) => ({
   openOverlay: () => {
     dispatchBus.open() // arm the lazy mount (first open fetches the chunk)
     set({ open: true })
+    // Drive the global modal manager so the dispatcher opens as a parkable,
+    // maximizable dock-managed panel (not a fullscreen trap). Restoring a parked
+    // dispatcher re-opens it in place (global scope = no warp).
+    useModalManagerStore.getState().open(DISPATCH_MODAL, { type: 'global' })
     get().fetchThreads()
   },
-  closeOverlay: () => set({ open: false }),
+  closeOverlay: () => {
+    set({ open: false })
+    useModalManagerStore.getState().close('dispatch')
+  },
   selectConv: id => set({ activeConvId: id, rightPane: id ? 'conversation' : 'memory' }),
   setRightPane: pane => set({ rightPane: pane }),
   routeTo: id => {
     useConversationsStore.getState().selectConversation(id, 'dispatch')
-    set({ open: false })
+    get().closeOverlay()
   },
 
   // inbound WS reducers (history seed/stream, decision feed, tool gears)
