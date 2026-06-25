@@ -385,8 +385,16 @@ export function replaceEditorDoc(view: EditorView, text: string) {
 // the eager index chunk. Import it from './editor-bridge', not from here.
 
 export function submitFromEditor(view: EditorView, onSubmit: () => void) {
-  clearEditorDoc(view)
+  // ORDER MATTERS: submit BEFORE clearing. @uiw/react-codemirror's onChange
+  // fires SYNCHRONOUSLY off the clear's docChanged transaction. A consumer
+  // whose onSubmit reads a live external store (the dispatcher: submit() reads
+  // get().intent, which onChange writes) would otherwise see the just-cleared
+  // '' and bail -- the "dead input" bug. The main chat dodged it only by
+  // reading a stale React closure. Submitting first means every consumer reads
+  // the typed text; the clear then resets the visible doc instantly (still
+  // bypassing react-codemirror's 200ms typing latch).
   onSubmit()
+  clearEditorDoc(view)
 }
 
 export function buildInputExtensions(opts: InputExtensionOptions): Extension[] {
