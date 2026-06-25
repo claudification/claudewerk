@@ -31,9 +31,10 @@ function canvasAge(updatedAt: number): string {
   return `${Math.floor(hours / 24)}d ago`
 }
 
+/** Open a drawing in its own lightweight window (NOT the full app shell). */
 function openCanvas(canvasId: string) {
   haptic('tap')
-  window.dispatchEvent(new CustomEvent('rclaude-canvas-open', { detail: { canvasId } }))
+  window.open(`/canvas/${encodeURIComponent(canvasId)}`, `canvas-${canvasId}`, 'noopener')
 }
 
 async function createCanvas(projectUri: string) {

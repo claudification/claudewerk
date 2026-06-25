@@ -20,7 +20,7 @@ if (localStorage.getItem('sw-crash-detected')) {
   })().catch(go)
 }
 
-import React from 'react'
+import React, { lazy, Suspense } from 'react'
 import ReactDOM from 'react-dom/client'
 import { App } from './app'
 import { installChunkLoadLog } from './lib/chunk-load-log'
@@ -53,10 +53,22 @@ import { loadAndApplyTheme } from './lib/themes'
 
 loadAndApplyTheme()
 
+// A drawing opens in its OWN lightweight window (/canvas/:id, via window.open):
+// render JUST the canvas surface, NOT the full app shell. Lazy so the canvas
+// chunk (Excalidraw) never loads for the main app.
+const CanvasWindow = lazy(() => import('./components/canvas/canvas-window').then(m => ({ default: m.CanvasWindow })))
+const isCanvasWindow = window.location.pathname.startsWith('/canvas/')
+
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <App />
+      {isCanvasWindow ? (
+        <Suspense fallback={null}>
+          <CanvasWindow />
+        </Suspense>
+      ) : (
+        <App />
+      )}
     </ErrorBoundary>
   </React.StrictMode>,
 )
