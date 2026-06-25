@@ -23,6 +23,7 @@ import { ModalDock } from '@/components/modal-dock'
 import { openOrganizeProjects, useOrganizeProjectsOpen } from '@/components/organize-projects/organize-state'
 import { PanelBoundary } from '@/components/panel-boundary'
 import { PinnedSwitchStrip } from '@/components/pinned-switch-strip'
+import { usePopoutStore } from '@/components/popout/use-popout-store'
 import { ProjectList } from '@/components/project-list'
 import { quickTaskBus } from '@/components/quick-task-trigger'
 import { PublicRecapView } from '@/components/recap/public-recap-view'
@@ -176,6 +177,13 @@ const DispatchOverlay = lazyModule(() => import('@/components/dispatch-overlay/d
 const AgentShellHost = lazyModule(
   named(() => import('@/components/agent-shell-host'), 'AgentShellHost'),
   () => useAgentShellsStore(s => Object.keys(s.attached).length > 0),
+)
+// Portal popout host -- renders canvases (and future surfaces) into real second
+// OS windows that stay in THIS React tree. Chunk (+ Excalidraw) loads only once
+// a popout is open; opening happens synchronously in the triggering click.
+const PopoutHost = lazyModule(
+  named(() => import('@/components/popout/popout-host'), 'PopoutHost'),
+  () => usePopoutStore(s => Object.keys(s.records).length > 0),
 )
 // Parent-conditional: gated on showBatchPalette below, so plain React.lazy.
 const BatchModeModal = lazy(() =>
@@ -443,6 +451,10 @@ function Dashboard() {
       {/* Off-screen host for agent-attached (debug) shells -- mounted + readable
           without ever popping the fullscreen overlay. Self-hides when empty. */}
       <AgentShellHost />
+
+      {/* Portal popout host -- canvases in real second windows, same React tree.
+          Renders nothing inline (portals only); self-hides when no popout open. */}
+      <PopoutHost />
 
       {/* Main content */}
       <div className="flex gap-4 flex-1 min-h-0 relative">

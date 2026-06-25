@@ -6,6 +6,7 @@
 
 import type { CanvasSummary } from '@shared/protocol'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { usePopoutWindow } from '@/components/popout/popout-window'
 import { loadCanvas, renameCanvas, saveCanvasScene } from './canvas-editor-io'
 
 const SAVE_DEBOUNCE_MS = 1500
@@ -37,6 +38,9 @@ export interface CanvasDocument {
 }
 
 export function useCanvasDocument(id: string | null): CanvasDocument {
+  // In a popout, title/flush/prompt must target the POPUP window, not the parent
+  // tab; usePopoutWindow falls back to the global window/document when inline.
+  const { win, doc } = usePopoutWindow()
   const [canvas, setCanvas] = useState<CanvasSummary | null>(null)
   const [seed, setSeed] = useState<unknown>(null)
   const [state, setState] = useState<DocState>('loading')
@@ -61,7 +65,7 @@ export function useCanvasDocument(id: string | null): CanvasDocument {
     void loadCanvas(id).then(loaded => {
       if (cancelled) return
       if (!loaded) return setState('missing')
-      document.title = `${loaded.canvas.name} -- canvas`
+      doc.title = `${loaded.canvas.name} -- canvas`
       setCanvas(loaded.canvas)
       setSeed(parseScene(loaded.scene))
       setState('ready')
@@ -69,9 +73,10 @@ export function useCanvasDocument(id: string | null): CanvasDocument {
     return () => {
       cancelled = true
     }
-  }, [id])
+  }, [id, doc])
 
-  // Best-effort save when the tab is closing (debounce may not have fired yet).
+  // Best-effort save when the window is closing (debounce may not have fired yet).
+  // In a popout this is the POPUP's close, flushing before it goes away.
   useEffect(() => {
     const onUnload = () => {
       if (pending.current == null || !id) return
@@ -80,9 +85,9 @@ export function useCanvasDocument(id: string | null): CanvasDocument {
         new Blob([JSON.stringify({ scene: pending.current })], { type: 'application/json' }),
       )
     }
-    window.addEventListener('beforeunload', onUnload)
-    return () => window.removeEventListener('beforeunload', onUnload)
-  }, [id])
+    win.addEventListener('beforeunload', onUnload)
+    return () => win.removeEventListener('beforeunload', onUnload)
+  }, [id, win])
 
   const onSnapshot = useCallback(
     (json: string) => {
@@ -96,12 +101,12 @@ export function useCanvasDocument(id: string | null): CanvasDocument {
 
   const onRename = useCallback(() => {
     if (!canvas) return
-    const name = window.prompt('Canvas name', canvas.name)?.trim()
+    const name = win.prompt('Canvas name', canvas.name)?.trim()
     if (!name || name === canvas.name) return
     setCanvas({ ...canvas, name })
-    document.title = `${name} -- canvas`
+    doc.title = `${name} -- canvas`
     void renameCanvas(canvas.id, name)
-  }, [canvas])
+  }, [canvas, win, doc])
 
   return { canvas, seed, state, saveState, onSnapshot, onRename }
 }

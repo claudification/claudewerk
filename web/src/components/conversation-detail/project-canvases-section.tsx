@@ -8,6 +8,7 @@
 
 import type { CanvasSummary } from '@shared/protocol'
 import { useCallback, useEffect, useState } from 'react'
+import { usePopoutStore } from '@/components/popout/use-popout-store'
 import { appendShareParam } from '@/lib/share-mode'
 import { haptic } from '@/lib/utils'
 
@@ -31,10 +32,15 @@ function canvasAge(updatedAt: number): string {
   return `${Math.floor(hours / 24)}d ago`
 }
 
-/** Open a drawing in its own lightweight window (NOT the full app shell). */
+/**
+ * Open a drawing as a portal popout -- it lives in the parent React tree (shared
+ * store/WS, no second bundle), NOT the full app shell. If the browser blocks the
+ * popup, fall back to the standalone /canvas/:id route so it still opens.
+ */
 function openCanvas(canvasId: string) {
   haptic('tap')
-  window.open(`/canvas/${encodeURIComponent(canvasId)}`, `canvas-${canvasId}`, 'noopener')
+  const win = usePopoutStore.getState().open('canvas', canvasId)
+  if (!win) window.open(`/canvas/${encodeURIComponent(canvasId)}`, `canvas-${canvasId}`, 'noopener')
 }
 
 async function createCanvas(projectUri: string) {
