@@ -85,8 +85,13 @@ function micConstraints(deviceId: string): MediaStreamConstraints {
   }
 }
 
-/** Virtual aggregate device ids that don't pin a real mic -- never persist these. */
-function isPinnableDevice(id: string): boolean {
+/**
+ * True for a REAL hardware mic id. False for Chrome's virtual aggregate entries
+ * ('default' / 'communications') whose id tracks whatever the OS default is --
+ * pinning one silently follows a Bluetooth headset when it connects. Used both
+ * to skip auto-persisting virtual ids and to keep them out of the device picker.
+ */
+export function isPinnableDevice(id: string): boolean {
   return !!id && id !== 'default' && id !== 'communications'
 }
 
