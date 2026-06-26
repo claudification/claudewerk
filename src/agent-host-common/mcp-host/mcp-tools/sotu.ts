@@ -15,7 +15,7 @@
  */
 
 import { cwdToProjectUri } from '../../../shared/project-uri'
-import type { ScribeNoteTarget, SotuView } from '../../../shared/protocol'
+import type { ScribeNoteTarget, SotuConfigView, SotuDistillEval, SotuView } from '../../../shared/protocol'
 import { brokerRpc, hasBrokerRpcSender } from './lib/broker-rpc'
 import { errResult as err, jsonResult, notConnected } from './lib/results'
 import type { McpToolContext, ToolDef, ToolResult } from './types'
@@ -134,9 +134,77 @@ function sotuContributeTool(_ctx: McpToolContext): ToolDef {
   }
 }
 
+function sotuConfigureTool(ctx: McpToolContext): ToolDef {
+  return {
+    description:
+      'Read AND optionally tune a project State of the Union config (Phase 7, benevolent-gated). With no ' +
+      'mutating field it just reads the resolved config. Pass enabled to flip the opt-in; stakes ' +
+      '(main-income|client|side|experiment) to set the affordability tier that DEFAULTS the budget; ' +
+      'budgetDailyUsd/budgetMonthlyUsd (number, or null to clear) to cap paid distills; params {scribeModel, ' +
+      'reconcileModel, reconcileBurst, minIntervalMs, burstThreshold, quietSettleMs, staleOnReadMs, deadCutoffMs} ' +
+      '(a field = null clears it) to tune the distill engine. Returns the resolved config after the write.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        projectUri: { type: 'string', description: '"@self" (or omitted) -> the caller conversation project.' },
+        enabled: { type: 'boolean', description: 'Opt-in flag: false = free floor only, no paid distill.' },
+        stakes: {
+          type: 'string',
+          enum: ['main-income', 'client', 'side', 'experiment'],
+          description: 'Affordability tier -- defaults the budget; does NOT auto-enable.',
+        },
+        budgetDailyUsd: { type: ['number', 'null'], description: 'Daily USD cap (null clears).' },
+        budgetMonthlyUsd: { type: ['number', 'null'], description: 'Monthly USD cap (null clears).' },
+        params: { type: 'object', description: 'Distill tuning overrides (models / cutoffs / trigger constants).' },
+      },
+      required: [],
+    },
+    async handle(params) {
+      if (!hasBrokerRpcSender()) return notConnected()
+      const projectUri = resolveProjectUri(ctx, typeof params.projectUri === 'string' ? params.projectUri : undefined)
+      const { projectUri: _drop, ...rest } = params
+      return rpcResult<{ config?: SotuConfigView; error?: string }>(
+        'sotu_configure_request',
+        { ...rest, ...(projectUri ? { projectUri } : {}) },
+        reply => reply.config,
+      )
+    },
+  }
+}
+
+function sotuEvalTool(ctx: McpToolContext): ToolDef {
+  return {
+    description:
+      'List a project recent SOTU distill evals (Phase 7, benevolent-gated) -- each carries the self-describing ' +
+      'RECIPE (resolved models / cutoffs / trigger constants used), the COST it burned, and the GROUNDING score ' +
+      '(precision / coverage / unknownCited -- the bard-lying detector). Use this to QC distill quality vs cost ' +
+      'across tuning variants without re-running anything. Newest first.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        projectUri: { type: 'string', description: '"@self" (or omitted) -> the caller conversation project.' },
+        limit: { type: 'number', description: 'Max evals to return, newest first (default 20, max 100).' },
+      },
+      required: [],
+    },
+    async handle(params) {
+      if (!hasBrokerRpcSender()) return notConnected()
+      const projectUri = resolveProjectUri(ctx, typeof params.projectUri === 'string' ? params.projectUri : undefined)
+      const limit = typeof params.limit === 'number' ? params.limit : undefined
+      return rpcResult<{ evals?: SotuDistillEval[]; error?: string }>(
+        'sotu_eval_request',
+        { ...(projectUri ? { projectUri } : {}), ...(limit ? { limit } : {}) },
+        reply => reply.evals,
+      )
+    },
+  }
+}
+
 export function registerSotuTools(ctx: McpToolContext): Record<string, ToolDef> {
   return {
     get_state_of_union: getStateOfUnionTool(ctx),
     sotu_contribute: sotuContributeTool(ctx),
+    sotu_configure: sotuConfigureTool(ctx),
+    sotu_eval: sotuEvalTool(ctx),
   }
 }

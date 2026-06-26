@@ -21,6 +21,9 @@ export { readChronicle, readChronicleMd, renderChronicleMd, writeChronicle } fro
 // `maybeDistillOnRead` (read-triggered regen) is consumed from the barrel by the
 // Phase-5 REST route. The MCP handler imports it directly from './engine'.
 export { maybeDistillOnRead, startSotuEngine, stopSotuEngine } from './engine'
+// Phase-7 eval surface -- recent distill recipes + cost + grounding (recap D mirror),
+// consumed by the sotu_eval handler + the REST eval route.
+export { readDistillEvals } from './eval'
 // Phase-6 fleet rollup -- enriches the Sheaf response (consumed by the sheaf route).
 export { enrichSheafWithSotu } from './fleet'
 export { startSotuFloor, stopSotuFloor } from './floor'

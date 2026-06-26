@@ -12,21 +12,18 @@
  *     chronicle forces a fresh reconcile ("wither on return").
  *
  * The gates (project opt-in + budget) live in `runDistill`; this module owns only
- * the WHEN. Idle project -> no contributions -> zero timers -> zero cost.
+ * the WHEN. The trigger constants (burst / min-interval / quiet-settle / stale-on-read)
+ * are PER-PROJECT now (Phase 7): resolved from the project's config (`config.params`),
+ * so a busy main-income project and an idle experiment tune independently. Idle
+ * project -> no contributions -> zero timers -> zero cost.
  */
 
-import { defaultResolveSotuConfig, type ResolveSotuConfig } from './config'
+import { defaultResolveSotuConfig, type ResolveSotuConfig, type SotuProjectConfig } from './config'
 import { onContribution } from './contribute'
 import { type ChatFn, realChatFn } from './distill/llm'
 import { type DistillDeps, type DistillOutcome, runDistill } from './distill/run'
 import { projectSlug } from './paths'
 import { readState } from './state'
-
-/** Trigger tunables (design first guesses). All overridable for tests. */
-const MIN_INTERVAL_MS = 5 * 60_000
-const BURST_THRESHOLD = 10
-const QUIET_SETTLE_MS = 90_000
-const STALE_ON_READ_MS = 45 * 60_000
 
 export interface SotuEngineDeps {
   /** Injected chat fn (production = the real OpenRouter client; tests stub it). */
@@ -35,19 +32,21 @@ export interface SotuEngineDeps {
   resolveConfig?: ResolveSotuConfig
   now?: () => number
   log?: (msg: string) => void
-  minIntervalMs?: number
-  burstThreshold?: number
-  quietSettleMs?: number
-  staleOnReadMs?: number
-  reconcileBurst?: number
-  scribeModel?: string
-  reconcileModel?: string
 }
 
 interface TriggerThresholds {
   burst: number
   minIntervalMs: number
   quietSettleMs: number
+}
+
+/** The trigger thresholds for a project come straight from its resolved tuning. */
+function thresholdsFor(config: SotuProjectConfig): TriggerThresholds {
+  return {
+    burst: config.params.burstThreshold,
+    minIntervalMs: config.params.minIntervalMs,
+    quietSettleMs: config.params.quietSettleMs,
+  }
 }
 
 export type TriggerAction = { action: 'now' } | { action: 'arm'; delayMs: number } | { action: 'none' }
@@ -66,8 +65,6 @@ interface EngineState {
   distillDeps: DistillDeps
   resolveConfig: ResolveSotuConfig
   now: () => number
-  thresholds: TriggerThresholds
-  staleOnReadMs: number
   timers: Map<string, ReturnType<typeof setTimeout>>
   inFlight: Set<string>
   unsubscribe: () => void
@@ -80,27 +77,17 @@ let current: EngineState | null = null
 export function startSotuEngine(deps: SotuEngineDeps): void {
   if (current) return
   const now = deps.now ?? (() => Date.now())
-  const thresholds: TriggerThresholds = {
-    burst: deps.burstThreshold ?? BURST_THRESHOLD,
-    minIntervalMs: deps.minIntervalMs ?? MIN_INTERVAL_MS,
-    quietSettleMs: deps.quietSettleMs ?? QUIET_SETTLE_MS,
-  }
   const distillDeps: DistillDeps = {
     chat: deps.chat ?? realChatFn,
     broadcast: deps.broadcast,
     now,
     ...(deps.log ? { log: deps.log } : {}),
-    ...(deps.scribeModel ? { scribeModel: deps.scribeModel } : {}),
-    ...(deps.reconcileModel ? { reconcileModel: deps.reconcileModel } : {}),
-    ...(deps.reconcileBurst !== undefined ? { reconcileBurst: deps.reconcileBurst } : {}),
   }
   const state: EngineState = {
     deps,
     distillDeps,
     resolveConfig: deps.resolveConfig ?? defaultResolveSotuConfig,
     now,
-    thresholds,
-    staleOnReadMs: deps.staleOnReadMs ?? STALE_ON_READ_MS,
     timers: new Map(),
     inFlight: new Set(),
     unsubscribe: () => {},
@@ -123,7 +110,8 @@ export function stopSotuEngine(): void {
 
 function schedule(state: EngineState, slug: string, project: string): void {
   const st = readState(slug)
-  const decision = decideTrigger(st.pendingContribs, state.now() - st.lastDistillAt, state.thresholds)
+  const config = state.resolveConfig(project)
+  const decision = decideTrigger(st.pendingContribs, state.now() - st.lastDistillAt, thresholdsFor(config))
   if (decision.action === 'none') return
   if (decision.action === 'now') {
     void fire(state, slug, project, false)
@@ -140,8 +128,10 @@ function schedule(state: EngineState, slug: string, project: string): void {
 }
 
 /** Run one distill for a project, guarding against concurrent folds. If a fold is
- *  already running, re-arm a trailing timer so the new signal is not dropped. */
+ *  already running, re-arm a trailing timer so the new signal is not dropped. Resolves
+ *  the project config FRESH at fire time (a delayed timer picks up edited tuning). */
 async function fire(state: EngineState, slug: string, project: string, forceReconcile: boolean): Promise<void> {
+  const config = state.resolveConfig(project)
   if (state.inFlight.has(slug)) {
     if (!state.timers.has(slug)) {
       state.timers.set(
@@ -149,14 +139,14 @@ async function fire(state: EngineState, slug: string, project: string, forceReco
         setTimeout(() => {
           state.timers.delete(slug)
           void fire(state, slug, project, forceReconcile)
-        }, state.thresholds.quietSettleMs),
+        }, config.params.quietSettleMs),
       )
     }
     return
   }
   state.inFlight.add(slug)
   try {
-    await runDistill(state.distillDeps, { slug, project, config: state.resolveConfig(project), forceReconcile })
+    await runDistill(state.distillDeps, { slug, project, config, forceReconcile })
   } catch (err) {
     state.deps.log?.(`[sotu] engine distill threw project=${project}: ${(err as Error)?.message ?? err}`)
   } finally {
@@ -175,12 +165,8 @@ export async function maybeDistillOnRead(project: string): Promise<DistillOutcom
   const state = current
   const slug = projectSlug(project)
   const st = readState(slug)
-  const stale = state.now() - st.genAt > state.staleOnReadMs
+  const config = state.resolveConfig(project)
+  const stale = state.now() - st.genAt > config.params.staleOnReadMs
   if (st.pendingContribs <= 0 && !stale) return null
-  return runDistill(state.distillDeps, {
-    slug,
-    project,
-    config: state.resolveConfig(project),
-    forceReconcile: stale,
-  })
+  return runDistill(state.distillDeps, { slug, project, config, forceReconcile: stale })
 }

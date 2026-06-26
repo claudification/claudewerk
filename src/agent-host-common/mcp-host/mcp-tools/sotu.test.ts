@@ -49,8 +49,13 @@ describe('sotu MCP tools', () => {
   beforeEach(() => _resetBrokerRpc())
   afterEach(() => _resetBrokerRpc())
 
-  test('exposes get_state_of_union + sotu_contribute', () => {
-    expect(Object.keys(tools()).sort()).toEqual(['get_state_of_union', 'sotu_contribute'])
+  test('exposes the SOTU read/write/tune tools', () => {
+    expect(Object.keys(tools()).sort()).toEqual([
+      'get_state_of_union',
+      'sotu_configure',
+      'sotu_contribute',
+      'sotu_eval',
+    ])
   })
 
   test('get_state_of_union resolves @self to the caller project + returns the view', async () => {
@@ -87,5 +92,29 @@ describe('sotu MCP tools', () => {
     expect(sent[0].payload.target).toMatchObject({ kind: 'claim', path: 'src/x.ts' })
     expect(result.isError).toBeUndefined()
     expect(result.content[0].text).toContain('pendingContribs')
+  })
+
+  test('sotu_configure forwards the tuning write + @self project + returns the config', async () => {
+    const config = { enabled: true, stakes: 'side', budget: { dailyUsd: 2 }, tuning: {}, overrides: {} }
+    const { result, sent } = await callTool(
+      tools().sotu_configure,
+      { projectUri: '@self', enabled: true, stakes: 'side', params: { burstThreshold: 4 } },
+      () => ({ ok: true, config }),
+    )
+    expect(sent[0].type).toBe('sotu_configure_request')
+    expect(String(sent[0].payload.projectUri)).toContain('foo')
+    expect(sent[0].payload.enabled).toBe(true)
+    expect(sent[0].payload.params).toMatchObject({ burstThreshold: 4 })
+    expect(result.isError).toBeUndefined()
+    expect(result.content[0].text).toContain('side')
+  })
+
+  test('sotu_eval forwards the request + returns the evals', async () => {
+    const evals = [{ ts: 1, mode: 'scribe', costUsd: 0.02, recipe: { mode: 'scribe' } }]
+    const { result, sent } = await callTool(tools().sotu_eval, { limit: 5 }, () => ({ ok: true, evals }))
+    expect(sent[0].type).toBe('sotu_eval_request')
+    expect(sent[0].payload.limit).toBe(5)
+    expect(result.isError).toBeUndefined()
+    expect(result.content[0].text).toContain('scribe')
   })
 })

@@ -14,7 +14,7 @@
 
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { RecapCostLedger } from '../../../shared/protocol'
+import type { RecapCostLedger, SheafGrounding, SotuRecipe } from '../../../shared/protocol'
 import { distillDir } from '../paths'
 import type { Chronicle, Contribution, GitFabric, SotuDistillMode } from '../types'
 
@@ -42,6 +42,12 @@ export interface DistillBundleInput {
   /** Chronicle produced by this distill. */
   chronicle: Chronicle
   ledger: RecapCostLedger
+  /** Self-describing recipe (Phase 7 -- recap args_json mirror): the resolved tuning
+   *  actually used + budget/stakes context, so the distill is reproducible + QC-able. */
+  recipe: SotuRecipe
+  /** Citation-grounding of the produced chronicle vs the folded input (Pillar D).
+   *  Absent when the distill failed before producing a chronicle. */
+  grounding?: SheafGrounding
   error?: string
 }
 
@@ -61,12 +67,20 @@ export function writeDistillBundle(slug: string, ts: number, input: DistillBundl
           startedAt: input.startedAt,
           completedAt: input.completedAt,
           cost: input.ledger.summary,
+          // Pillar D mirror: the recipe + grounding live IN the manifest (SOTU's
+          // args_json) so the eval scan reads quality/cost/recipe from one file.
+          recipe: input.recipe,
+          folded: input.queuedItems.length,
+          ...(input.grounding ? { grounding: input.grounding } : {}),
           ...(input.error !== undefined ? { error: input.error } : {}),
         },
         null,
         2,
       )}\n`,
     )
+    // Standalone recipe.json -- the self-describing args_json, for a cheap variant
+    // scan that never has to parse the full manifest.
+    write('recipe.json', `${JSON.stringify(input.recipe, null, 2)}\n`)
     write(
       'inputs.json',
       `${JSON.stringify(

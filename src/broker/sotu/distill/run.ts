@@ -20,6 +20,8 @@
 import type { SotuBudgetExhausted, SotuUpdated } from '../../../shared/protocol'
 import { readChronicle, writeChronicle } from '../chronicle'
 import type { SotuProjectConfig } from '../config'
+import { buildRecipe } from '../eval'
+import { scoreGrounding } from '../grounding'
 import { isExpired, readQueue } from '../queue'
 import { overBudget, recordSpend, spendThisPeriod } from '../spend'
 import { readState, updateState } from '../state'
@@ -35,14 +37,10 @@ import { applyDecay } from './decay'
 import { type ChatFn, RecapLedger, runSotuLlmCall } from './llm'
 import { buildReconcilePrompt, buildScribePrompt, type ChronicleSections, parseChronicleOutput } from './prompts'
 
-const SCRIBE_MODEL = 'anthropic/claude-haiku-4.5'
-const RECONCILE_MODEL = 'anthropic/claude-opus-4.8'
 const SCRIBE_MAX_TOKENS = 4_000
 const RECONCILE_MAX_TOKENS = 8_000
 const SCRIBE_TIMEOUT_MS = 60_000
 const RECONCILE_TIMEOUT_MS = 180_000
-/** A single fold this busy escalates to the Opus reconcile (big-burst trigger). */
-const DEFAULT_RECONCILE_BURST = 25
 
 export interface DistillDeps {
   chat: ChatFn
@@ -50,9 +48,6 @@ export interface DistillDeps {
   broadcast: (message: Record<string, unknown>, project: string) => void
   now?: () => number
   log?: (msg: string) => void
-  scribeModel?: string
-  reconcileModel?: string
-  reconcileBurst?: number
 }
 
 export interface RunDistillArgs {
@@ -108,16 +103,17 @@ export async function runDistill(deps: DistillDeps, args: RunDistillArgs): Promi
   }
 
   const mode: SotuDistillMode =
-    args.forceReconcile || state.pendingContribs >= (deps.reconcileBurst ?? DEFAULT_RECONCILE_BURST)
-      ? 'reconcile'
-      : 'scribe'
-  return execute(deps, args, { now, mode, newItems, gitFabric: latestGitFabric(allItems) })
+    args.forceReconcile || state.pendingContribs >= config.params.reconcileBurst ? 'reconcile' : 'scribe'
+  const live = allItems.filter(c => !isExpired(c, now))
+  return execute(deps, args, { now, mode, newItems, live, gitFabric: latestGitFabric(allItems) })
 }
 
 interface ExecCtx {
   now: number
   mode: SotuDistillMode
   newItems: Contribution[]
+  /** All non-expired contributions at distill time -- the input grounding scores against. */
+  live: Contribution[]
   gitFabric?: GitFabric
 }
 
@@ -130,17 +126,19 @@ async function execute(deps: DistillDeps, args: RunDistillArgs, ctx: ExecCtx): P
   const startedAt = ctx.now
   const legs: { scribe?: DistillLeg; reconcile?: DistillLeg } = {}
 
+  const tuning = args.config.params
   let sections: ChronicleSections = { now: prior.now, justDone: prior.justDone, narrative: prior.narrative }
   let failed: string | undefined
   try {
-    sections = await runScribe(deps, ledger, sections, ctx, legs)
-    if (ctx.mode === 'reconcile') sections = await runReconcile(deps, ledger, sections, ctx, legs)
+    sections = await runScribe(deps, ledger, sections, ctx, legs, tuning.scribeModel)
+    if (ctx.mode === 'reconcile')
+      sections = await runReconcile(deps, ledger, sections, ctx, legs, tuning.reconcileModel)
   } catch (err) {
     failed = err instanceof Error ? err.message : String(err)
     log(`[sotu] distill ERROR project=${project} mode=${ctx.mode} -- ${failed} (keeping prior chronicle)`)
   }
 
-  const chronicle = buildChronicle(prior, sections, ctx, failed)
+  const chronicle = buildChronicle(prior, sections, ctx, tuning.deadCutoffMs, failed)
   if (!failed) writeChronicle(slug, chronicle)
   const costUsd = ledger.totalCostUsd()
   persist(deps, args, ctx, { prior, chronicle, ledger, startedAt, legs, error: failed })
@@ -160,10 +158,11 @@ async function runScribe(
   prior: ChronicleSections,
   ctx: ExecCtx,
   legs: { scribe?: DistillLeg },
+  model: string,
 ): Promise<ChronicleSections> {
   const prompt = buildScribePrompt(prior, ctx.newItems)
   const raw = await runSotuLlmCall(deps.chat, ledger, 'scribe', {
-    model: deps.scribeModel ?? SCRIBE_MODEL,
+    model,
     system: prompt.system,
     user: prompt.user,
     responseFormat: { type: 'json_object' },
@@ -182,10 +181,11 @@ async function runReconcile(
   scribed: ChronicleSections,
   ctx: ExecCtx,
   legs: { reconcile?: DistillLeg },
+  model: string,
 ): Promise<ChronicleSections> {
   const prompt = buildReconcilePrompt(scribed, ctx.gitFabric)
   const raw = await runSotuLlmCall(deps.chat, ledger, 'reconcile', {
-    model: deps.reconcileModel ?? RECONCILE_MODEL,
+    model,
     system: prompt.system,
     user: prompt.user,
     responseFormat: { type: 'json_object' },
@@ -201,7 +201,13 @@ async function runReconcile(
 /** Assemble the chronicle to persist: the scribed/reconciled sections, stamped with
  *  version + generatedAt, with deterministic decay (git attach + prune) applied on a
  *  reconcile pass. On failure the PRIOR chronicle is returned (only genAt advances). */
-function buildChronicle(prior: Chronicle, sections: ChronicleSections, ctx: ExecCtx, failed?: string): Chronicle {
+function buildChronicle(
+  prior: Chronicle,
+  sections: ChronicleSections,
+  ctx: ExecCtx,
+  deadCutoffMs: number,
+  failed?: string,
+): Chronicle {
   if (failed) return { ...prior, generatedAt: ctx.now }
   const base: Chronicle = {
     now: sections.now,
@@ -211,7 +217,7 @@ function buildChronicle(prior: Chronicle, sections: ChronicleSections, ctx: Exec
     generatedAt: ctx.now,
     ...(prior.git ? { git: prior.git } : {}),
   }
-  return ctx.mode === 'reconcile' ? applyDecay(base, ctx.gitFabric, { now: ctx.now }) : base
+  return ctx.mode === 'reconcile' ? applyDecay(base, ctx.gitFabric, { now: ctx.now, deadCutoffMs }) : base
 }
 
 interface PersistCtx {
@@ -227,6 +233,10 @@ interface PersistCtx {
 function persist(deps: DistillDeps, args: RunDistillArgs, ctx: ExecCtx, p: PersistCtx): void {
   const { slug, project } = args
   const costUsd = p.ledger.totalCostUsd()
+  // Pillar D: score the PRODUCED chronicle's citations against the input the fold saw
+  // (the live queue at distill time). Only meaningful when a chronicle was written --
+  // a failed distill keeps the prior chronicle, so skip grounding then.
+  const grounding = p.error ? undefined : scoreGrounding(p.chronicle, ctx.live)
   writeDistillBundle(slug, ctx.now, {
     mode: ctx.mode,
     project,
@@ -237,6 +247,8 @@ function persist(deps: DistillDeps, args: RunDistillArgs, ctx: ExecCtx, p: Persi
     priorChronicle: p.prior,
     chronicle: p.chronicle,
     ledger: p.ledger.build(),
+    recipe: buildRecipe(args.config, ctx.mode),
+    ...(grounding ? { grounding } : {}),
     ...(ctx.gitFabric ? { gitFabric: ctx.gitFabric } : {}),
     ...(p.legs.scribe ? { scribe: p.legs.scribe } : {}),
     ...(p.legs.reconcile ? { reconcile: p.legs.reconcile } : {}),

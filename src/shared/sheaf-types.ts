@@ -9,11 +9,13 @@
  * in-memory live status).
  */
 
-import type { BranchFabric, GitAlert } from './protocol'
+import type { BranchFabric, GitAlert, SheafGrounding } from './protocol'
 
 // Re-exported so the Sheaf web layer (sheaf-sotu.tsx) consumes the git-fabric
-// shapes from one module alongside the SOTU enrichment types.
-export type { BranchFabric, GitAlert } from './protocol'
+// shapes + the grounding metric from one module alongside the SOTU enrichment
+// types. `SheafGrounding` lives in protocol.ts (the wire home) since the Phase-7
+// `sotu_eval` result carries it too.
+export type { BranchFabric, GitAlert, SheafGrounding } from './protocol'
 
 export type SheafStatus = 'running' | 'idle' | 'ended' | 'killed' | 'crashed'
 
@@ -82,26 +84,6 @@ export interface SheafWorktreeSubtotal {
   convCount: number
   tokens: SheafTokens
   cost: SheafCost
-}
-
-/** Citation-grounding metric (recap Pillar D, deterministic, no judge) -- THE
- *  bard-lying detector. Scores the distilled chronicle's cited conversations
- *  against the input it actually had (the live contribution queue). High
- *  precision = the narrative isn't inventing convs; coverage = how much of the
- *  input it accounts for. `unknownCited` is the hard count that matters most:
- *  conversations the chronicle cites that are NOT in the input (hallucinated or
- *  stale). See `src/broker/sotu/grounding.ts`. */
-export interface SheafGrounding {
-  /** (cited - unknownCited) / cited. 1 when nothing is cited. */
-  precision: number
-  /** (cited ∩ known) / known. 1 when there is no input to cover. */
-  coverage: number
-  /** Distinct conversations the chronicle cites. */
-  citedConvs: number
-  /** Distinct conversations present in the input (the queue the bard folded). */
-  knownConvs: number
-  /** Cited conversations absent from the input -- the lie/staleness count. */
-  unknownCited: number
 }
 
 /** SOTU enrichment attached to one project section in the fleet view (Phase 6).

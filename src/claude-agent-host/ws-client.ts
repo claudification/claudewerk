@@ -571,8 +571,13 @@ export function createWsClient(options: WsClientOptions): WsClient {
             break
           }
         }
-        if (msgType === 'get_state_of_union_result' || msgType === 'sotu_contribute_result') {
-          // SOTU MCP read/write replies (Phase 5). Same broker-rpc path: forward
+        if (
+          msgType === 'get_state_of_union_result' ||
+          msgType === 'sotu_contribute_result' ||
+          msgType === 'sotu_configure_result' ||
+          msgType === 'sotu_eval_result'
+        ) {
+          // SOTU MCP read/write replies (Phase 5 + Phase-7 configure/eval). Same broker-rpc path: forward
           // only when it carries a requestId we minted; an unmatched id no-ops in
           // dispatchBrokerRpcResponse (the sotu_contribution / sotu_updated
           // broadcasts carry NO requestId, so they fall through to normal handling).

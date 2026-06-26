@@ -9,8 +9,9 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Hono } from 'hono'
-import type { SotuView } from '../../../shared/protocol'
+import type { SotuConfigView, SotuView } from '../../../shared/protocol'
 import { setRclaudeSecret } from '../../auth-routes'
+import { deleteProjectSettings } from '../../project-settings'
 import { initSotuStore, projectSlug } from '../../sotu'
 import { writeChronicle } from '../../sotu/chronicle'
 import { claimContrib } from '../../sotu/contrib-fixtures'
@@ -34,7 +35,10 @@ beforeEach(() => {
   app = new Hono()
   app.route('/', createSotuRouter(helpers))
 })
-afterEach(() => rmSync(dir, { recursive: true, force: true }))
+afterEach(() => {
+  rmSync(dir, { recursive: true, force: true })
+  deleteProjectSettings(PROJECT)
+})
 
 const auth = () => ({ Authorization: `Bearer ${TEST_SECRET}` })
 
@@ -63,4 +67,35 @@ it('serves the view (narrative + CONTENDED holds) for a project', async () => {
   expect(view.chronicle.narrative).toContain('auth refactor')
   expect(view.holds).toHaveLength(1)
   expect(view.holds[0]).toMatchObject({ target: 'src/auth.ts', contended: true })
+})
+
+// ─── Phase 7: config + evals (admin) ────────────────────────────────
+
+it('GET /api/sotu/config rejects non-admin + 400s without project', async () => {
+  expect((await app.request('/api/sotu/config?project=x')).status).toBe(403)
+  expect((await app.request('/api/sotu/config', { headers: auth() })).status).toBe(400)
+})
+
+it('POST /api/sotu/config writes the tuning, GET reads it back', async () => {
+  const post = await app.request('/api/sotu/config', {
+    method: 'POST',
+    headers: { ...auth(), 'content-type': 'application/json' },
+    body: JSON.stringify({ project: PROJECT, enabled: true, stakes: 'side', params: { burstThreshold: 4 } }),
+  })
+  expect(post.status).toBe(200)
+  const cfg = (await post.json()) as SotuConfigView
+  expect(cfg.enabled).toBe(true)
+  expect(cfg.stakes).toBe('side')
+  expect(cfg.budget).toMatchObject({ monthlyUsd: 8 }) // 'side' stakes default
+  expect(cfg.tuning.burstThreshold).toBe(4)
+
+  const get = await app.request('/api/sotu/config?project=' + encodeURIComponent(PROJECT), { headers: auth() })
+  expect(((await get.json()) as SotuConfigView).overrides).toEqual({ burstThreshold: 4 })
+})
+
+it('GET /api/sotu/evals returns an empty list (no distills) + gates on admin', async () => {
+  expect((await app.request('/api/sotu/evals?project=x')).status).toBe(403)
+  const res = await app.request('/api/sotu/evals?project=' + encodeURIComponent(PROJECT), { headers: auth() })
+  expect(res.status).toBe(200)
+  expect((await res.json()) as { evals: unknown[] }).toEqual({ evals: [] })
 })

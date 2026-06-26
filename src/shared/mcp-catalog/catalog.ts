@@ -149,6 +149,18 @@ export const MCP_CATALOG: readonly CatalogTool[] = [
     sites: HOST_ONLY,
     summary: 'Contribute a declared-intent signal to the SOTU',
   },
+  {
+    name: 'sotu_configure',
+    group: 'sotu',
+    sites: HOST_ONLY,
+    summary: 'Read/tune a project SOTU config (enabled, stakes, budget, distill params)',
+  },
+  {
+    name: 'sotu_eval',
+    group: 'sotu',
+    sites: HOST_ONLY,
+    summary: 'List recent SOTU distill evals (recipe + cost + grounding) for QC',
+  },
 
   // ── web control (both sites; host bridged in Phase 5) ──────────────
   { name: 'web_list_clients', group: 'web-control', sites: BOTH, summary: 'List opted-in control-panel browsers' },

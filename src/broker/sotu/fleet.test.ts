@@ -15,6 +15,7 @@ import { recordContribution } from './contribute'
 import { enrichSheafWithSotu } from './fleet'
 import { initSotuStore } from './index'
 import { projectSlug } from './paths'
+import { SOTU_TUNING_DEFAULTS } from './tuning'
 import { type CalloutContrib, type Chronicle, emptyChronicle, type GitScanContrib } from './types'
 
 const URI_A = 'claude://default/Users/test/alpha'
@@ -113,7 +114,7 @@ function callout(over: Partial<CalloutContrib> = {}): CalloutContrib {
   return { kind: 'callout', convId: 'conv-a', ts: NOW - 500, type: 'lock', payload: 'x', weight: 'high', ...over }
 }
 
-const enabled = () => ({ enabled: true, budget: {} })
+const enabled = () => ({ enabled: true, budget: {}, params: SOTU_TUNING_DEFAULTS })
 const allVisible = () => true
 
 /** Seed a single-branch git scan carrying the given alerts for a project. */
@@ -201,7 +202,11 @@ test('paid narrative only when enabled AND distilled; grounding attached', () =>
 
 test('disabled project gets the floor but NO narrative even if a chronicle exists', () => {
   seedNarrative(URI_A, 'leftover')
-  const s = run([project(URI_A, [node()])], allVisible, () => ({ enabled: false, budget: {} }))
+  const s = run([project(URI_A, [node()])], allVisible, () => ({
+    enabled: false,
+    budget: {},
+    params: SOTU_TUNING_DEFAULTS,
+  }))
   const sotu = s.projects[0].sotu!
   expect(sotu.enabled).toBe(false)
   expect(sotu.narrative).toBeUndefined()

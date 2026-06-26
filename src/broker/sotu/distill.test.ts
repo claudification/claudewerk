@@ -12,11 +12,12 @@ import { initSotuStore, projectSlug } from './index'
 import { distillDir } from './paths'
 import { recordSpend } from './spend'
 import { readState } from './state'
+import { SOTU_TUNING_DEFAULTS } from './tuning'
 import type { Chronicle, GitFabric } from './types'
 
 const PROJECT = '/Users/jonas/projects/remote-claude'
 const NOW = 1_000_000
-const ENABLED: SotuProjectConfig = { enabled: true, budget: {} }
+const ENABLED: SotuProjectConfig = { enabled: true, budget: {}, params: SOTU_TUNING_DEFAULTS }
 let dir: string
 let slug: string
 
@@ -111,7 +112,7 @@ test('disabled project: floor only, NO LLM ever', async () => {
   const out = await runDistill(deps(chat.fn, []), {
     slug,
     project: PROJECT,
-    config: { enabled: false, budget: {} },
+    config: { enabled: false, budget: {}, params: SOTU_TUNING_DEFAULTS },
   })
   expect(out.status).toBe('disabled')
   expect(chat.calls).toBe(0)
@@ -126,7 +127,7 @@ test('budget gate: over cap -> skip the paid distill, emit sotu_budget_exhausted
   const out = await runDistill(deps(chat.fn, broadcasts), {
     slug,
     project: PROJECT,
-    config: { enabled: true, budget: { dailyUsd: 1 } },
+    config: { enabled: true, budget: { dailyUsd: 1 }, params: SOTU_TUNING_DEFAULTS },
   })
   expect(out.status).toBe('budget')
   expect(chat.calls).toBe(0)

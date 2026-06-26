@@ -1060,6 +1060,8 @@ export type AgentHostMessage =
   | TurnDigest
   | GetStateOfUnionRequest
   | SotuContributeRequest
+  | SotuConfigureRequest
+  | SotuEvalRequest
 
 export interface ConversationNameUpdate {
   type: 'conversation_name'
@@ -2983,6 +2985,14 @@ export interface ProjectSettings {
   /** Optional monthly USD cap on SOTU's paid distills (same gate as the daily cap,
    *  whichever binds first). Unset = no monthly cap. */
   sotuBudgetMonthlyUsd?: number
+  /** Project "stakes" tier -- the affordability proxy (design BUDGET / OPEN ITEM #5).
+   *  Picks the DEFAULT SOTU budget when no explicit `sotuBudget*` cap is set; does NOT
+   *  auto-enable SOTU (opt-in stays explicit). */
+  stakes?: SotuStakes
+  /** Benevolent-gated SOTU distill tuning overrides (Phase 7) -- any subset of
+   *  `SotuTuning` (models / trigger constants / cutoffs). Absent fields use the baked
+   *  defaults. Edited via the `sotu_configure` tool. */
+  sotuParams?: SotuTuningOverrides
 }
 
 // File metadata for the file editor
@@ -6170,6 +6180,106 @@ export interface SotuBudgetExhausted {
   budget: { dailyUsd?: number; monthlyUsd?: number }
 }
 
+/** Citation-grounding metric (recap Pillar D, deterministic, no judge) -- THE
+ *  bard-lying detector. Scores the distilled chronicle's cited conversations
+ *  against the input it actually had (the live contribution queue). High
+ *  precision = the narrative isn't inventing convs; coverage = how much of the
+ *  input it accounts for. `unknownCited` is the hard count that matters most:
+ *  conversations the chronicle cites that are NOT in the input (hallucinated or
+ *  stale). Computed by `src/broker/sotu/grounding.ts`; the Sheaf web layer
+ *  re-exports this from `sheaf-types.ts`. */
+export interface SheafGrounding {
+  /** (cited - unknownCited) / cited. 1 when nothing is cited. */
+  precision: number
+  /** (cited ∩ known) / known. 1 when there is no input to cover. */
+  coverage: number
+  /** Distinct conversations the chronicle cites. */
+  citedConvs: number
+  /** Distinct conversations present in the input (the queue the bard folded). */
+  knownConvs: number
+  /** Cited conversations absent from the input -- the lie/staleness count. */
+  unknownCited: number
+}
+
+// ─── SOTU tuning + eval (Phase 7) ──────────────────────────────────────────────
+
+/** Project "stakes" tier -- the affordability proxy that DEFAULTS SOTU's budget
+ *  (design BUDGET section / OPEN ITEM #5). Higher stakes = a more generous default
+ *  daily/monthly cap. It does NOT auto-enable SOTU (opt-in stays explicit); it only
+ *  picks the DEFAULT budget when the project sets no explicit cap. */
+export type SotuStakes = 'main-income' | 'client' | 'side' | 'experiment'
+
+/** The fully-resolved SOTU distill tuning -- models, trigger constants, and cutoffs.
+ *  Every field has a baked default (`SOTU_TUNING_DEFAULTS`); a project overrides any
+ *  subset via `ProjectSettings.sotuParams`. This is the benevolent-gated tuning bag
+ *  (Phase 7) and the basis of the self-describing per-distill recipe (recap D). */
+export interface SotuTuning {
+  /** Scribe (cheap frequent fold) model -- OpenRouter id. */
+  scribeModel: string
+  /** Reconcile (rare Opus re-ground) model -- OpenRouter id. */
+  reconcileModel: string
+  /** A single fold this busy (weighted pending) escalates scribe -> reconcile. */
+  reconcileBurst: number
+  /** Hard cost floor: never distill more often than this (ms). */
+  minIntervalMs: number
+  /** Weighted pending count that fires a distill immediately past the floor. */
+  burstThreshold: number
+  /** Trailing-timer delay a trickle settles for before folding (ms). */
+  quietSettleMs: number
+  /** A read of a chronicle older than this forces a fresh reconcile (ms). */
+  staleOnReadMs: number
+  /** Age past which a JUST-DONE entry has withered and is dropped (ms). */
+  deadCutoffMs: number
+}
+
+/** Per-project overrides for the distill tuning -- any subset of `SotuTuning`.
+ *  Persisted on `ProjectSettings.sotuParams`, edited via the benevolent-gated
+ *  `sotu_configure` tool. Absent fields fall back to `SOTU_TUNING_DEFAULTS`. */
+export type SotuTuningOverrides = Partial<SotuTuning>
+
+/** The self-describing recipe recorded in every distill bundle (recap `args_json`
+ *  mirror, Pillar D): the RESOLVED tuning actually used + the budget/stakes context
+ *  + the mode + pipeline version. A benevolent agent compares variants by recipe +
+ *  cost + grounding. Flat (tuning fields inlined) so it reads like recap's recipe. */
+export interface SotuRecipe extends SotuTuning {
+  pipelineVersion: number
+  mode: SotuDistillMode
+  stakes?: SotuStakes
+  budgetDailyUsd?: number
+  budgetMonthlyUsd?: number
+}
+
+/** One distill's eval row (Phase 7) -- what `sotu_eval` / `GET /api/sotu/evals`
+ *  return per distill so quality/cost is QC-able across tuning variants. */
+export interface SotuDistillEval {
+  /** Distill instant (its bundle dir name, epoch ms). */
+  ts: number
+  mode: SotuDistillMode
+  /** USD the fold cost (COST-2 ledger sum). */
+  costUsd: number
+  /** New items folded this run. */
+  folded?: number
+  recipe: SotuRecipe
+  /** Citation-grounding of the produced chronicle vs the folded input (Pillar D).
+   *  Absent on a failed distill that never produced a chronicle. */
+  grounding?: SheafGrounding
+  /** Set when the distill failed (parse error etc.) -- the prior chronicle was kept. */
+  error?: string
+}
+
+/** The current + resolved SOTU config for a project, returned by `sotu_configure`. */
+export interface SotuConfigView {
+  /** Opt-in flag (false/unset = free floor only, no paid distill). */
+  enabled: boolean
+  stakes?: SotuStakes
+  /** Explicit caps the project set (absent = the stakes-tier default applies). */
+  budget: { dailyUsd?: number; monthlyUsd?: number }
+  /** The resolved tuning actually in effect (defaults + the project's overrides). */
+  tuning: SotuTuning
+  /** Just the project's overrides (what is stored on `ProjectSettings.sotuParams`). */
+  overrides: SotuTuningOverrides
+}
+
 // ─── Chronicle (Layer 2 -- the distilled narrative, served over the wire) ──────
 // The chronicle is now a READ SURFACE (get_state_of_union MCP + REST), so its
 // shape is part of the wire contract. `src/broker/sotu/types.ts` re-exports these
@@ -6274,6 +6384,53 @@ export interface SotuContributeResult {
   requestId: string
   ok: boolean
   pendingContribs?: number
+  error?: string
+}
+
+/** Agent host -> Broker: read AND optionally edit the project's SOTU config (Phase 7,
+ *  benevolent-gated). A read passes no mutating fields; a write sets any of
+ *  enabled/stakes/budget/params and the broker persists them to `ProjectSettings`. */
+export interface SotuConfigureRequest {
+  type: 'sotu_configure_request'
+  requestId: string
+  /** Optional explicit project URI; omitted -> the caller's conversation project. */
+  projectUri?: string
+  /** When present, flip the opt-in flag. */
+  enabled?: boolean
+  /** When present, set the stakes tier (affordability proxy for the budget default). */
+  stakes?: SotuStakes
+  /** When present, set the explicit daily/monthly caps (null clears a cap). */
+  budgetDailyUsd?: number | null
+  budgetMonthlyUsd?: number | null
+  /** When present, merge these tuning overrides (a field set to null is cleared). */
+  params?: Record<string, number | string | null>
+}
+
+/** Broker -> Agent host: the resolved config AFTER any write. Echoes `requestId`. */
+export interface SotuConfigureResult {
+  type: 'sotu_configure_result'
+  requestId: string
+  ok: boolean
+  config?: SotuConfigView
+  error?: string
+}
+
+/** Agent host -> Broker: list recent distill evals (recipe + cost + grounding) for a
+ *  project so a benevolent agent QCs SOTU quality/cost across tuning variants. */
+export interface SotuEvalRequest {
+  type: 'sotu_eval_request'
+  requestId: string
+  projectUri?: string
+  /** Max evals to return, newest first (broker clamps; default a small page). */
+  limit?: number
+}
+
+/** Broker -> Agent host: the recent distill evals (or an error). Echoes `requestId`. */
+export interface SotuEvalResult {
+  type: 'sotu_eval_result'
+  requestId: string
+  ok: boolean
+  evals?: SotuDistillEval[]
   error?: string
 }
 

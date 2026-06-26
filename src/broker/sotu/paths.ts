@@ -91,7 +91,7 @@ export function spendPath(slug: string): string {
 }
 
 /** The distills/ root for a project (recap C+ run-artifact bundle pattern). */
-function distillsRoot(slug: string): string {
+export function distillsRoot(slug: string): string {
   const dir = join(projectDir(slug), 'distills')
   mkdirSync(dir, { recursive: true })
   return dir

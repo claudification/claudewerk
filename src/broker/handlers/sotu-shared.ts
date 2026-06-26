@@ -42,6 +42,15 @@ export function echoOf(data: MessageData): Echo {
   return typeof data.requestId === 'string' ? { requestId: data.requestId } : {}
 }
 
+/** The project a read/config RPC targets: an explicit `projectUri` when given, else
+ *  the caller's OWN conversation project (resolved from the broker's view, never
+ *  spoofable). Shared by `get_state_of_union`, `sotu_configure`, and `sotu_eval`. */
+export function resolveReadProject(ctx: HandlerContext, data: MessageData): string | null {
+  const explicit = typeof data.projectUri === 'string' ? data.projectUri.trim() : ''
+  if (explicit) return explicit
+  return resolveSource(ctx, data)?.project ?? null
+}
+
 /** Resolve the source conv + project from the caller's OWN connection. The wire
  *  body's convId is honored only as a hint; the project is always derived from the
  *  broker's view of that conv so a host can't spoof another queue. */

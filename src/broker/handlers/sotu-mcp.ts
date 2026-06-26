@@ -20,15 +20,15 @@ import { defaultResolveSotuConfig } from '../sotu/config'
 import { maybeDistillOnRead } from '../sotu/engine'
 import { projectSlug } from '../sotu/paths'
 import { buildSotuView } from '../sotu/view'
-import { buildCallout, commit, echoOf, resolveSource, trustError, VALID_NOTE_TYPES } from './sotu-shared'
-
-/** The project to read: an explicit `projectUri` when given, else the caller's own
- *  conversation project (resolved from the broker's view, never spoofable). */
-function resolveReadProject(ctx: HandlerContext, data: MessageData): string | null {
-  const explicit = typeof data.projectUri === 'string' ? data.projectUri.trim() : ''
-  if (explicit) return explicit
-  return resolveSource(ctx, data)?.project ?? null
-}
+import {
+  buildCallout,
+  commit,
+  echoOf,
+  resolveReadProject,
+  resolveSource,
+  trustError,
+  VALID_NOTE_TYPES,
+} from './sotu-shared'
 
 async function serveView(ctx: HandlerContext, project: string, echo: { requestId?: string }): Promise<void> {
   // Lazy-regen-if-stale: a no-op (fast) when fresh + nothing pending, or for a
