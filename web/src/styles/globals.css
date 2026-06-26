@@ -377,6 +377,44 @@ body {
 		border-color: color-mix(in oklch, var(--color-teal-400, #2dd4bf) 55%, transparent);
 	}
 
+	/* SOTU inline callout chip (`<callout type="...">...</callout>`). An inline
+	   highlight (like <mark>) so a mid-sentence callout never breaks the prose --
+	   the body stays part of the sentence; a small per-type tag + tint signal that
+	   this bit is a SOTU contribution. Per-type accent via --sotu-c. */
+	.sotu-callout {
+		border-radius: 3px;
+		padding: 0.02em 0.32em;
+		background: color-mix(in oklch, var(--sotu-c) 12%, transparent);
+		box-shadow: inset 0 -1.5px 0 color-mix(in oklch, var(--sotu-c) 45%, transparent);
+	}
+
+	.sotu-callout::before {
+		content: attr(data-callout-type);
+		margin-right: 0.35em;
+		font-size: 0.68em;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--sotu-c);
+		opacity: 0.85;
+	}
+
+	.sotu-callout-insight {
+		--sotu-c: var(--color-amber-400, #fbbf24);
+	}
+	.sotu-callout-lock {
+		--sotu-c: var(--color-rose-400, #fb7185);
+	}
+	.sotu-callout-blocked {
+		--sotu-c: var(--color-red-400, #f87171);
+	}
+	.sotu-callout-focus {
+		--sotu-c: var(--color-sky-400, #38bdf8);
+	}
+	.sotu-callout-dead-end {
+		--sotu-c: var(--color-zinc-400, #a1a1aa);
+	}
+
 	.code-block-wrap {
 		position: relative;
 	}

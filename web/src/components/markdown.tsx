@@ -3,6 +3,7 @@ import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef } from 
 import { usePopoutStore } from '@/components/popout/use-popout-store'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { useMarkdownViewer } from '@/hooks/use-markdown-viewer'
+import { calloutInlineExtension } from '@/lib/callout-marked'
 import { matchLeadingCanvasRef } from '@/lib/canvas-refs'
 import { matchLeadingConversationRef } from '@/lib/conversation-refs'
 import { record } from '@/lib/perf-metrics'
@@ -260,12 +261,12 @@ marked.use({
           // Odd indices are code blocks/inline code - leave them alone
           if (i % 2 === 1) return part
           // Escape ALL angle brackets that look like HTML tags -- EXCEPT our own
-          // `<conversation ...>` reference tokens, which the inline extension below
-          // consumes and renders as a controlled pill. (Leaving them raw is safe:
-          // the extension emits escaped, controlled HTML; a malformed token just
-          // falls through as visible text.)
+          // `<conversation ...>` and `<callout ...>` tokens, which the inline
+          // extensions below consume and render as controlled inline elements.
+          // (Leaving them raw is safe: the extensions emit escaped, controlled
+          // HTML; a malformed token just falls through as visible text.)
           let out = part.replace(/<(\/?[a-zA-Z][a-zA-Z0-9_-]*(?:\s[^>]*)?)>/g, (full, inner: string) =>
-            /^\/?conversation(?:\s|$)/.test(inner) ? full : `&lt;${inner}&gt;`,
+            /^\/?(?:conversation|callout)(?:\s|$)/.test(inner) ? full : `&lt;${inner}&gt;`,
           )
           // Strip trailing backslash before newline. With `breaks: true`, every `\n`
           // already produces a hard break, so `\\\n` is redundant -- and marked leaks
@@ -364,6 +365,10 @@ marked.use({
         return `<button type="button" class="canvas-pill" data-canvas-id="${id}" title="Open canvas (${id})">◳ ${label}</button>`
       },
     },
+    // SOTU inline callout chip: `<callout type="insight">...</callout>` rendered
+    // mid-sentence without mangling the prose. Grammar shared with the agent-host
+    // scanner via @shared/sotu-callout (see lib/callout-marked.ts).
+    calloutInlineExtension,
   ],
 })
 

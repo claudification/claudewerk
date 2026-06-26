@@ -17,6 +17,7 @@ import { hasPendingAskRequests } from './local-server'
 import { clearInteraction, countInteractions, sendInteraction } from './pending-interactions'
 import { observeClaudeSessionId } from './session-transition'
 import { writeMergedSettings } from './settings-merge'
+import { SotuEmitter } from './sotu-emit'
 import type { StreamBackendOptions, StreamProcess } from './stream-backend'
 import { sendTranscriptEntriesChunked, startBgTaskOutputWatcher, startSubagentWatcher } from './transcript-manager'
 
@@ -87,6 +88,14 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
   // other fields, since the broker REPLACES the snapshot rather than merging.
   let lastConversationInfo: (AgentHostMessage & { slashCommands: string[] }) | null = null
 
+  // SOTU emit channel (Phase 3 COLLECT): scan LIVE main-thread assistant text for
+  // inline `<callout>`s (-> scribe_note) and emit the per-turn turn-digest floor
+  // (-> turn_digest) at each result. Fire-and-forget through the broker's single
+  // recordContribution chokepoint; dropped silently when not connected.
+  const sotu = new SotuEmitter(ctx.conversationId, msg => {
+    if (ctx.wsClient?.isConnected()) ctx.wsClient.send(msg)
+  })
+
   const opts: StreamBackendOptions = {
     args: finalClaudeArgs,
     settingsPath: deps.settingsPath,
@@ -100,6 +109,9 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
 
     onTranscriptEntries(entries, isInitial) {
       transcriptSendChain = transcriptSendChain.then(() => sendTranscriptEntriesChunked(ctx, entries, isInitial))
+      // SOTU: scan only LIVE main-thread entries; replay batches would re-emit
+      // historical callouts. Non-destructive -- the transcript is untouched.
+      if (!isInitial) sotu.observeLiveEntries(entries)
     },
 
     onInit(init) {
@@ -203,6 +215,12 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
 
     onResult(result) {
       ctx.diag('headless', `Result: ${result.subtype} cost=$${result.total_cost_usd} turns=${result.num_turns}`)
+      // SOTU: emit the per-turn baseline turn-digest + reset the callout scanner
+      // for the next turn. The turn is over -- this is the floor collection.
+      sotu.flushTurn({
+        subtype: result.subtype,
+        result_text: typeof result.result_text === 'string' ? result.result_text : undefined,
+      })
       // Signal idle -- turn is done
       ctx.wsClient?.sendConversationStatus('idle')
       if (result.total_cost_usd != null && ctx.wsClient?.isConnected() && ctx.claudeSessionId) {

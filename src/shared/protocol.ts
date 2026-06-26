@@ -1056,6 +1056,8 @@ export type AgentHostMessage =
   | DebugTraceEvent
   | DebugControlResult
   | WebControlRelayRequest
+  | ScribeNote
+  | TurnDigest
 
 export interface ConversationNameUpdate {
   type: 'conversation_name'
@@ -6071,6 +6073,29 @@ export interface ScribeNote {
   /** Present for a claim (file/path) or stake (concept) callout. */
   target?: ScribeNoteTarget
   /** RPC echo so a belt-and-suspenders MCP caller can match the reply. */
+  requestId?: string
+}
+
+/** `turn_digest` -- the always-on BASELINE floor (Phase 3). The agent host emits
+ *  one at the END OF EVERY TURN: a COMPACT summary (intent + files touched + a
+ *  short result), NOT raw messages. Guarantees the chronicle has coverage even
+ *  when no `<callout>` was emitted. Weight is always `baseline`. Benevolent-gated
+ *  for agent-host callers (same posture as `scribe_note`). */
+export interface TurnDigest {
+  type: 'turn_digest'
+  /** The user prompt that opened/continued the turn (clamped). */
+  intent?: string
+  /** Files the turn TOUCHED (write-ish tool calls), deduped. */
+  touching?: string[]
+  /** A short result/blocker signal (non-success subtype and/or trimmed text). */
+  result?: string
+  /** An explicit blocker, when known. */
+  blockedOn?: string
+  /** Source conversation id (broker-owned). Falls back to the caller WS conv id. */
+  convId?: string
+  /** Epoch ms when emitted. Broker stamps now when omitted. */
+  ts?: number
+  /** RPC echo so a belt-and-suspenders caller can match the reply. */
   requestId?: string
 }
 

@@ -1,17 +1,23 @@
 /**
- * SOTU `scribe_note` handler -- the contribution-spine wire seam (Phase 1).
+ * SOTU contribution-spine wire handlers (Phase 1 `scribe_note` + Phase 3
+ * `turn_digest`).
  *
- * An agent host emits `scribe_note` (a copy of an inline `<callout>`); the broker
- * appends it to the project's queue, bumps the weighted pending counter, and
- * broadcasts `sotu_contribution` to authorized dashboards so the live soft-lock map
- * updates. NO LLM -- this is the free floor. The distill engine (Phase 4) drains it.
+ * An agent host emits two kinds of contribution:
+ *  - `scribe_note` -- a copy of an inline `<callout>` (declared intent, high weight).
+ *  - `turn_digest` -- the always-on per-turn baseline floor (compact intent +
+ *    files touched + result, NOT raw messages).
+ * Both append to the project's queue via the single `recordContribution`
+ * chokepoint, bump the weighted pending counter, and broadcast `sotu_contribution`
+ * so the live soft-lock map updates. NO LLM -- the free floor. The distill engine
+ * (Phase 4) drains it.
  *
- * Trust: agent-host callers must be benevolent (recap Pillar B gate) -- the same
- * posture as recap_create. The reply echoes `requestId` so a belt-and-suspenders
- * MCP caller surfaces the error instead of hanging to a silent timeout.
+ * Trust: agent-host callers must be benevolent (recap Pillar B gate). The reply
+ * echoes `requestId` so a belt-and-suspenders MCP caller surfaces the error
+ * instead of hanging to a silent timeout.
  *
- * Boundary: the broker receives an ALREADY-STRUCTURED note; it never parses CC
- * output (the `<callout>` parse happens at the agent host, Phase 3).
+ * Boundary: the broker receives ALREADY-STRUCTURED messages; it never parses CC
+ * output (the `<callout>` parse + the turn-digest distillation happen at the
+ * agent host, Phase 3).
  */
 
 import type { ScribeNote, SotuContribution } from '../../shared/protocol'
@@ -19,23 +25,67 @@ import type { HandlerContext, MessageData } from '../handler-context'
 import { AGENT_HOST_ONLY, detectRole, registerHandlers } from '../message-router'
 import { recordContribution } from '../sotu/contribute'
 import { projectSlug } from '../sotu/paths'
-import type { CalloutContrib } from '../sotu/types'
+import type { CalloutContrib, Contribution, TurnDigestContrib } from '../sotu/types'
 
 const VALID_NOTE_TYPES = new Set<ScribeNote['noteType']>(['insight', 'lock', 'blocked', 'focus', 'dead-end'])
 
 type Echo = { requestId?: string }
 
-/** Parsed + validated scribe_note, ready to record. convId + project are resolved
- *  from the caller's OWN connection (never the wire body) so a host can't mis-route
- *  another project's queue. Returns an error string on any rejection. */
-interface Accepted {
+/** The resolved source for a contribution: conv + project come from the caller's
+ *  OWN connection (never the wire body) so a host can't mis-route another
+ *  project's queue. */
+interface Source {
   convId: string
   project: string
-  contrib: CalloutContrib
 }
 
-/** Build the queue contribution from a validated note. Optional fields (ttl,
- *  claim/stake target) are spread in only when present. */
+/** Pillar B trust gate: an agent host may contribute only when benevolent. The
+ *  router already admitted the agent-host role; this is the trust check. Returns
+ *  an error string when rejected, else null. */
+function trustError(ctx: HandlerContext): string | null {
+  if (detectRole(ctx.ws.data) === 'agent-host' && ctx.callerSettings?.trustLevel !== 'benevolent') {
+    return 'Requires benevolent trust level'
+  }
+  return null
+}
+
+/** Resolve the source conv + project from the caller's OWN connection (the wire
+ *  body's convId is honored only as a hint, but the project is always derived
+ *  from the broker's view of that conv so a host can't spoof another queue). */
+function resolveSource(ctx: HandlerContext, data: MessageData): Source | null {
+  const convId = (typeof data.convId === 'string' ? data.convId : undefined) ?? ctx.ws.data.conversationId
+  if (!convId) return null
+  const project = ctx.conversations.getConversation(convId)?.project ?? ctx.caller?.project
+  return project ? { convId, project } : null
+}
+
+/** Record a contribution + broadcast the refreshed live map + ack the caller.
+ *  Shared by both handlers so the queue append / pending bump / broadcast can
+ *  never drift between the two contribution kinds. */
+function commit(
+  ctx: HandlerContext,
+  resultType: string,
+  src: Source,
+  contrib: Contribution,
+  echo: Echo,
+  logLine: string,
+): void {
+  const { pendingContribs } = recordContribution(projectSlug(src.project), contrib)
+  ctx.broadcastScoped(
+    {
+      type: 'sotu_contribution',
+      project: src.project,
+      pendingContribs,
+      latest: { convId: src.convId, kind: contrib.kind, ts: contrib.ts },
+    } satisfies SotuContribution,
+    src.project,
+  )
+  ctx.log.info(`[sotu] ${logLine} pending=${pendingContribs}`)
+  ctx.reply({ type: resultType, ok: true, pendingContribs, ...echo })
+}
+
+/** Build the callout queue contribution from a validated note. Optional fields
+ *  (ttl, claim/stake target) are spread in only when present. */
 function buildCallout(
   data: MessageData,
   convId: string,
@@ -54,54 +104,76 @@ function buildCallout(
   }
 }
 
-/** Resolve the source conv + project from the caller's OWN connection (never the
- *  wire body's project, which a host could spoof to mis-route another queue). */
-function resolveSource(ctx: HandlerContext, data: MessageData): { convId: string; project: string } | null {
-  const convId = (typeof data.convId === 'string' ? data.convId : undefined) ?? ctx.ws.data.conversationId
-  if (!convId) return null
-  const project = ctx.conversations.getConversation(convId)?.project ?? ctx.caller?.project
-  return project ? { convId, project } : null
-}
-
-function acceptScribeNote(ctx: HandlerContext, data: MessageData): Accepted | { error: string } {
+function scribeNote(ctx: HandlerContext, data: MessageData): void {
+  const echo: Echo = typeof data.requestId === 'string' ? { requestId: data.requestId } : {}
+  const denied = trustError(ctx)
+  if (denied) {
+    ctx.reply({ type: 'scribe_note_result', ok: false, error: denied, ...echo })
+    return
+  }
   const noteType = data.noteType as ScribeNote['noteType'] | undefined
   const payload = typeof data.payload === 'string' ? data.payload : undefined
   if (!noteType || !VALID_NOTE_TYPES.has(noteType) || !payload) {
-    return { error: 'scribe_note requires noteType + payload' }
+    ctx.reply({ type: 'scribe_note_result', ok: false, error: 'scribe_note requires noteType + payload', ...echo })
+    return
   }
   const src = resolveSource(ctx, data)
-  if (!src) return { error: 'no resolvable conversation/project' }
-  return { ...src, contrib: buildCallout(data, src.convId, noteType, payload) }
+  if (!src) {
+    ctx.reply({ type: 'scribe_note_result', ok: false, error: 'no resolvable conversation/project', ...echo })
+    return
+  }
+  const contrib = buildCallout(data, src.convId, noteType, payload)
+  commit(
+    ctx,
+    'scribe_note_result',
+    src,
+    contrib,
+    echo,
+    `scribe_note conv=${src.convId.slice(0, 8)} type=${contrib.type}`,
+  )
 }
 
-function scribeNote(ctx: HandlerContext, data: MessageData): void {
+/** Build the turn-digest queue contribution. Optional fields are spread in only
+ *  when present so an empty digest never lands. */
+function buildTurnDigest(data: MessageData, convId: string): TurnDigestContrib {
+  const stringArray = (v: unknown): string[] | undefined =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : undefined
+  const touching = stringArray(data.touching)
+  return {
+    kind: 'turn_digest',
+    convId,
+    ts: typeof data.ts === 'number' ? data.ts : Date.now(),
+    ...(typeof data.intent === 'string' ? { intent: data.intent } : {}),
+    ...(touching && touching.length ? { touching } : {}),
+    ...(typeof data.result === 'string' ? { result: data.result } : {}),
+    ...(typeof data.blockedOn === 'string' ? { blockedOn: data.blockedOn } : {}),
+  }
+}
+
+function turnDigest(ctx: HandlerContext, data: MessageData): void {
   const echo: Echo = typeof data.requestId === 'string' ? { requestId: data.requestId } : {}
-  // Pillar B trust gate: an agent host may contribute only when benevolent. The
-  // router already admitted the agent-host role; this is the trust check.
-  if (detectRole(ctx.ws.data) === 'agent-host' && ctx.callerSettings?.trustLevel !== 'benevolent') {
-    ctx.reply({ type: 'scribe_note_result', ok: false, error: 'Requires benevolent trust level', ...echo })
+  const denied = trustError(ctx)
+  if (denied) {
+    ctx.reply({ type: 'turn_digest_result', ok: false, error: denied, ...echo })
     return
   }
-  const accepted = acceptScribeNote(ctx, data)
-  if ('error' in accepted) {
-    ctx.reply({ type: 'scribe_note_result', ok: false, error: accepted.error, ...echo })
+  const src = resolveSource(ctx, data)
+  if (!src) {
+    ctx.reply({ type: 'turn_digest_result', ok: false, error: 'no resolvable conversation/project', ...echo })
     return
   }
-  const { convId, project, contrib } = accepted
-  const { pendingContribs } = recordContribution(projectSlug(project), contrib)
-  ctx.broadcastScoped(
-    {
-      type: 'sotu_contribution',
-      project,
-      pendingContribs,
-      latest: { convId, kind: 'callout', ts: contrib.ts },
-    } satisfies SotuContribution,
-    project,
+  const contrib = buildTurnDigest(data, src.convId)
+  const touchCount = contrib.touching?.length ?? 0
+  commit(
+    ctx,
+    'turn_digest_result',
+    src,
+    contrib,
+    echo,
+    `turn_digest conv=${src.convId.slice(0, 8)} touched=${touchCount}`,
   )
-  ctx.log.info(`[sotu] scribe_note conv=${convId.slice(0, 8)} type=${contrib.type} pending=${pendingContribs}`)
-  ctx.reply({ type: 'scribe_note_result', ok: true, pendingContribs, ...echo })
 }
 
 export function registerSotuHandlers(): void {
-  registerHandlers({ scribe_note: scribeNote }, AGENT_HOST_ONLY)
+  registerHandlers({ scribe_note: scribeNote, turn_digest: turnDigest }, AGENT_HOST_ONLY)
 }
