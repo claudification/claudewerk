@@ -30,6 +30,7 @@ import {
   type ViewUpdate,
   WidgetType,
 } from '@codemirror/view'
+import { parseCanvasRefs } from '@/lib/canvas-refs'
 import { parseConversationRefs } from '@/lib/conversation-refs'
 import { record } from '@/lib/perf-metrics'
 import type { SubCommandContext } from '../../sub-commands'
@@ -206,38 +207,68 @@ class ConversationPillWidget extends WidgetType {
   }
 }
 
-function buildConversationPillDecorations(view: EditorView): DecorationSet {
-  const builder = new RangeSetBuilder<Decoration>()
-  for (const { from, to } of view.visibleRanges) {
-    const text = view.state.doc.sliceString(from, to)
-    for (const ref of parseConversationRefs(text)) {
-      builder.add(
-        from + ref.start,
-        from + ref.end,
-        Decoration.replace({ widget: new ConversationPillWidget(ref.id, ref.label) }),
-      )
-    }
+// Canvas reference pill -- the `!c:` completer's `<canvas id="...">name</canvas>`
+// token (see lib/canvas-refs.ts). Same atomic-replace treatment as conversations.
+class CanvasPillWidget extends WidgetType {
+  constructor(
+    readonly id: string,
+    readonly label: string,
+  ) {
+    super()
   }
-  return builder.finish()
+
+  eq(other: CanvasPillWidget) {
+    return other.id === this.id && other.label === this.label
+  }
+
+  toDOM() {
+    const pill = document.createElement('span')
+    pill.className = 'cm-canvas-pill'
+    pill.textContent = `◳ ${this.label}`
+    pill.title = `Canvas reference (${this.id})`
+    return pill
+  }
+
+  ignoreEvent() {
+    return false
+  }
 }
 
-const conversationPillPlugin = ViewPlugin.fromClass(
-  class {
-    decorations: DecorationSet
-    constructor(view: EditorView) {
-      this.decorations = buildConversationPillDecorations(view)
+// Shared atomic-pill plugin factory: scans visible text for `<tag id=>label</tag>`
+// refs and replaces each with a widget. Atomic so caret motion + Backspace treat a
+// reference as one unit, not a walk through the hidden XML. Used by both pills.
+function pillPlugin(
+  parseRefs: (text: string) => { id: string; label: string; start: number; end: number }[],
+  makeWidget: (id: string, label: string) => WidgetType,
+) {
+  const build = (view: EditorView): DecorationSet => {
+    const builder = new RangeSetBuilder<Decoration>()
+    for (const { from, to } of view.visibleRanges) {
+      for (const ref of parseRefs(view.state.doc.sliceString(from, to))) {
+        builder.add(from + ref.start, from + ref.end, Decoration.replace({ widget: makeWidget(ref.id, ref.label) }))
+      }
     }
-    update(u: ViewUpdate) {
-      if (u.docChanged || u.viewportChanged) this.decorations = buildConversationPillDecorations(u.view)
-    }
-  },
-  {
-    decorations: v => v.decorations,
-    // Make the pills atomic: caret motion and deletion treat each reference as
-    // a single unit instead of stepping through the hidden XML character by char.
-    provide: plugin => EditorView.atomicRanges.of(view => view.plugin(plugin)?.decorations ?? Decoration.none),
-  },
-)
+    return builder.finish()
+  }
+  return ViewPlugin.fromClass(
+    class {
+      decorations: DecorationSet
+      constructor(view: EditorView) {
+        this.decorations = build(view)
+      }
+      update(u: ViewUpdate) {
+        if (u.docChanged || u.viewportChanged) this.decorations = build(u.view)
+      }
+    },
+    {
+      decorations: v => v.decorations,
+      provide: plugin => EditorView.atomicRanges.of(view => view.plugin(plugin)?.decorations ?? Decoration.none),
+    },
+  )
+}
+
+const conversationPillPlugin = pillPlugin(parseConversationRefs, (id, label) => new ConversationPillWidget(id, label))
+const canvasPillPlugin = pillPlugin(parseCanvasRefs, (id, label) => new CanvasPillWidget(id, label))
 
 // ---------------------------------------------------------------------------
 // Dark mode base -- replaces @uiw/react-codemirror's built-in "dark" theme
@@ -297,6 +328,22 @@ function inputTheme(fontSize: number, minHeight: string, maxHeight: string): Ext
         color: 'var(--color-primary)',
         backgroundColor: 'color-mix(in oklch, var(--color-primary) 14%, transparent)',
         border: '1px solid color-mix(in oklch, var(--color-primary) 35%, transparent)',
+        cursor: 'default',
+      },
+      // Canvas reference pill -- same chip shape as the conversation pill, tinted
+      // with the accent so a drawing reference reads distinctly from a conv ref.
+      '.cm-canvas-pill': {
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '0 6px',
+        borderRadius: '4px',
+        fontSize: '0.92em',
+        lineHeight: '1.35',
+        whiteSpace: 'nowrap',
+        verticalAlign: 'baseline',
+        color: 'var(--color-accent)',
+        backgroundColor: 'color-mix(in oklch, var(--color-accent) 14%, transparent)',
+        border: '1px solid color-mix(in oklch, var(--color-accent) 35%, transparent)',
         cursor: 'default',
       },
       // Markdown decorator classes -- matches prose-hacker styling in globals.css
@@ -479,8 +526,9 @@ export function buildInputExtensions(opts: InputExtensionOptions): Extension[] {
     // Lightweight regex-based markdown decorator (replaces the heavy
     // lang-markdown + tree-walk highlight plugin -- see PERF NOTE above).
     markdownDecoratorPlugin,
-    // Render `<conversation ...>` reference tokens as compact atomic pills.
+    // Render `<conversation ...>` + `<canvas ...>` reference tokens as atomic pills.
     conversationPillPlugin,
+    canvasPillPlugin,
     cmUpdateTimer,
     EditorView.lineWrapping,
   ]

@@ -14,49 +14,16 @@
  * all build/parse through here — do NOT re-spell the regex elsewhere.
  */
 
-/** A parsed conversation reference. */
-export interface ConversationRef {
-  /** Stable conversation id (the wire `SessionSummary.id` / routing id). */
-  id: string
-  /** Human-readable label — the compound `project:conversation-slug`. */
-  label: string
-  /** Byte offset of the opening `<` in the source string. */
-  start: number
-  /** Byte offset just past the closing `>`. */
-  end: number
-}
+import { makeXmlRefCodec } from './xml-ref'
 
-// Global, multi-match. Capture 1 = id attribute, capture 2 = label body.
-// Label body is non-greedy and forbids a literal `<` so a malformed/nested tag
-// can't swallow following content.
-const REF_RE = /<conversation id="([^"]+)">([^<]*)<\/conversation>/g
+const codec = makeXmlRefCodec('conversation')
 
 /** Build the canonical reference token for a conversation. */
-export function buildConversationRef(id: string, label: string): string {
-  return `<conversation id="${id}">${label}</conversation>`
-}
-
+export const buildConversationRef = codec.build
 /** Parse every conversation reference out of `text`, in document order. */
-export function parseConversationRefs(text: string): ConversationRef[] {
-  const refs: ConversationRef[] = []
-  REF_RE.lastIndex = 0
-  let m: RegExpExecArray | null
-  // biome-ignore lint/suspicious/noAssignInExpressions: idiomatic regex iteration
-  while ((m = REF_RE.exec(text))) {
-    refs.push({ id: m[1], label: m[2], start: m.index, end: m.index + m[0].length })
-  }
-  return refs
-}
-
-// Anchored single-match form for streaming tokenizers (e.g. the marked inline
-// extension), which test the start of the remaining source. Same shape as REF_RE.
-const LEADING_REF_RE = /^<conversation id="([^"]+)">([^<]*)<\/conversation>/
-
+export const parseConversationRefs = codec.parse
 /** Match a conversation reference at the START of `src`, or null. */
-export function matchLeadingConversationRef(src: string): { raw: string; id: string; label: string } | null {
-  const m = src.match(LEADING_REF_RE)
-  return m ? { raw: m[0], id: m[1], label: m[2] } : null
-}
+export const matchLeadingConversationRef = codec.matchLeading
 
 /** Distinct referenced conversation ids (order-preserving). */
 export function referencedConversationIds(text: string): string[] {

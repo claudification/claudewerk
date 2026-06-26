@@ -1,7 +1,9 @@
 import { Marked } from 'marked'
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef } from 'react'
+import { usePopoutStore } from '@/components/popout/use-popout-store'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { useMarkdownViewer } from '@/hooks/use-markdown-viewer'
+import { matchLeadingCanvasRef } from '@/lib/canvas-refs'
 import { matchLeadingConversationRef } from '@/lib/conversation-refs'
 import { record } from '@/lib/perf-metrics'
 import { isMobileViewport } from '@/lib/utils'
@@ -340,6 +342,28 @@ marked.use({
         return `<button type="button" class="conversation-pill" data-conversation-id="${id}" title="Open conversation (${id})">${label}</button>`
       },
     },
+    // Canvas reference pill: `<canvas id="...">name</canvas>` (the `!c:` completer's
+    // token). Clickable chip that opens the hosted canvas. Shape owned by
+    // lib/canvas-refs.ts (matchLeadingCanvasRef).
+    {
+      name: 'canvas',
+      level: 'inline',
+      start(src: string) {
+        const i = src.indexOf('<canvas ')
+        return i < 0 ? undefined : i
+      },
+      tokenizer(src: string) {
+        const hit = matchLeadingCanvasRef(src)
+        if (!hit) return undefined
+        return { type: 'canvas', raw: hit.raw, canvasId: hit.id, label: hit.label }
+      },
+      // biome-ignore lint/suspicious/noExplicitAny: marked extension renderer receives generic token
+      renderer(token: any) {
+        const id = escapeAttr(token.canvasId)
+        const label = escapeHtml(token.label)
+        return `<button type="button" class="canvas-pill" data-canvas-id="${id}" title="Open canvas (${id})">◳ ${label}</button>`
+      },
+    },
   ],
 })
 
@@ -593,6 +617,20 @@ export const Markdown = memo(function Markdown({ children, inline, copyable }: M
       if (id) {
         e.preventDefault()
         useConversationsStore.getState().selectConversation(id)
+      }
+      return
+    }
+
+    // Canvas reference pill -> open the hosted canvas (portal popout, with a
+    // standalone-route fallback if the popup is blocked -- mirrors openCanvas).
+    const canvasPill = target.closest('.canvas-pill') as HTMLElement | null
+    if (canvasPill) {
+      const id = canvasPill.getAttribute('data-canvas-id')
+      if (id) {
+        e.preventDefault()
+        if (!usePopoutStore.getState().open('canvas', id)) {
+          window.open(`/canvas/${encodeURIComponent(id)}`, `canvas-${id}`, 'noopener')
+        }
       }
       return
     }

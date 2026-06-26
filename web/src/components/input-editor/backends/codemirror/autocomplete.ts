@@ -45,6 +45,7 @@ import { projectPath } from '@/lib/types'
 import { conversationAddressableSlug, lastPathSegments, projectDisplayName } from '@/lib/utils'
 import { BUILTIN_COMMAND_NAMES, BUILTIN_SCORE_BOOST, fuzzyScore } from '../../autocomplete-shared'
 import { getSubCommand, type SubCommandContext, type SubCommandDef } from '../../sub-commands'
+import { canvasCompletionSource } from './canvas-complete'
 import { composingField } from './composition'
 
 interface SourceInfo {
@@ -435,7 +436,9 @@ export function autocompleteExtension(opts: AutocompleteOptions): Extension {
     tabAcceptKeymap,
     colonDelayTracker,
     autocompletion({
-      override: [makeCompletionSource(opts.getSubCommandContext)],
+      // canvasCompletionSource is independent (own `!c:` trigger, async fetch) so
+      // it never touches the slash/@/`:` conversation source's logic.
+      override: [makeCompletionSource(opts.getSubCommandContext), canvasCompletionSource],
       activateOnTyping: true,
       closeOnBlur: true,
       icons: false,
