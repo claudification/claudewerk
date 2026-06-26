@@ -25,7 +25,7 @@
     "build:acp-agent-host": "bun run gen-version && bun build src/acp-agent-host/index.ts --compile --minify --outfile bin/acp-host",
     "build:acp-agent-host:linux-x64": "bun run gen-version && bun build src/acp-agent-host/index.ts --compile --minify --target=bun-linux-x64-baseline --outfile bin/acp-host-linux-x64",
     "build:acp-agent-host:linux-arm64": "bun run gen-version && bun build src/acp-agent-host/index.ts --compile --minify --target=bun-linux-arm64 --outfile bin/acp-host-linux-arm64",
-    "build:daemon-agent-host": "bun run gen-version && bun build src/daemon-agent-host/index.ts --compile --minify --outfile bin/daemon-host && bun run codesign bin/daemon-host",
+    "build:daemon-agent-host": "bun run gen-version && bun build src/daemon-agent-host/index.ts --compile --minify --outfile bin/daemon-host",
     "build:daemon-agent-host:linux-x64": "bun run gen-version && bun build src/daemon-agent-host/index.ts --compile --minify --target=bun-linux-x64-baseline --outfile bin/daemon-host-linux-x64",
     "build:daemon-agent-host:linux-arm64": "bun run gen-version && bun build src/daemon-agent-host/index.ts --compile --minify --target=bun-linux-arm64 --outfile bin/daemon-host-linux-arm64",
     "build:claude-agent-host:linux-x64": "bun run gen-version && bun build src/claude-agent-host/index.ts --compile --minify --target=bun-linux-x64-baseline --outfile bin/rclaude-linux-x64",
