@@ -11,8 +11,14 @@
  * The parse is defensive: malformed JSON -> reject (caller keeps the prior scene).
  */
 
+import type { CanvasShareTier } from '../shared/protocol'
+
 /** Element types that render external/embedded content -- never persisted. */
 const FORBIDDEN_TYPES = new Set(['embeddable', 'iframe'])
+
+/** customData flag marking an element as a guest annotation (comment tier).
+ *  A `comment`-tier peer may only add/modify/remove elements carrying this. */
+export const CANVAS_ANNOTATION_KEY = 'canvasAnnotation'
 
 function isSafeLink(link: unknown): boolean {
   if (typeof link !== 'string') return false
@@ -68,4 +74,68 @@ export function sanitizeCanvasScene(raw: string): SanitizeResult {
 
   scene.elements = cleaned
   return { json: JSON.stringify(scene), droppedElements, strippedLinks }
+}
+
+/** Is this element a guest annotation (customData.canvasAnnotation === true)? */
+function isAnnotation(el: unknown): boolean {
+  if (!el || typeof el !== 'object') return false
+  const cd = (el as Record<string, unknown>).customData
+  return !!cd && typeof cd === 'object' && (cd as Record<string, unknown>)[CANVAS_ANNOTATION_KEY] === true
+}
+
+/** Stable signature of the non-annotation (base) elements, keyed by id and
+ *  Excalidraw's monotonic `version`. Two scenes with an identical signature have
+ *  the same base design; any base add/remove/edit changes a version or the id set. */
+function baseSignature(raw: string): string | null {
+  let scene: Record<string, unknown>
+  try {
+    scene = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  const elements = Array.isArray(scene?.elements) ? scene.elements : []
+  const sig = elements
+    .filter(el => !isAnnotation(el))
+    .map(el => {
+      const e = el as Record<string, unknown>
+      return `${String(e.id)}:${String(e.version ?? '')}`
+    })
+    .sort()
+  return sig.join('|')
+}
+
+export interface TierEnforceResult {
+  /** true if the proposed scene is allowed under the tier. */
+  ok: boolean
+  /** Sanitized scene JSON to persist when ok (embeds/links already stripped). */
+  json?: string
+  /** Reason for rejection (for logging / 403 detail). */
+  reason?: string
+}
+
+/**
+ * Gate a proposed scene write from a SHARE GUEST by their permission tier.
+ * Owner/authed saves never go through here -- they use sanitizeCanvasScene directly.
+ *
+ *   read    -> no writes at all.
+ *   comment -> may only add/modify/remove annotation elements
+ *              (customData.canvasAnnotation); any change to a base element rejected.
+ *   edit    -> full co-edit; scene accepted after embed/link sanitize.
+ *
+ * `prevRaw` is the current stored scene (the baseline a comment peer must preserve).
+ */
+export function enforceCanvasTier(prevRaw: string, nextRaw: string, tier: CanvasShareTier): TierEnforceResult {
+  if (tier === 'read') return { ok: false, reason: 'read-only share' }
+
+  const clean = sanitizeCanvasScene(nextRaw)
+  if (clean.json === null) return { ok: false, reason: 'invalid scene JSON' }
+
+  if (tier === 'edit') return { ok: true, json: clean.json }
+
+  // comment: base design must be untouched -- only annotation elements may differ.
+  const prevSig = baseSignature(prevRaw)
+  const nextSig = baseSignature(clean.json)
+  if (prevSig === null || nextSig === null) return { ok: false, reason: 'unparseable scene' }
+  if (prevSig !== nextSig) return { ok: false, reason: 'comment tier may not modify the base design' }
+  return { ok: true, json: clean.json }
 }
