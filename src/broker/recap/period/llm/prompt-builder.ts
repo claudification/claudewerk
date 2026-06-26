@@ -39,7 +39,7 @@ export interface PromptInputs {
   forgotten: ForgottenThreadDigest
   commits: CommitDigest
   /** Multi-agent contention evidence -- present only when the `contention` signal
-   *  is on (the agentic-retro template). Rendered as an authoritative input block
+   *  is on (the agentic-retrospect template). Rendered as an authoritative input block
    *  the LLM grounds its recommendations in; absent on every other recap. */
   contention?: ContentionDigest
 }

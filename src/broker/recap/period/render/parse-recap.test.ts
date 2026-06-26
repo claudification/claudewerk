@@ -91,11 +91,11 @@ body`
     expect(out.metadata.went_badly?.[0].inferred).toBe(true)
     expect(out.metadata.recommendations?.[0].title).toContain('lint rule')
     expect(out.metadata.recommendations?.[0].conversations).toContain('conv_xyz789')
-    // The agentic-retro `contentions` field is OPTIONAL too -- absent here.
+    // The agentic-retrospect `contentions` field is OPTIONAL too -- absent here.
     expect(out.metadata.contentions).toBeUndefined()
   })
 
-  it('parses the agentic-retro contentions field (block + flow-map forms)', () => {
+  it('parses the agentic-retrospect contentions field (block + flow-map forms)', () => {
     const raw = `---
 subtitle: agentic retro
 contentions:

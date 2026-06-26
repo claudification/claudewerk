@@ -5370,7 +5370,7 @@ export type RecapSignal =
   | 'agent_status'
   /** Multi-agent CONTENTION evidence: same-file edit collisions, main-tree edits
    *  while siblings ran, spawn fan-out -- mined deterministically from edit
-   *  tool-call args already in the store. Opt-in (the agentic-retro template turns
+   *  tool-call args already in the store. Opt-in (the agentic-retrospect template turns
    *  it on); NOT in DEFAULT_SIGNALS, so normal recaps never pay for the mining. */
   | 'contention'
 
@@ -5480,7 +5480,7 @@ export interface RecapMetadata {
   /** Agentic-retro template: multi-agent contention findings (same-file edit
    *  collisions, main-tree-while-busy, spawn fan-out), each grounded in the
    *  deterministic CONTENTION evidence block. OPTIONAL + absent from
-   *  makeEmptyMetadata -- only the agentic-retro template emits it. */
+   *  makeEmptyMetadata -- only the agentic-retrospect template emits it. */
   contentions?: RecapItem[]
   /** Lessons Scavenger: technologies/libraries/tools/approaches discovered or
    *  adopted, each with an `outcome` (success/failure/mixed) and citations.

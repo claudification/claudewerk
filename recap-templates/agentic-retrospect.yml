@@ -1,4 +1,4 @@
-id: agentic-retro
+id: agentic-retrospect
 label: Agentic retrospective
 description: A multi-agent retrospective -- mines same-file edit collisions, main-tree-while-busy edits and spawn fan-out, then turns that evidence into concrete worktree / CLAUDE.md / hook / process fixes.
 scope: fleet
@@ -45,7 +45,7 @@ body: |-
 
   {{ frontmatter_spec }}
 
-  ADDITIONAL AGENTIC-RETRO FRONTMATTER (this recap's PRIMARY payload):
+  ADDITIONAL AGENTIC-RETROSPECT FRONTMATTER (this recap's PRIMARY payload):
 
     contentions: [<each multi-agent friction finding, GROUNDED in the CONTENTION block, as {title, detail (which conversations + file, and whether it was concurrent / independent-agents), conversations?}>]
     recommendations: [<concrete ACTIONABLE fixes, MOST IMPACTFUL FIRST. PREFIX each title with a fix-type tag in brackets -- [worktree], [claude-md], [hook], or [process]. detail = EXACTLY what to change and why, citing the file + conversations from the evidence. as {title, detail, conversations?}>]

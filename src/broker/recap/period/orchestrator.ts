@@ -728,7 +728,7 @@ async function runRecap(
     `forgotten threads: ${fg.threads.length} shown (open-loop survivors) of ${fg.candidateCount} stale+invested candidate(s), ${fg.probed} tail(s) probed`,
   )
   // Contention: no-silent-caps funnel -- what was scanned vs surfaced. Only present
-  // when the `contention` signal is on (the agentic-retro template).
+  // when the `contention` signal is on (the agentic-retrospect template).
   const ct = promptInputs.contention
   if (ct) {
     emit.emit(
@@ -867,7 +867,7 @@ function collectSignals(
     openQuestions,
     forgotten,
     commits,
-    // Gated: only the agentic-retro template (contention signal) pays for the mining.
+    // Gated: only the agentic-retrospect template (contention signal) pays for the mining.
     ...(includeContention ? { contention: gatherContention(deps.brokerStore, conversations, scope) } : {}),
   }
   const inputChars = transcripts.reduce(

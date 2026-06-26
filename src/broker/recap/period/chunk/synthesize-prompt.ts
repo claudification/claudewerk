@@ -40,7 +40,7 @@ export interface SynthesizeContext {
   agentStatus?: ConversationDigest[]
   /** Period-global multi-agent contention evidence. Like forgotten threads, this
    *  is authoritative deterministic data that bypasses map extraction -- injected
-   *  here so a CHUNKED agentic-retro recap grounds its recommendations in the same
+   *  here so a CHUNKED agentic-retrospect recap grounds its recommendations in the same
    *  collisions the oneshot path sees. Omitted when the contention signal is off. */
   contention?: ContentionDigest
 }
