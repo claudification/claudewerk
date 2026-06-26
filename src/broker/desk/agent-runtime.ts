@@ -12,9 +12,10 @@ import { z } from 'zod'
 import type { DispatchDecision } from '../../shared/protocol'
 import { chat } from '../recap/shared/openrouter-client'
 import { type AgentToolCallEvent, type AgentToolResultEvent, DISPATCHER_MODEL, runAgent } from './agent'
+import { MEMORY_BLOCK_ID } from './consolidate'
 import { buildDispatchToolset, projectOverviewRows } from './dispatch-tools'
 import { consolidateIfDue, getUserHistory, markDirty, recordTurn, refreshLiveBlocks } from './history-store'
-import { appendTurn, toMessages } from './living-history'
+import { appendTurn, getBlock, toMessages } from './living-history'
 import { readMemory } from './memory'
 import { activeContextRows } from './overview'
 import type { QuestSpawn } from './quest-tool'
@@ -103,8 +104,39 @@ function threadTools(): Toolset {
   }
 }
 
-function buildAgentToolset(rt: DispatchRuntime, confirmedExpensive: boolean, questSpawn?: QuestSpawn): Toolset {
-  return { ...buildDispatchToolset(rt, confirmedExpensive, questSpawn), ...threadTools(), ...buildWorkspaceToolset() }
+/** PROGRESSIVE MEMORY (plan-dispatcher-living-history.md B10). The dispatcher's own
+ *  long-term memory (durable `<notes>` + the rolling `<memory>` block) is kept SMALL
+ *  in the hot window -- consolidation prunes it as it ages. This tool pages the FULL
+ *  current memory back in ON DEMAND, so the dispatcher can answer about something that
+ *  has aged out of context instead of guessing. (Project memory has its own pagers:
+ *  recall / project_brief / projects_overview.) */
+function memoryTools(userId: string | null | undefined): Toolset {
+  return {
+    read_memory: defineTool({
+      description:
+        'Re-read your FULL long-term memory about the user -- the durable notes plus your rolling recollection. Use when you need a standing fact, preference, or past decision that may have aged out of the live context window. Returns what you remember; it does not search project briefs (use recall for that).',
+      inputSchema: z.object({}),
+      idempotent: true,
+      execute: () => ({
+        notes: readMemory(userId),
+        memory: getBlock(getUserHistory(userId), MEMORY_BLOCK_ID)?.content ?? '',
+      }),
+    }),
+  }
+}
+
+function buildAgentToolset(
+  rt: DispatchRuntime,
+  confirmedExpensive: boolean,
+  userId: string | null | undefined,
+  questSpawn?: QuestSpawn,
+): Toolset {
+  return {
+    ...buildDispatchToolset(rt, confirmedExpensive, questSpawn),
+    ...threadTools(),
+    ...memoryTools(userId),
+    ...buildWorkspaceToolset(),
+  }
 }
 
 export interface RunDispatchAgentOpts {
@@ -170,7 +202,7 @@ export async function runDispatchAgent(
       system: opts.systemOverride || DISPATCHER_SYSTEM,
       seedMessages: toMessages(history),
       model,
-      toolset: buildAgentToolset(rt, opts.confirmedExpensive ?? false, opts.questSpawn),
+      toolset: buildAgentToolset(rt, opts.confirmedExpensive ?? false, opts.userId, opts.questSpawn),
       signal: opts.signal,
       identity: { userId: opts.userId ?? undefined },
       onToolCall: opts.onToolCall,
