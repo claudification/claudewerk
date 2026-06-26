@@ -27,6 +27,7 @@ import { registerRclaudeConfigHandlers } from './rclaude-config'
 import { registerRecapHandlers } from './recap'
 import { registerSentinelHandlers } from './sentinel'
 import { registerShellHandlers } from './shell'
+import { registerSotuHandlers } from './sotu'
 import { registerSpawnHandlers } from './spawn'
 import { registerSpawnApprovalHandlers } from './spawn-approval'
 import { registerStatusHandlers } from './status'
@@ -60,6 +61,7 @@ export function registerAllHandlers(): void {
   registerConversationLifecycleHandlers()
   registerConversationReassignHandlers()
   registerDaemonHandlers()
+  registerSotuHandlers()
   registerSpawnApprovalHandlers()
   registerStatusHandlers()
   registerSpawnHandlers()

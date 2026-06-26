@@ -5951,6 +5951,71 @@ export interface RecapTemplatesResult {
   error?: string
 }
 
+// State of the Union (SOTU) -- the contribution spine (Phase 1).
+//
+// SOTU is a per-project + fleet, auto-maintained, decaying briefing. Layer 1 is
+// the free, no-LLM contribution queue; `scribe_note` is the wire message an agent
+// host emits to append a declared-intent contribution (a `<callout>`). These wire
+// types are the CANONICAL home for the callout/claim shapes -- the broker module
+// `src/broker/sotu/types.ts` re-exports them so there is a single source of truth
+// (shared -> broker, never the reverse). Design: `.claude/docs/plan-state-of-union.md`.
+
+/** Callout types emitted inline by agents (`<callout type=...>`). lock/focus =
+ *  live-coordination (ephemeral, decay); insight/blocked/dead-end also feed the
+ *  period retrospect (`dead-end` -> recap `dead_ends`). */
+export type CalloutType = 'insight' | 'lock' | 'blocked' | 'focus' | 'dead-end'
+
+/** Salience weight of a contribution. Callouts flag "this matters more"; the
+ *  always-on turn-digest floor is `baseline`. Over/under-emission is harmless --
+ *  the scribe + reconcile dedupe/prune. */
+export type ContribWeight = 'high' | 'baseline'
+
+/** Claims & stakes soft-coordination target (design addendum). A CLAIM is a
+ *  file/path (exact key, matched in the free floor); a STAKE is a concept (fuzzy,
+ *  matched in the Opus reconcile pass). Advisory only -- never a lease. */
+export type ScribeNoteTarget =
+  | { kind: 'claim'; path: string; etaHint?: string; scope?: string }
+  | { kind: 'stake'; concept: string; tag?: string; etaHint?: string; scope?: string }
+
+/** `scribe_note` -- an agent host emits a declared-intent contribution (a copy of
+ *  an inline `<callout>`). The broker appends it to the project queue, bumps the
+ *  pending-contribution counter, and broadcasts. Fire-and-forget; benevolent-gated
+ *  for agent-host callers (recap Pillar B trust gate). */
+export interface ScribeNote {
+  type: 'scribe_note'
+  /** Callout type. lock/focus carry an optional claim/stake `target`. */
+  noteType: CalloutType
+  /** The callout body (the inline text the agent flagged). */
+  payload: string
+  /** Salience. Defaults to `high` (a callout is declared intent). */
+  weight?: ContribWeight
+  /** Source conversation id (broker-owned). Falls back to the caller WS conv id. */
+  convId?: string
+  /** Epoch ms when emitted. Broker stamps now when omitted. */
+  ts?: number
+  /** Optional time-to-live in ms; the live soft-lock map drops expired entries. */
+  ttlMs?: number
+  /** Present for a claim (file/path) or stake (concept) callout. */
+  target?: ScribeNoteTarget
+  /** RPC echo so a belt-and-suspenders MCP caller can match the reply. */
+  requestId?: string
+}
+
+/** Broker -> dashboard broadcast when a contribution lands (Phase 1). Carries the
+ *  refreshed pending-contribution count + a thin summary of the latest entry so
+ *  the live soft-lock map can update without a full chronicle regen. */
+export interface SotuContribution {
+  type: 'sotu_contribution'
+  project: string
+  /** Weighted pending-contribution count after this append. */
+  pendingContribs: number
+  latest: {
+    convId: string
+    kind: 'callout' | 'turn_digest' | 'git_scan' | 'lifecycle'
+    ts: number
+  }
+}
+
 // Configuration
 export const DEFAULT_BROKER_URL = 'ws://localhost:9999'
 

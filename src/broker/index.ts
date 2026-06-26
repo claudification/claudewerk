@@ -98,6 +98,7 @@ import {
   validateShare as validateShareToken,
 } from './shares'
 import { shellRegistry } from './shell-registry'
+import { initSotuStore, startSotuFloor, stopSotuFloor } from './sotu'
 import { createStore } from './store'
 import { createTerminationLog, startTerminationLogSweep } from './termination-log'
 import { cleanupVoiceForWs } from './voice-stream'
@@ -332,6 +333,10 @@ async function main() {
   // Initialize analytics store (SQLite, non-critical)
   initAnalyticsStore(authCacheDir)
 
+  // Initialize the SOTU file store (queue.jsonl + chronicle + state under
+  // {cacheDir}/sotu/). The contribution spine + lifecycle floor write here.
+  initSotuStore(authCacheDir)
+
   // Initialize unified store (SQLite-backed)
   const store = createStore({ type: 'sqlite', dataDir: authCacheDir })
   store.init()
@@ -546,6 +551,11 @@ async function main() {
       recapOrch.list({ projectUri, status: ['done'], limit }).map(r => ({ title: r.title, subtitle: r.subtitle })),
   })
 
+  // SOTU deterministic lifecycle floor: subscribe to the same desk-event bus and
+  // append every lifecycle transition as a baseline contribution (no LLM). This
+  // guarantees the chronicle has coverage even when no agent emits a callout.
+  startSotuFloor()
+
   // G2 boot sweep: a recap whose async run was mid-flight when this broker last
   // stopped is now orphaned (the process took the run with it). Reclaim every
   // such row to 'interrupted' (resumable, manual-only) so it can't sit forever
@@ -611,36 +621,28 @@ async function main() {
     onEfficiency: efficiency => conversationStore.setClaudeEfficiency(efficiency),
   })
 
-  // Shutdown: StoreDriver writes are immediate, just close handles
-  process.on('SIGINT', async () => {
+  // Shutdown: StoreDriver writes are immediate, just close handles. Both signals
+  // run the identical teardown -- one chokepoint so they can never drift apart.
+  const shutdown = (): never => {
+    stopExternalStatusPolling()
+    clearInterval(costCleanupTimer)
+    closeAnalyticsStore()
+    closeProjectStore()
+    closeChecklistStore()
+    closeCanvasStore()
+    closeDispatchAudit()
+    closeDispatchThreads()
+    stopDeskMemoryService()
+    stopSotuFloor()
+    closeProjectMemory()
+    store.close()
+    process.exit(0)
+  }
+  process.on('SIGINT', () => {
     console.log('\n[shutdown] Closing stores...')
-    stopExternalStatusPolling()
-    clearInterval(costCleanupTimer)
-    closeAnalyticsStore()
-    closeProjectStore()
-    closeChecklistStore()
-    closeCanvasStore()
-    closeDispatchAudit()
-    closeDispatchThreads()
-    stopDeskMemoryService()
-    closeProjectMemory()
-    store.close()
-    process.exit(0)
+    shutdown()
   })
-  process.on('SIGTERM', async () => {
-    stopExternalStatusPolling()
-    clearInterval(costCleanupTimer)
-    closeAnalyticsStore()
-    closeProjectStore()
-    closeChecklistStore()
-    closeCanvasStore()
-    closeDispatchAudit()
-    closeDispatchThreads()
-    stopDeskMemoryService()
-    closeProjectMemory()
-    store.close()
-    process.exit(0)
-  })
+  process.on('SIGTERM', () => shutdown())
   process.on('SIGHUP', () => {
     reloadState()
     sentinelRegistry?.load()

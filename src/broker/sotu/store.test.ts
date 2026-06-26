@@ -73,7 +73,7 @@ test('readQueue is empty before any append', () => {
 
 test('appendContribution is append-only and preserves order', () => {
   const a = callout({ ts: 1 })
-  const b: LifecycleContrib = { kind: 'lifecycle', event: 'exit', convId: 'c2', ts: 2 }
+  const b: LifecycleContrib = { kind: 'lifecycle', event: 'ended', convId: 'c2', ts: 2 }
   appendContribution(SLUG, a)
   appendContribution(SLUG, b)
   expect(readQueue(SLUG)).toEqual([a, b])

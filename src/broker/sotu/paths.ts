@@ -20,6 +20,7 @@
 
 import { mkdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { projectIdentityKey } from '../../shared/project-uri'
 
 /** Reserved slug for the fleet rollup. A project may never normalize to this. */
 export const FLEET_SLUG = '_fleet'
@@ -47,6 +48,15 @@ export function sanitizeSlug(slug: string): string {
     .replace(/[^a-z0-9._-]/g, '-')
     .replace(/^_+/, '')
   return cleaned && cleaned !== '.' && cleaned !== '..' ? cleaned : 'unknown'
+}
+
+/** Derive the SOTU storage slug from a project URI. Uses the system's canonical
+ *  `projectIdentityKey` (so the slug agrees with the rest of the broker's project
+ *  identity), then `sanitizeSlug` for filesystem safety. The scribe_note handler
+ *  and the lifecycle floor both route through this, so a project always maps to
+ *  one queue regardless of which seam produced the contribution. */
+export function projectSlug(projectUri: string): string {
+  return sanitizeSlug(projectIdentityKey(projectUri))
 }
 
 /** Per-project directory, created on demand. Pass FLEET_SLUG for the rollup. */

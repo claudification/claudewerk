@@ -19,24 +19,15 @@
  * Boundary: every id here is a broker-owned conversation id, NEVER ccSessionId.
  */
 
+// The callout/claim shapes are the WIRE contract -- they live in
+// `src/shared/protocol.ts` (the single source of truth) and are re-exported here
+// so the broker module consumes them without duplicating the union. `scribe_note`
+// (the wire message) carries the same `noteType`/`weight`/`target` fields.
+import type { CalloutType, ContribWeight, ScribeNoteTarget } from '../../shared/protocol'
+
+export type { CalloutType, ContribWeight, ScribeNoteTarget } from '../../shared/protocol'
+
 // ─── Contribution queue (Layer 1, queue.jsonl) ──────────────────────
-
-/** Callout types emitted inline by agents (`<callout type=...>`).
- *  lock/focus = live-coordination (ephemeral, decay). insight/blocked/dead-end
- *  also feed the period retrospect (`dead-end` -> recap `dead_ends`). */
-export type CalloutType = 'insight' | 'lock' | 'blocked' | 'focus' | 'dead-end'
-
-/** Salience weight of a contribution. Callouts flag "this matters more"; the
- *  always-on turn-digest floor is `baseline`. Over/under-emission is harmless --
- *  the scribe + reconcile dedupe/prune. */
-export type ContribWeight = 'high' | 'baseline'
-
-/** Claims & stakes soft-coordination target (design addendum). A CLAIM is a
- *  file/path (exact key, matched in the free floor); a STAKE is a concept
- *  (fuzzy, matched in the Opus reconcile pass). Advisory only -- never a lease. */
-export type ClaimTarget =
-  | { kind: 'claim'; path: string; etaHint?: string; scope?: string }
-  | { kind: 'stake'; concept: string; tag?: string; etaHint?: string; scope?: string }
 
 interface ContribBase {
   /** Broker-owned source conversation id (never ccSessionId). */
@@ -56,7 +47,7 @@ export interface CalloutContrib extends ContribBase {
   payload: string
   weight: ContribWeight
   /** Present when the callout is a claim/stake (soft-coordination layer). */
-  target?: ClaimTarget
+  target?: ScribeNoteTarget
 }
 
 /** Per-turn baseline -- a compact digest, NOT raw messages. The scribe's main
@@ -75,10 +66,13 @@ export interface GitScanContrib extends ContribBase {
   git: GitFabric
 }
 
-/** Lifecycle event the broker already emits (the deterministic floor). */
+/** Lifecycle event the broker already emits (the deterministic floor). The values
+ *  mirror the broker's in-process desk-event vocabulary (`created` = spawn/open,
+ *  `ended` = exit/terminate/complete, `resumed` = revive) -- the floor consumes
+ *  those events verbatim rather than inventing a parallel taxonomy. */
 export interface LifecycleContrib extends ContribBase {
   kind: 'lifecycle'
-  event: 'spawn' | 'exit' | 'terminate' | 'complete'
+  event: 'created' | 'ended' | 'resumed'
 }
 
 export type Contribution = CalloutContrib | TurnDigestContrib | GitScanContrib | LifecycleContrib
