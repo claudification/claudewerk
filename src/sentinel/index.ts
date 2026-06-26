@@ -86,6 +86,7 @@ import {
 } from './daemon-dispatch'
 import { writeDaemonMcpConfig } from './daemon-mcp-config'
 import { registerDaemonSession, startDaemonRosterWatch, stopDaemonRosterWatch } from './daemon-roster'
+import { expandPath } from './expand-path'
 import { runGitLog } from './git-log'
 import { handleNightshiftOp } from './nightshift-handlers'
 import { applyOAuthToken, applyOAuthTokenDelta } from './oauth-token-env'
@@ -2064,13 +2065,6 @@ async function reviveConversation(
 /**
  * Expand path shortcuts: ~ -> $HOME, relative paths -> spawnRoot
  */
-function expandPath(p: string, spawnRoot: string): string {
-  const home = process.env.HOME || '/root'
-  if (p.startsWith('~/')) return resolve(home, p.slice(2))
-  if (p === '~') return home
-  if (!p.startsWith('/')) return resolve(spawnRoot, p)
-  return resolve(p)
-}
 
 /**
  * Check if a directory is spawn-approved.
@@ -3920,7 +3914,7 @@ function connect(
 
         case 'git_log_request': {
           const gitMsg = msg as GitLogRequest
-          const expandedCwd = expandPath(parseProjectUri(gitMsg.projectUri).path, spawnRoot)
+          const expandedCwd = expandPath(gitMsg.projectUri, spawnRoot)
           debug(`Git log for: ${expandedCwd} (${gitMsg.sinceMs}..${gitMsg.untilMs})`, verbose)
           const outcome = runGitLog(expandedCwd, gitMsg.sinceMs, gitMsg.untilMs)
           const gitResponse: GitLogResult = {
@@ -3997,7 +3991,7 @@ function connect(
 
         case 'project_watch': {
           const m = msg as ProjectWatch
-          const root = expandPath(parseProjectUri(m.project).path, spawnRoot)
+          const root = expandPath(m.project, spawnRoot)
           watchProject(
             root,
             m.project,
@@ -4010,7 +4004,7 @@ function connect(
 
         case 'project_unwatch': {
           const m = msg as ProjectUnwatch
-          const root = expandPath(parseProjectUri(m.project).path, spawnRoot)
+          const root = expandPath(m.project, spawnRoot)
           unwatchProject(root, l => log(l))
           break
         }
