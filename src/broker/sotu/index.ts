@@ -22,6 +22,10 @@ export { readChronicle, readChronicleMd, renderChronicleMd, writeChronicle } fro
 // the handler + floor (and the distill engine in Phase 4) -- re-exported here once
 // the barrel gains an external consumer, per the "grows per phase" seam rule.
 export { startSotuFloor, stopSotuFloor } from './floor'
+// gatherGitFabric / GitFabricTransport are consumed directly by git-scan.ts (and
+// the Phase-4 distill engine later) -- barrel re-export lands with that external
+// consumer, per the "grows per phase" seam rule (avoids the fallow dead-export gate).
+export { startSotuGitScan, stopSotuGitScan } from './git-scan'
 // Path helpers are re-exported as their consumers land (queuePath/statePath/...
 // are used internally by the store; the barrel surfaces only what callers need).
 export { FLEET_SLUG, projectDir, projectSlug, sanitizeSlug, sotuRootDir } from './paths'

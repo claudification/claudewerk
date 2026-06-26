@@ -38,6 +38,8 @@ import type {
   BrokerSentinelMessage,
   CcVersionChanged,
   FetchArtifact,
+  GitFabricRequest,
+  GitFabricResult,
   GitLogRequest,
   GitLogResult,
   ListCcSessionsResult,
@@ -87,6 +89,7 @@ import {
 import { writeDaemonMcpConfig } from './daemon-mcp-config'
 import { registerDaemonSession, startDaemonRosterWatch, stopDaemonRosterWatch } from './daemon-roster'
 import { expandPath } from './expand-path'
+import { runGitFabric } from './git-fabric'
 import { runGitLog } from './git-log'
 import { handleNightshiftOp } from './nightshift-handlers'
 import { applyOAuthToken, applyOAuthTokenDelta } from './oauth-token-env'
@@ -3926,6 +3929,23 @@ function connect(
             error: outcome.error,
           }
           ws.send(JSON.stringify(gitResponse))
+          break
+        }
+
+        case 'git_fabric_request': {
+          const fabMsg = msg as GitFabricRequest
+          const expandedCwd = expandPath(fabMsg.projectUri, spawnRoot)
+          debug(`Git fabric scan for: ${expandedCwd}`, verbose)
+          const outcome = runGitFabric(expandedCwd)
+          const fabResponse: GitFabricResult = {
+            type: 'git_fabric_result',
+            requestId: fabMsg.requestId,
+            projectUri: fabMsg.projectUri,
+            success: !outcome.error,
+            fabric: outcome.fabric,
+            error: outcome.error,
+          }
+          ws.send(JSON.stringify(fabResponse))
           break
         }
 

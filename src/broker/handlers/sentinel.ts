@@ -288,6 +288,13 @@ const gitLogResult: MessageHandler = (ctx, data) => {
   ctx.conversations.resolveGitLog(data.requestId as string, data)
 }
 
+// Sentinel -> broker: the SOTU git-fabric snapshot (Phase 2). Rides the generic
+// requestId-keyed file listener (result == arbitrary JSON), same seam the
+// `fetch_artifact_result` reuses -- no dedicated listener registry needed.
+const gitFabricResult: MessageHandler = (ctx, data) => {
+  ctx.conversations.resolveFile(data.requestId as string, data)
+}
+
 // Sentinel -> broker: whitelisted artifact bytes (the /insights report). Resolves
 // the pending request registered by the GET /api/conversations/:id/artifact route.
 // Rides the generic requestId-keyed file listener (artifact bytes == file bytes).
@@ -609,6 +616,7 @@ export function registerSentinelHandlers(): void {
       list_dirs_result: listDirsResult,
       list_cc_sessions_result: listCcSessionsResult,
       git_log_result: gitLogResult,
+      git_fabric_result: gitFabricResult,
       fetch_artifact_result: fetchArtifactResult,
       launch_log: launchLog,
       sentinel_diag: sentinelDiag,

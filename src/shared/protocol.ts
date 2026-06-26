@@ -3543,6 +3543,77 @@ export interface GitLogResult {
 }
 
 // ===========================================================================
+// Git-fabric RPC (Broker <-> Sentinel) -- SOTU Phase 2
+//
+// Same boundary as `git_log`: the broker NEVER touches the host FS. It asks the
+// SENTINEL (which owns the repo) to run the proven integration + mergeability
+// ladder over every worktree/branch and return a structured snapshot. The
+// `GitFabric`/`BranchFabric`/`IntegrationStatus`/`GitAlert` shapes live HERE (the
+// wire-contract home) and are re-exported from `src/broker/sotu/types.ts` so the
+// broker module consumes them without duplicating the definition.
+// ===========================================================================
+
+/** Integration status of a branch vs origin/main, from one `merge-tree` run.
+ *  integrated -> work absorbed (decays); conflicts -> needs a human merge. */
+export type IntegrationStatus = 'integrated' | 'ff-clean' | 'merge-clean' | 'conflicts'
+
+/** Escalation alerts derived from the SAME scan (opposite of decay):
+ *   at-risk  -- a worktree has uncommitted changes (loss risk).
+ *   unpushed -- local main is ahead of origin/main (loss risk).
+ *   stalled  -- an unmerged branch has drifted far behind origin/main (rotting).
+ *  Liveness sharpening (dead/idle conv) is layered later by the Phase-4 decay
+ *  pass -- the sentinel only sees git truth, never conversation liveness. */
+export type GitAlert = 'at-risk' | 'unpushed' | 'stalled'
+
+export interface BranchFabric {
+  branch: string
+  /** Absolute worktree path when this branch is checked out in a worktree. */
+  worktree?: string
+  /** Whether the branch's worktree has uncommitted changes (drives at-risk). */
+  dirty?: boolean
+  /** ahead/behind reported vs BOTH origin/main and local main. */
+  aheadOrigin: number
+  behindOrigin: number
+  aheadLocal: number
+  behindLocal: number
+  integration: IntegrationStatus
+  /** Conflicting paths when integration === 'conflicts'. */
+  conflictFiles?: string[]
+  alerts: GitAlert[]
+}
+
+/** A timestamped snapshot. Integration claims are only as fresh as the last
+ *  fetch -- `fetchedAt` stamps "origin/main as of <t>" (the FETCH_HEAD mtime);
+ *  `scannedAt` stamps the scan. Refs mutate mid-scan in a hot multi-worktree
+ *  repo, so every ref is guarded with `rev-parse --verify` before use. */
+export interface GitFabric {
+  branches: BranchFabric[]
+  fetchedAt?: number
+  scannedAt: number
+}
+
+/** Broker -> Sentinel: run the git-fabric ladder for a project. The sentinel owns
+ *  URI->path (CWD-IS-INFORMATIONAL); the broker forwards the URI only. */
+export interface GitFabricRequest {
+  type: 'git_fabric_request'
+  requestId: string
+  /** Project URI (`claude://{sentinel}/{path}`). The sentinel owns URI->path. */
+  projectUri: string
+}
+
+/** Sentinel -> Broker: the git-fabric snapshot. `success:false` + `error` when the
+ *  path is not a git repo or git failed; an empty `branches` list is valid. The
+ *  echoed `projectUri` is provenance only -- the broker keys on `requestId`. */
+export interface GitFabricResult {
+  type: 'git_fabric_result'
+  requestId: string
+  projectUri: string
+  success: boolean
+  fabric?: GitFabric
+  error?: string
+}
+
+// ===========================================================================
 // Project store RPCs (Broker <-> Sentinel)
 //
 // Project-scoped filesystem access runs on the SENTINEL, keyed by an absolute
@@ -4787,6 +4858,7 @@ export type SentinelMessage =
   | ListDirsResult
   | ListCcSessionsResult
   | GitLogResult
+  | GitFabricResult
   | ProjectReadFileResult
   | ProjectWriteFileResult
   | ProjectMoveFileResult
@@ -5079,6 +5151,7 @@ export type BrokerSentinelMessage =
   | ListDirs
   | ListCcSessions
   | GitLogRequest
+  | GitFabricRequest
   | ProjectReadFile
   | ProjectWriteFile
   | ProjectMoveFile

@@ -98,7 +98,7 @@ import {
   validateShare as validateShareToken,
 } from './shares'
 import { shellRegistry } from './shell-registry'
-import { initSotuStore, startSotuFloor, stopSotuFloor } from './sotu'
+import { initSotuStore, startSotuFloor, startSotuGitScan, stopSotuFloor, stopSotuGitScan } from './sotu'
 import { createStore } from './store'
 import { createTerminationLog, startTerminationLogSweep } from './termination-log'
 import { cleanupVoiceForWs } from './voice-stream'
@@ -556,6 +556,17 @@ async function main() {
   // guarantees the chronicle has coverage even when no agent emits a callout.
   startSotuFloor()
 
+  // SOTU git-fabric scan (Phase 2): also on the desk-event bus, but debounced --
+  // it asks the SENTINEL (boundary: the broker never touches host FS) to run the
+  // integration ladder per project and appends the snapshot as a `git_scan`
+  // contribution. Part of the always-on free floor (zero-LLM); the Phase-4 distill
+  // that consumes it is the only budget-gated step.
+  startSotuGitScan({
+    transport: conversationStore,
+    broadcast: (message, project) => conversationStore.broadcastConversationScoped(message, project),
+    log: msg => console.log(msg),
+  })
+
   // G2 boot sweep: a recap whose async run was mid-flight when this broker last
   // stopped is now orphaned (the process took the run with it). Reclaim every
   // such row to 'interrupted' (resumable, manual-only) so it can't sit forever
@@ -634,6 +645,7 @@ async function main() {
     closeDispatchThreads()
     stopDeskMemoryService()
     stopSotuFloor()
+    stopSotuGitScan()
     closeProjectMemory()
     store.close()
     process.exit(0)

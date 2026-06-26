@@ -19,13 +19,18 @@
  * Boundary: every id here is a broker-owned conversation id, NEVER ccSessionId.
  */
 
-// The callout/claim shapes are the WIRE contract -- they live in
-// `src/shared/protocol.ts` (the single source of truth) and are re-exported here
-// so the broker module consumes them without duplicating the union. `scribe_note`
-// (the wire message) carries the same `noteType`/`weight`/`target` fields.
-import type { CalloutType, ContribWeight, ScribeNoteTarget } from '../../shared/protocol'
+// The callout/claim shapes AND the git-fabric shapes are the WIRE contract -- they
+// live in `src/shared/protocol.ts` (the single source of truth) and are re-exported
+// here so the broker module consumes them without duplicating the union. `scribe_note`
+// carries the callout fields; `git_fabric_result` carries the GitFabric snapshot.
+import type { CalloutType, ContribWeight, GitFabric, ScribeNoteTarget } from '../../shared/protocol'
 
-export type { CalloutType, ContribWeight, ScribeNoteTarget } from '../../shared/protocol'
+// GitFabric is consumed here (GitScanContrib wraps it). Its member types
+// (BranchFabric / IntegrationStatus / GitAlert) are re-exported as their broker
+// consumers land (Phase 4 decay reads integration + alerts; Phase 6 renders them) --
+// grows-per-phase, so the fallow dead-export gate stays green. The sentinel ladder
+// imports those member types straight from `../shared/protocol`.
+export type { CalloutType, ContribWeight, GitFabric, ScribeNoteTarget } from '../../shared/protocol'
 
 // ─── Contribution queue (Layer 1, queue.jsonl) ──────────────────────
 
@@ -77,37 +82,10 @@ export interface LifecycleContrib extends ContribBase {
 
 export type Contribution = CalloutContrib | TurnDigestContrib | GitScanContrib | LifecycleContrib
 
-// ─── Git fabric (derived state -- Phase 2 produces it) ──────────────
-
-/** Integration status of a branch vs origin/main, from one `merge-tree` run.
- *  integrated -> work absorbed (decays); conflicts -> needs a human merge. */
-export type IntegrationStatus = 'integrated' | 'ff-clean' | 'merge-clean' | 'conflicts'
-
-/** Escalation alerts from the SAME scan (opposite of decay). */
-export type GitAlert = 'at-risk' | 'unpushed' | 'stalled'
-
-export interface BranchFabric {
-  branch: string
-  worktree?: string
-  /** ahead/behind reported vs BOTH origin/main and local main. */
-  aheadOrigin: number
-  behindOrigin: number
-  aheadLocal: number
-  behindLocal: number
-  integration: IntegrationStatus
-  /** Conflicting paths when integration === 'conflicts'. */
-  conflictFiles?: string[]
-  alerts: GitAlert[]
-}
-
-/** A timestamped snapshot. Integration claims are only as fresh as the last
- *  fetch -- `fetchedAt` stamps "origin/main as of <t>"; `scannedAt` stamps the
- *  scan. Refs mutate mid-scan in this hot multi-worktree repo. */
-export interface GitFabric {
-  branches: BranchFabric[]
-  fetchedAt?: number
-  scannedAt: number
-}
+// Git fabric (derived state, Phase 2) -- the shapes (GitFabric/BranchFabric/
+// IntegrationStatus/GitAlert) live in `src/shared/protocol.ts` (the wire home,
+// produced by the sentinel ladder) and are re-exported at the top of this file.
+// `GitScanContrib` (above) wraps a `GitFabric` snapshot as a queue contribution.
 
 // ─── Chronicle (Layer 2, chronicle.json + chronicle.md) ─────────────
 
