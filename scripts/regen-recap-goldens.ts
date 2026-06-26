@@ -8,10 +8,10 @@
  */
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { makePromptInputs } from '../src/broker/recap/__tests__/synthetic-fixtures'
 import { makeEmptyMetadata } from '../src/broker/recap/period/chunk/merge'
 import { buildSynthesizePrompt, type SynthesizeContext } from '../src/broker/recap/period/chunk/synthesize-prompt'
 import { buildPrompt } from '../src/broker/recap/period/llm/prompt-builder'
-import { makePromptInputs } from '../src/broker/recap/__tests__/synthetic-fixtures'
 
 const GOLDEN_DIR = join(import.meta.dir, '../src/broker/recap/period/llm/__golden__')
 
