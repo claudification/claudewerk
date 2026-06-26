@@ -18,13 +18,7 @@
 import type { DispatchDecision, DispatchProjectStatus } from '../../shared/protocol'
 import { runDispatchAgent } from '../desk/agent-runtime'
 import { projectOverviewRows } from '../desk/dispatch-tools'
-import {
-  compactNow,
-  consolidateOnOpen,
-  dumpUserHistory,
-  forgetUserMemory,
-  resetUserHistory,
-} from '../desk/history-store'
+import { compactNow, dumpUserHistory, forgetUserMemory, maintainOnOpen, resetUserHistory } from '../desk/history-store'
 import { readMemory } from '../desk/memory'
 import type { DispatchCommand } from '../desk/orchestrate'
 import type { ProjectOverviewRow } from '../desk/overview'
@@ -180,13 +174,13 @@ const dispatchListThreads: MessageHandler = (ctx: HandlerContext, data: MessageD
   ctx.requirePermission('spawn')
   const requestId = typeof data.requestId === 'string' ? data.requestId : undefined
   const userId = ctx.ws.data.userName ?? null
-  // READ-TRIGGERED FOLD (the 30-hour fix): condense aged-out turns into <memory> on
-  // open, so returning after a long gap shows a condensed memory, not the raw last
-  // conversation. FIRE-AND-FORGET -- the open stays instant (never blocks on the
-  // ~LLM fold); when it finishes, markDirty streams the condensed history to ALL the
-  // user's devices (dispatch_history, Slice B), replacing this snapshot in place.
-  // Age-gated + once-per-return (consolidateOnOpen); a no-op (zero cost) when nothing aged.
-  void consolidateOnOpen(userId, Date.now(), req => chat(req)).catch(() => null)
+  // ON-OPEN MAINTENANCE (the 30-hour fix): condense aged-out turns into <memory> (the
+  // read-triggered fold), then run the once-a-day Opus dream-cycle re-ground -- so
+  // returning after a long gap shows a tight condensed memory, not the raw last
+  // conversation. FIRE-AND-FORGET -- the open stays instant (never blocks on the LLM
+  // work); when each step finishes, markDirty streams the fresh history to ALL the
+  // user's devices (dispatch_history, Slice B). Both steps no-op (zero cost) when not due.
+  void maintainOnOpen(userId, Date.now(), req => chat(req)).catch(() => null)
   const roster = listDispatchRosterCandidates(ctx.conversations)
   // STATUS strip (Phase 4b): the "where things stand" half on open, zero-LLM.
   const status = toStatusRows(projectOverviewRows({ store: ctx.conversations, callerConversationId: null }))

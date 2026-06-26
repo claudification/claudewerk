@@ -17,6 +17,7 @@
 import type { DispatchHistoryDump, DispatchHistoryTurn } from '../../shared/protocol'
 import type { ChatFn } from './classify'
 import { type ConsolidateResult, consolidate, MEMORY_BLOCK_ID } from './consolidate'
+import { type DreamResult, dreamCycle } from './dream-cycle'
 import {
   createHistorySaver,
   type HistorySaver,
@@ -45,6 +46,8 @@ const ANON_KEY = '__anon__'
 
 const histories = new Map<string, LivingHistory>()
 const lastConsolidatedAt = new Map<string, number>()
+/** Per-user clock for the rare Opus dream-cycle re-ground (gated to once / day). */
+const lastDreamAt = new Map<string, number>()
 /** The disk-backed saver, wired at boot via initHistoryPersistence. Null in unit
  *  tests / pre-boot -- markDirty is then a no-op so the store never touches disk. */
 let saver: HistorySaver | null = null
@@ -80,6 +83,7 @@ export function resetUserHistory(userId: string | null | undefined): void {
   const key = userKey(userId)
   histories.delete(key)
   lastConsolidatedAt.delete(key)
+  lastDreamAt.delete(key)
   clearTranscriptByKey(key)
   saver?.removeFile(key) // delete the persisted file too (Slice A)
   // Notify-only re-sync: push the now-empty history to the user's open overlays
@@ -203,6 +207,42 @@ export async function consolidateOnOpen(
     markDirty(userId)
   }
   return res
+}
+
+/** Below this gap an OPEN does NOT re-ground (the Opus dream-cycle is rare by design). */
+const DREAM_INTERVAL_MS = 24 * 60 * 60_000
+
+/**
+ * Run the DREAM-CYCLE (Opus re-ground of `<memory>`) if it's been a day since the
+ * last one for this user. The cheap live fold runs constantly and drifts; this is
+ * the infrequent editor pass that de-dups + supersedes + tightens. Gated once/day
+ * and skipped entirely on a short memory (dreamCycle no-ops), so the Opus cost is
+ * negligible. No-op (null) when there's no history.
+ */
+async function dreamCycleIfDue(
+  userId: string | null | undefined,
+  now: number,
+  chat: ChatFn,
+): Promise<DreamResult | null> {
+  const key = userKey(userId)
+  const h = histories.get(key)
+  if (!h) return null
+  if (now - (lastDreamAt.get(key) ?? 0) < DREAM_INTERVAL_MS) return null
+  lastDreamAt.set(key, now) // stamp the attempt even if memory was too short to dream
+  const res = await dreamCycle(h, now, chat)
+  if (res.ran) markDirty(userId)
+  return res
+}
+
+/**
+ * On-open MAINTENANCE (the return path): first the read-triggered fold (condense
+ * aged turns -> the 30-hour fix), then the once-a-day dream-cycle re-ground. Both
+ * are no-ops with zero LLM cost when not due. Fired-and-forgotten by the overlay
+ * open handler; each mutation streams to all devices via markDirty.
+ */
+export async function maintainOnOpen(userId: string | null | undefined, now: number, chat: ChatFn): Promise<void> {
+  await consolidateOnOpen(userId, now, chat)
+  await dreamCycleIfDue(userId, now, chat)
 }
 
 /**
