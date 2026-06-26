@@ -16,7 +16,7 @@
 
 import type { DispatchHistoryDump, DispatchHistoryTurn } from '../../shared/protocol'
 import type { ChatFn } from './classify'
-import { type ConsolidateResult, consolidate } from './consolidate'
+import { type ConsolidateResult, consolidate, MEMORY_BLOCK_ID } from './consolidate'
 import {
   createHistorySaver,
   type HistorySaver,
@@ -25,12 +25,15 @@ import {
   type PersistenceDeps,
 } from './history-persistence'
 import {
+  agedTurns,
   createHistory,
+  dropBlock,
   estimateTokens,
   type LivingHistory,
   ONE_HOUR_MS,
   type Role,
   shouldConsolidate,
+  TEN_MIN_MS,
   type Turn,
 } from './living-history'
 import { clearTranscriptByKey, getTranscriptByKey, recordTurnByKey, setTranscriptByKey } from './transcript-ring'
@@ -70,13 +73,28 @@ export function getUserHistory(userId: string | null | undefined): LivingHistory
   return h
 }
 
-/** Test/forensics seam: drop a user's history (e.g. an explicit reset). */
+/** Drop a user's history entirely (the user's `/clear`, or the dev reset seam):
+ *  living history + viewable transcript + persisted file all go. Re-syncs every
+ *  device so the fresh (empty) dispatcher streams out immediately. */
 export function resetUserHistory(userId: string | null | undefined): void {
   const key = userKey(userId)
   histories.delete(key)
   lastConsolidatedAt.delete(key)
   clearTranscriptByKey(key)
   saver?.removeFile(key) // delete the persisted file too (Slice A)
+  // Notify-only re-sync: push the now-empty history to the user's open overlays
+  // WITHOUT scheduling a save (markDirty would re-persist the file we just removed).
+  notifier?.(userId)
+}
+
+/** The user's `/forget`: drop the rolling `<memory>` block only, keeping the recent
+ *  conversation + transcript. Forgets the long-term recollection, not the chat. */
+export function forgetUserMemory(userId: string | null | undefined): void {
+  const key = userKey(userId)
+  const h = histories.get(key)
+  if (!h) return
+  dropBlock(h, MEMORY_BLOCK_ID)
+  markDirty(userId)
 }
 
 /**
@@ -151,6 +169,90 @@ export async function consolidateIfDue(
     markDirty(userId) // the fold mutated blocks/turns -- persist the folded state
   }
   return res
+}
+
+/** Below this, an OPEN does NOT re-fold (we condensed recently -- nothing stale). */
+const STALE_ON_READ_MS = 15 * 60_000
+
+/**
+ * READ-TRIGGERED fold (the 30-hour fix). When the user OPENS the dispatcher after a
+ * genuine gap, condense the aged-out turns into `<memory>` BEFORE the overlay renders
+ * -- so returning shows a condensed memory, not the raw last conversation.
+ *
+ * AGE-gated, NOT size-gated: the 1500-tok size floor (`shouldConsolidate`) is a
+ * HOT-PATH cost guard so we don't pay to fold a tiny live session every turn. But a
+ * once-per-return fold IS worth a cent even for a small stale chat -- that is exactly
+ * the case the user hit (a short chat left for 30h never crossed the floor, so it
+ * never folded). So here we bypass the floor and fold whenever turns have aged past
+ * the 1h horizon and we haven't folded recently. No-op (zero cost) otherwise.
+ */
+export async function consolidateOnOpen(
+  userId: string | null | undefined,
+  now: number,
+  chat: ChatFn,
+): Promise<ConsolidateResult | null> {
+  const key = userKey(userId)
+  const h = histories.get(key)
+  if (!h) return null
+  const lastRunAt = lastConsolidatedAt.get(key) ?? 0
+  if (now - lastRunAt < STALE_ON_READ_MS) return null // folded recently -- nothing stale
+  if (agedTurns(h, now).length === 0) return null // nothing past the 1h horizon -- no fold
+  const res = await consolidate({ history: h, now }, chat) // bypass the size floor on return
+  if (res.ran) {
+    lastConsolidatedAt.set(key, now)
+    markDirty(userId)
+  }
+  return res
+}
+
+/**
+ * The user's `/compact`: force-fold the WHOLE current window into `<memory>` NOW,
+ * regardless of age or the size floor (`maxAgeMs: 0` ages every turn), then drop the
+ * raw turns. Condense-on-demand -- the explicit version of what phase-out does lazily.
+ */
+export async function compactNow(
+  userId: string | null | undefined,
+  now: number,
+  chat: ChatFn,
+): Promise<ConsolidateResult> {
+  const h = getUserHistory(userId)
+  const res = await consolidate({ history: h, now, maxAgeMs: 0 }, chat)
+  if (res.ran) {
+    lastConsolidatedAt.set(userKey(userId), now)
+    markDirty(userId)
+  }
+  return res
+}
+
+/** The background fold heartbeat handle (armed at boot, cleared on shutdown/test). */
+let heartbeat: ReturnType<typeof setInterval> | null = null
+
+/**
+ * BACKGROUND fold heartbeat (the "fold even if the user never returns" safety net).
+ * Every interval, run the GATED fold (`consolidateIfDue` -- honors the size floor +
+ * interval) for every live user, so memory forms in the background for big idle
+ * sessions without the user typing. Tiny sessions are deliberately left to the
+ * on-open fold (`consolidateOnOpen`) -- folding a 400-tok chat every 10 min would
+ * be the net-cost waste §8a warns against. Returns a stop fn.
+ */
+export function startConsolidationHeartbeat(chat: ChatFn, intervalMs: number = TEN_MIN_MS): () => void {
+  stopConsolidationHeartbeat()
+  heartbeat = setInterval(() => {
+    const now = Date.now()
+    for (const [key, h] of histories) {
+      consolidateIfDue(h, key === ANON_KEY ? null : key, now, chat).catch(() => {})
+    }
+  }, intervalMs)
+  // Don't keep the broker process alive on this timer (tests, graceful shutdown).
+  ;(heartbeat as unknown as { unref?: () => void }).unref?.()
+  return stopConsolidationHeartbeat
+}
+
+function stopConsolidationHeartbeat(): void {
+  if (heartbeat) {
+    clearInterval(heartbeat)
+    heartbeat = null
+  }
 }
 
 /** The wire shape lives in shared/protocol (single source of truth, web-shared). */

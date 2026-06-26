@@ -8,11 +8,17 @@ import { join } from 'node:path'
 import { Hono } from 'hono'
 import { handleAuthRoute, requireAuth } from './auth-routes'
 import type { ConversationStore } from './conversation-store'
-import { dumpUserHistory, initHistoryPersistence, setHistoryNotifier } from './desk/history-store'
+import {
+  dumpUserHistory,
+  initHistoryPersistence,
+  setHistoryNotifier,
+  startConsolidationHeartbeat,
+} from './desk/history-store'
 import { startFileReaper } from './file-reaper'
 import type { GatewayRegistry } from './gateway-registry'
 import { createLaunchProfilesRouter } from './launch-profiles/routes'
 import { resolveInJail } from './path-jail'
+import { chat as chatLlm } from './recap/shared/openrouter-client'
 import { createAdminRouter } from './routes/admin'
 import { createApiRouter } from './routes/api'
 import { blobDir, initBlobStore, initSharedFilesLog } from './routes/blob-store'
@@ -136,6 +142,12 @@ export function createRouter(options: RouteOptions): Hono {
       history: dumpUserHistory(userId),
     }),
   )
+
+  // Arm the BACKGROUND fold heartbeat (P2): every interval, condense any user whose
+  // live window has aged past the policy, so dispatcher memory forms even if the user
+  // never sends another turn. The on-open fold (consolidateOnOpen) covers the return
+  // path; this covers big sessions left idle. Cheap -- short-circuits when nothing aged.
+  startConsolidationHeartbeat(req => chatLlm(req))
 
   const helpers = createRouteHelpers(rclaudeSecret)
 

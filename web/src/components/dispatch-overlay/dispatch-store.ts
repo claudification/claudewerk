@@ -86,6 +86,16 @@ export interface DispatchState {
 let reqSeq = 0
 const nextRequestId = () => `dreq_${Date.now().toString(36)}_${++reqSeq}`
 
+/** Slash-commands the user can type to RESET the dispatcher (a `dispatch_control`
+ *  verb, not an intent for the agent loop). The broker performs the verb + re-syncs
+ *  every device live. `/clear` wipes everything, `/compact` folds the window into
+ *  memory now, `/forget` drops the long-term memory only. */
+const SLASH_CONTROL: Record<string, 'clear' | 'compact' | 'forget'> = {
+  '/clear': 'clear',
+  '/compact': 'compact',
+  '/forget': 'forget',
+}
+
 const NOT_CONNECTED = 'Not connected -- your message was not sent. It is still here; try again in a moment.'
 
 // The dispatcher is a single, per-user GLOBAL managed modal -- parkable + maximizable,
@@ -143,6 +153,14 @@ export const useDispatchStore = create<DispatchState>((set, get) => ({
       // stale bundle) must not throw on `.trim()` before we ever wsSend.
       const intent = (get().intent ?? '').trim()
       if (!intent || get().pending) return
+      // Reset slash-commands (/clear /compact /forget) route to dispatch_control, not
+      // the agent loop. Same anti-brick rule: only clear the draft if it left the wire.
+      const action = SLASH_CONTROL[intent.toLowerCase()]
+      if (action) {
+        if (wsSend('dispatch_control', { action, requestId: nextRequestId() })) set({ intent: '', lastError: null })
+        else set({ lastError: NOT_CONNECTED })
+        return
+      }
       const requestId = nextRequestId()
       // Clear the draft ONLY once the frame is really on the wire ("on ask/Enter the
       // input must clear"). A dropped send keeps the user's text so they can retry --

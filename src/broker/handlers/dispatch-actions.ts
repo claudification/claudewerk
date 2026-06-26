@@ -15,14 +15,22 @@
  *   dispatch_list_threads  -> listThreadsForUser   -> dispatch_list_threads_result
  */
 
+import type { DispatchDecision } from '../../shared/protocol'
 import { runDispatchAgent } from '../desk/agent-runtime'
-import { dumpUserHistory } from '../desk/history-store'
+import {
+  compactNow,
+  consolidateOnOpen,
+  dumpUserHistory,
+  forgetUserMemory,
+  resetUserHistory,
+} from '../desk/history-store'
 import { readMemory } from '../desk/memory'
 import type { DispatchCommand } from '../desk/orchestrate'
 import { type DispatchRuntime, listDispatchRosterCandidates, runDispatch } from '../desk/runtime'
 import { workspaceSnapshot } from '../desk/workspace'
 import { GuardError, type HandlerContext, type MessageData, type MessageHandler } from '../handler-context'
 import { CONTROL_PANEL_ONLY, registerHandlers } from '../message-router'
+import { chat } from '../recap/shared/openrouter-client'
 
 // fallow-ignore-next-line complexity
 function buildCommand(data: MessageData): DispatchCommand {
@@ -148,6 +156,13 @@ const dispatchListThreads: MessageHandler = (ctx: HandlerContext, data: MessageD
   ctx.requirePermission('spawn')
   const requestId = typeof data.requestId === 'string' ? data.requestId : undefined
   const userId = ctx.ws.data.userName ?? null
+  // READ-TRIGGERED FOLD (the 30-hour fix): condense aged-out turns into <memory> on
+  // open, so returning after a long gap shows a condensed memory, not the raw last
+  // conversation. FIRE-AND-FORGET -- the open stays instant (never blocks on the
+  // ~LLM fold); when it finishes, markDirty streams the condensed history to ALL the
+  // user's devices (dispatch_history, Slice B), replacing this snapshot in place.
+  // Age-gated + once-per-return (consolidateOnOpen); a no-op (zero cost) when nothing aged.
+  void consolidateOnOpen(userId, Date.now(), req => chat(req)).catch(() => null)
   const roster = listDispatchRosterCandidates(ctx.conversations)
   const memory = readMemory(userId)
   const workspaces = workspaceSnapshot()
@@ -161,10 +176,77 @@ const dispatchListThreads: MessageHandler = (ctx: HandlerContext, data: MessageD
   ctx.reply({ type: 'dispatch_list_threads_result', requestId, roster, memory, workspaces, history, userId })
 }
 
+type ControlAction = 'clear' | 'compact' | 'forget'
+
+/** Perform a control verb and return the one-line confirmation. The store mutators
+ *  re-sync every device live (the notifier inside markDirty). */
+async function applyControlVerb(action: ControlAction, userId: string | null): Promise<string> {
+  if (action === 'clear') {
+    resetUserHistory(userId)
+    return 'Cleared. Fresh dispatcher -- history, memory, and transcript wiped.'
+  }
+  if (action === 'forget') {
+    forgetUserMemory(userId)
+    return 'Forgot my long-term memory. The recent conversation is still here.'
+  }
+  const res = await compactNow(userId, Date.now(), req => chat(req))
+  return res.ran ? `Compacted ${res.foldedTurns} turn(s) into memory.` : 'Nothing to compact -- already condensed.'
+}
+
+/** Render a control verb's confirmation as a `converse` decision for the feed. */
+function controlDecision(action: ControlAction, userId: string | null, reply: string): DispatchDecision {
+  return {
+    type: 'dispatch_decision',
+    decisionId: `dec_${crypto.randomUUID()}`,
+    intent: `/${action}`,
+    disposition: 'converse',
+    confidence: 1,
+    reasoning: 'control verb',
+    reply,
+    executed: true,
+    traceId: `trc_${crypto.randomUUID()}`,
+    ts: Date.now(),
+    userId,
+  }
+}
+
+/**
+ * A dispatcher CONTROL VERB (slash-command): clear / compact / forget. The reset
+ * surface the user asked for. Acks the requesting overlay with a one-line confirmation
+ * decision; the store mutators stream the new state to every device (markDirty).
+ */
+const dispatchControl: MessageHandler = async (ctx: HandlerContext, data: MessageData) => {
+  ctx.requirePermission('spawn')
+  const requestId = typeof data.requestId === 'string' ? data.requestId : undefined
+  const userId = ctx.ws.data.userName ?? null
+  const action = data.action
+  if (action !== 'clear' && action !== 'compact' && action !== 'forget') {
+    ctx.reply({ type: 'dispatch_request_result', requestId, ok: false, error: 'unknown dispatch_control action' })
+    return
+  }
+  try {
+    const reply = await applyControlVerb(action, userId)
+    ctx.log.debug(`dispatch_control [${userId ?? 'anon'}] ${action}`)
+    ctx.reply({
+      type: 'dispatch_request_result',
+      requestId,
+      ok: true,
+      decision: controlDecision(action, userId, reply),
+    })
+  } catch (e) {
+    ctx.reply({ type: 'dispatch_request_result', requestId, ok: false, error: (e as Error).message })
+    ctx.log.debug(`dispatch_control [${userId ?? 'anon'}] ${action} failed: ${(e as Error).message}`)
+  }
+}
+
 export function registerDispatchHandlers(): void {
   // Control panel only -- share (guest) viewers must not drive the dispatcher.
   registerHandlers(
-    { dispatch_request: dispatchRequest, dispatch_list_threads: dispatchListThreads },
+    {
+      dispatch_request: dispatchRequest,
+      dispatch_list_threads: dispatchListThreads,
+      dispatch_control: dispatchControl,
+    },
     CONTROL_PANEL_ONLY,
   )
 }

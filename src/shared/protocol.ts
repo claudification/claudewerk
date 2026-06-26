@@ -1019,6 +1019,7 @@ export type AgentHostMessage =
   | AgentHostNotify
   | InterConversationMessage
   | DispatchRequest
+  | DispatchControlRequest
   | ProjectLinkResponse
   | InterConversationListRequest
   | PermissionRequest
@@ -1505,6 +1506,25 @@ export interface DispatchRequest {
    *  (user-switchable in the overlay). Omitted -> the desk default. */
   model?: string
   /** Correlation id so the resulting decision can be matched back. */
+  requestId?: string
+}
+
+/**
+ * Control-panel -> broker: a dispatcher CONTROL VERB (a slash-command typed in the
+ * overlay). The reset surface the user asked for (`/clear` etc.):
+ *  - `clear`   -- wipe the living history + viewable transcript + persisted file
+ *                 (a fresh dispatcher, like CC's /clear).
+ *  - `compact` -- force a consolidation fold of the WHOLE current window into the
+ *                 rolling `<memory>` now, then drop the raw turns (condense on demand).
+ *  - `forget`  -- drop the rolling `<memory>` block only, keeping the recent
+ *                 conversation (forget the long-term recollection).
+ * The broker performs the verb, re-syncs EVERY device (`dispatch_history`), and
+ * acks via `dispatch_request_result` carrying a one-line confirmation reply.
+ */
+export interface DispatchControlRequest {
+  type: 'dispatch_control'
+  action: 'clear' | 'compact' | 'forget'
+  /** Correlation id so the ack can be matched back. */
   requestId?: string
 }
 
