@@ -4001,6 +4001,77 @@ export interface CanvasSummary {
   archivedAt: number | null
 }
 
+// ─── Canvas live multiplayer (Phase E) ──────────────────────────────────────
+// A `canvas` WS room keyed by canvasId (NOT conversationId). Peers join, stream
+// cursors (never persisted) + scene deltas (sanitized, tier-gated, debounce-
+// persisted), and see presence. No yjs -- Excalidraw's own version/versionNonce
+// LWW reconcile over OUR broker WS. See handlers/canvas-sync.ts.
+
+/** A peer present in a canvas room (one per live WS connection). */
+export interface CanvasPeer {
+  peerId: string
+  name: string
+  /** Cursor/selection colour (hex), assigned by the broker on join. */
+  color: string
+}
+
+/** Client -> broker: join a canvas room (subscribe to cursors + scene sync). */
+export interface CanvasJoin {
+  type: 'canvas_join'
+  canvasId: string
+  /** Display name for the cursor label (falls back to the authed user). */
+  name?: string
+}
+
+/** Client -> broker: leave a canvas room. */
+export interface CanvasLeave {
+  type: 'canvas_leave'
+  canvasId: string
+}
+
+/** Broker -> client: join accepted. Carries the caller's assigned identity, the
+ *  effective tier, the current scene, and the peers already in the room. */
+export interface CanvasJoinAck {
+  type: 'canvas_join_ack'
+  canvasId: string
+  peerId: string
+  tier: CanvasShareTier
+  /** Current scene JSON (sanitized), or null for a blank canvas. */
+  scene: string | null
+  peers: CanvasPeer[]
+}
+
+/** Broker -> client: a peer joined or left -- full current roster. */
+export interface CanvasPresence {
+  type: 'canvas_presence'
+  canvasId: string
+  peers: CanvasPeer[]
+}
+
+/** Client -> broker -> peers: cursor move. Never persisted. The broker stamps
+ *  peerId/name/color on rebroadcast; clients send only the coordinates. */
+export interface CanvasPointer {
+  type: 'canvas_pointer'
+  canvasId: string
+  x: number
+  y: number
+  /** Set by the broker on rebroadcast (absent on the inbound client message). */
+  peerId?: string
+  name?: string
+  color?: string
+}
+
+/** Client -> broker -> peers: a scene change. The broker tier-checks + sanitizes
+ *  before rebroadcast + debounced persist. peerId is stamped on rebroadcast so a
+ *  client can ignore the echo of its own delta. */
+export interface CanvasSceneDelta {
+  type: 'canvas_scene_delta'
+  canvasId: string
+  /** Full serialized Excalidraw scene (LWW reconcile = replace). */
+  scene: string
+  peerId?: string
+}
+
 /** Lifecycle of a checklist item. `open` and `in_progress` show inline (active);
  *  `done` moves to the archive. in_progress is purely a user-facing emphasis. */
 export type ChecklistStatus = 'open' | 'in_progress' | 'done'
@@ -5142,6 +5213,10 @@ export type SubscriptionChannel =
   | 'conversation:tasks'
   | 'conversation:bg_output'
   | 'conversation:subagent_transcript'
+  // Canvas live multiplayer room, keyed by canvasId in the registry's id slot
+  // (NOT a conversationId). Managed by handlers/canvas-sync.ts, not the generic
+  // channel_subscribe path (which assumes a conversation + chat:read).
+  | 'canvas'
 
 // Control Panel -> Broker: channel subscription management
 export interface ChannelSubscribe {

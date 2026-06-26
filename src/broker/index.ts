@@ -50,6 +50,7 @@ import { createGatewayRegistry } from './gateway-registry'
 import { initGlobalSettings } from './global-settings'
 import type { WsData } from './handler-context'
 import { registerAllHandlers } from './handlers'
+import { leaveAllCanvasRooms } from './handlers/canvas-sync'
 import { dropShellViewerSocket, onSentinelDisconnect } from './handlers/shell'
 import { startSpawnApprovalSweep } from './handlers/spawn-approval'
 import { appendMessage, initInterConversationLog } from './inter-conversation-log'
@@ -994,6 +995,8 @@ async function main() {
             conversationStore.cleanupJobSubscriber(ws)
             // Drop any project-board watches this socket was the last viewer of
             dropSocketFromWatches(ws)
+            // Leave any canvas multiplayer rooms (broadcast updated presence)
+            leaveAllCanvasRooms(ws, conversationStore)
             conversationStore.removeSubscriber(ws)
             if (verbose) {
               console.log(`[dashboard] Subscriber disconnected (total: ${conversationStore.getSubscriberCount()})`)
