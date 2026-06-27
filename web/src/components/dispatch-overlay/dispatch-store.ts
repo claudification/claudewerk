@@ -334,22 +334,23 @@ export const useDispatchStore = create<DispatchState>((set, get) => ({
     get().closeOverlay()
   },
 
-  // /memory + /system control results
+  // /memory + /system control results -- strategy map (STRATEGY MAPS covenant).
   onControlResult: msg => {
-    if (msg.action === 'memory_read') {
-      set({ editorModal: { kind: 'memory', content: msg.content ?? '' } })
-    } else if (msg.action === 'system_read') {
-      set({ editorModal: { kind: 'system', content: msg.content ?? '' } })
-    } else if (msg.action === 'memory_refine') {
-      set({
-        pending: false,
-        refinePreview: msg.ok ? { before: msg.before ?? '', after: msg.after ?? '', model: msg.model ?? '' } : null,
-      })
-      if (!msg.ok) set({ lastError: msg.error ?? 'refine failed' })
-    } else if (msg.action === 'memory_write' || msg.action === 'system_write') {
-      // write confirmed -- just close any open modal
-      set({ editorModal: null })
+    const handlers: Record<string, () => void> = {
+      memory_read: () => set({ editorModal: { kind: 'memory', content: msg.content ?? '' } }),
+      system_read: () => set({ editorModal: { kind: 'system', content: msg.content ?? '' } }),
+      memory_refine: () => {
+        set({
+          pending: false,
+          refinePreview: msg.ok ? { before: msg.before ?? '', after: msg.after ?? '', model: msg.model ?? '' } : null,
+        })
+        if (!msg.ok) set({ lastError: msg.error ?? 'refine failed' })
+      },
+      memory_write: () => set({ editorModal: null }),
+      system_write: () => set({ editorModal: null }),
     }
+    const fn = msg.action ? handlers[msg.action] : undefined
+    fn?.()
   },
   closeEditor: () => set({ editorModal: null }),
   saveEditor: content => {

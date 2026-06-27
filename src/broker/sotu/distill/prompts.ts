@@ -81,6 +81,10 @@ function renderContribution(c: Contribution): string {
       return `- [lifecycle/${c.event}] ${who}`
     case 'git_scan':
       return `- [git] ${summarizeGitFabric(c.git)}`
+    case 'status': {
+      const fields = [c.done, c.pending, c.blocked, c.caveats].filter(Boolean).join(' | ')
+      return `- [status/${c.state}] ${who}${fields ? `: ${fields}` : ''}`
+    }
   }
 }
 
