@@ -106,18 +106,18 @@ function spawnHermes(req: SpawnRequest, deps: SpawnDeps): SpawnResult {
       return { ok: false, error: 'Requested Hermes gateway not connected', statusCode: 503 }
     }
     chosen = { gatewayId: found.gatewayId, alias: found.alias }
-  } else if (connectedGateways.length === 1) {
-    chosen = { gatewayId: connectedGateways[0].gatewayId, alias: connectedGateways[0].alias }
-  } else if (connectedGateways.length === 0) {
-    deps.conversationStore.failJob(jobId, 'Hermes gateway not connected')
-    return { ok: false, error: 'Hermes gateway not connected', statusCode: 503 }
   } else {
-    deps.conversationStore.failJob(jobId, 'Multiple Hermes gateways connected; gatewayId required')
-    return {
-      ok: false,
-      error: 'Multiple Hermes gateways connected; specify gatewayId',
-      statusCode: 400,
+    // No explicit gatewayId: auto-pick the only connected gateway. Guard the
+    // none/ambiguous cases first so the happy path is a single assignment.
+    if (connectedGateways.length === 0) {
+      deps.conversationStore.failJob(jobId, 'Hermes gateway not connected')
+      return { ok: false, error: 'Hermes gateway not connected', statusCode: 503 }
     }
+    if (connectedGateways.length > 1) {
+      deps.conversationStore.failJob(jobId, 'Multiple Hermes gateways connected; gatewayId required')
+      return { ok: false, error: 'Multiple Hermes gateways connected; specify gatewayId', statusCode: 400 }
+    }
+    chosen = { gatewayId: connectedGateways[0].gatewayId, alias: connectedGateways[0].alias }
   }
 
   // URI authority is the gateway alias so each gateway gets its own sidebar

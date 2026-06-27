@@ -10,6 +10,27 @@ import type { MessageHandler } from '../handler-context'
 import { AGENT_HOST_ONLY, ANY_ROLE, registerHandlers } from '../message-router'
 import { rejectBadMessage, requireProtocolVersion, requireStrings } from './validate'
 
+// Legacy free-form `end` reasons -> typed TerminationSource. Exact matches win;
+// prefix matches are tried next (cc-exit-N / dashboard-* families).
+const LEGACY_REASON_SOURCE: Record<string, TerminationSource> = {
+  normal: 'cc-exit-normal',
+  'mcp-exit-session': 'mcp-exit-session',
+}
+const LEGACY_REASON_PREFIX_SOURCE: Array<[string, TerminationSource]> = [
+  ['exit_code_', 'cc-exit-crash'],
+  ['dashboard-', 'dashboard-other'],
+]
+
+/** Map an agent host's `end` payload to a typed source: an explicit wire source
+ *  wins, then exact legacy reasons, then prefix families, else 'unknown'. */
+function resolveTerminationSource(wireSource: TerminationSource | undefined, reason: string): TerminationSource {
+  if (wireSource) return wireSource
+  const exact = LEGACY_REASON_SOURCE[reason]
+  if (exact) return exact
+  const prefixed = LEGACY_REASON_PREFIX_SOURCE.find(([prefix]) => reason.startsWith(prefix))
+  return prefixed ? prefixed[1] : 'unknown'
+}
+
 // ─── Session meta (agent host connecting) ─────────────────────────────
 
 const meta: MessageHandler = (ctx, data) => {
@@ -301,13 +322,7 @@ const end: MessageHandler = (ctx, data) => {
     // reason -> typed source so the NDJSON log is uniform.
     const wireSource = data.source as TerminationSource | undefined
     const reason = ((data.reason as string) || '').toLowerCase()
-    let source: TerminationSource
-    if (wireSource) source = wireSource
-    else if (reason === 'normal') source = 'cc-exit-normal'
-    else if (reason.startsWith('exit_code_')) source = 'cc-exit-crash'
-    else if (reason.startsWith('dashboard-')) source = 'dashboard-other'
-    else if (reason === 'mcp-exit-session') source = 'mcp-exit-session'
-    else source = 'unknown'
+    const source = resolveTerminationSource(wireSource, reason)
     const detail = (data.detail as TerminationDetail | undefined) || {
       note: data.reason ? `legacy reason=${data.reason}` : undefined,
     }

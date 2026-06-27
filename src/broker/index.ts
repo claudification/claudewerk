@@ -159,39 +159,74 @@ function parseArgs(): Args {
   let rclaudeSecret: string | undefined
   // vapidPublicKey and vapidPrivateKey declared after arg parsing (env-only)
 
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i]
-
-    if (arg === '--port' || arg === '-p') {
-      port = parseInt(args[++i], 10)
-    } else if (arg === '--verbose' || arg === '-v') {
-      verbose = true
-    } else if (arg === '--cache-dir') {
-      cacheDir = args[++i]
-    } else if (arg === '--clear-cache') {
+  // Flag -> handler. Each handler receives the current index and returns the
+  // last index it consumed (value flags advance past their argument; boolean
+  // and terminal flags return the index unchanged). Aliases map to the same
+  // handler. Unknown args fall through (ignored, matching the old chain).
+  const setPort = (i: number): number => {
+    port = parseInt(args[i + 1], 10)
+    return i + 1
+  }
+  const setVerbose = (i: number): number => {
+    verbose = true
+    return i
+  }
+  const setWebDir = (i: number): number => {
+    webDir = args[i + 1]
+    return i + 1
+  }
+  const showHelp = (): number => {
+    printHelp()
+    return process.exit(0)
+  }
+  const flagHandlers: Record<string, (i: number) => number> = {
+    '--port': setPort,
+    '-p': setPort,
+    '--verbose': setVerbose,
+    '-v': setVerbose,
+    '--cache-dir': i => {
+      cacheDir = args[i + 1]
+      return i + 1
+    },
+    '--clear-cache': i => {
       clearCache = true
-    } else if (arg === '--no-persistence') {
+      return i
+    },
+    '--no-persistence': i => {
       noPersistence = true
-    } else if (arg === '--web-dir' || arg === '-w') {
-      webDir = args[++i]
-    } else if (arg === '--allow-root') {
-      allowedRoots.push(args[++i])
-    } else if (arg === '--rp-id') {
-      rpId = args[++i]
-    } else if (arg === '--origin') {
-      origins.push(args[++i])
-    } else if (arg === '--rclaude-secret') {
-      rclaudeSecret = args[++i]
-    } else if (arg === '--path-map') {
-      const mapping = args[++i]
+      return i
+    },
+    '--web-dir': setWebDir,
+    '-w': setWebDir,
+    '--allow-root': i => {
+      allowedRoots.push(args[i + 1])
+      return i + 1
+    },
+    '--rp-id': i => {
+      rpId = args[i + 1]
+      return i + 1
+    },
+    '--origin': i => {
+      origins.push(args[i + 1])
+      return i + 1
+    },
+    '--rclaude-secret': i => {
+      rclaudeSecret = args[i + 1]
+      return i + 1
+    },
+    '--path-map': i => {
+      const mapping = args[i + 1]
       const sep = mapping.indexOf(':')
-      if (sep > 0) {
-        pathMaps.push({ from: mapping.slice(0, sep), to: mapping.slice(sep + 1) })
-      }
-    } else if (arg === '--help' || arg === '-h') {
-      printHelp()
-      process.exit(0)
-    }
+      if (sep > 0) pathMaps.push({ from: mapping.slice(0, sep), to: mapping.slice(sep + 1) })
+      return i + 1
+    },
+    '--help': showHelp,
+    '-h': showHelp,
+  }
+
+  for (let i = 0; i < args.length; i++) {
+    const handler = flagHandlers[args[i]]
+    if (handler) i = handler(i)
   }
 
   // Env fallbacks

@@ -922,23 +922,27 @@ function deliverToOne(
   // Resolve which layer authorizes (and whether we matched a persisted link that needs
   // caching into the in-memory registry). Order: live conv link > live project link >
   // persisted conv link > trust > persisted project link.
-  let matchedConvLink = false
-  let effectiveLinkStatus: 'linked' | 'persisted' | 'trusted' | 'unknown'
-  if (convStatus === 'linked') {
-    effectiveLinkStatus = 'linked'
-    matchedConvLink = true
-  } else if (projectStatus === 'linked') {
-    effectiveLinkStatus = 'linked'
-  } else if (ctx.convLinks.find(fromConversation, toConversation)) {
-    effectiveLinkStatus = 'persisted'
-    matchedConvLink = true
-  } else if (isTrusted) {
-    effectiveLinkStatus = 'trusted'
-  } else if (fromConv?.project && toConv.project && ctx.links.find(fromConv.project, toConv.project)) {
-    effectiveLinkStatus = 'persisted'
-  } else {
-    effectiveLinkStatus = 'unknown'
-  }
+  // Ordered authorization layers -- first matching rule wins (preserving the
+  // live conv > live project > persisted conv > trust > persisted project
+  // precedence). Predicates are lazy thunks so a later lookup never runs when
+  // an earlier layer already authorized.
+  const linkRules: Array<{
+    when: () => boolean
+    status: 'linked' | 'persisted' | 'trusted'
+    matchedConv?: boolean
+  }> = [
+    { when: () => convStatus === 'linked', status: 'linked', matchedConv: true },
+    { when: () => projectStatus === 'linked', status: 'linked' },
+    { when: () => !!ctx.convLinks.find(fromConversation, toConversation), status: 'persisted', matchedConv: true },
+    { when: () => isTrusted, status: 'trusted' },
+    {
+      when: () => !!(fromConv?.project && toConv.project && ctx.links.find(fromConv.project, toConv.project)),
+      status: 'persisted',
+    },
+  ]
+  const matchedRule = linkRules.find(rule => rule.when())
+  const effectiveLinkStatus: 'linked' | 'persisted' | 'trusted' | 'unknown' = matchedRule?.status ?? 'unknown'
+  const matchedConvLink = matchedRule?.matchedConv ?? false
 
   if (effectiveLinkStatus === 'linked' || effectiveLinkStatus === 'persisted' || effectiveLinkStatus === 'trusted') {
     if (effectiveLinkStatus !== 'linked') {

@@ -213,22 +213,20 @@ function arrayItemText(item: unknown): string {
   return text == null ? '' : String(text)
 }
 
-// fallow-ignore-next-line complexity
-function compactValue(value: unknown, max: number): string {
-  let text: string
-  if (typeof value === 'string') {
-    text = value
-  } else if (Array.isArray(value)) {
-    text = value.map(arrayItemText).join(' ')
-  } else if (value === null || value === undefined) {
-    text = ''
-  } else {
-    try {
-      text = JSON.stringify(value)
-    } catch {
-      text = String(value)
-    }
+/** Best-effort raw string for any value: string verbatim, arrays joined, nullish
+ *  empty, everything else JSON (or String() when JSON throws on a cycle). */
+function rawText(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) return value.map(arrayItemText).join(' ')
+  if (value === null || value === undefined) return ''
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
   }
-  text = text.replace(/\s+/g, ' ').trim()
+}
+
+function compactValue(value: unknown, max: number): string {
+  const text = rawText(value).replace(/\s+/g, ' ').trim()
   return text.length > max ? `${text.slice(0, max)}...` : text
 }

@@ -39,6 +39,136 @@ export interface ParsedArgs {
   ttlArg: string
 }
 
+/** A named-flag handler: applies the flag, returns the last argv index it
+ *  consumed (value flags advance past their argument; booleans return `i`). */
+type FlagHandler = (result: ParsedArgs, argv: string[], i: number) => number
+
+type StringFlagKey = { [K in keyof ParsedArgs]: ParsedArgs[K] extends string ? K : never }[keyof ParsedArgs]
+type BoolFlagKey = { [K in keyof ParsedArgs]: ParsedArgs[K] extends boolean ? K : never }[keyof ParsedArgs]
+
+/** `--flag value` -> result[key] = value. */
+const valueFlag =
+  (key: StringFlagKey): FlagHandler =>
+  (result, argv, i) => {
+    result[key] = argv[i + 1]
+    return i + 1
+  }
+
+/** `--flag` (no value) -> result[key] = true. */
+const boolFlag =
+  (key: BoolFlagKey): FlagHandler =>
+  (result, _argv, i) => {
+    result[key] = true
+    return i
+  }
+
+/** `--flag value` -> result[key].push(value). */
+const pushFlag =
+  (key: 'grantArgs' | 'allowRoots'): FlagHandler =>
+  (result, argv, i) => {
+    result[key].push(argv[i + 1])
+    return i + 1
+  }
+
+/** `--path-map from:to` -> pathMapArgs entry (silently skips a malformed value). */
+const pathMapFlag: FlagHandler = (result, argv, i) => {
+  const mapping = argv[i + 1]
+  const sep = mapping.indexOf(':')
+  if (sep > 0) result.pathMapArgs.push({ from: mapping.slice(0, sep), to: mapping.slice(sep + 1) })
+  return i + 1
+}
+
+/** Named-flag dispatch. Aliases (`--scope`/`--cwd`, `--conversation`/`--conv`)
+ *  share one handler. Unknown flags fall through, ignored, as before. */
+const FLAG_HANDLERS: Record<string, FlagHandler> = {
+  '--cache-dir': valueFlag('cacheDir'),
+  '--data-dir': valueFlag('dataDir'),
+  '--dry-run': boolFlag('dryRun'),
+  '--url': valueFlag('baseUrl'),
+  '--name': valueFlag('name'),
+  '--grant': pushFlag('grantArgs'),
+  '--scope': valueFlag('cwdArg'),
+  '--cwd': valueFlag('cwdArg'),
+  '--permissions': valueFlag('permissionsArg'),
+  '--role': valueFlag('roleArg'),
+  '--alias': valueFlag('aliasArg'),
+  '--color': valueFlag('colorArg'),
+  '--credential-id': valueFlag('credentialIdArg'),
+  '--not-before': valueFlag('notBeforeArg'),
+  '--not-after': valueFlag('notAfterArg'),
+  '--allow-root': pushFlag('allowRoots'),
+  '--path-map': pathMapFlag,
+  '--db': valueFlag('dbArg'),
+  '--json': boolFlag('jsonFlag'),
+  '--dest': valueFlag('destArg'),
+  '--include-blobs': boolFlag('includeBlobs'),
+  '--retain-hours': valueFlag('retainHoursArg'),
+  '--retain-days': valueFlag('retainDaysArg'),
+  '--type': valueFlag('typeArg'),
+  '--source': valueFlag('sourceArg'),
+  '--initiator': valueFlag('initiatorArg'),
+  '--conversation': valueFlag('conversationIdArg'),
+  '--conv': valueFlag('conversationIdArg'),
+  '--days': valueFlag('daysArg'),
+  '--limit': valueFlag('limitArg'),
+  '--grep': valueFlag('grepArg'),
+  '--as': valueFlag('asArg'),
+  '--ttl': valueFlag('ttlArg'),
+}
+
+/** A positional (sub)arg router keyed on the already-parsed `command`. Returns
+ *  true when it claimed `arg` into a slot, false when the slot is already full
+ *  (the caller then treats `arg` as the next command). */
+type PositionalHandler = (result: ParsedArgs, arg: string) => boolean
+
+const fillQueryArg: PositionalHandler = (result, arg) => {
+  if (result.queryArg) return false
+  result.queryArg = arg
+  return true
+}
+
+const fillSubCommand: PositionalHandler = (result, arg) => {
+  if (result.subCommand) return false
+  result.subCommand = arg
+  return true
+}
+
+/** Command -> positional-slot filler. Commands absent here have no positional
+ *  slots, so a bareword under them just becomes the next command. */
+const POSITIONAL_HANDLERS: Record<string, PositionalHandler> = {
+  'resolve-path': (result, arg) => {
+    if (result.testPath) return false
+    result.testPath = arg
+    return true
+  },
+  query: fillQueryArg,
+  exec: fillQueryArg,
+  sentinel: fillSubCommand,
+  gateway: fillSubCommand,
+  backup: (result, arg) => {
+    if (!result.subCommand) {
+      result.subCommand = arg
+      return true
+    }
+    if (result.subCommand === 'restore' && !result.backupArchive) {
+      result.backupArchive = arg
+      return true
+    }
+    return false
+  },
+  termination: (result, arg) => {
+    if (!result.subCommand) {
+      result.subCommand = arg
+      return true
+    }
+    if (result.subCommand === 'grep' && !result.grepArg) {
+      result.grepArg = arg
+      return true
+    }
+    return false
+  },
+}
+
 export function parseArgs(argv: string[], defaultCacheDir: string): ParsedArgs {
   const result: ParsedArgs = {
     cacheDir: defaultCacheDir,
@@ -81,92 +211,16 @@ export function parseArgs(argv: string[], defaultCacheDir: string): ParsedArgs {
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
-    if (arg === '--cache-dir') {
-      result.cacheDir = argv[++i]
-    } else if (arg === '--data-dir') {
-      result.dataDir = argv[++i]
-    } else if (arg === '--dry-run') {
-      result.dryRun = true
-    } else if (arg === '--url') {
-      result.baseUrl = argv[++i]
-    } else if (arg === '--name') {
-      result.name = argv[++i]
-    } else if (arg === '--grant') {
-      result.grantArgs.push(argv[++i])
-    } else if (arg === '--scope' || arg === '--cwd') {
-      result.cwdArg = argv[++i]
-    } else if (arg === '--permissions') {
-      result.permissionsArg = argv[++i]
-    } else if (arg === '--role') {
-      result.roleArg = argv[++i]
-    } else if (arg === '--alias') {
-      result.aliasArg = argv[++i]
-    } else if (arg === '--color') {
-      result.colorArg = argv[++i]
-    } else if (arg === '--credential-id') {
-      result.credentialIdArg = argv[++i]
-    } else if (arg === '--not-before') {
-      result.notBeforeArg = argv[++i]
-    } else if (arg === '--not-after') {
-      result.notAfterArg = argv[++i]
-    } else if (arg === '--allow-root') {
-      result.allowRoots.push(argv[++i])
-    } else if (arg === '--path-map') {
-      const mapping = argv[++i]
-      const sep = mapping.indexOf(':')
-      if (sep > 0) {
-        result.pathMapArgs.push({ from: mapping.slice(0, sep), to: mapping.slice(sep + 1) })
-      }
-    } else if (arg === '--db') {
-      result.dbArg = argv[++i]
-    } else if (arg === '--json') {
-      result.jsonFlag = true
-    } else if (arg === '--dest') {
-      result.destArg = argv[++i]
-    } else if (arg === '--include-blobs') {
-      result.includeBlobs = true
-    } else if (arg === '--retain-hours') {
-      result.retainHoursArg = argv[++i]
-    } else if (arg === '--retain-days') {
-      result.retainDaysArg = argv[++i]
-    } else if (arg === '--type') {
-      result.typeArg = argv[++i]
-    } else if (arg === '--source') {
-      result.sourceArg = argv[++i]
-    } else if (arg === '--initiator') {
-      result.initiatorArg = argv[++i]
-    } else if (arg === '--conversation' || arg === '--conv') {
-      result.conversationIdArg = argv[++i]
-    } else if (arg === '--days') {
-      result.daysArg = argv[++i]
-    } else if (arg === '--limit') {
-      result.limitArg = argv[++i]
-    } else if (arg === '--grep') {
-      result.grepArg = argv[++i]
-    } else if (arg === '--as') {
-      result.asArg = argv[++i]
-    } else if (arg === '--ttl') {
-      result.ttlArg = argv[++i]
-    } else if (!arg.startsWith('-')) {
-      if (result.command === 'resolve-path' && !result.testPath) {
-        result.testPath = arg
-      } else if ((result.command === 'query' || result.command === 'exec') && !result.queryArg) {
-        result.queryArg = arg
-      } else if (result.command === 'sentinel' && !result.subCommand) {
-        result.subCommand = arg
-      } else if (result.command === 'gateway' && !result.subCommand) {
-        result.subCommand = arg
-      } else if (result.command === 'backup' && !result.subCommand) {
-        result.subCommand = arg
-      } else if (result.command === 'backup' && result.subCommand === 'restore' && !result.backupArchive) {
-        result.backupArchive = arg
-      } else if (result.command === 'termination' && !result.subCommand) {
-        result.subCommand = arg
-      } else if (result.command === 'termination' && result.subCommand === 'grep' && !result.grepArg) {
-        result.grepArg = arg
-      } else {
-        result.command = arg
-      }
+    const flagHandler = FLAG_HANDLERS[arg]
+    if (flagHandler) {
+      i = flagHandler(result, argv, i)
+      continue
+    }
+    if (!arg.startsWith('-')) {
+      // A bareword: try to fill a positional slot for the current command;
+      // anything left over becomes the (next) command itself.
+      const positional = POSITIONAL_HANDLERS[result.command]
+      if (!positional?.(result, arg)) result.command = arg
     }
   }
 

@@ -35,17 +35,22 @@ export function handleDeletePasskey(args: ParsedArgs): void {
     process.exit(1)
   }
   const result = removeCredential(args.name, args.credentialIdArg)
-  if (result === 'user_not_found') {
-    console.error(`ERROR: User "${args.name}" not found.`)
-    process.exit(1)
-  } else if (result === 'not_found') {
-    console.error(`ERROR: Credential not found for user "${args.name}".`)
-    process.exit(1)
-  } else if (result === 'removed_and_revoked') {
-    console.log(`Passkey deleted. This was "${args.name}"'s last passkey - user has been REVOKED.`)
-    console.log('All active sessions terminated.')
-  } else {
-    console.log(`Passkey deleted for "${args.name}". All active sessions terminated.`)
+  const outcomes: Record<string, () => void> = {
+    user_not_found: () => {
+      console.error(`ERROR: User "${args.name}" not found.`)
+      process.exit(1)
+    },
+    not_found: () => {
+      console.error(`ERROR: Credential not found for user "${args.name}".`)
+      process.exit(1)
+    },
+    removed_and_revoked: () => {
+      console.log(`Passkey deleted. This was "${args.name}"'s last passkey - user has been REVOKED.`)
+      console.log('All active sessions terminated.')
+    },
   }
+  const report =
+    outcomes[result] ?? (() => console.log(`Passkey deleted for "${args.name}". All active sessions terminated.`))
+  report()
   notifyServer(args.cacheDir)
 }
