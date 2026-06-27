@@ -138,6 +138,7 @@ export function routeMessage(ctx: HandlerContext, type: string, data: MessageDat
     }
   } catch (err) {
     if (err instanceof GuardError) {
+      console.warn(`[router] GuardError for ${type}: ${err.message}`)
       ctx.reply({ type: `${type}_result`, ok: false, error: err.message, ...requestIdEcho(data) })
     } else {
       console.error(`[router] Handler error for ${type}:`, err)
