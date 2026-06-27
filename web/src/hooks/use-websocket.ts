@@ -44,6 +44,7 @@ const CONVERSATION_CHANNELS = [
 // --- rAF message buffer (module-level, outside React) ---
 let msgBuffer: DashboardMessage[] = []
 let rafScheduled = false
+let syncCatchUpTimer: ReturnType<typeof setTimeout> | null = null
 
 // Module-level subscription tracking - must be clearable from onopen handler
 let _subscribedConversations = new Set<string>()
@@ -107,6 +108,17 @@ function flushMessages() {
     }
   })
   if (flushT0) perfRecord('ws', 'flush', performance.now() - flushT0, summarizeFlush(pending))
+  settleSyncCatchUp()
+}
+
+function settleSyncCatchUp() {
+  if (!useConversationsStore.getState().syncCatchingUp) return
+  if (syncCatchUpTimer) clearTimeout(syncCatchUpTimer)
+  syncCatchUpTimer = setTimeout(() => {
+    syncCatchUpTimer = null
+    useConversationsStore.setState({ syncCatchingUp: false })
+    console.log('[sync] catch-up settled')
+  }, 1_000)
 }
 
 function flushTypeCounts(pending: DashboardMessage[]): Array<[string, number]> {
@@ -720,6 +732,11 @@ export function useWebSocket() {
     // what we've applied -- those get a ?sinceSeq=N delta refetch.
     const syncInterval = setInterval(() => {
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+      // Skip while hidden: responses pile up and all flush on tab restore,
+      // causing a connectSeq storm (each sync_stale bumps connectSeq ->
+      // full reconnect cycle x N). The visibility-restore handler sends
+      // its own sync_check, so nothing is lost.
+      if (document.hidden) return
       const { syncEpoch, syncSeq, lastAppliedTranscriptSeq } = useConversationsStore.getState()
       const transcriptSeqs: Record<string, number> = {}
       for (const [sid, seq] of Object.entries(lastAppliedTranscriptSeq)) {

@@ -233,6 +233,7 @@ interface ConversationsState {
   connectSeq: number // increments on each WS connect, used to trigger re-fetches
   syncEpoch: string // server epoch (changes on server restart)
   syncSeq: number // last received sequence number
+  syncCatchingUp: boolean // true while processing a large sync backlog after tab restore
   sentinelConnected: boolean
   sentinels: SentinelStatusInfo[]
   /** Live daemon worker rosters, keyed by sentinelId ('default' when the
@@ -827,6 +828,7 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   connectSeq: 0,
   syncEpoch: '',
   syncSeq: 0,
+  syncCatchingUp: false,
   sentinelConnected: false,
   sentinels: [],
   daemonRosters: {},

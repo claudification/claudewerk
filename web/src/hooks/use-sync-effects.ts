@@ -102,6 +102,9 @@ function useVisibilitySync(fetchSidebarMetadata: () => Promise<void>) {
           `[sync] restored after ${(elapsed / 1000).toFixed(1)}s - sending sync_check (epoch=${syncEpoch.slice(0, 8)} seq=${syncSeq} transcripts=${Object.keys(transcriptSeqs).length})`,
         )
         wsSend('sync_check', { epoch: syncEpoch, lastSeq: syncSeq, transcripts: transcriptSeqs })
+        if (elapsed > 10_000) {
+          useConversationsStore.setState({ syncCatchingUp: true })
+        }
         if (elapsed > 30_000) {
           console.log(`[sync] refetch sidebar metadata after ${(elapsed / 1000).toFixed(0)}s background`)
           fetchSidebarMetadata()

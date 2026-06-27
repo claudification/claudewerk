@@ -274,18 +274,29 @@ function handleSyncCatchup(msg: DashboardMessage) {
   console.log(`[sync] <- sync_catchup: ${cu.count} missed (epoch=${cu.epoch?.slice(0, 8)} seq=${cu.seq})${staleInfo}`)
 }
 
+let lastSyncStaleBumpAt = 0
+const SYNC_STALE_DEBOUNCE_MS = 2_000
+
 function handleSyncStale(msg: DashboardMessage) {
   const stale = msg as DashboardMessage & { reason?: string; missed?: number; epoch?: string; seq?: number }
   const staleTranscripts = (msg as DashboardMessage & { staleTranscripts?: Record<string, number> }).staleTranscripts
   const staleInfo = staleTranscripts ? ` staleTranscripts=${Object.keys(staleTranscripts).length}` : ''
-  console.log(`[sync] <- sync_stale: ${stale.reason || 'unknown'} missed=${stale.missed || '?'}${staleInfo}`)
-  // Full resync needed - bump connectSeq (triggers LIFO eviction + re-fetch in onopen).
-  // Clear lastAppliedTranscriptSeq: epoch changed means server's per-conversation
-  // seq counters reset, so our stored seqs are from the previous generation
-  // and would false-negative a future sync_check. The upcoming initial
-  // transcript_entries broadcasts will reseed from fresh seqs.
+
+  // Coalesce rapid-fire sync_stale messages (tab-restore storm): only the
+  // first bump within SYNC_STALE_DEBOUNCE_MS triggers the full reconnect
+  // cycle (refresh_sessions + fetchSidebarMetadata + fetchConversationData).
+  // Later arrivals still update epoch/seq but skip the connectSeq bump that
+  // fires the expensive useConnectSeqSync effect.
+  const now = performance.now()
+  const shouldBump = now - lastSyncStaleBumpAt > SYNC_STALE_DEBOUNCE_MS
+  if (shouldBump) lastSyncStaleBumpAt = now
+
+  console.log(
+    `[sync] <- sync_stale: ${stale.reason || 'unknown'} missed=${stale.missed || '?'}${staleInfo}${shouldBump ? '' : ' (debounced)'}`,
+  )
+
   useConversationsStore.setState(s => ({
-    connectSeq: s.connectSeq + 1,
+    ...(shouldBump ? { connectSeq: s.connectSeq + 1 } : {}),
     syncEpoch: stale.epoch || '',
     syncSeq: stale.seq || 0,
     lastAppliedTranscriptSeq: {},

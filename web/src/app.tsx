@@ -38,6 +38,7 @@ import { manageProjectLinksBus } from '@/components/settings/manage-project-link
 import { SharedConversationView } from '@/components/shared-conversation-view'
 import { ShortcutHelp } from '@/components/shortcut-help'
 import { spawnDialogBus } from '@/components/spawn-dialog-trigger'
+import { SyncIndicator } from '@/components/sync-indicator'
 import { taskBatchBus } from '@/components/task-batch-trigger'
 import { TerminateConfirmDialog } from '@/components/terminate-confirm'
 import { TerminateLineageConfirmDialog } from '@/components/terminate-lineage-confirm'
@@ -528,6 +529,7 @@ function Dashboard() {
       )}
 
       <TranscriptSearch />
+      <SyncIndicator />
       <VoiceFabGate />
       <ActionFabGate />
       <VoiceKey />
