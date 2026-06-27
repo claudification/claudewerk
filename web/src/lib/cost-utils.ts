@@ -189,16 +189,14 @@ export function getCacheTimerInfo(
 
   if (reCacheCost < 0.75) return null // not worth warning for cheap re-caches
 
-  let state: CacheTimerState
-  if (remainingMs <= 0) {
-    state = 'expired'
-  } else if (remainingMs <= 30_000) {
-    state = 'critical'
-  } else if (remainingMs <= 60_000) {
-    state = 'warning'
-  } else {
-    state = 'hot'
-  }
+  // Ascending thresholds: first band whose ceiling we're under wins; past the
+  // last ceiling the cache is still 'hot'.
+  const stateBands: Array<{ maxMs: number; state: CacheTimerState }> = [
+    { maxMs: 0, state: 'expired' },
+    { maxMs: 30_000, state: 'critical' },
+    { maxMs: 60_000, state: 'warning' },
+  ]
+  const state: CacheTimerState = stateBands.find(band => remainingMs <= band.maxMs)?.state ?? 'hot'
 
   return { state, remainingMs: Math.max(0, remainingMs), ttlMs, reCacheCost, contextTokens }
 }

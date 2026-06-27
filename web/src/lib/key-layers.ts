@@ -98,6 +98,20 @@ function isTerminal(el: Element | null): boolean {
 
 // ── Key normalization ──────────────────────────────────────────────────────
 
+/**
+ * Layout-agnostic key from a `KeyboardEvent.code`, for when Alt is held (on
+ * macOS Option+digit / Option+letter mutates `e.key` into a special character,
+ * e.g. Alt+1 -> '¡', Alt+c -> 'ç', so `alt+1` / `alt+a` would never match).
+ * Returns null when no Digit / Numpad / Key code rule applies (the caller then
+ * falls back to `e.key`).
+ */
+function altCodeToKey(code: string): string | null {
+  if (code.startsWith('Digit')) return code.slice(5) // 'Digit1' -> '1'
+  if (code.startsWith('Numpad') && /^Numpad\d$/.test(code)) return code.slice(6) // 'Numpad1' -> '1'
+  if (code.startsWith('Key') && code.length === 4) return code.slice(3).toLowerCase() // 'KeyA' -> 'a'
+  return null
+}
+
 function normalizeEvent(e: KeyboardEvent): string {
   const parts: string[] = []
 
@@ -111,23 +125,12 @@ function normalizeEvent(e: KeyboardEvent): string {
   // Don't include modifier keys themselves as the key part
   const ignoreKeys = new Set(['Control', 'Meta', 'Alt', 'Shift'])
   if (!ignoreKeys.has(e.key)) {
-    // On macOS, Option+digit / Option+letter mutates `e.key` into a special
-    // character (Alt+1 -> '¡', Alt+c -> 'ç'). Bindings like `alt+1` would
-    // never match. Fall back to the layout-agnostic `e.code` for Digit*/Key*
-    // when alt is held so `alt+1` and `alt+a` resolve consistently.
-    let key: string
-    if (e.altKey && e.code.startsWith('Digit')) {
-      key = e.code.slice(5) // 'Digit1' -> '1'
-    } else if (e.altKey && e.code.startsWith('Numpad') && /^Numpad\d$/.test(e.code)) {
-      key = e.code.slice(6) // 'Numpad1' -> '1'
-    } else if (e.altKey && e.code.startsWith('Key') && e.code.length === 4) {
-      key = e.code.slice(3).toLowerCase() // 'KeyA' -> 'a'
-    } else {
-      // Normalize single letter keys to lowercase so bindings are case-insensitive
-      // (Shift+D produces e.key='D', but we want 'shift+d' to match)
-      // Spacebar normalizes to 'Space' so chord bindings like 'mod+g Space' parse cleanly
-      key = e.key === ' ' ? 'Space' : e.key.length === 1 ? e.key.toLowerCase() : e.key
-    }
+    // When alt is held, derive the key from the layout-agnostic `e.code` (see
+    // altCodeToKey); else, and when no code rule matches, normalize single
+    // letters to lowercase so bindings are case-insensitive (Shift+D ->
+    // 'shift+d') and Space parses cleanly for chords like 'mod+g Space'.
+    const altKey = e.altKey ? altCodeToKey(e.code) : null
+    const key = altKey ?? (e.key === ' ' ? 'Space' : e.key.length === 1 ? e.key.toLowerCase() : e.key)
     parts.push(key)
   }
 

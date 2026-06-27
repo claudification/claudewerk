@@ -590,17 +590,16 @@ export function processHash() {
   if (!id) return
 
   const store = useConversationsStore.getState()
-  if (mode === 'terminal') {
-    store.openTerminal(id)
-  } else if (mode === 'conversation' || mode === 'session') {
-    // `conversation` is the canonical fragment. `session` is the legacy form,
-    // kept only so old bookmarks / tabs opened before the rename still resolve.
-    store.selectConversation(id, 'hash-route')
-  } else if (mode === 'project') {
-    store.selectProject(decodeURIComponent(id))
-  } else if (mode === 'task') {
-    window.dispatchEvent(new CustomEvent('open-project-task', { detail: { taskId: id } }))
+  // `conversation` is the canonical fragment; `session` is the legacy alias,
+  // kept only so old bookmarks / tabs opened before the rename still resolve.
+  const routes: Record<string, (id: string) => void> = {
+    terminal: id => store.openTerminal(id),
+    conversation: id => store.selectConversation(id, 'hash-route'),
+    session: id => store.selectConversation(id, 'hash-route'),
+    project: id => store.selectProject(decodeURIComponent(id)),
+    task: id => window.dispatchEvent(new CustomEvent('open-project-task', { detail: { taskId: id } })),
   }
+  routes[mode]?.(id)
 }
 
 // Slim shape containing only the fields ProjectList uses to compute
