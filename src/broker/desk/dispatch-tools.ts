@@ -13,6 +13,7 @@
 
 import { z } from 'zod'
 import type { Conversation, DispatchDecision } from '../../shared/protocol'
+import { sendPushToAll } from '../push'
 import { buildControlDeps } from './control-deps'
 import { buildControlToolset } from './control-tools'
 import { computeCostSignal } from './cost'
@@ -163,11 +164,38 @@ function projectTools(rt: DispatchRuntime): Toolset {
  * `spawn_into_project` are both dropped -- `dispatch_quest` resolves a named /
  * slug / uri project and spawns into it even with zero live conversations.
  */
+function notifyTool(rt: DispatchRuntime): Toolset {
+  return {
+    notify_user: defineTool({
+      description:
+        "Send a push notification to the user's phone/browser. Use freely -- for async quest results, status updates, or anything the user should see even if they're not watching the dashboard.",
+      inputSchema: z.object({
+        message: z.string().describe('Notification body.'),
+        title: z.string().optional().describe('Optional title (defaults to "Front Desk").'),
+      }),
+      execute: async a => {
+        const { message, title } = a as { message: string; title?: string }
+        const heading = title || 'Front Desk'
+        const wsPayload = JSON.stringify({ type: 'notification', title: heading, body: message, timestamp: Date.now() })
+        for (const ws of rt.store.getSubscribers()) {
+          try {
+            ws.send(wsPayload)
+          } catch {
+            /* dead socket */
+          }
+        }
+        const push = await sendPushToAll({ title: heading, body: message })
+        return { delivered: push.sent > 0 || push.failed > 0 ? 'yes' : 'no push subscriptions (WS only)' }
+      },
+    }),
+  }
+}
+
 export function buildDispatchToolset(
   rt: DispatchRuntime,
   confirmedExpensive = false,
   questSpawn?: QuestSpawn,
 ): Toolset {
   const { spawn: _omitGenericSpawn, ...control } = buildControlToolset(buildControlDeps(rt, confirmedExpensive))
-  return { ...projectTools(rt), ...questTools(rt, questSpawn), ...lookupTools(rt), ...control }
+  return { ...projectTools(rt), ...questTools(rt, questSpawn), ...lookupTools(rt), ...notifyTool(rt), ...control }
 }
