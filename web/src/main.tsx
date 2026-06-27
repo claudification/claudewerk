@@ -49,8 +49,8 @@ import '@fontsource/geist-mono/700.css'
 import '@fontsource/geist-mono/400-italic.css'
 import '@fontsource/geist-mono/700-italic.css'
 import './styles/globals.css'
-import { loadAndApplyTheme } from './lib/themes'
 import { setRemountTrigger } from './lib/remount'
+import { loadAndApplyTheme } from './lib/themes'
 
 loadAndApplyTheme()
 
@@ -71,7 +71,9 @@ function Root() {
 
       requestAnimationFrame(() => {
         const total = performance.now() - t0
-        console.log(`[remount] full cycle: ${total.toFixed(1)}ms (teardown=${teardown.toFixed(1)}ms, mount=${(total - teardown).toFixed(1)}ms)`)
+        console.log(
+          `[remount] full cycle: ${total.toFixed(1)}ms (teardown=${teardown.toFixed(1)}ms, mount=${(total - teardown).toFixed(1)}ms)`,
+        )
         window.dispatchEvent(
           new CustomEvent('rclaude-toast', {
             detail: {

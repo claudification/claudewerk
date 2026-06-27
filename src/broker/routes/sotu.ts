@@ -17,9 +17,9 @@ import type { SotuView } from '../../shared/protocol'
 import { listDeskProjects } from '../desk/projects'
 import { applyWrite, buildConfigView } from '../handlers/sotu-config'
 import { buildSotuView, maybeDistillOnRead, projectSlug, readDistillEvals } from '../sotu'
+import { defaultResolveSotuConfig } from '../sotu/config'
 import { readQueue } from '../sotu/queue'
 import { readState } from '../sotu/state'
-import { defaultResolveSotuConfig } from '../sotu/config'
 import type { RouteHelpers } from './shared'
 
 export function createSotuRouter(helpers: RouteHelpers): Hono {

@@ -133,7 +133,10 @@ export function SotuDumpModal() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="mx-4 flex w-full max-w-3xl flex-col gap-3 rounded-xl border border-border bg-background p-5 shadow-2xl" style={{ maxHeight: '85vh' }}>
+      <div
+        className="mx-4 flex w-full max-w-3xl flex-col gap-3 rounded-xl border border-border bg-background p-5 shadow-2xl"
+        style={{ maxHeight: '85vh' }}
+      >
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-sm font-medium text-foreground">State of the Union</h3>
