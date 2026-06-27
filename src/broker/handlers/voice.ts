@@ -5,7 +5,7 @@
 
 import type { MessageHandler } from '../handler-context'
 import { registerHandlers } from '../message-router'
-import { handleVoiceData, handleVoiceStart, handleVoiceStop } from '../voice-stream'
+import { handleVoiceData, handleVoiceReplay, handleVoiceStart, handleVoiceStop } from '../voice-stream'
 
 const voiceStart: MessageHandler = (ctx, data) => {
   ctx.requirePermission('voice')
@@ -16,6 +16,10 @@ const voiceData: MessageHandler = (ctx, data) => {
   handleVoiceData(ctx.ws, data.audio as string)
 }
 
+const voiceReplay: MessageHandler = (ctx, data) => {
+  handleVoiceReplay(ctx.ws, data.chunks as string[])
+}
+
 const voiceStop: MessageHandler = ctx => {
   handleVoiceStop(ctx.ws)
 }
@@ -24,6 +28,7 @@ export function registerVoiceHandlers(): void {
   registerHandlers({
     voice_start: voiceStart,
     voice_data: voiceData,
+    voice_replay: voiceReplay,
     voice_stop: voiceStop,
   })
 }

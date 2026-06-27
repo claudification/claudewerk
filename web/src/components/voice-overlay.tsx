@@ -83,7 +83,7 @@ export function VoiceOverlay({ onResult, onClose, holdMode = false, onMicGranted
   // Map hook state to overlay display state
   const isDone = voice.state === 'submitting'
   const displayText = voice.refinedText || voice.finalText
-  const displayInterim = voice.state === 'recording' ? voice.interimText : ''
+  const displayInterim = voice.state === 'recording' || voice.state === 'recording-offline' ? voice.interimText : ''
 
   return (
     <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex flex-col animate-in fade-in duration-150">
@@ -104,6 +104,15 @@ export function VoiceOverlay({ onResult, onClose, holdMode = false, onMicGranted
             <span className="text-xs text-red-400 font-mono uppercase tracking-wider">
               {holdMode ? 'Release to send...' : 'Listening...'}
             </span>
+          </>
+        )}
+        {voice.state === 'recording-offline' && (
+          <>
+            <span className="relative flex size-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+              <span className="relative inline-flex rounded-full size-3 bg-amber-500" />
+            </span>
+            <span className="text-xs text-amber-400 font-mono uppercase tracking-wider">Offline -- buffering...</span>
           </>
         )}
         {voice.state === 'refining' && (
@@ -156,11 +165,16 @@ export function VoiceOverlay({ onResult, onClose, holdMode = false, onMicGranted
       {/* Action buttons - BOTTOM (thumb zone) */}
       <div className="shrink-0 pb-safe">
         <div className="max-w-[700px] mx-auto px-4 pb-6 pt-3 flex items-center justify-center gap-3">
-          {voice.state === 'recording' && !holdMode && (
+          {(voice.state === 'recording' || voice.state === 'recording-offline') && !holdMode && (
             <button
               type="button"
               onClick={handleStopClick}
-              className="flex items-center justify-center gap-3 px-8 py-4 bg-red-500/20 border-2 border-red-500/50 text-red-400 text-base font-bold uppercase tracking-wider hover:bg-red-500/30 active:bg-red-500/40 transition-colors rounded-xl min-w-[180px]"
+              className={cn(
+                'flex items-center justify-center gap-3 px-8 py-4 border-2 text-base font-bold uppercase tracking-wider transition-colors rounded-xl min-w-[180px]',
+                voice.state === 'recording-offline'
+                  ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 hover:bg-amber-500/30 active:bg-amber-500/40'
+                  : 'bg-red-500/20 border-red-500/50 text-red-400 hover:bg-red-500/30 active:bg-red-500/40',
+              )}
               style={{ touchAction: 'manipulation' }}
             >
               <Square className="size-5 fill-current" />

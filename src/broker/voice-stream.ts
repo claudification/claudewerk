@@ -44,7 +44,7 @@ const voiceSessions = new Map<ServerWebSocket<unknown>, VoiceSession>()
 
 export function handleVoiceStart(
   ws: ServerWebSocket<unknown>,
-  data: { conversationId?: string; project?: string },
+  data: { conversationId?: string; project?: string; accumulated?: string },
   conversationStore: ConversationStore,
 ) {
   const deepgramKey = process.env.DEEPGRAM_API_KEY
@@ -98,7 +98,7 @@ export function handleVoiceStart(
     dgWs,
     dashboardWs: ws,
     conversationId: data.conversationId || null,
-    finalTranscript: '',
+    finalTranscript: data.accumulated || '',
     keyterms,
     audioBuffer: [],
     closed: false,
@@ -255,6 +255,30 @@ export function handleVoiceData(ws: ServerWebSocket<unknown>, audioBase64: strin
   } else {
     console.warn(`[voice-stream] DG WS not open (state: ${session.dgWs.readyState}), dropping ${bytes.length}B audio`)
   }
+}
+
+export function handleVoiceReplay(ws: ServerWebSocket<unknown>, chunks: string[]) {
+  const session = voiceSessions.get(ws)
+  if (!session) {
+    console.warn('[voice-stream] voice_replay received but no active session')
+    return
+  }
+
+  let totalBytes = 0
+  for (const base64 of chunks) {
+    const bytes = Buffer.from(base64, 'base64')
+    session.audioChunks++
+    session.audioBytes += bytes.length
+    totalBytes += bytes.length
+    if (session.dgWs.readyState === WebSocket.OPEN) {
+      session.dgWs.send(bytes)
+    } else {
+      session.audioBuffer.push(bytes)
+    }
+  }
+  console.log(
+    `[voice-stream] Replayed ${chunks.length} buffered chunks (${totalBytes}B, DG state: ${session.dgWs.readyState})`,
+  )
 }
 
 export function handleVoiceStop(ws: ServerWebSocket<unknown>) {

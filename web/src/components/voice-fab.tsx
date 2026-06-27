@@ -131,7 +131,7 @@ export function VoiceFab() {
   }
 
   function handlePointerMove(e: React.PointerEvent) {
-    if (voice.state !== 'recording' && voice.state !== 'connecting') return
+    if (voice.state !== 'recording' && voice.state !== 'recording-offline' && voice.state !== 'connecting') return
 
     const dx = e.clientX - startXRef.current
     const offset = Math.min(0, dx)
@@ -164,7 +164,7 @@ export function VoiceFab() {
       return
     }
 
-    if (voice.state === 'recording') {
+    if (voice.state === 'recording' || voice.state === 'recording-offline') {
       haptic('tick')
       voice.stop()
     }
@@ -179,11 +179,12 @@ export function VoiceFab() {
   }, [voice.state])
 
   const needsUnlock = micPermission === 'prompt' || micPermission === 'unknown'
-  const isRecording = voice.state === 'recording'
+  const isRecording = voice.state === 'recording' || voice.state === 'recording-offline'
+  const isOffline = voice.state === 'recording-offline'
   const isActive = voice.state !== 'idle'
   const isCancelling = Math.abs(dragOffset) >= CANCEL_THRESHOLD
   const displayText = voice.refinedText || voice.finalText
-  const displayInterim = voice.state === 'recording' ? voice.interimText : ''
+  const displayInterim = isRecording ? voice.interimText : ''
   const hasText = !!(displayText || displayInterim)
   const totalChars = (displayText?.length || 0) + (displayInterim?.length || 0)
   const transcriptRef = useRef<HTMLDivElement>(null)
@@ -207,7 +208,11 @@ export function VoiceFab() {
             <div
               className={cn(
                 'mt-2 px-4 py-3 rounded-xl border shadow-xl',
-                isCancelling ? 'bg-red-950 border-red-500/50' : 'bg-surface-inset border-red-500/40',
+                isCancelling
+                  ? 'bg-red-950 border-red-500/50'
+                  : isOffline
+                    ? 'bg-surface-inset border-amber-500/40'
+                    : 'bg-surface-inset border-red-500/40',
               )}
             >
               {/* Status line */}
@@ -225,6 +230,17 @@ export function VoiceFab() {
                     </span>
                     <span className="text-[10px] text-red-400 font-mono uppercase tracking-wider">
                       Recording - release to send
+                    </span>
+                  </>
+                )}
+                {voice.state === 'recording-offline' && (
+                  <>
+                    <span className="relative flex size-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full size-2 bg-amber-500" />
+                    </span>
+                    <span className="text-[10px] text-amber-400 font-mono uppercase tracking-wider">
+                      Offline -- buffering
                     </span>
                   </>
                 )}
@@ -287,7 +303,8 @@ export function VoiceFab() {
           !needsUnlock &&
             voice.state === 'idle' &&
             'bg-background/80 border-border/50 text-muted-foreground active:scale-95',
-          isRecording && !isCancelling && 'bg-red-500/20 border-red-500/50 text-red-400 scale-110',
+          isRecording && !isOffline && !isCancelling && 'bg-red-500/20 border-red-500/50 text-red-400 scale-110',
+          isOffline && !isCancelling && 'bg-amber-500/20 border-amber-500/50 text-amber-400 scale-110 animate-pulse',
           isRecording && isCancelling && 'bg-red-950/80 border-red-500/50 text-red-400',
           voice.state === 'connecting' && 'bg-accent/10 border-accent/30 text-accent animate-pulse',
           voice.state === 'refining' && 'bg-accent/10 border-accent/30 text-accent animate-pulse',
@@ -309,8 +326,15 @@ export function VoiceFab() {
           <X className="size-5" />
         ) : isRecording ? (
           <span className="relative flex size-4">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-            <span className="relative inline-flex rounded-full size-4 bg-red-500" />
+            <span
+              className={cn(
+                'animate-ping absolute inline-flex h-full w-full rounded-full opacity-75',
+                isOffline ? 'bg-amber-400' : 'bg-red-400',
+              )}
+            />
+            <span
+              className={cn('relative inline-flex rounded-full size-4', isOffline ? 'bg-amber-500' : 'bg-red-500')}
+            />
           </span>
         ) : (
           <Mic className="size-5" />

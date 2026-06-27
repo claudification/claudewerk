@@ -29,12 +29,15 @@ export {
   subscribeMicExpired,
 } from '@/hooks/voice-mic-stream'
 
-type VoiceState = 'idle' | 'connecting' | 'recording' | 'refining' | 'submitting' | 'error'
+type VoiceState = 'idle' | 'connecting' | 'recording' | 'recording-offline' | 'refining' | 'submitting' | 'error'
 
 // Max wait, after voice_start is sent, for the broker->Deepgram chain to come
 // up (voice_ready). If it doesn't, the connection is genuinely broken and we
 // must surface that rather than leave the user believing they're recording.
 const CONNECT_TIMEOUT_MS = 8000
+
+// Offline audio ring buffer: ~60s at 100ms chunks, ~1-2MB of base64
+const OFFLINE_BUFFER_MAX = 600
 
 /** True only when the browser->broker socket is actually open, not merely present. */
 function wsIsOpen(): boolean {
@@ -88,6 +91,11 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
   const connectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const brokerAckedRef = useRef(false) // saw voice_connecting (broker got our start)
   const droppedChunksRef = useRef(0) // voice_data sends dropped because WS wasn't open
+  // Offline resilience: buffer audio locally when broker WS drops mid-recording,
+  // replay on reconnect so no speech is lost during a broker restart (~10-20s).
+  const offlineBufferRef = useRef<string[]>([])
+  const accumulatedTextRef = useRef('') // last known accumulated transcript from broker
+  const reconnectingRef = useRef(false) // prevents double-fire of reconnect logic
 
   stateRef.current = state
 
@@ -144,9 +152,22 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
       `[voice] ${elapsed()} voice_ready (Deepgram connected, flushed ${msg.flushedChunks ?? '?'} chunks / ${msg.flushedBytes ?? '?'}B)`,
     )
     clearConnectTimer()
+
+    // Reconnect path: replay buffered audio, then resume
+    if (reconnectingRef.current) {
+      reconnectingRef.current = false
+      const buffered = offlineBufferRef.current
+      if (buffered.length > 0) {
+        console.log(`[voice] ${elapsed()} replaying ${buffered.length} buffered chunks after reconnect`)
+        sendWs({ type: 'voice_replay', chunks: buffered })
+        offlineBufferRef.current = []
+      }
+      droppedChunksRef.current = 0
+    }
+
     setState('recording')
-    // If the user already released during 'connecting' (quick tap), honour that
-    // stop now that the chain is live -- the buffered audio still transcribes.
+    // If the user already released during 'connecting' or offline (quick tap),
+    // honour that stop now that the chain is live.
     if (pendingStopRef.current) {
       pendingStopRef.current = false
       setTimeout(() => stop(), 300)
@@ -155,7 +176,9 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
 
   function applyTranscript(msg: { isFinal?: boolean; accumulated?: string; transcript?: string }) {
     if (msg.isFinal) {
-      setFinalText(msg.accumulated || msg.transcript || '')
+      const acc = msg.accumulated || msg.transcript || ''
+      setFinalText(acc)
+      accumulatedTextRef.current = acc
       setInterimText('')
     } else {
       setInterimText(msg.transcript || '')
@@ -248,6 +271,9 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     pendingStopRef.current = false
     brokerAckedRef.current = false
     droppedChunksRef.current = 0
+    offlineBufferRef.current = []
+    accumulatedTextRef.current = ''
+    reconnectingRef.current = false
   }, [])
 
   /** Transition to the error state with a user-facing message + optional log line. */
@@ -270,6 +296,63 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     }, CONNECT_TIMEOUT_MS)
   }
 
+  /** Attempt to resume voice after broker WS reconnects during offline recording. */
+  function attemptReconnect() {
+    if (reconnectingRef.current) return
+    reconnectingRef.current = true
+    console.log(
+      `[voice] ${elapsed()} WS reconnected during offline recording, attempting resume (${offlineBufferRef.current.length} buffered chunks, accumulated=${accumulatedTextRef.current.length} chars)`,
+    )
+
+    // Re-attach to the new WS object (old one is dead)
+    if (!attachWsListener()) {
+      reconnectingRef.current = false
+      return
+    }
+
+    // Start a new Deepgram session, seeding it with the transcript so far
+    const target = useConversationsStore.getState().selectedConversationId
+    sendWs({
+      type: 'voice_start',
+      conversationId: target,
+      accumulated: accumulatedTextRef.current,
+    })
+    armConnectTimeout()
+    // voice_ready handler will replay the buffer and flip state to 'recording'
+  }
+
+  function pushOfflineBuffer(base64: string) {
+    offlineBufferRef.current.push(base64)
+    if (offlineBufferRef.current.length > OFFLINE_BUFFER_MAX) {
+      offlineBufferRef.current.shift()
+    }
+  }
+
+  function handleChunkWsOpen(base64: string) {
+    if (stateRef.current === 'recording-offline' && !reconnectingRef.current) {
+      attemptReconnect()
+    }
+    if (stateRef.current === 'recording') {
+      sendWs({ type: 'voice_data', audio: base64 })
+    } else {
+      pushOfflineBuffer(base64)
+    }
+  }
+
+  function handleChunkWsClosed(base64: string) {
+    droppedChunksRef.current++
+    pushOfflineBuffer(base64)
+    if (droppedChunksRef.current === 1 || droppedChunksRef.current % 10 === 0) {
+      console.warn(
+        `[voice] ${elapsed()} offline: buffered ${offlineBufferRef.current.length} chunks (dropped ${droppedChunksRef.current} total)`,
+      )
+    }
+    if (droppedChunksRef.current >= 5 && stateRef.current === 'recording') {
+      console.warn(`[voice] ${elapsed()} transitioning to recording-offline`)
+      setState('recording-offline')
+    }
+  }
+
   /** Build the MediaRecorder with a connection-guarded send + mic-death detection. */
   function buildRecorder(stream: MediaStream): MediaRecorder {
     const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/mp4'
@@ -280,20 +363,10 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
       pendingDataRef.current = (async () => {
         const buffer = await ev.data.arrayBuffer()
         const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)))
-        // A closed socket silently swallows this chunk -- count + surface drops
-        // instead of pretending it landed.
         if (wsIsOpen()) {
-          sendWs({ type: 'voice_data', audio: base64 })
-          return
-        }
-        droppedChunksRef.current++
-        if (droppedChunksRef.current === 1 || droppedChunksRef.current % 10 === 0) {
-          console.error(`[voice] ${elapsed()} dropped ${droppedChunksRef.current} audio chunk(s): broker WS not open`)
-        }
-        // Sustained drop = socket died mid-recording; the broker session is
-        // bound to the dead socket and can't recover. Fail loud.
-        if (droppedChunksRef.current === 5 && stateRef.current === 'recording') {
-          failVoice('Lost connection to server')
+          handleChunkWsOpen(base64)
+        } else {
+          handleChunkWsClosed(base64)
         }
       })()
     }
@@ -303,7 +376,11 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     const track = stream.getAudioTracks()[0]
     if (track) {
       track.onended = () => {
-        if (stateRef.current === 'recording' || stateRef.current === 'connecting') {
+        if (
+          stateRef.current === 'recording' ||
+          stateRef.current === 'connecting' ||
+          stateRef.current === 'recording-offline'
+        ) {
           failVoice('Microphone disconnected', 'mic track ended mid-recording')
         }
       }
@@ -410,7 +487,7 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
   const stop = useCallback(() => {
     console.log(`[voice] ${elapsed()} stop() (state=${stateRef.current})`)
 
-    if (stateRef.current === 'connecting') {
+    if (stateRef.current === 'connecting' || stateRef.current === 'recording-offline') {
       pendingStopRef.current = true
       return
     }
