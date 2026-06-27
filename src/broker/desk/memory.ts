@@ -75,9 +75,15 @@ function saveVersion(): void {
   if (!dir) return
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
   copyFileSync(memoryFile, join(dir, `${stamp}.md`))
-  const files = readdirSync(dir).filter(f => f.endsWith('.md')).sort()
+  const files = readdirSync(dir)
+    .filter(f => f.endsWith('.md'))
+    .sort()
   for (const old of files.slice(0, -MAX_VERSIONS)) {
-    try { require('node:fs').unlinkSync(join(dir, old)) } catch { /* ok */ }
+    try {
+      require('node:fs').unlinkSync(join(dir, old))
+    } catch {
+      /* ok */
+    }
   }
 }
 

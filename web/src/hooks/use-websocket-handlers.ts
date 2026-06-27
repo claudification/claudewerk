@@ -1626,7 +1626,15 @@ function handleDispatchRequestResult(msg: DashboardMessage) {
 }
 
 function handleDispatchControlResult(msg: DashboardMessage) {
-  const data = msg as DashboardMessage & { action?: string; content?: string; before?: string; after?: string; model?: string; ok?: boolean; error?: string }
+  const data = msg as DashboardMessage & {
+    action?: string
+    content?: string
+    before?: string
+    after?: string
+    model?: string
+    ok?: boolean
+    error?: string
+  }
   useDispatchStore.getState().onControlResult(data)
 }
 

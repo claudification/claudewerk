@@ -19,7 +19,14 @@ import type { DispatchDecision, DispatchProjectStatus } from '../../shared/proto
 import { runDispatchAgent } from '../desk/agent-runtime'
 import { projectOverviewRows } from '../desk/dispatch-tools'
 import { compactNow, dumpUserHistory, forgetUserMemory, maintainOnOpen, resetUserHistory } from '../desk/history-store'
-import { readMemory, readMemoryRaw, readSystemAppend, refineMemory, writeMemory, writeSystemAppend } from '../desk/memory'
+import {
+  readMemory,
+  readMemoryRaw,
+  readSystemAppend,
+  refineMemory,
+  writeMemory,
+  writeSystemAppend,
+} from '../desk/memory'
 import type { DispatchCommand } from '../desk/orchestrate'
 import type { ProjectOverviewRow } from '../desk/overview'
 import { type DispatchRuntime, listDispatchRosterCandidates, runDispatch } from '../desk/runtime'
@@ -246,10 +253,7 @@ const FILE_ACTIONS: Record<string, FileAction> = {
   system_write: 'system_write',
 }
 
-async function handleFileAction(
-  action: FileAction,
-  data: MessageData,
-): Promise<Record<string, unknown>> {
+async function handleFileAction(action: FileAction, data: MessageData): Promise<Record<string, unknown>> {
   if (action === 'memory_read') {
     return { content: readMemoryRaw() }
   }
