@@ -29,6 +29,7 @@ export function MermaidLightbox() {
   // Fit the diagram to the viewport once it (and the portal) are painted.
   useEffect(() => {
     if (!open || !svg) return
+    // biome-ignore lint/suspicious/noFocusedTests: `fit` is a local fit-to-viewport function, not a focused test
     const id = requestAnimationFrame(() => fit())
     return () => cancelAnimationFrame(id)
   }, [open, svg, fit])
@@ -93,8 +94,8 @@ export function MermaidLightbox() {
 
           {/* Pan/zoom surface. touch-none so the browser doesn't hijack
               pinch/drag for its own scroll-zoom. */}
-          {/* biome-ignore lint/a11y/noStaticElementInteractions: pan/zoom surface, keyboard handled via dialog */}
           <MaybeProfiler id="mermaid-lightbox">
+            {/* biome-ignore lint/a11y/noStaticElementInteractions: pan/zoom surface, keyboard handled via dialog */}
             <div
               ref={containerRef}
               className="relative flex-1 overflow-hidden touch-none cursor-grab active:cursor-grabbing"
@@ -108,8 +109,8 @@ export function MermaidLightbox() {
               <div
                 ref={contentRef}
                 className="absolute left-0 top-0 origin-top-left will-change-transform [&_svg]:block [&_svg]:max-w-none"
-                // biome-ignore lint/security/noDangerouslySetInnerHtml: SVG rendered by beautiful-mermaid from trusted CC transcript
                 // react-doctor-disable-next-line react-doctor/no-danger
+                // biome-ignore lint/security/noDangerouslySetInnerHtml: SVG rendered by beautiful-mermaid from trusted CC transcript
                 dangerouslySetInnerHTML={{ __html: svg }}
               />
             </div>

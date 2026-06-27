@@ -90,7 +90,7 @@ export function createCanvasesRouter(conversationStore: ConversationStore, helpe
    *  or rotated token matches no row -> the canvas is invisible (revocation). */
   function guardPublic(c: Context): { res: Response } | { canvas: CanvasSummary } {
     const canvas = getCanvasByToken(c.req.param('token') ?? '')
-    if (!canvas || !canvas.shared) return { res: c.json({ error: 'invalid or revoked share' }, 404) }
+    if (!canvas?.shared) return { res: c.json({ error: 'invalid or revoked share' }, 404) }
     return { canvas }
   }
 

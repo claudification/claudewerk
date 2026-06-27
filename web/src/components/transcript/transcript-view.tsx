@@ -764,7 +764,6 @@ export const TranscriptView = memo(function TranscriptView({
   // Start at the latest message (docs pattern). virtualizer.scrollToEnd()
   // sets the virtualizer's internal "at end" state so followOnAppend knows
   // to pin. el.scrollTop = el.scrollHeight does NOT do this.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: virtualizer is stable
   useLayoutEffect(() => {
     virtualizer.scrollToEnd()
   }, [virtualizer])
@@ -833,7 +832,6 @@ export const TranscriptView = memo(function TranscriptView({
   // clamp settle the content gently, and an extra scrollToEnd here would fight
   // that. prevTotalSizeRef (declared above, reset to 0 on switch) makes the first
   // measure of a fresh conversation count as growth.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: totalSize is the intentional trigger; virtualizer is stable
   const lastGrewLogRef = useRef(0)
   useLayoutEffect(() => {
     const grew = totalSize > prevTotalSizeRef.current

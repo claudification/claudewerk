@@ -19,7 +19,7 @@ export function scheduleRecap(store: ConversationStore, conversationId: string):
   const timer = setTimeout(() => {
     pendingTimers.delete(conversationId)
     const conv = store.getConversation(conversationId)
-    if (!conv || conv.status !== 'idle') return
+    if (conv?.status !== 'idle') return
     runGeneration(store, conversationId, { allowEnded: false }).catch(err => {
       logFailure('generation failed', conversationId, err)
     })

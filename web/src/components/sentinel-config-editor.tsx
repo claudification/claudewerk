@@ -194,7 +194,6 @@ export function SentinelConfigEditor({
 
   // Resync the draft when the upstream baseline changes (e.g. a fresh fetch
   // after another save, or a sentinel reconnect with new profiles).
-  // biome-ignore lint/correctness/useExhaustiveDependencies: baseline identity is the resync trigger
   useEffect(() => {
     setDraft(baseline)
     setError(null)

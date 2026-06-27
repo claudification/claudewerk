@@ -229,7 +229,6 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(function Xt
       xtermRef.current = null
       fitAddonRef.current = null
     }
-    // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only setup; settings applied via the effect below
   }, [])
 
   // Re-apply theme/font/size when settings change (does NOT rebuild xterm).

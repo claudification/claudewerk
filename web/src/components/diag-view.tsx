@@ -83,8 +83,8 @@ export const DiagView = memo(function DiagView({ conversationId }: DiagViewProps
         {highlighted ? (
           <div
             className="text-[11px] font-mono [&_pre]:!bg-transparent [&_code]:!bg-transparent"
-            // biome-ignore lint/security/noDangerouslySetInnerHtml: shiki syntax highlighter output (trusted)
             // react-doctor-disable-next-line react-doctor/no-danger
+            // biome-ignore lint/security/noDangerouslySetInnerHtml: shiki syntax highlighter output (trusted)
             dangerouslySetInnerHTML={{ __html: highlighted }}
           />
         ) : (

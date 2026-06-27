@@ -86,8 +86,8 @@ function SnippetText({ html }: { html: string }) {
   return (
     <span
       className="text-[11px] text-foreground/70 leading-relaxed"
-      // biome-ignore lint/security/noDangerouslySetInnerHtml: pre-sanitized highlight (HTML-escaped then mark spans inserted)
       // react-doctor-disable-next-line react-doctor/no-danger
+      // biome-ignore lint/security/noDangerouslySetInnerHtml: pre-sanitized highlight (HTML-escaped then mark spans inserted)
       dangerouslySetInnerHTML={{ __html: sanitized }}
     />
   )

@@ -167,16 +167,14 @@ function cmdList(configPath: string): number {
 
 function formatTable(rows: string[][]): string {
   const widths = rows[0].map((_, i) => Math.max(...rows.map(r => r[i].length)))
-  return (
-    rows
-      .map(row =>
-        row
-          .map((c, i) => c.padEnd(widths[i]))
-          .join('  ')
-          .trimEnd(),
-      )
-      .join('\n') + '\n'
-  )
+  return `${rows
+    .map(row =>
+      row
+        .map((c, i) => c.padEnd(widths[i]))
+        .join('  ')
+        .trimEnd(),
+    )
+    .join('\n')}\n`
 }
 
 // fallow-ignore-next-line complexity

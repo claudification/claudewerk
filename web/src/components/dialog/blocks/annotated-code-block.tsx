@@ -26,8 +26,8 @@ export function AnnotatedCodeBlock({
         <ul className="border-t border-border/30 p-2 space-y-1 text-xs">
           {sorted.map((ann, i) => (
             <li
-              // biome-ignore lint/suspicious/noArrayIndexKey: annotation rows are positional
               // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
+              // biome-ignore lint/suspicious/noArrayIndexKey: annotation rows are positional
               key={i}
               className="flex gap-2"
             >

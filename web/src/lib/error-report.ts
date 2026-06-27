@@ -72,7 +72,7 @@ export interface ErrorReportInput {
  */
 export function buildErrorReport(input: ErrorReportInput): string {
   const { error, componentStack, boundary, scoped, url } = input
-  const fence = (body: string) => '```\n' + (body?.trim() || '(none)') + '\n```'
+  const fence = (body: string) => `\`\`\`\n${body?.trim() || '(none)'}\n\`\`\``
 
   const lines: string[] = ['# Control Panel -- Error Report', '']
 

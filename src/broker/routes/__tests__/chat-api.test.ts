@@ -13,7 +13,6 @@ import { createRouteHelpers, type RouteHelpers } from '../shared'
 
 const TEST_SECRET = 'test-secret-chat-api-42'
 
-// biome-ignore lint/suspicious/noExplicitAny: test helper
 async function json(res: Response): Promise<any> {
   return res.json()
 }

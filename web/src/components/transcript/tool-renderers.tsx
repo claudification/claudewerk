@@ -125,8 +125,8 @@ export const DiffView = memo(
           {visibleLines.map((line, j) => {
             if (line.hunkHeader) {
               return (
-                // biome-ignore lint/suspicious/noArrayIndexKey: diff lines are positional, no stable IDs
                 // react-doctor-disable-next-line react-doctor/no-array-index-key
+                // biome-ignore lint/suspicious/noArrayIndexKey: diff lines are positional, no stable IDs
                 <div key={j} className="text-muted-foreground">
                   {line.hunkHeader}
                 </div>
@@ -135,8 +135,8 @@ export const DiffView = memo(
             const syntaxHtml = highlighted?.get(line.content)
             return (
               <div
-                // biome-ignore lint/suspicious/noArrayIndexKey: diff lines are positional, no stable IDs
                 // react-doctor-disable-next-line react-doctor/no-array-index-key
+                // biome-ignore lint/suspicious/noArrayIndexKey: diff lines are positional, no stable IDs
                 key={j}
                 className={cn(line.prefix === '+' && 'bg-green-500/10', line.prefix === '-' && 'bg-red-500/10')}
               >
@@ -157,8 +157,8 @@ export const DiffView = memo(
                   />
                 ) : syntaxHtml ? (
                   <span
-                    // biome-ignore lint/security/noDangerouslySetInnerHtml: shiki syntax-highlighter output (trusted)
                     // react-doctor-disable-next-line react-doctor/no-danger
+                    // biome-ignore lint/security/noDangerouslySetInnerHtml: shiki syntax-highlighter output (trusted)
                     dangerouslySetInnerHTML={{ __html: syntaxHtml }}
                   />
                 ) : (
@@ -276,8 +276,8 @@ const WordDiffLine = memo(function WordDiffLine({
       <span>
         {merged.map((seg, i) => (
           <span
-            // biome-ignore lint/suspicious/noArrayIndexKey: merged segments are positional
             // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
+            // biome-ignore lint/suspicious/noArrayIndexKey: merged segments are positional
             key={i}
             style={seg.color ? { color: seg.color } : undefined}
             className={
@@ -297,8 +297,8 @@ const WordDiffLine = memo(function WordDiffLine({
         const isHighlighted = mode === 'add' ? part.added : part.removed
         return (
           <span
-            // biome-ignore lint/suspicious/noArrayIndexKey: word diff parts are positional
             // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
+            // biome-ignore lint/suspicious/noArrayIndexKey: word diff parts are positional
             key={i}
             className={
               isHighlighted ? (mode === 'add' ? 'bg-green-500/30 rounded-sm' : 'bg-red-500/30 rounded-sm') : undefined
@@ -333,8 +333,8 @@ export function ShellCommand({ command, maxLines = 10 }: { command: string; maxL
       <span className="text-green-500/60 select-none">$ </span>
       {html ? (
         <code
-          // biome-ignore lint/security/noDangerouslySetInnerHtml: shiki syntax-highlighter output (trusted)
           // react-doctor-disable-next-line react-doctor/no-danger
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: shiki syntax-highlighter output (trusted)
           dangerouslySetInnerHTML={{ __html: html }}
         />
       ) : (
@@ -366,8 +366,8 @@ export function WritePreview({ content, filePath }: { content: string; filePath?
         {htmlLines ? (
           <code>
             {htmlLines.slice(0, visibleLines).map((lineHtml, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: file lines are positional, no stable IDs
               // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
+              // biome-ignore lint/suspicious/noArrayIndexKey: file lines are positional, no stable IDs
               <div key={i} className="hover:bg-muted/20">
                 <span
                   className="text-muted-foreground/40 select-none inline-block text-right mr-3"
@@ -376,8 +376,8 @@ export function WritePreview({ content, filePath }: { content: string; filePath?
                   {i + 1}
                 </span>
                 <span
-                  // biome-ignore lint/security/noDangerouslySetInnerHtml: shiki syntax-highlighter output (trusted)
                   // react-doctor-disable-next-line react-doctor/no-danger
+                  // biome-ignore lint/security/noDangerouslySetInnerHtml: shiki syntax-highlighter output (trusted)
                   dangerouslySetInnerHTML={{ __html: lineHtml }}
                 />
               </div>
@@ -386,8 +386,8 @@ export function WritePreview({ content, filePath }: { content: string; filePath?
         ) : (
           <code className="text-foreground/70">
             {lines.slice(0, visibleLines).map((line, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: file lines are positional, no stable IDs
               // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
+              // biome-ignore lint/suspicious/noArrayIndexKey: file lines are positional, no stable IDs
               <div key={i} className="hover:bg-muted/20">
                 <span
                   className="text-muted-foreground/40 select-none inline-block text-right mr-3"
@@ -530,9 +530,8 @@ export function ReplView({ code, isError }: { code: string; isError?: boolean })
               <div
                 key={i}
                 className="hover:bg-muted/20"
-                // biome-ignore lint/suspicious/noArrayIndexKey: code lines are positional
-                // biome-ignore lint/security/noDangerouslySetInnerHtml: shiki syntax-highlighter output (trusted)
                 // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key, react-doctor/no-danger
+                // biome-ignore lint/security/noDangerouslySetInnerHtml: shiki syntax-highlighter output (trusted)
                 dangerouslySetInnerHTML={{ __html: lineHtml }}
               />
             ))}
@@ -540,8 +539,8 @@ export function ReplView({ code, isError }: { code: string; isError?: boolean })
         ) : (
           <code className="text-foreground/70">
             {codeLines.slice(0, visibleCodeLines).map((line, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: code lines are positional
               // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
+              // biome-ignore lint/suspicious/noArrayIndexKey: code lines are positional
               <div key={i} className="hover:bg-muted/20">
                 {line}
               </div>

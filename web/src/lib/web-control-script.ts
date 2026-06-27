@@ -45,7 +45,6 @@ export async function runScript(code: string, timeoutMs: number): Promise<{ resu
   })
   try {
     // Gated, intentional eval. Body of an async fn so `await`/`return` work.
-    // biome-ignore lint/security/noGlobalEval: gated agent eval -- the whole point of this tool
     const fn = new Function(`return (async () => { ${code} })()`) as () => unknown
     // Promise.resolve().then adopts a returned promise/thenable, so the race bounds
     // the WHOLE async chain (including a returned thenable), not just the first tick.

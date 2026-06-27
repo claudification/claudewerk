@@ -14,8 +14,8 @@ export function DataModelBlock({ name, fields }: Pick<DataModelComponent, 'name'
         <tbody>
           {fields.map((field, i) => (
             <tr
-              // biome-ignore lint/suspicious/noArrayIndexKey: schema rows are positional
               // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
+              // biome-ignore lint/suspicious/noArrayIndexKey: schema rows are positional
               key={i}
               className="border-b border-border/20 last:border-0"
             >

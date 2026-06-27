@@ -179,7 +179,7 @@ export class BrokerShellRegistry {
    */
   unsubscribe(shellId: string, ws: ServerWebSocket<unknown>): UnsubscribeAction | null {
     const shell = this.shells.get(shellId)
-    if (!shell || !shell.viewers.has(ws)) return null
+    if (!shell?.viewers.has(ws)) return null
     shell.viewers.delete(ws)
     if (shell.viewers.size === 0) {
       shell.attached = false
@@ -195,7 +195,7 @@ export class BrokerShellRegistry {
    */
   resize(shellId: string, ws: ServerWebSocket<unknown>, cols: number, rows: number): UnsubscribeAction | null {
     const shell = this.shells.get(shellId)
-    if (!shell || !shell.viewers.has(ws)) return null
+    if (!shell?.viewers.has(ws)) return null
     shell.viewers.set(ws, { cols, rows })
     return resizeAction(shell)
   }

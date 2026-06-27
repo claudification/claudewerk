@@ -10,15 +10,7 @@ import { StatusIcon } from '../project-list/status-icon'
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog'
 import { BatchBroadcastInput, BatchReassignInputs } from './batch-action-inputs'
 import { ALL_BATCH_ACTIONS, type BatchAction } from './batch-actions'
-import {
-  type ConvRow,
-  defaultSort,
-  effectiveProject,
-  type FlatRow,
-  flatten,
-  type GroupRow,
-  projectLabelFor,
-} from './batch-grouping'
+import { type ConvRow, defaultSort, effectiveProject, flatten, type GroupRow, projectLabelFor } from './batch-grouping'
 import { BatchProgress } from './batch-progress'
 
 const SELECT_ALL_CAP = 50
@@ -224,7 +216,7 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
   const handleToggleAt = useCallback(
     (idx: number, shift: boolean) => {
       const row = flatRows[idx]
-      if (!row || row.kind !== 'conv') return
+      if (row?.kind !== 'conv') return
       if (shift && lastClickedIndexRef.current !== null) {
         const a = Math.min(lastClickedIndexRef.current, idx)
         const b = Math.max(lastClickedIndexRef.current, idx)
@@ -329,7 +321,7 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
   const moveFocus = useCallback(
     (delta: number) => {
       if (focusableIndices.length === 0) return
-      const cur = focusableIndices.findIndex(i => i === focusedIndex)
+      const cur = focusableIndices.indexOf(focusedIndex)
       const nextOrdinal = cur === -1 ? 0 : Math.max(0, Math.min(focusableIndices.length - 1, cur + delta))
       const target = focusableIndices[nextOrdinal] ?? 0
       setFocusedIndex(target)

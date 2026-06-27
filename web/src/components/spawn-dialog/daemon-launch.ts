@@ -87,7 +87,7 @@ export function validateDaemonModeForm(mode: 'new' | 'resume', value: DaemonMode
 
 /** Validate an ATTACH selection -- a roster worker's 8-hex short id. */
 export function validateDaemonAttach(short: string | undefined): string[] {
-  if (!short || !short.trim()) return ['Select a daemon worker to attach to']
+  if (!short?.trim()) return ['Select a daemon worker to attach to']
   if (!/^[0-9a-f]{8}$/.test(short.trim())) return ['Selected worker has an invalid short id']
   return []
 }

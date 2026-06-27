@@ -385,7 +385,7 @@ export function createRecapsRouter(_conversationStore: ConversationStore, helper
       return c.json({ error: 'token is not a recap share' }, 400)
     }
     const row = orch.store.get(share.targetId)
-    if (!row || row.status !== 'done' || !row.markdown) {
+    if (row?.status !== 'done' || !row.markdown) {
       return c.json({ error: 'recap not available' }, 404)
     }
 

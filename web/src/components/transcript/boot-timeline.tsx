@@ -107,8 +107,8 @@ export function BootTimeline({ group }: { group: DisplayGroup }) {
       </div>
       <div className="space-y-0.5">
         {entries.map((entry, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: boot entries are a fixed timeline, no stable IDs
           // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
+          // biome-ignore lint/suspicious/noArrayIndexKey: boot entries are a fixed timeline, no stable IDs
           <BootLine key={i} entry={entry} startTs={startTs} />
         ))}
       </div>

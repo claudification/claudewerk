@@ -335,8 +335,8 @@ export function GrepContentResults({
             <div className="bg-black/20 px-2 py-1">
               {g.matches.map((m, i) => (
                 <div
-                  // biome-ignore lint/suspicious/noArrayIndexKey: ordered match list, no stable id
                   // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
+                  // biome-ignore lint/suspicious/noArrayIndexKey: ordered match list, no stable id
                   key={i}
                   className="flex gap-2 hover:bg-muted/20 leading-tight"
                 >
@@ -347,8 +347,8 @@ export function GrepContentResults({
                   )}
                   <span
                     className="text-foreground/80 whitespace-pre-wrap break-all min-w-0"
-                    // biome-ignore lint/security/noDangerouslySetInnerHtml: highlightLine escapes HTML then wraps matches in <mark>
                     // react-doctor-disable-next-line react-doctor/no-danger
+                    // biome-ignore lint/security/noDangerouslySetInnerHtml: highlightLine escapes HTML then wraps matches in <mark>
                     dangerouslySetInnerHTML={{ __html: highlightLine(m.text, highlight) }}
                   />
                 </div>

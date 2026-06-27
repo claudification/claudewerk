@@ -12,7 +12,7 @@
  * portal -- so the canvas never remounts and the toggle is instant with pan/zoom kept.
  */
 
-import { type DrawValue, isDrawValue } from '@shared/draw'
+import { isDrawValue } from '@shared/draw'
 import { isDslScene, type Scene } from '@shared/draw-dsl'
 import { lazy, Suspense, useCallback, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'

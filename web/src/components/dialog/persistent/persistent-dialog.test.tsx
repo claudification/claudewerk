@@ -1,6 +1,6 @@
 import type { DialogLayout } from '@shared/dialog-schema'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import type { LiveDialogEntry } from '@/hooks/use-live-dialogs'
 import { DEFAULT_PERMISSIONS } from '@/lib/permissions'

@@ -296,7 +296,7 @@ function SentinelList() {
   useEffect(() => {
     function onChange(e: Event) {
       const detail = (e as CustomEvent<CcVersionChange>).detail
-      if (!detail || !detail.sentinelId) return
+      if (!detail?.sentinelId) return
       setCcVersionChanges(prev => {
         const next = new Map(prev)
         next.set(detail.sentinelId, detail)

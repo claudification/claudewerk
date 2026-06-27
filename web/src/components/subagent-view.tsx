@@ -179,8 +179,8 @@ export function SubagentView({ conversationId }: { conversationId: string }) {
             {isExpanded && hasEvents && (
               <div className="ml-8 mt-0.5 mb-1 border-l border-border pl-3 space-y-0">
                 {agent.events.map((evt, j) => (
-                  // biome-ignore lint/suspicious/noArrayIndexKey: subagent events are ordered log entries, no stable IDs
                   // react-doctor-disable-next-line react-doctor/no-array-index-key
+                  // biome-ignore lint/suspicious/noArrayIndexKey: subagent events are ordered log entries, no stable IDs
                   <SubagentEventLine key={j} event={evt} />
                 ))}
               </div>

@@ -40,14 +40,14 @@ describe('Bun.spawn headless stdio contract', () => {
 
     // stdin is a writable FileSink: write a line, flush so the child sees it now.
     const sink = proc.stdin as { write: (s: string) => void; flush: () => void; end: () => void }
-    sink.write(JSON.stringify({ type: 'ping', n: 42 }) + '\n')
+    sink.write(`${JSON.stringify({ type: 'ping', n: 42 })}\n`)
     sink.flush()
 
     await waitFor(() => stdout.read().includes('"echo":42'), { label: 'pong echo:42' })
     const reply = JSON.parse(stdout.read().trim().split('\n')[0])
     expect(reply).toEqual({ type: 'pong', echo: 42 })
 
-    sink.write(JSON.stringify({ type: 'bye' }) + '\n')
+    sink.write(`${JSON.stringify({ type: 'bye' })}\n`)
     sink.flush()
 
     const code = await proc.exited

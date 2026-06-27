@@ -58,15 +58,12 @@ marked.use({
       tokenizer(src: string) {
         const match = src.match(/^~~(?!~)(\S[\s\S]{0,198}?\S|\S)~~(?!~)/)
         if (match) {
-          // biome-ignore lint/suspicious/noExplicitAny: marked extension API
           const token = { type: 'del', raw: match[0], text: match[1], tokens: [] as any[] }
-          // biome-ignore lint/suspicious/noExplicitAny: marked internal lexer
           ;(this as any).lexer.inlineTokens(match[1], token.tokens)
           return token
         }
         return undefined
       },
-      // biome-ignore lint/suspicious/noExplicitAny: marked extension renderer
       renderer(token: any) {
         return `<del>${this.parser.parseInline(token.tokens)}</del>`
       },

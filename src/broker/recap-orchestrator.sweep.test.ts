@@ -45,7 +45,6 @@ describe('boot sweep (sweepInterrupted)', () => {
       signalsHash: 'h',
       createdAt: Date.now(),
     })
-    // biome-ignore lint/suspicious/noExplicitAny: test only
     orch.store.update(id, { status: status as any, progress: status === 'rendering' ? 45 : 0 })
   }
 

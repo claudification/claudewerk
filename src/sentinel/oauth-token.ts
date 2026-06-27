@@ -33,7 +33,7 @@ const KEYCHAIN_SERVICE_DEFAULT = 'Claude Code-credentials'
  * profiles, already suffixed, worked. The bare name lives on as a LEGACY
  * fallback candidate in `getOAuthToken`, never as the primary.)
  */
-export function keychainServiceFor(configDir: string, home: string): string {
+export function keychainServiceFor(configDir: string, _home: string): string {
   const hash = createHash('sha256').update(configDir).digest('hex').slice(0, 8)
   return `${KEYCHAIN_SERVICE_DEFAULT}-${hash}`
 }

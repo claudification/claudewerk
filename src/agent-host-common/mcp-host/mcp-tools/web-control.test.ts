@@ -4,10 +4,8 @@ import { registerWebControlTools } from './web-control'
 
 afterEach(() => _resetBrokerRpc())
 
-// biome-ignore lint/suspicious/noExplicitAny: stub ctx -- the relay tools ignore it
 const tools = registerWebControlTools({} as any)
 
-// biome-ignore lint/suspicious/noExplicitAny: loose params/ctx for the handle() call seam
 const callHandle = (name: string, params: Record<string, unknown>) => tools[name].handle(params as any, {} as any)
 
 function captureSends() {

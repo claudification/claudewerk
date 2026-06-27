@@ -18,13 +18,11 @@ import { CATALOG_NAMES, DEFERRED_BINDINGS, MCP_CATALOG, type McpSite } from './c
 
 const SITES = ['broker', 'host'] as const
 
-// biome-ignore lint/suspicious/noExplicitAny: stub ctx -- registration reads neither store nor ctx
 const hostBound = new Set(
   Object.entries(registerAllTools({} as any))
     .filter(([, def]) => !def.hidden)
     .map(([name]) => name),
 )
-// biome-ignore lint/suspicious/noExplicitAny: stub store -- registration reads neither store nor ctx
 const brokerServer = createMcpServer({} as any, {} as any) as any
 // _registeredTools is the MCP SDK's private registry; the server exposes no public
 // tool enumeration. The SDK is version-pinned, so a rename failing this test loudly
@@ -86,7 +84,7 @@ describe('mcp catalog parity', () => {
     const stale: string[] = []
     for (const d of DEFERRED_BINDINGS) {
       const entry = MCP_CATALOG.find(t => t.name === d.name)
-      if (!entry || !entry.sites.includes(d.site)) stale.push(`${d.site}:${d.name} (not catalogued/intended for site)`)
+      if (!entry?.sites.includes(d.site)) stale.push(`${d.site}:${d.name} (not catalogued/intended for site)`)
       else if (boundBySite[d.site].has(d.name)) stale.push(`${d.site}:${d.name} (already bound -- drop the defer)`)
     }
     expect(stale).toEqual([])

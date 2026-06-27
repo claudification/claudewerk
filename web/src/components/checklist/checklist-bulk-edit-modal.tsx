@@ -70,7 +70,6 @@ export function ChecklistBulkEditModal() {
               <div className="px-3 py-2 text-muted-foreground">Loading…</div>
             ) : (
               <SafeCodeMirror
-                // biome-ignore lint/a11y/noAutofocus: focus the editor the user just opened so they can type immediately
                 autoFocus
                 value={doc}
                 onChange={setDoc}

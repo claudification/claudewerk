@@ -27,7 +27,7 @@ export function createExternalStoreSignal(): ExternalStoreSignal {
     },
     subscribe(fn) {
       listeners.add(fn)
-      return () => listeners.delete(fn) as unknown as void
+      return () => listeners.delete(fn) as unknown as undefined
     },
     getVersion() {
       return version

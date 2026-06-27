@@ -23,7 +23,6 @@ import {
   type LivingHistory,
   ONE_HOUR_MS,
   shouldConsolidate,
-  TEN_MIN_MS,
 } from './living-history'
 
 const MINUTE = 60_000

@@ -75,7 +75,6 @@ function CommentableDiagram({ content, id, form }: { content: string; id: string
   const ref = useRef<HTMLDivElement>(null)
   const { active, onClickCapture, setNote, close, currentNote } = useDiagramComments(ref, id, form)
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: node interaction is delegated to mermaid <g> elements
     // react-doctor-disable-next-line react-doctor/no-static-element-interactions
     <div ref={ref} className="mermaid-commentable" onClickCapture={onClickCapture}>
       <DiagramBlock content={content} />
@@ -152,9 +151,8 @@ function OptionsInput({
             : current != null && current === opt.value
 
           return (
-            // biome-ignore lint/a11y/useKeyWithClickEvents: dialog option
-            // biome-ignore lint/a11y/noStaticElementInteractions: dialog option
             // react-doctor-disable-next-line react-doctor/click-events-have-key-events, react-doctor/no-static-element-interactions
+            // biome-ignore lint/a11y/noStaticElementInteractions: dialog option
             <div
               key={opt.value}
               onClick={() => applySelect(form, id, opt.value, multi)}
@@ -275,9 +273,8 @@ function ImagePickerInput({
             current != null &&
             (multi ? (Array.isArray(current) ? current : []).includes(img.value) : current === img.value)
           return (
-            // biome-ignore lint/a11y/useKeyWithClickEvents: dialog image picker
-            // biome-ignore lint/a11y/noStaticElementInteractions: dialog image picker
             // react-doctor-disable-next-line react-doctor/click-events-have-key-events, react-doctor/no-static-element-interactions
+            // biome-ignore lint/a11y/noStaticElementInteractions: dialog image picker
             <div
               key={img.value}
               onClick={() => applySelect(form, id, img.value, multi)}
@@ -305,9 +302,8 @@ function ToggleInput({ id, label, form }: { id: string; label: string; form: Dia
   const checked = form.values[id] === true
 
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: dialog toggle
-    // biome-ignore lint/a11y/noStaticElementInteractions: dialog toggle
     // react-doctor-disable-next-line react-doctor/click-events-have-key-events, react-doctor/no-static-element-interactions
+    // biome-ignore lint/a11y/noStaticElementInteractions: dialog toggle
     <div
       className="flex items-center gap-3 cursor-pointer py-1"
       onClick={() => {
@@ -437,8 +433,8 @@ function StackLayout({
   return (
     <div className={cn(direction === 'horizontal' ? 'flex flex-wrap gap-2 items-start' : 'flex flex-col gap-3')}>
       {items.map((child, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: dialog layout children are positional, no stable IDs
         // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
+        // biome-ignore lint/suspicious/noArrayIndexKey: dialog layout children are positional, no stable IDs
         <ComponentRenderer key={i} component={child} form={form} onAction={onAction} />
       ))}
     </div>
@@ -459,8 +455,8 @@ function GridLayout({
   return (
     <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(columns, 4)}, minmax(0, 1fr))` }}>
       {items.map((child, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: grid layout children are positional, no stable IDs
         // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
+        // biome-ignore lint/suspicious/noArrayIndexKey: grid layout children are positional, no stable IDs
         <ComponentRenderer key={i} component={child} form={form} onAction={onAction} />
       ))}
     </div>
@@ -484,9 +480,9 @@ function GroupLayout({
 
   return (
     <div className="rounded border border-border/30 overflow-hidden">
+      {/* react-doctor-disable-next-line react-doctor/click-events-have-key-events, react-doctor/no-static-element-interactions */}
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: dialog group header */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: dialog group header */}
-      {/* react-doctor-disable-next-line react-doctor/click-events-have-key-events, react-doctor/no-static-element-interactions */}
       <div
         className="flex items-center gap-2 px-3 py-2 bg-muted/30 cursor-pointer select-none"
         onClick={() => {
@@ -500,8 +496,8 @@ function GroupLayout({
       {!isCollapsed && (
         <div className="p-3 space-y-3">
           {items.map((child, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: group layout children are positional, no stable IDs
             // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
+            // biome-ignore lint/suspicious/noArrayIndexKey: group layout children are positional, no stable IDs
             <ComponentRenderer key={i} component={child} form={form} onAction={onAction} />
           ))}
         </div>

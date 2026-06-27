@@ -6,7 +6,6 @@
  * single-letter shortcuts still skip when text input is focused.
  */
 
-import type React from 'react'
 import { ToggleSwitch } from '@/components/ui/toggle-switch'
 import { cn, haptic } from '@/lib/utils'
 

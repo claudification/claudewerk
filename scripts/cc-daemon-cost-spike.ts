@@ -80,7 +80,6 @@ function truncate(value: string, max: number): string {
 }
 
 /** Strip ANSI escape sequences so the job id can be matched in plain text. */
-// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escapes are control chars by definition.
 const ANSI_RE = /\[[0-9;]*m/g
 function stripAnsi(text: string): string {
   return text.replace(ANSI_RE, '')

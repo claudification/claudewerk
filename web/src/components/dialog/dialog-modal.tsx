@@ -229,9 +229,8 @@ export const DialogModal = memo(function DialogModal({
   // Minimized: thin vertical strip on the right edge
   if (minimized) {
     return (
-      // biome-ignore lint/a11y/useKeyWithClickEvents: restore handle
-      // biome-ignore lint/a11y/noStaticElementInteractions: restore handle
       // react-doctor-disable-next-line react-doctor/click-events-have-key-events, react-doctor/no-static-element-interactions
+      // biome-ignore lint/a11y/noStaticElementInteractions: restore handle
       <div
         className="fixed top-0 right-0 bottom-0 z-50 w-10 flex flex-col items-center cursor-pointer group"
         onClick={handleRestore}
@@ -287,9 +286,9 @@ export const DialogModal = memo(function DialogModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* react-doctor-disable-next-line react-doctor/click-events-have-key-events, react-doctor/no-static-element-interactions */}
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: modal backdrop */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: modal backdrop */}
-      {/* react-doctor-disable-next-line react-doctor/click-events-have-key-events, react-doctor/no-static-element-interactions */}
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleCancel} />
 
       {/* Modal */}
@@ -351,8 +350,8 @@ export const DialogModal = memo(function DialogModal({
           <div className="flex gap-1 px-4 py-2 border-b border-border/20 shrink-0 overflow-x-auto">
             {pages.map((page, i) => (
               <button
-                // biome-ignore lint/suspicious/noArrayIndexKey: page tabs are positional, no stable IDs
                 // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
+                // biome-ignore lint/suspicious/noArrayIndexKey: page tabs are positional, no stable IDs
                 key={i}
                 type="button"
                 onClick={() => {
@@ -376,8 +375,8 @@ export const DialogModal = memo(function DialogModal({
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {currentPage?.body.map((component, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: dialog components are positional content blocks
             // react-doctor-disable-next-line react-doctor/no-array-index-as-key
+            // biome-ignore lint/suspicious/noArrayIndexKey: dialog components are positional content blocks
             <ComponentRenderer key={`${activePage}-${i}`} component={component} form={form} onAction={handleAction} />
           ))}
           {/* Auto-injected notes field -- skip if the page already has a TextInput */}

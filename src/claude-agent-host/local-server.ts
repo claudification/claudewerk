@@ -76,7 +76,7 @@ const ASK_TIMEOUT_MS = 90_000 // 90s -- must be under curl's 120s --max-time
 export interface LocalServerOptions {
   conversationId: string
   mcpEnabled: boolean
-  onHookEvent: (event: HookEvent) => HookDecision | void
+  onHookEvent: (event: HookEvent) => HookDecision | undefined
   onNotify?: (message: string, title?: string) => void
   onAskQuestion?: (request: AskQuestionRequest) => void
   /** Fired when a queued ask request times out -- gives the agent host a chance
@@ -262,7 +262,7 @@ export async function startLocalServer(options: LocalServerOptions): Promise<{ s
               data,
             }
 
-            let decision: HookDecision | void
+            let decision: HookDecision | undefined
             try {
               decision = onHookEvent(event)
               debugFn(`[hook] ${eventType} received (sid=${effectiveSessionId.slice(0, 8)})`)

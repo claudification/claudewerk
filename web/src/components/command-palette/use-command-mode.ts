@@ -31,8 +31,8 @@ export function useCommandMode(filter: string, isCommandMode: boolean, onClose: 
   const commandSearch = commandRaw.toLowerCase()
   const _gen = getCommandGeneration()
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: _gen is a generation counter dep key that invalidates memoized command list when registry changes
   // react-doctor-disable-next-line react-doctor/exhaustive-deps
+  // biome-ignore lint/correctness/useExhaustiveDependencies: _gen is a generation counter dep key that invalidates memoized command list when registry changes
   const registryCommands = useMemo(() => buildRegistryCommands(onClose), [_gen, onClose])
 
   const filteredCommands = isCommandMode ? filterCommandsBySearch(registryCommands, commandSearch) : []

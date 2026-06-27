@@ -77,7 +77,7 @@ function completeBgTask(
   const rawTaskId = input.task_id ?? input.taskId
   if (typeof rawTaskId !== 'string') return
   const bgTask = conv.bgTasks.find(t => t.taskId === rawTaskId)
-  if (!bgTask || bgTask.status !== 'running') return
+  if (bgTask?.status !== 'running') return
   bgTask.completedAt = event.timestamp
   bgTask.status = toolName === 'TaskStop' ? 'killed' : 'completed'
 }

@@ -20,6 +20,7 @@ function readParams(): { mount: string; key: string } {
 
 /** Inject the dev token as the session cookie BEFORE any WS handshake. */
 function injectDevKey(key: string): void {
+  // biome-ignore lint/suspicious/noDocumentCookie: dev-harness-only token injection; this route is DEV-gated and stripped from prod builds
   if (key) document.cookie = `cw-session=${key}; path=/; SameSite=Lax`
 }
 

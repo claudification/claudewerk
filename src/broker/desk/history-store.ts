@@ -62,7 +62,7 @@ export function setHistoryNotifier(fn: (userId: string | null | undefined) => vo
 }
 
 export function userKey(userId: string | null | undefined): string {
-  return userId && userId.trim() ? userId : ANON_KEY
+  return userId?.trim() ? userId : ANON_KEY
 }
 
 /** Get (or lazily create) the persistent living history for a user. */

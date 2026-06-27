@@ -157,8 +157,8 @@ export function DebugConsole({ onClose }: { onClose: () => void }) {
           <div className="text-muted-foreground/50 text-xs font-mono py-4 text-center">No log entries yet</div>
         )}
         {entries.map((entry, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: display-only log entries, no stable IDs
           // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
+          // biome-ignore lint/suspicious/noArrayIndexKey: display-only log entries, no stable IDs
           <LogLine key={i} entry={entry} />
         ))}
       </div>

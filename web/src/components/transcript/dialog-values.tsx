@@ -50,8 +50,8 @@ function ArrayBadges({ items }: { items: unknown[] }) {
     <span className="flex flex-wrap gap-1">
       {items.map((v, j) => (
         <span
-          // biome-ignore lint/suspicious/noArrayIndexKey: display-only array values, no stable IDs
           // react-doctor-disable-next-line react-doctor/no-array-index-key
+          // biome-ignore lint/suspicious/noArrayIndexKey: display-only array values, no stable IDs
           key={j}
           className="px-1.5 py-0.5 bg-violet-500/15 text-violet-300 border border-violet-500/25 rounded text-[9px]"
         >

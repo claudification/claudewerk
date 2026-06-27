@@ -37,8 +37,8 @@ export function ChatBubble({
               const hasBlocks = /^```/m.test(item.text) || /^\|.*\|.*\|/m.test(item.text)
               return (
                 <div
-                  // biome-ignore lint/suspicious/noArrayIndexKey: content blocks without stable IDs
                   // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
+                  // biome-ignore lint/suspicious/noArrayIndexKey: content blocks without stable IDs
                   key={i}
                   // [&_code] styles inline code chips; [&_pre_code] re-zeros them
                   // for fenced blocks -- inline padding on a wrapped <code> bleeds
@@ -51,8 +51,8 @@ export function ChatBubble({
             }
             if (item.kind === 'images') {
               return (
-                // biome-ignore lint/suspicious/noArrayIndexKey: content blocks without stable IDs
                 // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
+                // biome-ignore lint/suspicious/noArrayIndexKey: content blocks without stable IDs
                 <div key={i} className="flex gap-1 flex-wrap mt-1">
                   {item.images.map(img => (
                     <img key={img.hash} src={img.url} alt="" className="max-h-24 rounded" />

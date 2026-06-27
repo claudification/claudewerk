@@ -31,7 +31,6 @@ export function DiagramCommentPopover({
   useEffect(() => {
     setText(initialNote)
     inputRef.current?.focus()
-    // biome-ignore lint/correctness/useExhaustiveDependencies: re-seed per node
   }, [node.nodeId])
 
   // Esc to close, outside-click to close.

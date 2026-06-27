@@ -18,6 +18,7 @@ export function buildSystemPrompt(opts: PromptOptions): string {
     'When the user sends a message containing markdown image or file links like `![filename](https://...)` or `[filename](https://...)`,',
     'these are files attached via the remote dashboard. Handle them based on file type:',
     '',
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion inside prompt text, not a JS template literal
     'Downloaded attachments can contain private user data, so save them to a private per-user directory, NOT world-readable `/tmp`. Set it up once per session: `DL="${XDG_CACHE_HOME:-$HOME/.cache}/rclaude/attachments"; mkdir -p -m 700 "$DL"` -- then `$DL` is the download dir referenced below.',
     '',
     '- **Images** (.png, .jpg, .jpeg, .gif, .webp, .svg): Download with `curl -sL "<url>" -o "$DL/<filename>"`, then use REPL `cat(\'$DL/<filename>\')` to view the image contents. The REPL cat() function supports image files natively.',

@@ -76,7 +76,7 @@ export function CacheExpiredBanner({ lastTurnEndedAt, tokenUsage, model, cacheTt
 
   void tick
   const info = getCacheTimerInfo(lastTurnEndedAt, tokenUsage, model, cacheTtl)
-  if (!info || info.state !== 'expired') return null
+  if (info?.state !== 'expired') return null
 
   const idleMs = Date.now() - (lastTurnEndedAt || 0)
   const idleMin = Math.floor(idleMs / 60_000)

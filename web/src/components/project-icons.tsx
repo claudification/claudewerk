@@ -44,7 +44,6 @@ import {
   Carrot,
   Cast,
   Cat,
-  Check,
   Cherry,
   Church,
   CircleUser,
@@ -164,7 +163,6 @@ import {
   Palette,
   Paperclip,
   PawPrint,
-  Pencil,
   PencilRuler,
   PenTool,
   PersonStanding,
@@ -225,7 +223,6 @@ import {
   Tornado,
   Tractor,
   TrainFront,
-  Trash2,
   TreePine,
   Truck,
   Turtle,
@@ -254,7 +251,6 @@ import {
   Wine,
   Workflow,
   Wrench,
-  X,
   Zap,
 } from 'lucide-react'
 

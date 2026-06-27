@@ -567,6 +567,7 @@ export function normalizeDaemonSessionRetired(data: Record<string, unknown>): Da
   if (typeof retiredAt !== 'number') return null
   // Forensic field -- never branched on by the broker. Bracket access keeps
   // the BOUNDARY lint happy: it is treated as opaque blob, not a typed field.
+  // biome-ignore lint/complexity/useLiteralKeys: bracket access is REQUIRED by lint:boundary -- dot access would read ccSessionId as a typed field
   const rawForensic = data['ccSessionId']
   const ccSessionField: string | null = typeof rawForensic === 'string' ? rawForensic : null
   return {
@@ -605,6 +606,7 @@ const daemonSessionRetired: MessageHandler = (ctx, data) => {
   // BOUNDARY-clean stamp: forensic ccSessionId + retiredAt go into the opaque
   // bag (write-only). Broker core never reads these back as typed fields.
   // Bracket access on `event` keeps lint-boundary clean.
+  // biome-ignore lint/complexity/useLiteralKeys: bracket access is REQUIRED by lint:boundary -- dot access would read ccSessionId as a typed field
   const forensicCc = (event as unknown as Record<string, unknown>)['ccSessionId'] ?? null
   conv.agentHostMeta = {
     ...conv.agentHostMeta,

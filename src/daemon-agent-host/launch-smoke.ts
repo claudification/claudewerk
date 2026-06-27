@@ -184,7 +184,6 @@ export function checkVersionCanary(resp: DaemonResponse): CanaryResult {
 // ---------------------------------------------------------------------------
 
 /** Strip ANSI escapes so the `backgrounded - <id>` line can be matched. */
-// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escapes are control chars.
 const ANSI_RE = /\[[0-9;]*m/g
 
 /** Extract the 8-hex worker short id from `claude --bg` output, or null. */

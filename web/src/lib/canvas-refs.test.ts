@@ -17,7 +17,7 @@ describe('canvas-refs', () => {
   })
 
   it('matchLeadingCanvasRef only matches at the start', () => {
-    expect(matchLeadingCanvasRef(buildCanvasRef('x', 'X') + ' tail')?.id).toBe('x')
+    expect(matchLeadingCanvasRef(`${buildCanvasRef('x', 'X')} tail`)?.id).toBe('x')
     expect(matchLeadingCanvasRef(`pre ${buildCanvasRef('x', 'X')}`)).toBeNull()
   })
 
