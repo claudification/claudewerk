@@ -934,12 +934,20 @@ async function main() {
             }
           }
         },
+        // fallow-ignore-next-line complexity
         message(ws, message) {
           try {
             const msgStr = message as string
             conversationStore.recordTraffic('in', msgStr.length)
             recordInboundForSocket(ws, msgStr.length)
             const data = JSON.parse(msgStr)
+
+            if (typeof data.type === 'string' && data.type.startsWith('voice_') && data.type !== 'voice_data') {
+              const d = ws.data as { user?: string; userId?: string; conversationId?: string }
+              console.log(
+                `[ws] ${data.type} from user=${d?.user ?? d?.userId ?? '?'} conv=${d?.conversationId ?? '?'} keys=${Object.keys(data).join(',')}`,
+              )
+            }
 
             // Route to registered handler
             const ctx = createContext(ws, contextDeps)

@@ -233,6 +233,9 @@ export function handleVoiceStart(
   }
 }
 
+// Throttle the no-session warning so a stuck/phantom recorder can't flood the log.
+const noSessionWarned = new WeakSet<ServerWebSocket<unknown>>()
+
 export function handleVoiceData(ws: ServerWebSocket<unknown>, audioBase64: string) {
   const session = voiceSessions.get(ws)
   if (!session) {
@@ -240,7 +243,13 @@ export function handleVoiceData(ws: ServerWebSocket<unknown>, audioBase64: strin
     // socket -- voice_start never arrived (or was dropped). This is a real
     // discrepancy: the user is talking into the void. Tell them so the UI can
     // stop pretending it's recording, instead of silently swallowing audio.
-    console.warn('[voice-stream] voice_data received but no active session -- voice_start missing/dropped')
+    if (!noSessionWarned.has(ws)) {
+      noSessionWarned.add(ws)
+      const d = ws.data as { user?: string; userId?: string; conversationId?: string }
+      console.warn(
+        `[voice-stream] voice_data with NO session (voice_start missing) user=${d?.user ?? d?.userId ?? '?'} conv=${d?.conversationId ?? '?'} -- further drops from this socket silenced`,
+      )
+    }
     ws.send(JSON.stringify({ type: 'voice_error', error: 'Voice session not started (lost connection). Try again.' }))
     return
   }
