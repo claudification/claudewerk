@@ -1,0 +1,17 @@
+id: no-long-if-chain
+language: TypeScript
+severity: warning
+message: "If-else chain with 4+ branches -- use a strategy map (Record<string, handler>) or switch"
+note: "See CLAUDE.md 'STRATEGY MAPS OVER CHAINS' covenant"
+rule:
+  kind: if_statement
+  has:
+    kind: else_clause
+    has:
+      kind: if_statement
+      has:
+        kind: else_clause
+        has:
+          kind: if_statement
+          has:
+            kind: else_clause

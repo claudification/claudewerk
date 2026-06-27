@@ -1,0 +1,23 @@
+[
+  "src/broker/backends/hermes.ts",
+  "src/broker/cli/parse-args.ts",
+  "src/broker/cli/passkey-commands.ts",
+  "src/broker/handlers/channel.ts",
+  "src/broker/handlers/conversation-lifecycle.ts",
+  "src/broker/index.ts",
+  "src/broker/recap/shared/transcript-extract.ts",
+  "src/claude-agent-host/broker-connection.ts",
+  "src/claude-agent-host/cli-args.ts",
+  "src/daemon-agent-host/index.ts",
+  "src/sentinel/git-fabric.ts",
+  "src/sentinel/index.ts",
+  "src/sentinel/shell-data-ws.ts",
+  "src/shared/diff.ts",
+  "web/src/components/command-palette/key-handlers.ts",
+  "web/src/components/transcript/parse-entries.ts",
+  "web/src/hooks/use-conversations.ts",
+  "web/src/lib/cost-utils.ts",
+  "web/src/lib/key-layers.ts",
+  "web/src/lib/perf-rollup.ts",
+  "web/src/lib/web-control-grant.ts"
+]
