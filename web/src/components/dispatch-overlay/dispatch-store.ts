@@ -62,6 +62,8 @@ export interface DispatchState {
   editorModal: { kind: 'memory' | 'system'; content: string } | null
   /** Refine preview state for /memory x. */
   refinePreview: { before: string; after: string; model: string } | null
+  /** SotU debug modal data. */
+  sotuDump: unknown | null
 
   // intent / submission
   setIntent(intent: string): void
@@ -102,6 +104,7 @@ export interface DispatchState {
   saveEditor(content: string): void
   confirmRefine(): void
   cancelRefine(): void
+  closeSotu(): void
 }
 
 let reqSeq = 0
@@ -146,6 +149,19 @@ function parseMemorySlash(intent: string): MemorySlash | null {
 }
 
 type SetFn = (partial: Partial<DispatchState>) => void
+
+async function fetchSotuDump(set: SetFn): Promise<void> {
+  try {
+    const res = await fetch('/api/sotu/fleet', { credentials: 'include' })
+    if (!res.ok) {
+      set({ lastError: `SotU fetch failed: ${res.status}` })
+      return
+    }
+    set({ sotuDump: await res.json() })
+  } catch (e) {
+    set({ lastError: `SotU fetch failed: ${(e as Error).message}` })
+  }
+}
 
 function handleMemorySlash(cmd: MemorySlash, set: SetFn): void {
   if (cmd.kind === 'memory_editor') {
@@ -219,6 +235,7 @@ export const useDispatchStore = create<DispatchState>((set, get) => ({
   workspaces: [],
   editorModal: null,
   refinePreview: null,
+  sotuDump: null,
 
   // Enforce the `intent: string` invariant at the write boundary. CodeMirror's
   // onChange always hands us a string, but the `window.__dispatch` debug seam
@@ -241,6 +258,12 @@ export const useDispatchStore = create<DispatchState>((set, get) => ({
       if (action) {
         if (wsSend('dispatch_control', { action, requestId: nextRequestId() })) set({ intent: '', lastError: null })
         else set({ lastError: NOT_CONNECTED })
+        return
+      }
+      // /sotu: open the SotU debug modal (REST fetch, not WS).
+      if (intent.toLowerCase() === '/sotu') {
+        set({ intent: '', lastError: null })
+        fetchSotuDump(set)
         return
       }
       // /memory and /system: editor or refine, outside the agent loop.
@@ -343,6 +366,7 @@ export const useDispatchStore = create<DispatchState>((set, get) => ({
     set({ refinePreview: null })
   },
   cancelRefine: () => set({ refinePreview: null }),
+  closeSotu: () => set({ sotuDump: null }),
 
   // inbound WS reducers (history seed/stream, decision feed, tool gears)
   ...createInbound(set, get),

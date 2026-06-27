@@ -14,8 +14,11 @@
 
 import { Hono } from 'hono'
 import type { SotuView } from '../../shared/protocol'
+import { listDeskProjects } from '../desk/projects'
 import { applyWrite, buildConfigView } from '../handlers/sotu-config'
 import { buildSotuView, maybeDistillOnRead, projectSlug, readDistillEvals } from '../sotu'
+import { readQueue } from '../sotu/queue'
+import { readState } from '../sotu/state'
 import { defaultResolveSotuConfig } from '../sotu/config'
 import type { RouteHelpers } from './shared'
 
@@ -40,6 +43,30 @@ export function createSotuRouter(helpers: RouteHelpers): Hono {
     const enabled = defaultResolveSotuConfig(project).enabled
     const view: SotuView = buildSotuView({ slug: projectSlug(project), project, enabled, now: Date.now() })
     return c.json(view)
+  })
+
+  // Fleet dump -- all projects' SotU state for the debug modal. Admin.
+  app.get('/api/sotu/fleet', c => {
+    if (!helpers.httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
+    const now = Date.now()
+    const projects = listDeskProjects().map(p => {
+      const slug = projectSlug(p.projectUri)
+      const config = defaultResolveSotuConfig(p.projectUri)
+      const state = readState(slug)
+      const queue = readQueue(slug)
+      const view = buildSotuView({ slug, project: p.projectUri, enabled: config.enabled, now })
+      return {
+        project: p.label,
+        projectUri: p.projectUri,
+        slug,
+        enabled: config.enabled,
+        state,
+        queueSize: queue.length,
+        view,
+        config,
+      }
+    })
+    return c.json({ projects, ts: now })
   })
 
   // Phase 7 -- the recent distill evals (recipe + cost + grounding) for QC. Admin.
