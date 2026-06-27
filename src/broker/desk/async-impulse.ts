@@ -18,7 +18,7 @@ import { broadcastToSubscribers } from '../routes/shared'
 import { runDispatchAgent } from './agent-runtime'
 import { getUserHistory, markDirty } from './history-store'
 import { dropBlock, upsertBlock } from './living-history'
-import { clearQuest, resolveQuest } from './quest-registry'
+import { claimQuest } from './quest-registry'
 import type { DispatchRuntime } from './runtime'
 
 export interface DeliverResult {
@@ -51,7 +51,10 @@ export async function deliverDispatcherReport(
 ): Promise<DeliverResult> {
   const runImpulse = deps.runImpulse ?? runDispatchAgent
   const broadcast = deps.broadcast ?? broadcastToSubscribers
-  const link = resolveQuest(callerConversationId)
+  // Atomically claim the quest: get + delete with no await between, so a second
+  // call from the same worker (Haiku double-calling send_message) gets undefined
+  // and bails instead of racing through a second impulse + broadcast.
+  const link = claimQuest(callerConversationId)
   if (!link) {
     return { ok: false, detail: 'no dispatcher quest is registered for this caller' }
   }
@@ -78,9 +81,8 @@ export async function deliverDispatcherReport(
     detail = `relayed to ${link.userId ?? 'anon'} (${decision.reply ? 'reply sent' : 'no reply'})`
   } finally {
     // The findings have been relayed (or the turn failed) -- drop the block either
-    // way so the context never accumulates stale findings, and retire the quest.
+    // way so the context never accumulates stale findings.
     dropBlock(history, link.pendingId)
-    if (callerConversationId) clearQuest(callerConversationId)
     markDirty(link.userId) // persist the post-relay state (findings dropped) -- Slice A
   }
   return { ok: true, detail }

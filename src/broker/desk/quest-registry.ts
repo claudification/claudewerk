@@ -35,6 +35,18 @@ export function resolveQuest(workerConversationId: string | null | undefined): Q
   return workerConversationId ? quests.get(workerConversationId) : undefined
 }
 
+/**
+ * Atomically resolve AND remove a quest (get+delete with no await between).
+ * Prevents double-delivery when a worker calls send_message twice: the first
+ * call claims the link, the second gets undefined and bails.
+ */
+export function claimQuest(workerConversationId: string | null | undefined): QuestLink | undefined {
+  if (!workerConversationId) return undefined
+  const link = quests.get(workerConversationId)
+  if (link) quests.delete(workerConversationId)
+  return link
+}
+
 /** Drop a quest once its report has been delivered (one-shot). */
 export function clearQuest(workerConversationId: string): void {
   quests.delete(workerConversationId)

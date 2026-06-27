@@ -4,7 +4,7 @@ import type { ConversationStore } from '../conversation-store'
 import { deliverDispatcherReport } from './async-impulse'
 import { getUserHistory, resetUserHistory } from './history-store'
 import { getBlock, upsertBlock } from './living-history'
-import { clearQuest, questCount, registerQuest, resolveQuest } from './quest-registry'
+import { claimQuest, clearQuest, questCount, registerQuest, resolveQuest } from './quest-registry'
 
 const fakeStore = {} as unknown as ConversationStore
 
@@ -31,6 +31,14 @@ describe('quest registry', () => {
     expect(resolveQuest(null)).toBeUndefined()
     clearQuest('conv_worker')
     expect(resolveQuest('conv_worker')).toBeUndefined()
+  })
+
+  test('claimQuest atomically gets and removes', () => {
+    registerQuest('conv_once', { userId: 'jonas', pendingId: 'q2', intent: 'test' })
+    const first = claimQuest('conv_once')
+    expect(first?.intent).toBe('test')
+    const second = claimQuest('conv_once')
+    expect(second).toBeUndefined()
   })
 })
 
@@ -89,5 +97,34 @@ describe('deliverDispatcherReport (async impulse)', () => {
     ).rejects.toThrow('loop blew up')
     expect(getBlock(h, 'q9')).toBeUndefined()
     expect(resolveQuest('conv_x')).toBeUndefined()
+  })
+
+  test('concurrent double-delivery: second call bails, only one impulse runs', async () => {
+    resetUserHistory('jonas3')
+    const h = getUserHistory('jonas3')
+    upsertBlock(h, 'q10', 'pending', 'double-send test', 1)
+    registerQuest('conv_double', { userId: 'jonas3', pendingId: 'q10', intent: 'double test' })
+
+    let impulseCount = 0
+    const deps = {
+      runImpulse: async () => {
+        impulseCount++
+        await new Promise(r => setTimeout(r, 50))
+        return fakeDecision('relayed')
+      },
+      broadcast: () => {},
+    }
+
+    const [r1, r2] = await Promise.all([
+      deliverDispatcherReport(fakeStore, 'conv_double', 'result', deps),
+      deliverDispatcherReport(fakeStore, 'conv_double', 'result', deps),
+    ])
+
+    expect(impulseCount).toBe(1)
+    const ok = [r1, r2].filter(r => r.ok)
+    const fail = [r1, r2].filter(r => !r.ok)
+    expect(ok.length).toBe(1)
+    expect(fail.length).toBe(1)
+    expect(fail[0].detail).toContain('no dispatcher quest')
   })
 })
