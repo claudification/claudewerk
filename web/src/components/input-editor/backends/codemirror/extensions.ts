@@ -394,6 +394,7 @@ interface InputExtensionOptions {
   maxHeight?: string
   enableEffortKeywords?: boolean
   enableAutocomplete?: boolean
+  customSlashCommands?: Array<{ name: string; detail?: string }>
   /**
    * Return false to make Enter fall through (insert newline) instead of
    * submitting. Called at keypress time, so callers can back it with a ref
@@ -534,9 +535,9 @@ export function buildInputExtensions(opts: InputExtensionOptions): Extension[] {
   ]
 
   if (opts.enableEffortKeywords) extensions.push(effortKeywordPlugin)
-  if (opts.enableAutocomplete) {
+  if (opts.enableAutocomplete || opts.customSlashCommands) {
     const getCtx = opts.getSubCommandContext ?? (() => ({ tasks: [], conversationId: null }))
-    extensions.push(autocompleteExtension({ getSubCommandContext: getCtx }))
+    extensions.push(autocompleteExtension({ getSubCommandContext: getCtx, customSlashCommands: opts.customSlashCommands }))
   }
 
   return extensions

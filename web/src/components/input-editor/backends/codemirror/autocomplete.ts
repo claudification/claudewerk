@@ -337,7 +337,7 @@ function conversationArgCompletion(text: string, pos: number): CompletionResult 
   }
 }
 
-function makeCompletionSource(getCtx: () => SubCommandContext) {
+function makeCompletionSource(getCtx: () => SubCommandContext, customSlash?: Array<{ name: string; detail?: string }>) {
   return function completionSource(context: CompletionContext): CompletionResult | null {
     if (context.state.field(composingField, false)) return null
 
@@ -375,6 +375,18 @@ function makeCompletionSource(getCtx: () => SubCommandContext) {
 
     const trigger = ch as '/' | '@'
     const atDocStart = start === 0
+
+    // Custom slash commands (dispatcher overlay) bypass the conversation's info.
+    if (trigger === '/' && customSlash) {
+      if (query.length > 0 && customSlash.some(c => c.name.toLowerCase() === query.toLowerCase())) return null
+      const q = query.toLowerCase()
+      const options = customSlash
+        .filter(c => !q || c.name.toLowerCase().includes(q))
+        .map(c => ({ label: c.name, detail: c.detail }))
+      if (options.length === 0) return null
+      return { from: start + 1, to: pos, options, filter: false }
+    }
+
     const info = readSourceInfo()
 
     // Exact-match short-circuit: if the query already is a full builtin command
@@ -429,6 +441,9 @@ interface AutocompleteOptions {
    * and the extension closure stays stable across React renders.
    */
   getSubCommandContext: () => SubCommandContext
+  /** Custom slash commands (e.g. dispatcher overlay). When set, these replace
+   *  the conversation's slashCommands + builtins for `/` completions. */
+  customSlashCommands?: Array<{ name: string; detail?: string }>
 }
 
 export function autocompleteExtension(opts: AutocompleteOptions): Extension {
@@ -438,7 +453,7 @@ export function autocompleteExtension(opts: AutocompleteOptions): Extension {
     autocompletion({
       // canvasCompletionSource is independent (own `!c:` trigger, async fetch) so
       // it never touches the slash/@/`:` conversation source's logic.
-      override: [makeCompletionSource(opts.getSubCommandContext), canvasCompletionSource],
+      override: [makeCompletionSource(opts.getSubCommandContext, opts.customSlashCommands), canvasCompletionSource],
       activateOnTyping: true,
       closeOnBlur: true,
       icons: false,

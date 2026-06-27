@@ -3,6 +3,15 @@ import { InputEditor } from '../input-editor'
 import { DISPATCH_MODELS } from './dispatch-models'
 import { useDispatchStore } from './dispatch-store'
 
+const DISPATCH_SLASH_COMMANDS = [
+  { name: 'memory', detail: 'edit or refine durable memory' },
+  { name: 'system', detail: 'edit appended system prompt' },
+  { name: 'sotu', detail: 'State of the Union inspector' },
+  { name: 'clear', detail: 'wipe history + memory' },
+  { name: 'compact', detail: 'fold turns into memory' },
+  { name: 'forget', detail: 'drop long-term memory' },
+]
+
 /** Which model drives the dispatcher agent loop -- switchable per the user. */
 function ModelSelect() {
   const model = useDispatchStore(s => s.model)
@@ -60,6 +69,7 @@ export function DispatchIntentInput() {
             placeholder="tell me in your own words…"
             autoFocus
             inline
+            customSlashCommands={DISPATCH_SLASH_COMMANDS}
           />
         </div>
         <button

@@ -24,4 +24,7 @@ export interface InputEditorProps {
   enableEffortKeywords?: boolean
   /** Called on Ctrl+S with the text that was in the editor (already cleared by CM). */
   onStash?: (text: string) => void
+  /** Custom slash commands for the autocomplete popup. When set, these replace
+   *  the conversation's slashCommands (used by the dispatcher overlay). */
+  customSlashCommands?: Array<{ name: string; detail?: string }>
 }

@@ -83,6 +83,7 @@ export default function CodeMirrorBackendInner(props: InputEditorProps) {
         maxHeight: '12em',
         enableEffortKeywords: props.enableEffortKeywords,
         enableAutocomplete: props.enableAutocomplete,
+        customSlashCommands: props.customSlashCommands,
         shouldEnterSubmit: () => enterSubmitsRef.current,
         // Read sub-command context lazily so /workon picks up the latest
         // project tasks + conversation id without rebuilding extensions.
