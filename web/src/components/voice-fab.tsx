@@ -253,7 +253,7 @@ export function VoiceFab() {
                   <span className="text-[10px] text-red-400 font-mono uppercase tracking-wider">Release to cancel</span>
                 )}
                 {voice.state === 'refining' && (
-                  <span className="text-[10px] text-accent font-mono uppercase tracking-wider">Refining…</span>
+                  <span className="text-[10px] text-accent font-mono uppercase tracking-wider">Processing…</span>
                 )}
                 {voice.state === 'submitting' && (
                   <span className="text-[10px] text-green-400 font-mono uppercase tracking-wider">Sent!</span>
