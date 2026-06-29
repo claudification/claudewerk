@@ -6249,7 +6249,7 @@ export interface SotuRecipe extends SotuTuning {
   budgetMonthlyUsd?: number
 }
 
-/** One distill's eval row (Phase 7) -- what `sotu_eval` / `GET /api/sotu/evals`
+/** One distill's eval row (Phase 7) -- what `sotu_eval` / `WS `sotu_view`/evals`
  *  return per distill so quality/cost is QC-able across tuning variants. */
 export interface SotuDistillEval {
   /** Distill instant (its bundle dir name, epoch ms). */
@@ -6333,7 +6333,7 @@ export interface SotuTargetHold {
 }
 
 /** The assembled SOTU read model -- chronicle (paid narrative) + the free floor
- *  (claims/stakes + git alerts). Returned by `get_state_of_union` + `GET /api/sotu`. */
+ *  (claims/stakes + git alerts). Returned by `get_state_of_union` + `WS `sotu_view``. */
 export interface SotuView {
   project: string
   /** False -> floor only, no narrative ever (the chronicle stays empty). */
@@ -6432,6 +6432,81 @@ export interface SotuEvalResult {
   ok: boolean
   evals?: SotuDistillEval[]
   error?: string
+}
+
+// ─── SOTU dashboard read (WS request/response, replaces REST GETs) ───────────
+// Wire-contract types: consumed by the WS handler via MessageData (untyped dispatch),
+// documented here so the protocol shape is explicit for implementors on both sides.
+
+/** Dashboard -> Broker: read a single project's assembled SotuView. */
+interface SotuViewRequest {
+  type: 'sotu_view'
+  project: string
+}
+
+/** Broker -> Dashboard: the assembled SotuView (or error). */
+interface SotuViewResponse {
+  type: 'sotu_view_result'
+  view?: SotuView
+  error?: string
+}
+
+/** Dashboard -> Broker: read the fleet-wide SOTU dump (all projects). */
+interface SotuFleetRequest {
+  type: 'sotu_fleet'
+}
+
+/** Dashboard -> Broker: all projects' SOTU state. */
+interface SotuFleetResponse {
+  type: 'sotu_fleet_result'
+  projects: Array<{
+    project: string
+    projectUri: string
+    slug: string
+    enabled: boolean
+    state: { lastDistillAt: number; pendingContribs: number; genAt: number; pipelineVersion: number }
+    queueSize: number
+    view: SotuView
+    config: SotuConfigView
+  }>
+  ts: number
+}
+
+/** Dashboard -> Broker: read recent distill evals for a project. */
+interface SotuEvalsRequest {
+  type: 'sotu_evals'
+  project: string
+  limit?: number
+}
+
+/** Broker -> Dashboard: recent distill evals. */
+interface SotuEvalsResponse {
+  type: 'sotu_evals_result'
+  evals: SotuDistillEval[]
+}
+
+/** Dashboard -> Broker: read SOTU config for a project. */
+interface SotuConfigGetRequest {
+  type: 'sotu_config_get'
+  project: string
+}
+
+/** Dashboard -> Broker: write SOTU config for a project. */
+interface SotuConfigSetRequest {
+  type: 'sotu_config_set'
+  project: string
+  enabled?: boolean
+  stakes?: SotuStakes
+  budgetDailyUsd?: number | null
+  budgetMonthlyUsd?: number | null
+  params?: Record<string, number | string | null>
+}
+
+/** Broker -> Dashboard: resolved config after read or write. */
+interface SotuConfigResponse {
+  type: 'sotu_config_result'
+  config: SotuConfigView
+  project: string
 }
 
 // Configuration

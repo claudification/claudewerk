@@ -29,6 +29,7 @@ import { registerSentinelHandlers } from './sentinel'
 import { registerShellHandlers } from './shell'
 import { registerSotuHandlers } from './sotu'
 import { registerSotuConfigHandlers } from './sotu-config'
+import { registerSotuDashboardHandlers } from './sotu-dashboard'
 import { registerSotuMcpHandlers } from './sotu-mcp'
 import { registerSpawnHandlers } from './spawn'
 import { registerSpawnApprovalHandlers } from './spawn-approval'
@@ -66,6 +67,7 @@ export function registerAllHandlers(): void {
   registerSotuHandlers()
   registerSotuMcpHandlers()
   registerSotuConfigHandlers()
+  registerSotuDashboardHandlers()
   registerSpawnApprovalHandlers()
   registerStatusHandlers()
   registerSpawnHandlers()

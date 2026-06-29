@@ -1667,6 +1667,14 @@ function handleDispatchToolResult(msg: DashboardMessage) {
   useDispatchStore.getState().onToolResult(msg as unknown as DispatchToolResult)
 }
 
+function handleSotuFleetResult(msg: DashboardMessage) {
+  useDispatchStore.getState().onSotuFleetResult(msg)
+}
+
+function handleSotuViewResult(_msg: DashboardMessage) {
+  // Handled by the SOTU viewer modal (task 5) -- placeholder for now.
+}
+
 export const handlers: Record<string, MessageHandler> = {
   // sync
   sync_ok: handleSyncOk,
@@ -1767,4 +1775,7 @@ export const handlers: Record<string, MessageHandler> = {
   dispatch_decision: handleDispatchDecision,
   dispatch_tool_call: handleDispatchToolCall,
   dispatch_tool_result: handleDispatchToolResult,
+  // SOTU dashboard reads
+  sotu_fleet_result: handleSotuFleetResult,
+  sotu_view_result: handleSotuViewResult,
 }

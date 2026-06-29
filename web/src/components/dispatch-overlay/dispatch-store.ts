@@ -105,6 +105,7 @@ export interface DispatchState {
   confirmRefine(): void
   cancelRefine(): void
   closeSotu(): void
+  onSotuFleetResult(data: unknown): void
 }
 
 let reqSeq = 0
@@ -150,16 +151,9 @@ function parseMemorySlash(intent: string): MemorySlash | null {
 
 type SetFn = (partial: Partial<DispatchState>) => void
 
-async function fetchSotuDump(set: SetFn): Promise<void> {
-  try {
-    const res = await fetch('/api/sotu/fleet', { credentials: 'include' })
-    if (!res.ok) {
-      set({ lastError: `SotU fetch failed: ${res.status}` })
-      return
-    }
-    set({ sotuDump: await res.json() })
-  } catch (e) {
-    set({ lastError: `SotU fetch failed: ${(e as Error).message}` })
+function requestSotuFleet(set: SetFn): void {
+  if (!wsSend('sotu_fleet')) {
+    set({ lastError: 'Not connected -- cannot fetch SotU' })
   }
 }
 
@@ -260,10 +254,10 @@ export const useDispatchStore = create<DispatchState>((set, get) => ({
         else set({ lastError: NOT_CONNECTED })
         return
       }
-      // /sotu: open the SotU debug modal (REST fetch, not WS).
+      // /sotu: open the SotU debug modal via WS.
       if (intent.toLowerCase() === '/sotu') {
         set({ intent: '', lastError: null })
-        fetchSotuDump(set)
+        requestSotuFleet(set)
         return
       }
       // /memory and /system: editor or refine, outside the agent loop.
@@ -368,6 +362,7 @@ export const useDispatchStore = create<DispatchState>((set, get) => ({
   },
   cancelRefine: () => set({ refinePreview: null }),
   closeSotu: () => set({ sotuDump: null }),
+  onSotuFleetResult: (data: unknown) => set({ sotuDump: data }),
 
   // inbound WS reducers (history seed/stream, decision feed, tool gears)
   ...createInbound(set, get),

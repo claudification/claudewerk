@@ -171,5 +171,5 @@ export function registerSotuConfigHandlers(): void {
   registerHandlers({ sotu_configure_request: sotuConfigure, sotu_eval_request: sotuEval }, AGENT_HOST_ONLY)
 }
 
-// Consumed by the REST config route (admin read of the same resolved view).
+// Consumed by the dashboard WS handler (sotu-dashboard.ts).
 export { applyWrite, buildConfigView }
