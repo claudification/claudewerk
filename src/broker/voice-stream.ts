@@ -30,7 +30,8 @@ const KEEPALIVE_INTERVAL_MS = 5_000 // Deepgram kills connection after 10s of no
 
 interface VoiceSession {
   dgWs: WebSocket
-  dashboardWs: ServerWebSocket<unknown>
+  dashboardWs: ServerWebSocket<unknown> | null // null = orphaned (WS died mid-recording)
+  userId: string | null
   conversationId: string | null
   finalTranscript: string
   keyterms: string[]
@@ -50,6 +51,53 @@ interface VoiceSession {
 
 // Active voice sessions keyed by dashboard WS identity
 const voiceSessions = new Map<ServerWebSocket<unknown>, VoiceSession>()
+
+// ─── Pending voice results (survive WS disconnect) ─────────────────
+const PENDING_VOICE_TTL_MS = 5 * 60_000
+interface PendingVoiceResult {
+  raw: string
+  refined: string
+  conversationId: string | null
+  ts: number
+}
+const pendingVoiceResults = new Map<string, PendingVoiceResult>()
+
+function bufferVoiceResult(userId: string | null, raw: string, refined: string, conversationId: string | null) {
+  if (!userId || !raw) return
+  console.log(
+    `[voice-stream] Buffering voice result for user=${userId} (${raw.length} chars raw, ${refined.length} chars refined, conv=${conversationId ?? 'none'}) -- will redeliver on reconnect`,
+  )
+  pendingVoiceResults.set(userId, { raw, refined, conversationId, ts: Date.now() })
+}
+
+/** Called by the subscribe handler when a dashboard WS reconnects. */
+export function deliverPendingVoiceResult(userName: string, ws: ServerWebSocket<unknown>): boolean {
+  const pending = pendingVoiceResults.get(userName)
+  if (!pending) return false
+  if (Date.now() - pending.ts > PENDING_VOICE_TTL_MS) {
+    console.log(
+      `[voice-stream] Pending voice result for ${userName} expired (${((Date.now() - pending.ts) / 1000).toFixed(0)}s old)`,
+    )
+    pendingVoiceResults.delete(userName)
+    return false
+  }
+  console.log(
+    `[voice-stream] Redelivering buffered voice result to ${userName} (${pending.raw.length} chars, age=${((Date.now() - pending.ts) / 1000).toFixed(1)}s)`,
+  )
+  safeSend(ws, JSON.stringify({ type: 'voice_done', raw: pending.raw, refined: pending.refined, recovered: true }))
+  pendingVoiceResults.delete(userName)
+  return true
+}
+
+function safeSend(ws: ServerWebSocket<unknown> | null, data: string): boolean {
+  if (!ws) return false
+  try {
+    ws.send(data)
+    return true
+  } catch {
+    return false
+  }
+}
 
 export function handleVoiceStart(
   ws: ServerWebSocket<unknown>,
@@ -106,9 +154,11 @@ export function handleVoiceStart(
     headers: { Authorization: `Token ${deepgramKey}` },
   } as unknown as string)
 
+  const wsData = ws.data as { userName?: string }
   const voiceSession: VoiceSession = {
     dgWs,
     dashboardWs: ws,
+    userId: wsData?.userName || null,
     conversationId: data.conversationId || null,
     finalTranscript: data.accumulated || '',
     keyterms,
@@ -136,7 +186,7 @@ export function handleVoiceStart(
   // dropped it; if it sees voice_connecting but never voice_ready, Deepgram is
   // the slow/failed leg. The client uses this to phrase honest errors and to
   // keep the UI in "connecting" (NOT "speak now") until the whole chain is up.
-  ws.send(JSON.stringify({ type: 'voice_connecting' }))
+  safeSend(ws, JSON.stringify({ type: 'voice_connecting' }))
 
   dgWs.onopen = () => {
     // Flush any audio buffered during connection
@@ -154,7 +204,7 @@ export function handleVoiceStart(
     // NOTE: do NOT reset the audio counters here. They count every chunk the
     // browser has sent so far (including the ones just flushed); zeroing them
     // would discount real audio and could fabricate a false "No audio" error.
-    ws.send(JSON.stringify({ type: 'voice_ready', flushedChunks, flushedBytes }))
+    safeSend(voiceSession.dashboardWs, JSON.stringify({ type: 'voice_ready', flushedChunks, flushedBytes }))
   }
 
   dgWs.onmessage = (event: MessageEvent) => {
@@ -175,7 +225,8 @@ export function handleVoiceStart(
             voiceSession.finalTranscript += (voiceSession.finalTranscript ? ' ' : '') + transcript
           }
 
-          ws.send(
+          safeSend(
+            voiceSession.dashboardWs,
             JSON.stringify({
               type: 'voice_transcript',
               transcript,
@@ -186,7 +237,7 @@ export function handleVoiceStart(
           )
         }
       } else if (msg.type === 'UtteranceEnd') {
-        ws.send(JSON.stringify({ type: 'voice_utterance_end' }))
+        safeSend(voiceSession.dashboardWs, JSON.stringify({ type: 'voice_utterance_end' }))
       } else if (msg.type === 'Metadata') {
         // Sent after CloseStream - connection is about to close
         console.log(`[voice-stream] Deepgram metadata: duration=${msg.duration}s`)
@@ -198,29 +249,51 @@ export function handleVoiceStart(
 
   dgWs.onerror = (event: Event) => {
     console.error('[voice-stream] Deepgram WS error:', event)
-    ws.send(JSON.stringify({ type: 'voice_error', error: 'Deepgram connection failed. Check server logs.' }))
+    safeSend(
+      voiceSession.dashboardWs,
+      JSON.stringify({ type: 'voice_error', error: 'Deepgram connection failed. Check server logs.' }),
+    )
     cleanupVoiceSession(ws)
   }
 
   dgWs.onclose = (event: CloseEvent) => {
     const reason = event.reason || 'no reason'
+    const orphaned = !voiceSession.dashboardWs
     console.log(
-      `[voice-stream] Deepgram WS closed (code: ${event.code}, reason: "${reason}", audioChunks: ${voiceSession.audioChunks}, totalBytes: ${voiceSession.audioBytes})`,
+      `[voice-stream] Deepgram WS closed (code: ${event.code}, reason: "${reason}", audioChunks: ${voiceSession.audioChunks}, totalBytes: ${voiceSession.audioBytes}, orphaned: ${orphaned})`,
     )
 
     if (!voiceSession.closed) {
       if (voiceSession.finalTranscript) {
         voiceSession.closed = true
-        refineAndSend(ws, voiceSession.finalTranscript, voiceSession.keyterms)
+        if (orphaned) {
+          // WS died mid-recording -- buffer for redelivery, skip refinement
+          bufferVoiceResult(
+            voiceSession.userId,
+            voiceSession.finalTranscript,
+            voiceSession.finalTranscript,
+            voiceSession.conversationId,
+          )
+        } else {
+          refineAndSend(
+            voiceSession.dashboardWs as ServerWebSocket<unknown>,
+            voiceSession.finalTranscript,
+            voiceSession.keyterms,
+            voiceSession.userId,
+            voiceSession.conversationId,
+          )
+        }
       } else if (voiceSession.audioChunks === 0) {
-        // Deepgram closed and we never sent any audio -- something is wrong
         console.error('[voice-stream] Deepgram closed with ZERO audio chunks received from browser')
-        ws.send(JSON.stringify({ type: 'voice_error', error: 'No audio data received. Check microphone permissions.' }))
+        safeSend(
+          voiceSession.dashboardWs,
+          JSON.stringify({ type: 'voice_error', error: 'No audio data received. Check microphone permissions.' }),
+        )
         voiceSession.closed = true
       } else if (voiceSession.audioBytes > 0 && !voiceSession.finalTranscript) {
-        // Got audio but no transcript -- Deepgram couldn't decode or no speech detected
         console.warn(`[voice-stream] Deepgram closed with ${voiceSession.audioBytes}B audio but no transcript`)
-        ws.send(
+        safeSend(
+          voiceSession.dashboardWs,
           JSON.stringify({
             type: 'voice_error',
             error: 'No speech detected. Try speaking louder or closer to the mic.',
@@ -229,7 +302,8 @@ export function handleVoiceStart(
         voiceSession.closed = true
       }
     }
-    voiceSessions.delete(ws)
+    cleanupTimers(voiceSession)
+    if (voiceSession.dashboardWs) voiceSessions.delete(voiceSession.dashboardWs)
   }
 }
 
@@ -250,7 +324,10 @@ export function handleVoiceData(ws: ServerWebSocket<unknown>, audioBase64: strin
         `[voice-stream] voice_data with NO session (voice_start missing) user=${d?.user ?? d?.userId ?? '?'} conv=${d?.conversationId ?? '?'} -- further drops from this socket silenced`,
       )
     }
-    ws.send(JSON.stringify({ type: 'voice_error', error: 'Voice session not started (lost connection). Try again.' }))
+    safeSend(
+      ws,
+      JSON.stringify({ type: 'voice_error', error: 'Voice session not started (lost connection). Try again.' }),
+    )
     return
   }
 
@@ -309,9 +386,9 @@ export function handleVoiceStop(ws: ServerWebSocket<unknown>) {
 /** Emit the final result if we captured a transcript, else an empty voice_done, then clean up. */
 function completeVoiceSession(ws: ServerWebSocket<unknown>, session: VoiceSession) {
   if (session.finalTranscript) {
-    refineAndSend(ws, session.finalTranscript, session.keyterms) // cleans up internally
+    refineAndSend(ws, session.finalTranscript, session.keyterms, session.userId, session.conversationId)
   } else {
-    ws.send(JSON.stringify({ type: 'voice_done', raw: '', refined: '' }))
+    safeSend(ws, JSON.stringify({ type: 'voice_done', raw: '', refined: '' }))
     cleanupVoiceSession(ws)
   }
 }
@@ -350,12 +427,7 @@ function stopVoiceSession(ws: ServerWebSocket<unknown>, reason: string) {
       if (resolved) return
       resolved = true
       console.warn(`[voice-stream] DG WS never connected (had ${bufferedChunks} buffered chunks)`)
-      ws.send(
-        JSON.stringify({
-          type: 'voice_error',
-          error: 'Voice service connection timed out. Try again.',
-        }),
-      )
+      safeSend(ws, JSON.stringify({ type: 'voice_error', error: 'Voice service connection timed out. Try again.' }))
       cleanupVoiceSession(ws)
     }, 3000)
 
@@ -365,23 +437,15 @@ function stopVoiceSession(ws: ServerWebSocket<unknown>, reason: string) {
       if (resolved) return
       resolved = true
       clearTimeout(giveUp)
-      // Let original onopen flush the buffer, then run the normal finalize flow.
-      // 1500ms (vs 800) since DG just connected and must process buffered audio.
       if (origOnOpen) (origOnOpen as (ev: Event) => void)(ev)
       flushFinalizeAndComplete(ws, session, 1500)
     }
 
-    // If DG errors out during the wait
     session.dgWs.onerror = () => {
       if (resolved) return
       resolved = true
       clearTimeout(giveUp)
-      ws.send(
-        JSON.stringify({
-          type: 'voice_error',
-          error: 'Voice service connection failed. Try again.',
-        }),
-      )
+      safeSend(ws, JSON.stringify({ type: 'voice_error', error: 'Voice service connection failed. Try again.' }))
       cleanupVoiceSession(ws)
     }
   } else {
@@ -401,19 +465,28 @@ function stopVoiceSession(ws: ServerWebSocket<unknown>, reason: string) {
  * Step 2 - Refinement: Clean the transcript using TAP multi-turn structure, enriched
  *   with both project keyterms AND dynamically extracted context from step 1.
  */
-async function refineAndSend(ws: ServerWebSocket<unknown>, rawText: string, keyterms: string[]) {
+// fallow-ignore-next-line complexity
+async function refineAndSend(
+  ws: ServerWebSocket<unknown>,
+  rawText: string,
+  keyterms: string[],
+  userId: string | null,
+  conversationId: string | null,
+) {
   const globalSettings = getGlobalSettings()
   const openrouterKey = process.env.OPENROUTER_API_KEY
 
   // Skip refinement if disabled in settings, no API key, or empty text
   if (!globalSettings.voiceRefinement || !openrouterKey || !rawText.trim()) {
-    ws.send(JSON.stringify({ type: 'voice_done', raw: rawText, refined: rawText }))
+    if (!safeSend(ws, JSON.stringify({ type: 'voice_done', raw: rawText, refined: rawText }))) {
+      bufferVoiceResult(userId, rawText, rawText, conversationId)
+    }
     cleanupVoiceSession(ws)
     return
   }
 
   console.log(`[voice-stream] Refining (${keyterms.length} keyterms):\n  RAW: "${rawText}"`)
-  ws.send(JSON.stringify({ type: 'voice_refining' }))
+  safeSend(ws, JSON.stringify({ type: 'voice_refining' }))
 
   try {
     // ── Step 1: Context Extraction ──────────────────────────────────
@@ -522,14 +595,20 @@ ${rawText}`,
       })
       const refined = stripPreamble(res.content || rawText)
       console.log(`[voice-stream] Refined:\n  OUT: "${refined}"`)
-      ws.send(JSON.stringify({ type: 'voice_done', raw: rawText, refined }))
+      if (!safeSend(ws, JSON.stringify({ type: 'voice_done', raw: rawText, refined }))) {
+        bufferVoiceResult(userId, rawText, refined, conversationId)
+      }
     } catch (err) {
       console.error('[voice-stream] Step 2 refinement failed:', err)
-      ws.send(JSON.stringify({ type: 'voice_done', raw: rawText, refined: rawText }))
+      if (!safeSend(ws, JSON.stringify({ type: 'voice_done', raw: rawText, refined: rawText }))) {
+        bufferVoiceResult(userId, rawText, rawText, conversationId)
+      }
     }
   } catch (err) {
     console.error('[voice-stream] Refinement error:', err)
-    ws.send(JSON.stringify({ type: 'voice_done', raw: rawText, refined: rawText }))
+    if (!safeSend(ws, JSON.stringify({ type: 'voice_done', raw: rawText, refined: rawText }))) {
+      bufferVoiceResult(userId, rawText, rawText, conversationId)
+    }
   }
 
   cleanupVoiceSession(ws)
@@ -550,21 +629,80 @@ function stripPreamble(text: string): string {
   return result.trim()
 }
 
-function cleanupVoiceSession(ws: ServerWebSocket<unknown>) {
-  const session = voiceSessions.get(ws)
-  if (!session) return
-
+function cleanupTimers(session: VoiceSession) {
   clearTimeout(session.timeoutTimer)
   clearInterval(session.keepaliveTimer)
+}
+
+function closeDgWs(session: VoiceSession) {
   if (session.dgWs.readyState === WebSocket.OPEN || session.dgWs.readyState === WebSocket.CONNECTING) {
     try {
       session.dgWs.close()
     } catch {}
   }
+}
+
+function cleanupVoiceSession(ws: ServerWebSocket<unknown>) {
+  const session = voiceSessions.get(ws)
+  if (!session) return
+  cleanupTimers(session)
+  closeDgWs(session)
   voiceSessions.delete(ws)
 }
 
-/** Clean up voice session when dashboard WS disconnects */
+/**
+ * Dashboard WS disconnected mid-recording. Instead of nuking the session,
+ * orphan it: let Deepgram finish processing and buffer the result for
+ * redelivery when the user reconnects. (Origin: 2026-06-29, a full dictated
+ * essay was lost because cleanupVoiceForWs nuked the session while Deepgram
+ * was still transcribing.)
+ */
 export function cleanupVoiceForWs(ws: ServerWebSocket<unknown>) {
-  cleanupVoiceSession(ws)
+  const session = voiceSessions.get(ws)
+  if (!session) return
+
+  voiceSessions.delete(ws)
+
+  // If we already have a transcript, buffer it immediately
+  if (session.finalTranscript) {
+    console.log(
+      `[voice-stream] WS disconnected, buffering existing transcript for user=${session.userId} (${session.finalTranscript.length} chars)`,
+    )
+    bufferVoiceResult(session.userId, session.finalTranscript, session.finalTranscript, session.conversationId)
+    session.closed = true
+    cleanupTimers(session)
+    closeDgWs(session)
+    return
+  }
+
+  // Deepgram may still be processing -- orphan the session (dashboardWs=null)
+  // so the dgWs.onclose callback will buffer the result instead of trying to
+  // send to a dead socket.
+  session.dashboardWs = null
+  console.log(
+    `[voice-stream] WS disconnected mid-recording, orphaning session for user=${session.userId} (DG state=${session.dgWs.readyState}, chunks=${session.audioChunks})`,
+  )
+
+  // If DG is open, trigger a graceful flush so we get the final transcript
+  if (session.dgWs.readyState === WebSocket.OPEN) {
+    try {
+      session.dgWs.send(JSON.stringify({ type: 'Finalize' }))
+    } catch {}
+    setTimeout(() => {
+      if (session.dgWs.readyState === WebSocket.OPEN) {
+        try {
+          session.dgWs.send(JSON.stringify({ type: 'CloseStream' }))
+        } catch {}
+      }
+    }, 500)
+  }
+
+  // Safety timeout: kill DG if it hasn't closed on its own
+  setTimeout(() => {
+    if (!session.closed) {
+      console.warn(`[voice-stream] Orphaned DG session still open after 5s, force-closing (user=${session.userId})`)
+      closeDgWs(session)
+      cleanupTimers(session)
+    }
+  }, 5000)
 }

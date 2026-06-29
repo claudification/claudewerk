@@ -22,6 +22,7 @@ import { AGENT_HOST_ONLY, DASHBOARD_ROLES, registerHandlers } from '../message-r
 import { resolvePermissionFlags } from '../permissions'
 import { buildRosterSnapshot, shellRegistry } from '../shell-registry'
 import { collectLineageSubtree } from '../spawn-lineage'
+import { deliverPendingVoiceResult } from '../voice-stream'
 import {
   computeConversationSlug,
   computeLocalId,
@@ -33,6 +34,7 @@ import {
 
 // ─── Dashboard subscription ────────────────────────────────────────
 
+// fallow-ignore-next-line complexity
 const subscribe: MessageHandler = (ctx, data) => {
   ctx.ws.data.isControlPanel = true
   const pv = (data.protocolVersion as number) || 1
@@ -56,6 +58,12 @@ const subscribe: MessageHandler = (ctx, data) => {
     ctx.log.error(
       `[channel] subscribe: DEGRADED sentinel_status -- hasSentinel=true but getSentinels()=[] (subscriber will not see launch-dialog profile picker until next sentinel reconnect)`,
     )
+  }
+
+  // Redeliver any voice transcript buffered during a prior WS disconnect
+  const wsUserName = (ctx.ws.data as { userName?: string }).userName
+  if (wsUserName && deliverPendingVoiceResult(wsUserName, ctx.ws)) {
+    ctx.log.info(`[channel] subscribe: redelivered buffered voice result to ${wsUserName}`)
   }
 
   // Initial host-shell roster snapshot, filtered to what this client may see
