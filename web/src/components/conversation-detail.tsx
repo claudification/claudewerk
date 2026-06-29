@@ -20,7 +20,6 @@ import { useConversationTab } from './conversation-detail/use-conversation-tab'
 import { useEventsFetch } from './conversation-detail/use-events-fetch'
 import { useSubagentFetch } from './conversation-detail/use-subagent-fetch'
 import { useTaskEditor } from './conversation-detail/use-task-editor'
-import { PersistentDialogMount } from './dialog/persistent/persistent-dialog-mount'
 import { ShareBanner } from './share-panel'
 
 const EMPTY_EVENTS: HookEvent[] = []
@@ -138,8 +137,6 @@ export const ConversationDetail = memo(function ConversationDetail() {
         onToggleExpanded={() => setInfoExpanded(!infoExpanded)}
         onSetConversationTarget={setConversationTarget}
       />
-
-      {selectedConversationId && <PersistentDialogMount conversationId={selectedConversationId} />}
 
       {selectedSubagentId && (
         <SubagentDetailView

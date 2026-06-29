@@ -26,6 +26,12 @@ interface ModalSurfaceProps {
   headerExtra?: ReactNode
   /** Inline (non-maximized) DialogContent sizing classes. */
   className?: string
+  /** Override the default close. When set, all close gestures (Dialog X, chrome
+   *  button, Escape) call this instead of `modal.close()`. The caller owns the
+   *  close lifecycle -- call `modal.close()` inside when you're ready to drop
+   *  the record. Use this for surfaces that need custom teardown (e.g. live
+   *  dialogs emitting a close event before removing the UI). */
+  onClose?: () => void
   children: ReactNode
 }
 
@@ -55,7 +61,7 @@ function MinimizeButton({ modal }: { modal: ManagedModal }) {
 }
 
 /** Detached window: minimize / reattach / close (no Dialog X to dodge). */
-function DetachedControls({ modal }: { modal: ManagedModal }) {
+function DetachedControls({ modal, onClose }: { modal: ManagedModal; onClose?: () => void }) {
   return (
     <div className="ml-auto flex items-center gap-3">
       <MinimizeButton modal={modal} />
@@ -64,7 +70,7 @@ function DetachedControls({ modal }: { modal: ManagedModal }) {
           <Shrink className="size-3.5" />
         </ChromeButton>
       )}
-      <ChromeButton onClick={modal.close} title="Close">
+      <ChromeButton onClick={onClose ?? modal.close} title="Close">
         <X className="size-4" />
       </ChromeButton>
     </div>
@@ -94,12 +100,14 @@ function SurfaceHeader({
   icon,
   headerExtra,
   detached,
+  onClose,
 }: {
   modal: ManagedModal
   title: string
   icon?: ReactNode
   headerExtra?: ReactNode
   detached: boolean
+  onClose?: () => void
 }) {
   return (
     <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
@@ -110,12 +118,14 @@ function SurfaceHeader({
         <DialogTitle className="text-xs">{title}</DialogTitle>
       )}
       {headerExtra}
-      {detached ? <DetachedControls modal={modal} /> : <InlineControls modal={modal} />}
+      {detached ? <DetachedControls modal={modal} onClose={onClose} /> : <InlineControls modal={modal} />}
     </div>
   )
 }
 
-export function ModalSurface({ modal, title, icon, headerExtra, className, children }: ModalSurfaceProps) {
+// fallow-ignore-next-line complexity
+export function ModalSurface({ modal, title, icon, headerExtra, className, onClose, children }: ModalSurfaceProps) {
+  const handleClose = onClose ?? modal.close
   // Detached: portal the body into its own OS window. The window was opened in
   // the detach() gesture and lives in the manager registry; closing it via its
   // own chrome parks the modal to the dock (state survives).
@@ -125,7 +135,7 @@ export function ModalSurface({ modal, title, icon, headerExtra, className, child
     return (
       <PopoutWindow win={win} title={title} onClose={modal.parkFromDetached}>
         <div className="flex h-screen w-screen flex-col bg-background text-foreground">
-          <SurfaceHeader modal={modal} title={title} icon={icon} headerExtra={headerExtra} detached />
+          <SurfaceHeader modal={modal} title={title} icon={icon} headerExtra={headerExtra} detached onClose={onClose} />
           {children}
         </div>
       </PopoutWindow>
@@ -138,11 +148,18 @@ export function ModalSurface({ modal, title, icon, headerExtra, className, child
     <Dialog
       open={modal.presentation === 'inline'}
       onOpenChange={o => {
-        if (!o) modal.close()
+        if (!o) handleClose()
       }}
     >
       <DialogContent className={cn('flex flex-col p-0', modal.maximized ? MAXIMIZED_CONTENT : className)}>
-        <SurfaceHeader modal={modal} title={title} icon={icon} headerExtra={headerExtra} detached={false} />
+        <SurfaceHeader
+          modal={modal}
+          title={title}
+          icon={icon}
+          headerExtra={headerExtra}
+          detached={false}
+          onClose={onClose}
+        />
         {children}
       </DialogContent>
     </Dialog>

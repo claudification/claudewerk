@@ -88,6 +88,10 @@ const NightshiftModal = lazy(() =>
 const DebugControlModal = lazy(() =>
   import('@/components/debug/debug-control-modal').then(m => ({ default: m.DebugControlModal })),
 )
+// THE DIALOGUE -- live dialogs as managed modals (parkable, detachable).
+const LiveDialogModals = lazy(() =>
+  import('@/components/dialog/persistent/live-dialog-modals').then(m => ({ default: m.LiveDialogModals })),
+)
 
 // Lazy modals: code-split out of the eager index chunk, mounted on first open.
 // The gate subscribes to each modal's open signal (see lazyModule / lazy-bus).
@@ -495,6 +499,9 @@ function Dashboard() {
           <DebugControlModal />
         </Suspense>
       )}
+      <Suspense fallback={null}>
+        <LiveDialogModals />
+      </Suspense>
       <MarkdownViewerModal />
       {canAdmin && <TaskBatchSelector />}
       {canAdmin && <ShortcutHelp />}
