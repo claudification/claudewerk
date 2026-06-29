@@ -98,7 +98,8 @@ function projectTools(rt: DispatchRuntime): Toolset {
           .filter(c => projectKeyOf(c.project) === dp.key && c.status !== 'ended')
           .map(c => {
             const idleMs = c.lastActivity ? now - c.lastActivity : undefined
-            const cost = computeCostSignal({ contextTokens: contextTokensOf(c), idleMs, model: c.model })
+            const isActive = c.status === 'active'
+            const cost = computeCostSignal({ contextTokens: contextTokensOf(c), idleMs, model: c.model, isActive })
             const entry: Record<string, unknown> = {
               conversationId: c.id,
               title: c.title,

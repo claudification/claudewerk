@@ -31,6 +31,8 @@ export interface DispatchRosterEntry {
   title?: string
   /** Ended conversations are revive candidates, not route candidates. */
   ended?: boolean
+  /** True when the conversation is currently running (context is hot). */
+  isActive?: boolean
   liveState?: string
   contextTokens?: number
   idleMs?: number
@@ -255,5 +257,5 @@ function findEntry(roster: DispatchRosterEntry[], id: string): DispatchRosterEnt
 }
 
 function entryCost(e: DispatchRosterEntry): DispatchCostSignal {
-  return computeCostSignal({ contextTokens: e.contextTokens, idleMs: e.idleMs, model: e.model })
+  return computeCostSignal({ contextTokens: e.contextTokens, idleMs: e.idleMs, model: e.model, isActive: e.isActive })
 }

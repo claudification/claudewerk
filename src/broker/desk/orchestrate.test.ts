@@ -159,6 +159,44 @@ describe('orchestrateDispatch', () => {
   })
 })
 
+describe('cost gate -- active vs idle vs ended', () => {
+  it('active 269k Opus is NOT held at the cost gate (context is hot)', async () => {
+    const active: DispatchRosterEntry[] = [
+      { conversationId: 'conv_hot', isActive: true, contextTokens: 269_000, model: 'opus', idleMs: 5_000 },
+    ]
+    const chat = chatReturning({ disposition: 'route', target: 'conv_hot', confidence: 0.95, reasoning: 'continue' })
+    const { deps, spy } = makeDeps({ roster: rosterOf(active), chat })
+    const d = await orchestrateDispatch({ intent: 'inject a message' }, deps)
+    expect(d.awaitingConfirmation).toBeUndefined()
+    expect(d.executed).toBe(true)
+    expect(spy.routed).toHaveLength(1)
+  })
+
+  it('idle 269k Opus IS held at the cost gate', async () => {
+    const idle: DispatchRosterEntry[] = [
+      { conversationId: 'conv_idle', contextTokens: 269_000, model: 'opus', idleMs: 60_000 },
+    ]
+    const chat = chatReturning({ disposition: 'route', target: 'conv_idle', confidence: 0.95, reasoning: 'continue' })
+    const { deps, spy } = makeDeps({ roster: rosterOf(idle), chat })
+    const d = await orchestrateDispatch({ intent: 'inject a message' }, deps)
+    expect(d.awaitingConfirmation).toBe(true)
+    expect(d.executed).toBe(false)
+    expect(spy.routed).toHaveLength(0)
+  })
+
+  it('ended 269k Opus IS held at the cost gate (revive is expensive)', async () => {
+    const ended: DispatchRosterEntry[] = [
+      { conversationId: 'conv_dead', ended: true, contextTokens: 269_000, model: 'opus' },
+    ]
+    const chat = chatReturning({ disposition: 'revive', target: 'conv_dead', confidence: 0.95, reasoning: 'reopen' })
+    const { deps, spy } = makeDeps({ roster: rosterOf(ended), chat })
+    const d = await orchestrateDispatch({ intent: 'continue old work' }, deps)
+    expect(d.awaitingConfirmation).toBe(true)
+    expect(d.executed).toBe(false)
+    expect(spy.revived).toHaveLength(0)
+  })
+})
+
 describe('HOT-PATH worktree guard on spawn', () => {
   const spawnCmd = (over: Partial<DispatchCommand> = {}): DispatchCommand => ({
     intent: 'new feature',

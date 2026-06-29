@@ -31,6 +31,9 @@ export interface CostInput {
   idleMs?: number
   /** Model/profile name, e.g. 'opus', 'claude-opus-4-8', 'haiku'. */
   model?: string
+  /** True when the conversation is currently running (status active/streaming/waiting).
+   *  An active conversation's context is already loaded -- injecting is just one turn. */
+  isActive?: boolean
 }
 
 function isOpus(model: string | undefined): boolean {
@@ -54,10 +57,22 @@ function maxTier(a: DispatchCostSignal['tier'], b: DispatchCostSignal['tier']): 
  * Compute the cost signal for resuming/routing into a conversation (or for a
  * fresh spawn, where only `model` is known). Pure -- no I/O.
  */
+// fallow-ignore-next-line complexity
 export function computeCostSignal(input: CostInput): DispatchCostSignal {
   const ctx = input.contextTokens ?? 0
-  const coldCache = (input.idleMs ?? 0) > CACHE_TTL_COLD_MS
   const opus = isOpus(input.model)
+
+  // Active conversations have their context loaded -- injecting is one turn,
+  // not a full re-process. Cold cache and context-size penalties don't apply.
+  if (input.isActive) {
+    const signal: DispatchCostSignal = { tier: 'cheap' }
+    if (input.contextTokens !== undefined) signal.contextTokens = input.contextTokens
+    if (input.model !== undefined) signal.model = input.model
+    signal.note = buildNote({ ctx, coldCache: false, opus, tier: 'cheap', active: true })
+    return signal
+  }
+
+  const coldCache = (input.idleMs ?? 0) > CACHE_TTL_COLD_MS
 
   let tier: DispatchCostSignal['tier'] = 'cheap'
   if (ctx >= CTX_VERY_EXPENSIVE) tier = 'very_expensive'
@@ -81,7 +96,14 @@ export function computeCostSignal(input: CostInput): DispatchCostSignal {
   return signal
 }
 
-function buildNote(p: { ctx: number; coldCache: boolean; opus: boolean; tier: DispatchCostSignal['tier'] }): string {
+function buildNote(p: {
+  ctx: number
+  coldCache: boolean
+  opus: boolean
+  tier: DispatchCostSignal['tier']
+  active?: boolean
+}): string {
+  if (p.active) return 'cheap: active (context already loaded)'
   const parts: string[] = []
   if (p.opus) parts.push('Opus')
   if (p.ctx >= CTX_MODERATE) parts.push(`${Math.round(p.ctx / 1000)}k context`)

@@ -129,6 +129,64 @@ describe('classifyDispatch -- LLM path', () => {
   })
 })
 
+describe('classifyDispatch -- active conversation cost override', () => {
+  const activeRoster: DispatchRosterEntry[] = [
+    {
+      conversationId: 'conv_hot',
+      project: 'rc',
+      title: 'active big opus',
+      isActive: true,
+      contextTokens: 269_000,
+      model: 'opus',
+      idleMs: 5_000,
+    },
+    {
+      conversationId: 'conv_idle',
+      project: 'rc',
+      title: 'idle big opus',
+      contextTokens: 200_000,
+      model: 'opus',
+      idleMs: 60_000,
+    },
+    {
+      conversationId: 'conv_dead',
+      project: 'rc',
+      title: 'ended big',
+      ended: true,
+      contextTokens: 200_000,
+      model: 'opus',
+    },
+  ]
+
+  it('explicit active 269k Opus target = route with cheap cost', async () => {
+    const r = await classifyDispatch({ intent: 'x', target: 'conv_hot', roster: activeRoster }, throwingChat)
+    expect(r.disposition).toBe('route')
+    expect(r.cost?.tier).toBe('cheap')
+  })
+
+  it('explicit idle 200k Opus target = route with very_expensive cost', async () => {
+    const r = await classifyDispatch({ intent: 'x', target: 'conv_idle', roster: activeRoster }, throwingChat)
+    expect(r.disposition).toBe('route')
+    expect(r.cost?.tier).toBe('very_expensive')
+  })
+
+  it('explicit ended 200k Opus target = revive with very_expensive cost', async () => {
+    const r = await classifyDispatch({ intent: 'x', target: 'conv_dead', roster: activeRoster }, throwingChat)
+    expect(r.disposition).toBe('revive')
+    expect(r.cost?.tier).toBe('very_expensive')
+  })
+
+  it('ask candidates show correct commentary for active vs idle', async () => {
+    const chat = mockChat({ disposition: 'route', target: 'conv_hot', confidence: 0.2, reasoning: 'unsure' })
+    const r = await classifyDispatch({ intent: 'vague', roster: activeRoster }, chat)
+    expect(r.disposition).toBe('ask')
+    const hot = r.candidates?.find(c => c.conversationId === 'conv_hot')
+    const idle = r.candidates?.find(c => c.conversationId === 'conv_idle')
+    expect(hot?.cost?.tier).toBe('cheap')
+    expect(idle?.cost?.tier).toBe('very_expensive')
+  })
+})
+
 describe('classifyDispatch -- converse', () => {
   it('passes a converse decision through (the concierge answers directly)', async () => {
     const r = await classifyDispatch(

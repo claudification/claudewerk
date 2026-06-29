@@ -38,6 +38,40 @@ describe('computeCostSignal', () => {
   })
 })
 
+describe('computeCostSignal -- active conversation override', () => {
+  it('active 269k Opus = cheap (context is hot, no re-processing)', () => {
+    const c = computeCostSignal({ contextTokens: 269_000, model: 'opus', isActive: true })
+    expect(c.tier).toBe('cheap')
+    expect(c.coldCache).toBeUndefined()
+  })
+
+  it('active 100k with cold idle time = still cheap (active overrides cold)', () => {
+    const c = computeCostSignal({ contextTokens: 100_000, idleMs: CACHE_TTL_COLD_MS + 1, isActive: true })
+    expect(c.tier).toBe('cheap')
+    expect(c.coldCache).toBeUndefined()
+  })
+
+  it('active small context = cheap (no change from baseline)', () => {
+    const c = computeCostSignal({ contextTokens: 5_000, model: 'haiku', isActive: true })
+    expect(c.tier).toBe('cheap')
+  })
+
+  it('idle (not active) preserves original expensive behavior', () => {
+    const c = computeCostSignal({ contextTokens: 200_000, model: 'opus', isActive: false })
+    expect(c.tier).toBe('very_expensive')
+  })
+
+  it('isActive unset preserves original behavior (backwards compat)', () => {
+    const c = computeCostSignal({ contextTokens: 200_000, model: 'opus' })
+    expect(c.tier).toBe('very_expensive')
+  })
+
+  it('note reflects active state', () => {
+    const c = computeCostSignal({ contextTokens: 269_000, model: 'opus', isActive: true })
+    expect(c.note).toContain('active')
+  })
+})
+
 describe('requiresConfirmation', () => {
   it('gates only very_expensive', () => {
     expect(requiresConfirmation({ tier: 'very_expensive' })).toBe(true)

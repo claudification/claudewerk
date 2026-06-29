@@ -51,11 +51,15 @@ function sumContextTokens(c: Conversation): number | undefined {
   return tu ? tu.input + tu.cacheCreation + tu.cacheRead : undefined
 }
 
+const ACTIVE_STATUSES = new Set<string>(['active'])
+
+// fallow-ignore-next-line complexity
 function toRosterEntry(c: Conversation): DispatchRosterEntry {
   const entry: DispatchRosterEntry = {
     conversationId: c.id,
     ended: c.status === 'ended',
   }
+  if (ACTIVE_STATUSES.has(c.status)) entry.isActive = true
   if (c.project) entry.project = c.project
   if (c.title) entry.title = c.title
   const ctx = sumContextTokens(c)
@@ -63,8 +67,6 @@ function toRosterEntry(c: Conversation): DispatchRosterEntry {
   if (c.lastActivity) entry.idleMs = Date.now() - c.lastActivity
   const model = c.model ?? c.resolvedProfile
   if (model) entry.model = model
-  // status-tool's qualitative LiveStatus (landed origin/main 53ba4463): the
-  // agent's self-reported state ('working'|'done'|'needs_you'|'blocked').
   if (c.liveStatus?.state) entry.liveState = c.liveStatus.state
   return entry
 }

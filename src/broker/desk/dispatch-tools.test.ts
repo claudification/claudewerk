@@ -93,6 +93,50 @@ describe('dispatch tools (project-anchored)', () => {
     expect(tools.list_conversations).toBeDefined() // still available (Jonas)
   })
 
+  // fallow-ignore-next-line code-duplication
+  test('project_brief: active conversation has NO interactionCost tag', async () => {
+    seedBrief('arr indexes media')
+    const tools = buildDispatchToolset(
+      fakeRt([
+        {
+          id: 'c1',
+          project: ARR,
+          status: 'active',
+          title: 'heavy opus work',
+          model: 'opus',
+          tokenUsage: { input: 200_000, cacheCreation: 50_000, cacheRead: 19_000 } as never,
+          lastActivity: Date.now() - 5_000,
+          liveStatus: { state: 'working' } as never,
+        },
+      ]),
+    )
+    const out = (await tools.project_brief.execute({ project: 'arr' }, ctx)) as {
+      conversations: Array<{ conversationId: string; interactionCost?: string }>
+    }
+    expect(out.conversations[0].interactionCost).toBeUndefined()
+  })
+
+  test('project_brief: idle conversation DOES show interactionCost tag', async () => {
+    seedBrief('arr indexes media')
+    const tools = buildDispatchToolset(
+      fakeRt([
+        {
+          id: 'c2',
+          project: ARR,
+          status: 'idle',
+          title: 'idle opus work',
+          model: 'opus',
+          tokenUsage: { input: 200_000, cacheCreation: 50_000, cacheRead: 19_000 } as never,
+          lastActivity: Date.now() - 60_000,
+        },
+      ]),
+    )
+    const out = (await tools.project_brief.execute({ project: 'arr' }, ctx)) as {
+      conversations: Array<{ conversationId: string; interactionCost?: string }>
+    }
+    expect(out.conversations[0].interactionCost).toBeDefined()
+  })
+
   test('dispatch_quest rejects an unknown project cleanly', async () => {
     const tools = buildDispatchToolset(fakeRt([]))
     const out = (await tools.dispatch_quest.execute({ project: 'nope-xyz', task: 'x', complexity: 'simple' }, ctx)) as {
