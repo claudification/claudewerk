@@ -1668,19 +1668,19 @@ function handleDispatchToolResult(msg: DashboardMessage) {
 }
 
 function handleSotuFleetResult(msg: DashboardMessage) {
-  useDispatchStore.getState().onSotuFleetResult(msg)
+  window.dispatchEvent(new CustomEvent('sotu-ws', { detail: msg }))
 }
 
-function handleSotuViewResult(_msg: DashboardMessage) {
-  // Handled by the SOTU viewer modal (task 5) via event bus.
+function handleSotuViewResult(msg: DashboardMessage) {
+  window.dispatchEvent(new CustomEvent('sotu-ws', { detail: msg }))
 }
 
-function handleSotuContribution(_msg: DashboardMessage) {
-  // Live soft-lock update -- the viewer re-reads on this.
+function handleSotuContribution(msg: DashboardMessage) {
+  window.dispatchEvent(new CustomEvent('sotu-ws', { detail: msg }))
 }
 
-function handleSotuUpdated(_msg: DashboardMessage) {
-  // Distill completed -- the viewer re-reads the fresh chronicle.
+function handleSotuUpdated(msg: DashboardMessage) {
+  window.dispatchEvent(new CustomEvent('sotu-ws', { detail: msg }))
 }
 
 export const handlers: Record<string, MessageHandler> = {
