@@ -14,9 +14,9 @@
  *   dismiss-> close the modal + drop from live-dialog store
  */
 
-import type { DialogStatus } from '@shared/dialog-live'
+import { ACTIVE_PAGE_KEY, type DialogStatus } from '@shared/dialog-live'
 import { Undo2 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import type { LiveDialogEntry } from '@/hooks/use-live-dialogs'
 import { useLiveDialogsStore } from '@/hooks/use-live-dialogs'
@@ -26,6 +26,7 @@ import { Markdown } from '../../markdown'
 import { ModalSurface } from '../../modal-surface'
 import { Button } from '../../ui/button'
 import { collectRequired, hasValue } from '../dialog-form-init'
+import { layoutPages, resolvePageIndex } from '../dialog-pages'
 import { DIALOG_WIDTH_CLASS } from '../dialog-width'
 import { PersistentDialogBody } from './persistent-dialog-body'
 import { PersistentDialogFooter } from './persistent-dialog-footer'
@@ -71,23 +72,25 @@ export function LiveDialogModal({ conversationId }: { conversationId: string }) 
     s => ((conversationId && s.conversationPermissions[conversationId]) || s.permissions).canDialogInteract,
   )
 
+  const selectedId = useConversationsStore(s => s.selectedConversationId)
+
   const modalId = `live-dialog:${conversationId}`
   const modal = useManagedModal({ id: modalId, kind: 'live-dialog', title: entry?.snapshot.layout.title ?? 'Dialog' })
 
-  // Auto-open when a dialog appears; auto-close when removed or non-open.
-  const prevEntry = useRef<LiveDialogEntry | undefined>(undefined)
+  // Auto-open when a dialog appears AND the user is viewing this conversation.
+  // If the user is on a different conversation, the dialog waits -- it opens
+  // when they navigate here (selectedId changes to match). Never steal focus.
   const restoreOnUpdate = useRef(false)
   // fallow-ignore-next-line complexity
   useEffect(() => {
-    const hadEntry = !!prevEntry.current
-    prevEntry.current = entry
-    if (entry && !hadEntry && modal.presentation === 'closed') {
+    const isSelected = selectedId === conversationId
+    if (entry && isSelected && modal.presentation === 'closed') {
       modal.open({ type: 'conversation', id: conversationId })
     }
     if (!entry && modal.presentation !== 'closed') {
       modal.close()
     }
-  }, [entry, modal, conversationId])
+  }, [entry, modal, conversationId, selectedId])
 
   // Auto-restore from dock when agent patches (SHIFT+send -> minimize -> agent
   // replies -> bring it back). Fires on any rev bump while docked+armed.
@@ -115,7 +118,6 @@ export function LiveDialogModal({ conversationId }: { conversationId: string }) 
 
   return (
     <LiveDialogModalInner
-      conversationId={conversationId}
       entry={entry}
       modal={modal}
       agentActive={agentActive}
@@ -129,7 +131,6 @@ export function LiveDialogModal({ conversationId }: { conversationId: string }) 
 
 // fallow-ignore-next-line complexity
 function LiveDialogModalInner({
-  conversationId,
   entry,
   modal,
   agentActive,
@@ -138,7 +139,6 @@ function LiveDialogModalInner({
   onClearError,
   onShiftSend,
 }: {
-  conversationId: string
   entry: LiveDialogEntry
   modal: ReturnType<typeof useManagedModal>
   agentActive: boolean
@@ -148,6 +148,20 @@ function LiveDialogModalInner({
   onShiftSend: () => void
 }) {
   const { form, values, layout, highlightIds, canUndo, undo } = usePersistentDialogForm(entry)
+
+  // Page state -- owned here so both Body and Footer can use it.
+  const pages = useMemo(() => layoutPages(layout), [layout])
+  const serverIdx = resolvePageIndex(form.values[ACTIVE_PAGE_KEY], pages)
+  const [userIdx, setUserIdx] = useState<number | null>(null)
+  const lastServer = useRef(form.values[ACTIVE_PAGE_KEY])
+  useEffect(() => {
+    const cur = form.values[ACTIVE_PAGE_KEY]
+    if (cur !== lastServer.current) {
+      lastServer.current = cur
+      setUserIdx(null)
+    }
+  }, [form.values])
+  const activePage = Math.min(userIdx ?? serverIdx ?? 0, pages.length - 1)
 
   const status = entry.snapshot.status
   const readOnly = !canInteract || status !== 'open'
@@ -199,7 +213,9 @@ function LiveDialogModalInner({
           )}
         >
           <PersistentDialogBody
-            layout={layout}
+            pages={pages}
+            activePage={activePage}
+            onSelectPage={setUserIdx}
             form={formWithAction}
             highlightIds={highlightIds}
             onAction={id => {
@@ -224,6 +240,15 @@ function LiveDialogModalInner({
               onShiftSend()
             }
           }}
+          pageNav={
+            pages.length > 1
+              ? {
+                  activePage,
+                  pageCount: pages.length,
+                  onNext: () => setUserIdx(Math.min(activePage + 1, pages.length - 1)),
+                }
+              : undefined
+          }
         />
       </div>
     </ModalSurface>
