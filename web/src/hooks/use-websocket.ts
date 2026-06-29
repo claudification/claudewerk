@@ -15,6 +15,7 @@ import { beginMessage, endMessage, setFlushBatch } from '@/lib/perf-message-cont
 import { isPerfEnabled, record as perfRecord } from '@/lib/perf-metrics'
 import { buildWsUrl, isShareView } from '@/lib/share-mode'
 import { cachePushEntries } from '@/lib/transcript-page-cache'
+import { addVoiceHistoryEntry } from '@/lib/voice-history'
 import { handleWebControlRequest } from '@/lib/web-control-dispatch'
 import { buildWebControlAdvertise } from '@/lib/web-control-grant'
 import { resubscribeAgentScopes, subscribeAgentScope, unsubscribeAgentScope } from './agent-scope-subscription'
@@ -517,6 +518,24 @@ export function useWebSocket() {
             const handler = useConversationsStore.getState().nightshiftWatchdogHandler
             handler?.(msg as unknown as Record<string, unknown>)
             return
+          }
+
+          // Recovered voice result (redelivered after WS reconnect) -> persist
+          // to localStorage history. The voice recording hook only listens
+          // during active recording; this global handler catches results
+          // that arrive on subscribe (reconnect).
+          if (msg.type === 'voice_done' && (msg as { recovered?: boolean }).recovered) {
+            const m = msg as { raw?: string; refined?: string }
+            if (m.raw || m.refined) {
+              console.log('[voice] Recovered voice result from broker (buffered during WS disconnect)')
+              addVoiceHistoryEntry({
+                raw: m.raw || '',
+                refined: m.refined || '',
+                conversationId: null,
+                recovered: true,
+              })
+            }
+            // Don't return -- let it also reach any active voice recording listener
           }
 
           // Terminal data -> direct handler callback (low latency critical)

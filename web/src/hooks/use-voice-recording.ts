@@ -18,6 +18,7 @@ import {
   scheduleStreamRelease,
   setMicExpired,
 } from '@/hooks/voice-mic-stream'
+import { addVoiceHistoryEntry } from '@/lib/voice-history'
 
 // Re-export the warm-stream public API so existing consumers
 // (voice-key, settings-page, use-global-commands) keep importing from here.
@@ -217,9 +218,17 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
       ws.removeEventListener('message', wsListenerRef.current)
     }
 
-    function onVoiceDone(msg: { refined?: string; raw?: string }) {
-      console.log(`[voice] ${elapsed()} done`)
+    function onVoiceDone(msg: { refined?: string; raw?: string; recovered?: boolean }) {
+      console.log(`[voice] ${elapsed()} done${msg.recovered ? ' (recovered from WS disconnect)' : ''}`)
       const text = msg.refined || msg.raw || ''
+      if (text) {
+        addVoiceHistoryEntry({
+          raw: msg.raw || '',
+          refined: msg.refined || '',
+          conversationId: target,
+          recovered: msg.recovered,
+        })
+      }
       setRefinedText(text)
       setState('submitting')
       onDone?.(text)

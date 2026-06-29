@@ -480,6 +480,30 @@ export function useGlobalCommands(toggleSidebar: () => void) {
   )
 
   useCommand(
+    'voice-history',
+    async () => {
+      const { getVoiceHistory } = await import('@/lib/voice-history')
+      const entries = getVoiceHistory()
+      if (entries.length === 0) {
+        console.log('[voice-history] No voice recordings in last 24h')
+        return
+      }
+      console.log(`[voice-history] ${entries.length} recordings:`)
+      for (const e of entries) {
+        const age = ((Date.now() - e.ts) / 60_000).toFixed(0)
+        console.log(`  [${age}m ago] ${e.refined || e.raw}`)
+      }
+      const latest = entries[entries.length - 1]
+      const text = latest.refined || latest.raw
+      if (text) {
+        await navigator.clipboard.writeText(text)
+        console.log(`[voice-history] Latest entry copied to clipboard (${text.length} chars)`)
+      }
+    },
+    { label: 'Voice history (copy latest to clipboard)', group: 'Voice' },
+  )
+
+  useCommand(
     'remount-app',
     async () => {
       const { remountApp } = await import('@/lib/remount')
