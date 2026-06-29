@@ -60,6 +60,12 @@ export type DialogOp =
   | { op: 'setPage'; page: number | string }
   | { op: 'busy'; target?: string; pending: boolean }
   | { op: 'close' }
+  // Page-level structural ops: add/remove/replace entire tabs. `page` targets
+  // by 0-based index or label string. `after` on addPage inserts after the
+  // target (index or label); omit to append at end.
+  | { op: 'addPage'; label: string; body: DialogComponent[]; after?: number | string }
+  | { op: 'removePage'; page: number | string }
+  | { op: 'replacePage'; page: number | string; label?: string; body?: DialogComponent[] }
 
 // ─── Host-authoritative snapshot ───────────────────────────────────
 //

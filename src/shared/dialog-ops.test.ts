@@ -115,3 +115,108 @@ describe('applyDialogOps', () => {
     expect(r.status).toBe('closed')
   })
 })
+
+// ─── Page-level ops ─────────────────────────────────────────────────
+
+function pageSnap(): DialogSnapshot {
+  return {
+    dialogId: 'd1',
+    seq: 0,
+    status: 'open',
+    state: {},
+    layout: {
+      title: 'Tabbed',
+      pages: [
+        { label: 'Plan', body: [{ type: 'Markdown', id: 'p1', content: 'plan' }] },
+        { label: 'Files', body: [{ type: 'Markdown', id: 'p2', content: 'files' }] },
+        { label: 'Risks', body: [{ type: 'Markdown', id: 'p3', content: 'risks' }] },
+      ],
+    },
+  } as DialogSnapshot
+}
+
+describe('page-level ops', () => {
+  test('addPage appends at end by default', () => {
+    const r = applyDialogOps(pageSnap(), [
+      { op: 'addPage', label: 'Notes', body: [{ type: 'Markdown', id: 'n1', content: 'notes' }] },
+    ])
+    expect(r.layout.pages).toHaveLength(4)
+    expect(r.layout.pages![3].label).toBe('Notes')
+    expect(r.applied).toBe(1)
+  })
+
+  test('addPage inserts after target by index', () => {
+    const r = applyDialogOps(pageSnap(), [
+      { op: 'addPage', label: 'Schema', body: [], after: 0 },
+    ])
+    expect(r.layout.pages).toHaveLength(4)
+    expect(r.layout.pages![1].label).toBe('Schema')
+    expect(r.layout.pages![2].label).toBe('Files')
+  })
+
+  test('addPage inserts after target by label', () => {
+    const r = applyDialogOps(pageSnap(), [
+      { op: 'addPage', label: 'Schema', body: [], after: 'Files' },
+    ])
+    expect(r.layout.pages![2].label).toBe('Schema')
+    expect(r.layout.pages![3].label).toBe('Risks')
+  })
+
+  test('removePage by index', () => {
+    const r = applyDialogOps(pageSnap(), [{ op: 'removePage', page: 1 }])
+    expect(r.layout.pages).toHaveLength(2)
+    expect(r.layout.pages![0].label).toBe('Plan')
+    expect(r.layout.pages![1].label).toBe('Risks')
+  })
+
+  test('removePage by label (case-insensitive)', () => {
+    const r = applyDialogOps(pageSnap(), [{ op: 'removePage', page: 'risks' }])
+    expect(r.layout.pages).toHaveLength(2)
+    expect(r.applied).toBe(1)
+  })
+
+  test('removePage rejects last page', () => {
+    const single = { ...pageSnap(), layout: { title: 'T', pages: [{ label: 'Only', body: [] }] } } as DialogSnapshot
+    const r = applyDialogOps(single, [{ op: 'removePage', page: 0 }])
+    expect(r.conflicts).toHaveLength(1)
+    expect(r.conflicts[0].reason).toContain('cannot remove the last page')
+  })
+
+  test('removePage conflicts on missing page', () => {
+    const r = applyDialogOps(pageSnap(), [{ op: 'removePage', page: 'nonexistent' }])
+    expect(r.conflicts).toHaveLength(1)
+    expect(r.conflicts[0].reason).toContain('not found')
+  })
+
+  test('replacePage updates label and body', () => {
+    const r = applyDialogOps(pageSnap(), [
+      { op: 'replacePage', page: 'Files', label: 'Changed Files', body: [{ type: 'Markdown', id: 'new', content: 'new' }] },
+    ])
+    expect(r.layout.pages![1].label).toBe('Changed Files')
+    expect(r.layout.pages![1].body).toHaveLength(1)
+    expect((r.layout.pages![1].body[0] as { id: string }).id).toBe('new')
+  })
+
+  test('replacePage updates only label when body omitted', () => {
+    const r = applyDialogOps(pageSnap(), [{ op: 'replacePage', page: 0, label: 'Overview' }])
+    expect(r.layout.pages![0].label).toBe('Overview')
+    expect(r.layout.pages![0].body).toHaveLength(1)
+  })
+
+  test('page ops conflict on body-only layout', () => {
+    const r = applyDialogOps(snap(), [{ op: 'addPage', label: 'X', body: [] }])
+    expect(r.conflicts).toHaveLength(1)
+    expect(r.conflicts[0].reason).toContain('no pages')
+  })
+
+  test('validates page op shapes', () => {
+    const errs = validateDialogOps([
+      { op: 'addPage' },
+      { op: 'removePage' },
+      { op: 'replacePage', page: 0, label: 42 },
+    ])
+    expect(errs.length).toBeGreaterThan(0)
+    expect(errs.some(e => e.includes('label'))).toBe(true)
+    expect(errs.some(e => e.includes('body'))).toBe(true)
+  })
+})
