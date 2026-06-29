@@ -1672,7 +1672,15 @@ function handleSotuFleetResult(msg: DashboardMessage) {
 }
 
 function handleSotuViewResult(_msg: DashboardMessage) {
-  // Handled by the SOTU viewer modal (task 5) -- placeholder for now.
+  // Handled by the SOTU viewer modal (task 5) via event bus.
+}
+
+function handleSotuContribution(_msg: DashboardMessage) {
+  // Live soft-lock update -- the viewer re-reads on this.
+}
+
+function handleSotuUpdated(_msg: DashboardMessage) {
+  // Distill completed -- the viewer re-reads the fresh chronicle.
 }
 
 export const handlers: Record<string, MessageHandler> = {
@@ -1775,7 +1783,9 @@ export const handlers: Record<string, MessageHandler> = {
   dispatch_decision: handleDispatchDecision,
   dispatch_tool_call: handleDispatchToolCall,
   dispatch_tool_result: handleDispatchToolResult,
-  // SOTU dashboard reads
+  // SOTU dashboard reads + live push
   sotu_fleet_result: handleSotuFleetResult,
   sotu_view_result: handleSotuViewResult,
+  sotu_contribution: handleSotuContribution,
+  sotu_updated: handleSotuUpdated,
 }
