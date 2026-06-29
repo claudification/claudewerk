@@ -88,6 +88,9 @@ const NightshiftModal = lazy(() =>
 const DebugControlModal = lazy(() =>
   import('@/components/debug/debug-control-modal').then(m => ({ default: m.DebugControlModal })),
 )
+const SotuViewerModal = lazy(() =>
+  import('@/components/sotu-viewer').then(m => ({ default: m.SotuViewerModal })),
+)
 // THE DIALOGUE -- live dialogs as managed modals (parkable, detachable).
 const LiveDialogModals = lazy(() =>
   import('@/components/dialog/persistent/live-dialog-modals').then(m => ({ default: m.LiveDialogModals })),
@@ -499,6 +502,9 @@ function Dashboard() {
           <DebugControlModal />
         </Suspense>
       )}
+      <Suspense fallback={null}>
+        <SotuViewerModal />
+      </Suspense>
       <Suspense fallback={null}>
         <LiveDialogModals />
       </Suspense>
