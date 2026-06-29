@@ -194,6 +194,16 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
       setFinalText(acc)
       accumulatedTextRef.current = acc
       setInterimText('')
+      // Entered 'refining' because no finals existed at stop time, but one
+      // arrived now (Deepgram's Finalize flush). Submit immediately with the
+      // raw text rather than waiting for the broker's LLM refinement round-trip
+      // which can exceed the 30s timeout. Matches the normal immediate-submit
+      // path in doStop() which also uses unrefined text.
+      if (stateRef.current === 'refining' && acc) {
+        console.log(`[voice] late isFinal during refining -- immediate submit (${acc.length} chars)`)
+        setRefinedText(acc)
+        setState('submitting')
+      }
     } else {
       setInterimText(msg.transcript || '')
     }
@@ -529,13 +539,15 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     } else {
       // No accumulated text yet (very short recording, or Deepgram hasn't
       // returned any finals). Fall back to waiting for broker's voice_done.
+      // A late isFinal in applyTranscript will submit immediately; this
+      // timeout is the safety net for when nothing arrives at all.
       setState('refining')
       setTimeout(() => {
         if (stateRef.current === 'refining') {
-          console.warn('[voice] Stuck in refining for 10s, resetting')
+          console.warn('[voice] Stuck in refining for 30s, resetting')
           reset()
         }
-      }, 10_000)
+      }, 30_000)
     }
   }
 
