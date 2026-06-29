@@ -186,6 +186,9 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
   }
 
   function applyTranscript(msg: { isFinal?: boolean; accumulated?: string; transcript?: string }) {
+    // Already committed to submit -- late broker transcripts (Deepgram's
+    // final-on-close) would re-trigger the consumer's auto-submit effect.
+    if (stateRef.current === 'submitting' || stateRef.current === 'idle') return
     if (msg.isFinal) {
       const acc = msg.accumulated || msg.transcript || ''
       setFinalText(acc)
