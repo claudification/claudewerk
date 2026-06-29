@@ -11,7 +11,7 @@ import diff, { type Difference } from 'microdiff'
 export type { Difference }
 export type DeltaPatch = Difference[]
 
-export function diffState<T extends Record<string, unknown>>(prev: T, next: T): DeltaPatch {
+export function diffState<T extends object>(prev: T, next: T): DeltaPatch {
   return diff(prev, next)
 }
 
@@ -20,7 +20,7 @@ export function diffState<T extends Record<string, unknown>>(prev: T, next: T): 
  * changes applied (does not mutate the input).
  */
 // fallow-ignore-next-line complexity
-export function applyPatch<T extends Record<string, unknown>>(base: T, diffs: DeltaPatch): T {
+export function applyPatch<T extends object>(base: T, diffs: DeltaPatch): T {
   if (diffs.length === 0) return base
   const out = structuredClone(base)
   for (const d of diffs) {
@@ -49,7 +49,7 @@ export function applyPatch<T extends Record<string, unknown>>(base: T, diffs: De
  * Patch overhead (type/path wrappers per change) means a patch that touches
  * most fields can exceed the full object -- in that case, send full.
  */
-export function deltaOrFull<T extends Record<string, unknown>>(
+export function deltaOrFull<T extends object>(
   prev: T | undefined,
   next: T,
   nextJson: string,

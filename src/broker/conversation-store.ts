@@ -5,6 +5,7 @@
 
 import type { ServerWebSocket } from 'bun'
 import { resolveContextWindow } from '../shared/context-window'
+import { deltaOrFull } from '../shared/delta-sync'
 import { deriveModelName } from '../shared/models'
 import {
   buildProjectUri,
@@ -627,6 +628,11 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
   // for the invalidation contract. `invalidateSummary` is the single hook all
   // those sites call.
   const summaryCache = createSummaryCache()
+  // Per-conversation snapshot of the last summary broadcast to control panels.
+  // Used by delta-sync to diff prev vs current and send compact patches.
+  // Cleared when a conversation is evicted; NOT cleared on invalidate (that
+  // would defeat the diff -- we need the old value to diff against).
+  const lastBroadcastSummary = new Map<string, ConversationSummary>()
   function invalidateSummary(conversationId: string): void {
     summaryCache.invalidate(conversationId)
   }
@@ -909,17 +915,38 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     const permMemo = createPermissionMemo()
     for (const id of pendingConversationUpdates) {
       const conv = conversations.get(id)
-      if (conv) {
+      if (!conv) continue
+      const { summary, json } = getSummaryEntry(conv)
+      const prev = lastBroadcastSummary.get(id)
+      const delta = deltaOrFull(prev, summary, json)
+
+      if (delta.mode === 'patch' && delta.diffs.length === 0) {
+        // No change -- skip the broadcast entirely
+        continue
+      }
+
+      if (delta.mode === 'patch') {
+        broadcastConversationScoped(
+          {
+            type: 'conversation_patch',
+            conversationId: id,
+            diffs: delta.diffs,
+          },
+          conv.project,
+          permMemo,
+        )
+      } else {
         broadcastConversationScoped(
           {
             type: 'conversation_update',
             conversationId: id,
-            conversation: getConversationSummary(conv),
+            conversation: summary,
           },
           conv.project,
           permMemo,
         )
       }
+      lastBroadcastSummary.set(id, summary)
     }
     pendingConversationUpdates.clear()
   }
@@ -1423,14 +1450,16 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     persistConversation(conv)
 
     // Broadcast to dashboard subscribers (scoped by grants)
+    const createdSummary = getConversationSummary(conv)
     broadcastConversationScoped(
       {
         type: 'conversation_created',
         conversationId: id,
-        conversation: getConversationSummary(conv),
+        conversation: createdSummary,
       },
       conv.project,
     )
+    lastBroadcastSummary.set(id, createdSummary)
 
     // Push per-conversation permissions to scoped subscribers so the client can
     // immediately include the new conversation in its filtered list.
@@ -1564,15 +1593,17 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       // resumeConversation mutates conv directly without going through
       // scheduleConversationUpdate -- invalidate before building the summary.
       invalidateSummary(id)
+      const resumeSummary = getConversationSummary(conv)
       // Notify dashboards that this conversation resumed - triggers transcript re-fetch
       broadcastConversationScoped(
         {
           type: 'conversation_update',
           conversationId: id,
-          conversation: getConversationSummary(conv),
+          conversation: resumeSummary,
         },
         conv.project,
       )
+      lastBroadcastSummary.set(id, resumeSummary)
 
       // Background lifecycle signal -- only a genuine un-end is interesting to
       // the memory engine (a plain reconnect of a live conv is not).
@@ -1678,14 +1709,16 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
 
     // /clear mutates conv directly (not via scheduleConversationUpdate).
     invalidateSummary(conversationId)
+    const clearSummary = getConversationSummary(conv)
     broadcastConversationScoped(
       {
         type: 'conversation_update',
         conversationId,
-        conversation: getConversationSummary(conv),
+        conversation: clearSummary,
       },
       conv.project,
     )
+    lastBroadcastSummary.set(conversationId, clearSummary)
 
     if (wasCompacting) {
       const marker = { type: 'compacting' as const, timestamp: new Date().toISOString() }
@@ -1925,15 +1958,17 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       // endConversation mutates conv directly (status/subagents/teammates/bgTasks)
       // without scheduleConversationUpdate -- invalidate before building.
       invalidateSummary(conversationId)
+      const endedSummary = getConversationSummary(conv)
       // Broadcast to dashboard subscribers (scoped by grants)
       broadcastConversationScoped(
         {
           type: 'conversation_ended',
           conversationId,
-          conversation: getConversationSummary(conv),
+          conversation: endedSummary,
         },
         conv.project,
       )
+      lastBroadcastSummary.set(conversationId, endedSummary)
 
       // Persist to store immediately
       persistConversation(conv)
@@ -1953,6 +1988,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     conversations.delete(conversationId)
     conversationSockets.delete(conversationId)
     invalidateSummary(conversationId)
+    lastBroadcastSummary.delete(conversationId)
     transcriptCache.delete(conversationId)
     transcriptSeqCounters.delete(conversationId)
     dirtyTranscripts.delete(conversationId)

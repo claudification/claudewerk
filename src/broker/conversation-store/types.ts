@@ -44,6 +44,7 @@ export interface SentinelStatusInfo {
 export interface ControlPanelMessage {
   type:
     | 'conversation_update'
+    | 'conversation_patch'
     | 'conversation_created'
     | 'conversation_ended'
     | 'conversation_terminated'
@@ -74,6 +75,7 @@ export interface ControlPanelMessage {
   previousConversationId?: string
   conversation?: ConversationSummary
   conversations?: ConversationSummary[]
+  diffs?: unknown[]
   event?: unknown
   connected?: boolean
   machineId?: string

@@ -198,9 +198,7 @@ describe('microdiff fitness for rclaude state sync', () => {
     it('subagent status change (nested array element field)', () => {
       const prev = makeSummary()
       const next = makeSummary()
-      // @ts-expect-error -- mutating fixture
       next.subagents[0].status = 'stopped'
-      // @ts-expect-error
       next.subagents[0].stoppedAt = 1719604000000
       const d = diff(prev, next)
 
@@ -212,9 +210,7 @@ describe('microdiff fitness for rclaude state sync', () => {
     it('new task added to activeTasks', () => {
       const prev = makeSummary()
       const next = makeSummary()
-      // @ts-expect-error
       next.activeTasks.push({ id: 'task_new', subject: 'New hot task' })
-      // @ts-expect-error
       next.taskCount = 9
 
       const d = diff(prev, next)
@@ -225,13 +221,9 @@ describe('microdiff fitness for rclaude state sync', () => {
     it('task moved from pending to completed', () => {
       const prev = makeSummary()
       const next = makeSummary()
-      // @ts-expect-error - move task_3 from pending to completed
-      next.pendingTasks = next.pendingTasks.filter((t: any) => t.id !== 'task_3')
-      // @ts-expect-error
+      next.pendingTasks = next.pendingTasks.filter(t => t.id !== 'task_3')
       next.completedTasks.push({ id: 'task_3', subject: 'Deploy to staging' })
-      // @ts-expect-error
       next.pendingTaskCount = 2
-      // @ts-expect-error
       next.completedTaskCount = 4
 
       const d = diff(prev, next)
@@ -395,9 +387,7 @@ describe('microdiff fitness for rclaude state sync', () => {
     })
 
     it('diffs 50 summaries (fleet broadcast) in < 5ms', () => {
-      const summaries = Array.from({ length: 50 }, (_, i) =>
-        makeSummary({ id: `conv_${i}`, eventCount: 100 + i }),
-      )
+      const summaries = Array.from({ length: 50 }, (_, i) => makeSummary({ id: `conv_${i}`, eventCount: 100 + i }))
       const updated = summaries.map((s, i) => ({ ...s, eventCount: s.eventCount + 1, lastActivity: Date.now() }))
 
       const start = performance.now()

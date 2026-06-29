@@ -10,6 +10,7 @@
  * subscribed selector -- so handler reorganization has no React #310 risk.
  */
 
+import { applyPatch, type DeltaPatch } from '@shared/delta-sync'
 import type { DialogOp, DialogSnapshot } from '@shared/dialog-live'
 import type { DialogLayout } from '@shared/dialog-schema'
 import { formatResetIn } from '@shared/format-reset-time'
@@ -435,6 +436,35 @@ function handleConversationUpdate(msg: DashboardMessage) {
       }, 1000)
     }
   }
+}
+
+function handleConversationPatch(msg: DashboardMessage) {
+  const conversationId = msg.conversationId
+  const diffs = msg.diffs as DeltaPatch | undefined
+  if (!conversationId || !diffs || diffs.length === 0) return
+
+  useConversationsStore.setState(state => {
+    const prev = state.conversationsById[conversationId]
+    if (!prev) return state
+    const patched = applyPatch(prev, diffs) as Conversation
+    const selectedId = state.selectedConversationId
+    rememberFull(patched, selectedId)
+    const entry = selectedId === conversationId ? patched : slimConversation(patched)
+    const newState: Partial<typeof state> = {
+      conversationsById: { ...state.conversationsById, [conversationId]: entry },
+    }
+    if (patched.status === 'idle' || patched.status === 'ended') {
+      if (state.streamingText[conversationId]) {
+        const { [conversationId]: _t, ...rest } = state.streamingText
+        newState.streamingText = rest
+      }
+      if (state.streamingThinking[conversationId]) {
+        const { [conversationId]: _k, ...rest } = state.streamingThinking
+        newState.streamingThinking = rest
+      }
+    }
+    return newState
+  })
 }
 
 function handleChannelAck(msg: DashboardMessage) {
@@ -1693,6 +1723,7 @@ export const handlers: Record<string, MessageHandler> = {
   conversation_created: handleConversationCreated,
   conversation_ended: handleConversationUpdate,
   conversation_update: handleConversationUpdate,
+  conversation_patch: handleConversationPatch,
   channel_ack: handleChannelAck,
   event: handleEvent,
   // transcripts + streaming
