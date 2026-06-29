@@ -155,6 +155,15 @@ export function ConversationContextMenu({
             className={menuItemClass}
             onSelect={() => {
               haptic('tap')
+              window.open(`/conversation/${conversation.id}`, `conv-${conversation.id}`, 'noopener')
+            }}
+          >
+            Open in new window
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            className={menuItemClass}
+            onSelect={() => {
+              haptic('tap')
               useConversationsStore.getState().setRenamingConversationId(conversation.id)
             }}
           >
