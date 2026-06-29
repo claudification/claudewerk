@@ -92,11 +92,15 @@ function Root() {
   return mounted ? <App key={gen} /> : null
 }
 
-// A drawing opens in its OWN lightweight window (/canvas/:id, via window.open):
-// render JUST the canvas surface, NOT the full app shell. Lazy so the canvas
-// chunk (Excalidraw) never loads for the main app.
+// Standalone windows: each opens in its OWN lightweight shell (/canvas/:id,
+// /conversation/:id via window.open), bypassing the full app. Lazy-loaded so
+// chunks only pull in when needed.
 const CanvasWindow = lazy(() => import('./components/canvas/canvas-window').then(m => ({ default: m.CanvasWindow })))
+const ConversationWindow = lazy(() =>
+  import('./components/conversation-window').then(m => ({ default: m.ConversationWindow })),
+)
 const isCanvasWindow = window.location.pathname.startsWith('/canvas/')
+const isConversationWindow = window.location.pathname.startsWith('/conversation/')
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
@@ -104,6 +108,10 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
       {isCanvasWindow ? (
         <Suspense fallback={null}>
           <CanvasWindow />
+        </Suspense>
+      ) : isConversationWindow ? (
+        <Suspense fallback={null}>
+          <ConversationWindow />
         </Suspense>
       ) : (
         <Root />
