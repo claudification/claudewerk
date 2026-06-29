@@ -5,7 +5,7 @@
  */
 
 import { Globe, Layers } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import { useManagedModal } from '@/hooks/use-modal-manager'
 import { useCommand } from '@/lib/commands'
@@ -101,7 +101,9 @@ function HoldsSection({ holds }: { holds: SotuViewData['holds'] }) {
   )
 }
 
-function ProjectView({ view }: { view: SotuViewData | null }) {
+// fallow-ignore-next-line complexity
+function ProjectView({ view, error }: { view: SotuViewData | null; error: string | null }) {
+  if (error) return <p className="text-rose-400 text-xs p-4">{error}</p>
   if (!view) return <p className="text-comment text-xs p-4">Loading...</p>
   const now = Date.now()
   return (
@@ -134,7 +136,8 @@ function ProjectView({ view }: { view: SotuViewData | null }) {
   )
 }
 
-function UniverseView({ projects }: { projects: FleetProject[] | null }) {
+function UniverseView({ projects, error }: { projects: FleetProject[] | null; error: string | null }) {
+  if (error) return <p className="text-rose-400 text-xs p-4">{error}</p>
   if (!projects) return <p className="text-comment text-xs p-4">Loading...</p>
   const enabled = projects.filter(p => p.enabled)
   const withActivity = projects.filter(p => p.queueSize > 0 || p.view.chronicle.now.length > 0)
@@ -169,18 +172,37 @@ export function SotuViewerModal() {
   const [tab, setTab] = useState<Tab>('project')
   const [projectView, setProjectView] = useState<SotuViewData | null>(null)
   const [fleetProjects, setFleetProjects] = useState<FleetProject[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout>>()
 
   const selectedConversationId = useConversationsStore(s => s.selectedConversationId)
   const conversations = useConversationsStore(s => s.conversationsById)
   const currentProject = selectedConversationId ? conversations?.[selectedConversationId]?.project : undefined
 
+  const startTimeout = useCallback(() => {
+    clearTimeout(timeoutRef.current)
+    timeoutRef.current = setTimeout(() => setError('No response from broker -- is it deployed with SOTU WS handlers?'), 5000)
+  }, [])
+
+  const clearError = useCallback(() => {
+    clearTimeout(timeoutRef.current)
+    setError(null)
+  }, [])
+
   const fetchProject = useCallback(() => {
-    if (currentProject) wsSend('sotu_view', { project: currentProject })
-  }, [currentProject])
+    if (!currentProject) return
+    setError(null)
+    setProjectView(null)
+    wsSend('sotu_view', { project: currentProject })
+    startTimeout()
+  }, [currentProject, startTimeout])
 
   const fetchFleet = useCallback(() => {
+    setError(null)
+    setFleetProjects(null)
     wsSend('sotu_fleet')
-  }, [])
+    startTimeout()
+  }, [startTimeout])
 
   useEffect(() => {
     if (!modal.isVisible) return
@@ -192,10 +214,17 @@ export function SotuViewerModal() {
     const refresh = tab === 'project' ? fetchProject : fetchFleet
     // fallow-ignore-next-line complexity
     function onSotuWs(e: CustomEvent<{ type: string; [k: string]: unknown }>) {
-      const { type, view, projects } = e.detail as Record<string, unknown>
-      if (type === 'sotu_view_result' && view) setProjectView(view as SotuViewData)
-      else if (type === 'sotu_fleet_result' && projects) setFleetProjects(projects as FleetProject[])
-      else if (type === 'sotu_updated' || type === 'sotu_contribution') refresh()
+      const { type, view, projects, error: err } = e.detail as Record<string, unknown>
+      if (type === 'sotu_view_result') {
+        clearError()
+        if (err) setError(err as string)
+        else if (view) setProjectView(view as SotuViewData)
+      } else if (type === 'sotu_fleet_result') {
+        clearError()
+        if (projects) setFleetProjects(projects as FleetProject[])
+      } else if (type === 'sotu_updated' || type === 'sotu_contribution') {
+        refresh()
+      }
     }
     window.addEventListener('sotu-ws' as string, onSotuWs as EventListener)
     return () => window.removeEventListener('sotu-ws' as string, onSotuWs as EventListener)
@@ -229,7 +258,11 @@ export function SotuViewerModal() {
             Universe
           </button>
         </div>
-        {tab === 'project' ? <ProjectView view={projectView} /> : <UniverseView projects={fleetProjects} />}
+        {tab === 'project' ? (
+          <ProjectView view={projectView} error={error} />
+        ) : (
+          <UniverseView projects={fleetProjects} error={error} />
+        )}
       </div>
     </ModalSurface>
   )
