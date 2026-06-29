@@ -103,6 +103,9 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
   const offlineBufferRef = useRef<string[]>([])
   const accumulatedTextRef = useRef('') // last known accumulated transcript from broker
   const reconnectingRef = useRef(false) // prevents double-fire of reconnect logic
+  // Session sequence: prevents a late voice_done from a previous recording from
+  // clobbering a new one that started while the broker was still processing.
+  const voiceSeqRef = useRef(0)
 
   stateRef.current = state
 
@@ -201,12 +204,8 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
   }
 
   /** Returns false (and sets error state) if the socket isn't genuinely open. */
-  function attachWsListener(onDone?: (text: string) => void): boolean {
+  function attachWsListener(seq: number): boolean {
     const ws = useConversationsStore.getState().ws
-    // A present-but-not-OPEN socket is the core bug: sendWsMessage silently
-    // drops everything when readyState !== OPEN, so voice_start + every audio
-    // chunk vanish while the UI claims it's recording. Refuse to start unless
-    // the socket is genuinely open.
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       console.error(`[voice] cannot start: broker WS not open (readyState=${ws?.readyState ?? 'no-socket'})`)
       setErrorMsg('Not connected to server')
@@ -218,8 +217,8 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
       ws.removeEventListener('message', wsListenerRef.current)
     }
 
+    // fallow-ignore-next-line complexity
     function onVoiceDone(msg: { refined?: string; raw?: string; recovered?: boolean }) {
-      console.log(`[voice] ${elapsed()} done${msg.recovered ? ' (recovered from WS disconnect)' : ''}`)
       const text = msg.refined || msg.raw || ''
       if (text) {
         addVoiceHistoryEntry({
@@ -229,9 +228,24 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
           recovered: msg.recovered,
         })
       }
+      // Late arrival from a previous session -- save to history but don't
+      // touch state. The immediate submit in doStop() already delivered.
+      if (seq !== voiceSeqRef.current) {
+        console.log(
+          `[voice] ${elapsed()} voice_done from old session (seq=${seq}, current=${voiceSeqRef.current}) -- saved to history`,
+        )
+        return
+      }
+      // If we already submitted immediately (state is submitting/idle),
+      // this is a late broker round-trip -- just log.
+      if (stateRef.current === 'submitting' || stateRef.current === 'idle') {
+        console.log(`[voice] ${elapsed()} voice_done arrived after immediate submit -- saved to history`)
+        return
+      }
+      // Fallback: still waiting (e.g. no accumulated text at stop time)
+      console.log(`[voice] ${elapsed()} done${msg.recovered ? ' (recovered)' : ''}`)
       setRefinedText(text)
       setState('submitting')
-      onDone?.(text)
     }
 
     function handleMessage(event: MessageEvent) {
@@ -241,9 +255,6 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
 
         switch (msg.type) {
           case 'voice_connecting':
-            // Broker received our voice_start and is dialing Deepgram. Proves
-            // the browser->broker leg is alive; if voice_ready never follows,
-            // Deepgram is the failed leg (not a dropped voice_start).
             brokerAckedRef.current = true
             console.log(`[voice] ${elapsed()} voice_connecting (broker ack, dialing transcriber)`)
             break
@@ -257,13 +268,12 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
             break
           case 'voice_refining':
             console.log(`[voice] ${elapsed()} refining...`)
-            setState('refining')
             break
           case 'voice_done':
             onVoiceDone(msg)
             break
           case 'voice_error':
-            onServerError(msg.error)
+            if (seq === voiceSeqRef.current) onServerError(msg.error)
             break
         }
       } catch {}
@@ -324,7 +334,7 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     )
 
     // Re-attach to the new WS object (old one is dead)
-    if (!attachWsListener()) {
+    if (!attachWsListener(voiceSeqRef.current)) {
       reconnectingRef.current = false
       return
     }
@@ -417,15 +427,20 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     const target = useConversationsStore.getState().selectedConversationId
     setTargetConversationId(target)
 
+    voiceSeqRef.current++
+    const seq = voiceSeqRef.current
     startTsRef.current = performance.now()
     setMicExpired(false)
-    console.log(`[voice] start() (target=${target ?? 'none'})`)
+    console.log(`[voice] start() (target=${target ?? 'none'}, seq=${seq})`)
 
     cancelledRef.current = false
     pendingStopRef.current = false
     brokerAckedRef.current = false
     backendReadyRef.current = false
     droppedChunksRef.current = 0
+    offlineBufferRef.current = []
+    accumulatedTextRef.current = ''
+    reconnectingRef.current = false
     setInterimText('')
     setFinalText('')
     setRefinedText('')
@@ -433,8 +448,7 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     setBackendReady(false)
     setState('connecting')
 
-    // attachWsListener refuses (and sets error state) if the socket isn't OPEN.
-    if (!attachWsListener()) return
+    if (!attachWsListener(seq)) return
 
     try {
       const stream = await acquireMicStream()
@@ -495,14 +509,31 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
       scheduleStreamRelease()
       sendWs({ type: 'voice_stop' })
     }
-    setState('refining')
 
-    setTimeout(() => {
-      if (stateRef.current === 'refining') {
-        console.warn('[voice] Stuck in refining for 10s, resetting')
-        reset()
-      }
-    }, 10_000)
+    // Use the accumulated transcript directly -- don't wait for the broker
+    // round-trip (voice_stop -> Deepgram finalize -> voice_done). The client
+    // already has every isFinal segment via voice_transcript messages.
+    const immediateText = accumulatedTextRef.current
+    if (immediateText) {
+      console.log(`[voice] ${elapsed()} immediate submit (${immediateText.length} chars)`)
+      addVoiceHistoryEntry({
+        raw: immediateText,
+        refined: immediateText,
+        conversationId: targetConversationId,
+      })
+      setRefinedText(immediateText)
+      setState('submitting')
+    } else {
+      // No accumulated text yet (very short recording, or Deepgram hasn't
+      // returned any finals). Fall back to waiting for broker's voice_done.
+      setState('refining')
+      setTimeout(() => {
+        if (stateRef.current === 'refining') {
+          console.warn('[voice] Stuck in refining for 10s, resetting')
+          reset()
+        }
+      }, 10_000)
+    }
   }
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: doStop is a stable function
