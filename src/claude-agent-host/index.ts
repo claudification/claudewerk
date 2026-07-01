@@ -115,6 +115,7 @@ async function main() {
     jsonStreamAttached: false,
     jsonStreamBuffer: [],
     resumeId: cli.resumeId || null,
+    forkSession: cli.forkSession,
     syntheticUserUuids: new Map(),
     parentTranscriptPath: null,
     lastTasksJson: '',

@@ -20,6 +20,24 @@ export interface ReviveOverrides {
    *  comes from the conversation's `resolvedProfile` field; overriding is only
    *  useful for tests or recovery flows. */
   profile?: string
+  /** FORK: branch a NEW CC session off the source instead of continuing it in
+   *  place. The caller pairs this with a fresh `newConversationId`; the source
+   *  conversation is left untouched. */
+  forkSession?: boolean
+  /** FORK / ROLLBACK: truncate replayed history to end at this source message
+   *  uuid (`--resume-session-at`). Undefined = fork from HEAD. */
+  resumeSessionAt?: string
+}
+
+/**
+ * Whether a conversation has a resumable CC session (it booted at least once).
+ * A FORK replays the source CC session, so callers gate on this before forking.
+ * Lives here because `build-revive.ts` is the boundary-allowlisted file allowed
+ * to touch `agentHostMeta.ccSessionId` -- the broker core stays free of it and
+ * only sees a boolean.
+ */
+export function conversationHasCcSession(conversation: Conversation): boolean {
+  return typeof conversation.agentHostMeta?.ccSessionId === 'string'
 }
 
 /**
@@ -48,6 +66,11 @@ export function buildReviveMessage(
     jobId: overrides?.jobId,
     conversationName: conversation.title || undefined,
     mode: 'resume',
+    // FORK: branch off the source session (--fork-session) rather than continue
+    // it. `resumeSessionAt` truncates the replay to a source message uuid. Both
+    // are opaque passthroughs -- the sentinel turns them into CC flags.
+    forkSession: overrides?.forkSession || undefined,
+    resumeSessionAt: overrides?.resumeSessionAt || undefined,
     headless: overrides?.headless ?? lc?.headless,
     effort: overrides?.effort ?? lc?.effort ?? undefined,
     model: overrides?.model ?? lc?.model ?? conversation.model ?? undefined,

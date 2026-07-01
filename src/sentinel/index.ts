@@ -656,6 +656,11 @@ function buildHeadlessEnv(opts: {
    *  `CLAUDE_CODE_OAUTH_TOKEN`; conflicting host `ANTHROPIC_*` creds are
    *  stripped so the token actually wins (auth precedence #3 > #5). */
   oauthToken?: string
+  /** FORK: branch a new CC session off `ccSessionId` (`--fork-session`). */
+  forkSession?: boolean
+  /** FORK / ROLLBACK: truncate replayed history to this source message uuid
+   *  (`--resume-session-at`). */
+  resumeSessionAt?: string
 }): Record<string, string | undefined> {
   // Start from sanitized sentinel env (PATH, API keys, etc. but no conversation-scoped vars)
   const env = cleanSentinelEnv()
@@ -688,6 +693,8 @@ function buildHeadlessEnv(opts: {
     env.RCLAUDE_ADVISOR = opts.advisor
     env.CLAUDE_CODE_ENABLE_EXPERIMENTAL_ADVISOR_TOOL = '1'
   }
+  if (opts.forkSession) env.RCLAUDE_FORK_SESSION = '1'
+  if (opts.resumeSessionAt) env.RCLAUDE_RESUME_SESSION_AT = opts.resumeSessionAt
   if (opts.includePartialMessages === false) env.RCLAUDE_INCLUDE_PARTIAL_MESSAGES = '0'
   if (opts.appendSystemPrompt) env.CLAUDWERK_APPEND_SYSTEM_PROMPT = opts.appendSystemPrompt
   if (opts.settingsPath) env.CLAUDWERK_SETTINGS_PATH = opts.settingsPath
@@ -1918,6 +1925,11 @@ async function reviveConversation(
   agent?: string,
   profile?: ResolvedProfile,
   advisor?: string,
+  /** FORK: branch a new CC session off `ccSessionId` (`--fork-session`),
+   *  optionally truncating replayed history to `resumeSessionAt` (a source
+   *  message uuid). The source conversation is untouched; CC writes the forked
+   *  history to a NEW session file. */
+  fork?: { session?: boolean; resumeSessionAt?: string },
 ): Promise<ReviveResult & { tmuxPaneId?: string }> {
   const result: ReviveResult = {
     type: 'revive_result',
@@ -1978,9 +1990,16 @@ async function reviveConversation(
       configDir: profile?.configDir,
       profileEnv: profile?.env,
       oauthToken: profile?.oauthToken,
+      forkSession: fork?.session,
+      resumeSessionAt: fork?.resumeSessionAt,
     })
 
-    launchLog(jobId, 'Reviving headless (direct spawn)', 'info', `mode=${mode || 'default'}`)
+    launchLog(
+      jobId,
+      fork?.session ? 'Forking headless (direct spawn)' : 'Reviving headless (direct spawn)',
+      'info',
+      `mode=${mode || 'default'}${fork?.session ? ` fork@${fork.resumeSessionAt?.slice(0, 8) || 'HEAD'}` : ''}`,
+    )
     const spawnRes = spawnHeadlessDirect(rclaudeBin, cwd, conversationId, args, spawnEnv, jobId, mode === 'resume')
     result.success = spawnRes.success
     result.error = spawnRes.error
@@ -2024,6 +2043,8 @@ async function reviveConversation(
     ...(maxBudgetUsd ? { RCLAUDE_MAX_BUDGET_USD: String(maxBudgetUsd) } : {}),
     ...(adHocWorktree ? { RCLAUDE_WORKTREE: adHocWorktree } : {}),
     ...(agent ? { RCLAUDE_AGENT: agent } : {}),
+    ...(fork?.session ? { RCLAUDE_FORK_SESSION: '1' } : {}),
+    ...(fork?.resumeSessionAt ? { RCLAUDE_RESUME_SESSION_AT: fork.resumeSessionAt } : {}),
     ...(env && Object.keys(env).length ? { RCLAUDE_CUSTOM_ENV: JSON.stringify(env) } : {}),
     // Sentinel profile -- inject CLAUDE_CONFIG_DIR + profile.env DIRECTLY
     // so revive-session.sh, the tmux child, and the rclaude binary all see
@@ -3151,6 +3172,7 @@ function connect(
             reviveMsg.agent,
             resolvedReviveProfile,
             reviveMsg.advisor,
+            reviveMsg.forkSession ? { session: true, resumeSessionAt: reviveMsg.resumeSessionAt } : undefined,
           )
           // Strip sentinel-internal tmuxPaneId before sending over WS. Echo the
           // resolved profile NAME (not configDir / env -- Profile-Env Boundary).

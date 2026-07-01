@@ -60,6 +60,10 @@ export interface AgentHostContext {
   jsonStreamAttached: boolean
   readonly jsonStreamBuffer: string[]
   resumeId: string | null
+  /** FORK: launched with `--fork-session` -- CC branched a new session off
+   *  `resumeId` and writes the forked history to a NEW session file, so the
+   *  transcript path is derived from the observed (new) session id, not resumeId. */
+  forkSession: boolean
   parentTranscriptPath: string | null
   syntheticUserUuids: Map<string, string>
   lastTasksJson: string

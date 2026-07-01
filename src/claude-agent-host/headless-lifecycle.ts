@@ -150,13 +150,17 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
       }
       // Derive transcript path from init if not yet set by SessionStart hook.
       // On --resume, CC reports a NEW session_id but keeps writing to the
-      // ORIGINAL file. Use the resumeId for the path when available.
+      // ORIGINAL file, so we use the resumeId for the path. A FORK is the
+      // exception: `--fork-session` writes the branched history to the NEW
+      // session file, so we MUST use the observed init.session_id -- using
+      // resumeId there would tail the source conversation's file instead.
       if (init.session_id && !ctx.parentTranscriptPath) {
         const cwdSlug = ctx.cwd.replace(/\//g, '-').replace(/^-/, '')
-        const transcriptId = ctx.resumeId || init.session_id
+        const transcriptId = ctx.forkSession ? init.session_id : ctx.resumeId || init.session_id
         ctx.parentTranscriptPath = join(claudeConfigDir(), 'projects', cwdSlug, `${transcriptId}.jsonl`)
         debug(
-          `[headless] Derived transcript path: ${ctx.parentTranscriptPath}${ctx.resumeId ? ` (resumed from ${ctx.resumeId})` : ''}`,
+          `[headless] Derived transcript path: ${ctx.parentTranscriptPath}` +
+            `${ctx.forkSession ? ` (forked from ${ctx.resumeId})` : ctx.resumeId ? ` (resumed from ${ctx.resumeId})` : ''}`,
         )
       }
       // Forward full init metadata to broker for dashboard autocomplete

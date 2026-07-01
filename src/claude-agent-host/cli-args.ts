@@ -25,6 +25,11 @@ export interface CliConfig {
   claudeArgs: string[]
   configuredModel: string | undefined
   resumeId: string | undefined
+  /** FORK: this worker was launched with `--fork-session` -- it branches a new
+   *  CC session off `resumeId` rather than continuing it. Drives the fork-aware
+   *  transcript-path derivation in headless-lifecycle (CC writes the forked
+   *  history to the NEW session file, not the resumed one). */
+  forkSession: boolean
 }
 
 function detectClaudeVersion(): string | undefined {
@@ -393,6 +398,22 @@ export async function parseCliArgs(args: string[]): Promise<CliConfig> {
     claudeArgs.push('--advisor', process.env.RCLAUDE_ADVISOR)
   }
 
+  // Fork-from-message (fork a new conversation off another's history). The
+  // sentinel sets these on a revive with `forkSession` set. `--fork-session`
+  // branches a fresh CC session off `--resume <id>`; `--resume-session-at <uuid>`
+  // truncates the replayed history to end at that source message. Both are
+  // native `claude` flags -- we forward them and remember the fork bit so the
+  // headless lifecycle derives the transcript path from the NEW (forked) session
+  // id rather than the resumed one.
+  let forkSession = false
+  if (process.env.RCLAUDE_FORK_SESSION === '1' && !claudeArgs.includes('--fork-session')) {
+    claudeArgs.push('--fork-session')
+    forkSession = true
+  }
+  if (process.env.RCLAUDE_RESUME_SESSION_AT && !claudeArgs.includes('--resume-session-at')) {
+    claudeArgs.push('--resume-session-at', process.env.RCLAUDE_RESUME_SESSION_AT)
+  }
+
   // Append-system-prompt injection (transport-reframe Phase 2). Headless passes
   // the text inline via CLAUDWERK_APPEND_SYSTEM_PROMPT (real env, safe at any
   // size). The PTY path can't put 16 KiB of arbitrary text through the tmux
@@ -438,6 +459,7 @@ export async function parseCliArgs(args: string[]): Promise<CliConfig> {
     claudeArgs,
     configuredModel,
     resumeId,
+    forkSession,
   }
 }
 

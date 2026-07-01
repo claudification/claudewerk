@@ -4935,6 +4935,15 @@ export interface ReviveConversation {
   conversationName?: string
   // Launch config
   mode?: 'fresh' | 'resume'
+  /** FORK: when set, this revive BRANCHES a new CC session off `ccSessionId`
+   *  (`--fork-session`) instead of continuing it in place. The sentinel mints a
+   *  fresh ccSessionId for the forked worker and the SOURCE conversation is left
+   *  untouched. Pairs with a broker-minted fresh `conversationId`. */
+  forkSession?: boolean
+  /** FORK / ROLLBACK: truncate the replayed history to end at this SOURCE
+   *  message uuid (`--resume-session-at <uuid>`). Undefined = fork from HEAD.
+   *  Opaque to the broker -- a CC transcript uuid the sentinel forwards. */
+  resumeSessionAt?: string
   headless?: boolean
   effort?: string
   model?: string
