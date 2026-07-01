@@ -6,7 +6,7 @@
  * Uses shared useVoiceRecording hook.
  */
 
-import { Mic, MicOff, X } from 'lucide-react'
+import { ClipboardCopy, Mic, MicOff, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { sendInput } from '@/hooks/use-conversations'
 import { useVoiceRecording } from '@/hooks/use-voice-recording'
@@ -298,6 +298,39 @@ export function VoiceFab() {
 
               {!hasText && voice.state === 'recording' && (
                 <span className="text-sm text-muted-foreground/40 italic font-mono">Speak now…</span>
+              )}
+
+              {/* Copy + Dismiss for stuck/terminal states */}
+              {(voice.state === 'refining' || voice.state === 'error') && (
+                <div className="flex items-center gap-2 mt-2 pointer-events-auto">
+                  {hasText && (
+                    <button
+                      type="button"
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-mono uppercase tracking-wider bg-white/5 hover:bg-white/10 text-muted-foreground border border-border/30 active:scale-95 transition-all"
+                      onClick={() => {
+                        const text = displayText + (displayInterim ? ` ${displayInterim}` : '')
+                        navigator.clipboard.writeText(text)
+                        haptic('tick')
+                      }}
+                    >
+                      <ClipboardCopy className="size-3" />
+                      Copy
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-mono uppercase tracking-wider bg-white/5 hover:bg-white/10 text-muted-foreground border border-border/30 active:scale-95 transition-all"
+                    onClick={() => {
+                      voice.reset()
+                      setDragOffset(0)
+                      cancelled.current = false
+                      haptic('tick')
+                    }}
+                  >
+                    <X className="size-3" />
+                    Dismiss
+                  </button>
+                </div>
               )}
             </div>
           </div>
