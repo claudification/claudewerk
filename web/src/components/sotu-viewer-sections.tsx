@@ -101,7 +101,15 @@ export function ProjectView({ view, error }: { view: SotuViewData | null; error:
   )
 }
 
-export function UniverseView({ projects, error }: { projects: FleetProject[] | null; error: string | null }) {
+export function UniverseView({
+  projects,
+  error,
+  onSelect,
+}: {
+  projects: FleetProject[] | null
+  error: string | null
+  onSelect: (projectUri: string) => void
+}) {
   if (error) return <p className="text-rose-400 text-xs p-4">{error}</p>
   if (!projects) return <p className="text-comment text-xs p-4">Loading...</p>
   const enabled = projects.filter(p => p.enabled)
@@ -113,7 +121,12 @@ export function UniverseView({ projects, error }: { projects: FleetProject[] | n
       </div>
       <div className="space-y-3">
         {(withActivity.length > 0 ? withActivity : projects.slice(0, 20)).map(p => (
-          <div key={p.projectUri} className="rounded-lg border border-border/50 p-3">
+          <button
+            type="button"
+            key={p.projectUri}
+            onClick={() => onSelect(p.projectUri)}
+            className="w-full text-left rounded-lg border border-border/50 p-3 transition-colors hover:border-accent/60 hover:bg-accent/5"
+          >
             <div className="flex items-center gap-2 mb-1">
               <span className={`h-1.5 w-1.5 rounded-full ${p.enabled ? 'bg-accent' : 'bg-comment/30'}`} />
               <span className="font-mono text-[11px] font-medium">{p.project}</span>
@@ -124,7 +137,7 @@ export function UniverseView({ projects, error }: { projects: FleetProject[] | n
                 {p.view.chronicle.narrative}
               </p>
             )}
-          </div>
+          </button>
         ))}
       </div>
     </div>

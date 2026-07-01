@@ -13,6 +13,7 @@ interface SotuViewerBodyProps {
   projectView: SotuViewData | null
   fleetProjects: FleetProject[] | null
   error: string | null
+  onSelectProject: (projectUri: string) => void
 }
 
 function tabCls(active: boolean): string {
@@ -20,7 +21,7 @@ function tabCls(active: boolean): string {
   return `${base} ${active ? 'border-accent text-foreground' : 'border-transparent text-comment hover:text-foreground/70'}`
 }
 
-export function SotuViewerBody({ tab, setTab, projectView, fleetProjects, error }: SotuViewerBodyProps) {
+export function SotuViewerBody({ tab, setTab, projectView, fleetProjects, error, onSelectProject }: SotuViewerBodyProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex border-b border-border/50 px-4">
@@ -36,7 +37,7 @@ export function SotuViewerBody({ tab, setTab, projectView, fleetProjects, error 
       {tab === 'project' ? (
         <ProjectView view={projectView} error={error} />
       ) : (
-        <UniverseView projects={fleetProjects} error={error} />
+        <UniverseView projects={fleetProjects} error={error} onSelect={onSelectProject} />
       )}
     </div>
   )

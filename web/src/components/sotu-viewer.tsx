@@ -26,6 +26,7 @@ export function SotuViewerModal() {
 
   const selectedConversationId = useConversationsStore(s => s.selectedConversationId)
   const conversations = useConversationsStore(s => s.conversationsById)
+  const selectProject = useConversationsStore(s => s.selectProject)
   const currentProject = selectedConversationId ? conversations?.[selectedConversationId]?.project : undefined
   // ManagedModal has `presentation`, NOT `isVisible`. The old code read
   // `modal.isVisible` (always undefined) so the fetch-on-open effect always
@@ -119,6 +120,16 @@ export function SotuViewerModal() {
 
   useCommand('sotu-viewer', () => modal.open({ type: 'global' }), { label: 'State of the Union', group: 'View' })
 
+  // Universe card click -> navigate to that project and close the modal, so the
+  // focus is visible (you land on its project page) rather than hidden behind us.
+  const onSelectProject = useCallback(
+    (projectUri: string) => {
+      selectProject(projectUri)
+      modal.close()
+    },
+    [selectProject, modal],
+  )
+
   return (
     <ModalSurface
       modal={modal}
@@ -126,7 +137,14 @@ export function SotuViewerModal() {
       icon={<Globe className="size-4 text-accent" />}
       className="max-w-2xl top-[8vh] translate-y-0 max-h-[84vh]"
     >
-      <SotuViewerBody tab={tab} setTab={setTab} projectView={projectView} fleetProjects={fleetProjects} error={error} />
+      <SotuViewerBody
+        tab={tab}
+        setTab={setTab}
+        projectView={projectView}
+        fleetProjects={fleetProjects}
+        error={error}
+        onSelectProject={onSelectProject}
+      />
     </ModalSurface>
   )
 }
