@@ -169,6 +169,7 @@ function ProfileEditRow({
   )
 }
 
+// fallow-ignore-next-line complexity
 export function SentinelConfigEditor({
   sentinelId,
   profiles,
@@ -194,10 +195,12 @@ export function SentinelConfigEditor({
 
   // Resync the draft when the upstream baseline changes (e.g. a fresh fetch
   // after another save, or a sentinel reconnect with new profiles).
-  useEffect(() => {
+  const [prevBaseline, setPrevBaseline] = useState(baseline)
+  if (baseline !== prevBaseline) {
+    setPrevBaseline(baseline)
     setDraft(baseline)
     setError(null)
-  }, [baseline])
+  }
 
   const dirty = !draftsEqual(baseline, draft)
   // Pool options for the sentinel-wide defaultPool: reported pools plus any

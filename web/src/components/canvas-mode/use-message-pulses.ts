@@ -38,16 +38,18 @@ export function useMessagePulses(presentIds: ReadonlySet<string>): Edge[] {
 
   return useMemo(
     () =>
-      live
-        .filter(p => presentIds.has(p.from) && presentIds.has(p.to))
-        .map(p => ({
-          id: `pulse:${p.key}`,
-          source: p.from,
-          target: p.to,
-          type: 'pulse' as const,
-          data: { status: p.status },
-          zIndex: 20,
-        })),
+      live.flatMap(p =>
+        presentIds.has(p.from) && presentIds.has(p.to)
+          ? [{
+              id: `pulse:${p.key}`,
+              source: p.from,
+              target: p.to,
+              type: 'pulse' as const,
+              data: { status: p.status },
+              zIndex: 20,
+            }]
+          : [],
+      ),
     [live, presentIds],
   )
 }

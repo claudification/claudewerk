@@ -15,6 +15,19 @@ import { GroupNode } from './project-list/conversation-sorting'
 import { PinnedProjectNode, ProjectNode } from './project-list/project-node'
 import { WorkspaceTabs } from './project-list/workspace-tabs'
 
+// Find the on-screen instance of a conversation row. Two ProjectLists are
+// mounted at once: the desktop sidebar (hidden lg:flex -> display:none on
+// mobile) AND the mobile sheet (Radix-portaled to body end). A bare
+// document.querySelector hits the FIRST in DOM order -- the hidden desktop
+// copy -- and scrollIntoView()/pulse on a display:none node is a no-op, which
+// is why the mobile slider always stuck to the top. offsetParent is null for
+// display:none elements, so this returns whichever copy is actually visible.
+function findVisibleConversationEl(id: string): HTMLElement | null {
+  const els = document.querySelectorAll<HTMLElement>(`[data-conversation-id="${id}"]`)
+  for (const el of els) if (el.offsetParent !== null) return el
+  return els[0] ?? null
+}
+
 // ─── Main ProjectList ──────────────────────────────────────────────
 
 export function ProjectList() {
@@ -83,6 +96,7 @@ export function ProjectList() {
     return projects
   }, [projectOrder])
 
+  // react-doctor-disable-next-line react-doctor/no-derived-state -- already using useMemo, not useState+useEffect
   // Filter root tree nodes by active workspace. "All" (null) = full tree.
   const filteredTree = useMemo(() => {
     if (!activeWorkspaceId) return projectOrder.tree
@@ -232,19 +246,6 @@ export function ProjectList() {
       localStorage.setItem('collapsed-groups', JSON.stringify([...next]))
       return next
     })
-  }
-
-  // Find the on-screen instance of a conversation row. Two ProjectLists are
-  // mounted at once: the desktop sidebar (hidden lg:flex -> display:none on
-  // mobile) AND the mobile sheet (Radix-portaled to body end). A bare
-  // document.querySelector hits the FIRST in DOM order -- the hidden desktop
-  // copy -- and scrollIntoView()/pulse on a display:none node is a no-op, which
-  // is why the mobile slider always stuck to the top. offsetParent is null for
-  // display:none elements, so this returns whichever copy is actually visible.
-  function findVisibleConversationEl(id: string): HTMLElement | null {
-    const els = document.querySelectorAll<HTMLElement>(`[data-conversation-id="${id}"]`)
-    for (const el of els) if (el.offsetParent !== null) return el
-    return els[0] ?? null
   }
 
   // Scroll the selected conversation into view. Always safe to call -- block:'nearest'

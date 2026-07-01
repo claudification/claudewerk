@@ -27,6 +27,8 @@ const DURATION_OPTIONS = [
 
 const EMPTY_SHARES: ReturnType<typeof useConversationsStore.getState>['shares'] = []
 
+// react-doctor:only-export-components -- conversationShareMatches is a pure
+// predicate exported for unit tests (share-match.test.ts).
 /** A share "belongs to" a conversation only when it is a conversation-kind share
  *  bound to that exact conversationId. Recap shares (targetKind 'recap', no
  *  conversationId) are project-scoped documents -- they must NEVER mark a
@@ -43,6 +45,13 @@ export function conversationShareMatches(
     share.project === conversationProject &&
     share.expiresAt > Date.now()
   )
+}
+
+async function handleRevoke(token: string) {
+  haptic('error')
+  try {
+    await fetch(`/api/shares/${token}`, { method: 'DELETE' })
+  } catch {}
 }
 
 export function ShareBanner({ conversationProject, conversationId }: SharePanelProps) {
@@ -110,13 +119,6 @@ export function ShareBanner({ conversationProject, conversationId }: SharePanelP
       haptic('error')
     }
     setCreating(false)
-  }
-
-  async function handleRevoke(token: string) {
-    haptic('error')
-    try {
-      await fetch(`/api/shares/${token}`, { method: 'DELETE' })
-    } catch {}
   }
 
   function handleCopyLink(token: string) {

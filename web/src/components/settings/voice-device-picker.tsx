@@ -27,6 +27,8 @@ function healVirtualSelection(
 export function VoiceDevicePicker({ value, onChange }: VoiceDevicePickerProps) {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
   const [error, setError] = useState('')
+  // react-doctor:rerender-state-only-in-handlers -- labelsHidden is read in JSX
+  // (onMouseDown/onFocus conditionals), so it must be state to drive re-renders.
   const [labelsHidden, setLabelsHidden] = useState(false)
   const enumeratingRef = useRef(false)
   // Latest `value` without making `enumerate` re-created on every keystroke.

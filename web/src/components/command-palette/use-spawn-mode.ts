@@ -139,6 +139,17 @@ export function useSpawnMode({
     ? spawnPath.slice(spawnPath.lastIndexOf('/') + 1).toLowerCase()
     : spawnPath.toLowerCase()
 
+  // Reset dirs/error synchronously when leaving dir-fetch mode (entering sentinel/profile/pool entry or leaving spawn mode).
+  const shouldFetchDirs = isSpawnMode && !isSentinelEntry && !isProfileEntry && !isPoolEntry
+  const [prevShouldFetchDirs, setPrevShouldFetchDirs] = useState(shouldFetchDirs)
+  if (shouldFetchDirs !== prevShouldFetchDirs) {
+    setPrevShouldFetchDirs(shouldFetchDirs)
+    if (!shouldFetchDirs) {
+      setSpawnDirs([])
+      setSpawnError(null)
+    }
+  }
+
   const fetchDirs = useCallback(
     (dirPath: string, sentinel?: string) => {
       if (!sentinelConnected) return
@@ -162,17 +173,13 @@ export function useSpawnMode({
   )
 
   useEffect(() => {
-    if (!isSpawnMode || isSentinelEntry || isProfileEntry || isPoolEntry) {
-      setSpawnDirs([])
-      setSpawnError(null)
-      return
-    }
+    if (!shouldFetchDirs) return
     if (spawnFetchTimer.current) clearTimeout(spawnFetchTimer.current)
     spawnFetchTimer.current = setTimeout(() => fetchDirs(spawnParentDir, spawnSentinel), 200)
     return () => {
       if (spawnFetchTimer.current) clearTimeout(spawnFetchTimer.current)
     }
-  }, [isSpawnMode, isSentinelEntry, isProfileEntry, isPoolEntry, spawnParentDir, spawnSentinel, fetchDirs])
+  }, [shouldFetchDirs, spawnParentDir, spawnSentinel, fetchDirs])
 
   const filteredSpawnDirs = spawnPartial ? spawnDirs.filter(d => d.toLowerCase().startsWith(spawnPartial)) : spawnDirs
   const canCreateDir =

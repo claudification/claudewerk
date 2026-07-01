@@ -22,11 +22,13 @@ export function InlineTerminal({ conversationId }: InlineTerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
+  // fallow-ignore-next-line code-duplication
   const sendWsMessage = useConversationsStore(state => state.sendWsMessage)
   const setTerminalHandler = useConversationsStore(state => state.setTerminalHandler)
   const isConnected = useConversationsStore(state => state.isConnected)
   const showSwitcher = useConversationsStore(state => state.showSwitcher)
   const [terminalError, setTerminalError] = useState<string | null>(null)
+  // react-doctor-disable-next-line react-doctor/no-derived-state -- lazy one-shot init, not synced from other state
   const [themeColors] = useState(() => getTheme(loadTerminalSettings().themeId))
 
   useEffect(() => {
@@ -146,10 +148,17 @@ export function InlineTerminal({ conversationId }: InlineTerminalProps) {
     }
   }, [conversationId, sendWsMessage, setTerminalHandler])
 
+  // react-doctor-disable-next-line react-doctor/no-derived-state -- multi-source: terminalError set by terminal handler AND cleared on reconnect
+  // fallow-ignore-next-line code-duplication
+  const [prevIsConnected, setPrevIsConnected] = useState(isConnected)
+  if (isConnected !== prevIsConnected) {
+    setPrevIsConnected(isConnected)
+    if (isConnected) setTerminalError(null)
+  }
+
   // Re-attach on WS reconnect
   useEffect(() => {
     if (!isConnected || !xtermRef.current) return
-    setTerminalError(null)
     const { cols, rows } = xtermRef.current
     sendWsMessage({ type: 'terminal_attach', conversationId, cols, rows })
   }, [isConnected, conversationId, sendWsMessage])

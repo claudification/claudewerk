@@ -11,7 +11,7 @@ export function AnnotatedCodeBlock({
   filename,
   annotations,
 }: Pick<AnnotatedCodeComponent, 'code' | 'language' | 'filename' | 'annotations'>) {
-  const sorted = annotations ? [...annotations].sort((a, b) => a.line - b.line) : []
+  const sorted = annotations ? annotations.toSorted((a, b) => a.line - b.line) : []
   return (
     <div className="rounded border border-border/30 overflow-hidden">
       {filename && (

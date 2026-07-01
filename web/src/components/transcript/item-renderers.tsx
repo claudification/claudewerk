@@ -99,21 +99,23 @@ export function ThinkingItem({ item }: { item: Extract<RenderItem, { kind: 'thin
   )
 }
 
+const PRIO_COLORS: Record<string, string> = {
+  high: 'border-l-red-500',
+  medium: 'border-l-amber-500',
+  low: 'border-l-blue-500',
+}
+
+const TASK_STATUS_COLORS: Record<string, string> = {
+  inbox: 'bg-zinc-500/20 text-zinc-400',
+  open: 'bg-blue-500/20 text-blue-400',
+  'in-progress': 'bg-amber-500/20 text-amber-400',
+  'in-review': 'bg-purple-500/20 text-purple-400',
+  done: 'bg-emerald-500/20 text-emerald-400',
+}
+
 export function ProjectTaskItem({ item }: { item: Extract<RenderItem, { kind: 'project-task' }> }) {
-  const prioColors: Record<string, string> = {
-    high: 'border-l-red-500',
-    medium: 'border-l-amber-500',
-    low: 'border-l-blue-500',
-  }
-  const prioColor = prioColors[item.priority || 'medium'] || prioColors.medium
-  const statusColors: Record<string, string> = {
-    inbox: 'bg-zinc-500/20 text-zinc-400',
-    open: 'bg-blue-500/20 text-blue-400',
-    'in-progress': 'bg-amber-500/20 text-amber-400',
-    'in-review': 'bg-purple-500/20 text-purple-400',
-    done: 'bg-emerald-500/20 text-emerald-400',
-  }
-  const sColor = statusColors[item.taskStatus || ''] || statusColors.inbox
+  const prioColor = PRIO_COLORS[item.priority || 'medium'] || PRIO_COLORS.medium
+  const sColor = TASK_STATUS_COLORS[item.taskStatus || ''] || TASK_STATUS_COLORS.inbox
 
   return (
     <div

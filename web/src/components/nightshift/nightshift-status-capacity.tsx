@@ -68,7 +68,7 @@ export function NightshiftStatusCapacity({ profiles }: { profiles: ProfileRow[] 
   if (profiles.length === 0) {
     return <p className="text-[11px] text-muted-foreground">No capacity telemetry yet.</p>
   }
-  const sorted = [...profiles].sort((a, b) => a.profile.localeCompare(b.profile))
+  const sorted = profiles.toSorted((a, b) => a.profile.localeCompare(b.profile))
   return (
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
       {sorted.map(p => (

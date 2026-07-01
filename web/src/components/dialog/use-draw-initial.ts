@@ -33,6 +33,18 @@ export function useDrawInitial(
 ): DrawInitialState {
   const [state, setState] = useState<DrawInitialState>({ snapshot: null, loading: true, error: null })
 
+  // react-doctor-disable-next-line react-doctor/no-derived-state -- multi-source: state set synchronously on prop change AND asynchronously by fetch
+  // Inline render-time adjustment: when content/contentUrl change, immediately
+  // mark loading (no stale frame showing old snapshot). Synchronous resolution
+  // paths (inline content, no-content fallback) also resolve here directly.
+  const [prevContent, setPrevContent] = useState(content)
+  const [prevContentUrl, setPrevContentUrl] = useState(contentUrl)
+  if (content !== prevContent || contentUrl !== prevContentUrl) {
+    setPrevContent(content)
+    setPrevContentUrl(contentUrl)
+    setState({ snapshot: null, loading: true, error: null })
+  }
+
   useEffect(() => {
     let cancelled = false
     const done = (snapshot: unknown | null, error: string | null = null) => {
@@ -48,7 +60,6 @@ export function useDrawInitial(
       }
     }
 
-    setState(s => ({ ...s, loading: true }))
     if (isDrawValue(seed)) {
       // Restore the raw scene the user last had: inline kinds carry it, *-ref kinds
       // fetch it. (DSL is only the agent's SEED via `content`; a restored edit is raw.)

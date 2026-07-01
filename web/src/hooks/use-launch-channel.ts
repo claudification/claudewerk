@@ -40,19 +40,20 @@ export function useLaunchChannel(jobId: string | null): LaunchChannelState {
   const [state, setState] = useState<LaunchChannelState>(INITIAL_STATE)
   const subscribedRef = useRef<string | null>(null)
 
-  // Subscribe/unsubscribe to job
+  // Reset state synchronously on jobId change (render-time adjustment)
+  const [prevJobId, setPrevJobId] = useState(jobId)
+  if (jobId !== prevJobId) {
+    setPrevJobId(jobId)
+    setState(INITIAL_STATE)
+  }
+
+  // Subscribe/unsubscribe to job (side-effect only -- state reset handled above)
   useEffect(() => {
-    if (!jobId) {
-      setState(INITIAL_STATE)
-      return
-    }
+    if (!jobId) return
 
     // Subscribe to this job
     wsSend('subscribe_job', { jobId })
     subscribedRef.current = jobId
-
-    // Reset state for new job
-    setState({ ...INITIAL_STATE })
 
     return () => {
       // Unsubscribe on cleanup

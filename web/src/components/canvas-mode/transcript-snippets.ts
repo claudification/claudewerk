@@ -66,6 +66,6 @@ function isChatEntry(entry: TranscriptEntry): boolean {
 
 /** Last MAX_ROWS compact rows for a conversation's cached transcript. */
 export function buildMiniRows(entries: TranscriptEntry[]): MiniRow[] {
-  const rows = entries.filter(isChatEntry).flatMap((entry, i) => entryRows(entry, i))
+  const rows = entries.flatMap((entry, i) => isChatEntry(entry) ? entryRows(entry, i) : [])
   return rows.slice(-MAX_ROWS)
 }

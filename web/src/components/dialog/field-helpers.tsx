@@ -11,6 +11,8 @@ interface SelectForm {
   setValue: (id: string, value: unknown) => void
 }
 
+// react-doctor:only-export-components -- this is a shared helpers module, not a
+// component file; applySelect + FieldLabel are both consumed by dialog-renderer.
 /** Toggle a value into a single- or multi-select form field. */
 export function applySelect(form: SelectForm, id: string, value: string, multi?: boolean): void {
   haptic('tap')

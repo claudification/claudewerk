@@ -189,6 +189,8 @@ function defaultWindowStart(len: number): number {
  *  `?? null` of a seqless boundary made the re-anchor branch re-fire forever
  *  (React #301 -- it kept setting the anchor back to null while
  *  `windowAnchorSeq === null` stayed true). */
+// react-doctor:only-export-components -- defaultAnchorSeq is a pure function
+// exported for unit tests (transcript-anchor-loop.test.tsx).
 export function defaultAnchorSeq(entries: TranscriptEntry[]): number | null {
   const idx = defaultWindowStart(entries.length)
   if (idx <= 0) return null
@@ -303,7 +305,8 @@ export const TranscriptView = memo(function TranscriptView({
   // Forced group-break seqs, one per backfill boundary (see loadEarlier below).
   // Per-conversation; cleared on switch. Mutated in place BEFORE the anchor
   // state change that triggers the regroup, so grouping reads it fresh.
-  const backfillBreaksRef = useRef<Set<number>>(new Set())
+  const backfillBreaksRef = useRef<Set<number>>(null!)
+  if (backfillBreaksRef.current === null) backfillBreaksRef.current = new Set()
   const prevCacheKeyRef = useRef(cacheKey)
   // True once we've sized the window against a NON-EMPTY transcript for the
   // current cacheKey. A cold switch (MISS) opens the conversation with entries=[]

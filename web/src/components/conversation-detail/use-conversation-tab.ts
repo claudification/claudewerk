@@ -19,22 +19,27 @@ export function useConversationTab(selectedConversationId: string | null, conver
   const requestedTab = useConversationsStore(state => state.requestedTab)
   const requestedTabSeq = useConversationsStore(state => state.requestedTabSeq)
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: selectedConversationId is the trigger dep
-  useEffect(() => {
+  // Reset follow + conversation target when switching conversations.
+  const [prevConversationId, setPrevConversationId] = useState(selectedConversationId)
+  if (selectedConversationId !== prevConversationId) {
+    setPrevConversationId(selectedConversationId)
     setFollow(true)
     setConversationTarget(null)
-  }, [selectedConversationId])
+  }
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: requestedTabSeq is a counter dep key
   useEffect(() => {
     if (requestedTab) setActiveTab(requestedTab as Tab)
   }, [requestedTab, requestedTabSeq])
 
-  useEffect(() => {
+  // Kick back to transcript when a conversation ends while on the project tab.
+  const [prevStatus, setPrevStatus] = useState(conversationStatus)
+  if (conversationStatus !== prevStatus) {
+    setPrevStatus(conversationStatus)
     if (conversationStatus === 'ended' && activeTab === 'project') {
       setActiveTab('transcript')
     }
-  }, [conversationStatus, activeTab])
+  }
 
   useEffect(() => {
     if (selectedConversationId) setConversationTab(selectedConversationId, activeTab)

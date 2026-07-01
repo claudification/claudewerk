@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useDispatchStore } from './dispatch-store'
 
 /** Modal editor for /memory (bare) and /system -- a textarea with save/cancel.
@@ -8,13 +8,13 @@ export function MemoryEditorModal() {
   const saveEditor = useDispatchStore(s => s.saveEditor)
   const closeEditor = useDispatchStore(s => s.closeEditor)
   const [draft, setDraft] = useState('')
-  const [initialized, setInitialized] = useState(false)
+  const initialized = useRef(false)
 
   if (!modal) return null
-  if (!initialized || draft === '') {
-    if (!initialized) {
+  if (!initialized.current || draft === '') {
+    if (!initialized.current) {
       setDraft(modal.content)
-      setInitialized(true)
+      initialized.current = true
     }
   }
 
@@ -32,11 +32,13 @@ export function MemoryEditorModal() {
           <p className="mt-1 text-[11px] text-comment">{hint}</p>
         </div>
         <textarea
+          aria-label="Dispatch memory editor"
           className="min-h-[300px] w-full resize-y rounded-lg border border-border/70 bg-card/40 p-3 font-mono text-[12px] leading-relaxed text-foreground focus:border-accent focus:outline-none"
           value={draft}
           onChange={e => setDraft(e.target.value)}
           spellCheck={false}
           // biome-ignore lint/a11y/noAutofocus: modal editor should focus immediately
+          // eslint-disable-next-line jsx-a11y/no-autofocus
           autoFocus
         />
         <div className="flex justify-end gap-2">
@@ -44,7 +46,7 @@ export function MemoryEditorModal() {
             type="button"
             className="rounded-lg border border-border px-4 py-1.5 text-[12px] text-comment hover:bg-card"
             onClick={() => {
-              setInitialized(false)
+              initialized.current = false
               closeEditor()
             }}
           >
@@ -55,7 +57,7 @@ export function MemoryEditorModal() {
             className="rounded-lg bg-accent px-4 py-1.5 text-[12px] text-white hover:bg-accent/80"
             onClick={() => {
               saveEditor(draft)
-              setInitialized(false)
+              initialized.current = false
             }}
           >
             Save

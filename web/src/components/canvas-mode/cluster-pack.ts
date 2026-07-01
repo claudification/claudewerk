@@ -57,7 +57,7 @@ export function layoutCluster(uri: string, members: Conversation[], expandedIds:
 
 /** Shelf-pack clusters into rows of at most ROW_MAX_W, biggest first. */
 export function packClusters(clusters: Cluster[]): Map<string, { x: number; y: number }> {
-  const sorted = [...clusters].sort((a, b) => b.members.length - a.members.length || a.uri.localeCompare(b.uri))
+  const sorted = clusters.toSorted((a, b) => b.members.length - a.members.length || a.uri.localeCompare(b.uri))
   const origins = new Map<string, { x: number; y: number }>()
   let x = 0
   let y = 0

@@ -36,9 +36,15 @@ function useSheaf(windowH: number): SheafState & { reload: () => void } {
   const [state, setState] = useState<SheafState>({ data: null, loading: true, error: null })
   const [tick, setTick] = useState(0)
 
+  // Reset loading state synchronously on windowH/tick change (render-time adjustment)
+  const [prevKey, setPrevKey] = useState({ windowH, tick })
+  if (windowH !== prevKey.windowH || tick !== prevKey.tick) {
+    setPrevKey({ windowH, tick })
+    setState(s => ({ ...s, loading: true, error: null }))
+  }
+
   useEffect(() => {
     let cancelled = false
-    setState(s => ({ ...s, loading: true, error: null }))
     fetchSheaf(windowH)
       .then(data => {
         if (!cancelled) setState({ data, loading: false, error: null })

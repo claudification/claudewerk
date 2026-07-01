@@ -1,6 +1,8 @@
 import { cn } from '@/lib/utils'
 import { DISPATCH_MODELS, type DispatchToolEvent } from './dispatch-models'
 
+// react-doctor:only-export-components -- modelLabel is a tiny helper co-located
+// with ToolEvents; both are consumed together by dispatch-tail.
 /** Friendly label for a model slug (falls back to the slug tail). */
 export function modelLabel(slug?: string): string | undefined {
   if (!slug) return undefined

@@ -235,10 +235,12 @@ export function SpawnApprovalBanners({ conversationId }: { conversationId: strin
   const pending = conversation?.pendingSpawnApproval
   const items = useMemo(() => (pending ? [pending] : []), [pending])
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only react to id swap
-  useEffect(() => {
+  // react-doctor-disable-next-line react-doctor/no-derived-state -- multi-source: persistChecked set by user checkbox AND reset on requestId change
+  const [prevRequestId, setPrevRequestId] = useState(pending?.requestId)
+  if (pending?.requestId !== prevRequestId) {
+    setPrevRequestId(pending?.requestId)
     setPersistChecked(false)
-  }, [pending?.requestId])
+  }
 
   return (
     <BannerStack

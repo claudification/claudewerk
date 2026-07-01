@@ -153,14 +153,14 @@ function LiveDialogModalInner({
   const pages = useMemo(() => layoutPages(layout), [layout])
   const serverIdx = resolvePageIndex(form.values[ACTIVE_PAGE_KEY], pages)
   const [userIdx, setUserIdx] = useState<number | null>(null)
-  const lastServer = useRef(form.values[ACTIVE_PAGE_KEY])
-  useEffect(() => {
-    const cur = form.values[ACTIVE_PAGE_KEY]
-    if (cur !== lastServer.current) {
-      lastServer.current = cur
-      setUserIdx(null)
-    }
-  }, [form.values])
+  // Inline render-time adjustment: when the server's active page changes, reset
+  // the user's local page override so the server's page takes effect immediately.
+  const [prevServerPage, setPrevServerPage] = useState(form.values[ACTIVE_PAGE_KEY])
+  const curServerPage = form.values[ACTIVE_PAGE_KEY]
+  if (curServerPage !== prevServerPage) {
+    setPrevServerPage(curServerPage)
+    setUserIdx(null)
+  }
   const activePage = Math.min(userIdx ?? serverIdx ?? 0, pages.length - 1)
 
   const status = entry.snapshot.status

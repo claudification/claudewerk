@@ -48,8 +48,10 @@ function ChecklistRowEditor({ initial, onCommit }: { initial: string; onCommit: 
   return (
     <input
       // biome-ignore lint/a11y/noAutofocus: focus the field the user just opened
+      // eslint-disable-next-line jsx-a11y/no-autofocus
       autoFocus
       value={draft}
+      aria-label="Edit checklist item"
       onChange={e => setDraft(e.currentTarget.value)}
       onBlur={() => finish(draft.trim() || null)}
       onKeyDown={e => {

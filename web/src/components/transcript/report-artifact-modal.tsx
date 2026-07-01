@@ -29,10 +29,16 @@ export function ReportArtifactModal({
 
   const url = `/api/conversations/${encodeURIComponent(conversationId)}/artifact?path=${encodeURIComponent(relPath)}`
 
-  useEffect(() => {
-    let alive = true
+  // Reset state synchronously when url changes (no stale frame)
+  const [prevUrl, setPrevUrl] = useState(url)
+  if (url !== prevUrl) {
+    setPrevUrl(url)
     setHtml(null)
     setError(null)
+  }
+
+  useEffect(() => {
+    let alive = true
     fetch(url, { credentials: 'same-origin' })
       .then(async res => {
         if (!res.ok) {

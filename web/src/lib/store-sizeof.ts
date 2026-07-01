@@ -232,22 +232,24 @@ export function formatStoreReport(r: StoreReport, iso: string): string {
     '',
     ...mdTable(
       ['slice', 'kind', 'count', 'size'],
-      r.slices.filter(s => s.bytes >= MIN_REPORT_BYTES).map(s => [s.key, s.kind, String(s.count), humanBytes(s.bytes)]),
+      r.slices.flatMap(s => (s.bytes >= MIN_REPORT_BYTES ? [[s.key, s.kind, String(s.count), humanBytes(s.bytes)]] : [])),
     ),
     '',
     `## Per-key breakdown (top ${MAX_SUBS} by size)`,
     '',
     ...mdTable(
       ['slice', 'key', 'items', 'size', 'maxItem'],
-      r.subs
-        .filter(s => s.bytes >= MIN_REPORT_BYTES)
-        .map(s => [
-          s.slice,
-          s.subKey.length > 24 ? `${s.subKey.slice(0, 24)}…` : s.subKey,
-          String(s.count),
-          humanBytes(s.bytes),
-          humanBytes(s.maxItemBytes),
-        ]),
+      r.subs.flatMap(s =>
+        s.bytes >= MIN_REPORT_BYTES
+          ? [[
+              s.slice,
+              s.subKey.length > 24 ? `${s.subKey.slice(0, 24)}…` : s.subKey,
+              String(s.count),
+              humanBytes(s.bytes),
+              humanBytes(s.maxItemBytes),
+            ]]
+          : [],
+      ),
     ),
     '',
   ]

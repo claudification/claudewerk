@@ -50,6 +50,7 @@ export function nextComments(
   return Object.keys(next).length ? next : undefined
 }
 
+// react-doctor-disable-next-line react-doctor/no-derived-state -- comments is derived inline from form.values; active is user-interaction state
 export function useDiagramComments(containerRef: RefObject<HTMLElement | null>, id: string, form: DialogFormState) {
   const comments = (form.values[id] as Record<string, string> | undefined) ?? {}
   const [active, setActive] = useState<ActiveNode | null>(null)

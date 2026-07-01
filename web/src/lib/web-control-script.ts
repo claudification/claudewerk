@@ -45,6 +45,7 @@ export async function runScript(code: string, timeoutMs: number): Promise<{ resu
   })
   try {
     // Gated, intentional eval. Body of an async fn so `await`/`return` work.
+    // react-doctor-disable-next-line react-doctor/no-eval -- intentional: sandboxed script runner for web-control debug feature, gated by opt-in + benevolent-only + audit
     const fn = new Function(`return (async () => { ${code} })()`) as () => unknown
     // Promise.resolve().then adopts a returned promise/thenable, so the race bounds
     // the WHOLE async chain (including a returned thenable), not just the first tick.

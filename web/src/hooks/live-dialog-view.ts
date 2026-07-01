@@ -12,7 +12,7 @@ import type { DialogViewPref } from './live-dialog-prefs'
  *  It collapses into a fading, dismissible bar first (so you see it WAS there),
  *  then is removed outright. Purely a client-side view decay -- the broker keeps
  *  the dialog for reopen. */
-export const CLOSED_DECAY_MS = 20 * 60 * 1000
+const CLOSED_DECAY_MS = 20 * 60 * 1000
 
 /** Panel-owned interaction state, persisted across the unmount that a
  *  conversation switch causes. The mounted component mirrors values/pending/

@@ -76,6 +76,7 @@ export function DiagramCommentPopover({
       </div>
       <textarea
         ref={inputRef}
+        aria-label="Diagram node comment"
         value={text}
         onChange={e => setText(e.target.value)}
         onKeyDown={e => {

@@ -3,9 +3,9 @@ import { type ReactNode, useEffect, useRef, useState } from 'react'
 /** In-flight decoration motion. Asymmetric on purpose: the pill/spinner fade out
  *  FAST (opacity) so they visually disappear quickly, while the height collapses
  *  SLOWLY so the freed space closes gently -- no jerk. Reveal is snappy. */
-export const INFLIGHT_REVEAL_MS = 200 // height expand on enter
-export const INFLIGHT_COLLAPSE_MS = 500 // height collapse on exit
-export const INFLIGHT_OPACITY_MS = 200 // fade, both directions
+const INFLIGHT_REVEAL_MS = 200 // height expand on enter
+const INFLIGHT_COLLAPSE_MS = 500 // height collapse on exit
+const INFLIGHT_OPACITY_MS = 200 // fade, both directions
 
 /**
  * Smoothly collapses its children's height (and fades them) when `show` flips

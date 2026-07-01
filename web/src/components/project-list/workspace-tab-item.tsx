@@ -19,6 +19,7 @@ export function InlineNameInput({
   return (
     <input
       ref={el => el?.focus()}
+      aria-label="Workspace name"
       defaultValue={initial}
       className="h-5 w-20 bg-background border border-border rounded px-1 text-[10px] font-mono outline-none focus:ring-1 focus:ring-primary"
       onKeyDown={e => {

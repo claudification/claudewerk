@@ -380,9 +380,9 @@ function makeCompletionSource(getCtx: () => SubCommandContext, customSlash?: Arr
     if (trigger === '/' && customSlash) {
       if (query.length > 0 && customSlash.some(c => c.name.toLowerCase() === query.toLowerCase())) return null
       const q = query.toLowerCase()
-      const options = customSlash
-        .filter(c => !q || c.name.toLowerCase().includes(q))
-        .map(c => ({ label: c.name, detail: c.detail }))
+      const options = customSlash.flatMap(c =>
+        !q || c.name.toLowerCase().includes(q) ? [{ label: c.name, detail: c.detail }] : [],
+      )
       if (options.length === 0) return null
       return { from: start + 1, to: pos, options, filter: false }
     }

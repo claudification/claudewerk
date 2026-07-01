@@ -157,7 +157,7 @@ export const DiffView = memo(
                   />
                 ) : syntaxHtml ? (
                   <span
-                    // react-doctor-disable-next-line react-doctor/no-danger
+                    // react-doctor-disable-next-line react-doctor/no-danger, react-doctor/dangerous-html-sink -- shiki syntax-highlighter output (trusted)
                     // biome-ignore lint/security/noDangerouslySetInnerHtml: shiki syntax-highlighter output (trusted)
                     dangerouslySetInnerHTML={{ __html: syntaxHtml }}
                   />
@@ -333,7 +333,7 @@ export function ShellCommand({ command, maxLines = 10 }: { command: string; maxL
       <span className="text-green-500/60 select-none">$ </span>
       {html ? (
         <code
-          // react-doctor-disable-next-line react-doctor/no-danger
+          // react-doctor-disable-next-line react-doctor/no-danger, react-doctor/dangerous-html-sink -- shiki syntax-highlighter output (trusted)
           // biome-ignore lint/security/noDangerouslySetInnerHtml: shiki syntax-highlighter output (trusted)
           dangerouslySetInnerHTML={{ __html: html }}
         />
@@ -376,7 +376,7 @@ export function WritePreview({ content, filePath }: { content: string; filePath?
                   {i + 1}
                 </span>
                 <span
-                  // react-doctor-disable-next-line react-doctor/no-danger
+                  // react-doctor-disable-next-line react-doctor/no-danger, react-doctor/dangerous-html-sink -- shiki syntax-highlighter output (trusted)
                   // biome-ignore lint/security/noDangerouslySetInnerHtml: shiki syntax-highlighter output (trusted)
                   dangerouslySetInnerHTML={{ __html: lineHtml }}
                 />
@@ -530,7 +530,7 @@ export function ReplView({ code, isError }: { code: string; isError?: boolean })
               <div
                 key={i}
                 className="hover:bg-muted/20"
-                // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key, react-doctor/no-danger
+                // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key, react-doctor/no-danger, react-doctor/dangerous-html-sink -- shiki syntax-highlighter output (trusted)
                 // biome-ignore lint/security/noDangerouslySetInnerHtml: shiki syntax-highlighter output (trusted)
                 dangerouslySetInnerHTML={{ __html: lineHtml }}
               />

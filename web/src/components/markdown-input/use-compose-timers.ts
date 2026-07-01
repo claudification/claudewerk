@@ -8,7 +8,8 @@ interface ComposeTimersResult {
 }
 
 export function useComposeTimers(): ComposeTimersResult {
-  const composeTimersRef = useRef(new Set<ReturnType<typeof setTimeout>>())
+  const composeTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(null!)
+  if (composeTimersRef.current === null) composeTimersRef.current = new Set()
 
   function composeTimeout(fn: () => void, ms: number): ReturnType<typeof setTimeout> {
     const id = setTimeout(() => {

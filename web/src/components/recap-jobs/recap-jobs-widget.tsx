@@ -146,6 +146,10 @@ function JobCard({ job, onOpen }: { job: RecapJob; onOpen: (id: string) => void 
   )
 }
 
+function openRecap(recapId: string) {
+  window.dispatchEvent(new CustomEvent('rclaude-recap-open', { detail: { recapId } }))
+}
+
 export function RecapJobsWidget() {
   // Subscribe to the stable jobs map; derive the visible array via useMemo.
   // Calling selectVisibleJobs as a Zustand selector returns a fresh array on
@@ -167,10 +171,6 @@ export function RecapJobsWidget() {
   }, [hasAny])
 
   if (jobs.length === 0) return null
-
-  function openRecap(recapId: string) {
-    window.dispatchEvent(new CustomEvent('rclaude-recap-open', { detail: { recapId } }))
-  }
 
   return (
     <div className="border-t border-border p-2 space-y-1.5 shrink-0">

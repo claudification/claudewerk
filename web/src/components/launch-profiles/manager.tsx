@@ -22,6 +22,7 @@ export function LaunchProfileManager() {
   const [error, setError] = useState<string | undefined>()
   const [saving, setSaving] = useState(false)
 
+  // react-doctor-disable-next-line react-doctor/no-derived-state -- multi-source: draft/selectedId seeded from props AND mutated by user actions (create/delete/edit)
   useEffect(() => {
     if (!open) {
       setDraft(null)

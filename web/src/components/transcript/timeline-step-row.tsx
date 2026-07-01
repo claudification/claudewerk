@@ -10,6 +10,8 @@ import { cn } from '@/lib/utils'
 
 /** Elapsed seconds (one decimal) from a timeline card's start to a step's
  *  timestamp; '' when either is unknown. Shared by the boot + launch timelines. */
+// react-doctor:only-export-components -- elapsedSince is a tiny pure helper
+// co-located with TimelineStepRow; both are consumed by boot/launch timelines.
 export function elapsedSince(timestamp: string | number | undefined, startTs: number): string {
   const ts = timestamp ? new Date(timestamp).getTime() : 0
   return ts && startTs ? ((ts - startTs) / 1000).toFixed(1) : ''

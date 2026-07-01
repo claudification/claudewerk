@@ -470,6 +470,7 @@ function renderShikiBlocks(container: HTMLElement) {
             }
           }
           if (html !== undefined) {
+            // react-doctor-disable-next-line react-doctor/dangerous-html-sink -- shiki syntax-highlighter output (escapeHtml'd)
             el.innerHTML = html
           }
           el.removeAttribute('data-shiki-source')
@@ -731,7 +732,7 @@ export const Markdown = memo(function Markdown({ children, inline, copyable }: M
       ref={ref}
       role="document"
       className="prose-hacker [overflow-wrap:break-word]"
-      // react-doctor-disable-next-line react-doctor/no-danger
+      // react-doctor-disable-next-line react-doctor/no-danger, react-doctor/dangerous-html-sink -- marked-rendered markdown from trusted CC transcript
       // biome-ignore lint/security/noDangerouslySetInnerHtml: marked-rendered markdown from trusted CC transcript
       dangerouslySetInnerHTML={{ __html: html }}
       onClick={handleMarkdownClick}

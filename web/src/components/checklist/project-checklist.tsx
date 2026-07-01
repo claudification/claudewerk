@@ -43,6 +43,7 @@ export function ProjectChecklist({ project }: { project: string }) {
       <Plus className="size-3.5 shrink-0 text-muted-foreground/50" />
       <input
         value={text}
+        aria-label="Add checklist item"
         onChange={e => setText(e.currentTarget.value)}
         onKeyDown={e => {
           if (e.key === 'Enter') add(text)

@@ -16,6 +16,11 @@ import { useThemeMode } from './use-theme-mode'
  * implemented by a dedicated hook colocated in this folder; this orchestrator
  * stitches them together and produces the keyboard handler for the input.
  */
+function selectConversationWithTracking(s: Conversation, onSelectConversation: (id: string) => void) {
+  recordSwitch(s.project)
+  onSelectConversation(s.id)
+}
+
 export function useCommandPalette(onClose: () => void) {
   const selectedConversationId = useConversationsStore(state => state.selectedConversationId)
   const projectSettings = useConversationsStore(state => state.projectSettings)
@@ -102,11 +107,6 @@ export function useCommandPalette(onClose: () => void) {
       callbacks,
     )
     dispatch(e)
-  }
-
-  function selectConversationWithTracking(s: Conversation, onSelectConversation: (id: string) => void) {
-    recordSwitch(s.project)
-    onSelectConversation(s.id)
   }
 
   return {

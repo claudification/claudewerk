@@ -12,6 +12,8 @@ function formatTokenCount(tokens: number): string {
 // Terse model label for the roster badge: drop the `claude-` vendor prefix and
 // any trailing date / context-window suffix so "claude-opus-4-8[1m]" reads as
 // "opus-4-8". Short Agent-tool names ("opus") pass through unchanged.
+// react-doctor:only-export-components -- shortModel + AgentModelPill are
+// cohesive agent-task utilities consumed by sibling files + tests.
 export function shortModel(model: string): string {
   return model
     .replace(/^claude-/, '')

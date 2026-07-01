@@ -25,7 +25,6 @@ import { type DialogViewState, freshView, type ViewMirror } from './live-dialog-
 import { wsSend } from './use-conversations'
 
 export type { LiveDialogEntry } from './live-dialog-apply'
-export { CLOSED_DECAY_MS } from './live-dialog-view'
 
 interface LiveDialogsState {
   byConversation: Record<string, LiveDialogEntry>

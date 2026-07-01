@@ -31,7 +31,8 @@ export function useCanvasCollab(canvasId: string | null, enabled: boolean, name?
   const [peers, setPeers] = useState<CanvasPeer[]>([])
   const api = useRef<CollabApi | null>(null)
   const ownPeerId = useRef<string | null>(null)
-  const collaborators = useRef(new Map<string, RemoteCollaborator>())
+  const collaborators = useRef<Map<string, RemoteCollaborator>>(null!)
+  if (collaborators.current === null) collaborators.current = new Map()
   const suppressUntil = useRef(0)
 
   const pushCollaborators = useCallback(() => {

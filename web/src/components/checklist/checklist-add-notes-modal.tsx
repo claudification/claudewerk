@@ -61,6 +61,7 @@ export function ChecklistAddNotesModal() {
             <textarea
               ref={ref}
               value={text}
+              aria-label="Checklist notes"
               onChange={e => setText(e.currentTarget.value)}
               onKeyDown={e => {
                 if (e.key === 'Escape') setOpen(false)

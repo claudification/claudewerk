@@ -19,6 +19,31 @@ import {
 } from '@/hooks/use-conversations'
 import { useWebSocket } from '@/hooks/use-websocket'
 
+const expiredQuotes = [
+  '"This is your mom, and you are not my baby." - Jian-Yang',
+  '"You just brought piss to a shit fight." - Erlich Bachman',
+  '"I\'ve been known to fuck myself." - Russ Hanneman',
+  '"That guy fucks." - Russ Hanneman',
+  '"Delete that footage. Delete it. DELETE IT." - Gavin Belson',
+  '"The only winning move is not to play." - WOPR',
+  '"I am not a robot. Unless... wait, am I?" - TARS',
+  '"Not hot dog." - Jian-Yang',
+  '"Consider the tortoise." - Peter Gregory',
+  '"Bitches on my dick like fleas on a dog." - Erlich Bachman',
+]
+
+const connectingQuotes = [
+  'Compressing middle-out...',
+  'Calculating Weissman score...',
+  'Feeding the neural network...',
+  'Pivoting to video...',
+  'Not a hot dog...',
+  'Achieving optimal D2F ratio...',
+  'Negotiating with Hooli...',
+]
+
+const randomQuote = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)]
+
 export function SharedConversationView({ token: _token }: { token: string }) {
   const conversations = useConversations()
   const selectedConversationId = useConversationsStore(s => s.selectedConversationId)
@@ -84,30 +109,6 @@ export function SharedConversationView({ token: _token }: { token: string }) {
   // We don't have the exact expiry on the client, so we'll get it from the server
   // via a permissions message or just show "Shared conversation" without countdown
   // TODO: Server could send share metadata on subscribe
-
-  const expiredQuotes = [
-    '"This is your mom, and you are not my baby." - Jian-Yang',
-    '"You just brought piss to a shit fight." - Erlich Bachman',
-    '"I\'ve been known to fuck myself." - Russ Hanneman',
-    '"That guy fucks." - Russ Hanneman',
-    '"Delete that footage. Delete it. DELETE IT." - Gavin Belson',
-    '"The only winning move is not to play." - WOPR',
-    '"I am not a robot. Unless... wait, am I?" - TARS',
-    '"Not hot dog." - Jian-Yang',
-    '"Consider the tortoise." - Peter Gregory',
-    '"Bitches on my dick like fleas on a dog." - Erlich Bachman',
-  ]
-  const connectingQuotes = [
-    'Compressing middle-out...',
-    'Calculating Weissman score...',
-    'Feeding the neural network...',
-    'Pivoting to video...',
-    'Not a hot dog...',
-    'Achieving optimal D2F ratio...',
-    'Negotiating with Hooli...',
-  ]
-
-  const randomQuote = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)]
 
   if (expired) {
     return (

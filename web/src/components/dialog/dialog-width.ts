@@ -16,13 +16,3 @@ export const DIALOG_WIDTH_CLASS: Record<string, string> = {
   wide: 'sm:w-[min(900px,92vw)]',
   full: 'sm:w-[96vw] sm:max-w-[1400px]',
 }
-
-const DIALOG_INLINE_WIDTH_CLASS: Record<string, string> = {
-  normal: 'w-[calc(100%-1rem)] sm:max-w-[560px]',
-  wide: 'w-[calc(100%-1rem)] sm:max-w-[900px]',
-  full: 'w-[calc(100%-1rem)]',
-}
-
-export function dialogInlineWidthClass(width: string | undefined): string {
-  return DIALOG_INLINE_WIDTH_CLASS[width ?? 'normal'] ?? DIALOG_INLINE_WIDTH_CLASS.normal
-}
