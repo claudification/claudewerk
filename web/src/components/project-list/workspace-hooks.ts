@@ -1,6 +1,7 @@
 import { useCallback, useEffect } from 'react'
 import { saveProjectOrder, useConversationsStore } from '@/hooks/use-conversations'
 import type { ProjectOrder, ProjectOrderNode, Workspace } from '@/lib/types'
+import { loadLastWorkspaceConversations, saveLastWorkspaceConversation } from '@/lib/workspace-membership'
 
 export const WORKSPACE_COLORS = ['emerald', 'blue', 'purple', 'amber', 'rose', 'cyan', 'orange', 'pink'] as const
 
@@ -36,27 +37,14 @@ function setTrees(o: ProjectOrder, trees: Record<string, ProjectOrderNode[]>): P
   return { ...o, workspaceTrees: Object.keys(trees).length > 0 ? trees : undefined }
 }
 
-const WS_LAST_CONV_KEY = 'workspace-last-conversation'
-
-function loadLastConversations(): Record<string, string> {
-  try { return JSON.parse(localStorage.getItem(WS_LAST_CONV_KEY) ?? '{}') } catch { return {} }
-}
-
-function saveLastConversation(wsId: string, convId: string | null) {
-  const map = loadLastConversations()
-  if (convId) map[wsId] = convId
-  else delete map[wsId]
-  localStorage.setItem(WS_LAST_CONV_KEY, JSON.stringify(map))
-}
-
 // fallow-ignore-next-line complexity
 function switchWorkspace(id: string | null) {
   const store = useConversationsStore.getState()
   const prevWs = store.controlPanelPrefs.activeWorkspaceId ?? '_all'
   const curConv = store.selectedConversationId
-  if (curConv) saveLastConversation(prevWs, curConv)
+  if (curConv) saveLastWorkspaceConversation(prevWs, curConv)
   const targetWs = id ?? '_all'
-  const lastConv = loadLastConversations()[targetWs]
+  const lastConv = loadLastWorkspaceConversations()[targetWs]
   store.updateControlPanelPrefs({ activeWorkspaceId: id })
   if (lastConv && lastConv !== curConv) {
     requestAnimationFrame(() => {

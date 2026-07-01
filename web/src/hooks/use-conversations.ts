@@ -46,6 +46,7 @@ import {
   type UsageUpdate,
 } from '@/lib/types'
 import { getConversationTab, getLastConversationId, initUIState, setLastConversationId } from '@/lib/ui-state'
+import { isProjectInWorkspace, saveLastWorkspaceConversation } from '@/lib/workspace-membership'
 import { recordOut } from './ws-stats'
 
 export type { ProjectSettingsMap }
@@ -1149,6 +1150,17 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
         `[nav] selectConversation: ${prev?.slice(0, 8) || 'none'} -> ${id?.slice(0, 8) || 'none'}${reason ? ` (${reason})` : ''}`,
       )
     }
+    // Jumping to a conversation outside the active workspace (CMD+P, ctrl+Tab,
+    // deep links, notifications) must reveal it rather than silently no-op --
+    // fall back to the "All" workspace instead of leaving it invisible.
+    const activeWs = get().controlPanelPrefs.activeWorkspaceId
+    if (id && activeWs) {
+      const projectUri = get().conversationsById[id]?.project
+      if (projectUri && !isProjectInWorkspace(get().projectOrder, activeWs, projectUri)) {
+        if (prev) saveLastWorkspaceConversation(activeWs, prev)
+        get().updateControlPanelPrefs({ activeWorkspaceId: null })
+      }
+    }
     clearExpandedState()
     const defaultView = get().controlPanelPrefs.defaultView
     const rememberedTab = id ? getConversationTab(id) : null
@@ -1197,6 +1209,12 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
     }
   },
   selectProject: (projectUri: string | null) => {
+    const activeWs = get().controlPanelPrefs.activeWorkspaceId
+    if (projectUri && activeWs && !isProjectInWorkspace(get().projectOrder, activeWs, projectUri)) {
+      const prevConv = get().selectedConversationId
+      if (prevConv) saveLastWorkspaceConversation(activeWs, prevConv)
+      get().updateControlPanelPrefs({ activeWorkspaceId: null })
+    }
     set({
       selectedProjectUri: projectUri,
       selectedConversationId: null,
