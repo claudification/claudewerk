@@ -14,6 +14,7 @@ import { openReviveDialog } from '../revive-dialog-trigger'
 import { openManageProjectLinks } from '../settings/manage-project-links-trigger'
 import { openSpawnDialog } from '../spawn-dialog-trigger'
 import { openTerminateLineageConfirm } from '../terminate-lineage-confirm-trigger'
+import { WorkspaceAssignSub } from './workspace-assign-menu'
 
 // ─── Conversation context menu (right-click) ─────────────────────────────
 
@@ -142,6 +143,7 @@ export function ConversationContextMenu({
       <ContextMenu.Portal>
         <ContextMenu.Content className="min-w-[180px] bg-popover border border-border rounded-md shadow-lg py-1 z-50">
           <GroupingMenuItems project={conversation.project} />
+          <WorkspaceAssignSub nodeId={conversation.project} />
           <ContextMenu.Item
             className={menuItemClass}
             onSelect={() => {
@@ -388,6 +390,7 @@ export function PinnedProjectContextMenu({
       <ContextMenu.Portal>
         <ContextMenu.Content className="min-w-[180px] bg-popover border border-border rounded-md shadow-lg py-1 z-50">
           <GroupingMenuItems project={project} />
+          <WorkspaceAssignSub nodeId={project} />
           <ContextMenu.Separator className="h-px bg-border my-1" />
           <ProjectMenuItems project={project} onOpenSettings={onOpenSettings} />
         </ContextMenu.Content>
@@ -431,6 +434,7 @@ export function ProjectContextMenu({
       <ContextMenu.Portal>
         <ContextMenu.Content className="min-w-[180px] bg-popover border border-border rounded-md shadow-lg py-1 z-50">
           <GroupingMenuItems project={project} />
+          <WorkspaceAssignSub nodeId={project} />
           <ContextMenu.Separator className="h-px bg-border my-1" />
           <ProjectMenuItems project={project} onOpenSettings={onOpenSettings} />
           {(active.length > 0 || ended.length > 0) && <ContextMenu.Separator className="h-px bg-border my-1" />}

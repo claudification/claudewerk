@@ -13,6 +13,7 @@ import { MaybeProfiler } from './perf-profiler'
 import { ConversationCompactPeek, InactiveProjectItem } from './project-list/conversation-item'
 import { GroupNode } from './project-list/conversation-sorting'
 import { PinnedProjectNode, ProjectNode } from './project-list/project-node'
+import { WorkspaceTabs } from './project-list/workspace-tabs'
 
 // ─── Main ProjectList ──────────────────────────────────────────────
 
@@ -31,6 +32,7 @@ export function ProjectList() {
   const projectSettings = useConversationsStore(s => s.projectSettings)
   const showEnded = useConversationsStore(s => s.controlPanelPrefs.showEndedConversations)
   const showInactive = useConversationsStore(s => s.controlPanelPrefs.showInactiveByDefault)
+  const activeWorkspaceId = useConversationsStore(s => s.controlPanelPrefs.activeWorkspaceId)
   const updatePrefs = useConversationsStore(s => s.updateControlPanelPrefs)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
     try {
@@ -80,6 +82,13 @@ export function ProjectList() {
     walk(projectOrder.tree)
     return projects
   }, [projectOrder])
+
+  // Filter root tree nodes by active workspace. "All" (null) = full tree.
+  const filteredTree = useMemo(() => {
+    if (!activeWorkspaceId) return projectOrder.tree
+    const assignments = projectOrder.assignments ?? {}
+    return projectOrder.tree.filter(node => assignments[node.id] === activeWorkspaceId)
+  }, [projectOrder, activeWorkspaceId])
 
   // Effective project URI for each conversation: worktree URIs collapse to
   // parent (legacy support -- post-v7 migration these are already canonical
@@ -322,7 +331,8 @@ export function ProjectList() {
     )
   }
 
-  const hasOrganized = projectOrder.tree.length > 0
+  const hasOrganized = filteredTree.length > 0
+  const isFiltered = activeWorkspaceId !== null
   // Project URI of the currently-selected conversation, looked up lazily
   // from the structural shape so we don't have to subscribe to conversationsById.
   // Strip profile so a `work@default` selection still highlights the project
@@ -335,10 +345,8 @@ export function ProjectList() {
   return (
     <MaybeProfiler id="ProjectList">
       <div className="space-y-2 overflow-y-auto" data-perf-region="sidebar">
-        {/* Organized tree. Reordering happens in the Organize Projects modal
-            (the '> Organize projects' command / sidebar button) -- the list
-            itself is no longer drag-and-droppable. */}
-        {projectOrder.tree.map(node => {
+        <WorkspaceTabs />
+        {filteredTree.map(node => {
           if (node.type === 'group') {
             const isCollapsed = collapsedGroups.has(node.id)
             return (
@@ -402,8 +410,8 @@ export function ProjectList() {
           )
         })}
 
-        {/* Unorganized section */}
-        {(unorganized.length > 0 || pinnedNotInTree.length > 0) && (
+        {/* Unorganized section -- hidden when a workspace filter is active */}
+        {!isFiltered && (unorganized.length > 0 || pinnedNotInTree.length > 0) && (
           <div>
             {hasOrganized && (
               <div className="text-[10px] text-muted-foreground/50 font-bold uppercase tracking-wider px-1 mb-1 flex items-center gap-2">
@@ -445,8 +453,8 @@ export function ProjectList() {
           </div>
         )}
 
-        {/* Inactive section */}
-        {inactive.length > 0 && (
+        {/* Inactive section -- hidden when a workspace filter is active */}
+        {!isFiltered && inactive.length > 0 && (
           <label className="flex items-center gap-2 px-2 py-1.5 text-muted-foreground text-xs cursor-pointer select-none">
             <input
               type="checkbox"
@@ -457,7 +465,8 @@ export function ProjectList() {
             show inactive ({inactive.length})
           </label>
         )}
-        {showInactive &&
+        {!isFiltered &&
+          showInactive &&
           inactive.map(group => <InactiveProjectItem key={group[0].project} conversationIds={group.map(s => s.id)} />)}
       </div>
     </MaybeProfiler>

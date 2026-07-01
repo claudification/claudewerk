@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ProjectOrderGroup } from '@/lib/types'
 import { haptic } from '@/lib/utils'
+import { GroupContextMenu } from './workspace-assign-menu'
 
 // ─── Group node (collapsible folder) ───────────────────────────────
 // Read-only in the sidebar: collapse + double-click rename only. Structural
@@ -37,7 +38,7 @@ export function GroupNode({
     : 0
 
   return (
-    <div>
+    <GroupContextMenu groupId={group.id}>
       {/* contains nested input/textbox; cannot be a native <button> */}
       {/* react-doctor-disable-next-line react-doctor/prefer-tag-over-role */}
       <div
@@ -107,6 +108,6 @@ export function GroupNode({
         {collapsed && <span className="text-muted-foreground/40 font-normal normal-case">({childCount})</span>}
         <span className="flex-1 h-px bg-border/50" />
       </div>
-    </div>
+    </GroupContextMenu>
   )
 }

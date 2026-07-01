@@ -8,6 +8,7 @@ import { exposeDispatchControl } from '@/components/dispatch-overlay/dispatch-co
 import { useDispatchStore } from '@/components/dispatch-overlay/dispatch-store'
 import { openLaunchProfileManager } from '@/components/launch-profiles/manager-state'
 import { openOrganizeProjects } from '@/components/organize-projects/organize-state'
+import { useWorkspaceShortcuts } from '@/components/project-list/workspace-hooks'
 import { openRecapConfigDialog } from '@/components/recap-jobs/recap-config-trigger'
 import { openRecapHistory } from '@/components/recap-jobs/recap-history-trigger'
 import { openRenameModal } from '@/components/rename-modal-trigger'
@@ -83,6 +84,9 @@ export function useGlobalCommands(toggleSidebar: () => void) {
     },
     { label: 'List view: rows / status rail', group: 'View' },
   )
+
+  // Workspace switching: Ctrl+1 = All, Ctrl+2..9 = workspace 1..8
+  useWorkspaceShortcuts()
 
   useCommand(
     'open-sheaf',

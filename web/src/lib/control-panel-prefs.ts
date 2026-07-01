@@ -75,6 +75,8 @@ export interface ControlPanelPrefs {
    *  'rail' = status-rail: state-colored glyph + project monogram/spine, denser.
    *  Per-device (localStorage). Toggle via the `> List view` palette command. */
   listViewMode: 'default' | 'rail'
+  /** Active workspace filter. null = "All" (show every root node). */
+  activeWorkspaceId: string | null
 }
 
 export type SettingsTab = 'general' | 'display' | 'input' | 'sessions' | 'sentinels' | 'system'
@@ -113,6 +115,7 @@ const defaultPrefs: ControlPanelPrefs = {
   settingsTab: 'general',
   theme: 'tokyo-night',
   listViewMode: 'default',
+  activeWorkspaceId: null,
 }
 
 export function loadPrefs(): ControlPanelPrefs {
