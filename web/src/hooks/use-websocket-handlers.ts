@@ -1384,6 +1384,7 @@ const ACTION_TITLES: Record<string, string> = {
   delete_project_settings_result: 'Project settings delete failed',
   update_project_order_result: 'Reorder failed',
   revive_conversation_result: 'Revive failed',
+  fork_conversation_result: 'Fork failed',
   revive_session_result: 'Revive failed',
   rename_conversation_result: 'Rename failed',
   conversation_control_result: 'Control action failed',
@@ -1408,6 +1409,22 @@ function handleActionResult(msg: DashboardMessage) {
 function handleReviveResult(msg: DashboardMessage) {
   // Agent's revive result -- forwarded by broker for pipeline tracking
   window.dispatchEvent(new CustomEvent('revive-agent-result', { detail: msg }))
+}
+
+function handleForkResult(msg: DashboardMessage) {
+  // On failure fall back to the shared toast; on success jump to the new fork.
+  if (msg.ok === false) {
+    handleActionResult(msg)
+    return
+  }
+  const newId = msg.conversationId as string | undefined
+  if (!newId) return
+  useConversationsStore.getState().selectConversation(newId, 'fork-from-message')
+  window.dispatchEvent(
+    new CustomEvent('rclaude-toast', {
+      detail: { title: 'Forked', body: (msg.name as string) || 'New conversation created', variant: 'success' },
+    }),
+  )
 }
 
 function handleLaunchJobEvent(msg: DashboardMessage) {
@@ -1838,6 +1855,7 @@ export const handlers: Record<string, MessageHandler> = {
   delete_project_settings_result: handleActionResult,
   update_project_order_result: handleActionResult,
   revive_conversation_result: handleActionResult,
+  fork_conversation_result: handleForkResult,
   revive_session_result: handleActionResult, // backward compat
   recap_request_result: handleActionResult,
   revive_result: handleReviveResult,

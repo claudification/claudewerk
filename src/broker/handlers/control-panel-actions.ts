@@ -13,6 +13,7 @@ import type { SendInput, SubscriptionChannel } from '../../shared/protocol'
 import { slugify } from '../address-book'
 import { resolveBackend } from '../backends'
 import { buildReviveMessage } from '../build-revive'
+import { forkConversation } from '../fork-conversation'
 import { recordRetiredSlug } from '../former-slugs'
 import { getGlobalSettings, updateGlobalSettings } from '../global-settings'
 import { GuardError, type HandlerContext, type MessageHandler, type WsData } from '../handler-context'
@@ -339,6 +340,30 @@ const reviveConversation: MessageHandler = (ctx, data) => {
   })
 }
 
+// Fork a conversation from a specific transcript message into a NEW conversation
+// (the source is untouched). Thin over the shared `forkConversation`; the web
+// gets the new conversationId back on `fork_conversation_result` and navigates.
+const forkConversationHandler: MessageHandler = (ctx, data) => {
+  const sourceId = data.conversationId as string
+  if (!sourceId) throw new GuardError('Missing conversationId')
+  const source = ctx.conversations.getConversation(sourceId)
+  if (!source) throw new GuardError('Conversation not found')
+  ctx.requirePermission('spawn', source.project)
+
+  const atMessageUuid = typeof data.atMessageUuid === 'string' && data.atMessageUuid ? data.atMessageUuid : undefined
+  const result = forkConversation(ctx.conversations, { sourceId, atMessageUuid })
+  if (!result.ok) throw new GuardError(result.error)
+
+  ctx.reply({
+    type: 'fork_conversation_result',
+    ok: true,
+    name: result.name,
+    conversationId: result.conversationId,
+    sourceConversationId: sourceId,
+    message: 'Fork command sent to sentinel',
+  })
+}
+
 // ─── Launch Job Subscriptions ─────────────────────────────────────
 // jobIds are randomUUID() (128 bits) so guessing is infeasible, but we
 // still gate subscribe on `spawn` permission so users without spawn
@@ -449,6 +474,7 @@ export function registerDashboardActionHandlers(): void {
       delete_project_settings: deleteProjectSettingsHandler,
       update_project_order: updateProjectOrder,
       revive_conversation: reviveConversation,
+      fork_conversation: forkConversationHandler,
       subscribe_job: subscribeJob,
       unsubscribe_job: unsubscribeJob,
     },

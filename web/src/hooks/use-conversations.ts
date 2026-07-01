@@ -1645,6 +1645,18 @@ export function reviveConversation(conversationId: string, options: ReviveConver
 }
 
 /**
+ * Fork a conversation from a specific transcript message into a NEW conversation.
+ * Omit `atMessageUuid` to fork from HEAD. The broker replies with
+ * `fork_conversation_result`; the handler navigates to the new conversation.
+ */
+export function forkConversation(conversationId: string, atMessageUuid?: string): boolean {
+  return wsSend('fork_conversation', {
+    conversationId,
+    ...(atMessageUuid && { atMessageUuid }),
+  })
+}
+
+/**
  * Detect a bare control command typed on its own line and route it to the
  * `conversation_control` channel instead of `send_input`. The agent host interprets
  * these verbs backend-specifically (headless vs PTY) rather than letting the

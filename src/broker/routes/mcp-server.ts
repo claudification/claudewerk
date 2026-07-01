@@ -17,6 +17,7 @@ import type { ConversationStore } from '../conversation-store'
 import { deliverDispatcherReport } from '../desk/async-impulse'
 import { runDispatch } from '../desk/runtime'
 import { listThreads } from '../desk/threads'
+import { forkConversation } from '../fork-conversation'
 import { getGlobalSettings } from '../global-settings'
 import { getProjectSettings } from '../project-settings'
 import { isPushConfigured, sendPushToAll } from '../push'
@@ -382,6 +383,24 @@ export function createMcpServer(
           },
         ],
       }
+    },
+  )
+
+  // ─── fork_conversation ───────────────────────────────────────────────
+  mcp.tool(
+    'fork_conversation',
+    'Fork an existing conversation from a specific transcript message into a NEW conversation. The fork replays the source\'s history UP TO `atMessageUuid` and branches into a fresh session; the SOURCE conversation is left untouched. Omit `atMessageUuid` to fork from the latest point (HEAD). Use to explore an alternative branch from a past point without disturbing the original. Returns the new conversationId. The source must have booted at least once.',
+    {
+      sourceConversationId: z.string().describe('The conversationId to fork from.'),
+      atMessageUuid: z
+        .string()
+        .optional()
+        .describe('Transcript message uuid to fork at (history is kept up to and including it). Omit = fork from HEAD.'),
+    },
+    async ({ sourceConversationId, atMessageUuid }) => {
+      const result = forkConversation(conversationStore, { sourceId: sourceConversationId, atMessageUuid })
+      if (!result.ok) return toolText(`Fork failed: ${result.error}`, true)
+      return toolText(JSON.stringify({ conversationId: result.conversationId, name: result.name }))
     },
   )
 

@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils'
 import { AdvisorCard } from './advisor-card'
 import { BootTimeline } from './boot-timeline'
 import { ChatBubble } from './chat-bubble'
+import { ForkButton } from './fork-button'
 import type { RenderItem, ResultLookup, TranscriptSettings } from './group-view-types'
 import type { DisplayGroup } from './grouping'
 import { BashItem, ChannelItem, ImagesItem, ProjectTaskItem, TextItem, ThinkingItem, ToolItem } from './item-renderers'
@@ -111,6 +112,11 @@ function GroupView({
   )
   const hasProjectTask = items.some(it => it.kind === 'project-task')
 
+  // Fork anchor: the assistant message this turn ends on. `--resume-session-at`
+  // targets an assistant message uuid, so only assistant turns carry the fork
+  // affordance (a user turn has no assistant message to anchor to).
+  const forkUuid = isUser ? undefined : (group.entries.at(-1) as { uuid?: string } | undefined)?.uuid
+
   if (chatBubbles && isUser && !hasInterConversationContent && !hasProjectTask) {
     return (
       <ChatBubble
@@ -138,6 +144,7 @@ function GroupView({
         attributionSkill={attributionSkill}
         queued={group.queued}
         ts={ts}
+        forkUuid={forkUuid}
       />
       <div className={cn('pl-4 space-y-2', group.queued && 'opacity-50')}>
         {items.map((item, i) => (
@@ -167,6 +174,7 @@ function GroupHeader({
   attributionSkill,
   queued,
   ts,
+  forkUuid,
 }: {
   label: string
   customColor: string
@@ -178,9 +186,10 @@ function GroupHeader({
   attributionSkill?: string
   queued?: boolean
   ts?: string | number
+  forkUuid?: string
 }) {
   return (
-    <div className="flex items-center gap-2 mb-2">
+    <div className="group flex items-center gap-2 mb-2">
       <span className={cn('text-[10px]', borderColor)}>{'┌──'}</span>
       <span
         className={cn('px-2 py-0.5 font-bold', sizeClass, !customColor && labelBg)}
@@ -213,6 +222,7 @@ function GroupHeader({
       )}
       <TimeStamp ts={ts} className="text-muted-foreground text-[10px]" />
       <span className={cn('flex-1 text-[10px] overflow-hidden', borderColor)}>{'─'.repeat(40)}</span>
+      {forkUuid && <ForkButton atMessageUuid={forkUuid} />}
     </div>
   )
 }
