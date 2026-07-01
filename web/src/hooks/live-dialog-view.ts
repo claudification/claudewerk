@@ -8,12 +8,6 @@ import type { DialogOp, DialogSnapshot, DialogStatus } from '@shared/dialog-live
 import { getInitialValues, reconcileValues } from '@/components/dialog/dialog-form-init'
 import type { DialogViewPref } from './live-dialog-prefs'
 
-/** An agent-closed dialog auto-hides from THIS client's view after this long.
- *  It collapses into a fading, dismissible bar first (so you see it WAS there),
- *  then is removed outright. Purely a client-side view decay -- the broker keeps
- *  the dialog for reopen. */
-const CLOSED_DECAY_MS = 20 * 60 * 1000
-
 /** Panel-owned interaction state, persisted across the unmount that a
  *  conversation switch causes. The mounted component mirrors values/pending/
  *  submitRev/activeAction down here every render; collapsed/closedAt are owned
