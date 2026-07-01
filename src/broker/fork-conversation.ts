@@ -14,6 +14,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import type { Conversation } from '../shared/protocol'
 import { resolveSpawnConfig } from '../shared/spawn-defaults'
 import type { SpawnRequest } from '../shared/spawn-schema'
 import { buildReviveMessage, conversationHasCcSession } from './build-revive'
@@ -25,6 +26,26 @@ import { computeSpawnLineage } from './spawn-lineage'
 export type ForkResult =
   | { ok: true; conversationId: string; name: string }
   | { ok: false; error: string; statusCode: number }
+
+/** Resolve the fork's launch config from the source's (launch config > project >
+ *  global defaults). Extracted so `forkConversation` stays low-complexity. */
+function resolveForkLaunchConfig(source: Conversation) {
+  const lc = source.launchConfig
+  return resolveSpawnConfig(
+    {
+      cwd: source.project,
+      model: lc?.model as SpawnRequest['model'] | undefined,
+      effort: lc?.effort as SpawnRequest['effort'] | undefined,
+      bare: lc?.bare,
+      repl: lc?.repl,
+      permissionMode: lc?.permissionMode as SpawnRequest['permissionMode'] | undefined,
+      autocompactPct: lc?.autocompactPct,
+      maxBudgetUsd: lc?.maxBudgetUsd,
+    },
+    getProjectSettings(source.project),
+    getGlobalSettings(),
+  )
+}
 
 export function forkConversation(
   conversationStore: ConversationStore,
@@ -46,23 +67,7 @@ export function forkConversation(
   const newId = randomUUID()
   const lineage = computeSpawnLineage(conversationStore, opts.sourceId, newId, 'fork')
 
-  // Resolve launch config from the source (mirrors the revive path).
-  const lc = source.launchConfig
-  const resolved = resolveSpawnConfig(
-    {
-      cwd: source.project,
-      model: lc?.model as SpawnRequest['model'] | undefined,
-      effort: lc?.effort as SpawnRequest['effort'] | undefined,
-      bare: lc?.bare,
-      repl: lc?.repl,
-      permissionMode: lc?.permissionMode as SpawnRequest['permissionMode'] | undefined,
-      autocompactPct: lc?.autocompactPct,
-      maxBudgetUsd: lc?.maxBudgetUsd,
-    },
-    getProjectSettings(source.project),
-    getGlobalSettings(),
-  )
-  const { model, effort, bare, repl, permissionMode, autocompactPct, maxBudgetUsd } = resolved
+  const { model, effort, bare, repl, permissionMode, autocompactPct, maxBudgetUsd } = resolveForkLaunchConfig(source)
 
   // Create the forked row up front (a lineage child of the source) so it shows in
   // the sidebar the moment the fork is requested. Title gets a "(fork)" suffix,

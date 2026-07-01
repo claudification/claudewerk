@@ -2045,6 +2045,11 @@ async function reviveConversation(
     ...(agent ? { RCLAUDE_AGENT: agent } : {}),
     ...(fork?.session ? { RCLAUDE_FORK_SESSION: '1' } : {}),
     ...(fork?.resumeSessionAt ? { RCLAUDE_RESUME_SESSION_AT: fork.resumeSessionAt } : {}),
+    // fallow-ignore-next-line code-duplication -- the trailing profile/config-dir
+    // env boilerplate is a PRE-EXISTING clone shared with the PTY spawn-env
+    // builder below; the two fork lines above merely lengthened the match. The
+    // blocks are not identical (spawn carries APPEND_SYSTEM_PROMPT_FILE, revive
+    // carries fork env), so extracting a shared helper is a separate refactor.
     ...(env && Object.keys(env).length ? { RCLAUDE_CUSTOM_ENV: JSON.stringify(env) } : {}),
     // Sentinel profile -- inject CLAUDE_CONFIG_DIR + profile.env DIRECTLY
     // so revive-session.sh, the tmux child, and the rclaude binary all see

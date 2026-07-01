@@ -79,3 +79,41 @@ describe('parseCliArgs -- append-system-prompt injection', () => {
     expect(cfg.claudeArgs).not.toContain('--append-system-prompt')
   })
 })
+
+describe('parseCliArgs -- fork-from-message flags', () => {
+  const prevFork = process.env.RCLAUDE_FORK_SESSION
+  const prevAt = process.env.RCLAUDE_RESUME_SESSION_AT
+
+  beforeEach(() => {
+    delete process.env.RCLAUDE_FORK_SESSION
+    delete process.env.RCLAUDE_RESUME_SESSION_AT
+  })
+  afterEach(() => {
+    if (prevFork === undefined) delete process.env.RCLAUDE_FORK_SESSION
+    else process.env.RCLAUDE_FORK_SESSION = prevFork
+    if (prevAt === undefined) delete process.env.RCLAUDE_RESUME_SESSION_AT
+    else process.env.RCLAUDE_RESUME_SESSION_AT = prevAt
+  })
+
+  it('RCLAUDE_FORK_SESSION=1 adds --fork-session and sets cfg.forkSession', async () => {
+    process.env.RCLAUDE_FORK_SESSION = '1'
+    const cfg = await parseCliArgs([])
+    expect(cfg.claudeArgs).toContain('--fork-session')
+    expect(cfg.forkSession).toBe(true)
+  })
+
+  it('RCLAUDE_RESUME_SESSION_AT adds --resume-session-at <uuid>', async () => {
+    process.env.RCLAUDE_RESUME_SESSION_AT = 'msg-uuid-42'
+    const cfg = await parseCliArgs([])
+    const i = cfg.claudeArgs.indexOf('--resume-session-at')
+    expect(i).toBeGreaterThanOrEqual(0)
+    expect(cfg.claudeArgs[i + 1]).toBe('msg-uuid-42')
+  })
+
+  it('no fork env -> no flags and forkSession false', async () => {
+    const cfg = await parseCliArgs([])
+    expect(cfg.claudeArgs).not.toContain('--fork-session')
+    expect(cfg.claudeArgs).not.toContain('--resume-session-at')
+    expect(cfg.forkSession).toBe(false)
+  })
+})
