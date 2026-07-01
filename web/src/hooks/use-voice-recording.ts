@@ -122,6 +122,7 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
   // replay on reconnect so no speech is lost during a broker restart (~10-20s).
   const offlineBufferRef = useRef<string[]>([])
   const accumulatedTextRef = useRef('') // last known accumulated transcript from broker
+  const interimTextRef = useRef('') // in-flight (yellow) words not yet finalized by Deepgram
   const reconnectingRef = useRef(false) // prevents double-fire of reconnect logic
   // Session sequence: prevents a late voice_done from a previous recording from
   // clobbering a new one that started while the broker was still processing.
@@ -205,6 +206,13 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     }
   }
 
+  // Mirror interim text into a ref so doStop() -- which runs off refs, not the
+  // captured render closure -- can see whether words are still un-finalized.
+  function setInterim(v: string) {
+    interimTextRef.current = v
+    setInterimText(v)
+  }
+
   function applyTranscript(msg: { isFinal?: boolean; accumulated?: string; transcript?: string }) {
     // Already committed to submit -- late broker transcripts (Deepgram's
     // final-on-close) would re-trigger the consumer's auto-submit effect.
@@ -213,7 +221,7 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
       const acc = msg.accumulated || msg.transcript || ''
       setFinalText(acc)
       accumulatedTextRef.current = acc
-      setInterimText('')
+      setInterim('')
       // Entered 'refining' because no finals existed at stop time, but one
       // arrived now (Deepgram's Finalize flush). Submit immediately with the
       // raw text rather than waiting for the broker's LLM refinement round-trip
@@ -225,7 +233,7 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
         setState('submitting')
       }
     } else {
-      setInterimText(msg.transcript || '')
+      setInterim(msg.transcript || '')
     }
   }
 
@@ -323,7 +331,7 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     setState('idle')
     backendReadyRef.current = false
     setBackendReady(false)
-    setInterimText('')
+    setInterim('')
     setFinalText('')
     setRefinedText('')
     setErrorMsg('')
@@ -488,8 +496,9 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     droppedChunksRef.current = 0
     offlineBufferRef.current = []
     accumulatedTextRef.current = ''
+    interimTextRef.current = ''
     reconnectingRef.current = false
-    setInterimText('')
+    setInterim('')
     setFinalText('')
     setRefinedText('')
     setErrorMsg('')
@@ -565,6 +574,31 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
       streamRef.current = null
       scheduleStreamRelease()
       sendWs({ type: 'voice_stop' })
+    }
+
+    // If words are still in flight (yellow interim not yet finalized), the
+    // accumulated transcript is INCOMPLETE -- submitting now would truncate the
+    // tail. voice_stop above triggers Deepgram's Finalize flush, which arrives
+    // as a late isFinal carrying the full text; applyTranscript's refining
+    // branch submits it. So defer to 'refining' instead of immediate-submit.
+    if (interimTextRef.current) {
+      console.log(`[voice] ${elapsed()} interim pending on stop -- await finalize flush`)
+      setState('refining')
+      setTimeout(() => {
+        if (stateRef.current === 'refining') {
+          // Flush never arrived; salvage whatever we have rather than hang/lose.
+          const salvage = `${accumulatedTextRef.current} ${interimTextRef.current}`.trim()
+          if (salvage) {
+            console.warn(`[voice] finalize flush never arrived -- salvaging (${salvage.length} chars)`)
+            setRefinedText(salvage)
+            setState('submitting')
+          } else {
+            console.warn('[voice] Stuck in refining for 30s, resetting')
+            reset()
+          }
+        }
+      }, 30_000)
+      return
     }
 
     // Use the accumulated transcript directly -- don't wait for the broker
