@@ -111,12 +111,16 @@ export interface BuildViewArgs {
   project: string
   enabled: boolean
   now: number
+  /** Pre-read live (non-expired) queue. Pass this to reuse a queue the caller
+   *  already read (the fleet handler builds 200+ views -- reading each queue
+   *  once instead of twice halves its FS + JSON.parse cost). Omit to read here. */
+  live?: Contribution[]
 }
 
 /** Assemble the full SOTU read model for a project (chronicle + free floor). */
-export function buildSotuView({ slug, project, enabled, now }: BuildViewArgs): SotuView {
+export function buildSotuView({ slug, project, enabled, now, live: liveArg }: BuildViewArgs): SotuView {
   const chronicle = readChronicle(slug)
-  const live = readLiveQueue(slug, now)
+  const live = liveArg ?? readLiveQueue(slug, now)
   const fabric = chronicle.git ?? latestFabric(live)
   return {
     project,
