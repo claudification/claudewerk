@@ -201,6 +201,7 @@ function OptionsInput({
                       form.setValue(`${id}_note_${opt.value}`, e.target.value)
                     }}
                     onClick={e => e.stopPropagation()}
+                    onKeyDown={e => e.stopPropagation()}
                     className="mt-1.5 w-full text-xs bg-background/50 border border-border/40 rounded px-2 py-1 placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
                   />
                 )}
