@@ -43,6 +43,7 @@ export interface CatalogTool {
     | 'web-control'
     | 'nightshift'
     | 'dispatch'
+    | 'canvas'
   /** Sites where this tool is MEANT to be exposed. */
   sites: readonly McpSite[]
 }
@@ -161,6 +162,13 @@ export const MCP_CATALOG: readonly CatalogTool[] = [
     sites: HOST_ONLY,
     summary: 'List recent SOTU distill evals (recipe + cost + grounding) for QC',
   },
+
+  // ── canvas (host only; hosted Excalidraw/draw-dsl surfaces) ────────
+  { name: 'canvas_list', group: 'canvas', sites: HOST_ONLY, summary: 'List hosted canvases in this project' },
+  { name: 'canvas_read', group: 'canvas', sites: HOST_ONLY, summary: 'Read a hosted canvas scene' },
+  { name: 'canvas_create', group: 'canvas', sites: HOST_ONLY, summary: 'Create a hosted canvas (optional seed scene)' },
+  { name: 'canvas_update_scene', group: 'canvas', sites: HOST_ONLY, summary: "Replace a canvas's full scene" },
+  { name: 'canvas_rename', group: 'canvas', sites: HOST_ONLY, summary: 'Rename a hosted canvas' },
 
   // ── web control (both sites; host bridged in Phase 5) ──────────────
   { name: 'web_list_clients', group: 'web-control', sites: BOTH, summary: 'List opted-in control-panel browsers' },

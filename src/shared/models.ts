@@ -152,9 +152,10 @@ const CC_MODELS: readonly CCModelFamily[] = [
     defaultOutputTokens: 64_000,
     maxOutputTokens: 128_000,
     supports1M: true,
-    // NOT in CC's default-[1m] alias set (only opus-4-7/4-8/fable/mythos are),
-    // so 1M is opt-in via the [1m] suffix -- same handling as every Sonnet.
-    default1M: false,
+    // In CC's default-[1m] alias set: bare `sonnet` -> claude-sonnet-5 at 1M with
+    // NO [1m] suffix (like opus-4-7/4-8/fable/mythos). First Sonnet where 1M is the
+    // default rather than opt-in -- the [1m] variants below are now redundant.
+    default1M: true,
     tier: 'current',
     // CC v2.1.197 remaps the bare `sonnet` alias to this family
     // (i8_={...sonnet:"claude-sonnet-5",...}); moved here off claude-sonnet-4-6.
@@ -446,31 +447,60 @@ function formatModelError(slug: string): string {
 /**
  * Authoritative model catalog for UI. Ordered the way they appear in the dropdown.
  *
- * The "latest" rows USE CC's bare aliases (`fable`, `opus[1m]`, `haiku`) so they
- * auto-track Anthropic's newest build with no maintenance -- no more "bump the
+ * The "latest" rows USE CC's bare aliases (`fable`, `opus`, `sonnet`, `haiku`) so
+ * they auto-track Anthropic's newest build with no maintenance -- no more "bump the
  * pinned id" when a new model ships. Safe because the agent host upgrades a stored
  * alias to the resolved family id at runtime (`deriveModelName`), and default-1M
- * families (opus/fable) stay 1M either way.
- *
- * EXCEPTION: Sonnet's "latest, 1M" row stays pinned to `claude-sonnet-4-6[1m]`.
- * Sonnet 1M is opt-in (not default-1M), and `deriveModelName` would drop a bare
- * `sonnet[1m]` back to the 200K family id -- the qualified slug must survive.
+ * families (fable/opus/sonnet-5) stay 1M either way.
  */
 const MODEL_CATALOG: readonly ModelEntry[] = [
-  // --- Current flagship: Fable 5 (Mythos-class, default 1M) ---
+  // --- Shorthand defaults: ONE bare-alias row per family (auto-track latest) ---
+  // These USE CC's bare aliases (`fable`, `opus`, `sonnet`, `haiku`) so they
+  // always resolve to Anthropic's newest build for that family with zero
+  // maintenance -- no pinned-id bumping. The pinned specifics (Opus 4.8, 4.7,
+  // ...) follow further down for anyone who wants to lock a version.
   {
-    // Bare `fable` alias -> claude-fable-5 (auto-tracks the latest Fable build).
+    // Bare `fable` alias -> claude-fable-5 (1M default). Flagship.
     id: 'fable',
-    label: 'Fable 5',
+    label: 'Fable (latest)',
     info: 'Fable 5 · 1M default · 128K output',
     window: 1_000_000,
     showInDropdown: true,
     showInCompleter: true,
   },
   {
-    // Mythos is the underlying class label for Fable 5 -- same limits. Shown in
-    // the dropdown alongside Fable; the bare `mythos` mnemonic (typeable) maps
-    // here via canonicalizeModelSlug since CC won't resolve bare `mythos`.
+    // Bare `opus` alias -> claude-opus-4-8. Default-1M family, so no [1m] needed.
+    id: 'opus',
+    label: 'Opus (latest)',
+    info: 'Opus 4.8 · 1M default · 128K output',
+    window: 1_000_000,
+    showInDropdown: true,
+    showInCompleter: true,
+  },
+  {
+    // Bare `sonnet` alias -> claude-sonnet-5. Default-1M family, so no [1m] needed.
+    id: 'sonnet',
+    label: 'Sonnet (latest)',
+    info: 'Sonnet 5 · 1M default · 128K output',
+    window: 1_000_000,
+    showInDropdown: true,
+    showInCompleter: true,
+  },
+  {
+    // Bare `haiku` alias -> latest Haiku (200K).
+    id: 'haiku',
+    label: 'Haiku (latest)',
+    info: 'Haiku 4.5 · 200K · 64K output',
+    window: 200_000,
+    showInDropdown: true,
+    showInCompleter: true,
+  },
+
+  // --- Flagship specific ---
+  {
+    // Mythos is the underlying class label for Fable 5 -- same limits. The bare
+    // `mythos` mnemonic (typeable) maps here via canonicalizeModelSlug since CC
+    // won't resolve bare `mythos` on its own.
     id: 'claude-mythos-5',
     label: 'Mythos 5',
     info: 'Mythos 5 · 1M default · 128K output (class label for Fable 5)',
@@ -479,37 +509,26 @@ const MODEL_CATALOG: readonly ModelEntry[] = [
     showInCompleter: true,
   },
 
-  // --- "Latest" aliases: prominent, explicit 1M where supported ---
+  // --- Completer-only explicit-1M variants (not in the dropdown) ---
   {
-    // Bare `opus[1m]` alias -> claude-opus-4-8 (1M). Auto-tracks the latest Opus.
+    // Redundant with the bare `opus` default (already default-1M) but kept
+    // typeable via `/model` for users who spell out the suffix.
     id: 'opus[1m]',
     label: 'Opus (latest, 1M)',
     info: 'Opus 4.8 · 1M · 128K output',
-    window: 1_000_000,
-    showInDropdown: true,
-    showInCompleter: true,
-  },
-  {
-    // Hidden from dropdown: Sonnet 1M moved to API/usage-credit billing, not
-    // included on any subscription tier. Still accepted via `/model` typing
-    // for API/PAYG/credits-enabled accounts. Profile-capabilities work will
-    // surface it conditionally when we know the (sentinel, profile) tier.
-    // Pinned to the qualified slug: `deriveModelName` would drop a bare
-    // `sonnet[1m]` back to the 200K family id.
-    id: 'claude-sonnet-5[1m]',
-    label: 'Sonnet (latest, 1M)',
-    info: 'Sonnet 5 · 1M · 128K output (requires usage credits)',
     window: 1_000_000,
     showInDropdown: false,
     showInCompleter: true,
   },
   {
-    // Bare `haiku` alias -> latest Haiku (200K). Auto-tracks.
-    id: 'haiku',
-    label: 'Haiku (latest)',
-    info: 'Haiku 4.5 · 200K · 64K output',
-    window: 200_000,
-    showInDropdown: true,
+    // Redundant with the bare `sonnet` default (already default-1M) but kept
+    // typeable via `/model` for users who spell out the suffix. Pinned to the
+    // qualified slug: `deriveModelName` would drop a bare `sonnet[1m]` to an alias.
+    id: 'claude-sonnet-5[1m]',
+    label: 'Sonnet (latest, 1M)',
+    info: 'Sonnet 5 · 1M · 128K output',
+    window: 1_000_000,
+    showInDropdown: false,
     showInCompleter: true,
   },
 
@@ -549,8 +568,8 @@ const MODEL_CATALOG: readonly ModelEntry[] = [
   {
     id: 'claude-sonnet-5',
     label: 'Sonnet 5',
-    info: 'Pinned · 200K (1M via [1m]) · 128K output',
-    window: 200_000,
+    info: 'Pinned · 1M default · 128K output',
+    window: 1_000_000,
     showInDropdown: true,
     showInCompleter: true,
   },
@@ -639,9 +658,9 @@ const MODEL_CATALOG: readonly ModelEntry[] = [
     showInCompleter: true,
   },
 
-  // --- Bare CC aliases (rows whose alias isn't already a "latest" row above) ---
-  // `fable` and `haiku` are the ids of the flagship/latest rows above, so they
-  // are not repeated here.
+  // --- Meta-aliases (typeable, not in the dropdown) ---
+  // The bare family shorthands (`fable`, `opus`, `sonnet`, `haiku`) are the
+  // shorthand-default rows at the TOP of this catalog -- not repeated here.
   {
     id: 'best',
     label: 'best',
@@ -655,22 +674,6 @@ const MODEL_CATALOG: readonly ModelEntry[] = [
     label: 'opusplan',
     info: 'CC alias -> Opus while planning, else Sonnet',
     window: 1_000_000,
-    showInDropdown: false,
-    showInCompleter: true,
-  },
-  {
-    id: 'opus',
-    label: 'opus',
-    info: 'CC alias -> Opus 4.8 (1M default)',
-    window: 1_000_000,
-    showInDropdown: false,
-    showInCompleter: true,
-  },
-  {
-    id: 'sonnet',
-    label: 'sonnet',
-    info: 'CC alias -> Sonnet 5 (200K)',
-    window: 200_000,
     showInDropdown: false,
     showInCompleter: true,
   },
