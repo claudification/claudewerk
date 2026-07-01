@@ -6,7 +6,7 @@
  * real-time state. Admin-gated (CONTROL_PANEL_ONLY).
  */
 
-import type { SotuView } from '../../shared/protocol'
+import type { SotuConfigView, SotuView } from '../../shared/protocol'
 import { listDeskProjects } from '../desk/projects'
 import type { HandlerContext, MessageData } from '../handler-context'
 import { CONTROL_PANEL_ONLY, registerHandlers } from '../message-router'
@@ -14,7 +14,7 @@ import { buildSotuView, maybeDistillOnRead } from '../sotu'
 import { defaultResolveSotuConfig } from '../sotu/config'
 import { readDistillEvals } from '../sotu/eval'
 import { projectSlug } from '../sotu/paths'
-import { readQueue } from '../sotu/queue'
+import { isExpired, readQueue } from '../sotu/queue'
 import { readState } from '../sotu/state'
 import { applyWrite, buildConfigView } from './sotu-config'
 
@@ -37,8 +37,12 @@ function sotuFleet(ctx: HandlerContext, _data: MessageData): void {
     const slug = projectSlug(p.projectUri)
     const config = defaultResolveSotuConfig(p.projectUri)
     const state = readState(slug)
+    // Read the queue ONCE and reuse it for both queueSize and the view's live
+    // derivation -- buildSotuView would otherwise re-read + re-parse the same
+    // file, doubling the FS/parse cost across every project in the fleet.
     const queue = readQueue(slug)
-    const view = buildSotuView({ slug, project: p.projectUri, enabled: config.enabled, now })
+    const live = queue.filter(c => !isExpired(c, now))
+    const view = buildSotuView({ slug, project: p.projectUri, enabled: config.enabled, now, live })
     return {
       project: p.label,
       projectUri: p.projectUri,
