@@ -876,7 +876,14 @@ export const TranscriptView = memo(function TranscriptView({
     const delta = totalSize - prevTotalSizeRef.current
     prevTotalSizeRef.current = totalSize
     if (follow && grew) {
-      virtualizer.scrollToEnd({ behavior: followSmoothRef.current ? 'smooth' : 'auto' })
+      // INSTANT, always. This manual re-pin coexists with native's own end-pin
+      // (virtual-core 3.17.2 pins in-place last-item growth). A SMOOTH scroll here
+      // chased a target native had already pinned instantly -> visible overshoot
+      // every time an in-flight block / streaming text grew or vanished. Both
+      // drivers instant to the same bottom = idempotent, no overshoot. (Removing
+      // this effect entirely + followOnAppend:true was tried in a18ff1f6 and broke
+      // follow badly -> reverted; keep the effect, just drop the smooth animation.)
+      virtualizer.scrollToEnd({ behavior: 'auto' })
     } else if (grew && !follow && delta > 24) {
       // Content arrived (new group, async recap, finished turn) while follow was
       // already OFF, so nothing pins -- the "recap scrolls below / anchor lost"
