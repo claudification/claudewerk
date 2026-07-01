@@ -10,14 +10,24 @@ const menuItemClass =
 
 const EMPTY_WORKSPACES: Workspace[] = []
 
+// fallow-ignore-next-line complexity
+function findRootNodeId(tree: ProjectOrder['tree'], nodeId: string): string {
+  for (const n of tree) {
+    if (n.id === nodeId) return n.id
+    if (n.type === 'group' && n.children.some(c => c.id === nodeId)) return n.id
+  }
+  return nodeId
+}
+
 function useWorkspaceAssignment(nodeId: string) {
   const workspaces = useConversationsStore(s => (s.projectOrder as ProjectOrder).workspaces ?? EMPTY_WORKSPACES)
-  const currentWsId = useConversationsStore(s => ((s.projectOrder as ProjectOrder).assignments ?? {})[nodeId] ?? null)
-  return { workspaces, currentWsId }
+  const rootId = useConversationsStore(s => findRootNodeId((s.projectOrder as ProjectOrder).tree ?? [], nodeId))
+  const currentWsId = useConversationsStore(s => ((s.projectOrder as ProjectOrder).assignments ?? {})[rootId] ?? null)
+  return { workspaces, currentWsId, rootId }
 }
 
 function WorkspaceListItems({ nodeId }: { nodeId: string }) {
-  const { workspaces, currentWsId } = useWorkspaceAssignment(nodeId)
+  const { workspaces, currentWsId, rootId } = useWorkspaceAssignment(nodeId)
   const actions = useWorkspaceActions()
   return (
     <>
@@ -27,7 +37,7 @@ function WorkspaceListItems({ nodeId }: { nodeId: string }) {
           className={cn(menuItemClass, currentWsId === ws.id && 'text-primary')}
           onSelect={() => {
             haptic('tap')
-            actions.assign(nodeId, ws.id)
+            actions.assign(rootId, ws.id)
           }}
         >
           <span className={cn('size-2 rounded-full mr-2 shrink-0', colorDot(ws.color))} />
@@ -40,7 +50,7 @@ function WorkspaceListItems({ nodeId }: { nodeId: string }) {
           className={cn(menuItemClass, !currentWsId && 'text-primary')}
           onSelect={() => {
             haptic('tap')
-            actions.assign(nodeId, null)
+            actions.assign(rootId, null)
           }}
         >
           None (All only)
@@ -52,7 +62,7 @@ function WorkspaceListItems({ nodeId }: { nodeId: string }) {
           haptic('tap')
           const name = prompt('Workspace name:')
           if (!name?.trim()) return
-          actions.createAndAssign(name.trim(), workspaces.length, nodeId)
+          actions.createAndAssign(name.trim(), workspaces.length, rootId)
         }}
       >
         New workspace…
