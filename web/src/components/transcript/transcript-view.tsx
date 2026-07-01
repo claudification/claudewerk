@@ -640,18 +640,11 @@ export const TranscriptView = memo(function TranscriptView({
     // scrolled up = no pull-down). Replaces all manual scroll-to-bottom and
     // prepend-anchor machinery.
     anchorTo: 'end',
-    // followOnAppend ON: native SINGLE-SOURCES all follow. On new items it pins
-    // the end (only when already at end -- a scrolled-up reader is never pulled
-    // down); virtual-core 3.17.2's resize path pins the end on the LAST item
-    // growing IN PLACE (streaming thinking/text/spinner/pill inside the last
-    // virtual item). We used to keep this OFF and drive follow from a manual
-    // totalSize scrollToEnd effect, because the old core did NOT pin in-place
-    // growth -- but with the core fixed, running BOTH double-compensated: our
-    // SMOOTH scrollToEnd chased a target native had already pinned instantly,
-    // overshooting every time an in-flight block appeared/vanished. Native is
-    // now the sole pinner; the manual effect is gone. (3.17.3 also fixed the
-    // false-wasAtEnd direction mislatch, so "at end" is trustworthy again.)
-    followOnAppend: true,
+    // followOnAppend OFF (field experiment): its native scroll-on-append is
+    // INSTANT and pre-empts the smooth follow below. With it off, every follow
+    // (append AND in-place growth) routes through the single totalSize effect,
+    // which animates smoothly once the conversation has settled.
+    followOnAppend: false,
     scrollEndThreshold: 80,
     // Safari fix: ResizeObserver can fire mid-layout before paint completes,
     // causing the virtualizer to read intermediate/partial element heights and
@@ -810,10 +803,22 @@ export const TranscriptView = memo(function TranscriptView({
     virtualizer.scrollToEnd()
   }, [virtualizer])
 
-  // Conversation switch: scroll to end (instant) + re-enable follow in the parent.
-  // Native then single-sources follow from here on (followOnAppend + resize pin).
+  // Smooth-follow gate. FALSE during the initial post-switch measurement burst so
+  // entering/switching a conversation snaps INSTANTLY to the bottom (boom, you're
+  // there) -- without this, the totalSize effect below would smooth-crawl through
+  // the content as it measures in. Flipped true a beat after settle so subsequent
+  // growth (streaming/pills/appends) follows SMOOTHLY.
+  const followSmoothRef = useRef(false)
+  // Last totalSize, for the growth-only follow guard below. Reset on switch so the
+  // first measure of a fresh conversation counts as growth.
+  const prevTotalSizeRef = useRef(0)
+
+  // Conversation switch: scroll to end + re-enable follow in the parent. Resets
+  // the smooth gate so the entry scroll + initial load stay instant.
   // biome-ignore lint/correctness/useExhaustiveDependencies: virtualizer is stable, onReachedBottom is stable
   useLayoutEffect(() => {
+    followSmoothRef.current = false
+    prevTotalSizeRef.current = 0
     // Drop the auto-spacer latch for the new conversation -- the measurement
     // effect re-evaluates it against the incoming content.
     setFillSpacerActive(false)
@@ -823,7 +828,8 @@ export const TranscriptView = memo(function TranscriptView({
     // Did the entry actually land at the bottom? (Issue: "entering a conversation
     // doesn't always get to the bottom".) Measure a frame later, after the
     // scrollToEnd + first layout. DID-NOT-REACH means the pin undershot the
-    // still-measuring content -- native follow should converge it.
+    // still-measuring content -- the growth effect below should converge it iff
+    // `follow` is true by then.
     const raf = requestAnimationFrame(() => {
       const el = parentRef.current
       if (!el) return
@@ -832,7 +838,11 @@ export const TranscriptView = memo(function TranscriptView({
         `[follow] switch-pin settled drift=${drift.toFixed(0)} ${drift < 40 ? 'OK' : 'DID-NOT-REACH-BOTTOM'} follow=${follow ? 1 : 0}`,
       )
     })
+    const id = setTimeout(() => {
+      followSmoothRef.current = true
+    }, 350)
     return () => {
+      clearTimeout(id)
       cancelAnimationFrame(raf)
     }
   }, [cacheKey])
@@ -845,16 +855,42 @@ export const TranscriptView = memo(function TranscriptView({
     if (follow) virtualizer.scrollToEnd()
   }, [follow])
 
-  // NOTE: the manual "re-pin on totalSize growth" scrollToEnd effect was REMOVED
-  // here. It existed because the old virtual-core did NOT pin the end when the
-  // LAST item grew IN PLACE (the in-flight thinking/text/spinner/pill render
-  // inside the last virtual item), so followOnAppend never fired for streaming.
-  // virtual-core 3.17.2 fixed that resize path, so native now pins in-place
-  // growth AND appends (followOnAppend: true). Running both double-compensated:
-  // our SMOOTH scroll chased a target native had already pinned instantly, so an
-  // in-flight block appearing/vanishing overshot the bottom. Native is the sole
-  // pinner now. If a follow gap resurfaces (e.g. async recap arriving while
-  // detached), re-add a DIAGNOSTIC-ONLY totalSize log -- not another scroll.
+  // Re-pin on ANY measured-height change while following. anchorTo:'end' anchors
+  // the end against jumps but does NOT actively pull the viewport down when the
+  // LAST item grows IN PLACE -- which is exactly what the in-flight bottom UI
+  // does: streaming thinking/text, the verb spinner, and the thinking pill all
+  // render inside the last virtual item, so no new item is appended and
+  // followOnAppend never fires. totalSize captures every such growth (and the
+  // shrink when they vanish), so scroll to end to keep the new bottom content
+  // visible. Gated on `follow` so a scrolled-up user is never yanked; idempotent
+  // when already pinned; stable across the live->committed swap (seeded height
+  // keeps totalSize constant there), so it does not fire spuriously.
+  // Follow only on GROWTH. On shrink -- in-flight decorations collapsing away --
+  // we do NOT scroll: the smooth height-collapse + the browser's own scrollTop
+  // clamp settle the content gently, and an extra scrollToEnd here would fight
+  // that. prevTotalSizeRef (declared above, reset to 0 on switch) makes the first
+  // measure of a fresh conversation count as growth.
+  const lastGrewLogRef = useRef(0)
+  useLayoutEffect(() => {
+    const grew = totalSize > prevTotalSizeRef.current
+    const delta = totalSize - prevTotalSizeRef.current
+    prevTotalSizeRef.current = totalSize
+    if (follow && grew) {
+      virtualizer.scrollToEnd({ behavior: followSmoothRef.current ? 'smooth' : 'auto' })
+    } else if (grew && !follow && delta > 24) {
+      // Content arrived (new group, async recap, finished turn) while follow was
+      // already OFF, so nothing pins -- the "recap scrolls below / anchor lost"
+      // symptom. The preceding DISENGAGE line tells you WHY follow was off.
+      // Throttled so streaming-while-reading-history doesn't flood.
+      const now = performance.now()
+      if (now - lastGrewLogRef.current > 800) {
+        lastGrewLogRef.current = now
+        console.debug(
+          `[follow] grew-but-not-following Δ=${delta.toFixed(0)} total=${totalSize.toFixed(0)} -- content arrived while follow OFF (won't pin)`,
+        )
+      }
+    }
+  }, [totalSize, follow])
 
   // PREPEND STABILITY is native. virtual-core 3.17.0 (`@tanstack/react-virtual`
   // 3.14.2 pins it exactly and passes options straight through) implements
