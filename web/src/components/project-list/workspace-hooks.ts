@@ -55,11 +55,16 @@ export function useWorkspaceActions() {
   const setActive = useCallback((id: string | null) => {
     const store = useConversationsStore.getState()
     const prevWs = store.controlPanelPrefs.activeWorkspaceId ?? '_all'
-    if (store.selectedConversationId) saveLastConversation(prevWs, store.selectedConversationId)
-    updatePrefs({ activeWorkspaceId: id })
+    const curConv = store.selectedConversationId
+    if (curConv) saveLastConversation(prevWs, curConv)
     const targetWs = id ?? '_all'
     const lastConv = loadLastConversations()[targetWs]
-    if (lastConv) store.selectConversation(lastConv, 'workspace-switch')
+    updatePrefs({ activeWorkspaceId: id })
+    if (lastConv && lastConv !== curConv) {
+      requestAnimationFrame(() => {
+        useConversationsStore.getState().selectConversation(lastConv, 'workspace-switch')
+      })
+    }
   }, [updatePrefs])
 
   return {
