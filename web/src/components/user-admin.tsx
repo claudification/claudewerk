@@ -590,6 +590,7 @@ function UserEditPanel({ user, onSave, onClose }: { user: UserSummary; onSave: (
 
 // ─── Main Modal ───────────────────────────────────────────────────
 
+// fallow-ignore-next-line complexity
 export function UserAdminDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const [users, setUsers] = useState<UserSummary[]>([])
   const [loading, setLoading] = useState(false)
@@ -607,6 +608,13 @@ export function UserAdminDialog({ open, onOpenChange }: { open: boolean; onOpenC
     } catch {}
     setLoading(false)
   }, [])
+
+  // Set loading synchronously when dialog opens (no stale frame)
+  const [prevOpen, setPrevOpen] = useState(open)
+  if (open !== prevOpen) {
+    setPrevOpen(open)
+    if (open) setLoading(true)
+  }
 
   useEffect(() => {
     if (open) loadUsers()

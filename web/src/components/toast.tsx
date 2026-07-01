@@ -24,7 +24,8 @@ const AUTO_DISMISS_MS = 8000
 
 export function ToastContainer() {
   const [toasts, setToasts] = useState<Toast[]>([])
-  const timersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map())
+  const timersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(null!)
+  if (timersRef.current === null) timersRef.current = new Map()
 
   useEffect(() => {
     const timers = timersRef.current

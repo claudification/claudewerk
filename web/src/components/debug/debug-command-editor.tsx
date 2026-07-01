@@ -25,6 +25,7 @@ export function DebugCommandEditor({
       <textarea
         value={payloadText}
         onChange={e => onPayloadChange(e.target.value)}
+        aria-label="Command payload"
         spellCheck={false}
         className="w-full h-28 bg-muted/40 border border-border text-[11px] font-mono px-2 py-1.5 outline-none focus:border-accent resize-none"
       />

@@ -41,7 +41,8 @@ export function usePublicCanvas(token: string): PublicCanvasDoc {
   const [state, setState] = useState<PublicState>('loading')
   const [saveState, setSaveState] = useState<PublicCanvasDoc['saveState']>('idle')
 
-  const baseIds = useRef<Set<string>>(new Set())
+  const baseIds = useRef<Set<string>>(null!)
+  if (baseIds.current === null) baseIds.current = new Set()
   const tier = useRef<PublicCanvas['tier']>('read')
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 

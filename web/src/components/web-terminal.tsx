@@ -137,10 +137,16 @@ export function WebTerminal({ conversationId, onClose, popout }: WebTerminalProp
     }
   }, [conversationId, sendWsMessage, setTerminalHandler])
 
+  // Clear error synchronously when reconnected (no stale frame)
+  const [prevIsConnected, setPrevIsConnected] = useState(isConnected)
+  if (isConnected !== prevIsConnected) {
+    setPrevIsConnected(isConnected)
+    if (isConnected) setTerminalError(null)
+  }
+
   // Re-attach when WS reconnects
   useEffect(() => {
     if (!isConnected || !paneRef.current) return
-    setTerminalError(null)
     const { cols, rows } = paneRef.current.getSize()
     sendWsMessage({ type: 'terminal_attach', conversationId, cols, rows })
   }, [isConnected, conversationId, sendWsMessage])

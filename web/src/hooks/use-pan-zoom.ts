@@ -38,7 +38,8 @@ export function usePanZoom(containerRef: RefObject<HTMLElement | null>, contentR
   // Only state that re-renders React: the zoom-% shown in the toolbar.
   const [scaleDisplay, setScaleDisplay] = useState(1)
   // Active pointers (id -> client coords) for drag + pinch tracking.
-  const pointers = useRef(new Map<number, { x: number; y: number }>())
+  const pointers = useRef<Map<number, { x: number; y: number }>>(null!)
+  if (pointers.current === null) pointers.current = new Map()
   const pinchDist = useRef(0)
 
   // Write the current transform straight to the element (no React commit).

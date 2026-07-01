@@ -32,12 +32,17 @@ function ConversationWindowInner({ conversationId }: { conversationId: string })
   const isConnected = useConversationsStore(s => s.isConnected)
   const [selected, setSelected] = useState(false)
 
+  // Flip selected synchronously during render (avoids stale frame);
+  // the store side-effect stays in an effect below.
+  if (!selected && isConnected && conversation) {
+    setSelected(true)
+  }
+
   useEffect(() => {
-    if (isConnected && conversation && !selected) {
+    if (selected) {
       useConversationsStore.getState().selectConversation(conversationId, 'standalone-window')
-      setSelected(true)
     }
-  }, [isConnected, conversation, conversationId, selected])
+  }, [selected, conversationId])
 
   const windowTitle = conversation?.title || conversation?.name || conversationId.slice(0, 12)
   useEffect(() => {

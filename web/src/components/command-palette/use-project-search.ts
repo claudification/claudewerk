@@ -41,9 +41,7 @@ export function useProjectSearch(
 
   const pinnedProjectUris = useMemo(
     () =>
-      Object.entries(projectSettings)
-        .filter(([, ps]) => ps.pinned)
-        .map(([uri]) => uri),
+      Object.entries(projectSettings).flatMap(([uri, ps]) => (ps.pinned ? [uri] : [])),
     [projectSettings],
   )
 

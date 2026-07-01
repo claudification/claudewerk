@@ -61,6 +61,8 @@ interface SceneSnapshot {
 export default function ExcalidrawCanvas({ initialSnapshot, readOnly, onSnapshot, collab }: DrawCanvasProps) {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const apiRef = useRef<ExcalidrawAPI | null>(null)
+  // react-doctor:rerender-state-only-in-handlers -- apiReady is read as a hook
+  // dependency (useDslSeed), so it must be state to trigger the effect re-run.
   const [apiReady, setApiReady] = useState(false)
 
   // Seed once from the snapshot. A DSL Scene (v:1 + nodes) is EXPANDED to elements

@@ -16,7 +16,10 @@ import { FanItem } from './action-fab-item'
 
 export function ActionFab() {
   const [expanded, setExpanded] = useState(false)
-  const [confirmId, setConfirmId] = useState<string | null>(null)
+  const [rawConfirmId, setConfirmId] = useState<string | null>(null)
+  // confirmId is only meaningful when the fan is expanded; derive it inline
+  // instead of syncing via useEffect (react-doctor/no-derived-state).
+  const confirmId = expanded ? rawConfirmId : null
   const lastTapRef = useRef(0)
   const selectedConversationId = useConversationsStore(state => state.selectedConversationId)
   const conversation = useConversationsStore(state =>
@@ -45,6 +48,7 @@ export function ActionFab() {
       }
       haptic('double')
       setExpanded(false)
+      setConfirmId(null)
       const { conversationMru, conversationsById, selectConversation } = useConversationsStore.getState()
       const prev = conversationMru.slice(1).find(id => id in conversationsById)
       if (prev) selectConversation(prev)
@@ -56,7 +60,10 @@ export function ActionFab() {
     // Delay toggle to allow double-tap detection
     singleTapTimer.current = setTimeout(() => {
       singleTapTimer.current = null
-      setExpanded(prev => !prev)
+      setExpanded(prev => {
+        if (prev) setConfirmId(null) // closing the fan clears pending confirmation
+        return !prev
+      })
     }, 300)
   }, [])
 
@@ -84,16 +91,14 @@ export function ActionFab() {
       const target = e.target as HTMLElement
       if (!target.closest('[data-action-fab]')) {
         setExpanded(false)
+        setConfirmId(null)
       }
     }
     document.addEventListener('click', handleClick, { capture: true })
     return () => document.removeEventListener('click', handleClick, { capture: true })
   }, [expanded])
 
-  // Clear confirmation when fan closes
-  useEffect(() => {
-    if (!expanded) setConfirmId(null)
-  }, [expanded])
+  // confirmId derived inline from expanded -- no useEffect needed.
 
   return (
     <div data-action-fab className="fixed z-[56] right-3" style={{ width: 44, height: 44, top: 'calc(50% + 32px)' }}>

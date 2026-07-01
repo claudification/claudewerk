@@ -17,7 +17,7 @@ const ORDER: Record<string, number> = { feasible: 0, uncertain: 1, infeasible: 2
 const rank = (item: NightshiftQueueItem): number => ORDER[item.feasibility ?? 'feasible'] ?? 0
 
 function sortQueue(queue: NightshiftQueueItem[]): NightshiftQueueItem[] {
-  return [...queue].sort((a, b) => rank(a) - rank(b) || a.id.localeCompare(b.id))
+  return queue.toSorted((a, b) => rank(a) - rank(b) || a.id.localeCompare(b.id))
 }
 
 function EmptyState() {

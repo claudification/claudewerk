@@ -22,10 +22,16 @@ export function ProjectReadmeSection({ projectUri }: { projectUri: string }) {
   const [truncated, setTruncated] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
 
-  useEffect(() => {
-    let cancelled = false
+  // Reset content/truncated synchronously when projectUri changes.
+  const [prevProjectUri, setPrevProjectUri] = useState(projectUri)
+  if (projectUri !== prevProjectUri) {
+    setPrevProjectUri(projectUri)
     setContent(null)
     setTruncated(false)
+  }
+
+  useEffect(() => {
+    let cancelled = false
     void readProjectFile(projectUri, 'README.md', PREVIEW_BYTES).then(res => {
       if (cancelled) return
       if (res.ok && res.content?.trim()) {

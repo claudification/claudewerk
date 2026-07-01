@@ -89,7 +89,8 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
   const cancelledRef = useRef(false)
   const pendingStopRef = useRef(false)
   const utteranceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pendingDataRef = useRef<Promise<void>>(Promise.resolve())
+  const pendingDataRef = useRef<Promise<void>>(null!)
+  if (pendingDataRef.current === null) pendingDataRef.current = Promise.resolve()
   const startTsRef = useRef(0)
   // Connection-integrity tracking. Recording starts immediately for instant
   // feel (mic + recorder live = 'recording'). The connect timer guards against

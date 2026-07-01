@@ -52,8 +52,9 @@ export const DialogModal = memo(function DialogModal({
   const [lastAction, setLastAction] = useState<string | null>(null)
   const [minimized, setMinimized] = useState(false)
   const timeoutSec = layout.timeout ?? 900
-  const [remaining, setRemaining] = useState(timeoutSec)
-  const lastInteractionRef = useRef(Date.now())
+  const [remaining, setRemaining] = useState(timeoutSec) // react-doctor-disable-line react-doctor/no-derived-state -- countdown timer initialized from prop, diverges immediately
+  const lastInteractionRef = useRef<number>(null!)
+  if (lastInteractionRef.current === null) lastInteractionRef.current = Date.now()
 
   // Countdown timer (skipped for expired re-displays -- there is no deadline)
   useEffect(() => {
@@ -229,11 +230,17 @@ export const DialogModal = memo(function DialogModal({
   // Minimized: thin vertical strip on the right edge
   if (minimized) {
     return (
-      // react-doctor-disable-next-line react-doctor/click-events-have-key-events, react-doctor/no-static-element-interactions
-      // biome-ignore lint/a11y/noStaticElementInteractions: restore handle
       <div
+        role="button"
+        tabIndex={0}
         className="fixed top-0 right-0 bottom-0 z-50 w-10 flex flex-col items-center cursor-pointer group"
         onClick={handleRestore}
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            handleRestore()
+          }
+        }}
       >
         {/* Background strip */}
         <div
@@ -286,10 +293,18 @@ export const DialogModal = memo(function DialogModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* react-doctor-disable-next-line react-doctor/click-events-have-key-events, react-doctor/no-static-element-interactions */}
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents: modal backdrop */}
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: modal backdrop */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleCancel} />
+      <div
+        role="button"
+        tabIndex={0}
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={handleCancel}
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            handleCancel()
+          }
+        }}
+      />
 
       {/* Modal */}
       <div

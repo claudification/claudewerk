@@ -30,6 +30,7 @@ function ShareLink({ url, busy, revoke }: { url: string; busy: boolean; revoke: 
         <input
           readOnly
           value={url}
+          aria-label="Share URL"
           onFocus={e => e.currentTarget.select()}
           className="flex-1 min-w-0 bg-muted/30 px-1 py-0.5 font-mono text-[10px] text-muted-foreground"
         />

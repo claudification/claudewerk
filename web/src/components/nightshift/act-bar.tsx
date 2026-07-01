@@ -80,6 +80,7 @@ export function ActBar({ act, hasReady }: Props) {
       {freeformOpen && (
         <div className="space-y-2 pt-1">
           <textarea
+            aria-label="Freeform agent command"
             value={text}
             onChange={e => setText(e.target.value)}
             rows={3}

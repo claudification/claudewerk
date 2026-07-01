@@ -1,14 +1,14 @@
 import { useConversationsStore } from '@/hooks/use-conversations'
 
+function handleSignOut() {
+  fetch('/auth/logout', { method: 'POST' }).finally(() => {
+    window.location.reload()
+  })
+}
+
 export function AuthExpiredModal() {
   const authExpired = useConversationsStore(s => s.authExpired)
   if (!authExpired) return null
-
-  function handleSignOut() {
-    fetch('/auth/logout', { method: 'POST' }).finally(() => {
-      window.location.reload()
-    })
-  }
 
   return (
     <div className="fixed inset-0 z-[9999] bg-black/80 flex items-center justify-center p-4">

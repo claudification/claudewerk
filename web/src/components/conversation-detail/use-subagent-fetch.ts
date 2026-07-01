@@ -17,10 +17,16 @@ export function useSubagentFetch(selectedConversationId: string | null) {
 
   const [subagentLoading, setSubagentLoading] = useState(false)
 
+  // react-doctor-disable-next-line react-doctor/no-derived-state -- multi-source: loading set synchronously on key change AND cleared by async fetch
+  const [prevSubagentKey, setPrevSubagentKey] = useState(subagentKey)
+  if (subagentKey !== prevSubagentKey) {
+    setPrevSubagentKey(subagentKey)
+    if (subagentKey) setSubagentLoading(true)
+  }
+
   useEffect(() => {
     if (!selectedConversationId || !selectedSubagentId) return
     let cancelled = false
-    setSubagentLoading(true)
     fetchSubagentTranscript(selectedConversationId, selectedSubagentId).then(entries => {
       if (cancelled) return
       setSubagentLoading(false)

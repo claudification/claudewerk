@@ -17,6 +17,7 @@ export function useCanvasActions(): CanvasActions {
   return useContext(CanvasActionsContext)
 }
 
+// react-doctor-disable react-doctor/no-derived-state -- standalone imperative functions, not hooks
 async function primeTranscript(id: string): Promise<void> {
   const store = useConversationsStore.getState()
   if (store.transcripts[id]?.length) return // already cached (and subscribed)

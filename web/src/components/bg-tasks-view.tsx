@@ -42,6 +42,21 @@ function BgTaskOutputView({ taskId }: { taskId: string }) {
 
 const EMPTY_BG_TASKS: BgTaskSummary[] = []
 
+function renderTask(task: BgTaskSummary) {
+  return (
+    <div key={task.taskId} className="border border-border p-3 space-y-1.5">
+      <div className="flex items-center gap-2">
+        <StatusBadge status={task.status} />
+        <span className="text-[10px] text-muted-foreground font-mono">{task.taskId}</span>
+        <span className="text-[10px] text-muted-foreground ml-auto">{formatAge(task.startedAt)}</span>
+      </div>
+      {task.description && <div className="text-xs text-foreground">{task.description}</div>}
+      <div className="text-[11px] text-muted-foreground font-mono truncate">$ {task.command}</div>
+      <BgTaskOutputView taskId={task.taskId} />
+    </div>
+  )
+}
+
 export function BgTasksView({ conversationId }: { conversationId: string }) {
   const bgTasks = useConversationsStore(state => state.conversationsById[conversationId]?.bgTasks || EMPTY_BG_TASKS)
 
@@ -52,21 +67,6 @@ export function BgTasksView({ conversationId }: { conversationId: string }) {
   const running = bgTasks.filter(t => t.status === 'running')
   const completed = bgTasks.filter(t => t.status === 'completed')
   const killed = bgTasks.filter(t => t.status === 'killed')
-
-  function renderTask(task: BgTaskSummary) {
-    return (
-      <div key={task.taskId} className="border border-border p-3 space-y-1.5">
-        <div className="flex items-center gap-2">
-          <StatusBadge status={task.status} />
-          <span className="text-[10px] text-muted-foreground font-mono">{task.taskId}</span>
-          <span className="text-[10px] text-muted-foreground ml-auto">{formatAge(task.startedAt)}</span>
-        </div>
-        {task.description && <div className="text-xs text-foreground">{task.description}</div>}
-        <div className="text-[11px] text-muted-foreground font-mono truncate">$ {task.command}</div>
-        <BgTaskOutputView taskId={task.taskId} />
-      </div>
-    )
-  }
 
   return (
     <div className="h-full overflow-y-auto p-3 sm:p-4 space-y-4">

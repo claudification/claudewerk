@@ -151,11 +151,17 @@ function OptionsInput({
             : current != null && current === opt.value
 
           return (
-            // react-doctor-disable-next-line react-doctor/click-events-have-key-events, react-doctor/no-static-element-interactions
-            // biome-ignore lint/a11y/noStaticElementInteractions: dialog option
             <div
+              role="button"
+              tabIndex={0}
               key={opt.value}
               onClick={() => applySelect(form, id, opt.value, multi)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  applySelect(form, id, opt.value, multi)
+                }
+              }}
               className={cn(
                 'flex items-start gap-3 px-3.5 py-3 rounded cursor-pointer border transition-colors text-sm',
                 selected
@@ -273,11 +279,17 @@ function ImagePickerInput({
             current != null &&
             (multi ? (Array.isArray(current) ? current : []).includes(img.value) : current === img.value)
           return (
-            // react-doctor-disable-next-line react-doctor/click-events-have-key-events, react-doctor/no-static-element-interactions
-            // biome-ignore lint/a11y/noStaticElementInteractions: dialog image picker
             <div
+              role="button"
+              tabIndex={0}
               key={img.value}
               onClick={() => applySelect(form, id, img.value, multi)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  applySelect(form, id, img.value, multi)
+                }
+              }}
               className={cn(
                 'relative cursor-pointer rounded border-2 overflow-hidden transition-all',
                 selected ? 'border-primary ring-1 ring-primary/30' : 'border-border/30 hover:border-border/60',
@@ -302,13 +314,20 @@ function ToggleInput({ id, label, form }: { id: string; label: string; form: Dia
   const checked = form.values[id] === true
 
   return (
-    // react-doctor-disable-next-line react-doctor/click-events-have-key-events, react-doctor/no-static-element-interactions
-    // biome-ignore lint/a11y/noStaticElementInteractions: dialog toggle
     <div
+      role="button"
+      tabIndex={0}
       className="flex items-center gap-3 cursor-pointer py-1"
       onClick={() => {
         haptic('tap')
         form.setValue(id, !checked)
+      }}
+      onKeyDown={e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          haptic('tap')
+          form.setValue(id, !checked)
+        }
       }}
     >
       <div
@@ -480,14 +499,20 @@ function GroupLayout({
 
   return (
     <div className="rounded border border-border/30 overflow-hidden">
-      {/* react-doctor-disable-next-line react-doctor/click-events-have-key-events, react-doctor/no-static-element-interactions */}
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents: dialog group header */}
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: dialog group header */}
       <div
+        role="button"
+        tabIndex={0}
         className="flex items-center gap-2 px-3 py-2 bg-muted/30 cursor-pointer select-none"
         onClick={() => {
           haptic('tick')
           setIsCollapsed(!isCollapsed)
+        }}
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            haptic('tick')
+            setIsCollapsed(!isCollapsed)
+          }
         }}
       >
         {isCollapsed ? <ChevronRight className="size-3.5" /> : <ChevronDown className="size-3.5" />}

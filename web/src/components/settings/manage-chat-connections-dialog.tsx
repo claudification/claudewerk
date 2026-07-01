@@ -60,6 +60,17 @@ const menuItemClass =
 const menuItemDestructiveClass =
   'px-3 py-1.5 text-[11px] font-mono cursor-pointer outline-none text-red-400 data-[highlighted]:bg-red-500/20 data-[highlighted]:text-red-400'
 
+function copyYaml(connection: ChatApiConnection) {
+  const yaml = formToYaml({
+    name: connection.name,
+    url: connection.url,
+    apiKey: connection.apiKey,
+    model: connection.model || '',
+  })
+  navigator.clipboard.writeText(yaml)
+  haptic('success')
+}
+
 export function ManageChatConnectionsDialog() {
   const [open, setOpen] = useState(false)
   const [view, setView] = useState<View>('list')
@@ -102,6 +113,7 @@ export function ManageChatConnectionsDialog() {
   }, [])
 
   useEffect(() => {
+    // react-doctor-disable-next-line react-doctor/no-derived-state -- fetch-on-open side effect; loading has multiple setters (fetchConnections + init)
     if (open) fetchConnections()
   }, [open, fetchConnections])
 
@@ -147,17 +159,6 @@ export function ManageChatConnectionsDialog() {
     setView('add')
     setError(null)
     setSourceMode(false)
-  }
-
-  function copyYaml(connection: ChatApiConnection) {
-    const yaml = formToYaml({
-      name: connection.name,
-      url: connection.url,
-      apiKey: connection.apiKey,
-      model: connection.model || '',
-    })
-    navigator.clipboard.writeText(yaml)
-    haptic('success')
   }
 
   function toggleSourceMode() {

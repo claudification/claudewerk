@@ -350,6 +350,7 @@ export function SpawnDialog() {
   // Auto-redirect when countdown reaches 0
   useEffect(() => {
     if (progress.viewCountdown !== 0) return
+    // react-doctor-disable-next-line react-doctor/no-derived-state -- handleClose sets jobId + state as side effect of countdown reaching 0; jobId has multiple setters
     handleClose()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once when countdown hits 0, not on every handleClose recreation
     // react-doctor-disable-next-line react-doctor/exhaustive-deps
@@ -1162,6 +1163,23 @@ export function SpawnDialog() {
 
 // ─── Resume Session Field ──────────────────────────────────────────────
 
+function formatAge(mtime: number): string {
+  const diff = Date.now() - mtime
+  const mins = Math.floor(diff / 60_000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
+}
+
 function ResumeSessionField({
   resumeId,
   onResumeIdChange,
@@ -1197,23 +1215,6 @@ function ResumeSessionField({
       })
       .catch(err => setError(String(err)))
       .finally(() => setLoading(false))
-  }
-
-  function formatAge(mtime: number): string {
-    const diff = Date.now() - mtime
-    const mins = Math.floor(diff / 60_000)
-    if (mins < 1) return 'just now'
-    if (mins < 60) return `${mins}m ago`
-    const hours = Math.floor(mins / 60)
-    if (hours < 24) return `${hours}h ago`
-    const days = Math.floor(hours / 24)
-    return `${days}d ago`
-  }
-
-  function formatSize(bytes: number): string {
-    if (bytes < 1024) return `${bytes}B`
-    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`
-    return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
   }
 
   return (
@@ -1344,6 +1345,11 @@ function HermesGatewayPicker({
 // so both honor the 1/2 hotkeys identically. Single source of truth for the
 // tab chrome -- don't inline a second copy.
 
+const CONFIG_TABS: Array<{ key: 'basic' | 'advanced'; label: string; hint: string }> = [
+  { key: 'basic', label: 'Basic', hint: '1' },
+  { key: 'advanced', label: 'Advanced', hint: '2' },
+]
+
 function ConfigTabBar({
   value,
   onChange,
@@ -1351,13 +1357,9 @@ function ConfigTabBar({
   value: 'basic' | 'advanced'
   onChange: (tab: 'basic' | 'advanced') => void
 }) {
-  const tabs: Array<{ key: 'basic' | 'advanced'; label: string; hint: string }> = [
-    { key: 'basic', label: 'Basic', hint: '1' },
-    { key: 'advanced', label: 'Advanced', hint: '2' },
-  ]
   return (
     <div className="flex gap-1.5 shrink-0">
-      {tabs.map(t => (
+      {CONFIG_TABS.map(t => (
         <button
           key={t.key}
           type="button"

@@ -74,6 +74,16 @@ function StatRow({ label, value, accent, dim }: { label: string; value: string; 
 
 type Tab = 'traffic' | 'cache' | 'sw' | 'log' | 'perf' | 'conns' | 'heap'
 
+const NERD_TABS: { id: Tab; label: string }[] = [
+  { id: 'cache', label: 'Cache' },
+  { id: 'heap', label: 'Heap' },
+  { id: 'conns', label: 'Conns' },
+  { id: 'traffic', label: 'Traffic' },
+  { id: 'perf', label: 'Perf' },
+  { id: 'sw', label: 'SW' },
+  { id: 'log', label: 'Log' },
+]
+
 function TrafficTab({ serverStats, fetchError }: { serverStats: ServerStats | null; fetchError: string | null }) {
   const clientRates = useSyncExternalStore(subscribeStats, getRates)
   const channelEntries = serverStats ? Object.entries(serverStats.channels) : []
@@ -607,23 +617,25 @@ function HeapTab() {
           <div>
             <div className="text-[10px] uppercase tracking-wider text-comment mb-2">Top-level slices</div>
             <div className="max-h-40 overflow-y-auto">
-              {report.slices
-                .filter(s => s.bytes >= 1024)
-                .map(s => (
-                  <HeapRow
-                    key={s.key}
-                    cells={[
-                      { k: 'key', text: s.key, cn: 'text-foreground truncate flex-1' },
-                      { k: 'kind', text: s.kind, cn: 'text-comment shrink-0 w-10 text-right' },
-                      { k: 'count', text: String(s.count), cn: 'text-comment shrink-0 w-14 text-right tabular-nums' },
-                      {
-                        k: 'size',
-                        text: humanBytes(s.bytes),
-                        cn: 'text-primary shrink-0 w-20 text-right tabular-nums',
-                      },
-                    ]}
-                  />
-                ))}
+              {report.slices.flatMap(s =>
+                s.bytes >= 1024
+                  ? [
+                      <HeapRow
+                        key={s.key}
+                        cells={[
+                          { k: 'key', text: s.key, cn: 'text-foreground truncate flex-1' },
+                          { k: 'kind', text: s.kind, cn: 'text-comment shrink-0 w-10 text-right' },
+                          { k: 'count', text: String(s.count), cn: 'text-comment shrink-0 w-14 text-right tabular-nums' },
+                          {
+                            k: 'size',
+                            text: humanBytes(s.bytes),
+                            cn: 'text-primary shrink-0 w-20 text-right tabular-nums',
+                          },
+                        ]}
+                      />,
+                    ]
+                  : [],
+              )}
             </div>
           </div>
 
@@ -632,28 +644,30 @@ function HeapTab() {
               Per-key (top retainers · maxItem = largest single item)
             </div>
             <div className="max-h-48 overflow-y-auto">
-              {report.subs
-                .filter(s => s.bytes >= 1024)
-                .map(s => (
-                  <HeapRow
-                    key={`${s.slice}:${s.subKey}`}
-                    cells={[
-                      { k: 'slice', text: s.slice, cn: 'text-comment shrink-0 w-20 truncate' },
-                      { k: 'sub', text: s.subKey, cn: 'text-foreground truncate flex-1' },
-                      { k: 'count', text: String(s.count), cn: 'text-comment shrink-0 w-12 text-right tabular-nums' },
-                      {
-                        k: 'size',
-                        text: humanBytes(s.bytes),
-                        cn: 'text-primary shrink-0 w-16 text-right tabular-nums',
-                      },
-                      {
-                        k: 'max',
-                        text: humanBytes(s.maxItemBytes),
-                        cn: 'text-warning shrink-0 w-16 text-right tabular-nums',
-                      },
-                    ]}
-                  />
-                ))}
+              {report.subs.flatMap(s =>
+                s.bytes >= 1024
+                  ? [
+                      <HeapRow
+                        key={`${s.slice}:${s.subKey}`}
+                        cells={[
+                          { k: 'slice', text: s.slice, cn: 'text-comment shrink-0 w-20 truncate' },
+                          { k: 'sub', text: s.subKey, cn: 'text-foreground truncate flex-1' },
+                          { k: 'count', text: String(s.count), cn: 'text-comment shrink-0 w-12 text-right tabular-nums' },
+                          {
+                            k: 'size',
+                            text: humanBytes(s.bytes),
+                            cn: 'text-primary shrink-0 w-16 text-right tabular-nums',
+                          },
+                          {
+                            k: 'max',
+                            text: humanBytes(s.maxItemBytes),
+                            cn: 'text-warning shrink-0 w-16 text-right tabular-nums',
+                          },
+                        ]}
+                      />,
+                    ]
+                  : [],
+              )}
             </div>
           </div>
         </>
@@ -664,6 +678,7 @@ function HeapTab() {
 
 export function NerdModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [tab, setTab] = useState<Tab>('cache')
+  // react-doctor-disable-next-line react-doctor/no-derived-state -- async polling state, not derived from props/other state
   const [serverStats, setServerStats] = useState<ServerStats | null>(null)
   const [fetchError, setFetchError] = useState<string | null>(null)
 
@@ -688,16 +703,6 @@ export function NerdModal({ open, onClose }: { open: boolean; onClose: () => voi
     return () => clearInterval(id)
   }, [open, fetchStats])
 
-  const tabs: { id: Tab; label: string }[] = [
-    { id: 'cache', label: 'Cache' },
-    { id: 'heap', label: 'Heap' },
-    { id: 'conns', label: 'Conns' },
-    { id: 'traffic', label: 'Traffic' },
-    { id: 'perf', label: 'Perf' },
-    { id: 'sw', label: 'SW' },
-    { id: 'log', label: 'Log' },
-  ]
-
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
       <DialogContent className="max-w-lg max-h-[80vh] overflow-hidden font-mono flex flex-col p-0">
@@ -710,7 +715,7 @@ export function NerdModal({ open, onClose }: { open: boolean; onClose: () => voi
           </pre>
 
           <div className="flex gap-1 mb-3">
-            {tabs.map(t => (
+            {NERD_TABS.map(t => (
               <button
                 key={t.id}
                 type="button"

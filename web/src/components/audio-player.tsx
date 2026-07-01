@@ -72,13 +72,16 @@ export function AudioPlayer() {
       <audio
         ref={audioRef}
         src={track.url}
+        aria-label="Audio player"
         preload="metadata"
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onEnded={() => setPlaying(false)}
         onTimeUpdate={e => setCurrent(e.currentTarget.currentTime)}
         onLoadedMetadata={e => setDuration(e.currentTarget.duration)}
-      />
+      >
+        <track kind="captions" />
+      </audio>
 
       <button
         type="button"

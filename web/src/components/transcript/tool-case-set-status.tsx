@@ -50,6 +50,8 @@ function HandoffCard({ input, state }: { input: Record<string, unknown>; state: 
   )
 }
 
+// react-doctor:only-export-components -- renderMcpSetStatus is a render-case
+// factory (returns {summary, inlineContent, details}), not a React component.
 export function renderMcpSetStatus({ input }: ToolCaseInput): ToolCaseResult {
   const state = resolveState(input.state)
   const meta = STATUS_META[state]

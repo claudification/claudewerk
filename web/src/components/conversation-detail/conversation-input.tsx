@@ -259,9 +259,11 @@ export function DialogOverlay({ conversationId }: { conversationId: string }) {
 
   // Reset the re-open state whenever the active dialog changes (or clears) so a
   // fresh dialog never inherits a stale "reopened" flag.
-  useEffect(() => {
+  const [prevDialogId, setPrevDialogId] = useState(pending?.dialogId)
+  if (pending?.dialogId !== prevDialogId) {
+    setPrevDialogId(pending?.dialogId)
     setReopened(false)
-  }, [pending?.dialogId])
+  }
 
   // A "Re-trigger" button on the cancelled/timed-out transcript entry dispatches
   // this event. Re-open the modal here if it targets our live pending dialog.

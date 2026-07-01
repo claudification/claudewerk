@@ -69,6 +69,7 @@ function SendRow({ id }: { id: string }) {
           if (e.key === 'Enter') submit()
           e.stopPropagation()
         }}
+        aria-label="Send message"
         placeholder="message…"
         className="min-w-0 flex-1 cursor-text rounded border border-border bg-background px-2 py-1 text-[11px] outline-none focus:border-ring"
       />

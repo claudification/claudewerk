@@ -24,6 +24,7 @@ export interface ConversationModeState {
  * conversation that merely fuzzy-matches those letters. The heavy lifting lives in
  * useConversationSearch + useProjectSearch; this hook just merges and sorts.
  */
+// react-doctor-disable-next-line react-doctor/no-derived-state -- all derivations use useMemo, no useState+useEffect sync
 export function useConversationMode(
   filter: string,
   isConversationMode: boolean,
@@ -118,9 +119,11 @@ function emptyFilterItems(
   pinnedProjectUris: string[],
   selectedConversationId: string | null,
 ): MergedItem[] {
-  const convItems: MergedItem[] = allConversations
-    .filter(s => s.status !== 'ended' && s.id !== selectedConversationId)
-    .map(s => ({ kind: 'conversation', conversation: s, tier: RANK_TIER.FUZZY, score: 0, live: true }))
+  const convItems: MergedItem[] = allConversations.flatMap(s =>
+    s.status !== 'ended' && s.id !== selectedConversationId
+      ? [{ kind: 'conversation' as const, conversation: s, tier: RANK_TIER.FUZZY, score: 0, live: true }]
+      : [],
+  )
   const projItems: MergedItem[] = pinnedProjectUris.map(uri => ({
     kind: 'project',
     projectUri: uri,

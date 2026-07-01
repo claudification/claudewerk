@@ -113,7 +113,9 @@ export function MediaLightbox() {
                 autoPlay
                 playsInline
                 className="max-w-[92vw] max-h-[calc(100vh-7rem)] rounded border border-border/30 shadow-2xl bg-black"
-              />
+              >
+                <track kind="captions" />
+              </video>
             )}
           </div>
 

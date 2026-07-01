@@ -62,7 +62,7 @@ export function NightshiftStatusTasks({ tasks, now }: { tasks: Conversation[]; n
     return <p className="px-3 py-4 text-[11px] text-muted-foreground">No night-run tasks for this project right now.</p>
   }
   // queued/running first (active/idle), then terminal -- newest start first within a band.
-  const sorted = [...tasks].sort((a, b) => {
+  const sorted = tasks.toSorted((a, b) => {
     const live = (c: Conversation) => (c.status === 'active' || c.status === 'idle' ? 0 : 1)
     return live(a) - live(b) || b.startedAt - a.startedAt
   })

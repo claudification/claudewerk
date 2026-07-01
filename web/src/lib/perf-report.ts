@@ -33,7 +33,10 @@ export function buildPerfReport(opts: PerfReportOptions = {}): string {
   // react-doctor-disable-next-line react-doctor/rendering-hydration-mismatch-time
   const lines: string[] = ['# Perf Report', '', opts.now ?? new Date().toISOString(), '']
 
-  const stats = PERF_CATEGORIES.map(cat => ({ cat, ...categoryStats(cat) })).filter(s => s.count > 0)
+  const stats = PERF_CATEGORIES.flatMap(cat => {
+    const s = categoryStats(cat)
+    return s.count > 0 ? [{ cat, ...s }] : []
+  })
   if (stats.length > 0) {
     lines.push('## Summary', '', '| Category | Count | Avg | P95 | Max |', '|---|---|---|---|---|')
     for (const s of stats) {

@@ -61,9 +61,13 @@ export function usePersistentDialogForm(entry: LiveDialogEntry): PersistentForm 
   const ring = useRef<DialogLayout[]>([])
   const [canUndo, setCanUndo] = useState(false)
 
+  // react-doctor-disable-next-line react-doctor/no-derived-state -- multi-source: values set by user input AND reconciled on agent patch (rev change)
   // Reconcile on every apply (rev bumps even when seq is unchanged, e.g. replay).
-  useEffect(() => {
-    if (entry.rev === appliedRev.current) return
+  // Inline render-time adjustment: no stale frame between the entry arriving and
+  // the reconciled values being visible.
+  const [prevRev, setPrevRev] = useState(entry.rev)
+  if (entry.rev !== prevRev) {
+    setPrevRev(entry.rev)
     appliedRev.current = entry.rev
     if (!entry.replay && entry.lastOps.length > 0) {
       // Real agent patch: ring the layout shown until now (undo target), flash.
@@ -74,7 +78,7 @@ export function usePersistentDialogForm(entry: LiveDialogEntry): PersistentForm 
     displayed.current = entry.snapshot.layout
     setOverride(null) // a fresh host snapshot supersedes any local undo view
     setValues(prev => reconcileValues(prev, entry.snapshot.layout, entry.lastOps))
-  }, [entry])
+  }
 
   // Clear the highlight after the flash.
   useEffect(() => {

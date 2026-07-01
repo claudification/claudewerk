@@ -21,7 +21,7 @@ export function VoiceFab() {
   const voice = useVoiceRecording()
   const [micPermission, setMicPermission] = useState<MicPermission>('unknown')
   const [dragOffset, setDragOffset] = useState(0)
-  const [cancelled, setCancelled] = useState(false)
+  const cancelled = useRef(false)
 
   const startXRef = useRef(0)
   const dragOffsetRef = useRef(0)
@@ -46,7 +46,7 @@ export function VoiceFab() {
 
   // Auto-submit when voice_done arrives
   useEffect(() => {
-    if (voice.state !== 'submitting' || cancelled) return
+    if (voice.state !== 'submitting' || cancelled.current) return
     const text = voice.refinedText || voice.finalText
     haptic('tick')
     if (text.trim()) {
@@ -59,10 +59,10 @@ export function VoiceFab() {
     const t = setTimeout(() => {
       voice.reset()
       setDragOffset(0)
-      setCancelled(false)
+      cancelled.current = false
     }, 300)
     return () => clearTimeout(t)
-  }, [voice.state, voice.refinedText, voice.finalText, voice.targetConversationId, cancelled, voice.reset])
+  }, [voice.state, voice.refinedText, voice.finalText, voice.targetConversationId, voice.reset])
 
   // Auto-dismiss errors
   useEffect(() => {
@@ -71,7 +71,7 @@ export function VoiceFab() {
       const t = setTimeout(() => {
         voice.reset()
         setDragOffset(0)
-        setCancelled(false)
+        cancelled.current = false
       }, 2000)
       return () => clearTimeout(t)
     }
@@ -124,7 +124,7 @@ export function VoiceFab() {
     ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
 
     startXRef.current = e.clientX
-    setCancelled(false)
+    cancelled.current = false
     setDragOffset(0)
     haptic('tap')
     voice.start()
@@ -137,7 +137,7 @@ export function VoiceFab() {
     const offset = Math.min(0, dx)
     setDragOffset(offset)
 
-    if (Math.abs(offset) >= CANCEL_THRESHOLD && !cancelled) {
+    if (Math.abs(offset) >= CANCEL_THRESHOLD && !cancelled.current) {
       haptic('tick')
     }
   }
@@ -146,7 +146,7 @@ export function VoiceFab() {
     if (voice.state === 'idle') return
 
     if (Math.abs(dragOffsetRef.current) >= CANCEL_THRESHOLD) {
-      setCancelled(true)
+      cancelled.current = true
       haptic('error')
       voice.cancel()
       setDragOffset(0)

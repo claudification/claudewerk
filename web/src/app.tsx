@@ -291,6 +291,15 @@ function DashboardContent() {
   return <ConversationDetail conversationId={selectedConversationId} />
 }
 
+function handleSwitcherSelect(id: string) {
+  const store = useConversationsStore.getState()
+  store.selectConversation(id, 'command-palette')
+  store.setShowSwitcher(false)
+  if (!isMobileViewport()) {
+    requestAnimationFrame(() => focusInputEditor())
+  }
+}
+
 // fallow-ignore-next-line complexity
 function Dashboard() {
   const [sheetOpen, setSheetOpen] = useState(
@@ -386,15 +395,6 @@ function Dashboard() {
     }, 540)
     return () => clearTimeout(timer)
   }, [sheetOpen, selectedConversationId])
-
-  function handleSwitcherSelect(id: string) {
-    const store = useConversationsStore.getState()
-    store.selectConversation(id, 'command-palette')
-    store.setShowSwitcher(false)
-    if (!isMobileViewport()) {
-      requestAnimationFrame(() => focusInputEditor())
-    }
-  }
 
   return (
     <div className="h-full flex flex-col p-2 sm:p-4 max-w-[1400px] mx-auto overflow-hidden" {...swipeHandlers}>

@@ -7,7 +7,7 @@
 import type { ChecklistItem } from '@shared/protocol'
 import { RotateCcw, Trash2 } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Kbd } from '@/components/ui/kbd'
 import { fetchChecklistArchive, purgeChecklistArchive, setChecklistStatus } from '@/lib/checklist-client'
 import { groupByResolvedDate } from '@/lib/checklist-dategroup'
@@ -18,10 +18,10 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
 
 export function ChecklistArchiveModal() {
   const [open, setOpen] = useState(false)
-  const [project, setProject] = useState('')
+  const project = useRef('')
   const [items, setItems] = useState<ChecklistItem[]>([])
   const [loading, setLoading] = useState(false)
-  const [filter, setFilter] = useState('')
+  const [filter, setFilter] = useState('') // react-doctor-disable-line react-doctor/no-derived-state -- user-controlled input, not derived
 
   const reload = useCallback(async (proj: string) => {
     setLoading(true)
@@ -34,7 +34,7 @@ export function ChecklistArchiveModal() {
 
   useEffect(() => {
     function onOpen(detail: ChecklistModalDetail) {
-      setProject(detail.project)
+      project.current = detail.project
       setFilter('')
       setOpen(true)
       void reload(detail.project)
@@ -50,13 +50,13 @@ export function ChecklistArchiveModal() {
   }, [items, filter])
 
   const reopen = (id: string) => {
-    setChecklistStatus(project, id, 'open')
+    setChecklistStatus(project.current, id, 'open')
     setItems(prev => prev.filter(i => i.id !== id))
   }
 
   const purgeOld = async () => {
-    await purgeChecklistArchive(project, THIRTY_DAYS_MS)
-    void reload(project)
+    await purgeChecklistArchive(project.current, THIRTY_DAYS_MS)
+    void reload(project.current)
   }
 
   return (
@@ -69,6 +69,7 @@ export function ChecklistArchiveModal() {
             <input
               value={filter}
               onChange={e => setFilter(e.currentTarget.value)}
+              aria-label="Filter completed"
               placeholder="Filter…"
               className="flex-1 min-w-0 bg-muted/30 border border-border/60 rounded px-2 py-1 text-xs outline-none focus:border-accent/60"
             />

@@ -33,6 +33,7 @@ export interface DialogSubmit {
 
 /** `gateOpen` = the dialog is interactive and every required field has a value.
  *  The hook folds in the in-flight guard (`!pending`) to produce `canSubmit`. */
+// fallow-ignore-next-line complexity
 export function usePersistentDialogSubmit(
   entry: LiveDialogEntry,
   values: Record<string, unknown>,
@@ -56,20 +57,27 @@ export function usePersistentDialogSubmit(
     syncView(conversationId, { pending, submitRev: submitRev.current, activeAction })
   }, [conversationId, pending, activeAction, syncView])
 
+  // react-doctor-disable-next-line react-doctor/no-derived-state -- multi-source: pending set by send() AND cleared by rev/error prop changes
+  // Inline render-time adjustments: clear pending/overdue immediately when the
+  // entry changes (no stale frame with a spinner that should be gone).
+  const [prevRev, setPrevRev] = useState(entry.rev)
+  const [prevError, setPrevError] = useState(entry.error)
   // A new apply (patch/reopen) after our submit clears the wait state.
-  useEffect(() => {
+  if (entry.rev !== prevRev) {
+    setPrevRev(entry.rev)
     if (pending && entry.rev !== submitRev.current) {
       setPending(false)
       setOverdue(false)
     }
-  }, [entry.rev, pending])
+  }
   // Broker rejected the event -> stop waiting; the error bar surfaces.
-  useEffect(() => {
+  if (entry.error !== prevError) {
+    setPrevError(entry.error)
     if (entry.error) {
       setPending(false)
       setOverdue(false)
     }
-  }, [entry.error])
+  }
   // Soft deadline -- a nudge, never a hard stop.
   useEffect(() => {
     if (!pending) return

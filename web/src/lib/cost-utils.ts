@@ -91,7 +91,7 @@ export function getConversationCost(
 // Cost color thresholds
 type CostLevel = 'low' | 'moderate' | 'high' | 'critical'
 
-export function getCostLevel(cost: number): CostLevel {
+function getCostLevel(cost: number): CostLevel {
   if (cost < 0.5) return 'low'
   if (cost < 2) return 'moderate'
   if (cost < 5) return 'high'

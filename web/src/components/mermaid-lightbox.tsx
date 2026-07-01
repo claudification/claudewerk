@@ -95,13 +95,20 @@ export function MermaidLightbox() {
           {/* Pan/zoom surface. touch-none so the browser doesn't hijack
               pinch/drag for its own scroll-zoom. */}
           <MaybeProfiler id="mermaid-lightbox">
-            {/* biome-ignore lint/a11y/noStaticElementInteractions: pan/zoom surface, keyboard handled via dialog */}
             <div
+              role="button"
+              tabIndex={0}
               ref={containerRef}
               className="relative flex-1 overflow-hidden touch-none cursor-grab active:cursor-grabbing"
               {...handlers}
               onClick={e => {
                 if (e.target === e.currentTarget) close()
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  close()
+                }
               }}
             >
               {/* transform is written imperatively by usePanZoom (see its header) --

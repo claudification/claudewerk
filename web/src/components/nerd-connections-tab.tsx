@@ -181,6 +181,15 @@ function ConnectionRow({ conn, now, onKill }: { conn: ConnectionInfo; now: numbe
 
 type Filter = 'all' | ConnectionRole
 
+const FILTER_CHIPS: Array<{ id: Filter; label: string }> = [
+  { id: 'all', label: 'all' },
+  { id: 'sentinel', label: 'sentinel' },
+  { id: 'agent-host', label: 'agent' },
+  { id: 'gateway', label: 'gateway' },
+  { id: 'web', label: 'web' },
+  { id: 'share', label: 'share' },
+]
+
 export default function ConnectionsTab() {
   const [connections, setConnections] = useState<ConnectionInfo[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -247,20 +256,11 @@ export default function ConnectionsTab() {
     }
   }
 
-  const filterChips: Array<{ id: Filter; label: string }> = [
-    { id: 'all', label: 'all' },
-    { id: 'sentinel', label: 'sentinel' },
-    { id: 'agent-host', label: 'agent' },
-    { id: 'gateway', label: 'gateway' },
-    { id: 'web', label: 'web' },
-    { id: 'share', label: 'share' },
-  ]
-
   return (
     <div className="space-y-2">
       {/* Filter chips */}
       <div className="flex gap-1 flex-wrap">
-        {filterChips.map(chip => {
+        {FILTER_CHIPS.map(chip => {
           const active = filter === chip.id
           const count = counts[chip.id] ?? 0
           return (

@@ -6,6 +6,8 @@ import { isShareView } from '@/lib/share-mode'
 import type { Conversation } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
 
+// react-doctor:only-export-components -- Tab type + tabVisibility are co-located
+// with ConversationTabs and exported for unit tests; splitting hurts cohesion.
 export type Tab = 'transcript' | 'tty' | 'json_stream' | 'events' | 'agents' | 'tasks' | 'shared' | 'project' | 'diag'
 
 interface ConversationTabsProps {

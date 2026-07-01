@@ -23,11 +23,36 @@ import { useShellsStore } from '@/hooks/use-shells'
 import { formatShortcut, useChordCommand, useCommand, validateChordBindings } from '@/lib/commands'
 import { canRespawnStaleDaemon } from '@/lib/daemon-control'
 import { focusInputEditor } from '@/lib/focus-input'
+import { remountApp } from '@/lib/remount'
 import { openShell, projectShellCapable } from '@/lib/shell-commands'
 import { selectConversations } from '@/lib/slim-conversation'
+import { getVoiceHistory } from '@/lib/voice-history'
 import { canShell, canTerminal, projectPath } from '@/lib/types'
 import { isMobileViewport } from '@/lib/utils'
 import { toggleWebControl } from '@/lib/web-control-actions'
+import { prewarmMicStream } from '@/hooks/use-voice-recording'
+
+function quickTaskEnabled() {
+  const s = useConversationsStore.getState()
+  if (!s.permissions.canAdmin) return false
+  const conv = s.selectedConversationId ? s.conversationsById[s.selectedConversationId] : undefined
+  return conv != null && conv.status !== 'ended'
+}
+
+// Resolves the "this project" target for project-scoped recaps. Falls back
+// to '*' (cross-project) when no conversation is selected.
+function selectedProjectOrCross(): string {
+  const sid = useConversationsStore.getState().selectedConversationId
+  const selected = sid ? useConversationsStore.getState().conversationsById[sid] : undefined
+  return selected?.project ?? '*'
+}
+
+// Resolve the focused conversation's project. No-op when no conversation is selected.
+function selectedProjectUriOrNull(): string | null {
+  const sid = useConversationsStore.getState().selectedConversationId
+  const selected = sid ? useConversationsStore.getState().conversationsById[sid] : undefined
+  return selected?.project ?? null
+}
 
 export function useGlobalCommands(toggleSidebar: () => void) {
   const openSwitcher = useCallback(() => {
@@ -477,7 +502,7 @@ export function useGlobalCommands(toggleSidebar: () => void) {
       const next = !store.controlPanelPrefs.keepMicOpen
       store.updateControlPanelPrefs({ keepMicOpen: next })
       if (next) {
-        import('@/hooks/use-voice-recording').then(m => m.prewarmMicStream())
+        prewarmMicStream()
       }
     },
     { label: keepMicOpen ? 'Keep mic open: ON (disable)' : 'Keep mic open: OFF (enable)', group: 'Voice' },
@@ -486,7 +511,6 @@ export function useGlobalCommands(toggleSidebar: () => void) {
   useCommand(
     'voice-history',
     async () => {
-      const { getVoiceHistory } = await import('@/lib/voice-history')
       const entries = getVoiceHistory()
       if (entries.length === 0) {
         console.log('[voice-history] No voice recordings in last 24h')
@@ -509,8 +533,7 @@ export function useGlobalCommands(toggleSidebar: () => void) {
 
   useCommand(
     'remount-app',
-    async () => {
-      const { remountApp } = await import('@/lib/remount')
+    () => {
       remountApp()
     },
     { label: 'Remount App (tear down + rebuild React tree)', group: 'Debug' },
@@ -593,12 +616,6 @@ export function useGlobalCommands(toggleSidebar: () => void) {
   // the lazy QuickTaskModal body: the modal only mounts once the bus is armed,
   // so an opener buried in it is dead on cold load. The action just dispatches
   // the same `open-quick-task` window event the FAB uses, arming the lazy bus.
-  const quickTaskEnabled = () => {
-    const s = useConversationsStore.getState()
-    if (!s.permissions.canAdmin) return false
-    const conv = s.selectedConversationId ? s.conversationsById[s.selectedConversationId] : undefined
-    return conv != null && conv.status !== 'ended'
-  }
   const openQuickTask = () => {
     if (quickTaskEnabled()) window.dispatchEvent(new Event('open-quick-task'))
   }
@@ -616,13 +633,6 @@ export function useGlobalCommands(toggleSidebar: () => void) {
   })
 
   // ─── Recap commands ───────────────────────────────────────────────────
-  // Resolves the "this project" target for project-scoped recaps. Falls back
-  // to '*' (cross-project) when no conversation is selected.
-  function selectedProjectOrCross(): string {
-    const sid = useConversationsStore.getState().selectedConversationId
-    const selected = sid ? useConversationsStore.getState().conversationsById[sid] : undefined
-    return selected?.project ?? '*'
-  }
 
   useCommand('recap-project', () => openRecapConfigDialog({ projectUri: selectedProjectOrCross() }), {
     label: 'Project recap…',
@@ -638,13 +648,6 @@ export function useGlobalCommands(toggleSidebar: () => void) {
   })
 
   // ─── Checklist commands ───────────────────────────────────────────────
-  // Resolve the focused conversation's project (mirrors recap's resolver). No-op
-  // when no conversation is selected.
-  function selectedProjectUriOrNull(): string | null {
-    const sid = useConversationsStore.getState().selectedConversationId
-    const selected = sid ? useConversationsStore.getState().conversationsById[sid] : undefined
-    return selected?.project ?? null
-  }
   useCommand(
     'checklist-add-notes',
     () => {

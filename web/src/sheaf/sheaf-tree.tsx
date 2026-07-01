@@ -178,6 +178,7 @@ function visit(node: SheafNode, depth: number, now: number, showRecaps: boolean,
 }
 
 export function SheafTree({ root, now, showRecaps = true }: SheafTreeProps) {
+  // react-doctor-disable-next-line react-doctor/prefer-module-scope-static-value
   const rows: React.ReactNode[] = []
   visit(root, 0, now, showRecaps, rows)
   return <div className="border border-border/50 rounded">{rows}</div>

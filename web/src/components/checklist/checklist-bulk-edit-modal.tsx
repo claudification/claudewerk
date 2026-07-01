@@ -9,7 +9,7 @@
 import { markdown } from '@codemirror/lang-markdown'
 import { EditorView } from '@codemirror/view'
 import { Dialog as DialogPrimitive } from 'radix-ui'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { SafeCodeMirror } from '@/components/codemirror/safe-codemirror'
 import { Kbd } from '@/components/ui/kbd'
 import { fetchChecklistArchive, fetchChecklistOpen, replaceChecklist } from '@/lib/checklist-client'
@@ -21,13 +21,13 @@ const CM_EXTENSIONS = [markdown(), EditorView.lineWrapping]
 
 export function ChecklistBulkEditModal() {
   const [open, setOpen] = useState(false)
-  const [project, setProject] = useState('')
+  const project = useRef('')
   const [doc, setDoc] = useState('')
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     async function onOpen(detail: ChecklistModalDetail) {
-      setProject(detail.project)
+      project.current = detail.project
       setOpen(true)
       setLoading(true)
       try {
@@ -45,7 +45,7 @@ export function ChecklistBulkEditModal() {
   }, [])
 
   const save = async () => {
-    await replaceChecklist(project, markdownToItems(doc))
+    await replaceChecklist(project.current, markdownToItems(doc))
     setOpen(false)
   }
 

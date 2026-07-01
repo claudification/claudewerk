@@ -43,7 +43,7 @@ export function useCanvasDocument(id: string | null): CanvasDocument {
   const { win, doc } = usePopoutWindow()
   const [canvas, setCanvas] = useState<CanvasSummary | null>(null)
   const [seed, setSeed] = useState<unknown>(null)
-  const [state, setState] = useState<DocState>('loading')
+  const [state, setState] = useState<DocState>(id ? 'loading' : 'missing')
   const [saveState, setSaveState] = useState<SaveState>('idle')
 
   const pending = useRef<string | null>(null)
@@ -59,9 +59,17 @@ export function useCanvasDocument(id: string | null): CanvasDocument {
     setSaveState('saved')
   }, [id])
 
+  // react-doctor-disable-next-line react-doctor/no-derived-state -- multi-source: state set synchronously from prop AND asynchronously from loadCanvas
+  const [prevId, setPrevId] = useState(id)
+  if (id !== prevId) {
+    setPrevId(id)
+    if (!id) setState('missing')
+  }
+
   useEffect(() => {
-    if (!id) return setState('missing')
+    if (!id) return
     let cancelled = false
+    setState('loading')
     void loadCanvas(id).then(loaded => {
       if (cancelled) return
       if (!loaded) return setState('missing')

@@ -81,13 +81,16 @@ export function AssignTasksDialog({
         </div>
         <div className="p-3 space-y-2.5">
           <input
+            // eslint-disable-next-line jsx-a11y/no-autofocus
             autoFocus
+            aria-label="Task title"
             value={title}
             onChange={e => setTitle(e.target.value)}
             placeholder="Task title (required)"
             className={inputClass}
           />
           <textarea
+            aria-label="Task description"
             value={description}
             onChange={e => setDescription(e.target.value)}
             placeholder="What should the night run do? (optional)"
@@ -95,6 +98,7 @@ export function AssignTasksDialog({
             className={`${inputClass} resize-none`}
           />
           <input
+            aria-label="Acceptance criteria"
             value={acceptance}
             onChange={e => setAcceptance(e.target.value)}
             placeholder="Acceptance criteria (optional)"

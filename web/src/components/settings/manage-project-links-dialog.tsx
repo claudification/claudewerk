@@ -97,6 +97,7 @@ export function ManageProjectLinksDialog() {
   }, [])
 
   useEffect(() => {
+    // react-doctor-disable-next-line react-doctor/no-derived-state -- fetch-on-open side effect; loading has multiple setters
     if (open) fetchData()
   }, [open, fetchData])
 
@@ -105,9 +106,11 @@ export function ManageProjectLinksDialog() {
     if (focusProject) {
       const match = projects.find(p => uriMatches(p.project_uri, focusProject))
       if (match && match.project_uri !== focusProject) {
+        // react-doctor-disable-next-line react-doctor/no-derived-state -- focusProject has multiple setters (bus handler, select, handleClose); normalizes stale URI
         setFocusProject(match.project_uri)
       }
     } else if (!pinned.current) {
+      // react-doctor-disable-next-line react-doctor/no-derived-state -- focusProject has multiple setters; auto-select first project
       setFocusProject(projects[0].project_uri)
     }
   }, [open, projects, focusProject])

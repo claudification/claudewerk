@@ -11,7 +11,7 @@ function clone(tree: ProjectOrderNode[]): ProjectOrderNode[] {
 
 function projectIdsOf(node: ProjectOrderNode): string[] {
   if (node.type === 'project') return [node.id]
-  return node.children.filter(c => c.type === 'project').map(c => c.id)
+  return node.children.flatMap(c => (c.type === 'project' ? [c.id] : []))
 }
 
 function treeProjectIds(tree: ProjectOrderNode[]): Set<string> {

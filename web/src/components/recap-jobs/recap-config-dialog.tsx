@@ -46,7 +46,7 @@ export function RecapConfigDialog() {
   const [endStr, setEndStr] = useState(today)
   const [retrospect, setRetrospect] = useState(true)
   // Once the user toggles retrospect by hand, stop auto-following the preset.
-  const [retrospectTouched, setRetrospectTouched] = useState(false)
+  const retrospectTouched = useRef(false)
   // Customer-friendly tone: sanitize the recap for sharing outside the team. Off
   // by default -- an internal recap keeps the unfiltered frustration signal.
   const [customerFriendly, setCustomerFriendly] = useState(false)
@@ -89,7 +89,7 @@ export function RecapConfigDialog() {
       setStartStr(isoLocalDay(start))
       setEndStr(isoLocalDay(now))
       setRetrospect(retrospectDefault('last_7'))
-      setRetrospectTouched(false)
+      retrospectTouched.current = false
       setCustomerFriendly(false)
       setTemplateId(defaultIdRef.current)
       setError(null)
@@ -111,24 +111,24 @@ export function RecapConfigDialog() {
   // overrides it manually.
   function applyPreset(next: RecapPeriodLabel) {
     setLabel(next)
-    if (!retrospectTouched) setRetrospect(retrospectDefault(next, dateToStartMs(startStr), dateToEndMs(endStr)))
+    if (!retrospectTouched.current) setRetrospect(retrospectDefault(next, dateToStartMs(startStr), dateToEndMs(endStr)))
   }
 
   function onCustomStart(v: string) {
     setStartStr(v)
-    if (label === 'custom' && !retrospectTouched)
+    if (label === 'custom' && !retrospectTouched.current)
       setRetrospect(retrospectDefault('custom', dateToStartMs(v), dateToEndMs(endStr)))
   }
 
   function onCustomEnd(v: string) {
     setEndStr(v)
-    if (label === 'custom' && !retrospectTouched)
+    if (label === 'custom' && !retrospectTouched.current)
       setRetrospect(retrospectDefault('custom', dateToStartMs(startStr), dateToEndMs(v)))
   }
 
   function toggleRetrospect() {
     setRetrospect(v => !v)
-    setRetrospectTouched(true)
+    retrospectTouched.current = true
   }
 
   function submit() {

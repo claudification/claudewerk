@@ -31,6 +31,11 @@ function formatRange(s: RecapSummary): string {
   return start === end ? start : `${start} - ${end}`
 }
 
+function openViewer(recapId: string) {
+  haptic('tap')
+  window.dispatchEvent(new CustomEvent('rclaude-recap-open', { detail: { recapId } }))
+}
+
 export function RecapHistoryModal() {
   const [open, setOpen] = useState(false)
   const [projectUri, setProjectUri] = useState<string | undefined>(undefined)
@@ -61,11 +66,6 @@ export function RecapHistoryModal() {
     recapHistoryBus.setHandler(onOpen)
     return () => recapHistoryBus.setHandler(null)
   }, [load])
-
-  function openViewer(recapId: string) {
-    haptic('tap')
-    window.dispatchEvent(new CustomEvent('rclaude-recap-open', { detail: { recapId } }))
-  }
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={o => !o && close()}>

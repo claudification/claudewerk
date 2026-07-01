@@ -114,12 +114,11 @@ export function useLaunchProgress({
   }, [enabled, startTime])
 
   // Amber-stuck fix: when conversation connects, resolve all prior active steps to done.
-  // Uses connectedRef to fire exactly once.
-  useEffect(() => {
-    if (!isConnected || connectedRef.current) return
+  // Render-time adjustment -- fires exactly once via connectedRef.
+  if (isConnected && !connectedRef.current) {
     connectedRef.current = true
     setSteps(prev => prev.map(s => (s.status === 'active' ? { ...s, status: 'done' } : s)))
-  }, [isConnected])
+  }
 
   // Auto-insert launch channel events as steps (insert before "Waiting for conversation..." if present)
   useEffect(() => {

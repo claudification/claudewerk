@@ -18,14 +18,15 @@ function valueEntries(text: string): Array<[string, unknown]> {
   return []
 }
 
+const DIALOG_STATUS_STYLES: Record<string, string> = {
+  submitted: 'bg-violet-500/15 text-violet-400 border-violet-500/30',
+  cancelled: 'bg-zinc-500/15 text-muted-foreground border-zinc-500/20',
+  timeout: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+}
+
 /** A one-shot dialog RESULT delivered back to the agent (sender="dialog"). */
 export function DialogChannel({ item }: { item: ChannelRenderItem }) {
-  const statusStyles: Record<string, string> = {
-    submitted: 'bg-violet-500/15 text-violet-400 border-violet-500/30',
-    cancelled: 'bg-zinc-500/15 text-muted-foreground border-zinc-500/20',
-    timeout: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
-  }
-  const sStyle = statusStyles[item.dialogStatus || 'submitted'] || statusStyles.submitted
+  const sStyle = DIALOG_STATUS_STYLES[item.dialogStatus || 'submitted'] || DIALOG_STATUS_STYLES.submitted
 
   // A cancelled/timed-out dialog whose layout is still held live (the broker
   // keeps it re-displayable) can be re-triggered: re-open the same modal and

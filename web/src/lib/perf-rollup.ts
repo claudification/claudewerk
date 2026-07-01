@@ -64,5 +64,5 @@ export function messageImpactStats(entries: readonly PerfEntry[]): MessageImpact
     v.totalMs += e.durationMs
     ;(categoryHandlers[e.category] ?? applyOther)(v, e)
   }
-  return [...map.values()].sort((a, b) => b.totalMs - a.totalMs)
+  return [...map.values()].toSorted((a, b) => b.totalMs - a.totalMs)
 }

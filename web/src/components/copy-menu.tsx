@@ -130,6 +130,11 @@ interface CopyMenuProps {
   copyAsImage?: boolean
 }
 
+function handleOpen() {
+  haptic('double')
+  window.getSelection()?.removeAllRanges()
+}
+
 export function CopyMenu({ text, className, iconClassName = 'w-3 h-3', copyAsImage: enableImage }: CopyMenuProps) {
   const [copied, setCopied] = useState(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
@@ -153,11 +158,6 @@ export function CopyMenu({ text, className, iconClassName = 'w-3 h-3', copyAsIma
     } else {
       copyAsText(text, format).then(flashCopied)
     }
-  }
-
-  function handleOpen() {
-    haptic('double')
-    window.getSelection()?.removeAllRanges()
   }
 
   const buttonClass = cn('text-muted-foreground/40 hover:text-muted-foreground transition-colors p-0.5', className)

@@ -40,6 +40,14 @@ export function PopoutWindow({ win, title, onClose, children }: PopoutWindowProp
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
 
+  // Inline render-time adjustment: when the window reference changes, immediately
+  // mark not-ready so we don't portal into a stale document for one frame.
+  const [prevWin, setPrevWin] = useState(win)
+  if (win !== prevWin) {
+    setPrevWin(win)
+    setReady(false)
+  }
+
   useEffect(() => {
     const doc = win.document
     doc.body.style.margin = '0'

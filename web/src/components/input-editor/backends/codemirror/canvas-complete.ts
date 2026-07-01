@@ -66,9 +66,10 @@ export async function canvasCompletionSource(context: CompletionContext): Promis
   if (canvases.length === 0) return null
 
   const q = hit.query.toLowerCase()
-  const scored = canvases
-    .map(c => ({ c, score: q ? fuzzyScore(q, c.name.toLowerCase()) : 1 }))
-    .filter(s => s.score > 0)
+  const scored = canvases.flatMap(c => {
+    const score = q ? fuzzyScore(q, c.name.toLowerCase()) : 1
+    return score > 0 ? [{ c, score }] : []
+  })
     .sort((a, b) => b.score - a.score)
     .slice(0, 12)
   if (scored.length === 0) return null
