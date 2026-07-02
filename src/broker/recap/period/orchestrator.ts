@@ -124,6 +124,7 @@ export async function startRecap(deps: OrchestratorDeps, args: StartArgs): Promi
     periodEnd: period.end,
     audience,
     customerFriendly: args.customerFriendly ?? false,
+    ...(args.instructions?.trim() ? { instructions: args.instructions } : {}),
     signals,
     template: recipe.templateId,
     options: recipe.optionFlags,
@@ -435,6 +436,7 @@ export function resumeRecap(deps: OrchestratorDeps, recapId: string): ResumeResu
     // be silently dropped on resume.
     ...(manifest.retrospect ? { retrospect: true } : {}),
     ...(manifest.customerFriendly ? { customerFriendly: true } : {}),
+    ...(manifest.instructions ? { instructions: manifest.instructions } : {}),
     tuning,
     force: true,
     ...(row.informConversationId ? { informConversationId: row.informConversationId } : {}),
@@ -613,6 +615,8 @@ async function replayStage(
       audience,
       manifest.retrospect ?? false,
       manifest.customerFriendly ?? false,
+      undefined,
+      manifest.instructions,
     )
     const content = await runLlmCall(deps, targetId, ledger, 'reduce', {
       model,
@@ -670,6 +674,7 @@ async function runRecap(
     audience,
     ...(args.retrospect ? { retrospect: true } : {}),
     ...(args.customerFriendly ? { customerFriendly: true } : {}),
+    ...(args.instructions?.trim() ? { instructions: args.instructions.trim() } : {}),
     ...(args.batchId ? { batchId: args.batchId } : {}),
     createdAt: startedAt,
     ...(args.createdBy ? { createdBy: args.createdBy } : {}),
@@ -748,6 +753,7 @@ async function runRecap(
     args.retrospect ?? false,
     args.customerFriendly ?? false,
     presentationOf(recipe),
+    args.instructions,
   )
   emit.setStatus('rendering')
   // ONESHOT for small periods (one Opus pass), CHUNKED map-reduce for big ones
@@ -1346,6 +1352,7 @@ async function runChunked(
     p.args.retrospect ?? false,
     p.args.customerFriendly ?? false,
     presentationOf(p.recipe),
+    p.args.instructions,
   )
   const content = await runLlmCall(deps, recapId, ledger, 'reduce', {
     model: models.reduceModel,
@@ -1505,12 +1512,14 @@ function defaultLabel(projectUri: string): string {
 
 /**
  * Cache key for a recap run. Two recaps sharing this key (within the 5-min
- * window) are the same document and dedupe. audience + customerFriendly + the
- * presentation template + its resolved option toggles are all part of the key: a
- * human vs agent recap, a sanitized (customer-friendly) vs raw recap, a different
- * template, OR a different set of option booleans are DISTINCT documents even for
- * the same project+period+signals, so they must hash differently or one would
- * serve the other from cache.
+ * window) are the same document and dedupe. audience + customerFriendly + free-text
+ * instructions + the presentation template + its resolved option toggles are all
+ * part of the key: a human vs agent recap, a sanitized (customer-friendly) vs raw
+ * recap, a recap shaped by a DIFFERENT instruction, a different template, OR a
+ * different set of option booleans are DISTINCT documents even for the same
+ * project+period+signals, so they must hash differently or one would serve the
+ * other from cache. The instructions segment is APPENDED only when present, so a
+ * recap with no instructions hashes byte-identically to before this field existed.
  */
 export function recapCacheKey(args: {
   projectUri: string
@@ -1518,6 +1527,9 @@ export function recapCacheKey(args: {
   periodEnd: number
   audience: RecapAudience
   customerFriendly: boolean
+  /** Free-text refinement directives; folded in (hashed) so a different directive
+   *  is a distinct document. Trimmed; absent/empty adds nothing to the key. */
+  instructions?: string
   signals: RecapSignal[]
   /** Resolved template id (after fallback). */
   template: string
@@ -1528,18 +1540,19 @@ export function recapCacheKey(args: {
     .sort()
     .map(k => `${k}=${args.options[k] ? 1 : 0}`)
     .join(',')
-  return sha256(
-    [
-      args.projectUri,
-      args.periodStart,
-      args.periodEnd,
-      args.audience,
-      args.customerFriendly ? 'cf' : 'raw',
-      args.signals.join(','),
-      `tmpl:${args.template}`,
-      `opts:${optionsPart}`,
-    ].join('|'),
-  )
+  const parts = [
+    args.projectUri,
+    args.periodStart,
+    args.periodEnd,
+    args.audience,
+    args.customerFriendly ? 'cf' : 'raw',
+    args.signals.join(','),
+    `tmpl:${args.template}`,
+    `opts:${optionsPart}`,
+  ]
+  const instr = args.instructions?.trim()
+  if (instr) parts.push(`instr:${sha256(instr)}`)
+  return sha256(parts.join('|'))
 }
 
 function sha256(input: string): string {

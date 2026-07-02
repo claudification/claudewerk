@@ -58,6 +58,10 @@ function recapCreate(ctx: HandlerContext, data: MessageData): void {
   // customerFriendly is a top-level product mode like retrospect (NOT gated, NOT
   // in tuning): sanitize the recap's tone for sharing outside the team.
   const customerFriendly = data.customerFriendly === true
+  // instructions: free-text shaping directives for the final refinement stage
+  // (presentation-only; never touches extraction). Trimmed; empty -> omitted.
+  const instructionsRaw = typeof data.instructions === 'string' ? data.instructions.trim() : ''
+  const instructions = instructionsRaw || undefined
   // inform_on_complete: the target conversation is the CALLER's own
   // conversation, derived from the WS connection -- never passed by the agent.
   const informOnComplete = data.inform_on_complete === true
@@ -84,6 +88,7 @@ function recapCreate(ctx: HandlerContext, data: MessageData): void {
       ...(audience ? { audience } : {}),
       ...(retrospect ? { retrospect: true } : {}),
       ...(customerFriendly ? { customerFriendly: true } : {}),
+      ...(instructions ? { instructions } : {}),
       ...(template ? { template } : {}),
       ...(options ? { options } : {}),
       ...(tuning ? { tuning } : {}),

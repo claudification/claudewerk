@@ -5828,6 +5828,15 @@ export interface RecapCreateMessage {
    *  is reframed neutral + constructive. Facts + citations are preserved; only the
    *  voice changes. Opt-in, NOT benevolent-gated; a product mode like retrospect. */
   customerFriendly?: boolean
+  /** Free-text shaping directives for the FINAL written recap, e.g. "emphasize
+   *  shipping wins, skip the testing noise" or "keep it upbeat, one paragraph per
+   *  feature". Applied ONLY at the last refinement stage (Opus oneshot/synthesize),
+   *  NEVER the cheap map/extraction stage -- so facts stay fully extracted + stored
+   *  and this only shapes the PROSE. Appended last, so it can override the body-spec
+   *  defaults where they conflict. Presentation-only: a "don't mention X" directive
+   *  omits X from the rendered body, it does not delete X from the stored data.
+   *  Opt-in; part of the cache key (a different directive is a distinct document). */
+  instructions?: string
   /** When true, the broker records the calling conversation and pushes a
    *  recap-completed channel message to it when the run finishes, instead of
    *  the caller polling recap_get. The conversationId is derived broker-side

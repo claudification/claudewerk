@@ -52,6 +52,7 @@ export function buildSynthesizePrompt(
   retrospect = false,
   customerFriendly = false,
   presentation?: PresentationSelection,
+  instructions?: string,
 ): SynthesizePrompt {
   // BOTH audiences render through the SAME template seam the oneshot path uses
   // (renderBody, `path: 'synthesize'`), so the deliverable contract (frontmatter +
@@ -69,7 +70,7 @@ export function buildSynthesizePrompt(
     periodIsoRange: ctx.periodIsoRange,
     ...presentation,
   })
-  const system = applyRetroCf(base, retrospect, customerFriendly)
+  const system = applyRetroCf(base, retrospect, customerFriendly, instructions)
 
   const forgottenBlock = ctx.forgotten ? renderForgottenSection(ctx.forgotten) : ''
   const statusBlock = ctx.agentStatus ? renderStatusSection(ctx.agentStatus) : ''

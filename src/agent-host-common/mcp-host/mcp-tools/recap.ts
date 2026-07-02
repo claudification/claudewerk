@@ -286,6 +286,16 @@ function recapCreateTool(ctx: McpToolContext): ToolDef {
             'section is omitted and harsh / blaming / profane language is reframed neutral and ' +
             'constructive. Facts and citations are preserved; only the tone changes. Opt-in; off by default.',
         },
+        instructions: {
+          type: 'string',
+          description:
+            'Free-text directives that shape the FINAL written recap, e.g. "emphasize shipping ' +
+            'wins, skip the testing noise" or "keep it upbeat, one paragraph per feature". Applied ' +
+            'ONLY at the last refinement pass, never the extraction stage -- so it shapes the PROSE ' +
+            'without changing what was extracted. Presentation-only: a "don\'t mention X" directive ' +
+            'omits X from the rendered body, it does NOT delete X from the stored recap data. Part ' +
+            'of the cache key, so a different directive produces a distinct recap. Opt-in.',
+        },
         inform_on_complete: {
           type: 'boolean',
           description:
@@ -385,6 +395,7 @@ function recapCreateTool(ctx: McpToolContext): ToolDef {
       const audience = raw.audience === 'human' ? 'human' : 'agent'
       const retrospect = raw.retrospect === true
       const customerFriendly = raw.customerFriendly === true
+      const instructions = typeof raw.instructions === 'string' && raw.instructions.trim() ? raw.instructions.trim() : undefined
       const informOnComplete = raw.inform_on_complete === true
 
       try {
@@ -397,6 +408,7 @@ function recapCreateTool(ctx: McpToolContext): ToolDef {
             audience,
             ...(retrospect ? { retrospect: true } : {}),
             ...(customerFriendly ? { customerFriendly: true } : {}),
+            ...(instructions ? { instructions } : {}),
             ...(signals ? { signals } : {}),
             ...(template ? { template } : {}),
             ...(options ? { options } : {}),

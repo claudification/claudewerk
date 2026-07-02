@@ -63,6 +63,9 @@ export interface RecapBundleInit {
   retrospect?: boolean
   /** Customer-friendly tone flag; recorded so resume/regenerate re-apply it. */
   customerFriendly?: boolean
+  /** Free-text user directives for the final refinement stage; recorded so
+   *  resume/regenerate re-apply the same shaping. Trimmed, non-empty when present. */
+  instructions?: string
   /** Batch correlation id (eval-harness fan-out). Lives in the manifest, not the
    *  folder name -- the folder key is always the unique recapId. */
   batchId?: string
@@ -103,6 +106,7 @@ export interface RecapBundleManifest {
   audience: RecapAudience
   retrospect?: boolean
   customerFriendly?: boolean
+  instructions?: string
   /** Resolved render mode (set once produce decides oneshot vs chunked). */
   mode?: RecapBundleMode
   /** Resolved per-stage models actually used. */
@@ -242,6 +246,7 @@ export function createRecapBundleWriter(cacheDir: string): RecapBundleWriter {
         audience: init.audience,
         ...(init.retrospect ? { retrospect: true } : {}),
         ...(init.customerFriendly ? { customerFriendly: true } : {}),
+        ...(init.instructions ? { instructions: init.instructions } : {}),
         status: 'gathering',
         artifacts: { merged: false, finalMarkdown: false, mapChunks: 0 },
         timing: { createdAt: init.createdAt, updatedAt: Date.now() },

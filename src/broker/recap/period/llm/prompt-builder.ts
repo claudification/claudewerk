@@ -68,6 +68,7 @@ export function buildPrompt(
   retrospect = false,
   customerFriendly = false,
   presentation?: PresentationSelection,
+  instructions?: string,
 ): BuiltPrompt {
   const base = renderBody({
     path: 'oneshot',
@@ -78,7 +79,7 @@ export function buildPrompt(
     stats: humanStats(inputs),
     ...presentation,
   })
-  const system = applyRetroCf(base, retrospect, customerFriendly)
+  const system = applyRetroCf(base, retrospect, customerFriendly, instructions)
   const user = userPayload(inputs)
   return { system, user, inputChars: system.length + user.length }
 }
@@ -91,10 +92,36 @@ export function buildPrompt(
  *     section append on top of whichever audience body was chosen.
  *   - Customer-friendly tone appends LAST so it OVERRIDES the body spec's
  *     "Frustrations ... do not sanitise" instruction with the opposite directive.
+ *   - Free-text user `instructions` append AFTER even that, so they are the final
+ *     word and can override any earlier spec (including customer-friendly). Empty /
+ *     whitespace-only is a no-op. Presentation-only -- this shapes the PROSE the
+ *     refinement stage writes, never what the map stage already extracted + stored.
  */
-export function applyRetroCf(base: string, retrospect: boolean, customerFriendly: boolean): string {
+export function applyRetroCf(
+  base: string,
+  retrospect: boolean,
+  customerFriendly: boolean,
+  instructions?: string,
+): string {
   const withRetro = retrospect ? `${base}\n\n${RETRO_FRONTMATTER_SPEC}\n\n${RETRO_BODY_SPEC}` : base
-  return customerFriendly ? `${withRetro}\n\n${CUSTOMER_FRIENDLY_SPEC}` : withRetro
+  const withCf = customerFriendly ? `${withRetro}\n\n${CUSTOMER_FRIENDLY_SPEC}` : withRetro
+  const trimmed = instructions?.trim()
+  return trimmed ? `${withCf}\n\n${customInstructionsSpec(trimmed)}` : withCf
+}
+
+/**
+ * The final user-directive layer. Wraps the caller's free-text so the model treats
+ * it as an authoritative override of the body spec (matching how CUSTOMER_FRIENDLY
+ * frames its overrides). The directives shape the WRITTEN recap only; they never
+ * change the facts, citations, or `inferred` flags carried up from extraction, and
+ * a "don't mention X" directive omits X from the rendered body -- it does not remove
+ * X from the stored frontmatter/bundle.
+ */
+function customInstructionsSpec(instructions: string): string {
+  return `ADDITIONAL USER DIRECTIVES (apply on top of everything above; these are the FINAL word and OVERRIDE the body spec wherever they conflict):
+${instructions}
+
+These shape the WRITTEN recap only. Never invent facts, drop citations, or upgrade an inference to a fact to satisfy a directive; if a directive says to omit something, simply leave it out of the prose.`
 }
 
 function humanStats(inputs: PromptInputs): RenderStats {
