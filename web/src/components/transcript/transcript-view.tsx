@@ -21,24 +21,23 @@ import { fetchTranscriptBefore, useConversationsStore } from '@/hooks/use-conver
 import { record } from '@/lib/perf-metrics'
 import type { TranscriptEntry } from '@/lib/types'
 import { cn } from '@/lib/utils'
-import {
-  AskQuestionBanners,
-  LinkRequestBanners,
-  PermissionBanners,
-  SpawnApprovalBanners,
-} from '../conversation-detail/conversation-banners'
+import { labSummary, resolveVirtualizerLab } from '@/lib/virtualizer-lab'
 import { TranscriptEmptyState } from './ghost-peek'
 import { CompactedDivider, CompactingBanner, MemoizedGroupView, SkillDivider } from './group-view'
 import { type DisplayGroup, useIncrementalGroups } from './grouping'
 import { detectReportArtifactRelPath } from './grouping/report-artifact'
-import { StreamingTextBlock, StreamingThinkingBlock, ThinkingSpinner } from './in-flight-decorations'
-import { ThinkingPill } from './thinking-pill'
+import { BannersBlock, InFlightBlock } from './transcript-bottom'
 import { useFollowSignals } from './use-follow-signals'
 import { usePlanContext, useTranscriptSettings } from './use-transcript-derivations'
 
 /** Content-aware size estimation to minimize layout shift on first render.
  *  Falls back to measuredSizes cache for groups that have been rendered before. */
-function estimateGroupSize(group: DisplayGroup, measuredSizes: Map<string, number>, key: string): number {
+function estimateGroupSize(
+  group: DisplayGroup,
+  measuredSizes: Map<string, number>,
+  key: string,
+  liveEstimate: number,
+): number {
   // The scrollback spacer's height is authoritative-by-computation (olderCount *
   // avgPerEntry), NOT by measurement -- bypass the cache so refinements take
   // effect and a stale measured height never sticks.
@@ -50,8 +49,10 @@ function estimateGroupSize(group: DisplayGroup, measuredSizes: Map<string, numbe
   switch (group.type) {
     case 'live':
       // First-frame estimate only; measureElement reports the real height once
-      // the streaming/spinner content renders. Modest so the initial pin is close.
-      return 80
+      // the streaming/spinner content renders. Modest so the initial pin is
+      // close. Lab-tunable: the estimate->measured snap is a residual jump
+      // suspect (virtualizerLab.liveEstimate).
+      return liveEstimate
     case 'compacted':
       return 40
     case 'compacting':
@@ -528,6 +529,22 @@ export const TranscriptView = memo(function TranscriptView({
 
   const perfEnabled = useConversationsStore(state => state.controlPanelPrefs.showPerfMonitor)
 
+  // VIRTUALIZER LAB -- per-device experiment knobs (Experiments settings tab,
+  // lib/virtualizer-lab.ts). Defaults reproduce production behavior exactly.
+  // The stored partial is a stable ref in the prefs object, so the selector is
+  // safe; resolve merges defaults for knobs the stored value doesn't carry.
+  const storedLab = useConversationsStore(state => state.controlPanelPrefs.virtualizerLab)
+  const lab = useMemo(() => resolveVirtualizerLab(storedLab), [storedLab])
+  const labRef = useRef(lab)
+  labRef.current = lab
+  // Name the configuration under test in the device log -- every experiment
+  // session's [follow]/[window] lines are meaningless without knowing which
+  // knobs were live.
+  useEffect(() => {
+    const summary = labSummary(lab)
+    if (summary) console.debug(`[lab] active experiments: ${summary}`)
+  }, [lab])
+
   // LIVE TAIL ITEM. The in-flight turn (streaming thinking + text + spinner +
   // thinking-pill) renders INSIDE one persistent virtualizer item so it is part
   // of the virtualizer's totalSize and anchorTo:'end' tracks it. The committed
@@ -540,7 +557,10 @@ export const TranscriptView = memo(function TranscriptView({
   // Once the committed assistant group exists it IS the live slot -- streaming
   // renders inside it and it keeps the live key, making the synthetic->committed
   // transition an in-place swap (same key/index, no count change).
-  const appendSyntheticLive = liveActive && lastMainGroup?.type !== 'assistant'
+  // With the lab's outside placement the in-flight UI never renders in the last
+  // item, so the synthetic host would just be an empty estimated-height item --
+  // skip it there.
+  const appendSyntheticLive = lab.inFlightPlacement === 'inside' && liveActive && lastMainGroup?.type !== 'assistant'
   const LIVE_GROUP = useMemo<DisplayGroup>(() => ({ type: 'live', timestamp: '', entries: [] }), [])
 
   // SCROLLBACK SPACER (flag-gated, EXPERIMENTAL). Reserve estimated height for
@@ -630,8 +650,10 @@ export const TranscriptView = memo(function TranscriptView({
     count: renderGroups.length,
     getScrollElement: () => parentRef.current,
     estimateSize: index =>
-      index < renderGroups.length ? estimateGroupSize(renderGroups[index], measuredSizes, getItemKey(index)) : 0,
-    overscan: 5,
+      index < renderGroups.length
+        ? estimateGroupSize(renderGroups[index], measuredSizes, getItemKey(index), lab.liveEstimate)
+        : 0,
+    overscan: lab.overscan,
     getItemKey,
     // Chat-mode: end-anchored list with auto-follow. anchorTo:'end' handles
     // prepend stability (scroll offset adjusts to keep the visible item fixed)
@@ -640,12 +662,22 @@ export const TranscriptView = memo(function TranscriptView({
     // scrolled up = no pull-down). Replaces all manual scroll-to-bottom and
     // prepend-anchor machinery.
     anchorTo: 'end',
-    // followOnAppend OFF (field experiment): its native scroll-on-append is
-    // INSTANT and pre-empts the smooth follow below. With it off, every follow
-    // (append AND in-place growth) routes through the single totalSize effect,
-    // which animates smoothly once the conversation has settled.
-    followOnAppend: false,
-    scrollEndThreshold: 80,
+    // followOnAppend OFF by default (field experiment): its native
+    // scroll-on-append is INSTANT and pre-empts the manual follow below.
+    // Lab-tunable to re-test against the current driver mix.
+    followOnAppend: lab.followOnAppend,
+    // The native wasAtEnd end-pin (resizeItem) re-pins in-place growth whenever
+    // the ESTIMATED distance from the end is within this threshold -- it never
+    // reads our follow prop. gateNativePinWhenDetached zeroes it while follow
+    // is off so a detached reader can never be dragged to the bottom by a
+    // mis-estimated live group (plan-transcript-detached-forced-scroll Step 2).
+    scrollEndThreshold: lab.gateNativePinWhenDetached && !follow ? 0 : lab.scrollEndThreshold,
+    // isScrolling machinery: affects scroll-direction latching, which gates the
+    // above-viewport re-measure compensation (virtual-core 3.17.1/3.17.3).
+    // NOTE: both bind when the scroll element attaches -- changes apply after
+    // a reload, not live.
+    useScrollendEvent: lab.useScrollendEvent,
+    isScrollingResetDelay: lab.isScrollingResetDelay,
     // Safari fix: ResizeObserver can fire mid-layout before paint completes,
     // causing the virtualizer to read intermediate/partial element heights and
     // clip content. Deferring to rAF ensures measurements happen after layout.
@@ -688,8 +720,57 @@ export const TranscriptView = memo(function TranscriptView({
     },
   })
 
-  // No supplementary RO needed -- streaming content is inside the last
-  // virtualizer group. anchorTo:'end' handles height growth natively.
+  // Single pin-to-bottom entry point, lab-switchable. 'scrollToEnd' (default)
+  // is the virtualizer's item-math target -- it also updates the internal
+  // at-end/scrollState the native follow machinery reads, but it aligns to the
+  // last ITEM's measured end, which can undershoot content the measurement
+  // hasn't caught up with (quirk #4's hypothesized mechanism). 'scrollHeight'
+  // writes the exact DOM bottom -- includes everything (lab-outside overlays,
+  // late-measuring in-flight UI), but leaves the virtualizer's internal at-end
+  // state to be inferred from the resulting scroll event.
+  const pinToBottom = useCallback(
+    (opts?: { behavior?: 'auto' | 'smooth' }) => {
+      if (labRef.current.pinMethod === 'scrollHeight') {
+        const el = parentRef.current
+        if (el) el.scrollTop = el.scrollHeight
+        return
+      }
+      virtualizer.scrollToEnd(opts)
+    },
+    [virtualizer],
+  )
+
+  // OUTSIDE-PLACEMENT FOLLOW (lab). Content rendered below the measured stack
+  // is invisible to totalSize, so neither the native wasAtEnd pin nor the
+  // manual growth effect sees it grow -- the exact failure class that put the
+  // in-flight UI inside the last item in the first place. When either
+  // placement knob is 'outside', observe the outside container and pin on its
+  // growth while following. Pins to the DOM scrollHeight regardless of
+  // pinMethod: scrollToEnd's item-math target excludes this block by
+  // construction, so it would stop above it.
+  const outsideActive = lab.inFlightPlacement === 'outside' || lab.bannersPlacement === 'outside'
+  const outsideRef = useRef<HTMLDivElement>(null)
+  const followRef = useRef(follow)
+  followRef.current = follow
+  useEffect(() => {
+    if (!outsideActive) return
+    const el = outsideRef.current
+    const scroller = parentRef.current
+    if (!el || !scroller) return
+    let lastHeight = el.offsetHeight
+    const observer = new ResizeObserver(() => {
+      const height = el.offsetHeight
+      const grew = height > lastHeight
+      lastHeight = height
+      if (grew && followRef.current) scroller.scrollTop = scroller.scrollHeight
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [outsideActive])
+
+  // Default placement: streaming content is inside the last virtualizer group,
+  // so no supplementary observer is needed -- anchorTo:'end' handles height
+  // growth natively.
 
   // Track measured sizes: visible items have real DOM measurements from ResizeObserver.
   // Cache these so estimateSize returns accurate heights when items re-enter the viewport.
@@ -800,8 +881,8 @@ export const TranscriptView = memo(function TranscriptView({
   // sets the virtualizer's internal "at end" state so followOnAppend knows
   // to pin. el.scrollTop = el.scrollHeight does NOT do this.
   useLayoutEffect(() => {
-    virtualizer.scrollToEnd()
-  }, [virtualizer])
+    pinToBottom()
+  }, [pinToBottom])
 
   // Smooth-follow gate. FALSE during the initial post-switch measurement burst so
   // entering/switching a conversation snaps INSTANTLY to the bottom (boom, you're
@@ -822,7 +903,7 @@ export const TranscriptView = memo(function TranscriptView({
     // Drop the auto-spacer latch for the new conversation -- the measurement
     // effect re-evaluates it against the incoming content.
     setFillSpacerActive(false)
-    virtualizer.scrollToEnd()
+    pinToBottom()
     onReachedBottom?.()
     console.debug(`[follow] switch-pin cacheKey=${cacheKey?.slice(0, 8) ?? '-'} groups=${renderGroups.length}`)
     // Did the entry actually land at the bottom? (Issue: "entering a conversation
@@ -852,7 +933,7 @@ export const TranscriptView = memo(function TranscriptView({
   // biome-ignore lint/correctness/useExhaustiveDependencies: virtualizer is stable
   useLayoutEffect(() => {
     console.debug(`[follow] follow-prop=${follow ? 'ON (engaged)' : 'OFF (disengaged)'}`)
-    if (follow) virtualizer.scrollToEnd()
+    if (follow) pinToBottom()
   }, [follow])
 
   // Re-pin on ANY measured-height change while following. anchorTo:'end' anchors
@@ -875,7 +956,7 @@ export const TranscriptView = memo(function TranscriptView({
     const grew = totalSize > prevTotalSizeRef.current
     const delta = totalSize - prevTotalSizeRef.current
     prevTotalSizeRef.current = totalSize
-    if (follow && grew) {
+    if (follow && grew && labRef.current.manualGrowthPin) {
       // INSTANT, always. This manual re-pin coexists with native's own end-pin
       // (virtual-core 3.17.2 pins in-place last-item growth). A SMOOTH scroll here
       // chased a target native had already pinned instantly -> visible overshoot
@@ -883,7 +964,8 @@ export const TranscriptView = memo(function TranscriptView({
       // drivers instant to the same bottom = idempotent, no overshoot. (Removing
       // this effect entirely + followOnAppend:true was tried in a18ff1f6 and broke
       // follow badly -> reverted; keep the effect, just drop the smooth animation.)
-      virtualizer.scrollToEnd({ behavior: 'auto' })
+      // Lab: manualGrowthPin=false runs native wasAtEnd as the SOLE driver.
+      pinToBottom({ behavior: 'auto' })
     } else if (grew && !follow && delta > 24) {
       // Content arrived (new group, async recap, finished turn) while follow was
       // already OFF, so nothing pins -- the "recap scrolls below / anchor lost"
@@ -897,7 +979,7 @@ export const TranscriptView = memo(function TranscriptView({
         )
       }
     }
-  }, [totalSize, follow])
+  }, [totalSize, follow, pinToBottom])
 
   // PREPEND STABILITY is native. virtual-core 3.17.0 (`@tanstack/react-virtual`
   // 3.14.2 pins it exactly and passes options straight through) implements
@@ -1119,39 +1201,24 @@ export const TranscriptView = memo(function TranscriptView({
                     })()}
                   </div>
                 )}
-                {/* In-flight UI lives INSIDE the last measured item so totalSize
-                    includes it and anchorTo:'end' keeps it pinned. Order is
-                    chronological: streaming thinking -> streaming text -> pill
-                    -> spinner, then banners + queued. For a continuation turn these
-                    render after the committed content above. All of these return
-                    null when there is nothing in-flight, so an idle last item
-                    renders only its committed content + any pending banners. */}
+                {/* In-flight UI lives INSIDE the last measured item (default) so
+                    totalSize includes it and anchorTo:'end' keeps it pinned. For
+                    a continuation turn these render after the committed content
+                    above; all render null when nothing is in-flight. The lab
+                    placement knobs move either block OUTSIDE the virtualizer
+                    (below the measured stack) to test whether the in-place
+                    resizes of the last item are what trips the end-pin. */}
                 {isLast && (
                   <>
-                    <StreamingThinkingBlock conversationId={conversationId} />
-                    <StreamingTextBlock conversationId={conversationId} />
-                    <ThinkingPill conversationId={conversationId} />
-                    <ThinkingSpinner conversationId={conversationId} />
-                    <div className="mt-2">
-                      <LinkRequestBanners conversationId={conversationId} />
-                      <PermissionBanners conversationId={conversationId} />
-                      <SpawnApprovalBanners conversationId={conversationId} />
-                      <AskQuestionBanners conversationId={conversationId} />
-                    </div>
-                    {queuedGroups.length > 0 && (
-                      <div className="mt-2 border-t border-dashed border-amber-500/30 pt-2">
-                        <div className="text-[10px] font-mono text-amber-500/60 px-1 mb-1">QUEUED</div>
-                        {queuedGroups.map((qg, i) => (
-                          <MemoizedGroupView
-                            // biome-ignore lint/suspicious/noArrayIndexKey: queued groups may share timestamp
-                            key={`queued-${qg.timestamp}-${i}`}
-                            group={qg}
-                            getResult={getResult}
-                            settings={transcriptSettings}
-                            showThinking={showThinking}
-                          />
-                        ))}
-                      </div>
+                    {lab.inFlightPlacement === 'inside' && <InFlightBlock conversationId={conversationId} />}
+                    {lab.bannersPlacement === 'inside' && (
+                      <BannersBlock
+                        conversationId={conversationId}
+                        queuedGroups={queuedGroups}
+                        getResult={getResult}
+                        settings={transcriptSettings}
+                        showThinking={showThinking}
+                      />
                     )}
                   </>
                 )}
@@ -1160,6 +1227,23 @@ export const TranscriptView = memo(function TranscriptView({
           })}
         </MaybeProfiler>
       </div>
+      {/* Lab outside placement: content below the measured stack. Part of the
+          scroller's scrollHeight but invisible to totalSize -- the outside
+          growth observer (above) keeps it pinned while following. */}
+      {outsideActive && (
+        <div ref={outsideRef}>
+          {lab.inFlightPlacement === 'outside' && <InFlightBlock conversationId={conversationId} />}
+          {lab.bannersPlacement === 'outside' && (
+            <BannersBlock
+              conversationId={conversationId}
+              queuedGroups={queuedGroups}
+              getResult={getResult}
+              settings={transcriptSettings}
+              showThinking={showThinking}
+            />
+          )}
+        </div>
+      )}
     </div>
   )
 })

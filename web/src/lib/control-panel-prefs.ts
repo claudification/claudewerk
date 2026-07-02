@@ -1,3 +1,5 @@
+import type { VirtualizerLabPrefs } from './virtualizer-lab'
+
 export interface ToolDisplayPrefs {
   defaultOpen: boolean
   lineLimit: number
@@ -77,9 +79,13 @@ export interface ControlPanelPrefs {
   listViewMode: 'default' | 'rail'
   /** Active workspace filter. null = "All" (show every root node). */
   activeWorkspaceId: string | null
+  /** Virtualizer Lab experiment knobs (Experiments settings tab). Stored as a
+   *  partial so knobs added later inherit their defaults; resolve with
+   *  resolveVirtualizerLab() at the point of use. {} = production behavior. */
+  virtualizerLab: Partial<VirtualizerLabPrefs>
 }
 
-export type SettingsTab = 'general' | 'display' | 'input' | 'sessions' | 'sentinels' | 'system'
+export type SettingsTab = 'general' | 'display' | 'input' | 'sessions' | 'sentinels' | 'system' | 'experiments'
 
 const defaultPrefs: ControlPanelPrefs = {
   showEndedConversations: true,
@@ -116,6 +122,7 @@ const defaultPrefs: ControlPanelPrefs = {
   theme: 'tokyo-night',
   listViewMode: 'default',
   activeWorkspaceId: null,
+  virtualizerLab: {},
 }
 
 export function loadPrefs(): ControlPanelPrefs {

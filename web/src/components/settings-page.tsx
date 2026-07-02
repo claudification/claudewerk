@@ -20,6 +20,7 @@ import {
   SizePicker,
 } from './settings/settings-inputs'
 import { SettingsShell, type SettingsShellTab } from './settings/settings-shell'
+import { VirtualizerLabSection } from './settings/virtualizer-lab-section'
 import { VoiceDevicePicker } from './settings/voice-device-picker'
 import { ThemeSelector } from './theme-selector'
 import { WebControlToggle } from './web-control-toggle'
@@ -97,6 +98,7 @@ const DASHBOARD_TABS: SettingsShellTab[] = [
   { id: 'input', label: 'Input' },
   { id: 'sessions', label: 'Conversations' },
   { id: 'system', label: 'System' },
+  { id: 'experiments', label: 'Experiments' },
 ]
 
 interface SettingsContext {
@@ -1161,6 +1163,16 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
               return out
             })()}
           </div>
+        </div>
+      )}
+
+      {/* Virtualizer Lab -- pinned to Experiments tab */}
+      {(isFiltering
+        ? 'virtualizer lab experiments transcript scroll follow pin jumpy'.includes(lowerFilter)
+        : activeTab === 'experiments') && (
+        <div>
+          <GroupHeader label="Virtualizer Lab" />
+          <VirtualizerLabSection />
         </div>
       )}
 
