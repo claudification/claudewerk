@@ -20,6 +20,7 @@ import { readMemory, readSystemAppend } from './memory'
 import { activeContextRows } from './overview'
 import type { QuestSpawn } from './quest-tool'
 import type { DispatchRuntime } from './runtime'
+import { buildSotuBlockBody } from './sotu-context'
 import { listThreads, upsertThread } from './threads'
 import { defineTool, type Toolset } from './tool-def'
 import { buildWorkspaceToolset } from './workspace'
@@ -37,6 +38,10 @@ const DISPATCHER_SYSTEM = [
   '  first). This is your nearest, freshest memory -- trust it over older context.',
   '  Keep it current with commit_thread; full detail is in list_threads.',
   '  <briefs> -- condensed per-project memory (detail via project_brief / recall).',
+  '  <sotu> -- the State of the Union: per-project distilled narrative + git',
+  '  escalation alerts (at-risk/unpushed/stalled) + CONTENDED collisions. This is',
+  '  the fleet TRUTH -- ground status answers in it. Full detail + fresh regen via',
+  '  the state_of_union tool; quantitative cost/token numbers via fleet_sheaf.',
   '  <notes> -- durable facts about the user. <memory> -- your rolling recollection.',
   '  <pending id=..> -- async work you dispatched and are awaiting; when it reports',
   '  back it becomes <findings id=..>, which is your cue to continue that thread.',
@@ -214,6 +219,9 @@ export async function runDispatchAgent(
     rows: contextRows,
     threads: listThreads(),
     durableNotes: readMemory(opts.userId),
+    // The State of the Union, always in context (zero-LLM read of the current
+    // chronicle + live queue; the SOTU engine owns freshness).
+    sotu: buildSotuBlockBody(contextRows, now),
     now,
   })
   appendTurn(history, 'user', intent, now)

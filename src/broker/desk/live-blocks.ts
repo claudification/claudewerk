@@ -72,6 +72,9 @@ interface RefreshInput {
   now: number
   /** The dispatcher's near-memory threads -- short-term "what we're doing now". */
   threads?: DispatchThread[]
+  /** Pre-rendered State of the Union body (sotu-context.ts): distilled narrative
+   *  + git alerts + CONTENDED collisions -- the fleet truth, always in context. */
+  sotu?: string
   briefBudgetChars?: number
   threadLimit?: number
 }
@@ -94,6 +97,10 @@ export function refreshLiveBlocks(h: LivingHistory, input: RefreshInput): void {
   const threadsBody = packThreads(input.threads ?? [], input.threadLimit ?? DEFAULT_THREAD_LIMIT)
   if (threadsBody) upsertBlock(h, 'threads', 'threads', threadsBody, now)
   else h.blocks.delete('threads')
+
+  const sotu = input.sotu?.trim()
+  if (sotu) upsertBlock(h, 'sotu', 'sotu', sotu, now)
+  else h.blocks.delete('sotu')
 
   const { body } = packBriefs(rows, input.briefBudgetChars ?? DEFAULT_BRIEF_BUDGET_CHARS)
   if (body) upsertBlock(h, 'briefs', 'briefs', body, now)

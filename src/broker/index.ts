@@ -42,6 +42,7 @@ import { type ContextDeps, createContext } from './create-context'
 import { closeDispatchAudit, initDispatchAudit } from './desk/audit'
 import { startDeskMemoryService, stopDeskMemoryService } from './desk/desk-memory-service'
 import { emitDeskEvent } from './desk/event-registry'
+import { setFleetSheafProvider } from './desk/fleet-sheaf'
 import { initDispatchMemory, initSystemAppend } from './desk/memory'
 import { closeProjectMemory, initProjectMemory } from './desk/project-memory'
 import { closeDispatchThreads, initDispatchThreads } from './desk/threads'
@@ -537,6 +538,14 @@ async function main() {
     await conversationStore.clearState()
     console.log('Cache cleared.')
     process.exit(0)
+  }
+
+  // Bind the Sheaf fleet ledger for the dispatcher's fleet_sheaf tool -- the
+  // desk holds no StoreDriver, so the boot injects the builder (lazy import
+  // keeps sheaf-build off the desk's static dependency graph).
+  {
+    const { buildSheaf } = await import('./handlers/sheaf-build')
+    setFleetSheafProvider(windowH => buildSheaf({ store, conversationStore, terminationLog, windowH }))
   }
 
   const recapOrch = initRecapOrchestrator({

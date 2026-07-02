@@ -14,6 +14,7 @@
 import { z } from 'zod'
 import type { Conversation, DispatchDecision } from '../../shared/protocol'
 import { sendPushToAll } from '../push'
+import { awarenessTools } from './awareness-tools'
 import { buildControlDeps } from './control-deps'
 import { buildControlToolset } from './control-tools'
 import { computeCostSignal } from './cost'
@@ -198,5 +199,12 @@ export function buildDispatchToolset(
   questSpawn?: QuestSpawn,
 ): Toolset {
   const { spawn: _omitGenericSpawn, ...control } = buildControlToolset(buildControlDeps(rt, confirmedExpensive))
-  return { ...projectTools(rt), ...questTools(rt, questSpawn), ...lookupTools(rt), ...notifyTool(rt), ...control }
+  return {
+    ...projectTools(rt),
+    ...questTools(rt, questSpawn),
+    ...lookupTools(rt),
+    ...awarenessTools(),
+    ...notifyTool(rt),
+    ...control,
+  }
 }
