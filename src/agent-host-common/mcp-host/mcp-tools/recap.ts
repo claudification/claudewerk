@@ -395,7 +395,8 @@ function recapCreateTool(ctx: McpToolContext): ToolDef {
       const audience = raw.audience === 'human' ? 'human' : 'agent'
       const retrospect = raw.retrospect === true
       const customerFriendly = raw.customerFriendly === true
-      const instructions = typeof raw.instructions === 'string' && raw.instructions.trim() ? raw.instructions.trim() : undefined
+      const instructions =
+        typeof raw.instructions === 'string' && raw.instructions.trim() ? raw.instructions.trim() : undefined
       const informOnComplete = raw.inform_on_complete === true
 
       try {

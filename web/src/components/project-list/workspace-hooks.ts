@@ -22,9 +22,14 @@ export const colorClasses: Record<string, { bg: string; ring: string }> = {
 }
 
 const colorDotMap: Record<string, string> = {
-  emerald: 'bg-emerald-400', blue: 'bg-blue-400', purple: 'bg-purple-400',
-  amber: 'bg-amber-400', rose: 'bg-rose-400', cyan: 'bg-cyan-400',
-  orange: 'bg-orange-400', pink: 'bg-pink-400',
+  emerald: 'bg-emerald-400',
+  blue: 'bg-blue-400',
+  purple: 'bg-purple-400',
+  amber: 'bg-amber-400',
+  rose: 'bg-rose-400',
+  cyan: 'bg-cyan-400',
+  orange: 'bg-orange-400',
+  pink: 'bg-pink-400',
 }
 
 export function colorDot(color?: string): string {

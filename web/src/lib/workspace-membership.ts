@@ -49,10 +49,7 @@ export function saveLastWorkspaceConversation(wsId: string, convId: string | nul
 // recorded or the recorded one is no longer valid. `isValid` lets the caller
 // reject dead/unknown conversation ids; a rejected entry is pruned in place so
 // stale ids cannot accumulate across the lifetime of the map.
-export function loadValidWorkspaceConversation(
-  wsId: string,
-  isValid: (convId: string) => boolean,
-): string | undefined {
+export function loadValidWorkspaceConversation(wsId: string, isValid: (convId: string) => boolean): string | undefined {
   const map = loadLastWorkspaceConversations()
   const convId = map[wsId]
   if (!convId) return undefined

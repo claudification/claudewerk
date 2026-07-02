@@ -19,8 +19,8 @@ function projectInWorkspace(trees: Record<string, ProjectOrderNode[]>, projectUr
 
 function useWorkspaceState(projectUri: string) {
   const workspaces = useConversationsStore(s => (s.projectOrder as ProjectOrder).workspaces ?? EMPTY_WORKSPACES)
-  const currentWsId = useConversationsStore(
-    s => projectInWorkspace((s.projectOrder as ProjectOrder).workspaceTrees ?? {}, projectUri),
+  const currentWsId = useConversationsStore(s =>
+    projectInWorkspace((s.projectOrder as ProjectOrder).workspaceTrees ?? {}, projectUri),
   )
   return { workspaces, currentWsId }
 }

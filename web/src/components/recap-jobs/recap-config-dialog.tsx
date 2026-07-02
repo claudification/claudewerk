@@ -165,7 +165,15 @@ export function RecapConfigDialog() {
       })
     } else {
       haptic('success')
-      createRecap({ projectUri, label, retrospect, customerFriendly, template: templateId, options: optionFlags, instructions })
+      createRecap({
+        projectUri,
+        label,
+        retrospect,
+        customerFriendly,
+        template: templateId,
+        options: optionFlags,
+        instructions,
+      })
     }
     close()
   }

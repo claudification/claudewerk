@@ -19,7 +19,10 @@ export function WorkspaceTabs() {
       {workspaces.length > 0 && (
         <button
           type="button"
-          onClick={() => { haptic('tick'); actions.setActive(null) }}
+          onClick={() => {
+            haptic('tick')
+            actions.setActive(null)
+          }}
           title="All (Ctrl+1)"
           className={cn(
             'shrink-0 h-5 px-2 rounded text-[10px] font-mono transition-all cursor-pointer flex items-center gap-1',
@@ -48,13 +51,19 @@ export function WorkspaceTabs() {
       {creating ? (
         <InlineNameInput
           initial=""
-          onSubmit={name => { actions.create(name, workspaces.length); setCreating(false) }}
+          onSubmit={name => {
+            actions.create(name, workspaces.length)
+            setCreating(false)
+          }}
           onCancel={() => setCreating(false)}
         />
       ) : (
         <button
           type="button"
-          onClick={() => { haptic('tick'); setCreating(true) }}
+          onClick={() => {
+            haptic('tick')
+            setCreating(true)
+          }}
           className="shrink-0 h-5 px-1.5 rounded text-[10px] font-mono text-muted-foreground/40 hover:text-muted-foreground hover:bg-accent/10 transition-all cursor-pointer select-none"
           title="New workspace"
         >

@@ -21,7 +21,14 @@ function tabCls(active: boolean): string {
   return `${base} ${active ? 'border-accent text-foreground' : 'border-transparent text-comment hover:text-foreground/70'}`
 }
 
-export function SotuViewerBody({ tab, setTab, projectView, fleetProjects, error, onSelectProject }: SotuViewerBodyProps) {
+export function SotuViewerBody({
+  tab,
+  setTab,
+  projectView,
+  fleetProjects,
+  error,
+  onSelectProject,
+}: SotuViewerBodyProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex border-b border-border/50 px-4">

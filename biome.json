@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.16/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.2/schema.json",
   "assist": {
     "actions": {
       "source": {
@@ -28,15 +28,12 @@
       "react": "recommended"
     },
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "correctness": {
         "useHookAtTopLevel": "error",
         "useExhaustiveDependencies": "warn"
       },
-      "nursery": {
-        "noJsxPropsBind": "off",
-        "noLeakedRender": "off"
-      },
+      "nursery": {},
       "style": {
         "useConst": "warn",
         "useComponentExportOnlyModules": "off",
@@ -45,7 +42,8 @@
       "suspicious": {
         "noExplicitAny": "warn",
         "noControlCharactersInRegex": "off",
-        "noArrayIndexKey": "warn"
+        "noArrayIndexKey": "warn",
+        "noLeakedRender": "off"
       },
       "security": {
         "noDangerouslySetInnerHtml": "warn"
@@ -54,7 +52,11 @@
         "noStaticElementInteractions": "warn",
         "useKeyWithClickEvents": "warn",
         "noLabelWithoutControl": "warn",
-        "useSemanticElements": "off"
+        "useSemanticElements": "off",
+        "noAutofocus": "warn"
+      },
+      "performance": {
+        "noJsxPropsBind": "off"
       }
     }
   },

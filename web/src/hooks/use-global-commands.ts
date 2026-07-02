@@ -20,17 +20,17 @@ import { openTerminateLineageConfirm } from '@/components/terminate-lineage-conf
 import { fetchTranscript, sendInput, useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import { openNightshiftModal } from '@/hooks/use-nightshift-modal'
 import { useShellsStore } from '@/hooks/use-shells'
+import { prewarmMicStream } from '@/hooks/use-voice-recording'
 import { formatShortcut, useChordCommand, useCommand, validateChordBindings } from '@/lib/commands'
 import { canRespawnStaleDaemon } from '@/lib/daemon-control'
 import { focusInputEditor } from '@/lib/focus-input'
 import { remountApp } from '@/lib/remount'
 import { openShell, projectShellCapable } from '@/lib/shell-commands'
 import { selectConversations } from '@/lib/slim-conversation'
-import { getVoiceHistory } from '@/lib/voice-history'
 import { canShell, canTerminal, projectPath } from '@/lib/types'
 import { isMobileViewport } from '@/lib/utils'
+import { getVoiceHistory } from '@/lib/voice-history'
 import { toggleWebControl } from '@/lib/web-control-actions'
-import { prewarmMicStream } from '@/hooks/use-voice-recording'
 
 function quickTaskEnabled() {
   const s = useConversationsStore.getState()

@@ -339,9 +339,9 @@ describe('matchProjectUri', () => {
   })
 
   test('CC dashed-slug is scheme-blind and authority-blind', () => {
-    expect(matchProjectUri('-Users-jonas-projects-remote-claude', 'codex://beast/Users/jonas/projects/remote-claude')).toBe(
-      true,
-    )
+    expect(
+      matchProjectUri('-Users-jonas-projects-remote-claude', 'codex://beast/Users/jonas/projects/remote-claude'),
+    ).toBe(true)
     expect(
       matchProjectUri('-Users-jonas-projects-remote-claude', 'claude://studio/Users/jonas/projects/remote-claude'),
     ).toBe(true)

@@ -30,7 +30,12 @@ export function sceneElementIds(sceneJson: string | null): Set<string> {
   if (!sceneJson) return new Set()
   try {
     const s = JSON.parse(sceneJson) as { elements?: { id?: string }[] }
-    return new Set((s.elements ?? []).flatMap(e => { const id = String(e.id); return id ? [id] : [] }))
+    return new Set(
+      (s.elements ?? []).flatMap(e => {
+        const id = String(e.id)
+        return id ? [id] : []
+      }),
+    )
   } catch {
     return new Set()
   }

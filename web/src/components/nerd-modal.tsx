@@ -625,7 +625,11 @@ function HeapTab() {
                         cells={[
                           { k: 'key', text: s.key, cn: 'text-foreground truncate flex-1' },
                           { k: 'kind', text: s.kind, cn: 'text-comment shrink-0 w-10 text-right' },
-                          { k: 'count', text: String(s.count), cn: 'text-comment shrink-0 w-14 text-right tabular-nums' },
+                          {
+                            k: 'count',
+                            text: String(s.count),
+                            cn: 'text-comment shrink-0 w-14 text-right tabular-nums',
+                          },
                           {
                             k: 'size',
                             text: humanBytes(s.bytes),
@@ -652,7 +656,11 @@ function HeapTab() {
                         cells={[
                           { k: 'slice', text: s.slice, cn: 'text-comment shrink-0 w-20 truncate' },
                           { k: 'sub', text: s.subKey, cn: 'text-foreground truncate flex-1' },
-                          { k: 'count', text: String(s.count), cn: 'text-comment shrink-0 w-12 text-right tabular-nums' },
+                          {
+                            k: 'count',
+                            text: String(s.count),
+                            cn: 'text-comment shrink-0 w-12 text-right tabular-nums',
+                          },
                           {
                             k: 'size',
                             text: humanBytes(s.bytes),

@@ -40,14 +40,16 @@ export function useMessagePulses(presentIds: ReadonlySet<string>): Edge[] {
     () =>
       live.flatMap(p =>
         presentIds.has(p.from) && presentIds.has(p.to)
-          ? [{
-              id: `pulse:${p.key}`,
-              source: p.from,
-              target: p.to,
-              type: 'pulse' as const,
-              data: { status: p.status },
-              zIndex: 20,
-            }]
+          ? [
+              {
+                id: `pulse:${p.key}`,
+                source: p.from,
+                target: p.to,
+                type: 'pulse' as const,
+                data: { status: p.status },
+                zIndex: 20,
+              },
+            ]
           : [],
       ),
     [live, presentIds],
