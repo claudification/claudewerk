@@ -1617,6 +1617,21 @@ export interface DispatchHistoryMessage {
   history: DispatchHistoryDump
 }
 
+/** broker -> a user's overlays: a fleet signal woke the dispatcher (proactive
+ *  impulse, N2) -- a conversation flipped needs_you/blocked, a git escalation
+ *  appeared, or a target went CONTENDED. The dispatcher's resulting reply (if
+ *  the turn cap allowed one) follows as a normal `DispatchDecision`. */
+export interface DispatchImpulseMessage {
+  type: 'dispatch_impulse'
+  userId: string | null
+  source: 'needs_you' | 'git_alert' | 'contended'
+  /** Human one-liner (what the <attention> block received). */
+  description: string
+  conversationId?: string
+  project?: string
+  ts: number
+}
+
 /** Control-panel -> broker: fetch the current user's dispatcher near-memory
  *  threads. A thin request/response over the dashboard WS (the `dispatch`/
  *  `list_threads` MCP tools have no authed-user identity; the WS connection
@@ -2119,6 +2134,7 @@ export type BrokerMessage =
   | DispatchToolResult
   | DispatchThreadsResult
   | DispatchHistoryMessage
+  | DispatchImpulseMessage
   | ProjectLinkRequest
   | ProjectLinkGranted
   | InterConversationListResponse

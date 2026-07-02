@@ -65,6 +65,13 @@ export function userKey(userId: string | null | undefined): string {
   return userId?.trim() ? userId : ANON_KEY
 }
 
+/** Every user with a living history (loaded from disk at boot or created this
+ *  run) -- the dispatcher's user set. ANON decodes back to null. Attention
+ *  impulses (N2) fan out to exactly these users. */
+export function listHistoryUsers(): Array<string | null> {
+  return [...histories.keys()].map(k => (k === ANON_KEY ? null : k))
+}
+
 /** Get (or lazily create) the persistent living history for a user. */
 export function getUserHistory(userId: string | null | undefined): LivingHistory {
   const key = userKey(userId)

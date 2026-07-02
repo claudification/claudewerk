@@ -39,6 +39,7 @@ import {
 } from './conversation-links'
 import { createConversationStore } from './conversation-store'
 import { type ContextDeps, createContext } from './create-context'
+import { startAttentionImpulses, stopAttentionImpulses } from './desk/attention-impulse'
 import { closeDispatchAudit, initDispatchAudit } from './desk/audit'
 import { startDeskMemoryService, stopDeskMemoryService } from './desk/desk-memory-service'
 import { emitDeskEvent } from './desk/event-registry'
@@ -604,6 +605,12 @@ async function main() {
       recapOrch.list({ projectUri, status: ['done'], limit }).map(r => ({ title: r.title, subtitle: r.subtitle })),
   })
 
+  // Proactive attention impulses (N2): needs_you/blocked flips, git escalations,
+  // and CONTENDED collisions wake the dispatcher -- fold into the <attention>
+  // block always, run a turn when the rate cap allows. The dispatcher becomes a
+  // sentinel, not just a responder.
+  startAttentionImpulses(conversationStore)
+
   // SOTU deterministic lifecycle floor: subscribe to the same desk-event bus and
   // append every lifecycle transition as a baseline contribution (no LLM). This
   // guarantees the chronicle has coverage even when no agent emits a callout.
@@ -707,6 +714,7 @@ async function main() {
     closeDispatchAudit()
     closeDispatchThreads()
     stopDeskMemoryService()
+    stopAttentionImpulses()
     stopSotuFloor()
     stopSotuGitScan()
     stopSotuEngine()
