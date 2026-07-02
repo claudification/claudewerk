@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import type { ProjectOrder } from '@/lib/types'
 import {
   isProjectInWorkspace,
-  loadConversationWorkspace,
-  saveConversationWorkspace,
+  loadValidWorkspaceConversation,
+  saveLastWorkspaceConversation,
   WORKSPACE_ALL,
 } from './workspace-membership'
 
@@ -34,29 +34,36 @@ describe('isProjectInWorkspace (membership is per-workspace, not single-home)', 
   })
 })
 
-describe('conversation -> workspace memory (record + remember)', () => {
+describe('workspace -> last conversation memory (forward-only, no reverse lookup)', () => {
   beforeEach(() => localStorage.clear())
+  const anyValid = () => true
 
   it('returns undefined before anything is recorded', () => {
-    expect(loadConversationWorkspace('conv1')).toBeUndefined()
+    expect(loadValidWorkspaceConversation('ws1', anyValid)).toBeUndefined()
   })
 
-  it('remembers the workspace a conversation was last viewed in', () => {
-    saveConversationWorkspace('conv1', 'ws2')
-    expect(loadConversationWorkspace('conv1')).toBe('ws2')
+  it('remembers, per workspace, its last selected conversation independently', () => {
+    saveLastWorkspaceConversation('ws1', 'convA')
+    saveLastWorkspaceConversation('ws2', 'convB')
+    saveLastWorkspaceConversation(WORKSPACE_ALL, 'convC')
+    expect(loadValidWorkspaceConversation('ws1', anyValid)).toBe('convA')
+    expect(loadValidWorkspaceConversation('ws2', anyValid)).toBe('convB')
+    expect(loadValidWorkspaceConversation(WORKSPACE_ALL, anyValid)).toBe('convC')
   })
 
-  it('records the "All" view with the WORKSPACE_ALL sentinel (distinct from unrecorded)', () => {
-    saveConversationWorkspace('conv1', WORKSPACE_ALL)
-    expect(loadConversationWorkspace('conv1')).toBe(WORKSPACE_ALL)
-    expect(loadConversationWorkspace('other')).toBeUndefined()
+  it('overwrites on re-record and clears with null', () => {
+    saveLastWorkspaceConversation('ws1', 'convA')
+    saveLastWorkspaceConversation('ws1', 'convB')
+    expect(loadValidWorkspaceConversation('ws1', anyValid)).toBe('convB')
+    saveLastWorkspaceConversation('ws1', null)
+    expect(loadValidWorkspaceConversation('ws1', anyValid)).toBeUndefined()
   })
 
-  it('overwrites on re-record and keeps conversations independent', () => {
-    saveConversationWorkspace('conv1', 'ws1')
-    saveConversationWorkspace('conv2', 'ws2')
-    saveConversationWorkspace('conv1', WORKSPACE_ALL)
-    expect(loadConversationWorkspace('conv1')).toBe(WORKSPACE_ALL)
-    expect(loadConversationWorkspace('conv2')).toBe('ws2')
+  it('prunes a dead/unknown conversation id in place on read', () => {
+    saveLastWorkspaceConversation('ws1', 'deadConv')
+    // First read rejects + prunes it.
+    expect(loadValidWorkspaceConversation('ws1', () => false)).toBeUndefined()
+    // Even a subsequently-permissive validator sees nothing -- it's gone.
+    expect(loadValidWorkspaceConversation('ws1', anyValid)).toBeUndefined()
   })
 })

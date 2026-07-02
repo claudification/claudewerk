@@ -46,13 +46,7 @@ import {
   type UsageUpdate,
 } from '@/lib/types'
 import { getConversationTab, getLastConversationId, initUIState, setLastConversationId } from '@/lib/ui-state'
-import {
-  isProjectInWorkspace,
-  loadConversationWorkspace,
-  saveConversationWorkspace,
-  saveLastWorkspaceConversation,
-  WORKSPACE_ALL,
-} from '@/lib/workspace-membership'
+import { saveLastWorkspaceConversation, WORKSPACE_ALL } from '@/lib/workspace-membership'
 import { recordOut } from './ws-stats'
 
 export type { ProjectSettingsMap }
@@ -812,44 +806,6 @@ function shortId(id: string | null): string {
   return id?.slice(0, 8) || 'none'
 }
 
-// The workspace to land in when selecting `id`: the one it was last viewed in,
-// else the reveal-via-All fallback when a never-recorded conversation would be
-// invisible in the active workspace, else stay put. A project can belong to
-// zero or many workspaces, so remembered context -- NOT project membership --
-// is the only truthful workspace for a conversation.
-function targetWorkspaceForSelect(
-  s: Pick<ConversationsState, 'projectOrder' | 'conversationsById'>,
-  activeWs: string | null,
-  id: string,
-): string | null {
-  const rememberedWs = loadConversationWorkspace(id)
-  if (rememberedWs !== undefined) return rememberedWs === WORKSPACE_ALL ? null : rememberedWs
-  if (!activeWs) return activeWs
-  const projectUri = s.conversationsById[id]?.project
-  return projectUri && !isProjectInWorkspace(s.projectOrder, activeWs, projectUri) ? null : activeWs
-}
-
-// Ctrl+Tab / CMD+P / deep links move you between conversations: record the
-// workspace the OUTGOING conversation was viewed in, then follow the INCOMING
-// one into the workspace it was last seen in.
-function followWorkspaceOnSelect(
-  get: () => ConversationsState,
-  prev: string | null,
-  id: string | null,
-  reason?: string,
-): void {
-  const s = get()
-  const activeWs = s.controlPanelPrefs.activeWorkspaceId // real id | null (=All)
-  // A workspace-switch drives its own selection and has already stamped the
-  // outgoing conversation against the correct (pre-switch) workspace.
-  if (prev && reason !== 'workspace-switch') saveConversationWorkspace(prev, activeWs ?? WORKSPACE_ALL)
-  if (!id) return
-  const targetWs = targetWorkspaceForSelect(s, activeWs, id)
-  if (targetWs === activeWs) return
-  if (activeWs && prev) saveLastWorkspaceConversation(activeWs, prev)
-  s.updateControlPanelPrefs({ activeWorkspaceId: targetWs })
-}
-
 export const useConversationsStore = create<ConversationsState>((set, get) => ({
   conversationsById: {},
   selectedConversationId: null,
@@ -1192,14 +1148,16 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
     const slim = ingestConversations(clean, selectedId)
     set({ conversationsById: buildSlimIndexWithSelected(slim, selectedId) })
   },
+  // fallow-ignore-next-line complexity
   selectConversation: (id: string | null, reason?: string) => {
     const prev = get().selectedConversationId
     if (id !== prev) {
       console.log(`[nav] selectConversation: ${shortId(prev)} -> ${shortId(id)}${reason ? ` (${reason})` : ''}`)
     }
-    // Follow the conversation into the workspace it was last viewed in (records
-    // the outgoing one on the way out). See followWorkspaceOnSelect.
-    followWorkspaceOnSelect(get, prev, id, reason)
+    // Selection is workspace-NEUTRAL: it never changes the active workspace.
+    // The active workspace merely REMEMBERS its last selected conversation, so
+    // switching back into it restores context. Forward-only, no reverse lookup.
+    if (id) saveLastWorkspaceConversation(get().controlPanelPrefs.activeWorkspaceId ?? WORKSPACE_ALL, id)
     clearExpandedState()
     const defaultView = get().controlPanelPrefs.defaultView
     const rememberedTab = id ? getConversationTab(id) : null
@@ -1248,12 +1206,8 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
     }
   },
   selectProject: (projectUri: string | null) => {
-    const activeWs = get().controlPanelPrefs.activeWorkspaceId
-    if (projectUri && activeWs && !isProjectInWorkspace(get().projectOrder, activeWs, projectUri)) {
-      const prevConv = get().selectedConversationId
-      if (prevConv) saveLastWorkspaceConversation(activeWs, prevConv)
-      get().updateControlPanelPrefs({ activeWorkspaceId: null })
-    }
+    // Selecting a project is workspace-NEUTRAL. A project belongs to zero or
+    // many workspaces; picking one NEVER drags you into (or out of) a workspace.
     set({
       selectedProjectUri: projectUri,
       selectedConversationId: null,
