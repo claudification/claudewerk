@@ -37,6 +37,10 @@ export interface CreateRecapOptions {
    *  boolean). A prompt-tweak option flips a body toggle; a technical option also
    *  adds/removes a gather signal. Unknown keys are ignored broker-side. */
   options?: Record<string, boolean>
+  /** Optional free-text refinement instruction. Shapes the final written prose
+   *  only (never the extraction stage) -- e.g. "focus on the auth migration" or
+   *  "don't mention the testing problems". Empty/whitespace is dropped. */
+  instructions?: string
 }
 
 /** Send recap_create over the dashboard WS. Returns whether the send was
@@ -58,6 +62,7 @@ export function createRecap(opts: CreateRecapOptions): boolean {
     ...(opts.customerFriendly ? { customerFriendly: true } : {}),
     ...(opts.template ? { template: opts.template } : {}),
     ...(opts.options && Object.keys(opts.options).length ? { options: opts.options } : {}),
+    ...(opts.instructions?.trim() ? { instructions: opts.instructions.trim() } : {}),
   })
 }
 

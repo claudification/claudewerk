@@ -50,6 +50,9 @@ export function RecapConfigDialog() {
   // Customer-friendly tone: sanitize the recap for sharing outside the team. Off
   // by default -- an internal recap keeps the unfiltered frustration signal.
   const [customerFriendly, setCustomerFriendly] = useState(false)
+  // Optional free-text steer for the final written prose (never the extraction
+  // stage). Highly optional -- blank is the norm and byte-identical to before.
+  const [instructions, setInstructions] = useState('')
   // Template picker (PLAN phase 9 fast-follow). Empty until the manifest loads;
   // a failed fetch / pre-template broker simply shows no picker and behaves as
   // the byte-identical default ('project-recap') path.
@@ -91,6 +94,7 @@ export function RecapConfigDialog() {
       setRetrospect(retrospectDefault('last_7'))
       retrospectTouched.current = false
       setCustomerFriendly(false)
+      setInstructions('')
       setTemplateId(defaultIdRef.current)
       setError(null)
       setOpen(true)
@@ -157,10 +161,11 @@ export function RecapConfigDialog() {
         customerFriendly,
         template: templateId,
         options: optionFlags,
+        instructions,
       })
     } else {
       haptic('success')
-      createRecap({ projectUri, label, retrospect, customerFriendly, template: templateId, options: optionFlags })
+      createRecap({ projectUri, label, retrospect, customerFriendly, template: templateId, options: optionFlags, instructions })
     }
     close()
   }
@@ -323,6 +328,24 @@ export function RecapConfigDialog() {
                 </span>
               </span>
             </label>
+
+            <div>
+              <span className="block mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
+                Refinement instruction <span className="normal-case tracking-normal">(optional)</span>
+              </span>
+              <textarea
+                value={instructions}
+                onChange={e => setInstructions(e.target.value)}
+                rows={2}
+                placeholder="e.g. focus on the auth migration; skip the testing troubles"
+                className="w-full resize-y rounded border border-input bg-background px-2 py-1 text-sm placeholder:text-muted-foreground/60"
+              />
+              <span className="block mt-1 text-[11px] text-muted-foreground">
+                A free-text steer for how the recap is <span className="text-foreground">written</span> -- emphasise a
+                theme, set the tone, or leave something out. Shapes the final prose only; every fact is still gathered
+                and stored. Leave blank for the standard recap.
+              </span>
+            </div>
 
             {error && <div className="text-xs text-red-400">{error}</div>}
           </div>
