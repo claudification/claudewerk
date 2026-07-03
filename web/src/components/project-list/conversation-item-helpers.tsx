@@ -11,6 +11,22 @@ import { InlineConfirmButton } from './inline-confirm-button'
 import { StatusBadge } from './status-badge'
 import { StatusIndicator } from './status-indicator'
 
+/** Render a list of meta chips interposed with `·` separators. Shared by the
+ *  rail + compact meta footers so the separator dance lives in one place. */
+export function InterpunctRow({ items }: { items: ReactNode[] }) {
+  return (
+    <>
+      {items.filter(Boolean).map((node, i) => (
+        // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
+        <span key={i} className="contents">
+          {i > 0 && <span className="text-muted-foreground/30">·</span>}
+          {node}
+        </span>
+      ))}
+    </>
+  )
+}
+
 // ─── Spawn lineage (Phase 4) ───────────────────────────────────────
 
 /** Direct-children count for a conversation. Prefers the REST `directChildCount`;

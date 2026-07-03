@@ -10,6 +10,7 @@ import { cn, formatPermissionMode, haptic } from '@/lib/utils'
 import { useIsMobile } from '../input-editor/shell/use-is-mobile'
 import { ShareIndicator } from '../share-panel'
 import { BackendIcon } from './backend-icon'
+import { BranchPill, resolveBranch } from './branch-pill'
 import { ConversationInfoButton } from './conversation-info-dialog'
 import {
   ConversationAttentionBadges,
@@ -147,17 +148,9 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
         )}
         {conversation.status === 'ended' && <DismissButton conversationId={conversation.id} />}
       </div>
-      {conversation.gitBranch && conversation.gitBranch !== 'main' && conversation.gitBranch !== 'master' && (
+      {resolveBranch(conversation) && (
         <div className="pl-4 flex items-center gap-1">
-          <span
-            className={cn(
-              'text-[9px] font-mono truncate',
-              conversation.adHocWorktree ? 'text-orange-400/70' : 'text-purple-400/60',
-            )}
-          >
-            {conversation.adHocWorktree ? '⎇ ' : '⌥ '}
-            {conversation.gitBranch}
-          </span>
+          <BranchPill conversation={conversation} compact />
         </div>
       )}
       <SpawnedFromSubtext conversation={conversation} padClass="pl-4" />

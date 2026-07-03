@@ -4,7 +4,8 @@ import { errorTitle, formatCostInfo, rowTitle } from '@/lib/conversation-row'
 import type { Conversation } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { BackendIcon } from './backend-icon'
-import { ConversationAttentionBadges, DismissButton } from './conversation-item-helpers'
+import { BranchPill } from './branch-pill'
+import { ConversationAttentionBadges, DismissButton, InterpunctRow } from './conversation-item-helpers'
 import { GhostAttachButton, GhostBadge, GhostStatusDot } from './ghost-attach'
 import type { useConversationRowData } from './row-hooks'
 import { SentinelProfileBadge } from './sentinel-profile-badge'
@@ -95,6 +96,8 @@ export function RailMeta({
   cacheInfo: RowData['cacheInfo']
   costInfo: RowData['costInfo']
 }) {
+  // Declarative chip list -- InterpunctRow drops the falsy slots + dot-joins the
+  // rest, so no per-chip `if` branches live here (keeps this builder trivial).
   const items: ReactNode[] = [
     <SentinelProfileBadge
       key="profile"
@@ -102,28 +105,21 @@ export function RailMeta({
       hostSentinelAlias={conversation.hostSentinelAlias}
       launchConfig={conversation.launchConfig}
     />,
-  ]
-  if (cacheInfo?.state === 'expired')
-    items.push(
+    cacheInfo?.state === 'expired' ? (
       <span key="cache" className="text-red-400/70 font-bold">
         EXPIRED
-      </span>,
-    )
-  if (costInfo)
-    items.push(
+      </span>
+    ) : null,
+    costInfo ? (
       <span key="cost" className={cn('font-bold font-mono', costInfo.colorClass)}>
         {formatCostInfo(costInfo)}
-      </span>,
-    )
+      </span>
+    ) : null,
+    <BranchPill key="branch" conversation={conversation} compact />,
+  ]
   return (
     <div className="mt-0.5 pl-[18px] flex items-center gap-1.5 text-[9px]">
-      {items.map((node, i) => (
-        // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
-        <span key={i} className="contents">
-          {i > 0 && <span className="text-muted-foreground/30">·</span>}
-          {node}
-        </span>
-      ))}
+      <InterpunctRow items={items} />
     </div>
   )
 }
