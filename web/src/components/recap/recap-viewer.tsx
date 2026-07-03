@@ -25,6 +25,7 @@ import { fetchRecapList, modelLabel, selectSiblings } from './recap-forks'
 import { recapOpenBus } from './recap-open-trigger'
 import { RecapReport } from './recap-report'
 import { RecapWriteupTab } from './recap-writeup-tab'
+import type { RegenerateTuning } from './regenerate-recap-modal'
 
 const POLL_MS = 2000
 
@@ -341,16 +342,24 @@ export function RecapViewer() {
   }, [])
 
   const handleRegenerate = useCallback(
-    (model: string) => {
+    (tuning: RegenerateTuning) => {
       const cur = recap
       if (!cur) return
-      const ok = regenerateRecap({ recapId: cur.recapId, model })
+      const ok = regenerateRecap({
+        recapId: cur.recapId,
+        model: tuning.model,
+        instructions: tuning.instructions,
+        variantLabel: tuning.variantLabel,
+        temperature: tuning.temperature,
+        ...(tuning.maxTokens !== undefined ? { maxTokens: tuning.maxTokens } : {}),
+      })
       if (!ok) {
         toast('Not connected', 'Cannot regenerate: WebSocket is offline.', 'warning')
         return
       }
       setRegenerating(true)
-      toast('Generating variant', `Re-running the write-up with ${modelLabel(model)}…`)
+      const what = tuning.variantLabel || modelLabel(tuning.model)
+      toast('Generating variant', `Re-running the write-up as ${what}…`)
     },
     [recap],
   )

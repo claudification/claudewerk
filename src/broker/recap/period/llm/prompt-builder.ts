@@ -117,11 +117,33 @@ export function applyRetroCf(
  * a "don't mention X" directive omits X from the rendered body -- it does not remove
  * X from the stored frontmatter/bundle.
  */
+/** Stable heading that opens the appended directives block. Used both to build
+ *  the block and to locate/strip it on a saved prompt (see {@link swapInstructions}),
+ *  so the two never drift. */
+const CUSTOM_DIRECTIVES_HEADING =
+  'ADDITIONAL USER DIRECTIVES (apply on top of everything above; these are the FINAL word and OVERRIDE the body spec wherever they conflict):'
+
 function customInstructionsSpec(instructions: string): string {
-  return `ADDITIONAL USER DIRECTIVES (apply on top of everything above; these are the FINAL word and OVERRIDE the body spec wherever they conflict):
+  return `${CUSTOM_DIRECTIVES_HEADING}
 ${instructions}
 
 These shape the WRITTEN recap only. Never invent facts, drop citations, or upgrade an inference to a fact to satisfy a directive; if a directive says to omit something, simply leave it out of the prose.`
+}
+
+/**
+ * Re-steer an already-assembled oneshot system prompt: strip any trailing
+ * user-directives block (matched by {@link CUSTOM_DIRECTIVES_HEADING}) and
+ * re-append the new one when non-empty. Lets recap_regenerate change the soft
+ * instructions on a SAVED oneshot prompt without re-running the $$ extraction --
+ * the format knowledge stays here, not in the orchestrator. Idempotent: a blank
+ * `instructions` removes the block entirely.
+ */
+export function swapInstructions(system: string, instructions?: string): string {
+  const marker = `\n\n${CUSTOM_DIRECTIVES_HEADING}`
+  const at = system.indexOf(marker)
+  const base = at >= 0 ? system.slice(0, at) : system
+  const trimmed = instructions?.trim()
+  return trimmed ? `${base}\n\n${customInstructionsSpec(trimmed)}` : base
 }
 
 function humanStats(inputs: PromptInputs): RenderStats {

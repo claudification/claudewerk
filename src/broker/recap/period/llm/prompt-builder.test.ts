@@ -1,6 +1,38 @@
 import { describe, expect, test } from 'bun:test'
 import { makePromptInputs, SIZES } from '../../__tests__/synthetic-fixtures'
-import { buildPrompt } from './prompt-builder'
+import { buildPrompt, swapInstructions } from './prompt-builder'
+
+describe('swapInstructions', () => {
+  test('appends a directives block to a plain prompt', () => {
+    const out = swapInstructions('BODY SPEC', 'keep it upbeat')
+    expect(out.startsWith('BODY SPEC')).toBe(true)
+    expect(out).toContain('keep it upbeat')
+    expect(out).toContain('ADDITIONAL USER DIRECTIVES')
+  })
+
+  test('replaces an existing block instead of stacking (idempotent re-steer)', () => {
+    const first = swapInstructions('BODY SPEC', 'be terse')
+    const second = swapInstructions(first, 'be verbose')
+    expect(second).toContain('be verbose')
+    expect(second).not.toContain('be terse')
+    // Exactly one directives block survives.
+    expect(second.split('ADDITIONAL USER DIRECTIVES').length - 1).toBe(1)
+  })
+
+  test('a blank instruction strips the block back to the base prompt', () => {
+    const withBlock = swapInstructions('BODY SPEC', 'be terse')
+    expect(swapInstructions(withBlock, '')).toBe('BODY SPEC')
+    expect(swapInstructions(withBlock, '   ')).toBe('BODY SPEC')
+  })
+
+  test('round-trips the block built by buildPrompt', () => {
+    const built = buildPrompt(makePromptInputs('small'), 'human', false, false, undefined, 'original steer')
+    const reSteered = swapInstructions(built.system, 'new steer')
+    expect(reSteered).toContain('new steer')
+    expect(reSteered).not.toContain('original steer')
+    expect(reSteered.split('ADDITIONAL USER DIRECTIVES').length - 1).toBe(1)
+  })
+})
 
 describe('buildPrompt', () => {
   test('emits non-empty system + user payloads', () => {

@@ -47,7 +47,7 @@ import {
 import type { CommitDigest } from './gather/types'
 import { RecapLedger } from './ledger'
 import { chunkModels, pickModel } from './llm/escalate'
-import { buildPrompt, type PresentationSelection, type PromptInputs } from './llm/prompt-builder'
+import { buildPrompt, type PresentationSelection, type PromptInputs, swapInstructions } from './llm/prompt-builder'
 import { createProgressEmitter, type ProgressBroadcaster, type ProgressEmitter } from './progress'
 import { buildRecapDigest } from './render/digest'
 import { renderFinalMarkdown } from './render/markdown'
@@ -229,6 +229,14 @@ export interface RegenerateArgs {
   /** Optional synthesize-stage model override (the eval-harness lever: try a new
    *  reduce/oneshot model on the SAME merged JSON without re-paying extraction). */
   model?: string
+  /** Optional refinement-instructions override. undefined = reuse the source's
+   *  (manifest); a string = override (empty clears). Applied at synthesize only. */
+  instructions?: string
+  /** Optional human label for the resulting variant (shown in the fork switcher). */
+  variantLabel?: string
+  /** Optional synthesize-stage sampling overrides. */
+  temperature?: number
+  maxTokens?: number
   createdBy?: string
 }
 
@@ -296,12 +304,35 @@ export function regenerateRecap(deps: OrchestratorDeps, args: RegenerateArgs): R
     })
     deps.bundle.forkUpstream(src.id, targetId)
   }
+  // Resolve the effective refinement recipe for this variant: start from the
+  // source's persisted recipe, then apply any override the caller supplied.
+  // Persisted to BOTH the row's args_json (cheap list-level display of the
+  // variant name) and the manifest (regenerate + doc prefill re-read it).
+  const instructionsProvided = args.instructions !== undefined
+  const effInstructions = instructionsProvided ? args.instructions?.trim() || undefined : manifest.instructions
+  const srcRecipe = (jsonParseOr(src.argsJson) ?? {}) as Record<string, unknown>
+  const effRecipe: Record<string, unknown> = { ...srcRecipe }
+  if (args.variantLabel !== undefined) {
+    const label = args.variantLabel.trim()
+    if (label) effRecipe.variantLabel = label
+    else delete effRecipe.variantLabel
+  }
+  if (args.model) effRecipe.model = args.model
+  if (args.temperature !== undefined) effRecipe.temperature = args.temperature
+  if (args.maxTokens !== undefined) effRecipe.maxTokens = args.maxTokens
+  if (instructionsProvided) {
+    if (effInstructions) effRecipe.instructions = effInstructions
+    else delete effRecipe.instructions
+  }
+
   // Flip the target row to 'rendering' synchronously so observers (and an
   // in-place refine of an already-'done' recap) see the regenerate in flight
   // rather than a stale terminal status.
-  deps.store.update(targetId, { status: 'rendering', progress: 0, error: null })
+  deps.store.update(targetId, { status: 'rendering', progress: 0, error: null, argsJson: JSON.stringify(effRecipe) })
   deps.bundle.updateManifest(targetId, {
     status: 'rendering',
+    recipe: effRecipe,
+    ...(instructionsProvided ? { instructions: effInstructions ?? '' } : {}),
     regenerate: { from: args.from, mode, sourceRecapId: src.id, at: Date.now() },
   })
 
@@ -577,6 +608,91 @@ async function runRegenerate(
   })
 }
 
+/** Effective refinement overrides for a regenerate: instructions (undefined =
+ *  reuse source) + the resolved sampling knobs. */
+interface RefineOverrides {
+  effInstructions?: string
+  instructionsProvided: boolean
+  temperature: number
+  maxTokens: number
+}
+
+/** synthesize from the chunked merged JSON: rebuild the reduce prompt (honoring
+ *  the instruction override) and make the single reduce call. */
+async function synthesizeFromMerged(
+  deps: OrchestratorDeps,
+  targetId: string,
+  ledger: RecapLedger,
+  emit: ProgressEmitter,
+  args: RegenerateArgs,
+  manifest: NonNullable<ReturnType<RecapBundleWriter['readManifest']>>,
+  promptInputs: PromptInputs,
+  audience: RecapAudience,
+  merged: RecapMetadata,
+  ov: RefineOverrides,
+): Promise<{ parsed: ParsedRecap; model: string }> {
+  const model = args.model ?? manifest.models?.reduce ?? 'anthropic/claude-opus-4.8'
+  emit.setProgress(55, 'regenerate/synthesize')
+  const synth = buildSynthesizePrompt(
+    merged,
+    {
+      projectLabel: promptInputs.projectLabel,
+      periodHuman: promptInputs.periodHuman,
+      periodIsoRange: promptInputs.periodIsoRange,
+      forgotten: promptInputs.forgotten,
+      agentStatus: promptInputs.conversations,
+      contention: promptInputs.contention,
+    },
+    audience,
+    manifest.retrospect ?? false,
+    manifest.customerFriendly ?? false,
+    undefined,
+    ov.effInstructions,
+  )
+  const content = await runLlmCall(deps, targetId, ledger, 'reduce', {
+    model,
+    system: synth.system,
+    user: synth.user,
+    maxTokens: ov.maxTokens,
+    timeoutMs: RECAP_TIMEOUT_MS,
+    temperature: ov.temperature,
+    retries: 2,
+    apiKey: deps.apiKey,
+  })
+  deps.bundle?.recordFinalResponse(targetId, content)
+  const parsed = await parseOrRetry(deps, targetId, ledger, content, synth, model, deps.apiKey)
+  return { parsed, model }
+}
+
+/** oneshot bundle: replay the saved oneshot prompt. When the caller re-steers the
+ *  instructions, swap the trailing directives block in place -- the saved prompt
+ *  already carries the extraction, so this re-shapes prose without the $$ map
+ *  re-run. A pure model/temperature swap replays verbatim. */
+async function replayOneshot(
+  deps: OrchestratorDeps,
+  targetId: string,
+  ledger: RecapLedger,
+  emit: ProgressEmitter,
+  args: RegenerateArgs,
+  manifest: NonNullable<ReturnType<RecapBundleWriter['readManifest']>>,
+  sourceId: string,
+  ov: RefineOverrides,
+): Promise<{ parsed: ParsedRecap; model: string }> {
+  const prompt = deps.bundle?.readStagePrompt(sourceId, 'oneshot')
+  if (!prompt?.system || !prompt.user) throw new Error('no merged JSON or oneshot prompt available to synthesize')
+  const model = args.model ?? manifest.models?.oneshot ?? 'anthropic/claude-opus-4.8'
+  emit.setProgress(55, 'regenerate/synthesize')
+  const system = ov.instructionsProvided ? swapInstructions(prompt.system, ov.effInstructions) : prompt.system
+  const built = { system, user: prompt.user }
+  const content = await callLlm(deps, targetId, ledger, built, model, deps.apiKey, {
+    temperature: ov.temperature,
+    maxTokens: ov.maxTokens,
+  })
+  deps.bundle?.recordFinalResponse(targetId, content)
+  const parsed = await parseOrRetry(deps, targetId, ledger, content, built, model, deps.apiKey)
+  return { parsed, model }
+}
+
 /** Re-produce the parsed recap for the requested resume stage. render/html never
  *  call a model; synthesize makes exactly one LLM call on saved upstream input. */
 async function replayStage(
@@ -597,51 +713,20 @@ async function replayStage(
     const parsed = parseRecapOutput(content)
     return { parsed, model: manifest.models?.reduce ?? manifest.models?.oneshot ?? 'saved' }
   }
+  // Effective refinement overrides: instructions default to the source's own
+  // (manifest) unless the caller passed a value; sampling only overrides when set.
+  const instructionsProvided = args.instructions !== undefined
+  const ov: RefineOverrides = {
+    effInstructions: instructionsProvided ? args.instructions?.trim() || undefined : manifest.instructions,
+    instructionsProvided,
+    temperature: args.temperature ?? 0.2,
+    maxTokens: args.maxTokens ?? RECAP_MAX_TOKENS,
+  }
   // synthesize: prefer the chunked merged JSON; fall back to replaying oneshot.
   const merged = deps.bundle?.readMerged<RecapMetadata>(sourceId)
-  if (merged) {
-    const model = args.model ?? manifest.models?.reduce ?? 'anthropic/claude-opus-4.8'
-    emit.setProgress(55, 'regenerate/synthesize')
-    const synth = buildSynthesizePrompt(
-      merged,
-      {
-        projectLabel: promptInputs.projectLabel,
-        periodHuman: promptInputs.periodHuman,
-        periodIsoRange: promptInputs.periodIsoRange,
-        forgotten: promptInputs.forgotten,
-        agentStatus: promptInputs.conversations,
-        contention: promptInputs.contention,
-      },
-      audience,
-      manifest.retrospect ?? false,
-      manifest.customerFriendly ?? false,
-      undefined,
-      manifest.instructions,
-    )
-    const content = await runLlmCall(deps, targetId, ledger, 'reduce', {
-      model,
-      system: synth.system,
-      user: synth.user,
-      maxTokens: RECAP_MAX_TOKENS,
-      timeoutMs: RECAP_TIMEOUT_MS,
-      temperature: 0.2,
-      retries: 2,
-      apiKey: deps.apiKey,
-    })
-    deps.bundle?.recordFinalResponse(targetId, content)
-    const parsed = await parseOrRetry(deps, targetId, ledger, content, synth, model, deps.apiKey)
-    return { parsed, model }
-  }
-  // oneshot bundle: replay the saved oneshot prompt verbatim (new model allowed).
-  const prompt = deps.bundle?.readStagePrompt(sourceId, 'oneshot')
-  if (!prompt?.system || !prompt.user) throw new Error('no merged JSON or oneshot prompt available to synthesize')
-  const model = args.model ?? manifest.models?.oneshot ?? 'anthropic/claude-opus-4.8'
-  emit.setProgress(55, 'regenerate/synthesize')
-  const built = { system: prompt.system, user: prompt.user }
-  const content = await callLlm(deps, targetId, ledger, built, model, deps.apiKey)
-  deps.bundle?.recordFinalResponse(targetId, content)
-  const parsed = await parseOrRetry(deps, targetId, ledger, content, built, model, deps.apiKey)
-  return { parsed, model }
+  return merged
+    ? synthesizeFromMerged(deps, targetId, ledger, emit, args, manifest, promptInputs, audience, merged, ov)
+    : replayOneshot(deps, targetId, ledger, emit, args, manifest, sourceId, ov)
 }
 
 // fallow-ignore-next-line complexity

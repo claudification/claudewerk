@@ -117,6 +117,12 @@ function recapRegenerate(ctx: HandlerContext, data: MessageData): void {
   }
   const mode = data.mode === 'in-place' ? 'in-place' : data.mode === 'fork' ? 'fork' : undefined
   const model = typeof data.model === 'string' ? data.model : undefined
+  // instructions: forward only when the KEY is present (undefined => reuse the
+  // source's; a string, incl. empty, => override). Label/sampling are simple.
+  const instructions = typeof data.instructions === 'string' ? data.instructions : undefined
+  const variantLabel = typeof data.variantLabel === 'string' ? data.variantLabel.trim() || undefined : undefined
+  const temperature = typeof data.temperature === 'number' ? data.temperature : undefined
+  const maxTokens = typeof data.maxTokens === 'number' ? data.maxTokens : undefined
   const orchestrator = getRecapOrchestrator()
   if (!orchestrator) {
     ctx.reply({ type: 'recap_error', error: 'recap orchestrator not initialised', ...echo })
@@ -128,6 +134,10 @@ function recapRegenerate(ctx: HandlerContext, data: MessageData): void {
       from,
       ...(mode ? { mode } : {}),
       ...(model ? { model } : {}),
+      ...(instructions !== undefined ? { instructions } : {}),
+      ...(variantLabel ? { variantLabel } : {}),
+      ...(temperature !== undefined ? { temperature } : {}),
+      ...(maxTokens !== undefined ? { maxTokens } : {}),
     })
     ctx.reply({
       type: 'recap_regenerated',

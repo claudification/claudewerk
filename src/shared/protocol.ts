@@ -5594,6 +5594,9 @@ export interface RecapSummary {
    *  token. Server-computed in `GET /api/recaps` so the list can show a shared
    *  indicator. See plan-recap-share-leak.md. */
   isShared?: boolean
+  /** Human label for this variant (RecapTuning.variantLabel, from args_json).
+   *  Shown in the write-up fork switcher in place of the bare model name. */
+  variantLabel?: string
 }
 
 /** One cited item in a recap section (feature/bug/fix/incident/decision/...).
@@ -5802,6 +5805,13 @@ export interface PeriodRecapDoc extends RecapMeta {
   metadata?: RecapMetadata
   /** Charts + drill-down projection. Absent on pre-2.0 recaps. */
   digest?: RecapDigest
+  /** The free-text refinement instructions this recap's write-up was generated
+   *  with (from the run bundle manifest). Surfaced so the regenerate modal can
+   *  prefill "what was used" and let the user tweak it. Absent when none. */
+  instructions?: string
+  /** Human label distinguishing this variant in the fork switcher (the
+   *  RecapTuning.variantLabel used to generate it). Absent when unnamed. */
+  variantLabel?: string
 }
 
 export interface RecapLogEntry {
@@ -5910,6 +5920,19 @@ export interface RecapRegenerateMessage {
   mode?: 'fork' | 'in-place'
   /** Optional synthesize-stage model override (eval-harness lever). */
   model?: string
+  /** Optional free-text refinement instructions for the regenerated write-up.
+   *  Semantics: OMITTED = reuse whatever the source recap used (manifest);
+   *  PRESENT = override (empty string clears instructions entirely). Applied at
+   *  the final synthesize/refinement stage only, exactly like recap_create. */
+  instructions?: string
+  /** Optional human label for the resulting variant, shown in the fork switcher
+   *  (RecapTuning.variantLabel). Lets the user name a fork instead of relying on
+   *  the model name alone. */
+  variantLabel?: string
+  /** Optional synthesize-stage sampling temperature override (0-2). */
+  temperature?: number
+  /** Optional synthesize-stage max output tokens override. */
+  maxTokens?: number
   /** Echoed on recap_regenerated/recap_error so MCP broker-rpc can correlate. */
   requestId?: string
 }

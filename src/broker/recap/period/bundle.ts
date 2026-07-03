@@ -132,7 +132,17 @@ export interface RecapBundleManifest {
 export type RecapBundleManifestPatch = Partial<
   Pick<
     RecapBundleManifest,
-    'mode' | 'models' | 'chunkCount' | 'recipe' | 'status' | 'error' | 'cost' | 'timing' | 'regenerate' | 'resumeCount'
+    | 'mode'
+    | 'models'
+    | 'chunkCount'
+    | 'recipe'
+    | 'instructions'
+    | 'status'
+    | 'error'
+    | 'cost'
+    | 'timing'
+    | 'regenerate'
+    | 'resumeCount'
   >
 > & { startedAt?: number; completedAt?: number }
 
@@ -402,15 +412,25 @@ export function createRecapBundleWriter(cacheDir: string): RecapBundleWriter {
     updateManifest(recapId, patch) {
       const manifest = readManifest(recapId)
       if (!manifest) return
-      if (patch.mode !== undefined) manifest.mode = patch.mode
-      if (patch.models !== undefined) manifest.models = patch.models
-      if (patch.chunkCount !== undefined) manifest.chunkCount = patch.chunkCount
-      if (patch.recipe !== undefined) manifest.recipe = patch.recipe
-      if (patch.status !== undefined) manifest.status = patch.status
-      if (patch.error !== undefined) manifest.error = patch.error
-      if (patch.cost !== undefined) manifest.cost = patch.cost
-      if (patch.regenerate !== undefined) manifest.regenerate = patch.regenerate
-      if (patch.resumeCount !== undefined) manifest.resumeCount = patch.resumeCount
+      // Straight passthrough keys: copy every defined one onto the manifest.
+      const DIRECT_KEYS = [
+        'mode',
+        'models',
+        'chunkCount',
+        'recipe',
+        'status',
+        'error',
+        'cost',
+        'regenerate',
+        'resumeCount',
+      ] as const
+      const bag = manifest as unknown as Record<string, unknown>
+      for (const key of DIRECT_KEYS) {
+        if (patch[key] !== undefined) bag[key] = patch[key]
+      }
+      // Keys with their own shape: instructions coalesces '' -> undefined; the
+      // two timings live on the nested timing object.
+      if (patch.instructions !== undefined) manifest.instructions = patch.instructions || undefined
       if (patch.startedAt !== undefined) manifest.timing.startedAt = patch.startedAt
       if (patch.completedAt !== undefined) manifest.timing.completedAt = patch.completedAt
       manifest.timing.updatedAt = Date.now()

@@ -49,8 +49,12 @@ function summary(overrides: Partial<RecapSummary> = {}): RecapSummary {
 
 afterEach(cleanup)
 
+function openModal() {
+  fireEvent.click(screen.getByText('Regenerate write-up…'))
+}
+
 describe('RecapWriteupTab', () => {
-  test('regenerate sends the currently-selected model (defaults to the recap model)', () => {
+  test('button opens the modal; submitting regenerates with the recap model by default', () => {
     const onRegenerate = vi.fn()
     render(
       <RecapWriteupTab
@@ -61,11 +65,19 @@ describe('RecapWriteupTab', () => {
         onRegenerate={onRegenerate}
       />,
     )
-    fireEvent.click(screen.getByText('Regenerate write-up'))
-    expect(onRegenerate).toHaveBeenCalledWith('anthropic/claude-opus-4.8')
+    openModal()
+    fireEvent.click(screen.getByText('Regenerate', { selector: 'button' }))
+    expect(onRegenerate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'anthropic/claude-opus-4.8',
+        instructions: '',
+        variantLabel: '',
+        temperature: 0.2,
+      }),
+    )
   })
 
-  test('changing the dropdown then regenerating sends the chosen slug', () => {
+  test('changing the model in the modal then regenerating sends the chosen slug', () => {
     const onRegenerate = vi.fn()
     render(
       <RecapWriteupTab
@@ -76,14 +88,28 @@ describe('RecapWriteupTab', () => {
         onRegenerate={onRegenerate}
       />,
     )
-    fireEvent.change(screen.getByLabelText('Regenerate write-up model'), {
-      target: { value: 'deepseek/deepseek-chat' },
-    })
-    fireEvent.click(screen.getByText('Regenerate write-up'))
-    expect(onRegenerate).toHaveBeenCalledWith('deepseek/deepseek-chat')
+    openModal()
+    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'z-ai/glm-5.2' } })
+    fireEvent.click(screen.getByText('Regenerate', { selector: 'button' }))
+    expect(onRegenerate).toHaveBeenCalledWith(expect.objectContaining({ model: 'z-ai/glm-5.2' }))
   })
 
-  test('while regenerating the button is disabled and does not fire', () => {
+  test('the modal prefills the instructions the write-up was generated with', () => {
+    render(
+      <RecapWriteupTab
+        recap={doc({ instructions: 'keep it upbeat' })}
+        siblings={[]}
+        regenerating={false}
+        onSelectFork={vi.fn()}
+        onRegenerate={vi.fn()}
+      />,
+    )
+    openModal()
+    const box = screen.getByPlaceholderText(/focus on the auth migration/) as HTMLTextAreaElement
+    expect(box.value).toBe('keep it upbeat')
+  })
+
+  test('while regenerating the button is disabled and does not open the modal', () => {
     const onRegenerate = vi.fn()
     render(
       <RecapWriteupTab
@@ -95,26 +121,26 @@ describe('RecapWriteupTab', () => {
       />,
     )
     fireEvent.click(screen.getByText('Generating…'))
+    expect(screen.queryByText('Tune & regenerate write-up')).toBeNull()
     expect(onRegenerate).not.toHaveBeenCalled()
   })
 
-  test('fork switcher renders sibling variants and routes clicks to onSelectFork', () => {
+  test('fork switcher shows the variant name when set, else the model, and routes clicks', () => {
     const onSelectFork = vi.fn()
     render(
       <RecapWriteupTab
         recap={doc({ recapId: 'recap_1' })}
         siblings={[
           summary({ id: 'recap_1', model: 'anthropic/claude-opus-4.8' }),
-          summary({ id: 'recap_2', model: 'deepseek/deepseek-chat', createdAt: 2 }),
+          summary({ id: 'recap_2', model: 'z-ai/glm-5.2', variantLabel: 'Client-safe', createdAt: 2 }),
         ]}
         regenerating={false}
         onSelectFork={onSelectFork}
         onRegenerate={vi.fn()}
       />,
     )
-    // Scope to the switcher: "DeepSeek" also appears as a dropdown <option>.
     const switcher = within(screen.getByLabelText('Write-up variants'))
-    fireEvent.click(switcher.getByText('DeepSeek'))
+    fireEvent.click(switcher.getByText('Client-safe'))
     expect(onSelectFork).toHaveBeenCalledWith('recap_2')
   })
 

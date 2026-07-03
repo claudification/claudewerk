@@ -147,6 +147,12 @@ export function initRecapOrchestrator(opts: InitOptions): RecapOrchestrator {
       const row = store.get(recapId)
       if (!row) return null
       const recap = rowToDoc(row)
+      // Surface the refinement inputs the write-up was generated with (bundle
+      // manifest, not a DB column) so the regenerate modal prefills them.
+      const manifest = bundle.readManifest(recapId)
+      if (manifest?.instructions) recap.instructions = manifest.instructions
+      const variantLabel = manifest?.recipe?.variantLabel
+      if (typeof variantLabel === 'string' && variantLabel) recap.variantLabel = variantLabel
       if (!includeLogs) return { recap }
       return { recap, logs: store.getLogs(recapId) as RecapLogEntry[] }
     },
@@ -186,6 +192,7 @@ export function resetRecapOrchestratorForTests(): void {
 }
 
 function rowToSummary(row: RecapRow): RecapSummary {
+  const variantLabel = variantLabelOf(row)
   return {
     id: row.id,
     projectUri: row.projectUri,
@@ -203,7 +210,16 @@ function rowToSummary(row: RecapRow): RecapSummary {
     progress: row.progress,
     phase: row.phase ?? undefined,
     error: row.error ?? undefined,
+    ...(variantLabel ? { variantLabel } : {}),
   }
+}
+
+/** Pull the variant label out of the persisted recipe (args_json) -- a cheap
+ *  row-level read (no bundle manifest) so the fork switcher can name variants. */
+function variantLabelOf(row: RecapRow): string | undefined {
+  const recipe = parseJsonOr<Record<string, unknown>>(row.argsJson)
+  const label = recipe?.variantLabel
+  return typeof label === 'string' && label ? label : undefined
 }
 
 function rowToDoc(row: RecapRow): PeriodRecapDoc {

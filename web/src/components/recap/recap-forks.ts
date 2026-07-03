@@ -19,15 +19,19 @@ export interface RecapModelOption {
   label: string
 }
 
-// All verified live on OpenRouter (2026-05-29). Opus 4.8 is the prod reduce
-// default. grok-4 does not exist as a slug -- 4.3 is the current stable Grok.
+// All verified live on OpenRouter (2026-07-03). Opus 4.8 is the prod reduce
+// default and leads the list. A synthesize override accepts ANY OpenRouter
+// slug, so this curated set is a convenience, not a constraint.
 export const RECAP_MODEL_OPTIONS: RecapModelOption[] = [
   { slug: 'anthropic/claude-opus-4.8', label: 'Opus 4.8' },
-  { slug: 'anthropic/claude-sonnet-4', label: 'Sonnet 4' },
-  { slug: 'deepseek/deepseek-chat', label: 'DeepSeek' },
+  { slug: 'anthropic/claude-sonnet-5', label: 'Sonnet 5' },
+  { slug: 'anthropic/claude-haiku-4.5', label: 'Haiku 4.5' },
+  { slug: 'z-ai/glm-5.2', label: 'GLM-5.2' },
+  { slug: 'deepseek/deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
   { slug: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-  { slug: 'qwen/qwen-2.5-72b-instruct', label: 'Qwen 2.5 72B' },
   { slug: 'x-ai/grok-4.3', label: 'Grok 4.3' },
+  { slug: 'moonshotai/kimi-k2.6', label: 'Kimi K2.6' },
+  { slug: 'qwen/qwen3-max', label: 'Qwen3 Max' },
 ]
 
 export const DEFAULT_RECAP_MODEL = RECAP_MODEL_OPTIONS[0].slug

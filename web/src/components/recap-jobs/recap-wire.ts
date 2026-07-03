@@ -74,6 +74,15 @@ export interface RegenerateRecapOptions {
   from?: 'synthesize' | 'render' | 'html'
   /** fork (default) mints a new recapId so the source survives for comparison. */
   mode?: 'fork' | 'in-place'
+  /** Free-text refinement instructions for the regenerated write-up. Sent only
+   *  when defined so a plain model swap keeps reusing the source's instructions;
+   *  an explicit empty string clears them. */
+  instructions?: string
+  /** Human label for the resulting variant (shown in the fork switcher). */
+  variantLabel?: string
+  /** Synthesize-stage sampling overrides. */
+  temperature?: number
+  maxTokens?: number
 }
 
 /** Send recap_regenerate over the dashboard WS. The broker replies
@@ -85,5 +94,9 @@ export function regenerateRecap(opts: RegenerateRecapOptions): boolean {
     from: opts.from ?? 'synthesize',
     mode: opts.mode ?? 'fork',
     ...(opts.model ? { model: opts.model } : {}),
+    ...(opts.instructions !== undefined ? { instructions: opts.instructions } : {}),
+    ...(opts.variantLabel?.trim() ? { variantLabel: opts.variantLabel.trim() } : {}),
+    ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
+    ...(opts.maxTokens !== undefined ? { maxTokens: opts.maxTokens } : {}),
   })
 }
