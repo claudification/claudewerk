@@ -5,7 +5,7 @@ import type { Conversation } from '@/lib/types'
 import { projectPath } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
-type BranchKind = 'worktree' | 'worktree-adhoc' | 'branch' | 'base' | 'none'
+type BranchKind = 'worktree' | 'worktree-adhoc' | 'branch'
 
 interface ResolvedBranch {
   label: string
@@ -14,13 +14,13 @@ interface ResolvedBranch {
 }
 
 /** Resolve a conversation's branch/worktree label. Prefers the LIVE worktree
- *  (from `currentPath`, updated via `cwd_changed`) over the sticky `gitBranch`,
- *  then falls back to `(none)`. Worktree/path-derived labels are hidden from
- *  share guests (the header redacts host disk paths); a plain branch name is not
- *  a path, so it stays. Returns null only when there's nothing safe to show. */
+ *  (from `currentPath`, updated via `cwd_changed`) over the sticky `gitBranch`.
+ *  Returns null when there's nothing worth showing -- a base branch
+ *  (`main`/`master`) or no branch at all -- so those rows stay clean. Worktree/
+ *  path-derived labels are hidden from share guests (the header redacts host
+ *  disk paths); a plain branch name is not a path, so it stays. */
 export function resolveBranch(conversation: Conversation): ResolvedBranch | null {
-  const share = isShareView()
-  if (!share) {
+  if (!isShareView()) {
     const cur = conversation.currentPath
     const wt = cur && cur !== projectPath(conversation.project) ? worktreeName(cur) : null
     if (wt) return { label: wt, kind: 'worktree', title: `Working in worktree ${wt}` }
@@ -32,28 +32,21 @@ export function resolveBranch(conversation: Conversation): ResolvedBranch | null
       }
   }
   const branch = conversation.gitBranch
-  if (branch) {
-    const base = branch === 'main' || branch === 'master'
-    return { label: branch, kind: base ? 'base' : 'branch', title: `Branch ${branch}` }
-  }
-  if (share) return null
-  return { label: '(none)', kind: 'none', title: 'No branch detected' }
+  if (branch && branch !== 'main' && branch !== 'master')
+    return { label: branch, kind: 'branch', title: `Branch ${branch}` }
+  return null
 }
 
 const INLINE_COLOR: Record<BranchKind, string> = {
   worktree: 'text-violet-300/80',
   'worktree-adhoc': 'text-orange-400/70',
   branch: 'text-purple-400/70',
-  base: 'text-muted-foreground/50',
-  none: 'text-muted-foreground/40',
 }
 
 const PILL_COLOR: Record<BranchKind, string> = {
   worktree: 'bg-violet-500/15 text-violet-300 border-violet-500/30',
   'worktree-adhoc': 'bg-orange-500/15 text-orange-300 border-orange-500/30',
   branch: 'bg-purple-500/15 text-purple-300 border-purple-500/30',
-  base: 'bg-muted/30 text-muted-foreground border-border',
-  none: 'bg-muted/20 text-muted-foreground/60 border-border',
 }
 
 /** Shared branch/worktree indicator. `compact` = inline text for list rows;
