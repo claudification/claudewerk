@@ -1,7 +1,6 @@
 import type React from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
-import { recordSwitch } from '@/lib/conversation-frequency'
-import type { Conversation } from '@/lib/types'
+import { selectConversationFromPalette, selectProjectFromPalette } from './palette-navigate'
 import type { CommandModeState, RegistryCommand } from './use-command-mode'
 import type { ConversationModeState } from './use-conversation-mode'
 import type { SpawnModeState } from './use-spawn-mode'
@@ -173,9 +172,9 @@ function submitTask(ctx: KeyHandlerContext): void {
 function submitConversation(ctx: KeyHandlerContext, callbacks: KeyHandlerCallbacks): void {
   const item = ctx.conversation.mergedItems[ctx.activeIndex]
   if (item?.kind === 'conversation') {
-    selectConversationWithTracking(item.conversation, callbacks.onSelectConversation)
+    selectConversationFromPalette(item.conversation, callbacks.onSelectConversation)
   } else if (item?.kind === 'project') {
-    useConversationsStore.getState().selectProject(item.projectUri)
+    selectProjectFromPalette(item.projectUri)
     ctx.onClose()
   } else if (item?.kind === 'command') {
     const cmd = item.command as RegistryCommand
@@ -186,9 +185,4 @@ function submitConversation(ctx: KeyHandlerContext, callbacks: KeyHandlerCallbac
       cmd.action()
     }
   }
-}
-
-function selectConversationWithTracking(conversation: Conversation, onSelectConversation: (id: string) => void): void {
-  recordSwitch(conversation.project)
-  onSelectConversation(conversation.id)
 }

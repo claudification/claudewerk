@@ -4,6 +4,7 @@ import { useKeyLayer } from '@/lib/key-layers'
 import { CommandResults, CommandRow } from './command-results'
 import { ConversationRow, ProjectRow } from './conversation-results'
 import { FooterHints } from './footer-hints'
+import { selectConversationFromPalette, selectProjectFromPalette } from './palette-navigate'
 import { SpawnResults } from './spawn-results'
 import { ThemeResults } from './theme-results'
 import type { CommandPaletteProps } from './types'
@@ -174,7 +175,7 @@ export function CommandPalette({ onSelect, onClose }: CommandPaletteProps) {
                   active={i === palette.activeIndex}
                   onSelect={() => {
                     const sess = useConversationsStore.getState().conversationsById[item.conversation.id]
-                    if (sess) palette.selectConversationWithTracking(sess, onSelect)
+                    if (sess) selectConversationFromPalette(sess, onSelect)
                     else onSelect(item.conversation.id)
                   }}
                   onMouseEnter={() => palette.setActiveIndex(i)}
@@ -186,7 +187,7 @@ export function CommandPalette({ onSelect, onClose }: CommandPaletteProps) {
                   projectSettings={palette.projectSettings}
                   active={i === palette.activeIndex}
                   onSelect={() => {
-                    useConversationsStore.getState().selectProject(item.projectUri)
+                    selectProjectFromPalette(item.projectUri)
                     onClose()
                   }}
                   onMouseEnter={() => palette.setActiveIndex(i)}
