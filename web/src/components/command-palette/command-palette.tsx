@@ -4,7 +4,7 @@ import { useKeyLayer } from '@/lib/key-layers'
 import { CommandResults, CommandRow } from './command-results'
 import { ConversationRow, ProjectRow } from './conversation-results'
 import { FooterHints } from './footer-hints'
-import { selectConversationFromPalette, selectProjectFromPalette } from './palette-navigate'
+import { selectConversationFromPalette } from './palette-navigate'
 import { SpawnResults } from './spawn-results'
 import { ThemeResults } from './theme-results'
 import type { CommandPaletteProps } from './types'
@@ -187,7 +187,7 @@ export function CommandPalette({ onSelect, onClose }: CommandPaletteProps) {
                   projectSettings={palette.projectSettings}
                   active={i === palette.activeIndex}
                   onSelect={() => {
-                    selectProjectFromPalette(item.projectUri)
+                    useConversationsStore.getState().selectProject(item.projectUri)
                     onClose()
                   }}
                   onMouseEnter={() => palette.setActiveIndex(i)}

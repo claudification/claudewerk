@@ -1,6 +1,6 @@
 import type React from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
-import { selectConversationFromPalette, selectProjectFromPalette } from './palette-navigate'
+import { selectConversationFromPalette } from './palette-navigate'
 import type { CommandModeState, RegistryCommand } from './use-command-mode'
 import type { ConversationModeState } from './use-conversation-mode'
 import type { SpawnModeState } from './use-spawn-mode'
@@ -174,7 +174,7 @@ function submitConversation(ctx: KeyHandlerContext, callbacks: KeyHandlerCallbac
   if (item?.kind === 'conversation') {
     selectConversationFromPalette(item.conversation, callbacks.onSelectConversation)
   } else if (item?.kind === 'project') {
-    selectProjectFromPalette(item.projectUri)
+    useConversationsStore.getState().selectProject(item.projectUri)
     ctx.onClose()
   } else if (item?.kind === 'command') {
     const cmd = item.command as RegistryCommand

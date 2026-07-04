@@ -46,7 +46,8 @@ import {
   type UsageUpdate,
 } from '@/lib/types'
 import { getConversationTab, getLastConversationId, initUIState, setLastConversationId } from '@/lib/ui-state'
-import { saveLastWorkspaceConversation, WORKSPACE_ALL } from '@/lib/workspace-membership'
+import { parseWorktreeUri } from '@/lib/utils'
+import { isProjectInWorkspace, saveLastWorkspaceConversation, WORKSPACE_ALL } from '@/lib/workspace-membership'
 import { recordOut } from './ws-stats'
 
 export type { ProjectSettingsMap }
@@ -540,6 +541,42 @@ function findBestConversationForProject(conversations: Conversation[], projectUr
     }
   }
   return best
+}
+
+// selectConversation reasons that RESTORE or AUTO-PICK a selection instead of
+// being a fresh user navigation. These must NOT reveal (see below): a workspace
+// switch restores that workspace's OWN last conversation, and the on-load
+// defaults must not yank you out of the workspace you opened into. Every other
+// reason -- palette, hash route, notification, lineage, etc. -- is a genuine
+// navigation and reveals an out-of-workspace target.
+const NO_REVEAL_REASONS = new Set([
+  'workspace-switch',
+  'default-conversation-project',
+  'default-conversation-last-viewed',
+  'default-conversation-only-active',
+])
+
+// The command palette / search span every workspace, but the sidebar is scoped
+// to the active one -- so navigating to a project or conversation that lives in
+// another workspace would leave you staring at a sidebar that hides it. Reveal
+// drops the workspace filter to the All view (null) in exactly that case.
+//
+// FORWARD-only: it asks "is this project in the CURRENTLY active workspace?" and
+// never derives WHICH workspace owns the target, so the no-reverse-lookup
+// covenant in workspace-membership.ts still holds. A worktree conversation is
+// filed under its parent project, so the parent counts as in-workspace too --
+// otherwise jumping to a worktree conv of an in-workspace project would
+// needlessly kick you out to All. No-op when already on the All view.
+function revealWorkspaceForProject(projectUri: string): void {
+  const store = useConversationsStore.getState()
+  const activeWs = store.controlPanelPrefs.activeWorkspaceId
+  if (!activeWs) return
+  const order = store.projectOrder as ProjectOrder
+  const parentUri = parseWorktreeUri(projectUri)?.parentUri
+  const inWorkspace =
+    isProjectInWorkspace(order, activeWs, projectUri) ||
+    (parentUri ? isProjectInWorkspace(order, activeWs, parentUri) : false)
+  if (!inWorkspace) store.updateControlPanelPrefs({ activeWorkspaceId: null })
 }
 
 function applyDefaultConversation() {
@@ -1154,9 +1191,16 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
     if (id !== prev) {
       console.log(`[nav] selectConversation: ${shortId(prev)} -> ${shortId(id)}${reason ? ` (${reason})` : ''}`)
     }
-    // Selection is workspace-NEUTRAL: it never changes the active workspace.
-    // The active workspace merely REMEMBERS its last selected conversation, so
-    // switching back into it restores context. Forward-only, no reverse lookup.
+    // A genuine navigation to an out-of-workspace conversation REVEALS it by
+    // dropping the workspace filter to All (restore/auto-pick reasons opt out via
+    // NO_REVEAL_REASONS). This runs BEFORE the save below so a workspace only ever
+    // remembers IN-tree conversations -- which is what keeps workspace-switch's
+    // restore from bouncing you back out. The active workspace merely REMEMBERS
+    // its last selected conversation; the reveal check is forward-only.
+    if (id && !NO_REVEAL_REASONS.has(reason ?? '')) {
+      const project = get().conversationsById[id]?.project
+      if (project) revealWorkspaceForProject(project)
+    }
     if (id) saveLastWorkspaceConversation(get().controlPanelPrefs.activeWorkspaceId ?? WORKSPACE_ALL, id)
     clearExpandedState()
     const defaultView = get().controlPanelPrefs.defaultView
@@ -1206,8 +1250,12 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
     }
   },
   selectProject: (projectUri: string | null) => {
-    // Selecting a project is workspace-NEUTRAL. A project belongs to zero or
-    // many workspaces; picking one NEVER drags you into (or out of) a workspace.
+    // Navigating to a project that is NOT in the active workspace reveals it by
+    // dropping the filter to All (forward-only check, never a reverse lookup).
+    // Every selectProject caller is a genuine navigation -- there is no restore
+    // path for projects -- and a sidebar click is in-workspace by construction,
+    // so it no-ops there. Picking one still never drags you INTO a workspace.
+    if (projectUri) revealWorkspaceForProject(projectUri)
     set({
       selectedProjectUri: projectUri,
       selectedConversationId: null,
