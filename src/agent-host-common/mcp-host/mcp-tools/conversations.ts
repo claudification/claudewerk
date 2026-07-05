@@ -23,7 +23,7 @@ export function registerConversationTools(ctx: McpToolContext): Record<string, T
             type: 'string',
             enum: ['minimal', 'standard', 'full'],
             description:
-              'Verbosity tier (default: minimal). minimal = id, name, status, self?, host?, profile?, queued?. standard = + project, conversation_id, description, link, top-level self block. full = + projectUri, conversationUri, capabilities, title, summary, label, metadata, agent_status, self mirrors (model/mode/effort). Keep minimal to save tokens; dial up when you need extras. Combine with `include` for surgical additions.',
+              'Verbosity tier (default: minimal). minimal = id, name, status, self?, host?, profile?, queued? (`queued: true` flags a conversation with messages waiting to deliver on reconnect). standard = + project, conversation_id, description, link, top-level self block. full = + projectUri, conversationUri, capabilities, title, summary, label, metadata, agent_status, self mirrors (model/mode/effort). Keep minimal to save tokens; dial up when you need extras. Combine with `include` for surgical additions. See `include` for what each optional field means.',
           },
           include: {
             type: 'array',
@@ -45,7 +45,7 @@ export function registerConversationTools(ctx: McpToolContext): Record<string, T
               ],
             },
             description:
-              'Additive field overrides on top of `fields`. Example: `fields: "minimal", include: ["summary","capabilities"]` returns minimal plus those two. `uris` is a pair (projectUri + conversationUri). `metadata` is benevolent-only. `agent_status` returns the conversation’s last self-reported set_status as `agentStatus` (state + detail fields + safe_to_close), plus `statusAge` (how old that status is) and `lastInputAge` (time since the last message/impulse posted to the conversation).',
+              'Additive field overrides on top of `fields`. Example: `fields: "minimal", include: ["summary","capabilities"]` returns minimal plus those two. FIELD MEANINGS (the overlapping ones): `name` = the conversation\'s addressable slug (user-set via rename or auto-generated) -- this is what you pass as a `to` target; `title` = its display title (raw, usually equals `name`); `label` = the PROJECT\'s display name, returned only when it differs from `name`; `description` = a short user-written line on what the conversation is working on; `summary` = an AI-generated summary of the conversation; `capabilities` = agent-host capability-flag strings (e.g. terminal/clipboard support). `uris` is a pair (projectUri + conversationUri). `metadata` is benevolent-only. `agent_status` returns the conversation’s last self-reported set_status as `agentStatus` (state + detail fields + safe_to_close), plus `statusAge` (how old that status is) and `lastInputAge` (time since the last message/impulse posted to the conversation).',
           },
           show_metadata: {
             type: 'boolean',
