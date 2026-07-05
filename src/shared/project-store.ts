@@ -180,6 +180,9 @@ export interface ProjectTaskInput {
   priority?: 'low' | 'medium' | 'high'
   tags?: string[]
   refs?: string[]
+  /** Quest membership (plan-quest-engine §4a). Written as a `quest:` frontmatter
+   *  key; preserved across lane moves. */
+  quest?: string
 }
 
 function boardRoot(root: string): string {
@@ -216,6 +219,7 @@ function toMarkdown(input: ProjectTaskInput, createdIso: string): string {
   if (input.priority) lines.push(`priority: ${input.priority}`)
   if (input.tags?.length) lines.push(`tags: [${input.tags.join(', ')}]`)
   if (input.refs?.length) lines.push(`refs: [${input.refs.join(', ')}]`)
+  if (input.quest) lines.push(`quest: ${input.quest}`)
   lines.push(`created: ${createdIso}`)
   lines.push('---')
   lines.push('')
@@ -239,6 +243,7 @@ function readTask(dir: string, filename: string, status: TaskStatus): ProjectTas
         : undefined,
       tags: Array.isArray(meta.tags) ? meta.tags.map(String) : [],
       refs: Array.isArray(meta.refs) ? meta.refs.map(String) : [],
+      quest: meta.quest ? String(meta.quest) : undefined,
       created: String(meta.created || ''),
       mtime,
       body,
@@ -327,6 +332,7 @@ export function createProjectTask(root: string, input: ProjectTaskInput, nowMs: 
     priority: input.priority,
     tags: input.tags || [],
     refs: input.refs || [],
+    quest: input.quest,
     created: createdIso,
     mtime: nowMs,
     bodyPreview: input.body.split('\n').filter(Boolean).join(' ').slice(0, 600),
@@ -347,6 +353,7 @@ export function updateProjectTask(
     priority: patch.priority ?? task.priority,
     tags: patch.tags ?? task.tags,
     refs: patch.refs ?? task.refs,
+    quest: patch.quest ?? task.quest,
   }
   const content = toMarkdown(updated, task.created || new Date().toISOString())
   writeFileSync(join(statusDir(root, status), `${slug}.md`), content, 'utf8')

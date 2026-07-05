@@ -68,33 +68,30 @@ export function VoiceDevicePicker({ value, label, onChange }: VoiceDevicePickerP
   // `unlock` opens the preferred mic once to reveal labels (browsers hide them
   // without a persistent grant). On mount we DON'T unlock -- on a standing grant
   // (desktop Chrome) labels are already there; only first-run (no grant) unlocks.
-  const enumerate = useCallback(
-    async (unlock: boolean) => {
-      if (enumeratingRef.current) return
-      enumeratingRef.current = true
-      try {
-        if (unlock) await revealLabels()
-        const all = await navigator.mediaDevices.enumerateDevices()
-        const inputs = all.filter(d => d.kind === 'audioinput')
-        // Drop Chrome's virtual "Default"/"Communications" rows: their deviceId
-        // follows the OS default, so pinning one yanks a Bluetooth headset into
-        // HFP the moment it connects. Only real hardware ids pin a fixed mic.
-        const real = inputs.filter(d => isPinnableDevice(d.deviceId))
-        healVirtualSelection(inputs, real, valueRef.current, onChangeRef.current)
-        cacheSelectedLabel(real, valueRef.current, labelRef.current, onChangeRef.current)
-        // No grant yet -> blank ids + labels -> `real` empty. Gate the unlock on
-        // `inputs` (present even without a grant), NOT `real`.
-        setLabelsHidden(inputs.length > 0 && !real.some(d => d.label))
-        setDevices(real)
-        setError('')
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Cannot list devices')
-      } finally {
-        enumeratingRef.current = false
-      }
-    },
-    [],
-  )
+  const enumerate = useCallback(async (unlock: boolean) => {
+    if (enumeratingRef.current) return
+    enumeratingRef.current = true
+    try {
+      if (unlock) await revealLabels()
+      const all = await navigator.mediaDevices.enumerateDevices()
+      const inputs = all.filter(d => d.kind === 'audioinput')
+      // Drop Chrome's virtual "Default"/"Communications" rows: their deviceId
+      // follows the OS default, so pinning one yanks a Bluetooth headset into
+      // HFP the moment it connects. Only real hardware ids pin a fixed mic.
+      const real = inputs.filter(d => isPinnableDevice(d.deviceId))
+      healVirtualSelection(inputs, real, valueRef.current, onChangeRef.current)
+      cacheSelectedLabel(real, valueRef.current, labelRef.current, onChangeRef.current)
+      // No grant yet -> blank ids + labels -> `real` empty. Gate the unlock on
+      // `inputs` (present even without a grant), NOT `real`.
+      setLabelsHidden(inputs.length > 0 && !real.some(d => d.label))
+      setDevices(real)
+      setError('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Cannot list devices')
+    } finally {
+      enumeratingRef.current = false
+    }
+  }, [])
 
   // Enumerate on mount (no mic opened) so the saved selection shows immediately,
   // and re-enumerate on device plug/unplug.

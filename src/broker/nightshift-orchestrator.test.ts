@@ -9,7 +9,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { expandPath } from '../sentinel/expand-path'
 import type { NightshiftResult } from '../shared/protocol'
+import type { SpawnRequest } from '../shared/spawn-schema'
 import type { ConversationStore } from './conversation-store'
 
 // --- controllable doubles, closed over by the mocked modules below ---------
@@ -22,6 +24,8 @@ interface OpCall {
 
 let opCalls: OpCall[] = []
 let dispatchCount = 0
+/** Every SpawnRequest the orchestrator handed to dispatchSpawn, verbatim. */
+let spawnReqs: SpawnRequest[] = []
 /** Queue the fake sentinel returns for `queue_list`. */
 let queueItems: Array<{ id: string; title: string }> = []
 /** Config the fake sentinel returns for `config_read`. */
@@ -32,7 +36,8 @@ let snapshotTasks: Array<{ id: string; status: string }> = []
 const convStatus = new Map<string, string>()
 
 mock.module('./spawn-dispatch', () => ({
-  dispatchSpawn: async () => {
+  dispatchSpawn: async (req: SpawnRequest) => {
+    spawnReqs.push(req)
     dispatchCount += 1
     const conversationId = `conv-${dispatchCount}`
     convStatus.set(conversationId, 'active')
@@ -104,6 +109,7 @@ async function drainToFinalize(project: string, maxSteps = 20): Promise<number> 
 beforeEach(() => {
   opCalls = []
   dispatchCount = 0
+  spawnReqs = []
   queueItems = []
   configOut = { enabled: true, permissionMode: 'dontAsk', caps: { concurrency: 2, totalTasks: 8 } }
   snapshotTasks = []
@@ -156,6 +162,33 @@ describe('runNightshift', () => {
     await drainToFinalize('proj-cap')
     expect(dispatchCount).toBe(8) // never dispatched the extra 4
     expect(isNightshiftRunActive('proj-cap')).toBe(false)
+  })
+
+  // REGRESSION (Phase F dispatch bug, 2026-06-26): the orchestrator passes the
+  // project URI as `cwd` untouched (CWD-IS-INFORMATIONAL -- the broker never
+  // resolves paths); the sentinel's expandPath seam is what turns it into a real
+  // directory. Before ba3e70dd expandPath mangled the URI into
+  // `/Users/jonas/claude:/default/...` and no worker ever spawned.
+  test('dispatch shapes a spawnable request: URI cwd verbatim, resolvable by the sentinel seam', async () => {
+    const project = 'claude://default/Users/jonas/projects/remote-claude'
+    queueItems = makeQueue(1)
+    const out = await runNightshift(store, project, { trigger: 'manual' })
+    expect(out.ok).toBe(true)
+
+    const req = spawnReqs[0]
+    expect(req).toBeDefined()
+    if (!req || !out.runId) throw new Error('no spawn request captured')
+    expect(req.cwd).toBe(project) // the URI, byte-for-byte -- no broker-side path surgery
+    expect(req.worktree).toBe(`nightshift/${out.runId}-001`)
+    expect(req.headless).toBe(true)
+    expect(req.nightshift).toEqual({ runId: out.runId, taskId: '001' })
+    expect(req.permissionMode).toBe('dontAsk')
+
+    // The other half of the seam: the sentinel resolves that exact cwd to the
+    // project path, NOT a spawnRoot-relative mangle of the URI text.
+    expect(expandPath(req.cwd as string, '/some/spawn/root')).toBe('/Users/jonas/projects/remote-claude')
+
+    await drainToFinalize(project)
   })
 
   test('a worker that ends WITHOUT reporting is patched to errored', async () => {

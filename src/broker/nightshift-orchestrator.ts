@@ -21,6 +21,7 @@ import {
   type NightshiftQueueItem,
   type NightshiftReportInput,
 } from '../shared/nightshift-types'
+import type { Conversation } from '../shared/protocol'
 import type { SpawnCallerContext } from '../shared/spawn-permissions'
 import { fillSlotsWithAdmission, taskRefOf } from './capacity-admission'
 import { CapacityLedger } from './capacity-ledger'
@@ -28,6 +29,7 @@ import { DEFAULT_CAPACITY_CONFIG } from './capacity-types'
 import type { ConversationStore } from './conversation-store'
 import { getGlobalSettings } from './global-settings'
 import { sendNightshiftOp } from './nightshift-broker-rpc'
+import { settleWorkerFromStore } from './nightshift-guardians'
 import { computeWindowEndMs } from './nightshift-window'
 import { getProjectSettings } from './project-settings'
 import { dispatchSpawn } from './spawn-dispatch'
@@ -205,18 +207,35 @@ async function stampSkipped(
   console.log(`[nightshift-orch] task=${item.id} SKIPPED(capacity) run=${state.runId}: ${reason}`)
 }
 
-/** A worker ended -- if it never wrote a terminal outcome, mark it errored (no silent stalls). */
-async function ensureTerminalArtifact(store: ConversationStore, state: RunState, taskId: string): Promise<void> {
+/**
+ * A worker ended without a terminal card. A CRASH (cc-exit-crash) with attempts
+ * left is handed to the GUARDIAN, which triages it against the hint catalog and
+ * retries-with-remedy or stamps terminal (§6d) -- EXTEND, don't duplicate. A
+ * clean end that simply never reported is stamped errored right here (no silent
+ * stalls). `conv` is the ended conversation from the reap (undefined if already
+ * pruned from the store).
+ */
+async function ensureTerminalArtifact(
+  store: ConversationStore,
+  state: RunState,
+  taskId: string,
+  conv: Conversation | undefined,
+): Promise<void> {
   const snap = await sendNightshiftOp(store, state.project, { op: 'snapshot', runId: state.runId })
   const task = snap.snapshot?.tasks.find(t => t.id === taskId)
   const unsettled = !task || task.status === 'running' || task.status === 'queued' || task.status === 'spinning'
-  if (unsettled) {
-    await sendNightshiftOp(store, state.project, {
-      op: 'task_patch',
-      runId: state.runId,
-      taskPatch: { id: taskId, status: 'errored', note: 'worker ended without reporting an outcome' },
-    })
+  if (!unsettled) return
+
+  if (conv?.endedBy?.source === 'cc-exit-crash') {
+    // Crash: let the guardian investigate before any terminal verdict (§6d).
+    await settleWorkerFromStore(store, { project: state.project, runId: state.runId, taskId }, conv)
+    return
   }
+  await sendNightshiftOp(store, state.project, {
+    op: 'task_patch',
+    runId: state.runId,
+    taskPatch: { id: taskId, status: 'errored', note: 'worker ended without reporting an outcome' },
+  })
 }
 
 /** Reap workers that have ended: drop them from inflight + ensure a terminal
@@ -231,7 +250,7 @@ async function reapFinished(store: ConversationStore, state: RunState): Promise<
     // admission was disabled at dispatch.
     const actual = conv ? conv.stats.totalInputTokens + conv.stats.totalOutputTokens : undefined
     ledger.settle(taskRefOf(state.runId, taskId), actual)
-    await ensureTerminalArtifact(store, state, taskId)
+    await ensureTerminalArtifact(store, state, taskId, conv)
     console.log(`[nightshift-orch] task=${taskId} settled run=${state.runId} inflight=${state.inflight.size}`)
   }
 }

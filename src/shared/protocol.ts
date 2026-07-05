@@ -21,6 +21,17 @@ import type {
   NightshiftTaskPatchInput,
 } from './nightshift-types'
 import type { ProjectTask, ProjectTaskManifestEntry, ProjectTaskMeta, ProjectTaskRef } from './project-task-types'
+import type {
+  QuestAcceptanceContract,
+  QuestGate,
+  QuestLogEntry,
+  QuestLogKind,
+  QuestManifest,
+  QuestManifestPatch,
+  QuestStatus,
+  QuestStatusReport,
+  QuestTarget,
+} from './quest-schema'
 import type { SpawnRequest } from './spawn-schema'
 
 export type { LaunchProfile } from './launch-profile'
@@ -2182,6 +2193,7 @@ export type BrokerMessage =
   | ChecklistArchiveRequest
   | ChecklistPurgeRequest
   | NightshiftRequest
+  | QuestRequest
 
 export interface NotifyConfigUpdated {
   type: 'notify_config_updated'
@@ -4033,6 +4045,117 @@ export interface NightshiftEvent {
 }
 
 // ===========================================================================
+// QUEST substrate RPCs (Dashboard / agent-leg <-> Broker <-> Sentinel)
+//
+// A quest = a petname-selected set of board cards + a manifest folder under
+// `<project>/.rclaude/project/quests/<petname>/`, written + read by the SENTINEL
+// (the lease-watcher host that owns `.rclaude/project/`). One op-envelope per
+// direction, mirroring ProjectBoardOp/NightshiftOp: the caller sends a project
+// URI + op, the broker resolves it to an absolute `projectRoot` + owning
+// sentinel, forwards `quest_op`, and relays `quest_result` back.
+//
+// §14: no broker/orchestrator state -- everything is re-derivable from the
+// manifest + cards on the sentinel's disk. THE ARTIFACT IS THE API.
+// ===========================================================================
+
+/** The op selector shared by the request, the sentinel op, and the result. */
+export type QuestOpKind =
+  | 'create' // petname gen + manifest write (+ optional card tagging)
+  | 'update' // patch manifest fields (steering, target, contracts, gate, status)
+  | 'log_append' // append-only intent/completion/plan/steering entry (NEVER rewrites)
+  | 'get' // manifest + full log
+  | 'list' // all quests' manifests
+  | 'status' // the computed §4c completion predicate
+  | 'abort' // §13: stamp aborted + archive non-terminal cards
+  | 'pause' // §13: stamp paused (no card stamping)
+
+/** create payload. */
+export interface QuestCreateInput {
+  goal: string
+  target?: QuestTarget
+  gate?: QuestGate
+  status?: QuestStatus
+  contracts?: QuestAcceptanceContract[]
+  /** Force a specific petname (else one is generated + collision-checked). */
+  petname?: string
+  /** Optionally tag these existing board cards into the quest at creation. */
+  cards?: ProjectTaskRef[]
+}
+
+/** log_append payload (append-only -- a separate op so the log is never patched). */
+export interface QuestLogAppendInput {
+  kind: QuestLogKind
+  convId: string
+  body: string
+}
+
+/** Dashboard / agent-leg -> Broker: one quest substrate op. */
+export interface QuestRequest {
+  type: 'quest_request'
+  requestId: string
+  /** Canonical project URI; the broker resolves it to projectRoot + sentinel. */
+  project: string
+  op: QuestOpKind
+  /** update / log_append / get / status / abort / pause. */
+  petname?: string
+  create?: QuestCreateInput
+  patch?: QuestManifestPatch
+  logAppend?: QuestLogAppendInput
+  /** abort reason (§13). */
+  reason?: string
+}
+
+/** Broker -> Sentinel: the same op, with the resolved absolute projectRoot. */
+export interface QuestOp {
+  type: 'quest_op'
+  requestId: string
+  projectRoot: string
+  op: QuestOpKind
+  petname?: string
+  create?: QuestCreateInput
+  patch?: QuestManifestPatch
+  logAppend?: QuestLogAppendInput
+  reason?: string
+}
+
+/** Sentinel -> Broker: result of one op. Populated field depends on `op`. */
+export interface QuestResult {
+  type: 'quest_result'
+  requestId: string
+  op: QuestOpKind
+  ok: boolean
+  /** create / update / abort / pause -- the manifest after the write. */
+  manifest?: QuestManifest | null
+  /** get -- manifest + full append-only log. */
+  detail?: { manifest: QuestManifest; log: QuestLogEntry[] } | null
+  /** list -- every quest's manifest. */
+  quests?: QuestManifest[]
+  /** status -- the computed §4c predicate. */
+  report?: QuestStatusReport | null
+  /** log_append -- the persisted entry. */
+  logEntry?: QuestLogEntry
+  /** create -- the board cards tagged into the quest. */
+  taggedCards?: string[]
+  /** abort -- the non-terminal cards stamped SKIPPED-by-abort. */
+  abortedCards?: { slug: string; from: string; to: string }[]
+  error?: string
+}
+
+/**
+ * Broker -> Dashboard broadcast (permission-scoped by project URI): a quest
+ * lifecycle beat, fired after a write op persists. Viewers re-fetch the quest
+ * rather than reconstructing state from the beat (EVERYTHING IS A MESSAGE).
+ */
+export interface QuestEvent {
+  type: 'quest_event'
+  /** Canonical project URI -- the broadcast scope key. */
+  project: string
+  event: 'created' | 'updated' | 'log' | 'aborted' | 'paused'
+  petname: string
+  status?: QuestStatus
+}
+
+// ===========================================================================
 // NIGHTSHIFT WATCHDOG -- the deterministic control tier (plan-nightshift.md §2.4)
 //
 // A broker reaper-style loop (~1 min, NO LLM) that enforces PURE THRESHOLDS on
@@ -4180,6 +4303,82 @@ export interface CapacityLedgerEvent {
   /** Canonical project URI -- the broadcast scope key. */
   project: string
   decision: CapacityDecision
+}
+
+// ===========================================================================
+// NIGHTSHIFT GUARDIANS (plan-quest-engine.md §2a / §6c / §6d)
+// ---------------------------------------------------------------------------
+// Three deterministic guardians layered on the watchdog: the POKE protocol
+// (prod a dead-but-non-terminal worker, then mechanically stamp errored), the
+// CRASH INVESTIGATOR (triage an abnormal exit against the hint catalog before
+// any retry, hard attempt cap), and the mechanical NOTIFY rule on the typed
+// transition to a terminal-error state. EVERYTHING IS A STRUCTURED MESSAGE: each
+// guardian action is one of these events, persisted in a broker-local ring +
+// broadcast project-scoped -- never a diag-only line. No LLM sits in the alarm
+// path (§6c): the notify + the terminal-error decision are deterministic; the
+// investigator LEG is advisory (it deepens the catalog + annotates the card).
+// ===========================================================================
+
+/** The crash investigator's call: retry (optionally with a remedy note applied)
+ *  or give up terminal. Derived deterministically from the hint catalog; the
+ *  spawned investigator leg annotates the card with richer narrative. */
+export type InvestigatorVerdict = 'retryable' | 'fatal'
+
+/**
+ * One guardian action this sweep. The `kind` discriminates:
+ * - `poke`            -- a prod was delivered to a dead/stalled non-terminal worker.
+ * - `poke-exhausted`  -- pokes hit the cap; the card is about to be stamped errored.
+ * - `investigate`     -- a crash investigator leg was spawned for an abnormal exit.
+ * - `retry`           -- the investigator returned retryable; a fresh leg is dispatched.
+ * - `cap-hit`         -- the per-task attempt cap was reached; no more retries.
+ * - `terminal-error`  -- the task was stamped a terminal error (unresponsive / crash-fatal / cap-hit).
+ */
+export type GuardianActionKind = 'poke' | 'poke-exhausted' | 'investigate' | 'retry' | 'cap-hit' | 'terminal-error'
+
+/** Why a task reached a terminal-error state -- drives the notify text + card reason. */
+export type GuardianTerminalReason = 'unresponsive' | 'crash-fatal' | 'cap-hit'
+
+/**
+ * One timestamped guardian action. Flat + JSON-safe (rides the WS, sits in a
+ * broker-local ring next to the watchdog decisions). `attempt`/`attempts` carry
+ * the bounded-poke count or the crash attempt counter so the log reconstructs
+ * the full escalation. LOG EVERYTHING: ids + counts + reason on every record.
+ */
+export interface GuardianEvent {
+  /** Unique id for this record (dedup + React keys). */
+  id: string
+  /** Action timestamp, epoch ms. */
+  at: number
+  kind: GuardianActionKind
+  /** Canonical project URI -- the broadcast scope + Status-screen filter key. */
+  project: string
+  runId: string
+  taskId: string
+  /** The (dead/crashed/retried) conversation this action concerns. */
+  conversationId: string
+  /** resolvedProfile the task ran under, when known. */
+  profile?: string
+  /** Poke ordinal (1..maxPokes) for `poke`; crash attempt number for retry/cap. */
+  attempt?: number
+  /** The bound in force: max pokes (poke kinds) or attempt cap (crash kinds). */
+  cap?: number
+  /** Investigator verdict for `investigate`/`retry` records. */
+  verdict?: InvestigatorVerdict
+  /** Matched hint catalog key, when a known crash cause was recognized. */
+  hintKey?: string
+  /** Terminal-error classification for `terminal-error` records. */
+  terminalReason?: GuardianTerminalReason
+  /** Human-readable one-liner -- the "why", logged + shown verbatim. */
+  reason: string
+}
+
+/** Broker -> Control panel broadcast (project-scoped): one fresh guardian
+ *  action, fired the moment the guardian records it. */
+export interface NightshiftGuardianEvent {
+  type: 'nightshift_guardian_event'
+  /** Canonical project URI -- the broadcast scope key. */
+  project: string
+  event: GuardianEvent
 }
 
 // ─── Project Checklists ─────────────────────────────────────────────────
@@ -4979,6 +5178,7 @@ export type SentinelMessage =
   | ProjectBoardResult
   | ProjectChanged
   | NightshiftResult
+  | QuestResult
   | UsageUpdate
   | SentinelUsageReport
   | LaunchLog
@@ -5273,6 +5473,7 @@ export type BrokerSentinelMessage =
   | ProjectWatch
   | ProjectUnwatch
   | NightshiftOp
+  | QuestOp
   | SentinelPatchConfig
   | SentinelQuit
   | SentinelReject

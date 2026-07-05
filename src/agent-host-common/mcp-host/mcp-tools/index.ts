@@ -8,6 +8,7 @@ import { registerIdentityTools } from './identity'
 import { registerNightshiftTools } from './nightshift'
 import { registerNotifyTools } from './notify'
 import { registerProjectBoardTools } from './project-board'
+import { registerQuestTools } from './quest'
 import { registerRecapTools } from './recap'
 import { registerSearchTools } from './search'
 import { registerSotuTools } from './sotu'
@@ -34,6 +35,7 @@ export function registerAllTools(ctx: McpToolContext): Record<string, ToolDef> {
     ...registerSpawnTools(ctx),
     ...registerHostTools(ctx),
     ...registerProjectBoardTools(ctx),
+    ...registerQuestTools(ctx),
     ...registerCanvasTools(ctx),
     ...registerNightshiftTools(ctx),
     ...registerDialogTool(ctx),
