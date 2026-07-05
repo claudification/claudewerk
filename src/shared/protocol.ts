@@ -5291,6 +5291,12 @@ export interface SpawnConversation {
    *  the PTY/headless agent host appends it as an additional `--mcp-config` value
    *  alongside the rclaude HTTP server (CC `--mcp-config` is variadic and merges). */
   mcpConfigPath?: string
+  /** Inline settings.json fragment the SENTINEL materializes to a file (broker-FS
+   *  boundary: broker passes opaque data, sentinel writes it) and feeds the
+   *  settingsPath seam. Unattended workers use this to inject the dontAsk
+   *  allowlist + deny-floor (plan-quest-engine §6a). Materialized inline wins
+   *  over any explicit settingsPath. */
+  settingsInline?: Record<string, unknown>
   /** Which agent host binary to spawn. Defaults to 'claude' (rclaude). When
    *  set to 'opencode', the sentinel launches the opencode-host binary with
    *  OPENCODE_MODEL set. When set to 'acp', the sentinel launches the

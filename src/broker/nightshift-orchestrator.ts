@@ -23,6 +23,7 @@ import {
 } from '../shared/nightshift-types'
 import type { Conversation } from '../shared/protocol'
 import type { SpawnCallerContext } from '../shared/spawn-permissions'
+import { buildUnattendedSettings } from '../shared/unattended-permissions'
 import { fillSlotsWithAdmission, taskRefOf } from './capacity-admission'
 import { CapacityLedger } from './capacity-ledger'
 import { DEFAULT_CAPACITY_CONFIG } from './capacity-types'
@@ -71,6 +72,9 @@ interface RunState {
   /** taskId -> spawned conversationId, for the tasks currently running. */
   inflight: Map<string, string>
   permissionMode: NightshiftConfig['permissionMode']
+  /** Inline settings the sentinel materializes for every worker this run: the
+   *  dontAsk allowlist + always-on deny-floor (§6a). Computed once at run open. */
+  settingsInline: Record<string, unknown>
   concurrency: number
   startedAt: number
   /** Reentrancy guard so the tick never double-advances a run. */
@@ -149,8 +153,14 @@ async function dispatchTask(store: ConversationStore, state: RunState, item: Nig
       cwd: project,
       prompt: taskPrompt(item, runId, project),
       headless: true,
+      // Fire-and-forget single-prompt worker: exit on completion instead of
+      // idling until the watchdog idle-cap reaps it (H7 finding 2). adHoc drives
+      // the tested end-of-turn shutdown (headless-lifecycle: isAdHoc && !leaveRunning).
+      adHoc: true,
       worktree: `nightshift/${runId}-${item.id}`,
       permissionMode: state.permissionMode,
+      // Unattended allowlist + deny-floor, materialized sentinel-side (§6a).
+      settingsInline: state.settingsInline,
       nightshift: { runId, taskId: item.id },
       name: `[ns ${runId}] ${item.title}`.slice(0, 80),
     },
@@ -338,6 +348,10 @@ export async function runNightshift(
     pending: [...tasks],
     inflight: new Map(),
     permissionMode: config.permissionMode,
+    // Allowlist + deny-floor materialized per worker (§6a / plan-nightshift §10).
+    // Applies in every mode -- the deny-floor bites even under bypass; the
+    // allowlist is what makes dontAsk usable at all.
+    settingsInline: buildUnattendedSettings({ allow: config.allow, deny: config.deny }),
     concurrency: caps.concurrency,
     startedAt,
     advancing: false,

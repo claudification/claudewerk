@@ -184,6 +184,20 @@ describe('runNightshift', () => {
     expect(req.nightshift).toEqual({ runId: out.runId, taskId: '001' })
     expect(req.permissionMode).toBe('dontAsk')
 
+    // H7 finding 2: single-prompt workers are ad-hoc so they EXIT on completion
+    // (tested end-of-turn shutdown) instead of idling until the watchdog reaps them.
+    expect(req.adHoc).toBe(true)
+
+    // H7 finding 1: the spawn carries the unattended settings the sentinel
+    // materializes -- a default allowlist (dontAsk is otherwise dead) + the
+    // always-on deny-floor. Broker passes opaque data; sentinel writes the file.
+    const perms = (req.settingsInline as { permissions?: { allow?: string[]; deny?: string[] } } | undefined)
+      ?.permissions
+    expect(perms?.allow).toContain('Bash(bun test:*)')
+    expect(perms?.allow).toContain('Bash(git commit:*)')
+    expect(perms?.deny).toContain('Bash(git push origin main:*)')
+    expect(perms?.allow).not.toContain('Bash(git push origin main:*)')
+
     // The other half of the seam: the sentinel resolves that exact cwd to the
     // project path, NOT a spawnRoot-relative mangle of the URI text.
     expect(expandPath(req.cwd as string, '/some/spawn/root')).toBe('/Users/jonas/projects/remote-claude')
@@ -202,6 +216,21 @@ describe('runNightshift', () => {
     expect(patch?.taskPatch?.status).toBe('errored')
     expect(patch?.taskPatch?.note).toMatch(/without reporting/)
     expect(isNightshiftRunActive('proj-stall')).toBe(false)
+  })
+
+  // H7 finding 3: a watchdog-capped worker is stamped terminal (errored) by the
+  // watchdog BEFORE it terminates. When the orchestrator then reaps the ended
+  // worker, ensureTerminalArtifact's guard must see the terminal status and NOT
+  // add a second "without reporting" stamp -- exactly ONE terminal artifact.
+  test('a worker already stamped errored (watchdog cap) is not double-stamped', async () => {
+    queueItems = makeQueue(1)
+    await runNightshift(store, 'proj-capped', { trigger: 'manual' })
+    for (const id of convStatus.keys()) convStatus.set(id, 'ended')
+    snapshotTasks = [{ id: '001', status: 'errored' }] // watchdog got here first
+    await advanceAllRuns(store)
+    const patches = opCalls.filter(o => o.op === 'task_patch' && o.taskPatch?.id === '001')
+    expect(patches).toHaveLength(0) // guard skips -> no duplicate terminal artifact
+    expect(isNightshiftRunActive('proj-capped')).toBe(false)
   })
 })
 

@@ -220,6 +220,15 @@ export const spawnRequestSchema = z.object({
       'Absolute path to an MCP config JSON. Backend-general (promoted from daemonMcpConfigPath): honored by backends ' +
         'that accept --mcp-config (claude across all transports). Wired into PTY/headless in Phase 2.',
     ),
+  settingsInline: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe(
+      'Inline settings.json fragment (a plain object) the SENTINEL materializes to a file and feeds the ' +
+        'settingsPath seam. Broker passes it opaquely -- the broker never writes host files (FS boundary). Used by ' +
+        'unattended workers to inject the dontAsk allowlist + deny-floor (plan-quest-engine §6a). When both this ' +
+        'and settingsPath are set, the materialized inline file wins.',
+    ),
   profile: z
     .string()
     .min(1)

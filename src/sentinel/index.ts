@@ -93,7 +93,6 @@ import { expandPath } from './expand-path'
 import { runGitFabric } from './git-fabric'
 import { runGitLog } from './git-log'
 import { handleNightshiftOp } from './nightshift-handlers'
-import { handleQuestOp } from './quest-handlers'
 import { applyOAuthToken, applyOAuthTokenDelta } from './oauth-token-env'
 import { type PreflightIssue, preflightSpawn } from './preflight'
 import { runProfileCli } from './profile-cli'
@@ -105,6 +104,7 @@ import {
 } from './project-handlers'
 import { stopAllWatches, unwatchProject, watchProject } from './project-watch'
 import { ptyCrossBoundaryEnvKeys, shouldInjectConfigDir } from './pty-env'
+import { handleQuestOp } from './quest-handlers'
 import { pickProfile, type UsageHeadroom } from './selection'
 import {
   configDirFor,
@@ -3315,6 +3315,26 @@ function connect(
             agentHostType: spawnMsg.agentHostType,
           })
 
+          // ─── inline settings materialization ─────────────────────
+          // The broker may hand us an opaque `settingsInline` object (unattended
+          // allowlist + deny-floor -- plan-quest-engine §6a). The broker never
+          // writes host files (FS boundary); the SENTINEL materializes it here
+          // to a secure temp file, then feeds it through the settingsPath seam
+          // for whichever backend branch runs below. Materialized inline wins
+          // over any explicit settingsPath.
+          let materializedSettingsPath: string | undefined
+          if (spawnMsg.settingsInline) {
+            try {
+              materializedSettingsPath = secureTmpPath(`rclaude-settings-inline-${spawnMsg.conversationId}.json`)
+              await writeSecureFile(materializedSettingsPath, JSON.stringify(spawnMsg.settingsInline, null, 2))
+              launchLog(spawnMsg.jobId, 'Inline settings materialized', 'ok', materializedSettingsPath.split('/').pop())
+            } catch (e: unknown) {
+              materializedSettingsPath = undefined
+              launchLog(spawnMsg.jobId, 'Inline settings materialization failed', 'error', (e as Error).message)
+            }
+          }
+          const effectiveSettingsPath = materializedSettingsPath ?? spawnMsg.settingsPath
+
           // ─── acp-host spawn path ─────────────────────────────────
           // Routed when the broker tags a spawn with agentHostType: 'acp'.
           // The recipe (acp-recipes.ts, keyed by spawnMsg.acpAgent) supplies
@@ -3598,7 +3618,9 @@ function connect(
             const daemonMode: DaemonLaunchMode = metaMode === 'resume' || metaMode === 'attach' ? metaMode : 'new'
             const daemonResumeSessionId = daemonMetaStr('resumeSessionId')
             const daemonAttachShort = daemonMetaStr('attachShort')
-            const daemonSettingsPath = daemonMetaStr('settingsPath')
+            // A materialized inline-settings file (unattended allowlist + deny-floor)
+            // wins over the transportMeta path so the daemon `--settings` carries it.
+            const daemonSettingsPath = materializedSettingsPath ?? daemonMetaStr('settingsPath')
             const daemonMcpConfigPath = daemonMetaStr('mcpConfigPath')
             const daemonAppendSystemPrompt = daemonMetaStr('appendSystemPrompt')
 
@@ -3843,7 +3865,7 @@ function connect(
             spawnMsg.agent,
             spawnMsg.appendSystemPrompt,
             resolvedSpawnProfile,
-            spawnMsg.settingsPath,
+            effectiveSettingsPath,
             spawnMsg.mcpConfigPath,
             spawnMsg.advisor,
           )

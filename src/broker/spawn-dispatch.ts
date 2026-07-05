@@ -578,6 +578,10 @@ async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): 
           // top-level SpawnRequest fields, NOT transportMeta -- no boundary read.
           settingsPath: req.settingsPath || undefined,
           mcpConfigPath: req.mcpConfigPath || undefined,
+          // Opaque settings fragment for the sentinel to materialize (unattended
+          // allowlist + deny-floor). Broker never touches the host FS; it only
+          // forwards the data (plan-quest-engine §6a).
+          settingsInline: req.settingsInline || undefined,
           profile: req.profile || undefined,
           pool: req.pool || undefined,
         }),

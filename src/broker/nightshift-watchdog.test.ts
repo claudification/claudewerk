@@ -215,13 +215,17 @@ describe('sweep -- end-to-end kill + dedup', () => {
     return { deps, sent }
   }
 
-  test('over-cap night task is terminated once; non-night task is ignored', () => {
+  test('over-cap night task is terminated once; non-night task is ignored', async () => {
     const night = makeConv({ id: 'night-1' })
     const ordinary = makeConv({ id: 'plain-1', launchConfig: { headless: true } }) // no nightshift tag
     const sentMsgs: string[] = []
     const { deps } = fakeDeps([night, ordinary], sentMsgs)
 
     const wd = startNightshiftWatchdog(deps) // runs sweep() immediately
+    // The kill now fires AFTER the terminal-artifact write completes (H7 finding
+    // 3: stamp-before-terminate makes the watchdog the single stamp owner), so
+    // flush microtasks before asserting on the terminate message.
+    await new Promise(r => setTimeout(r, 0))
 
     // Exactly one terminate, for the night task.
     const terminates = sentMsgs.filter(m => m.includes('terminate_conversation'))

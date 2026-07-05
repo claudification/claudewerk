@@ -137,9 +137,7 @@ export function startNightshiftWatchdog(deps: WatchdogDeps): { stop: () => void 
 
       if (decision.verdict === 'end' || decision.verdict === 'block') {
         acted.add(conv.id)
-        // Fire-and-forget the terminal artifact write (logs on failure), then kill.
-        void writeTerminalArtifact(deps, conv, decision)
-        terminate(deps, conv, decision)
+        void stampThenTerminate(deps, conv, decision)
       }
     }
   }
@@ -251,6 +249,24 @@ function readFiveHourPct(conv: Conversation, deps: Pick<WatchdogDeps, 'getSentin
   const snap = usage?.profiles.find(p => p.profile === conv.resolvedProfile)
   if (!snap || snap.error || !snap.fiveHour) return undefined
   return snap.fiveHour.usedPercent
+}
+
+/**
+ * Stamp the terminal artifact BEFORE killing the worker, then terminate.
+ *
+ * The orchestrator's reap fires `ensureTerminalArtifact` the instant the
+ * conversation ends; its guard only skips when the task is ALREADY terminal.
+ * Terminating first raced both into stamping an errored record (H7 finding 3 --
+ * duplicate artifact). Writing first makes the watchdog the single terminal-stamp
+ * owner. `try/finally` guarantees the kill even if the write throws (it shouldn't
+ * -- writeTerminalArtifact self-catches).
+ */
+async function stampThenTerminate(deps: WatchdogDeps, conv: Conversation, decision: WatchdogDecision): Promise<void> {
+  try {
+    await writeTerminalArtifact(deps, conv, decision)
+  } finally {
+    terminate(deps, conv, decision)
+  }
 }
 
 /** Stop a night task. Mirrors `channel.ts:terminateOne`: forward the graceful

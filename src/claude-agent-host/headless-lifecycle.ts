@@ -10,6 +10,7 @@ import { hasPendingDialogs, resetMcpChannel } from '../agent-host-common/mcp-hos
 import { claudeConfigDir } from '../shared/claude-config-dir'
 import type { AgentHostMessage } from '../shared/protocol'
 import { writeSecureFile } from '../shared/secure-temp'
+import { shouldExitAfterResultFromEnv } from './adhoc-exit'
 import type { AgentHostContext } from './agent-host-context'
 import { debug as _debug } from './debug'
 import { emitLaunchEvent, filterRelevantEnv } from './launch-events'
@@ -239,13 +240,12 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
         } as unknown as AgentHostMessage)
       }
 
-      // Ad-hoc sessions: auto-terminate after the first result.
-      // CC in stream-json mode stays alive waiting for more stdin input.
-      // For fire-and-forget tasks, we exit after the task completes.
-      // RCLAUDE_LEAVE_RUNNING=1 skips shutdown, keeping the session alive for follow-up work.
-      const isAdHoc = process.env.RCLAUDE_ADHOC === '1'
-      const leaveRunning = process.env.RCLAUDE_LEAVE_RUNNING === '1'
-      if (isAdHoc && !leaveRunning) {
+      // Ad-hoc sessions: auto-terminate after the first result (fire-and-forget).
+      // CC in stream-json mode stays alive waiting for more stdin; nightshift/quest
+      // workers are adHoc so they exit here instead of idling until the watchdog
+      // reaps them (H7 finding 2). RCLAUDE_LEAVE_RUNNING=1 keeps them up for
+      // follow-up work. Decision extracted to `shouldExitAfterResultFromEnv` (tested).
+      if (shouldExitAfterResultFromEnv()) {
         // Check for pending user interactions (permission/ask/dialog/plan).
         // countInteractions() covers every registered interaction in one call --
         // replaces the older ad-hoc sum across hasPendingDialogs/pendingAskRequests/
