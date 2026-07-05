@@ -7,6 +7,20 @@
  * subsequent starts reuse it instantly (0ms).
  * - Normal mode: released after 30s of inactivity
  * - keepMicOpen mode: released after 30min of inactivity + banner shown
+ *
+ * SAFARI/macOS BLUETOOTH BLIP -- VERIFIED 2026-07-05 (do not re-litigate):
+ * Opening/closing a mic input session makes CoreAudio renegotiate any Bluetooth
+ * OUTPUT link -> one short blip on OPEN, one on CLOSE. This is a Bluetooth LAW,
+ * not our bug: Google Meet in Safari blips IDENTICALLY. It has NO ducking and NO
+ * quality degradation, and warm-stream REUSE across presses is blipless. The only
+ * lever is blip COUNT (hold the stream across a session -> once per session, not
+ * per press). We do NOT chase the blip itself.
+ * The REAL bug people hit -- sustained DUCKING + full HFP flip (crap quality) --
+ * came from `micConstraints` (below): `echoCancellation` on (or defaulted by
+ * WebKit) engages macOS VoiceProcessingIO / communication mode, and the old
+ * sampleRate/channelCount forced a HAL reconfigure. Fixed by opening the device
+ * RAW. See memory `project_voice_mic_safari_blip.md`.
+ * iOS (iPhone/iPad Safari) is UNTESTED and stricter -- start here if it regresses.
  */
 
 import { useConversationsStore } from '@/hooks/use-conversations'
