@@ -1,16 +1,9 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { moveProjectTask } from '../../../shared/project-store'
-import { DEFAULT_VISIBLE_STATUSES, TASK_STATUSES, type TaskStatus } from '../../../shared/task-statuses'
+import { DEFAULT_VISIBLE_STATUSES, TASK_STATUSES } from '../../../shared/task-statuses'
 import { debug } from '../debug'
+import { handleProjectSetStatus } from './project-set-status'
 import type { McpToolContext, ToolDef } from './types'
-
-function formatStatus(s: string): string {
-  return s
-    .split('-')
-    .map(w => w[0].toUpperCase() + w.slice(1))
-    .join('-')
-}
 
 export function registerProjectBoardTools(ctx: McpToolContext): Record<string, ToolDef> {
   return {
@@ -47,7 +40,10 @@ export function registerProjectBoardTools(ctx: McpToolContext): Record<string, T
 
     project_set_status: {
       description:
-        'Move a project task to a different status column on the board. Use the filename (without .md) as the task ID. Avoids needing Bash mv which triggers permission prompts.',
+        'Move a project task to a different status column on the board. Use the filename (without .md) as the task ID. Avoids needing Bash mv which triggers permission prompts. ' +
+        'DONE-GATE: moving to in-review or done may be gated by deterministic checks (per-project gate.conf, or `full` for quest cards). ' +
+        "When gated, the tool captures git evidence (branch/base/commits/diffstat, and runs the card's `test_cmd`) and REFUSES the move with a precise reason if the tree is dirty, nothing is committed, the diff is empty, or tests fail. " +
+        'Under `full`, in-review -> done additionally requires approval by a DIFFERENT conversation than the one that moved the card to in-review (the worker cannot approve itself). You cannot self-report these facts.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -138,50 +134,4 @@ function handleProjectList(ctx: McpToolContext, params: Record<string, string>) 
     `[channel] project_list: ${results.length} tasks (filter=${statusFilter}${params.filter ? `, pattern=${params.filter}` : ''})`,
   )
   return { content: [{ type: 'text', text: output }] }
-}
-
-function handleProjectSetStatus(ctx: McpToolContext, params: Record<string, string>) {
-  const taskId = params.id
-  const targetStatus = params.status as TaskStatus
-  if (!taskId) return { content: [{ type: 'text', text: 'Error: id is required' }], isError: true }
-  if (!(TASK_STATUSES as readonly string[]).includes(targetStatus))
-    return { content: [{ type: 'text', text: `Error: invalid status "${targetStatus}"` }], isError: true }
-
-  const dialogCwd = ctx.getDialogCwd()
-  const allStatuses = TASK_STATUSES
-  let fromStatus: TaskStatus | null = null
-  for (const s of allStatuses) {
-    const dir = join(dialogCwd, '.rclaude', 'project', s)
-    try {
-      if (readdirSync(dir).includes(`${taskId}.md`)) {
-        fromStatus = s
-        break
-      }
-    } catch {}
-  }
-  if (!fromStatus) return { content: [{ type: 'text', text: `Task "${taskId}" not found` }], isError: true }
-  if (fromStatus === targetStatus)
-    return { content: [{ type: 'text', text: `"${taskId}" is already ${formatStatus(targetStatus)}` }] }
-
-  let taskTitle = taskId
-  try {
-    const raw = readFileSync(join(dialogCwd, '.rclaude', 'project', fromStatus, `${taskId}.md`), 'utf-8')
-    const titleMatch = raw.match(/^title:\s*(.+)$/m)
-    if (titleMatch?.[1]) taskTitle = titleMatch[1].trim()
-  } catch {}
-
-  const newSlug = moveProjectTask(dialogCwd, taskId, fromStatus, targetStatus, Date.now())
-  if (!newSlug) return { content: [{ type: 'text', text: 'Failed to move task' }], isError: true }
-  ctx.callbacks.onProjectChanged?.()
-  debug(`[channel] set_task_status: ${taskId} ${fromStatus} -> ${targetStatus} (slug: ${newSlug})`)
-  const newPath = `.rclaude/project/${targetStatus}/${newSlug}.md`
-  const renamed = newSlug !== taskId ? ` (renamed to "${newSlug}")` : ''
-  return {
-    content: [
-      {
-        type: 'text',
-        text: `Moved "${taskTitle}" from ${formatStatus(fromStatus)} to ${formatStatus(targetStatus)}${renamed}\nThe task file is now located at ${newPath}`,
-      },
-    ],
-  }
 }
