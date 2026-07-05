@@ -52,6 +52,7 @@ import type {
   ProjectUnwatch,
   ProjectWatch,
   ProjectWriteFile,
+  QuestOp,
   ReviveConversation,
   ReviveResult,
   SentinelIdentify,
@@ -92,6 +93,7 @@ import { expandPath } from './expand-path'
 import { runGitFabric } from './git-fabric'
 import { runGitLog } from './git-log'
 import { handleNightshiftOp } from './nightshift-handlers'
+import { handleQuestOp } from './quest-handlers'
 import { applyOAuthToken, applyOAuthTokenDelta } from './oauth-token-env'
 import { type PreflightIssue, preflightSpawn } from './preflight'
 import { runProfileCli } from './profile-cli'
@@ -4033,6 +4035,13 @@ function connect(
           const m = msg as NightshiftOp
           const root = expandPath(m.projectRoot, spawnRoot)
           ws.send(JSON.stringify(handleNightshiftOp(root, m, Date.now())))
+          break
+        }
+
+        case 'quest_op': {
+          const m = msg as QuestOp
+          const root = expandPath(m.projectRoot, spawnRoot)
+          ws.send(JSON.stringify(handleQuestOp(root, m, Date.now())))
           break
         }
 

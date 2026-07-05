@@ -29,6 +29,7 @@ import { createDeskDebugRouter } from './routes/desk-debug'
 import { createGatewayRouter } from './routes/gateways'
 import { createMcpRouter } from './routes/mcp-server'
 import { createNightshiftRouter } from './routes/nightshift'
+import { createQuestRouter } from './routes/quest'
 import { createRecapsRouter } from './routes/recaps'
 import { createSentinelRouter } from './routes/sentinels'
 import { broadcastToUser, createRouteHelpers } from './routes/shared'
@@ -292,6 +293,7 @@ export function createRouter(options: RouteOptions): Hono {
   app.route('/', createRecapsRouter(conversationStore, helpers))
   app.route('/', createCanvasesRouter(conversationStore, helpers))
   app.route('/', createNightshiftRouter(conversationStore, helpers))
+  app.route('/', createQuestRouter(conversationStore, helpers))
   app.route('/', createSpawnRouter(conversationStore, helpers))
   app.route('/', createChatApiRouter(conversationStore, store.kv, helpers))
   app.route('/', createMcpRouter(conversationStore, store, rclaudeSecret))

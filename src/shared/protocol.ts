@@ -21,6 +21,17 @@ import type {
   NightshiftTaskPatchInput,
 } from './nightshift-types'
 import type { ProjectTask, ProjectTaskManifestEntry, ProjectTaskMeta, ProjectTaskRef } from './project-task-types'
+import type {
+  QuestAcceptanceContract,
+  QuestGate,
+  QuestLogEntry,
+  QuestLogKind,
+  QuestManifest,
+  QuestManifestPatch,
+  QuestStatus,
+  QuestStatusReport,
+  QuestTarget,
+} from './quest-schema'
 import type { SpawnRequest } from './spawn-schema'
 
 export type { LaunchProfile } from './launch-profile'
@@ -2182,6 +2193,7 @@ export type BrokerMessage =
   | ChecklistArchiveRequest
   | ChecklistPurgeRequest
   | NightshiftRequest
+  | QuestRequest
 
 export interface NotifyConfigUpdated {
   type: 'notify_config_updated'
@@ -4033,6 +4045,117 @@ export interface NightshiftEvent {
 }
 
 // ===========================================================================
+// QUEST substrate RPCs (Dashboard / agent-leg <-> Broker <-> Sentinel)
+//
+// A quest = a petname-selected set of board cards + a manifest folder under
+// `<project>/.rclaude/project/quests/<petname>/`, written + read by the SENTINEL
+// (the lease-watcher host that owns `.rclaude/project/`). One op-envelope per
+// direction, mirroring ProjectBoardOp/NightshiftOp: the caller sends a project
+// URI + op, the broker resolves it to an absolute `projectRoot` + owning
+// sentinel, forwards `quest_op`, and relays `quest_result` back.
+//
+// §14: no broker/orchestrator state -- everything is re-derivable from the
+// manifest + cards on the sentinel's disk. THE ARTIFACT IS THE API.
+// ===========================================================================
+
+/** The op selector shared by the request, the sentinel op, and the result. */
+export type QuestOpKind =
+  | 'create' // petname gen + manifest write (+ optional card tagging)
+  | 'update' // patch manifest fields (steering, target, contracts, gate, status)
+  | 'log_append' // append-only intent/completion/plan/steering entry (NEVER rewrites)
+  | 'get' // manifest + full log
+  | 'list' // all quests' manifests
+  | 'status' // the computed §4c completion predicate
+  | 'abort' // §13: stamp aborted + archive non-terminal cards
+  | 'pause' // §13: stamp paused (no card stamping)
+
+/** create payload. */
+export interface QuestCreateInput {
+  goal: string
+  target?: QuestTarget
+  gate?: QuestGate
+  status?: QuestStatus
+  contracts?: QuestAcceptanceContract[]
+  /** Force a specific petname (else one is generated + collision-checked). */
+  petname?: string
+  /** Optionally tag these existing board cards into the quest at creation. */
+  cards?: ProjectTaskRef[]
+}
+
+/** log_append payload (append-only -- a separate op so the log is never patched). */
+export interface QuestLogAppendInput {
+  kind: QuestLogKind
+  convId: string
+  body: string
+}
+
+/** Dashboard / agent-leg -> Broker: one quest substrate op. */
+export interface QuestRequest {
+  type: 'quest_request'
+  requestId: string
+  /** Canonical project URI; the broker resolves it to projectRoot + sentinel. */
+  project: string
+  op: QuestOpKind
+  /** update / log_append / get / status / abort / pause. */
+  petname?: string
+  create?: QuestCreateInput
+  patch?: QuestManifestPatch
+  logAppend?: QuestLogAppendInput
+  /** abort reason (§13). */
+  reason?: string
+}
+
+/** Broker -> Sentinel: the same op, with the resolved absolute projectRoot. */
+export interface QuestOp {
+  type: 'quest_op'
+  requestId: string
+  projectRoot: string
+  op: QuestOpKind
+  petname?: string
+  create?: QuestCreateInput
+  patch?: QuestManifestPatch
+  logAppend?: QuestLogAppendInput
+  reason?: string
+}
+
+/** Sentinel -> Broker: result of one op. Populated field depends on `op`. */
+export interface QuestResult {
+  type: 'quest_result'
+  requestId: string
+  op: QuestOpKind
+  ok: boolean
+  /** create / update / abort / pause -- the manifest after the write. */
+  manifest?: QuestManifest | null
+  /** get -- manifest + full append-only log. */
+  detail?: { manifest: QuestManifest; log: QuestLogEntry[] } | null
+  /** list -- every quest's manifest. */
+  quests?: QuestManifest[]
+  /** status -- the computed §4c predicate. */
+  report?: QuestStatusReport | null
+  /** log_append -- the persisted entry. */
+  logEntry?: QuestLogEntry
+  /** create -- the board cards tagged into the quest. */
+  taggedCards?: string[]
+  /** abort -- the non-terminal cards stamped SKIPPED-by-abort. */
+  abortedCards?: { slug: string; from: string; to: string }[]
+  error?: string
+}
+
+/**
+ * Broker -> Dashboard broadcast (permission-scoped by project URI): a quest
+ * lifecycle beat, fired after a write op persists. Viewers re-fetch the quest
+ * rather than reconstructing state from the beat (EVERYTHING IS A MESSAGE).
+ */
+export interface QuestEvent {
+  type: 'quest_event'
+  /** Canonical project URI -- the broadcast scope key. */
+  project: string
+  event: 'created' | 'updated' | 'log' | 'aborted' | 'paused'
+  petname: string
+  status?: QuestStatus
+}
+
+// ===========================================================================
 // NIGHTSHIFT WATCHDOG -- the deterministic control tier (plan-nightshift.md §2.4)
 //
 // A broker reaper-style loop (~1 min, NO LLM) that enforces PURE THRESHOLDS on
@@ -4920,6 +5043,7 @@ export type SentinelMessage =
   | ProjectBoardResult
   | ProjectChanged
   | NightshiftResult
+  | QuestResult
   | UsageUpdate
   | SentinelUsageReport
   | LaunchLog
@@ -5214,6 +5338,7 @@ export type BrokerSentinelMessage =
   | ProjectWatch
   | ProjectUnwatch
   | NightshiftOp
+  | QuestOp
   | SentinelPatchConfig
   | SentinelQuit
   | SentinelReject

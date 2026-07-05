@@ -17,6 +17,10 @@ export interface ProjectTaskMeta {
   priority?: 'low' | 'medium' | 'high'
   tags: string[]
   refs: string[]
+  /** First-class quest membership (plan-quest-engine §4a): `quest: <petname>`.
+   *  Orthogonal to `status` (the card's lane) -- a quest card keeps this key as
+   *  it moves between lanes. Absent = not part of any quest. */
+  quest?: string
   created: string
   /** File mtime in ms since epoch -- sort key, also the cache-staleness marker. */
   mtime: number

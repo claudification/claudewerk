@@ -23,6 +23,7 @@ import { registerNightshiftWatchdogHandlers } from './nightshift-watchdog'
 import { registerPermissionHandlers } from './permissions'
 import { registerPlanApprovalHandlers } from './plan-approval'
 import { registerProjectHandlers } from './project'
+import { registerQuestHandlers } from './quest'
 import { registerRclaudeConfigHandlers } from './rclaude-config'
 import { registerRecapHandlers } from './recap'
 import { registerSentinelHandlers } from './sentinel'
@@ -59,6 +60,7 @@ export function registerAllHandlers(): void {
   registerProjectHandlers()
   registerNightshiftHandlers()
   registerNightshiftWatchdogHandlers()
+  registerQuestHandlers()
   registerRclaudeConfigHandlers()
   registerRecapHandlers()
   registerConversationLifecycleHandlers()
