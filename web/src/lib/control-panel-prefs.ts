@@ -55,6 +55,7 @@ export interface ControlPanelPrefs {
   voiceLingerMs: number // how long to keep recording after releasing push-to-talk (catches trailing words)
   voiceWarmStreamMs: number // how long to keep mic stream warm after recording (0 = release immediately)
   voiceDeviceId: string // preferred audio input device ID ('' = system default)
+  voiceDeviceLabel: string // last-known label for voiceDeviceId, so the picker shows the right mic name before/without a mic grant (Google-Meet-style). '' when unknown.
   chatBubbleColor: string // tailwind color class prefix (e.g. 'blue', 'teal', 'purple')
   defaultConversationCwd: string // auto-select this project on dashboard load (per-device)
   showDiag: boolean
@@ -107,6 +108,7 @@ const defaultPrefs: ControlPanelPrefs = {
   voiceLingerMs: 1500,
   voiceWarmStreamMs: 30_000,
   voiceDeviceId: '',
+  voiceDeviceLabel: '',
   chatBubbleColor: 'blue',
   showDiag: false,
   showStreaming: true,

@@ -379,9 +379,13 @@ const SETTINGS: SettingItem[] = [
     render: (ctx, _ariaLabel) => (
       <VoiceDevicePicker
         value={ctx.prefs.voiceDeviceId ?? ''}
-        onChange={v => {
-          ctx.updatePrefs({ voiceDeviceId: v })
-          invalidateWarmStream()
+        label={ctx.prefs.voiceDeviceLabel ?? ''}
+        onChange={(id, label) => {
+          const deviceChanged = id !== (ctx.prefs.voiceDeviceId ?? '')
+          ctx.updatePrefs({ voiceDeviceId: id, voiceDeviceLabel: label })
+          // Only a real device switch drops the warm stream; a label-only refresh
+          // (same id) must NOT re-acquire the mic.
+          if (deviceChanged) invalidateWarmStream()
         }}
       />
     ),
