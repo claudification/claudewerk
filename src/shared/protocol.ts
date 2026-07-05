@@ -4123,6 +4123,65 @@ export interface NightshiftWatchdogEvent {
   decision: WatchdogDecision
 }
 
+// ─── Capacity admission (headroom ledger, plan-quest-engine §9) ──────────────
+//
+// The orchestrator gates every dispatch on profile HEADROOM via a reservation
+// ledger (`src/broker/capacity-ledger.ts`): smart-balance is the ORACLE (5h
+// interactive gate); the ledger debits an estimate per dispatch and settles to
+// actual on end, so parallel dispatches can't collectively overshoot the gate.
+// Every reserve/settle/deny/sleep/starve decision is a STRUCTURED MESSAGE (this
+// type), broadcast project-scoped exactly like the watchdog's -- no silent
+// capacity transitions (LOG EVERYTHING / EVERYTHING IS A MESSAGE).
+
+/** What the ledger did with (or about) a task this dispatch attempt:
+ *  - `reserve` -- admitted: an estimate was debited against the profile.
+ *  - `settle`  -- a finished task's reservation was released (actual folded).
+ *  - `deny`    -- insufficient headroom; the task stays QUEUED (never errored).
+ *  - `sleep`   -- nothing admits; the run parks until a computed wake time.
+ *  - `starve`  -- the window ended with the task never admitted -> SKIPPED. */
+export type CapacityVerdict = 'reserve' | 'settle' | 'deny' | 'sleep' | 'starve'
+
+/**
+ * One timestamped capacity-ledger decision. Flat + JSON-safe (rides the WS).
+ * All token figures are in the admission accounting unit (input+output tokens);
+ * `headroomTokens`/`outstandingTokens`/`floorTokens`/`availableTokens` are the
+ * terms of `available = headroom - outstanding - floor` at decision time.
+ */
+export interface CapacityDecision {
+  /** Unique id (dedup + React keys). */
+  id: string
+  /** Decision timestamp, epoch ms. */
+  at: number
+  /** Canonical project URI -- broadcast scope + Status-screen filter key. */
+  project: string
+  runId: string
+  taskId: string
+  /** Profile the ledger gated against (resolvedProfile once known). */
+  profile: string
+  verdict: CapacityVerdict
+  /** Human-readable one-liner -- the "why", logged + shown verbatim. */
+  reason: string
+  /** The task's token estimate (reserve/deny/starve) or actual (settle). */
+  estimateTokens?: number
+  headroomTokens?: number
+  outstandingTokens?: number
+  floorTokens?: number
+  availableTokens?: number
+  /** Profile 5h utilisation % read from the oracle (undefined = unreadable -> fail closed). */
+  fiveHourPct?: number
+  /** For a `sleep` verdict: the computed wall-clock wake time, epoch ms. */
+  sleepUntil?: number
+}
+
+/** Broker -> Control panel broadcast (project-scoped): one fresh capacity
+ *  decision, fired the moment the ledger records it. */
+export interface CapacityLedgerEvent {
+  type: 'capacity_ledger_event'
+  /** Canonical project URI -- the broadcast scope key. */
+  project: string
+  decision: CapacityDecision
+}
+
 // ─── Project Checklists ─────────────────────────────────────────────────
 // Per-project personal checklist ("notes from me to me") shown in the
 // conversation list above a project's conversations. Broker-local data

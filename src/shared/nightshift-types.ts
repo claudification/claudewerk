@@ -301,6 +301,10 @@ export interface NightshiftQueueItem {
   created: string
   /** Markdown body: the task description / details. */
   body: string
+  /** Per-task capacity estimate override (§9b): expected total tokens this task
+   *  will burn. Sourced from the task's `estimate_tokens` frontmatter. Absent ->
+   *  the capacity config's `defaultEstimateTokens`. */
+  estimateTokens?: number
 }
 
 /** Wire input to enqueue one task into the project's nightshift queue. */

@@ -16,7 +16,11 @@ import { DEFAULT_NIGHTSHIFT_CONFIG, type NightshiftConfig } from '../shared/nigh
 import type { ConversationStore } from './conversation-store'
 import { sendNightshiftOp } from './nightshift-broker-rpc'
 import { isNightshiftRunActive, runNightshift } from './nightshift-orchestrator'
+// withinWindow moved to the shared pure module; re-exported here for callers/tests.
+import { withinWindow } from './nightshift-window'
 import { listProjects } from './project-store'
+
+export { withinWindow }
 
 /** Cadence of the scheduling tick. */
 const TICK_MS = 60_000
@@ -26,36 +30,6 @@ const CONFIG_TTL_MS = 10 * 60 * 1000
 /** Local calendar-day key (YYYY-M-D) so a project schedules at most once per day. */
 function dayKey(date: Date): string {
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
-}
-
-/** Local minutes since midnight. */
-function minutesOfDay(date: Date): number {
-  return date.getHours() * 60 + date.getMinutes()
-}
-
-/** Parse "HH:MM" to minutes-since-midnight, or null if malformed / out of range. */
-function parseClock(hhmm: string): number | null {
-  const m = /^\s*(\d{1,2}):(\d{2})\s*$/.exec(hhmm)
-  if (!m) return null
-  const h = Number(m[1])
-  const min = Number(m[2])
-  return h > 23 || min > 59 ? null : h * 60 + min
-}
-
-/**
- * True if `date`'s local time falls inside the "HH:MM-HH:MM" window. A window
- * whose end is <= its start wraps past midnight (e.g. "23:00-06:00"). Non-clock
- * windows (e.g. "interactive load < X") never match -- only the time form arms
- * the scheduler; everything else is left to a future load-based trigger.
- */
-export function withinWindow(window: string, date: Date): boolean {
-  const [rawStart, rawEnd] = window.split('-')
-  const start = parseClock(rawStart ?? '')
-  const end = parseClock(rawEnd ?? '')
-  if (start === null || end === null) return false
-  const t = minutesOfDay(date)
-  if (start <= end) return t >= start && t < end
-  return t >= start || t < end
 }
 
 /** Time-gate: armed config whose clock window the local time currently falls in. */

@@ -12,6 +12,7 @@ import { filterDisplayEntries } from '../../shared/transcript-filter'
 import { partitionByAgentScope } from '../conversation-store/agent-scope'
 import type { MessageHandler } from '../handler-context'
 import { AGENT_HOST_ONLY, DASHBOARD_ROLES, registerHandlers } from '../message-router'
+import { noteCapacityUsageEvent } from '../nightshift-orchestrator'
 import { generateRecapManual } from '../recap/away-summary'
 import { requireStrings } from './validate'
 
@@ -528,6 +529,10 @@ function recordInferenceUsageFromRateLimit(
   ctx.log.debug(
     `[usage-inf] record profile=${tags.profile} sid=${tags.sentinelId.slice(0, 8)} ${data.rateLimitType}=${Math.round(utilization * 100)}% -> ok=${ok}`,
   )
+  // Event-triggered admission recheck (§9d): fresh utilisation may have freed
+  // headroom -- wake any capacity-parked nightshift run so recovered capacity is
+  // used immediately, not on the next slow tick. No-op when nothing is parked.
+  if (ok) noteCapacityUsageEvent(ctx.conversations)
 }
 
 const rateLimitStatusHandler: MessageHandler = (ctx, data) => {

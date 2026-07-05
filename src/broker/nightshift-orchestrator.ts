@@ -22,14 +22,36 @@ import {
   type NightshiftReportInput,
 } from '../shared/nightshift-types'
 import type { SpawnCallerContext } from '../shared/spawn-permissions'
+import { fillSlotsWithAdmission, taskRefOf } from './capacity-admission'
+import { CapacityLedger } from './capacity-ledger'
+import { DEFAULT_CAPACITY_CONFIG } from './capacity-types'
 import type { ConversationStore } from './conversation-store'
 import { getGlobalSettings } from './global-settings'
 import { sendNightshiftOp } from './nightshift-broker-rpc'
+import { computeWindowEndMs } from './nightshift-window'
 import { getProjectSettings } from './project-settings'
 import { dispatchSpawn } from './spawn-dispatch'
 
 /** How often the engine advances in-flight runs (reaps finished workers, dispatches next). */
 const ORCH_TICK_MS = 20_000
+
+/**
+ * The capacity admission ledger (plan-quest-engine §9). A default DISABLED ledger
+ * keeps today's pure-concurrency behaviour until the broker wires a real oracle
+ * via `configureCapacityAdmission` at startup. When disabled, `fillSlots` ignores
+ * it entirely -- no gating, no reservations.
+ */
+let ledger = new CapacityLedger({
+  config: { ...DEFAULT_CAPACITY_CONFIG, enabled: false },
+  oracle: () => null,
+  emit: () => {},
+})
+
+/** Install the real capacity ledger (oracle + emit wired to the store). Called
+ *  once at broker startup (index.ts) BEFORE the orchestrator tick begins. */
+export function configureCapacityAdmission(next: CapacityLedger): void {
+  ledger = next
+}
 
 /** Trusted, autonomous caller -- same shape the dispatcher uses for broker-internal spawns. */
 const NIGHTSHIFT_CALLER: SpawnCallerContext = {
@@ -51,6 +73,13 @@ interface RunState {
   startedAt: number
   /** Reentrancy guard so the tick never double-advances a run. */
   advancing: boolean
+  /** Profiles the balanced picker may place workers on (capacity admission §9). */
+  candidateProfiles: string[]
+  /** Epoch ms the run window closes -- drives the time-aware floor + starvation
+   *  terminal (§9c/§9f). Undefined when the project has no clock window. */
+  windowEndMs?: number
+  /** Computed-sleep gate: while `now < sleepUntilMs` the run parks (§9d). */
+  sleepUntilMs?: number
 }
 
 /** One in-flight run per project (a project can't run two nights at once). */
@@ -140,6 +169,10 @@ async function dispatchTask(store: ConversationStore, state: RunState, item: Nig
       `[nightshift-orch] dispatched task=${item.id} conv=${res.conversationId.slice(0, 8)} run=${runId} project=${project}`,
     )
   } else {
+    // Spawn failed after we reserved capacity for it -- release the reservation
+    // so the estimate doesn't sit on the profile's books forever (no-op when
+    // admission was disabled and nothing was reserved).
+    ledger.settle(taskRefOf(runId, item.id))
     await sendNightshiftOp(store, project, {
       op: 'task_patch',
       runId,
@@ -147,6 +180,29 @@ async function dispatchTask(store: ConversationStore, state: RunState, item: Nig
     })
     console.warn(`[nightshift-orch] spawn failed task=${item.id} run=${runId}: ${res.error}`)
   }
+}
+
+/** Stamp a task SKIPPED(capacity) in the run report when the window closes with
+ *  it never admitted (§9f). Structured message, not silence. */
+async function stampSkipped(
+  store: ConversationStore,
+  state: RunState,
+  item: NightshiftQueueItem,
+  reason: string,
+): Promise<void> {
+  await sendNightshiftOp(store, state.project, {
+    op: 'report',
+    runId: state.runId,
+    report: {
+      kind: 'skipped',
+      id: item.id,
+      title: item.title,
+      project: state.project,
+      reason,
+      feasibility: item.feasibility ?? 'feasible',
+    },
+  })
+  console.log(`[nightshift-orch] task=${item.id} SKIPPED(capacity) run=${state.runId}: ${reason}`)
 }
 
 /** A worker ended -- if it never wrote a terminal outcome, mark it errored (no silent stalls). */
@@ -163,19 +219,36 @@ async function ensureTerminalArtifact(store: ConversationStore, state: RunState,
   }
 }
 
-/** Reap workers that have ended: drop them from inflight + ensure a terminal artifact. */
+/** Reap workers that have ended: drop them from inflight + ensure a terminal
+ *  artifact + SETTLE their capacity reservation with the actual token spend. */
 async function reapFinished(store: ConversationStore, state: RunState): Promise<void> {
   for (const [taskId, convId] of [...state.inflight]) {
     const conv = store.getConversation(convId)
     if (conv && conv.status !== 'ended') continue
     state.inflight.delete(taskId)
+    // Settle the reservation to actual usage (the real figure is already in the
+    // oracle's used%; this releases the estimate + logs the delta). No-op when
+    // admission was disabled at dispatch.
+    const actual = conv ? conv.stats.totalInputTokens + conv.stats.totalOutputTokens : undefined
+    ledger.settle(taskRefOf(state.runId, taskId), actual)
     await ensureTerminalArtifact(store, state, taskId)
     console.log(`[nightshift-orch] task=${taskId} settled run=${state.runId} inflight=${state.inflight.size}`)
   }
 }
 
-/** Fill open concurrency slots from the pending queue. */
+/** Fill open concurrency slots from the pending queue. With capacity admission
+ *  ENABLED, gate every dispatch on headroom (§9); otherwise fall back to the
+ *  pure-concurrency drain (today's behaviour). */
 async function fillSlots(store: ConversationStore, state: RunState): Promise<void> {
+  if (!ledger.enabled) return fillSlotsLegacy(store, state)
+  await fillSlotsWithAdmission(ledger, state, {
+    dispatch: item => dispatchTask(store, state, item),
+    starveCard: (item, reason) => stampSkipped(store, state, item, reason),
+  })
+}
+
+/** Pure-concurrency drain (capacity admission disabled). */
+async function fillSlotsLegacy(store: ConversationStore, state: RunState): Promise<void> {
   while (state.inflight.size < state.concurrency && state.pending.length > 0) {
     const next = state.pending.shift()
     if (next) await dispatchTask(store, state, next)
@@ -233,6 +306,7 @@ export async function runNightshift(
   const caps = resolveCaps(config.caps)
   const tasks = queue.slice(0, caps.totalTasks)
   const runId = todayStr()
+  const startedAt = Date.now()
   const startRes = await sendNightshiftOp(store, project, {
     op: 'run_start',
     runStart: { runId, taskCount: tasks.length, window: config.window },
@@ -246,8 +320,12 @@ export async function runNightshift(
     inflight: new Map(),
     permissionMode: config.permissionMode,
     concurrency: caps.concurrency,
-    startedAt: Date.now(),
+    startedAt,
     advancing: false,
+    // Capacity admission (§9): which profiles the workers may land on, and when
+    // the run window closes (for the time-aware floor + starvation terminal).
+    candidateProfiles: config.profilesAllowed?.length ? config.profilesAllowed : ['default'],
+    windowEndMs: computeWindowEndMs(config.window, startedAt),
   }
   activeRuns.set(project, state)
   console.log(
@@ -260,6 +338,26 @@ export async function runNightshift(
 /** True if a run is currently in flight for the project (used by the scheduler). */
 export function isNightshiftRunActive(project: string): boolean {
   return activeRuns.has(project)
+}
+
+/**
+ * EVENT-TRIGGERED RECHECK (§9d): a `rate_limit_event` folded fresh utilisation
+ * telemetry (headroom may have moved). Clear the computed-sleep gate on every
+ * parked run and advance immediately, so recovered capacity is used the moment
+ * it appears -- no polling loop beyond the existing tick. Called from the
+ * transcript rate-limit handler; a no-op when nothing is parked.
+ */
+export function noteCapacityUsageEvent(store: ConversationStore): void {
+  let woke = 0
+  for (const state of activeRuns.values()) {
+    if (state.sleepUntilMs !== undefined) {
+      state.sleepUntilMs = undefined
+      woke++
+    }
+  }
+  if (woke === 0) return
+  console.log(`[nightshift-orch] capacity usage event -- woke ${woke} parked run(s), re-checking admission`)
+  void advanceAllRuns(store)
 }
 
 /** Advance every in-flight run once -- the tick body, exported so tests can step it. */

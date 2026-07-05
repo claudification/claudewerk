@@ -28,6 +28,7 @@ import {
 } from './auth-routes'
 import { buildReviveMessage } from './build-revive'
 import { closeCanvasStore, initCanvasStore } from './canvas-store'
+import { wireCapacityAdmission } from './capacity-wiring'
 import { closeChecklistStore, initChecklistStore } from './checklist-store'
 import { recordInboundForSocket, registerConnection, unregisterConnection } from './connection-registry'
 import {
@@ -1287,6 +1288,11 @@ async function main() {
     addProjectListener: (id, cb) => conversationStore.addProjectListener(id, cb),
     removeProjectListener: id => conversationStore.removeProjectListener(id),
   })
+
+  // CAPACITY ADMISSION (plan-quest-engine §9): reservation ledger gating every
+  // dispatch on smart-balance headroom; rebuilt from in-flight convs on boot
+  // (§14). Env-gated (default off). Wired before the orchestrator tick.
+  wireCapacityAdmission(conversationStore)
 
   // NIGHTSHIFT ENGINE: the orchestrator tick drains in-flight runs (reap finished
   // workers -> fill concurrency slots from the queue -> finalize when empty); the

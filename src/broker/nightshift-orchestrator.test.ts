@@ -8,7 +8,7 @@
  * ensure-terminal patch for a worker that ends without reporting.
  */
 
-import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import type { NightshiftResult } from '../shared/protocol'
 import type { ConversationStore } from './conversation-store'
 
@@ -51,11 +51,34 @@ mock.module('./nightshift-broker-rpc', () => ({
   },
 }))
 
-const { advanceAllRuns, isNightshiftRunActive, runNightshift } = await import('./nightshift-orchestrator')
+const { advanceAllRuns, configureCapacityAdmission, isNightshiftRunActive, runNightshift } = await import(
+  './nightshift-orchestrator'
+)
+const { CapacityLedger } = await import('./capacity-ledger')
 
 const store = {
-  getConversation: (id: string) => (convStatus.has(id) ? { status: convStatus.get(id) } : undefined),
+  getConversation: (id: string) =>
+    convStatus.has(id)
+      ? { status: convStatus.get(id), stats: { totalInputTokens: 0, totalOutputTokens: 0 } }
+      : undefined,
 } as unknown as ConversationStore
+
+/** A capacity ledger for the admission tests. `fiveHourPct` sets the stubbed
+ *  oracle's 5h usage; a 1M-token window + 200k default estimate means 750k
+ *  headroom at 0% admits exactly 3 tasks. */
+function capacityLedger(enabled: boolean, fiveHourPct = 0): InstanceType<typeof CapacityLedger> {
+  return new CapacityLedger({
+    config: {
+      enabled,
+      windowTokenBudget: 1_000_000,
+      defaultEstimateTokens: 200_000,
+      floor: { baseFloorFraction: 0, morningRampMultiplier: 1, rampHours: 0 },
+    },
+    oracle: () => (enabled ? { fiveHourPct } : null),
+    emit: () => {},
+    now: () => 1_000,
+  })
+}
 
 /** Mark every spawned worker as ended and (by default) cleanly settled in the snapshot. */
 function endAllWorkers(status = 'done'): void {
@@ -146,5 +169,50 @@ describe('runNightshift', () => {
     expect(patch?.taskPatch?.status).toBe('errored')
     expect(patch?.taskPatch?.note).toMatch(/without reporting/)
     expect(isNightshiftRunActive('proj-stall')).toBe(false)
+  })
+})
+
+/**
+ * Capacity admission wired into the real dispatch path (§9). Proves the ledger
+ * gates runNightshift: only what HEADROOM allows is dispatched; denied tasks stay
+ * QUEUED, never errored. Verified with the stubbed spawn (end-to-end needs H1
+ * merged -- see the H4 packet Verify note). Resets the ledger to disabled after
+ * each case so no other test inherits an enabled ledger.
+ */
+describe('capacity admission', () => {
+  afterEach(async () => {
+    configureCapacityAdmission(capacityLedger(false))
+    // drain any lingering capacity run so it doesn't bleed into later tests.
+    for (const proj of ['proj-cap-admit', 'proj-cap-gated']) {
+      for (let i = 0; i < 10 && isNightshiftRunActive(proj); i++) {
+        for (const id of convStatus.keys()) convStatus.set(id, 'ended')
+        snapshotTasks = queueItems.map(q => ({ id: q.id, status: 'done' }))
+        await advanceAllRuns(store)
+      }
+    }
+  })
+
+  test('dispatches only what headroom admits; denied tasks stay QUEUED, not errored', async () => {
+    configureCapacityAdmission(capacityLedger(true, 0)) // 750k headroom -> 3 * 200k fit
+    // high concurrency so HEADROOM, not the concurrency cap, is the limiter.
+    configOut = { enabled: true, permissionMode: 'dontAsk', caps: { concurrency: 8, totalTasks: 8 } }
+    queueItems = makeQueue(5)
+    const out = await runNightshift(store, 'proj-cap-admit', { trigger: 'manual' })
+    expect(out.ok).toBe(true)
+    expect(dispatchCount).toBe(3)
+    // no denied task was errored
+    expect(opCalls.some(o => o.op === 'task_patch' && o.taskPatch?.status === 'errored')).toBe(false)
+    expect(isNightshiftRunActive('proj-cap-admit')).toBe(true) // holding the queued remainder
+  })
+
+  test('fully gated (no headroom) dispatches nothing but keeps the run alive', async () => {
+    configureCapacityAdmission(capacityLedger(true, 99)) // ~0 headroom
+    configOut = { enabled: true, permissionMode: 'dontAsk', caps: { concurrency: 8, totalTasks: 8 } }
+    queueItems = makeQueue(5)
+    const out = await runNightshift(store, 'proj-cap-gated', { trigger: 'manual' })
+    expect(out.ok).toBe(true)
+    expect(dispatchCount).toBe(0)
+    expect(opCalls.some(o => o.op === 'task_patch' && o.taskPatch?.status === 'errored')).toBe(false)
+    expect(isNightshiftRunActive('proj-cap-gated')).toBe(true)
   })
 })
