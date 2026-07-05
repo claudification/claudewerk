@@ -68,18 +68,24 @@ function preferredDeviceId(): string {
 
 function micConstraints(deviceId: string): MediaStreamConstraints {
   return {
+    // Open the SELECTED device RAW -- at its native format, no processing. Every
+    // constraint we used to set forced CoreAudio/AVAudioSession to reconfigure
+    // the hardware on cold open, glitching ALL input "until it settles" (the blip
+    // Jonas hears on any mic, BT or not; absent in Meet/Zoom which capture native):
+    //   - sampleRate/channelCount: forcing a non-native rate/layout reopens the
+    //     AudioUnit at a new format (Safari bug WebKit#217147 -- constraint can
+    //     even fail). Pointless too: MediaRecorder opus is 48k internally, so a
+    //     16k capture is re-encoded away. Deepgram reads the rate from the header.
+    //   - echoCancellation/noiseSuppression: route input through Apple's
+    //     voice-processing unit -> "communication" mode, ducks other media + adds
+    //     a settle. Deepgram does server-side cleanup; a close-talk mic needs none.
+    // Leaves ONLY the device pin: `exact` reuses THIS physical mic on every attach
+    // and across reloads -- a bare/ideal id silently falls back to the OS default
+    // (the "wrong mic" / blips-the-AirPods symptom).
     audio: {
-      sampleRate: 16000,
-      channelCount: 1,
-      // echoCancellation MUST stay off: on macOS, enabling it routes the input
-      // through CoreAudio's VoiceProcessingIO unit, which flips the system into
-      // "communication" mode and ducks/pauses all other media (Jonas's music
-      // stopping). We capture a single close-talk voice, so OS AEC buys nothing.
       echoCancellation: false,
-      noiseSuppression: true,
-      // `exact` pins THIS physical mic so the same device is reused on every
-      // attach and across reloads -- a bare/ideal deviceId silently falls back
-      // to the OS default when it doesn't match (the "wrong mic" symptom).
+      noiseSuppression: false,
+      autoGainControl: false,
       ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
     },
   }

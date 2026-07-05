@@ -99,6 +99,9 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
   const [refinedText, setRefinedText] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
   const [targetConversationId, setTargetConversationId] = useState<string | null>(null)
+  // Ref mirror of the pinned target: WS handlers (onVoiceDone) are created at
+  // attach time and would capture a stale render-closure value of the state.
+  const targetConversationIdRef = useRef<string | null>(null)
 
   const stateRef = useRef<VoiceState>('idle')
   const backendReadyRef = useRef(false)
@@ -265,7 +268,7 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
         addVoiceHistoryEntry({
           raw: msg.raw || '',
           refined: msg.refined || '',
-          conversationId: target,
+          conversationId: targetConversationIdRef.current,
           recovered: msg.recovered,
         })
       }
@@ -336,6 +339,7 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     setRefinedText('')
     setErrorMsg('')
     setTargetConversationId(null)
+    targetConversationIdRef.current = null
     cancelledRef.current = false
     pendingStopRef.current = false
     brokerAckedRef.current = false
@@ -482,6 +486,7 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     // but this recording belongs to whatever was selected right now.
     const target = useConversationsStore.getState().selectedConversationId
     setTargetConversationId(target)
+    targetConversationIdRef.current = target
 
     voiceSeqRef.current++
     const seq = voiceSeqRef.current
