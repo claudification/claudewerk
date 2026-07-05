@@ -42,6 +42,7 @@ export interface CatalogTool {
     | 'sotu'
     | 'web-control'
     | 'nightshift'
+    | 'quest'
     | 'dispatch'
     | 'canvas'
   /** Sites where this tool is MEANT to be exposed. */
@@ -73,6 +74,16 @@ export const MCP_CATALOG: readonly CatalogTool[] = [
   // ── project board (both sites) ─────────────────────────────────────
   { name: 'project_list', group: 'project', sites: BOTH, summary: 'List project-board tasks' },
   { name: 'project_set_status', group: 'project', sites: BOTH, summary: 'Move a task between columns' },
+
+  // ── quest engine (host only, plan-quest-engine §4e/§13) ────────────
+  { name: 'create_quest', group: 'quest', sites: HOST_ONLY, summary: 'Create a quest: petname + manifest + card tagging' },
+  { name: 'update_quest', group: 'quest', sites: HOST_ONLY, summary: 'Patch a quest manifest (steering, target, contracts)' },
+  { name: 'quest_log_append', group: 'quest', sites: HOST_ONLY, summary: 'Append an entry to the quest append-only log' },
+  { name: 'abort_quest', group: 'quest', sites: HOST_ONLY, summary: 'Kill switch: stop dispatch + stamp cards (§13)' },
+  { name: 'pause_quest', group: 'quest', sites: HOST_ONLY, summary: 'Pause a quest so nothing new dispatches (§13)' },
+  { name: 'get_quest', group: 'quest', sites: HOST_ONLY, summary: 'Read one quest manifest' },
+  { name: 'quest_status', group: 'quest', sites: HOST_ONLY, summary: 'Computed quest-complete predicate (§4c)' },
+  { name: 'list_quests', group: 'quest', sites: HOST_ONLY, summary: 'List quests for a project' },
 
   // ── conversation control ───────────────────────────────────────────
   { name: 'list_conversations', group: 'conversation', sites: BOTH, summary: 'List conversations' },
