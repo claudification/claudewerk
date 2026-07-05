@@ -6,10 +6,13 @@
 > these rules into a live interview; this guide is the rulebook it enforces.
 >
 > Parent design: `.claude/docs/plan-quest-engine.md` (the frozen §-register).
-> Schema owner: `src/shared/quest-schema.ts` (packet H2). **Sync status: see the
-> [Schema sync](#schema-sync) note at the bottom — H2 was not yet merged when
-> this guide was written, so the field list here is the authoritative interim
-> spec, taken from the H2 packet + plan §4.**
+> Schema owner: `src/shared/quest-schema.ts` (packet H2, merged). **The code is the
+> source of truth for field names, enums, and on-disk layout; this guide owns the
+> authoring rules (§3–§5) and prose.** The field tables below are reconciled to the
+> merged v1 schema + serializers (`quest-manifest.ts`, `quest-log.ts`).
+> Register-anticipated fields the v1 substrate does not yet persist are listed in
+> [§6 Not in the v1 schema yet](#6-not-in-the-v1-schema-yet) — the interviewer may
+> still discuss them, but they do NOT survive a `create_quest` write today.
 
 ---
 
@@ -54,10 +57,16 @@ A quest lives at `.rclaude/project/quests/<petname>/`:
 
 ```
 .rclaude/project/quests/floppy-panda/
-├── manifest.md      # YAML frontmatter (the schema below) + prose body
+├── manifest.md      # frontmatter scalars + `## Goal` body + `## Acceptance` json fence
 ├── log.md           # append-only baton — intent/completion/plan/steering entries
 └── artifacts/       # graphics, plan docs, steering notes, Guard evidence
 ```
+
+The manifest is **not pure frontmatter**: the store keeps only flat scalars in the
+`---` block; `goal` and the acceptance `contracts[]` live in the **body** (`## Goal`
+prose + a `## Acceptance` JSON fence). This mirrors the project-board/nightshift
+artifacts (the shared `frontmatter.ts` subset only holds flat `key: value` scalars
+and inline `[a, b]` arrays — no nesting, so structured data goes in the body).
 
 The **board cards** for the quest's tasks live in the normal lanes
 (`.rclaude/project/{inbox,open,in-progress,in-review,done,archived}/`) and stay
@@ -67,89 +76,104 @@ member because it says `quest: floppy-panda`, regardless of what lane it sits in
 
 ### 2.1 `manifest.md` frontmatter — field by field
 
+Frontmatter holds ONLY these flat scalars (`goal` and `contracts` are in the body,
+see §2.2). Field names and enums are exactly `QuestManifest` in `quest-schema.ts`.
+
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `petname` | string | yes | The quest selector, e.g. `floppy-panda`. Generated at intake (§4d), collision-checked against existing quests. This is also the folder name. |
+| `petname` | string | yes | The quest selector, e.g. `floppy-panda`. Generated at `create_quest` (§4d), collision-checked against existing quests. This is also the folder name. |
 | `project` | string | yes | The project the quest runs against. The `claude://` URI or the plain project name — **informational to the broker**, the sentinel owns URI↔path. |
-| `goal` | string | yes | One-sentence delivery statement. What "done" means at the quest level, in plain language. |
-| `target` | enum | yes | `pr` \| `merged` \| `shipped`. The delivery rung — rewrites the completion predicate (§7). |
-| `status` | enum | yes | `intake` \| `armed` \| `running` \| `paused` \| `complete` \| `aborted`. Lifecycle of the quest itself (distinct from card lanes). Intake writes `armed` on blessing. |
-| `gate` | object | yes | The gate verdict. `{ verdict: blessed \| declined \| pending, blessed_by, blessed_at }`. The blessed intake IS the hard gate's output (§1a). |
-| `tasks` | list | yes | The decomposition — one entry per leg. Each carries its acceptance contract. See §2.2. |
-| `constraints` | list of strings | no | Standing rules every leg must honor (e.g. "no new dependencies", "touch only `src/broker/`"). |
-| `deny_floor` | list of strings | no | Extra denies layered on top of the profile's permission floor for this quest's unattended legs (§10 of plan-nightshift). |
+| `target` | enum | yes | `pr` \| `merged` \| `shipped`. The delivery rung — rewrites the completion predicate (§7). Defaults to `pr` if unset. |
+| `status` | enum | yes | `intake` \| `armed` \| `running` \| `paused` \| `complete` \| `aborted`. Lifecycle of the quest itself (distinct from card lanes). Intake writes `intake`; blessing flips it to `armed`. |
+| `gate` | enum (scalar) | yes | `pending` \| `blessed` \| `rejected`. The hard-gate verdict (§1a); a plain string, NOT an object. Defaults to `pending`. **Note the value is `rejected`, not "declined".** Who/when blessed is recorded in the `log.md` intent entry, not in frontmatter. |
+| `abortReason` | string | no | Only present when `status: aborted` (§13) — the reason stamped at kill time. |
 | `created` | ISO-8601 | yes | Manifest creation time. |
 | `updated` | ISO-8601 | yes | Last `update_quest` patch time. |
 
-### 2.2 `tasks[]` — one entry per leg
+### 2.2 `## Goal` + `## Acceptance` — the manifest body
+
+The `goal` string and the acceptance `contracts[]` live in the manifest **body**,
+not the frontmatter:
+
+- **`## Goal`** — one prose paragraph: the one-sentence delivery statement (what
+  "done" means at the quest level).
+- **`## Acceptance`** — a single ```` ```json ```` fence holding the
+  `QuestAcceptanceContract[]` array. Each contract:
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `id` | string | yes | Stable task id within the quest, e.g. `t1`. Matches the board card's own id linkage. |
-| `title` | string | yes | Imperative one-liner: "Add `--version` flag to broker-cli". |
-| `accept` | string | yes | **The machine-checkable acceptance command** (§3). A shell command that exits 0 iff the task is truly done. This is the contract. |
-| `accept_note` | string | no | Human gloss of what `accept` proves, for the Guard and the reviewer. |
-| `kind` | enum | no | `build` (default) \| `scout` (research, produces a doc not a diff) \| `integrate` (merge/deploy leg for higher targets). |
-| `depends_on` | list of ids | no | Task ids that must reach terminal-delivered before this leg dispatches. Feeds the integrator's DAG (§7b). |
+| `id` | string | yes | Stable contract id within the quest, e.g. `t1`. Ties the contract to its board card / leg. |
+| `command` | string | yes | **The machine-checkable acceptance command** (§3). A shell command that exits 0 iff the task is truly done. This IS the contract. |
+| `description` | string | no | Human gloss of what `command` proves, for the Guard and the reviewer. |
+
+> **One contract == one leg's task.** The v1 substrate flattens the "task list" to
+> this contract array: the leg's imperative title lives on its **board card** (cards
+> stay thin, §4a), and per-task metadata like `kind`/`depends_on` is not yet
+> persisted (§6). When you decompose in the interview (§5), each task becomes one
+> `{ id, command, description }` contract here plus one board card carrying
+> `quest: <petname>`.
 
 ### 2.3 `log.md` — the append-only baton
 
 Never rewritten. Only appended (the `quest_log_append` verb is separate from
-`update_quest` precisely so the log can NEVER be patched away — §4e). Each entry:
+`update_quest` precisely so the log can NEVER be patched away — §4e). The file
+opens with a fixed header, then one `### <ts> <kind> [<convId>]` section per entry:
 
 | Field | Meaning |
 |---|---|
 | `ts` | ISO-8601 timestamp. |
 | `kind` | `intent` (what a leg was about to do) \| `completion` (what it delivered, machine-authored git facts + agent narrative) \| `plan` (a replan version) \| `steering` (a Quest-Giver course correction). |
-| `convId` | The conversation (leg) that wrote the entry. |
-| `body` | Markdown. For `intent`: what I was about to do, worktree state, what's safe to redo (§3 resumer schema). |
+| `convId` | The conversation (leg) that wrote the entry (the bracketed id in the header). |
+| `body` | Markdown under the header. For `intent`: what I was about to do, worktree state, what's safe to redo (§3 resumer schema). |
 
 ### 2.4 Worked example
 
-`.rclaude/project/quests/floppy-panda/manifest.md`:
+`.rclaude/project/quests/floppy-panda/manifest.md` (exactly as the store serializes
+it — scalars in frontmatter, `goal` + `contracts` in the body):
 
-```markdown
+````markdown
 ---
 petname: floppy-panda
 project: claude://sentinel/Users/jonas/projects/remote-claude
-goal: Ship a `--version` flag on broker-cli that prints the package version.
 target: merged
 status: armed
-gate:
-  verdict: blessed
-  blessed_by: jonas
-  blessed_at: 2026-07-05T21:14:00Z
-tasks:
-  - id: t1
-    title: Add --version flag to broker-cli
-    accept: "cd \"$WORKTREE\" && bun test src/broker/cli/version.test.ts && ./broker-cli --version | grep -Eq '^[0-9]+\\.[0-9]+\\.[0-9]+'"
-    accept_note: Unit test covers flag parsing; the grep proves the real binary prints a semver line.
-    kind: build
-constraints:
-  - Touch only src/broker/cli/ and its tests.
-  - No new dependencies.
-deny_floor:
-  - Bash(git push:*)
+gate: blessed
 created: 2026-07-05T21:10:00Z
 updated: 2026-07-05T21:14:00Z
 ---
 
-## Why now
+## Goal
 
-`broker-cli` has no way to report its own version, so ops can't tell which build
-a container is running without `docker inspect`. A `--version` flag closes that.
+Ship a `--version` flag on broker-cli that prints the package version.
 
-## Notes
+## Acceptance
 
-Version source is the package.json already bundled into the CLI. No network.
+```json
+[
+  {
+    "id": "t1",
+    "command": "cd \"$WORKTREE\" && bun test src/broker/cli/version.test.ts && bun run src/broker/cli.ts --version | grep -Eq '^[0-9]+\\.[0-9]+\\.[0-9]+'",
+    "description": "Unit test covers flag parsing in parse-args.ts; the grep runs the real CLI and proves it prints a semver line."
+  }
+]
 ```
+````
+
+> The `## Goal`/`## Acceptance` bodies are what `quest-manifest.ts` writes and reads
+> back; a prose "Why now"/"Notes" section may follow `## Acceptance` freely — the
+> parser keys only on the `## Goal` and `## Acceptance` headings.
 
 `.rclaude/project/quests/floppy-panda/log.md`:
 
 ```markdown
-### 2026-07-05T21:14:00Z · intent · conv_intake_abc123
-Quest blessed at intake. Target `merged`, one build leg (t1). Acceptance is a
-unit test + a real-binary grep. Next: dispatch t1 in a fresh worktree.
+# Quest Log
+
+Append-only intent/completion/plan/steering entries (never rewritten).
+
+### 2026-07-05T21:14:00Z intent [conv_intake_abc123]
+
+Quest blessed at intake by jonas. Target `merged`, one build contract (t1).
+Acceptance is a unit test + a real-CLI grep. Next: dispatch t1 in a fresh worktree.
 ```
 
 ---
@@ -190,10 +214,11 @@ An acceptance command is well-formed when:
 
 Push back first. Most "unmeasurable" tasks are actually under-decomposed —
 break them until each piece has a command. If a piece is genuinely
-research/unknown ("figure out why X is slow"), it is a **Scout task** (§5):
-`kind: scout`, and its acceptance is the *artifact* it must produce
+research/unknown ("figure out why X is slow"), it is a **Scout task** (§5): its
+acceptance contract checks the *artifact* it must produce
 (`test -f "$WORKTREE/docs/x-slowness-findings.md"` plus a content check), not a
-behavior change. If even that can't be pinned, **decline the task and say so
+behavior change. (Scout is a sizing concept, not a persisted field in the v1
+schema — see §6.) If even that can't be pinned, **decline the task and say so
 loudly** — declining is a valid, respectable intake outcome. A soft contract is
 worse than no quest: it launders a vague goal into false confidence.
 
@@ -230,11 +255,11 @@ unit. Size every task to fit inside a single leg with room for the Guard.
 - **Too big** (won't fit one context, or spans multiple subsystems) → **split**
   it until each piece is a single-leg task with its own acceptance command.
 - **Unknown** (you can't yet write a contract because the shape isn't known) →
-  put a **Scout task first** (`kind: scout`): a research leg whose output is a
-  findings doc. The follow-up build tasks depend on it and get real contracts
-  once the Scout returns.
-- **Sequential dependencies** → set `depends_on`; the engine orders legs by the
-  DAG (matters for `merged`/`shipped` integration).
+  put a **Scout task first**: a research leg whose acceptance contract checks a
+  findings doc. The follow-up build tasks get real contracts once the Scout
+  returns.
+- **Sequential dependencies** → note the ordering in the task's `description` and
+  the log for now; a persisted `depends_on` DAG arrives with the integrator (§6/§7b).
 - **Few sharp reviewable tasks beat many vague ones.** A quest with three tasks
   that each have a crisp `accept` command is worth more than ten mushy ones.
   Ruthless scoping is the interviewer's job.
@@ -244,22 +269,24 @@ and check it with one command, it's mis-sized. Split or Scout.
 
 ---
 
-## Schema sync
+## 6. Not in the v1 schema yet
 
-The field names and enums above are taken from the **H2 packet**
-(`.claude/docs/plan-quest-engine/H2-quest-substrate.md`, deliverable 1) and plan
-§4, because H2's `src/shared/quest-schema.ts` had **not yet merged to main** when
-this guide was written. When H2 lands:
+The v1 substrate (`quest-schema.ts`, H2) is deliberately lean — it carries the
+§4b manifest spine (goal, gate verdict, acceptance contracts, append-only log,
+artifacts) and nothing more. Several fields the register *anticipates* are **not
+persisted today**. The interviewer may still discuss them, but a `create_quest`
+write drops anything not in the table above. Do not fabricate them into the
+manifest — surface them in the `## Goal` prose, a `contract.description`, or the
+log until the owning packet lands.
 
-1. Diff this guide's §2 field tables against the real `quest-schema.ts`.
-2. Reconcile any drift — the **code is the source of truth for field names and
-   enums**; this guide owns the *authoring rules* (§3–§5) and prose.
-3. Update the [worked example](#24-worked-example) if the frontmatter shape moved.
-4. Remove this note once the two are confirmed in sync.
+| Anticipated field | Register | Lands with | Interim handling |
+|---|---|---|---|
+| `constraints[]` (standing rules per leg) | §1a | intake/orchestrator packet | State them in the log's `intent` entry + each contract `description`. |
+| `deny_floor[]` (extra unattended denies) | §1a, plan-nightshift §10 | headroom/permissions packet | Note in the log; the profile permission floor still applies. |
+| per-task `kind` (`build`/`scout`/`integrate`) | §5, §7 | replan/integrator packets | Sizing concept only; encode intent in the contract `description`. |
+| per-task `depends_on` (DAG) | §7b | integrator packet (P6) | Note ordering in `description` + log; no engine DAG yet. |
+| gate `blessed_by` / `blessed_at` metadata | §1a | — | `gate` is a scalar; record who/when in the blessing `intent` log entry. |
 
-Known interim assumptions to verify against the merged schema:
-- `status` enum is `intake|armed|running|paused|complete|aborted` (H2 packet).
-- log `kind` enum is `intent|completion|plan|steering` (H2 packet).
-- Per-task contracts live in `manifest.md`'s `tasks[]`, cards stay thin with a
-  `quest:` key (plan §4a/§4b). Confirm whether H2 nests contracts under `tasks`
-  or a separate `contracts` map, and rename here to match.
+If a future packet adds any of these to `quest-schema.ts`, promote it from this
+table into §2.1/§2.2 and update the worked example + fixture to match. The code
+stays the source of truth.
