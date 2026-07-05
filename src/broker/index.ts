@@ -69,6 +69,7 @@ import {
 import { drain, enqueue, getQueueSize, initMessageQueue } from './message-queue'
 import { routeMessage } from './message-router'
 import { initModelPricing } from './model-pricing'
+import { startNightshiftGuardians } from './nightshift-guardians'
 import { startNightshiftOrchestrator } from './nightshift-orchestrator'
 import { startNightshiftScheduler } from './nightshift-scheduler'
 import { startNightshiftWatchdog } from './nightshift-watchdog'
@@ -1294,6 +1295,13 @@ async function main() {
   // until a project sets `enabled` + a window). Both ride the same watchdog caps.
   startNightshiftOrchestrator(conversationStore)
   startNightshiftScheduler(conversationStore)
+
+  // NIGHTSHIFT GUARDIANS (plan-quest-engine.md §2a / §6c / §6d): the deterministic
+  // POKE protocol (prod a dead-but-non-terminal worker, then mechanically stamp
+  // errored/unresponsive), the CRASH INVESTIGATOR (triage an abnormal exit against
+  // the hint catalog, bounded retries, hard attempt cap), and the mechanical
+  // NOTIFY rule on the terminal-error transition. No LLM in the alarm path.
+  startNightshiftGuardians(conversationStore)
 
   // Print status periodically
   if (verbose) {

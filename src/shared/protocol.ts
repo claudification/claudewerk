@@ -4123,6 +4123,82 @@ export interface NightshiftWatchdogEvent {
   decision: WatchdogDecision
 }
 
+// ===========================================================================
+// NIGHTSHIFT GUARDIANS (plan-quest-engine.md §2a / §6c / §6d)
+// ---------------------------------------------------------------------------
+// Three deterministic guardians layered on the watchdog: the POKE protocol
+// (prod a dead-but-non-terminal worker, then mechanically stamp errored), the
+// CRASH INVESTIGATOR (triage an abnormal exit against the hint catalog before
+// any retry, hard attempt cap), and the mechanical NOTIFY rule on the typed
+// transition to a terminal-error state. EVERYTHING IS A STRUCTURED MESSAGE: each
+// guardian action is one of these events, persisted in a broker-local ring +
+// broadcast project-scoped -- never a diag-only line. No LLM sits in the alarm
+// path (§6c): the notify + the terminal-error decision are deterministic; the
+// investigator LEG is advisory (it deepens the catalog + annotates the card).
+// ===========================================================================
+
+/** The crash investigator's call: retry (optionally with a remedy note applied)
+ *  or give up terminal. Derived deterministically from the hint catalog; the
+ *  spawned investigator leg annotates the card with richer narrative. */
+export type InvestigatorVerdict = 'retryable' | 'fatal'
+
+/**
+ * One guardian action this sweep. The `kind` discriminates:
+ * - `poke`            -- a prod was delivered to a dead/stalled non-terminal worker.
+ * - `poke-exhausted`  -- pokes hit the cap; the card is about to be stamped errored.
+ * - `investigate`     -- a crash investigator leg was spawned for an abnormal exit.
+ * - `retry`           -- the investigator returned retryable; a fresh leg is dispatched.
+ * - `cap-hit`         -- the per-task attempt cap was reached; no more retries.
+ * - `terminal-error`  -- the task was stamped a terminal error (unresponsive / crash-fatal / cap-hit).
+ */
+export type GuardianActionKind = 'poke' | 'poke-exhausted' | 'investigate' | 'retry' | 'cap-hit' | 'terminal-error'
+
+/** Why a task reached a terminal-error state -- drives the notify text + card reason. */
+export type GuardianTerminalReason = 'unresponsive' | 'crash-fatal' | 'cap-hit'
+
+/**
+ * One timestamped guardian action. Flat + JSON-safe (rides the WS, sits in a
+ * broker-local ring next to the watchdog decisions). `attempt`/`attempts` carry
+ * the bounded-poke count or the crash attempt counter so the log reconstructs
+ * the full escalation. LOG EVERYTHING: ids + counts + reason on every record.
+ */
+export interface GuardianEvent {
+  /** Unique id for this record (dedup + React keys). */
+  id: string
+  /** Action timestamp, epoch ms. */
+  at: number
+  kind: GuardianActionKind
+  /** Canonical project URI -- the broadcast scope + Status-screen filter key. */
+  project: string
+  runId: string
+  taskId: string
+  /** The (dead/crashed/retried) conversation this action concerns. */
+  conversationId: string
+  /** resolvedProfile the task ran under, when known. */
+  profile?: string
+  /** Poke ordinal (1..maxPokes) for `poke`; crash attempt number for retry/cap. */
+  attempt?: number
+  /** The bound in force: max pokes (poke kinds) or attempt cap (crash kinds). */
+  cap?: number
+  /** Investigator verdict for `investigate`/`retry` records. */
+  verdict?: InvestigatorVerdict
+  /** Matched hint catalog key, when a known crash cause was recognized. */
+  hintKey?: string
+  /** Terminal-error classification for `terminal-error` records. */
+  terminalReason?: GuardianTerminalReason
+  /** Human-readable one-liner -- the "why", logged + shown verbatim. */
+  reason: string
+}
+
+/** Broker -> Control panel broadcast (project-scoped): one fresh guardian
+ *  action, fired the moment the guardian records it. */
+export interface NightshiftGuardianEvent {
+  type: 'nightshift_guardian_event'
+  /** Canonical project URI -- the broadcast scope key. */
+  project: string
+  event: GuardianEvent
+}
+
 // ─── Project Checklists ─────────────────────────────────────────────────
 // Per-project personal checklist ("notes from me to me") shown in the
 // conversation list above a project's conversations. Broker-local data
