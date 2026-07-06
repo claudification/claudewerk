@@ -1,5 +1,21 @@
 import { describe, expect, it } from 'bun:test'
-import { collectLineageSubtree } from './spawn-lineage'
+import { DEFAULT_NOTIFY_PARENT_SETTLE_MS } from '../shared/spawn-schema'
+import { collectLineageSubtree, resolveNotifyParentSettleMs } from './spawn-lineage'
+
+describe('resolveNotifyParentSettleMs', () => {
+  it('is undefined when the caller did not opt in', () => {
+    expect(resolveNotifyParentSettleMs({})).toBeUndefined()
+    expect(resolveNotifyParentSettleMs({ notifyParent: false, notifyParentSettleMs: 5000 })).toBeUndefined()
+  })
+
+  it('defaults to the standard window when opted in without an override', () => {
+    expect(resolveNotifyParentSettleMs({ notifyParent: true })).toBe(DEFAULT_NOTIFY_PARENT_SETTLE_MS)
+  })
+
+  it('honors a caller-supplied window when opted in', () => {
+    expect(resolveNotifyParentSettleMs({ notifyParent: true, notifyParentSettleMs: 45000 })).toBe(45000)
+  })
+})
 
 type Row = { id: string; parentConversationId?: string | null }
 

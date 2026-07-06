@@ -130,7 +130,11 @@ export function processHookEvent(ctx: AgentHostContext, event: HookEvent): HookD
     const agentId = String(data.agent_id || '')
     // Open the subagent's containment window: hooks forwarded while this id is
     // in flight get tagged subagent-originated (see resolveSubagentAttribution).
-    if (agentId) ctx.runningSubagents.add(agentId)
+    if (agentId) {
+      ctx.runningSubagents.add(agentId)
+      // Report the new live count -- gates the broker's parent-notify settle.
+      ctx.wsClient?.sendBackgroundActivity(ctx.runningSubagents.size)
+    }
     if (agentId && ctx.parentTranscriptPath) {
       // Derive subagent transcript path: {sessionDir}/subagents/agent-{agentId}.jsonl
       const sessionDir = ctx.parentTranscriptPath.replace(/\.jsonl$/, '')
@@ -156,7 +160,11 @@ export function processHookEvent(ctx: AgentHostContext, event: HookEvent): HookD
     const transcriptPath = typeof data.agent_transcript_path === 'string' ? data.agent_transcript_path : undefined
     debug(`SubagentStop: agent=${agentId.slice(0, 7)} transcript=${transcriptPath || 'NONE'}`)
     // Close the containment window for this subagent.
-    if (agentId) ctx.runningSubagents.delete(agentId)
+    if (agentId && ctx.runningSubagents.delete(agentId)) {
+      // Report the new live count -- when it hits 0 the broker can re-arm the
+      // parent-notify settle timer (child is truly quiet).
+      ctx.wsClient?.sendBackgroundActivity(ctx.runningSubagents.size)
+    }
     // Stop live watcher first
     stopSubagentWatcher(ctx, agentId)
     // Then do a final read of the complete transcript

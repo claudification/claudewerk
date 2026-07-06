@@ -1056,6 +1056,7 @@ export type AgentHostMessage =
   | MonitorUpdate
   | ScheduledTaskFire
   | ConversationStatusSignal
+  | BackgroundActivitySignal
   | JsonStreamData
   | HostTransportReconnect
   | DaemonLaunchEvent
@@ -1189,6 +1190,19 @@ export interface ConversationStatusSignal {
    */
   daemonState?: DaemonRunState
   detail?: string
+}
+
+// Backend-agnostic background sub-agent liveness signal (agent host -> broker).
+// Fired on SubagentStart/Stop transitions with the current count of in-flight
+// sub-agents. Feeds the parent-notify settle gate: a child that has ended its
+// turn (idle) but still has `active > 0` background sub-agents must NOT report
+// to its parent yet -- it is still doing work. Memory-only on the broker
+// (`Conversation.backgroundBusy`); never persisted.
+export interface BackgroundActivitySignal {
+  type: 'background_activity'
+  conversationId: string
+  /** Count of currently-running sub-agents (0 = none in flight). */
+  active: number
 }
 
 // Headless streaming deltas (token-by-token from --include-partial-messages)
@@ -3085,6 +3099,21 @@ export interface Conversation {
    * key is a column lookup rather than a recursive walk.
    */
   rootConversationId?: string
+  /**
+   * EXPENSIVE report-back opt-in, captured at spawn time from the `notifyParent`
+   * spawn flag. When set (ms > 0), this conversation reports its latest
+   * `liveStatus` back to its `parentConversationId` once it SETTLES: after a
+   * set_status or turn-end, stays quiet for this debounce window, and has no
+   * running background sub-agent. Undefined = no report-back. Persisted in the
+   * `meta` JSON blob (survives broker restart). See `src/broker/parent-notify.ts`.
+   */
+  notifyParentSettleMs?: number
+  /**
+   * Transient (memory-only) count of live background sub-agents reported by the
+   * agent host via `background_activity`. When > 0 the parent-notify settle
+   * timer is held off (the child is still doing work). Not persisted.
+   */
+  backgroundBusy?: number
   /**
    * Sentinel-profile NAME the sentinel resolved for this conversation. Set by
    * spawn_result.resolvedProfile / revive_result.resolvedProfile. Pinned for

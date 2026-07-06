@@ -13,6 +13,9 @@ import { ALL_CC_SLUGS, DROPDOWN_MODEL_ENTRIES, resolveModelFamily } from './mode
 
 export const DEFAULT_SENTINEL = '__default__'
 
+/** Default settle/debounce window (ms) for the notifyParent report-back. */
+export const DEFAULT_NOTIFY_PARENT_SETTLE_MS = 20_000
+
 type ModelOption = { value: string; label: string; info: string }
 export type ModelOptionGroup = { group: string; options: ModelOption[] }
 
@@ -260,6 +263,26 @@ export const spawnRequestSchema = z.object({
       'Tags this spawn as a NIGHTSHIFT task (origin marker). Present => the conversation is an unattended ' +
         'night-run worker for runId/taskId; the night manager correlates its result back into .nightshift/. ' +
         'Absent => an ordinary spawn.',
+    ),
+  notifyParent: z
+    .boolean()
+    .optional()
+    .describe(
+      'EXPENSIVE -- opt-in report-back. When true, this spawned conversation notifies YOU (the launching ' +
+        'conversation) once it SETTLES: after it sets a status or ends a turn, waits for a quiet debounce window, ' +
+        'and is not blocked by a running background sub-agent, the broker delivers its latest set_status to you as ' +
+        'an inter-conversation message. ONLY set this to true if you REALLY rely on the output or completion of ' +
+        'this conversation -- otherwise DO NOT set it. Costs a wake/turn on your side each time it fires.',
+    ),
+  notifyParentSettleMs: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      'Settle/debounce window in milliseconds for notifyParent (default 20000). The report fires only after the ' +
+        'child stays quiet -- no new turn, no running background sub-agent -- for this long. Ignored unless ' +
+        'notifyParent is true.',
     ),
 })
 export type SpawnRequest = z.infer<typeof spawnRequestSchema>

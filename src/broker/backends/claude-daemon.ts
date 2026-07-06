@@ -32,7 +32,7 @@ import type { Conversation, LaunchConfig, SpawnResult as SentinelSpawnResult } f
 import { deriveConversationName, validateConversationName } from '../../shared/spawn-naming'
 import type { SpawnRequest } from '../../shared/spawn-schema'
 import type { ConversationStore, CreateConversationLineage } from '../conversation-store'
-import { computeSpawnLineage } from '../spawn-lineage'
+import { computeSpawnLineage, resolveNotifyParentSettleMs } from '../spawn-lineage'
 import { emitLaunchProgress } from './launch-progress'
 import { awaitSentinelSpawn } from './sentinel-spawn'
 import type { SpawnDeps, SpawnResult } from './types'
@@ -458,6 +458,7 @@ function finalizeDaemonConversation(
     deps.rendezvousCallerConversationId,
     conversationId,
     'daemon',
+    resolveNotifyParentSettleMs(req),
   )
   const conv = getOrCreateDaemonConversation(deps, conversationId, project, req.model, lineage)
   const statusBefore = conv.status

@@ -23,6 +23,31 @@ describe('validatedSpawnRequestSchema -- legacy daemon shape removed (transport 
   })
 })
 
+describe('validatedSpawnRequestSchema -- notifyParent report-back opt-in', () => {
+  it('omits the report-back fields by default', () => {
+    const r = validatedSpawnRequestSchema.safeParse({ cwd: '/tmp' })
+    expect(r.success).toBe(true)
+    if (r.success) {
+      expect(r.data.notifyParent).toBeUndefined()
+      expect(r.data.notifyParentSettleMs).toBeUndefined()
+    }
+  })
+
+  it('accepts the opt-in flag plus an optional settle window', () => {
+    const r = validatedSpawnRequestSchema.safeParse({ cwd: '/tmp', notifyParent: true, notifyParentSettleMs: 30000 })
+    expect(r.success).toBe(true)
+    if (r.success) {
+      expect(r.data.notifyParent).toBe(true)
+      expect(r.data.notifyParentSettleMs).toBe(30000)
+    }
+  })
+
+  it('rejects a non-positive settle window', () => {
+    expect(validatedSpawnRequestSchema.safeParse({ cwd: '/tmp', notifyParent: true, notifyParentSettleMs: 0 }).success).toBe(false)
+    expect(validatedSpawnRequestSchema.safeParse({ cwd: '/tmp', notifyParent: true, notifyParentSettleMs: -5 }).success).toBe(false)
+  })
+})
+
 /** A minimal claude-daemon transport spawn request, overridable per-test. */
 const transportDaemonReq = (
   meta: Record<string, unknown> = {},

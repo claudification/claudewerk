@@ -21,7 +21,20 @@
  * tag lets the reader tell PTY-boot lineage from daemon lineage at a glance.
  */
 
+import { DEFAULT_NOTIFY_PARENT_SETTLE_MS, type SpawnRequest } from '../shared/spawn-schema'
 import type { ConversationStore, CreateConversationLineage } from './conversation-store'
+
+/**
+ * Resolve the effective notify-parent settle window (ms) for a spawn request.
+ * `undefined` when the caller did not opt into the EXPENSIVE report-back. When
+ * opted in, the caller-supplied `notifyParentSettleMs` wins, else the default.
+ */
+export function resolveNotifyParentSettleMs(
+  req: Pick<SpawnRequest, 'notifyParent' | 'notifyParentSettleMs'>,
+): number | undefined {
+  if (!req.notifyParent) return undefined
+  return req.notifyParentSettleMs ?? DEFAULT_NOTIFY_PARENT_SETTLE_MS
+}
 
 /**
  * Compute the lineage to persist for a freshly-created conversation, given
@@ -35,6 +48,7 @@ export function computeSpawnLineage(
   callerId: string | null | undefined,
   conversationId: string,
   via: string,
+  notifyParentSettleMs?: number,
 ): CreateConversationLineage | undefined {
   if (!callerId) {
     console.log(`[parent-track] conv=${conversationId.slice(0, 8)} parent=none root=self via=${via}`)
@@ -43,10 +57,11 @@ export function computeSpawnLineage(
   const parent = conversations.getConversation(callerId)
   const rootId = parent?.rootConversationId ?? callerId
   const missingTag = parent ? '' : ' (parent-missing)'
+  const notifyTag = notifyParentSettleMs ? ` notifyParent=${notifyParentSettleMs}ms` : ''
   console.log(
-    `[parent-track] conv=${conversationId.slice(0, 8)} parent=${callerId.slice(0, 8)} root=${rootId.slice(0, 8)}${missingTag} via=${via}`,
+    `[parent-track] conv=${conversationId.slice(0, 8)} parent=${callerId.slice(0, 8)} root=${rootId.slice(0, 8)}${missingTag}${notifyTag} via=${via}`,
   )
-  return { parentConversationId: callerId, rootConversationId: rootId }
+  return { parentConversationId: callerId, rootConversationId: rootId, notifyParentSettleMs }
 }
 
 /**

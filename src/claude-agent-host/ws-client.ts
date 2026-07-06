@@ -190,6 +190,10 @@ export interface WsClient {
     raw: Record<string, unknown>
   }) => void
   sendConversationStatus: (status: 'active' | 'idle') => void
+  /** Report the live background sub-agent count (SubagentStart/Stop). Drives the
+   *  broker's parent-notify settle gate -- a child that is idle but still has a
+   *  background sub-agent running must NOT report to its parent yet. */
+  sendBackgroundActivity: (active: number) => void
   /** Emit a structured boot-phase event. Queued if not yet connected. */
   sendBootEvent: (step: BootStep, detail?: string, raw?: unknown) => void
   /** Called once the real CC session id is known. Sends `meta` (so the
@@ -804,6 +808,9 @@ export function createWsClient(options: WsClientOptions): WsClient {
     },
     sendConversationStatus(status: 'active' | 'idle') {
       send({ type: 'conversation_status', conversationId: routeId(), status } as AgentHostMessage)
+    },
+    sendBackgroundActivity(active: number) {
+      send({ type: 'background_activity', conversationId: routeId(), active } as AgentHostMessage)
     },
     sendBootEvent,
     setSessionId,

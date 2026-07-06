@@ -81,6 +81,10 @@ export interface SpawnJobRegistry {
 export interface RendezvousInfo {
   callerConversationId: string
   action: string
+  /** EXPENSIVE report-back settle window (ms) from the spawn's `notifyParent`
+   *  flag, carried so the boot-lifecycle lineage capture can persist it on the
+   *  child row. Undefined for revive/restart and opt-out spawns. */
+  notifyParentSettleMs?: number
 }
 
 export interface PendingRestartInfo {
@@ -96,6 +100,7 @@ export interface RendezvousRegistry {
     callerConversationId: ConversationId,
     project: string,
     action: 'spawn' | 'revive' | 'restart',
+    notifyParentSettleMs?: number,
   ) => Promise<Conversation>
   resolveRendezvous: (
     connectionId: ConnectionId,
@@ -289,6 +294,7 @@ export function createRendezvousRegistry(): RendezvousRegistry {
     conversationId: string
     project: string
     action: 'spawn' | 'revive' | 'restart'
+    notifyParentSettleMs?: number
     resolve: (conv: Conversation) => void
     reject: (error: string) => void
     timer: ReturnType<typeof setTimeout>
@@ -299,7 +305,7 @@ export function createRendezvousRegistry(): RendezvousRegistry {
   const pendingRestarts = new Map<string, PendingRestartInfo>()
 
   return {
-    addRendezvous(conversationId, callerConversationId, project, action) {
+    addRendezvous(conversationId, callerConversationId, project, action, notifyParentSettleMs) {
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
           conversationRendezvous.delete(conversationId)
@@ -314,6 +320,7 @@ export function createRendezvousRegistry(): RendezvousRegistry {
           conversationId,
           project,
           action,
+          notifyParentSettleMs,
           resolve,
           reject,
           timer,
@@ -346,7 +353,11 @@ export function createRendezvousRegistry(): RendezvousRegistry {
     getRendezvousInfo(conversationId) {
       const rv = conversationRendezvous.get(conversationId)
       if (!rv) return undefined
-      return { callerConversationId: rv.callerConversationId, action: rv.action }
+      return {
+        callerConversationId: rv.callerConversationId,
+        action: rv.action,
+        notifyParentSettleMs: rv.notifyParentSettleMs,
+      }
     },
 
     addPendingRestart(conversationId, info) {

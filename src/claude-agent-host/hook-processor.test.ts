@@ -22,6 +22,7 @@ function makeCtx(sent: HookEvent[]): AgentHostContext {
     wsClient: {
       isConnected: () => true,
       sendHookEvent: (e: HookEvent) => sent.push(e),
+      sendBackgroundActivity: () => {},
     },
   } as unknown as AgentHostContext
 }

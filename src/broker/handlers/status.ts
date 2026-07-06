@@ -19,6 +19,7 @@ import { notifyNeedsYou, rearmAttentionNotify } from '../attention-notify'
 import { emitDeskEvent } from '../desk/event-registry'
 import type { MessageHandler } from '../handler-context'
 import { AGENT_HOST_ONLY, registerHandlers } from '../message-router'
+import { armParentNotify } from '../parent-notify'
 import { recordContribution } from '../sotu/contribute'
 import { projectSlug } from '../sotu/paths'
 import type { StatusContrib } from '../sotu/types'
@@ -111,6 +112,10 @@ const agentStatus: MessageHandler = (ctx, data) => {
   }
   handleNeedsYouSignal(conv, conversationId, status)
   emitSotuContribution(conv, conversationId, status)
+  // EXPENSIVE report-back: a set_status (re)arms the parent-notify settle timer.
+  // No-op unless the child opted in via `notifyParent` at spawn. Re-validated at
+  // fire time, so arming mid-turn is safe (a still-active turn just skips).
+  armParentNotify(conversationId)
 
   ctx.log.info(`[status] conv=${conversationId.slice(0, 8)} state=${prevState}->${status.state} seq=${status.seq}`)
 }

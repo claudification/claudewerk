@@ -129,6 +129,10 @@ export interface CreateConversationLineage {
   parentConversationId?: string
   /** Topmost ancestor (parent.rootConversationId ?? parent.id), best-effort. */
   rootConversationId?: string
+  /** EXPENSIVE report-back settle window (ms) from the `notifyParent` spawn flag.
+   *  Undefined = no report-back. Rides with lineage since it is spawn-time
+   *  parent-relationship config captured at first persistence. */
+  notifyParentSettleMs?: number
 }
 
 export interface ConversationStore {
@@ -372,6 +376,7 @@ export interface ConversationStore {
     callerConversationId: string,
     project: string,
     action: 'spawn' | 'revive' | 'restart',
+    notifyParentSettleMs?: number,
   ) => Promise<Conversation>
   // Pending restart (terminate + auto-revive on disconnect)
   addPendingRestart: (conversationId: string, info: PendingRestartInfo) => void
@@ -1191,6 +1196,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
           pendingDialog: fullMeta.pendingDialog as Conversation['pendingDialog'],
           liveDialog: fullMeta.liveDialog as Conversation['liveDialog'],
           liveStatus: fullMeta.liveStatus as Conversation['liveStatus'],
+          notifyParentSettleMs: fullMeta.notifyParentSettleMs as number | undefined,
           pendingPlanApproval: fullMeta.pendingPlanApproval as Conversation['pendingPlanApproval'],
           pendingPermission: fullMeta.pendingPermission as Conversation['pendingPermission'],
           pendingAskQuestion: fullMeta.pendingAskQuestion as Conversation['pendingAskQuestion'],
@@ -1286,6 +1292,10 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
         // THE STATUS: the agent's self-reported task state, persisted so the
         // badge survives a broker restart (reset to `working` on next user turn).
         liveStatus: conv.liveStatus,
+        // EXPENSIVE report-back config: persist so a still-running child keeps
+        // reporting to its parent after a broker restart. backgroundBusy is
+        // transient (memory-only) and intentionally NOT persisted.
+        notifyParentSettleMs: conv.notifyParentSettleMs,
         pendingPlanApproval: conv.pendingPlanApproval,
         pendingPermission: conv.pendingPermission,
         pendingAskQuestion: conv.pendingAskQuestion,
@@ -1417,6 +1427,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       capabilities,
       parentConversationId: lineage?.parentConversationId,
       rootConversationId: lineage?.rootConversationId,
+      notifyParentSettleMs: lineage?.notifyParentSettleMs,
       startedAt: Date.now(),
       lastActivity: Date.now(),
       status: 'starting',
@@ -3075,8 +3086,9 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     callerConversationId: string,
     project: string,
     action: 'spawn' | 'revive' | 'restart',
+    notifyParentSettleMs?: number,
   ): Promise<Conversation> {
-    return rendezvous.addRendezvous(conversationId, callerConversationId, project, action)
+    return rendezvous.addRendezvous(conversationId, callerConversationId, project, action, notifyParentSettleMs)
   }
 
   function resolveRendezvous(conversationId: string, connectionId: string): boolean {

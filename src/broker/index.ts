@@ -74,6 +74,7 @@ import { startNightshiftGuardians } from './nightshift-guardians'
 import { startNightshiftOrchestrator } from './nightshift-orchestrator'
 import { startNightshiftScheduler } from './nightshift-scheduler'
 import { startNightshiftWatchdog } from './nightshift-watchdog'
+import { initParentNotify } from './parent-notify'
 import { addAllowedRoot, addPathMapping, getAllowedRoots } from './path-jail'
 import { allGrantsExpired } from './permissions'
 import {
@@ -839,6 +840,22 @@ async function main() {
   {
     // Register message handlers
     registerAllHandlers()
+
+    // Parent-notify (EXPENSIVE report-back): wire the settle engine to the
+    // conversation store + inter-conversation delivery primitives. Fires from
+    // the status / conversation_status / background_activity handlers.
+    initParentNotify({
+      getConversation: id => conversationStore.getConversation(id),
+      getConversationSocket: id => conversationStore.getConversationSocket(id),
+      registerImpulse: id => conversationStore.registerImpulse(id),
+      enqueue,
+      broadcastScoped: (msg, project) =>
+        conversationStore.broadcastConversationScoped(
+          msg as Parameters<typeof conversationStore.broadcastConversationScoped>[0],
+          project,
+        ),
+      log: msg => console.log(msg),
+    })
 
     // Project board watch registry (LEASE MODEL): resolve a project URI to its
     // owning sentinel so the broker can arm/renew/unwatch sentinel-side watches.

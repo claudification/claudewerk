@@ -8,6 +8,7 @@ import type { Conversation, HookEvent, TerminationDetail, TerminationSource } fr
 import { slugify } from '../address-book'
 import type { MessageHandler } from '../handler-context'
 import { AGENT_HOST_ONLY, ANY_ROLE, registerHandlers } from '../message-router'
+import { armParentNotify, cancelParentNotify, disposeParentNotify } from '../parent-notify'
 import { rejectBadMessage, requireProtocolVersion, requireStrings } from './validate'
 
 // Legacy free-form `end` reasons -> typed TerminationSource. Exact matches win;
@@ -317,6 +318,8 @@ const end: MessageHandler = (ctx, data) => {
   ctx.conversations.removeConversationSocket(conversationId, connectionId)
   const remaining = ctx.conversations.getActiveConversationCount(conversationId)
   if (remaining === 0) {
+    // Drop any pending parent-notify settle timer for this child.
+    disposeParentNotify(conversationId)
     // The agent host's `end` message carries either a typed source (new
     // wire) OR a free-form reason string (cc-exit-N, legacy). Map legacy
     // reason -> typed source so the NDJSON log is uniform.
@@ -422,13 +425,42 @@ const conversationStatus: MessageHandler = (ctx, data) => {
   conversation.lastActivity = Date.now()
   if (status === 'idle') {
     ctx.conversations.scheduleRecap(conversationId)
+    // Turn ended -> arm the EXPENSIVE parent-notify settle timer (no-op unless
+    // opted in). A running background sub-agent still holds it off (checked in arm).
+    armParentNotify(conversationId)
   } else {
     ctx.conversations.cancelRecap(conversationId)
     if (conversation.lastError) conversation.lastError = undefined
     if (conversation.rateLimit) conversation.rateLimit = undefined
+    // The conversation continues -> cancel any pending parent report.
+    cancelParentNotify(conversationId, 'turn-active')
   }
   ctx.conversations.broadcastConversationUpdate(conversationId)
   ctx.log.debug(`conversation_status: ${conversationId.slice(0, 8)} -> ${status}`)
+}
+
+// ─── Background sub-agent liveness (agent host -> broker) ────────────────
+// Feeds the parent-notify settle gate: a child that is idle but still has a
+// background sub-agent running must NOT report to its parent yet. Transient
+// (memory-only) -- never persisted.
+// Shared handler preamble (matches rateLimitStatusHandler / monitorUpdate /
+// streamDelta); extracting it is a repo-wide refactor, out of scope here.
+// fallow-ignore-next-line code-duplication
+const backgroundActivity: MessageHandler = (ctx, data) => {
+  const conversationId = (data.conversationId || ctx.ws.data.conversationId) as string
+  if (!conversationId) return
+  const conversation = ctx.conversations.getConversation(conversationId)
+  if (!conversation) return
+  const active = typeof data.active === 'number' ? data.active : 0
+  conversation.backgroundBusy = active
+  if (active > 0) {
+    // Still doing background work -> hold off the parent report.
+    cancelParentNotify(conversationId, 'background-busy')
+  } else if (conversation.status === 'idle') {
+    // Sub-agents drained and the turn already ended -> quiet again, re-arm.
+    armParentNotify(conversationId)
+  }
+  ctx.log.debug(`background_activity: ${conversationId.slice(0, 8)} active=${active} status=${conversation.status}`)
 }
 
 export function registerConversationLifecycleHandlers(): void {
@@ -442,6 +474,7 @@ export function registerConversationLifecycleHandlers(): void {
       update_conversation_metadata: updateMetadata,
       cwd_changed: cwdChanged,
       conversation_status: conversationStatus,
+      background_activity: backgroundActivity,
       host_transport_reconnect: hostTransportReconnect,
       notify,
       end,

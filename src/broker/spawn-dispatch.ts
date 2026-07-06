@@ -41,6 +41,7 @@ import { emitLaunchProgress as emitProgress } from './backends/launch-progress'
 import type { ConversationStore } from './conversation-store'
 import type { GlobalSettings } from './global-settings'
 import { sotuSpawnBrief } from './sotu'
+import { resolveNotifyParentSettleMs } from './spawn-lineage'
 
 /**
  * Translate the wire-level (`req.profile`, `req.pool`) pair into the
@@ -299,6 +300,7 @@ export async function dispatchSpawn(rawReq: SpawnRequest, deps: SpawnDispatchDep
       conversationId: result.conversationId,
       jobId: result.jobId,
       project: result.project ?? req.cwd,
+      notifyParentSettleMs: resolveNotifyParentSettleMs(req),
     })
   }
   return result
@@ -648,15 +650,16 @@ function registerSpawnRendezvous(opts: {
   conversationId: string
   jobId: string
   project: string
+  notifyParentSettleMs?: number
 }): void {
-  const { deps, conversationId, jobId, project } = opts
+  const { deps, conversationId, jobId, project, notifyParentSettleMs } = opts
   const callerConversationId = deps.rendezvousCallerConversationId
   if (!callerConversationId) return
   // Don't block the dispatch return -- caller gets immediate success +
   // conversationId. The rendezvous resolves async via boot-lifecycle's
   // `resolveRendezvous` call (or times out at 120s).
   deps.conversationStore
-    .addRendezvous(conversationId, callerConversationId, project, 'spawn')
+    .addRendezvous(conversationId, callerConversationId, project, 'spawn', notifyParentSettleMs)
     .then(conv => {
       emitProgress(deps.conversationStore, jobId, 'conversation_connected', 'done', {
         ccSessionId: (conv.agentHostMeta?.ccSessionId as string) || conv.id,

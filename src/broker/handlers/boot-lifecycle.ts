@@ -126,8 +126,9 @@ const agentHostBoot: MessageHandler = (ctx, data) => {
     // root on the INSERT. The lineage is computed once -- subsequent reboots
     // hit the `existing` branch above which intentionally does NOT touch
     // parent/root.
-    const callerId = ctx.conversations.getRendezvousInfo(conversationId)?.callerConversationId
-    const lineage = computeSpawnLineage(ctx.conversations, callerId, conversationId, 'boot')
+    const rv = ctx.conversations.getRendezvousInfo(conversationId)
+    const callerId = rv?.callerConversationId
+    const lineage = computeSpawnLineage(ctx.conversations, callerId, conversationId, 'boot', rv?.notifyParentSettleMs)
     const placeholder = ctx.conversations.createConversation(
       conversationId,
       resolvedProject,
