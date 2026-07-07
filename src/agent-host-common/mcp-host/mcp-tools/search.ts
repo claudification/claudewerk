@@ -119,7 +119,8 @@ export function registerSearchTools(ctx: McpToolContext): Record<string, ToolDef
         'QUERY SYNTAX (FTS5):\n' +
         '  bareword: `migration` | phrase: `"merge conflict"` | boolean: `auth AND token`\n' +
         '  prefix: `migrat*` | NOT: `error NOT timeout` | NEAR: `NEAR(foo bar, 5)`\n\n' +
-        'FILTERS: conversationId, project (URI or glob `path/*`), types (["user","assistant",...]).',
+        'FILTERS: conversationId, project (URI or glob `path/*`), types (["user","assistant",...]).\n' +
+        'SORT: "relevance" (default, best match first) or "recency" (newest first -- use to find recent activity).',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -146,6 +147,12 @@ export function registerSearchTools(ctx: McpToolContext): Record<string, ToolDef
             items: { type: 'string' },
             description: 'Filter by entry types: "user", "assistant", "tool_use", "tool_result", etc.',
           },
+          sort: {
+            type: 'string',
+            enum: ['relevance', 'recency'],
+            description:
+              'Result order. "relevance" (default) = best FTS match first. "recency" = newest transcript entry first (date desc); use to surface recent activity regardless of match quality.',
+          },
           limit: { type: 'number', description: 'Max results (1-100, default 20).' },
           offset: { type: 'number', description: 'Pagination offset (default 0).' },
         },
@@ -167,6 +174,7 @@ export function registerSearchTools(ctx: McpToolContext): Record<string, ToolDef
           const types = Array.isArray(params.types) ? params.types : String(params.types).split(',')
           url.searchParams.set('type', types.map(String).join(','))
         }
+        if (params.sort === 'recency') url.searchParams.set('sort', 'recency')
         if (params.limit != null) url.searchParams.set('limit', String(params.limit))
         if (params.offset != null) url.searchParams.set('offset', String(params.offset))
 

@@ -105,6 +105,7 @@ export function createApiRouter(
     const offset = clampInt(url.searchParams.get('offset'), 0, 0, Number.MAX_SAFE_INTEGER)
     const windowBefore = clampInt(url.searchParams.get('windowBefore'), 0, 0, 50)
     const windowAfter = clampInt(url.searchParams.get('windowAfter'), 0, 0, 50)
+    const sort = url.searchParams.get('sort') === 'recency' ? 'recency' : 'relevance'
 
     // Permission filter: collect conversations the caller can read.
     const allConversations = conversationStore.getAllConversations()
@@ -117,7 +118,7 @@ export function createApiRouter(
     // (e.g. a `project` filter that matches no conversation) must render as
     // "0 hits for <query>", never as `query: undefined` -> the client's
     // misleading `for "undefined"` (looks like a broken tool, not a real miss).
-    if (allowed.length === 0) return c.json({ hits: [], total: 0, query: q, limit, offset })
+    if (allowed.length === 0) return c.json({ hits: [], total: 0, query: q, limit, offset, sort })
 
     // If a single-conversation filter resolves to an unauthorized conversation, deny.
     if (conversationId && !allowed.some(s => s.id === conversationId)) {
@@ -135,6 +136,7 @@ export function createApiRouter(
       types,
       limit,
       offset,
+      sort,
     })
 
     const enriched = hits.map(hit => {
@@ -156,7 +158,7 @@ export function createApiRouter(
       }
     })
 
-    return c.json({ hits: enriched, total: hits.length, query: q, limit, offset })
+    return c.json({ hits: enriched, total: hits.length, query: q, limit, offset, sort })
   })
 
   // ─── Search-index admin (stats + manual rebuild) ──────────────────

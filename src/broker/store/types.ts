@@ -199,6 +199,11 @@ export interface SearchHit {
   snippet: string
 }
 
+/** How to order transcript search hits.
+ *  - `relevance` (default): FTS5 bm25 rank, best match first.
+ *  - `recency`: newest transcript entry first (date desc), regardless of match quality. */
+export type SearchSort = 'relevance' | 'recency'
+
 export interface SearchOpts {
   conversationId?: string
   conversationIds?: string[]
@@ -206,6 +211,7 @@ export interface SearchOpts {
   types?: string[]
   limit?: number
   offset?: number
+  sort?: SearchSort
 }
 
 export interface WindowOpts {

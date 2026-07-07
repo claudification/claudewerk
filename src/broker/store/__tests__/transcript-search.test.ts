@@ -244,6 +244,40 @@ for (const flavor of flavors) {
       })
     })
 
+    // ---------- recency vs relevance sort ----------
+
+    describe('search() sort', () => {
+      beforeEach(() => {
+        // The short/specific match is OLDER; the long/padded match is NEWER, so the
+        // relevance order and the recency order DISAGREE -- a clean discriminator.
+        store.transcripts.append('c1', 'e1', [
+          makeEntry('user', 'sortcanary', 'sc-old', { timestamp: 1_000 }),
+          makeEntry('user', 'sortcanary padded with extra filler words to lower its rank', 'sc-new', {
+            timestamp: 9_000,
+          }),
+        ])
+      })
+
+      it('default sort is relevance: best match first, regardless of date', () => {
+        const hits = store.transcripts.search('sortcanary')
+        expect(hits.length).toBe(2)
+        expect(hits[0].timestamp).toBe(1_000) // shorter, better-ranked entry -- even though it is older
+        for (let i = 1; i < hits.length; i++) {
+          expect(hits[i].rank).toBeGreaterThanOrEqual(hits[i - 1].rank)
+        }
+      })
+
+      it('sort=recency orders newest-first, regardless of rank', () => {
+        const hits = store.transcripts.search('sortcanary', { sort: 'recency' })
+        expect(hits.length).toBe(2)
+        expect(hits[0].timestamp).toBe(9_000)
+        expect(hits[hits.length - 1].timestamp).toBe(1_000)
+        for (let i = 1; i < hits.length; i++) {
+          expect(hits[i].timestamp).toBeLessThanOrEqual(hits[i - 1].timestamp)
+        }
+      })
+    })
+
     // ---------- snippet ----------
 
     describe('search() snippet', () => {

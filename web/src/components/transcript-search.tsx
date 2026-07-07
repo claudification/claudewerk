@@ -41,6 +41,7 @@ interface SearchResponse {
 }
 
 type ViewMode = 'conversations' | 'snippets'
+type SortMode = 'relevance' | 'recency'
 
 function parseConversationHits(data: SearchResponse): ConversationHit[] {
   const grouped = new Map<string, ConversationHit>()
@@ -126,6 +127,31 @@ function entryTypeIcon(type: string): string {
   }
 }
 
+function SortToggle({ sort, onChange }: { sort: SortMode; onChange: (s: SortMode) => void }) {
+  const opts: Array<{ value: SortMode; label: string }> = [
+    { value: 'relevance', label: 'relevant' },
+    { value: 'recency', label: 'recent' },
+  ]
+  return (
+    <div className="flex items-center shrink-0 rounded bg-background border border-surface-inset overflow-hidden">
+      {opts.map(o => (
+        <button
+          key={o.value}
+          type="button"
+          aria-pressed={sort === o.value}
+          onClick={() => onChange(o.value)}
+          className={cn(
+            'px-1.5 py-0.5 text-[10px] font-mono transition-colors cursor-pointer',
+            sort === o.value ? 'bg-primary/15 text-primary' : 'text-comment hover:text-foreground',
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function SyntaxHints() {
   return (
     <div className="px-4 py-3 border-t border-surface-inset bg-background">
@@ -190,10 +216,15 @@ export function TranscriptSearch() {
   const [loading, setLoading] = useState(false)
   const [total, setTotal] = useState(0)
   const [activeIndex, setActiveIndex] = useState(0)
+  const [sort, setSort] = useState<SortMode>('relevance')
 
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Mirror `sort` into a ref so the debounced/closure callers of doSearch always
+  // read the current mode without re-plumbing every call site or busting memo deps.
+  const sortRef = useRef(sort)
+  sortRef.current = sort
 
   function openSearch() {
     setOpen(true)
@@ -203,6 +234,8 @@ export function TranscriptSearch() {
     setConversationHits([])
     setSnippetHits([])
     setActiveIndex(0)
+    setSort('relevance')
+    sortRef.current = 'relevance'
     haptic('tap')
   }
 
@@ -231,6 +264,7 @@ export function TranscriptSearch() {
     try {
       const params = new URLSearchParams({ q: q.trim(), limit: '50' })
       if (conversationId) params.set('conversation', conversationId)
+      if (sortRef.current === 'recency') params.set('sort', 'recency')
       const res = await fetch(`/api/search?${params}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = (await res.json()) as SearchResponse
@@ -278,6 +312,16 @@ export function TranscriptSearch() {
     setFocusedConversation(null)
     setActiveIndex(0)
     doSearch(query)
+    haptic('tick')
+  }
+
+  function changeSort(next: SortMode) {
+    if (next === sort) return
+    setSort(next)
+    sortRef.current = next
+    setActiveIndex(0)
+    // Re-run the current search (preserving drill-in state) under the new order.
+    if (query.trim()) doSearch(query, mode === 'snippets' ? (focusedConversation ?? undefined) : undefined)
     haptic('tick')
   }
 
@@ -393,6 +437,7 @@ export function TranscriptSearch() {
           />
           {loading && <span className="text-[10px] text-comment animate-pulse shrink-0">...</span>}
           {!loading && total > 0 && <span className="text-[10px] text-comment font-mono shrink-0">{total} hits</span>}
+          <SortToggle sort={sort} onChange={changeSort} />
         </div>
 
         {/* Results */}

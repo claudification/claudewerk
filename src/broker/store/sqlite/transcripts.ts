@@ -440,7 +440,10 @@ export function createSqliteTranscriptStore(db: Database): TranscriptStore {
           params[`type${i}`] = opts.types[i]
         }
       }
-      sql += ' ORDER BY rank LIMIT $limit OFFSET $offset'
+      // Ordering: bm25 relevance by default; `recency` sorts newest-first by the
+      // entry timestamp (indexed), with id as a stable tiebreaker for same-ms rows.
+      sql += opts?.sort === 'recency' ? ' ORDER BY t.timestamp DESC, t.id DESC' : ' ORDER BY rank'
+      sql += ' LIMIT $limit OFFSET $offset'
 
       let rows: Params[]
       try {
