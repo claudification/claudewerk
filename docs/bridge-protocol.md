@@ -1,9 +1,11 @@
 # Bridge Protocol v1
 
-**Status: DRAFT rev 6 -- 2026-07-08. Design locked (14 decisions, workshop with Jonas);
+**Status: DRAFT rev 7 -- 2026-07-08. Design locked (15 decisions, workshop with Jonas);
 security-hardened against a full Opus adversarial audit (19 findings folded);
 nothing implemented yet.** Rev 6 adds a non-normative Recommendations section
-(operator dashboard + SRV-based domain resolution). Rev 1 bound A2A directly onto the connection -- one layer
+(operator dashboard + SRV-based domain resolution). Rev 7 adds connection
+management: graceful drain, random-live-carrier routing, simultaneous-dial
+collision resolution, and the connection-agnostic ack/sequencing model. Rev 1 bound A2A directly onto the connection -- one layer
 too low. Rev 2 = the three-layer, named-object model. Rev 3 adds the normative
 envelope/body split (fabric alignment), futility/bounce semantics, and encoding
 negotiation (JSON baseline / CBOR upgrade). Rev 4 closes the audit: authorized
@@ -111,6 +113,15 @@ queues are the fabric's inboxes. (Not to be confused with rclaude's internal
     warnings and periodic auth retry; `terminated` tears down all named objects
     for the peer. A graceful `terminate` verb exists; the inferred path is N
     consecutive auth rejections over the window.
+15. **Connection management** (section 2): connections drain **gracefully** (no
+    abrupt supersede); outbound ops route over a **random live** carrier. Two ack
+    levels, not conflated: the QoS-1 **hop delivery-ack** returns over the SAME
+    connection (its loss on connection death triggers a **resend** over another
+    carrier, made safe by the idempotency key = opId); the **end-to-end
+    application answer** (`res`/`end`/`err`) and per-object ordering are
+    connection-agnostic. Simultaneous mutual dial collapses to one connection via a
+    **deterministic tiebreak** both sides compute identically (never both-severed,
+    never both-kept) + randomized reconnect backoff.
 
 ### The frozen line
 
@@ -210,6 +221,38 @@ place: inside the bulk transfer class. Global backpressure = socket + queue caps
   and owns its cleanup; during `severing` a human can re-issue the key (-> back to
   `active`) or confirm teardown early. `unreachable` never enters `severing` --
   only an authorization signal does.
+- **Connection management (decision 15)** -- how the 0..N carriers are chosen,
+  drained, and de-duplicated. This is a TRANSPORT concern; nothing here touches
+  object/session state (those are connection-agnostic, section 3).
+
+  - **Outbound routing**: an op to send picks a **random live** connection (any
+    authenticated, non-`draining` carrier). Zero live carriers -> it stays in the
+    durable outbox (section 8) and drains on the next connection. Random spread
+    (not round-robin state) keeps routing stateless and load roughly even.
+  - **Graceful drain**: a connection is shut down by first marking it `draining`
+    (a `drain` control frame to the peer, or local state), NOT by an abrupt close.
+    While `draining`: no NEW ops route to it; ops already dispatched over it get a
+    bounded **drain window** for their **hop delivery-ack** (section 3) to return
+    over this same connection. The socket closes when its outstanding-opId set
+    empties OR the window expires -- then the outbox **resends** the unacked
+    stragglers over another carrier (dedupe by idempotency key covers any double
+    delivery). Abrupt close is reserved for error/timeout.
+  - **Simultaneous-dial collision (SHOULD, not MUST)**: multiple live connections
+    are a **valid steady state**, not an error -- the 0..N model already treats
+    every carrier as interchangeable, so a redundant duplicate from a mutual dial
+    is harmless. Implementations SHOULD nonetheless collapse an obvious duplicate
+    to avoid waste. When they do, the decision uses a **deterministic tiebreak both
+    sides compute identically** (prior art: XMPP stream-collision resolution
+    RFC 6120 s4.9.3.3, BGP connection-collision detection RFC 4271 -- both compare
+    a shared identifier so both ends independently pick the same survivor): order
+    the two by the pair of hello `nonce`s (lexicographically), tie-broken by domain
+    name, and **gracefully drain the loser**. Running the same comparison on the
+    same inputs guarantees exactly ONE is dropped -- never both (stranding the peer
+    at zero), never neither. A side that still needs a carrier redials after a
+    **randomized backoff** (full jitter) so the two do not re-collide in lockstep.
+  - Because coexisting carriers are fine, an implementation MAY also keep several
+    on purpose (throughput scale-out). The machinery handles 0 (queue), N
+    (interchangeable), and the collision case (SHOULD-collapse) uniformly.
 - **Keepalive**: WS ping/pong every 30s from the preferred dialer; kill
   connections silent > 90s. Caddy hops must tolerate the cadence (see
   `stream_close_delay` scar, `.claude/topics/gotchas-runtime.md`).
@@ -255,6 +298,20 @@ place: inside the bulk transfer class. Global backpressure = socket + queue caps
   briefly (default 30s), then `resync { object, fromSeq }` replays from there --
   `fromSeq` MUST be `>= tombstoneHorizon` and `<= current`, and resync itself is
   rate-limited, so a peer cannot force unbounded whole-queue replay.
+- **Two acknowledgment levels (do not conflate)** -- the `id` (ULID) is the
+  **idempotency key** that makes both safe:
+  1. **Hop delivery-ack** (`ack`, the QoS-1 reliability signal): the receiver,
+     upon durably persisting a transmission, returns `ack { id }` **over the same
+     connection it arrived on**. It confirms hop receipt, nothing more. If the
+     connection dies before the sender sees the `ack`, the sender does not know
+     whether it landed, so it **resends the same `id`** over another live carrier;
+     the receiver **discards the duplicate by idempotency key**. This is why
+     QoS-1 needs the key -- TCP guarantees delivery only while the socket lives.
+  2. **End-to-end answer** (`res` / `end` / `err`, or `accept`/`reject` for
+     `open`): the L3 semantic terminal. It is **connection-agnostic** (keyed to
+     the `id`, may arrive over any carrier, possibly much later) and doubles as
+     the delivery-ack when it comes promptly.
+  A best-effort send MAY skip the hop delivery-ack; a QoS-1 send requires it.
 - **Durability (QoS-1)**: `open`, `send`, `req`, and bulk `offer` persist in the
   sender's per-object FIFO queue until their terminal frame (`accept`/`reject`,
   `ack`, `res`/`end`/`err`, `done`). Dedupe by `(peer, id)` kept >= 7 days;
