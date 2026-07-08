@@ -735,6 +735,28 @@ const scheduledTaskFire: MessageHandler = (ctx, data) => {
   ctx.log.debug(`scheduled_task_fire: "${(data.content as string)?.slice(0, 60)}"`)
 }
 
+// Conversation-scoped auth failure (headless inference 401) -- broadcast the
+// re-login hint to dashboard subscribers. EPHEMERAL, same class as
+// scheduled_task_fire: not persisted; a still-broken profile re-emits next turn.
+// fallow-ignore-next-line code-duplication -- shared MessageHandler preamble (conversationId + project guard), same idiom as streamDelta/monitorUpdate.
+const conversationAuthNeeded: MessageHandler = (ctx, data) => {
+  const conversationId = (data.conversationId || ctx.ws.data.conversationId) as string
+  if (!conversationId) return
+  const conversation = ctx.conversations.getConversation(conversationId)
+  if (!conversation?.project) return
+  ctx.broadcastScoped(
+    {
+      type: 'conversation_auth_needed',
+      conversationId,
+      errorStatus: Number(data.errorStatus) || 0,
+      detail: typeof data.detail === 'string' ? data.detail : undefined,
+      timestamp: Number(data.timestamp) || Date.now(),
+    },
+    conversation.project,
+  )
+  ctx.log.info(`conversation_auth_needed: ${conversationId.slice(0, 8)} status=${Number(data.errorStatus) || 0}`)
+}
+
 // Store the final result text from headless conversations (used for ad-hoc task completion display)
 const resultText: MessageHandler = (ctx, data) => {
   const conversationId = data.conversationId as string
@@ -795,6 +817,7 @@ export function registerTranscriptHandlers(): void {
       result_text: resultText,
       monitor_update: monitorUpdate,
       scheduled_task_fire: scheduledTaskFire,
+      conversation_auth_needed: conversationAuthNeeded,
     },
     AGENT_HOST_ONLY,
   )

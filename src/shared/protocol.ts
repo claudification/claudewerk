@@ -1055,6 +1055,7 @@ export type AgentHostMessage =
   | SpawnFailed
   | MonitorUpdate
   | ScheduledTaskFire
+  | ConversationAuthNeeded
   | ConversationStatusSignal
   | BackgroundActivitySignal
   | JsonStreamData
@@ -2974,6 +2975,30 @@ export interface ScheduledTaskFire {
   timestamp: number
 }
 
+/**
+ * Agent host -> broker -> control-panel: THIS headless conversation's inference
+ * call is failing auth (a `system/api_retry` with `error_status: 401`), so the
+ * profile needs a re-login. Distinct from ProfileAuthTrouble, which is the
+ * SENTINEL's out-of-band usage-probe 401 (profile-level, no live conversation).
+ * This one is conversation-scoped and inference-sourced -- it drives the in-
+ * transcript "Authorize" hint. EPHEMERAL: broadcast, not persisted (same class
+ * as scheduled_task_fire); a still-broken profile re-emits on the next turn's
+ * first retry, and the client clears the hint on the next successful message or
+ * a completed login.
+ *
+ * Recovery IS automatable headless via the `claude_authenticate` /
+ * `claude_oauth_callback` cc_control commands -- the Login modal drives them.
+ */
+export interface ConversationAuthNeeded {
+  type: 'conversation_auth_needed'
+  conversationId: string
+  /** HTTP status that surfaced the failure (401). */
+  errorStatus: number
+  /** Sanitized error label from CC, e.g. "authentication_failed". */
+  detail?: string
+  timestamp: number
+}
+
 // Per-project customization settings (label, icon, color, keyterms)
 export interface ProjectSettings {
   label?: string
@@ -4726,9 +4751,14 @@ export interface SentinelUsageReport {
 export type AuthTroubleReason = 'http_401' | 'http_403' | 'no_token' | 'invalid_grant'
 
 /**
- * Broker -> control-panel: a profile's OAuth auth has failed and needs a manual
- * re-login (`claude auth login` -- which CANNOT be automated; only the
- * inference-only `setup-token` is headless). Detected broker-side from the
+ * Broker -> control-panel: a profile's OAuth auth has failed and needs a re-
+ * login. This is the SENTINEL's out-of-band usage-probe 401 (profile-level, no
+ * live conversation) -- for the in-conversation inference 401, see
+ * ConversationAuthNeeded. Re-login IS automatable headless via the
+ * `claude_authenticate` / `claude_oauth_callback` cc_control commands (the Login
+ * modal drives them); this profile-level event only names the profile + a
+ * recovery hint since the broker has no live conversation to drive. Detected
+ * broker-side from the
  * per-profile error in `sentinel_usage_report`, debounced once-per-window per
  * `sentinelId:profile`, and broadcast as a first-class event that also drives a
  * push notification. Broadcast on the ControlPanelMessage channel.

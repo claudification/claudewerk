@@ -89,6 +89,11 @@ export interface StreamBackendOptions {
     outputPath?: string
   }) => void
   onScheduledTaskFire?: (content: string) => void
+  /** Backend hit an auth failure on an inference call (CC: `system/api_retry`
+   *  with `error_status: 401`). Drives the in-transcript "Authorize" hint.
+   *  EPHEMERAL -- the receiver broadcasts, never persists; see
+   *  ConversationAuthNeeded in src/shared/protocol.ts. */
+  onAuthNeeded?: (info: { errorStatus: number; detail?: string }) => void
   onPlanModeChanged?: (planMode: boolean) => void
   onApiStatus?: (status: string) => void
   /** Backend emitted a thinking-progress ping (CC: `system/thinking_tokens`).
@@ -201,6 +206,7 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
       onSubagentEntry: options.onSubagentEntry,
       onMonitorUpdate: options.onMonitorUpdate,
       onScheduledTaskFire: options.onScheduledTaskFire,
+      onAuthNeeded: options.onAuthNeeded,
       onPlanModeChanged: options.onPlanModeChanged,
       onApiStatus: options.onApiStatus,
       onThinkingProgress: options.onThinkingProgress,

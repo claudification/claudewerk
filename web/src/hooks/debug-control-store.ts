@@ -89,5 +89,11 @@ export function getDebugTraces(conversationId: string): DebugTrace[] {
   return traces.filter(t => t.conversationId === conversationId).reverse()
 }
 
+/** The final result for a single trace, or undefined until it lands. Lets a
+ *  caller (e.g. the Login modal) await one command's outcome without scanning. */
+export function getDebugTraceResult(traceId: string): DebugTraceResult | undefined {
+  return byId.get(traceId)?.result
+}
+
 export const subscribe = signal.subscribe
 export const getVersion = signal.getVersion

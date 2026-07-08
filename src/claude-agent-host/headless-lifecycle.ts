@@ -380,6 +380,19 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
       }
     },
 
+    onAuthNeeded({ errorStatus, detail }) {
+      ctx.diag('headless', `auth_needed: inference ${errorStatus}${detail ? ` (${detail})` : ''} -- surfacing re-login hint`)
+      if (ctx.wsClient?.isConnected()) {
+        ctx.wsClient.send({
+          type: 'conversation_auth_needed',
+          conversationId: ctx.conversationId,
+          errorStatus,
+          detail,
+          timestamp: Date.now(),
+        } as unknown as AgentHostMessage)
+      }
+    },
+
     onApiStatus(status) {
       // Backend-agnostic activity signal: CC is making an API request
       if (status === 'requesting') {

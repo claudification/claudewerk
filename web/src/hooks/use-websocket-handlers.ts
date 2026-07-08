@@ -48,6 +48,7 @@ import type {
 } from '@/lib/types'
 import { setLastConversationId } from '@/lib/ui-state'
 import { formatRateBucketName, haptic } from '@/lib/utils'
+import { clearAuthNeeded, setAuthNeeded } from './auth-needed-store'
 import { addDebugTraceEvent, setDebugTraceResult } from './debug-control-store'
 import { clearThinkingProgress, recordThinkingProgress } from './thinking-progress-store'
 import { recordTokenSample } from './token-flow-store'
@@ -560,7 +561,13 @@ function handleTranscriptEntries(msg: DashboardMessage) {
   // Terminus for the live thinking indicator: any new (non-initial) entry
   // means the model has emitted SOMETHING -- the thinking phase is over.
   // Cheap insurance even though the store has its own 4s staleness clear.
-  if (!initial && newEntries.length > 0) clearThinkingProgress(sid)
+  if (!initial && newEntries.length > 0) {
+    clearThinkingProgress(sid)
+    // A fresh entry means the model produced output -> auth recovered (the
+    // stalled 401 turn self-healed, or an external re-login landed). Clear the
+    // re-login hint so it never lingers stale.
+    clearAuthNeeded(sid)
+  }
   useConversationsStore.setState(state => {
     const existing = state.transcripts[sid] || []
     // isInitial=true REPLACES the cache. The agent host fires this on WS
@@ -1614,6 +1621,16 @@ function handleDebugTraceEvent(msg: DashboardMessage): void {
   })
 }
 
+function handleConversationAuthNeeded(msg: DashboardMessage): void {
+  const conversationId = msg.conversationId as string | undefined
+  if (!conversationId) return
+  setAuthNeeded(conversationId, {
+    errorStatus: (msg.errorStatus as number | undefined) || 401,
+    detail: typeof msg.detail === 'string' ? msg.detail : undefined,
+    at: (msg.timestamp as number | undefined) || Date.now(),
+  })
+}
+
 function handleDebugControlResult(msg: DashboardMessage): void {
   const traceId = msg.traceId as string | undefined
   if (!traceId) return
@@ -1801,6 +1818,7 @@ export const handlers: Record<string, MessageHandler> = {
   thinking_progress: handleThinkingProgress,
   debug_trace_event: handleDebugTraceEvent,
   debug_control_result: handleDebugControlResult,
+  conversation_auth_needed: handleConversationAuthNeeded,
   claude_health_update: handleClaudeHealthUpdate,
   claude_efficiency_update: handleClaudeEfficiencyUpdate,
   rate_limit_status: handleRateLimitStatus,

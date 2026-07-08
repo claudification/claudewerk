@@ -6,6 +6,7 @@
 
 import { openRenameModal } from '@/components/rename-modal-trigger'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import { openLogin } from './open-login'
 
 /**
  * Returns true if the input is a client command and was handled (caller
@@ -54,6 +55,12 @@ export function tryRunClientCommand(input: string): boolean {
     case 'rename':
       openRenameModal()
       return true
+    case 'login': {
+      const sid = useConversationsStore.getState().selectedConversationId
+      if (!sid) return false
+      openLogin(sid)
+      return true
+    }
     default:
       return false
   }

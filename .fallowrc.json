@@ -1,5 +1,11 @@
 {
   "entry": ["web/public/sw.js", "scripts/**/*.ts", "**/*.test.ts", "**/*.test.tsx"],
   "ignoreDependencies": ["bun:sqlite", "bun:test", "@codemirror/theme-one-dark"],
-  "ignorePatterns": [".claude/**", ".rclaude/**"]
+  "ignorePatterns": [".claude/**", ".rclaude/**"],
+  "ignoreExports": [
+    { "file": "web/src/hooks/auth-needed-store.ts", "exports": ["*"] },
+    { "file": "web/src/hooks/debug-control-store.ts", "exports": ["*"] },
+    { "file": "web/src/hooks/thinking-progress-store.ts", "exports": ["*"] },
+    { "file": "web/src/hooks/token-flow-store.ts", "exports": ["*"] }
+  ]
 }

@@ -55,6 +55,7 @@ export interface HandlerContext {
     | 'onSubagentEntry'
     | 'onMonitorUpdate'
     | 'onScheduledTaskFire'
+    | 'onAuthNeeded'
     | 'onPlanModeChanged'
     | 'onApiStatus'
     | 'onThinkingProgress'
@@ -268,6 +269,21 @@ function handleTaskStarted(hctx: HandlerContext, msg: Record<string, unknown>) {
   callbacks.onTaskStarted?.({ taskId, toolUseId, taskType, description })
 }
 
+/** A `system/api_retry` with `error_status: 401` means the profile's auth is
+ *  dead. Surface the re-login hint ONCE per failing request (gate on the first
+ *  retry attempt) -- attempts 2..N are the same episode, and a genuinely new
+ *  failing turn starts back at 1. */
+function surfaceAuthNeededOnUnauthorized(
+  callbacks: { onAuthNeeded?: (info: { errorStatus: number; detail?: string }) => void },
+  msg: Record<string, unknown>,
+): void {
+  const errorStatus = Number(msg.error_status) || 0
+  const attempt = Number(msg.attempt) || 0
+  if (errorStatus === 401 && attempt <= 1) {
+    callbacks.onAuthNeeded?.({ errorStatus, detail: typeof msg.error === 'string' ? msg.error : undefined })
+  }
+}
+
 function handleSystemSubtype(
   hctx: HandlerContext,
   subtype: string,
@@ -286,6 +302,7 @@ function handleSystemSubtype(
       debug(
         `api_retry: attempt=${msg.attempt}/${msg.max_retries} delay=${msg.retry_delay_ms}ms status=${msg.error_status}`,
       )
+      surfaceAuthNeededOnUnauthorized(callbacks, msg)
       break
     case 'informational':
       debug(`informational: ${((msg.content as string) || '').slice(0, 80)}`)

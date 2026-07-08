@@ -13,6 +13,7 @@ import { ProjectActionPanel } from '@/components/conversation-detail/project-act
 import { DebugConsole } from '@/components/debug-console'
 import { dispatchBus } from '@/components/dispatch-overlay/dispatch-bus'
 import { Dock } from '@/components/dock'
+import { LoginHintBanner } from '@/components/auth/login-hint-banner'
 import { Header } from '@/components/header'
 import { JsonInspectorDialog } from '@/components/json-inspector'
 import { LaunchProfileCommands } from '@/components/launch-profiles/launch-profile-commands'
@@ -91,6 +92,8 @@ const DebugControlModal = lazy(() =>
   import('@/components/debug/debug-control-modal').then(m => ({ default: m.DebugControlModal })),
 )
 const SotuViewerModal = lazy(() => import('@/components/sotu-viewer').then(m => ({ default: m.SotuViewerModal })))
+// Admin-only Claude login flow (cc_control OAuth). Kept out of the index bundle.
+const LoginModal = lazy(() => import('@/components/auth/login-modal').then(m => ({ default: m.LoginModal })))
 // THE DIALOGUE -- live dialogs as managed modals (parkable, detachable).
 const LiveDialogModals = lazy(() =>
   import('@/components/dialog/persistent/live-dialog-modals').then(m => ({ default: m.LiveDialogModals })),
@@ -480,6 +483,7 @@ function Dashboard() {
         <DesktopSidebar collapsed={sidebarCollapsed} onToggle={toggleSidebar} canLocate={!!selectedConversationId} />
 
         <div className="flex-1 border border-border overflow-hidden flex flex-col min-w-0">
+          {canAdmin && <LoginHintBanner />}
           <PanelBoundary name="Conversation">
             <DashboardContent />
           </PanelBoundary>
@@ -513,6 +517,11 @@ function Dashboard() {
       {canAdmin && (
         <Suspense fallback={null}>
           <DebugControlModal />
+        </Suspense>
+      )}
+      {canAdmin && (
+        <Suspense fallback={null}>
+          <LoginModal />
         </Suspense>
       )}
       <Suspense fallback={null}>
