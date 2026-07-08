@@ -39,7 +39,16 @@
  *     swallows its error to console.error, exactly like termination-log.
  */
 
-import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  appendFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import type { RecapAudience, RecapLedgerSummary, RecapPeriodLabel, RecapStatus } from '../../../shared/protocol'
 
@@ -184,6 +193,11 @@ export interface RecapBundleWriter {
   /** Copy a source bundle's UPSTREAM artifacts (manifest/merged/chunks/prompts/
    *  final-response) into a fresh recapId dir for fork-mode regenerate. */
   forkUpstream(srcRecapId: string, dstRecapId: string): void
+  /** Retention: delete TERMINAL bundle dirs whose last activity is older than
+   *  `maxAgeMs` (keep banked map/merge output for a cost-safe resume window, then
+   *  reclaim disk). Never touches an in-flight/interrupted bundle. Returns the
+   *  removed recapIds. Best-effort: a single dir's error is logged, not thrown. */
+  pruneOlderThan(maxAgeMs: number, now?: number): string[]
 }
 
 /** Create the bundle writer rooted at `<cacheDir>/recaps`. Mirrors
@@ -447,8 +461,42 @@ export function createRecapBundleWriter(cacheDir: string): RecapBundleWriter {
         seqByRecap.delete(recapId)
       }
     },
+
+    pruneOlderThan(maxAgeMs, now = Date.now()) {
+      const removed: string[] = []
+      let entries: string[]
+      try {
+        entries = readdirSync(root)
+      } catch (err) {
+        console.error('[recap-bundle] prune readdir failed:', describe(err))
+        return removed
+      }
+      for (const recapId of entries) {
+        if (!isPrunable(readManifest(recapId), maxAgeMs, now)) continue
+        try {
+          rmSync(bundleDir(recapId), { recursive: true, force: true })
+          removed.push(recapId)
+        } catch (err) {
+          console.error(`[recap-bundle] prune ${recapId} failed:`, describe(err))
+        }
+      }
+      return removed
+    },
   }
 }
+
+/** True iff a bundle is a TERMINAL run past the retention window. A missing
+ *  manifest (not our dir) or an in-flight/interrupted (resumable) run is kept. */
+function isPrunable(manifest: RecapBundleManifest | null, maxAgeMs: number, now: number): boolean {
+  if (!manifest || !TERMINAL_BUNDLE_STATUSES.has(manifest.status)) return false
+  const t = manifest.timing
+  const lastActivity = t.completedAt ?? t.updatedAt ?? t.startedAt ?? t.createdAt
+  return now - lastActivity > maxAgeMs
+}
+
+/** Terminal statuses whose bundle is safe to reclaim once past the retention
+ *  window. 'interrupted' is resumable -> never pruned by age. */
+const TERMINAL_BUNDLE_STATUSES = new Set<RecapStatus>(['done', 'partial', 'failed', 'cancelled'])
 
 function describe(err: unknown): string {
   return err instanceof Error ? err.message : String(err)

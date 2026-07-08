@@ -94,6 +94,7 @@ import { makeCommitGatherer } from './recap/commit-gather'
 import { gatherConversations } from './recap/period/gather'
 import { chat } from './recap/shared/openrouter-client'
 import { initRecapOrchestrator } from './recap-orchestrator'
+import { startRecapReaper } from './recap-reaper'
 import { createRouter } from './routes'
 import { createSentinelRegistry } from './sentinel-registry'
 import {
@@ -656,6 +657,12 @@ async function main() {
   } catch (err) {
     console.error('[recap] boot sweep failed:', err)
   }
+
+  // Live recap reaper: the boot sweep only fires at startup, so a run that wedges
+  // while the broker STAYS UP (a hang the in-process overall deadline missed) would
+  // sit 'rendering' forever. This periodic loop force-fails any silent in-flight
+  // recap past the reap ceiling and prunes expired bundles. Mirrors the watchdog.
+  startRecapReaper({ orchestrator: recapOrch })
 
   // Lessons-Learned Scavenger ("Overwatch"). TIER 1: nightly (04:00 local), for
   // each opted-in project (ProjectSettings.lessonsEnabled), an activity gate then

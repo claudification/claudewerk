@@ -204,4 +204,33 @@ describe('RecapBundleWriter', () => {
     // ...and the fork has its own call counter (starts at 1)
     expect(bundle.recordCallPrompt('recap_fork', { stage: 'reduce', model: 'm' })).toBe(1)
   })
+
+  describe('pruneOlderThan (retention)', () => {
+    function terminalBundle(recapId: string, completedAt: number): void {
+      begin(recapId)
+      bundle.updateManifest(recapId, { status: 'done', completedAt })
+    }
+
+    it('removes terminal bundles past the window, keeps recent ones', () => {
+      const now = 1_000_000_000_000
+      const thirtyDays = 30 * 24 * 60 * 60_000
+      terminalBundle('recap_old', now - thirtyDays - 1) // just past the window
+      terminalBundle('recap_fresh', now - 60_000) // a minute ago
+      const removed = bundle.pruneOlderThan(thirtyDays, now)
+      expect(removed).toEqual(['recap_old'])
+      expect(existsSync(bundle.dir('recap_old'))).toBe(false)
+      expect(existsSync(bundle.dir('recap_fresh'))).toBe(true)
+    })
+
+    it('never prunes an in-flight or interrupted (resumable) bundle, however old', () => {
+      const now = 1_000_000_000_000
+      begin('recap_running') // status 'gathering', old createdAt (1234)
+      begin('recap_paused')
+      bundle.updateManifest('recap_paused', { status: 'interrupted' })
+      const removed = bundle.pruneOlderThan(1, now) // window of 1ms -> everything is "old"
+      expect(removed).toEqual([])
+      expect(existsSync(bundle.dir('recap_running'))).toBe(true)
+      expect(existsSync(bundle.dir('recap_paused'))).toBe(true)
+    })
+  })
 })

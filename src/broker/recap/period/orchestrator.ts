@@ -30,6 +30,7 @@ import {
   splitIntoChunks,
 } from './chunk/split'
 import { buildSynthesizePrompt } from './chunk/synthesize-prompt'
+import { overallDeadlineMs, withDeadline } from './deadline'
 import {
   gatherCommitsStub,
   gatherContention,
@@ -174,8 +175,12 @@ function scheduleRun(
     // cost was already burned (record-on-failure) -- the runLlmCall wrapper
     // also flushes it incrementally, but this guarantees the final state.
     const ledger = new RecapLedger()
+    const scheduledAt = Date.now()
     runRecap(deps, recapId, args, period, timeZone, ledger, reuseMap).catch(err => {
-      console.error(`[recap] run failed for ${recapId}:`, err)
+      const priorPhase = deps.store.get(recapId)?.phase ?? '?'
+      console.error(
+        `[recap] ${recapId} FAILED after ${Math.round((Date.now() - scheduledAt) / 1000)}s at phase=${priorPhase}: ${describe(err)}`,
+      )
       const built = ledger.build()
       deps.store.update(recapId, {
         status: 'failed',
@@ -770,6 +775,7 @@ async function runRecap(
   emit.setProgress(2, 'gather/begin')
   deps.store.update(recapId, { startedAt })
   deps.bundle?.updateManifest(recapId, { startedAt })
+  console.log(`[recap] ${recapId} start: project=${args.projectUri} period=${args.period.label} audience=${audience}`)
 
   const projectUris = resolveProjectScope(deps.brokerStore, args.projectUri, deps.expandProjectScope)
   const scope: PeriodScope = { projectUris, periodStart: period.start, periodEnd: period.end, timeZone }
@@ -843,15 +849,27 @@ async function runRecap(
   emit.setStatus('rendering')
   // ONESHOT for small periods (one Opus pass), CHUNKED map-reduce for big ones
   // (parallel cheap extraction -> code merge -> one Opus synthesis). Both feed
-  // the SAME parseRecapOutput/finalize downstream.
-  const { parsed, model, partial } = await produceRecap(deps, recapId, ledger, emit, {
-    built,
-    promptInputs,
-    audience,
-    args,
-    recipe,
-    reuseMap,
-  })
+  // the SAME parseRecapOutput/finalize downstream. The WHOLE render races the
+  // overall deadline (deadline.ts) -- the master cap scaled by conversation count
+  // -- so a hung map OR reduce call force-fails the run instead of hanging the
+  // progress bar. Banked map/merge output survives on disk for a cost-safe resume.
+  const convCount = promptInputs.conversations.length
+  const overallMs = overallDeadlineMs(convCount)
+  const remainingMs = overallMs - (Date.now() - startedAt)
+  console.log(
+    `[recap] ${recapId} render start: ${convCount} conv(s), ${inputChars} chars, ` +
+      `overall deadline ${Math.round(overallMs / 1000)}s (${Math.round(remainingMs / 1000)}s left after gather)`,
+  )
+  const { parsed, model, partial } = await withDeadline(remainingMs, convCount, () =>
+    produceRecap(deps, recapId, ledger, emit, {
+      built,
+      promptInputs,
+      audience,
+      args,
+      recipe,
+      reuseMap,
+    }),
+  )
   const partialReason = partial
     ? `${partial.failed} of ${partial.total} chunk(s) failed -- recap is partial`
     : undefined
@@ -899,6 +917,10 @@ async function runRecap(
     'info',
     'persist',
     partial ? `recap stored as ${recapId} (PARTIAL: ${partialReason})` : `recap stored as ${recapId}`,
+  )
+  console.log(
+    `[recap] ${recapId} ${partial ? 'PARTIAL' : 'done'} in ${Math.round((Date.now() - startedAt) / 1000)}s` +
+      ` ($${ledger.build().summary.totalCostUsd.toFixed(4)}, model=${model})`,
   )
   deps.broadcaster.broadcast({
     type: 'recap_complete',
@@ -1160,7 +1182,10 @@ const MAP_CONCURRENCY = Number(process.env.CLAUDWERK_RECAP_MAP_CONCURRENCY) || 4
 // bounded), per Jonas's "deadline should scale with conversations" note. Floor
 // is the dialog's 10min; ceil keeps even a huge month-recap bounded.
 const MAP_STAGE_FLOOR_MS = 10 * 60_000
-const MAP_STAGE_CEIL_MS = 45 * 60_000
+// The overall conv-scaled deadline (deadline.ts, <=30min) is now the master cap
+// for the whole render, so the map stage no longer needs its own hour-scale ceil
+// (dropped the old 45min): it always sits under the overall race regardless.
+const MAP_STAGE_CEIL_MS = 20 * 60_000
 export function mapStageDeadlineMs(chunkCount: number): number {
   // Test/ops override -- a tiny value lets tests exercise the degrade path.
   const override = Number(process.env.CLAUDWERK_RECAP_MAP_STAGE_DEADLINE_MS)
@@ -1422,6 +1447,11 @@ async function runChunked(
   emit.emit('info', 'render/merge', `merged ${chunks.length} chunk(s) -> ${countItems(merged)} item(s) after dedup`)
 
   // REDUCE -- one synthesis pass on the small merged JSON (not the raw bulk).
+  // The merged JSON is banked (recordMerged above) BEFORE the call, so the
+  // reduce is cheap to retry: `timeoutRetries: RECAP_TIMEOUT_RETRIES` (=1) below
+  // AUTO-RETRIES the synthesize call once on a timeout against the SAME banked
+  // merged JSON -- the expensive map extraction is never re-paid. If it still
+  // fails, the banked merged JSON survives on disk for a one-click resume/Retry.
   emit.setProgress(78, 'render/synthesize')
   const synth = buildSynthesizePrompt(
     merged,

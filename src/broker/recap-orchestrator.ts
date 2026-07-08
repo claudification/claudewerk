@@ -10,6 +10,7 @@ import type {
 } from '../shared/protocol'
 import { isRecapTerminal } from '../shared/protocol'
 import { createRecapBundleWriter } from './recap/period/bundle'
+import { reapCeilingMs } from './recap/period/deadline'
 import type { CommitDigest, PeriodScope } from './recap/period/gather/types'
 import {
   type RegenerateArgs,
@@ -27,6 +28,10 @@ import type { StoreDriver } from './store/types'
 
 let singleton: RecapOrchestrator | null = null
 
+/** Keep banked map/merge output ~30 days for a cost-safe resume, then reclaim
+ *  disk. Overridable via CLAUDWERK_RECAP_BUNDLE_RETENTION_MS. */
+const DEFAULT_BUNDLE_RETENTION_MS = 30 * 24 * 60 * 60_000
+
 export interface RecapOrchestrator {
   start(args: StartArgs): Promise<StartResult>
   /** Pillar C++: re-run a recap from a downstream stage off its on-disk bundle. */
@@ -37,6 +42,14 @@ export interface RecapOrchestrator {
   /** G2: on broker boot, reclaim recaps stuck in-flight (their async died with the
    *  process) -> 'interrupted' (resumable, never auto-resumed). Returns what it swept. */
   sweepInterrupted(): Array<{ id: string; prevStatus: RecapStatus; progress: number }>
+  /** Live backstop (runs periodically, NOT just at boot): force-fail any in-flight
+   *  recap whose last activity is older than the reap ceiling -- a run wedged while
+   *  the broker stayed up (the in-process overall deadline never fired). Marks it
+   *  `failed` (reported, resumable off the banked bundle). Returns what it reaped. */
+  reapStale(): Array<{ id: string; prevStatus: RecapStatus; ageMs: number }>
+  /** Retention: delete terminal on-disk bundles past the retention window (default
+   *  ~30 days, env CLAUDWERK_RECAP_BUNDLE_RETENTION_MS). Returns removed recapIds. */
+  pruneBundles(): string[]
   cancel(recapId: string): void
   dismiss(recapId: string): void
   list(filter: { projectUri?: string; status?: RecapStatus[]; limit?: number }): RecapSummary[]
@@ -121,6 +134,43 @@ export function initRecapOrchestrator(opts: InitOptions): RecapOrchestrator {
         swept.push({ id: row.id, prevStatus: row.status, progress: row.progress })
       }
       return swept
+    },
+    reapStale() {
+      const ceilingMs = reapCeilingMs()
+      const now = Date.now()
+      const reaped: Array<{ id: string; prevStatus: RecapStatus; ageMs: number }> = []
+      for (const row of store.list({ status: ['queued', 'gathering', 'rendering'] })) {
+        // Liveness = the most recent of (last log line, run start, row creation).
+        // A healthy long run keeps emitting progress logs; a wedged one goes silent.
+        const lastActivity = Math.max(store.lastActivityAt(row.id) ?? 0, row.startedAt ?? 0, row.createdAt)
+        const ageMs = now - lastActivity
+        if (ageMs <= ceilingMs) continue
+        const note = `reaped: no activity for ${Math.round(ageMs / 1000)}s (was ${row.status} at ${row.progress}%) -- exceeded the ${Math.round(ceilingMs / 1000)}s reap ceiling; banked output kept for resume`
+        console.error(`[recap] ${row.id} ${note}`)
+        store.update(row.id, { status: 'failed', error: note, completedAt: now })
+        bundle.updateManifest(row.id, { status: 'failed', error: note, completedAt: now })
+        opts.broadcaster.broadcast({
+          type: 'recap_progress',
+          recapId: row.id,
+          status: 'failed',
+          progress: row.progress,
+          phase: 'failed',
+          log: { level: 'error', message: note, ts: now },
+        })
+        if (row.informConversationId && opts.informConversation) {
+          opts.informConversation(row.informConversationId, {
+            recapId: row.id,
+            text: `Recap ${row.id} failed (timed out): ${note}. Retry to resume from banked output.`,
+          })
+        }
+        reaped.push({ id: row.id, prevStatus: row.status, ageMs })
+      }
+      return reaped
+    },
+    pruneBundles() {
+      const envMs = Number(process.env.CLAUDWERK_RECAP_BUNDLE_RETENTION_MS)
+      const retentionMs = Number.isFinite(envMs) && envMs > 0 ? envMs : DEFAULT_BUNDLE_RETENTION_MS
+      return bundle.pruneOlderThan(retentionMs)
     },
     cancel(recapId: string) {
       const row = store.get(recapId)

@@ -139,6 +139,10 @@ export interface PeriodRecapStore {
   purge(id: string): boolean
   appendLog(entry: RecapLogInsert): void
   getLogs(recapId: string): RecapLogRow[]
+  /** Timestamp (ms) of the most recent log line for a recap, or null if it has
+   *  none yet. The reaper's liveness signal: a healthy long run keeps emitting
+   *  progress logs, so a silent gap = a wedged run. */
+  lastActivityAt(recapId: string): number | null
   insertChunk(chunk: RecapChunkInsert): void
   getChunks(parentId: string): RecapChunkRow[]
   setTags(recapId: string, tags: RecapTagInsert[]): void
@@ -312,6 +316,13 @@ class SqlitePeriodRecapStore implements PeriodRecapStore {
       message: r.message,
       data: r.data_json ? safeParseJson(r.data_json) : null,
     }))
+  }
+
+  lastActivityAt(recapId: string): number | null {
+    const row = this.db
+      .prepare('SELECT MAX(timestamp) AS ts FROM recap_logs WHERE recap_id = $recapId')
+      .get({ recapId }) as { ts: number | null } | undefined
+    return row?.ts ?? null
   }
 
   insertChunk(chunk: RecapChunkInsert): void {

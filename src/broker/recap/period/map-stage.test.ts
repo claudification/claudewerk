@@ -45,10 +45,12 @@ describe('mapStageDeadlineMs (conv-count scaled)', () => {
     expect(mapStageDeadlineMs(1)).toBe(10 * 60_000)
     expect(mapStageDeadlineMs(6)).toBe(10 * 60_000) // 2 waves -> 9.6min -> floored
   })
-  it('scales up with chunk count and ceils at 45min', () => {
-    expect(mapStageDeadlineMs(30)).toBeGreaterThan(10 * 60_000)
-    expect(mapStageDeadlineMs(30)).toBeLessThan(45 * 60_000)
-    expect(mapStageDeadlineMs(1000)).toBe(45 * 60_000) // ceil
+  it('scales up with chunk count and ceils at 20min', () => {
+    // Ceil dropped 45min -> 20min: the overall conv-scaled deadline (deadline.ts)
+    // is now the master cap for the whole render, so the map stage sits under it.
+    expect(mapStageDeadlineMs(10)).toBeGreaterThan(10 * 60_000)
+    expect(mapStageDeadlineMs(10)).toBeLessThan(20 * 60_000)
+    expect(mapStageDeadlineMs(1000)).toBe(20 * 60_000) // ceil
   })
   it('honours the env override (test/ops seam)', () => {
     process.env.CLAUDWERK_RECAP_MAP_STAGE_DEADLINE_MS = '123'
