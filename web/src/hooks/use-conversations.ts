@@ -1674,8 +1674,15 @@ function detectControlCommand(input: string): {
 
 function sendConversationControl(
   conversationId: string,
-  action: 'clear' | 'quit' | 'interrupt' | 'set_model' | 'set_effort' | 'set_permission_mode',
-  opts: { model?: string; effort?: string; permissionMode?: string } = {},
+  action:
+    | 'clear'
+    | 'quit'
+    | 'interrupt'
+    | 'set_model'
+    | 'set_effort'
+    | 'set_permission_mode'
+    | 'cancel_background_task',
+  opts: { model?: string; effort?: string; permissionMode?: string; taskId?: string } = {},
 ): boolean {
   return wsSend('conversation_control', {
     targetConversation: conversationId,
@@ -1683,7 +1690,14 @@ function sendConversationControl(
     ...(opts.model && { model: opts.model }),
     ...(opts.effort && { effort: opts.effort }),
     ...(opts.permissionMode && { permissionMode: opts.permissionMode }),
+    ...(opts.taskId && { taskId: opts.taskId }),
   })
+}
+
+/** Cancel a single running background task (agnostic control -> the agent host
+ *  translates it to its backend's stop mechanism). */
+export function cancelBackgroundTask(conversationId: string, taskId: string): boolean {
+  return sendConversationControl(conversationId, 'cancel_background_task', { taskId })
 }
 
 export function sendInput(conversationId: string, input: string): boolean {

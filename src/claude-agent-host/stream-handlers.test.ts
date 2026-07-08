@@ -440,3 +440,64 @@ describe('advisor tool events', () => {
     expect(e.text).toBe('thinking it over')
   })
 })
+
+describe('background_tasks_changed -> neutral snapshot', () => {
+  function ctxWithSnapshotSink() {
+    const snapshots: Array<Array<{ id: string; kind: string; description: string }>> = []
+    const { hctx, entries } = createTestContext({
+      onBackgroundTasksChanged(tasks) {
+        snapshots.push(tasks)
+      },
+    })
+    return { hctx, entries, snapshots }
+  }
+
+  test('maps CC task_type to neutral kind and fires the callback', () => {
+    const { hctx, snapshots } = ctxWithSnapshotSink()
+    handleMessage(hctx, {
+      type: 'system',
+      subtype: 'background_tasks_changed',
+      tasks: [
+        { task_id: 'a', task_type: 'local_bash', description: 'echo hi' },
+        { task_id: 'b', task_type: 'local_agent', description: 'map code' },
+        { task_id: 'c', task_type: 'future_kind', description: 'passthrough' },
+      ],
+    })
+    expect(snapshots).toHaveLength(1)
+    expect(snapshots[0]).toEqual([
+      { id: 'a', kind: 'shell', description: 'echo hi' },
+      { id: 'b', kind: 'agent', description: 'map code' },
+      { id: 'c', kind: 'future_kind', description: 'passthrough' },
+    ])
+  })
+
+  test('an empty task list fires an empty snapshot (all-done transition)', () => {
+    const { hctx, snapshots } = ctxWithSnapshotSink()
+    handleMessage(hctx, { type: 'system', subtype: 'background_tasks_changed', tasks: [] })
+    expect(snapshots).toEqual([[]])
+  })
+
+  test('the raw entry is still forwarded to the transcript', () => {
+    const { hctx, entries } = ctxWithSnapshotSink()
+    handleMessage(hctx, {
+      type: 'system',
+      subtype: 'background_tasks_changed',
+      tasks: [{ task_id: 'a', task_type: 'local_bash', description: 'echo hi' }],
+    })
+    const e = entries.find(x => (x as Record<string, unknown>).subtype === 'background_tasks_changed')
+    expect(e).toBeDefined()
+  })
+
+  test('drops tasks without an id', () => {
+    const { hctx, snapshots } = ctxWithSnapshotSink()
+    handleMessage(hctx, {
+      type: 'system',
+      subtype: 'background_tasks_changed',
+      tasks: [
+        { task_type: 'local_bash', description: 'no id' },
+        { task_id: 'ok', task_type: 'local_bash' },
+      ],
+    })
+    expect(snapshots[0]).toEqual([{ id: 'ok', kind: 'shell', description: '' }])
+  })
+})

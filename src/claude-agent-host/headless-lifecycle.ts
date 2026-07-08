@@ -380,8 +380,22 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
       }
     },
 
+    onBackgroundTasksChanged(tasks) {
+      if (ctx.wsClient?.isConnected()) {
+        ctx.wsClient.send({
+          type: 'background_tasks',
+          conversationId: ctx.conversationId,
+          tasks,
+        } as unknown as AgentHostMessage)
+      }
+      ctx.diag('headless', `background_tasks: ${tasks.length} running`)
+    },
+
     onAuthNeeded({ errorStatus, detail }) {
-      ctx.diag('headless', `auth_needed: inference ${errorStatus}${detail ? ` (${detail})` : ''} -- surfacing re-login hint`)
+      ctx.diag(
+        'headless',
+        `auth_needed: inference ${errorStatus}${detail ? ` (${detail})` : ''} -- surfacing re-login hint`,
+      )
       if (ctx.wsClient?.isConnected()) {
         ctx.wsClient.send({
           type: 'conversation_auth_needed',

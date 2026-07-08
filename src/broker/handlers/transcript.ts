@@ -10,6 +10,10 @@ import { resolveModelFamily } from '../../shared/models'
 import type { AgentHostLaunchStep, TranscriptLaunchEntry, TranscriptSystemEntry } from '../../shared/protocol'
 import { filterDisplayEntries } from '../../shared/transcript-filter'
 import { partitionByAgentScope } from '../conversation-store/agent-scope'
+import {
+  type BgTaskSnapshotItem,
+  reconcileBackgroundTasks,
+} from '../conversation-store/event-handlers/background-tasks'
 import type { MessageHandler } from '../handler-context'
 import { AGENT_HOST_ONLY, DASHBOARD_ROLES, registerHandlers } from '../message-router'
 import { noteCapacityUsageEvent } from '../nightshift-orchestrator'
@@ -714,6 +718,25 @@ const monitorUpdate: MessageHandler = (ctx, data) => {
   )
 }
 
+// Agnostic running-background-tasks snapshot (agent host -> broker). The host
+// has already translated its backend's native signal to a neutral shape, so
+// the broker only reconciles + broadcasts -- it never parses backend output.
+// fallow-ignore-next-line code-duplication -- shared MessageHandler preamble (conversationId + guard), same idiom as monitorUpdate/scheduledTaskFire.
+const backgroundTasks: MessageHandler = (ctx, data) => {
+  const conversationId = (data.conversationId || ctx.ws.data.conversationId) as string
+  if (!conversationId) return
+  const conversation = ctx.conversations.getConversation(conversationId)
+  if (!conversation) return
+  const raw = Array.isArray(data.tasks) ? (data.tasks as BgTaskSnapshotItem[]) : []
+  const snapshot = raw.filter(t => t && typeof t.id === 'string' && t.id)
+
+  const changed = reconcileBackgroundTasks(conversation, snapshot, Date.now())
+  if (!changed) return
+  ctx.conversations.persistConversationById(conversationId)
+  ctx.conversations.broadcastConversationUpdate(conversationId)
+  ctx.log.debug(`background_tasks: ${snapshot.length} running (${conversationId.slice(0, 8)})`)
+}
+
 // Scheduled task fire - broadcast to dashboard subscribers
 const scheduledTaskFire: MessageHandler = (ctx, data) => {
   const conversationId = (data.conversationId || ctx.ws.data.conversationId) as string
@@ -816,6 +839,7 @@ export function registerTranscriptHandlers(): void {
       conversation_model: conversationModel,
       result_text: resultText,
       monitor_update: monitorUpdate,
+      background_tasks: backgroundTasks,
       scheduled_task_fire: scheduledTaskFire,
       conversation_auth_needed: conversationAuthNeeded,
     },

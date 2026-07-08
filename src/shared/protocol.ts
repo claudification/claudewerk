@@ -1054,6 +1054,7 @@ export type AgentHostMessage =
   | ThinkingProgress
   | SpawnFailed
   | MonitorUpdate
+  | BackgroundTasksChanged
   | ScheduledTaskFire
   | ConversationAuthNeeded
   | ConversationStatusSignal
@@ -2531,6 +2532,7 @@ export type ConversationControlAction =
   | 'set_model'
   | 'set_effort'
   | 'set_permission_mode'
+  | 'cancel_background_task'
 
 export interface ConversationControl {
   type: 'conversation_control'
@@ -2540,6 +2542,7 @@ export interface ConversationControl {
   model?: string // required when action === 'set_model'
   effort?: string // required when action === 'set_effort' (low|medium|high|xhigh|max|auto)
   permissionMode?: string // required when action === 'set_permission_mode'
+  taskId?: string // required when action === 'cancel_background_task' (a BgTaskInfo.taskId)
   /** Optional batch correlation id for fan-out from batch command palette.
    *  Broker logs it; never interpreted. */
   batchId?: string
@@ -2560,6 +2563,7 @@ export interface ControlDeliver {
   model?: string
   effort?: string
   permissionMode?: string
+  taskId?: string // required when action === 'cancel_background_task'
   fromConversation?: string
 }
 
@@ -2944,6 +2948,15 @@ export interface BgTaskInfo {
   startedAt: number
   completedAt?: number
   status: 'running' | 'completed' | 'killed'
+  /** Backend-neutral task kind. 'shell' = a backgrounded shell command,
+   *  'agent' = a backgrounded sub-agent, or any backend-specific passthrough
+   *  string. Set by the agent host; the broker never derives it. */
+  kind?: 'shell' | 'agent' | string
+  /** Which writer owns this row. 'host' = the agnostic background_tasks
+   *  snapshot (authoritative, reconciled on every snapshot); 'hook' = the
+   *  legacy PostToolUse-derived writer. Used to reconcile the two without
+   *  one clobbering the other. Absent on rows persisted before this field. */
+  source?: 'host' | 'hook'
 }
 
 // Monitor (background watch) tracking
@@ -2965,6 +2978,25 @@ export interface MonitorUpdate {
   type: 'monitor_update'
   conversationId: string
   monitor: MonitorInfo
+}
+
+/**
+ * Agent host -> broker: the CURRENT full set of running background tasks for
+ * this conversation (a snapshot, NOT a delta -- an empty `tasks` means nothing
+ * is running). The agent host translates its backend's native signal (for CC:
+ * the `background_tasks_changed` stream-json system message) into this neutral
+ * shape, so the broker never parses backend output. The broker upserts these
+ * into `conv.bgTasks` and marks any host-sourced task absent from the snapshot
+ * as completed.
+ */
+export interface BackgroundTasksChanged {
+  type: 'background_tasks'
+  conversationId: string
+  tasks: Array<{
+    id: string
+    kind: 'shell' | 'agent' | string
+    description: string
+  }>
 }
 
 // Scheduled task fire event (agent host -> broker, distinct from transcript entry)

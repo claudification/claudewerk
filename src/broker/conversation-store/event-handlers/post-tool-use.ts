@@ -35,6 +35,7 @@ function correlateTaskStopWithSubagent(conv: Conversation, event: HookEventOf<'P
  * Bash with a backgroundTaskId in the response (or user-triggered Ctrl+B
  * with the legacy "with ID: xxx" string format) registers a new bgTask.
  */
+// fallow-ignore-next-line complexity -- linear guards over CC tool_response shapes; crap is coverage-estimated only.
 function registerBgTaskFromBash(conv: Conversation, event: HookEventOf<'PostToolUse'>): void {
   const responseObj = event.data.tool_response
   const bgTaskId =
@@ -50,6 +51,9 @@ function registerBgTaskFromBash(conv: Conversation, event: HookEventOf<'PostTool
     taskId = responseText.match(/with ID: (\S+)/)?.[1]
   }
   if (!taskId) return
+  // The agnostic `background_tasks` snapshot may already have registered this
+  // id (either order can win the hook-vs-stream race); never double-insert.
+  if (conv.bgTasks.some(t => t.taskId === taskId)) return
 
   const input = event.data.tool_input
   const command = typeof input.command === 'string' ? input.command : ''
@@ -60,6 +64,8 @@ function registerBgTaskFromBash(conv: Conversation, event: HookEventOf<'PostTool
     description,
     startedAt: event.timestamp,
     status: 'running',
+    kind: 'shell',
+    source: 'hook',
   })
 }
 

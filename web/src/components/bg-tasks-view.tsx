@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getBgTaskOutput, onBgTaskOutput, useConversationsStore } from '@/hooks/use-conversations'
+import { cancelBackgroundTask, getBgTaskOutput, onBgTaskOutput, useConversationsStore } from '@/hooks/use-conversations'
 import type { BgTaskSummary } from '@/lib/types'
 import { cn, formatAge } from '@/lib/utils'
 import { AnsiText } from './transcript/shared'
@@ -42,13 +42,23 @@ function BgTaskOutputView({ taskId }: { taskId: string }) {
 
 const EMPTY_BG_TASKS: BgTaskSummary[] = []
 
-function renderTask(task: BgTaskSummary) {
+function renderTask(task: BgTaskSummary, onCancel?: (taskId: string) => void) {
   return (
     <div key={task.taskId} className="border border-border p-3 space-y-1.5">
       <div className="flex items-center gap-2">
         <StatusBadge status={task.status} />
         <span className="text-[10px] text-muted-foreground font-mono">{task.taskId}</span>
         <span className="text-[10px] text-muted-foreground ml-auto">{formatAge(task.startedAt)}</span>
+        {task.status === 'running' && onCancel && (
+          <button
+            type="button"
+            onClick={() => onCancel(task.taskId)}
+            className="px-1.5 py-0.5 text-[9px] font-bold uppercase text-red-400/80 border border-red-400/40 hover:bg-red-400/10"
+            title="Stop this background task"
+          >
+            Cancel
+          </button>
+        )}
       </div>
       {task.description && <div className="text-xs text-foreground">{task.description}</div>}
       <div className="text-[11px] text-muted-foreground font-mono truncate">$ {task.command}</div>
@@ -67,6 +77,7 @@ export function BgTasksView({ conversationId }: { conversationId: string }) {
   const running = bgTasks.filter(t => t.status === 'running')
   const completed = bgTasks.filter(t => t.status === 'completed')
   const killed = bgTasks.filter(t => t.status === 'killed')
+  const onCancel = (taskId: string) => cancelBackgroundTask(conversationId, taskId)
 
   return (
     <div className="h-full overflow-y-auto p-3 sm:p-4 space-y-4">
@@ -81,7 +92,7 @@ export function BgTasksView({ conversationId }: { conversationId: string }) {
       {running.length > 0 && (
         <div className="space-y-2">
           <div className="text-[10px] text-emerald-400 uppercase font-bold tracking-wider">Running</div>
-          {running.map(renderTask)}
+          {running.map(t => renderTask(t, onCancel))}
         </div>
       )}
 
@@ -89,7 +100,7 @@ export function BgTasksView({ conversationId }: { conversationId: string }) {
       {completed.length > 0 && (
         <div className="space-y-2">
           <div className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Completed</div>
-          {completed.map(renderTask)}
+          {completed.map(t => renderTask(t))}
         </div>
       )}
 
@@ -97,7 +108,7 @@ export function BgTasksView({ conversationId }: { conversationId: string }) {
       {killed.length > 0 && (
         <div className="space-y-2">
           <div className="text-[10px] text-red-400 uppercase font-bold tracking-wider">Killed</div>
-          {killed.map(renderTask)}
+          {killed.map(t => renderTask(t))}
         </div>
       )}
     </div>

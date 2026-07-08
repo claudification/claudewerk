@@ -89,6 +89,13 @@ export interface StreamBackendOptions {
     outputPath?: string
   }) => void
   onScheduledTaskFire?: (content: string) => void
+  /** The CURRENT full set of running background tasks (a snapshot, not a delta).
+   *  CC emits this as `system/background_tasks_changed`; the host maps it to a
+   *  neutral shape here so nothing CC-specific crosses to the broker. Empty
+   *  array = nothing running. */
+  onBackgroundTasksChanged?: (
+    tasks: Array<{ id: string; kind: 'shell' | 'agent' | string; description: string }>,
+  ) => void
   /** Backend hit an auth failure on an inference call (CC: `system/api_retry`
    *  with `error_status: 401`). Drives the in-transcript "Authorize" hint.
    *  EPHEMERAL -- the receiver broadcasts, never persists; see
@@ -206,6 +213,7 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
       onSubagentEntry: options.onSubagentEntry,
       onMonitorUpdate: options.onMonitorUpdate,
       onScheduledTaskFire: options.onScheduledTaskFire,
+      onBackgroundTasksChanged: options.onBackgroundTasksChanged,
       onAuthNeeded: options.onAuthNeeded,
       onPlanModeChanged: options.onPlanModeChanged,
       onApiStatus: options.onApiStatus,

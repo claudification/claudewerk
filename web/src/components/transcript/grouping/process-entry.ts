@@ -126,10 +126,10 @@ function handleSystem(entry: TranscriptEntry, state: GroupingState): boolean {
   // walks entries in order and emits an inline 'system' RenderItem for
   // each system entry it encounters in an assistant group.
   //
-  // away_summary is the one exception: it renders as a full-width bordered
-  // recap card that would look wrong nested inside an assistant body, so
-  // it always gets its own group.
-  if (state.current?.type === 'assistant' && sub !== 'away_summary') {
+  // away_summary and background_tasks_changed are the exceptions: they render
+  // as full-width bordered cards that would look wrong nested inside an
+  // assistant body, so they always get their own group.
+  if (state.current?.type === 'assistant' && sub !== 'away_summary' && sub !== 'background_tasks_changed') {
     state.current.entries.push(entry)
     return true
   }

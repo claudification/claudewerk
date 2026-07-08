@@ -352,7 +352,15 @@ const handleChannelConfigure: MessageHandler = (ctx, data) => {
 
 // ─── Unified conversation control ───
 
-const VALID_CONTROL_ACTIONS = new Set(['clear', 'quit', 'interrupt', 'set_model', 'set_effort', 'set_permission_mode'])
+const VALID_CONTROL_ACTIONS = new Set([
+  'clear',
+  'quit',
+  'interrupt',
+  'set_model',
+  'set_effort',
+  'set_permission_mode',
+  'cancel_background_task',
+])
 
 const handleConversationControl: MessageHandler = (ctx, data) => {
   const targetId = data.targetConversation as string
@@ -360,6 +368,7 @@ const handleConversationControl: MessageHandler = (ctx, data) => {
   const model = typeof data.model === 'string' ? data.model : undefined
   const effort = typeof data.effort === 'string' ? data.effort : undefined
   const permissionMode = typeof data.permissionMode === 'string' ? data.permissionMode : undefined
+  const taskId = typeof data.taskId === 'string' ? data.taskId : undefined
   const fromConversation = (data.fromConversation as string) || ctx.ws.data.conversationId
   const batchId = typeof data.batchId === 'string' ? data.batchId : undefined
 
@@ -385,6 +394,15 @@ const handleConversationControl: MessageHandler = (ctx, data) => {
       ok: false,
       action,
       error: 'permissionMode is required for set_permission_mode',
+    })
+    return
+  }
+  if (action === 'cancel_background_task' && !taskId) {
+    ctx.reply({
+      type: 'conversation_control_result',
+      ok: false,
+      action,
+      error: 'taskId is required for cancel_background_task',
     })
     return
   }
@@ -441,6 +459,7 @@ const handleConversationControl: MessageHandler = (ctx, data) => {
       ...(model && { model }),
       ...(effort && { effort }),
       ...(permissionMode && { permissionMode }),
+      ...(taskId && { taskId }),
       ...(fromConversation && { fromConversation }),
     }),
   )

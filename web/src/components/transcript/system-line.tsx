@@ -2,6 +2,7 @@ import { formatResetIn } from '@shared/format-reset-time'
 import { parseRecapContent } from '@shared/recap'
 import { formatRateBucketName } from '@/lib/utils'
 import { JsonInspector } from '../json-inspector'
+import { BgTasksHint } from './bg-tasks-hint'
 import { formatDuration } from './group-view-types'
 import type { DisplayGroup } from './grouping'
 import { TimeStamp } from './timestamp'
@@ -273,6 +274,8 @@ function describeSystemEntry(
     // render it inline even if one slips through.
     case 'task_summary':
       return null
+    case 'background_tasks_changed':
+      return { kind: 'jsx', node: <BgTasksHint entry={entry} ts={ts} /> }
     default:
       return { kind: 'text', text: content || `[${sub}]`, color: 'text-muted-foreground' }
   }

@@ -9,7 +9,16 @@ import { canonicalizeModelSlug } from '../shared/models'
 import type { AgentHostContext } from './agent-host-context'
 import { beginLaunch, emitLaunchEvent } from './launch-events'
 
-type ControlArgs = { model?: string; effort?: string; permissionMode?: string; source?: string }
+type ControlArgs = { model?: string; effort?: string; permissionMode?: string; taskId?: string; source?: string }
+
+type ControlAction =
+  | 'clear'
+  | 'quit'
+  | 'interrupt'
+  | 'set_model'
+  | 'set_effort'
+  | 'set_permission_mode'
+  | 'cancel_background_task'
 
 /**
  * Expand claudewerk-only model aliases (e.g. `mythos` -> claude-mythos-5) before
@@ -25,11 +34,7 @@ function canonicalizeControlArgs(action: string, args: ControlArgs): ControlArgs
  * Execute a control action against the local CC process.
  * Shared entry point for dashboard input, control buttons, and inter-session MCP.
  */
-export function executeControl(
-  ctx: AgentHostContext,
-  action: 'clear' | 'quit' | 'interrupt' | 'set_model' | 'set_effort' | 'set_permission_mode',
-  args: ControlArgs = {},
-): boolean {
+export function executeControl(ctx: AgentHostContext, action: ControlAction, args: ControlArgs = {}): boolean {
   const source = args.source || 'unknown'
   const resolved = canonicalizeControlArgs(action, args)
   if (ctx.headless) {
@@ -41,7 +46,7 @@ export function executeControl(
 function executeHeadlessControl(
   ctx: AgentHostContext,
   action: string,
-  args: { model?: string; effort?: string; permissionMode?: string },
+  args: { model?: string; effort?: string; permissionMode?: string; taskId?: string },
   source: string,
 ): boolean {
   if (!ctx.streamProc) return false
@@ -89,6 +94,18 @@ function executeHeadlessControl(
       ctx.diag('conversation', `Set permission mode requested (${source}): ${args.permissionMode}`)
       ctx.streamProc.sendSetPermissionMode(args.permissionMode)
       return true
+    case 'cancel_background_task': {
+      if (!args.taskId) return false
+      const taskId = args.taskId
+      ctx.diag('conversation', `Cancel background task requested (${source}): ${taskId.slice(0, 8)}`)
+      // Translate the neutral cancel to CC's `stop_task` control_request. This
+      // is the ONE place CC specifics are allowed. Fire-and-forget; the running
+      // snapshot the host emits will reflect the task leaving the set.
+      void ctx.streamProc.sendControlRequest('stop_task', { task_id: taskId }).then(r => {
+        if (!r.ok) ctx.diag('conversation', `stop_task ${taskId.slice(0, 8)} failed: ${r.error ?? 'unknown'}`)
+      })
+      return true
+    }
     default:
       return false
   }
@@ -97,7 +114,7 @@ function executeHeadlessControl(
 function executePtyControl(
   ctx: AgentHostContext,
   action: string,
-  args: { model?: string; effort?: string; permissionMode?: string },
+  args: { model?: string; effort?: string; permissionMode?: string; taskId?: string },
   source: string,
 ): boolean {
   if (!ctx.ptyProcess) return false
@@ -129,6 +146,11 @@ function executePtyControl(
     case 'set_permission_mode':
       if (!args.permissionMode) return false
       ctx.diag('conversation', `Set permission mode not supported in PTY mode (${source}): ${args.permissionMode}`)
+      return false
+    case 'cancel_background_task':
+      // Background tasks are a headless/stream-json feature; a PTY session has
+      // no control_request channel to stop one. No-op.
+      ctx.diag('conversation', `Cancel background task not supported in PTY mode (${source})`)
       return false
     default:
       return false

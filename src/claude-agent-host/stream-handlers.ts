@@ -55,6 +55,7 @@ export interface HandlerContext {
     | 'onSubagentEntry'
     | 'onMonitorUpdate'
     | 'onScheduledTaskFire'
+    | 'onBackgroundTasksChanged'
     | 'onAuthNeeded'
     | 'onPlanModeChanged'
     | 'onApiStatus'
@@ -66,6 +67,36 @@ export interface HandlerContext {
 function extractSystemFields(msg: Record<string, unknown>): Record<string, unknown> {
   const { type: _t, subtype: _s, session_id: _sid, ...rest } = msg
   return rest
+}
+
+/** CC's `task_type` -> the broker-neutral `kind`. Unknown types pass through
+ *  verbatim so a new CC task_type still renders rather than being dropped. */
+const CC_TASK_KIND: Record<string, 'shell' | 'agent'> = {
+  local_bash: 'shell',
+  local_agent: 'agent',
+}
+
+/** Map a CC `background_tasks_changed.tasks` array to the neutral snapshot shape.
+ *  Tolerant of a missing/garbled list (returns []). */
+// fallow-ignore-next-line complexity -- flat guard/map over CC task fields; unit-tested, splitting adds no clarity.
+function mapBackgroundTasks(
+  raw: unknown,
+): Array<{ id: string; kind: 'shell' | 'agent' | string; description: string }> {
+  if (!Array.isArray(raw)) return []
+  const out: Array<{ id: string; kind: string; description: string }> = []
+  for (const t of raw) {
+    if (!t || typeof t !== 'object') continue
+    const task = t as Record<string, unknown>
+    const id = typeof task.task_id === 'string' ? task.task_id : ''
+    if (!id) continue
+    const ccType = typeof task.task_type === 'string' ? task.task_type : ''
+    out.push({
+      id,
+      kind: CC_TASK_KIND[ccType] ?? ccType,
+      description: typeof task.description === 'string' ? task.description : '',
+    })
+  }
+  return out
 }
 
 export function handleMessage(hctx: HandlerContext, msg: Record<string, unknown>) {
@@ -284,6 +315,7 @@ function surfaceAuthNeededOnUnauthorized(
   }
 }
 
+// fallow-ignore-next-line complexity -- flat per-subtype dispatch switch; cyclomatic scales with CC subtypes by design.
 function handleSystemSubtype(
   hctx: HandlerContext,
   subtype: string,
@@ -341,6 +373,12 @@ function handleSystemSubtype(
     case 'status':
       handleStatusSubtype(hctx, msg)
       break
+    case 'background_tasks_changed': {
+      const tasks = mapBackgroundTasks(msg.tasks)
+      debug(`background_tasks_changed: ${tasks.length} running`)
+      callbacks.onBackgroundTasksChanged?.(tasks)
+      break
+    }
     default:
       debug(`system/${subtype}: ${JSON.stringify(msg).slice(0, 120)}`)
       break
