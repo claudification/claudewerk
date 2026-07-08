@@ -1,10 +1,14 @@
 # Bridge Protocol v1
 
-**Status: DRAFT rev 3 -- 2026-07-08. Design locked (11 decisions, workshop with Jonas);
+**Status: DRAFT rev 4 -- 2026-07-08. Design locked (11 decisions, workshop with Jonas);
+security-hardened against a full Opus adversarial audit (19 findings folded);
 nothing implemented yet.** Rev 1 bound A2A directly onto the connection -- one layer
 too low. Rev 2 = the three-layer, named-object model. Rev 3 adds the normative
 envelope/body split (fabric alignment), futility/bounce semantics, and encoding
-negotiation (JSON baseline / CBOR upgrade).
+negotiation (JSON baseline / CBOR upgrade). Rev 4 closes the audit: authorized
+finality, receiver-derived error classes, op-id (not name) tombstones, a defined
+spend rail, a durable user-stop, a revocation barrier, and a bulk/downgrade/
+CBOR/nonce/seq hardening pass (section 8 tracks every finding).
 
 Service-to-service bridge between CLAUDEWERK (the broker at `concentrator.frst.dev`)
 and remote peer systems. First peer: **GATE**. Either side addresses named things on
@@ -73,9 +77,11 @@ queues are the fabric's inboxes. (Not to be confused with rclaude's internal
    forwards (onion routing = transitive reach, gated on a future trust/settlement
    model -- cost tokens per the fabric whitepaper).
 10. **Futility semantics** (bounce discipline): every failure is classified
-    terminal or transient; a frame to a dead/unknown object gets EXACTLY ONE
-    terminal `err`, then a tombstone silently swallows the rest; an `err` never
-    begets an `err`; senders purge on terminal errors.
+    terminal or transient **by the receiver, from the code** (never a wire flag);
+    a frame to a dead object gets EXACTLY ONE terminal `err`, then a **per-op-id**
+    tombstone silently swallows redelivery of that op; an `err` never begets an
+    `err`; senders purge on terminal errors. **Finality is authorized** -- only a
+    verified participant may close/kill an object (section 4).
 11. **Encoding negotiated**: JSON is the mandatory baseline (bootstrap frames are
     always JSON); CBOR (RFC 8949, `cbor-x`) upgrades the channel when both sides
     advertise it -- native byte strings kill the base64 tax on binary bodies.
@@ -101,7 +107,11 @@ place: inside the bulk transfer class. Global backpressure = socket + queue caps
   headers):
 
   1. Anonymous WSS upgrade. Pre-auth budget: one `capabilities` frame each way,
-     5s deadline to reach `ready`, per-IP rate limit.
+     5s deadline to reach `ready`, a short pre-auth idle timeout, a **hard global
+     cap on concurrent un-`ready` connections**, and a per-client-IP rate limit.
+     Behind Caddy every socket shows the proxy IP, so the client IP is read from
+     the trusted forwarded header of the KNOWN Caddy hop only -- never a
+     client-spoofable `X-Forwarded-For` (MED-13).
   2. `capabilities` (both directions):
      `{ bindingVersions: [1], authMethods: ["bearer-key-v1"], maxInline: 65536,
      encodings: ["json", "cbor"], features: ["bulk"], peer: "gate" }`. Effective
@@ -109,34 +119,65 @@ place: inside the bulk transfer class. Global backpressure = socket + queue caps
      effective `maxInline` = `min(ours, theirs)`; effective encoding = `cbor` iff
      both advertise it, else `json` (the mandatory baseline -- capabilities
      frames themselves are ALWAYS JSON text; the switch applies from `auth`
-     onward). Services/endpoints are NOT advertised pre-auth.
+     onward). Services/endpoints are NOT advertised pre-auth. The pre-auth `peer`
+     name is an untrusted hint; the authoritative peer identity is `key.peerId`
+     resolved at auth, and ALL peer-scoping uses that (MED-14).
   3. `auth` with the chosen method. `bearer-key-v1`: `{ method: "bearer-key-v1",
      key: "brg_..." }` -- the key the receiving side issued. Invalid/revoked ->
      `err code=auth_failed`, close 4004. Enables the sender's direction.
-  4. Direction proof for the reverse side: the authenticated side sends
-     `{ nonce }`; the other side answers `{ keyProof:
-     base64url(hmacSHA256(nonce, <key issued BY the nonce sender>)), keyId }`.
-     Valid proof enables the reverse direction; `keyProof: null` = one-way
+  4. Direction proof for the reverse side. **Both directions use
+     challenge-response** so no bearer secret is transmitted in the clear more
+     than the forward `auth` already requires; the challenged side proves the key
+     it was ISSUED without sending it. The challenger sends `{ nonce }`; the other
+     answers `{ keyProof, keyId }` where
+     `keyProof = base64url(hmacSHA256(transcript, <key issued BY the nonce sender>))`
+     and `transcript = nonce || "\x00cw-bridge/dir-proof/v1\x00" || direction ||
+     H(myCaps) || H(peerCaps) || resolved{bindingVersion,encoding,authMethod}`.
+     Folding the negotiated tuple + both caps frames into the HMAC input **binds
+     the proof to this connection and defeats downgrade tampering** (the
+     SSH-exchange-hash / TLS-Finished property, previously missing -- HIGH-8).
+     `nonce` MUST be >= 16 bytes from a CSPRNG (`crypto.getRandomValues` /
+     `randomBytes` -- never `Math.random`), single-use, bound to the pending
+     connection, time-boxed to the 5s budget (MED-10). The bridge HMAC key is
+     used for NOTHING else (no signing-oracle reuse). `keyProof: null` = one-way
      channel (frames the other way -> `err code=direction_not_granted`).
-  5. `ready`. Queues drain.
+  5. `ready`. Queues drain. If either side's echoed resolved tuple mismatches what
+     it computed, abort (close 4002) before `ready` -- no traffic on a downgraded
+     channel.
 
 - **Keys**: format `brg_<24+ bytes base64url>`, shown once at mint, stored
   **hashed** (SHA-256) by the issuer. CLI-mint only (`broker-cli bridge issue-key
   --peer gate --scopes mention,list`), same rails as `mint-dev-key`, never an
   HTTP/WS mint path. Each key: `peerId`, `scopes`, rate limit, optional project
   allowlist, `status`. Rotation = issue new, deploy, revoke old (overlap allowed).
-- **Revocation is live**: issuer sends `revoked { direction }`, drops the
-  direction, closes (4003) if both die. Next `auth` with a revoked key fails.
+- **Keys** also carry a mandatory `expiresAt` (bounded lifetime; rotation overlap
+  is a short window, not forever -- LOW-17). The **scope->verb matrix** is fixed
+  and enforced per-frame, not only at open: `list` -> `endpoints/list`; `mention`
+  -> `open` / `send` / `req` on a `mention`-scoped session. A frame outside the
+  key's scopes -> `err code=scope_denied` (final).
+- **Revocation barrier (HIGH-6)**: revocation is live AND synchronous. The issuer
+  sends `revoked { direction }`, then: (a) invalidates that direction on ALL live
+  connections for the key at once, (b) **drops undelivered inbound queued ops**
+  originated by the revoked key/direction, (c) the key/scope is **re-validated at
+  agent-wake time**, not only at session open -- so an op already in the pipeline
+  cannot wake an agent after revocation lands. Closes (4003) if both directions
+  die. Next `auth` with a revoked/expired key fails.
 - **Keepalive**: WS ping/pong every 30s from the preferred dialer; kill
   connections silent > 90s. Caddy hops must tolerate the cadence (see
   `stream_close_delay` scar, `.claude/topics/gotchas-runtime.md`).
 - **Frames**: control = UTF-8 JSON text frames, or CBOR binary frames after a
   negotiated upgrade (one frame = one message either way); bulk chunks = raw
-  binary frames in both modes. Transport frame cap 1 MiB. Under CBOR, binary
-  bodies ride as native byte strings (no base64); under JSON, binary bodies
-  either base64 (small) or go bulk. The substrate never depends on WebSocket
-  specifics -- a raw TCP/TLS carrier with 4-byte length-prefix framing is a
-  legal future L1.
+  binary frames in both modes. In CBOR mode both control and chunks are binary
+  WS frames, so every binary frame carries a **1-byte leading discriminator**
+  (`0x01` = control message, `0x02` = bulk chunk) resolved BEFORE any decode --
+  the receiver never guesses by trial-parsing (MED-9). Transport frame cap 1 MiB.
+  The CBOR decoder (`cbor-x`) is hardened: max nesting depth, max collection
+  size, size cap before decode, no tag->class instantiation, reject
+  indefinite-length and duplicate keys; JSON parsing gets the same depth cap.
+  Under CBOR, binary bodies ride as native byte strings (no base64); under JSON,
+  binary bodies either base64 (small) or go bulk. The substrate never depends on
+  WebSocket specifics -- a raw TCP/TLS carrier with 4-byte length-prefix framing
+  is a legal future L1.
 
 ## 3. L2 -- named objects and ordering
 
@@ -144,22 +185,37 @@ place: inside the bulk transfer class. Global backpressure = socket + queue caps
   in the namespace of the machine that owns that side; the peer is implied by the
   channel. Raw internal ids (`conv_...`) never appear; conversation-facing names
   are address-book slugs.
+- **Slug charset (normative)**: object slugs and `from`/`to`/`obj` addresses match
+  `[a-z0-9._-]{1,128}` ONLY, evaluated after Unicode normalization. Anything
+  else -> reject the WHOLE frame. This closes homoglyph/escape smuggling and
+  keeps names filesystem-safe (MED-14/15).
 - **Address grammar (fabric-reserved)**: endpoint addresses are formally
   `name(@hop)*` per the execution-fabric whitepaper (`recipient@gw1@gw2`). **V1
-  accepts single-segment names only**; any `@` in an address -> one terminal
-  `err code=routing_not_supported`. The grammar is reserved so a future
-  forwarding hop needs no wire change.
+  accepts single-segment names only**; an `@` (or any out-of-charset byte) in
+  ANY address field (`to`, `from`, `obj`) -> one terminal
+  `err code=routing_not_supported`, checked after normalization, before the name
+  is stored/echoed/logged (MED-15). The grammar is reserved so a future
+  forwarding hop needs no wire change; v1 L3 handlers treat a nested-envelope
+  body as opaque data and never parse it as routing.
 - **Per-object sequencing**: the sender stamps each op with a per-object
-  monotonic `seq` at enqueue time. Receivers deliver in-seq per object, buffer
-  gaps briefly (default 30s), and request `resync { object, fromSeq }` when a gap
-  times out -- the sender's durable queue replays from there. This is what makes
-  multiple parallel carriers safe.
+  monotonic `seq` from a **single seq authority per object per direction** (a
+  shared atomic counter, even across parallel sender connections -- never
+  per-connection). Receivers deliver in-seq per object and **only buffer seqs
+  inside a bounded window** `[nextExpected, nextExpected + W]`; an out-of-window
+  seq (far-future gap-poison, MED-11) is rejected with `err code=out_of_seq`
+  rather than buffered, so no single frame can wedge delivery. Gaps buffer
+  briefly (default 30s), then `resync { object, fromSeq }` replays from there --
+  `fromSeq` MUST be `>= tombstoneHorizon` and `<= current`, and resync itself is
+  rate-limited, so a peer cannot force unbounded whole-queue replay.
 - **Durability (QoS-1)**: `open`, `send`, `req`, and bulk `offer` persist in the
   sender's per-object FIFO queue until their terminal frame (`accept`/`reject`,
   `ack`, `res`/`end`/`err`, `done`). Dedupe by `(peer, id)` kept >= 7 days;
-  duplicates re-acked with the original terminal frame. Queue TTL 24h (expiry
-  emits a structured `bridge/expired` event); depth cap 1000 per object
-  (`err code=queue_full`); session count cap per peer 200.
+  duplicates re-acked with the original terminal frame. **Dedupe wins over
+  tombstone (MED-12)**: a redelivery of a KNOWN op `id` always re-serves the
+  stored terminal (so a sender that lost the answer converges); the silent-drop
+  of futility law 2 applies only to NEW ids arriving at a dead object. Queue TTL
+  24h (expiry emits a structured `bridge/expired` event); depth cap 1000 per
+  object (`err code=queue_full`); session count cap per peer 200.
 
 ## 4. L2 -- the substrate verbs (frozen)
 
@@ -174,14 +230,14 @@ seam -- v1 never forwards, see decision 9).
 |---|---|---|
 | `open` | `obj, service, from, to, meta?` | create/attach a session between named endpoints ("I would like a `{service}` session between my `{from}` and your `{to}`") |
 | `accept` | `obj` | session live (may arrive long after -- e.g. human approval) |
-| `reject` | `obj, code, reason` | terminal per attempt: `unknown_endpoint`, `approval_denied`, `scope_denied`, `unsupported_service`; transient: `rate_limited` |
-| `close` | `obj, reason?` | explicit end -- the ONLY way a session dies |
+| `reject` | `obj, code, reason` | answer to a specific `open` attempt (carries the attempt's `id`); codes: `unknown_endpoint`, `approval_denied`, `scope_denied`, `unsupported_service`, `rate_limited` |
+| `close` | `obj, reason?` | explicit end -- the ONLY way a session dies. **Honored only from a verified participant** of that session (CRIT-1) |
 | `send` | `obj?, id` + body | one-way; acked by `ack { id }` |
 | `req` | `obj?, id` + body | expects exactly one terminal answer |
 | `res` | `id` + body | terminal answer (also the ack) |
 | `chunk` | `id` + body | streamed partial answer, zero or more |
 | `end` | `id` (+ body?) | stream terminator (terminal) |
-| `err` | `id?, obj?, code, final, message` | error frame -- see futility semantics below |
+| `err` | `id?, obj?, code, message` | error frame -- NO `final` field; class is derived from `code` by the receiver (CRIT-2). See futility semantics below |
 
 Connection-scope (no `obj`): `ping`, `card/get`, `endpoints/list` -- same
 primitives, no special casing. An interrupted `chunk` stream is retried whole by
@@ -191,41 +247,69 @@ terminal for true duplicates).
 ### Errors and futility (bounce discipline)
 
 Prior art: SMTP's permanent/transient split (5xx/4xx) and its hard-won bounce
-rules. Four laws, applying uniformly to every mechanic:
+rules -- but SMTP tombstones a *message*, never a *recipient forever*; rev 4
+keeps that distinction (HIGH-3). Five laws, applying uniformly to every mechanic:
 
-1. **Every failure code is classified** `final: true` (permanent -- retrying is
-   futile) or `final: false` (transient -- backoff and retry is legitimate).
-   Terminal: `closed`, `unknown_endpoint`, `no_such_object`, `approval_denied`,
-   `scope_denied`, `unsupported_service`, `routing_not_supported`,
-   `payload_too_large`, `direction_not_granted`, `upgrade_required`,
-   `auth_failed`. Transient: `rate_limited`, `queue_full`, `quota`, `busy`.
-2. **Exactly one bounce.** The first frame addressed to a dead/unknown object
-   answers with one terminal `err { obj, code: "closed", final: true }`; the
-   receiver then tombstones that object id (TTL 7d, same store as dedupe) and
-   **silently drops** all subsequent frames to it. No error storms.
-3. **An `err` never begets an `err`.** Error frames are terminals, never
-   re-answered, never bounced -- the mail-loop rule.
-4. **Senders honor finality.** On a terminal `err` for an object: purge that
-   object's outbound queue, tombstone locally, surface a structured
-   `bridge/futile` event. Retrying a tombstoned id is a local bug, not a wire
-   event. For sessions, futility attaches to the session ID -- the relationship
-   recovers by opening a FRESH session (silent re-open, decision 2), never by
-   retrying the dead one. QoS-1 redelivery of the SAME op id is not a retry --
-   dedupe re-serves the original terminal answer.
+1. **Class is derived by the RECEIVER from the code**, via this fixed table --
+   the wire carries no `final` flag a peer could forge (CRIT-2). Disjoint codes
+   (INFO-19): `unknown_endpoint` (address-book miss), `no_such_object` (id never
+   existed), `closed` (object was explicitly closed by a participant).
+   **Terminal**: `closed`, `unknown_endpoint`, `no_such_object`,
+   `approval_denied`, `scope_denied`, `unsupported_service`,
+   `routing_not_supported`, `payload_too_large`, `direction_not_granted`,
+   `upgrade_required`, `auth_failed`, `out_of_seq`, `sha256_mismatch`.
+   **Transient**: `rate_limited`, `queue_full`, `quota`, `busy`.
+2. **Finality is authorized (CRIT-1).** An inbound `err`/`close` may purge or
+   tombstone an object ONLY if its sender is a **verified participant** of that
+   object -- a session party, or the declared counterparty of that queue --
+   checked server-side against `key.peerId` + the session table, never against a
+   client-asserted `obj` name alone. A finality frame from a non-participant is
+   itself dropped. This is what stops any authenticated peer from silently
+   censoring channels it can merely name.
+3. **Exactly one bounce, tombstoned by OP-ID not by NAME (HIGH-3).** The first
+   frame carrying an `id` that targets a dead/unknown object answers with one
+   terminal `err { id, obj, code: "closed" | "no_such_object" }`; the receiver
+   then tombstones **that op `id`** (TTL 7d, dedupe store) and silently swallows
+   only redelivery of that same id. A stray frame to an unknown NAME never
+   blackholes the name -- a later legitimate `open`/create re-activates it.
+   (Ephemeral session ULIDs are the one case a name-tombstone is acceptable,
+   because the id is never reused.)
+4. **An `err` never begets an `err`.** Error frames are terminals, never
+   re-answered, never bounced -- the mail-loop rule. This is what stops two
+   durable QoS-1 queues from feedback-looping each other to death.
+5. **Senders honor finality.** On a terminal `err` for an op: purge that op from
+   the outbound queue, surface a structured `bridge/futile` event. For a session
+   that a participant `close`d, futility attaches to the session ID -- the
+   relationship recovers by opening a FRESH session (subject to the durable
+   user-stop block, section 6), never by retrying the dead one. QoS-1 redelivery
+   of the SAME op id is not a retry -- dedupe re-serves the stored terminal
+   (dedupe wins over tombstone, section 3).
 
 ### Bulk transfer class (any-size payloads)
 
 Mandatory for bodies > effective `maxInline`. Admission before bytes:
 
 1. `offer { id, obj?, size, contentType, sha256 }` -- total size declared first.
+   `contentType` is an allowlisted enum that only ever selects a SAFE handler;
+   an unknown/dangerous type is refused, never used to pick a renderer (MED-14).
 2. `accept-transfer { id, mode: memory | file | reject, window }` -- the receiver's
-   veto (`payload_too_large` = final, `quota` = transient), preallocate, or
-   spool-to-file decision, plus the initial credit window (chunks).
+   veto (`payload_too_large` = terminal, `quota` = transient), preallocate, or
+   spool-to-file decision, plus the initial credit window (chunks). The receiver
+   **never preallocates the attacker-declared `size`** -- buffers grow
+   incrementally to a hard cap; `file` mode spools to a **server-generated random
+   filename in an isolated temp dir**, never a path derived from any client field
+   (no traversal -- HIGH-7). Per-peer quotas gate admission: max concurrent
+   transfers, max total in-flight bytes, max disk. An idle transfer (accepted,
+   no chunks) times out and is cleaned up.
 3. Binary chunks, 256 KiB, header-tagged `(transferId, offset)` -- interleave with
-   control frames so a 2 GB transfer never head-of-line-blocks the pipe.
+   control frames so a 2 GB transfer never head-of-line-blocks the pipe. A chunk
+   whose bytes would exceed declared `size`, or whose `offset` is out of the
+   received range, is rejected.
 4. `credit { id, n }` -- receiver-paced; the ONLY flow control in the protocol.
-5. `done { id }` after sha256 verify; resume = re-`offer` + `accept-transfer`
-   carrying `fromOffset`.
+5. `done { id }` after sha256 verify. A hash mismatch -> `err code=sha256_mismatch`
+   (terminal) and the partial spool file is deleted. Resume = re-`offer` +
+   `accept-transfer` carrying `fromOffset`, validated `<= bytesReceived` (no
+   rewind/overlap past what was stored).
 
 ## 5. L3 -- services
 
@@ -268,14 +352,24 @@ in topics.
 
 ## 6. CLAUDEWERK implementation mapping
 
-- **Inbound `open` for `a2a@1`** -> resolve `to` slug via address book -> **LINK
-  approval gate** (same first-contact banner as inter-session; approvals persist
-  in the peer registry) -> `accept`. Inbound `message/send` in an accepted
-  session -> `channel_deliver` wrapped in `<channel source="gate" ...>` --
-  untrusted framing, existing rendering.
+- **Inbound `open` for `a2a@1`** -> check the **durable user-stop block** first
+  (HIGH-5): a user "close" that was an intent-to-stop (or a "deny/block peer"
+  action) persists in the peer registry and a fresh `open` MUST honor it ->
+  `reject code=approval_denied`. Otherwise resolve `to` slug via address book ->
+  **LINK approval gate** (same first-contact banner as inter-session; approvals
+  persist in the peer registry) -> `accept`. Inbound `message/send` in an
+  accepted session -> `channel_deliver` wrapped in `<channel source="gate"
+  from="{peer.from -- untrusted, namespaced}" ...>` -- the peer-asserted `from`
+  is display-only, prefixed as peer-controlled, NEVER conflated with a local
+  trusted identity (MED-14); untrusted framing, existing rendering.
+- **Two kinds of close (HIGH-5)**: a transport-loss disconnect is silent and the
+  session silently re-opens with remembered approval; a USER-initiated close/deny
+  writes a durable block that silent re-open honors until the user lifts it. A
+  runaway peer cannot resurrect a session the user killed by minting a fresh
+  session id -- only lifting the block or a new LINK approval re-enables it.
 - **Outbound**: a conversation's `send_message` to a `gate:*` slug opens (or
-  silently re-opens) the session and sends within it; task updates return as
-  channel messages.
+  silently re-opens, if not user-blocked) the session and sends within it; task
+  updates return as channel messages.
 - **New pieces**: `src/broker/bridge/` (L1 handshake server + dialer, L2 engine:
   named-object store + queues + sequencer + bulk, L3 a2a handler),
   `bridge_peers` / `bridge_keys` / `bridge_objects` / queue tables,
@@ -290,26 +384,75 @@ in topics.
 
 ## 7. Security
 
-1. **Spend-bomb guard**: an inbound bridge message can wake an agent = real
-   money. Per-key rate limit (default 10 msgs/min), project allowlist, LINK
-   approval at session open -- all three server-side before any agent wakes.
+1. **Spend-bomb guard (HIGH-4)**: an inbound frame can wake an agent = real money.
+   The **agent-waking frame set is enumerated**: `message/send`, and any `req`/
+   `send` op that reaches `channel_deliver`. EVERY such frame is metered by a
+   **per-key rolling-window rate limit (default 10/min)** and re-checks project
+   allowlist + key validity **at wake time, before the wake** -- NOT merely at
+   session open. One approved `open` does NOT grant unlimited post-approval sends;
+   each waking frame is counted. Control frames (`open`, `err`, `close`, `resync`,
+   `offer`) carry a **separate, stricter budget** (LOW-16) so a control flood
+   cannot drive the CRIT-1/HIGH-3/MED-11 abuses at volume.
 2. **Untrusted content**: peer bodies are data, never instructions -- `<channel>`
-   framing end-to-end; no tool authority attaches to bridge traffic.
-3. **Pre-auth surface**: one capabilities frame, 5s deadline, per-IP rate limit;
-   nothing sensitive advertised before auth.
-4. **Key hygiene**: hashed at rest, shown once, CLI-mint only; greppable
-   `[bridge]` audit lines for every mint/auth/proof/revoke/reject.
-5. **No transitive reach**: v1 scopes = `mention` + `list`. No spawn, no kill,
-   no file access, no sentinel verbs over the bridge. Corollary: **no
-   forwarding** -- multi-hop addresses and nested envelopes are reserved grammar
-   only; acting on them requires a trust/settlement model that does not exist yet.
-6. **DoS**: transport frame cap, bulk admission (declared size or no bytes),
-   dedupe TTL, queue depth/TTL caps, session cap, gap-buffer timeout.
-7. **Bounce storms**: the futility laws (section 4) are load-bearing security --
-   exactly-one bounce + tombstones + err-never-begets-err is what stops two
-   durable QoS-1 queues from feedback-looping each other to death.
+   framing end-to-end; no tool authority attaches to bridge traffic. **LINK
+   approval is WHO-only (INFO-18)**: it authorizes a peer/endpoint pair, never
+   inspects body content, and once bodies are sealed no content defense can be
+   added -- so the protocol reserves the right to refuse sealed bodies from
+   un-approved / low-trust peers.
+3. **Pre-auth surface**: one capabilities frame, 5s deadline, pre-auth idle
+   timeout, global concurrent-un-`ready` cap, per-client-IP rate limit read from
+   the trusted Caddy hop only (MED-13); nothing sensitive advertised before auth.
+4. **Key hygiene**: hashed at rest, shown once, CLI-mint only, mandatory expiry;
+   greppable `[bridge]` audit lines for every mint/auth/proof/revoke/reject.
+   Downgrade-bound direction proofs (section 2) + single-purpose HMAC key.
+5. **No transitive reach**: v1 scopes = `mention` + `list`, enforced per-frame via
+   the fixed scope->verb matrix. No spawn, no kill, no file access, no sentinel
+   verbs over the bridge. Corollary: **no forwarding** -- multi-hop addresses and
+   nested envelopes are reserved grammar only; acting on them requires a
+   trust/settlement model that does not exist yet.
+6. **Authorized finality (CRIT-1/2, HIGH-3)**: close/kill of an object requires a
+   verified participant; error class is receiver-derived from the code; tombstones
+   are per-op-id, so no peer can censor a named channel or forge a retry storm.
+7. **Revocation barrier (HIGH-6)**: revoke invalidates all live connections
+   synchronously, drops queued inbound ops, re-validates at wake time -- an
+   in-flight op cannot wake an agent after revocation.
+8. **DoS**: transport frame cap, hardened decoder (depth/size caps), bulk
+   admission with per-peer disk/byte/concurrency quotas + no attacker-sized
+   prealloc + idle timeout, bounded seq window + rate-limited resync, dedupe/
+   tombstone TTL, queue depth/TTL caps, session cap, gap-buffer timeout.
+9. **Bounce storms**: the futility laws (section 4) are load-bearing security --
+   exactly-one bounce + per-op-id tombstones + err-never-begets-err is what stops
+   two durable QoS-1 queues from feedback-looping each other to death.
 
-## 8. Prior art (why these choices)
+## 8. Security audit trail (rev 4)
+
+Opus adversarial audit of rev 3, 2026-07-08. Every finding folded; the blast-radius
+scoping (`mention`+`list`, no forwarding) and per-peer dedupe namespacing were
+confirmed SOLID and kept as-is.
+
+| # | Sev | Finding | Fix location |
+|---|---|---|---|
+| 1 | CRIT | Forged `close`/`err` black-holes any named object | §4 futility law 2 (authorized finality) |
+| 2 | CRIT | Wire `final` flag self-contradicts code class | §4 verbs (`err` loses `final`) + law 1 |
+| 3 | HIGH | Tombstone-by-name blackholes reusable slugs | §4 law 3 (per-op-id) + §3 |
+| 4 | HIGH | Spend rail undefined (per-open vs per-wake) | §7.1 (enumerated waking set, per-wake meter) |
+| 5 | HIGH | Silent re-open resurrects user-killed session | §6 (durable user-stop block) |
+| 6 | HIGH | Revocation races / no wake-time re-check | §2 (revocation barrier) |
+| 7 | HIGH | Bulk spool path/quota/prealloc/idle/sha | §4 bulk (server paths, quotas, no prealloc) |
+| 8 | HIGH | No downgrade protection on negotiation | §2 step 4 (tuple+caps bound into proof) |
+| 9 | MED | CBOR collapses control/chunk discriminator | §2 frames (1-byte discriminator + hardened decoder) |
+| 10 | MED | Nonce source / proof binding underspecified | §2 step 4 (CSPRNG, single-use, domain-sep) |
+| 11 | MED | `seq`/`resync`/`fromSeq` unbounded | §3 (bounded seq window, resync bounds) |
+| 12 | MED | Dedupe vs tombstone contradiction | §3 (dedupe wins for known ids) |
+| 13 | MED | Per-IP limit broken behind Caddy; slowloris | §2 step 1 + §7.3 (trusted fwd-IP, preauth cap) |
+| 14 | MED | Untrusted `from`/`contentType`/`meta`/`peer` | §2 step 2, §6, §4 bulk (peerId auth, enums) |
+| 15 | MED | `@`-reject coverage + slug charset | §3 (charset allowlist, all address fields) |
+| 16 | LOW | Control-frame flood + approval fatigue | §7.1 (separate control budget); §6 peer block |
+| 17 | LOW | No key expiry; scope->verb matrix unstated | §2 (expiry, matrix) |
+| 18 | INFO | LINK approval is WHO-only (seal caveat) | §7.2 |
+| 19 | INFO | Overlapping error codes; `busy` unused | §4 law 1 (disjoint codes) |
+
+## 9. Prior art (why these choices)
 
 - **SSH connection protocol (RFC 4254)** -- the L1/L2 template: one authenticated
   connection, typed channels opened by request, multiplexed; SFTP's windowed
