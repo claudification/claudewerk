@@ -235,14 +235,14 @@ export function registerConversationTools(ctx: McpToolContext): Record<string, T
 
     control_conversation: {
       description:
-        "Send a high-level control verb to another conversation's agent host. Unlike send_message (which delivers text to the model's context), control_conversation bypasses the model and tells the agent host itself what to do. Requires benevolent trust. Actions:\n- clear: reset context (headless respawns CC fresh; PTY runs /clear in CC's CLI)\n- quit: graceful shutdown (headless closes stdin; PTY sends SIGTERM)\n- interrupt: cancel the current turn (Ctrl+C equivalent)\n- set_model: switch model (requires `model`, e.g. 'sonnet', 'opus')\n- set_effort: switch thinking-effort level (requires `effort`: low | medium | high | xhigh | max | auto)\n- set_permission_mode: switch permission mode (requires `permissionMode`: plan | acceptEdits | auto | bypassPermissions | default). Headless only -- sends set_permission_mode control_request to CC.",
+        "Send a high-level control verb to another conversation's agent host. Unlike send_message (which delivers text to the model's context), control_conversation bypasses the model and tells the agent host itself what to do. Requires benevolent trust. Actions:\n- clear: reset context (headless respawns CC fresh; PTY runs /clear in CC's CLI)\n- quit: graceful shutdown (headless closes stdin; PTY sends SIGTERM)\n- interrupt: cancel the current turn (Ctrl+C equivalent)\n- set_model: switch model (requires `model`, e.g. 'sonnet', 'opus')\n- set_effort: switch thinking-effort level (requires `effort`: low | medium | high | xhigh | max | auto)\n- set_permission_mode: switch permission mode (requires `permissionMode`: plan | acceptEdits | auto | bypassPermissions | default). Headless only -- sends set_permission_mode control_request to CC.\n- cancel_background_task: stop one running background task by id (requires `task_id`; get ids from the target conversation's background-task list). Headless only.",
       inputSchema: {
         type: 'object' as const,
         properties: {
           conversation_id: { type: 'string', description: 'Target ID from list_conversations' },
           action: {
             type: 'string',
-            enum: ['clear', 'quit', 'interrupt', 'set_model', 'set_effort', 'set_permission_mode'],
+            enum: ['clear', 'quit', 'interrupt', 'set_model', 'set_effort', 'set_permission_mode', 'cancel_background_task'],
             description: 'Control verb to execute on the target conversation',
           },
           model: {
@@ -259,6 +259,10 @@ export function registerConversationTools(ctx: McpToolContext): Record<string, T
             enum: ['default', 'plan', 'acceptEdits', 'auto', 'bypassPermissions'],
             description: 'Permission mode. Required when action is "set_permission_mode". Headless conversations only.',
           },
+          task_id: {
+            type: 'string',
+            description: 'Background task id to stop. Required when action is "cancel_background_task".',
+          },
         },
         required: ['conversation_id', 'action'],
       },
@@ -271,40 +275,39 @@ export function registerConversationTools(ctx: McpToolContext): Record<string, T
           | 'set_model'
           | 'set_effort'
           | 'set_permission_mode'
+          | 'cancel_background_task'
         const model = typeof params.model === 'string' ? params.model : undefined
         const effort = typeof params.effort === 'string' ? params.effort : undefined
         const permissionMode = typeof params.permissionMode === 'string' ? params.permissionMode : undefined
+        const taskId = typeof params.task_id === 'string' ? params.task_id : undefined
+        const validActions = [
+          'clear',
+          'quit',
+          'interrupt',
+          'set_model',
+          'set_effort',
+          'set_permission_mode',
+          'cancel_background_task',
+        ]
         if (!targetConversationId)
           return { content: [{ type: 'text', text: 'Error: conversation_id is required' }], isError: true }
-        if (
-          !action ||
-          !['clear', 'quit', 'interrupt', 'set_model', 'set_effort', 'set_permission_mode'].includes(action)
-        ) {
+        if (!action || !validActions.includes(action)) {
           return {
-            content: [
-              {
-                type: 'text',
-                text: 'Error: action must be one of clear | quit | interrupt | set_model | set_effort | set_permission_mode',
-              },
-            ],
+            content: [{ type: 'text', text: `Error: action must be one of ${validActions.join(' | ')}` }],
             isError: true,
           }
         }
-        if (action === 'set_model' && !model) {
-          return {
-            content: [{ type: 'text', text: 'Error: model is required when action is "set_model"' }],
-            isError: true,
-          }
+        // Each action's required companion arg, checked in one place.
+        const requiredArg: Partial<Record<typeof action, [unknown, string]>> = {
+          set_model: [model, 'model'],
+          set_effort: [effort, 'effort'],
+          set_permission_mode: [permissionMode, 'permissionMode'],
+          cancel_background_task: [taskId, 'task_id'],
         }
-        if (action === 'set_effort' && !effort) {
+        const missing = requiredArg[action]
+        if (missing && !missing[0]) {
           return {
-            content: [{ type: 'text', text: 'Error: effort is required when action is "set_effort"' }],
-            isError: true,
-          }
-        }
-        if (action === 'set_permission_mode' && !permissionMode) {
-          return {
-            content: [{ type: 'text', text: 'Error: permissionMode is required when action is "set_permission_mode"' }],
+            content: [{ type: 'text', text: `Error: ${missing[1]} is required when action is "${action}"` }],
             isError: true,
           }
         }
@@ -314,6 +317,7 @@ export function registerConversationTools(ctx: McpToolContext): Record<string, T
           model,
           effort,
           permissionMode,
+          taskId,
         })
         if (!result?.ok) {
           debug(`[channel] control_conversation(${action}) failed: ${result?.error}`)
@@ -323,22 +327,19 @@ export function registerConversationTools(ctx: McpToolContext): Record<string, T
           }
         }
         debug(
-          `[channel] control_conversation(${action}): ${targetConversationId.slice(0, 8)}${model ? ` model=${model}` : ''}${effort ? ` effort=${effort}` : ''}${permissionMode ? ` mode=${permissionMode}` : ''}`,
+          `[channel] control_conversation(${action}): ${targetConversationId.slice(0, 8)}${model ? ` model=${model}` : ''}${effort ? ` effort=${effort}` : ''}${permissionMode ? ` mode=${permissionMode}` : ''}${taskId ? ` task=${taskId.slice(0, 8)}` : ''}`,
         )
         const label = result.name || targetConversationId.slice(0, 8)
-        const verbText =
-          action === 'clear'
-            ? `Clear requested on ${label}. Context will reset in a few seconds.`
-            : action === 'quit'
-              ? `Quit signal sent to ${label}. The conversation will end within a few seconds.`
-              : action === 'interrupt'
-                ? `Interrupt sent to ${label}. Current turn will stop.`
-                : action === 'set_model'
-                  ? `Model switch requested on ${label} -> ${model}.`
-                  : action === 'set_effort'
-                    ? `Effort level switch requested on ${label} -> ${effort}.`
-                    : `Permission mode switch requested on ${label} -> ${permissionMode}.`
-        return { content: [{ type: 'text', text: verbText }] }
+        const verbText: Record<typeof action, string> = {
+          clear: `Clear requested on ${label}. Context will reset in a few seconds.`,
+          quit: `Quit signal sent to ${label}. The conversation will end within a few seconds.`,
+          interrupt: `Interrupt sent to ${label}. Current turn will stop.`,
+          set_model: `Model switch requested on ${label} -> ${model}.`,
+          set_effort: `Effort level switch requested on ${label} -> ${effort}.`,
+          set_permission_mode: `Permission mode switch requested on ${label} -> ${permissionMode}.`,
+          cancel_background_task: `Cancel requested for background task ${taskId?.slice(0, 8)} on ${label}.`,
+        }
+        return { content: [{ type: 'text', text: verbText[action] }] }
       },
     },
 

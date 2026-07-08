@@ -126,7 +126,7 @@ export function buildInterConversationCallbacks(ctx: HostRpcContext): McpChannel
       })
     },
 
-    async onControlConversation({ conversationId: targetConversationId, action, model, effort }) {
+    async onControlConversation({ conversationId: targetConversationId, action, model, effort, permissionMode, taskId }) {
       if (!transport.isConnected()) return { ok: false, error: 'Not connected to broker' }
       return new Promise(resolve => {
         const timeout = setTimeout(
@@ -144,6 +144,8 @@ export function buildInterConversationCallbacks(ctx: HostRpcContext): McpChannel
           action,
           ...(model && { model }),
           ...(effort && { effort }),
+          ...(permissionMode && { permissionMode }),
+          ...(taskId && { taskId }),
           fromConversation: senderId(ctx),
         } as unknown as AgentHostMessage)
       })
