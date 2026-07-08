@@ -47,6 +47,8 @@ function recordSample(overrides: Partial<TokenSampleInput> = {}) {
     outputTokens: overrides.outputTokens ?? 200,
     cacheReadTokens: overrides.cacheReadTokens ?? 5000,
     cacheWriteTokens: overrides.cacheWriteTokens ?? 25,
+    cacheWrite5mTokens: overrides.cacheWrite5mTokens ?? 25,
+    cacheWrite1hTokens: overrides.cacheWrite1hTokens ?? 0,
   })
 }
 
@@ -95,5 +97,32 @@ describe('GET /api/stats/tokens', () => {
     const res = await app.request('/api/stats/tokens?window=5m&bucket=1000', { headers: authHeaders() })
     const body = (await res.json()) as { bucketMs: number }
     expect(body.bucketMs).toBe(1_000)
+  })
+
+  it('sums the real 5m/1h cache-write split per bucket', async () => {
+    const t = Date.now() - 10_000
+    recordSample({ timestamp: t, cacheWriteTokens: 100, cacheWrite5mTokens: 100, cacheWrite1hTokens: 0 })
+    recordSample({ timestamp: t + 1, cacheWriteTokens: 40, cacheWrite5mTokens: 10, cacheWrite1hTokens: 30 })
+    const res = await app.request('/api/stats/tokens', { headers: authHeaders() })
+    const body = (await res.json()) as {
+      buckets: Array<{ cacheWriteTokens: number; cacheWrite5mTokens: number; cacheWrite1hTokens: number }>
+    }
+    const sum = (k: 'cacheWriteTokens' | 'cacheWrite5mTokens' | 'cacheWrite1hTokens') =>
+      body.buckets.reduce((s, b) => s + b[k], 0)
+    expect(sum('cacheWriteTokens')).toBe(140)
+    expect(sum('cacheWrite5mTokens')).toBe(110)
+    expect(sum('cacheWrite1hTokens')).toBe(30)
+    // The split reconciles to the collapsed total -- KNOWN, not guessed.
+    expect(sum('cacheWrite5mTokens') + sum('cacheWrite1hTokens')).toBe(sum('cacheWriteTokens'))
+  })
+
+  it('?conversationId restricts the series to one conversation', async () => {
+    const t = Date.now() - 10_000
+    recordSample({ timestamp: t, conversationId: 'conv-a', outputTokens: 11 })
+    recordSample({ timestamp: t + 1, conversationId: 'conv-b', outputTokens: 22 })
+    const res = await app.request('/api/stats/tokens?conversationId=conv-a', { headers: authHeaders() })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { buckets: Array<{ outputTokens: number }> }
+    expect(body.buckets.reduce((s, b) => s + b.outputTokens, 0)).toBe(11)
   })
 })

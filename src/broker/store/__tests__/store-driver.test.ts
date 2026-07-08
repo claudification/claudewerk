@@ -1279,6 +1279,8 @@ function runStoreTests(name: string, createDriver: () => StoreDriver) {
           outputTokens: 200,
           cacheReadTokens: 5000,
           cacheWriteTokens: 25,
+          cacheWrite5mTokens: 25,
+          cacheWrite1hTokens: 0,
           ...overrides,
         }
       }

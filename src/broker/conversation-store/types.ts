@@ -130,4 +130,6 @@ export interface ControlPanelMessage {
   outputTokens?: number
   cacheReadTokens?: number
   cacheWriteTokens?: number
+  cacheWrite5mTokens?: number
+  cacheWrite1hTokens?: number
 }

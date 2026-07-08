@@ -645,6 +645,10 @@ export interface TokenSampleInput {
   outputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
+  /** Real 5m-TTL portion of cacheWriteTokens. 0 on pre-split rows. */
+  cacheWrite5mTokens: number
+  /** Real 1h-TTL portion of cacheWriteTokens. 0 on pre-split rows. */
+  cacheWrite1hTokens: number
 }
 
 export interface TokenBucketFilter {
@@ -656,6 +660,8 @@ export interface TokenBucketFilter {
   groupBy?: 'global' | 'profile'
   sentinelId?: string
   profile?: string
+  /** Restrict to a single conversation's samples (per-conversation time-series). */
+  conversationId?: string
 }
 
 export interface TokenBucket {
@@ -669,6 +675,10 @@ export interface TokenBucket {
   outputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
+  /** Real 5m-TTL portion of cacheWriteTokens summed over the bucket. */
+  cacheWrite5mTokens: number
+  /** Real 1h-TTL portion of cacheWriteTokens summed over the bucket. */
+  cacheWrite1hTokens: number
   /** Number of per-message samples folded into this bucket. */
   samples: number
 }

@@ -19,6 +19,17 @@ function addPhase5ProfileColumns(db: Database): void {
   if (!hourlyCols.has('profile')) db.run("ALTER TABLE hourly_stats ADD COLUMN profile TEXT NOT NULL DEFAULT 'default'")
 }
 
+/** cache-ttl split: backfill the 5m/1h cache-write columns on token_samples.
+ *  Idempotent ALTER ADD COLUMN; pre-existing rows keep 0 (the collapsed total
+ *  can't be un-mixed, so we don't guess it -- new samples carry the real split). */
+function addCacheTtlColumns(db: Database): void {
+  const cols = tableColumns(db, 'token_samples')
+  if (!cols.has('cache_write_5m_tokens'))
+    db.run('ALTER TABLE token_samples ADD COLUMN cache_write_5m_tokens INTEGER NOT NULL DEFAULT 0')
+  if (!cols.has('cache_write_1h_tokens'))
+    db.run('ALTER TABLE token_samples ADD COLUMN cache_write_1h_tokens INTEGER NOT NULL DEFAULT 0')
+}
+
 /** profile-url-strip migration (2026-05-22): the URI format dropped its
  *  `profile@host` userinfo. Cost-table `project_uri` rows persisted from before
  *  this change still carry the userinfo. Rewrite to canonical form once.
@@ -440,9 +451,17 @@ export function createSchema(db: Database) {
       output_tokens INTEGER NOT NULL DEFAULT 0,
       cache_read_tokens INTEGER NOT NULL DEFAULT 0,
       cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_write_5m_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_write_1h_tokens INTEGER NOT NULL DEFAULT 0,
       UNIQUE(conversation_id, uuid)
     )
   `)
+  // cache-ttl split (2026-07-08): record the REAL 5m/1h portions of
+  // cache_write_tokens per message so a cache-write-TTL time-series is KNOWN,
+  // not reconstructed. Idempotent ADD COLUMN for DBs that predate it -- old rows
+  // keep 0/0 (the split is unrecoverable from the collapsed total).
+  addCacheTtlColumns(db)
   db.run('CREATE INDEX IF NOT EXISTS idx_token_samples_timestamp ON token_samples(timestamp)')
   db.run('CREATE INDEX IF NOT EXISTS idx_token_samples_profile_ts ON token_samples(sentinel_id, profile, timestamp)')
+  db.run('CREATE INDEX IF NOT EXISTS idx_token_samples_conv_ts ON token_samples(conversation_id, timestamp)')
 }

@@ -30,54 +30,51 @@ function extractUsage(
   entry: TranscriptAssistantEntry,
   assistantModel: string | undefined,
 ): boolean {
-  const usage = entry.message?.usage
-  if (!usage || typeof usage.input_tokens !== 'number' || assistantModel === '<synthetic>') return false
+  // One parse via the shared extractor: it coerces every field and applies the
+  // real 5m/1h split, so the aggregate here and the token_samples time-series
+  // can never disagree. Null on synthetic / usage-less blocks.
+  const u = sampleFromMessageUsage(entry.message?.usage, assistantModel, conv.model || '')
+  if (!u) return false
+  const { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens: cwTotal } = u
+  const { cacheWrite5mTokens: cw5m, cacheWrite1hTokens: cw1h } = u
 
-  conv.tokenUsage = {
-    input: usage.input_tokens || 0,
-    cacheCreation: usage.cache_creation_input_tokens || 0,
-    cacheRead: usage.cache_read_input_tokens || 0,
-    output: usage.output_tokens || 0,
-  }
+  conv.tokenUsage = { input: inputTokens, cacheCreation: cwTotal, cacheRead: cacheReadTokens, output: outputTokens }
 
-  // Extract 5m/1h cache write split from usage.cache_creation
-  const cc = usage.cache_creation
-  const cw5m = (cc?.ephemeral_5m_input_tokens as number | undefined) || 0
-  const cw1h = (cc?.ephemeral_1h_input_tokens as number | undefined) || 0
-  // Fallback: if total cache_creation > sum of 5m+1h, remainder -> 5m bucket
-  const cwTotal = usage.cache_creation_input_tokens || 0
-  const cwRemainder = Math.max(0, cwTotal - cw5m - cw1h)
+  if (cw5m > 0 || cw1h > 0) conv.cacheTtl = cw1h > cw5m ? '1h' : '5m'
 
-  if (cw5m + cwRemainder > 0 || cw1h > 0) {
-    conv.cacheTtl = cw1h > cw5m + cwRemainder ? '1h' : '5m'
-  }
-
-  conv.stats.totalInputTokens += (usage.input_tokens || 0) + cwTotal + (usage.cache_read_input_tokens || 0)
-  conv.stats.totalOutputTokens += usage.output_tokens || 0
+  conv.stats.totalInputTokens += inputTokens + cwTotal + cacheReadTokens
+  conv.stats.totalOutputTokens += outputTokens
   conv.stats.totalCacheCreation += cwTotal
-  conv.stats.totalCacheWrite5m += cw5m + cwRemainder
+  conv.stats.totalCacheWrite5m += cw5m
   conv.stats.totalCacheWrite1h += cw1h
-  conv.stats.totalCacheRead += usage.cache_read_input_tokens || 0
+  conv.stats.totalCacheRead += cacheReadTokens
 
-  // Cost timeline snapshot for PTY conversations (headless uses turn_cost from stream backend)
-  if (!conv.stats.totalCostUsd) {
-    if (!conv.costTimeline) conv.costTimeline = []
-    const s = conv.stats
-    const uncached = Math.max(0, s.totalInputTokens - s.totalCacheCreation - s.totalCacheRead)
-    const est =
-      (uncached * 15 +
-        s.totalOutputTokens * 75 +
-        s.totalCacheRead * 1.875 +
-        s.totalCacheWrite5m * 18.75 +
-        s.totalCacheWrite1h * 30) /
-      1_000_000
-    conv.costTimeline.push({ t: Date.now(), cost: est })
-    if (conv.costTimeline.length > 500) {
-      conv.costTimeline = conv.costTimeline.slice(-500)
-    }
-  }
-
+  pushPtyCostEstimate(conv)
   return true
+}
+
+/**
+ * Append a running cost estimate to the PTY cost timeline. Headless
+ * conversations get exact cost via `turn_cost` from the stream backend, so this
+ * only runs when no exact total is present. Uses the real 5m/1h write split for
+ * the re-warm tax (18.75 vs 30 per Mtok).
+ */
+function pushPtyCostEstimate(conv: Conversation): void {
+  if (conv.stats.totalCostUsd) return
+  if (!conv.costTimeline) conv.costTimeline = []
+  const s = conv.stats
+  const uncached = Math.max(0, s.totalInputTokens - s.totalCacheCreation - s.totalCacheRead)
+  const est =
+    (uncached * 15 +
+      s.totalOutputTokens * 75 +
+      s.totalCacheRead * 1.875 +
+      s.totalCacheWrite5m * 18.75 +
+      s.totalCacheWrite1h * 30) /
+    1_000_000
+  conv.costTimeline.push({ t: Date.now(), cost: est })
+  if (conv.costTimeline.length > 500) {
+    conv.costTimeline = conv.costTimeline.slice(-500)
+  }
 }
 
 /**

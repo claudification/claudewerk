@@ -1,4 +1,5 @@
 import type { ProjectSettings } from '@shared/protocol'
+import { lazy, Suspense } from 'react'
 import { CostSparkline } from '@/components/cost-sparkline'
 import { formatCost, getBurnRate, getCacheEfficiency, getConversationCost, getCostColor } from '@/lib/cost-utils'
 import type { Conversation } from '@/lib/types'
@@ -21,6 +22,9 @@ import {
   TrustLevelBadge,
 } from './header-info-rows'
 import { StatusRow } from './header-status-row'
+
+// Off-index: per-conversation cache-hit-ratio + real 5m/1h write split time-series.
+const CacheHitChart = lazy(() => import('./cache-hit-chart').then(m => ({ default: m.CacheHitChart })))
 
 interface HeaderExpandedPanelProps {
   conversation: Conversation
@@ -62,6 +66,9 @@ export function HeaderExpandedPanel({
       {conversation.costTimeline && conversation.costTimeline.length >= 2 && (
         <CostSparkline timeline={conversation.costTimeline} />
       )}
+      <Suspense fallback={null}>
+        <CacheHitChart conversationId={conversation.id} />
+      </Suspense>
       <ConversationStats conversation={conversation} stats={s} />
       <SpawnLineageRow conversation={conversation} />
       <ErrorBanner lastError={conversation.lastError} />

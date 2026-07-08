@@ -185,6 +185,8 @@ function recordTokenSample(
       outputTokens: sample.outputTokens,
       cacheReadTokens: sample.cacheReadTokens,
       cacheWriteTokens: sample.cacheWriteTokens,
+      cacheWrite5mTokens: sample.cacheWrite5mTokens,
+      cacheWrite1hTokens: sample.cacheWrite1hTokens,
     })
     if (inserted && !isInitial) {
       ctx.broadcastConversationScoped(
@@ -199,6 +201,8 @@ function recordTokenSample(
           outputTokens: sample.outputTokens,
           cacheReadTokens: sample.cacheReadTokens,
           cacheWriteTokens: sample.cacheWriteTokens,
+          cacheWrite5mTokens: sample.cacheWrite5mTokens,
+          cacheWrite1hTokens: sample.cacheWrite1hTokens,
         },
         '*',
       )

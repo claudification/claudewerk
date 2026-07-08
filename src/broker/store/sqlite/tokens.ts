@@ -37,10 +37,12 @@ export function createSqliteTokenStore(db: Database): TokenStore {
   const stmtInsert = db.prepare(`
     INSERT OR IGNORE INTO token_samples
       (uuid, timestamp, conversation_id, sentinel_id, profile, model,
-       input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
+       input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+       cache_write_5m_tokens, cache_write_1h_tokens)
     VALUES
       ($uuid, $timestamp, $conversationId, $sentinelId, $profile, $model,
-       $inputTokens, $outputTokens, $cacheReadTokens, $cacheWriteTokens)
+       $inputTokens, $outputTokens, $cacheReadTokens, $cacheWriteTokens,
+       $cacheWrite5mTokens, $cacheWrite1hTokens)
   `)
 
   const stmtPrune = db.prepare('DELETE FROM token_samples WHERE timestamp < $cutoff')
@@ -57,6 +59,8 @@ export function createSqliteTokenStore(db: Database): TokenStore {
       outputTokens: s.outputTokens,
       cacheReadTokens: s.cacheReadTokens,
       cacheWriteTokens: s.cacheWriteTokens,
+      cacheWrite5mTokens: s.cacheWrite5mTokens,
+      cacheWrite1hTokens: s.cacheWrite1hTokens,
     })
     return (result.changes ?? 0) > 0
   }
@@ -74,6 +78,10 @@ export function createSqliteTokenStore(db: Database): TokenStore {
       conditions.push('profile = $profile')
       binds.profile = filter.profile
     }
+    if (filter.conversationId) {
+      conditions.push('conversation_id = $conversationId')
+      binds.conversationId = filter.conversationId
+    }
 
     // Integer bucket flooring. timestamp + bucketMs are both INTEGER so the
     // division is integer division; CAST is belt-and-suspenders.
@@ -90,6 +98,8 @@ export function createSqliteTokenStore(db: Database): TokenStore {
         SUM(output_tokens) AS output_tokens,
         SUM(cache_read_tokens) AS cache_read_tokens,
         SUM(cache_write_tokens) AS cache_write_tokens,
+        SUM(cache_write_5m_tokens) AS cache_write_5m_tokens,
+        SUM(cache_write_1h_tokens) AS cache_write_1h_tokens,
         COUNT(*) AS samples
       FROM token_samples
       WHERE ${conditions.join(' AND ')}
@@ -106,6 +116,8 @@ export function createSqliteTokenStore(db: Database): TokenStore {
       outputTokens: num(r, 'output_tokens'),
       cacheReadTokens: num(r, 'cache_read_tokens'),
       cacheWriteTokens: num(r, 'cache_write_tokens'),
+      cacheWrite5mTokens: num(r, 'cache_write_5m_tokens'),
+      cacheWrite1hTokens: num(r, 'cache_write_1h_tokens'),
       samples: num(r, 'samples'),
     }))
   }
@@ -155,6 +167,8 @@ export function createSqliteTokenStore(db: Database): TokenStore {
           outputTokens: sample.outputTokens,
           cacheReadTokens: sample.cacheReadTokens,
           cacheWriteTokens: sample.cacheWriteTokens,
+          cacheWrite5mTokens: sample.cacheWrite5mTokens,
+          cacheWrite1hTokens: sample.cacheWrite1hTokens,
         })
         if (ok) inserted++
       }

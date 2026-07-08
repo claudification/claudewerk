@@ -154,8 +154,22 @@ export function createStatsRouter(
   // to render the 5h/1d views; short windows otherwise ride the live
   // token_sample WS stream. Tokens only -- cost is a render-time multiply.
   app.get('/api/stats/tokens', c => {
-    if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
     const q = c.req.query()
+    // Fleet-wide series is admin-only; a single-conversation series is gated on
+    // read access to THAT conversation, so the per-conversation cache-hit chart
+    // works for any viewer who can already see the transcript.
+    const conversationId = q.conversationId || undefined
+    if (conversationId) {
+      // Admin sees any conversation; a non-admin needs read access to THIS one.
+      if (!httpIsAdmin(c.req.raw)) {
+        const project = conversationStore.getConversation(conversationId)?.project
+        if (!project || !helpers.httpHasPermission(c.req.raw, 'chat:read', project, conversationId)) {
+          return c.json({ error: 'Forbidden' }, 403)
+        }
+      }
+    } else if (!httpIsAdmin(c.req.raw)) {
+      return c.json({ error: 'Forbidden: admin only' }, 403)
+    }
     const windowKey = q.window || '5m'
     const win = TOKEN_WINDOWS[windowKey]
     if (!win) {
@@ -172,6 +186,7 @@ export function createStatsRouter(
       groupBy,
       sentinelId: q.sentinelId || undefined,
       profile: q.profile || undefined,
+      conversationId,
     })
     return c.json({ window: windowKey, from, to, bucketMs, groupBy, buckets })
   })
