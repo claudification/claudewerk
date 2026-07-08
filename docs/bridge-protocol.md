@@ -1,8 +1,10 @@
 # Bridge Protocol v1
 
-**Status: DRAFT rev 2 -- 2026-07-08. Design locked (8 decisions, workshop with Jonas);
+**Status: DRAFT rev 3 -- 2026-07-08. Design locked (11 decisions, workshop with Jonas);
 nothing implemented yet.** Rev 1 bound A2A directly onto the connection -- one layer
-too low; rev 2 is the agreed three-layer, named-object model.
+too low. Rev 2 = the three-layer, named-object model. Rev 3 adds the normative
+envelope/body split (fabric alignment), futility/bounce semantics, and encoding
+negotiation (JSON baseline / CBOR upgrade).
 
 Service-to-service bridge between CLAUDEWERK (the broker at `concentrator.frst.dev`)
 and remote peer systems. First peer: **GATE**. Either side addresses named things on
@@ -34,6 +36,16 @@ kind's semantics live above it. Prior art shape: SSH connection protocol (RFC 42
 authenticated pipe, typed channels, multiplexed -- with the queue layer promoted to
 the durable anchor.
 
+**Envelope/body principle (normative):** every message is `envelope + optional
+body`. Routing, ordering, dedupe, queueing, and admission read the ENVELOPE ONLY;
+the body is an opaque payload interpreted solely by the terminal receiver (the L3
+service handler). This is the fabric posture (see prior art: the execution-fabric
+whitepaper): it keeps the substrate payload-blind, lets bodies be end-to-end
+sealed later without protocol change, and reserves nested-envelope (onion)
+scenarios. The bridge is the two-node degenerate case of that fabric; its named
+queues are the fabric's inboxes. (Not to be confused with rclaude's internal
+"plan-fabric.md", which is the identity/vocabulary doc -- different Fabric.)
+
 ### Decision record (all locked 2026-07-08)
 
 1. Generalized substrate, **frozen** at the verbs in section 4 + the bulk class.
@@ -55,6 +67,20 @@ the durable anchor.
    carriers (per-object sequencing + gap buffer + resync, section 4).
 8. `state@1` = Yjs, **spec seam only**, ships v1.1 (nice-to-have, not must-have).
    Fan-out / event feeds are future L3 services, never substrate topics.
+9. **Envelope + optional body**, normative: routing on envelope only, body opaque
+   to the substrate. Fabric-style multi-hop addresses (`name@gw1@gw2`) and nested
+   envelopes are RESERVED grammar; v1 accepts single-segment names only and never
+   forwards (onion routing = transitive reach, gated on a future trust/settlement
+   model -- cost tokens per the fabric whitepaper).
+10. **Futility semantics** (bounce discipline): every failure is classified
+    terminal or transient; a frame to a dead/unknown object gets EXACTLY ONE
+    terminal `err`, then a tombstone silently swallows the rest; an `err` never
+    begets an `err`; senders purge on terminal errors.
+11. **Encoding negotiated**: JSON is the mandatory baseline (bootstrap frames are
+    always JSON); CBOR (RFC 8949, `cbor-x`) upgrades the channel when both sides
+    advertise it -- native byte strings kill the base64 tax on binary bodies.
+    Bulk chunks stay raw binary regardless. MessagePack rejected in favor of its
+    standards-track cousin (CBOR = the WebAuthn/CTAP2/COSE lineage).
 
 ### The frozen line
 
@@ -78,9 +104,12 @@ place: inside the bulk transfer class. Global backpressure = socket + queue caps
      5s deadline to reach `ready`, per-IP rate limit.
   2. `capabilities` (both directions):
      `{ bindingVersions: [1], authMethods: ["bearer-key-v1"], maxInline: 65536,
-     features: ["bulk"], peer: "gate" }`. Effective binding = highest common
-     version (empty intersection -> close 4002); effective `maxInline` =
-     `min(ours, theirs)`. Services/endpoints are NOT advertised pre-auth.
+     encodings: ["json", "cbor"], features: ["bulk"], peer: "gate" }`. Effective
+     binding = highest common version (empty intersection -> close 4002);
+     effective `maxInline` = `min(ours, theirs)`; effective encoding = `cbor` iff
+     both advertise it, else `json` (the mandatory baseline -- capabilities
+     frames themselves are ALWAYS JSON text; the switch applies from `auth`
+     onward). Services/endpoints are NOT advertised pre-auth.
   3. `auth` with the chosen method. `bearer-key-v1`: `{ method: "bearer-key-v1",
      key: "brg_..." }` -- the key the receiving side issued. Invalid/revoked ->
      `err code=auth_failed`, close 4004. Enables the sender's direction.
@@ -101,8 +130,11 @@ place: inside the bulk transfer class. Global backpressure = socket + queue caps
 - **Keepalive**: WS ping/pong every 30s from the preferred dialer; kill
   connections silent > 90s. Caddy hops must tolerate the cadence (see
   `stream_close_delay` scar, `.claude/topics/gotchas-runtime.md`).
-- **Frames**: control = UTF-8 JSON text frames; bulk chunks = binary frames.
-  Transport frame cap 1 MiB. The substrate never depends on WebSocket
+- **Frames**: control = UTF-8 JSON text frames, or CBOR binary frames after a
+  negotiated upgrade (one frame = one message either way); bulk chunks = raw
+  binary frames in both modes. Transport frame cap 1 MiB. Under CBOR, binary
+  bodies ride as native byte strings (no base64); under JSON, binary bodies
+  either base64 (small) or go bulk. The substrate never depends on WebSocket
   specifics -- a raw TCP/TLS carrier with 4-byte length-prefix framing is a
   legal future L1.
 
@@ -112,6 +144,11 @@ place: inside the bulk transfer class. Global backpressure = socket + queue caps
   in the namespace of the machine that owns that side; the peer is implied by the
   channel. Raw internal ids (`conv_...`) never appear; conversation-facing names
   are address-book slugs.
+- **Address grammar (fabric-reserved)**: endpoint addresses are formally
+  `name(@hop)*` per the execution-fabric whitepaper (`recipient@gw1@gw2`). **V1
+  accepts single-segment names only**; any `@` in an address -> one terminal
+  `err code=routing_not_supported`. The grammar is reserved so a future
+  forwarding hop needs no wire change.
 - **Per-object sequencing**: the sender stamps each op with a per-object
   monotonic `seq` at enqueue time. Receivers deliver in-seq per object, buffer
   gaps briefly (default 30s), and request `resync { object, fromSeq }` when a gap
@@ -126,25 +163,55 @@ place: inside the bulk transfer class. Global backpressure = socket + queue caps
 
 ## 4. L2 -- the substrate verbs (frozen)
 
-Every control frame: `{ v: 1, kind, obj?, id?, seq?, ... }`. `id` = ULID.
+Every message: `{ env: { v: 1, kind, obj?, id?, seq?, ... }, body?: <opaque> }`.
+`id` = ULID. ALL routing/control fields live in `env` -- the substrate (queues,
+sequencer, dedupe, admission, any future forwarding hop) reads `env` and never
+parses `body`. A body is opaque payload for the terminal L3 handler; it may be
+JSON, bytes (CBOR byte string), a sealed blob, or a nested envelope+body (onion
+seam -- v1 never forwards, see decision 9).
 
-| Frame | Fields | Meaning |
+| Frame kind | env fields | Meaning |
 |---|---|---|
 | `open` | `obj, service, from, to, meta?` | create/attach a session between named endpoints ("I would like a `{service}` session between my `{from}` and your `{to}`") |
 | `accept` | `obj` | session live (may arrive long after -- e.g. human approval) |
-| `reject` | `obj, code, reason` | `unknown_endpoint`, `approval_denied`, `scope_denied`, `unsupported_service`, `rate_limited` |
+| `reject` | `obj, code, reason` | terminal per attempt: `unknown_endpoint`, `approval_denied`, `scope_denied`, `unsupported_service`; transient: `rate_limited` |
 | `close` | `obj, reason?` | explicit end -- the ONLY way a session dies |
-| `send` | `obj?, id, body` | one-way; acked by `ack { id }` |
-| `req` | `obj?, id, body` | expects exactly one terminal answer |
-| `res` | `id, body` | terminal answer (also the ack) |
-| `chunk` | `id, body` | streamed partial answer, zero or more |
-| `end` | `id, body?` | stream terminator (terminal) |
-| `err` | `id?, obj?, code, message` | terminal error / fault |
+| `send` | `obj?, id` + body | one-way; acked by `ack { id }` |
+| `req` | `obj?, id` + body | expects exactly one terminal answer |
+| `res` | `id` + body | terminal answer (also the ack) |
+| `chunk` | `id` + body | streamed partial answer, zero or more |
+| `end` | `id` (+ body?) | stream terminator (terminal) |
+| `err` | `id?, obj?, code, final, message` | error frame -- see futility semantics below |
 
 Connection-scope (no `obj`): `ping`, `card/get`, `endpoints/list` -- same
 primitives, no special casing. An interrupted `chunk` stream is retried whole by
 re-sending the `req` (streams idempotent at L3; dedupe returns the original
 terminal for true duplicates).
+
+### Errors and futility (bounce discipline)
+
+Prior art: SMTP's permanent/transient split (5xx/4xx) and its hard-won bounce
+rules. Four laws, applying uniformly to every mechanic:
+
+1. **Every failure code is classified** `final: true` (permanent -- retrying is
+   futile) or `final: false` (transient -- backoff and retry is legitimate).
+   Terminal: `closed`, `unknown_endpoint`, `no_such_object`, `approval_denied`,
+   `scope_denied`, `unsupported_service`, `routing_not_supported`,
+   `payload_too_large`, `direction_not_granted`, `upgrade_required`,
+   `auth_failed`. Transient: `rate_limited`, `queue_full`, `quota`, `busy`.
+2. **Exactly one bounce.** The first frame addressed to a dead/unknown object
+   answers with one terminal `err { obj, code: "closed", final: true }`; the
+   receiver then tombstones that object id (TTL 7d, same store as dedupe) and
+   **silently drops** all subsequent frames to it. No error storms.
+3. **An `err` never begets an `err`.** Error frames are terminals, never
+   re-answered, never bounced -- the mail-loop rule.
+4. **Senders honor finality.** On a terminal `err` for an object: purge that
+   object's outbound queue, tombstone locally, surface a structured
+   `bridge/futile` event. Retrying a tombstoned id is a local bug, not a wire
+   event. For sessions, futility attaches to the session ID -- the relationship
+   recovers by opening a FRESH session (silent re-open, decision 2), never by
+   retrying the dead one. QoS-1 redelivery of the SAME op id is not a retry --
+   dedupe re-serves the original terminal answer.
 
 ### Bulk transfer class (any-size payloads)
 
@@ -152,8 +219,8 @@ Mandatory for bodies > effective `maxInline`. Admission before bytes:
 
 1. `offer { id, obj?, size, contentType, sha256 }` -- total size declared first.
 2. `accept-transfer { id, mode: memory | file | reject, window }` -- the receiver's
-   veto (`too_large`, `quota`), preallocate, or spool-to-file decision, plus the
-   initial credit window (chunks).
+   veto (`payload_too_large` = final, `quota` = transient), preallocate, or
+   spool-to-file decision, plus the initial credit window (chunks).
 3. Binary chunks, 256 KiB, header-tagged `(transferId, offset)` -- interleave with
    control frames so a 2 GB transfer never head-of-line-blocks the pipe.
 4. `credit { id, n }` -- receiver-paced; the ONLY flow control in the protocol.
@@ -233,9 +300,14 @@ in topics.
 4. **Key hygiene**: hashed at rest, shown once, CLI-mint only; greppable
    `[bridge]` audit lines for every mint/auth/proof/revoke/reject.
 5. **No transitive reach**: v1 scopes = `mention` + `list`. No spawn, no kill,
-   no file access, no sentinel verbs over the bridge.
+   no file access, no sentinel verbs over the bridge. Corollary: **no
+   forwarding** -- multi-hop addresses and nested envelopes are reserved grammar
+   only; acting on them requires a trust/settlement model that does not exist yet.
 6. **DoS**: transport frame cap, bulk admission (declared size or no bytes),
    dedupe TTL, queue depth/TTL caps, session cap, gap-buffer timeout.
+7. **Bounce storms**: the futility laws (section 4) are load-bearing security --
+   exactly-one bounce + tombstones + err-never-begets-err is what stops two
+   durable QoS-1 queues from feedback-looping each other to death.
 
 ## 8. Prior art (why these choices)
 
@@ -247,6 +319,14 @@ in topics.
   Express-shaped).
 - **MQTT** -- QoS-1 + persistent sessions inspired the queue semantics; rejected
   as a protocol (central broker, topics, req/resp bolted on in v5).
+- **The execution-fabric whitepaper** ("Claw Gate: The Open Execution Fabric",
+  internal research 2026-03) -- envelope/body split, onion encapsulation,
+  envelope-and-inbox async, pluggable transports, fabric addresses. The bridge is
+  its two-node degenerate case; the reserved grammar keeps them convergent.
+- **SMTP** -- permanent/transient failure classes and at-most-once bounce
+  discipline; the mail-loop rule (never bounce a bounce).
+- **CBOR (RFC 8949)** -- the negotiated binary encoding; chosen over MessagePack
+  for the standards-track + WebAuthn/CTAP2/COSE lineage, native byte strings.
 - **Yjs** -- the `state@1` encoding: CRDT convergence for named shared objects.
 - **LSP** -- symmetric request traffic over one connection, proven at scale.
 - **XMPP S2S dialback** -- ancestor of per-direction grants.
