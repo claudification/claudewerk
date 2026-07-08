@@ -1,6 +1,6 @@
 # Bridge Protocol v1
 
-**Status: DRAFT rev 9 -- 2026-07-08. Design locked (16 decisions, workshop with Jonas);
+**Status: DRAFT rev 10 -- 2026-07-08. Design locked (17 decisions, workshop with Jonas);
 security-hardened against a full Opus adversarial audit (19 findings folded);
 nothing implemented yet.**
 
@@ -22,6 +22,9 @@ nothing implemented yet.**
   the channel encoding (only the envelope speaks JSON/CBOR).
 - Rev 9 = optional discovery capability (scoped, read-only introspection for
   debugging addressing) + documented a2a@1 channel-setup procedure.
+- Rev 10 = addresses (`to`/`from`/`obj`) are opaque tokens the substrate never
+  parses (kind moved to an explicit envelope field); human-readable in v1 by
+  convention, swappable to `h_` handles later with zero envelope change.
 
 Service-to-service bridge between CLAUDEWERK (the broker at `concentrator.frst.dev`)
 and remote peer systems. First peer: **GATE**. Either side addresses named things on
@@ -151,6 +154,16 @@ body pays only what its own contract chooses.
     participates in -- to debug addressing. **Scoped, never the full host graph**:
     a caller sees only what its allowlist exposes or what it is a party to. No
     capability = discovery simply absent (not an error).
+17. **Addresses are opaque tokens** (`to`/`from`/`obj`): the substrate MATCHES
+    them as identifiers and MUST NOT parse structure or derive meaning from them.
+    In v1 they are human-readable / hierarchical by convention (two trusted
+    parties + debuggability -- `queue/nightshift-engine`, `session/<ulid>`); a
+    future rev can replace them with random `h_...` handles (resolved by a private
+    receiver table, the onion/fabric direction) with **zero envelope change**,
+    precisely because nothing depends on an address being meaningful. Concrete
+    consequence: the object **`kind`** (queue|session|state) is an **explicit
+    envelope field**, NOT inferred from an address prefix -- that inference was the
+    only place "meaning" leaked into the address, and it is removed.
 
 ### The frozen line
 
@@ -309,22 +322,31 @@ place: inside the bulk transfer class. Global backpressure = socket + queue caps
 
 ## 3. L2 -- named objects and ordering
 
-- **Naming**: `queue/<slug>`, `session/<ulid>`, `state/<slug>` -- each interpreted
-  in the namespace of the machine that owns that side; the peer is implied by the
-  channel. Raw internal ids (`conv_...`) never appear; conversation-facing names
-  are address-book slugs.
-- **Slug charset (normative)**: object slugs and `from`/`to`/`obj` addresses match
-  `[a-z0-9._-]{1,128}` ONLY, evaluated after Unicode normalization. Anything
-  else -> reject the WHOLE frame. This closes homoglyph/escape smuggling and
-  keeps names filesystem-safe (MED-14/15).
-- **Address grammar (fabric-reserved)**: endpoint addresses are formally
-  `name(@hop)*` per the execution-fabric whitepaper (`recipient@gw1@gw2`). **V1
-  accepts single-segment names only**; an `@` (or any out-of-charset byte) in
-  ANY address field (`to`, `from`, `obj`) -> one terminal
-  `err code=routing_not_supported`, checked after normalization, before the name
-  is stored/echoed/logged (MED-15). The grammar is reserved so a future
-  forwarding hop needs no wire change; v1 L3 handlers treat a nested-envelope
-  body as opaque data and never parse it as routing.
+- **Addresses are opaque tokens (decision 17)**: `to` / `from` / `obj` are
+  identifiers the substrate MATCHES but never PARSES -- no structure, no meaning is
+  derived from them. The object **`kind`** (queue | session | state) travels as an
+  **explicit envelope field**, so the substrate applies queue/session/state
+  semantics from `kind`, not from the address shape. In v1 the tokens are
+  human-readable by convention -- `queue/nightshift-engine`, `session/<ulid>`,
+  interpreted in the owning machine's namespace, peer implied by the channel --
+  purely for debuggability; a future rev may swap in random `h_...` handles
+  (private-table resolution, the onion/fabric direction) with no envelope change.
+  Raw internal ids (`conv_...`) never appear.
+- **Token charset (normative)**: an address token matches `[a-z0-9._/-]{1,128}`
+  ONLY (the `/` is a human-hierarchy convenience the substrate does NOT
+  interpret), evaluated after Unicode normalization. Anything else -> reject the
+  WHOLE frame. This closes homoglyph/escape smuggling and keeps names
+  filesystem-safe (MED-14/15). Handles (`h_...`) are a strict subset, so the swap
+  needs no charset change.
+- **Address grammar (fabric-reserved)**: a fabric address is formally
+  `token(@hop)*` per the execution-fabric whitepaper (`recipient@gw1@gw2`), where
+  `@` separates ROUTING hops (a layer above the opaque object token). **V1 accepts
+  a single opaque token only** (which may contain the `/` hierarchy convenience);
+  an `@` in ANY address field (`to`, `from`, `obj`) -> one terminal
+  `err code=routing_not_supported`, checked after normalization, before the token
+  is stored/echoed/logged (MED-15). The hop grammar is reserved so a future
+  forwarding hop needs no wire change; v1 L3 handlers treat a nested-envelope body
+  as opaque data and never parse it as routing.
 - **Per-object sequencing**: the sender stamps each op with a per-object
   monotonic `seq` from a **single seq authority per object per direction** (a
   shared atomic counter, even across parallel sender connections -- never
@@ -361,17 +383,25 @@ place: inside the bulk transfer class. Global backpressure = socket + queue caps
 
 ## 4. L2 -- the substrate verbs (frozen)
 
-Every message: `{ env: { v: 1, kind, obj?, id?, seq?, ... }, body?: <opaque> }`.
-`id` = ULID. ALL routing/control fields live in `env` -- the substrate (queues,
-sequencer, dedupe, admission, any future forwarding hop) reads `env` and never
-parses `body`. A body is opaque payload for the terminal L3 handler; it may be
-JSON, bytes (CBOR byte string), a sealed blob, or a nested envelope+body (onion
-seam -- v1 never forwards, see decision 9).
+Every message: `{ env: { v: 1, kind, obj?, objKind?, id?, seq?, ... }, body?:
+<opaque> }`. `kind` is the FRAME kind (the verb, below); `objKind` is the OBJECT
+kind (`queue | session | state`), explicit per decision 17 so the substrate never
+infers it from the opaque `obj` token. `id` = ULID. ALL routing/control fields
+live in `env` -- the substrate (queues, sequencer, dedupe, admission, any future
+forwarding hop) reads `env` and never parses `body`. A body is opaque payload for
+the terminal L3 handler; it may be JSON, bytes (CBOR byte string), a sealed blob,
+or a nested envelope+body (onion seam -- v1 never forwards, see decision 9).
+
+**Object creation carries `objKind`**: the frame that first introduces an `obj`
+(`open`/`propose` -> `session` or `state`; the first `send`/`req` to a new
+`queue`) sets `objKind` explicitly; the substrate records `obj -> objKind` and
+thereafter resolves kind from its own table, never from the token string. This is
+what lets `obj` be a meaningless handle.
 
 | Frame kind | env fields | Meaning |
 |---|---|---|
-| `open` | `obj, service, from, to, meta?` | bare 2-party session open ("I would like a `{service}` session between my `{from}` and your `{to}`"). Implicit consent handshake -- answered by `accept`/`reject` |
-| `propose` | `obj, service, from, to` + body | **elicit** (decision 12): explicit consent request. Body = structured intent `{ purpose, artifactKind, scopes[], expiresAt, members[] }`. Surfaces WHAT + WHO-ELSE at the approval banner |
+| `open` | `obj, objKind, service, from, to, meta?` | bare 2-party session open ("I would like a `{service}` session between my `{from}` and your `{to}`"). Implicit consent handshake -- answered by `accept`/`reject` |
+| `propose` | `obj, objKind, service, from, to` + body | **elicit** (decision 12): explicit consent request. Body = structured intent `{ purpose, artifactKind, scopes[], expiresAt, members[] }`. Surfaces WHAT + WHO-ELSE at the approval banner |
 | `consent` | `obj, decision` | answer to a `propose`: `decision = accept \| decline`; `decline` carries a code |
 | `accept` | `obj` | session live (may arrive long after -- e.g. human approval) |
 | `reject` | `obj, code, reason` | answer to a specific `open` attempt (carries the attempt's `id`); codes: `unknown_endpoint`, `approval_denied`, `scope_denied`, `unsupported_service`, `rate_limited` |
