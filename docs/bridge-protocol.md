@@ -1,8 +1,9 @@
 # Bridge Protocol v1
 
-**Status: DRAFT rev 5 -- 2026-07-08. Design locked (14 decisions, workshop with Jonas);
+**Status: DRAFT rev 6 -- 2026-07-08. Design locked (14 decisions, workshop with Jonas);
 security-hardened against a full Opus adversarial audit (19 findings folded);
-nothing implemented yet.** Rev 1 bound A2A directly onto the connection -- one layer
+nothing implemented yet.** Rev 6 adds a non-normative Recommendations section
+(operator dashboard + SRV-based domain resolution). Rev 1 bound A2A directly onto the connection -- one layer
 too low. Rev 2 = the three-layer, named-object model. Rev 3 adds the normative
 envelope/body split (fabric alignment), futility/bounce semantics, and encoding
 negotiation (JSON baseline / CBOR upgrade). Rev 4 closes the audit: authorized
@@ -594,3 +595,84 @@ confirmed SOLID and kept as-is.
 - **HTTP/2, AMQP, libp2p, NATS, WAMP, STOMP, graphql-ws** -- surveyed; their
   flow-control windows, topic routing, and negotiation registries are exactly
   the frozen line this spec refuses to cross.
+
+## 11. Recommendations (NON-NORMATIVE)
+
+Guidance for an implementation, not wire requirements. Nothing here changes the
+protocol; a compliant peer may do none of it. Two recommendations.
+
+### 11.1 Operator dashboard (super-admin surface)
+
+A system running the bridge should give its super-admin a single surface to SEE
+and CONTROL every peer relationship -- the bridge is money-and-trust plumbing, so
+it must not be a black box.
+
+**Visualize:**
+
+- **Connections**: every L1 carrier per peer, its live status (`connecting` /
+  `serving` / `idle` / `unreachable`), remote IP, negotiated `{bindingVersion,
+  encoding, authMethod}`, direction grants (one-way vs full duplex), uptime,
+  last keepalive.
+- **Peer lifecycle**: the `active` / `unreachable` / `severing` / `terminated`
+  state (section 2), `severingSince` + grace remaining, with the escalating
+  `bridge/severing` warnings inline.
+- **Named objects**: the list of queues / sessions / state objects per peer, each
+  with kind, membership (star artifacts show the domain roster), `nextSeq`, and
+  age.
+- **Queue contents**: `bridge_outbox` depth **incoming and outgoing**, the actual
+  pending items (envelope metadata + inline-vs-file-ref, never the sealed body),
+  oldest-item age, dedupe/tombstone counts, `bridge/futile` and `bridge/expired`
+  events.
+- **Keys**: issued and held `brg_` keys, scopes, `expiresAt`, rate-limit
+  budgets + current consumption, revocation status.
+
+**Control (admin actions):**
+
+- **Mint a relationship**: create a peer, register its **domain** (see 11.2),
+  issue a `brg_` key with scopes + allowlist + rate limit -- the same CLI-only
+  mint path (`broker-cli bridge issue-key`), surfaced with an audit trail. The
+  key is shown once.
+- **Terminate a relationship**: fully tear a peer down -- send `terminate`, drop
+  all its queues / sessions / state, revoke its keys (the graceful side of the
+  section-2 lifecycle). Distinct from a transient disconnect.
+- **Revoke / rotate a single key**; **lift or set** a durable user-stop block
+  (section 6); **early-terminate** a peer stuck in `severing`.
+
+Everything here is already a structured message (the LOG-EVERYTHING covenant), so
+the dashboard is a rendering of the persisted event + `bridge_*` tables, not a new
+data source.
+
+### 11.2 Domain resolution via SRV records
+
+A peer is identified by a **domain**; where its bridge node actually listens is a
+DNS lookup, exactly the mail model -- but **SRV (RFC 2782), not MX**. SRV is the
+right tool: MX is mail-only and implies a port, whereas SRV carries **host + port
++ priority + weight**, so a domain can relocate its node, run several, and get
+failover / load-balancing for free. This is the XMPP server-discovery pattern
+(`_xmpp-server._tcp`).
+
+```
+_cwbridge._tcp.<domain>.   IN SRV   <priority> <weight> 443 node.<domain>.
+```
+
+The dialer resolves `_cwbridge._tcp.<domain>` (server-side `node:dns.resolveSrv`
+-- the browser SRV limitation does not apply to a Bun dialer), picks a target by
+priority then weight, and connects there.
+
+**Security -- resolve loosely, authenticate strictly (this is the crux):** DNS is
+unauthenticated (assume no DNSSEC), so a spoofed SRV can point the dialer at a
+hostile node. SRV therefore establishes **location, never identity**. Identity is
+proven independently, the way SMTP/XMPP eventually learned:
+
+- The TLS certificate MUST validate against the **`<domain>`** (the identity), NOT
+  the SRV target (the location).
+- The `brg_` key's `peerId` MUST equal the domain; a node that resolves but can't
+  present the domain's key/cert is rejected.
+
+So SRV can freely move you around inside a domain's infrastructure, but it can
+never move you to a *different* domain's trust.
+
+**Upgrade path (noted, not chosen):** SVCB / HTTPS resource records (RFC 9460) are
+the modern, HTTP-aware successor (ALPN, port, ECH hints in one RR). For a
+server-side WebSocket dialer SRV is simpler and sufficient today; SVCB is the
+clean future migration if HTTP-layer discovery becomes useful.
