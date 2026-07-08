@@ -56,10 +56,12 @@ function JobCard({ job, onOpen }: { job: RecapJob; onOpen: (id: string) => void 
   const isInterrupted = job.status === 'interrupted'
   const isPartial = job.status === 'partial'
   const isActive = job.status === 'queued' || job.status === 'gathering' || job.status === 'rendering'
-  // Resume reuses already-paid chunks: an interrupted run (broker restart) or a
-  // partial one (dropped chunks to backfill). The broker validates; a
-  // non-chunked recap replies recap_error, harmless here.
-  const canResume = isInterrupted || isPartial
+  // Resume reuses already-paid chunks: an interrupted run (broker restart), a
+  // partial one (dropped chunks to backfill), or a FAILED one (e.g. a timed-out
+  // reduce -- the banked map/merge output is re-run cheaply, the $$ extraction is
+  // NOT re-paid). The broker validates; a non-chunked recap replies recap_error,
+  // harmless here. Failed shows "Retry" (a fresh attempt), the rest "Resume".
+  const canResume = isInterrupted || isPartial || isFailed
 
   function dismissOrCancel(e: React.MouseEvent) {
     e.stopPropagation()
@@ -120,10 +122,17 @@ function JobCard({ job, onOpen }: { job: RecapJob; onOpen: (id: string) => void 
             <button
               type="button"
               onClick={resume}
-              className="text-amber-500 hover:text-amber-400 px-1 font-medium"
-              title="Resume (reuse paid chunks, re-run only what's missing)"
+              className={cn(
+                'px-1 font-medium',
+                isFailed ? 'text-cyan-500 hover:text-cyan-400' : 'text-amber-500 hover:text-amber-400',
+              )}
+              title={
+                isFailed
+                  ? 'Retry (reuse banked map/merge output, re-run only what failed -- extraction is not re-paid)'
+                  : 'Resume (reuse paid chunks, re-run only what is missing)'
+              }
             >
-              Resume
+              {isFailed ? 'Retry' : 'Resume'}
             </button>
           )}
           {/* react-doctor-disable-next-line react-doctor/html-no-nested-interactive */}
