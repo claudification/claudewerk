@@ -1,20 +1,25 @@
 # Bridge Protocol v1
 
-**Status: DRAFT rev 7 -- 2026-07-08. Design locked (15 decisions, workshop with Jonas);
+**Status: DRAFT rev 8 -- 2026-07-08. Design locked (15 decisions, workshop with Jonas);
 security-hardened against a full Opus adversarial audit (19 findings folded);
-nothing implemented yet.** Rev 6 adds a non-normative Recommendations section
-(operator dashboard + SRV-based domain resolution). Rev 7 adds connection
-management: graceful drain, random-live-carrier routing, simultaneous-dial
-collision resolution, and the connection-agnostic ack/sequencing model. Rev 1 bound A2A directly onto the connection -- one layer
-too low. Rev 2 = the three-layer, named-object model. Rev 3 adds the normative
-envelope/body split (fabric alignment), futility/bounce semantics, and encoding
-negotiation (JSON baseline / CBOR upgrade). Rev 4 closes the audit: authorized
-finality, receiver-derived error classes, op-id (not name) tombstones, a defined
-spend rail, a durable user-stop, a revocation barrier, and a bulk/downgrade/
-CBOR/nonce/seq hardening pass (section 9 tracks every finding). Rev 5 adds the
-first-class elicit (propose/consent) primitive, star-topology shared artifacts
-(multi-party as pairwise-authorized fan-out, no forwarding), and the peer
-lifecycle (active/unreachable/severing/terminated with a graceful terminate).
+nothing implemented yet.**
+
+- Rev 1 bound A2A directly onto the connection -- one layer too low.
+- Rev 2 = the three-layer, named-object model.
+- Rev 3 = normative envelope/body split (fabric alignment), futility/bounce
+  semantics, encoding negotiation (JSON baseline / CBOR upgrade).
+- Rev 4 closes the audit: authorized finality, receiver-derived error classes,
+  op-id (not name) tombstones, a defined spend rail, a durable user-stop, a
+  revocation barrier, a bulk/downgrade/CBOR/nonce/seq hardening pass (section 9
+  tracks every finding).
+- Rev 5 = first-class elicit (propose/consent), star-topology shared artifacts
+  (multi-party as pairwise-authorized fan-out, no forwarding), peer lifecycle
+  (active/unreachable/severing/terminated with a graceful terminate).
+- Rev 6 = non-normative Recommendations (operator dashboard + SRV resolution).
+- Rev 7 = connection management: graceful drain, random-live-carrier routing,
+  simultaneous-dial collision resolution, connection-agnostic ack/sequencing.
+- Rev 8 = drain window default (30s) + body encoding independent of and opaque to
+  the channel encoding (only the envelope speaks JSON/CBOR).
 
 Service-to-service bridge between CLAUDEWERK (the broker at `concentrator.frst.dev`)
 and remote peer systems. First peer: **GATE**. Either side addresses named things on
@@ -56,6 +61,18 @@ scenarios. The bridge is the two-node degenerate case of that fabric; its named
 queues are the fabric's inboxes. (Not to be confused with rclaude's internal
 "plan-fabric.md", which is the identity/vocabulary doc -- different Fabric.)
 
+**Encoding follows the split (normative, decision 11).** ONLY the **envelope**
+speaks the channel encoding (JSON or negotiated CBOR) -- it must, because the
+substrate decodes it to route/sequence/dedupe/admit. The **body is opaque octets
+the substrate never decodes**, so its encoding is entirely the L3 contract's
+business: JSON, CBOR, protobuf, raw bytes, or a **sealed** blob the substrate
+cannot read. The envelope declares the body's `contentType` + length; the
+substrate passes the body through byte-for-byte. This is what both enables
+end-to-end sealing (route a body you can't read) AND makes it efficient -- a large
+binary body rides as a native CBOR byte string (or a bulk chunk in JSON mode),
+never base64'd into the envelope. Envelope pays the structured-encoding cost; the
+body pays only what its own contract chooses.
+
 ### Decision record (all locked 2026-07-08)
 
 1. Generalized substrate, **frozen** at the verbs in section 4 + the bulk class.
@@ -88,11 +105,15 @@ queues are the fabric's inboxes. (Not to be confused with rclaude's internal
     tombstone silently swallows redelivery of that op; an `err` never begets an
     `err`; senders purge on terminal errors. **Finality is authorized** -- only a
     verified participant may close/kill an object (section 4).
-11. **Encoding negotiated**: JSON is the mandatory baseline (bootstrap frames are
-    always JSON); CBOR (RFC 8949, `cbor-x`) upgrades the channel when both sides
-    advertise it -- native byte strings kill the base64 tax on binary bodies.
-    Bulk chunks stay raw binary regardless. MessagePack rejected in favor of its
-    standards-track cousin (CBOR = the WebAuthn/CTAP2/COSE lineage).
+11. **Encoding negotiated, and scoped to the envelope**: JSON is the mandatory
+    baseline (bootstrap frames are always JSON); CBOR (RFC 8949, `cbor-x`)
+    upgrades the channel when both sides advertise it -- native byte strings kill
+    the base64 tax on binary bodies. Bulk chunks stay raw binary regardless.
+    MessagePack rejected in favor of its standards-track cousin (CBOR = the
+    WebAuthn/CTAP2/COSE lineage). **The channel encoding applies to the ENVELOPE
+    ONLY; the body is opaque octets** whose encoding is the L3 contract's (may
+    differ from the channel, may be sealed) -- see the envelope/body principle
+    above.
 12. **Elicit is first-class**: `propose`/`consent` (section 4) is a richer,
     explicit consent handshake carrying structured intent (purpose, artifact
     kind, requested scopes, expiry, member list). Bare `open` stays for simple
@@ -232,11 +253,16 @@ place: inside the bulk transfer class. Global backpressure = socket + queue caps
   - **Graceful drain**: a connection is shut down by first marking it `draining`
     (a `drain` control frame to the peer, or local state), NOT by an abrupt close.
     While `draining`: no NEW ops route to it; ops already dispatched over it get a
-    bounded **drain window** for their **hop delivery-ack** (section 3) to return
-    over this same connection. The socket closes when its outstanding-opId set
-    empties OR the window expires -- then the outbox **resends** the unacked
-    stragglers over another carrier (dedupe by idempotency key covers any double
-    delivery). Abrupt close is reserved for error/timeout.
+    bounded **drain window** (**default 30s, configurable**) for their **hop
+    delivery-ack** (section 3) to return over this same connection. The socket
+    closes when its outstanding-opId set empties OR the window expires -- then the
+    outbox **resends** the unacked stragglers over another carrier (dedupe by
+    idempotency key covers any double delivery). The window only needs to cover a
+    worst-case hop-ack round trip (NOT end-to-end answers, which are
+    connection-agnostic and arrive later elsewhere), so it is deliberately short --
+    30s aligns with the keepalive ping, and because expiry just triggers a
+    dedup-safe resend, erring short is harmless (raise toward 60s only for a
+    high-latency/flaky peer). Abrupt close is reserved for error/hard timeout.
   - **Simultaneous-dial collision (SHOULD, not MUST)**: multiple live connections
     are a **valid steady state**, not an error -- the 0..N model already treats
     every carrier as interchangeable, so a redundant duplicate from a mutual dial
