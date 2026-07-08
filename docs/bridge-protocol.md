@@ -1,260 +1,255 @@
-# Bridge Protocol v1 ("a2a-ws")
+# Bridge Protocol v1
 
-**Status: DRAFT -- direction blessed 2026-07-08.** Nothing below is implemented yet.
+**Status: DRAFT rev 2 -- 2026-07-08. Design locked (8 decisions, workshop with Jonas);
+nothing implemented yet.** Rev 1 bound A2A directly onto the connection -- one layer
+too low; rev 2 is the agreed three-layer, named-object model.
 
 Service-to-service bridge between CLAUDEWERK (the broker at `concentrator.frst.dev`)
-and remote peer systems. First peer: **GATE**. Either side can address ("mention") a
-conversation on the other side and receive asynchronous replies. Reach is granted
-per direction via independently revocable API keys.
+and remote peer systems. First peer: **GATE**. Either side addresses named things on
+the other side and receives asynchronous replies; reach is granted per direction via
+independently revocable API keys.
 
-## 1. Decision record
+## 1. The model
 
-| Decision | Choice |
-|---|---|
-| Semantics | **A2A v1.0.0** data model + operations (agent cards, messages, tasks, task states) |
-| Binding | **Custom WebSocket binding** ("a2a-ws") -- explicitly permitted by A2A spec section 12 (Custom Protocol Bindings). NOT the HTTP+JSON-RPC, REST, or gRPC bindings |
-| Framing | JSON-RPC 2.0, used **symmetrically** (both peers send requests on the same socket, LSP-style) |
-| Reliability | At-least-once + `messageId` dedupe + durable per-peer outbound queue (MQTT QoS-1 / persistent-session semantics, without MQTT's central-broker topology) |
-| Push | Queued JSON-RPC notifications over the socket. **No webhooks** |
-| Auth | Mutual, per-direction revocable API keys (`brg_` prefix), minted CLI-only, hashed at rest |
-| Version pin | Spec hand-rolled on both sides against A2A 1.0.0 data shapes; binding versioned separately, hard-gated |
-
-Cost accepted knowingly: a custom binding means off-the-shelf A2A clients cannot talk
-to us directly. Because the data model is unchanged, the standard HTTP binding can be
-added later as a second front door without touching bridge internals.
-
-Protobuf/gRPC note: A2A's `.proto` file is the *normative schema source*, not a wire
-requirement. This binding serializes those shapes as JSON. No protobuf runtime, no
-gRPC -- plain Bun (`Bun.serve` websockets, native `WebSocket` client).
-
-## 2. Terminology
-
-- **PEER** -- a remote system bridged to CLAUDEWERK (e.g. GATE). One registry record per peer.
-- **DIALER / LISTENER** -- per peer pair, exactly ONE side is configured to dial
-  (`dialer: "us" | "them"`); the other listens. Roles affect only connection
-  establishment -- once the channel is up, the protocol is fully symmetric.
-- **DIRECTION GRANT** -- authorization for one direction of traffic (A may send to B).
-  Embodied by an API key issued by the receiving side. Two grants = full duplex.
-- **CHANNEL** -- the single authenticated WSS connection carrying both directions.
-
-## 3. Relationship to A2A v1.0.0
-
-Kept verbatim: `Message`, `Part` (text only in v1), `Task`, `TaskStatus`, task state
-enum, `AgentCard` shapes, operation semantics of `SendMessage` / `GetTask` /
-`CancelTask`.
-
-Deviations (all documented, all binding-level or namespaced extensions):
-
-1. **Transport**: WebSocket channel instead of HTTP request/response. Streaming
-   (`SendStreamingMessage`, `SubscribeToTask`) is replaced by task update
-   *notifications* pushed over the channel -- same events SSE would carry.
-2. **Push notification config CRUD** (A2A 3.1.7-3.1.10) is dropped -- push is
-   inherent to the channel.
-3. **Conversation addressing**: A2A addresses an *agent*. We target a specific
-   conversation via `message.metadata.conversation` (address-book slug, never a raw
-   `conv_` id). Namespaced as extension `dev.frst.bridge/conversation`.
-4. **Discovery**: agent card is exchanged in-band (`card/get`) after auth. Serving
-   it additionally at `/.well-known/agent-card.json` is optional and deferred.
-
-## 4. Transport and connection lifecycle
-
-- **Endpoint**: `wss://{host}/bridge/v1`, WebSocket subprotocol `a2a-ws.v1`.
-  CLAUDEWERK's listener is a new route on the broker (through Caddy, like all WS).
-- **One channel per peer pair.** If a duplicate connection authenticates for the same
-  peer, the listener closes the OLD channel (code 4001 `superseded`) and adopts the
-  new one -- the dialer's reconnect is always authoritative.
-- **Reconnect** (dialer): exponential backoff with full jitter, 1s base, 60s cap,
-  forever. Queued traffic survives disconnects (section 7); there is no session
-  resume handshake -- the queues ARE the session state.
-- **Keepalive**: transport-level WS ping/pong every 30s from the dialer, plus the
-  listener kills channels silent for > 90s. App-level `ping` request exists for
-  explicit RTT/liveness probes but is not required traffic. Both Caddy hops must be
-  configured to tolerate this cadence (see the `stream_close_delay` scar in
-  `.claude/topics/gotchas-runtime.md`).
-- **Frames**: UTF-8 text, one JSON-RPC message per frame, max 1 MiB. Oversize =
-  error `-32011 payload_too_large`, channel stays up.
-
-## 5. Authentication -- mutual direction grants
-
-### Keys
-
-- Format `brg_<24+ bytes base64url>`, shown once at mint, stored **hashed** (SHA-256)
-  by the issuer. The holder stores it like any credential (GATE side: its config;
-  CLAUDEWERK side: encrypted in the peer registry).
-- Minted CLI-only, same rails as `mint-dev-key`: `broker-cli bridge issue-key --peer
-  gate --scopes mention,list`. **Never an HTTP/WS mint path.**
-- Each key carries: `peerId`, `scopes`, per-key **rate limit**, optional **project
-  allowlist**, `status: active | revoked`.
-- Rotation: issue new, deploy on peer, revoke old. Two active keys per direction are
-  allowed during overlap.
-
-### Handshake (mutual proof on one socket)
-
-TLS authenticates the listener's domain. The two grants are proven in-band:
-
-1. Dialer connects with `Authorization: Bearer brg_...` (the key the LISTENER
-   issued). Invalid/revoked -> HTTP 401, no upgrade. This enables the
-   **dialer -> listener** direction.
-2. Dialer sends `hello` request: `{ bindingVersion: 1, peer: "gate", nonce:
-   "<32B base64url>" }`.
-3. Listener replies with `{ bindingVersion: 1, peer: "claudewerk", keyProof:
-   base64url(hmacSHA256(nonce, <key the DIALER issued to the listener>)),
-   keyId: "<prefix8>" }`. A valid proof enables the **listener -> dialer** direction.
-   The raw reverse key never crosses the wire; a logged frame cannot be replayed
-   against a fresh nonce.
-4. Either direction may be absent: `keyProof: null` means the listener holds no
-   (valid) grant, and the channel runs one-way. Traffic in an un-granted direction
-   is rejected with `-32013 direction_not_granted`.
-
-### Revocation
-
-Revoking a key takes effect live: the issuer sends notification `bridge/revoked`
-`{ direction }` and drops that direction immediately; if both directions are dead it
-closes the channel (code 4003 `revoked`). Next dial with a revoked key -> 401.
-Either side can also simply delete the key it *holds* -- no coordination required.
-
-### Version gate
-
-`bindingVersion` mismatch in `hello` -> error `-32010 upgrade_required` carrying both
-versions, then close (code 4002). **No negotiation, no translation** -- same hard-gate
-covenant as `AGENT_HOST_PROTOCOL_VERSION`.
-
-## 6. Framing -- symmetric JSON-RPC 2.0
-
-Standard JSON-RPC 2.0 objects. Both peers run a dispatcher; either side may send
-requests once its direction is granted (prior art: LSP, where server->client requests
-are routine). Request `id` = ULID string, unique per sender. Notifications (no `id`)
-carry events. Batch arrays are NOT supported.
-
-Method namespaces:
-
-| Namespace | Layer |
-|---|---|
-| `hello`, `ping`, `bridge/*` | binding/channel control |
-| `message/*`, `tasks/*`, `card/*` | A2A operations |
-| `conversations/*` | CLAUDEWERK extension (scoped address book) |
-
-## 7. Reliability -- QoS-1 semantics
-
-- **At-least-once**: every `message/send` params object carries a sender-generated
-  `messageId` (ULID). The JSON-RPC response is the delivery ack.
-- **Dedupe**: receivers keep `(peerId, messageId)` for >= 7 days; a duplicate is
-  re-acked with the ORIGINAL result and not re-delivered.
-- **Durable outbound queue** per peer, per direction: sends while the channel is
-  down (or before an ack) are persisted and drained FIFO on reconnect. Default TTL
-  24h; expiry emits a local `bridge/expired` event (structured message, visible in
-  the control panel). Task update notifications queue the same way; only the LATEST
-  status per task is retained (state supersedes state).
-- **Ordering**: FIFO per direction per peer -- guaranteed by the single channel plus
-  the FIFO queue. No cross-peer ordering.
-
-## 8. V1 operations
-
-### `message/send` (A2A SendMessage)
-
-Request (GATE -> CLAUDEWERK):
-
-```json
-{
-  "jsonrpc": "2.0", "id": "01JZ...",
-  "method": "message/send",
-  "params": {
-    "messageId": "01JZ...",
-    "message": {
-      "role": "user",
-      "parts": [{ "kind": "text", "text": "Deploy is green, proceed?" }],
-      "metadata": { "dev.frst.bridge/conversation": "nightshift-engine", "intent": "request" }
-    }
-  }
-}
+```
+L3  SERVICES      a2a@1 (message passing over sessions) | state@1 (Yjs, seam)
+L2  NAMED OBJECTS queues, sessions, state objects -- durable, on BOTH sides,
+                  ordered op streams, QoS-1, bulk transfer class
+L1  CONNECTIONS   0..N ephemeral authenticated WSS carriers, interchangeable
 ```
 
-Response: `{ "task": { "id": "tsk_...", "status": { "state": "submitted" } } }` --
-or an immediate `rejected` task if the target slug is unknown/out of scope.
+The consolidation points are **named, durable coordination objects** existing on both
+sides. Connections are IP-and-transport things: they carry ops, they die, nothing
+above notices. With zero connections everything queues; with several, they all feed
+the same named objects.
 
-### Task updates (replaces SSE streaming)
+| Object kind | Semantics | Its op stream carries |
+|---|---|---|
+| **queue** | consume-once mailbox / named receiver | messages |
+| **session** | long-lived context between two named endpoints; **outlives connections**, dies only by explicit `close` | lifecycle ops + data primitives |
+| **state** | CRDT-backed shared object, both sides mutate, converges (spec seam, v1.1) | Yjs updates |
 
-Notification, sent by the task's server side as the task moves:
+The substrate unifies **addressing + durable ordered op streams + dedupe**; each
+kind's semantics live above it. Prior art shape: SSH connection protocol (RFC 4254) --
+authenticated pipe, typed channels, multiplexed -- with the queue layer promoted to
+the durable anchor.
 
-```json
-{ "jsonrpc": "2.0", "method": "tasks/statusUpdate",
-  "params": { "taskId": "tsk_...", "status": { "state": "completed" },
-              "result": { "role": "agent", "parts": [{ "kind": "text", "text": "Done. 3 tests fixed." }] } } }
-```
+### Decision record (all locked 2026-07-08)
 
-### `tasks/get`, `tasks/cancel`
+1. Generalized substrate, **frozen** at the verbs in section 4 + the bulk class.
+   Growth requires reopening this spec.
+2. Sessions are long-lived, outlive connections; lifecycle ops are queued in order,
+   so both sides **converge on the same session table by replay** (event-sourced).
+   Re-open after loss is silent -- approval is remembered at the grant layer.
+3. A2A v1.0.0 **data shapes** kept as the `a2a@1` tenant payload. Honest framing:
+   "A2A data model over a custom binding", never "we speak A2A". (A2A section 12
+   sanctions custom bindings; its `.proto` is schema-source only -- everything here
+   is JSON/binary over WS, plain Bun, no gRPC, no protobuf runtime.)
+4. Bulk transfer class fully in v1: offer / accept(memory|file|reject) / credit /
+   resume, 256 KiB binary chunks, sha256 verify.
+5. Staged handshake: anonymous connect -> capabilities -> auth (negotiable,
+   upgradeable; `bearer-key-v1` today) -> direction proofs -> ready.
+6. Inline ceiling `maxInline` = 64 KiB default, effective `min(ours, theirs)`;
+   bodies above it MUST travel as bulk.
+7. Named objects are the consolidation points; connections are 0..N interchangeable
+   carriers (per-object sequencing + gap buffer + resync, section 4).
+8. `state@1` = Yjs, **spec seam only**, ships v1.1 (nice-to-have, not must-have).
+   Fan-out / event feeds are future L3 services, never substrate topics.
 
-A2A GetTask / CancelTask, unchanged shapes. Poll fallback + cancellation.
+### The frozen line
 
-### `conversations/list` (extension, scope `list`)
+Explicitly OUT of the substrate, permanently-unless-reopened: topic routing /
+fan-out pub-sub, per-message QoS levels, protocol negotiation registries,
+compression, general per-session flow control. Flow control exists in exactly one
+place: inside the bulk transfer class. Global backpressure = socket + queue caps.
 
-Returns the peer-scoped address book: `[{ slug, title, project, state }]` -- ONLY
-conversations the peer's project allowlist exposes. Never raw `conv_` ids, never the
-full registry.
+## 2. L1 -- CONNECTIONS
 
-### `card/get`
+- **Endpoint**: `wss://{host}/bridge/v1`, subprotocol `cw-bridge.v1`. CLAUDEWERK
+  side: a new broker route (through Caddy, like all broker WS).
+- **0..N connections per peer pair.** Any authenticated connection is an equal
+  carrier for the peer's named objects. Zero connections = everything queues.
+  Either side may dial whenever it has something to move (config still names a
+  preferred dialer for keepalive duty: `dialer: "us" | "them"`).
+- **Staged handshake** (SSH-shaped; auth is negotiable so it cannot live in HTTP
+  headers):
 
-Returns the A2A AgentCard (name, description, skills, capabilities). In-band
-discovery after auth.
+  1. Anonymous WSS upgrade. Pre-auth budget: one `capabilities` frame each way,
+     5s deadline to reach `ready`, per-IP rate limit.
+  2. `capabilities` (both directions):
+     `{ bindingVersions: [1], authMethods: ["bearer-key-v1"], maxInline: 65536,
+     features: ["bulk"], peer: "gate" }`. Effective binding = highest common
+     version (empty intersection -> close 4002); effective `maxInline` =
+     `min(ours, theirs)`. Services/endpoints are NOT advertised pre-auth.
+  3. `auth` with the chosen method. `bearer-key-v1`: `{ method: "bearer-key-v1",
+     key: "brg_..." }` -- the key the receiving side issued. Invalid/revoked ->
+     `err code=auth_failed`, close 4004. Enables the sender's direction.
+  4. Direction proof for the reverse side: the authenticated side sends
+     `{ nonce }`; the other side answers `{ keyProof:
+     base64url(hmacSHA256(nonce, <key issued BY the nonce sender>)), keyId }`.
+     Valid proof enables the reverse direction; `keyProof: null` = one-way
+     channel (frames the other way -> `err code=direction_not_granted`).
+  5. `ready`. Queues drain.
 
-## 9. Task lifecycle mapping (CLAUDEWERK side)
+- **Keys**: format `brg_<24+ bytes base64url>`, shown once at mint, stored
+  **hashed** (SHA-256) by the issuer. CLI-mint only (`broker-cli bridge issue-key
+  --peer gate --scopes mention,list`), same rails as `mint-dev-key`, never an
+  HTTP/WS mint path. Each key: `peerId`, `scopes`, rate limit, optional project
+  allowlist, `status`. Rotation = issue new, deploy, revoke old (overlap allowed).
+- **Revocation is live**: issuer sends `revoked { direction }`, drops the
+  direction, closes (4003) if both die. Next `auth` with a revoked key fails.
+- **Keepalive**: WS ping/pong every 30s from the preferred dialer; kill
+  connections silent > 90s. Caddy hops must tolerate the cadence (see
+  `stream_close_delay` scar, `.claude/topics/gotchas-runtime.md`).
+- **Frames**: control = UTF-8 JSON text frames; bulk chunks = binary frames.
+  Transport frame cap 1 MiB. The substrate never depends on WebSocket
+  specifics -- a raw TCP/TLS carrier with 4-byte length-prefix framing is a
+  legal future L1.
 
-| A2A state | Meaning here |
+## 3. L2 -- named objects and ordering
+
+- **Naming**: `queue/<slug>`, `session/<ulid>`, `state/<slug>` -- each interpreted
+  in the namespace of the machine that owns that side; the peer is implied by the
+  channel. Raw internal ids (`conv_...`) never appear; conversation-facing names
+  are address-book slugs.
+- **Per-object sequencing**: the sender stamps each op with a per-object
+  monotonic `seq` at enqueue time. Receivers deliver in-seq per object, buffer
+  gaps briefly (default 30s), and request `resync { object, fromSeq }` when a gap
+  times out -- the sender's durable queue replays from there. This is what makes
+  multiple parallel carriers safe.
+- **Durability (QoS-1)**: `open`, `send`, `req`, and bulk `offer` persist in the
+  sender's per-object FIFO queue until their terminal frame (`accept`/`reject`,
+  `ack`, `res`/`end`/`err`, `done`). Dedupe by `(peer, id)` kept >= 7 days;
+  duplicates re-acked with the original terminal frame. Queue TTL 24h (expiry
+  emits a structured `bridge/expired` event); depth cap 1000 per object
+  (`err code=queue_full`); session count cap per peer 200.
+
+## 4. L2 -- the substrate verbs (frozen)
+
+Every control frame: `{ v: 1, kind, obj?, id?, seq?, ... }`. `id` = ULID.
+
+| Frame | Fields | Meaning |
+|---|---|---|
+| `open` | `obj, service, from, to, meta?` | create/attach a session between named endpoints ("I would like a `{service}` session between my `{from}` and your `{to}`") |
+| `accept` | `obj` | session live (may arrive long after -- e.g. human approval) |
+| `reject` | `obj, code, reason` | `unknown_endpoint`, `approval_denied`, `scope_denied`, `unsupported_service`, `rate_limited` |
+| `close` | `obj, reason?` | explicit end -- the ONLY way a session dies |
+| `send` | `obj?, id, body` | one-way; acked by `ack { id }` |
+| `req` | `obj?, id, body` | expects exactly one terminal answer |
+| `res` | `id, body` | terminal answer (also the ack) |
+| `chunk` | `id, body` | streamed partial answer, zero or more |
+| `end` | `id, body?` | stream terminator (terminal) |
+| `err` | `id?, obj?, code, message` | terminal error / fault |
+
+Connection-scope (no `obj`): `ping`, `card/get`, `endpoints/list` -- same
+primitives, no special casing. An interrupted `chunk` stream is retried whole by
+re-sending the `req` (streams idempotent at L3; dedupe returns the original
+terminal for true duplicates).
+
+### Bulk transfer class (any-size payloads)
+
+Mandatory for bodies > effective `maxInline`. Admission before bytes:
+
+1. `offer { id, obj?, size, contentType, sha256 }` -- total size declared first.
+2. `accept-transfer { id, mode: memory | file | reject, window }` -- the receiver's
+   veto (`too_large`, `quota`), preallocate, or spool-to-file decision, plus the
+   initial credit window (chunks).
+3. Binary chunks, 256 KiB, header-tagged `(transferId, offset)` -- interleave with
+   control frames so a 2 GB transfer never head-of-line-blocks the pipe.
+4. `credit { id, n }` -- receiver-paced; the ONLY flow control in the protocol.
+5. `done { id }` after sha256 verify; resume = re-`offer` + `accept-transfer`
+   carrying `fromOffset`.
+
+## 5. L3 -- services
+
+### `a2a@1` (v1)
+
+A2A v1.0.0 data shapes (`Message`, `Part` -- text only in v1 -- `Task`,
+`TaskStatus`, `AgentCard`) inside sessions; a session maps to an A2A `contextId`.
+
+| A2A operation | Substrate mapping |
 |---|---|
-| `submitted` | Accepted, queued for the conversation (or awaiting LINK approval) |
-| `working` | Conversation turn active |
-| `input-required` | The conversation asked the peer a question back |
-| `completed` | Conversation **settled** -- reuses the parent-notify settle machinery (idle + no background sub-agents for the settle window); result = the settled reply/status |
-| `rejected` | LINK blocked, scope/allowlist miss, or rate-limited |
-| `failed` | Conversation errored/died before settling |
-| `canceled` | Peer sent `tasks/cancel` |
+| SendMessage | `req { body: { op: "message/send", message } }` -> `res { body: { task } }` |
+| Task updates (replaces SSE) | `send { body: { op: "tasks/statusUpdate", taskId, status, result? } }` |
+| GetTask / CancelTask | `req { body: { op: "tasks/get" \| "tasks/cancel", taskId } }` |
+| Streamed turn output (opt-in later) | `chunk` frames on the `message/send` req |
 
-## 10. CLAUDEWERK implementation mapping
+CLAUDEWERK task-state mapping: `submitted` = queued for the conversation;
+`working` = turn active; `input-required` = the conversation asked the peer a
+question; `completed` = conversation **settled** (parent-notify settle machinery:
+idle + no background sub-agents through the settle window), result = settled
+reply; `rejected` = scope/approval/rate denial; `failed` = conversation died;
+`canceled` = peer cancel.
 
-- **Inbound** `message/send` -> resolve slug via address book -> **LINK approval
-  gate** (same first-contact banner as inter-session; peer link approvals persist in
-  the peer registry, not in-memory) -> `channel_deliver` wrapped in
-  `<channel source="gate" sender="peer" intent="...">` -- untrusted framing, rendered
-  with the existing decoration.
-- **Outbound**: a conversation's `send_message` to a `gate:*` slug routes to the
-  bridge client instead of a local conversation. Reply task updates deliver back as
+### `state@1` (spec seam -- ships v1.1, nice-to-have)
+
+Named `state/<slug>` objects, CRDT-backed with **Yjs**: ops are Yjs binary
+updates riding the object's op stream (ordering not required for convergence --
+Yjs is a CRDT -- but the substrate provides it anyway); full snapshots ride the
+bulk class. No v1 implementation; the kind + encoding are reserved here so
+nothing forks.
+
+### Connection-scope built-ins (v1)
+
+`card/get` -> A2A AgentCard (in-band discovery, post-auth only). `endpoints/list`
+(scope `list`) -> peer-scoped address book `[{ slug, title, project, state }]` --
+only what the key's project allowlist exposes. `ping` -> RTT probe.
+
+Future tenants (event feeds, file drops, presence) = new `service@major` strings
++ L3 handlers. The substrate does not change; fan-out lives in the service, not
+in topics.
+
+## 6. CLAUDEWERK implementation mapping
+
+- **Inbound `open` for `a2a@1`** -> resolve `to` slug via address book -> **LINK
+  approval gate** (same first-contact banner as inter-session; approvals persist
+  in the peer registry) -> `accept`. Inbound `message/send` in an accepted
+  session -> `channel_deliver` wrapped in `<channel source="gate" ...>` --
+  untrusted framing, existing rendering.
+- **Outbound**: a conversation's `send_message` to a `gate:*` slug opens (or
+  silently re-opens) the session and sends within it; task updates return as
   channel messages.
-- **New pieces**: `src/broker/bridge/` (channel server + dialer client + queue +
-  registry), `bridge_peers` + `bridge_keys` + queue tables in the store, `broker-cli
-  bridge` verbs (`add-peer`, `issue-key`, `revoke-key`, `status`), WS role
-  `bridge-peer` in the message-router role table.
-- **Naming**: this is the **BRIDGE**. It is NOT the existing `gateway` role
-  (`gw_`, backend adapters/hermes) -- no reuse, no collision. Key prefix `brg_`.
-- **Covenants apply**: every lifecycle event (peer connect/disconnect/supersede,
-  grant proven, direction rejected, revocation, queue drain/expiry, task
-  transitions) is a typed, persisted, rendered structured message with full context.
+- **New pieces**: `src/broker/bridge/` (L1 handshake server + dialer, L2 engine:
+  named-object store + queues + sequencer + bulk, L3 a2a handler),
+  `bridge_peers` / `bridge_keys` / `bridge_objects` / queue tables,
+  `broker-cli bridge` verbs (`add-peer`, `issue-key`, `revoke-key`, `status`),
+  WS role `bridge-peer` in the message-router role table.
+- **Naming**: this is the **BRIDGE** -- NOT the existing `gateway` role (`gw_`,
+  backend adapters/hermes). Key prefix `brg_`.
+- **Covenants**: every lifecycle event (connect/auth/proof/ready/disconnect,
+  open/accept/reject/close, queue drain/expiry/resync, transfer admission/verify,
+  revocation, task transitions) is a typed, persisted, rendered structured
+  message with full context.
 
-## 11. Security considerations
+## 7. Security
 
-1. **Spend-bomb guard**: an inbound bridge message can wake an agent = real money.
-   Per-key rate limit enforced server-side (default 10 msgs/min), project
-   allowlist, LINK approval per conversation. All three before any agent wakes.
-2. **Untrusted content**: peer text is data, never instructions -- `<channel>`
+1. **Spend-bomb guard**: an inbound bridge message can wake an agent = real
+   money. Per-key rate limit (default 10 msgs/min), project allowlist, LINK
+   approval at session open -- all three server-side before any agent wakes.
+2. **Untrusted content**: peer bodies are data, never instructions -- `<channel>`
    framing end-to-end; no tool authority attaches to bridge traffic.
-3. **Key hygiene**: hashed at rest on the issuer, shown once, CLI-mint only,
-   greppable audit log lines (`[bridge] ...`) for every mint/proof/revoke/reject.
-4. **No transitive reach**: v1 scopes are `mention` and `list`. No spawn, no kill,
+3. **Pre-auth surface**: one capabilities frame, 5s deadline, per-IP rate limit;
+   nothing sensitive advertised before auth.
+4. **Key hygiene**: hashed at rest, shown once, CLI-mint only; greppable
+   `[bridge]` audit lines for every mint/auth/proof/revoke/reject.
+5. **No transitive reach**: v1 scopes = `mention` + `list`. No spawn, no kill,
    no file access, no sentinel verbs over the bridge.
-5. **DoS**: 1 MiB frame cap, dedupe-store TTL, queue TTL + depth cap (default 1000;
-   overflow rejects sends with `-32012 queue_full` rather than growing unbounded).
+6. **DoS**: transport frame cap, bulk admission (declared size or no bytes),
+   dedupe TTL, queue depth/TTL caps, session cap, gap-buffer timeout.
 
-## 12. Prior art (why these choices)
+## 8. Prior art (why these choices)
 
-- **A2A v1.0.0** -- data model, task lifecycle, agent cards, security-scheme
-  declaration. Section 12 sanctions custom bindings.
-- **LSP** -- the proof that symmetric JSON-RPC over one connection works at scale;
-  "who dialed" stops mattering exactly as intended here.
-- **MQTT** -- QoS-1 at-least-once + persistent sessions inspired section 7; rejected
-  as the protocol itself (central broker topology, topic pub/sub, req/resp only
-  bolted on in v5).
-- **XMPP S2S dialback** -- the ancestor of per-direction grants; we get the same
-  property on one socket via the hello key-proof instead of two TCP streams.
-- **WAMP / STOMP / graphql-ws** -- surveyed for WS framing patterns; all bring
-  router components or subscription semantics we do not need between two peers.
-- **Plain signed webhooks** -- the boring runner-up; lost on push-over-channel,
-  presence, and the task lifecycle it lacks.
+- **SSH connection protocol (RFC 4254)** -- the L1/L2 template: one authenticated
+  connection, typed channels opened by request, multiplexed; SFTP's windowed
+  transfers = the bulk class's ancestor. Staged caps-then-auth = SSH KEX ordering.
+- **A2A v1.0.0** -- L3 data shapes + task lifecycle + agent card; section 12
+  sanctions custom bindings. Official `@a2a-js/sdk` rejected (tracks 0.3.x,
+  Express-shaped).
+- **MQTT** -- QoS-1 + persistent sessions inspired the queue semantics; rejected
+  as a protocol (central broker, topics, req/resp bolted on in v5).
+- **Yjs** -- the `state@1` encoding: CRDT convergence for named shared objects.
+- **LSP** -- symmetric request traffic over one connection, proven at scale.
+- **XMPP S2S dialback** -- ancestor of per-direction grants.
+- **HTTP/2, AMQP, libp2p, NATS, WAMP, STOMP, graphql-ws** -- surveyed; their
+  flow-control windows, topic routing, and negotiation registries are exactly
+  the frozen line this spec refuses to cross.
