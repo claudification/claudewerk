@@ -1,6 +1,6 @@
 # Bridge Protocol v1
 
-**Status: DRAFT rev 4 -- 2026-07-08. Design locked (11 decisions, workshop with Jonas);
+**Status: DRAFT rev 5 -- 2026-07-08. Design locked (14 decisions, workshop with Jonas);
 security-hardened against a full Opus adversarial audit (19 findings folded);
 nothing implemented yet.** Rev 1 bound A2A directly onto the connection -- one layer
 too low. Rev 2 = the three-layer, named-object model. Rev 3 adds the normative
@@ -8,7 +8,10 @@ envelope/body split (fabric alignment), futility/bounce semantics, and encoding
 negotiation (JSON baseline / CBOR upgrade). Rev 4 closes the audit: authorized
 finality, receiver-derived error classes, op-id (not name) tombstones, a defined
 spend rail, a durable user-stop, a revocation barrier, and a bulk/downgrade/
-CBOR/nonce/seq hardening pass (section 8 tracks every finding).
+CBOR/nonce/seq hardening pass (section 9 tracks every finding). Rev 5 adds the
+first-class elicit (propose/consent) primitive, star-topology shared artifacts
+(multi-party as pairwise-authorized fan-out, no forwarding), and the peer
+lifecycle (active/unreachable/severing/terminated with a graceful terminate).
 
 Service-to-service bridge between CLAUDEWERK (the broker at `concentrator.frst.dev`)
 and remote peer systems. First peer: **GATE**. Either side addresses named things on
@@ -87,6 +90,26 @@ queues are the fabric's inboxes. (Not to be confused with rclaude's internal
     advertise it -- native byte strings kill the base64 tax on binary bodies.
     Bulk chunks stay raw binary regardless. MessagePack rejected in favor of its
     standards-track cousin (CBOR = the WebAuthn/CTAP2/COSE lineage).
+12. **Elicit is first-class**: `propose`/`consent` (section 4) is a richer,
+    explicit consent handshake carrying structured intent (purpose, artifact
+    kind, requested scopes, expiry, member list). Bare `open` stays for simple
+    2-party sessions; `propose` is used when the human should approve WHAT and
+    WHO-ELSE, not just WHO.
+13. **Multi-party is STAR, never mesh**: N domains each open a normal pairwise
+    session to a shared named object on the hub. Every trust edge is
+    self-authorized pairwise; the hub is the trust broker (domains trust the hub,
+    not each other). "Broadcast to multiple domains" = the artifact owner relays
+    each update to every authorized pairwise session (fan-out-as-L3, N sends, not
+    substrate pub-sub -- consistent with decision 8 / the frozen line). Inline
+    key/proof introduction (A vouches for C) stays OUT -- that is forwarding /
+    delegation, reserved for a future fabric trust+settlement tier (decision 9).
+14. **Peer lifecycle** (section 2): a peer moves `active` -> `unreachable`
+    (transport lost, queues persist, NEVER auto-terminates) and, on authorization
+    severance only, `active`/`unreachable` -> `severing` -> `terminated`.
+    `severing` runs a configurable grace window (default 7d) with escalating
+    warnings and periodic auth retry; `terminated` tears down all named objects
+    for the peer. A graceful `terminate` verb exists; the inferred path is N
+    consecutive auth rejections over the window.
 
 ### The frozen line
 
@@ -162,6 +185,30 @@ place: inside the bulk transfer class. Global backpressure = socket + queue caps
   agent-wake time**, not only at session open -- so an op already in the pipeline
   cannot wake an agent after revocation lands. Closes (4003) if both directions
   die. Next `auth` with a revoked/expired key fails.
+- **Peer lifecycle (decision 14)**: a per-peer-pair state ABOVE individual
+  objects. The cardinal rule: **loss of connectivity is NOT loss of
+  authorization.** Durable queues exist to survive disconnection, so an
+  unreachable peer must NEVER auto-terminate.
+
+  ```
+  active  --transport lost-->  unreachable  --reconnect-->  active
+     (queues/sessions/state persist indefinitely; NO teardown)
+  active | unreachable  --auth severed-->  severing  --re-authorized-->  active
+     severing: grace window (configurable, default 7d) + escalating
+               warnings (bridge/severing events, user-surfaced) + periodic auth retry
+  severing  --grace expires | mutual terminate-->  TERMINATED
+     tear down ALL queues/sessions/state for the peer; purge durable
+     data + tombstones; terminal bridge/terminated event. A newly issued
+     key is a FRESH relationship, not a resurrection.
+  ```
+
+  **Auth-severed** is the ONLY trigger into `severing`: an explicit `terminate`/
+  `revoked` from the peer (graceful path), OR N consecutive `auth_failed` /
+  `direction_not_granted` across reconnect attempts (inferred path, for a peer
+  that just deletes the key and 401s). The severed side runs its OWN grace clock
+  and owns its cleanup; during `severing` a human can re-issue the key (-> back to
+  `active`) or confirm teardown early. `unreachable` never enters `severing` --
+  only an authorization signal does.
 - **Keepalive**: WS ping/pong every 30s from the preferred dialer; kill
   connections silent > 90s. Caddy hops must tolerate the cadence (see
   `stream_close_delay` scar, `.claude/topics/gotchas-runtime.md`).
@@ -228,10 +275,13 @@ seam -- v1 never forwards, see decision 9).
 
 | Frame kind | env fields | Meaning |
 |---|---|---|
-| `open` | `obj, service, from, to, meta?` | create/attach a session between named endpoints ("I would like a `{service}` session between my `{from}` and your `{to}`") |
+| `open` | `obj, service, from, to, meta?` | bare 2-party session open ("I would like a `{service}` session between my `{from}` and your `{to}`"). Implicit consent handshake -- answered by `accept`/`reject` |
+| `propose` | `obj, service, from, to` + body | **elicit** (decision 12): explicit consent request. Body = structured intent `{ purpose, artifactKind, scopes[], expiresAt, members[] }`. Surfaces WHAT + WHO-ELSE at the approval banner |
+| `consent` | `obj, decision` | answer to a `propose`: `decision = accept \| decline`; `decline` carries a code |
 | `accept` | `obj` | session live (may arrive long after -- e.g. human approval) |
 | `reject` | `obj, code, reason` | answer to a specific `open` attempt (carries the attempt's `id`); codes: `unknown_endpoint`, `approval_denied`, `scope_denied`, `unsupported_service`, `rate_limited` |
 | `close` | `obj, reason?` | explicit end -- the ONLY way a session dies. **Honored only from a verified participant** of that session (CRIT-1) |
+| `terminate` | `reason?` | connection-scope: graceful peer goodbye ("you are no longer a client"). Drives the peer to `severing`->`terminated` (decision 14) |
 | `send` | `obj?, id` + body | one-way; acked by `ack { id }` |
 | `req` | `obj?, id` + body | expects exactly one terminal answer |
 | `res` | `id` + body | terminal answer (also the ack) |
@@ -239,10 +289,16 @@ seam -- v1 never forwards, see decision 9).
 | `end` | `id` (+ body?) | stream terminator (terminal) |
 | `err` | `id?, obj?, code, message` | error frame -- NO `final` field; class is derived from `code` by the receiver (CRIT-2). See futility semantics below |
 
-Connection-scope (no `obj`): `ping`, `card/get`, `endpoints/list` -- same
-primitives, no special casing. An interrupted `chunk` stream is retried whole by
-re-sending the `req` (streams idempotent at L3; dedupe returns the original
+Connection-scope (no `obj`): `ping`, `card/get`, `endpoints/list`, `terminate` --
+same primitives, no special casing. An interrupted `chunk` stream is retried whole
+by re-sending the `req` (streams idempotent at L3; dedupe returns the original
 terminal for true duplicates).
+
+`open` vs `propose`: `open` is the lightweight 2-party path (implicit "attach a
+session, ok?"); `propose` is the first-class elicit for anything a human should
+weigh -- a shared multi-party artifact, elevated scopes, an expiring grant. Both
+land on the same LINK approval gate; `propose` just gives the banner the intent +
+member list to show.
 
 ### Errors and futility (bounce discipline)
 
@@ -340,6 +396,25 @@ Yjs is a CRDT -- but the substrate provides it anyway); full snapshots ride the
 bulk class. No v1 implementation; the kind + encoding are reserved here so
 nothing forks.
 
+**Star topology for multi-party shared artifacts (decision 13).** A `state@1`
+object shared across several domains is NOT a mesh session and carries NO
+multi-party wire construct. Each domain opens (via `propose`) a normal **pairwise**
+session to the shared object on the hub; membership is the `propose` body's
+`members[]` and each edge is authorized pairwise (LINK approval on the hub side).
+The hub is the trust broker -- domains trust the hub, not each other; a domain
+never presents proof for another domain (that would be forwarding/delegation,
+reserved as a future fabric tier per decision 9).
+
+**Broadcast = fan-out-as-L3, not substrate pub-sub.** When domain X mutates the
+artifact, the hub (the object owner) relays that Yjs update to every OTHER
+currently-authorized pairwise session -- N ordinary `send`s, one per member, over
+the substrate's normal per-object streams. There is no topic, no substrate
+subscription (consistent with the frozen line). Membership changes (a domain
+joining/leaving) are themselves fan-out events, so every member sees the roster.
+Because X's changes become visible to Y THROUGH the hub, joining a shared artifact
+is explicit **consent to co-participation** -- which is exactly what the `propose`
+member list surfaces at the approval banner.
+
 ### Connection-scope built-ins (v1)
 
 `card/get` -> A2A AgentCard (in-band discovery, post-auth only). `endpoints/list`
@@ -371,9 +446,10 @@ in topics.
   silently re-opens, if not user-blocked) the session and sends within it; task
   updates return as channel messages.
 - **New pieces**: `src/broker/bridge/` (L1 handshake server + dialer, L2 engine:
-  named-object store + queues + sequencer + bulk, L3 a2a handler),
-  `bridge_peers` / `bridge_keys` / `bridge_objects` / queue tables,
-  `broker-cli bridge` verbs (`add-peer`, `issue-key`, `revoke-key`, `status`),
+  named-object store + queues + sequencer + bulk, L3 a2a handler), the SQLite
+  tables of section 8 (`bridge_peers` / `bridge_keys` / `bridge_objects` /
+  `bridge_outbox` / `bridge_dedupe`) + the bulk spool dir, `broker-cli bridge`
+  verbs (`add-peer`, `issue-key`, `revoke-key`, `status`, `terminate-peer`),
   WS role `bridge-peer` in the message-router role table.
 - **Naming**: this is the **BRIDGE** -- NOT the existing `gateway` role (`gw_`,
   backend adapters/hermes). Key prefix `brg_`.
@@ -423,8 +499,50 @@ in topics.
 9. **Bounce storms**: the futility laws (section 4) are load-bearing security --
    exactly-one bounce + per-op-id tombstones + err-never-begets-err is what stops
    two durable QoS-1 queues from feedback-looping each other to death.
+10. **Peer teardown never triggers on connectivity (decision 14)**: only an
+    authorization signal (`terminate`/`revoked`, or N inferred auth rejections)
+    moves a peer to `severing`->`terminated`. An unreachable peer keeps its
+    durable state forever. This prevents both a data-loss DoS (partition != purge)
+    and a stuck-forever relationship (a real severance is reclaimed after the
+    grace window).
 
-## 8. Security audit trail (rev 4)
+## 8. Persistence (SQLite, `bun:sqlite`)
+
+Every durable structure is SQLite (`store.db` family, WAL, strict mode -- the
+same engine the broker already uses; bind keys with `{strict:true}` and no `$`
+prefix per the repo's bun:sqlite conventions). The wire spec above is
+storage-agnostic, but the reference implementation is SQLite and the schema is
+what makes QoS-1 real:
+
+- **`bridge_peers`** -- one row per peer: `peerId`, `baseUrl?`, `dialer`,
+  `lifecycleState` (active/unreachable/severing/terminated), `severingSince?`,
+  `graceMs`, user-stop block flags.
+- **`bridge_keys`** -- issued/held keys: hashed key, `direction`, `scopes`,
+  `rateLimit`, `projectAllowlist?`, `expiresAt`, `status`.
+- **`bridge_objects`** -- named objects: `(peerId, name)` PK, `kind`, `nextSeq`
+  (the single seq authority), session party set / membership, `state`.
+- **`bridge_outbox`** -- the durable QoS-1 send queue: `(peerId, objName, seq)`,
+  `opId`, `kind`, **`bodyInline BLOB?`** for small bodies, **`bodyRef TEXT?`** for
+  large ones (a path into the bulk spool dir), `enqueuedAt`, `deliveredAt?`,
+  `terminalFrame?` (the stored answer that dedupe re-serves). A `send`/`req`/
+  `open`/`offer` is durable the instant it is COMMITTED here, before it hits the
+  socket -- that is the QoS-1 write. Drain = read undelivered rows in `seq` order
+  and emit; ack/terminal marks the row done.
+- **`bridge_dedupe`** -- `(peerId, opId)` -> stored terminal + `tombstonedAt?`,
+  TTL 7d. Dedupe re-serve and per-op-id tombstone both live here (dedupe wins,
+  section 3).
+
+**Small inline / large file-ref split** is exactly your instinct and it mirrors
+the wire `maxInline` line: a body <= `maxInline` is stored inline in
+`bodyInline`; anything larger never enters the DB as a blob -- it lives in the
+bulk spool dir (server-generated path, section 4) and the row holds only
+`bodyRef`. So the durable queue stays small and index-friendly regardless of
+payload size, and bulk transfers are resumable from the same spool the row
+points at. Writes are transactional (row + seq bump in one tx); a crash mid-send
+replays from the outbox on reconnect -- no lost, no double-woken agent (dedupe
+covers the redelivery).
+
+## 9. Security audit trail (rev 4)
 
 Opus adversarial audit of rev 3, 2026-07-08. Every finding folded; the blast-radius
 scoping (`mention`+`list`, no forwarding) and per-peer dedupe namespacing were
@@ -452,7 +570,7 @@ confirmed SOLID and kept as-is.
 | 18 | INFO | LINK approval is WHO-only (seal caveat) | §7.2 |
 | 19 | INFO | Overlapping error codes; `busy` unused | §4 law 1 (disjoint codes) |
 
-## 9. Prior art (why these choices)
+## 10. Prior art (why these choices)
 
 - **SSH connection protocol (RFC 4254)** -- the L1/L2 template: one authenticated
   connection, typed channels opened by request, multiplexed; SFTP's windowed
