@@ -1,6 +1,6 @@
 # Bridge Protocol v1
 
-**Status: DRAFT rev 8 -- 2026-07-08. Design locked (15 decisions, workshop with Jonas);
+**Status: DRAFT rev 9 -- 2026-07-08. Design locked (16 decisions, workshop with Jonas);
 security-hardened against a full Opus adversarial audit (19 findings folded);
 nothing implemented yet.**
 
@@ -20,6 +20,8 @@ nothing implemented yet.**
   simultaneous-dial collision resolution, connection-agnostic ack/sequencing.
 - Rev 8 = drain window default (30s) + body encoding independent of and opaque to
   the channel encoding (only the envelope speaks JSON/CBOR).
+- Rev 9 = optional discovery capability (scoped, read-only introspection for
+  debugging addressing) + documented a2a@1 channel-setup procedure.
 
 Service-to-service bridge between CLAUDEWERK (the broker at `concentrator.frst.dev`)
 and remote peer systems. First peer: **GATE**. Either side addresses named things on
@@ -143,6 +145,12 @@ body pays only what its own contract chooses.
     connection-agnostic. Simultaneous mutual dial collapses to one connection via a
     **deterministic tiebreak** both sides compute identically (never both-severed,
     never both-kept) + randomized reconnect backoff.
+16. **Discovery is an OPTIONAL capability** (section 5): a peer MAY advertise
+    `discovery` in capabilities and expose read-only `discover/*` introspection so
+    a remote can list the endpoints/objects/sessions it may address or
+    participates in -- to debug addressing. **Scoped, never the full host graph**:
+    a caller sees only what its allowlist exposes or what it is a party to. No
+    capability = discovery simply absent (not an error).
 
 ### The frozen line
 
@@ -170,7 +178,9 @@ place: inside the bulk transfer class. Global backpressure = socket + queue caps
      client-spoofable `X-Forwarded-For` (MED-13).
   2. `capabilities` (both directions):
      `{ bindingVersions: [1], authMethods: ["bearer-key-v1"], maxInline: 65536,
-     encodings: ["json", "cbor"], features: ["bulk"], peer: "gate" }`. Effective
+     encodings: ["json", "cbor"], features: ["bulk", "discovery"], peer: "gate" }`.
+     `features` is the optional-capability set (`discovery` per decision 16 is
+     opt-in -- absent = the peer offers no introspection). Effective
      binding = highest common version (empty intersection -> close 4002);
      effective `maxInline` = `min(ours, theirs)`; effective encoding = `cbor` iff
      both advertise it, else `json` (the mandatory baseline -- capabilities
@@ -208,8 +218,9 @@ place: inside the bulk transfer class. Global backpressure = socket + queue caps
   allowlist, `status`. Rotation = issue new, deploy, revoke old (overlap allowed).
 - **Keys** also carry a mandatory `expiresAt` (bounded lifetime; rotation overlap
   is a short window, not forever -- LOW-17). The **scope->verb matrix** is fixed
-  and enforced per-frame, not only at open: `list` -> `endpoints/list`; `mention`
-  -> `open` / `send` / `req` on a `mention`-scoped session. A frame outside the
+  and enforced per-frame, not only at open: `list` -> `discover/endpoints`;
+  `discover` -> `discover/objects` / `discover/object`; `mention` -> `open` /
+  `propose` / `send` / `req` on a `mention`-scoped session. A frame outside the
   key's scopes -> `err code=scope_denied` (final).
 - **Revocation barrier (HIGH-6)**: revocation is live AND synchronous. The issuer
   sends `revoked { direction }`, then: (a) invalidates that direction on ALL live
@@ -373,7 +384,7 @@ seam -- v1 never forwards, see decision 9).
 | `end` | `id` (+ body?) | stream terminator (terminal) |
 | `err` | `id?, obj?, code, message` | error frame -- NO `final` field; class is derived from `code` by the receiver (CRIT-2). See futility semantics below |
 
-Connection-scope (no `obj`): `ping`, `card/get`, `endpoints/list`, `terminate` --
+Connection-scope (no `obj`): `ping`, `card/get`, `discover/*`, `terminate` --
 same primitives, no special casing. An interrupted `chunk` stream is retried whole
 by re-sending the `req` (streams idempotent at L3; dedupe returns the original
 terminal for true duplicates).
@@ -501,13 +512,49 @@ member list surfaces at the approval banner.
 
 ### Connection-scope built-ins (v1)
 
-`card/get` -> A2A AgentCard (in-band discovery, post-auth only). `endpoints/list`
-(scope `list`) -> peer-scoped address book `[{ slug, title, project, state }]` --
-only what the key's project allowlist exposes. `ping` -> RTT probe.
+`card/get` -> A2A AgentCard (post-auth only). `ping` -> RTT probe.
+
+### Discovery (optional capability, decision 16)
+
+Offered only if the peer advertised `discovery` in `features`. Read-only,
+introspective, meant for **debugging addressing** -- "does the endpoint I'm
+sending to exist, and what's the state of the object I opened?" All three verbs
+are **peer-scoped**: a caller sees ONLY endpoints its allowlist exposes and
+objects it is a party to -- NEVER the host's full object graph (that would leak
+other peers' relationships; see §7).
+
+| Verb | Scope | Returns |
+|---|---|---|
+| `discover/endpoints` | `list` | the address book the caller may target: `[{ slug, title, project, state }]` (was `endpoints/list`; folded here) |
+| `discover/objects` | `discover` | objects the caller participates in: `[{ obj, kind, state, service?, members?, seq, inDepth, outDepth, ageMs }]` -- the caller's own sessions/queues/shared artifacts |
+| `discover/object` | `discover` | detail for one `obj` the caller is a party to: full state, membership, in/out queue depth, last-activity, tombstone/futile flags -- to debug why a specific address isn't flowing |
+
+Discovery never exposes bodies (opaque) and never other peers' objects. A query
+for an object the caller is not a party to answers `err code=unknown_endpoint`
+(indistinguishable from "does not exist" -- no existence oracle).
 
 Future tenants (event feeds, file drops, presence) = new `service@major` strings
 + L3 handlers. The substrate does not change; fan-out lives in the service, not
 in topics.
+
+### Setting up a new `a2a@1` channel (procedure)
+
+1. **(optional) Discover** -- `discover/endpoints` to confirm the target slug is
+   addressable, catching an addressing typo before you send.
+2. **Open** -- `open { obj: "session/<ULID>", service: "a2a@1", from: "<my
+   endpoint>", to: "<their endpoint>" }`; or `propose { ... }` when the setup
+   needs explicit human consent (elevated scopes, a shared/multi-party artifact).
+3. **Receiver gate chain** (§6) -- durable user-stop block -> resolve `to` ->
+   scope (`mention`) -> rate-limit + allowlist -> LINK approval banner (human,
+   may be slow/async).
+4. **Accept** -- `accept { obj }` and the session is live; both sides persist it
+   (survives reconnects, decision 2) and `obj` is the A2A `contextId`. Denial =
+   `reject { obj, code }`.
+5. **Exchange** -- `req { obj, id, body:{ op:"message/send", message } }` ->
+   `res { body:{ task } }`; task progress via `send { body:{ op:
+   "tasks/statusUpdate", ... } }`; `tasks/get` / `tasks/cancel` as needed.
+6. **Close** -- `close { obj }` from a participant (or a user-stop). A dead
+   session recovers by opening a FRESH one, never by reusing the closed id.
 
 ## 6. CLAUDEWERK implementation mapping
 
@@ -565,10 +612,13 @@ in topics.
 4. **Key hygiene**: hashed at rest, shown once, CLI-mint only, mandatory expiry;
    greppable `[bridge]` audit lines for every mint/auth/proof/revoke/reject.
    Downgrade-bound direction proofs (section 2) + single-purpose HMAC key.
-5. **No transitive reach**: v1 scopes = `mention` + `list`, enforced per-frame via
-   the fixed scope->verb matrix. No spawn, no kill, no file access, no sentinel
-   verbs over the bridge. Corollary: **no forwarding** -- multi-hop addresses and
-   nested envelopes are reserved grammar only; acting on them requires a
+5. **No transitive reach**: v1 scopes = `mention` + `list` + `discover`, enforced
+   per-frame via the fixed scope->verb matrix. Discovery is read-only and
+   peer-scoped (only the caller's own endpoints/objects, never the host graph;
+   unknown-or-unauthorized -> `unknown_endpoint`, no existence oracle). No spawn,
+   no kill, no file access, no sentinel verbs over the bridge. Corollary: **no
+   forwarding** -- multi-hop addresses and nested envelopes are reserved grammar
+   only; acting on them requires a
    trust/settlement model that does not exist yet.
 6. **Authorized finality (CRIT-1/2, HIGH-3)**: close/kill of an object requires a
    verified participant; error class is receiver-derived from the code; tombstones
