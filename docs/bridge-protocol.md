@@ -1,8 +1,10 @@
 # Bridge Protocol v1
 
-**Status: DRAFT rev 10 -- 2026-07-08. Design locked (17 decisions, workshop with Jonas);
-security-hardened against a full Opus adversarial audit (19 findings folded);
-nothing implemented yet.**
+**Status: DRAFT rev 11 -- 2026-07-08. Design locked (17 decisions, workshop with Jonas);
+security-hardened against a full Opus adversarial audit (19 findings) + an
+implementation-informed pass (section 12) after four reference packages + a
+composition harness were built and green (168 + 9 tests). Not yet wired into the
+broker.**
 
 - Rev 1 bound A2A directly onto the connection -- one layer too low.
 - Rev 2 = the three-layer, named-object model.
@@ -25,6 +27,12 @@ nothing implemented yet.**
 - Rev 10 = addresses (`to`/`from`/`obj`) are opaque tokens the substrate never
   parses (kind moved to an explicit envelope field); human-readable in v1 by
   convention, swappable to `h_` handles later with zero envelope change.
+- Rev 11 = implementation-informed pass (section 12): mandatory **binary WS wire**
+  (CBOR bodies as native octets), per-delivery **receipt-token fencing**,
+  per-object strict-FIFO ordering, producer-stable idempotency ids, the
+  store-and-forward contract, a **full-tuple** downgrade binding (all layers) with
+  role-absolute transcript + mandatory collision-nonce binding, a discriminator
+  registry, and reserved envelope auth slots for sealed bodies.
 
 Service-to-service bridge between CLAUDEWERK (the broker at `concentrator.frst.dev`)
 and remote peer systems. First peer: **GATE**. Either side addresses named things on
@@ -209,17 +217,30 @@ place: inside the bulk transfer class. Global backpressure = socket + queue caps
      than the forward `auth` already requires; the challenged side proves the key
      it was ISSUED without sending it. The challenger sends `{ nonce }`; the other
      answers `{ keyProof, keyId }` where
-     `keyProof = base64url(hmacSHA256(transcript, <key issued BY the nonce sender>))`
-     and `transcript = nonce || "\x00cw-bridge/dir-proof/v1\x00" || direction ||
-     H(myCaps) || H(peerCaps) || resolved{bindingVersion,encoding,authMethod}`.
-     Folding the negotiated tuple + both caps frames into the HMAC input **binds
-     the proof to this connection and defeats downgrade tampering** (the
-     SSH-exchange-hash / TLS-Finished property, previously missing -- HIGH-8).
-     `nonce` MUST be >= 16 bytes from a CSPRNG (`crypto.getRandomValues` /
-     `randomBytes` -- never `Math.random`), single-use, bound to the pending
-     connection, time-boxed to the 5s budget (MED-10). The bridge HMAC key is
-     used for NOTHING else (no signing-oracle reuse). `keyProof: null` = one-way
-     channel (frames the other way -> `err code=direction_not_granted`).
+     `keyProof = base64url(hmacSHA256(transcript, <key issued BY the nonce sender>))`.
+     The `transcript` is **role-absolute and canonically encoded** (section 12.13):
+     `transcript = canon( nonce, "cw-bridge/dir-proof/v1", proverRole,
+     initiatorHello, responderHello, negotiatedTuple, canonicalConnId )` where
+     `canon(...)` length-frames each field in fixed order (no `my/peer` perspective,
+     no concatenation ambiguity), `proverRole ∈ {INITIATOR_PROVES, RESPONDER_PROVES}`,
+     the two `*Hello` are the RAW capability frames (not reconstructions), and
+     `negotiatedTuple` is the **full cross-layer tuple** (section 12.16):
+     `{ bindingVersion, features, authMethod, payloadEncoding, dedupeScope,
+     canonicalConnId }` -- every layer's negotiated slice, not just the transport's.
+     Binding the full tuple + both raw hello frames + the connId **defeats
+     downgrade tampering at every layer AND makes collision-survivor selection
+     authenticated** (a tampered nonce/connId or a downgraded payload encoding
+     diverges the transcript -> proof fails). `nonce` MUST be >= 16 bytes from a
+     CSPRNG (`crypto.getRandomValues` / `randomBytes` -- never `Math.random`),
+     single-use, connection-bound, time-boxed to the 5s budget; **one nonce = one
+     attempt** -- a failed proof burns the nonce, so a retry MUST re-run the
+     challenge with a fresh one (section 12.15). The HMAC key is
+     `SHA-256(rawKey)` (== the issuer's stored `record.hash`); it is used for
+     NOTHING else. **Security caveat (section 12.14):** because the proof is
+     symmetric HMAC and the verifier stores that same hash, the key store is
+     proof-forgery-sensitive -- mitigated by short `expiresAt` + fast revocation;
+     asymmetric signatures are the reserved dump-safe upgrade. `keyProof: null`
+     = one-way channel (frames the other way -> `err code=direction_not_granted`).
   5. `ready`. Queues drain. If either side's echoed resolved tuple mismatches what
      it computed, abort (close 4002) before `ready` -- no traffic on a downgraded
      channel.
@@ -295,8 +316,12 @@ place: inside the bulk transfer class. Global backpressure = socket + queue caps
     sides compute identically** (prior art: XMPP stream-collision resolution
     RFC 6120 s4.9.3.3, BGP connection-collision detection RFC 4271 -- both compare
     a shared identifier so both ends independently pick the same survivor): order
-    the two by the pair of hello `nonce`s (lexicographically), tie-broken by domain
-    name, and **gracefully drain the loser**. Running the same comparison on the
+    the two by `canonicalConnId` (derived from the pair of hello nonces,
+    lexicographically), tie-broken by domain name, and **gracefully drain the
+    loser**. The nonces/connId feeding this tiebreak are **bound into the auth
+    proof** (section 2 handshake, section 12.5), so survivor selection is
+    authenticated -- a peer cannot steer it by choosing its nonce. Running the same
+    comparison on the
     same inputs guarantees exactly ONE is dropped -- never both (stranding the peer
     at zero), never neither. A side that still needs a carrier redials after a
     **randomized backoff** (full jitter) so the two do not re-collide in lockstep.
@@ -306,19 +331,23 @@ place: inside the bulk transfer class. Global backpressure = socket + queue caps
 - **Keepalive**: WS ping/pong every 30s from the preferred dialer; kill
   connections silent > 90s. Caddy hops must tolerate the cadence (see
   `stream_close_delay` scar, `.claude/topics/gotchas-runtime.md`).
-- **Frames**: control = UTF-8 JSON text frames, or CBOR binary frames after a
-  negotiated upgrade (one frame = one message either way); bulk chunks = raw
-  binary frames in both modes. In CBOR mode both control and chunks are binary
-  WS frames, so every binary frame carries a **1-byte leading discriminator**
-  (`0x01` = control message, `0x02` = bulk chunk) resolved BEFORE any decode --
-  the receiver never guesses by trial-parsing (MED-9). Transport frame cap 1 MiB.
-  The CBOR decoder (`cbor-x`) is hardened: max nesting depth, max collection
-  size, size cap before decode, no tag->class instantiation, reject
-  indefinite-length and duplicate keys; JSON parsing gets the same depth cap.
-  Under CBOR, binary bodies ride as native byte strings (no base64); under JSON,
-  binary bodies either base64 (small) or go bulk. The substrate never depends on
-  WebSocket specifics -- a raw TCP/TLS carrier with 4-byte length-prefix framing
-  is a legal future L1.
+- **Frames -- the wire MUST support binary (rev 11, mandatory; F2).** A
+  string-only wire that carries the codec output as an opaque *string* is
+  forbidden: it forces a binary body to base64 (+33%) and destroys the entire
+  reason CBOR exists. The transport carries messages in **both WS frame types**:
+  a **text** frame for the JSON control envelope, a **binary** frame for
+  binary/CBOR payloads and bulk chunks. Every binary frame begins with a **1-byte
+  discriminator** resolved BEFORE any decode (never trial-parse -- MED-9), from
+  the reserved registry (section 12.10): `0x00` reserved, `0x01` envelope message,
+  `0x02` bulk/raw chunk, `0x03..0x0f` protocol control, `0x10..0xff` application.
+  So a CBOR envelope + native-byte-string body rides with **zero base64 tax**;
+  JSON mode stays text for the envelope and may still carry a binary body as a
+  `0x01`-tagged binary frame or send it via bulk. Transport frame cap 1 MiB. The
+  CBOR decoder (`cbor-x`) is hardened: max nesting depth, max collection size,
+  size cap before decode, no tag->class instantiation, reject indefinite-length +
+  duplicate keys; JSON parsing gets the same depth cap. The substrate never
+  depends on WebSocket specifics -- a raw TCP/TLS carrier with a 1-byte type +
+  length-prefix framing is a legal future L1.
 
 ## 3. L2 -- named objects and ordering
 
@@ -347,16 +376,22 @@ place: inside the bulk transfer class. Global backpressure = socket + queue caps
   is stored/echoed/logged (MED-15). The hop grammar is reserved so a future
   forwarding hop needs no wire change; v1 L3 handlers treat a nested-envelope body
   as opaque data and never parse it as routing.
-- **Per-object sequencing**: the sender stamps each op with a per-object
-  monotonic `seq` from a **single seq authority per object per direction** (a
-  shared atomic counter, even across parallel sender connections -- never
-  per-connection). Receivers deliver in-seq per object and **only buffer seqs
-  inside a bounded window** `[nextExpected, nextExpected + W]`; an out-of-window
-  seq (far-future gap-poison, MED-11) is rejected with `err code=out_of_seq`
-  rather than buffered, so no single frame can wedge delivery. Gaps buffer
-  briefly (default 30s), then `resync { object, fromSeq }` replays from there --
-  `fromSeq` MUST be `>= tombstoneHorizon` and `<= current`, and resync itself is
-  rate-limited, so a peer cannot force unbounded whole-queue replay.
+- **Per-object sequencing + strict FIFO (rev 11; mq#2, ws#3)**: the sender stamps
+  each op with a per-object monotonic `seq` from a **single seq authority per
+  object per direction** (a shared atomic counter, even across parallel sender
+  connections -- never per-connection). Receivers deliver in-seq per object and
+  **only buffer seqs inside a bounded window** `[nextExpected, nextExpected + W]`;
+  an out-of-window seq (far-future gap-poison, MED-11) is rejected with
+  `err code=out_of_seq`. **The ordering guarantee is per-object strict FIFO**, and
+  under at-least-once redelivery that requires **at most one un-acked op in flight
+  per object**: the next op is not delivered until the prior is acked (or dead-
+  lettered), so a redelivery can never reorder within an object. Ordering is a
+  **per-object** property (the object is the ordering key), so distinct objects
+  still flow concurrently. The **transport is explicitly unordered** (seq resets
+  per connection, fire-and-forget interleaves) -- all ordering lives here at L2, a
+  deliberate choice. Gaps buffer briefly (default 30s), then `resync { object,
+  fromSeq }` replays from there -- `fromSeq` MUST be `>= tombstoneHorizon` and
+  `<= current`, and resync is rate-limited, so a peer cannot force unbounded replay.
 - **Two acknowledgment levels (do not conflate)** -- the `id` (ULID) is the
   **idempotency key** that makes both safe:
   1. **Hop delivery-ack** (`ack`, the QoS-1 reliability signal): the receiver,
@@ -371,6 +406,22 @@ place: inside the bulk transfer class. Global backpressure = socket + queue caps
      the `id`, may arrive over any carrier, possibly much later) and doubles as
      the delivery-ack when it comes promptly.
   A best-effort send MAY skip the hop delivery-ack; a QoS-1 send requires it.
+- **The `id` is a PRODUCER-STABLE idempotency key (rev 11; mq#3)**: it MUST be
+  assigned by the producing L3 layer and stay **identical across every transport
+  retry/redelivery** of the same logical op -- NOT minted per network attempt.
+  Uniqueness scope is **per (peer, object)**. A transport-minted-per-attempt id
+  silently defeats dedupe; the substrate therefore requires the id on any op that
+  crosses a retrying link and never auto-generates one there.
+- **Per-delivery receipt token / fencing (rev 11; mq#1, G2)**: each delivery of an
+  op carries an opaque `receipt` (monotonic per op, e.g. `id + deliveryCount`),
+  distinct from the idempotency `id`. `ack`/`nack` MUST cite the **current**
+  `receipt`; a stale receipt (from a delivery that already timed out and
+  redelivered) is **rejected, not silently applied** -- this fences the
+  visibility-timeout race where a slow consumer acks a delivery another consumer
+  now owns. The envelope threads `receipt` so ack ↔ delivery ↔ idempotency-id are
+  one fenced unit. (Without it, exactly-once holds only for a single well-behaved
+  consumer/bridge per source object -- so absent receipts, the rule is **at most
+  one bridge per source queue**.)
 - **Durability (QoS-1)**: `open`, `send`, `req`, and bulk `offer` persist in the
   sender's per-object FIFO queue until their terminal frame (`accept`/`reject`,
   `ack`, `res`/`end`/`err`, `done`). Dedupe by `(peer, id)` kept >= 7 days;
@@ -839,3 +890,69 @@ never move you to a *different* domain's trust.
 the modern, HTTP-aware successor (ALPN, port, ECH hints in one RR). For a
 server-side WebSocket dialer SRV is simpler and sufficient today; SVCB is the
 clean future migration if HTTP-layer discovery becomes useful.
+
+## 12. Implementation-informed revisions (rev 11)
+
+Four reference packages (`bun-mq`, `bun-reliable-ws`, `envelope-codec`,
+`mutual-key-auth`) and a `bridge-compose` harness were built test-first and are
+green (168 + 9 tests; the harness proves exactly-once across a forced
+disconnect). Building them surfaced 16 package-level findings + 8 composition
+findings (F1-F6, G1-G2). Each is folded below; the load-bearing ones are also
+amended inline in the sections cited. Nothing here contradicts an earlier
+decision -- it sharpens the semantics the implementation proved were
+under-specified. **Jonas's three calls (2026-07-08):** symmetric HMAC kept for v1
+(12.14), per-object strict FIFO promised (12.2), canonical encoding only for the
+security transcript (12.13); binary WS wire mandated (12.8).
+
+| # | Finding (source) | Decision | Amends |
+|---|---|---|---|
+| 12.1 | Ack by bare id is unfenced under visibility timeout (mq#1, G2) | Per-delivery **`receipt` token**; ack/nack cite the current receipt, stale rejected; else "one bridge per source queue" | §3 |
+| 12.2 | Ordering breaks under redelivery (mq#2, ws#3) | **Per-object strict FIFO** = at-most-one-unacked-in-flight per object; transport explicitly unordered | §3 |
+| 12.3 | Idempotency needs a producer-stable id (mq#3) | `id` is **producer-assigned, retry-stable**, scope per (peer,object) | §3 |
+| 12.4 | Store-and-forward contract (mq#4) | Commit-before-receipt; **receiver always re-acks, dedupe gates only the enqueue**; `receiver.dedupeWindow >= sender.maxMessageLifetime` | §6 (12.4 below) |
+| 12.5 | Collision nonces unauthenticated -> steerable survivor (ws#1) | Collision nonces/`connId` **bound into the auth proof** (mandatory) | §2 |
+| 12.6 | Transport ack = "received" not "processed" (ws#2, F6) | Confirmed: transport ack is receipt-only; reliable-delivery layers carry their own end-to-end/**processed** ack | §3 |
+| 12.7 | Downgrade protection optional in the AuthProvider (ws#4) | **Mandatory** clause of the AuthProvider contract + conformance test | §2 |
+| 12.8 | Binary payloads need a binary wire (ws#5, F2) | **MANDATORY binary WS wire** (text control + binary payload/chunk), CBOR body as native octets, no base64 | §2 |
+| 12.9 | Negotiation needs preference order + versioned tokens (codec#1) | Protocol owns `PREFERENCE = ['cbor','json']`; tokens `name[/version]` (`cbor/1`); negotiation = first shared by name, availability-gated | §2 |
+| 12.10 | Discriminator needs a registry (codec#2) | Reserved: `0x00` reserved, `0x01` envelope, `0x02` chunk, `0x03..0x0f` control, `0x10..0xff` app | §2 |
+| 12.11 | Sealed bodies need envelope auth slots (codec#3) | Reserve envelope fields `bodyHash`, `enc`, `nonce` -- integrity/AEAD of the opaque body lives in the (parsed) envelope | §1, §4 |
+| 12.12 | Content-addressing needs canonical encoding (codec#4) | **No** general envelope hashing (dedupe stays `(peer,id)`); canonical encoding required ONLY for the security transcript (12.13) | §3 |
+| 12.13 | Transcript perspective-relative -> footgun (auth#1, F5) | **Role-absolute + canonical** transcript: `initiatorHello`/`responderHello` fixed order, `proverRole` enum, length-framed fields | §2 |
+| 12.14 | Symmetric HMAC + hashed-at-rest = proof-forgeable record (auth#2) | **v1: keep symmetric HMAC**, state store is proof-forgery-sensitive, mitigate with short expiry + fast revocation; **asymmetric signatures reserved** as the dump-safe upgrade | §2, §7 |
+| 12.15 | Failed proof burns the nonce (auth#3) | **One nonce = one attempt**; a retry re-runs the challenge with a fresh nonce | §2 |
+| 12.16 | Downgrade proof binds only the transport's slice (G1) | Define a **canonical negotiated tuple spanning all layers** (`bindingVersion, features, authMethod, payloadEncoding, dedupeScope, connId`) and feed THAT to the proof; WS capability exchange carries an opaque `payloadEncoding` (owned by the codec) so it reaches `Negotiated`, and `AuthContext` exposes the whole tuple + raw hello frames (F4) | §2 |
+
+### 12.4 Store-and-forward bridge contract (normative)
+
+A bridge that moves ops between a source object and a destination object across
+the link MUST:
+
+1. **Commit before receipt** -- durably enqueue into the destination BEFORE
+   acking the source; remove from the source ONLY on the destination's ack.
+2. **Receiver always re-acks; dedupe gates only the enqueue** -- on a duplicate
+   `id`, still ack the sender (it is still waiting) while NOT re-enqueuing.
+   Branchless: `dest.enqueue({id})` (idempotent) then always ack. Silence on a
+   duplicate strands the op until it dead-letters.
+3. **`receiver.dedupeWindow >= sender.maxMessageLifetime`** -- the destination's
+   dedupe memory must outlast the maximum time the source can keep retrying, or a
+   late resend is re-enqueued as a genuine duplicate. A config invariant, not a
+   per-deployment guess.
+
+This is **effectively-once** (at-least-once + idempotent receiver); true
+exactly-once across the link is impossible (two-generals), so the destination's
+dedupe is load-bearing, not optional.
+
+### Package reconciliation tasks (so the two composition adapters vanish)
+
+The harness needed two adapters (`bridgeCodec`, `keyAuthProvider`). These are
+NOT protocol changes -- they are follow-up fixes routed to the packages:
+- **`bun-reliable-ws`**: binary wire (12.8); `AuthContext` carries raw hello
+  frames + the full negotiated tuple incl. `payloadEncoding` (12.16, F4).
+- **`mutual-key-auth`**: ship `asAuthProvider()` (the `{method,start,step}`
+  machine) so it is a real `AuthProvider`, not just crypto primitives (F3); adopt
+  role-absolute transcript (12.13).
+- **`envelope-codec`**: preference-ordered versioned negotiation (12.9);
+  optional pass-through mode so an opaque frame becomes an empty-env body (F1).
+- **`bun-mq`**: `receipt` token + fenced ack/nack (12.1); README note that
+  `size()/enqueue()/ack()` are async (the harness's one red test).
