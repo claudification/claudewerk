@@ -253,6 +253,12 @@ function toConversation(summary: ConversationSummary): Conversation {
     spinnerVerbs: summary.spinnerVerbs,
     autocompactPct: summary.autocompactPct,
     backend: summary.backend,
+    // Resolved transport ('claude-pty' | 'claude-headless' | 'claude-daemon').
+    // Serialized by the broker (conversation-store toConversationSummary) but was
+    // dropped from this whitelist -- so transport was always undefined client-side
+    // (the silent-drop bug the liveStatus note above warns about). The Login
+    // palette command + any transport-gated UI need it.
+    transport: summary.transport,
     // Spawn lineage (Phase 3 carries parent/root over WS; directChildCount is
     // REST-only, so it stays undefined here and the UI walks the local list).
     parentConversationId: summary.parentConversationId,

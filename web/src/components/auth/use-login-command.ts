@@ -22,7 +22,12 @@ export function useLoginCommand(): void {
       when: () => {
         const s = useConversationsStore.getState()
         const sid = s.selectedConversationId
-        return !!sid && s.conversationsById[sid]?.transport === 'claude-headless'
+        if (!sid) return false
+        // Hide only where cc_control definitively can't reach (PTY/daemon). A
+        // missing/unresolved transport still shows it -- the broker is the true
+        // gate (unsupported_transport), same as the Debug: control command.
+        const transport = s.conversationsById[sid]?.transport
+        return transport !== 'claude-pty' && transport !== 'claude-daemon'
       },
     },
   )
