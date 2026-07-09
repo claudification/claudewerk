@@ -75,8 +75,38 @@ function summaryToJob(s: RecapSummary): RecapJob {
     error: s.error,
     llmCostUsd: s.llmCostUsd,
     completedAt: s.completedAt,
-    finishedAtLocal: s.status === 'done' || s.status === 'failed' ? s.completedAt : undefined,
+    // Any non-active status is terminal-ish (failed/done/interrupted/partial) and
+    // must carry a finish stamp -- the visibility window is measured from it. Fall
+    // back to Date.now() for a legacy row whose completed_at was never written (the
+    // pre-fix failed-recap bug) so it still surfaces + can be dismissed.
+    finishedAtLocal: isActive(s.status) ? undefined : (s.completedAt ?? Date.now()),
   }
+}
+
+/**
+ * Reconcile an already-tracked job to the broker's authoritative view (it is the
+ * source of truth). Server fields win; only local-only bookkeeping is preserved.
+ * This corrects a zombie card the client left 'active' after missing the terminal
+ * broadcast (e.g. the run failed/interrupted while the socket was down for a broker
+ * restart), which otherwise sat forever as an un-dismissable 'rendering'. On the
+ * active->terminal transition the visibility window starts NOW, so the user gets
+ * the full window to act even if the server's completedAt is old (or null).
+ */
+function reconcileTracked(prev: RecapJob, server: RecapJob, now: number): RecapJob {
+  const becameTerminal = isActive(prev.status) && !isActive(server.status)
+  return {
+    ...prev,
+    ...server,
+    ...(prev.dismissedAtLocal ? { dismissedAtLocal: prev.dismissedAtLocal } : {}),
+    finishedAtLocal: becameTerminal ? now : (server.finishedAtLocal ?? prev.finishedAtLocal),
+  }
+}
+
+/** Whether an untracked server row is worth surfacing in the widget: active jobs
+ *  always, plus recently-terminal ones (older ones live in the history modal). */
+function shouldSurface(r: RecapSummary, now: number): boolean {
+  if (isActive(r.status)) return true
+  return r.completedAt != null && now - r.completedAt < FAILED_VISIBLE_MS
 }
 
 export const useRecapJobsStore = create<RecapJobsState>((set, get) => ({
@@ -152,14 +182,15 @@ export const useRecapJobsStore = create<RecapJobsState>((set, get) => ({
   },
 
   syncFromList(recaps) {
-    const next: Record<string, RecapJob> = { ...get().jobs }
+    const cur = get().jobs
+    const next: Record<string, RecapJob> = { ...cur }
+    const now = Date.now()
     for (const r of recaps) {
-      // Only hydrate active or recently terminal jobs into the widget; older
-      // completed ones live in the history modal, not the widget.
-      const recent = r.completedAt && Date.now() - r.completedAt < FAILED_VISIBLE_MS
-      if (isActive(r.status) || (r.status === 'failed' && recent) || (r.status === 'done' && recent)) {
-        next[r.id] = { ...summaryToJob(r), ...(next[r.id] ?? {}) }
-      }
+      const prev = cur[r.id]
+      // Already tracked -> reconcile to broker truth (fixes zombie cards, any age).
+      // Untracked -> add only if worth surfacing.
+      if (prev) next[r.id] = reconcileTracked(prev, summaryToJob(r), now)
+      else if (shouldSurface(r, now)) next[r.id] = summaryToJob(r)
     }
     set({ jobs: next })
   },

@@ -183,6 +183,25 @@ describe('useRecapJobsStore -- syncFromList', () => {
     const ids = Object.keys(useRecapJobsStore.getState().jobs).sort()
     expect(ids).toEqual(['r_active', 'r_recent_done', 'r_recent_fail'])
   })
+
+  test('reconciles a stale locally-active card to the server terminal status', () => {
+    // Client left this card 'rendering' (missed the terminal broadcast during a
+    // broker restart). The server now reports it failed. Even with a null
+    // completedAt (the pre-fix bug) and regardless of recency, syncFromList must
+    // downgrade it to failed and make it visible/dismissable -- not leave a zombie.
+    useRecapJobsStore
+      .getState()
+      .applyProgress(progress({ recapId: 'r_zombie', status: 'rendering', progress: 88, phase: 'render/synthesize-done' }))
+    useRecapJobsStore
+      .getState()
+      .syncFromList([summary({ id: 'r_zombie', status: 'failed', progress: 88, completedAt: undefined, error: 'deadline' })])
+    const job = useRecapJobsStore.getState().jobs.r_zombie
+    expect(job.status).toBe('failed')
+    expect(job.error).toBe('deadline')
+    expect(job.finishedAtLocal).toBeDefined()
+    // Visible (so the user can act) and no longer counted as active.
+    expect(selectVisibleJobs(useRecapJobsStore.getState())).toHaveLength(1)
+  })
 })
 
 describe('useRecapJobsStore -- dismissFailed + removeJob', () => {

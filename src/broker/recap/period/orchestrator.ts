@@ -182,9 +182,17 @@ function scheduleRun(
         `[recap] ${recapId} FAILED after ${Math.round((Date.now() - scheduledAt) / 1000)}s at phase=${priorPhase}: ${describe(err)}`,
       )
       const built = ledger.build()
+      const failedAt = Date.now()
       deps.store.update(recapId, {
         status: 'failed',
         error: describe(err),
+        // Stamp completedAt on the STORE row, not just the bundle manifest. It's
+        // the terminal-time the widget's recency filter + history modal both read;
+        // omitting it left every failed recap with completed_at=null, so a stale
+        // in-flight card could never be reconciled to 'failed' after a broker
+        // restart (it sat forever as a zombie 'rendering'). reapStale already does
+        // this right -- match it here.
+        completedAt: failedAt,
         ledgerJson: JSON.stringify(built),
         inputTokens: built.summary.totalInputTokens,
         outputTokens: built.summary.totalOutputTokens,
@@ -195,7 +203,7 @@ function scheduleRun(
       deps.bundle?.updateManifest(recapId, {
         status: 'failed',
         error: describe(err),
-        completedAt: Date.now(),
+        completedAt: failedAt,
         cost: built.summary,
       })
       deps.broadcaster.broadcast({
@@ -346,9 +354,13 @@ export function regenerateRecap(deps: OrchestratorDeps, args: RegenerateArgs): R
     runRegenerate(deps, targetId, src, manifest, args, ledger).catch(err => {
       console.error(`[recap] regenerate failed for ${targetId} (from ${src.id}):`, err)
       const built = ledger.build()
+      const failedAt = Date.now()
       deps.store.update(targetId, {
         status: 'failed',
         error: describe(err),
+        // Stamp completedAt on the store row too (see the scheduleRun catch above
+        // for why a null completed_at strands the widget card as a zombie).
+        completedAt: failedAt,
         ledgerJson: JSON.stringify(built),
         inputTokens: built.summary.totalInputTokens,
         outputTokens: built.summary.totalOutputTokens,
@@ -357,7 +369,7 @@ export function regenerateRecap(deps: OrchestratorDeps, args: RegenerateArgs): R
       deps.bundle?.updateManifest(targetId, {
         status: 'failed',
         error: describe(err),
-        completedAt: Date.now(),
+        completedAt: failedAt,
         cost: built.summary,
       })
       deps.broadcaster.broadcast({
@@ -417,8 +429,9 @@ export function resumeRecap(deps: OrchestratorDeps, recapId: string): ResumeResu
   const priorResumes = manifest.resumeCount ?? 0
   if (priorResumes >= MAX_RESUME_ATTEMPTS) {
     const reason = `resume cap reached (${MAX_RESUME_ATTEMPTS} attempts) -- not retrying`
-    deps.store.update(recapId, { status: 'failed', error: reason })
-    deps.bundle.updateManifest(recapId, { status: 'failed', error: reason })
+    const failedAt = Date.now()
+    deps.store.update(recapId, { status: 'failed', error: reason, completedAt: failedAt })
+    deps.bundle.updateManifest(recapId, { status: 'failed', error: reason, completedAt: failedAt })
     throw new Error(`recap ${recapId}: ${reason}`)
   }
 
