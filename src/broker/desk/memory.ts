@@ -14,9 +14,10 @@
  * reality); the userId param is the seam for per-user scoping later.
  */
 
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 import type { ChatFn } from './classify'
+import { snapshotFile } from './file-history'
 
 /** Keep the memory the loop reads TINY -- it travels in every turn's context. */
 const MAX_MEMORY_CHARS = 4000
@@ -60,33 +61,6 @@ export function appendMemoryFacts(facts: string[], now: number, _userId?: string
 
 // ─── Version history (last 10 snapshots before each write) ─────────
 
-const MAX_VERSIONS = 10
-
-function versionDir(): string | null {
-  if (!memoryFile) return null
-  const dir = join(dirname(memoryFile), 'memory-versions')
-  mkdirSync(dir, { recursive: true })
-  return dir
-}
-
-function saveVersion(): void {
-  if (!memoryFile || !existsSync(memoryFile)) return
-  const dir = versionDir()
-  if (!dir) return
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-  copyFileSync(memoryFile, join(dir, `${stamp}.md`))
-  const files = readdirSync(dir)
-    .filter(f => f.endsWith('.md'))
-    .sort()
-  for (const old of files.slice(0, -MAX_VERSIONS)) {
-    try {
-      require('node:fs').unlinkSync(join(dir, old))
-    } catch {
-      /* ok */
-    }
-  }
-}
-
 /** Read the raw memory file (no cap). */
 export function readMemoryRaw(): string {
   if (!memoryFile || !existsSync(memoryFile)) return ''
@@ -96,7 +70,7 @@ export function readMemoryRaw(): string {
 /** Write the memory file wholesale (version backup first). */
 export function writeMemory(content: string): void {
   if (!memoryFile) return
-  saveVersion()
+  snapshotFile(memoryFile)
   mkdirSync(dirname(memoryFile), { recursive: true })
   writeFileSync(memoryFile, content, 'utf8')
 }

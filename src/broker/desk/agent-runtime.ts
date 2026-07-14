@@ -17,6 +17,7 @@ import { buildDispatchToolset, projectOverviewRows } from './dispatch-tools'
 import { consolidateIfDue, getUserHistory, markDirty, recordTurn, refreshLiveBlocks } from './history-store'
 import { appendTurn, getBlock, toMessages } from './living-history'
 import { readMemory, readSystemAppend } from './memory'
+import { notesTools } from './notes-tools'
 import { activeContextRows } from './overview'
 import type { QuestSpawn } from './quest-tool'
 import type { DispatchRuntime } from './runtime'
@@ -99,6 +100,13 @@ const DISPATCHER_SYSTEM = [
   '  must NEVER be injected or revived without explicit user go-ahead.',
   '- You have a scratch WORKSPACE (a virtual fs, workspace_* tools) to draft or',
   '  stage simple work yourself before acting. It is scratch, not storage.',
+  '- The USER keeps a permanent NOTES file (notes_* tools). When they say "take my',
+  '  notes", "note that ...", "jot this down", or dictate something to remember,',
+  '  call append_notes with their words verbatim -- do NOT route it or spawn work.',
+  '  read_notes to recall them; edit_notes for a surgical fix; write_notes only to',
+  '  rewrite the whole file; clear_notes ONLY on an explicit "wipe my notes". These',
+  '  notes are the USER`s (verbatim, permanent) -- distinct from your own rolling',
+  '  memory (read_memory), which you curate.',
   '- Keep replies short and plain-spoken, like a good assistant talking out loud.',
   '  After acting, say what you did in one line.',
 ].join('\n')
@@ -169,6 +177,7 @@ function buildAgentToolset(
     ...buildDispatchToolset(rt, confirmedExpensive, questSpawn),
     ...threadTools(),
     ...memoryTools(userId),
+    ...notesTools(userId),
     ...buildWorkspaceToolset(),
   }
 }

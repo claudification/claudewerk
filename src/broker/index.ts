@@ -46,6 +46,7 @@ import { startDeskMemoryService, stopDeskMemoryService } from './desk/desk-memor
 import { emitDeskEvent } from './desk/event-registry'
 import { setFleetSheafProvider } from './desk/fleet-sheaf'
 import { initDispatchMemory, initSystemAppend } from './desk/memory'
+import { initUserNotes } from './desk/notes'
 import { closeProjectMemory, initProjectMemory } from './desk/project-memory'
 import { closeDispatchThreads, initDispatchThreads } from './desk/threads'
 import { startExternalStatusPolling, stopExternalStatusPolling } from './external-status'
@@ -370,11 +371,12 @@ async function main() {
   // Initialize per-project hosted canvas store (broker-local config DB + durable scene files)
   initCanvasStore(authCacheDir)
 
-  // Initialize dispatcher stores (decision audit log + threads near-memory + durable memory file)
+  // Initialize dispatcher stores (decision audit log + threads near-memory + durable memory file + user notes)
   initDispatchAudit(authCacheDir)
   initDispatchThreads(authCacheDir)
   initDispatchMemory(authCacheDir)
   initSystemAppend(authCacheDir)
+  initUserNotes(authCacheDir) // the user's permanent notes file ("take my notes")
   // Per-project condensed memory (the dispatcher BRAIN's durable store). The
   // always-on desk-memory SERVICE that feeds it is started after recap init
   // (it backfills from recaps).
