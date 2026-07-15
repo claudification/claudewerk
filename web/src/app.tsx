@@ -2,6 +2,7 @@ import { ChevronLeft, ChevronRight, Command, Crosshair, FileText, FolderTree, Me
 import { type ComponentType, lazy, Suspense, useEffect, useState } from 'react'
 import { ActionFab } from '@/components/action-fab'
 import { AudioPlayerHost } from '@/components/audio-player-host'
+import { LoginHintBanner } from '@/components/auth/login-hint-banner'
 import { AuthExpiredModal } from '@/components/auth-expired-modal'
 import { AuthGate } from '@/components/auth-gate'
 import { checklistAddNotesBus, checklistArchiveBus, checklistBulkEditBus } from '@/components/checklist/checklist-bus'
@@ -13,7 +14,6 @@ import { ProjectActionPanel } from '@/components/conversation-detail/project-act
 import { DebugConsole } from '@/components/debug-console'
 import { dispatchBus } from '@/components/dispatch-overlay/dispatch-bus'
 import { Dock } from '@/components/dock'
-import { LoginHintBanner } from '@/components/auth/login-hint-banner'
 import { Header } from '@/components/header'
 import { JsonInspectorDialog } from '@/components/json-inspector'
 import { LaunchProfileCommands } from '@/components/launch-profiles/launch-profile-commands'
@@ -77,7 +77,8 @@ const GatewayManagerDialog = lazy(() =>
 const SearchIndexManagerDialog = lazy(() =>
   import('@/components/search-index-manager').then(m => ({ default: m.SearchIndexManagerDialog })),
 )
-const SheafPage = lazy(() => import('@/sheaf/sheaf-page').then(m => ({ default: m.SheafPage })))
+// Parkable fleet overview (was the #/sheaf fullscreen page).
+const SheafModal = lazy(() => import('@/sheaf/sheaf-modal').then(m => ({ default: m.SheafModal })))
 const CanvasPage = lazy(() => import('@/components/canvas-mode/canvas-page').then(m => ({ default: m.CanvasPage })))
 const PublicCanvasView = lazy(() =>
   import('@/components/canvas/public-canvas-view').then(m => ({ default: m.PublicCanvasView })),
@@ -527,6 +528,11 @@ function Dashboard() {
       <Suspense fallback={null}>
         <SotuViewerModal />
       </Suspense>
+      {canAdmin && (
+        <Suspense fallback={null}>
+          <SheafModal />
+        </Suspense>
+      )}
       <Suspense fallback={null}>
         <LiveDialogModals />
       </Suspense>
@@ -685,7 +691,7 @@ function ShareGate({ token }: { token: string }) {
   return <SharedConversationView token={token} />
 }
 
-/** Full-screen lazy pages routed by bare hash (`#/canvas`, `#/sheaf`). */
+/** Full-screen lazy pages routed by bare hash (`#/canvas`). */
 function FullscreenRoute({ fallbackLabel, children }: { fallbackLabel: string; children: React.ReactNode }) {
   return (
     <AuthGate>
@@ -704,11 +710,6 @@ const FULLSCREEN_PAGES: Record<string, () => React.ReactElement> = {
   canvas: () => (
     <FullscreenRoute fallbackLabel="Loading the canvas…">
       <CanvasPage />
-    </FullscreenRoute>
-  ),
-  sheaf: () => (
-    <FullscreenRoute fallbackLabel="Loading sheaf…">
-      <SheafPage />
     </FullscreenRoute>
   ),
 }

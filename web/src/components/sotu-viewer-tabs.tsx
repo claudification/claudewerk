@@ -4,8 +4,9 @@
  */
 
 import { Globe, Layers } from 'lucide-react'
-import { ProjectView, UniverseView } from './sotu-viewer-sections'
+import { ProjectView } from './sotu-viewer-sections'
 import type { FleetProject, SotuViewData, Tab } from './sotu-viewer-types'
+import { UniverseView } from './sotu-viewer-universe'
 
 interface SotuViewerBodyProps {
   tab: Tab

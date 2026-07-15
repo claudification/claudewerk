@@ -113,13 +113,7 @@ export function useGlobalCommands(toggleSidebar: () => void) {
   // Workspace switching: Ctrl+1 = All, Ctrl+2..9 = workspace 1..8
   useWorkspaceShortcuts()
 
-  useCommand(
-    'open-sheaf',
-    () => {
-      window.location.hash = '/sheaf'
-    },
-    { label: 'Sheaf (24/48h fleet overview)', group: 'Navigation' },
-  )
+  // 'open-sheaf' lives in SheafModal (web/src/sheaf/sheaf-modal.tsx).
 
   useCommand(
     'open-nightshift',

@@ -1,31 +1,20 @@
 /**
- * Sheaf page keyboard shortcuts:
- *   /        focus the filter input (unless already typing in a field)
- *   Escape   clear an active filter first, then exit the page
- *   r        reload (ignored while typing in the filter)
+ * Sheaf keyboard shortcuts (active only while the surface is INLINE -- the
+ * managed modal stays mounted when closed/docked, and a detached window has its
+ * own document so main-window listeners would be wrong there):
+ *   /   focus the filter input (unless already typing in a field)
+ *   r   reload (ignored while typing in the filter)
+ * Escape is owned by the Radix Dialog (closes the modal).
  */
 
 import { type RefObject, useEffect } from 'react'
 import { isEditableTarget } from './sheaf-derive'
 
-function backToDashboard() {
-  window.location.hash = ''
-}
-
 interface KeyboardOpts {
   filterRef: RefObject<HTMLInputElement | null>
-  filter: string
-  clearFilter: () => void
   reload: () => void
-}
-
-function handleEscape(filterRef: RefObject<HTMLInputElement | null>, filter: string, clearFilter: () => void): void {
-  if (document.activeElement === filterRef.current && filter.length > 0) {
-    clearFilter()
-    filterRef.current?.blur()
-    return
-  }
-  backToDashboard()
+  /** True only while the modal renders inline. */
+  active: boolean
 }
 
 const isSlashFocus = (e: KeyboardEvent): boolean => e.key === '/' && !isEditableTarget(e.target)
@@ -34,21 +23,18 @@ const isSlashFocus = (e: KeyboardEvent): boolean => e.key === '/' && !isEditable
 const isReloadKey = (e: KeyboardEvent): boolean =>
   e.key === 'r' && !e.metaKey && !e.ctrlKey && !e.altKey && !isEditableTarget(e.target)
 
-export function useSheafKeyboard({ filterRef, filter, clearFilter, reload }: KeyboardOpts): void {
+export function useSheafKeyboard({ filterRef, reload, active }: KeyboardOpts): void {
   useEffect(() => {
+    if (!active) return
     function onKey(e: KeyboardEvent) {
       if (isSlashFocus(e)) {
         e.preventDefault()
         filterRef.current?.focus()
         return
       }
-      if (e.key === 'Escape') {
-        handleEscape(filterRef, filter, clearFilter)
-        return
-      }
       if (isReloadKey(e)) reload()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [filterRef, filter, clearFilter, reload])
+  }, [filterRef, reload, active])
 }

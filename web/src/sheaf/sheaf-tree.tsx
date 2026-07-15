@@ -4,7 +4,9 @@
 
 import type { SheafNode } from '@shared/sheaf-types'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import { useModalManagerStore } from '@/hooks/use-modal-manager'
 import { costHeatClass, formatClockTime, formatCost, formatDuration, formatTokens } from './format'
+import { NodeTags, RecapBlock } from './sheaf-node-bits'
 import { STATUS_BG, STATUS_COLOR, STATUS_GLYPH } from './sheaf-status'
 
 interface SheafNodeRowProps {
@@ -18,70 +20,12 @@ interface SheafNodeRowProps {
 }
 
 function selectConv(id: string) {
-  const store = useConversationsStore.getState()
-  store.selectConversation(id, 'sheaf')
-  // selectConversation routes hash via history.replaceState, which does NOT
-  // fire `hashchange`. App's useHash listens to hashchange only, so without
-  // this nudge SheafPage stays mounted on top of the dashboard.
-  window.dispatchEvent(new HashChangeEvent('hashchange'))
-}
-
-// Per-conversation recap/description/summary, mirroring the layout of
-// web/src/components/project-list/conversation-item-full.tsx: description,
-// recap title, then summary OR the away-summary recap (fresh = boxed, stale = dim).
-// fallow-ignore-next-line complexity
-function RecapBlock({ node }: { node: SheafNode }) {
-  const { description, recap, recapFresh, summary } = node
-  if (!description && !recap && !summary) return null
-  return (
-    <>
-      {description && (
-        <div className="mt-0.5 text-[10px] text-muted-foreground/60 truncate italic" title={description}>
-          {description}
-        </div>
-      )}
-      {recap?.title && <div className="mt-0.5 text-[10px] text-zinc-400/80 truncate">{recap.title}</div>}
-      {summary ? (
-        <div className="mt-1 text-[10px] text-muted-foreground truncate" title={summary}>
-          {summary}
-        </div>
-      ) : (
-        recap && (
-          <div
-            className={`mt-1.5 text-[10px] whitespace-pre-wrap overflow-hidden ${
-              recapFresh
-                ? 'text-zinc-300/80 border-l-2 border-zinc-500/50 pl-2 py-0.5 bg-zinc-800/20 rounded-r'
-                : 'text-muted-foreground/50 italic pl-1'
-            }`}
-            title={recap.content}
-          >
-            {recap.content}
-          </div>
-        )
-      )}
-    </>
-  )
-}
-
-/** Row 1 tags: worktree name + the (git-fabric) ahead-of-origin commit count. */
-function NodeTags({ node }: { node: SheafNode }) {
-  return (
-    <>
-      {node.worktreeName && (
-        <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 font-mono">
-          wt:{node.worktreeName}
-        </span>
-      )}
-      {node.commits > 0 && (
-        <span
-          className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300 font-mono"
-          title={`${node.commits} commit${node.commits === 1 ? '' : 's'} ahead of origin/main on this worktree's branch (unmerged)`}
-        >
-          ↑{node.commits}
-        </span>
-      )}
-    </>
-  )
+  useConversationsStore.getState().selectConversation(id, 'sheaf')
+  // Selecting a conversation should reveal it: park an INLINE sheaf to the dock
+  // so it isn't covering the transcript. A DETACHED sheaf stays up -- it lives
+  // in its own OS window beside the app, which is the point of detaching.
+  const modals = useModalManagerStore.getState()
+  if (modals.records.sheaf?.presentation === 'inline') modals.minimize('sheaf')
 }
 
 export function SheafNodeRow({ node, depth, now, showRecaps = true, flat = false }: SheafNodeRowProps) {

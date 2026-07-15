@@ -5,6 +5,7 @@
  * calls live here -- just props in, JSX out.
  */
 
+import { Markdown } from './markdown'
 import type { ChronicleEntry, FleetProject, SotuViewData } from './sotu-viewer-types'
 
 function ago(ms: number, now: number): string {
@@ -17,7 +18,11 @@ function ago(ms: number, now: number): string {
 
 function NarrativeBlock({ text }: { text: string }) {
   if (!text) return <p className="text-comment text-xs italic">No narrative generated yet (SOTU may be disabled)</p>
-  return <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap">{text}</p>
+  return (
+    <div className="text-sm leading-relaxed text-foreground/90 [&_p:last-child]:mb-0">
+      <Markdown>{text}</Markdown>
+    </div>
+  )
 }
 
 function ChronicleSection({ label, entries, now }: { label: string; entries: ChronicleEntry[]; now: number }) {
@@ -97,49 +102,6 @@ export function ProjectView({ view, error }: { view: SotuViewData | null; error:
           ))}
         </div>
       )}
-    </div>
-  )
-}
-
-export function UniverseView({
-  projects,
-  error,
-  onSelect,
-}: {
-  projects: FleetProject[] | null
-  error: string | null
-  onSelect: (projectUri: string) => void
-}) {
-  if (error) return <p className="text-rose-400 text-xs p-4">{error}</p>
-  if (!projects) return <p className="text-comment text-xs p-4">Loading...</p>
-  const enabled = projects.filter(p => p.enabled)
-  const withActivity = projects.filter(p => p.queueSize > 0 || p.view.chronicle.now.length > 0)
-  return (
-    <div className="p-4 overflow-y-auto flex-1">
-      <div className="text-xs text-comment mb-3">
-        {projects.length} projects -- {enabled.length} enabled -- {withActivity.length} with activity
-      </div>
-      <div className="space-y-3">
-        {(withActivity.length > 0 ? withActivity : projects.slice(0, 20)).map(p => (
-          <button
-            type="button"
-            key={p.projectUri}
-            onClick={() => onSelect(p.projectUri)}
-            className="w-full text-left rounded-lg border border-border/50 p-3 transition-colors hover:border-accent/60 hover:bg-accent/5"
-          >
-            <div className="flex items-center gap-2 mb-1">
-              <span className={`h-1.5 w-1.5 rounded-full ${p.enabled ? 'bg-accent' : 'bg-comment/30'}`} />
-              <span className="font-mono text-[11px] font-medium">{p.project}</span>
-              <span className="text-[10px] text-comment ml-auto">{p.queueSize} queued</span>
-            </div>
-            {p.view.chronicle.narrative && (
-              <p className="text-[11px] text-foreground/70 leading-relaxed line-clamp-2">
-                {p.view.chronicle.narrative}
-              </p>
-            )}
-          </button>
-        ))}
-      </div>
     </div>
   )
 }
