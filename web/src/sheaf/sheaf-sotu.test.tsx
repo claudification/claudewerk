@@ -95,6 +95,7 @@ describe('FleetSotuStats', () => {
       atRiskProjects: 1,
       unpushedProjects: 0,
       stalledProjects: 1,
+      unmergedProjects: 0,
       filteredProjects: 2,
     }
     render(<FleetSotuStats sotu={sotu} />)
@@ -113,6 +114,7 @@ describe('FleetSotuStats', () => {
       atRiskProjects: 0,
       unpushedProjects: 0,
       stalledProjects: 0,
+      unmergedProjects: 0,
       filteredProjects: 0,
     }
     const { container } = render(<FleetSotuStats sotu={sotu} />)

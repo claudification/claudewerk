@@ -32,11 +32,13 @@ import type {
 import { detectWorktreeName } from '../../shared/worktree-detect'
 import { readChronicle } from './chronicle'
 import { defaultResolveSotuConfig, type ResolveSotuConfig } from './config'
+import { buildFleetUnion } from './fleet-union'
 import { scoreGrounding } from './grounding'
 import { projectSlug } from './paths'
 import { readLiveQueue } from './queue'
+import { sharpenAlerts } from './sharpen'
 import type { Contribution } from './types'
-import { deriveAlerts, deriveHolds } from './view'
+import { deriveHolds } from './view'
 
 /** Cap the narrative folded into the fleet grid -- it is a glance surface, the
  *  full chronicle lives behind `GET /api/sotu` / the dispatcher. */
@@ -85,6 +87,16 @@ function fillCommits(nodes: SheafNode[], byWorktree: Map<string | null, number>)
   }
 }
 
+/** Worktree names (null = main checkout) holding a LIVE conversation -- running
+ *  or idle, i.e. still attached and able to act. Feeds the liveness sharpening. */
+function liveWorktreeNames(nodes: SheafNode[], out = new Set<string | null>()): Set<string | null> {
+  for (const node of nodes) {
+    if (node.status === 'running' || node.status === 'idle') out.add(node.worktreeName)
+    if (node.children.length) liveWorktreeNames(node.children, out)
+  }
+  return out
+}
+
 /** Assemble one project's SOTU block from its chronicle + live queue (zero LLM:
  *  reads what the distill/scan already produced). Also fills the commits column. */
 function buildProjectSotu(project: SheafProject, resolveConfig: ResolveSotuConfig, now: number): SheafProjectSotu {
@@ -98,7 +110,7 @@ function buildProjectSotu(project: SheafProject, resolveConfig: ResolveSotuConfi
 
   const sotu: SheafProjectSotu = {
     enabled,
-    alerts: deriveAlerts(fabric),
+    alerts: sharpenAlerts(fabric, liveWorktreeNames(project.forest)),
     contended: deriveHolds(live).filter(h => h.contended).length,
     branches: fabric?.branches ?? [],
   }
@@ -112,54 +124,6 @@ function buildProjectSotu(project: SheafProject, resolveConfig: ResolveSotuConfi
   // Grounding is only meaningful once a distill has actually run.
   if (chronicle.generatedAt > 0) sotu.grounding = scoreGrounding(chronicle, live)
   return sotu
-}
-
-/** Input-weighted (by knownConvs) average grounding across distilled projects.
- *  Weighting by input size keeps a tiny chronicle from dominating the fleet score. */
-function foldGrounding(parts: SheafGrounding[]): SheafGrounding | undefined {
-  if (parts.length === 0) return undefined
-  let citedConvs = 0
-  let knownConvs = 0
-  let unknownCited = 0
-  let wPrecision = 0
-  let wCoverage = 0
-  let weight = 0
-  for (const g of parts) {
-    citedConvs += g.citedConvs
-    knownConvs += g.knownConvs
-    unknownCited += g.unknownCited
-    const w = Math.max(1, g.knownConvs) // an empty-input chronicle still counts once
-    wPrecision += g.precision * w
-    wCoverage += g.coverage * w
-    weight += w
-  }
-  return {
-    precision: weight ? wPrecision / weight : 1,
-    coverage: weight ? wCoverage / weight : 1,
-    citedConvs,
-    knownConvs,
-    unknownCited,
-  }
-}
-
-/** Fold the visible per-project SOTU blocks into the cheap fleet union. */
-function buildFleetUnion(blocks: SheafProjectSotu[], filteredProjects: number): SheafFleetSotu {
-  const alerts = new Set<GitAlert>()
-  for (const b of blocks) for (const a of b.alerts) alerts.add(a)
-  const withAlert = (a: GitAlert) => blocks.filter(b => b.alerts.includes(a)).length
-  const union: SheafFleetSotu = {
-    projectsEnabled: blocks.filter(b => b.enabled).length,
-    projectsWithNarrative: blocks.filter(b => b.narrative).length,
-    alerts: [...alerts],
-    contended: blocks.reduce((n, b) => n + b.contended, 0),
-    atRiskProjects: withAlert('at-risk'),
-    unpushedProjects: withAlert('unpushed'),
-    stalledProjects: withAlert('stalled'),
-    filteredProjects,
-  }
-  const grounding = foldGrounding(blocks.flatMap(b => (b.grounding ? [b.grounding] : [])))
-  if (grounding) union.grounding = grounding
-  return union
 }
 
 /**

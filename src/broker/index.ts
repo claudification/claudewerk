@@ -630,6 +630,15 @@ async function main() {
   startSotuGitScan({
     transport: conversationStore,
     broadcast: (message, project) => conversationStore.broadcastConversationScoped(message, project),
+    // LLM-activity probe for the PERIODIC rescan: a project with a conversation
+    // active now (or active within the window) keeps polling every 20min; a
+    // quiet project deep-sleeps until a lifecycle event or sheaf read wakes it.
+    hasRecentActivity: (project, windowMs) => {
+      const cutoff = Date.now() - windowMs
+      return conversationStore
+        .getAllConversations()
+        .some(c => c.project === project && (c.status === 'active' || c.lastActivity >= cutoff))
+    },
     log: msg => console.log(msg),
   })
 

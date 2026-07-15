@@ -13,7 +13,7 @@ const ALERT_STYLE: Record<GitAlert, { label: string; cls: string; title: string 
   'at-risk': {
     label: 'AT-RISK',
     cls: 'bg-rose-500/15 border-rose-500/40 text-rose-300',
-    title: 'A worktree has uncommitted changes -- loss risk',
+    title: 'A worktree has uncommitted changes and NO live conversation -- abandoned dirt, loss risk',
   },
   unpushed: {
     label: 'UNPUSHED',
@@ -24,6 +24,11 @@ const ALERT_STYLE: Record<GitAlert, { label: string; cls: string; title: string 
     label: 'STALLED',
     cls: 'bg-orange-500/15 border-orange-500/40 text-orange-300',
     title: 'An unmerged branch has drifted far behind origin/main -- rotting',
+  },
+  unmerged: {
+    label: 'UNMERGED',
+    cls: 'bg-violet-500/15 border-violet-500/40 text-violet-300',
+    title: 'A worktree branch carries unintegrated commits with no live conversation -- merge it or it rots',
   },
 }
 

@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import type { GitFabric, GitFabricRequest } from '../../shared/protocol'
 import { clearDeskEventHandlers, emitDeskEvent } from '../desk/event-registry'
 import type { GitFabricTransport } from './git-fabric-gather'
-import { startSotuGitScan, stopSotuGitScan } from './git-scan'
+import { requestSotuScan, startSotuGitScan, stopSotuGitScan } from './git-scan'
 import { initSotuStore, projectSlug } from './index'
 import { readQueue } from './queue'
 import { readState } from './state'
@@ -129,4 +129,56 @@ test('stopSotuGitScan unsubscribes -- no further scans', async () => {
   emitDeskEvent({ kind: 'lifecycle', conversationId: 'c1', project: PROJECT, ts: 1, transition: 'created' })
   await Bun.sleep(20)
   expect(sends).toBe(0)
+})
+
+test('scan-on-read: requestSotuScan schedules a floored scan', async () => {
+  let sends = 0
+  startSotuGitScan({
+    transport: fakeTransport(() => {
+      sends++
+    }),
+    broadcast: () => {},
+    quietSettleMs: 5,
+    minIntervalMs: 5,
+  })
+  requestSotuScan(PROJECT)
+  requestSotuScan(PROJECT) // coalesces with the pending one
+  await Bun.sleep(40)
+  expect(sends).toBe(1)
+  expect(readQueue(projectSlug(PROJECT))).toHaveLength(1)
+})
+
+test('periodic: re-arms while the project has recent LLM activity', async () => {
+  let sends = 0
+  startSotuGitScan({
+    transport: fakeTransport(() => {
+      sends++
+    }),
+    broadcast: () => {},
+    hasRecentActivity: () => true,
+    quietSettleMs: 5,
+    minIntervalMs: 5,
+    periodicMs: 15,
+  })
+  requestSotuScan(PROJECT)
+  await Bun.sleep(80)
+  // Initial scan + at least one periodic rescan fired without further events.
+  expect(sends).toBeGreaterThanOrEqual(2)
+})
+
+test('periodic: deep sleep when the project has no recent LLM activity', async () => {
+  let sends = 0
+  startSotuGitScan({
+    transport: fakeTransport(() => {
+      sends++
+    }),
+    broadcast: () => {},
+    hasRecentActivity: () => false,
+    quietSettleMs: 5,
+    minIntervalMs: 5,
+    periodicMs: 10,
+  })
+  requestSotuScan(PROJECT)
+  await Bun.sleep(60)
+  expect(sends).toBe(1) // the read scan ran; no periodic follow-up armed
 })

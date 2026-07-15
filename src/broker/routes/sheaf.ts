@@ -20,7 +20,7 @@
 import { Hono } from 'hono'
 import type { ConversationStore } from '../conversation-store'
 import { buildSheaf } from '../handlers/sheaf-build'
-import { enrichSheafWithSotu } from '../sotu'
+import { enrichSheafWithSotu, requestSotuScan } from '../sotu'
 import type { StoreDriver } from '../store/types'
 import type { TerminationLog } from '../termination-log'
 import type { RouteHelpers } from './shared'
@@ -53,6 +53,11 @@ export function createSheafRouter(
     enrichSheafWithSotu(response, {
       canViewProject: uri => helpers.httpHasPermission(c.req.raw, 'chat:read', uri),
     })
+    // Scan-on-read: this response was built from the LAST scan; schedule a fresh
+    // one per visible project so the NEXT refresh reflects out-of-band fixes
+    // (e.g. a manual terminal commit). Coalesced + floored in the scheduler, so
+    // hammering refresh cannot hammer the sentinel.
+    for (const p of response.projects) requestSotuScan(p.projectUri)
     return c.json(response)
   })
 

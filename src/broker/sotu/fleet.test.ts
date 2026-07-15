@@ -236,6 +236,24 @@ test('VISIBILITY FILTER: a hidden project gets NO sotu block and is excluded fro
   expect(s.sotu!.projectsWithNarrative).toBe(1)
 })
 
+test('liveness join: at-risk suppressed while a running conv sits in the dirty worktree, kept once it ends', () => {
+  const wt = '/Users/test/alpha/.claude/worktrees/feat-x'
+  const git: GitFabric = {
+    branches: [branch({ branch: 'feat-x', alerts: ['at-risk'], worktree: wt, dirty: true })],
+    scannedAt: NOW - 1000,
+  }
+  recordContribution(projectSlug(URI_A), gitScanContrib(git))
+
+  // Running conv in that worktree -> dirt is just work happening, no alerts.
+  const busy = run([project(URI_A, [node({ worktreeName: 'feat-x', status: 'running' })])])
+  expect(busy.projects[0].sotu!.alerts).toEqual([])
+
+  // Same scan, conv ended -> abandoned dirt (at-risk) + walked-away commits (unmerged).
+  const gone = run([project(URI_A, [node({ worktreeName: 'feat-x', status: 'ended' })])])
+  expect(new Set(gone.projects[0].sotu!.alerts)).toEqual(new Set(['at-risk', 'unmerged']))
+  expect(gone.sotu!.unmergedProjects).toBe(1)
+})
+
 test('fleet union aggregates alerts, contention and per-class risk counts across visible projects', () => {
   seedScan(URI_A, ['at-risk'])
   seedClaim(URI_A, 'c1', 'a.ts')

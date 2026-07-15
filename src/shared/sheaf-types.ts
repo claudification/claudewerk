@@ -148,6 +148,7 @@ export interface SheafFleetSotu {
   atRiskProjects: number
   unpushedProjects: number
   stalledProjects: number
+  unmergedProjects: number
   /** Input-weighted average grounding across distilled visible projects. Absent
    *  when no visible project has a distilled chronicle. */
   grounding?: SheafGrounding

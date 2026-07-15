@@ -12,6 +12,7 @@
 
 import type { SheafFleetSotu, SheafProjectSotu } from '@shared/sheaf-types'
 import { Markdown } from '@/components/markdown'
+import { formatAgo } from './format'
 import { AlertChip, BranchRisk, ContendedPill, GroundingChip } from './sheaf-sotu-chips'
 
 /** Per-project SOTU strip rendered between a project's header and its forest. */
@@ -38,6 +39,14 @@ export function SotuProjectStrip({ sotu }: { sotu: SheafProjectSotu | undefined 
             title="SOTU paid distill not enabled -- free floor only"
           >
             floor only
+          </span>
+        )}
+        {sotu.scannedAt !== undefined && (
+          <span
+            className="text-[10px] text-muted-foreground/50 font-mono"
+            title="Age of the git-fabric scan behind these alerts. Opening the sheaf schedules a fresh scan; refresh again to pick it up."
+          >
+            scanned {formatAgo(Date.now() - sotu.scannedAt)}
           </span>
         )}
       </div>

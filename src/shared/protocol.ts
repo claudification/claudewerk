@@ -3713,9 +3713,12 @@ export type IntegrationStatus = 'integrated' | 'ff-clean' | 'merge-clean' | 'con
  *   at-risk  -- a worktree has uncommitted changes (loss risk).
  *   unpushed -- local main is ahead of origin/main (loss risk).
  *   stalled  -- an unmerged branch has drifted far behind origin/main (rotting).
- *  Liveness sharpening (dead/idle conv) is layered later by the Phase-4 decay
- *  pass -- the sentinel only sees git truth, never conversation liveness. */
-export type GitAlert = 'at-risk' | 'unpushed' | 'stalled'
+ *   unmerged -- a worktree branch carries unintegrated commits with no live
+ *               conversation attached (walked away without merging).
+ *  The SENTINEL emits only the git-observable floor (at-risk/unpushed/stalled);
+ *  liveness sharpening (at-risk suppression while a conv works, the whole
+ *  'unmerged' class) is the BROKER's pass -- src/broker/sotu/sharpen.ts. */
+export type GitAlert = 'at-risk' | 'unpushed' | 'stalled' | 'unmerged'
 
 export interface BranchFabric {
   branch: string
