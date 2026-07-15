@@ -76,9 +76,24 @@ export const MCP_CATALOG: readonly CatalogTool[] = [
   { name: 'project_set_status', group: 'project', sites: BOTH, summary: 'Move a task between columns' },
 
   // ── quest engine (host only, plan-quest-engine §4e/§13) ────────────
-  { name: 'create_quest', group: 'quest', sites: HOST_ONLY, summary: 'Create a quest: petname + manifest + card tagging' },
-  { name: 'update_quest', group: 'quest', sites: HOST_ONLY, summary: 'Patch a quest manifest (steering, target, contracts)' },
-  { name: 'quest_log_append', group: 'quest', sites: HOST_ONLY, summary: 'Append an entry to the quest append-only log' },
+  {
+    name: 'create_quest',
+    group: 'quest',
+    sites: HOST_ONLY,
+    summary: 'Create a quest: petname + manifest + card tagging',
+  },
+  {
+    name: 'update_quest',
+    group: 'quest',
+    sites: HOST_ONLY,
+    summary: 'Patch a quest manifest (steering, target, contracts)',
+  },
+  {
+    name: 'quest_log_append',
+    group: 'quest',
+    sites: HOST_ONLY,
+    summary: 'Append an entry to the quest append-only log',
+  },
   { name: 'abort_quest', group: 'quest', sites: HOST_ONLY, summary: 'Kill switch: stop dispatch + stamp cards (§13)' },
   { name: 'pause_quest', group: 'quest', sites: HOST_ONLY, summary: 'Pause a quest so nothing new dispatches (§13)' },
   { name: 'get_quest', group: 'quest', sites: HOST_ONLY, summary: 'Read one quest manifest' },

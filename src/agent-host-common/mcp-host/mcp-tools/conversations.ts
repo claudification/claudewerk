@@ -242,7 +242,15 @@ export function registerConversationTools(ctx: McpToolContext): Record<string, T
           conversation_id: { type: 'string', description: 'Target ID from list_conversations' },
           action: {
             type: 'string',
-            enum: ['clear', 'quit', 'interrupt', 'set_model', 'set_effort', 'set_permission_mode', 'cancel_background_task'],
+            enum: [
+              'clear',
+              'quit',
+              'interrupt',
+              'set_model',
+              'set_effort',
+              'set_permission_mode',
+              'cancel_background_task',
+            ],
             description: 'Control verb to execute on the target conversation',
           },
           model: {

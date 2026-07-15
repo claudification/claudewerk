@@ -30,9 +30,10 @@ describe('parsePastedCode', () => {
   })
 
   it('extracts code + state from a full callback URL', () => {
-    expect(
-      parsePastedCode('https://platform.claude.com/oauth/code/callback?code=THECODE&state=STATE123'),
-    ).toEqual({ code: 'THECODE', state: 'STATE123' })
+    expect(parsePastedCode('https://platform.claude.com/oauth/code/callback?code=THECODE&state=STATE123')).toEqual({
+      code: 'THECODE',
+      state: 'STATE123',
+    })
   })
 
   it('parses a bare query string without a scheme', () => {

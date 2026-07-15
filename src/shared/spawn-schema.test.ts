@@ -43,8 +43,12 @@ describe('validatedSpawnRequestSchema -- notifyParent report-back opt-in', () =>
   })
 
   it('rejects a non-positive settle window', () => {
-    expect(validatedSpawnRequestSchema.safeParse({ cwd: '/tmp', notifyParent: true, notifyParentSettleMs: 0 }).success).toBe(false)
-    expect(validatedSpawnRequestSchema.safeParse({ cwd: '/tmp', notifyParent: true, notifyParentSettleMs: -5 }).success).toBe(false)
+    expect(
+      validatedSpawnRequestSchema.safeParse({ cwd: '/tmp', notifyParent: true, notifyParentSettleMs: 0 }).success,
+    ).toBe(false)
+    expect(
+      validatedSpawnRequestSchema.safeParse({ cwd: '/tmp', notifyParent: true, notifyParentSettleMs: -5 }).success,
+    ).toBe(false)
   })
 })
 

@@ -127,7 +127,14 @@ export interface McpChannelCallbacks {
   onReviveConversation?: (conversationId: string) => Promise<{ ok: boolean; error?: string; name?: string }>
   onControlConversation?: (params: {
     conversationId: string
-    action: 'clear' | 'quit' | 'interrupt' | 'set_model' | 'set_effort' | 'set_permission_mode' | 'cancel_background_task'
+    action:
+      | 'clear'
+      | 'quit'
+      | 'interrupt'
+      | 'set_model'
+      | 'set_effort'
+      | 'set_permission_mode'
+      | 'cancel_background_task'
     model?: string
     effort?: string
     permissionMode?: string

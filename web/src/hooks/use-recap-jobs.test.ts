@@ -191,10 +191,14 @@ describe('useRecapJobsStore -- syncFromList', () => {
     // downgrade it to failed and make it visible/dismissable -- not leave a zombie.
     useRecapJobsStore
       .getState()
-      .applyProgress(progress({ recapId: 'r_zombie', status: 'rendering', progress: 88, phase: 'render/synthesize-done' }))
+      .applyProgress(
+        progress({ recapId: 'r_zombie', status: 'rendering', progress: 88, phase: 'render/synthesize-done' }),
+      )
     useRecapJobsStore
       .getState()
-      .syncFromList([summary({ id: 'r_zombie', status: 'failed', progress: 88, completedAt: undefined, error: 'deadline' })])
+      .syncFromList([
+        summary({ id: 'r_zombie', status: 'failed', progress: 88, completedAt: undefined, error: 'deadline' }),
+      ])
     const job = useRecapJobsStore.getState().jobs.r_zombie
     expect(job.status).toBe('failed')
     expect(job.error).toBe('deadline')
