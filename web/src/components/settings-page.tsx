@@ -735,6 +735,23 @@ const SETTINGS: SettingItem[] = [
     render: (_ctx, ariaLabel) => <WebControlToggle ariaLabel={ariaLabel} />,
   },
   {
+    tab: 'experiments',
+    group: 'Transcript Renderer',
+    label: 'Plain renderer (non-virtualized)',
+    description:
+      'A/B: render transcripts in plain document flow with the stick-to-bottom engine + browser-native scroll mechanics (scrollHeight prepend anchor, IntersectionObserver scrollback, content-visibility offscreen skipping) instead of the TanStack virtualizer. Per-device. Watch [follow]/[window] console lines when comparing.',
+    keywords: 'plain transcript renderer virtualizer stick to bottom scroll follow experiment ab',
+    render: (ctx, ariaLabel) => (
+      <input
+        aria-label={ariaLabel}
+        type="checkbox"
+        checked={ctx.prefs.plainTranscript}
+        onChange={e => ctx.updatePrefs({ plainTranscript: e.target.checked })}
+        className="accent-primary size-4"
+      />
+    ),
+  },
+  {
     tab: 'system',
     group: 'Developer',
     label: 'Performance monitor',

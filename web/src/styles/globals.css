@@ -707,6 +707,19 @@ html[data-tab-hidden] *::after {
    motion setting. If a reduced-motion opt-out is wanted, make it a control-panel
    pref rather than honoring the OS flag here. */
 
+/* Plain transcript renderer (TranscriptViewPlain): browser-native offscreen
+   skipping. content-visibility:auto skips layout + paint for offscreen groups
+   (Safari 18.1+; older engines ignore it and render everything -- slower but
+   correct). contain-intrinsic-size `auto 200px` = 200px estimate on first
+   encounter, then the browser REMEMBERS the last rendered size, so scrollbar /
+   scrollHeight stay stable once a group has been seen. The stick-to-bottom
+   engine's resize pin absorbs the estimate->real settle while at bottom (the
+   Open WebUI initial-scroll gotcha). */
+.transcript-plain-group {
+	content-visibility: auto;
+	contain-intrinsic-size: auto 200px;
+}
+
 /* Draw block chrome-on-hover: on a real pointer device, keep the Excalidraw UI
    (toolbar, menus, zoom) hidden until the user hovers or focuses inside the canvas,
    so an idle Draw block reads as a clean sketch, not a busy editor. Touch devices

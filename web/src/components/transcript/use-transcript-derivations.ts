@@ -1,13 +1,36 @@
 /**
- * Pure derivations for the TanStack `TranscriptView`. Virtualizer-agnostic:
- * a transcript-settings projection off the store, and the ExitPlanMode
- * plan-content scan over the entries.
+ * Pure derivations shared by both transcript renderers. Virtualizer-agnostic:
+ * a transcript-settings projection off the store, the main/queued group split
+ * + live-turn signal, and the ExitPlanMode plan-content scan over the entries.
  */
 
 import { useMemo, useRef } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import type { TranscriptAssistantEntry, TranscriptEntry } from '@/lib/types'
 import type { TranscriptSettings } from './group-view-types'
+import type { DisplayGroup } from './grouping'
+
+/** Split queued groups (float at the bottom) from the main stream, and derive
+ *  whether a turn is live (active conversation OR streaming buffers present). */
+export function useLiveGroups(
+  groups: DisplayGroup[],
+  conversationId: string,
+): { mainGroups: DisplayGroup[]; queuedGroups: DisplayGroup[]; liveActive: boolean } {
+  const { mainGroups, queuedGroups } = useMemo(() => {
+    const main: DisplayGroup[] = []
+    const queued: DisplayGroup[] = []
+    for (const g of groups) {
+      if (g.queued) queued.push(g)
+      else main.push(g)
+    }
+    return { mainGroups: main, queuedGroups: queued }
+  }, [groups])
+  const convActive = useConversationsStore(state => state.conversationsById[conversationId]?.status === 'active')
+  const streamingPresent = useConversationsStore(
+    state => !!(state.streamingText[conversationId] || state.streamingThinking[conversationId]),
+  )
+  return { mainGroups, queuedGroups, liveActive: convActive || streamingPresent }
+}
 
 /** Lift the per-group display settings ONCE (instead of per-GroupView). Returns
  *  a memoized object stable across renders when the underlying store slices are

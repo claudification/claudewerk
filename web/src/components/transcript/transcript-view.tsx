@@ -17,18 +17,19 @@ import {
   useRef,
   useState,
 } from 'react'
-import { fetchTranscriptBefore, useConversationsStore } from '@/hooks/use-conversations'
+import { useConversationsStore } from '@/hooks/use-conversations'
 import { record } from '@/lib/perf-metrics'
 import type { TranscriptEntry } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { labSummary, resolveVirtualizerLab } from '@/lib/virtualizer-lab'
 import { TranscriptEmptyState } from './ghost-peek'
-import { CompactedDivider, CompactingBanner, MemoizedGroupView, SkillDivider } from './group-view'
+import { AnimatedGroupContent, stableGroupKey } from './group-content'
 import { type DisplayGroup, useIncrementalGroups } from './grouping'
-import { detectReportArtifactRelPath } from './grouping/report-artifact'
 import { BannersBlock, InFlightBlock } from './transcript-bottom'
 import { useFollowSignals } from './use-follow-signals'
-import { usePlanContext, useTranscriptSettings } from './use-transcript-derivations'
+import { useTailAnimations } from './use-tail-animations'
+import { useLiveGroups, usePlanContext, useTranscriptSettings } from './use-transcript-derivations'
+import { useTranscriptWindow } from './use-transcript-window'
 
 /** Content-aware size estimation to minimize layout shift on first render.
  *  Falls back to measuredSizes cache for groups that have been rendered before. */
@@ -149,73 +150,11 @@ function getConvSizeCache(conversationId: string | null): Map<string, number> {
   return fresh
 }
 
-// Progressive transcript loading (Phase 1a). Render only the last WINDOW_SIZE
-// entries on open/switch; "Load earlier" prepends LOAD_CHUNK more. Conversations
-// at or below WINDOW_THRESHOLD entries render whole (no window, no button) -- the
-// lever only matters for long transcripts that grouping collapses into a few
-// giant groups (see .claude/docs/plan-progressive-transcript-spike.md).
-const WINDOW_SIZE = 50
-const WINDOW_THRESHOLD = 80
-const LOAD_CHUNK = 100
+// Progressive transcript loading + infinite scrollback data logic lives in
+// use-transcript-window.ts (shared with TranscriptViewPlain).
 /** Auto-load older entries when a user scroll-UP brings the viewport within this
  *  many px of the top (infinite scrollback, Phase 1b -- replaces the button). */
 const LOAD_EARLIER_SCROLL_THRESHOLD = 400
-/** Re-anchor the seq-anchored window forward once the boundary entry drifts to
- *  within this many entries of the pruned head. Keeps a safety buffer above the
- *  live prune line so the anchor entry is never the one pruned (which would pin
- *  windowStart at 0 and reintroduce per-tick regroup thrash). Small relative to
- *  WINDOW_SIZE so the window amortizes ~(WINDOW_SIZE - margin) appends per
- *  re-anchor instead of regrouping on every post-cap tick. */
-const WINDOW_REANCHOR_MARGIN = 8
-
-/** Default window start: show the last WINDOW_SIZE entries, or all of them when
- *  the transcript is short enough that windowing buys nothing. */
-function defaultWindowStart(len: number): number {
-  return len > WINDOW_THRESHOLD ? len - WINDOW_SIZE : 0
-}
-
-/** The window boundary as a SEQ rather than an absolute index. Returns the seq
- *  of the entry at the default window start, or null when the transcript is
- *  short enough that no window applies (show all). Anchoring by seq keeps the
- *  window pinned to the same logical entry across a live head-prune.
- *
- *  Resilient to a SEQLESS boundary entry: `seq` is undefined on entries read
- *  from raw JSONL before the broker's cache-insert stamps it (protocol.ts), and
- *  the control panel does receive such entries (use-websocket-handlers dedupes on
- *  `e.seq === undefined`). If the ideal boundary entry has no seq we scan FORWARD
- *  (toward the tail, never widening the window past WINDOW_SIZE) for the nearest
- *  entry that carries one, so the window still anchors instead of collapsing to
- *  show-all. Returns null only when NO entry from the boundary onward has a seq.
- *  This also keeps the render-phase re-anchor convergent: returning the bare
- *  `?? null` of a seqless boundary made the re-anchor branch re-fire forever
- *  (React #301 -- it kept setting the anchor back to null while
- *  `windowAnchorSeq === null` stayed true). */
-// react-doctor:only-export-components -- defaultAnchorSeq is a pure function
-// exported for unit tests (transcript-anchor-loop.test.tsx).
-export function defaultAnchorSeq(entries: TranscriptEntry[]): number | null {
-  const idx = defaultWindowStart(entries.length)
-  if (idx <= 0) return null
-  for (let i = idx; i < entries.length; i++) {
-    const s = entries[i]?.seq
-    if (s !== undefined && s !== null) return s
-  }
-  return null
-}
-
-/** Stable virtualizer key for a group. Prefers the group's reconciled `id`
- *  (assigned by useIncrementalGroups), which is carried across regroups so it is
- *  invariant under BOTH a tail-append (streaming grows the LAST group at its
- *  tail) AND a head-prune/prepend ("Load earlier" grows the boundary group at
- *  its head). The earlier tail-seq key was invariant under prepend only -- it
- *  changed on every streaming tick, remounting the active group's whole subtree
- *  (fresh DiffView/EditDiff mounts, Shiki re-tokenize) every transcript row.
- *  Falls back to the tail seq for batch-built groups that carry no id. */
-function stableGroupKey(group: DisplayGroup): string {
-  if (group.id) return group.id
-  const tail = group.entries[group.entries.length - 1] as { seq?: number; uuid?: string } | undefined
-  const id = tail?.seq ?? tail?.uuid ?? group.timestamp
-  return `${group.type}-${id}`
-}
 
 let lastVirtualItemCount = 0
 let lastTotalGroupCount = 0
@@ -261,7 +200,7 @@ function MaybeProfiler({ enabled, id, children }: { enabled: boolean; id: string
   )
 }
 
-interface TranscriptViewProps {
+export interface TranscriptViewProps {
   conversationId: string
   entries: TranscriptEntry[]
   follow?: boolean
@@ -291,233 +230,70 @@ export const TranscriptView = memo(function TranscriptView({
   // no ResizeObserver fires on return when the box didn't actually resize.
   const rectCbRef = useRef<((rect: { width: number; height: number }) => void) | null>(null)
 
-  // Progressive load window (Phase 1a), SEQ-ANCHORED. windowAnchorSeq is the seq
-  // of the entry at the window's top boundary; the slice index `windowStart` is
-  // DERIVED from it each render. Anchoring by seq (not a raw index) keeps the
-  // window pinned to the same logical entry when the live head-prune
-  // (TRANSCRIPT_LIVE_CAP in use-websocket-handlers.ts) drops older entries off
-  // entries[0]: an absolute index silently slid forward on every post-cap append,
-  // flipping windowed[0] -> regroupSignal -> a full cold re-group + virtualizer
-  // jump on EVERY streamed tick once a conversation passed 100 entries. The prune
-  // only ever drops entries BELOW the boundary, so the anchor entry survives and
-  // the derived index just decrements -- windowed stays a pure tail-append and
-  // grouping stays on the cheap incremental path. null = no window (show all).
-  const [windowAnchorSeq, setWindowAnchorSeq] = useState<number | null>(() => defaultAnchorSeq(entries))
-  // Forced group-break seqs, one per backfill boundary (see loadEarlier below).
-  // Per-conversation; cleared on switch. Mutated in place BEFORE the anchor
-  // state change that triggers the regroup, so grouping reads it fresh.
+  // Forced group-break seqs, one per backfill boundary. Per-conversation;
+  // cleared on switch (the hook signals that with seq=undefined). Mutated in
+  // place BEFORE the anchor state change that triggers the regroup, so grouping
+  // reads it fresh. Native anchorTo:'end' prepend anchoring is ITEM-granular:
+  // it compensates by the anchored item's start shift, so a prepend that MERGES
+  // into the head of the reader's (giant) boundary group moves nothing it can
+  // see and the content slides under the reader uncompensated (2026-06-10:
+  // 8000px slide -> view lands at the top -> nearTop re-fires -> backfill
+  // loop). The forced break makes the boundary entry START A NEW GROUP, so
+  // prepended entries always form separate items ABOVE the anchored one.
   const backfillBreaksRef = useRef<Set<number>>(null!)
   if (backfillBreaksRef.current === null) backfillBreaksRef.current = new Set()
-  const prevCacheKeyRef = useRef(cacheKey)
-  // True once we've sized the window against a NON-EMPTY transcript for the
-  // current cacheKey. A cold switch (MISS) opens the conversation with entries=[]
-  // (fetch in flight), so the initial anchor is null; without this flag the
-  // window would never re-default when the fetched transcript arrives, and a
-  // freshly-fetched 460-entry conversation would render ALL of it (measured
-  // 340ms commit->paint -- the cold-open bug this fixes).
-  const windowInitRef = useRef(entries.length > 0)
-  // Derived slice index: the first entry at or after the anchor seq. A head-prune
-  // shrinks this number without moving the boundary entry; a switch/cold-open/
-  // load-earlier moves the anchor and so moves this deliberately. Computed before
-  // the reset block so the re-anchor branch can read it.
-  const windowStart = useMemo(() => {
-    if (windowAnchorSeq === null) return 0
-    const idx = entries.findIndex(e => (e.seq ?? 0) >= windowAnchorSeq)
-    return idx < 0 ? 0 : idx
-  }, [entries, windowAnchorSeq])
-  // Render-phase anchor setter with a CONVERGENCE GUARD. The reset block below
-  // adjusts state during render (the documented "adjust state on prop change"
-  // pattern), but the recovery branches re-test a condition that can stay true
-  // after the set -- if defaultAnchorSeq cannot produce a DIFFERENT anchor (a
-  // seqless boundary made it return null/the same value), calling the setter
-  // again on every render-phase pass re-arms React's render-phase update and
-  // throws #301 ("too many re-renders"). Only fire when the anchor actually
-  // changes, which guarantees the guard goes false within a single pass.
-  const reanchorTo = (next: number | null) => {
-    if (next !== windowAnchorSeq) setWindowAnchorSeq(next)
-  }
-  // Derived-state reset (the documented "adjust state on prop change in render"
-  // pattern -- re-renders before commit, no flash, no full-render paint):
-  if (cacheKey !== prevCacheKeyRef.current) {
-    // Conversation switch -- snap to the last-N default for whatever is loaded
-    // (null for a MISS; the real default anchor for a HIT).
-    prevCacheKeyRef.current = cacheKey
-    windowInitRef.current = entries.length > 0
-    backfillBreaksRef.current = new Set()
-    reanchorTo(defaultAnchorSeq(entries))
-  } else if (!windowInitRef.current && entries.length > 0) {
-    // Cold-open transcript just arrived (MISS -> fetch). Size the window now.
-    windowInitRef.current = true
-    reanchorTo(defaultAnchorSeq(entries))
-  } else if (
-    windowAnchorSeq !== null &&
-    entries.length > 0 &&
-    (entries[entries.length - 1].seq ?? 0) < windowAnchorSeq
-  ) {
-    // Anchor slid past the end of a shrunk/replaced array (e.g. /clear creating a
-    // new transcript whose seqs are all below the old anchor). Re-default.
-    reanchorTo(defaultAnchorSeq(entries))
-  } else if (
-    follow &&
-    entries.length > WINDOW_THRESHOLD &&
-    (windowAnchorSeq === null || windowStart < WINDOW_REANCHOR_MARGIN)
-  ) {
-    // The window boundary is at (or has drifted near) the pruned head. Two ways
-    // to get here: (a) tail-append + head-prune walked the anchor entry to within
-    // WINDOW_REANCHOR_MARGIN of the head; (b) a deep scrollback hit the local top,
-    // where loadEarlier sets the anchor to NULL ("show all") -- previously null was
-    // excluded here, so the window stayed show-all forever and EVERY post-cap
-    // head-prune changed windowed[0] -> regroupSignal -> a full cold regroup on
-    // every posted message (observed 2026-06-10). Re-default the anchor forward to
-    // the last WINDOW_SIZE so the boundary sits safely above the prune line again.
-    // Gated on `follow` (viewport at the bottom) so dropping the now-offscreen
-    // older entries is invisible -- and so a scrollback reader, where the prune is
-    // deferred and windowStart wouldn't shrink anyway, is never yanked.
-    //
-    // Compute the target first and only act when it CHANGES the anchor: with a
-    // seqless transcript defaultAnchorSeq stays null and this branch's condition
-    // (windowAnchorSeq === null) stays true every render -- logging + setting
-    // unconditionally would both spam the console and loop the render phase
-    // (#301). reanchorTo's guard already blocks the loop; gating the log keeps it
-    // from firing once per streamed tick in the steady seqless show-all state.
-    const reanchored = defaultAnchorSeq(entries)
-    if (reanchored !== windowAnchorSeq) {
-      console.debug(
-        `[window] re-anchor reason=${windowAnchorSeq === null ? 'post-scrollback-show-all' : 'near-pruned-head'} entries=${entries.length} windowStart=${windowStart} -> last-${WINDOW_SIZE}`,
-      )
-      reanchorTo(reanchored)
+  const registerBackfillBreak = useCallback((seq: number | undefined) => {
+    if (seq === undefined) {
+      backfillBreaksRef.current = new Set()
+      return
     }
-  }
-  const windowed = useMemo(() => (windowStart > 0 ? entries.slice(windowStart) : entries), [entries, windowStart])
-  // Live windowStart for the scroll handler (infinite scrollback trigger).
-  const windowStartRef = useRef(windowStart)
-  windowStartRef.current = windowStart
+    if (backfillBreaksRef.current.has(seq)) return
+    if (backfillBreaksRef.current.size >= 128) backfillBreaksRef.current.clear()
+    backfillBreaksRef.current.add(seq)
+    console.debug(`[window] backfill-break seq=${seq} (total=${backfillBreaksRef.current.size})`)
+  }, [])
 
-  // Grouping reset signal: identity of the FIRST rendered entry. Changes on a
-  // local window reveal (anchor moved older) AND a server prepend (anchor null/0
-  // but the oldest entry changes) -- both are head-growth that the tail-only
-  // incremental path would mis-group. Stays constant during streaming (tail
-  // append) AND across a head-prune (the anchor entry survives the prune), so
-  // both stay on the cheap incremental path.
-  const regroupSignal = windowed.length > 0 ? (windowed[0].seq ?? windowed[0].uuid ?? windowStart) : windowStart
-  // More history exists on the server iff our oldest-held entry isn't seq 1.
-  const hasMoreOlder = (entries[0]?.seq ?? 1) > 1
-  // Live mirrors for the scroll handler (a stable closure that must read latest).
-  const hasMoreOlderRef = useRef(hasMoreOlder)
-  hasMoreOlderRef.current = hasMoreOlder
-  const entriesRef = useRef(entries)
-  entriesRef.current = entries
-  const cacheKeyRef = useRef(cacheKey)
-  cacheKeyRef.current = cacheKey
+  // Progressive load window + infinite scrollback (SEQ-ANCHORED) -- shared data
+  // logic, see use-transcript-window.ts for the full incident-history rationale.
+  const {
+    windowed,
+    windowStart,
+    windowStartRef,
+    windowAnchorSeq,
+    regroupSignal,
+    hasMoreOlder,
+    hasMoreOlderRef,
+    entriesRef,
+    cacheKeyRef,
+    loadEarlier,
+    fetchOlder,
+    loadingEarlierRef,
+    fetchingOlderRef,
+  } = useTranscriptWindow({ entries, cacheKey, follow, onBackfillBoundary: registerBackfillBreak })
 
   const { getResult, groups } = useIncrementalGroups(windowed, cacheKey, regroupSignal, backfillBreaksRef.current)
 
   // Lift the per-group display settings ONCE (shared, virtualizer-agnostic).
   const transcriptSettings = useTranscriptSettings()
 
-  // Split: queued groups float at the bottom, non-queued in the virtualizer
-  const { mainGroups, queuedGroups } = useMemo(() => {
-    const main: DisplayGroup[] = []
-    const queued: DisplayGroup[] = []
-    for (const g of groups) {
-      if (g.queued) queued.push(g)
-      else main.push(g)
-    }
-    return { mainGroups: main, queuedGroups: queued }
-  }, [groups])
+  // Queued/main split + live-turn signal (shared with TranscriptViewPlain).
+  const { mainGroups, queuedGroups, liveActive } = useLiveGroups(groups, conversationId)
 
-  const convActive = useConversationsStore(state => state.conversationsById[conversationId]?.status === 'active')
-  const streamingPresent = useConversationsStore(
-    state => !!(state.streamingText[conversationId] || state.streamingThinking[conversationId]),
-  )
-  const liveActive = convActive || streamingPresent
-
-  // ENTER ANIMATION -- slide up + fade in the newest group, ONLY for a live new
-  // entry. Detected during RENDER (not an effect) so the new row carries the
-  // animation class on its FIRST paint -- adding it post-paint would flash the
-  // row at full opacity for a frame, then snap back to the start. Verified in a
-  // real-browser TanStack harness (.claude/temp/anim-harness): opacity + transform
-  // are composited, so the virtualizer's measureElement ResizeObserver never
-  // re-fires and scrollTop never moves (pinViolations 0 / jumpToTop 0 / maxDrift
-  // 0 across 25 appends). This touches NONE of the scroll/pin logic.
-  //
-  // Eligibility (all must hold): the LAST group's key changed, the conversation
-  // is the same (not a switch), the window is unchanged (not a head prepend /
-  // "load earlier"), there was a previous tail (not the first paint of a
-  // conversation), and follow is on and not killed (the bottom is in view).
-  // ENTER ANIMATION STATE. Uses a post-render effect (not derived-state-in-render)
-  // because the virtualizer may not include the new tail row in its visible range
-  // on the render where detection fires -- the pin-to-bottom scrolls AFTER paint,
-  // then a second render brings the row into view. A ref mutation is invisible to
-  // that second render; a state update via useEffect ensures React re-renders with
-  // the entering key at a point where the virtualizer has the row visible.
-  const [enteringKey, setEnteringKey] = useState<string | null>(null)
-  const prevTailKeyRef = useRef<string | null>(null)
-  const enterCacheKeyRef = useRef(cacheKey)
-  // Track the ANCHOR, not the derived index: a head-prune decrements windowStart
-  // without logically moving the window, and that must NOT read as a window change
-  // (which would suppress the slide-in for genuine new tail entries).
-  const enterWindowAnchorRef = useRef(windowAnchorSeq)
+  // ENTER + SETTLE tail animations -- shared with TranscriptViewPlain; see
+  // use-tail-animations.ts for detection rationale + the composited-only
+  // verification. Uses a post-render effect (not derived-state-in-render)
+  // because the virtualizer may not include the new tail row in its visible
+  // range on the render where detection fires.
   const tailKey = mainGroups.length > 0 ? stableGroupKey(mainGroups[mainGroups.length - 1]) : null
-  const shouldEnter =
-    tailKey !== null &&
-    tailKey !== prevTailKeyRef.current &&
-    prevTailKeyRef.current !== null &&
-    cacheKey === enterCacheKeyRef.current &&
-    windowAnchorSeq === enterWindowAnchorRef.current &&
-    // Never animate while a turn is live: the streaming itself is the animation,
-    // and the committed entry takes over the live item in place -- a slide-in
-    // there would flash/jerk. Genuine new entries while idle still animate.
-    !liveActive
-  const pendingEnterRef = useRef<string | null>(null)
-  if (shouldEnter) pendingEnterRef.current = tailKey
-  prevTailKeyRef.current = tailKey
-  enterCacheKeyRef.current = cacheKey
-  enterWindowAnchorRef.current = windowAnchorSeq
-  // Fire the state update in an effect so it lands AFTER the pin-to-bottom scroll
-  // has brought the new row into the virtualizer's visible range.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: tailKey is the intentional trigger
-  useEffect(() => {
-    const key = pendingEnterRef.current
-    if (key) {
-      pendingEnterRef.current = null
-      setEnteringKey(key)
-      // console.debug('[transcript-enter] SET', key)
-    }
-  }, [tailKey])
-  const clearEntering = useCallback(() => setEnteringKey(null), [])
-
-  // SETTLE MORPH. When the streaming TEXT buffer clears (a message/turn just
-  // committed), the committed assistant entry has taken over the live slot in
-  // place. Tag that tail group so its wrapper plays `assistant-settle`
-  // (globals.css): the emerald accent bar fades out + opacity rises to full, so
-  // the streaming box visibly settles into the final text. Mirrors enteringKey;
-  // detected during render off the true->false edge of the text buffer.
-  const [settlingKey, setSettlingKey] = useState<string | null>(null)
-  const streamingTextPresent = useConversationsStore(state =>
-    conversationId ? !!state.streamingText[conversationId] : false,
-  )
-  const prevStreamingTextRef = useRef(streamingTextPresent)
-  const pendingSettleRef = useRef<string | null>(null)
   const settleTailGroup = mainGroups.length > 0 ? mainGroups[mainGroups.length - 1] : null
-  if (
-    prevStreamingTextRef.current &&
-    !streamingTextPresent &&
-    tailKey !== null &&
-    settleTailGroup?.type === 'assistant'
-  ) {
-    pendingSettleRef.current = tailKey
-  }
-  prevStreamingTextRef.current = streamingTextPresent
-  // biome-ignore lint/correctness/useExhaustiveDependencies: streamingTextPresent is the intentional trigger
-  useEffect(() => {
-    const key = pendingSettleRef.current
-    if (key) {
-      pendingSettleRef.current = null
-      setSettlingKey(key)
-    }
-  }, [streamingTextPresent])
-  const clearSettling = useCallback(() => setSettlingKey(null), [])
+  const { enteringKey, settlingKey, clearEntering, clearSettling } = useTailAnimations({
+    conversationId,
+    cacheKey,
+    tailKey,
+    tailType: settleTailGroup?.type ?? null,
+    windowAnchorSeq,
+    liveActive,
+  })
 
   // Plan content for ExitPlanMode display (shared, virtualizer-agnostic).
   const planContext = usePlanContext(entries)
@@ -993,63 +769,16 @@ export const TranscriptView = memo(function TranscriptView({
   // full prepend-block, then it settled = the load/jerk/scroll/jerk symptom), so
   // the manual anchor is gone. Native is the sole prepend anchor.
 
-  // Re-entrancy guard for the scroll-up auto-trigger.
-  const loadingEarlierRef = useRef(false)
-  // Re-entrancy guard for the server-side older-history fetch (infinite scrollback).
-  const fetchingOlderRef = useRef(false)
   // True only while the user is actively scrolling (wheel/touch + a short tail for
   // momentum). The load-earlier trigger gates on this so PROGRAMMATIC scrolls --
   // conversation-switch scrollToEnd, the pin effects, the prepend anchor's own
   // scrollTop writes -- can never fire a backfill (which would snowball: switch
   // snaps to top -> load -> over-cap prune storm -> regroup thrash).
+  // loadEarlier / fetchOlder / their re-entrancy refs come from
+  // useTranscriptWindow above; the break registration rides its
+  // onBackfillBoundary callback.
   const userScrollingRef = useRef(false)
   const userScrollResetRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // "Load earlier": prepend a chunk of older entries from the local window.
-  // Scroll stability on prepend is handled natively by anchorTo:'end' (see the
-  // PREPEND STABILITY note above) -- BUT native anchoring is ITEM-granular: it
-  // compensates by the anchored item's start shift, so a prepend that MERGES
-  // into the head of the reader's (giant) boundary group moves nothing it can
-  // see and the content slides under the reader uncompensated (2026-06-10:
-  // 8000px slide -> view lands at the top -> nearTop re-fires -> backfill loop).
-  // registerBackfillBreak forces the boundary entry to START A NEW GROUP, so
-  // prepended entries always form separate items ABOVE the anchored one.
-  const registerBackfillBreak = useCallback((seq: number | undefined) => {
-    if (seq === undefined || backfillBreaksRef.current.has(seq)) return
-    if (backfillBreaksRef.current.size >= 128) backfillBreaksRef.current.clear()
-    backfillBreaksRef.current.add(seq)
-    console.debug(`[window] backfill-break seq=${seq} (total=${backfillBreaksRef.current.size})`)
-  }, [])
-  const loadEarlier = useCallback(() => {
-    const ents = entriesRef.current
-    // The current top-visible entry becomes a forced group boundary.
-    registerBackfillBreak(ents[windowStartRef.current]?.seq)
-    const newStart = Math.max(0, windowStartRef.current - LOAD_CHUNK)
-    // Move the anchor to the newly-revealed boundary entry (null = reached the
-    // top, show all). Derived windowStart re-resolves from this on the next render.
-    setWindowAnchorSeq(newStart <= 0 ? null : (ents[newStart]?.seq ?? null))
-  }, [registerBackfillBreak])
-
-  // Infinite scrollback: fetch older entries from the broker.
-  const fetchOlder = useCallback(() => {
-    const cid = cacheKeyRef.current
-    const oldestSeq = entriesRef.current[0]?.seq
-    if (!cid || oldestSeq === undefined || oldestSeq <= 1) return
-    // The current oldest entry becomes a forced group boundary -- the fetched
-    // entries prepend ABOVE it as their own groups.
-    registerBackfillBreak(oldestSeq)
-    fetchingOlderRef.current = true
-    fetchTranscriptBefore(cid, oldestSeq, LOAD_CHUNK)
-      .then(res => {
-        if (res && res.entries.length > 0) {
-          useConversationsStore.getState().prependTranscript(cid, res.entries)
-        }
-        fetchingOlderRef.current = false
-      })
-      .catch(() => {
-        fetchingOlderRef.current = false
-      })
-  }, [registerBackfillBreak])
 
   // Scroll handler: auto-load older entries on scroll-up.
   useEffect(() => {
@@ -1146,60 +875,18 @@ export const TranscriptView = memo(function TranscriptView({
                 {isSpacer && <div aria-hidden style={{ height: group.spacerHeight ?? 0 }} />}
                 {/* Committed content. The synthetic live/spacer groups have none. */}
                 {!isLive && !isSpacer && (
-                  <div
-                    className={cn(isEntering && 'transcript-entry-enter', isSettling && 'assistant-settle')}
-                    onAnimationEnd={
-                      isEntering || isSettling
-                        ? e => {
-                            if (e.animationName === 'transcript-entry-enter') clearEntering()
-                            else if (
-                              e.animationName === 'assistant-settle-bar' ||
-                              e.animationName === 'assistant-settle-text'
-                            )
-                              clearSettling()
-                          }
-                        : undefined
-                    }
-                  >
-                    {(() => {
-                      if (group.type === 'compacted') return <CompactedDivider />
-                      if (group.type === 'compacting') return <CompactingBanner />
-                      if (group.type === 'skill') {
-                        const entry = group.entries[0] as {
-                          message?: { content?: string | Array<{ type: string; text?: string }> }
-                        }
-                        let content = ''
-                        if (Array.isArray(entry?.message?.content)) {
-                          const parts: string[] = []
-                          for (const b of entry.message.content) {
-                            if (b.type === 'text') parts.push(b.text || '')
-                          }
-                          content = parts.join('')
-                        }
-                        const reportRel = detectReportArtifactRelPath(content)
-                        const reportArtifact =
-                          reportRel && conversationId
-                            ? { conversationId: conversationId, relPath: reportRel }
-                            : undefined
-                        return (
-                          <SkillDivider
-                            name={group.skillName || 'skill'}
-                            content={content}
-                            reportArtifact={reportArtifact}
-                          />
-                        )
-                      }
-                      return (
-                        <MemoizedGroupView
-                          group={group}
-                          getResult={getResult}
-                          settings={transcriptSettings}
-                          showThinking={showThinking}
-                          planContext={planContext}
-                        />
-                      )
-                    })()}
-                  </div>
+                  <AnimatedGroupContent
+                    group={group}
+                    conversationId={conversationId}
+                    getResult={getResult}
+                    settings={transcriptSettings}
+                    showThinking={showThinking}
+                    planContext={planContext}
+                    isEntering={isEntering}
+                    isSettling={isSettling}
+                    clearEntering={clearEntering}
+                    clearSettling={clearSettling}
+                  />
                 )}
                 {/* In-flight UI lives INSIDE the last measured item (default) so
                     totalSize includes it and anchorTo:'end' keeps it pinned. For

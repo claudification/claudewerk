@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 // react-doctor-disable-next-line react-doctor/no-barrel-import
 // transcript/index re-exports TranscriptView; collapsing this import keeps the file tidy
 // react-doctor-disable-next-line react-doctor/no-barrel-import
-import { TranscriptView } from '../transcript'
+import { TranscriptViewSwitch } from '../transcript'
 import { shortModel } from '../transcript/agent-task-badge'
 
 interface SubagentDetailViewProps {
@@ -75,7 +75,7 @@ export function SubagentDetailView({
             No transcript entries yet
           </div>
         ) : (
-          <TranscriptView
+          <TranscriptViewSwitch
             conversationId={conversationId}
             entries={transcript}
             follow={follow}

@@ -31,7 +31,8 @@ import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import type { TranscriptEntry } from '@/lib/types'
-import { defaultAnchorSeq, TranscriptView } from './transcript-view'
+import { TranscriptView } from './transcript-view'
+import { defaultAnchorSeq } from './transcript-window-core'
 
 // A minimal user entry. `seq` is attached only when provided -- omitting it
 // reproduces the raw-JSONL (pre-ingest) shape that triggered the loop.

@@ -84,6 +84,11 @@ export interface ControlPanelPrefs {
    *  partial so knobs added later inherit their defaults; resolve with
    *  resolveVirtualizerLab() at the point of use. {} = production behavior. */
   virtualizerLab: Partial<VirtualizerLabPrefs>
+  /** EXPERIMENTAL A/B: render transcripts with the non-virtualized plain
+   *  renderer (TranscriptViewPlain -- stick-to-bottom engine + browser-native
+   *  scroll mechanics) instead of the TanStack virtualizer. Per-device.
+   *  Plan: .claude/docs/plan-transcript-non-virtualized.md. */
+  plainTranscript: boolean
 }
 
 export type SettingsTab = 'general' | 'display' | 'input' | 'sessions' | 'sentinels' | 'system' | 'experiments'
@@ -125,6 +130,7 @@ const defaultPrefs: ControlPanelPrefs = {
   listViewMode: 'default',
   activeWorkspaceId: null,
   virtualizerLab: {},
+  plainTranscript: false,
 }
 
 export function loadPrefs(): ControlPanelPrefs {
