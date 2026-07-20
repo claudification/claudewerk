@@ -25,6 +25,41 @@ const DEFAULT_DEEPGRAM_MODEL = 'nova-3'
 function resolveDeepgramModel(configured: string | undefined): string {
   return configured?.startsWith('nova') ? configured : DEFAULT_DEEPGRAM_MODEL
 }
+
+/**
+ * Build the Deepgram live-transcription query params. The client now streams raw
+ * linear16 PCM (AudioWorklet, deterministic ~50ms cadence -- replaced
+ * MediaRecorder whose Safari mp4 fallback lumped audio into ~1s fragments = the
+ * lag). Raw PCM has NO container, so Deepgram can't auto-detect it: we MUST
+ * declare encoding + sample_rate. When absent (older cached client streaming
+ * webm/opus), fall through to container auto-detect.
+ */
+function buildDeepgramParams(
+  model: string,
+  keyterms: string[],
+  encoding: string | undefined,
+  sampleRate: number | undefined,
+): URLSearchParams {
+  const params = new URLSearchParams({
+    model,
+    smart_format: 'true',
+    punctuate: 'true',
+    filler_words: 'false',
+    interim_results: 'true',
+    endpointing: '500', // 500ms silence = speech_final (natural conversation pace)
+    vad_events: 'true',
+    language: 'en',
+  })
+  if (encoding === 'linear16') {
+    params.set('encoding', 'linear16')
+    params.set('sample_rate', String(sampleRate || 16000))
+    params.set('channels', '1')
+  }
+  for (const kt of keyterms) {
+    params.append('keyterm', `${kt}:3`)
+  }
+  return params
+}
 const VOICE_TIMEOUT_MS = 120_000 // Max 120s recording conversation
 const KEEPALIVE_INTERVAL_MS = 5_000 // Deepgram kills connection after 10s of no audio
 
@@ -101,7 +136,7 @@ function safeSend(ws: ServerWebSocket<unknown> | null, data: string): boolean {
 
 export function handleVoiceStart(
   ws: ServerWebSocket<unknown>,
-  data: { conversationId?: string; project?: string; accumulated?: string },
+  data: { conversationId?: string; project?: string; accumulated?: string; encoding?: string; sampleRate?: number },
   conversationStore: ConversationStore,
 ) {
   const deepgramKey = process.env.DEEPGRAM_API_KEY
@@ -124,8 +159,7 @@ export function handleVoiceStart(
     }
   }
 
-  // Build Deepgram live WS URL with params
-  // webm/opus is a containerized format - Deepgram auto-detects, no encoding/sample_rate needed
+  // Build Deepgram live WS URL with params.
   const globalSettings = getGlobalSettings()
   const model = resolveDeepgramModel(globalSettings.deepgramModel)
   if (globalSettings.deepgramModel && model !== globalSettings.deepgramModel) {
@@ -133,22 +167,13 @@ export function handleVoiceStart(
       `[voice-stream] Unsupported model "${globalSettings.deepgramModel}" -- falling back to ${model} (v1 pipeline is nova-only)`,
     )
   }
-  const params = new URLSearchParams({
-    model,
-    smart_format: 'true',
-    punctuate: 'true',
-    filler_words: 'false',
-    interim_results: 'true',
-    endpointing: '500', // 500ms silence = speech_final (natural conversation pace)
-    vad_events: 'true',
-    language: 'en',
-  })
-  for (const kt of keyterms) {
-    params.append('keyterm', `${kt}:3`)
-  }
+  const params = buildDeepgramParams(model, keyterms, data.encoding, data.sampleRate)
 
   const dgUrl = `${DEEPGRAM_LIVE_URL}?${params}`
-  console.log(`[voice-stream] Opening Deepgram live WS (model=${model}, ${keyterms.length} keyterms)`)
+  const encodingDesc = data.encoding === 'linear16' ? `linear16@${data.sampleRate || 16000}Hz` : 'container-autodetect'
+  console.log(
+    `[voice-stream] Opening Deepgram live WS (model=${model}, encoding=${encodingDesc}, ${keyterms.length} keyterms)`,
+  )
 
   const dgWs = new WebSocket(dgUrl, {
     headers: { Authorization: `Token ${deepgramKey}` },

@@ -1,8 +1,8 @@
 /**
  * useVoiceRecording - Shared voice recording hook.
  *
- * Handles mic access, MediaRecorder, WS streaming to Deepgram via broker,
- * transcript parsing, and refinement flow. Used by voice-fab (mobile),
+ * Handles mic access, AudioWorklet PCM capture, WS streaming to Deepgram via
+ * broker, transcript parsing, and refinement flow. Used by voice-fab (mobile),
  * voice-key (desktop push-to-talk), and voice-overlay (input bar mic button).
  *
  * Mic stream is pre-warmed and cached between recordings (30s TTL) to
@@ -18,6 +18,7 @@ import {
   scheduleStreamRelease,
   setMicExpired,
 } from '@/hooks/voice-mic-stream'
+import { PCM_ENCODING, PCM_SAMPLE_RATE, type PcmCaptureHandle, startPcmCapture } from '@/hooks/voice-pcm-capture'
 import { addVoiceHistoryEntry } from '@/lib/voice-history'
 
 // Re-export the warm-stream public API so existing consumers
@@ -41,23 +42,8 @@ const CONNECT_TIMEOUT_MS = 8000
 // timeout the state sits in 'connecting' forever and the FAB becomes dead.
 const MIC_ACQUIRE_TIMEOUT_MS = 10_000
 
-// Offline audio ring buffer: ~60s at 100ms chunks, ~1-2MB of base64
+// Offline audio ring buffer: ~30s at 50ms PCM chunks, ~1MB of base64
 const OFFLINE_BUFFER_MAX = 600
-
-/** Base64-encode a buffer without spread operator. The naive
- *  `btoa(String.fromCharCode(...u8))` spreads the entire Uint8Array as
- *  Function.prototype.apply arguments -- on Safari/iOS with large chunks
- *  (delayed first ondataavailable from audio/mp4 MediaRecorder) this hits
- *  the engine's argument-count limit and throws RangeError silently. */
-function bufferToBase64(buffer: ArrayBuffer): string {
-  const u8 = new Uint8Array(buffer)
-  const CHUNK = 0x8000 // 32 KiB per fromCharCode call
-  const parts: string[] = []
-  for (let i = 0; i < u8.length; i += CHUNK) {
-    parts.push(String.fromCharCode.apply(null, u8.subarray(i, i + CHUNK) as unknown as number[]))
-  }
-  return btoa(parts.join(''))
-}
 
 /** True only when the browser->broker socket is actually open, not merely present. */
 function wsIsOpen(): boolean {
@@ -105,14 +91,12 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
 
   const stateRef = useRef<VoiceState>('idle')
   const backendReadyRef = useRef(false)
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const pcmCaptureRef = useRef<PcmCaptureHandle | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const wsListenerRef = useRef<((event: MessageEvent) => void) | null>(null)
   const cancelledRef = useRef(false)
   const pendingStopRef = useRef(false)
   const utteranceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pendingDataRef = useRef<Promise<void>>(null!)
-  if (pendingDataRef.current === null) pendingDataRef.current = Promise.resolve()
   const startTsRef = useRef(0)
   // Connection-integrity tracking. Recording starts immediately for instant
   // feel (mic + recorder live = 'recording'). The connect timer guards against
@@ -150,10 +134,8 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
   }, [])
 
   function cleanup() {
-    if (mediaRecorderRef.current?.state === 'recording') {
-      mediaRecorderRef.current.stop()
-    }
-    mediaRecorderRef.current = null
+    pcmCaptureRef.current?.stop()
+    pcmCaptureRef.current = null
     streamRef.current = null
     scheduleStreamRelease()
     if (utteranceTimerRef.current) {
@@ -390,6 +372,8 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
       type: 'voice_start',
       conversationId: target,
       accumulated: accumulatedTextRef.current,
+      encoding: PCM_ENCODING,
+      sampleRate: PCM_SAMPLE_RATE,
     })
     armConnectTimeout()
     // voice_ready handler will replay the buffer and flip state to 'recording'
@@ -427,57 +411,55 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     }
   }
 
-  /** Build the MediaRecorder with a connection-guarded send + mic-death detection. */
-  function buildRecorder(stream: MediaStream): MediaRecorder {
-    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/mp4'
-    const recorder = new MediaRecorder(stream, { mimeType })
-
-    let chunkSeq = 0
-    recorder.ondataavailable = ev => {
-      if (ev.data.size === 0) return
-      const seq = ++chunkSeq
-      const size = ev.data.size
-      // Chain onto previous chunk so doStop's await catches ALL in-flight
-      // chunks, not just the last one (previous code overwrote the ref,
-      // letting voice_stop race ahead of earlier chunks on Safari where the
-      // first ondataavailable can be delayed and large).
-      const prev = pendingDataRef.current
-      pendingDataRef.current = prev.then(async () => {
-        try {
-          const buffer = await ev.data.arrayBuffer()
-          const base64 = bufferToBase64(buffer)
-          if (seq === 1 || seq % 20 === 0) {
-            console.log(`[voice] ${elapsed()} chunk #${seq}: ${size}B (ws=${wsIsOpen() ? 'open' : 'closed'})`)
-          }
-          if (wsIsOpen()) {
-            handleChunkWsOpen(base64)
-          } else {
-            handleChunkWsClosed(base64)
-          }
-        } catch (err) {
-          console.error(`[voice] ${elapsed()} chunk #${seq} failed (${size}B):`, err)
-        }
-      })
+  /** Route one PCM chunk (base64 linear16) to the broker, or the offline buffer. */
+  let chunkSeq = 0
+  function onPcmChunk(base64: string) {
+    const seq = ++chunkSeq
+    if (seq === 1 || seq % 20 === 0) {
+      console.log(`[voice] ${elapsed()} chunk #${seq}: ${base64.length}B64 (ws=${wsIsOpen() ? 'open' : 'closed'})`)
     }
+    if (wsIsOpen()) {
+      handleChunkWsOpen(base64)
+    } else {
+      handleChunkWsClosed(base64)
+    }
+  }
 
-    // A mic track dying mid-recording (unplug / OS revoke) makes MediaRecorder
-    // go silent with NO error -- detect it and surface honestly.
+  /** Start the AudioWorklet PCM capture; store the handle. Returns false if the
+   *  user cancelled during worklet init (async), in which case the capture is
+   *  torn down and start() must abort. */
+  async function beginPcmCapture(stream: MediaStream): Promise<boolean> {
+    const capture = await startPcmCapture(stream, {
+      onChunk: onPcmChunk,
+      onError: err => console.error(`[voice] ${elapsed()} pcm chunk encode failed:`, err),
+    })
+    if (cancelledRef.current) {
+      console.log(`[voice] ${elapsed()} cancelled during worklet init`)
+      capture.stop()
+      return false
+    }
+    pcmCaptureRef.current = capture
+    return true
+  }
+
+  /** A mic track dying mid-recording (unplug / OS revoke) goes silent with NO
+   *  error -- detect it and surface honestly. */
+  function watchTrackDeath(stream: MediaStream) {
     const track = stream.getAudioTracks()[0]
-    if (track) {
-      track.onended = () => {
-        if (
-          stateRef.current === 'recording' ||
-          stateRef.current === 'connecting' ||
-          stateRef.current === 'recording-offline'
-        ) {
-          failVoice('Microphone disconnected', 'mic track ended mid-recording')
-        }
+    if (!track) return
+    track.onended = () => {
+      if (
+        stateRef.current === 'recording' ||
+        stateRef.current === 'connecting' ||
+        stateRef.current === 'recording-offline'
+      ) {
+        failVoice('Microphone disconnected', 'mic track ended mid-recording')
       }
     }
-    return recorder
   }
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: attachWsListener and stop are stable functions defined in this scope
+  // fallow-ignore-next-line complexity -- CRAP artifact: CC 10 / cognitive 10 (both under threshold). Linear startup sequence; every branch is an honest-failure guard the LOG EVERYTHING covenant requires. Coverage estimates as ~0 (getUserMedia/Web Audio absent in jsdom), inflating CRAP; not real complexity debt.
   const start = useCallback(async () => {
     if (stateRef.current !== 'idle') return
 
@@ -540,23 +522,24 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
       }
 
       streamRef.current = stream
-      sendWs({ type: 'voice_start', conversationId: target })
+      watchTrackDeath(stream)
+      chunkSeq = 0
+      sendWs({ type: 'voice_start', conversationId: target, encoding: PCM_ENCODING, sampleRate: PCM_SAMPLE_RATE })
       console.log(`[voice] ${elapsed()} voice_start sent`)
       armConnectTimeout()
 
-      const recorder = buildRecorder(stream)
-      recorder.start(100)
-      mediaRecorderRef.current = recorder
-      // Instant feel: flip to 'recording' NOW. Mic is live, recorder is
-      // capturing, chunks flow to broker immediately. Broker buffers them
-      // until Deepgram connects, then flushes -- zero audio loss. The
-      // connect timeout still guards against a silent backend failure.
-      // Update ref BEFORE setState so the first ondataavailable (async,
-      // fires ~100ms later but sooner on fast devices) sees 'recording'
-      // and routes chunks to WS, not the offline buffer.
+      // AudioWorklet PCM capture: ~50ms linear16/16k chunks (deterministic on
+      // every browser). Replaces MediaRecorder, whose Safari audio/mp4 fallback
+      // emitted ~1s fragments and IGNORED the timeslice -- the whole voice lag.
+      if (!(await beginPcmCapture(stream))) return
+      // Instant feel: flip to 'recording' NOW. Mic is live, chunks flow to the
+      // broker immediately. Broker buffers them until Deepgram connects, then
+      // flushes -- zero audio loss. The connect timeout still guards a silent
+      // backend failure. Update ref BEFORE setState so the first chunk sees
+      // 'recording' and routes to WS, not the offline buffer.
       stateRef.current = 'recording'
       setState('recording')
-      console.log(`[voice] ${elapsed()} recorder started -- recording (backend warming up)`)
+      console.log(`[voice] ${elapsed()} pcm capture started -- recording (backend warming up)`)
     } catch (err) {
       failVoice(err instanceof Error ? err.message : 'Mic access denied', `recording failed: ${err}`)
     }
@@ -564,17 +547,19 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
   }, [sendWs])
 
   function doStop() {
-    const recorder = mediaRecorderRef.current
-    if (recorder?.state === 'recording') {
-      recorder.onstop = async () => {
-        await pendingDataRef.current
-        mediaRecorderRef.current = null
+    const capture = pcmCaptureRef.current
+    if (capture) {
+      // flush() drains the worklet's sub-frame remainder (its 'audio' message
+      // fires onPcmChunk BEFORE resolving), so every captured sample reaches the
+      // broker before voice_stop -- no truncated tail.
+      capture.flush().then(() => {
+        capture.stop()
+        pcmCaptureRef.current = null
         streamRef.current = null
         scheduleStreamRelease()
         sendWs({ type: 'voice_stop' })
         console.log(`[voice] ${elapsed()} voice_stop sent`)
-      }
-      recorder.stop()
+      })
     } else {
       streamRef.current = null
       scheduleStreamRelease()
