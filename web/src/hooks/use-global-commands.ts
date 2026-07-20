@@ -31,6 +31,7 @@ import { canShell, canTerminal, projectPath } from '@/lib/types'
 import { isMobileViewport } from '@/lib/utils'
 import { getVoiceHistory } from '@/lib/voice-history'
 import { toggleWebControl } from '@/lib/web-control-actions'
+import { quickSwitchConversation } from '@/lib/workspace-switch'
 
 function quickTaskEnabled() {
   const s = useConversationsStore.getState()
@@ -476,15 +477,11 @@ export function useGlobalCommands(toggleSidebar: () => void) {
     { label: 'Respawn stale daemon worker', group: 'Conversation' },
   )
 
-  useCommand(
-    'switch-conversation',
-    () => {
-      const { conversationMru, conversationsById, selectConversation } = useConversationsStore.getState()
-      const prev = conversationMru.slice(1).find((id: string) => id in conversationsById)
-      if (prev) selectConversation(prev, 'ctrl-tab')
-    },
-    { label: 'Switch to previous conversation', shortcut: 'ctrl+Tab', group: 'Navigation' },
-  )
+  useCommand('switch-conversation', quickSwitchConversation, {
+    label: 'Switch to previous conversation',
+    shortcut: 'ctrl+Tab',
+    group: 'Navigation',
+  })
 
   const keepMicOpen = useConversationsStore(
     (s: { controlPanelPrefs: { keepMicOpen: boolean } }) => s.controlPanelPrefs.keepMicOpen,

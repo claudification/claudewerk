@@ -2,11 +2,8 @@ import { useCallback, useEffect } from 'react'
 import { saveProjectOrder, useConversationsStore } from '@/hooks/use-conversations'
 import { useKeyLayer } from '@/lib/key-layers'
 import type { ProjectOrder, ProjectOrderNode, Workspace } from '@/lib/types'
-import {
-  loadValidWorkspaceConversation,
-  saveLastWorkspaceConversation,
-  WORKSPACE_ALL,
-} from '@/lib/workspace-membership'
+import { saveLastWorkspaceConversation } from '@/lib/workspace-membership'
+import { switchWorkspace } from '@/lib/workspace-switch'
 
 export const WORKSPACE_COLORS = ['emerald', 'blue', 'purple', 'amber', 'rose', 'cyan', 'orange', 'pink'] as const
 
@@ -45,30 +42,6 @@ function mutateOrder(fn: (order: ProjectOrder) => ProjectOrder) {
 
 function setTrees(o: ProjectOrder, trees: Record<string, ProjectOrderNode[]>): ProjectOrder {
   return { ...o, workspaceTrees: Object.keys(trees).length > 0 ? trees : undefined }
-}
-
-// Switching a workspace is the ONE and ONLY thing that changes the active
-// workspace. Its entire side effect: remember the conversation we're leaving
-// behind for the OLD workspace, flip the mode, then restore the NEW workspace's
-// last conversation IF it still exists (a dead id is pruned and we drop to the
-// workspace summary with nothing selected). It NEVER bounces you into a
-// different workspace than the one you picked -- there is no reverse lookup.
-// fallow-ignore-next-line complexity
-function switchWorkspace(id: string | null) {
-  const store = useConversationsStore.getState()
-  const prevWs = store.controlPanelPrefs.activeWorkspaceId ?? WORKSPACE_ALL
-  const curConv = store.selectedConversationId
-  if (curConv) saveLastWorkspaceConversation(prevWs, curConv)
-
-  const targetWs = id ?? WORKSPACE_ALL
-  store.updateControlPanelPrefs({ activeWorkspaceId: id })
-
-  const restored = loadValidWorkspaceConversation(
-    targetWs,
-    cid => !!useConversationsStore.getState().conversationsById[cid],
-  )
-  if (restored === curConv) return
-  useConversationsStore.getState().selectConversation(restored ?? null, 'workspace-switch')
 }
 
 export function useWorkspaceActions() {

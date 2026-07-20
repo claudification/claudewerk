@@ -11,6 +11,7 @@
 import { type MouseEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { cn, haptic } from '@/lib/utils'
+import { quickSwitchConversation } from '@/lib/workspace-switch'
 import { buildActions, type FanAction } from './action-fab-actions'
 import { FanItem } from './action-fab-item'
 
@@ -49,9 +50,7 @@ export function ActionFab() {
       haptic('double')
       setExpanded(false)
       setConfirmId(null)
-      const { conversationMru, conversationsById, selectConversation } = useConversationsStore.getState()
-      const prev = conversationMru.slice(1).find(id => id in conversationsById)
-      if (prev) selectConversation(prev)
+      quickSwitchConversation()
       lastTapRef.current = 0
       return
     }

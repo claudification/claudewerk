@@ -193,7 +193,7 @@ function useLifoCacheTimeout() {
       }
       if (evicted) {
         useConversationsStore.setState(state => {
-          const kept = new Set(state.conversationMru.slice(0, state.controlPanelPrefs.sessionCacheSize))
+          const kept = new Set(state.conversationMru.slice(0, state.controlPanelPrefs.sessionCacheSize).map(e => e.id))
           if (state.selectedConversationId) kept.add(state.selectedConversationId)
           const events = { ...state.events }
           const transcripts = { ...state.transcripts }
