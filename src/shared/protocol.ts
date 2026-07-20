@@ -2664,20 +2664,29 @@ export interface UserPromptSubmitData {
   prompt: string
 }
 
-export interface PreToolUseData {
+/** CC stamps `agent_id` + `agent_type` on the hooks a SUBAGENT raises for its own
+ *  tool calls, and omits both on the parent's -- including on the parent's own
+ *  Agent/Task spawn call. This is the discriminant `resolveSubagentAttribution`
+ *  relays as `HookEvent.subagentId`; see hook-forward.ts. */
+export interface SubagentOriginFields {
+  agent_id?: string
+  agent_type?: string
+}
+
+export interface PreToolUseData extends SubagentOriginFields {
   session_id: string
   tool_name: string
   tool_input: Record<string, unknown>
 }
 
-export interface PostToolUseData {
+export interface PostToolUseData extends SubagentOriginFields {
   session_id: string
   tool_name: string
   tool_input: Record<string, unknown>
   tool_response?: string | Record<string, unknown>
 }
 
-export interface PostToolUseFailureData {
+export interface PostToolUseFailureData extends SubagentOriginFields {
   session_id: string
   tool_name: string
   tool_input: Record<string, unknown>

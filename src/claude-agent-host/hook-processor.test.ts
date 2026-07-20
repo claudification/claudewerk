@@ -37,32 +37,33 @@ function hook(hookEvent: HookEventType, data: Record<string, unknown> = {}): Hoo
   } as HookEvent
 }
 
-describe('processHookEvent subagent window (end-to-end wiring)', () => {
-  it('tags hooks between SubagentStart and SubagentStop, and stops tagging after', () => {
+describe('processHookEvent subagent attribution (end-to-end wiring)', () => {
+  // Mirrors a real CC 2.1.209 capture: the parent spawns a BACKGROUND subagent
+  // and keeps issuing its own tool hooks while that subagent works. CC stamps
+  // agent_id only on the subagent's own hooks, so the two interleave cleanly.
+  it('separates interleaved parent and subagent hooks by agent_id', () => {
     const sent: HookEvent[] = []
     const ctx = makeCtx(sent)
 
-    // Parent spawns a subagent, the subagent reads, then it stops; a parent read
-    // follows. Only the in-window read is subagent-attributed.
     processHookEvent(ctx, hook('PreToolUse', { tool_name: 'Agent', tool_input: {} })) // parent spawns
     processHookEvent(ctx, hook('SubagentStart', { agent_id: 'a1', agent_type: 'Explore' }))
     expect(ctx.runningSubagents.has('a1')).toBe(true)
-    processHookEvent(ctx, hook('PreToolUse', { tool_name: 'Read', tool_input: {} })) // subagent read
+    // Parent keeps working -- no agent_id (this is what the old window heuristic
+    // misattributed to a1).
+    processHookEvent(ctx, hook('PreToolUse', { tool_name: 'Bash', tool_input: { command: 'echo PARENT' } }))
+    // The subagent's own tool call -- CC stamps agent_id.
+    processHookEvent(ctx, hook('PreToolUse', { tool_name: 'Read', tool_input: {}, agent_id: 'a1' }))
     processHookEvent(ctx, hook('SubagentStop', { agent_id: 'a1' }))
     expect(ctx.runningSubagents.has('a1')).toBe(false)
     processHookEvent(ctx, hook('PreToolUse', { tool_name: 'Read', tool_input: {} })) // parent read
 
     const byTool = (i: number) => sent[i]
-    // [0] parent Agent spawn -- parent (no subagent running yet)
-    expect(byTool(0).subagentId).toBeUndefined()
-    // [1] SubagentStart -- roster lifecycle, never tagged
-    expect(byTool(1).subagentId).toBeUndefined()
-    // [2] subagent Read -- tagged with the running subagent
-    expect(byTool(2).subagentId).toBe('a1')
-    // [3] SubagentStop -- roster lifecycle, never tagged
-    expect(byTool(3).subagentId).toBeUndefined()
-    // [4] parent Read after the window closed -- untagged
-    expect(byTool(4).subagentId).toBeUndefined()
+    expect(byTool(0).subagentId).toBeUndefined() // parent Agent spawn
+    expect(byTool(1).subagentId).toBeUndefined() // SubagentStart -- roster lifecycle
+    expect(byTool(2).subagentId).toBeUndefined() // parent Bash DURING the subagent
+    expect(byTool(3).subagentId).toBe('a1') // subagent Read
+    expect(byTool(4).subagentId).toBeUndefined() // SubagentStop -- roster lifecycle
+    expect(byTool(5).subagentId).toBeUndefined() // parent Read after
 
     // Every forwarded event carries the stable parent conversationId.
     for (const e of sent) expect(e.conversationId).toBe('conv_parent')

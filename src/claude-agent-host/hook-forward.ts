@@ -6,13 +6,11 @@
  * broker (or queue it until the WS + CC session id are ready).
  *
  * Subagent attribution is the containment fix for the systemic mis-attribution
- * bug: in the current CC version every subagent (Task tool) hook carries the
- * PARENT session id and no subagent identifier, so the broker cannot tell
- * subagent hooks apart from the wire payload alone. The agent host -- which
- * brackets each subagent between SubagentStart/SubagentStop -- tags
- * subagent-originated hooks with the running subagent's agent_id; the broker
- * then keeps their side effects off the parent. See
- * plan-subagent-hook-containment.md and HookEvent.subagentId.
+ * bug: the broker must keep a subagent's side effects off the parent, but the
+ * two are indistinguishable to it without an explicit marker. CC stamps
+ * `agent_id` (+ `agent_type`) on every hook a subagent raises and omits both on
+ * the parent's own hooks, so the agent host just relays that discriminant as
+ * `HookEvent.subagentId`. See plan-subagent-hook-containment.md.
  */
 
 import type { HookEvent } from '../shared/protocol'
@@ -23,67 +21,47 @@ const debug = (msg: string) => _debug(msg)
 
 const MAX_EVENT_QUEUE = 200
 
-/** Tool hooks (the ones carrying a `tool_name`). */
-const TOOL_USE_HOOKS = new Set(['PreToolUse', 'PostToolUse', 'PostToolUseFailure'])
-
-/** Tools by which the PARENT drives a subagent. A Pre/PostToolUse for one of
- *  these is a PARENT event even while a sibling subagent runs, so it must never
- *  be tagged subagent-originated. */
-const PARENT_SPAWN_TOOLS = new Set(['Agent', 'Task'])
-
 /** Roster/lifecycle hooks the broker needs to build and tear down its subagent +
- *  teammate rosters on the PARENT conversation. They carry an agent_id and fire
- *  during the subagent window, but tagging them subagent-originated would make
- *  the broker skip the very handler that registers/updates the roster. Always
- *  parent-routed. */
+ *  teammate rosters on the PARENT conversation. They carry an `agent_id` (it
+ *  names the subagent they are ABOUT), but tagging them subagent-originated
+ *  would make the broker skip the very handler that registers/updates the
+ *  roster. Always parent-routed. */
 const ROSTER_LIFECYCLE_HOOKS = new Set(['SubagentStart', 'SubagentStop', 'TeammateIdle', 'TaskCompleted'])
 
-/** True when the hook is the parent's own Agent/Task tool call (spawning or
- *  reaping a subagent) -- a parent event despite a running sibling subagent. */
-function isParentSpawnToolHook(event: HookEvent): boolean {
-  if (!TOOL_USE_HOOKS.has(event.hookEvent)) return false
-  const toolName = (event.data as { tool_name?: unknown }).tool_name
-  return PARENT_SPAWN_TOOLS.has(toolName as string)
-}
-
 /**
- * Decide whether a hook about to be forwarded came from a running subagent, and
- * if so which one. Returns the subagent's agent_id (the conv.subagents roster
- * key) or undefined for parent-originated hooks.
+ * Decide whether a hook about to be forwarded came from a subagent, and if so
+ * which one. Returns the subagent's agent_id (the conv.subagents roster key) or
+ * undefined for parent-originated hooks.
  *
- * Why a running-window heuristic and not payload correlation: in the current CC
- * version every subagent hook carries the PARENT session id and no subagent id
- * (`data.conversation_id` is absent; only SubagentStart/Stop carry `agent_id`).
- * The one reliable signal the agent host owns is the SubagentStart..SubagentStop
- * bracket. While >=1 subagent is in flight the parent turn is suspended inside
- * the Task tool and issues no tool hooks of its own -- so any hook in that window
- * (except the roster/lifecycle hooks themselves and the parent's own Agent/Task
- * tool hooks) is subagent-originated. With multiple subagents we cannot tell them
- * apart from the payload, so we attribute to the most-recently-started one:
- * containment off the parent matters more than picking the exact sibling.
+ * CC stamps `agent_id` + `agent_type` on the hooks a subagent raises for its own
+ * tool calls, and omits both on the parent's -- including on the parent's own
+ * Agent/Task spawn call, which is why that needs no special case here. So the
+ * payload is an exact discriminant and also names the RIGHT sibling when several
+ * subagents run concurrently.
+ *
+ * This deliberately does NOT consult ctx.runningSubagents. The previous
+ * implementation inferred attribution from the SubagentStart..SubagentStop
+ * window, on the premise that the parent turn was suspended inside the Task tool
+ * and issued no hooks of its own. CC 2.1.198 made subagents run in the
+ * BACKGROUND by default, so the parent keeps working through that window and had
+ * its own tool hooks tagged with the subagent's id -- measured at 5-6
+ * misattributed parent hooks per run on CC 2.1.209, which the broker then
+ * contained off the parent conversation (see add-event.ts). Window-free
+ * attribution is also immune to a hook that lands after SubagentStop.
  */
-export function resolveSubagentAttribution(ctx: AgentHostContext, event: HookEvent): string | undefined {
-  // Parent-originated hooks: roster/lifecycle (build/tear down the rosters), no
-  // subagent in flight, or the parent's own Agent/Task tool hook.
+export function resolveSubagentAttribution(event: HookEvent): string | undefined {
   if (ROSTER_LIFECYCLE_HOOKS.has(event.hookEvent)) return undefined
-  if (ctx.runningSubagents.size === 0 || isParentSpawnToolHook(event)) return undefined
-
-  // Subagent-originated. Attribute to the most-recently-started running subagent
-  // (Set preserves insertion order; the last entry is the newest).
-  return Array.from(ctx.runningSubagents).at(-1)
+  const agentId = (event.data as { agent_id?: unknown }).agent_id
+  return typeof agentId === 'string' && agentId.length > 0 ? agentId : undefined
 }
 
 /**
  * Stamp attribution + the stable conversationId, then forward the event to the
- * broker or queue it until the session id + WS are ready.
- *
- * Attribution is computed NOW, at observation time -- runningSubagents reflects
- * the live window here; a queued event may not flush until after the window
- * closed, so capturing it later would lose the attribution. The attributed event
+ * broker or queue it until the session id + WS are ready. The attributed event
  * is what gets queued, so the flush in broker-connection.ts preserves it.
  */
 export function forwardOrQueueHookEvent(ctx: AgentHostContext, event: HookEvent): void {
-  const subagentId = resolveSubagentAttribution(ctx, event)
+  const subagentId = resolveSubagentAttribution(event)
   const outgoing: HookEvent = { ...event, conversationId: ctx.conversationId }
   if (subagentId) outgoing.subagentId = subagentId
   const tag = fmtSubagentTag(subagentId)

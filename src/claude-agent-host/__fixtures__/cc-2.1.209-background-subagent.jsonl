@@ -1,0 +1,15 @@
+{"hook_event_name":"SessionStart","agent_id":null,"tool_name":null,"cmd":null}
+{"hook_event_name":"PreToolUse","agent_id":null,"tool_name":"Agent","cmd":null}
+{"hook_event_name":"PostToolUse","agent_id":null,"tool_name":"Agent","cmd":null}
+{"hook_event_name":"SubagentStart","agent_id":"ae246e3461af00873","tool_name":null,"cmd":null}
+{"hook_event_name":"PreToolUse","agent_id":null,"tool_name":"Bash","cmd":"echo PARENT_ONE"}
+{"hook_event_name":"PreToolUse","agent_id":null,"tool_name":"Bash","cmd":"echo PARENT_TWO"}
+{"hook_event_name":"PreToolUse","agent_id":null,"tool_name":"Bash","cmd":"echo PARENT_THREE"}
+{"hook_event_name":"PostToolUse","agent_id":null,"tool_name":"Bash","cmd":"echo PARENT_TWO"}
+{"hook_event_name":"PostToolUse","agent_id":null,"tool_name":"Bash","cmd":"echo PARENT_ONE"}
+{"hook_event_name":"PostToolUse","agent_id":null,"tool_name":"Bash","cmd":"echo PARENT_THREE"}
+{"hook_event_name":"Stop","agent_id":null,"tool_name":null,"cmd":null}
+{"hook_event_name":"PreToolUse","agent_id":"ae246e3461af00873","tool_name":"Bash","cmd":"sleep 25 && echo SUBAGENT_WOKE"}
+{"hook_event_name":"PostToolUse","agent_id":"ae246e3461af00873","tool_name":"Bash","cmd":"sleep 25 && echo SUBAGENT_WOKE"}
+{"hook_event_name":"SubagentStop","agent_id":"ae246e3461af00873","tool_name":null,"cmd":null}
+{"hook_event_name":"Stop","agent_id":null,"tool_name":null,"cmd":null}
