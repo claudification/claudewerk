@@ -25,12 +25,20 @@ function GroupView({
   settings,
   showThinking = false,
   planContext,
+  // When true (virtualized renderer) a continuation group pulls ITSELF up via a
+  // negative top margin on this inner box. The plain renderer sets this false and
+  // applies the same tuck on its OUTER .transcript-plain-group wrapper instead:
+  // that wrapper has content-visibility (contain:paint), which would CLIP a child
+  // pulled above the box top (the "cut text on new layout" bug). Moving the tuck
+  // to the contained box itself moves the whole box, so nothing is clipped.
+  continuationOffset = true,
 }: {
   group: DisplayGroup
   getResult: ResultLookup
   settings: TranscriptSettings
   showThinking?: boolean
   planContext?: { content: string; path?: string }
+  continuationOffset?: boolean
 }) {
   const { expandAll, userLabel, agentLabel, userColor, agentColor, userSize, agentSize } = settings
   const ts = group.timestamp
@@ -131,8 +139,9 @@ function GroupView({
         'mb-4',
         // A seq-bucket continuation renders headerless and pulls itself up so
         // the inter-group gap (mb-4 - mt-2 = 8px) matches the intra-group
-        // space-y-2 -- the split is invisible to the reader.
-        group.continuation && '-mt-2',
+        // space-y-2 -- the split is invisible to the reader. Suppressed when the
+        // wrapper owns the tuck (plain renderer -- see continuationOffset above).
+        group.continuation && continuationOffset && '-mt-2',
         group.planMode && 'border-l-2 border-blue-500/30 pl-2 bg-blue-950/10 rounded-r',
       )}
     >
