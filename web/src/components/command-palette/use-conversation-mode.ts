@@ -36,7 +36,7 @@ export function useConversationMode(
   const projectSettings = useConversationsStore(state => state.projectSettings)
 
   const freqMap = useMemo(() => getFrequencyMap(), [])
-  const mruIndex = useMemo(() => new Map(conversationMru.map((id, i) => [id, i])), [conversationMru])
+  const mruIndex = useMemo(() => new Map(conversationMru.map((e, i) => [e.id, i])), [conversationMru])
   const maxFreq = useMemo(() => {
     let m = 0
     for (const k in freqMap) {

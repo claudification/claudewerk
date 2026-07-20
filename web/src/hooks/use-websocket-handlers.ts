@@ -361,9 +361,11 @@ function applyRekeyFollow(
   newState: Partial<ConversationsState>,
 ): void {
   newState.selectedConversationId = conversationId
+  // Retarget the visit at the new id -- the entry keeps its workspace stamp, so a
+  // rekey cannot make quick-switch forget where that conversation was seen.
   newState.conversationMru = state.conversationMru
-    .map(x => (x === prevId ? conversationId : x))
-    .filter((x, i, arr) => arr.indexOf(x) === i)
+    .map(e => (e.id === prevId ? { ...e, id: conversationId } : e))
+    .filter((e, i, arr) => arr.findIndex(o => o.id === e.id) === i)
   const oldEvents = state.events[prevId]
   const oldTranscripts = state.transcripts[prevId]
   if (!oldEvents && !oldTranscripts) return

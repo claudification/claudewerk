@@ -169,6 +169,10 @@ export function dropConversationPatch(
   return { conversationsById, selectedConversationId: nextSelected }
 }
 
+// One entry of the conversation MRU: where we went, and which workspace we were
+// standing in when we got there.
+type MruVisit = { id: string; workspaceId: string }
+
 interface ConversationsState {
   /** SOURCE OF TRUTH for the fleet (W-H3). A `conversation_update` patches ONE
    *  key here instead of rebuilding a parallel array on every fleet message. The
@@ -183,7 +187,12 @@ interface ConversationsState {
   lastSelectReason: string | null
   selectedProjectUri: string | null
   selectedSubagentId: string | null
-  conversationMru: string[]
+  /** Visit history, most recent first. Each entry carries the workspace we were
+   *  STANDING in when we landed on that conversation, so a quick-switch bounce
+   *  (ctrl+Tab) can restore the mode as well as the conversation. It is history,
+   *  NOT the forbidden conversation->workspace reverse lookup (workspace-membership.ts)
+   *  -- a conversation still does not know "its" workspace. */
+  conversationMru: MruVisit[]
   events: Record<string, HookEvent[]>
   transcripts: Record<string, TranscriptEntry[]>
   /** Per-conversation highest transcript entry.seq we've applied to `transcripts`.
@@ -551,6 +560,9 @@ function findBestConversationForProject(conversations: Conversation[], projectUr
 // navigation and reveals an out-of-workspace target.
 const NO_REVEAL_REASONS = new Set([
   'workspace-switch',
+  // Quick-switch (ctrl+Tab / FAB double-tap) has ALREADY re-applied the workspace
+  // the target was last viewed in, so revealing would immediately undo it.
+  'quick-switch',
   'default-conversation-project',
   'default-conversation-last-viewed',
   'default-conversation-only-active',
@@ -1201,16 +1213,21 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
       const project = get().conversationsById[id]?.project
       if (project) revealWorkspaceForProject(project)
     }
-    if (id) saveLastWorkspaceConversation(get().controlPanelPrefs.activeWorkspaceId ?? WORKSPACE_ALL, id)
+    const activeWorkspace = get().controlPanelPrefs.activeWorkspaceId ?? WORKSPACE_ALL
+    if (id) saveLastWorkspaceConversation(activeWorkspace, id)
     clearExpandedState()
     const defaultView = get().controlPanelPrefs.defaultView
     const rememberedTab = id ? getConversationTab(id) : null
     set(state => {
-      const mru = id ? [id, ...state.conversationMru.filter(s => s !== id)] : state.conversationMru
+      // The visit is stamped with the workspace we are standing in POST-reveal,
+      // so it matches what the user actually ends up looking at.
+      const mru = id
+        ? [{ id, workspaceId: activeWorkspace }, ...state.conversationMru.filter(e => e.id !== id)]
+        : state.conversationMru
       const { sessionCacheSize } = state.controlPanelPrefs
 
       // LIFO cache: keep data for the N most recently viewed conversations
-      const cachedIds = new Set(mru.slice(0, Math.max(1, sessionCacheSize)))
+      const cachedIds = new Set(mru.slice(0, Math.max(1, sessionCacheSize)).map(e => e.id))
       if (id) cachedIds.add(id)
 
       const evictedData = buildEvictedConvData(state, cachedIds)

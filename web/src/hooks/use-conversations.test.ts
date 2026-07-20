@@ -157,7 +157,7 @@ describe('selectConversation', () => {
   it('pushes the selected id onto the MRU list, most-recent first', () => {
     useConversationsStore.getState().selectConversation('conv_a', 'test')
     useConversationsStore.getState().selectConversation('conv_b', 'test')
-    expect(useConversationsStore.getState().conversationMru).toEqual(['conv_b', 'conv_a'])
+    expect(useConversationsStore.getState().conversationMru.map(e => e.id)).toEqual(['conv_b', 'conv_a'])
   })
 
   it('clears the project selection when a conversation is selected', () => {

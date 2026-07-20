@@ -180,7 +180,7 @@ function CacheTab() {
           {(() => {
             const cachedSet = new Set(cachedIds)
             const out: ReactNode[] = []
-            for (const id of mru) {
+            for (const { id } of mru) {
               if (!cachedSet.has(id)) continue
               const conversation = conversationsById[id]
               const name =
