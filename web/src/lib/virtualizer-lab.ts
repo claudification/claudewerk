@@ -21,7 +21,11 @@ export interface VirtualizerLabPrefs {
   scrollEndThreshold: number
   /** Force scrollEndThreshold to 0 while follow is OFF, so the native end-pin
    *  can never drag a detached reader to the bottom (the "detached forced
-   *  scroll" fix candidate -- plan-transcript-detached-forced-scroll Step 2). */
+   *  scroll" fix -- plan-transcript-detached-forced-scroll Step 2). DEFAULT ON
+   *  since 2026-07-20: wasAtEnd distance uses ESTIMATED sizes, so a scrolled-
+   *  back reader over under-estimated items can read as "at end" and get
+   *  yanked -- a scrollback-jank mechanism. While following, our manual growth
+   *  pin is the driver, so gating native while detached loses nothing. */
   gateNativePinWhenDetached: boolean
   /** Our manual totalSize-growth scrollToEnd effect. OFF = native wasAtEnd pin
    *  is the SOLE follow driver (the single-driver experiment). */
@@ -53,7 +57,7 @@ export interface VirtualizerLabPrefs {
 export const DEFAULT_VIRTUALIZER_LAB: VirtualizerLabPrefs = {
   followOnAppend: false,
   scrollEndThreshold: 80,
-  gateNativePinWhenDetached: false,
+  gateNativePinWhenDetached: true,
   manualGrowthPin: true,
   pinMethod: 'scrollToEnd',
   inFlightPlacement: 'inside',

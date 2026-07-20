@@ -48,6 +48,11 @@ export interface DisplayGroup {
   queued?: boolean
   skillName?: string
   planMode?: boolean
+  /** True when this group exists only because the seq-bucket size bound split a
+   *  longer same-type run (GROUP_SEQ_SPAN, process-entry.ts). Rendered without
+   *  the group header so the split is visually seamless -- the reader sees one
+   *  continuous turn while the virtualizer gets small, stably-keyed items. */
+  continuation?: boolean
   /** scrollback_spacer only: estimated reserved height (px) + the count of
    *  unrendered older entries it stands in for. */
   spacerHeight?: number

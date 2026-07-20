@@ -106,11 +106,15 @@ function estimateGroupSize(
           if (b.type === 'text' && b.text) textLen += b.text.length
         }
       }
-      // Base + collapsed tool lines (~52px each) + text lines
+      // Base + collapsed tool lines (~52px each) + text lines. The cap was
+      // 1500 when a group could hold a whole agentic turn; with the seq-bucket
+      // group bound (GROUP_SEQ_SPAN) groups are small, so a higher cap lets a
+      // genuinely tall markdown entry estimate CLOSE instead of popping
+      // +2000px on first measure during scrollback.
       const base = 48
       const toolHeight = toolCount * 52
       const textHeight = Math.ceil(textLen / 80) * 20
-      return Math.max(80, Math.min(base + toolHeight + textHeight, 1500))
+      return Math.max(80, Math.min(base + toolHeight + textHeight, 4000))
     }
     default:
       return 120

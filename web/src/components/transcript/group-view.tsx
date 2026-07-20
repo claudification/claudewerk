@@ -4,16 +4,16 @@ import { cn } from '@/lib/utils'
 import { AdvisorCard } from './advisor-card'
 import { BootTimeline } from './boot-timeline'
 import { ChatBubble } from './chat-bubble'
-import type { RenderItem, ResultLookup, TranscriptSettings } from './group-view-types'
+import { GroupHeader } from './group-header'
+import { GroupItem } from './group-item'
+import type { ResultLookup, TranscriptSettings } from './group-view-types'
 import type { DisplayGroup } from './grouping'
-import { BashItem, ChannelItem, ImagesItem, ProjectTaskItem, TextItem, ThinkingItem, ToolItem } from './item-renderers'
 import { LaunchTimeline } from './launch-timeline'
 import { parseGroupEntries } from './parse-entries'
 import { ShellReceipt } from './shell-receipt'
 import { SpawnNotification } from './spawn-notification'
-import { SystemLine, SystemLineInline } from './system-line'
+import { SystemLine } from './system-line'
 import { TaskNotificationLine } from './task-notification-line'
-import { TimeStamp } from './timestamp'
 
 export { CompactedDivider, CompactingBanner } from './compacted-divider'
 export { BUBBLE_COLOR_OPTIONS } from './group-view-types'
@@ -126,19 +126,30 @@ function GroupView({
   }
 
   return (
-    <div className={cn('mb-4', group.planMode && 'border-l-2 border-blue-500/30 pl-2 bg-blue-950/10 rounded-r')}>
-      <GroupHeader
-        label={label}
-        customColor={customColor}
-        borderColor={borderColor}
-        labelBg={labelBg}
-        sizeClass={sizeClass}
-        channelServer={channelServer}
-        effortBadge={effortBadge}
-        attributionSkill={attributionSkill}
-        queued={group.queued}
-        ts={ts}
-      />
+    <div
+      className={cn(
+        'mb-4',
+        // A seq-bucket continuation renders headerless and pulls itself up so
+        // the inter-group gap (mb-4 - mt-2 = 8px) matches the intra-group
+        // space-y-2 -- the split is invisible to the reader.
+        group.continuation && '-mt-2',
+        group.planMode && 'border-l-2 border-blue-500/30 pl-2 bg-blue-950/10 rounded-r',
+      )}
+    >
+      {!group.continuation && (
+        <GroupHeader
+          label={label}
+          customColor={customColor}
+          borderColor={borderColor}
+          labelBg={labelBg}
+          sizeClass={sizeClass}
+          channelServer={channelServer}
+          effortBadge={effortBadge}
+          attributionSkill={attributionSkill}
+          queued={group.queued}
+          ts={ts}
+        />
+      )}
       <div className={cn('pl-4 space-y-2', group.queued && 'opacity-50')}>
         {items.map((item, i) => (
           <GroupItem
@@ -154,101 +165,6 @@ function GroupView({
       </div>
     </div>
   )
-}
-
-function GroupHeader({
-  label,
-  customColor,
-  borderColor,
-  labelBg,
-  sizeClass,
-  channelServer,
-  effortBadge,
-  attributionSkill,
-  queued,
-  ts,
-}: {
-  label: string
-  customColor: string
-  borderColor: string
-  labelBg: string
-  sizeClass: string
-  channelServer?: string
-  effortBadge: { symbol: string; label: string } | null
-  attributionSkill?: string
-  queued?: boolean
-  ts?: string | number
-}) {
-  return (
-    <div className="flex items-center gap-2 mb-2">
-      <span className={cn('text-[10px]', borderColor)}>{'┌──'}</span>
-      <span
-        className={cn('px-2 py-0.5 font-bold', sizeClass, !customColor && labelBg)}
-        style={customColor ? { backgroundColor: customColor, color: '#0a0a0a' } : undefined}
-      >
-        {label}
-      </span>
-      {channelServer &&
-        (channelServer === 'rclaude' ? (
-          <span className="text-[9px] text-teal-400/50 font-mono">via channel</span>
-        ) : (
-          <span className="px-1.5 py-0.5 text-[10px] font-bold bg-teal-400/20 text-teal-400 border border-teal-400/50 animate-pulse">
-            CHANNEL: {channelServer}
-          </span>
-        ))}
-      {effortBadge && (
-        <span className="px-1.5 py-0.5 text-[10px] font-bold bg-orange-400/20 text-orange-400">
-          {effortBadge.symbol} {effortBadge.label}
-        </span>
-      )}
-      {attributionSkill && (
-        <span className="px-1.5 py-0.5 text-[10px] font-mono text-teal-400/80 bg-teal-400/10 border border-teal-400/30">
-          via /{attributionSkill}
-        </span>
-      )}
-      {queued && (
-        <span className="px-1.5 py-0.5 text-[10px] font-mono text-amber-400/70 bg-amber-400/10 animate-pulse">
-          queued
-        </span>
-      )}
-      <TimeStamp ts={ts} className="text-muted-foreground text-[10px]" />
-      <span className={cn('flex-1 text-[10px] overflow-hidden', borderColor)}>{'─'.repeat(40)}</span>
-    </div>
-  )
-}
-
-function GroupItem({
-  item,
-  showThinking,
-  expandAll,
-  planContext,
-}: {
-  item: RenderItem
-  showThinking: boolean
-  expandAll: boolean
-  planContext?: { content: string; path?: string }
-}) {
-  switch (item.kind) {
-    case 'thinking':
-      if (!showThinking && !expandAll) return null
-      return <ThinkingItem item={item} />
-    case 'project-task':
-      return <ProjectTaskItem item={item} />
-    case 'text':
-      return <TextItem item={item} />
-    case 'images':
-      return <ImagesItem item={item} />
-    case 'channel':
-      return <ChannelItem item={item} />
-    case 'bash':
-      return <BashItem item={item} />
-    case 'tool':
-      return <ToolItem item={item} expandAll={expandAll} planContext={planContext} />
-    case 'system':
-      return <SystemLineInline entry={item.entry} subtype={item.subtype} ts={item.timestamp} />
-    default:
-      return null
-  }
 }
 
 export const MemoizedGroupView = memo(GroupView)

@@ -287,6 +287,32 @@ function handleUser(entry: TranscriptEntry, state: GroupingState): boolean {
   return false
 }
 
+/**
+ * GROUP SIZE BOUND -- max seq span merged into one user/assistant group.
+ *
+ * Why: virtual-core's anchorTo:'end' anchoring, wasAtEnd distance math, and
+ * first-measure scroll compensation are all ITEM-granular. Unbounded merge let
+ * one agentic turn become a single multi-thousand-px item (observed: 150
+ * entries -> 5 groups, ~8000px inside one item, 2026-06-10 incident), so the
+ * estimate-vs-measured error per item was huge and every first measurement
+ * during Safari scrollback fired a large scrollTop correction mid-momentum --
+ * the scrollback jerk. TanStack's chat guide assumes per-message items; this
+ * bound is how the merged-group model honors that without changing visuals
+ * (split groups render headerless via `continuation`).
+ *
+ * Buckets are ABSOLUTE (floor(seq / SPAN)), not offset-from-group-start, so a
+ * regroup from ANY window start reproduces identical split points -> group ids
+ * (first-entry-derived) stay stable across head-prune, window reveal, and
+ * refetch. Entries without a seq never force a break (rare pre-seq raw-JSONL
+ * shapes keep today's behavior).
+ */
+export const GROUP_SEQ_SPAN = 10
+
+function seqBucket(entry: unknown): number | null {
+  const s = (entry as { seq?: number } | undefined)?.seq
+  return typeof s === 'number' ? Math.floor(s / GROUP_SEQ_SPAN) : null
+}
+
 // Merge a user-or-assistant entry into the current run-of-same-type group.
 // Pre-filters empty / noise content blocks.
 function mergeMessageEntry(entry: TranscriptEntry, state: GroupingState): void {
@@ -312,10 +338,23 @@ function mergeMessageEntry(entry: TranscriptEntry, state: GroupingState): void {
   const sameClass =
     state.current?.type === type &&
     (type !== 'user' || isCardChannelEntry(entry) === isCardChannelEntry(state.current.entries[0]))
-  if (state.current && sameClass) {
+  // Seq-bucket size bound (see GROUP_SEQ_SPAN above): a merge never crosses an
+  // absolute seq bucket, so no group grows beyond ~SPAN entries.
+  const curBucket = state.current ? seqBucket(state.current.entries[0]) : null
+  const newBucket = seqBucket(entry)
+  const bucketBreak = curBucket !== null && newBucket !== null && newBucket !== curBucket
+  if (state.current && sameClass && !bucketBreak) {
     state.current.entries.push(entry)
   } else {
-    state.current = { type, timestamp: entry.timestamp || '', entries: [entry] }
+    // A bucket-forced split of a same-type run is a CONTINUATION: rendered
+    // headerless so the reader still sees one uninterrupted turn.
+    const continuation = sameClass && bucketBreak
+    state.current = {
+      type,
+      timestamp: entry.timestamp || '',
+      entries: [entry],
+      ...(continuation ? { continuation: true } : {}),
+    }
     state.groups.push(state.current)
   }
 }

@@ -45,6 +45,7 @@ function groupShallowEqual(a: DisplayGroup, b: DisplayGroup): boolean {
     a.skillName === b.skillName &&
     a.systemSubtype === b.systemSubtype &&
     a.localCommandOutput === b.localCommandOutput &&
+    a.continuation === b.continuation &&
     a.notifications === b.notifications &&
     entriesPointEqual(a.entries, b.entries)
   )

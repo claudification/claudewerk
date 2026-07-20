@@ -149,12 +149,14 @@ describe('useIncrementalGroups backfill breaks (prepend anchor granularity)', ()
   // into the reader's boundary group slides content under them uncompensated.
   // breakSeqs forces the boundary entry to start a NEW group so prepended
   // entries form separate items above. (2026-06-10 scroll-back-to-top bug.)
+  // Seqs kept inside ONE seq bucket (91-95, GROUP_SEQ_SPAN=10) so these tests
+  // exercise the breakSeqs mechanism itself, not the bucket bound.
   it('splits at the boundary seq and keeps the boundary group id stable across a prepend', () => {
     const breaks = new Set<number>()
-    const tail = [asst(100, 'boundary turn'), usr(101, 'reply'), asst(102, 'latest')]
+    const tail = [asst(93, 'boundary turn'), usr(94, 'reply'), asst(95, 'latest')]
     const { result, rerender } = renderHook(
       ({ entries, signal }) => useIncrementalGroups(entries, undefined, signal, breaks),
-      { initialProps: { entries: tail, signal: 100 } },
+      { initialProps: { entries: tail, signal: 93 } },
     )
     const boundaryId = result.current.groups[0].id
     expect(result.current.groups).toHaveLength(3)
@@ -162,29 +164,82 @@ describe('useIncrementalGroups backfill breaks (prepend anchor granularity)', ()
     // Backfill: register the break at the old top entry, prepend older
     // assistant entries that would otherwise MERGE into the boundary group,
     // and flip the reset signal (as the windowing does via regroupSignal).
-    breaks.add(100)
-    const prepended = [asst(98, 'older turn'), asst(99, 'older still'), ...tail]
-    rerender({ entries: prepended, signal: 98 })
+    breaks.add(93)
+    const prepended = [asst(91, 'older turn'), asst(92, 'older still'), ...tail]
+    rerender({ entries: prepended, signal: 91 })
 
     const after = result.current.groups
     // The prepended assistant entries form their OWN group; the boundary
     // entry starts a fresh group below them (no merge across the break).
-    expect(after[0].entries.map(e => (e as { seq?: number }).seq)).toEqual([98, 99])
-    expect(after[1].entries[0]).toMatchObject({ seq: 100 })
+    expect(after[0].entries.map(e => (e as { seq?: number }).seq)).toEqual([91, 92])
+    expect(after[1].entries[0]).toMatchObject({ seq: 93 })
     // Boundary group id carried (firstK match) -> virtualizer key stable ->
     // native anchor finds it and compensates by its start shift.
     expect(after[1].id).toBe(boundaryId)
   })
 
-  it('without a break, the same prepend merges into the boundary group (the bug shape)', () => {
-    const tail = [asst(100, 'boundary turn'), usr(101, 'reply')]
+  it('without a break, an intra-bucket prepend merges into the boundary group (the bug shape)', () => {
+    const tail = [asst(93, 'boundary turn'), usr(94, 'reply')]
     const { result, rerender } = renderHook(
       ({ entries, signal }) => useIncrementalGroups(entries, undefined, signal, undefined),
-      { initialProps: { entries: tail, signal: 100 } },
+      { initialProps: { entries: tail, signal: 93 } },
     )
     expect(result.current.groups).toHaveLength(2)
-    rerender({ entries: [asst(98, 'older'), asst(99, 'older2'), ...tail], signal: 98 })
-    // Documents the merge behavior the break exists to prevent.
-    expect(result.current.groups[0].entries.map(e => (e as { seq?: number }).seq)).toEqual([98, 99, 100])
+    rerender({ entries: [asst(91, 'older'), asst(92, 'older2'), ...tail], signal: 91 })
+    // Documents the merge behavior the break exists to prevent (within one
+    // bucket; across buckets the GROUP_SEQ_SPAN bound already splits).
+    expect(result.current.groups[0].entries.map(e => (e as { seq?: number }).seq)).toEqual([91, 92, 93])
+  })
+})
+
+describe('seq-bucket group size bound (GROUP_SEQ_SPAN)', () => {
+  // The scrollback-jank fix: no user/assistant group may span an absolute seq
+  // bucket, so no virtual item grows to thousands of px and anchorTo:'end'
+  // anchoring/compensation stays fine-grained. Splits are absolute-keyed, so
+  // any regroup reproduces identical boundaries -> stable ids.
+  it('splits a long assistant run at the bucket boundary and marks the continuation', () => {
+    const entries = [asst(8, 'a'), asst(9, 'b'), asst(10, 'c'), asst(11, 'd')]
+    const { result } = renderHook(() => useIncrementalGroups(entries))
+    const groups = result.current.groups
+    expect(groups).toHaveLength(2)
+    expect(groups[0].entries.map(e => (e as { seq?: number }).seq)).toEqual([8, 9])
+    expect(groups[1].entries.map(e => (e as { seq?: number }).seq)).toEqual([10, 11])
+    expect(groups[0].continuation).toBeUndefined()
+    expect(groups[1].continuation).toBe(true) // rendered headerless
+  })
+
+  it('produces identical split points regardless of window start (absolute buckets)', () => {
+    const full = [asst(8, 'a'), asst(9, 'b'), asst(10, 'c'), asst(11, 'd')]
+    const fromMidBucket = full.slice(1) // window opens at seq 9
+    const a = renderHook(() => useIncrementalGroups(full)).result.current.groups
+    const b = renderHook(() => useIncrementalGroups(fromMidBucket)).result.current.groups
+    // Both regroups split before seq 10; the seq-10 group's id matches.
+    expect(a[1].entries[0]).toMatchObject({ seq: 10 })
+    expect(b[1].entries[0]).toMatchObject({ seq: 10 })
+    expect(a[1].id).toBe(b[1].id)
+  })
+
+  it('keeps prior group ids stable when streaming crosses a bucket boundary', () => {
+    const base = [asst(8, 'a'), asst(9, 'b')]
+    const { result, rerender } = renderHook(({ entries }) => useIncrementalGroups(entries), {
+      initialProps: { entries: base },
+    })
+    const before = result.current.groups.map(g => g.id)
+    rerender({ entries: [...base, asst(10, 'c')] })
+    const after = result.current.groups
+    expect(after.map(g => g.id).slice(0, before.length)).toEqual(before)
+    expect(after).toHaveLength(before.length + 1) // new small item appended
+    expect(after[after.length - 1].continuation).toBe(true)
+  })
+
+  it('never splits on seqless entries (pre-seq shapes keep merging)', () => {
+    const seqless = (text: string) =>
+      ({
+        type: 'assistant',
+        timestamp: 't',
+        message: { role: 'assistant', content: [{ type: 'text', text }] },
+      }) as unknown as TranscriptEntry
+    const { result } = renderHook(() => useIncrementalGroups([seqless('a'), seqless('b'), seqless('c')]))
+    expect(result.current.groups).toHaveLength(1)
   })
 })
