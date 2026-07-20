@@ -15,14 +15,47 @@
  * The parent still owns the `follow` prop (shared with the events view + the
  * scroll-to-bottom button); this hook keeps engine state and parent state in
  * sync via onUserScroll/onReachedBottom, logging `[follow]` transitions.
+ *
+ * TWO ENGINE QUIRKS WE COMPENSATE FOR (both browser-verified, v1.1.6):
+ *
+ * 1. SUB-THRESHOLD ESCAPE (the "append doesn't follow" bug). The engine's
+ *    resize pin only fires when the RAW `state.isAtBottom` is true, but the
+ *    lock escapes on ANY scroll-up -- including a sub-threshold nudge INSIDE
+ *    the 70px near-bottom zone (layout jitter, a textarea/optimistic-bubble
+ *    reflow when you post, a touch bounce). After such a nudge `isNearBottom`
+ *    stays true (UI still reads "attached", `follow` stays true) yet raw
+ *    `state.isAtBottom` is false, so the next append does NOT pin. We treat the
+ *    parent `follow` prop as authoritative: a tail append while `follow` is on
+ *    re-pins. A genuine detach scrolls >70px, which drops `follow` and gates
+ *    this out -- a scrolled-away reader is never yanked.
+ *
+ * 2. ESTIMATE SETTLE ON SWITCH (the "doesn't always land at bottom" bug). A
+ *    switch back to a cached conversation REMOUNTS the view, so every
+ *    content-visibility group starts at its intrinsic-size ESTIMATE (no
+ *    remembered height). A single pin lands at the estimated bottom; real
+ *    heights then balloon scrollHeight and a post-switch re-anchor churns the
+ *    window -- and if that divergence trips an escape, the reader is stranded.
+ *    The switch-pin therefore SETTLES: it re-pins (ignoreEscapes) each frame
+ *    until scrollHeight stops moving, not just once with a logging probe (the
+ *    Open WebUI settle-re-pin gotcha).
  */
 
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { useStickToBottom } from 'use-stick-to-bottom'
 
+// Settle bound for the switch-pin: cap frames so a conversation whose content
+// never stabilizes (pathological) can't spin the rAF loop forever, and require
+// N consecutive stable frames so a mid-settle re-anchor can't end it early.
+const SETTLE_MAX_FRAMES = 40 // ~660ms at 60fps
+const SETTLE_STABLE_FRAMES = 2
+const SETTLE_DRIFT_OK_PX = 4
+
 export function usePlainFollow(opts: {
   cacheKey: string | undefined
   follow: boolean
+  /** Changes when a new entry lands at the tail (last entry's seq). Drives the
+   *  append re-pin that compensates for the engine's sub-threshold escape. */
+  tailSignal: number
   onUserScroll?: () => void
   onReachedBottom?: () => void
 }) {
@@ -31,6 +64,8 @@ export function usePlainFollow(opts: {
 
   const followRef = useRef(opts.follow)
   followRef.current = opts.follow
+  const tailSignalRef = useRef(opts.tailSignal)
+  tailSignalRef.current = opts.tailSignal
   const onUserScrollRef = useRef(opts.onUserScroll)
   onUserScrollRef.current = opts.onUserScroll
   const onReachedBottomRef = useRef(opts.onReachedBottom)
@@ -68,26 +103,58 @@ export function usePlainFollow(opts: {
     }
   }, [opts.follow])
 
-  // SWITCH-PIN. Entering/switching a conversation always lands at the bottom
-  // and re-engages follow (existing contract from the TanStack path). The
-  // engine's resize pin converges any late-measuring content (lazy chunks,
-  // content-visibility estimates settling -- the Open WebUI undershoot gotcha)
-  // because we are at-bottom when those resizes fire. The rAF probe verifies.
+  // SWITCH-PIN + SETTLE. Entering/switching a conversation always lands at the
+  // bottom and re-engages follow. On a cached-conversation remount the
+  // content-visibility groups open at their intrinsic-size estimate, so a
+  // single pin lands short; we re-pin (ignoreEscapes, so the estimate->real
+  // resize + post-switch re-anchor can't knock us off) each frame until
+  // scrollHeight holds for SETTLE_STABLE_FRAMES. `prevTailRef` is synced here so
+  // the append re-pin below treats the switch's tail change as positioning, not
+  // an append.
+  const prevTailRef = useRef(opts.tailSignal)
   // biome-ignore lint/correctness/useExhaustiveDependencies: cacheKey is the intentional trigger
   useLayoutEffect(() => {
-    scrollToBottom({ animation: 'instant' })
+    prevTailRef.current = tailSignalRef.current
     onReachedBottomRef.current?.()
     console.debug(`[follow] switch-pin (plain) cacheKey=${opts.cacheKey?.slice(0, 8) ?? '-'}`)
-    const raf = requestAnimationFrame(() => {
+    let raf = 0
+    let frames = 0
+    let stable = 0
+    let lastHeight = -1
+    const settle = () => {
+      scrollToBottom({ animation: 'instant', ignoreEscapes: true })
       const el = scrollRef.current
-      if (!el) return
-      const drift = el.scrollHeight - el.scrollTop - el.clientHeight
-      console.debug(
-        `[follow] switch-pin settled (plain) drift=${drift.toFixed(0)} ${drift < 40 ? 'OK' : 'DID-NOT-REACH-BOTTOM'}`,
-      )
-    })
+      const height = el?.scrollHeight ?? 0
+      const drift = el ? el.scrollHeight - el.scrollTop - el.clientHeight : 0
+      stable = height === lastHeight && drift < SETTLE_DRIFT_OK_PX ? stable + 1 : 0
+      lastHeight = height
+      frames += 1
+      if (stable >= SETTLE_STABLE_FRAMES || frames >= SETTLE_MAX_FRAMES) {
+        console.debug(
+          `[follow] switch-pin settled (plain) frames=${frames} drift=${drift.toFixed(0)} ${drift < 40 ? 'OK' : 'DID-NOT-REACH-BOTTOM'}`,
+        )
+        return
+      }
+      raf = requestAnimationFrame(settle)
+    }
+    raf = requestAnimationFrame(settle)
     return () => cancelAnimationFrame(raf)
   }, [opts.cacheKey])
+
+  // APPEND RE-PIN. A new tail entry while `follow` is on must land at the
+  // bottom even if a sub-threshold nudge silently escaped the engine's lock
+  // (quirk 1). scrollToBottom re-asserts raw isAtBottom so continued streaming
+  // follows again. Gated on `follow` (dropped by any real >70px scroll-up), so
+  // a detached reader is never pulled down. Skipped on the switch commit, whose
+  // tail change prevTailRef already absorbed.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: tailSignal is the intentional trigger
+  useLayoutEffect(() => {
+    if (opts.tailSignal === prevTailRef.current) return
+    prevTailRef.current = opts.tailSignal
+    if (!followRef.current) return
+    console.debug('[follow] append re-pin (plain) -> follow tail')
+    scrollToBottom({ animation: 'instant' })
+  }, [opts.tailSignal])
 
   return engine
 }

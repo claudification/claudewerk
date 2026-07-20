@@ -41,7 +41,13 @@ export const TranscriptViewPlain = memo(function TranscriptViewPlain({
   onReachedBottom,
   cacheKey,
 }: TranscriptViewProps) {
-  const engine = usePlainFollow({ cacheKey, follow, onUserScroll, onReachedBottom })
+  // Tail-append signal: the last entry's seq (uuid/length fallback for seqless
+  // transcripts). Increments on a new tail message so the follow engine can
+  // re-pin past a sub-threshold escape (see usePlainFollow quirk 1).
+  const lastEntry = entries.length > 0 ? entries[entries.length - 1] : null
+  const tailSignal = lastEntry ? (lastEntry.seq ?? entries.length) : 0
+
+  const engine = usePlainFollow({ cacheKey, follow, tailSignal, onUserScroll, onReachedBottom })
   const armPrependAnchor = usePrependAnchor(engine)
 
   // Shared progressive-window + scrollback data logic. No backfill group
