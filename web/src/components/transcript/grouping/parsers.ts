@@ -1,4 +1,9 @@
-import type { TranscriptEntry, TranscriptQueueEntry, TranscriptUserEntry } from '@/lib/types'
+import type {
+  TranscriptAssistantEntry,
+  TranscriptEntry,
+  TranscriptQueueEntry,
+  TranscriptUserEntry,
+} from '@/lib/types'
 import type { TaskNotification } from './types'
 
 export function isUser(e: TranscriptEntry): e is TranscriptUserEntry {
@@ -7,6 +12,62 @@ export function isUser(e: TranscriptEntry): e is TranscriptUserEntry {
 
 export function isQueue(e: TranscriptEntry): e is TranscriptQueueEntry {
   return e.type === 'queue-operation'
+}
+
+// System subtypes that carry NO transcript-visible content: CC's per-API-request
+// `status` heartbeat, internal snapshots, and subagent-only progress. grouping
+// skips them (handleSystem), and the progressive window must not count them
+// toward its displayable budget. Single source of truth -- keep in sync with the
+// skips in process-entry.ts (which imports this set).
+export const NOISE_SYSTEM_SUBTYPES = new Set([
+  'status',
+  'file_snapshot',
+  'post_turn_summary',
+  'task_progress',
+  'task_notification',
+])
+
+// A user entry whose content carries a tool_result block -- the OUTPUT of a tool
+// call. It renders INSIDE the originating tool_use line, never as its own
+// transcript item, so it must not count as a displayable entry (every tool call
+// is otherwise 2 raw entries -- the tool_use + this -- for 1 visible item).
+export function isToolResultUserEntry(e: TranscriptEntry): boolean {
+  if (e.type !== 'user') return false
+  const c = (e as TranscriptUserEntry).message?.content
+  return Array.isArray(c) && c.some(b => (b as { type?: string }).type === 'tool_result')
+}
+
+// Mirrors mergeMessageEntry's content gate: a user/assistant message renders only
+// if it carries non-empty text, thinking, or a tool_use block. Used by both the
+// grouper (drop empties) and the window budget (don't count empties).
+export function hasRenderableMessageContent(e: TranscriptEntry): boolean {
+  const c = (e as TranscriptUserEntry | TranscriptAssistantEntry).message?.content
+  if (typeof c === 'string') return !!c.trim()
+  if (!Array.isArray(c)) return false
+  return c.some(
+    b =>
+      (b.type === 'text' && b.text?.trim()) ||
+      (b.type === 'thinking' && (b.thinking?.trim() || b.text?.trim() || b.signature)) ||
+      b.type === 'tool_use',
+  )
+}
+
+// Would this entry contribute a VISIBLE transcript item? The progressive window
+// budgets by displayable entries, not raw ones -- otherwise `status` heartbeats
+// and tool_result entries eat the last-N slice before ~WINDOW_SIZE real items
+// load (the sparse-open bug). Deliberately conservative: it nails the dominant
+// noise (status, tool_result, empty messages) and treats anything ambiguous as
+// displayable, so the window can only ever err toward loading MORE real content,
+// never less. Non-message entries (boot/launch/shell/advisor/compact/queue) all
+// render cards -> displayable.
+export function isDisplayableEntry(e: TranscriptEntry): boolean {
+  if (e.type === 'system') {
+    const sub = (e as { subtype?: string }).subtype
+    return !(sub && NOISE_SYSTEM_SUBTYPES.has(sub))
+  }
+  if (e.type === 'user') return !isToolResultUserEntry(e) && hasRenderableMessageContent(e)
+  if (e.type === 'assistant') return hasRenderableMessageContent(e)
+  return true
 }
 
 const CHANNEL_BLOCK_RE = /^<channel\s+([^>]*)>\n?[\s\S]*?\n?<\/channel>$/

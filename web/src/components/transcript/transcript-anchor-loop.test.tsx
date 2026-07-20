@@ -100,6 +100,30 @@ describe('defaultAnchorSeq -- seqless resilience', () => {
   })
 })
 
+describe('defaultAnchorSeq -- budgets by DISPLAYABLE entries, not raw', () => {
+  // A status heartbeat: persisted but never rendered. Every tool call also emits
+  // a tool_result user entry that renders inside its tool_use line. Both must NOT
+  // consume the window's ~50-item budget.
+  const statusEntry = (seq: number): TranscriptEntry =>
+    ({ type: 'system', subtype: 'status', seq, timestamp: '2026-07-21T00:00:00.000Z' }) as unknown as TranscriptEntry
+
+  it('walks past interleaved status noise so ~WINDOW_SIZE real items are covered', () => {
+    // 200 entries, seq i+1: even idx = real user text (displayable), odd = status.
+    // 100 displayable total. Walking back for 50 displayable lands on idx 100
+    // (seq 101) -- NOT the raw len-50 boundary (idx 150 / seq 151).
+    const entries = Array.from({ length: 200 }, (_, i) => (i % 2 === 0 ? entry(i, i + 1) : statusEntry(i + 1)))
+    expect(defaultAnchorSeq(entries)).toBe(101)
+  })
+
+  it('caps the backward scan at WINDOW_MAX_RAW when the tail is nearly all noise', () => {
+    // 400 entries, only the last (idx 399) is displayable. The walk cannot find
+    // 50 displayable, so it stops at the raw floor len-300 (idx 100, seq 101)
+    // rather than dragging the whole conversation into the first render.
+    const entries = Array.from({ length: 400 }, (_, i) => (i === 399 ? entry(i, i + 1) : statusEntry(i + 1)))
+    expect(defaultAnchorSeq(entries)).toBe(101)
+  })
+})
+
 describe('TranscriptView -- seqless render loop', () => {
   it('does NOT throw React #301 on a fully-seqless transcript with follow on', () => {
     expect(() =>

@@ -9,7 +9,15 @@
  * callers (one `processEntry(entry, state)` per loop iteration).
  */
 import type { TranscriptAssistantEntry, TranscriptEntry, TranscriptUserEntry } from '@/lib/types'
-import { extractSkillName, isCardChannelEntry, isQueue, isSkillContent, parseTaskNotifications } from './parsers'
+import {
+  extractSkillName,
+  hasRenderableMessageContent,
+  isCardChannelEntry,
+  isQueue,
+  isSkillContent,
+  NOISE_SYSTEM_SUBTYPES,
+  parseTaskNotifications,
+} from './parsers'
 import type { DisplayGroup, GroupingState } from './types'
 
 function handleBoot(entry: TranscriptEntry, state: GroupingState): void {
@@ -103,16 +111,13 @@ function handleQueue(entry: TranscriptEntry, state: GroupingState): void {
 function handleSystem(entry: TranscriptEntry, state: GroupingState): boolean {
   if (entry.type !== 'system' || !(entry as Record<string, unknown>).subtype) return false
   const sub = (entry as Record<string, unknown>).subtype as string
-  // Skip internal/noise subtypes
-  if (sub === 'file_snapshot' || sub === 'post_turn_summary') return true
-  // Skip subagent task progress/notification -- belong in agent transcript, not parent
-  if (sub === 'task_progress' || sub === 'task_notification') return true
-  // CC emits system/status as a per-API-request activity heartbeat (apiStatus
-  // + permissionMode). Already converted to dedicated wire signals
-  // (sendConversationStatus('active'), plan_mode_changed) at the agent host.
-  // The raw entry still flows to the broker and is persisted -- visible in
-  // events log + JsonInspector -- but pure noise in the transcript view.
-  if (sub === 'status') return true
+  // Skip transcript-invisible noise subtypes (heartbeat status, internal
+  // snapshots, subagent-only progress). Set is shared with the window's
+  // displayable-budget predicate (NOISE_SYSTEM_SUBTYPES in parsers.ts): CC's
+  // per-API-request `status` heartbeat + file_snapshot/post_turn_summary +
+  // task_progress/task_notification all persist to the broker (events log /
+  // JsonInspector) but render nothing here.
+  if (NOISE_SYSTEM_SUBTYPES.has(sub)) return true
 
   const content = (entry as Record<string, unknown>).content as string | undefined
   // Skip raw slash command input entries (the output entry has the useful info)
@@ -319,15 +324,10 @@ function mergeMessageEntry(entry: TranscriptEntry, state: GroupingState): void {
   const msgEntry = entry as TranscriptUserEntry | TranscriptAssistantEntry
   const content = msgEntry.message?.content
 
-  if (Array.isArray(content)) {
-    const hasContent = content.some(
-      c =>
-        (c.type === 'text' && c.text?.trim()) ||
-        (c.type === 'thinking' && (c.thinking?.trim() || c.text?.trim() || c.signature)) ||
-        c.type === 'tool_use',
-    )
-    if (!hasContent) return
-  }
+  // Drop content-less messages (shared gate with the window's displayable
+  // budget). Only array content can be block-empty here; string content already
+  // passed the non-empty check in processEntry before this call.
+  if (Array.isArray(content) && !hasRenderableMessageContent(entry)) return
 
   const type = entry.type as 'user' | 'assistant'
   // A user group must be all-channel-card or all-normal. An inter-conversation/
