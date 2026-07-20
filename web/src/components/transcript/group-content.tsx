@@ -33,6 +33,9 @@ export interface GroupContentProps {
   settings: TranscriptSettings
   showThinking: boolean
   planContext: PlanContext
+  /** False when an outer wrapper owns the continuation tuck (plain renderer);
+   *  see GroupView's continuationOffset. Defaults true (virtualized). */
+  continuationOffset?: boolean
 }
 
 /** GroupContent wrapped in the enter/settle animation div (classes +
@@ -80,6 +83,7 @@ function GroupContent({
   settings,
   showThinking,
   planContext,
+  continuationOffset,
 }: GroupContentProps) {
   if (group.type === 'compacted') return <CompactedDivider />
   if (group.type === 'compacting') return <CompactingBanner />
@@ -106,6 +110,7 @@ function GroupContent({
       settings={settings}
       showThinking={showThinking}
       planContext={planContext}
+      continuationOffset={continuationOffset}
     />
   )
 }
