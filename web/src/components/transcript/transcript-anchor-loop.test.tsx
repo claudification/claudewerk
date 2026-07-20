@@ -127,12 +127,16 @@ describe('defaultAnchorSeq -- budgets by DISPLAYABLE entries, not raw', () => {
 describe('TranscriptView -- seqless render loop', () => {
   it('does NOT throw React #301 on a fully-seqless transcript with follow on', () => {
     expect(() =>
-      render(<TranscriptView entries={seqlessTranscript(100)} follow showThinking cacheKey="conv_seqless" />),
+      render(
+        <TranscriptView conversationId="c1" entries={seqlessTranscript(100)} follow showThinking cacheKey="conv_seqless" />,
+      ),
     ).not.toThrow()
   })
 
   it('does NOT throw on a partially-seqless transcript (boundary seqless, tail seq) with follow on', () => {
     const entries = Array.from({ length: 100 }, (_, i) => entry(i, i >= 60 ? i + 1 : undefined))
-    expect(() => render(<TranscriptView entries={entries} follow cacheKey="conv_partial" />)).not.toThrow()
+    expect(() =>
+      render(<TranscriptView conversationId="c1" entries={entries} follow cacheKey="conv_partial" />),
+    ).not.toThrow()
   })
 })

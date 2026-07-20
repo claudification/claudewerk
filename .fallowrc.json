@@ -1,6 +1,14 @@
 {
   "entry": ["web/public/sw.js", "scripts/**/*.ts", "**/*.test.ts", "**/*.test.tsx"],
-  "ignoreDependencies": ["bun:sqlite", "bun:test", "@codemirror/theme-one-dark", "@ast-grep/cli"],
+  "ignoreDependencies": [
+    "bun:sqlite",
+    "bun:test",
+    "@codemirror/theme-one-dark",
+    "@ast-grep/cli",
+    "@shared/project-order-types",
+    "@shared/project-uri",
+    "@shared/protocol"
+  ],
   "ignorePatterns": [".claude/**", ".rclaude/**"],
   "ignoreExports": [
     { "file": "web/src/hooks/auth-needed-store.ts", "exports": ["*"] },

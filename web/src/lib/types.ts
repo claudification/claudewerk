@@ -58,6 +58,9 @@ export function canShell(s: Conversation): boolean {
 // (`?? 0` / `?? []`), so they are always populated -- hence required here, not optional.
 export interface Conversation extends ConversationTaskFields {
   id: string
+  /** Addressable conversation name/slug (broker mirror). Optional: not every
+   *  card carries one; the window title falls back title -> name -> id-prefix. */
+  name?: string
   project: string
   /** Live working directory CC is using right now. `project` stays pinned to the
    *  launch URI; `currentPath` shifts when the agent enters/exits a worktree (or
@@ -220,7 +223,7 @@ export interface Conversation extends ConversationTaskFields {
 // shared with the broker so the two layers never drift). Re-exported here so the
 // many `@/lib/types` import sites are unchanged. Each leaf is a project keyed by
 // project URI (legacy "cwd:<path>" entries are migrated broker-side).
-export type { ProjectOrder, ProjectOrderGroup, ProjectOrderNode } from '@shared/project-order-types'
+export type { ProjectOrder, ProjectOrderGroup, ProjectOrderNode, Workspace } from '@shared/project-order-types'
 
 import type { ProjectOrderGroup, ProjectOrderNode } from '@shared/project-order-types'
 

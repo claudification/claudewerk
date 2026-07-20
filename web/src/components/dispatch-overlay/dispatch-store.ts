@@ -247,7 +247,9 @@ export const useDispatchStore = create<DispatchState>((set, get) => ({
       // /sotu: open the SotU viewer modal (parkable, managed).
       if (intent.toLowerCase() === '/sotu') {
         set({ intent: '', lastError: null })
-        useModalManagerStore.getState().open('sotu-viewer')
+        useModalManagerStore
+          .getState()
+          .open({ id: 'sotu-viewer', kind: 'sotu-viewer', title: 'State of the Union' }, { type: 'global' })
         return
       }
       // /memory and /system: editor or refine, outside the agent loop.
