@@ -33,6 +33,15 @@ function newId(): string {
   return `cnv_${crypto.randomUUID()}`
 }
 
+/** Shares predate expiry, so DBs created before it lack the column. Existing rows
+ *  get NULL = no expiry, which is exactly their old behaviour (live til revoked). */
+function migrateShareExpiry(database: Database): void {
+  const cols = database.query('PRAGMA table_info(canvases)').all() as { name: string }[]
+  if (cols.some(c => c.name === 'share_expires_at')) return
+  database.run('ALTER TABLE canvases ADD COLUMN share_expires_at INTEGER')
+  console.log('[canvas] Migrated: added share_expires_at')
+}
+
 export function initCanvasStore(cacheDir: string): void {
   const dbPath = resolve(cacheDir, 'canvases.db')
   db = openWalDatabase(dbPath)
@@ -51,9 +60,11 @@ export function initCanvasStore(cacheDir: string): void {
       shared      INTEGER NOT NULL DEFAULT 0,
       share_token TEXT,
       share_tier  TEXT,
+      share_expires_at INTEGER,
       archived_at INTEGER
     )
   `)
+  migrateShareExpiry(db)
   db.run('CREATE INDEX IF NOT EXISTS idx_canvas_project ON canvases(project_uri, updated_at DESC)')
   db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_canvas_token ON canvases(share_token) WHERE share_token IS NOT NULL')
 
@@ -72,7 +83,8 @@ export function initCanvasStore(cacheDir: string): void {
   stmtRename = db.prepare('UPDATE canvases SET name = $name, updated_at = $updated_at WHERE id = $id')
   stmtArchive = db.prepare('UPDATE canvases SET archived_at = $archived_at, updated_at = $updated_at WHERE id = $id')
   stmtSetShare = db.prepare(
-    'UPDATE canvases SET shared = $shared, share_token = $share_token, share_tier = $share_tier, updated_at = $updated_at WHERE id = $id',
+    `UPDATE canvases SET shared = $shared, share_token = $share_token, share_tier = $share_tier,
+     share_expires_at = $share_expires_at, updated_at = $updated_at WHERE id = $id`,
   )
   stmtDelete = db.prepare('DELETE FROM canvases WHERE id = $id')
 
@@ -152,15 +164,59 @@ export function archiveCanvas(id: string, archived: boolean): void {
   stmtArchive?.run({ id, archived_at: archived ? Date.now() : null, updated_at: Date.now() })
 }
 
-/** Set or clear a canvas's public share (token + tier). token=null clears. */
-export function setCanvasShare(id: string, token: string | null, tier: CanvasShareTier | null): void {
+/** Set or clear a canvas's public share (token + tier + expiry). token=null clears.
+ *  expiresAt=null means the link lives until someone revokes it. */
+export function setCanvasShare(
+  id: string,
+  token: string | null,
+  tier: CanvasShareTier | null,
+  expiresAt: number | null = null,
+): void {
   stmtSetShare?.run({
     id,
     shared: token ? 1 : 0,
     share_token: token,
     share_tier: token ? tier : null,
+    share_expires_at: token ? expiresAt : null,
     updated_at: Date.now(),
   })
+}
+
+/**
+ * THE share-token chokepoint. Resolves a token to its canvas, or null when the
+ * token is unknown, revoked, or past its expiry.
+ *
+ * Everything public must go through here rather than getCanvasByToken, so expiry
+ * inherits the same intrinsic invisibility revocation has: no match -> the public
+ * route 404s -> the canvas is simply not there. No "this link expired" page,
+ * because that would confirm a canvas once existed at that URL.
+ */
+export function validateCanvasShare(token: string): CanvasSummary | null {
+  if (!token) return null
+  const canvas = getCanvasByToken(token)
+  if (!canvas?.shared) return null
+  if (canvas.shareExpiresAt != null && canvas.shareExpiresAt <= Date.now()) return null
+  return canvas
+}
+
+/**
+ * Clear shares that have aged out. Lazy validation already makes them dead on
+ * arrival; this keeps the STORED state honest so the `shared` badge in the
+ * project list stops advertising a link that no longer opens. Returns the number
+ * of shares reaped.
+ */
+export function reapExpiredCanvasShares(): number {
+  if (!db) return 0
+  const now = Date.now()
+  const stale = db
+    .query(`SELECT id FROM canvases WHERE share_token IS NOT NULL AND share_expires_at IS NOT NULL
+            AND share_expires_at <= $now`)
+    .all({ now }) as { id: string }[]
+  for (const { id } of stale) {
+    setCanvasShare(id, null, null)
+    console.log(`[canvas] share expired id=${id}`)
+  }
+  return stale.length
 }
 
 export function deleteCanvas(id: string): void {

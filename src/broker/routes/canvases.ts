@@ -23,23 +23,46 @@ import { type Context, Hono } from 'hono'
 import type { CanvasShareTier, CanvasSummary } from '../../shared/protocol'
 import { getAuthenticatedUser } from '../auth-routes'
 import { enforceCanvasTier, sanitizeCanvasScene } from '../canvas-sanitize'
-import { readScene, readThumb } from '../canvas-scenes'
+import { BLANK_SCENE, readScene, readThumb } from '../canvas-scenes'
 import {
   archiveCanvas,
   createCanvas,
   deleteCanvas,
   getCanvas,
-  getCanvasByToken,
   listCanvases,
   renameCanvas,
   saveCanvasScene,
   setCanvasShare,
+  validateCanvasShare,
 } from '../canvas-store'
 import type { ConversationStore } from '../conversation-store'
 import type { RouteHelpers } from './shared'
 
-/** Empty scene fallback when a shared canvas has no stored scene yet. */
-const BLANK_SCENE = '{"type":"excalidraw","elements":[],"appState":{}}'
+/** Longest a canvas link may live, mirroring the 30-day cap on conversation shares. */
+const MAX_SHARE_HOURS = 30 * 24
+
+/**
+ * Validate a share request body into the two values the store needs.
+ *
+ * Pure + total: every rejection is a message, never a throw, so the route stays a
+ * two-branch handler instead of growing a validation ladder inline.
+ * `expiresInHours` absent/null means "until revoked", matching pre-expiry shares.
+ */
+export function parseShareRequest(
+  body: { tier?: unknown; expiresInHours?: unknown } | null | undefined,
+): { tier: CanvasShareTier; expiresAt: number | null } | { error: string } {
+  const tier = body?.tier
+  if (tier !== 'edit' && tier !== 'comment' && tier !== 'read') {
+    return { error: "tier must be 'edit' | 'comment' | 'read'" }
+  }
+  const hours = body?.expiresInHours
+  if (hours == null) return { tier, expiresAt: null }
+  if (typeof hours !== 'number' || !Number.isFinite(hours) || hours <= 0) {
+    return { error: 'expiresInHours must be a positive number or null' }
+  }
+  if (hours > MAX_SHARE_HOURS) return { error: `Maximum share duration is ${MAX_SHARE_HOURS / 24} days` }
+  return { tier, expiresAt: Date.now() + hours * 60 * 60 * 1000 }
+}
 
 /** Decode a thumbnail field (raw base64 or a data: URL) to bytes, or undefined. */
 function decodeThumb(thumb: unknown): Uint8Array | undefined {
@@ -88,9 +111,10 @@ export function createCanvasesRouter(conversationStore: ConversationStore, helpe
 
   /** Resolve a canvas from a public share token, or a 404 Response. A cleared
    *  or rotated token matches no row -> the canvas is invisible (revocation). */
+  // Expired reads exactly like revoked (404, no detail) -- see validateCanvasShare.
   function guardPublic(c: Context): { res: Response } | { canvas: CanvasSummary } {
-    const canvas = getCanvasByToken(c.req.param('token') ?? '')
-    if (!canvas?.shared) return { res: c.json({ error: 'invalid or revoked share' }, 404) }
+    const canvas = validateCanvasShare(c.req.param('token') ?? '')
+    if (!canvas) return { res: c.json({ error: 'invalid or revoked share' }, 404) }
     return { canvas }
   }
 
@@ -195,19 +219,20 @@ export function createCanvasesRouter(conversationStore: ConversationStore, helpe
   app.post('/api/canvases/:id/share', async c => {
     const g = await guardWithBody(c, 'files')
     if ('res' in g) return g.res
-    const tier = g.body?.tier
-    if (tier !== 'edit' && tier !== 'comment' && tier !== 'read') {
-      return c.json({ error: "tier must be 'edit' | 'comment' | 'read'" }, 400)
-    }
-    // Reuse the existing token when only the tier changes; otherwise mint one.
+    const req = parseShareRequest(g.body)
+    if ('error' in req) return c.json({ error: req.error }, 400)
+    // Reuse the existing token when only the tier/expiry changes; otherwise mint one.
     const token = g.canvas.shareToken ?? randomBytes(32).toString('base64url')
-    setCanvasShare(g.canvas.id, token, tier as CanvasShareTier)
-    console.log(`[canvas] share set id=${g.canvas.id} tier=${tier} token=${token.slice(0, 8)}...`)
+    setCanvasShare(g.canvas.id, token, req.tier, req.expiresAt)
+    console.log(
+      `[canvas] share set id=${g.canvas.id} tier=${req.tier} token=${token.slice(0, 8)}... ` +
+        `expires=${req.expiresAt ? new Date(req.expiresAt).toISOString() : 'never'}`,
+    )
     return c.json({ canvas: getCanvas(g.canvas.id), shareToken: token })
   })
 
   // ─── revoke public share (owner-only) ────────────────────────────
-  // Clears the token. getCanvasByToken(oldToken) then returns null, so the
+  // Clears the token. validateCanvasShare(oldToken) then returns null, so the
   // public route 404s and nobody can see the canvas anymore (Jonas's rule).
   app.delete('/api/canvases/:id/share', c => {
     const g = guard(c, 'files')

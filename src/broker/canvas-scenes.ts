@@ -16,6 +16,10 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
+/** Empty-scene fallback for a canvas with no stored scene yet -- the baseline a
+ *  tier check compares against on the very first guest write. */
+export const BLANK_SCENE = '{"type":"excalidraw","elements":[],"appState":{}}'
+
 let sceneDir = ''
 
 /** Idempotent: ensure {cacheDir}/canvas-scenes/ exists. Called from initCanvasStore. */

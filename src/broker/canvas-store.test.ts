@@ -13,9 +13,11 @@ import {
   getCanvasByToken,
   initCanvasStore,
   listCanvases,
+  reapExpiredCanvasShares,
   renameCanvas,
   saveCanvasScene,
   setCanvasShare,
+  validateCanvasShare,
 } from './canvas-store'
 
 const P = 'claude://default/Users/x/proj'
@@ -114,4 +116,67 @@ test('sanitizer drops embeddable/iframe and unsafe links', () => {
 
 test('sanitizer rejects unparseable input', () => {
   expect(sanitizeCanvasScene('{not json').json).toBeNull()
+})
+
+// ─── timed shares (E1) ───────────────────────────────────────────────────────
+
+test('share with no expiry resolves indefinitely', () => {
+  const c = createCanvas(P, { name: 'C' })
+  setCanvasShare(c.id, 'tok-forever', 'read')
+  expect(validateCanvasShare('tok-forever')?.id).toBe(c.id)
+  expect(getCanvas(c.id)?.shareExpiresAt).toBeUndefined()
+})
+
+test('share resolves before expiry and stops resolving after', () => {
+  const c = createCanvas(P, { name: 'C' })
+  setCanvasShare(c.id, 'tok-live', 'edit', Date.now() + 60_000)
+  expect(validateCanvasShare('tok-live')?.id).toBe(c.id)
+
+  setCanvasShare(c.id, 'tok-dead', 'edit', Date.now() - 1)
+  expect(validateCanvasShare('tok-dead')).toBeNull()
+  // ...even though the row itself is still there and still flagged shared.
+  expect(getCanvasByToken('tok-dead')?.shared).toBe(true)
+})
+
+test('expired share is indistinguishable from an unknown token', () => {
+  const c = createCanvas(P, { name: 'C' })
+  setCanvasShare(c.id, 'tok-gone', 'read', Date.now() - 1)
+  expect(validateCanvasShare('tok-gone')).toBeNull()
+  expect(validateCanvasShare('never-existed')).toBeNull()
+  expect(validateCanvasShare('')).toBeNull()
+})
+
+test('revoked share does not resolve even when unexpired', () => {
+  const c = createCanvas(P, { name: 'C' })
+  setCanvasShare(c.id, 'tok-revoke', 'edit', Date.now() + 60_000)
+  setCanvasShare(c.id, null, null)
+  expect(validateCanvasShare('tok-revoke')).toBeNull()
+  expect(getCanvas(c.id)?.shared).toBe(false)
+})
+
+test('reaper clears only shares past their deadline', () => {
+  const dead = createCanvas(P, { name: 'dead' })
+  const live = createCanvas(P, { name: 'live' })
+  const forever = createCanvas(P, { name: 'forever' })
+  setCanvasShare(dead.id, 'r-dead', 'read', Date.now() - 1)
+  setCanvasShare(live.id, 'r-live', 'read', Date.now() + 60_000)
+  setCanvasShare(forever.id, 'r-forever', 'read')
+
+  expect(reapExpiredCanvasShares()).toBe(1)
+  expect(getCanvas(dead.id)?.shared).toBe(false)
+  expect(getCanvas(dead.id)?.shareToken).toBeUndefined()
+  expect(getCanvas(live.id)?.shared).toBe(true)
+  expect(getCanvas(forever.id)?.shared).toBe(true)
+  // Idempotent: nothing left to reap on a second pass.
+  expect(reapExpiredCanvasShares()).toBe(0)
+})
+
+test('re-sharing after expiry mints a fresh token and the old one stays dead', () => {
+  const c = createCanvas(P, { name: 'C' })
+  setCanvasShare(c.id, 'old-token', 'read', Date.now() - 1)
+  reapExpiredCanvasShares()
+  setCanvasShare(c.id, 'new-token', 'edit', Date.now() + 60_000)
+
+  expect(validateCanvasShare('old-token')).toBeNull()
+  expect(validateCanvasShare('new-token')?.shareTier).toBe('edit')
 })

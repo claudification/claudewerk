@@ -27,7 +27,7 @@ import {
   setShareValidator,
 } from './auth-routes'
 import { buildReviveMessage } from './build-revive'
-import { closeCanvasStore, initCanvasStore } from './canvas-store'
+import { closeCanvasStore, initCanvasStore, reapExpiredCanvasShares } from './canvas-store'
 import { wireCapacityAdmission } from './capacity-wiring'
 import { closeChecklistStore, initChecklistStore } from './checklist-store'
 import { recordInboundForSocket, registerConnection, unregisterConnection } from './connection-registry'
@@ -830,6 +830,14 @@ async function main() {
       conversationStore.broadcastSharesUpdate()
     }
   }, 30_000) // check every 30 seconds
+
+  // Canvas shares live on the canvas row, not in shares.ts, so they need their own
+  // sweep. Validation is already lazy (an expired token stops resolving the moment
+  // it lapses) -- this only clears the stored token so the `shared` badge stops
+  // advertising a link that no longer opens.
+  setInterval(() => {
+    reapExpiredCanvasShares()
+  }, 60_000)
 
   // Write PID file so CLI can send signals
   if (cacheDir) {

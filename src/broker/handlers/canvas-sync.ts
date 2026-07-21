@@ -25,8 +25,8 @@ import type {
   CanvasSceneDelta,
   CanvasShareTier,
 } from '../../shared/protocol'
-import { sanitizeCanvasScene } from '../canvas-sanitize'
-import { readScene } from '../canvas-scenes'
+import { enforceCanvasTier } from '../canvas-sanitize'
+import { BLANK_SCENE, readScene } from '../canvas-scenes'
 import { getCanvas, saveCanvasScene } from '../canvas-store'
 import type { ConversationStore } from '../conversation-store'
 import type { MessageHandler } from '../handler-context'
@@ -37,6 +37,9 @@ const PALETTE = ['#38bdf8', '#f472b6', '#4ade80', '#facc15', '#a78bfa', '#fb923c
 
 interface Peer extends CanvasPeer {
   ws: ServerWebSocket<unknown>
+  /** What this peer may write. Resolved ONCE at join and never re-read from the
+   *  wire, so a client cannot talk its way up a tier after the fact. */
+  tier: CanvasShareTier
 }
 
 /** canvasId -> peerId -> peer. Module state (room membership beyond the raw
@@ -94,10 +97,10 @@ const handleCanvasJoin: MessageHandler = (ctx, data) => {
   }
   const color = PALETTE[room.size % PALETTE.length]
   const name = (typeof reqName === 'string' && reqName.trim()) || ctx.ws.data.userName || 'guest'
-  room.set(peerId, { peerId, name, color, ws: ctx.ws })
+  const tier: CanvasShareTier = 'edit' // authed project users co-edit
+  room.set(peerId, { peerId, name, color, ws: ctx.ws, tier })
   ctx.conversations.subscribeChannel(ctx.ws, 'canvas', canvasId)
 
-  const tier: CanvasShareTier = 'edit' // authed project users co-edit
   const ack: CanvasJoinAck = {
     type: 'canvas_join_ack',
     canvasId,
@@ -160,11 +163,24 @@ const handleCanvasSceneDelta: MessageHandler = (ctx, data) => {
   if (!peer) return
   const raw = data.scene
   if (typeof raw !== 'string' || !raw.trim()) return
-  const clean = sanitizeCanvasScene(raw)
-  if (clean.json === null) return // unparseable -> ignore, keep prior scene
-  const msg: CanvasSceneDelta = { type: 'canvas_scene_delta', canvasId, scene: clean.json, peerId: peer.peerId }
+
+  // Tier gate. The baseline is the last PERSISTED scene, so a comment peer is
+  // measured against committed state rather than another peer's in-flight delta.
+  // Same chokepoint the HTTP guest-write path uses -- a live socket must never be
+  // the cheaper way in.
+  const verdict = enforceCanvasTier(readScene(canvasId) ?? BLANK_SCENE, raw, peer.tier)
+  if (!verdict.ok || !verdict.json) {
+    ctx.reply({ type: 'canvas_error', canvasId, error: verdict.reason ?? 'rejected' })
+    ctx.log.debug(
+      `[canvas] delta REJECTED ${canvasId.slice(0, 12)} peer=${peer.peerId.slice(0, 8)} ` +
+        `tier=${peer.tier} reason=${verdict.reason}`,
+    )
+    return
+  }
+
+  const msg: CanvasSceneDelta = { type: 'canvas_scene_delta', canvasId, scene: verdict.json, peerId: peer.peerId }
   ctx.conversations.broadcastToChannel('canvas', canvasId, msg)
-  schedulePersist(canvasId, clean.json)
+  schedulePersist(canvasId, verdict.json)
 }
 
 /** Socket-close cleanup: drop this ws from every canvas room it was in, flush no
