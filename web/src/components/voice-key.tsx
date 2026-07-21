@@ -82,7 +82,7 @@ export function VoiceKey() {
   if (voice.state === 'idle' && !micExpired) return null
 
   const displayText = voice.finalText || ''
-  const displayInterim = voice.state === 'recording' ? voice.interimText : ''
+  const displayInterim = voice.displayInterim
   const keyLabel = voiceHoldKey ? formatKeyCode(voiceHoldKey) : ''
 
   if (micExpired && voice.state === 'idle') {

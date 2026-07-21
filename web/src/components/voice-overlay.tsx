@@ -83,7 +83,7 @@ export function VoiceOverlay({ onResult, onClose, holdMode = false, onMicGranted
   // Map hook state to overlay display state
   const isDone = voice.state === 'submitting'
   const displayText = voice.refinedText || voice.finalText
-  const displayInterim = voice.state === 'recording' || voice.state === 'recording-offline' ? voice.interimText : ''
+  const displayInterim = voice.displayInterim
 
   return (
     <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex flex-col animate-in fade-in duration-150">

@@ -23,6 +23,7 @@ vi.mock('@/hooks/use-voice-recording', () => ({
     refinedText: '',
     finalText: 'hello world',
     interimText: '',
+    displayInterim: '',
     errorMsg: '',
     targetConversationId,
     start: vi.fn(),

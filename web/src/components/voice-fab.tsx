@@ -193,7 +193,7 @@ export function VoiceFab() {
   const isActive = voice.state !== 'idle'
   const isCancelling = Math.abs(dragOffset) >= CANCEL_THRESHOLD
   const displayText = voice.refinedText || voice.finalText
-  const displayInterim = isRecording ? voice.interimText : ''
+  const displayInterim = voice.displayInterim
   const hasText = !!(displayText || displayInterim)
   const totalChars = (displayText?.length || 0) + (displayInterim?.length || 0)
   const transcriptRef = useRef<HTMLDivElement>(null)

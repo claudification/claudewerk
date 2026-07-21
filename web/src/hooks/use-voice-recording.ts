@@ -45,6 +45,16 @@ const MIC_ACQUIRE_TIMEOUT_MS = 10_000
 // Offline audio ring buffer: ~30s at 50ms PCM chunks, ~1MB of base64
 const OFFLINE_BUFFER_MAX = 600
 
+// How long, after release, we wait for the broker's voice_final before giving up
+// and submitting what we have. Deepgram finalizes words AFTER the audio stops --
+// interims trail speech by 100-300ms, so the last words spoken frequently have
+// no interim at all. This wait is the only thing standing between "release the
+// key" and a silently truncated tail; on timeout we salvage rather than hang.
+const FINALIZE_WAIT_MS = 2000
+// Backstop for the pathological case: no voice_final AND nothing to salvage.
+// Keeps the old behaviour of waiting for voice_done / voice_error to surface.
+const STUCK_RESET_MS = 30_000
+
 /** True only when the browser->broker socket is actually open, not merely present. */
 function wsIsOpen(): boolean {
   return useConversationsStore.getState().ws?.readyState === WebSocket.OPEN
@@ -57,6 +67,14 @@ interface UseVoiceRecordingResult {
    *  warmup is done. If backend fails, state flips to 'error' honestly. */
   backendReady: boolean
   interimText: string
+  /**
+   * interimText, but blanked once it can no longer change. Keep rendering
+   * unfinalized words through the post-release wait: they ARE part of the
+   * message, and hiding them the instant the key comes up makes a correct
+   * transcript look truncated. Lives here so the three consumers cannot drift
+   * apart on which states still show it.
+   */
+  displayInterim: string
   finalText: string
   refinedText: string
   errorMsg: string
@@ -117,6 +135,8 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
   // Throttle for the return-leg latency probe. Must be a ref: a plain `let` in
   // the hook body resets on every render, which would defeat the throttle.
   const lastLegLogAtRef = useRef(0)
+  // Post-release wait for voice_final (see FINALIZE_WAIT_MS).
+  const finalizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   stateRef.current = state
 
@@ -146,11 +166,34 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
       utteranceTimerRef.current = null
     }
     clearConnectTimer()
+    clearFinalizeTimer()
     const ws = useConversationsStore.getState().ws
     if (ws && wsListenerRef.current) {
       ws.removeEventListener('message', wsListenerRef.current)
       wsListenerRef.current = null
     }
+  }
+
+  function clearFinalizeTimer() {
+    if (finalizeTimerRef.current) {
+      clearTimeout(finalizeTimerRef.current)
+      finalizeTimerRef.current = null
+    }
+  }
+
+  /**
+   * Last resort: no terminal signal AND nothing to salvage. Keep waiting for
+   * voice_done / voice_error so a real backend error can still surface, then
+   * reset rather than leaving the recorder wedged.
+   */
+  function armStuckReset() {
+    clearFinalizeTimer()
+    finalizeTimerRef.current = setTimeout(() => {
+      finalizeTimerRef.current = null
+      if (stateRef.current !== 'refining') return
+      console.warn(`[voice] stuck in refining for ${STUCK_RESET_MS}ms with nothing to submit -- resetting`)
+      reset()
+    }, STUCK_RESET_MS)
   }
 
   function clearConnectTimer() {
@@ -229,16 +272,10 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
       setFinalText(acc)
       accumulatedTextRef.current = acc
       setInterim('')
-      // Entered 'refining' because no finals existed at stop time, but one
-      // arrived now (Deepgram's Finalize flush). Submit immediately with the
-      // raw text rather than waiting for the broker's LLM refinement round-trip
-      // which can exceed the 30s timeout. Matches the normal immediate-submit
-      // path in doStop() which also uses unrefined text.
-      if (stateRef.current === 'refining' && acc) {
-        console.log(`[voice] late isFinal during refining -- immediate submit (${acc.length} chars)`)
-        setRefinedText(acc)
-        setState('submitting')
-      }
+      // NB: a late isFinal does NOT submit any more. It used to, and that was a
+      // race -- Deepgram emits several finals while flushing, so submitting on
+      // the first one shipped a transcript that was still missing its tail.
+      // voice_final is now the single authority on "the transcript is complete".
     } else {
       setInterim(msg.transcript || '')
     }
@@ -296,6 +333,33 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
       setState('submitting')
     }
 
+    /**
+     * The transcript is complete. This is the ONLY signal that submits -- no
+     * more inferring completeness from whether a yellow interim happens to be
+     * on screen, which is what dropped the last words when the user released
+     * the key before Deepgram had emitted an interim for them.
+     */
+    function onVoiceFinal(msg: { accumulated?: string; reason?: string }) {
+      clearFinalizeTimer()
+      if (seq !== voiceSeqRef.current) return
+      if (stateRef.current === 'submitting' || stateRef.current === 'idle') return
+
+      const text = (msg.accumulated || accumulatedTextRef.current || '').trim()
+      console.log(`[voice] ${elapsed()} voice_final via ${msg.reason ?? '?'} (${text.length} chars)`)
+      if (!text) {
+        // Genuinely nothing transcribed. Stay put so a voice_error ("no speech
+        // detected") or voice_done can still surface instead of a silent reset.
+        armStuckReset()
+        return
+      }
+      accumulatedTextRef.current = text
+      setFinalText(text)
+      setInterim('')
+      addVoiceHistoryEntry({ raw: text, refined: text, conversationId: targetConversationIdRef.current })
+      setRefinedText(text)
+      setState('submitting')
+    }
+
     function handleMessage(event: MessageEvent) {
       try {
         const msg = JSON.parse(event.data)
@@ -317,6 +381,9 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
             break
           case 'voice_refining':
             console.log(`[voice] ${elapsed()} refining...`)
+            break
+          case 'voice_final':
+            onVoiceFinal(msg)
             break
           case 'voice_done':
             onVoiceDone(msg)
@@ -589,57 +656,33 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
       sendWs({ type: 'voice_stop' })
     }
 
-    // If words are still in flight (yellow interim not yet finalized), the
-    // accumulated transcript is INCOMPLETE -- submitting now would truncate the
-    // tail. voice_stop above triggers Deepgram's Finalize flush, which arrives
-    // as a late isFinal carrying the full text; applyTranscript's refining
-    // branch submits it. So defer to 'refining' instead of immediate-submit.
-    if (interimTextRef.current) {
-      console.log(`[voice] ${elapsed()} interim pending on stop -- await finalize flush`)
-      setState('refining')
-      setTimeout(() => {
-        if (stateRef.current === 'refining') {
-          // Flush never arrived; salvage whatever we have rather than hang/lose.
-          const salvage = `${accumulatedTextRef.current} ${interimTextRef.current}`.trim()
-          if (salvage) {
-            console.warn(`[voice] finalize flush never arrived -- salvaging (${salvage.length} chars)`)
-            setRefinedText(salvage)
-            setState('submitting')
-          } else {
-            console.warn('[voice] Stuck in refining for 30s, resetting')
-            reset()
-          }
-        }
-      }, 30_000)
-      return
-    }
-
-    // Use the accumulated transcript directly -- don't wait for the broker
-    // round-trip (voice_stop -> Deepgram finalize -> voice_done). The client
-    // already has every isFinal segment via voice_transcript messages.
-    const immediateText = accumulatedTextRef.current
-    if (immediateText) {
-      console.log(`[voice] ${elapsed()} immediate submit (${immediateText.length} chars)`)
-      addVoiceHistoryEntry({
-        raw: immediateText,
-        refined: immediateText,
-        conversationId: targetConversationId,
-      })
-      setRefinedText(immediateText)
+    // ALWAYS wait for voice_final -- never submit on release.
+    //
+    // This used to branch on whether a yellow interim was on screen, treating
+    // "no interim" as "nothing in flight". That is not what it means: interims
+    // trail speech by 100-300ms, so releasing right after the last word leaves
+    // audio that has produced no interim yet. The old code submitted, flipped to
+    // 'submitting', and applyTranscript then dropped every transcript that
+    // followed -- including Deepgram's flush carrying exactly those words. The
+    // full text still reached voice history via voice_done, which is why the
+    // fingerprint was "history has more than what got sent".
+    console.log(`[voice] ${elapsed()} awaiting voice_final (interim=${interimTextRef.current.length} chars)`)
+    setState('refining')
+    finalizeTimerRef.current = setTimeout(() => {
+      finalizeTimerRef.current = null
+      if (stateRef.current !== 'refining') return
+      // No voice_final in time -- salvage rather than hang or truncate. Interim
+      // is included: unfinalized words are still words the user said.
+      const salvage = [accumulatedTextRef.current, interimTextRef.current].filter(Boolean).join(' ').trim()
+      if (!salvage) {
+        armStuckReset()
+        return
+      }
+      console.warn(`[voice] no voice_final within ${FINALIZE_WAIT_MS}ms -- salvaging (${salvage.length} chars)`)
+      addVoiceHistoryEntry({ raw: salvage, refined: salvage, conversationId: targetConversationIdRef.current })
+      setRefinedText(salvage)
       setState('submitting')
-    } else {
-      // No accumulated text yet (very short recording, or Deepgram hasn't
-      // returned any finals). Fall back to waiting for broker's voice_done.
-      // A late isFinal in applyTranscript will submit immediately; this
-      // timeout is the safety net for when nothing arrives at all.
-      setState('refining')
-      setTimeout(() => {
-        if (stateRef.current === 'refining') {
-          console.warn('[voice] Stuck in refining for 30s, resetting')
-          reset()
-        }
-      }, 30_000)
-    }
+    }, FINALIZE_WAIT_MS)
   }
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: doStop is a stable function
@@ -677,10 +720,13 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     reset()
   }, [sendWs, reset, elapsed])
 
+  const interimStillMeaningful = state === 'recording' || state === 'recording-offline' || state === 'refining'
+
   return {
     state,
     backendReady,
     interimText,
+    displayInterim: interimStillMeaningful ? interimText : '',
     finalText,
     refinedText,
     errorMsg,

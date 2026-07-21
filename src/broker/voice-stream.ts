@@ -63,6 +63,11 @@ function buildDeepgramParams(
 }
 const VOICE_TIMEOUT_MS = 120_000 // Max 120s recording conversation
 const KEEPALIVE_INTERVAL_MS = 5_000 // Deepgram kills connection after 10s of no audio
+// Backstop for the stop handshake when Deepgram sends NEITHER from_finalize nor
+// Metadata. Generous on purpose: the old 800ms cutoff was itself a truncation
+// source. Every firing is logged as a warning, so a normal path silently
+// degrading into this one stays visible instead of becoming the new normal.
+const TERMINAL_SAFETY_MS = 8_000
 
 interface VoiceSession {
   dgWs: WebSocket
@@ -88,6 +93,12 @@ interface VoiceSession {
   // is charged to the browser->broker uplink leg and reads as a delivery fault.
   firstAudioAt: number
   latency: LatencyTracker
+  // Stop handshake. `stopping` distinguishes a from_finalize caused by the
+  // stop-time Finalize from one caused by a mid-stream keep-the-segment-short
+  // Finalize -- only the former terminates the session. `finalized` makes
+  // voice_final fire exactly once across its three possible triggers.
+  stopping: boolean
+  finalized: boolean
 }
 
 // Active voice sessions keyed by dashboard WS identity
@@ -137,6 +148,78 @@ function safeSend(ws: ServerWebSocket<unknown> | null, data: string): boolean {
     return true
   } catch {
     return false
+  }
+}
+
+/** The subset of Deepgram's live-transcription messages this relay reads. */
+interface DeepgramMessage {
+  type?: string
+  channel?: { alternatives?: Array<{ transcript?: string }> }
+  is_final?: boolean
+  speech_final?: boolean
+  /** Set on the Results that answers a Finalize -- Deepgram's fast "flushed" marker. */
+  from_finalize?: boolean
+  start?: number
+  duration?: number
+}
+
+/** Latency sample + finalization cadence. Kept apart from delivery so a logging
+ *  change can never alter what the user receives. */
+function logResultDiagnostics(session: VoiceSession, msg: DeepgramMessage, transcript: string, isFinal: boolean) {
+  const latLine = session.latency.onResult({
+    isFinal,
+    start: msg.start,
+    duration: msg.duration,
+    audioBytes: session.audioBytes,
+  })
+  if (latLine) console.log(latLine)
+  if (!isFinal) return
+  // Finalization cadence, logged separately so it never contaminates the latency
+  // measurement: a long gap between finals is the endpointing /
+  // never-closing-segment symptom, which is a DIFFERENT fault from lag.
+  console.log(
+    `[voice-lat] final speechFinal=${msg.speech_final === true} fromFinalize=${msg.from_finalize === true} ` +
+      `chars=${transcript.length} audioPos=${((msg.start ?? 0) + (msg.duration ?? 0)).toFixed(2)}s`,
+  )
+}
+
+/** Accumulate finalized segments and relay the segment to the control panel. */
+function relayTranscript(session: VoiceSession, transcript: string, isFinal: boolean, speechFinal: boolean) {
+  if (isFinal) {
+    session.finalTranscript += (session.finalTranscript ? ' ' : '') + transcript
+  }
+  safeSend(
+    session.dashboardWs,
+    JSON.stringify({
+      type: 'voice_transcript',
+      transcript,
+      isFinal,
+      speechFinal,
+      accumulated: session.finalTranscript,
+      // Broker-side elapsed (ms since first audio chunk). The client compares it
+      // against its OWN elapsed clock: both are relative to their own start so
+      // clock skew cancels, and a GROWING divergence isolates a broker->browser
+      // return-leg backlog from Deepgram lag.
+      brokerElapsedMs: session.firstAudioAt ? Date.now() - session.firstAudioAt : 0,
+    }),
+  )
+}
+
+/** One Results message: measure it, relay it, and notice when it terminates the session. */
+function handleDeepgramResults(ws: ServerWebSocket<unknown>, session: VoiceSession, msg: DeepgramMessage) {
+  const alt = msg.channel?.alternatives?.[0]
+  if (!alt) return
+
+  const transcript = alt.transcript || ''
+  const isFinal = msg.is_final === true
+
+  logResultDiagnostics(session, msg, transcript, isFinal)
+  if (transcript) relayTranscript(session, transcript, isFinal, msg.speech_final === true)
+
+  // Fast terminal marker. Gated on `stopping` because a mid-stream Finalize
+  // (used to cap segment length) sets the same flag without ending anything.
+  if (msg.from_finalize === true && session.stopping) {
+    markTranscriptFinal(ws, session, 'from_finalize')
   }
 }
 
@@ -198,6 +281,8 @@ export function handleVoiceStart(
     audioChunks: 0,
     audioBytes: 0,
     firstAudioAt: 0,
+    stopping: false,
+    finalized: false,
     latency: createLatencyTracker(bytesPerSecondFor(data.encoding, data.sampleRate), () => voiceSession.firstAudioAt),
     timeoutTimer: setTimeout(() => {
       console.log(`[voice-stream] Session timed out (${VOICE_TIMEOUT_MS / 1000}s)`)
@@ -240,63 +325,22 @@ export function handleVoiceStart(
     safeSend(voiceSession.dashboardWs, JSON.stringify({ type: 'voice_ready', flushedChunks, flushedBytes }))
   }
 
+  const dgHandlers: Record<string, (msg: DeepgramMessage) => void> = {
+    Results: msg => handleDeepgramResults(ws, voiceSession, msg),
+    UtteranceEnd: () => safeSend(voiceSession.dashboardWs, JSON.stringify({ type: 'voice_utterance_end' })),
+    // Metadata is Deepgram's guaranteed last word after CloseStream: everything
+    // has been processed and sent. That makes it the authoritative terminal
+    // marker, and the reason the stop path no longer needs a stopwatch.
+    Metadata: msg => {
+      console.log(`[voice-stream] Deepgram metadata: duration=${msg.duration}s`)
+      if (voiceSession.stopping) markTranscriptFinal(ws, voiceSession, 'metadata')
+    },
+  }
+
   dgWs.onmessage = (event: MessageEvent) => {
     try {
       const msg = JSON.parse(typeof event.data === 'string' ? event.data : '')
-
-      if (msg.type === 'Results') {
-        const alt = msg.channel?.alternatives?.[0]
-        if (!alt) return
-
-        const transcript = alt.transcript || ''
-        const isFinal = msg.is_final === true
-        const speechFinal = msg.speech_final === true
-
-        const latLine = voiceSession.latency.onResult({
-          isFinal,
-          start: msg.start,
-          duration: msg.duration,
-          audioBytes: voiceSession.audioBytes,
-        })
-        if (latLine) console.log(latLine)
-        if (isFinal) {
-          // Finalization cadence, logged separately so it never contaminates the
-          // latency measurement: a long gap between finals is the endpointing /
-          // never-closing-segment symptom, which is a DIFFERENT fault from lag.
-          console.log(
-            `[voice-lat] final speechFinal=${speechFinal} fromFinalize=${msg.from_finalize === true} ` +
-              `chars=${transcript.length} audioPos=${((msg.start ?? 0) + (msg.duration ?? 0)).toFixed(2)}s`,
-          )
-        }
-
-        if (transcript) {
-          if (isFinal) {
-            // Accumulate final segments
-            voiceSession.finalTranscript += (voiceSession.finalTranscript ? ' ' : '') + transcript
-          }
-
-          safeSend(
-            voiceSession.dashboardWs,
-            JSON.stringify({
-              type: 'voice_transcript',
-              transcript,
-              isFinal,
-              speechFinal,
-              accumulated: voiceSession.finalTranscript,
-              // Broker-side elapsed (ms since first audio chunk). The client
-              // compares it against its OWN elapsed clock: both are relative to
-              // their own start so clock skew cancels, and a GROWING divergence
-              // isolates a broker->browser return-leg backlog from Deepgram lag.
-              brokerElapsedMs: voiceSession.firstAudioAt ? Date.now() - voiceSession.firstAudioAt : 0,
-            }),
-          )
-        }
-      } else if (msg.type === 'UtteranceEnd') {
-        safeSend(voiceSession.dashboardWs, JSON.stringify({ type: 'voice_utterance_end' }))
-      } else if (msg.type === 'Metadata') {
-        // Sent after CloseStream - connection is about to close
-        console.log(`[voice-stream] Deepgram metadata: duration=${msg.duration}s`)
-      }
+      dgHandlers[msg.type as string]?.(msg)
     } catch (err) {
       console.error('[voice-stream] Failed to parse Deepgram message:', err)
     }
@@ -450,15 +494,52 @@ function completeVoiceSession(ws: ServerWebSocket<unknown>, session: VoiceSessio
   }
 }
 
-/** Ask Deepgram to flush (Finalize), close the stream, then complete once results settle. */
-function flushFinalizeAndComplete(ws: ServerWebSocket<unknown>, session: VoiceSession, completeDelayMs: number) {
+/**
+ * The transcript is COMPLETE as far as Deepgram is concerned. Emit voice_final
+ * immediately -- ahead of, and independent from, refinement -- so the client can
+ * submit the whole text without guessing whether more is coming. voice_done
+ * still follows later with the refined version; by then the client has already
+ * sent, and files it to history.
+ *
+ * Idempotent: from_finalize and Metadata can both arrive, and the safety timer
+ * may also fire. First one wins.
+ */
+function markTranscriptFinal(ws: ServerWebSocket<unknown>, session: VoiceSession, reason: string) {
+  if (session.finalized) return
+  session.finalized = true
+  console.log(
+    `[voice-stream] transcript final via ${reason} (${session.finalTranscript.length} chars, ` +
+      `audioChunks=${session.audioChunks}, DG state=${session.dgWs.readyState})`,
+  )
+  safeSend(session.dashboardWs, JSON.stringify({ type: 'voice_final', accumulated: session.finalTranscript, reason }))
+  completeVoiceSession(ws, session)
+}
+
+/**
+ * Ask Deepgram to flush and close, then complete when DEEPGRAM says it is done
+ * -- not on a stopwatch.
+ *
+ * The previous version fired CloseStream at a blind 500ms and completed at
+ * 800ms, which then hard-closed the socket in cleanupVoiceSession. If Deepgram
+ * was running behind (the reported bug), that severed the connection mid-drain
+ * and silently truncated the tail. Now the real terminal markers drive it:
+ * Results.from_finalize (fast path, not guaranteed for tiny audio per Deepgram's
+ * docs) or the Metadata message, which CloseStream guarantees before close.
+ * The timer that remains is a safety net that LOGS when it fires, never the
+ * normal path.
+ */
+function flushFinalizeAndComplete(ws: ServerWebSocket<unknown>, session: VoiceSession, safetyMs: number) {
+  session.stopping = true
   session.dgWs.send(JSON.stringify({ type: 'Finalize' }))
+  session.dgWs.send(JSON.stringify({ type: 'CloseStream' }))
   setTimeout(() => {
-    if (session.dgWs.readyState === WebSocket.OPEN) {
-      session.dgWs.send(JSON.stringify({ type: 'CloseStream' }))
-    }
-  }, 500)
-  setTimeout(() => completeVoiceSession(ws, session), completeDelayMs)
+    if (session.finalized) return
+    console.warn(
+      `[voice-stream] no terminal marker from Deepgram after ${safetyMs}ms -- completing on safety timer ` +
+        `(${session.finalTranscript.length} chars accumulated). If this recurs, Deepgram is running behind.`,
+    )
+    markTranscriptFinal(ws, session, 'safety-timeout')
+  }, safetyMs)
 }
 
 function stopVoiceSession(ws: ServerWebSocket<unknown>, reason: string) {
@@ -471,9 +552,9 @@ function stopVoiceSession(ws: ServerWebSocket<unknown>, reason: string) {
   clearInterval(session.keepaliveTimer)
 
   if (session.dgWs.readyState === WebSocket.OPEN) {
-    // DG connected - flush pending results, close, then complete (800ms catches
-    // the last finals from Finalize).
-    flushFinalizeAndComplete(ws, session, 800)
+    // DG connected - flush and close; Deepgram's own terminal marker completes
+    // it. The number is a safety net, not the expected path.
+    flushFinalizeAndComplete(ws, session, TERMINAL_SAFETY_MS)
   } else if (session.dgWs.readyState === WebSocket.CONNECTING) {
     // DG still connecting - wait up to 3s for it, then flush or give up
     console.log(`[voice-stream] DG still connecting at stop time, waiting up to 3s...`)
@@ -495,7 +576,7 @@ function stopVoiceSession(ws: ServerWebSocket<unknown>, reason: string) {
       resolved = true
       clearTimeout(giveUp)
       if (origOnOpen) (origOnOpen as (ev: Event) => void)(ev)
-      flushFinalizeAndComplete(ws, session, 1500)
+      flushFinalizeAndComplete(ws, session, TERMINAL_SAFETY_MS)
     }
 
     session.dgWs.onerror = () => {
