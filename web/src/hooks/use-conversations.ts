@@ -30,6 +30,7 @@ import {
   selectConversations,
 } from '@/lib/slim-conversation'
 import { cacheLookupBefore, cachePushEntries } from '@/lib/transcript-page-cache'
+import { pruneLiveTranscript } from '@/lib/transcript-prune'
 import {
   type ClaudeEfficiencyUpdate,
   type ClaudeHealthUpdate,
@@ -215,6 +216,14 @@ interface ConversationsState {
    *  after an infinite-scrollback prepend. On clear, setScrollbackActive collapses
    *  any over-cap excess into the page cache so steady-state memory is restored. */
   scrollbackActive: Record<string, boolean>
+  /** Per-conversation "user loaded older history this visit" flag. Set by the
+   *  transcript window's loadEarlier/fetchOlder; cleared on conversation
+   *  switch (releaseTranscriptHead). While held, loaded history is KEPT:
+   *  return-to-bottom does NOT collapse it and the passive prune backs off to
+   *  the held cap (lib/transcript-prune.ts). Prior art: ChatGPT/Slack/Discord
+   *  keep loaded history for the whole visit; dropping it the moment the
+   *  reader grazes the bottom destroyed scroll length + position. */
+  transcriptHeadHeld: Record<string, boolean>
   streamingText: Record<string, string> // conversationId -> accumulating text from headless stream deltas
   streamingThinking: Record<string, string> // conversationId -> accumulating thinking from stream deltas
   conversationInfo: Record<
@@ -418,6 +427,12 @@ interface ConversationsState {
    *  bottom), excess head entries beyond the live cap are collapsed into the
    *  page cache so memory returns to steady state. */
   setScrollbackActive: (conversationId: string, active: boolean) => void
+  /** Mark that the user loaded older history this visit -- keep it mounted
+   *  (no collapse on return-to-bottom, prune backs off to the held cap). */
+  holdTranscriptHead: (conversationId: string) => void
+  /** Conversation switch: drop the hold and collapse over-cap history into
+   *  the page cache so memory returns to steady state. */
+  releaseTranscriptHead: (conversationId: string) => void
   setTasks: (conversationId: string, tasks: TaskInfo[]) => void
   setProjectSettings: (settings: ProjectSettingsMap) => void
   setProjectOrder: (order: ProjectOrder) => void
@@ -819,6 +834,7 @@ function buildEvictedConvData(state: ConversationsState, cachedIds: Set<string>)
   const inputDrafts: ConversationsState['inputDrafts'] = {}
   const lastAppliedTranscriptSeq: ConversationsState['lastAppliedTranscriptSeq'] = {}
   const scrollbackActive: ConversationsState['scrollbackActive'] = {}
+  const transcriptHeadHeld: ConversationsState['transcriptHeadHeld'] = {}
   const conversationPermissions: ConversationsState['conversationPermissions'] = {}
   for (const sid of cachedIds) {
     if (state.events[sid]) events[sid] = state.events[sid]
@@ -830,6 +846,7 @@ function buildEvictedConvData(state: ConversationsState, cachedIds: Set<string>)
     if (state.lastAppliedTranscriptSeq[sid] !== undefined)
       lastAppliedTranscriptSeq[sid] = state.lastAppliedTranscriptSeq[sid]
     if (state.scrollbackActive[sid]) scrollbackActive[sid] = state.scrollbackActive[sid]
+    if (state.transcriptHeadHeld[sid]) transcriptHeadHeld[sid] = state.transcriptHeadHeld[sid]
     if (state.conversationPermissions[sid]) conversationPermissions[sid] = state.conversationPermissions[sid]
   }
   for (const key of Object.keys(state.subagentTranscripts)) {
@@ -846,6 +863,7 @@ function buildEvictedConvData(state: ConversationsState, cachedIds: Set<string>)
     inputDrafts,
     lastAppliedTranscriptSeq,
     scrollbackActive,
+    transcriptHeadHeld,
     conversationPermissions,
   }
 }
@@ -866,6 +884,7 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   transcripts: {},
   lastAppliedTranscriptSeq: {},
   scrollbackActive: {},
+  transcriptHeadHeld: {},
   streamingText: {},
   streamingThinking: {},
   conversationInfo: {},
@@ -1390,29 +1409,52 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
     set(state => {
       const prev = state.scrollbackActive[conversationId] ?? false
       if (prev === active) return state
-      // Mirror the cap in use-websocket-handlers.ts TRANSCRIPT_LIVE_CAP. Kept in
-      // sync by colocated comments at both prune sites and here.
-      const LIVE_CAP = 100
       if (active) {
         return { scrollbackActive: { ...state.scrollbackActive, [conversationId]: true } }
       }
-      // Returning to live tail: collapse any over-cap excess accumulated during
-      // scrollback (live appends were appended without pruning; fetched older
-      // pages were prepended). Push the evicted head to the page cache so a
-      // subsequent scroll-up replays locally. See handleTranscriptEntries.
+      // Returning to live tail: collapse over-cap excess accumulated during
+      // scrollback -- UNLESS the user loaded older history this visit
+      // (transcriptHeadHeld): then pruneLiveTranscript's held cap keeps it
+      // mounted and the real collapse waits for releaseTranscriptHead.
       const existing = state.transcripts[conversationId] || []
-      if (existing.length <= LIVE_CAP) {
+      const kept = pruneLiveTranscript({
+        sid: conversationId,
+        entries: existing,
+        scrollback: false,
+        held: !!state.transcriptHeadHeld[conversationId],
+        source: 'return-to-bottom',
+      })
+      if (kept === existing) {
         return { scrollbackActive: { ...state.scrollbackActive, [conversationId]: false } }
       }
-      const dropCount = existing.length - LIVE_CAP
-      const evicted = existing.slice(0, dropCount)
-      const kept = existing.slice(dropCount)
-      cachePushEntries(conversationId, evicted)
-      console.debug(
-        `[transcript-prune] ${conversationId.slice(0, 8)} deferred-collapse on return-to-bottom: dropped ${dropCount} (seq ${evicted[0]?.seq}..${evicted[evicted.length - 1]?.seq}) to cache; live=${kept.length} (cap ${LIVE_CAP})`,
-      )
       return {
         scrollbackActive: { ...state.scrollbackActive, [conversationId]: false },
+        transcripts: { ...state.transcripts, [conversationId]: kept },
+        newDataSeq: state.newDataSeq + 1,
+      }
+    }),
+  holdTranscriptHead: conversationId =>
+    set(state => {
+      if (state.transcriptHeadHeld[conversationId]) return state
+      console.debug(`[transcript-prune] ${conversationId.slice(0, 8)} HOLD head (older history loaded this visit)`)
+      return { transcriptHeadHeld: { ...state.transcriptHeadHeld, [conversationId]: true } }
+    }),
+  releaseTranscriptHead: conversationId =>
+    set(state => {
+      if (!state.transcriptHeadHeld[conversationId]) return state
+      const { [conversationId]: _, ...restHeld } = state.transcriptHeadHeld
+      const existing = state.transcripts[conversationId] || []
+      const kept = pruneLiveTranscript({
+        sid: conversationId,
+        entries: existing,
+        scrollback: false,
+        held: false,
+        source: 'release-on-switch',
+      })
+      console.debug(`[transcript-prune] ${conversationId.slice(0, 8)} RELEASE head (conversation switch)`)
+      if (kept === existing) return { transcriptHeadHeld: restHeld }
+      return {
+        transcriptHeadHeld: restHeld,
         transcripts: { ...state.transcripts, [conversationId]: kept },
         newDataSeq: state.newDataSeq + 1,
       }

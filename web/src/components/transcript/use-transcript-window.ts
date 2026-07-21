@@ -26,6 +26,7 @@ import {
   WINDOW_SIZE,
   WINDOW_THRESHOLD,
 } from './transcript-window-core'
+import { useTranscriptHeadHold } from './use-transcript-head-hold'
 
 type Ref<T> = { current: T }
 
@@ -82,6 +83,8 @@ export function useTranscriptWindow(opts: {
   onBeforePrependRef.current = opts.onBeforePrepend
 
   const [windowAnchorSeq, setWindowAnchorSeq] = useState<number | null>(() => defaultAnchorSeq(entries))
+  // Visit-scoped "user loaded older history" latch (see use-transcript-head-hold).
+  const { headHeldRef, markHeadHeld } = useTranscriptHeadHold(cacheKey)
   const prevCacheKeyRef = useRef(cacheKey)
   // True once we've sized the window against a NON-EMPTY transcript for the
   // current cacheKey. A cold switch (MISS) opens with entries=[] (fetch in
@@ -107,6 +110,7 @@ export function useTranscriptWindow(opts: {
     // Conversation switch -- snap to the last-N default for whatever is loaded.
     prevCacheKeyRef.current = cacheKey
     windowInitRef.current = entries.length > 0
+    headHeldRef.current = false
     onBackfillBoundaryRef.current?.(undefined)
     reanchorTo(defaultAnchorSeq(entries))
   } else if (!windowInitRef.current && entries.length > 0) {
@@ -123,6 +127,7 @@ export function useTranscriptWindow(opts: {
     reanchorTo(defaultAnchorSeq(entries))
   } else if (
     follow &&
+    !headHeldRef.current &&
     entries.length > WINDOW_THRESHOLD &&
     (windowAnchorSeq === null || windowStart < WINDOW_REANCHOR_MARGIN)
   ) {
@@ -132,7 +137,11 @@ export function useTranscriptWindow(opts: {
     // the bottom. Re-default forward so the boundary sits safely above the
     // prune line again. Gated on `follow` (viewport at the bottom) so dropping
     // the now-offscreen older entries is invisible -- a scrollback reader is
-    // never yanked.
+    // never yanked. ALSO gated on the head-hold: once the user loaded older
+    // history this visit, snapping back to last-N would visibly collapse the
+    // scrollbar (the "return to bottom kills my loaded history" bug). While
+    // held, the store prune backs off too (lib/transcript-prune.ts), so the
+    // head is stable and regroup thrash cannot occur.
     const reanchored = defaultAnchorSeq(entries)
     if (reanchored !== windowAnchorSeq) {
       console.debug(
@@ -160,6 +169,7 @@ export function useTranscriptWindow(opts: {
 
   const loadEarlier = useCallback(() => {
     const ents = entriesRef.current
+    markHeadHeld()
     // The current top-visible entry becomes a backfill boundary.
     onBackfillBoundaryRef.current?.(ents[windowStartRef.current]?.seq)
     onBeforePrependRef.current?.()
@@ -167,12 +177,13 @@ export function useTranscriptWindow(opts: {
     // Move the anchor to the newly-revealed boundary entry (null = reached the
     // top, show all). Derived windowStart re-resolves on the next render.
     setWindowAnchorSeq(newStart <= 0 ? null : (ents[newStart]?.seq ?? null))
-  }, [])
+  }, [markHeadHeld])
 
   const fetchOlder = useCallback(() => {
     const cid = cacheKeyRef.current
     const oldestSeq = entriesRef.current[0]?.seq
     if (!cid || oldestSeq === undefined || oldestSeq <= 1) return
+    markHeadHeld()
     // The current oldest entry becomes a backfill boundary -- fetched entries
     // prepend ABOVE it.
     onBackfillBoundaryRef.current?.(oldestSeq)
@@ -190,7 +201,7 @@ export function useTranscriptWindow(opts: {
       .catch(() => {
         fetchingOlderRef.current = false
       })
-  }, [])
+  }, [markHeadHeld])
 
   return {
     windowed,

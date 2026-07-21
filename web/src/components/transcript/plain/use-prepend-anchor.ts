@@ -49,11 +49,14 @@ export function usePrependAnchor(engine: Engine): () => void {
     const delta = el.scrollHeight - pending.scrollHeight
     if (delta === 0) return // content not committed yet -- stay armed
     pendingRef.current = null
-    // While following, the engine's bottom pin is the correct anchor -- adding
-    // a delta would shove the viewport off the bottom. Only a detached reader
-    // needs position compensation.
-    const engineAtBottom = state.isAtBottom || state.isNearBottom
-    if (delta > 0 && !engineAtBottom) {
+    // At the RAW bottom the engine's resize pin is the correct anchor --
+    // adding a delta would shove the viewport off the bottom. Everyone else
+    // (including a near-bottom reader whose lock silently escaped on a
+    // sub-threshold nudge -- raw isAtBottom false) keeps their position; when
+    // `follow` is still on, the tail-append re-pin re-asserts the bottom
+    // anyway. Gating on isNearBottom here skipped compensation for exactly
+    // that escaped reader and let a prepend shift them.
+    if (delta > 0 && !state.isAtBottom) {
       // Tagged write via the engine's scrollTop setter -- never reads as user
       // scroll intent (the ONE-WRITER invariant).
       state.scrollTop = pending.scrollTop + delta

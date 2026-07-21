@@ -35,9 +35,8 @@ import type {
 import { useDispatchStore } from '@/components/dispatch-overlay/dispatch-store'
 import { handleLaunchProfilesUpdatedMessage } from '@/components/launch-profiles/use-launch-profiles'
 import { daemonControlToast } from '@/lib/daemon-control'
-import { record } from '@/lib/perf-metrics'
 import { forgetFull, rememberFull, slimConversation } from '@/lib/slim-conversation'
-import { cachePushEntries } from '@/lib/transcript-page-cache'
+import { pruneLiveTranscript, TRANSCRIPT_LIVE_CAP } from '@/lib/transcript-prune'
 import type {
   ClaudeEfficiencyUpdate,
   ClaudeHealthUpdate,
@@ -553,13 +552,9 @@ function handleEvent(msg: DashboardMessage) {
 
 // ─── transcripts + streaming ───────────────────────────────────────────────
 
-/** Live-state cap. Tail-grow paths (incremental WS broadcast, delta refetch)
- *  prune the HEAD of the in-memory transcript when it exceeds this. Evicted
- *  entries flow into the transcript page cache so a scroll-up doesn't round
- *  -trip the broker for entries the client just saw. PASSIVE: only triggered
- *  by a live append, never by a prepend or by returning to the bottom. See
- *  .claude/docs/plan-progressive-transcript-impl.md for the design. */
-const TRANSCRIPT_LIVE_CAP = 100
+// Cap policy + prune implementation live in lib/transcript-prune.ts (shared
+// with the delta-refetch path in use-websocket.ts and the collapse sites in
+// use-conversations.ts). See .claude/docs/plan-progressive-transcript-impl.md.
 
 function handleTranscriptEntries(msg: DashboardMessage) {
   if (!msg.conversationId || !msg.entries) return
@@ -614,38 +609,17 @@ function handleTranscriptEntries(msg: DashboardMessage) {
         return {}
       }
       result = [...existing, ...fresh]
-      // Passive prune: tail grew, head may now exceed the live cap. Evicted
-      // entries are pushed into the page cache so a scroll-up after the
-      // prune can replay them locally without a broker round-trip. Skipped
-      // on the initial-replace path -- that's a server-determined snapshot,
-      // not a live tail-grow. ALSO skipped while the user is in scrollback
-      // (follow=false mirrored into state.scrollbackActive[sid]): pruning
-      // the head while the user is reading prepended-older history would
-      // yank entries out from under their viewport. Deferred-collapse runs
-      // on return-to-bottom via setScrollbackActive(sid, false).
-      const scrollback = state.scrollbackActive[sid]
-      if (result.length > TRANSCRIPT_LIVE_CAP && scrollback) {
-        console.debug(
-          `[transcript-prune] ${sid.slice(0, 8)} DEFERRED (scrollback active): live=${result.length} > cap ${TRANSCRIPT_LIVE_CAP}, collapse on return-to-bottom`,
-        )
-      }
-      if (result.length > TRANSCRIPT_LIVE_CAP && !scrollback) {
-        const t0 = performance.now()
-        const dropCount = result.length - TRANSCRIPT_LIVE_CAP
-        const evicted = result.slice(0, dropCount)
-        result = result.slice(dropCount)
-        cachePushEntries(sid, evicted)
-        const elapsed = performance.now() - t0
-        record(
-          'transcript',
-          'prune',
-          elapsed,
-          `${sid.slice(0, 8)} -${dropCount} (seq ${evicted[0]?.seq}..${evicted[evicted.length - 1]?.seq}) -> cache; live=${result.length}`,
-        )
-        console.debug(
-          `[transcript-prune] ${sid.slice(0, 8)} dropped ${dropCount} entries (seq ${evicted[0]?.seq}..${evicted[evicted.length - 1]?.seq}) to cache; live=${result.length} (cap ${TRANSCRIPT_LIVE_CAP}, ${elapsed.toFixed(1)}ms)`,
-        )
-      }
+      // Passive prune: tail grew, head may now exceed the cap. Skipped on the
+      // initial-replace path -- that's a server-determined snapshot, not a
+      // live tail-grow. Policy (scrollback defer, held-history back-off) is
+      // documented in lib/transcript-prune.ts.
+      result = pruneLiveTranscript({
+        sid,
+        entries: result,
+        scrollback: !!state.scrollbackActive[sid],
+        held: !!state.transcriptHeadHeld[sid],
+        source: 'ws-broadcast',
+      })
     }
     if (initial || newEntries.length > 2) {
       console.log(

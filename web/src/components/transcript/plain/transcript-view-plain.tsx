@@ -26,6 +26,7 @@ import { useLiveGroups, usePlanContext, useTranscriptSettings } from '../use-tra
 import { useTranscriptWindow } from '../use-transcript-window'
 import { PlainGroupList } from './plain-group-list'
 import { TopSentinel } from './top-sentinel'
+import { useAboveViewportAnchor } from './use-above-anchor'
 import { usePlainFollow } from './use-plain-follow'
 import { usePrependAnchor } from './use-prepend-anchor'
 
@@ -49,6 +50,9 @@ export const TranscriptViewPlain = memo(function TranscriptViewPlain({
 
   const engine = usePlainFollow({ cacheKey, follow, tailSignal, onUserScroll, onReachedBottom })
   const armPrependAnchor = usePrependAnchor(engine)
+  // Scroll-anchoring polyfill: compensates content-visibility estimate->real
+  // inflation ABOVE a detached reader (Safari has no native anchoring).
+  useAboveViewportAnchor(engine)
 
   // Shared progressive-window + scrollback data logic. No backfill group
   // breaks needed here: the scrollHeight-delta anchor measures the whole
