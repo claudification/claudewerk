@@ -24,12 +24,13 @@ import type {
   CanvasPresence,
   CanvasSceneDelta,
   CanvasShareTier,
+  CanvasSummary,
 } from '../../shared/protocol'
-import { sanitizeCanvasScene } from '../canvas-sanitize'
-import { readScene } from '../canvas-scenes'
+import { enforceCanvasTier } from '../canvas-sanitize'
+import { BLANK_SCENE, readScene } from '../canvas-scenes'
 import { getCanvas, saveCanvasScene } from '../canvas-store'
 import type { ConversationStore } from '../conversation-store'
-import type { MessageHandler } from '../handler-context'
+import type { HandlerContext, MessageHandler } from '../handler-context'
 import { DASHBOARD_ROLES, registerHandlers } from '../message-router'
 
 /** Cursor colours assigned round-robin as peers join a room. */
@@ -37,6 +38,9 @@ const PALETTE = ['#38bdf8', '#f472b6', '#4ade80', '#facc15', '#a78bfa', '#fb923c
 
 interface Peer extends CanvasPeer {
   ws: ServerWebSocket<unknown>
+  /** What this peer may write. Resolved ONCE at join and never re-read from the
+   *  wire, so a client cannot talk its way up a tier after the fact. */
+  tier: CanvasShareTier
 }
 
 /** canvasId -> peerId -> peer. Module state (room membership beyond the raw
@@ -45,6 +49,22 @@ const rooms = new Map<string, Map<string, Peer>>()
 /** canvasId -> pending persist. */
 const persistTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const PERSIST_DEBOUNCE_MS = 1500
+
+/**
+ * canvasId -> the newest ACCEPTED scene in the room.
+ *
+ * The tier check needs the baseline a comment peer must preserve, and the stored
+ * scene lags the room by up to PERSIST_DEBOUNCE_MS. Judging against disk would
+ * reject every annotation made within 1.5s of someone else's edit -- and measure
+ * it against a base the guest is not even looking at. So the room keeps the live
+ * scene and disk is only the fallback for a room that has not written yet.
+ */
+const latestScene = new Map<string, string>()
+
+/** The baseline for a tier check: live room scene, else stored, else blank. */
+function baselineScene(canvasId: string): string {
+  return latestScene.get(canvasId) ?? readScene(canvasId) ?? BLANK_SCENE
+}
 
 function peerIdOf(ws: ServerWebSocket<unknown>): string {
   return (ws.data as { wsConnId?: string }).wsConnId ?? `peer_${Math.abs(hashWs(ws))}`
@@ -75,6 +95,23 @@ function broadcastPresence(store: ConversationStore, canvasId: string): void {
   store.broadcastToChannel('canvas', canvasId, msg)
 }
 
+/**
+ * What this socket may do in this room, or null if it may not be here at all.
+ *
+ * Two ways in, and they must not blur: a project member authenticates and
+ * co-edits, while a share-link guest carries a capability for ONE canvas at a
+ * fixed tier (stamped on the socket at upgrade). A guest asking for a different
+ * canvas is refused even when their own token is perfectly valid -- the same
+ * "a share bound to A never grants B" rule conversation shares enforce.
+ */
+function resolveJoinTier(ctx: HandlerContext, canvas: CanvasSummary): CanvasShareTier | null {
+  const { shareCanvasId, shareCanvasTier } = ctx.ws.data
+  if (shareCanvasId) return shareCanvasId === canvas.id ? (shareCanvasTier ?? 'read') : null
+  // Authed project members co-edit. Throws (and the router answers) if not.
+  ctx.requirePermission('files:read', canvas.projectUri)
+  return 'edit'
+}
+
 const handleCanvasJoin: MessageHandler = (ctx, data) => {
   const { canvasId, name: reqName } = data as Partial<CanvasJoin>
   if (!canvasId) return
@@ -83,8 +120,12 @@ const handleCanvasJoin: MessageHandler = (ctx, data) => {
     ctx.reply({ type: 'canvas_error', canvasId, error: 'not found' })
     return
   }
-  // Authed path: project files:read. (Guest-via-share-token join is a later slice.)
-  ctx.requirePermission('files:read', canvas.projectUri)
+  const tier = resolveJoinTier(ctx, canvas)
+  if (!tier) {
+    ctx.reply({ type: 'canvas_error', canvasId, error: 'not found' })
+    ctx.log.debug(`[canvas] join DENIED ${canvasId.slice(0, 12)} -- share bound to another canvas`)
+    return
+  }
 
   const peerId = peerIdOf(ctx.ws)
   let room = rooms.get(canvasId)
@@ -94,10 +135,9 @@ const handleCanvasJoin: MessageHandler = (ctx, data) => {
   }
   const color = PALETTE[room.size % PALETTE.length]
   const name = (typeof reqName === 'string' && reqName.trim()) || ctx.ws.data.userName || 'guest'
-  room.set(peerId, { peerId, name, color, ws: ctx.ws })
+  room.set(peerId, { peerId, name, color, ws: ctx.ws, tier })
   ctx.conversations.subscribeChannel(ctx.ws, 'canvas', canvasId)
 
-  const tier: CanvasShareTier = 'edit' // authed project users co-edit
   const ack: CanvasJoinAck = {
     type: 'canvas_join_ack',
     canvasId,
@@ -116,8 +156,13 @@ function removePeer(store: ConversationStore, ws: ServerWebSocket<unknown>, canv
   const peerId = peerIdOf(ws)
   if (!room?.delete(peerId)) return false
   store.unsubscribeChannel(ws, 'canvas', canvasId)
-  if (room.size === 0) rooms.delete(canvasId)
-  else broadcastPresence(store, canvasId)
+  if (room.size === 0) {
+    // Last peer out: drop the live scene so the next room re-reads from disk
+    // (which the pending persist is about to have written) instead of trusting a
+    // cached copy that could outlive the canvas being edited elsewhere.
+    rooms.delete(canvasId)
+    latestScene.delete(canvasId)
+  } else broadcastPresence(store, canvasId)
   return true
 }
 
@@ -160,11 +205,23 @@ const handleCanvasSceneDelta: MessageHandler = (ctx, data) => {
   if (!peer) return
   const raw = data.scene
   if (typeof raw !== 'string' || !raw.trim()) return
-  const clean = sanitizeCanvasScene(raw)
-  if (clean.json === null) return // unparseable -> ignore, keep prior scene
-  const msg: CanvasSceneDelta = { type: 'canvas_scene_delta', canvasId, scene: clean.json, peerId: peer.peerId }
+
+  // Tier gate against the LIVE room scene (see baselineScene). Same chokepoint the
+  // HTTP guest-write path uses -- a live socket must never be the cheaper way in.
+  const verdict = enforceCanvasTier(baselineScene(canvasId), raw, peer.tier)
+  if (!verdict.ok || !verdict.json) {
+    ctx.reply({ type: 'canvas_error', canvasId, error: verdict.reason ?? 'rejected' })
+    ctx.log.debug(
+      `[canvas] delta REJECTED ${canvasId.slice(0, 12)} peer=${peer.peerId.slice(0, 8)} ` +
+        `tier=${peer.tier} reason=${verdict.reason}`,
+    )
+    return
+  }
+
+  latestScene.set(canvasId, verdict.json)
+  const msg: CanvasSceneDelta = { type: 'canvas_scene_delta', canvasId, scene: verdict.json, peerId: peer.peerId }
   ctx.conversations.broadcastToChannel('canvas', canvasId, msg)
-  schedulePersist(canvasId, clean.json)
+  schedulePersist(canvasId, verdict.json)
 }
 
 /** Socket-close cleanup: drop this ws from every canvas room it was in, flush no
@@ -178,6 +235,7 @@ export function _resetCanvasRooms(): void {
   for (const t of persistTimers.values()) clearTimeout(t)
   persistTimers.clear()
   rooms.clear()
+  latestScene.clear()
 }
 
 /** Handler map -- exported for direct unit testing; registered below. */

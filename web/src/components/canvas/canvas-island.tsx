@@ -12,27 +12,11 @@
  */
 
 import type { CanvasPeer, CanvasSummary } from '@shared/protocol'
+import { PresenceDots } from './canvas-presence-dots'
 import { CanvasShareControl } from './canvas-share-control'
 import type { SaveState } from './use-canvas-document'
 
 const SAVE_LABEL: Record<SaveState, string> = { idle: '', saving: 'saving...', saved: 'saved' }
-
-/** Live-presence dots for the peers currently in the room (self included). */
-function PresenceDots({ peers }: { peers: CanvasPeer[] }) {
-  if (peers.length < 2) return null
-  return (
-    <span className="flex items-center gap-1 shrink-0" title={`${peers.length} editing`}>
-      {peers.slice(0, 5).map(p => (
-        <span
-          key={p.peerId}
-          className="w-2.5 h-2.5 rounded-full border border-background"
-          style={{ background: p.color }}
-          title={p.name}
-        />
-      ))}
-    </span>
-  )
-}
 
 export interface CanvasIslandProps {
   canvas: CanvasSummary | null

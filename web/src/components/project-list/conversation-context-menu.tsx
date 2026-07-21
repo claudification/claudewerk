@@ -9,6 +9,7 @@ import { selectConversations } from '@/lib/slim-conversation'
 import type { Conversation, ProjectOrder, ProjectOrderGroup } from '@/lib/types'
 import { projectPath } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
+import { CanvasMenuItems } from '../canvas/canvas-menu-items'
 import { RecapMenuItems } from '../recap-jobs/recap-menu-items'
 import { openReviveDialog } from '../revive-dialog-trigger'
 import { openManageProjectLinks } from '../settings/manage-project-links-trigger'
@@ -193,6 +194,7 @@ export function ConversationContextMenu({
             Quick recap (this conversation)
           </ContextMenu.Item>
           <RecapMenuItems projectUri={conversation.project} />
+          <CanvasMenuItems projectUri={conversation.project} />
           {conversation.pendingTaskCount > 0 && (
             <ContextMenu.Item
               className={menuItemClass}
@@ -335,6 +337,7 @@ function ProjectMenuItems({ project, onOpenSettings }: { project: string; onOpen
         Launch new…
       </ContextMenu.Item>
       <RecapMenuItems projectUri={project} />
+      <CanvasMenuItems projectUri={project} />
       <ContextMenu.Item
         className={cn(menuItemClass, 'text-amber-400')}
         onSelect={() => {

@@ -6,7 +6,11 @@
  * tier-gated public route.
  */
 
-import ExcalidrawCanvas from '@/components/dialog/excalidraw-canvas'
+import type { CanvasPeer } from '@shared/protocol'
+import ExcalidrawCanvas, { type CanvasCollabBinding } from '@/components/dialog/excalidraw-canvas'
+import { PresenceDots } from './canvas-presence-dots'
+import { useCanvasCollab } from './use-canvas-collab'
+import { useGuestName } from './use-guest-name'
 import type { PublicCanvasDoc } from './use-public-canvas'
 import { usePublicCanvas } from './use-public-canvas'
 
@@ -33,10 +37,16 @@ function ViewerHeader({
   name,
   tier,
   saveState,
+  peers,
+  guestName,
+  onRename,
 }: {
   name: string
   tier: string
   saveState: PublicCanvasDoc['saveState']
+  peers: CanvasPeer[]
+  guestName: string
+  onRename: () => void
 }) {
   const badge = SAVE_BADGE[saveState]
   return (
@@ -45,6 +55,15 @@ function ViewerHeader({
       <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70 shrink-0">{TIER_NOTE[tier]}</span>
       <span className="flex-1" />
       {badge && <span className={`text-[10px] ${badge.cls}`}>{badge.text}</span>}
+      <PresenceDots peers={peers} />
+      <button
+        type="button"
+        onClick={onRename}
+        title="Change the name others see"
+        className="text-[10px] text-muted-foreground/70 hover:text-sky-300 shrink-0"
+      >
+        {guestName}
+      </button>
     </div>
   )
 }
@@ -52,6 +71,17 @@ function ViewerHeader({
 // fallow-ignore-next-line complexity -- loading/missing/ready three-state view, irreducible.
 export function PublicCanvasView({ token }: { token: string }) {
   const { doc, seed, state, saveState, onSnapshot } = usePublicCanvas(token)
+  const { name: guestName, rename } = useGuestName()
+  // Guests join the SAME room members do -- the share-mode socket already carries
+  // ?share=<token>, and the broker pins it to this canvas at the token's tier.
+  // Read-tier guests still join: they receive cursors and live edits, and simply
+  // never send (readOnly stops onChange at the source).
+  const { peers, bindApi, onLocalPointer, onLocalChange } = useCanvasCollab(
+    doc?.canvas.id ?? null,
+    state === 'ready',
+    guestName,
+  )
+  const collab: CanvasCollabBinding = { bindApi, onPointer: onLocalPointer, onChange: onLocalChange }
 
   if (state === 'loading') return <FullScreen>Loading canvas...</FullScreen>
   if (state === 'missing' || !doc) return <FullScreen>This share link is invalid or has been revoked.</FullScreen>
@@ -59,13 +89,25 @@ export function PublicCanvasView({ token }: { token: string }) {
   const readOnly = doc.tier === 'read'
   return (
     <div className="fixed inset-0 flex flex-col bg-background">
-      <ViewerHeader name={doc.canvas.name} tier={doc.tier} saveState={saveState} />
+      <ViewerHeader
+        name={doc.canvas.name}
+        tier={doc.tier}
+        saveState={saveState}
+        peers={peers}
+        guestName={guestName}
+        onRename={rename}
+      />
       <div className="flex-1 min-h-0 relative">
+        {/* onSnapshot (HTTP PUT) stays alongside the WS delta on purpose: the WS
+            path is what other peers SEE, while the HTTP response is what tells a
+            comment-tier guest their change was rejected. Both persist the same
+            JSON, so the redundancy costs a write, not correctness. */}
         <ExcalidrawCanvas
           key={doc.canvas.id}
           initialSnapshot={seed}
           readOnly={readOnly}
           onSnapshot={readOnly ? undefined : onSnapshot}
+          collab={collab}
         />
       </div>
     </div>

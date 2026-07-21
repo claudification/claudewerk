@@ -8,6 +8,7 @@
 import type { CanvasShareTier, CanvasSummary } from '@shared/protocol'
 import { useState } from 'react'
 import { haptic } from '@/lib/utils'
+import { CanvasShareExpiry } from './canvas-share-expiry'
 import { type CanvasShareState, useCanvasShare } from './use-canvas-share'
 
 const TIERS: { tier: CanvasShareTier; label: string; hint: string }[] = [
@@ -75,6 +76,7 @@ function SharePanel({ s }: { s: CanvasShareState }) {
           </button>
         )
       })}
+      <CanvasShareExpiry s={s} />
       {s.shared && s.url && <ShareLink url={s.url} busy={s.busy} revoke={() => void s.revoke()} />}
     </div>
   )

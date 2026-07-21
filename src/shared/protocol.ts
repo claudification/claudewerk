@@ -4515,6 +4515,8 @@ export interface CanvasSummary {
   shareTier?: CanvasShareTier
   /** opaque public-share token, when shared (authorized list only). */
   shareToken?: string
+  /** epoch ms the share link dies. Undefined = shared until explicitly revoked. */
+  shareExpiresAt?: number
   /** true if a thumbnail PNG has been stored. */
   hasThumb: boolean
   /** byte length of the stored scene JSON (0 for a blank canvas). */
