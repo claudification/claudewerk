@@ -4,6 +4,8 @@ import {
   openChecklistArchive,
   openChecklistBulkEdit,
 } from '@/components/checklist/checklist-bus'
+import { createCanvas } from '@/components/canvas/canvas-editor-io'
+import { openCanvasWindow } from '@/components/canvas/open-canvas-window'
 import { exposeDispatchControl } from '@/components/dispatch-overlay/dispatch-control-bridge'
 import { useDispatchStore } from '@/components/dispatch-overlay/dispatch-store'
 import { openLaunchProfileManager } from '@/components/launch-profiles/manager-state'
@@ -134,20 +136,35 @@ export function useGlobalCommands(toggleSidebar: () => void) {
     { label: 'NIGHTSHIFT (live status)', group: 'Navigation' },
   )
 
-  const openCanvas = useCallback(() => {
+  // NOTE the name clash this used to have: "THE CANVAS" is the FLEET MAP (the
+  // cytoscape graph in canvas-mode/), nothing to do with the Excalidraw drawings
+  // below. Labelled explicitly so the palette stops offering two unrelated things
+  // under the same word.
+  const openFleetMap = useCallback(() => {
     window.location.hash = '/canvas'
   }, [])
 
-  useCommand('open-canvas', openCanvas, {
-    label: 'THE CANVAS (fleet map)',
+  useCommand('open-canvas', openFleetMap, {
+    label: 'THE FLEET MAP (conversation graph)',
     group: 'Navigation',
   })
 
-  useChordCommand('open-canvas-chord', openCanvas, {
-    label: 'THE CANVAS',
+  useChordCommand('open-canvas-chord', openFleetMap, {
+    label: 'THE FLEET MAP',
     key: 'c',
     group: 'Navigation',
   })
+
+  // Excalidraw drawings, scoped to the project currently in focus.
+  useCommand(
+    'new-drawing',
+    () => {
+      const uri = useConversationsStore.getState().selectedProjectUri
+      if (!uri) return
+      void createCanvas(uri).then(c => c && openCanvasWindow(c.id))
+    },
+    { label: 'New drawing (canvas)', group: 'Navigation' },
+  )
 
   // The per-user dispatch cockpit. Expose the remote-control surface once so the
   // web_* debug tools can drive it (open / read state / submit intent).

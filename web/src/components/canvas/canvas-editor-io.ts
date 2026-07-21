@@ -61,6 +61,64 @@ export async function renameCanvas(canvasId: string, name: string): Promise<bool
   return res.ok
 }
 
+/** A project's active canvases, most recently edited first. */
+export async function listProjectCanvases(projectUri: string): Promise<CanvasSummary[]> {
+  const url = new URL('/api/canvases', window.location.origin)
+  url.searchParams.set('projectUri', projectUri)
+  const res = await fetch(appendShareParam(url.pathname + url.search))
+  if (!res.ok) return []
+  const { canvases } = (await res.json()) as { canvases?: CanvasSummary[] }
+  return (canvases ?? []).sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
+/** Create a canvas in a project, optionally seeded with a scene. */
+export async function createCanvas(
+  projectUri: string,
+  opts: { name?: string; sceneJson?: string } = {},
+): Promise<CanvasSummary | null> {
+  const res = await fetch('/api/canvases', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ projectUri, name: opts.name ?? 'Untitled canvas', scene: opts.sceneJson }),
+  })
+  if (!res.ok) return null
+  const { canvas } = (await res.json()) as { canvas: CanvasSummary }
+  window.dispatchEvent(new CustomEvent('rclaude-canvas-changed'))
+  return canvas
+}
+
+/**
+ * Copy a canvas within its project. Done client-side (load then create-with-scene)
+ * because the broker has no duplicate verb -- and does not need one, since a copy
+ * is exactly "a new canvas that happens to start with this scene".
+ */
+export async function duplicateCanvas(canvas: CanvasSummary): Promise<CanvasSummary | null> {
+  const loaded = await loadCanvas(canvas.id)
+  if (!loaded) return null
+  return createCanvas(canvas.projectUri, {
+    name: `${canvas.name} copy`,
+    sceneJson: loaded.scene ?? undefined,
+  })
+}
+
+/** Archive (or restore) a canvas -- archived drops out of the project list. */
+export async function archiveCanvas(canvasId: string, archived: boolean): Promise<boolean> {
+  const res = await fetch(`/api/canvases/${encodeURIComponent(canvasId)}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ archived }),
+  })
+  if (res.ok) window.dispatchEvent(new CustomEvent('rclaude-canvas-changed'))
+  return res.ok
+}
+
+/** Delete a canvas outright -- row AND scene files. There is no undo. */
+export async function deleteCanvas(canvasId: string): Promise<boolean> {
+  const res = await fetch(`/api/canvases/${encodeURIComponent(canvasId)}`, { method: 'DELETE' })
+  if (res.ok) window.dispatchEvent(new CustomEvent('rclaude-canvas-changed'))
+  return res.ok
+}
+
 /** Public link for a share token. `/c/:token` redirects into the SPA viewer. */
 export function canvasShareUrl(token: string): string {
   return `${window.location.origin}/c/${encodeURIComponent(token)}`
