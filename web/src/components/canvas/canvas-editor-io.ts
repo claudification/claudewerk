@@ -66,17 +66,25 @@ export function canvasShareUrl(token: string): string {
   return `${window.location.origin}/c/${encodeURIComponent(token)}`
 }
 
-/** Create/update the public share at a tier. Returns the share token, or null. */
-export async function shareCanvas(canvasId: string, tier: CanvasShareTier): Promise<string | null> {
+/**
+ * Create/update the public share at a tier. `expiresInHours` null = until revoked.
+ * Returns the token plus the resolved deadline the broker actually stored, which
+ * is the value the UI counts down from (never a locally-computed guess).
+ */
+export async function shareCanvas(
+  canvasId: string,
+  tier: CanvasShareTier,
+  expiresInHours: number | null,
+): Promise<{ token: string; expiresAt?: number } | null> {
   const res = await fetch(`/api/canvases/${encodeURIComponent(canvasId)}/share`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ tier }),
+    body: JSON.stringify({ tier, expiresInHours }),
   })
   if (!res.ok) return null
-  const { shareToken } = (await res.json()) as { shareToken?: string }
+  const { shareToken, canvas } = (await res.json()) as { shareToken?: string; canvas?: CanvasSummary }
   window.dispatchEvent(new CustomEvent('rclaude-canvas-changed'))
-  return shareToken ?? null
+  return shareToken ? { token: shareToken, expiresAt: canvas?.shareExpiresAt } : null
 }
 
 /** Revoke the public share -- the old link goes dead immediately. */
