@@ -114,6 +114,9 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
   // Session sequence: prevents a late voice_done from a previous recording from
   // clobbering a new one that started while the broker was still processing.
   const voiceSeqRef = useRef(0)
+  // Throttle for the return-leg latency probe. Must be a ref: a plain `let` in
+  // the hook body resets on every render, which would defeat the throttle.
+  const lastLegLogAtRef = useRef(0)
 
   stateRef.current = state
 
@@ -196,6 +199,25 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
   function setInterim(v: string) {
     interimTextRef.current = v
     setInterimText(v)
+  }
+
+  // Return-leg probe. Both sides measure elapsed-since-their-own-start, so clock
+  // skew cancels and only the DIVERGENCE matters: a constant offset is the
+  // mic-acquire head start, a growing one means transcripts are backing up
+  // between broker and browser (as opposed to Deepgram being slow).
+  // Interims only, matching the broker-side measurement: finals are held back by
+  // endpoint detection and would read as return-leg lag they did not cause.
+  function logReturnLeg(msg: { isFinal?: boolean; brokerElapsedMs?: number }) {
+    const brokerElapsedMs = msg.brokerElapsedMs
+    if (msg.isFinal || !brokerElapsedMs) return
+    const now = performance.now()
+    if (now - lastLegLogAtRef.current < 2000) return
+    lastLegLogAtRef.current = now
+    const clientElapsed = now - startTsRef.current
+    console.log(
+      `[voice-lat] client recv: clientElapsed=${(clientElapsed / 1000).toFixed(2)}s ` +
+        `brokerElapsed=${(brokerElapsedMs / 1000).toFixed(2)}s returnLeg=${((clientElapsed - brokerElapsedMs) / 1000).toFixed(2)}s`,
+    )
   }
 
   function applyTranscript(msg: { isFinal?: boolean; accumulated?: string; transcript?: string }) {
@@ -288,6 +310,7 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
             onVoiceReady(msg)
             break
           case 'voice_transcript':
+            logReturnLeg(msg)
             applyTranscript(msg)
             break
           case 'voice_utterance_end':

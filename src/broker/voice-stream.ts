@@ -10,6 +10,7 @@ import type { ConversationStore } from './conversation-store'
 import { getGlobalSettings } from './global-settings'
 import { getProjectSettings } from './project-settings'
 import { chat } from './recap/shared/openrouter-client'
+import { bytesPerSecondFor, createLatencyTracker, type LatencyTracker } from './voice-latency'
 
 const VOICE_REFINER_MODEL = 'anthropic/claude-haiku-4.5'
 
@@ -82,6 +83,11 @@ interface VoiceSession {
   // zero-chunk check reliably means "the browser's mic produced nothing".
   audioChunks: number
   audioBytes: number
+  // Wall clock of the FIRST audio chunk (0 until then). Latency legs are
+  // measured from here, not from session open -- otherwise Deepgram's dial time
+  // is charged to the browser->broker uplink leg and reads as a delivery fault.
+  firstAudioAt: number
+  latency: LatencyTracker
 }
 
 // Active voice sessions keyed by dashboard WS identity
@@ -191,6 +197,8 @@ export function handleVoiceStart(
     closed: false,
     audioChunks: 0,
     audioBytes: 0,
+    firstAudioAt: 0,
+    latency: createLatencyTracker(bytesPerSecondFor(data.encoding, data.sampleRate), () => voiceSession.firstAudioAt),
     timeoutTimer: setTimeout(() => {
       console.log(`[voice-stream] Session timed out (${VOICE_TIMEOUT_MS / 1000}s)`)
       stopVoiceSession(ws, 'timeout')
@@ -244,6 +252,23 @@ export function handleVoiceStart(
         const isFinal = msg.is_final === true
         const speechFinal = msg.speech_final === true
 
+        const latLine = voiceSession.latency.onResult({
+          isFinal,
+          start: msg.start,
+          duration: msg.duration,
+          audioBytes: voiceSession.audioBytes,
+        })
+        if (latLine) console.log(latLine)
+        if (isFinal) {
+          // Finalization cadence, logged separately so it never contaminates the
+          // latency measurement: a long gap between finals is the endpointing /
+          // never-closing-segment symptom, which is a DIFFERENT fault from lag.
+          console.log(
+            `[voice-lat] final speechFinal=${speechFinal} fromFinalize=${msg.from_finalize === true} ` +
+              `chars=${transcript.length} audioPos=${((msg.start ?? 0) + (msg.duration ?? 0)).toFixed(2)}s`,
+          )
+        }
+
         if (transcript) {
           if (isFinal) {
             // Accumulate final segments
@@ -258,6 +283,11 @@ export function handleVoiceStart(
               isFinal,
               speechFinal,
               accumulated: voiceSession.finalTranscript,
+              // Broker-side elapsed (ms since first audio chunk). The client
+              // compares it against its OWN elapsed clock: both are relative to
+              // their own start so clock skew cancels, and a GROWING divergence
+              // isolates a broker->browser return-leg backlog from Deepgram lag.
+              brokerElapsedMs: voiceSession.firstAudioAt ? Date.now() - voiceSession.firstAudioAt : 0,
             }),
           )
         }
@@ -287,6 +317,7 @@ export function handleVoiceStart(
     console.log(
       `[voice-stream] Deepgram WS closed (code: ${event.code}, reason: "${reason}", audioChunks: ${voiceSession.audioChunks}, totalBytes: ${voiceSession.audioBytes}, orphaned: ${orphaned})`,
     )
+    console.log(voiceSession.latency.summary())
 
     if (!voiceSession.closed) {
       if (voiceSession.finalTranscript) {
@@ -357,6 +388,7 @@ export function handleVoiceData(ws: ServerWebSocket<unknown>, audioBase64: strin
   }
 
   const bytes = Buffer.from(audioBase64, 'base64')
+  if (!session.firstAudioAt) session.firstAudioAt = Date.now()
   session.audioChunks++
   session.audioBytes += bytes.length
 
