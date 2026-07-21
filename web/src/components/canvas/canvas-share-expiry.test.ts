@@ -3,7 +3,9 @@
  * already dead is worse than no countdown, so the boundary cases matter.
  */
 
-import { expect, test } from 'bun:test'
+// web/ runs on vitest (`bun run test`), NOT bun:test -- a bun:test import here
+// fails the whole suite to load ("Cannot bundle Node.js built-in bun:test").
+import { expect, test } from 'vitest'
 import { formatRemaining } from './canvas-share-expiry'
 
 const NOW = 1_700_000_000_000

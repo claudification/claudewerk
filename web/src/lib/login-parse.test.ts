@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import { extractAccount, extractAuthUrl, formatAccount, parsePastedCode, validatePastedCode } from './login-parse'
 
 const AUTHORIZE = 'https://claude.com/cai/oauth/authorize?code=true&client_id=x&state=STATE123&code_challenge=y'

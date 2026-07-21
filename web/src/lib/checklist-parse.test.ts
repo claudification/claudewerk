@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { parseChecklistInput } from './checklist-parse'
 
 test('single plain line -> one open item', () => {

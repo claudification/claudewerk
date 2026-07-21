@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import type { ChecklistItem } from '@shared/protocol'
 import { itemsToMarkdown, markdownToItems } from './checklist-markdown'
 
