@@ -28,6 +28,7 @@ import {
 } from './auth-routes'
 import { buildReviveMessage } from './build-revive'
 import { closeCanvasStore, initCanvasStore, reapExpiredCanvasShares } from './canvas-store'
+import { resolveShareUpgrade } from './share-upgrade'
 import { wireCapacityAdmission } from './capacity-wiring'
 import { closeChecklistStore, initChecklistStore } from './checklist-store'
 import { recordInboundForSocket, registerConnection, unregisterConnection } from './connection-registry'
@@ -950,21 +951,13 @@ async function main() {
             userAgent: req.headers.get('user-agent') ?? undefined,
           }
 
-          // Share token auth (link-based guest access)
+          // Share token auth (link-based guest access -- conversation OR canvas;
+          // see share-upgrade.ts for which token namespace wins).
           const shareToken = url.searchParams.get('share')
           if (shareToken) {
-            const share = validateShareToken(shareToken)
+            const share = resolveShareUpgrade(shareToken)
             if (!share) return new Response('Invalid or expired share link', { status: 401 })
-            const success = server.upgrade(req, {
-              data: {
-                ...connMeta,
-                isShare: true,
-                shareToken,
-                shareConversationId: share.conversationId,
-                hideUserInput: share.hideUserInput || false,
-                grants: shareToGrantList(share),
-              } as WsData,
-            })
+            const success = server.upgrade(req, { data: { ...connMeta, ...share } as WsData })
             if (success) return undefined
             return new Response('WebSocket upgrade failed', { status: 500 })
           }

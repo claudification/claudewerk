@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { CanvasShareTier } from '../../shared/protocol'
 import { closeCanvasStore, createCanvas, initCanvasStore } from '../canvas-store'
 import type { HandlerContext } from '../handler-context'
 import { _resetCanvasRooms, canvasSyncHandlers, leaveAllCanvasRooms } from './canvas-sync'
@@ -30,6 +31,13 @@ interface MockStore {
 /** A fake WS keyed by a wsConnId so peerIdOf() is stable. */
 function fakeWs(connId: string) {
   return { data: { wsConnId: connId, userName: connId } } as unknown as Parameters<typeof leaveAllCanvasRooms>[0]
+}
+
+/** A share-link guest socket: bound to ONE canvas at a fixed tier, no grants. */
+function guestWs(connId: string, boundCanvasId: string, tier: CanvasShareTier) {
+  return {
+    data: { wsConnId: connId, isShare: true, shareCanvasId: boundCanvasId, shareCanvasTier: tier },
+  } as unknown as Parameters<typeof leaveAllCanvasRooms>[0]
 }
 
 function makeCtx(store: MockStore, ws: ReturnType<typeof fakeWs>, opts: { denyPerm?: boolean } = {}) {
@@ -151,4 +159,100 @@ test('leave + disconnect remove the peer and broadcast presence', () => {
   leaveAllCanvasRooms(b, conv as unknown as Parameters<typeof leaveAllCanvasRooms>[1])
   // room now empty -> unsubscribe recorded, no further presence (room deleted)
   expect(store2.unsubscribed).toContainEqual(['canvas', canvasId])
+})
+
+// ─── guest join + tier enforcement (E0 / E2) ─────────────────────────────────
+
+const RECT = '{"type":"excalidraw","elements":[{"id":"base","type":"rectangle"}]}'
+
+/** Join a share-link guest bound to the test canvas at `tier`. */
+function joinGuest(store: MockStore, connId: string, tier: CanvasShareTier, bound = canvasId) {
+  const m = makeCtx(store, guestWs(connId, bound, tier))
+  canvasSyncHandlers.canvas_join(m.ctx, { canvasId, name: 'Guest' })
+  return m
+}
+
+test('guest joins its own canvas and is acked at the token tier', () => {
+  const store: MockStore = { subscribed: [], unsubscribed: [], broadcasts: [] }
+  const { replies } = joinGuest(store, 'conn_g', 'comment')
+  expect(replies[0]).toMatchObject({ type: 'canvas_join_ack', tier: 'comment', peerId: 'conn_g' })
+  expect(store.subscribed).toEqual([['canvas', canvasId]])
+})
+
+test('guest bound to ANOTHER canvas cannot join this one', () => {
+  const store: MockStore = { subscribed: [], unsubscribed: [], broadcasts: [] }
+  const m = makeCtx(store, guestWs('conn_x', 'cnv_somewhere_else', 'edit'))
+  canvasSyncHandlers.canvas_join(m.ctx, { canvasId })
+  expect(m.replies[0]).toMatchObject({ type: 'canvas_error' })
+  expect(store.subscribed).toEqual([]) // never joined the room
+})
+
+test('a guest socket never falls back to the authed permission path', () => {
+  const store: MockStore = { subscribed: [], unsubscribed: [], broadcasts: [] }
+  // denyPerm would throw if requirePermission were consulted; a bound guest
+  // must be admitted on its token alone.
+  const m = makeCtx(store, guestWs('conn_g', canvasId, 'read'), { denyPerm: true })
+  canvasSyncHandlers.canvas_join(m.ctx, { canvasId })
+  expect(m.replies[0]).toMatchObject({ type: 'canvas_join_ack', tier: 'read' })
+})
+
+test('read-tier guest cannot write: delta rejected, nothing broadcast', () => {
+  const store: MockStore = { subscribed: [], unsubscribed: [], broadcasts: [] }
+  joinGuest(store, 'conn_r', 'read')
+  store.broadcasts.length = 0
+
+  const m = makeCtx(store, guestWs('conn_r', canvasId, 'read'))
+  canvasSyncHandlers.canvas_scene_delta(m.ctx, { canvasId, scene: RECT })
+
+  expect(store.broadcasts.find(b => b.msg.type === 'canvas_scene_delta')).toBeUndefined()
+  expect(m.replies.find(r => r.type === 'canvas_error')).toBeTruthy()
+})
+
+test('comment-tier guest may not alter the base design', () => {
+  const store: MockStore = { subscribed: [], unsubscribed: [], broadcasts: [] }
+  joinGuest(store, 'conn_c', 'comment')
+  // Seed a base design as an edit peer so the comment guest has a baseline.
+  joinPeer(store, 'conn_owner')
+  canvasSyncHandlers.canvas_scene_delta(makeCtx(store, fakeWs('conn_owner')).ctx, { canvasId, scene: RECT })
+  store.broadcasts.length = 0
+
+  const moved = '{"type":"excalidraw","elements":[{"id":"base","type":"rectangle","version":9}]}'
+  const m = makeCtx(store, guestWs('conn_c', canvasId, 'comment'))
+  canvasSyncHandlers.canvas_scene_delta(m.ctx, { canvasId, scene: moved })
+
+  expect(store.broadcasts.find(b => b.msg.type === 'canvas_scene_delta')).toBeUndefined()
+  expect(m.replies.find(r => r.type === 'canvas_error')).toBeTruthy()
+})
+
+test('comment-tier guest may add an annotation on top of the base', () => {
+  const store: MockStore = { subscribed: [], unsubscribed: [], broadcasts: [] }
+  joinGuest(store, 'conn_c', 'comment')
+  joinPeer(store, 'conn_owner')
+  canvasSyncHandlers.canvas_scene_delta(makeCtx(store, fakeWs('conn_owner')).ctx, { canvasId, scene: RECT })
+  store.broadcasts.length = 0
+
+  const annotated = JSON.stringify({
+    type: 'excalidraw',
+    elements: [
+      { id: 'base', type: 'rectangle' },
+      { id: 'note', type: 'text', customData: { canvasAnnotation: true } },
+    ],
+  })
+  const m = makeCtx(store, guestWs('conn_c', canvasId, 'comment'))
+  canvasSyncHandlers.canvas_scene_delta(m.ctx, { canvasId, scene: annotated })
+
+  const delta = store.broadcasts.find(b => b.msg.type === 'canvas_scene_delta')
+  expect(delta).toBeTruthy()
+  const ids = JSON.parse(delta?.msg.scene as string).elements.map((e: { id: string }) => e.id)
+  expect(ids).toEqual(['base', 'note'])
+})
+
+test('edit-tier guest co-edits like a member', () => {
+  const store: MockStore = { subscribed: [], unsubscribed: [], broadcasts: [] }
+  joinGuest(store, 'conn_e', 'edit')
+  store.broadcasts.length = 0
+
+  const m = makeCtx(store, guestWs('conn_e', canvasId, 'edit'))
+  canvasSyncHandlers.canvas_scene_delta(m.ctx, { canvasId, scene: RECT })
+  expect(store.broadcasts.find(b => b.msg.type === 'canvas_scene_delta')).toBeTruthy()
 })

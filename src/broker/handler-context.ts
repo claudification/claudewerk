@@ -5,7 +5,7 @@
 
 import type { ServerWebSocket } from 'bun'
 import type { ConnectionId, ConversationId } from '../shared/identity'
-import type { ProjectSettings } from '../shared/protocol'
+import type { CanvasShareTier, ProjectSettings } from '../shared/protocol'
 import type { ConversationStore } from './conversation-store'
 import type { Permission, UserGrant } from './permissions'
 import type { StoreDriver } from './store/types'
@@ -34,6 +34,13 @@ export interface WsData {
   /** When set, the share is scoped to a single conversation. The guest may
    *  only see/access this conversation, never the rest of the project. */
   shareConversationId?: string
+  /** When set, the share is scoped to a single CANVAS -- the guest may join that
+   *  canvas's multiplayer room and nothing else. Mirrors shareConversationId's
+   *  "a share bound to A never grants B" rule. */
+  shareCanvasId?: string
+  /** Write ceiling for a canvas-share guest, resolved from the token at upgrade
+   *  and never re-read from the wire. */
+  shareCanvasTier?: CanvasShareTier
   hideUserInput?: boolean
   // Gateway adapter (e.g. Hermes)
   isGateway?: boolean
