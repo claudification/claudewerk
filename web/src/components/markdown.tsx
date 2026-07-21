@@ -1,6 +1,6 @@
 import { Marked } from 'marked'
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef } from 'react'
-import { usePopoutStore } from '@/components/popout/use-popout-store'
+import { openCanvasWindow } from '@/components/canvas/open-canvas-window'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { useMarkdownViewer } from '@/hooks/use-markdown-viewer'
 import { calloutInlineExtension } from '@/lib/callout-marked'
@@ -627,16 +627,14 @@ export const Markdown = memo(function Markdown({ children, inline, copyable }: M
       return
     }
 
-    // Canvas reference pill -> open the hosted canvas (portal popout, with a
-    // standalone-route fallback if the popup is blocked -- mirrors openCanvas).
+    // Canvas reference pill -> open the hosted canvas in its own window, falling
+    // back to navigating this tab when the popup is blocked (mirrors openCanvas).
     const canvasPill = target.closest('.canvas-pill') as HTMLElement | null
     if (canvasPill) {
       const id = canvasPill.getAttribute('data-canvas-id')
       if (id) {
         e.preventDefault()
-        if (!usePopoutStore.getState().open('canvas', id)) {
-          window.open(`/canvas/${encodeURIComponent(id)}`, `canvas-${id}`, 'noopener')
-        }
+        if (!openCanvasWindow(id)) window.location.href = `/canvas/${encodeURIComponent(id)}`
       }
       return
     }

@@ -18,8 +18,9 @@
 import { Excalidraw, serializeAsJSON } from '@excalidraw/excalidraw'
 import '@excalidraw/excalidraw/index.css'
 import { utf8Bytes } from '@shared/draw'
-import { isDslScene } from '@shared/draw-dsl'
-import { type ComponentProps, useCallback, useMemo, useRef, useState } from 'react'
+import { type ComponentProps, type ReactNode, useCallback, useRef, useState } from 'react'
+import { CANVAS_UI_OPTIONS, CanvasMainMenu } from '@/components/canvas/canvas-chrome'
+import { useInitialData } from './excalidraw-initial-data'
 import { useDslSeed } from './use-dsl-seed'
 
 type ExcalidrawProps = ComponentProps<typeof Excalidraw>
@@ -48,47 +49,26 @@ export interface DrawCanvasProps {
   onSnapshot?: (json: string, bytes: number) => void
   /** Opt-in multiplayer binding. Undefined = solo (Draw block, private canvas). */
   collab?: CanvasCollabBinding
+  /** Chrome to float in excalidraw's own top-right island stack (hosted canvas
+   *  name / save state / presence / Share). Undefined = no island (Draw block). */
+  topRight?: ReactNode
 }
 
-// Parsed .excalidraw scene (serializeAsJSON output). Kept loose -- it is cast to
-// Excalidraw's initialData shape at the boundary.
-interface SceneSnapshot {
-  elements?: unknown
-  appState?: Record<string, unknown>
-  files?: unknown
-}
-
-export default function ExcalidrawCanvas({ initialSnapshot, readOnly, onSnapshot, collab }: DrawCanvasProps) {
+export default function ExcalidrawCanvas({
+  initialSnapshot,
+  readOnly,
+  onSnapshot,
+  collab,
+  topRight,
+}: DrawCanvasProps) {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const apiRef = useRef<ExcalidrawAPI | null>(null)
   // react-doctor:rerender-state-only-in-handlers -- apiReady is read as a hook
   // dependency (useDslSeed), so it must be state to trigger the effect re-run.
   const [apiReady, setApiReady] = useState(false)
 
-  // Seed once from the snapshot. A DSL Scene (v:1 + nodes) is EXPANDED to elements
-  // asynchronously (mermaid parses through a lazy runtime) and pushed via the imperative
-  // API in useDslSeed -- initialData stays empty for it. A raw Excalidraw scene seeds
-  // directly here. collaborators is a Map (non-serializable) so it never survives a
-  // round-trip -- drop it defensively before handing appState back to Excalidraw.
-  //
-  // Theme: seeded through appState (the DEFAULT), not the controlled `theme` prop -- the prop
-  // would LOCK the theme and override the user's in-app light/dark toggle on every re-render.
-  // claudewerk is a dark app, so we default the canvas to dark; the user can still flip to
-  // light from Excalidraw's menu, and that choice persists in appState across the snapshot.
-  const initialData = useMemo<ExcalidrawProps['initialData']>(() => {
-    if (isDslScene(initialSnapshot)) return { appState: { theme: 'dark' } }
-    const s = initialSnapshot as SceneSnapshot | undefined
-    if (!s) return { appState: { theme: 'dark' }, scrollToContent: true }
-    const { collaborators: _drop, ...appState } = s.appState ?? {}
-    return {
-      elements: s.elements,
-      appState: { theme: 'dark', ...appState },
-      files: s.files,
-      scrollToContent: true,
-    } as ExcalidrawProps['initialData']
-    // seed captured once at mount; later edits must not reset the canvas
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  // Seed captured once at mount -- see excalidraw-initial-data.ts for the rules.
+  const initialData = useInitialData(initialSnapshot)
 
   // DSL seed + agent redraw: when the seeded DSL Scene REFERENCE changes (mount, or the
   // agent patched the block via update_dialog), (re-)expand and push through the live API.
@@ -120,17 +100,24 @@ export default function ExcalidrawCanvas({ initialSnapshot, readOnly, onSnapshot
     [collab],
   )
 
+  // .canvas-chrome scopes the CSS-only chrome trims (see canvas-chrome.css).
   return (
-    <Excalidraw
-      initialData={initialData}
-      excalidrawAPI={api => {
-        apiRef.current = api
-        setApiReady(true)
-        collab?.bindApi(api as unknown as Parameters<NonNullable<DrawCanvasProps['collab']>['bindApi']>[0])
-      }}
-      viewModeEnabled={readOnly}
-      onChange={handleChange}
-      onPointerUpdate={collab ? handlePointer : undefined}
-    />
+    <div className="canvas-chrome w-full h-full">
+      <Excalidraw
+        initialData={initialData}
+        excalidrawAPI={api => {
+          apiRef.current = api
+          setApiReady(true)
+          collab?.bindApi(api as unknown as Parameters<NonNullable<DrawCanvasProps['collab']>['bindApi']>[0])
+        }}
+        viewModeEnabled={readOnly}
+        onChange={handleChange}
+        onPointerUpdate={collab ? handlePointer : undefined}
+        UIOptions={CANVAS_UI_OPTIONS}
+        renderTopRightUI={topRight ? () => <>{topRight}</> : undefined}
+      >
+        <CanvasMainMenu />
+      </Excalidraw>
+    </div>
   )
 }

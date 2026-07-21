@@ -6,7 +6,6 @@
 
 import type { CanvasSummary } from '@shared/protocol'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { usePopoutWindow } from '@/components/popout/popout-window'
 import { loadCanvas, renameCanvas, saveCanvasScene } from './canvas-editor-io'
 
 const SAVE_DEBOUNCE_MS = 1500
@@ -38,9 +37,11 @@ export interface CanvasDocument {
 }
 
 export function useCanvasDocument(id: string | null): CanvasDocument {
-  // In a popout, title/flush/prompt must target the POPUP window, not the parent
-  // tab; usePopoutWindow falls back to the global window/document when inline.
-  const { win, doc } = usePopoutWindow()
+  // The canvas always owns its document now (standalone /canvas/:id window), so
+  // title/flush/prompt target the globals directly -- see open-canvas-window.ts
+  // for why excalidraw can never be portaled into someone else's window.
+  const win = window
+  const doc = document
   const [canvas, setCanvas] = useState<CanvasSummary | null>(null)
   const [seed, setSeed] = useState<unknown>(null)
   const [state, setState] = useState<DocState>(id ? 'loading' : 'missing')

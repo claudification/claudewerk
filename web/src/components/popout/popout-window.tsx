@@ -1,30 +1,21 @@
 /**
  * PopoutWindow -- host a React subtree in a REAL second OS window without a new
  * document load. The window is opened BLANK (window.open('')) in the click that
- * triggered it (gesture-safe, done by use-popout-store) and handed here already
+ * triggered it (gesture-safe, done by the caller) and handed here already
  * open; we adopt the opener's styles + theme and createPortal the children into
  * its body. The subtree therefore lives in the PARENT React tree + JS heap: same
  * store, same WebSocket, no second bundle parse, no second auth.
  *
- * Hosted components reach THEIR popup's window/document via usePopoutWindow() --
- * the global window/document fallback means the same component also works inline.
+ * NOTE the hard limit this implies: the subtree's GLOBAL `window` is still the
+ * opener's. Anything that binds to it directly -- excalidraw's drag listeners and
+ * viewport sizing being the case that proved it -- will talk to the wrong window
+ * and must get its own document instead (see canvas/open-canvas-window.ts).
+ * Pure-React content (ModalSurface's detached modals) is unaffected.
  */
 
-import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { adoptStyles } from './stylesheet-adopt'
-
-interface PopoutTarget {
-  win: Window
-  doc: Document
-}
-
-const PopoutWindowContext = createContext<PopoutTarget | null>(null)
-
-/** The hosting popup's window/document, or the main tab's when rendered inline. */
-export function usePopoutWindow(): PopoutTarget {
-  return useContext(PopoutWindowContext) ?? { win: window, doc: document }
-}
 
 interface PopoutWindowProps {
   /** The already-open blank popup (opened in the triggering gesture). */
@@ -73,9 +64,5 @@ export function PopoutWindow({ win, title, onClose, children }: PopoutWindowProp
   }, [ready, title, win])
 
   if (!ready) return null
-  return (
-    <PopoutWindowContext.Provider value={{ win, doc: win.document }}>
-      {createPortal(children, win.document.body)}
-    </PopoutWindowContext.Provider>
-  )
+  return createPortal(children, win.document.body)
 }

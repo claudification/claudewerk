@@ -1,21 +1,20 @@
 /**
- * Hosted-canvas surface -- a thin header + the Excalidraw surface. Rendered in
- * two homes off the SAME `CanvasSurface`:
- *   - the standalone /canvas/:id route (main.tsx), for deep-links + share, and
- *   - a portal popout (PopoutHost), the default in-app open, which keeps the
- *     drawing in the parent React tree (no second document/WS/bundle).
+ * Hosted-canvas surface -- a full-bleed Excalidraw with our chrome floating on
+ * top of it (see canvas-island.tsx), served by the standalone /canvas/:id route.
  *
- * All load/save/rename logic lives in useCanvasDocument, which is target-window
- * aware -- in a popout it titles + flush-saves the POPUP, not the parent tab.
+ * It is deliberately NOT a portal popout: Excalidraw binds to the global
+ * `window`, so it only behaves in a document it actually owns. The reasoning is
+ * written up in open-canvas-window.ts.
+ *
+ * Load/save/rename logic lives in useCanvasDocument.
  */
 
-import type { CanvasPeer, CanvasSummary } from '@shared/protocol'
+import type { CanvasSummary } from '@shared/protocol'
+import type { ReactNode } from 'react'
 import ExcalidrawCanvas, { type CanvasCollabBinding } from '@/components/dialog/excalidraw-canvas'
-import { CanvasShareControl } from './canvas-share-control'
+import { CanvasIsland } from './canvas-island'
 import { useCanvasCollab } from './use-canvas-collab'
-import { canvasIdFromPath, type DocState, type SaveState, useCanvasDocument } from './use-canvas-document'
-
-const SAVE_LABEL: Record<SaveState, string> = { idle: '', saving: 'saving...', saved: 'saved' }
+import { canvasIdFromPath, type DocState, useCanvasDocument } from './use-canvas-document'
 
 function CanvasBody({
   state,
@@ -23,63 +22,32 @@ function CanvasBody({
   seed,
   onSnapshot,
   collab,
+  topRight,
 }: {
   state: DocState
   canvas: CanvasSummary | null
   seed: unknown
   onSnapshot: (json: string) => void
   collab: CanvasCollabBinding
+  topRight: ReactNode
 }) {
   if (state !== 'ready' || !canvas) {
     return (
       <div className="absolute inset-0 grid place-items-center text-muted-foreground text-sm">Loading canvas...</div>
     )
   }
-  return <ExcalidrawCanvas key={canvas.id} initialSnapshot={seed} onSnapshot={onSnapshot} collab={collab} />
-}
-
-/** Live-presence dots for the peers currently in the room (self included). */
-function PresenceDots({ peers }: { peers: CanvasPeer[] }) {
-  if (peers.length < 2) return null
   return (
-    <span className="flex items-center gap-1 shrink-0" title={`${peers.length} editing`}>
-      {peers.slice(0, 5).map(p => (
-        <span
-          key={p.peerId}
-          className="w-2.5 h-2.5 rounded-full border border-background"
-          style={{ background: p.color }}
-          title={p.name}
-        />
-      ))}
-    </span>
+    <ExcalidrawCanvas
+      key={canvas.id}
+      initialSnapshot={seed}
+      onSnapshot={onSnapshot}
+      collab={collab}
+      topRight={topRight}
+    />
   )
 }
 
-function SurfaceHeader({
-  canvas,
-  saveState,
-  peers,
-  onRename,
-}: {
-  canvas: CanvasSummary | null
-  saveState: SaveState
-  peers: CanvasPeer[]
-  onRename: () => void
-}) {
-  return (
-    <div className="flex items-center gap-3 px-3 h-9 border-b border-border shrink-0 text-xs">
-      <button type="button" onClick={onRename} className="font-mono text-sky-400/90 hover:text-sky-300 truncate">
-        {canvas?.name ?? 'Loading...'}
-      </button>
-      <span className="text-[10px] text-muted-foreground/60 shrink-0">{SAVE_LABEL[saveState]}</span>
-      <span className="flex-1" />
-      <PresenceDots peers={peers} />
-      {canvas && <CanvasShareControl canvas={canvas} />}
-    </div>
-  )
-}
-
-export function CanvasSurface({ canvasId }: { canvasId: string | null }) {
+function CanvasSurface({ canvasId }: { canvasId: string | null }) {
   const { canvas, seed, state, saveState, onSnapshot, onRename } = useCanvasDocument(canvasId)
   // Live multiplayer is on for the hosted canvas window (a solo editor is just a
   // room of one). The Draw dialog block stays solo (no collab prop).
@@ -91,11 +59,15 @@ export function CanvasSurface({ canvasId }: { canvasId: string | null }) {
   }
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-background">
-      <SurfaceHeader canvas={canvas} saveState={saveState} peers={peers} onRename={onRename} />
-      <div className="flex-1 min-h-0 relative">
-        <CanvasBody state={state} canvas={canvas} seed={seed} onSnapshot={onSnapshot} collab={collab} />
-      </div>
+    <div className="fixed inset-0 bg-background">
+      <CanvasBody
+        state={state}
+        canvas={canvas}
+        seed={seed}
+        onSnapshot={onSnapshot}
+        collab={collab}
+        topRight={<CanvasIsland canvas={canvas} saveState={saveState} peers={peers} onRename={onRename} />}
+      />
     </div>
   )
 }

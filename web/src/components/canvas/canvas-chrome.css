@@ -1,0 +1,23 @@
+/*
+ * Chrome trims that Excalidraw exposes no prop for.
+ *
+ * The library button is rendered unconditionally in the top-right stack --
+ * `renderTopRightUI` only appends NEXT to it, and UIOptions has no `library`
+ * flag -- so hiding it is CSS against excalidraw's own class hooks. A hosted
+ * canvas has no library: shapes come from the agent or the user, and the stock
+ * browser links out to excalidraw.com.
+ *
+ * Scoped to .canvas-chrome (set by ExcalidrawCanvas) so nothing here can leak
+ * into an unrelated excalidraw mount.
+ */
+
+.canvas-chrome .default-sidebar-trigger,
+.canvas-chrome .layer-ui__wrapper__top-right .sidebar-trigger {
+  display: none !important;
+}
+
+/* The top-right stack collapses to nothing once the library trigger is gone --
+   drop its gap so it stops reserving space next to the toolbar. */
+.canvas-chrome .layer-ui__wrapper__top-right:empty {
+  display: none;
+}
