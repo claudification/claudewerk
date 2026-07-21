@@ -8,11 +8,12 @@
  * ensure-terminal patch for a worker that ends without reporting.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { expandPath } from '../sentinel/expand-path'
 import type { NightshiftResult } from '../shared/protocol'
 import type { SpawnRequest } from '../shared/spawn-schema'
 import type { ConversationStore } from './conversation-store'
+import type { NightshiftIo } from './nightshift-orchestrator'
 
 // --- controllable doubles, closed over by the mocked modules below ---------
 
@@ -35,30 +36,42 @@ let snapshotTasks: Array<{ id: string; status: string }> = []
 /** conversationId -> status, the fake store's view of spawned workers. */
 const convStatus = new Map<string, string>()
 
-mock.module('./spawn-dispatch', () => ({
-  dispatchSpawn: async (req: SpawnRequest) => {
-    spawnReqs.push(req)
-    dispatchCount += 1
-    const conversationId = `conv-${dispatchCount}`
-    convStatus.set(conversationId, 'active')
-    return { ok: true as const, conversationId }
-  },
-}))
+const fakeDispatchSpawn = async (req: SpawnRequest) => {
+  spawnReqs.push(req)
+  dispatchCount += 1
+  const conversationId = `conv-${dispatchCount}`
+  convStatus.set(conversationId, 'active')
+  return { ok: true as const, conversationId }
+}
 
-mock.module('./nightshift-broker-rpc', () => ({
-  sendNightshiftOp: async (_deps: unknown, _project: string, op: OpCall): Promise<NightshiftResult> => {
-    opCalls.push(op)
-    const base = { type: 'nightshift_result' as const, requestId: '', op: op.op, ok: true }
-    if (op.op === 'config_read') return { ...base, config: configOut } as unknown as NightshiftResult
-    if (op.op === 'queue_list') return { ...base, queue: queueItems } as unknown as NightshiftResult
-    if (op.op === 'snapshot') return { ...base, snapshot: { tasks: snapshotTasks } } as unknown as NightshiftResult
-    return base as unknown as NightshiftResult
-  },
-}))
+const fakeSendNightshiftOp = async (_deps: unknown, _project: string, op: OpCall): Promise<NightshiftResult> => {
+  opCalls.push(op)
+  const base = { type: 'nightshift_result' as const, requestId: '', op: op.op, ok: true }
+  if (op.op === 'config_read') return { ...base, config: configOut } as unknown as NightshiftResult
+  if (op.op === 'queue_list') return { ...base, queue: queueItems } as unknown as NightshiftResult
+  if (op.op === 'snapshot') return { ...base, snapshot: { tasks: snapshotTasks } } as unknown as NightshiftResult
+  return base as unknown as NightshiftResult
+}
 
-const { advanceAllRuns, configureCapacityAdmission, isNightshiftRunActive, runNightshift } = await import(
-  './nightshift-orchestrator'
-)
+const {
+  advanceAllRuns,
+  configureCapacityAdmission,
+  configureNightshiftIo,
+  isNightshiftRunActive,
+  resetNightshiftIo,
+  runNightshift,
+} = await import('./nightshift-orchestrator')
+
+// The doubles go through the orchestrator's OWN io seam, not `mock.module`.
+// bun's module mocks are process-wide and resolve before any test runs, so
+// mocking './spawn-dispatch' here used to leak into every later test file in the
+// suite -- 32 spawn tests saw a dispatchSpawn that reported success without ever
+// reaching a sentinel. This keeps the substitution local to this file.
+configureNightshiftIo({
+  dispatchSpawn: fakeDispatchSpawn as unknown as NightshiftIo['dispatchSpawn'],
+  sendNightshiftOp: fakeSendNightshiftOp as unknown as NightshiftIo['sendNightshiftOp'],
+})
+afterAll(resetNightshiftIo)
 const { CapacityLedger } = await import('./capacity-ledger')
 
 const store = {

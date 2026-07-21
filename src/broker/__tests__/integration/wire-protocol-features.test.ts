@@ -94,8 +94,8 @@ describe('multiple subscribers', () => {
 
     await h.flushUpdates()
 
-    const updates1 = dash1.messagesOfType('conversation_update')
-    const updates2 = dash2.messagesOfType('conversation_update')
+    const updates1 = dash1.conversationUpdates()
+    const updates2 = dash2.conversationUpdates()
     expect(updates1.length).toBeGreaterThan(0)
     expect(updates2.length).toBeGreaterThan(0)
   })

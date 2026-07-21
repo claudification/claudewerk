@@ -56,6 +56,34 @@ export function configureCapacityAdmission(next: CapacityLedger): void {
   ledger = next
 }
 
+/**
+ * The two side-effecting calls this orchestrator makes -- spawning a worker and
+ * talking to the sentinel -- behind a swappable seam.
+ *
+ * This exists so tests can substitute them WITHOUT `mock.module`. Bun's module
+ * mocks are process-wide and are resolved before any test runs, so a module mock
+ * here silently leaked the doubles into every later test file in the run: 32
+ * spawn tests elsewhere saw a dispatchSpawn that reports success without ever
+ * reaching a sentinel. Same shape as configureCapacityAdmission above.
+ */
+export interface NightshiftIo {
+  dispatchSpawn: typeof dispatchSpawn
+  sendNightshiftOp: typeof sendNightshiftOp
+}
+
+const REAL_IO: NightshiftIo = { dispatchSpawn, sendNightshiftOp }
+let io: NightshiftIo = REAL_IO
+
+/** Swap the IO seam (tests only). Call `resetNightshiftIo()` when done. */
+export function configureNightshiftIo(next: Partial<NightshiftIo>): void {
+  io = { ...REAL_IO, ...next }
+}
+
+/** Restore the real spawn/sentinel calls. */
+export function resetNightshiftIo(): void {
+  io = REAL_IO
+}
+
 /** Trusted, autonomous caller -- same shape the dispatcher uses for broker-internal spawns. */
 const NIGHTSHIFT_CALLER: SpawnCallerContext = {
   kind: 'mcp',
@@ -145,10 +173,10 @@ function taskPrompt(item: NightshiftQueueItem, runId: string, project: string): 
 /** Seed the running artifact, remove from the queue, and spawn the guarded worker. */
 async function dispatchTask(store: ConversationStore, state: RunState, item: NightshiftQueueItem): Promise<void> {
   const { runId, project } = state
-  await sendNightshiftOp(store, project, { op: 'report', runId, report: runningReport(item, project) })
-  await sendNightshiftOp(store, project, { op: 'dequeue', dequeueId: item.id })
+  await io.sendNightshiftOp(store, project, { op: 'report', runId, report: runningReport(item, project) })
+  await io.sendNightshiftOp(store, project, { op: 'dequeue', dequeueId: item.id })
 
-  const res = await dispatchSpawn(
+  const res = await io.dispatchSpawn(
     {
       cwd: project,
       prompt: taskPrompt(item, runId, project),
@@ -185,7 +213,7 @@ async function dispatchTask(store: ConversationStore, state: RunState, item: Nig
     // so the estimate doesn't sit on the profile's books forever (no-op when
     // admission was disabled and nothing was reserved).
     ledger.settle(taskRefOf(runId, item.id))
-    await sendNightshiftOp(store, project, {
+    await io.sendNightshiftOp(store, project, {
       op: 'task_patch',
       runId,
       taskPatch: { id: item.id, status: 'errored', note: `spawn failed: ${res.error}` },
@@ -202,7 +230,7 @@ async function stampSkipped(
   item: NightshiftQueueItem,
   reason: string,
 ): Promise<void> {
-  await sendNightshiftOp(store, state.project, {
+  await io.sendNightshiftOp(store, state.project, {
     op: 'report',
     runId: state.runId,
     report: {
@@ -231,7 +259,7 @@ async function ensureTerminalArtifact(
   taskId: string,
   conv: Conversation | undefined,
 ): Promise<void> {
-  const snap = await sendNightshiftOp(store, state.project, { op: 'snapshot', runId: state.runId })
+  const snap = await io.sendNightshiftOp(store, state.project, { op: 'snapshot', runId: state.runId })
   const task = snap.snapshot?.tasks.find(t => t.id === taskId)
   const unsettled = !task || task.status === 'running' || task.status === 'queued' || task.status === 'spinning'
   if (!unsettled) return
@@ -241,7 +269,7 @@ async function ensureTerminalArtifact(
     await settleWorkerFromStore(store, { project: state.project, runId: state.runId, taskId }, conv)
     return
   }
-  await sendNightshiftOp(store, state.project, {
+  await io.sendNightshiftOp(store, state.project, {
     op: 'task_patch',
     runId: state.runId,
     taskPatch: { id: taskId, status: 'errored', note: 'worker ended without reporting an outcome' },
@@ -288,7 +316,7 @@ async function fillSlotsLegacy(store: ConversationStore, state: RunState): Promi
 async function maybeFinalize(store: ConversationStore, state: RunState): Promise<void> {
   if (state.pending.length > 0 || state.inflight.size > 0) return
   const runtimeMin = Math.round((Date.now() - state.startedAt) / 60_000)
-  await sendNightshiftOp(store, state.project, {
+  await io.sendNightshiftOp(store, state.project, {
     op: 'run_finalize',
     runId: state.runId,
     finalize: { runtime_min: runtimeMin },
@@ -322,12 +350,12 @@ export async function runNightshift(
 ): Promise<RunNightshiftOutcome> {
   if (activeRuns.has(project)) return { ok: false, skipped: 'a nightshift run is already in flight for this project' }
 
-  const cfgRes = await sendNightshiftOp(store, project, { op: 'config_read' })
+  const cfgRes = await io.sendNightshiftOp(store, project, { op: 'config_read' })
   const config = (cfgRes.config ?? DEFAULT_NIGHTSHIFT_CONFIG) as NightshiftConfig
   if (opts.trigger === 'scheduler' && !config.enabled)
     return { ok: false, skipped: 'nightshift not enabled for project' }
 
-  const qRes = await sendNightshiftOp(store, project, { op: 'queue_list' })
+  const qRes = await io.sendNightshiftOp(store, project, { op: 'queue_list' })
   if (!qRes.ok) return { ok: false, error: qRes.error ?? 'queue read failed' }
   const queue = (qRes.queue ?? []) as NightshiftQueueItem[]
   if (queue.length === 0) return { ok: false, skipped: 'queue is empty' }
@@ -336,7 +364,7 @@ export async function runNightshift(
   const tasks = queue.slice(0, caps.totalTasks)
   const runId = todayStr()
   const startedAt = Date.now()
-  const startRes = await sendNightshiftOp(store, project, {
+  const startRes = await io.sendNightshiftOp(store, project, {
     op: 'run_start',
     runStart: { runId, taskCount: tasks.length, window: config.window },
   })

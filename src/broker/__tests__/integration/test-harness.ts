@@ -10,6 +10,7 @@
  */
 
 import type { ServerWebSocket } from 'bun'
+import { applyPatch, type DeltaPatch } from '../../../shared/delta-sync'
 import { AGENT_HOST_PROTOCOL_VERSION } from '../../../shared/protocol'
 import type { ConversationStore } from '../../conversation-store'
 import { createConversationStore } from '../../conversation-store'
@@ -28,6 +29,10 @@ export interface MockWs {
   sent: Array<Record<string, unknown>>
   lastMessage(): Record<string, unknown> | undefined
   messagesOfType(type: string): Array<Record<string, unknown>>
+  /** Every "this conversation changed" message, full update OR delta patch. */
+  conversationUpdates(): Array<Record<string, unknown>>
+  /** The conversation as this subscriber sees it after folding updates + patches. */
+  conversationState(conversationId: string): Record<string, unknown> | undefined
   clearMessages(): void
   closed: boolean
   closeCode?: number
@@ -82,6 +87,44 @@ function createMockWs(data: Partial<WsData> = {}): MockWs {
     },
     messagesOfType(type: string) {
       return sent.filter(m => m.type === type)
+    },
+    conversationUpdates() {
+      // Three message types carry "this conversation changed", and which one the
+      // broker picks depends on history, not on the behaviour under test:
+      // `conversation_created` announces a new one (and seeds lastBroadcastSummary),
+      // `conversation_update` sends a full summary, `conversation_patch` sends a
+      // delta once a baseline exists. Counting only one of them makes a test pass
+      // or fail on broadcast history instead of on what it means to assert.
+      return sent.filter(
+        m =>
+          m.type === 'conversation_created' || m.type === 'conversation_update' || m.type === 'conversation_patch',
+      )
+    },
+    conversationState(conversationId: string) {
+      // Fold the wire messages the way a real client does: seed from a full
+      // baseline (created/update), then apply every later patch. Asserting on this
+      // states what the DASHBOARD ends up seeing, so it stays true regardless of
+      // which encoding the broker chose.
+      let state: Record<string, unknown> | undefined
+      for (const m of sent) {
+        // A client that subscribes AFTER a conversation exists gets its baseline
+        // from the conversations_list snapshot, not from a per-conversation
+        // message -- so that counts as a baseline here too.
+        if (m.type === 'conversations_list') {
+          const listed = (m.conversations as Array<Record<string, unknown>> | undefined)?.find(
+            c => c.id === conversationId,
+          )
+          if (listed) state = listed
+          continue
+        }
+        if (m.conversationId !== conversationId) continue
+        if (m.type === 'conversation_created' || m.type === 'conversation_update') {
+          state = m.conversation as Record<string, unknown>
+        } else if (m.type === 'conversation_patch' && state) {
+          state = applyPatch(state, m.diffs as DeltaPatch)
+        }
+      }
+      return state
     },
     clearMessages() {
       sent.length = 0

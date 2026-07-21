@@ -42,13 +42,11 @@ describe('conversation lifecycle', () => {
     expect(conv?.status).toBe('booting')
     expect(conv?.project).toBe('claude:///home/user/myproject')
 
-    const updates = dashboard.messagesOfType('conversation_update')
-    expect(updates.length).toBeGreaterThan(0)
-    const lastUpdate = updates[updates.length - 1]
-    expect(lastUpdate.conversation).toBeDefined()
-    const broadcast = lastUpdate.conversation as Record<string, unknown>
-    expect(broadcast.status).toBe('booting')
-    expect(broadcast.id).toBe(convId)
+    expect(dashboard.conversationUpdates().length).toBeGreaterThan(0)
+    const broadcast = dashboard.conversationState(convId)
+    expect(broadcast).toBeDefined()
+    expect(broadcast?.status).toBe('booting')
+    expect(broadcast?.id).toBe(convId)
   })
 
   it('meta after wrapper_boot promotes the conversation and broadcasts update', async () => {
@@ -84,7 +82,7 @@ describe('conversation lifecycle', () => {
     expect(conv).toBeDefined()
     expect(conv?.project).toBe('claude:///home/user/project')
 
-    const updates = dashboard.messagesOfType('conversation_update')
+    const updates = dashboard.conversationUpdates()
     expect(updates.length).toBeGreaterThan(0)
   })
 
@@ -465,8 +463,11 @@ describe('conversation status signal', () => {
       startedAt: Date.now(),
     })
 
+    // NB: no clearMessages() here. This dashboard subscribes after the
+    // conversation exists, so its baseline IS the conversations_list snapshot --
+    // dropping it would leave the later delta patch with nothing to apply to,
+    // which is a property of the test, not of the broker.
     const dashboard = h.connectDashboard()
-    dashboard.clearMessages()
 
     h.agentSend(agent, {
       type: 'conversation_status',
@@ -479,10 +480,8 @@ describe('conversation status signal', () => {
     const conv = h.conversationStore.getConversation(convId)
     expect(conv?.status).toBe('active')
 
-    const updates = dashboard.messagesOfType('conversation_update')
-    expect(updates.length).toBeGreaterThan(0)
-    const convUpdate = updates[updates.length - 1].conversation as Record<string, unknown>
-    expect(convUpdate.status).toBe('active')
+    expect(dashboard.conversationUpdates().length).toBeGreaterThan(0)
+    expect(dashboard.conversationState(convId)?.status).toBe('active')
   })
 
   it('conversation_status idle -> active clears stale error', async () => {
@@ -564,6 +563,9 @@ describe('wire protocol shape', () => {
 
     await h.flushUpdates()
 
+    // Deliberately NOT conversationUpdates() here: this asserts on the shape of
+    // the FULL update payload, and a conversation_patch carries diffs, no
+    // `conversation` object.
     const updates = dashboard.messagesOfType('conversation_update')
     for (const update of updates) {
       const convPayload = update.conversation as Record<string, unknown>
