@@ -1359,7 +1359,9 @@ export interface TranscriptKick {
   conversationId: string
 }
 
-// Persistent inter-conversation link (project-pair based, survives restarts)
+// Persistent inter-conversation link (project-pair based, survives restarts).
+// This is the `GET /api/links` row shape -- produced by src/broker/routes/admin.ts,
+// consumed by web/src/components/settings/conversation-links-section.tsx.
 export interface LinkSummary {
   projectA: string
   projectB: string
@@ -1368,6 +1370,8 @@ export interface LinkSummary {
   createdAt: number
   lastUsed: number
   online: boolean // true if both CWDs have active conversations
+  conversationIdA?: string
+  conversationIdB?: string
 }
 
 // Inter-conversation messaging (channel-enabled conversations only)
@@ -1978,7 +1982,7 @@ export interface AskQuestionTimeout {
 // THE DIALOGUE — live/persistent dialog contract (snapshot + op grammar).
 export type { DialogOp, DialogSnapshot } from './dialog-live'
 // Dialog MCP tool (channel-based rich UI for user interaction)
-export type { DialogComponent, DialogLayout, DialogResult } from './dialog-schema'
+export type { DialogLayout, DialogResult } from './dialog-schema'
 
 export interface DialogShowMessage {
   type: 'dialog_show'
@@ -3101,14 +3105,6 @@ export interface ProjectSettings {
    *  `SotuTuning` (models / trigger constants / cutoffs). Absent fields use the baked
    *  defaults. Edited via the `sotu_configure` tool. */
   sotuParams?: SotuTuningOverrides
-}
-
-// File metadata for the file editor
-export interface FileInfo {
-  path: string
-  name: string
-  size: number
-  modifiedAt: number
 }
 
 /**
@@ -5874,7 +5870,7 @@ export type RecapStatus =
   | 'cancelled'
 // Truly finished -- nothing left to run, no resume. (interrupted is NOT here: it
 // is paused/resumable. Use isRecapResumable for that.)
-export const RECAP_TERMINAL_STATUSES = ['done', 'partial', 'failed', 'cancelled'] as const
+const RECAP_TERMINAL_STATUSES = ['done', 'partial', 'failed', 'cancelled'] as const
 export function isRecapTerminal(status: RecapStatus): boolean {
   return (RECAP_TERMINAL_STATUSES as readonly string[]).includes(status)
 }

@@ -1,0 +1,35 @@
+{
+  "entry": ["web/public/sw.js", "scripts/**/*.ts", "**/*.test.ts", "**/*.test.tsx"],
+  "ignoreDependencies": [
+    "bun:sqlite",
+    "bun:test",
+    "@codemirror/theme-one-dark",
+    "@ast-grep/cli",
+    "@shared/project-order-types",
+    "@shared/project-uri",
+    "@shared/protocol"
+  ],
+  "ignorePatterns": [".claude/**", ".rclaude/**"],
+  "ignoreExports": [
+    // src/shared/protocol.ts is a WIRE CONTRACT surface, not an app module.
+    // "is it imported" is the wrong liveness test for it: broker handlers parse
+    // messages as `Record<string, unknown>` and dispatch on the `type` string
+    // literal, so a fully-live message type has ZERO importers by design.
+    //
+    // In 2026-07 fallow reported 38 unused types here. Every single one was
+    // live on the wire (channel_subscribe alone had 25 references). Acting on
+    // that report would have deleted the documentation of the live protocol.
+    //
+    // The real invariant is enforced instead by `bun run lint:protocol`
+    // (scripts/lint-protocol-contract.ts): every declared message's `type`
+    // literal must appear somewhere outside protocol.ts. Tradeoff: this blanket
+    // rule also stops fallow flagging dead NON-message payload types in this one
+    // file (e.g. the genuinely-dead FileInfo, removed in the same change) --
+    // audit those by hand when touching them.
+    { "file": "src/shared/protocol.ts", "exports": ["*"] },
+    { "file": "web/src/hooks/auth-needed-store.ts", "exports": ["*"] },
+    { "file": "web/src/hooks/debug-control-store.ts", "exports": ["*"] },
+    { "file": "web/src/hooks/thinking-progress-store.ts", "exports": ["*"] },
+    { "file": "web/src/hooks/token-flow-store.ts", "exports": ["*"] }
+  ]
+}

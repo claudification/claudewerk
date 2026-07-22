@@ -1,19 +1,8 @@
+import type { LinkSummary } from '@shared/protocol'
 import { useCallback, useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 
 const LINKS_API = `${window.location.protocol}//${window.location.host}/api/links`
-
-interface LinkItem {
-  projectA: string
-  projectB: string
-  nameA: string
-  nameB: string
-  createdAt: number
-  lastUsed: number
-  online: boolean
-  conversationIdA?: string
-  conversationIdB?: string
-}
 
 function formatAge(ts: number): string {
   const diff = Date.now() - ts
@@ -24,14 +13,14 @@ function formatAge(ts: number): string {
 }
 
 export function ProjectLinksSection() {
-  const [links, setLinks] = useState<LinkItem[]>([])
+  const [links, setLinks] = useState<LinkSummary[]>([])
   const [loading, setLoading] = useState(true)
 
   const fetchLinks = useCallback(async () => {
     try {
       const res = await fetch(LINKS_API)
       if (!res.ok) return
-      const data = (await res.json()) as { links: LinkItem[] }
+      const data = (await res.json()) as { links: LinkSummary[] }
       setLinks(data.links)
     } catch {
       // network error

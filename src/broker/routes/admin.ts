@@ -4,6 +4,7 @@
 
 import { Hono } from 'hono'
 import { normalizeProjectUri } from '../../shared/project-uri'
+import type { LinkSummary } from '../../shared/protocol'
 import {
   createAuthToken,
   createInvite,
@@ -313,7 +314,7 @@ export function createAdminRouter(
     const persisted = getPersistedLinks()
     const activeConversations = conversationStore.getActiveConversations()
 
-    const links = persisted.map(pl => {
+    const links: LinkSummary[] = persisted.map(pl => {
       const sessA = activeConversations.find(s => normalizeProjectUri(s.project) === normalizeProjectUri(pl.projectA))
       const sessB = activeConversations.find(s => normalizeProjectUri(s.project) === normalizeProjectUri(pl.projectB))
       const nameA = getProjectSettings(pl.projectA)?.label || pl.projectA.split('/').pop() || pl.projectA
