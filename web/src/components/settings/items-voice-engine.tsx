@@ -65,6 +65,21 @@ export const VOICE_ENGINE_ITEMS: SettingItem[] = [
   },
   {
     tab: 'voice',
+    group: 'Capture',
+    label: 'Direct-to-Deepgram (experimental)',
+    description:
+      'Stream mic audio straight from the browser to Deepgram, with the broker out of the audio path (it only mints a short-lived token). Deepgram does the endpointing. Lower latency + no broker relay. Takes effect on the next recording.',
+    keywords: 'voice deepgram direct websocket broker latency endpointing token experimental',
+    render: (ctx, ariaLabel) => (
+      <SettingCheckbox
+        ariaLabel={ariaLabel}
+        checked={ctx.prefs.voiceDirectToDeepgram === true}
+        onChange={v => ctx.updatePrefs({ voiceDirectToDeepgram: v })}
+      />
+    ),
+  },
+  {
+    tab: 'voice',
     group: 'Transcription',
     label: 'Deepgram model',
     description: 'STT model for voice transcription',

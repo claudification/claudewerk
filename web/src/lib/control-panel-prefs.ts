@@ -56,6 +56,10 @@ export interface ControlPanelPrefs {
   voiceLingerMs: number // how long to keep recording after releasing push-to-talk (catches trailing words)
   voiceWarmStreamMs: number // how long to keep mic stream warm after recording (0 = release immediately)
   voiceNoiseSuppression: boolean // ask the browser for noise suppression + AGC. OFF by default: on macOS/Safari it can route the mic through Apple's voice-processing unit, which ducks other media (see voice-mic-stream.ts). Flip it if the room is noisy and judge for yourself.
+  /** EXPERIMENTAL: stream mic audio DIRECTLY to Deepgram from the browser (broker
+   *  out of the audio path; broker only mints a short-lived token). Deepgram does
+   *  the endpointing via utterance_end_ms. Off by default. See voice-deepgram-direct.ts. */
+  voiceDirectToDeepgram: boolean
   voiceDeviceId: string // preferred audio input device ID ('' = system default)
   /** The voice ORB's tone dial (Professional | Snarky | Homicidal | Overkill).
    *  Sent with the mint; the broker narrows it and picks the persona preamble.
@@ -135,6 +139,7 @@ const defaultPrefs: ControlPanelPrefs = {
   voiceLingerMs: 1500,
   voiceWarmStreamMs: 30_000,
   voiceNoiseSuppression: false,
+  voiceDirectToDeepgram: false,
   voiceDeviceId: '',
   voiceOrbTone: 'snarky',
   voiceOrbSpeed: DEFAULT_VOICE_ORB_SPEED,

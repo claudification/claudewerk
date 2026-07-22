@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import type { CaptureHandle } from '@/hooks/voice-capture-shared'
+import { type DeepgramDirectSession, fetchDeepgramToken, startDeepgramDirect } from '@/hooks/voice-deepgram-direct'
 import { startMediaRecorderCapture } from '@/hooks/voice-mediarecorder-capture'
 import {
   acquireMicStream,
@@ -116,6 +117,11 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
   const stateRef = useRef<VoiceState>('idle')
   const backendReadyRef = useRef(false)
   const captureRef = useRef<CaptureHandle | null>(null)
+  // Direct-to-Deepgram transport (behind the voiceDirectToDeepgram flag): when
+  // set, the browser talks straight to Deepgram and the broker is out of the
+  // audio path entirely. Mutually exclusive with captureRef.
+  const directSessionRef = useRef<DeepgramDirectSession | null>(null)
+  const directModeRef = useRef(false)
   const streamRef = useRef<MediaStream | null>(null)
   const wsListenerRef = useRef<((event: MessageEvent) => void) | null>(null)
   const cancelledRef = useRef(false)
@@ -165,6 +171,8 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
   function cleanup() {
     captureRef.current?.stop()
     captureRef.current = null
+    directSessionRef.current?.abort()
+    directSessionRef.current = null
     streamRef.current = null
     scheduleStreamRelease()
     if (utteranceTimerRef.current) {
@@ -552,6 +560,50 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     }
   }
 
+  /** Direct-to-Deepgram transport: mint a short-lived token, open the live WS
+   *  straight to Deepgram, and route its transcripts into the same interim/final
+   *  state the broker path uses. The broker never touches the audio. */
+  async function beginDirect(stream: MediaStream): Promise<void> {
+    let token: string
+    try {
+      token = (await fetchDeepgramToken()).accessToken
+    } catch (err) {
+      failVoice('Voice service unavailable', `deepgram token mint failed: ${err}`)
+      return
+    }
+    if (cancelledRef.current) {
+      console.log(`[voice] ${elapsed()} cancelled during token mint`)
+      scheduleStreamRelease()
+      return
+    }
+    directSessionRef.current = startDeepgramDirect({
+      stream,
+      token,
+      model: 'nova-3',
+      callbacks: {
+        onOpen: () => {
+          backendReadyRef.current = true
+          setBackendReady(true)
+          console.log(`[voice] ${elapsed()} deepgram direct open`)
+        },
+        onTranscript: u => {
+          if (stateRef.current === 'submitting' || stateRef.current === 'idle') return
+          accumulatedTextRef.current = u.accumulated
+          if (u.isFinal) {
+            setFinalText(u.accumulated)
+            setInterim('')
+          } else {
+            setInterim(u.transcript)
+          }
+        },
+        onError: msg => failVoice('Voice error', `deepgram direct: ${msg}`),
+      },
+    })
+    stateRef.current = 'recording'
+    setState('recording')
+    console.log(`[voice] ${elapsed()} direct capture started -- recording`)
+  }
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: attachWsListener and stop are stable functions defined in this scope
   // fallow-ignore-next-line complexity -- CRAP artifact: CC 10 / cognitive 10 (both under threshold). Linear startup sequence; every branch is an honest-failure guard the LOG EVERYTHING covenant requires. Coverage estimates as ~0 (getUserMedia/Web Audio absent in jsdom), inflating CRAP; not real complexity debt.
   const start = useCallback(async () => {
@@ -564,11 +616,13 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     setTargetConversationId(target)
     targetConversationIdRef.current = target
 
+    directModeRef.current = useConversationsStore.getState().controlPanelPrefs.voiceDirectToDeepgram === true
+
     voiceSeqRef.current++
     const seq = voiceSeqRef.current
     startTsRef.current = performance.now()
     setMicExpired(false)
-    console.log(`[voice] start() (target=${target ?? 'none'}, seq=${seq})`)
+    console.log(`[voice] start() (target=${target ?? 'none'}, seq=${seq}, direct=${directModeRef.current})`)
 
     cancelledRef.current = false
     pendingStopRef.current = false
@@ -617,6 +671,14 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
 
       streamRef.current = stream
       watchTrackDeath(stream)
+
+      // Direct-to-Deepgram: mint a token, open the WS straight to Deepgram, and
+      // the broker never touches the audio. The broker path below is skipped.
+      if (directModeRef.current) {
+        await beginDirect(stream)
+        return
+      }
+
       chunkSeq = 0
       sendWs({ type: 'voice_start', conversationId: target })
       console.log(`[voice] ${elapsed()} voice_start sent`)
@@ -639,6 +701,30 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
   }, [sendWs])
 
   function doStop() {
+    // Direct-to-Deepgram: stop() flushes Deepgram and resolves with the FULL
+    // final transcript, so there is no broker voice_final handshake to wait on --
+    // the tail-truncation race cannot happen because Deepgram itself signals done.
+    const direct = directSessionRef.current
+    if (direct) {
+      directSessionRef.current = null
+      streamRef.current = null
+      scheduleStreamRelease()
+      setState('refining')
+      console.log(`[voice] ${elapsed()} direct stop -- awaiting Deepgram final`)
+      direct.stop().then(text => {
+        const final = (text || accumulatedTextRef.current || '').trim()
+        if (stateRef.current === 'submitting' || stateRef.current === 'idle') return
+        if (!final) {
+          armStuckReset()
+          return
+        }
+        addVoiceHistoryEntry({ raw: final, refined: final, conversationId: targetConversationIdRef.current })
+        setRefinedText(final)
+        setState('submitting')
+      })
+      return
+    }
+
     const capture = captureRef.current
     if (capture) {
       // flush() drains the engine's buffered remainder (each drained chunk fires
