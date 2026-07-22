@@ -16,7 +16,7 @@ import type { DisplayGroup, GroupingState, TaskNotification } from './grouping/t
 // stableGroupKey: keyed on the group's LAST entry (seq -> uuid -> timestamp)
 // so a HEAD prepend that grows a boundary group at its head doesn't change
 // the key. Used by the identity-preserving regroup below.
-function groupIdentityKey(group: DisplayGroup): string {
+export function groupIdentityKey(group: DisplayGroup): string {
   const tail = group.entries[group.entries.length - 1] as { seq?: number; uuid?: string } | undefined
   const id = tail?.seq ?? tail?.uuid ?? group.timestamp
   return `${group.type}-${id}`
