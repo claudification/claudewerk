@@ -32,7 +32,7 @@ const CLIENT_SECRETS_URL = 'https://api.openai.com/v1/realtime/client_secrets'
  *  contract does not offer. */
 export function buildVoiceSessionConfig(
   tools: RealtimeTool[],
-  opts: { instructions?: string; tone?: VoiceTone; speed?: number; voice?: VoiceOrbVoice } = {},
+  opts: { instructions?: string; tone?: VoiceTone; speed?: number; voice?: VoiceOrbVoice; orbId?: string } = {},
 ) {
   return {
     type: 'realtime' as const,
@@ -42,6 +42,7 @@ export function buildVoiceSessionConfig(
       buildVoiceInstructions(
         tools.map(t => t.name),
         opts.tone ?? DEFAULT_VOICE_TONE,
+        opts.orbId,
       ),
     audio: {
       input: {
@@ -85,6 +86,9 @@ export interface MintVoiceOptions {
   voice?: VoiceOrbVoice
   /** OpenAI-Safety-Identifier (e.g. `desk-<userId>`). */
   safetyId?: string
+  /** This browser's orb instance id -- baked into the persona so the orb knows
+   *  its own `orb:<id>` address for targeted replies. */
+  orbId?: string
 }
 
 export async function mintVoiceToken(opts: MintVoiceOptions): Promise<MintedVoiceToken> {
@@ -102,6 +106,7 @@ export async function mintVoiceToken(opts: MintVoiceOptions): Promise<MintedVoic
     tone: opts.tone,
     speed: opts.speed,
     voice: opts.voice,
+    orbId: opts.orbId,
   })
   const res = await fetcher(CLIENT_SECRETS_URL, {
     method: 'POST',

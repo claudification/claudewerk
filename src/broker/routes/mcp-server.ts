@@ -15,6 +15,7 @@ import { BUILD_VERSION } from '../../shared/version'
 import { resolveAuth } from '../auth-routes'
 import type { ConversationStore } from '../conversation-store'
 import { deliverDispatcherReport } from '../desk/async-impulse'
+import { parseOrbTarget, relayToOrb } from '../desk/orb-channel'
 import { runDispatch } from '../desk/runtime'
 import { listThreads } from '../desk/threads'
 import { getGlobalSettings } from '../global-settings'
@@ -237,7 +238,7 @@ export function createMcpServer(
   // ─── send_message ───────────────────────────────────────────────────
   mcp.tool(
     'send_message',
-    'Send a message to one or more other conversations (CC, Hermes, chat-api, etc.). The recipient sees the message wrapped in a <channel> tag with the from/intent/conversation_id attributes preserved -- they reply by calling this tool back with the same conversation_id. Pass `to` as a string for one recipient or an array for multicast (max 25). Multicast returns a per-target breakdown.',
+    'Send a message to one or more other conversations (CC, Hermes, chat-api, etc.). The recipient sees the message wrapped in a <channel> tag with the from/intent/conversation_id attributes preserved -- they reply by calling this tool back with the same conversation_id. Pass `to` as a string for one recipient or an array for multicast (max 25). Multicast returns a per-target breakdown. Reserved targets (always allowed, no link approval): `dispatcher` reports a dispatched quest\'s findings back to your dispatcher; `orb` speaks your message aloud to the user through the voice orb (use for a short spoken heads-up, e.g. "the deploy is blocked on you") -- the orb prefixes it with your conversation name.',
     {
       to: z
         .union([z.string(), z.array(z.string()).min(1).max(25)])
@@ -264,6 +265,15 @@ export function createMcpServer(
           if (t === 'dispatcher') {
             const res = await deliverDispatcherReport(conversationStore, callerConversationId, message)
             return { to: t, ok: res.ok, status: 'delivered' as const, error: res.ok ? undefined : res.detail }
+          }
+          // RESERVED `orb` SINK: speak this line aloud to the user through the
+          // live voice orb. Like `dispatcher`, it is a system notification, not a
+          // peer conversation -- intercept before the lookup and bypass the link
+          // gate. Best-effort: `subscribers` reports how many panels heard it.
+          const orb = parseOrbTarget(t)
+          if (orb.isOrb) {
+            const res = relayToOrb(conversationStore, callerConversationId, message, orb.orbId)
+            return { to: t, ok: res.ok, status: 'delivered' as const }
           }
           const target = conversations.find(c => c.id === t || c.title === t || c.agentName === t)
           if (!target) {

@@ -16,6 +16,7 @@ import {
 import { slugify } from '../address-book'
 import { getUser } from '../auth'
 import { deliverDispatcherReport } from '../desk/async-impulse'
+import { parseOrbTarget, relayToOrb } from '../desk/orb-channel'
 import { refreshAliasUse } from '../former-slugs'
 import { GuardError, type HandlerContext, type MessageHandler } from '../handler-context'
 import { AGENT_HOST_ONLY, DASHBOARD_ROLES, registerHandlers } from '../message-router'
@@ -745,6 +746,20 @@ function deliverToOne(
       ctx.log.debug(`[dispatcher-sink] ${fromConversation.slice(0, 8)} report failed: ${(err as Error).message}`),
     )
     ctx.log.debug(`[dispatcher-sink] ${fromConversation.slice(0, 8)} -> dispatcher (link gate bypassed)`)
+    return { to: toTarget, ok: true, status: 'delivered' }
+  }
+
+  // RESERVED `orb` SINK: speak this line aloud to the user through the live
+  // voice orb. Like `dispatcher`, a system notification (not a peer
+  // conversation), so it bypasses the link-approval gate. Best-effort: the log
+  // records how many control panels actually heard it.
+  const orb = parseOrbTarget(toTarget)
+  if (orb.isOrb) {
+    const message = typeof data.message === 'string' ? data.message : ''
+    const res = relayToOrb(ctx.conversations, fromConversation, message, orb.orbId)
+    ctx.log.debug(
+      `[orb-sink] ${fromConversation.slice(0, 8)} -> ${toTarget} as "${res.sourceName}" (${res.subscribers} panel(s), link gate bypassed)`,
+    )
     return { to: toTarget, ok: true, status: 'delivered' }
   }
 

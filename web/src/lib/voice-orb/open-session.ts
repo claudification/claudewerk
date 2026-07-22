@@ -8,6 +8,7 @@
  */
 
 import type { VoiceOrbTone } from '@/components/voice-orb/voice-orb-tone'
+import { getOrbInstanceId } from './orb-instance'
 import type { FunctionCall, VoiceState } from './realtime-events'
 import type { ToolBridge } from './tool-bridge'
 import type { VoiceSession } from './voice-session'
@@ -41,6 +42,7 @@ async function mintToken(opts: {
   tone: string
   speed: number
   voice: string
+  orbId: string
 }): Promise<{ value: string; model: string }> {
   const res = await fetch('/api/desk/voice/token', {
     method: 'POST',
@@ -81,7 +83,8 @@ export async function openVoiceSession(cb: OpenSessionCallbacks): Promise<OpenSe
 
   const session = new Session(
     {
-      mintToken: () => mintToken({ tone: String(cb.tone()), speed: cb.speed(), voice: cb.voice() }),
+      mintToken: () =>
+        mintToken({ tone: String(cb.tone()), speed: cb.speed(), voice: cb.voice(), orbId: getOrbInstanceId() }),
       runTool: (call: FunctionCall) => bridge.run(call),
     },
     { onState: cb.onState, onError: cb.onError, onTranscript: cb.onTranscript },

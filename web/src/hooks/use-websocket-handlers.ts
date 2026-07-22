@@ -47,6 +47,8 @@ import type {
 } from '@/lib/types'
 import { setLastConversationId } from '@/lib/ui-state'
 import { formatRateBucketName, haptic } from '@/lib/utils'
+import { isOrbChannelDraining, pushOrbChannelMessage } from '@/lib/voice-orb/orb-channel-bus'
+import { isForThisOrb } from '@/lib/voice-orb/orb-instance'
 import { deliverVoiceToolResult, type ToolResultMessage } from '@/lib/voice-orb/tool-bridge'
 import { clearAuthNeeded, setAuthNeeded } from './auth-needed-store'
 import { addDebugTraceEvent, setDebugTraceResult } from './debug-control-store'
@@ -1750,6 +1752,38 @@ function handleVoiceToolCallResult(msg: DashboardMessage) {
   deliverVoiceToolResult(msg as unknown as ToolResultMessage)
 }
 
+/** A conversation addressed the orb (`send_message to:"orb"`). The broker
+ *  broadcasts every delivery; this browser keeps only the ones aimed at it (or
+ *  the broadcast ones), queues them, and -- if no orb is summoned to speak them
+ *  -- raises a toast so the message is not silently held. All the modules here
+ *  are WebRTC-free, so the heavy orb chunk stays lazy. */
+function handleVoiceOrbDeliver(msg: DashboardMessage) {
+  const m = msg as unknown as {
+    sourceConversationId?: string
+    sourceName?: string
+    body?: string
+    ts?: number
+    targetOrbId?: string | null
+  }
+  if (!m.body || !isForThisOrb(m.targetOrbId)) return
+  pushOrbChannelMessage({
+    sourceConversationId: m.sourceConversationId ?? '',
+    sourceName: m.sourceName ?? 'a conversation',
+    body: m.body,
+    ts: typeof m.ts === 'number' ? m.ts : Date.now(),
+  })
+  if (!isOrbChannelDraining()) {
+    window.dispatchEvent(
+      new CustomEvent('rclaude-toast', {
+        detail: {
+          title: `The orb has a message from ${m.sourceName ?? 'a conversation'}`,
+          body: 'Summon the orb to hear it.',
+        },
+      }),
+    )
+  }
+}
+
 function handleSotuFleetResult(msg: DashboardMessage) {
   window.dispatchEvent(new CustomEvent('sotu-ws', { detail: msg }))
 }
@@ -1870,6 +1904,8 @@ export const handlers: Record<string, MessageHandler> = {
   dispatch_tool_result: handleDispatchToolResult,
   // voice orb (the realtime tool bridge)
   voice_tool_call_result: handleVoiceToolCallResult,
+  // voice orb channel: a conversation's spoken heads-up (send_message to:"orb")
+  voice_orb_deliver: handleVoiceOrbDeliver,
   // SOTU dashboard reads + live push
   sotu_fleet_result: handleSotuFleetResult,
   sotu_view_result: handleSotuViewResult,

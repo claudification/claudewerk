@@ -16,6 +16,7 @@ import { useVoiceOrb } from '@/hooks/use-voice-orb'
 import { OrbCaption, pickCaption } from './orb-caption'
 import { toOrbState } from './orb-state'
 import { useAudioLevel } from './use-audio-level'
+import { useOrbChannel } from './use-orb-channel'
 import { useOrbNarration } from './use-orb-narration'
 import { useOrbSummon } from './use-orb-summon'
 import { VoiceOrb } from './voice-orb'
@@ -34,6 +35,8 @@ export function VoiceOrbHost() {
   const level = useAudioLevel(summoned && !dozing, orb.audioStreams)
   // While it is up, the orb volunteers fleet news instead of waiting to be asked.
   useOrbNarration(summoned && orb.live, orb.state, orb.announce)
+  // ...and speaks any line a conversation addressed to it (send_message to:"orb").
+  useOrbChannel(summoned && orb.live, orb.state, orb.announce)
 
   const openDesk = () => {
     void import('@/components/dispatch-overlay/dispatch-store').then(m => m.useDispatchStore.getState().openOverlay())

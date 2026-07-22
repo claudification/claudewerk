@@ -48,6 +48,21 @@ describe('the contract drives the instructions', () => {
   })
 })
 
+describe('the orb channel', () => {
+  it('always teaches how to deliver a relayed line, even with an empty contract', () => {
+    expect(flat(buildVoiceInstructions([]))).toContain('[orb channel]')
+    expect(flat(buildVoiceInstructions(READ))).toContain('named to its source')
+  })
+
+  it('adds the instance address ONLY when an orbId is minted', () => {
+    expect(flat(buildVoiceInstructions(ALL, DEFAULT_VOICE_TONE))).not.toContain('YOUR ADDRESS')
+    const withId = flat(buildVoiceInstructions(ALL, DEFAULT_VOICE_TONE, 'abc123'))
+    expect(withId).toContain('YOUR ADDRESS')
+    expect(withId).toContain('orb:abc123')
+    expect(withId).toContain('reaches every screen')
+  })
+})
+
 describe('the safety rails survive every tone', () => {
   it('carries VOICE IS LOSSY and the never-skip-a-confirm rule, always', () => {
     for (const tone of VOICE_TONES) {
