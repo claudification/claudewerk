@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto'
 import type { TranscriptEntry } from '../../shared/protocol'
+import { deterministicUuid } from '../handlers/transcript-uuid'
 import type { StoreDriver, TranscriptAppendResult, TranscriptEntryInput } from '../store/types'
 
 /** Resolve a transcript entry's timestamp (ISO string or absent) to epoch ms. */
@@ -13,10 +13,29 @@ export function resolveEntryTimestamp(raw: unknown): number {
  *
  *  The synthesized uuid is written BACK onto the entry: uuid is the store's
  *  dedup key, so an entry that keeps it only in the stored row is one the
- *  dashboard can never dedup either. */
-function toTranscriptInput(e: TranscriptEntry, agentId: string | undefined): TranscriptEntryInput {
+ *  dashboard can never dedup either.
+ *
+ *  The synthesized id MUST be DETERMINISTIC (a content hash, not `randomUUID`).
+ *  A uuid-less entry (launch / attachment / queued-user / system) is re-sent
+ *  verbatim every time the agent host replays its buffer on reconnect, and the
+ *  host never saw the broker's id. A random uuid makes each replay a NEW row
+ *  with a fresh high seq while it keeps its ORIGINAL timestamp -- so a replayed
+ *  first input sorts to the BOTTOM, plus seq holes and duplicate launch cards.
+ *  Hashing the content (before uuid/seq are stamped) makes the same logical
+ *  entry hash to the same id, so the store's INSERT OR IGNORE dedups the
+ *  replay. Two byte-identical entries at the same instant are indistinguishable
+ *  duplicates anyway -- collapsing them is correct. */
+function toTranscriptInput(
+  e: TranscriptEntry,
+  conversationId: string,
+  agentId: string | undefined,
+): TranscriptEntryInput {
   const subtype = (e as Record<string, unknown>).subtype
-  if (!e.uuid) e.uuid = randomUUID()
+  if (!e.uuid) {
+    e.uuid = deterministicUuid(
+      `${conversationId}:${agentId ?? ''}:synth:${e.type}:${resolveEntryTimestamp(e.timestamp)}:${JSON.stringify(e)}`,
+    )
+  }
   return {
     type: e.type,
     subtype: typeof subtype === 'string' ? subtype : undefined,
@@ -81,7 +100,7 @@ function appendToStore(
     return store.transcripts.append(
       conversationId,
       'live',
-      entries.map(e => toTranscriptInput(e, agentId)),
+      entries.map(e => toTranscriptInput(e, conversationId, agentId)),
     )
   } catch (err) {
     console.error('[transcript-store] append failed:', err instanceof Error ? err.message : err)

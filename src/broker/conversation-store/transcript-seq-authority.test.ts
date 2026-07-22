@@ -171,6 +171,45 @@ describe('transcript seq authority', () => {
     expect(Object.values(stored).sort((x, y) => x - y)).toEqual([1, 2, 3, 4])
   })
 
+  // The uuid-LESS path. Launch / attachment / queued-user / system entries reach
+  // the store with no uuid of their own. The store dedups on
+  // (conversation_id, uuid), so the SYNTHESIZED uuid must be identical across
+  // replays -- or every reconnect mints a fresh row with a fresh high seq while
+  // the entry keeps its ORIGINAL (old) timestamp. That is the production bug the
+  // seq-authority fix could not reach: a replayed first user input got a brand
+  // new high seq and sorted to the BOTTOM of the transcript, plus 10%+ holes and
+  // duplicate launch cards. Fresh objects each replay, exactly how the agent
+  // host re-sends its buffer (it never saw the broker's synthesized id).
+  it('dedups uuid-less entries across a replay instead of minting fresh seqs', () => {
+    const noUuid = (type: string, timestamp: string, extra: Record<string, unknown> = {}): TranscriptEntry =>
+      ({ type, timestamp, ...extra }) as unknown as TranscriptEntry
+    const batch = () => [
+      noUuid('launch', '2026-07-22T07:00:00.000Z', { launchId: 'L1', step: 'spawn' }),
+      noUuid('attachment', '2026-07-22T07:00:01.000Z', { name: 'a.png' }),
+    ]
+
+    const dataDir = freshDataDir()
+    const first = createSqliteDriver({ type: 'sqlite', dataDir })
+    const original = batch()
+    addTranscriptEntries(ctxOver(first), CONV, original, false)
+    const originalUuids = original.map(x => x.uuid)
+    expect(originalUuids.every(u => typeof u === 'string' && u.length > 0)).toBe(true)
+    expect(original.map(x => x.seq)).toEqual([1, 2])
+
+    // New broker process; the host replays the same logical entries as FRESH
+    // objects that carry no uuid.
+    const restarted = createSqliteDriver({ type: 'sqlite', dataDir })
+    const replay = batch()
+    const accepted = addTranscriptEntries(ctxOver(restarted), CONV, replay, false)
+
+    // Same content -> same synthesized uuid -> the store recognizes the replay.
+    expect(replay.map(x => x.uuid)).toEqual(originalUuids)
+    // Nothing new: no fresh seqs, no duplicate rows, seq keeps tracking time.
+    expect(accepted).toEqual([])
+    expect(replay.map(x => x.seq)).toEqual([1, 2])
+    expect(Object.keys(storedSeqs(restarted))).toHaveLength(2)
+  })
+
   it('falls back to the in-memory counter when there is no store', () => {
     const ctx = makeTestContext()
     const entries = [e('a'), e('b')]
