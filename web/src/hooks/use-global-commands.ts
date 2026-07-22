@@ -1,11 +1,11 @@
 import { useCallback, useEffect } from 'react'
+import { createCanvas } from '@/components/canvas/canvas-editor-io'
+import { openCanvasWindow } from '@/components/canvas/open-canvas-window'
 import {
   openChecklistAddNotes,
   openChecklistArchive,
   openChecklistBulkEdit,
 } from '@/components/checklist/checklist-bus'
-import { createCanvas } from '@/components/canvas/canvas-editor-io'
-import { openCanvasWindow } from '@/components/canvas/open-canvas-window'
 import { exposeDispatchControl } from '@/components/dispatch-overlay/dispatch-control-bridge'
 import { useDispatchStore } from '@/components/dispatch-overlay/dispatch-store'
 import { openLaunchProfileManager } from '@/components/launch-profiles/manager-state'
@@ -19,6 +19,7 @@ import { openManageProjectLinks } from '@/components/settings/manage-project-lin
 import { openSpawnDialog } from '@/components/spawn-dialog-trigger'
 import { openTerminateConfirm } from '@/components/terminate-confirm-trigger'
 import { openTerminateLineageConfirm } from '@/components/terminate-lineage-confirm-trigger'
+import { summonVoiceOrb } from '@/components/voice-orb/voice-orb-bus'
 import { fetchTranscript, sendInput, useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import { openNightshiftModal } from '@/hooks/use-nightshift-modal'
 import { useShellsStore } from '@/hooks/use-shells'
@@ -117,6 +118,14 @@ export function useGlobalCommands(toggleSidebar: () => void) {
   useWorkspaceShortcuts()
 
   // 'open-sheaf' lives in SheafModal (web/src/sheaf/sheaf-modal.tsx).
+
+  // The voice orb. Hidden unless the broker has a realtime key -- summoning an
+  // orb that can only fail at mint is worse than not offering it.
+  useCommand('summon-voice-orb', summonVoiceOrb, {
+    label: 'Voice orb (talk to the fleet)',
+    group: 'Navigation',
+    when: () => useConversationsStore.getState().serverCapabilities.realtimeVoice === true,
+  })
 
   useCommand(
     'open-nightshift',

@@ -47,6 +47,7 @@ import type {
 } from '@/lib/types'
 import { setLastConversationId } from '@/lib/ui-state'
 import { formatRateBucketName, haptic } from '@/lib/utils'
+import { deliverVoiceToolResult, type ToolResultMessage } from '@/lib/voice-orb/tool-bridge'
 import { clearAuthNeeded, setAuthNeeded } from './auth-needed-store'
 import { addDebugTraceEvent, setDebugTraceResult } from './debug-control-store'
 import { clearThinkingProgress, recordThinkingProgress } from './thinking-progress-store'
@@ -1743,6 +1744,12 @@ function handleDispatchToolResult(msg: DashboardMessage) {
   useDispatchStore.getState().onToolResult(msg as unknown as DispatchToolResult)
 }
 
+/** The voice orb's tool round-trip. Eager (a few lines) so the heavy orb chunk
+ *  stays lazy: the bridge slot is null until the orb is summoned. */
+function handleVoiceToolCallResult(msg: DashboardMessage) {
+  deliverVoiceToolResult(msg as unknown as ToolResultMessage)
+}
+
 function handleSotuFleetResult(msg: DashboardMessage) {
   window.dispatchEvent(new CustomEvent('sotu-ws', { detail: msg }))
 }
@@ -1861,6 +1868,8 @@ export const handlers: Record<string, MessageHandler> = {
   dispatch_decision: handleDispatchDecision,
   dispatch_tool_call: handleDispatchToolCall,
   dispatch_tool_result: handleDispatchToolResult,
+  // voice orb (the realtime tool bridge)
+  voice_tool_call_result: handleVoiceToolCallResult,
   // SOTU dashboard reads + live push
   sotu_fleet_result: handleSotuFleetResult,
   sotu_view_result: handleSotuViewResult,

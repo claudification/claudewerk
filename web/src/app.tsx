@@ -51,6 +51,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/co
 import { UpdateBanner } from '@/components/update-banner'
 import { VoiceFab } from '@/components/voice-fab'
 import { VoiceKey } from '@/components/voice-key'
+import { voiceOrbBus } from '@/components/voice-orb/voice-orb-bus'
 import { useBuildUpdate } from '@/hooks/use-build-update'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { useGlobalCommands } from '@/hooks/use-global-commands'
@@ -108,6 +109,12 @@ const SpawnDialog = lazyModule(
 const ReviveDialog = lazyModule(
   named(() => import('@/components/revive-dialog'), 'ReviveDialog'),
   reviveDialogBus.useArmed,
+)
+// The voice orb drags WebRTC + the realtime session with it -- it must never
+// ride the index chunk. Armed only by the summon verb.
+const VoiceOrbHost = lazyModule(
+  named(() => import('@/components/voice-orb/voice-orb-host'), 'VoiceOrbHost'),
+  voiceOrbBus.useArmed,
 )
 const RecapConfigDialog = lazyModule(
   named(() => import('@/components/recap-jobs/recap-config-dialog'), 'RecapConfigDialog'),
@@ -560,6 +567,7 @@ function Dashboard() {
       <TranscriptSearch />
       <SyncIndicator />
       <VoiceFabGate />
+      <VoiceOrbHost />
       <ActionFabGate />
       <VoiceKey />
       <AuthExpiredModal />
