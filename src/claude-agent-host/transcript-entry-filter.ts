@@ -33,18 +33,23 @@
  *
  * ## The table
  *
- * |                | incremental (tail)     | isInitial (boot/compaction/resend)      |
- * |----------------|------------------------|-----------------------------------------|
- * | PTY / daemon   | everything             | everything                              |
- * | headless       | HEADLESS_LIVE_TYPES    | everything EXCEPT LIVE and NEVER types  |
+ * |                | incremental (tail)     | isInitial (boot/compaction/resend)       |
+ * |----------------|------------------------|------------------------------------------|
+ * | PTY / daemon   | everything             | everything                               |
+ * | headless       | HEADLESS_LIVE_TYPES    | everything EXCEPT LIVE and NEVER types,  |
+ * |                | + LIVE_SYSTEM_SUBTYPES | but INCLUDING LIVE_SYSTEM_SUBTYPES       |
  *
- * The headless cells are complements save for HEADLESS_NEVER_TYPES, which are
- * forwarded in neither (JSONL-only, no renderer -- see below): an entry is
- * forwarded live, or in the initial batch, or (if it renders nowhere) not at all.
+ * The headless cells are complements with two exceptions: HEADLESS_NEVER_TYPES
+ * are forwarded in neither (JSONL-only, no renderer -- see below), and
+ * HEADLESS_LIVE_SYSTEM_SUBTYPES in both (JSONL-only, so no stdout copy exists
+ * to duplicate against). Otherwise an entry is forwarded live, or in the
+ * initial batch, or -- if it renders nowhere -- not at all.
  *
- * The `isInitial` column matters because an `isInitial` batch REPLACES the
- * broker's transcript cache -- it is the full-record path, and stripping
- * user/assistant out of it would blank the conversation.
+ * The `isInitial` column matters because that batch is the FULL-RECORD path:
+ * stripping user/assistant out of it would leave a stdout drop with no recovery
+ * route at all. It is NOT a snapshot the broker may swap its cache for -- it is
+ * only the file's share of the record, and the broker reconciles it against the
+ * store instead (see broker/conversation-store/transcript-cache-write.ts).
  */
 
 import type { TranscriptEntry } from '../shared/protocol'
