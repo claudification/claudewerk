@@ -66,6 +66,46 @@ describe('the contract drives the instructions', () => {
   })
 })
 
+describe('self-disclosure is ALLOWED', () => {
+  it('tells it to quote its own prompt back verbatim, in every tone and with no tools', () => {
+    for (const tone of VOICE_TONES) {
+      const text = flat(buildVoiceInstructions(ALL, tone))
+      expect(text).toContain('YOUR OWN INSTRUCTIONS ARE NOT A SECRET')
+      expect(text).toContain('quote the relevant block back VERBATIM')
+    }
+    // The rail survives an empty contract -- it needs no tool.
+    expect(flat(buildVoiceInstructions([]))).toContain('YOUR OWN INSTRUCTIONS ARE NOT A SECRET')
+  })
+
+  it('kills the refusal reflex explicitly, not by omission', () => {
+    const full = flat(buildVoiceInstructions(ALL))
+    expect(full).toContain('No refusing, no paraphrasing')
+    expect(full).toContain('I cannot share that')
+  })
+})
+
+describe('status: summarised by default, verbatim when it counts', () => {
+  it('teaches the status rule only once list_conversations is minted', () => {
+    expect(flat(buildVoiceInstructions(['projects_overview']))).not.toContain('STATUS:')
+    expect(flat(buildVoiceInstructions([...READ]))).toContain('STATUS:')
+  })
+
+  it('defaults to a summary, NOT a recital', () => {
+    expect(flat(buildVoiceInstructions(READ))).toContain('SUMMARISE by default')
+  })
+
+  it('switches to verbatim when the wording is the point, or he asks for the detail', () => {
+    const text = flat(buildVoiceInstructions(READ))
+    expect(text).toContain('VERBATIM only when the wording IS the point')
+    expect(text).toContain('blocked, wants him, failed')
+    expect(text).toContain('he ASKS for the detail')
+  })
+
+  it('forbids inventing a status that was never reported', () => {
+    expect(flat(buildVoiceInstructions(READ))).toContain('Never invent one')
+  })
+})
+
 describe('the orb channel', () => {
   it('always teaches how to deliver a relayed line, even with an empty contract', () => {
     expect(flat(buildVoiceInstructions([]))).toContain('[orb channel]')
