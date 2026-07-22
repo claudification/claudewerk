@@ -58,9 +58,12 @@ function seedSignature(snapshot: unknown): string | null {
  *  present, the canvas streams cursors + scene changes to peers and applies
  *  theirs via the imperative API. Absent for the Draw dialog block (unchanged). */
 export interface CanvasCollabBinding {
-  /** Receive the Excalidraw API so the collab layer can updateScene(). */
+  /** Receive the Excalidraw API so the collab layer can updateScene() + addFiles(). */
   bindApi: (
-    api: { updateScene(scene: { elements?: readonly unknown[]; collaborators?: Map<string, unknown> }): void } | null,
+    api: {
+      updateScene(scene: { elements?: readonly unknown[]; collaborators?: Map<string, unknown> }): void
+      addFiles?(files: readonly unknown[]): void
+    } | null,
   ) => void
   /** Local cursor moved (scene coords). tool + button ride along so a remote
    *  Excalidraw can draw this peer's laser trail (needs tool 'laser' + button

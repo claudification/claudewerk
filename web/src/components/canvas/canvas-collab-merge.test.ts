@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   parseSceneElements,
+  parseSceneFiles,
   peerToApply,
   pointerCollaborator,
   prunePeers,
@@ -63,6 +64,20 @@ describe('parseSceneElements', () => {
   it('returns null for non-string / malformed input', () => {
     expect(parseSceneElements(42)).toBeNull()
     expect(parseSceneElements('{bad')).toBeNull()
+  })
+})
+
+describe('parseSceneFiles', () => {
+  it('returns the image file values (what addFiles wants)', () => {
+    const scene = JSON.stringify({ elements: [], files: { abc: { id: 'abc', dataURL: 'data:...' } } })
+    expect(parseSceneFiles(scene)).toEqual([{ id: 'abc', dataURL: 'data:...' }])
+  })
+  it('returns [] when files is absent (no image on the canvas)', () => {
+    expect(parseSceneFiles('{"elements":[]}')).toEqual([])
+  })
+  it('returns [] for non-string / malformed input, never throws', () => {
+    expect(parseSceneFiles(42)).toEqual([])
+    expect(parseSceneFiles('{bad')).toEqual([])
   })
 })
 
