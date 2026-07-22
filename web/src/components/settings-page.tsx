@@ -373,6 +373,26 @@ const SETTINGS: SettingItem[] = [
   {
     tab: 'input',
     group: 'Voice',
+    label: 'Mic noise suppression',
+    description:
+      'Ask the browser for noise suppression + auto gain. Off = raw mic (no ducking of other audio). Safari may ignore it -- the console logs what actually applied. Takes effect on the next recording.',
+    keywords: 'voice mic noise suppression isolation agc gain background',
+    render: (ctx, ariaLabel) => (
+      <input
+        aria-label={ariaLabel}
+        type="checkbox"
+        checked={ctx.prefs.voiceNoiseSuppression === true}
+        onChange={e => {
+          ctx.updatePrefs({ voiceNoiseSuppression: e.target.checked })
+          invalidateWarmStream() // the constraint only applies on a fresh getUserMedia
+        }}
+        className="accent-primary size-4"
+      />
+    ),
+  },
+  {
+    tab: 'input',
+    group: 'Voice',
     label: 'Audio input device',
     description: 'Microphone to use for voice input (change takes effect on next recording)',
     keywords: 'mic microphone device headphones audio input select',

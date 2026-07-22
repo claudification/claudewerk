@@ -9,17 +9,15 @@ import type { ServerWebSocket } from 'bun'
 import type { ConversationStore } from './conversation-store'
 import { getGlobalSettings } from './global-settings'
 import { getProjectSettings } from './project-settings'
-import { chat } from './recap/shared/openrouter-client'
 import {
   createEndpointerState,
   type EndpointerState,
   evaluateEndpointer,
-  FORCE_FINALIZE_MS,
   noteNaturalClose,
+  rmsFromLinear16,
 } from './voice-endpointer'
 import { bytesPerSecondFor, createLatencyTracker, type LatencyTracker } from './voice-latency'
-
-const VOICE_REFINER_MODEL = 'anthropic/claude-haiku-4.5'
+import { refinementSkipReason, refineTranscript } from './voice-refiner'
 
 const DEEPGRAM_LIVE_URL = 'wss://api.deepgram.com/v1/listen'
 // The v1 streaming pipeline (webm/opus auto-detect, smart_format, interim_results,
@@ -75,9 +73,6 @@ const KEEPALIVE_INTERVAL_MS = 5_000 // Deepgram kills connection after 10s of no
 // source. Every firing is logged as a warning, so a normal path silently
 // degrading into this one stays visible instead of becoming the new normal.
 const TERMINAL_SAFETY_MS = 8_000
-// How often we re-evaluate whether the open segment has outstayed its welcome.
-// Finer than FORCE_FINALIZE_MS so the cap is enforced with ~1s resolution.
-const ENDPOINTER_TICK_MS = 1_000
 
 interface VoiceSession {
   dgWs: WebSocket
@@ -90,9 +85,11 @@ interface VoiceSession {
   timeoutTimer: ReturnType<typeof setTimeout>
   keepaliveTimer: ReturnType<typeof setInterval>
   // Forces segment closure when the raw mic starves Deepgram's VAD (see
-  // voice-endpointer.ts). Null until the first audio chunk arms it.
-  endpointerTimer: ReturnType<typeof setInterval> | null
+  // voice-endpointer.ts). Driven per audio chunk, not on a timer -- the decision
+  // needs the chunk's own energy.
   endpointer: EndpointerState
+  /** True when the client streams raw linear16 we can measure for VAD. */
+  pcm: boolean
   closed: boolean
   // Per-session audio accounting. These USED to be module-level globals, which
   // collided across concurrent sessions (multi-user broker) and got reset
@@ -220,23 +217,27 @@ function relayTranscript(session: VoiceSession, transcript: string, isFinal: boo
 }
 
 /**
- * One endpointer tick: if the open segment has been receiving speech past the
- * cap, force Deepgram to close it. The resulting from_finalize Results is inert
- * for session termination (that path is gated on session.stopping) -- it just
- * flushes the segment and resets the decode window.
+ * Feed one audio chunk to the endpointer and act on its verdict: past the soft
+ * cap we close the segment at the speaker's next pause, past the hard cap we
+ * close it regardless. The resulting from_finalize Results is inert for session
+ * termination (that path is gated on session.stopping) -- it just flushes the
+ * segment and resets Deepgram's decode window.
  */
-function tickEndpointer(session: VoiceSession) {
+function feedEndpointer(session: VoiceSession, bytes: Buffer) {
   const active = session.dgWs.readyState === WebSocket.OPEN && !session.stopping && session.firstAudioAt > 0
-  const { finalize, next } = evaluateEndpointer(session.endpointer, {
+  const rms = session.pcm ? rmsFromLinear16(bytes) : 0
+  const { finalize, next, openMs, speech } = evaluateEndpointer(session.endpointer, {
     now: Date.now(),
-    audioBytes: session.audioBytes,
+    rms,
+    pcm: session.pcm,
     active,
   })
   session.endpointer = next
   if (!finalize) return
   console.log(
-    `[voice-stream] forced Finalize -- segment open >${FORCE_FINALIZE_MS}ms of continuous speech ` +
-      `(VAD starved by raw mic); flushing to keep Deepgram real-time`,
+    `[voice-stream] forced Finalize (${finalize}) -- segment open ${openMs}ms, ` +
+      `rms=${rms.toFixed(4)} floor=${next.noiseFloor.toFixed(4)} speech=${speech}; ` +
+      `flushing to keep Deepgram real-time`,
   )
   try {
     session.dgWs.send(JSON.stringify({ type: 'Finalize' }))
@@ -327,8 +328,8 @@ export function handleVoiceStart(
     firstAudioAt: 0,
     stopping: false,
     finalized: false,
-    endpointerTimer: null,
     endpointer: createEndpointerState(Date.now()),
+    pcm: data.encoding === 'linear16',
     latency: createLatencyTracker(bytesPerSecondFor(data.encoding, data.sampleRate), () => voiceSession.firstAudioAt),
     timeoutTimer: setTimeout(() => {
       console.log(`[voice-stream] Session timed out (${VOICE_TIMEOUT_MS / 1000}s)`)
@@ -341,10 +342,6 @@ export function handleVoiceStart(
       }
     }, KEEPALIVE_INTERVAL_MS),
   }
-
-  // Forced-endpointing timer: caps how long a segment can stay open when the raw
-  // mic starves Deepgram's VAD. Bounds the decode window so asrLag stays flat.
-  voiceSession.endpointerTimer = setInterval(() => tickEndpointer(voiceSession), ENDPOINTER_TICK_MS)
 
   voiceSessions.set(ws, voiceSession)
 
@@ -485,6 +482,7 @@ export function handleVoiceData(ws: ServerWebSocket<unknown>, audioBase64: strin
   if (!session.firstAudioAt) session.firstAudioAt = Date.now()
   session.audioChunks++
   session.audioBytes += bytes.length
+  feedEndpointer(session, bytes)
 
   // Log first chunk and then every 20th chunk
   if (session.audioChunks === 1 || session.audioChunks % 20 === 0) {
@@ -519,6 +517,7 @@ export function handleVoiceReplay(ws: ServerWebSocket<unknown>, chunks: string[]
     session.audioChunks++
     session.audioBytes += bytes.length
     totalBytes += bytes.length
+    feedEndpointer(session, bytes)
     if (session.dgWs.readyState === WebSocket.OPEN) {
       session.dgWs.send(bytes)
     } else {
@@ -598,12 +597,7 @@ function stopVoiceSession(ws: ServerWebSocket<unknown>, reason: string) {
 
   console.log(`[voice-stream] Stopping session (reason: ${reason})`)
   session.closed = true
-  clearTimeout(session.timeoutTimer)
-  clearInterval(session.keepaliveTimer)
-  if (session.endpointerTimer) {
-    clearInterval(session.endpointerTimer)
-    session.endpointerTimer = null
-  }
+  cleanupTimers(session)
 
   if (session.dgWs.readyState === WebSocket.OPEN) {
     // DG connected - flush and close; Deepgram's own terminal marker completes
@@ -647,17 +641,11 @@ function stopVoiceSession(ws: ServerWebSocket<unknown>, reason: string) {
 }
 
 /**
- * Two-Step ASR Post-Processing Refinement (APR)
- *
- * Inspired by Task-Activating Prompting (TAP) from:
- * "Generative Speech Recognition Error Correction with LLMs" (Yang et al., 2023)
- *
- * Step 1 - Context Extraction: Analyze the raw transcript to discover domain context,
- *   proper nouns, locations, and likely misrecognitions. Fast structured extraction.
- * Step 2 - Refinement: Clean the transcript using TAP multi-turn structure, enriched
- *   with both project keyterms AND dynamically extracted context from step 1.
+ * Deliver the finished transcript: run the optional refiner (see voice-refiner.ts
+ * -- it is a no-op unless BOTH the setting and a refinement prompt are
+ * configured), then hand both versions to the browser, buffering for redelivery
+ * if the socket died while we were refining.
  */
-// fallow-ignore-next-line complexity
 async function refineAndSend(
   ws: ServerWebSocket<unknown>,
   rawText: string,
@@ -665,169 +653,17 @@ async function refineAndSend(
   userId: string | null,
   conversationId: string | null,
 ) {
-  const globalSettings = getGlobalSettings()
-  const openrouterKey = process.env.OPENROUTER_API_KEY
-
-  // Skip refinement if disabled in settings, no API key, or empty text
-  if (!globalSettings.voiceRefinement || !openrouterKey || !rawText.trim()) {
-    if (!safeSend(ws, JSON.stringify({ type: 'voice_done', raw: rawText, refined: rawText }))) {
-      bufferVoiceResult(userId, rawText, rawText, conversationId)
-    }
-    cleanupVoiceSession(ws)
-    return
+  if (!refinementSkipReason(rawText)) safeSend(ws, JSON.stringify({ type: 'voice_refining' }))
+  const refined = await refineTranscript(rawText, keyterms)
+  if (!safeSend(ws, JSON.stringify({ type: 'voice_done', raw: rawText, refined }))) {
+    bufferVoiceResult(userId, rawText, refined, conversationId)
   }
-
-  console.log(`[voice-stream] Refining (${keyterms.length} keyterms):\n  RAW: "${rawText}"`)
-  safeSend(ws, JSON.stringify({ type: 'voice_refining' }))
-
-  try {
-    // ── Step 1: Context Extraction ──────────────────────────────────
-    const keytermHint = keyterms.length > 0 ? `\nKnown project terms: ${keyterms.join(', ')}` : ''
-
-    let contextBlock = ''
-    let contextJson = ''
-    try {
-      const contextRes = await chat({
-        model: VOICE_REFINER_MODEL,
-        apiKey: openrouterKey,
-        system: `You analyze voice transcripts to extract context that helps correct ASR errors.${keytermHint}`,
-        user: `Analyze this voice transcript and output a brief JSON object with these fields:
-- "proper_nouns": names, brands, places, tools mentioned or likely intended (array of strings)
-- "domain": the topic/domain (e.g. "software development", "Thai culture", "DevOps") (string)
-- "corrections": any words that are likely ASR misrecognitions, with what they probably should be (array of {"heard": "x", "meant": "y"})
-- "tone": the speaker's tone/register (e.g. "casual", "technical", "formal") (string)
-
-Output ONLY valid JSON, nothing else.
-
-${rawText}`,
-        maxTokens: 512,
-        temperature: 0.1,
-        retries: 0,
-      })
-      contextJson = contextRes.content
-      console.log(`[voice-stream] Step 1 context: ${contextJson.slice(0, 300)}`)
-    } catch (err) {
-      console.error('[voice-stream] Step 1 context failed:', err)
-    }
-    if (contextJson) {
-      try {
-        const cleanJson = contextJson.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '')
-        const ctx = JSON.parse(cleanJson)
-        const parts: string[] = []
-        if (ctx.domain) parts.push(`Domain: ${ctx.domain}`)
-        if (ctx.tone) parts.push(`Tone: ${ctx.tone}`)
-        if (ctx.proper_nouns?.length) parts.push(`Proper nouns/names: ${ctx.proper_nouns.join(', ')}`)
-        if (ctx.corrections?.length) {
-          const fixes = ctx.corrections
-            .map((c: { heard: string; meant: string }) => `"${c.heard}" -> "${c.meant}"`)
-            .join(', ')
-          parts.push(`Likely ASR misrecognitions: ${fixes}`)
-        }
-        if (parts.length > 0) {
-          contextBlock = `\n\nExtracted context from this transcript:\n${parts.join('\n')}`
-        }
-      } catch {
-        console.warn('[voice-stream] Step 1 returned non-JSON, proceeding with step 2 anyway')
-      }
-    }
-
-    // ── Step 2: Refinement with enriched context ────────────────────
-    const keytermBlock =
-      keyterms.length > 0
-        ? `\nDomain vocabulary (correct spellings for this project): ${keyterms.join(', ')}\nWhen the transcript contains words that sound similar to these terms, prefer the domain term.`
-        : ''
-
-    const defaultSystemPrompt = `You are an expert ASR (Automatic Speech Recognition) post-processor. You specialize in cleaning up voice-transcribed text that will be used as prompts for a coding AI assistant.
-
-You understand common ASR failure modes:
-- Homophones and near-homophones (e.g. "their/there/they're", "write/right", "new/knew")
-- Word boundary errors where ASR splits or merges words incorrectly (e.g. "react server" vs "React Server", "type script" vs "TypeScript")
-- Technical term misrecognition (API names, libraries, CLI tools often get mangled)
-- Disfluencies: false starts, self-corrections, filler words, repetitions
-- Spoken punctuation and syntax references`
-
-    const systemPrompt = globalSettings.voiceRefinementPrompt || defaultSystemPrompt
-
-    const messages = [
-      {
-        role: 'system' as const,
-        content: `${systemPrompt}${keytermBlock}${contextBlock}`,
-      },
-      {
-        role: 'user' as const,
-        content: `Here's an example of a raw voice transcript and its corrected version:
-
-Raw: "okay so um I want to add a new end point uh to the API that handles like user authentication no no wait not authentication I mean authorization slash permissions and it should use jason web tokens uh jwt for the for the token format"
-
-Corrected: "I want to add a new endpoint to the API that handles authorization/permissions and it should use JSON Web Tokens (JWT) for the token format"
-
-Notice how: filler words removed, self-correction applied ("not authentication, I mean authorization"), "end point" merged to "endpoint", "jason" corrected to "JSON", "slash" converted to "/", repeated words cleaned up, but the speaker's casual tone and intent are preserved exactly.`,
-      },
-      {
-        role: 'assistant' as const,
-        content:
-          "Understood. I will clean the transcript by removing disfluencies, applying self-corrections, fixing ASR errors (especially technical terms and word boundaries), and converting spoken syntax to written form - while preserving the speaker's original intent and tone.",
-      },
-      {
-        role: 'user' as const,
-        content: `Clean this voice transcript. Apply all corrections. Output ONLY the cleaned text - no quotes, no explanation, no preamble, no "Here's the corrected version" prefix.
-
-${rawText}`,
-      },
-    ]
-
-    try {
-      const res = await chat({
-        model: VOICE_REFINER_MODEL,
-        apiKey: openrouterKey,
-        messages,
-        maxTokens: 2048,
-        temperature: 0.3,
-        retries: 0,
-      })
-      const refined = stripPreamble(res.content || rawText)
-      console.log(`[voice-stream] Refined:\n  OUT: "${refined}"`)
-      if (!safeSend(ws, JSON.stringify({ type: 'voice_done', raw: rawText, refined }))) {
-        bufferVoiceResult(userId, rawText, refined, conversationId)
-      }
-    } catch (err) {
-      console.error('[voice-stream] Step 2 refinement failed:', err)
-      if (!safeSend(ws, JSON.stringify({ type: 'voice_done', raw: rawText, refined: rawText }))) {
-        bufferVoiceResult(userId, rawText, rawText, conversationId)
-      }
-    }
-  } catch (err) {
-    console.error('[voice-stream] Refinement error:', err)
-    if (!safeSend(ws, JSON.stringify({ type: 'voice_done', raw: rawText, refined: rawText }))) {
-      bufferVoiceResult(userId, rawText, rawText, conversationId)
-    }
-  }
-
   cleanupVoiceSession(ws)
-}
-
-/** Strip common LLM preamble patterns that leak through despite instructions */
-function stripPreamble(text: string): string {
-  // Remove leading patterns like "Here's the corrected version:" or "Corrected:" etc.
-  const preamblePatterns = [
-    /^(?:here(?:'s| is) (?:the )?(?:cleaned|corrected|refined|fixed)(?: version)?[:\s-]+)/i,
-    /^(?:corrected|cleaned|refined|fixed)(?: (?:version|text|transcript))?[:\s-]+/i,
-    /^(?:sure[,!.]?\s*)/i,
-  ]
-  let result = text
-  for (const pattern of preamblePatterns) {
-    result = result.replace(pattern, '')
-  }
-  return result.trim()
 }
 
 function cleanupTimers(session: VoiceSession) {
   clearTimeout(session.timeoutTimer)
   clearInterval(session.keepaliveTimer)
-  if (session.endpointerTimer) {
-    clearInterval(session.endpointerTimer)
-    session.endpointerTimer = null
-  }
 }
 
 function closeDgWs(session: VoiceSession) {

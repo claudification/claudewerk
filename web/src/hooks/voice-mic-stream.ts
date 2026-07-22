@@ -81,6 +81,11 @@ function preferredDeviceId(): string {
 }
 
 function micConstraints(deviceId: string): MediaStreamConstraints {
+  // Opt-in (Settings > Input > Voice). Default OFF -- see the header note: this
+  // is the constraint family that engaged macOS VoiceProcessingIO and ducked
+  // everything. echoCancellation stays off UNCONDITIONALLY; it was the specific
+  // proven trigger, and a close-talk mic has no echo to cancel anyway.
+  const suppress = useConversationsStore.getState().controlPanelPrefs.voiceNoiseSuppression === true
   return {
     // Open the SELECTED device RAW -- at its native format, no processing. Every
     // constraint we used to set forced CoreAudio/AVAudioSession to reconfigure
@@ -98,11 +103,32 @@ function micConstraints(deviceId: string): MediaStreamConstraints {
     // (the "wrong mic" / blips-the-AirPods symptom).
     audio: {
       echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false,
+      noiseSuppression: suppress,
+      autoGainControl: suppress,
       ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
     },
   }
+}
+
+/**
+ * Log what the browser ACTUALLY applied, not what we asked for. Safari lists
+ * neither noiseSuppression nor autoGainControl in getSupportedConstraints, so
+ * requesting them there is silently ignored -- without this line a no-op toggle
+ * looks like a working feature.
+ */
+function logAppliedConstraints(stream: MediaStream) {
+  const track = stream.getAudioTracks()[0]
+  if (!track) return
+  const s = track.getSettings() as MediaTrackSettings & { noiseSuppression?: boolean; autoGainControl?: boolean }
+  const supported = navigator.mediaDevices.getSupportedConstraints() as MediaTrackSupportedConstraints & {
+    noiseSuppression?: boolean
+    autoGainControl?: boolean
+  }
+  console.log(
+    `[voice] mic settings: rate=${s.sampleRate ?? '?'} channels=${s.channelCount ?? '?'} ` +
+      `ns=${s.noiseSuppression ?? 'n/a'} agc=${s.autoGainControl ?? 'n/a'} ec=${s.echoCancellation ?? 'n/a'} ` +
+      `(browser supports ns=${!!supported.noiseSuppression} agc=${!!supported.autoGainControl})`,
+  )
 }
 
 /**
@@ -211,6 +237,7 @@ export async function acquireMicStream(): Promise<MediaStream> {
   console.log(
     `[voice] mic acquired in ${(performance.now() - t0).toFixed(0)}ms (device=${(gotDevice || 'unknown').slice(0, 8)})`,
   )
+  logAppliedConstraints(stream)
   pinResolvedDevice(wantDevice, gotDevice)
   warmStream = stream
   return stream

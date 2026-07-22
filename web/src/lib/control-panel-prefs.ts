@@ -54,6 +54,7 @@ export interface ControlPanelPrefs {
   keepMicOpen: boolean // keep mic stream alive permanently (eliminates cold-start latency)
   voiceLingerMs: number // how long to keep recording after releasing push-to-talk (catches trailing words)
   voiceWarmStreamMs: number // how long to keep mic stream warm after recording (0 = release immediately)
+  voiceNoiseSuppression: boolean // ask the browser for noise suppression + AGC. OFF by default: on macOS/Safari it can route the mic through Apple's voice-processing unit, which ducks other media (see voice-mic-stream.ts). Flip it if the room is noisy and judge for yourself.
   voiceDeviceId: string // preferred audio input device ID ('' = system default)
   voiceDeviceLabel: string // last-known label for voiceDeviceId, so the picker shows the right mic name before/without a mic grant (Google-Meet-style). '' when unknown.
   chatBubbleColor: string // tailwind color class prefix (e.g. 'blue', 'teal', 'purple')
@@ -112,6 +113,7 @@ const defaultPrefs: ControlPanelPrefs = {
   keepMicOpen: false,
   voiceLingerMs: 1500,
   voiceWarmStreamMs: 30_000,
+  voiceNoiseSuppression: false,
   voiceDeviceId: '',
   voiceDeviceLabel: '',
   chatBubbleColor: 'blue',
