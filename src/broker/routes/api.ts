@@ -11,6 +11,7 @@ import type { FetchArtifact, FetchArtifactResult } from '../../shared/protocol'
 import { getAuthenticatedUser } from '../auth-routes'
 import type { ConversationStore } from '../conversation-store'
 import { buildDispatchRuntime } from '../desk/runtime'
+import { mintDeepgramToken } from '../deepgram-mint'
 import { asVoiceName, clampVoiceSpeed, mintVoiceToken } from '../desk/voice-mint'
 import { asVoiceTone } from '../desk/voice-tones'
 import { voiceRealtimeTools } from '../desk/voice-tools'
@@ -213,6 +214,22 @@ export function createApiRouter(
       return c.json(minted)
     } catch (e) {
       return c.json({ error: `voice token mint failed: ${(e as Error).message}` }, 502)
+    }
+  })
+
+  // ─── Deepgram token mint (browser-DIRECT dictation) ─────────────────
+  // A short-lived Deepgram access token so the browser opens its live STT
+  // WebSocket DIRECTLY to Deepgram -- broker out of the audio path. The real
+  // DEEPGRAM_API_KEY never leaves the server (see deepgram-mint.ts).
+  app.post('/api/voice/deepgram-token', async c => {
+    if (!httpHasPermission(c.req.raw, 'voice', '*'))
+      return c.json({ error: 'Forbidden: voice permission required' }, 403)
+    const apiKey = process.env.DEEPGRAM_API_KEY
+    if (!apiKey) return c.json({ error: 'voice not configured', code: 'voice_unconfigured' }, 503)
+    try {
+      return c.json(await mintDeepgramToken({ apiKey }))
+    } catch (e) {
+      return c.json({ error: `deepgram token mint failed: ${(e as Error).message}` }, 502)
     }
   })
 
