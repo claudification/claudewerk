@@ -1,5 +1,5 @@
 /**
- * The canvas's own floating chrome -- name, save state, live presence and Share,
+ * The canvas's own floating chrome -- save orb, rename, live presence and Share,
  * rendered as an ISLAND on top of the drawing surface rather than a header bar
  * above it.
  *
@@ -9,34 +9,38 @@
  * the supported `renderTopRightUI` hook and the drawing surface gets the whole
  * window back. Styling follows claudewerk (sharp borders, mono) on purpose --
  * this is OUR chrome sitting in excalidraw's layout, not a skin of theirs.
+ *
+ * The canvas NAME is not shown here anymore: this is a dedicated window, so the
+ * name lives in the browser `<title>` (the tab). A pencil renames it.
  */
 
 import type { CanvasPeer, CanvasSummary } from '@shared/protocol'
+import { Pencil } from 'lucide-react'
 import { PresenceDots } from './canvas-presence-dots'
+import { CanvasSaveOrb } from './canvas-save-orb'
+import type { SaveStateStore } from './canvas-save-store'
 import { CanvasShareControl } from './canvas-share-control'
-import type { SaveState } from './use-canvas-document'
-
-const SAVE_LABEL: Record<SaveState, string> = { idle: '', saving: 'saving...', saved: 'saved' }
 
 export interface CanvasIslandProps {
   canvas: CanvasSummary | null
-  saveState: SaveState
+  saveStore: SaveStateStore
   peers: CanvasPeer[]
   onRename: () => void
 }
 
-export function CanvasIsland({ canvas, saveState, peers, onRename }: CanvasIslandProps) {
+export function CanvasIsland({ canvas, saveStore, peers, onRename }: CanvasIslandProps) {
   return (
-    <div className="flex items-center gap-2 px-2 py-1.5 border border-border bg-background/95 backdrop-blur text-xs shadow-lg max-w-[min(60vw,32rem)]">
+    <div className="flex items-center gap-2 px-2 py-1.5 border border-border bg-background/95 backdrop-blur text-xs shadow-lg">
+      <CanvasSaveOrb store={saveStore} />
       <button
         type="button"
         onClick={onRename}
         title="Rename canvas"
-        className="font-mono text-sky-400/90 hover:text-sky-300 truncate min-w-0"
+        aria-label="Rename canvas"
+        className="shrink-0 text-muted-foreground hover:text-sky-300 transition-colors"
       >
-        {canvas?.name ?? 'Loading...'}
+        <Pencil className="size-3" />
       </button>
-      <span className="text-[10px] text-muted-foreground/60 shrink-0">{SAVE_LABEL[saveState]}</span>
       <PresenceDots peers={peers} />
       {canvas && <CanvasShareControl canvas={canvas} />}
     </div>

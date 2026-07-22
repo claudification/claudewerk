@@ -70,7 +70,9 @@ export function CanvasMenuItems({ projectUri }: { projectUri: string }) {
   const onOpenChange = useCallback((next: boolean) => setOpen(next), [])
   return (
     <ContextMenu.Sub onOpenChange={onOpenChange}>
-      <ContextMenu.SubTrigger className={itemClass}>Canvases</ContextMenu.SubTrigger>
+      <ContextMenu.SubTrigger className={itemClass}>
+        Canvases <span className="ml-auto text-muted-foreground">{'▸'}</span>
+      </ContextMenu.SubTrigger>
       <ContextMenu.Portal>
         <SubContent projectUri={projectUri} open={open} />
       </ContextMenu.Portal>

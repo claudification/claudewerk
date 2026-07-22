@@ -48,7 +48,7 @@ function CanvasBody({
 }
 
 function CanvasSurface({ canvasId }: { canvasId: string | null }) {
-  const { canvas, seed, state, saveState, onSnapshot, onRename } = useCanvasDocument(canvasId)
+  const { canvas, seed, state, saveStore, onSnapshot, onRename } = useCanvasDocument(canvasId)
   // Live multiplayer is on for the hosted canvas window (a solo editor is just a
   // room of one). The Draw dialog block stays solo (no collab prop).
   const { peers, bindApi, onLocalPointer, onLocalChange } = useCanvasCollab(canvasId, state === 'ready')
@@ -66,7 +66,7 @@ function CanvasSurface({ canvasId }: { canvasId: string | null }) {
         seed={seed}
         onSnapshot={onSnapshot}
         collab={collab}
-        topRight={<CanvasIsland canvas={canvas} saveState={saveState} peers={peers} onRename={onRename} />}
+        topRight={<CanvasIsland canvas={canvas} saveStore={saveStore} peers={peers} onRename={onRename} />}
       />
     </div>
   )

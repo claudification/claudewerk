@@ -18,6 +18,7 @@
 import { Excalidraw, serializeAsJSON } from '@excalidraw/excalidraw'
 import '@excalidraw/excalidraw/index.css'
 import { utf8Bytes } from '@shared/draw'
+import { isDslScene } from '@shared/draw-dsl'
 import { type ComponentProps, type ReactNode, useCallback, useRef, useState } from 'react'
 import { CANVAS_UI_OPTIONS, CanvasMainMenu } from '@/components/canvas/canvas-chrome'
 import { useInitialData } from './excalidraw-initial-data'
@@ -25,7 +26,33 @@ import { useDslSeed } from './use-dsl-seed'
 
 type ExcalidrawProps = ComponentProps<typeof Excalidraw>
 type ChangeHandler = NonNullable<ExcalidrawProps['onChange']>
+type ChangeElements = Parameters<ChangeHandler>[0]
+type ChangeFiles = Parameters<ChangeHandler>[2]
 type ExcalidrawAPI = Parameters<NonNullable<ExcalidrawProps['excalidrawAPI']>>[0]
+
+/**
+ * A cheap fingerprint of the scene's CONTENT -- element ids + their bumping
+ * `version` (which ticks on any create/edit/delete) plus the file-id set.
+ * Deliberately excludes appState, so pan / zoom / selection / a bare re-render
+ * do NOT count as a change. That is what stops the phantom-save loop: Excalidraw
+ * fires `onChange` for those non-content reasons too, and without this guard each
+ * one scheduled a real save whose state-flip re-rendered us into the next onChange.
+ */
+function sceneSignature(elements: ChangeElements, files: ChangeFiles | undefined): string {
+  let sig = ''
+  for (const el of elements) sig += `${el.id}:${el.version};`
+  return `${sig}|${files ? Object.keys(files).join(',') : ''}`
+}
+
+/** Baseline signature from the seed, so reopening a saved scene doesn't fire a
+ *  spurious save on its very first (settling) onChange. DSL/blank seed -> null
+ *  (the async expansion legitimately persists once). */
+function seedSignature(snapshot: unknown): string | null {
+  if (!snapshot || isDslScene(snapshot)) return null
+  const s = snapshot as { elements?: ChangeElements; files?: ChangeFiles }
+  if (!s.elements) return null
+  return sceneSignature(s.elements, s.files)
+}
 
 /** Opt-in live-collaboration wiring (hosted canvas multiplayer, Phase E). When
  *  present, the canvas streams cursors + scene changes to peers and applies
@@ -54,14 +81,11 @@ export interface DrawCanvasProps {
   topRight?: ReactNode
 }
 
-export default function ExcalidrawCanvas({
-  initialSnapshot,
-  readOnly,
-  onSnapshot,
-  collab,
-  topRight,
-}: DrawCanvasProps) {
+export default function ExcalidrawCanvas({ initialSnapshot, readOnly, onSnapshot, collab, topRight }: DrawCanvasProps) {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // Last content signature we acted on -- seeded from the initial scene so the
+  // first settling onChange for an already-saved canvas is a no-op.
+  const lastSig = useRef<string | null>(seedSignature(initialSnapshot))
   const apiRef = useRef<ExcalidrawAPI | null>(null)
   // react-doctor:rerender-state-only-in-handlers -- apiReady is read as a hook
   // dependency (useDslSeed), so it must be state to trigger the effect re-run.
@@ -77,6 +101,12 @@ export default function ExcalidrawCanvas({
   const handleChange = useCallback<ChangeHandler>(
     (elements, appState, files) => {
       if (readOnly) return
+      // Only persist when the actual drawing changed. Excalidraw fires onChange
+      // on pan/zoom/selection and on plain re-renders too; those keep the same
+      // signature, so we ignore them and the save loop can't sustain itself.
+      const sig = sceneSignature(elements, files)
+      if (sig === lastSig.current) return
+      lastSig.current = sig
       clearTimeout(timer.current)
       timer.current = setTimeout(() => {
         const json = serializeAsJSON(elements, appState, files, 'local')

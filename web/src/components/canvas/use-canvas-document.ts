@@ -7,10 +7,19 @@
 import type { CanvasSummary } from '@shared/protocol'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { loadCanvas, renameCanvas, saveCanvasScene } from './canvas-editor-io'
+import { createSaveStateStore, type SaveStateStore } from './canvas-save-store'
 
 const SAVE_DEBOUNCE_MS = 1500
-export type SaveState = 'idle' | 'saving' | 'saved'
 export type DocState = 'loading' | 'ready' | 'missing'
+
+function saveErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : 'Save failed'
+}
+
+function reportSave(store: SaveStateStore, ok: boolean): void {
+  if (ok) store.set('saved')
+  else store.set('error', 'Server rejected the save')
+}
 
 /** Canvas id from /canvas/:id (last non-empty path segment). */
 export function canvasIdFromPath(): string | null {
@@ -31,7 +40,9 @@ export interface CanvasDocument {
   canvas: CanvasSummary | null
   seed: unknown
   state: DocState
-  saveState: SaveState
+  /** Live save state, read via useSyncExternalStore so it never re-renders the
+   *  canvas surface -- only the orb that subscribes to it. */
+  saveStore: SaveStateStore
   onSnapshot: (json: string) => void
   onRename: () => void
 }
@@ -45,7 +56,9 @@ export function useCanvasDocument(id: string | null): CanvasDocument {
   const [canvas, setCanvas] = useState<CanvasSummary | null>(null)
   const [seed, setSeed] = useState<unknown>(null)
   const [state, setState] = useState<DocState>(id ? 'loading' : 'missing')
-  const [saveState, setSaveState] = useState<SaveState>('idle')
+
+  // Lazy init -> one store instance for the hook's life, no init branch.
+  const [saveStore] = useState(createSaveStateStore)
 
   const pending = useRef<string | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -55,10 +68,13 @@ export function useCanvasDocument(id: string | null): CanvasDocument {
     const json = pending.current
     if (!id || json == null) return
     pending.current = null
-    setSaveState('saving')
-    await saveCanvasScene(id, json)
-    setSaveState('saved')
-  }, [id])
+    saveStore.set('saving')
+    try {
+      reportSave(saveStore, await saveCanvasScene(id, json))
+    } catch (err) {
+      saveStore.set('error', saveErrorMessage(err))
+    }
+  }, [id, saveStore])
 
   // react-doctor-disable-next-line react-doctor/no-derived-state -- multi-source: state set synchronously from prop AND asynchronously from loadCanvas
   const [prevId, setPrevId] = useState(id)
@@ -74,7 +90,7 @@ export function useCanvasDocument(id: string | null): CanvasDocument {
     void loadCanvas(id).then(loaded => {
       if (cancelled) return
       if (!loaded) return setState('missing')
-      doc.title = `${loaded.canvas.name} -- canvas`
+      doc.title = loaded.canvas.name
       setCanvas(loaded.canvas)
       setSeed(parseScene(loaded.scene))
       setState('ready')
@@ -101,11 +117,11 @@ export function useCanvasDocument(id: string | null): CanvasDocument {
   const onSnapshot = useCallback(
     (json: string) => {
       pending.current = json
-      setSaveState('saving')
+      saveStore.set('saving')
       clearTimeout(timer.current)
       timer.current = setTimeout(() => void flush(), SAVE_DEBOUNCE_MS)
     },
-    [flush],
+    [flush, saveStore],
   )
 
   const onRename = useCallback(() => {
@@ -113,9 +129,9 @@ export function useCanvasDocument(id: string | null): CanvasDocument {
     const name = win.prompt('Canvas name', canvas.name)?.trim()
     if (!name || name === canvas.name) return
     setCanvas({ ...canvas, name })
-    doc.title = `${name} -- canvas`
+    doc.title = name
     void renameCanvas(canvas.id, name)
   }, [canvas, win, doc])
 
-  return { canvas, seed, state, saveState, onSnapshot, onRename }
+  return { canvas, seed, state, saveStore, onSnapshot, onRename }
 }
