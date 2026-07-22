@@ -20,6 +20,7 @@ import {
   dispatchBrokerRpcResponse,
   setBrokerRpcSender,
 } from '../agent-host-common/mcp-host/mcp-tools/lib/broker-rpc'
+import { renderSelectionBlock } from '../shared/canvas-selection'
 import type { DialogResult } from '../shared/dialog-schema'
 import type {
   AgentHostMessage,
@@ -557,35 +558,61 @@ async function retryTranscriptWatcher(ctx: AgentHostContext, path: string) {
   ctx.diag('error', 'Transcript file still not found after kick', { path })
 }
 
+/**
+ * The message body a delivery becomes.
+ *
+ * A canvas chat line carries what the user had SELECTED when they hit send, and
+ * that context belongs above their words -- "make these blue" is unanswerable
+ * without it. Everything else passes through untouched.
+ */
+export function deliveryBody(delivery: InterConversationDelivery): string {
+  const selection = renderSelectionBlock(delivery.selection)
+  return selection ? `${selection}\n${delivery.message}` : delivery.message
+}
+
+/** Attributes for the headless `<channel ...>` wrapper. Exported for tests --
+ *  it and channelMeta encode the wire contract two transports must agree on. */
+export function channelAttrs(delivery: InterConversationDelivery, sender: string): string {
+  return [
+    ...(delivery.source ? [`source="${delivery.source}"`] : []),
+    `sender="${sender}"`,
+    `from_conversation="${delivery.fromConversation}"`,
+    `from_project="${delivery.fromProject}"`,
+    `intent="${delivery.intent}"`,
+    // Which drawing this came from -- the agent's canvas_read/canvas_update_scene
+    // target, and the canvas:<id> address it replies to.
+    ...(delivery.canvasId ? [`canvas_id="${delivery.canvasId}"`] : []),
+    ...(delivery.conversationId ? [`conversation_id="${delivery.conversationId}"`] : []),
+  ].join(' ')
+}
+
+/** The same fields as channelAttrs, in the shape the MCP channel takes. */
+export function channelMeta(delivery: InterConversationDelivery, sender: string): Record<string, string> {
+  const meta: Record<string, string> = {
+    sender,
+    from_conversation: delivery.fromConversation,
+    from_project: delivery.fromProject,
+    intent: delivery.intent,
+  }
+  if (delivery.source) meta.source = delivery.source
+  if (delivery.canvasId) meta.canvas_id = delivery.canvasId
+  if (delivery.conversationId) meta.conversation_id = delivery.conversationId
+  if (delivery.context) meta.context = delivery.context
+  return meta
+}
+
 function handleChannelDeliver(ctx: AgentHostContext, deps: BrokerConnectionDeps, delivery: InterConversationDelivery) {
   // Default: an untrusted peer conversation. The voice orb overrides sender="orb"
   // + source="rclaude" so the message renders "from Orb" and counts as the user's
-  // own input (act on it), not a peer's request.
+  // own input (act on it), not a peer's request. A canvas chat sends
+  // sender="canvas" + source="rclaude" for the same reason.
   const sender = delivery.sender ?? 'conversation'
-  const source = delivery.source
+  const body = deliveryBody(delivery)
   if (deps.headless && ctx.streamProc) {
-    const attrs = [
-      ...(source ? [`source="${source}"`] : []),
-      `sender="${sender}"`,
-      `from_conversation="${delivery.fromConversation}"`,
-      `from_project="${delivery.fromProject}"`,
-      `intent="${delivery.intent}"`,
-      ...(delivery.conversationId ? [`conversation_id="${delivery.conversationId}"`] : []),
-    ].join(' ')
-    const wrapped = `<channel ${attrs}>\n${delivery.message}\n</channel>`
-    ctx.streamProc.sendUserMessage(wrapped)
+    ctx.streamProc.sendUserMessage(`<channel ${channelAttrs(delivery, sender)}>\n${body}\n</channel>`)
     ctx.diag('headless', `Channel from ${delivery.fromConversation}: ${delivery.message.slice(0, 60)}`)
   } else if (deps.channelEnabled && isMcpChannelReady()) {
-    const meta: Record<string, string> = {
-      sender,
-      from_conversation: delivery.fromConversation,
-      from_project: delivery.fromProject,
-      intent: delivery.intent,
-    }
-    if (source) meta.source = source
-    if (delivery.conversationId) meta.conversation_id = delivery.conversationId
-    if (delivery.context) meta.context = delivery.context
-    pushChannelMessage(delivery.message, meta).catch(err => {
+    pushChannelMessage(body, channelMeta(delivery, sender)).catch(err => {
       debug(`pushChannelMessage (deliver) error: ${err instanceof Error ? err.message : err}`)
     })
     ctx.diag('channel', `Received from ${delivery.fromProject}: ${delivery.message.slice(0, 60)}`)

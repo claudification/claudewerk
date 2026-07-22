@@ -146,3 +146,38 @@ export function describeSelection(sel: CanvasSelection): string {
   }
   return `${sel.count} selected`
 }
+
+/** Escape the few characters that would break out of an XML attribute/body. */
+function xmlEscape(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+function selectedTag(el: SelectedElement): string {
+  const attrs = [`id="${xmlEscape(el.id)}"`, `type="${xmlEscape(el.type)}"`]
+  if (el.strokeColor) attrs.push(`stroke="${xmlEscape(el.strokeColor)}"`)
+  if (el.backgroundColor) attrs.push(`fill="${xmlEscape(el.backgroundColor)}"`)
+  if (el.x !== undefined && el.y !== undefined) attrs.push(`at="${el.x},${el.y}"`)
+  if (el.width !== undefined && el.height !== undefined) attrs.push(`size="${el.width}x${el.height}"`)
+  const body = el.text ? xmlEscape(el.text) : ''
+  return `  <selected ${attrs.join(' ')}>${body}</selected>`
+}
+
+/**
+ * Render the selection as the `<selected>` lines that ride inside the `<channel>`
+ * wrapper -- the shape the feature was specified with.
+ *
+ * Returns '' for an empty selection so the wrapper stays clean when the user is
+ * just talking rather than pointing at something. A truncated selection renders
+ * as ONE census line instead of a listing: the model gets the size and the mix,
+ * which is what it can act on at that scale.
+ */
+export function renderSelectionBlock(sel: CanvasSelection | undefined): string {
+  if (!sel || sel.count === 0) return ''
+  if (sel.truncated) {
+    const mix = Object.entries(sel.histogram ?? {})
+      .map(([type, n]) => `${n} ${type}`)
+      .join(', ')
+    return `  <selected count="${sel.count}" summary="${xmlEscape(mix)}" />`
+  }
+  return sel.elements.map(selectedTag).join('\n')
+}
