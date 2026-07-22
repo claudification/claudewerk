@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { OrbMenu } from './orb-menu'
+import { OrbMenu, OrbMenuButton } from './orb-menu'
 
 const actions = () => ({
   muted: false,
@@ -10,21 +10,52 @@ const actions = () => ({
   openDesk: vi.fn(),
 })
 
-/** Radix opens its trigger on POINTERDOWN, not click. */
-function openMenu() {
-  fireEvent.pointerDown(screen.getByRole('button'), { button: 0, ctrlKey: false })
+const orb = () => screen.getByRole('button', { name: 'orb' })
+
+/** The orb's menu is a CONTEXT menu now -- right-click, not click. */
+function rightClickOrb() {
+  return !fireEvent.contextMenu(orb())
 }
 
 afterEach(cleanup)
 
-describe('the orb menu', () => {
-  it('opens on a plain click/tap and carries every self-control', () => {
+describe('the orb menu opens on right-click, NOT on click', () => {
+  it('leaves the plain click alone, so the transcript can have it', () => {
+    const onClick = vi.fn()
+    render(
+      <OrbMenu actions={actions()}>
+        <button type="button" onClick={onClick}>
+          orb
+        </button>
+      </OrbMenu>,
+    )
+    // Radix's DropdownMenu.Trigger used to open on POINTERDOWN. This must not.
+    fireEvent.pointerDown(orb(), { button: 0, ctrlKey: false })
+    fireEvent.click(orb())
+    expect(onClick).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('Dismiss the orb')).toBeNull()
+  })
+
+  it('does not claim Enter either -- the keyboard route to the transcript', () => {
+    const onClick = vi.fn()
+    render(
+      <OrbMenu actions={actions()}>
+        <button type="button" onClick={onClick}>
+          orb
+        </button>
+      </OrbMenu>,
+    )
+    fireEvent.keyDown(orb(), { key: 'Enter' })
+    expect(screen.queryByText('Dismiss the orb')).toBeNull()
+  })
+
+  it('opens on right-click, without the browser menu, and carries every self-control', () => {
     render(
       <OrbMenu actions={actions()}>
         <button type="button">orb</button>
       </OrbMenu>,
     )
-    openMenu()
+    expect(rightClickOrb()).toBe(true)
     expect(screen.getByText('Open the desk')).toBeTruthy()
     expect(screen.getByText('Mute the mic')).toBeTruthy()
     expect(screen.getByText('Restart the orb')).toBeTruthy()
@@ -34,25 +65,14 @@ describe('the orb menu', () => {
     expect(screen.getByText('1.5x')).toBeTruthy()
   })
 
-  it('opens on RIGHT-CLICK too, without the browser menu', () => {
-    render(
-      <OrbMenu actions={actions()}>
-        <button type="button">orb</button>
-      </OrbMenu>,
-    )
-    const prevented = !fireEvent.contextMenu(screen.getByRole('button'))
-    expect(prevented).toBe(true)
-    expect(screen.getByText('Open the desk')).toBeTruthy()
-  })
-
-  it('dismiss runs the dismiss action', () => {
+  it('runs the action it was asked for', () => {
     const a = actions()
     render(
       <OrbMenu actions={a}>
         <button type="button">orb</button>
       </OrbMenu>,
     )
-    openMenu()
+    rightClickOrb()
     fireEvent.click(screen.getByText('Dismiss the orb'))
     expect(a.dismiss).toHaveBeenCalled()
   })
@@ -63,7 +83,27 @@ describe('the orb menu', () => {
         <button type="button">orb</button>
       </OrbMenu>,
     )
-    openMenu()
+    rightClickOrb()
     expect(screen.getByText('Unmute the mic')).toBeTruthy()
+  })
+})
+
+describe('the same menu from an explicit button', () => {
+  it('opens from the transcript header and offers the identical rows', () => {
+    const a = actions()
+    render(<OrbMenuButton actions={a} />)
+    fireEvent.pointerDown(screen.getByRole('button', { name: "Open the orb's menu" }), {
+      button: 0,
+      ctrlKey: false,
+    })
+    expect(screen.getByText('Open the desk')).toBeTruthy()
+    expect(screen.getByText('Speaking rate')).toBeTruthy()
+    fireEvent.click(screen.getByText('Restart the orb'))
+    expect(a.reload).toHaveBeenCalled()
+  })
+
+  it('announces itself as a menu button -- the aria the orb itself must NOT claim', () => {
+    render(<OrbMenuButton actions={actions()} />)
+    expect(screen.getByRole('button', { name: "Open the orb's menu" }).getAttribute('aria-haspopup')).toBe('menu')
   })
 })

@@ -2,20 +2,27 @@
  * The voice orb's HOST: the summon latch and the floating presence.
  *
  * SUMMON MODEL -- the orb is summoned from the command palette, which starts
- * the realtime session and makes the orb appear. The orb IS the presence, not a
- * chat window; dismissing it ends the session and releases the mic. It is a
- * fixed floating element (like the voice FAB), NOT a managed/parkable surface --
- * the DETACHABLE SURFACES covenant covers panels, not the orb.
+ * the realtime session and makes the orb appear. The orb IS the presence;
+ * dismissing it ends the session and releases the mic. It is a fixed floating
+ * element (like the voice FAB), NOT a managed/parkable surface -- the DETACHABLE
+ * SURFACES covenant covers panels, not the orb.
+ *
+ * It is still not a chat WINDOW, but it does now have a chat SURFACE: clicking
+ * the orb opens the transcript, which is scrollback plus a box to type into --
+ * the way to hand it an exact string (an id, a path, a pasted URL) that voice
+ * would mangle. The session underneath is the same one either way; typed text
+ * enters it as the same `role: user` item a spoken turn does.
  *
  * Lives inside the lazy chunk armed by voiceOrbBus, so nothing here (or below
  * it) reaches the index bundle until the first summon.
  */
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useVoiceOrb } from '@/hooks/use-voice-orb'
 import { OrbCaption, pickCaption } from './orb-caption'
 import { OrbMenu } from './orb-menu'
 import { toOrbState } from './orb-state'
+import { OrbTranscript } from './orb-transcript'
 import { useAudioLevel } from './use-audio-level'
 import { useOrbChannel } from './use-orb-channel'
 import { useOrbDialog } from './use-orb-dialog'
@@ -25,6 +32,9 @@ import { VoiceOrb } from './voice-orb'
 
 export function VoiceOrbHost() {
   const orb = useVoiceOrb()
+  // Click opens the transcript; the menu rides right-click / long-press and owns
+  // its own open state inside OrbMenu.
+  const [panelOpen, setPanelOpen] = useState(false)
   const summon = useOrbSummon({
     start: orb.start,
     stop: orb.stop,
@@ -46,6 +56,14 @@ export function VoiceOrbHost() {
     void import('@/components/dispatch-overlay/dispatch-store').then(m => m.useDispatchStore.getState().openOverlay())
   }
 
+  const menuActions = {
+    muted: orb.muted,
+    toggleMute: orb.toggleMute,
+    reload: () => void orb.reload(),
+    dismiss: summon.dismiss,
+    openDesk,
+  }
+
   // Left alone long enough, the orb leaves and says so through the app's own
   // toast -- no bespoke modal for a five-second message.
   useEffect(() => {
@@ -60,6 +78,12 @@ export function VoiceOrbHost() {
     )
     acknowledgeSteppedAway()
   }, [steppedAway, acknowledgeSteppedAway])
+
+  // Dismissed with the panel open, the panel would be waiting on the next
+  // summon showing a transcript the new session does not have.
+  useEffect(() => {
+    if (!summoned) setPanelOpen(false)
+  }, [summoned])
 
   if (!summoned) return null
   const caption = pickCaption({
@@ -77,24 +101,33 @@ export function VoiceOrbHost() {
       className="pointer-events-none fixed right-4 bottom-20 z-[55] flex flex-col items-end gap-2 sm:bottom-6"
       style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
     >
-      <OrbCaption text={caption.text} tone={caption.tone} />
+      {/* The caption is the AT-A-GLANCE line; it stands down while the panel is
+          open, which shows the same words with their history. */}
+      {panelOpen ? null : <OrbCaption text={caption.text} tone={caption.tone} />}
+      {panelOpen ? (
+        <div className="pointer-events-auto">
+          <OrbTranscript
+            lines={orb.lines}
+            live={orb.live}
+            onSend={orb.say}
+            onClose={() => setPanelOpen(false)}
+            menuActions={menuActions}
+          />
+        </div>
+      ) : null}
       <div className="pointer-events-auto flex items-center gap-2">
-        {/* Everything the orb can do to itself lives in ONE menu now (mute,
-            rate, restart, dismiss, desk) -- click, tap or right-click it. */}
-        <OrbMenu
-          actions={{
-            muted: orb.muted,
-            toggleMute: orb.toggleMute,
-            reload: () => void orb.reload(),
-            dismiss: summon.dismiss,
-            openDesk,
-          }}
-        >
+        {/* CLICK (and Enter) opens the transcript; RIGHT-CLICK or long-press
+            opens the menu -- everything the orb does to ITSELF. */}
+        <OrbMenu actions={menuActions}>
           <button
             type="button"
-            aria-label="Voice orb -- open its menu"
-            title="Click or right-click for the orb's menu"
+            aria-label={panelOpen ? 'Voice orb -- close the transcript' : 'Voice orb -- open the transcript'}
+            aria-expanded={panelOpen}
+            title="Click for the transcript, right-click for the orb's menu"
             className="size-20 rounded-full focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
+            // No onContextMenu here: ContextMenu.Trigger owns that event, and
+            // calling preventDefault first would suppress Radix's own handler.
+            onClick={() => setPanelOpen(v => !v)}
           >
             <VoiceOrb state={toOrbState(orb.state, orb.muted, dozing)} level={level} />
           </button>

@@ -15,12 +15,15 @@ import { useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import { foldCaption, type SpokenLine } from '@/lib/voice-orb/caption-fold'
 import type { OpenSession } from '@/lib/voice-orb/open-session'
 import type { VoiceState } from '@/lib/voice-orb/realtime-events'
+import { appendLine, foldLog, typedLine } from '@/lib/voice-orb/transcript-log'
 
 export interface VoiceOrb {
   state: VoiceState
   error: string | null
   /** The most recent spoken line either way -- the orb's caption. */
   lastLine: SpokenLine | null
+  /** The whole session, both sides, oldest first -- what the panel scrolls. */
+  lines: SpokenLine[]
   muted: boolean
   live: boolean
   start(): Promise<void>
@@ -32,6 +35,13 @@ export interface VoiceOrb {
   audioStreams(): MediaStream[]
   /** Make the orb volunteer something (proactive fleet narration). */
   announce(note: string): void
+  /**
+   * Say something to the orb WITHOUT the mic -- the typed path, for pasting an
+   * id or a URL that voice would mangle. Same wire event as `announce`; the
+   * difference is that a typed line is HIS, so it enters the transcript
+   * immediately instead of waiting on a transcription that never comes.
+   */
+  say(text: string): void
 }
 
 /** The dial's current position, clamped to what the API accepts. */
@@ -69,6 +79,7 @@ export function useVoiceOrb(): VoiceOrb {
   const [state, setState] = useState<VoiceState>('idle')
   const [error, setError] = useState<string | null>(null)
   const [lastLine, setLastLine] = useState<SpokenLine | null>(null)
+  const [lines, setLines] = useState<SpokenLine[]>([])
   const [muted, setMuted] = useState(false)
 
   const liveRef = useRef<OpenSession | null>(null)
@@ -81,6 +92,9 @@ export function useVoiceOrb(): VoiceOrb {
     void import('@/lib/voice-orb/tool-bridge').then(m => m.setActiveToolBridge(null))
     setState('idle')
     setMuted(false)
+    // The realtime conversation is GONE -- keeping its transcript on screen
+    // would read as scrollback the orb still remembers. It does not.
+    setLines([])
   }, [])
 
   // `start` triggers reload (via the model's own verb) and reload calls start;
@@ -98,7 +112,10 @@ export function useVoiceOrb(): VoiceOrb {
         onState: setState,
         onError: setError,
         // Deltas are FRAGMENTS -- fold them, never display one as the line.
-        onTranscript: (role, text, partial) => setLastLine(prev => foldCaption(prev, { role, text, partial })),
+        onTranscript: (role, text, partial) => {
+          setLastLine(prev => foldCaption(prev, { role, text, partial }))
+          setLines(prev => foldLog(prev, { role, text, partial }))
+        },
         onReload: () => reloadRef.current(),
         send: wsSend,
         tone: () => useConversationsStore.getState().controlPanelPrefs.voiceOrbTone,
@@ -131,6 +148,17 @@ export function useVoiceOrb(): VoiceOrb {
   const audioStreams = useCallback(() => liveRef.current?.session.audioStreams() ?? [], [])
   const announce = useCallback((note: string) => liveRef.current?.session.announce(note), [])
 
+  // Typed text rides the SAME wire event as a narration note (a `role: user`
+  // input_text item plus a turn request) -- the only difference is that this
+  // one is his, so it goes in the transcript here. Nothing transcribes a
+  // keystroke, and a message that vanished on send would look like a drop.
+  const say = useCallback((text: string) => {
+    const trimmed = text.trim()
+    if (!trimmed || !liveRef.current) return
+    setLines(prev => appendLine(prev, typedLine(trimmed)))
+    liveRef.current.session.announce(trimmed)
+  }, [])
+
   // Releasing the mic is not optional -- unmounting with a live session leaves
   // the OS capture indicator on.
   useEffect(() => stop, [stop])
@@ -139,6 +167,7 @@ export function useVoiceOrb(): VoiceOrb {
     state,
     error,
     lastLine,
+    lines,
     muted,
     live: state !== 'idle',
     start,
@@ -147,5 +176,6 @@ export function useVoiceOrb(): VoiceOrb {
     reload,
     audioStreams,
     announce,
+    say,
   }
 }
