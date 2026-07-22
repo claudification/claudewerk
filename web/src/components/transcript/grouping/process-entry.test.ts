@@ -198,3 +198,92 @@ describe('processEntry - channel card vs user text', () => {
     expect(groups[0].entries).toHaveLength(2)
   })
 })
+
+// ---------------------------------------------------------------------------
+// queue-operation
+// ---------------------------------------------------------------------------
+
+function queueOp(operation: string, content?: string): TranscriptEntry {
+  return {
+    type: 'queue-operation',
+    timestamp: '2026-07-22T04:41:38.000Z',
+    operation,
+    ...(content !== undefined ? { content } : {}),
+  } as unknown as TranscriptEntry
+}
+
+describe('processEntry - queue-operation', () => {
+  it('flags the existing user bubble instead of rendering the message twice (headless)', () => {
+    // Headless: the agent host emits an optimistic user entry the moment it
+    // writes to CC's stdin, so the bubble exists before `enqueue` arrives.
+    const { groups } = group([userEntry('deploy the thing'), queueOp('enqueue', 'deploy the thing')])
+
+    expect(groups).toHaveLength(1)
+    expect(groups[0].type).toBe('user')
+    expect(groups[0].queued).toBe(true)
+  })
+
+  it('creates a queued group when nothing matches (PTY/daemon, no optimistic entry)', () => {
+    const { groups } = group([queueOp('enqueue', 'deploy the thing')])
+
+    expect(groups).toHaveLength(1)
+    expect(groups[0].type).toBe('user')
+    expect(groups[0].queued).toBe(true)
+  })
+
+  it('does not flag a user bubble whose text differs', () => {
+    const { groups } = group([userEntry('something else'), queueOp('enqueue', 'deploy the thing')])
+
+    expect(groups).toHaveLength(2)
+    expect(groups[0].queued).toBeFalsy()
+    expect(groups[1].queued).toBe(true)
+  })
+
+  it.each(['remove', 'dequeue'])('clears the queued flag on %s', op => {
+    const { groups } = group([userEntry('deploy the thing'), queueOp('enqueue', 'deploy the thing'), queueOp(op)])
+
+    expect(groups).toHaveLength(1)
+    expect(groups[0].queued).toBe(false)
+  })
+
+  it('clears only the oldest queued group on a single remove (FIFO)', () => {
+    const { groups } = group([
+      userEntry('first'),
+      queueOp('enqueue', 'first'),
+      userEntry('second'),
+      queueOp('enqueue', 'second'),
+      queueOp('remove'),
+    ])
+
+    expect(groups).toHaveLength(2)
+    expect(groups[0].queued).toBe(false)
+    expect(groups[1].queued).toBe(true)
+  })
+
+  it('clears every queued group on popAll', () => {
+    const { groups } = group([
+      userEntry('first'),
+      queueOp('enqueue', 'first'),
+      userEntry('second'),
+      queueOp('enqueue', 'second'),
+      queueOp('popAll'),
+    ])
+
+    expect(groups.every(g => !g.queued)).toBe(true)
+  })
+
+  it('replaces the group object rather than mutating it (React #300)', () => {
+    const state: GroupingState = { groups: [], current: null, pendingSkillName: undefined }
+    processEntry(userEntry('deploy the thing'), state)
+    const before = state.groups[0]
+
+    processEntry(queueOp('enqueue', 'deploy the thing'), state)
+    expect(state.groups[0]).not.toBe(before)
+    expect(before.queued).toBeFalsy()
+
+    const flagged = state.groups[0]
+    processEntry(queueOp('remove'), state)
+    expect(state.groups[0]).not.toBe(flagged)
+    expect(flagged.queued).toBe(true)
+  })
+})

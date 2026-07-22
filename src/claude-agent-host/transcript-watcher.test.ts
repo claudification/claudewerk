@@ -222,6 +222,96 @@ describe('TranscriptWatcher', () => {
 
     watcher.stop()
   })
+
+  describe('emitInitial: false (seek-to-end)', () => {
+    it('swallows the pre-existing content but still advances the offset', async () => {
+      await writeFile(testFile, `${JSON.stringify({ type: 'user', message: { content: 'old' } })}\n`)
+
+      const received: { entries: TranscriptEntry[]; isInitial: boolean }[] = []
+      const watcher = createTranscriptWatcher({
+        emitInitial: false,
+        onEntries(entries, isInitial) {
+          received.push({ entries: [...entries], isInitial })
+        },
+      })
+
+      await watcher.start(testFile)
+      await delay(100)
+
+      // Nothing emitted for content that was already on disk...
+      expect(received.length).toBe(0)
+      // ...but it WAS read: the count proves the offset moved past it, which is
+      // what stops the next append from re-delivering the whole file.
+      expect(watcher.getEntryCount()).toBe(1)
+
+      await appendFile(testFile, `${JSON.stringify({ type: 'queue-operation', operation: 'enqueue' })}\n`)
+      await delay(300)
+
+      expect(received.length).toBe(1)
+      expect(received[0].isInitial).toBe(false)
+      expect(received[0].entries).toEqual([{ type: 'queue-operation', operation: 'enqueue' }] as TranscriptEntry[])
+
+      watcher.stop()
+    })
+
+    it('still emits the isInitial batch after a truncation, so compaction recovers', async () => {
+      await writeFile(testFile, `${JSON.stringify({ type: 'user', message: { content: 'before' } })}\n`)
+
+      const received: { entries: TranscriptEntry[]; isInitial: boolean }[] = []
+      const watcher = createTranscriptWatcher({
+        emitInitial: false,
+        onEntries(entries, isInitial) {
+          received.push({ entries: [...entries], isInitial })
+        },
+      })
+
+      await watcher.start(testFile)
+      await delay(100)
+      expect(received.length).toBe(0)
+
+      // Compaction rewrites the JSONL shorter than the current offset.
+      await writeFile(testFile, `${JSON.stringify({ type: 'user', message: { content: 'after' } })}\n`)
+      await delay(700)
+
+      expect(received.length).toBe(1)
+      expect(received[0].isInitial).toBe(true)
+      expect(received[0].entries.length).toBe(1)
+
+      watcher.stop()
+    })
+
+    it('resend() re-reads the whole file even though start() suppressed it', async () => {
+      await writeFile(
+        testFile,
+        `${[
+          { type: 'user', message: { content: 'a' } },
+          { type: 'assistant', message: { content: 'b' } },
+        ]
+          .map(e => JSON.stringify(e))
+          .join('\n')}\n`,
+      )
+
+      const received: { entries: TranscriptEntry[]; isInitial: boolean }[] = []
+      const watcher = createTranscriptWatcher({
+        emitInitial: false,
+        onEntries(entries, isInitial) {
+          received.push({ entries: [...entries], isInitial })
+        },
+      })
+
+      await watcher.start(testFile)
+      await delay(100)
+      expect(received.length).toBe(0)
+
+      await watcher.resend()
+
+      expect(received.length).toBe(1)
+      expect(received[0].isInitial).toBe(true)
+      expect(received[0].entries.length).toBe(2)
+
+      watcher.stop()
+    })
+  })
 })
 
 function delay(ms: number): Promise<void> {

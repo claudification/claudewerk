@@ -67,9 +67,38 @@ function handleCompact(entry: TranscriptEntry, state: GroupingState): void {
   }
 }
 
+/**
+ * Flag an already-rendered user group as queued, when one matching this text is
+ * the most recent user group. Returns false when there is nothing to flag.
+ *
+ * Headless needs this: the agent host emits an optimistic user entry the moment
+ * it writes to CC's stdin (stream-backend `sendUserMessage`), so by the time the
+ * `enqueue` arrives from the JSONL the bubble already exists. Without the match
+ * the message would render twice -- once normally, once as a queued ghost.
+ * PTY/daemon have no optimistic entry, find no match, and keep the old
+ * create-a-synthetic-group behaviour.
+ */
+function flagExistingUserGroupAsQueued(content: string, state: GroupingState): boolean {
+  for (let gi = state.groups.length - 1; gi >= 0; gi--) {
+    const g = state.groups[gi]
+    if (g.type !== 'user') continue
+    const first = g.entries[0] as TranscriptUserEntry | undefined
+    const text = typeof first?.message?.content === 'string' ? first.message.content : undefined
+    if (text !== content) return false
+    // Replace rather than mutate: a currently-rendering React tree must not be
+    // disturbed mid-commit (React #300).
+    const flagged: DisplayGroup = { ...g, queued: true }
+    state.groups[gi] = flagged
+    if (state.current === g) state.current = flagged
+    return true
+  }
+  return false
+}
+
 // queue-operation: enqueue = user interject, remove = consumed by Claude.
-// enqueue creates a queued user group; remove clears the queued flag on
-// the most recent queued group (FIFO - multiple enqueues, bulk remove).
+// enqueue flags the existing user bubble (headless) or creates a queued user
+// group (PTY/daemon); remove clears the queued flag on the most recent queued
+// group (FIFO - multiple enqueues, bulk remove).
 function handleQueue(entry: TranscriptEntry, state: GroupingState): void {
   if (!isQueue(entry)) return
   if (entry.operation === 'enqueue' && entry.content) {
@@ -87,7 +116,7 @@ function handleQueue(entry: TranscriptEntry, state: GroupingState): void {
           notifications,
         })
       }
-    } else {
+    } else if (!flagExistingUserGroupAsQueued(entry.content, state)) {
       const synthetic: TranscriptUserEntry = {
         type: 'user',
         timestamp: entry.timestamp,
@@ -97,11 +126,16 @@ function handleQueue(entry: TranscriptEntry, state: GroupingState): void {
       state.groups.push(state.current)
     }
   } else if (entry.operation === 'remove' || entry.operation === 'dequeue' || entry.operation === 'popAll') {
-    for (const g of state.groups) {
-      if (g.queued) {
-        g.queued = false
-        if (entry.operation !== 'popAll') break
-      }
+    // CC drains via `dequeue` (taken straight away, never actually held),
+    // `remove` (held, then folded into a running turn) or `popAll`. Only
+    // popAll clears more than the oldest queued group.
+    for (let gi = 0; gi < state.groups.length; gi++) {
+      const g = state.groups[gi]
+      if (!g.queued) continue
+      const cleared: DisplayGroup = { ...g, queued: false }
+      state.groups[gi] = cleared
+      if (state.current === g) state.current = cleared
+      if (entry.operation !== 'popAll') break
     }
   }
 }

@@ -37,7 +37,7 @@ import { clearInteraction, replayInteractions } from './pending-interactions'
 import type { RulesEngine } from './permission-rules'
 import { getTerminalSize } from './pty-spawn'
 import { readAndSendTasks, startTaskWatching } from './task-watcher'
-import { resendTranscriptFromFile, startTranscriptWatcher } from './transcript-manager'
+import { resendTranscriptFromFile } from './transcript-manager'
 import { createWsClient } from './ws-client'
 
 export interface BrokerConnectionDeps {
@@ -514,23 +514,26 @@ function handleConfigSet(ctx: AgentHostContext, requestId: string, config: Rclau
   }
 }
 
+/**
+ * Defensive nudge from the broker: it has hook events but no transcript.
+ * Same handling for every transport now that they all share one watcher --
+ * resend if it is running, wait the file out and start it if it is not.
+ */
 function handleTranscriptKick(ctx: AgentHostContext) {
-  if (ctx.headless) {
-    debug('Transcript kick received (headless) - resending from JSONL')
+  if (ctx.transcriptWatcher) {
+    debug('Transcript kick received - resending from the running watcher')
     resendTranscriptFromFile(ctx)
     return
   }
-  if (!ctx.transcriptWatcher && ctx.parentTranscriptPath) {
-    debug(`Transcript kick received - retrying watcher for: ${ctx.parentTranscriptPath}`)
-    ctx.diag('info', 'Transcript kick - retrying watcher', { path: ctx.parentTranscriptPath })
-    retryTranscriptWatcher(ctx, ctx.parentTranscriptPath).catch(err => {
-      debug(`retryTranscriptWatcher error: ${err instanceof Error ? err.message : err}`)
-    })
-  } else if (ctx.transcriptWatcher) {
-    debug('Transcript kick received but watcher already running')
-  } else {
+  if (!ctx.parentTranscriptPath) {
     debug('Transcript kick received but no transcript path known')
+    return
   }
+  debug(`Transcript kick received - retrying watcher for: ${ctx.parentTranscriptPath}`)
+  ctx.diag('info', 'Transcript kick - retrying watcher', { path: ctx.parentTranscriptPath })
+  retryTranscriptWatcher(ctx, ctx.parentTranscriptPath).catch(err => {
+    debug(`retryTranscriptWatcher error: ${err instanceof Error ? err.message : err}`)
+  })
 }
 
 async function retryTranscriptWatcher(ctx: AgentHostContext, path: string) {
@@ -541,7 +544,10 @@ async function retryTranscriptWatcher(ctx: AgentHostContext, path: string) {
   while (elapsed < maxTotal) {
     if (existsSync(path)) {
       debug(`Transcript file found after kick: ${path}`)
-      startTranscriptWatcher(ctx, path)
+      // Start AND deliver: a bare startTranscriptWatcher seeks to end in
+      // headless and would send the broker nothing, which is the opposite of
+      // what a kick is asking for.
+      resendTranscriptFromFile(ctx)
       return
     }
     await new Promise(r => setTimeout(r, delay))

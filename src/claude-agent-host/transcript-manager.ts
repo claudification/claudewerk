@@ -19,6 +19,7 @@ import { normalizeTodoStatus } from '../shared/task-normalize'
 import type { AgentHostContext } from './agent-host-context'
 import { debug as _debug, DEBUG } from './debug'
 import { translateClaudeToolResult, translateClaudeToolUse } from './dialect/from-claude'
+import { selectForwardableEntries } from './transcript-entry-filter'
 import { createTranscriptWatcher } from './transcript-watcher'
 import { detectWorktreeCwd } from './worktree-detect'
 
@@ -262,24 +263,47 @@ async function processImageReadResults(ctx: AgentHostContext, entries: Transcrip
 /**
  * Send transcript entries to broker in fixed-size chunks.
  */
+/**
+ * What makes two same-typed entries at the same timestamp distinct.
+ *
+ * Only queue-operation needs one: it carries no `message`, so the hash below
+ * would otherwise see nothing but type+timestamp -- and CC writes the `enqueue`
+ * and its matching `dequeue` on the SAME millisecond whenever a message is
+ * taken straight away instead of being held. Both would collapse onto one uuid,
+ * the broker's INSERT OR IGNORE would drop the dequeue, and the "queued" badge
+ * would survive every reload with nothing left to clear it.
+ */
+function uuidDisambiguator(entry: TranscriptEntry): string {
+  if (entry.type !== 'queue-operation') return ''
+  const raw = entry as Record<string, unknown>
+  return `:${raw.operation}:${String(raw.content ?? '').slice(0, 120)}`
+}
+
+/**
+ * Stamp deterministic UUIDs on entries that lack them. CC doesn't assign UUIDs
+ * to user-typed messages (only tool results). Without stable UUIDs, duplicates
+ * from ring buffer replay or CC replay can't be deduped by the broker (INSERT
+ * OR IGNORE on uuid). Applies to BOTH headless (stream-json) and PTY (JSONL
+ * watcher) paths since both funnel through sendTranscriptEntriesChunked.
+ */
+function stampDeterministicUuids(entries: TranscriptEntry[]): void {
+  for (const e of entries) {
+    if (e.uuid) continue
+    const content = JSON.stringify((e as Record<string, unknown>).message ?? e.type).slice(0, 200)
+    const h = createHash('sha1')
+      .update(`${e.type}:${e.timestamp}:${content}${uuidDisambiguator(e)}`)
+      .digest('hex')
+    e.uuid = `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${((Number.parseInt(h[16], 16) & 0x3) | 0x8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`
+  }
+}
+
 export async function sendTranscriptEntriesChunked(
   ctx: AgentHostContext,
   entries: TranscriptEntry[],
   isInitial: boolean,
   agentId?: string,
 ) {
-  // Stamp deterministic UUIDs on entries that lack them. CC doesn't assign
-  // UUIDs to user-typed messages (only tool results). Without stable UUIDs,
-  // duplicates from ring buffer replay or CC replay can't be deduped by the
-  // broker (INSERT OR IGNORE on uuid). Applies to BOTH headless (stream-json)
-  // and PTY (JSONL watcher) paths since both funnel through here.
-  for (const e of entries) {
-    if (!e.uuid) {
-      const content = JSON.stringify((e as Record<string, unknown>).message ?? e.type).slice(0, 200)
-      const h = createHash('sha1').update(`${e.type}:${e.timestamp}:${content}`).digest('hex')
-      e.uuid = `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${((Number.parseInt(h[16], 16) & 0x3) | 0x8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`
-    }
-  }
+  stampDeterministicUuids(entries)
 
   if (!ctx.claudeSessionId) {
     debug(`Buffering ${entries.length} transcript entries (claudeSessionId not set yet)`)
@@ -499,10 +523,15 @@ function scanForBgTasks(ctx: AgentHostContext, entries: TranscriptEntry[]) {
 }
 
 /**
- * Re-send the entire transcript from the JSONL file.
- * Used on (re)connect to repopulate the broker's in-memory cache
- * after a restart. Headless mode doesn't use the file watcher, so this
- * is the only way to recover transcript after broker restarts.
+ * Re-send the entire transcript from the JSONL file, as the initial batch.
+ * Used on (re)connect to repopulate the broker's in-memory cache after a
+ * restart, and in response to `transcript_request` / `transcript_kick`.
+ *
+ * Delegates to the one watcher rather than reading the file itself: a second
+ * hand-rolled reader used to live here, and it silently lacked the watcher's
+ * offset tracking, partial-line reassembly and truncation handling. The
+ * headless `queue-operation` strip that also used to live here is now the
+ * `isInitial` column of `selectForwardableEntries`.
  */
 export function resendTranscriptFromFile(ctx: AgentHostContext) {
   const path = ctx.parentTranscriptPath
@@ -510,53 +539,54 @@ export function resendTranscriptFromFile(ctx: AgentHostContext) {
     debug(`resendTranscript: no file (path=${path || 'none'})`)
     return
   }
-  try {
-    Bun.file(path)
-      .text()
-      .then(async text => {
-        const entries: TranscriptEntry[] = []
-        for (const line of text.split('\n')) {
-          if (!line.trim()) continue
-          try {
-            entries.push(JSON.parse(line))
-          } catch {}
-        }
-        let parentEntries = filterParentEntries(entries)
-        // Headless: strip queue-operation entries from JSONL resend. The dashboard
-        // already has optimistic user entries for headless input -- queue-operations
-        // from the JSONL just create duplicate "queued" groups that can get stuck
-        // if the remove entry hasn't been written yet at resend time.
-        if (ctx.headless) {
-          parentEntries = parentEntries.filter(e => (e as Record<string, unknown>).type !== 'queue-operation')
-        }
-        if (parentEntries.length > 0) {
-          debug(`resendTranscript: sending ${parentEntries.length}/${entries.length} entries from ${path}`)
-          await sendTranscriptEntriesChunked(ctx, parentEntries, true)
-        }
-      })
-  } catch (err) {
-    debug(`resendTranscript error: ${err instanceof Error ? err.message : err}`)
-  }
+  // No watcher yet (failed to start, or the path only just became known):
+  // start it. For a transport that emits its initial batch, that first read IS
+  // the resend and there is nothing more to do. Headless seeks to end instead,
+  // so it still needs the explicit re-read below.
+  const fresh = !ctx.transcriptWatcher
+  const started = fresh ? startTranscriptWatcher(ctx, path) : Promise.resolve()
+  if (fresh) debug(`resendTranscript: no watcher, starting one for ${path}`)
+
+  started
+    .then(() => {
+      if (fresh && !ctx.headless) return
+      return ctx.transcriptWatcher?.resend()
+    })
+    .catch(err => {
+      debug(`resendTranscript error: ${err instanceof Error ? err.message : err}`)
+    })
 }
 
 /**
  * Start the main transcript watcher for a JSONL file.
+ *
+ * Every transport uses this one watcher -- it is the only JSONL reader in the
+ * agent host, and the only place that handles byte offsets, partial trailing
+ * lines, truncation-on-compaction and `/clear` minting a new file. Transports
+ * differ solely in WHICH entries they forward, and that is a predicate:
+ * `selectForwardableEntries`. Headless additionally seeks to end on start,
+ * because its stdout stream already owns the boot transcript.
  */
-export function startTranscriptWatcher(ctx: AgentHostContext, transcriptPath: string) {
-  if (ctx.headless) {
-    debug('Skipping transcript watcher in headless mode (data comes from stdout stream)')
-    return
-  }
+export function startTranscriptWatcher(ctx: AgentHostContext, transcriptPath: string): Promise<void> {
   if (ctx.transcriptWatcher) {
     debug('Transcript watcher already running, skipping')
-    return
+    return Promise.resolve()
   }
 
   ctx.transcriptWatcher = createTranscriptWatcher({
     debug: DEBUG ? (msg: string) => debug(`[tw] ${msg}`) : undefined,
+    emitInitial: !ctx.headless,
+    // PTY starts from the SessionStart hook, by which point the file exists.
+    // Headless starts off the stream-json `init` message, which CC can emit
+    // before it has written the first JSONL line -- wait the file out rather
+    // than losing the watcher to a one-shot ENOENT.
+    waitForFileMs: ctx.headless ? 15_000 : 0,
     onEntries(entries, isInitial) {
       // Filter out subagent entries -- they have their own file watchers
-      const parentEntries = filterParentEntries(entries)
+      const parentEntries = selectForwardableEntries(filterParentEntries(entries), {
+        headless: ctx.headless,
+        isInitial,
+      })
       if (parentEntries.length > 0) {
         sendTranscriptEntriesChunked(ctx, parentEntries, isInitial)
       }
@@ -571,10 +601,13 @@ export function startTranscriptWatcher(ctx: AgentHostContext, transcriptPath: st
     },
   })
 
-  ctx.transcriptWatcher
+  return ctx.transcriptWatcher
     .start(transcriptPath)
     .then(() => {
-      ctx.diag('watch', 'Transcript watcher started', transcriptPath)
+      ctx.diag('watch', 'Transcript watcher started', {
+        path: transcriptPath,
+        mode: ctx.headless ? 'headless (seek-to-end, queue-operations only)' : 'full',
+      })
     })
     .catch(err => {
       ctx.diag('error', 'Transcript watcher failed to start', { path: transcriptPath, error: String(err) })

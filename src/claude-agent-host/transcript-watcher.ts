@@ -52,6 +52,22 @@ export interface TranscriptWatcherOptions {
    * agent-host paths that always see an existing file).
    */
   waitForFileMs?: number
+  /**
+   * Emit the file's existing content as the initial batch on `start()`.
+   * Default true.
+   *
+   * `false` = seek-to-end: the first read still runs (to establish the byte
+   * offset and the entry count) but its entries are NOT emitted, so the
+   * watcher only reports what is appended from now on. Headless needs this:
+   * stdout already owns the boot transcript there, and an `isInitial` batch
+   * REPLACES the broker's transcript cache -- racing the stdout replay-buffer
+   * flush would clobber it.
+   *
+   * Scoped to that first read only. A later truncation/compaction reset still
+   * emits its `isInitial` batch, and `resend()` still works, so recovery is
+   * unaffected.
+   */
+  emitInitial?: boolean
 }
 
 export interface TranscriptWatcher {
@@ -66,7 +82,7 @@ export interface TranscriptWatcher {
  * Reads from the last known offset, parses new lines, emits entries.
  */
 export function createTranscriptWatcher(options: TranscriptWatcherOptions): TranscriptWatcher {
-  const { onEntries, onNewFile, onError, debug, waitForFileMs = 0 } = options
+  const { onEntries, onNewFile, onError, debug, waitForFileMs = 0, emitInitial = true } = options
 
   let fileHandle: FileHandle | null = null
   let watcher: TreeWatcher | null = null
@@ -78,6 +94,9 @@ export function createTranscriptWatcher(options: TranscriptWatcherOptions): Tran
   let pendingRead = false
   let stopped = false
   let filePath = ''
+  // Set only for the duration of the first read in start() when emitInitial is
+  // false. Guards the emit, never the offset bookkeeping -- see emitInitial.
+  let suppressInitialEmit = false
 
   async function readNewLines(isInitial_: boolean): Promise<void> {
     let isInitial = isInitial_
@@ -126,7 +145,9 @@ export function createTranscriptWatcher(options: TranscriptWatcherOptions): Tran
 
       if (entries.length > 0) {
         entryCount += entries.length
-        if (isInitial && entries.length > 500) {
+        if (isInitial && suppressInitialEmit) {
+          debug?.(`readNewLines: seek-to-end, ${entries.length} pre-existing entries not emitted`)
+        } else if (isInitial && entries.length > 500) {
           // On initial read, send the tail (ring buffer caps at 500) but preserve
           // metadata entries from earlier in the transcript (summary, title, pr-link, etc.)
           const METADATA_TYPES = new Set(['summary', 'custom-title', 'agent-name', 'pr-link'])
@@ -196,9 +217,13 @@ export function createTranscriptWatcher(options: TranscriptWatcherOptions): Tran
       return
     }
 
-    // Read existing content as initial batch
+    // Read existing content as initial batch. With emitInitial=false the read
+    // still runs -- it is what establishes the byte offset -- but its entries
+    // are swallowed, leaving the watcher tailing from EOF.
+    suppressInitialEmit = !emitInitial
     await readNewLines(true)
-    debug?.(`Initial read done, entryCount=${entryCount}`)
+    suppressInitialEmit = false
+    debug?.(`Initial read done, entryCount=${entryCount}${emitInitial ? '' : ' (seek-to-end, not emitted)'}`)
 
     // Watch the PARENT DIRECTORY (not the file): /clear + compaction mint a new
     // transcript file in the same dir and we must keep firing for it. Any event
