@@ -16,6 +16,7 @@
 
 import type { RealtimeTool } from './realtime-schema'
 import { buildVoiceInstructions } from './voice-persona'
+import { DEFAULT_VOICE_TONE, type VoiceTone } from './voice-tones'
 
 export const REALTIME_MODEL = 'gpt-realtime-2'
 const VOICE = 'marin'
@@ -25,11 +26,16 @@ const CLIENT_SECRETS_URL = 'https://api.openai.com/v1/realtime/client_secrets'
  *  does not apply consistently). `tools` is the phase's voice contract; the
  *  persona is composed from those same names so it never coaches a verb the
  *  contract does not offer. */
-export function buildVoiceSessionConfig(tools: RealtimeTool[], instructions?: string) {
+export function buildVoiceSessionConfig(tools: RealtimeTool[], opts: { instructions?: string; tone?: VoiceTone } = {}) {
   return {
     type: 'realtime' as const,
     model: REALTIME_MODEL,
-    instructions: instructions ?? buildVoiceInstructions(tools.map(t => t.name)),
+    instructions:
+      opts.instructions ??
+      buildVoiceInstructions(
+        tools.map(t => t.name),
+        opts.tone ?? DEFAULT_VOICE_TONE,
+      ),
     audio: {
       input: {
         transcription: { model: 'whisper-1' },
@@ -56,8 +62,10 @@ export interface MintVoiceOptions {
   tools: RealtimeTool[]
   /** Test seam. Defaults to globalThis.fetch. */
   fetcher?: typeof fetch
-  /** Override the session instructions (default: composed from `tools`). */
+  /** Override the session instructions entirely (default: composed from `tools`). */
   instructions?: string
+  /** How much attitude to mint with (voice-tones.ts). Default: snarky. */
+  tone?: VoiceTone
   /** OpenAI-Safety-Identifier (e.g. `desk-<userId>`). */
   safetyId?: string
 }
@@ -75,7 +83,9 @@ export async function mintVoiceToken(opts: MintVoiceOptions): Promise<MintedVoic
   const res = await fetcher(CLIENT_SECRETS_URL, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ session: buildVoiceSessionConfig(opts.tools, opts.instructions) }),
+    body: JSON.stringify({
+      session: buildVoiceSessionConfig(opts.tools, { instructions: opts.instructions, tone: opts.tone }),
+    }),
   })
 
   if (!res.ok) {

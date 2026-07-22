@@ -56,6 +56,10 @@ export interface ControlPanelPrefs {
   voiceWarmStreamMs: number // how long to keep mic stream warm after recording (0 = release immediately)
   voiceNoiseSuppression: boolean // ask the browser for noise suppression + AGC. OFF by default: on macOS/Safari it can route the mic through Apple's voice-processing unit, which ducks other media (see voice-mic-stream.ts). Flip it if the room is noisy and judge for yourself.
   voiceDeviceId: string // preferred audio input device ID ('' = system default)
+  /** The voice ORB's tone dial (Professional | Snarky | Homicidal | Overkill).
+   *  Sent with the mint; the broker narrows it and picks the persona preamble.
+   *  Per-device, like every other pref here. */
+  voiceOrbTone: string
   voiceDeviceLabel: string // last-known label for voiceDeviceId, so the picker shows the right mic name before/without a mic grant (Google-Meet-style). '' when unknown.
   chatBubbleColor: string // tailwind color class prefix (e.g. 'blue', 'teal', 'purple')
   defaultConversationCwd: string // auto-select this project on dashboard load (per-device)
@@ -115,6 +119,7 @@ const defaultPrefs: ControlPanelPrefs = {
   voiceWarmStreamMs: 30_000,
   voiceNoiseSuppression: false,
   voiceDeviceId: '',
+  voiceOrbTone: 'snarky',
   voiceDeviceLabel: '',
   chatBubbleColor: 'blue',
   showDiag: false,

@@ -15,6 +15,7 @@ import { useEffect } from 'react'
 import { useVoiceOrb } from '@/hooks/use-voice-orb'
 import { OrbCaption, pickCaption } from './orb-caption'
 import { toOrbState } from './orb-state'
+import { useAudioLevel } from './use-audio-level'
 import { useOrbSummon } from './use-orb-summon'
 import { VoiceOrb } from './voice-orb'
 
@@ -28,6 +29,8 @@ export function VoiceOrbHost() {
     activity: `${orb.state}:${orb.lastLine?.text ?? ''}`,
   })
   const { summoned, dozing, steppedAway, acknowledgeSteppedAway } = summon
+  // The halo breathes with whoever is actually talking.
+  const level = useAudioLevel(summoned && !dozing, orb.audioStreams)
 
   // Left alone long enough, the orb leaves and says so through the app's own
   // toast -- no bespoke modal for a five-second message.
@@ -77,7 +80,7 @@ export function VoiceOrbHost() {
           title="Dismiss (ends the session, releases the mic)"
           className="size-20 rounded-full focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
         >
-          <VoiceOrb state={toOrbState(orb.state, orb.muted, dozing)} />
+          <VoiceOrb state={toOrbState(orb.state, orb.muted, dozing)} level={level} />
         </button>
       </div>
     </div>

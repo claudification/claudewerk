@@ -36,8 +36,13 @@ describe('buildVoiceSessionConfig', () => {
     expect(buildVoiceSessionConfig(TOOLS).instructions).not.toContain('`dispatch`')
   })
 
+  it('mints at the requested tone, snarky by default', () => {
+    expect(buildVoiceSessionConfig(TOOLS).instructions).toContain('meatbag')
+    expect(buildVoiceSessionConfig(TOOLS, { tone: 'professional' }).instructions).not.toContain('meatbag')
+  })
+
   it('honours an explicit instructions override', () => {
-    expect(buildVoiceSessionConfig(TOOLS, 'be brief').instructions).toBe('be brief')
+    expect(buildVoiceSessionConfig(TOOLS, { instructions: 'be brief' }).instructions).toBe('be brief')
   })
 })
 

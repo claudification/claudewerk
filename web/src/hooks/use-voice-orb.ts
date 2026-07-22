@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { wsSend } from '@/hooks/use-conversations'
+import { useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import type { VoiceState } from '@/lib/voice-orb/realtime-events'
 import type { ToolBridge } from '@/lib/voice-orb/tool-bridge'
 import type { VoiceSession } from '@/lib/voice-orb/voice-session'
@@ -40,7 +40,15 @@ export interface VoiceOrb {
 }
 
 async function mintToken(): Promise<{ value: string; model: string }> {
-  const res = await fetch('/api/desk/voice/token', { method: 'POST', credentials: 'same-origin' })
+  // The tone dial rides in on the mint -- the broker bakes the matching persona
+  // into the session, so it can only change between sessions, never mid-turn.
+  const tone = useConversationsStore.getState().controlPanelPrefs.voiceOrbTone
+  const res = await fetch('/api/desk/voice/token', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tone }),
+  })
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string }
     if (body.code === 'voice_unconfigured') throw new Error('the broker has no OpenAI key configured')

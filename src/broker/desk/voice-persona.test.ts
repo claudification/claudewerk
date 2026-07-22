@@ -1,35 +1,80 @@
 import { describe, expect, it } from 'bun:test'
 import { buildVoiceInstructions } from './voice-persona'
+import { asVoiceTone, DEFAULT_VOICE_TONE, tonePreamble, VOICE_TONES } from './voice-tones'
 import { VOICE_ACTION_TOOLS, VOICE_READ_TOOLS } from './voice-tools'
 
-describe('buildVoiceInstructions', () => {
-  const p0 = buildVoiceInstructions([...VOICE_READ_TOOLS])
-  const p2 = buildVoiceInstructions([...VOICE_READ_TOOLS, ...VOICE_ACTION_TOOLS])
+const READ = [...VOICE_READ_TOOLS]
+const ALL = [...VOICE_READ_TOOLS, ...VOICE_ACTION_TOOLS]
 
-  it('never coaches a verb the phase does not mint (P0 is read-only)', () => {
-    expect(p0).not.toContain('`dispatch`')
-    expect(p0).not.toContain('`dispatch_quest`')
-    expect(p0).not.toContain('`confirm_expensive`')
-    expect(p0).toContain('`projects_overview`')
-    expect(p0).toContain('`control_screen`')
+describe('the contract drives the instructions', () => {
+  it('never coaches a verb that is not minted', () => {
+    const readOnly = buildVoiceInstructions(READ)
+    expect(readOnly).not.toContain('`dispatch`')
+    expect(readOnly).not.toContain('`dispatch_quest`')
+    expect(readOnly).not.toContain('`confirm_expensive`')
+    expect(readOnly).toContain('`projects_overview`')
+    expect(readOnly).toContain('`control_screen`')
   })
 
-  it('adds the action + cost paragraphs once those tools are minted', () => {
-    expect(p2).toContain('`dispatch`')
-    expect(p2).toContain('`dispatch_quest`')
-    expect(p2).toContain('`confirm_expensive`')
-    expect(p2).toContain('COST AWARENESS')
-  })
-
-  it('always carries the VOICE IS LOSSY rail and the identity', () => {
-    for (const text of [p0, p2, buildVoiceInstructions([])]) {
-      expect(text).toContain('VOICE IS LOSSY')
-      expect(text).toContain('Jarvis')
-    }
+  it('adds the driving + cost paragraphs once the action verbs are minted', () => {
+    const full = buildVoiceInstructions(ALL)
+    expect(full).toContain('`dispatch`')
+    expect(full).toContain('`dispatch_quest`')
+    expect(full).toContain('`confirm_expensive`')
+    expect(full).toContain('COST:')
   })
 
   it('speaks the fleet vocabulary', () => {
-    expect(p0).toContain('CONVERSATION')
-    expect(p0).toContain('SENTINEL')
+    expect(buildVoiceInstructions(READ)).toContain('CONVERSATION')
+    expect(buildVoiceInstructions(READ)).toContain('SENTINEL')
+  })
+})
+
+describe('the safety rails survive every tone', () => {
+  it('carries VOICE IS LOSSY and the never-skip-a-confirm rule, always', () => {
+    for (const tone of VOICE_TONES) {
+      const text = buildVoiceInstructions(ALL, tone)
+      expect(text).toContain('VOICE IS LOSSY')
+      expect(text).toContain('may never skip one')
+      expect(text).toContain('THE RULE')
+    }
+    // Even with an empty contract, the rails are there.
+    expect(buildVoiceInstructions([])).toContain('VOICE IS LOSSY')
+  })
+})
+
+describe('the tone dial', () => {
+  it('defaults to snarky, and snarky is the meatbag persona', () => {
+    expect(DEFAULT_VOICE_TONE).toBe('snarky')
+    const snarky = buildVoiceInstructions(ALL)
+    expect(snarky).toContain('meatbag')
+    expect(snarky).toContain('the orb')
+  })
+
+  it('professional drops the attitude entirely', () => {
+    const pro = tonePreamble('professional')
+    expect(pro).not.toContain('meatbag')
+    expect(pro).toContain('No jokes')
+    // ...but not the rule.
+    expect(pro).toContain('THE RULE')
+  })
+
+  it('homicidal and overkill keep the contempt without touching the work', () => {
+    expect(tonePreamble('homicidal')).toContain('meatbag')
+    expect(tonePreamble('homicidal')).toContain('never threaten anything you could actually carry out')
+    expect(tonePreamble('overkill')).toContain('profanity permitted')
+    expect(tonePreamble('overkill')).toContain('answer comes first')
+  })
+
+  it('every tone produces a distinct manner', () => {
+    const texts = VOICE_TONES.map(t => tonePreamble(t))
+    expect(new Set(texts).size).toBe(VOICE_TONES.length)
+  })
+
+  it('narrows junk from the wire to the default instead of minting a blank persona', () => {
+    for (const junk of [undefined, null, '', 'HOMICIDAL', 'evil', 42, {}]) {
+      expect(asVoiceTone(junk)).toBe(DEFAULT_VOICE_TONE)
+    }
+    expect(asVoiceTone('overkill')).toBe('overkill')
   })
 })

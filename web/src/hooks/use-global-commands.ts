@@ -20,6 +20,7 @@ import { openSpawnDialog } from '@/components/spawn-dialog-trigger'
 import { openTerminateConfirm } from '@/components/terminate-confirm-trigger'
 import { openTerminateLineageConfirm } from '@/components/terminate-lineage-confirm-trigger'
 import { summonVoiceOrb } from '@/components/voice-orb/voice-orb-bus'
+import { cycleVoiceOrbTone } from '@/components/voice-orb/voice-orb-tone'
 import { fetchTranscript, sendInput, useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import { openNightshiftModal } from '@/hooks/use-nightshift-modal'
 import { useShellsStore } from '@/hooks/use-shells'
@@ -121,11 +122,20 @@ export function useGlobalCommands(toggleSidebar: () => void) {
 
   // The voice orb. Hidden unless the broker has a realtime key -- summoning an
   // orb that can only fail at mint is worse than not offering it.
+  const orbAvailable = () => useConversationsStore.getState().serverCapabilities.realtimeVoice === true
   useCommand('summon-voice-orb', summonVoiceOrb, {
     label: 'Voice orb (talk to the fleet)',
     group: 'Navigation',
-    when: () => useConversationsStore.getState().serverCapabilities.realtimeVoice === true,
+    when: orbAvailable,
   })
+
+  useCommand(
+    'cycle-voice-orb-tone',
+    () => {
+      cycleVoiceOrbTone()
+    },
+    { label: 'Voice orb tone (professional / snarky / homicidal / overkill)', group: 'View', when: orbAvailable },
+  )
 
   useCommand(
     'open-nightshift',

@@ -12,6 +12,7 @@ import { getAuthenticatedUser } from '../auth-routes'
 import type { ConversationStore } from '../conversation-store'
 import { buildDispatchRuntime } from '../desk/runtime'
 import { mintVoiceToken } from '../desk/voice-mint'
+import { asVoiceTone } from '../desk/voice-tones'
 import { voiceRealtimeTools } from '../desk/voice-tools'
 import { getGlobalSettings, updateGlobalSettings } from '../global-settings'
 import { getModels, getModelsFetchedAt } from '../model-pricing'
@@ -180,7 +181,7 @@ export function createApiRouter(
     return c.json(result)
   })
 
-  // ─── Jarvis voice: mint an ephemeral OpenAI Realtime token ─────────
+  // ─── Voice orb: mint an ephemeral OpenAI Realtime token ───────────
   // The real OPENAI_API_KEY stays server-side; the browser gets only the
   // short-lived ephemeral secret for its WebRTC offer. Env-gated + graceful:
   // if the key is unset the route reports voice-unavailable (no crash, no
@@ -195,7 +196,11 @@ export function createApiRouter(
       // `voice_tool_call` executes -- so the schemas the model is offered can
       // never drift from what the broker will actually run.
       const tools = voiceRealtimeTools(buildDispatchRuntime(conversationStore, store.transcripts))
-      const minted = await mintVoiceToken({ apiKey, tools, safetyId: 'desk-voice' })
+      // The TONE DIAL rides in on the mint (the panel persists the user's pick).
+      // Narrowed against the enum here -- an unknown value falls back to the
+      // default rather than minting a session with no persona at all.
+      const body = await c.req.json<{ tone?: unknown }>().catch(() => ({}) as { tone?: unknown })
+      const minted = await mintVoiceToken({ apiKey, tools, tone: asVoiceTone(body.tone), safetyId: 'desk-voice' })
       return c.json(minted)
     } catch (e) {
       return c.json({ error: `voice token mint failed: ${(e as Error).message}` }, 502)
