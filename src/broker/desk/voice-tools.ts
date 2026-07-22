@@ -58,8 +58,18 @@ export const VOICE_FORBIDDEN_TOOLS = [
   'unlink',
 ] as const
 
-/** What is minted TODAY. P0 = read-only; P2 flips this to include the actions. */
-export const ACTIVE_VOICE_TOOLS: readonly string[] = VOICE_READ_TOOLS
+/**
+ * What is minted TODAY (P2): the read set PLUS the action verbs.
+ *
+ * The actions are safe to offer because three independent gates stand behind
+ * them, none of which the model can talk its way past:
+ *   1. the persona's confirm ritual (voice-persona.ts -- say it, get a yes),
+ *   2. the COST GATE: a `very_expensive` route comes back `awaitingConfirmation`
+ *      and executes nothing until `confirm_expensive` (orchestrate.ts:126),
+ *   3. the forbidden list is still absent -- nothing here can END a conversation.
+ * The worst a misheard sentence can do is spawn a worker or route a message.
+ */
+export const ACTIVE_VOICE_TOOLS: readonly string[] = [...VOICE_READ_TOOLS, ...VOICE_ACTION_TOOLS]
 
 /** Verbs the BROWSER answers itself -- the server executor is a stub that must
  *  never be reached (the tool-bridge intercepts them before the wire). Kept in
@@ -73,7 +83,14 @@ const CLIENT_LOCAL_TOOLS: Toolset = {
   }),
 }
 
-/** Every tool the voice contract may pick from, bound to the live broker. */
+/** Every tool the voice contract may pick from, bound to the live broker.
+ *
+ *  `dispatch` here is the DETERMINISTIC path (`runDispatch` via
+ *  buildDispatchRuntimeToolDeps), not the richer `runDispatchAgent` loop the
+ *  text overlay uses. Deliberate for voice: one classifier hop is already a
+ *  nested-LLM round trip inside a spoken turn, and the agent loop would need
+ *  userId + tool-event streaming plumbed through this seam to stream its
+ *  progress. Swapping it is a one-line deps change when that lands. */
 function availableVoiceTools(rt: DispatchRuntime): Toolset {
   return {
     ...buildDeskToolset(buildDispatchRuntimeToolDeps(rt)),

@@ -20,11 +20,17 @@ function fakeRt(): DispatchRuntime {
 }
 
 describe('the voice contract', () => {
-  it('P0 mints the READ set only -- no action verb is offered', () => {
-    expect([...ACTIVE_VOICE_TOOLS]).toEqual([...VOICE_READ_TOOLS])
-    for (const action of VOICE_ACTION_TOOLS) {
-      expect(ACTIVE_VOICE_TOOLS).not.toContain(action)
+  it('P2 mints the read set PLUS the action verbs', () => {
+    expect([...ACTIVE_VOICE_TOOLS]).toEqual([...VOICE_READ_TOOLS, ...VOICE_ACTION_TOOLS])
+  })
+
+  it('still offers no way to END anything -- the cost gate is the only brake', () => {
+    for (const forbidden of VOICE_FORBIDDEN_TOOLS) {
+      expect(ACTIVE_VOICE_TOOLS).not.toContain(forbidden)
     }
+    // `confirm_expensive` MUST ship alongside the verbs it gates, or a held
+    // decision can never be released and the orb looks broken on expensive routes.
+    expect(ACTIVE_VOICE_TOOLS).toContain('confirm_expensive')
   })
 
   it('ABSENCE IS THE GATE: no destructive verb appears on any phase list', () => {

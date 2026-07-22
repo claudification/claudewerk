@@ -1,11 +1,19 @@
-import { beforeAll, describe, expect, it } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { closeDispatchAudit, initDispatchAudit } from '../desk/audit'
 import type { HandlerContext, MessageData, WsData } from '../handler-context'
 import { routeMessage } from '../message-router'
 import { registerVoiceOrbHandlers } from './voice-orb-actions'
 
 beforeAll(() => {
   registerVoiceOrbHandlers()
+  // confirm_expensive reads the decision audit -- without it every release
+  // fails on plumbing instead of on the decision actually being unknown.
+  initDispatchAudit(mkdtempSync(join(tmpdir(), 'voice-orb-audit-')))
 })
+afterAll(() => closeDispatchAudit())
 
 /** Drive one wire message through the real router and collect the replies.
  *  `permit:false` makes requirePermission throw the way the live gate does. */
@@ -48,10 +56,32 @@ describe('voice_tool_call -- the contract gate', () => {
     }
   })
 
-  it('REFUSES the P2 action verbs while the active contract is read-only', async () => {
-    const replies = await run({ requestId: 'v3', name: 'dispatch', args: { intent: 'do a thing' } }, CONTROL_PANEL)
-    expect(replies[0]).toMatchObject({ ok: false })
-    expect(String(replies[0].error)).toContain('not in the voice contract')
+  it('ACCEPTS the action verbs (P2) -- they clear the contract gate', async () => {
+    // Schema rejection proves it got PAST the contract check to the zod gate.
+    const replies = await run({ requestId: 'v3', name: 'dispatch', args: {} }, CONTROL_PANEL)
+    expect(String(replies[0].error)).toContain('invalid args')
+    expect(String(replies[0].error)).not.toContain('not in the voice contract')
+  })
+
+  it('carries a cost-gate release through: an unknown decision is refused, not executed', async () => {
+    const replies = await run(
+      { requestId: 'v3b', name: 'confirm_expensive', args: { decisionId: 'dec_nope', confirm: true } },
+      CONTROL_PANEL,
+    )
+    expect(replies[0]).toMatchObject({ ok: false, name: 'confirm_expensive' })
+    expect(String(replies[0].error)).toContain('unknown decision')
+  })
+
+  it('rejects a quest with a complexity the schema does not know', async () => {
+    const replies = await run(
+      {
+        requestId: 'v3c',
+        name: 'dispatch_quest',
+        args: { project: 'arr', task: 'check for new movies', complexity: 'trivial' },
+      },
+      CONTROL_PANEL,
+    )
+    expect(String(replies[0].error)).toContain('invalid args')
   })
 
   it('rejects args the tool schema does not accept', async () => {
