@@ -53,11 +53,15 @@ describe('applyTranscriptBatch', () => {
 
   // THE screenshot. Recovered from the file 26 minutes late, so its seq is the
   // highest in the conversation while its timestamp is among the oldest.
+  // Lateness is in MINUTES because that is what a real resend looks like -- a
+  // few seconds behind is CC's non-monotonic clock on entries that arrived IN
+  // order, which shared/transcript-order.ts deliberately refuses to re-sort.
   it('places a late gap-fill by timestamp, not at the tail', () => {
-    const existing = [at('early', 10, 1), at('mid', 30, 2), at('late', 40, 3)]
+    const min = 60
+    const existing = [at('early', 10 * min, 1), at('mid', 30 * min, 2), at('late', 40 * min, 3)]
     const { result } = applyTranscriptBatch({
       existing,
-      incoming: [at('recovered', 20, 178)],
+      incoming: [at('recovered', 20 * min, 178)],
       initial: false,
       localMax: 3,
     })

@@ -1,4 +1,6 @@
 import type { Database, Statement } from 'bun:sqlite'
+import type { TranscriptEntry } from '../../../shared/protocol'
+import { sortTranscriptEntries } from '../../../shared/transcript-order'
 import type {
   SearchHit,
   TranscriptAppendResult,
@@ -23,6 +25,21 @@ function rowToEntry(row: Params): TranscriptEntryRecord {
     timestamp: row.timestamp as number,
     ingestedAt: row.ingested_at as number,
   }
+}
+
+/**
+ * SQL picks the WINDOW, this pass fixes the ORDER.
+ *
+ * `ORDER BY timestamp, seq` reads CC's clock literally, and that clock runs
+ * backwards between entries CC emitted in a definite order (a skill body is
+ * stamped before the tool_result that names it). The jitter clamp that repairs
+ * it needs to look at neighbours, which SQL cannot do cheaply -- so the rows
+ * come back chronologically and are re-ordered here. Both orders agree except
+ * within the sub-minute jitter band, so the LIMIT/cursor window SQL chose is
+ * unaffected. See shared/transcript-order.ts for the measured populations.
+ */
+function chrono(entries: TranscriptEntryRecord[]): TranscriptEntryRecord[] {
+  return sortTranscriptEntries(entries as unknown as TranscriptEntry[]) as unknown as TranscriptEntryRecord[]
 }
 
 // ---------- getPage / getLatest hoisted statement sets ----------
@@ -411,7 +428,7 @@ export function createSqliteTranscriptStore(db: Database): TranscriptStore {
 
       let rows = stmt.all(params) as Params[]
       if (backward) rows = rows.reverse()
-      const entries = rows.map(rowToEntry)
+      const entries = chrono(rows.map(rowToEntry))
 
       const nextCursor =
         entries.length > 0 ? getNextId(conversationId, entries[entries.length - 1].id, opts.agentId) : null
@@ -423,7 +440,7 @@ export function createSqliteTranscriptStore(db: Database): TranscriptStore {
     getLatest(conversationId, limit, agentId) {
       const [av, agentParams] = agentVariant(agentId)
       const rows = (latestStmts[av].all({ conversationId, limit, ...agentParams }) as Params[]).reverse()
-      return rows.map(rowToEntry)
+      return chrono(rows.map(rowToEntry))
     },
 
     getSinceSeq(conversationId, sinceSeq, limit, agentId) {
@@ -440,7 +457,7 @@ export function createSqliteTranscriptStore(db: Database): TranscriptStore {
       const params: Params = { conversationId, sinceSeq, ...agentParams }
       if (limit) params.limit = limit
       const rows = sinceSelectStmts[av][hasLimit].all(params) as Params[]
-      const entries = rows.map(rowToEntry)
+      const entries = chrono(rows.map(rowToEntry))
       const lastSeq = entries.length > 0 ? entries[entries.length - 1].seq : maxSeq
 
       return { entries, lastSeq, gap }
@@ -458,7 +475,7 @@ export function createSqliteTranscriptStore(db: Database): TranscriptStore {
       const rows = (
         beforeSelectStmts[av].all({ conversationId, ...cursor, limit, ...agentParams }) as Params[]
       ).reverse()
-      const entries = rows.map(rowToEntry)
+      const entries = chrono(rows.map(rowToEntry))
       const oldest = entries[0]
       // More history exists iff anything sorts strictly before the oldest entry
       // we just returned.
@@ -628,7 +645,7 @@ export function createSqliteTranscriptStore(db: Database): TranscriptStore {
       const minSeq = centerSeq - before
       const maxSeq = centerSeq + after
       const rows = stmtWindowSelect.all({ conversationId, minSeq, maxSeq }) as Params[]
-      return rows.map(rowToEntry)
+      return chrono(rows.map(rowToEntry))
     },
 
     count(conversationId, agentId) {

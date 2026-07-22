@@ -1,3 +1,5 @@
+import type { TranscriptEntry as SharedTranscriptEntry } from '@shared/protocol'
+import { sortTranscriptEntries } from '@shared/transcript-order'
 import { describe, expect, it } from 'vitest'
 import type { TranscriptEntry } from '@/lib/types'
 import { processEntry } from './process-entry'
@@ -101,9 +103,36 @@ function skillContent(body: string): TranscriptEntry {
   } as unknown as TranscriptEntry
 }
 
+/** The pair exactly as CC writes it: the tool_result that NAMES the skill is
+ *  stamped AFTER the body it introduces (measured -655ms, conversation
+ *  96f57b12 seq 397/398), while seq preserves the true emission order. */
+function invertedSkillPair(commandName: string): TranscriptEntry[] {
+  const invoke = skillToolResult(commandName) as unknown as Record<string, unknown>
+  const body = skillContent(SKILL_BODY) as unknown as Record<string, unknown>
+  invoke.timestamp = '2026-05-18T17:21:05.671Z'
+  invoke.seq = 397
+  body.timestamp = '2026-05-18T17:21:05.016Z'
+  body.seq = 398
+  return [invoke, body] as unknown as TranscriptEntry[]
+}
+
 describe('processEntry - Skill content', () => {
   it('collapses skill content into a skill group', () => {
     const { groups } = group([skillToolResult('minimalist-skill'), skillContent(SKILL_BODY)])
+    expect(groups).toHaveLength(1)
+    expect(groups[0].type).toBe('skill')
+    expect(groups[0].skillName).toBe('minimalist-skill')
+  })
+
+  // THE REGRESSION (2026-07-23): render order moved to the raw clock, which
+  // reads BACKWARDS across this pair, so the body reached the grouper before
+  // the entry naming it -- `pendingSkillName` was never set and every skill
+  // rendered as a fat user bubble. Ordering must hand them over in seq order.
+  it('still chips a skill whose body is stamped BEFORE its tool_result', () => {
+    const ordered = sortTranscriptEntries(
+      invertedSkillPair('minimalist-skill') as unknown as SharedTranscriptEntry[],
+    ) as unknown as TranscriptEntry[]
+    const { groups } = group(ordered)
     expect(groups).toHaveLength(1)
     expect(groups[0].type).toBe('skill')
     expect(groups[0].skillName).toBe('minimalist-skill')

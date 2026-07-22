@@ -43,6 +43,17 @@ function entry(uuid: string, type: string, tsSeconds: number, subtype?: string):
   } as unknown as TranscriptEntry
 }
 
+/** Millisecond-precision variant -- `Date.UTC` TRUNCATES a fractional seconds
+ *  argument, so sub-second cases must go through the ms slot or they silently
+ *  collapse to the same instant and assert nothing. */
+function entryMs(uuid: string, type: string, ms: number): TranscriptEntry {
+  return {
+    type,
+    uuid,
+    timestamp: new Date(Date.UTC(2026, 6, 22, 13, 0, 0, ms)).toISOString(),
+  } as unknown as TranscriptEntry
+}
+
 function freshStore(): StoreDriver {
   return createSqliteDriver({ type: 'sqlite', dataDir: mkdtempSync(join(tmpdir(), 'initial-cache-')) })
 }
@@ -124,21 +135,45 @@ describe('isInitial reconciles the cache instead of replacing it', () => {
   // dropped during a socket blip reaches the broker only from the file, minutes
   // late. It must land in CHRONOLOGICAL position, not at the tail, because seq
   // is an arrival counter and the dashboard renders in cache/read order.
+  // Lateness here is in MINUTES on purpose. A file resend is triggered by a
+  // reconnect or a transcript_kick, so a genuine gap-fill is minutes to hours
+  // behind (measured: 28 min average, 2.5 h worst). Anything under
+  // CLOCK_JITTER_MS is CC stamping entries it emitted IN ORDER slightly out of
+  // order, and shared/transcript-order.ts deliberately refuses to reorder that
+  // -- so a toy few-second gap would test the opposite of the intent.
   it('places a late gap-fill by timestamp, not at the tail', () => {
     const store = freshStore()
     const ctx = ctxOver(store)
+    const min = 60
 
     addTranscriptEntries(
       ctx,
       CONV,
-      [entry('early', 'assistant', 10), entry('later', 'assistant', 30), entry('latest', 'assistant', 40)],
+      [
+        entry('early', 'assistant', 10 * min),
+        entry('later', 'assistant', 30 * min),
+        entry('latest', 'assistant', 40 * min),
+      ],
       false,
     )
 
     // Recovered from the file long after the fact: its timestamp sits BETWEEN
     // 'early' and 'later', but it is ingested last so it gets MAX(seq)+1.
-    addTranscriptEntries(ctx, CONV, [entry('gapfill', 'assistant', 20)], true)
+    addTranscriptEntries(ctx, CONV, [entry('gapfill', 'assistant', 20 * min)], true)
 
     expect(uuidsInCache(ctx)).toEqual(['early', 'gapfill', 'later', 'latest'])
+  })
+
+  // The other half of the same rule: an entry that reads slightly behind the
+  // one before it arrived IN ORDER and must not be re-sorted ahead of it.
+  // This is the skill-chip regression -- CC stamps an injected skill body
+  // ~655ms BEFORE the tool_result naming it (2026-07-23).
+  it('keeps a sub-second clock inversion in arrival order', () => {
+    const store = freshStore()
+    const ctx = ctxOver(store)
+
+    addTranscriptEntries(ctx, CONV, [entryMs('invoke', 'user', 5671), entryMs('body', 'user', 5016)], false)
+
+    expect(uuidsInCache(ctx)).toEqual(['invoke', 'body'])
   })
 })

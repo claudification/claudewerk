@@ -30,6 +30,38 @@
 
 import type { TranscriptEntry } from './protocol'
 
+/**
+ * ## The clock is not monotonic -- clamp small inversions away
+ *
+ * CC's own timestamps go BACKWARDS between entries it emitted in a definite
+ * order. The injected body of a skill is stamped 150-800ms BEFORE the Skill
+ * tool_result that names it -- 15 of 15 invocations in the production store.
+ * Sorting on the raw clock swapped that pair, the grouper never saw
+ * `toolUseResult.commandName` ahead of the body, and every skill rendered as a
+ * fat user bubble instead of a `/chip` (2026-07-23).
+ *
+ * The two populations are three orders of magnitude apart. Measured over one
+ * day of seq-adjacent pairs:
+ *
+ *   in order                                        42893
+ *   inverted <1s     (clock jitter, arrived in order)  507
+ *   inverted 1s-60s                                    425
+ *   inverted 1m-1h   (genuine late gap-fill)          2626
+ *   inverted >1h     (genuine late gap-fill)          1172
+ *
+ * So: an entry that reads behind the running clock by no more than
+ * CLOCK_JITTER_MS arrived IN ORDER and keeps its arrival position; anything
+ * further behind is a real gap-fill recovered from the JSONL minutes or hours
+ * later, and is placed chronologically. The invariant is
+ * "entries CC emitted in a definite order are never reordered against each
+ * other", with the clock used only to repair genuinely displaced arrivals.
+ *
+ * The clamp needs arrival information, which is what `seq` is. Entries with NO
+ * seq carry no arrival evidence, so they are never clamped -- they sort on
+ * their raw clock exactly as before.
+ */
+const CLOCK_JITTER_MS = 60_000
+
 /** Milliseconds for an entry's own clock, or `null` when it carries no usable one. */
 function entryTime(entry: TranscriptEntry): number | null {
   const raw = entry.timestamp
@@ -41,7 +73,11 @@ function entryTime(entry: TranscriptEntry): number | null {
 
 /** Resolve one sort key per entry, ONCE. Undated entries carry forward the key
  *  of the entry before them (and lead with -Infinity), which keeps them pinned
- *  to their arrival position under a stable sort. */
+ *  to their arrival position under a stable sort.
+ *
+ *  Dated entries that also carry a `seq` are then walked in ARRIVAL order and
+ *  clamped forward past sub-CLOCK_JITTER_MS clock inversions (see above), so a
+ *  backwards-stamped neighbour cannot overtake the entry it followed. */
 function orderKeys(entries: TranscriptEntry[]): number[] {
   const keys = new Array<number>(entries.length)
   let carried = Number.NEGATIVE_INFINITY
@@ -50,7 +86,28 @@ function orderKeys(entries: TranscriptEntry[]): number[] {
     if (t !== null) carried = t
     keys[i] = carried
   }
+  clampJitterInArrivalOrder(entries, keys)
   return keys
+}
+
+/** Walk the seq-bearing entries in arrival order, dragging each key forward to
+ *  the running maximum whenever it reads behind by less than the jitter bound.
+ *  Mutates `keys` in place. */
+function clampJitterInArrivalOrder(entries: TranscriptEntry[], keys: number[]): void {
+  const arrival: number[] = []
+  for (let i = 0; i < entries.length; i++) {
+    if (typeof entries[i].seq === 'number' && entryTime(entries[i]) !== null) arrival.push(i)
+  }
+  arrival.sort((a, b) => (entries[a].seq as number) - (entries[b].seq as number) || a - b)
+
+  let runningMax = Number.NEGATIVE_INFINITY
+  for (const i of arrival) {
+    const key = keys[i]
+    // Behind the running clock, but not far enough behind to be a real
+    // gap-fill: this entry arrived in order, so pin it there.
+    if (key < runningMax && runningMax - key <= CLOCK_JITTER_MS) keys[i] = runningMax
+    else if (key > runningMax) runningMax = key
+  }
 }
 
 /** Sort a batch chronologically. Stable, so equal keys keep arrival order. */
@@ -76,12 +133,40 @@ export function insertTranscriptEntriesInOrder(list: TranscriptEntry[], incoming
     const key = entryTime(entry)
     const seq = entry.seq ?? 0
     const last = list[list.length - 1]
-    if (key === null || !last || !sortsBefore(key, seq, entryTime(last) ?? Number.NEGATIVE_INFINITY, last.seq ?? 0)) {
+    const lastKey = last ? (entryTime(last) ?? Number.NEGATIVE_INFINITY) : Number.NEGATIVE_INFINITY
+    if (key === null || !last || !sortsBefore(key, seq, lastKey, last.seq ?? 0)) {
+      list.push(entry)
+      continue
+    }
+    // Reads behind the tail, but only by jitter and directly continuing it:
+    // it arrived in order (same rule as orderKeys) and belongs at the tail.
+    if (continuesTailInOrder(list, key, seq, lastKey)) {
       list.push(entry)
       continue
     }
     list.splice(upperBound(list, key, seq), 0, entry)
   }
+}
+
+/**
+ * An entry that DIRECTLY CONTINUES the list but reads slightly behind its
+ * predecessor's clock -- CC's non-monotonic stamping, not a displaced arrival.
+ *
+ * The comparison is against the entry this one FOLLOWS BY SEQ, which must also
+ * be the tail. Comparing against the tail alone is not enough: a refetch batch
+ * splices older gap-fills in first, leaving a much newer live entry at the tail,
+ * and a genuine gap-fill that happens to land within a minute of THAT would be
+ * wrongly appended (it belongs next to its own seq neighbours). If the tail does
+ * not hold the highest seq in the list, this entry is not continuing anything.
+ */
+function continuesTailInOrder(list: TranscriptEntry[], key: number, seq: number, lastKey: number): boolean {
+  const last = list[list.length - 1]
+  const lastSeq = last?.seq
+  if (typeof lastSeq !== 'number' || seq <= lastSeq) return false
+  for (const e of list) {
+    if (typeof e.seq === 'number' && e.seq > lastSeq) return false
+  }
+  return lastKey - key <= CLOCK_JITTER_MS
 }
 
 /** Does `(keyA, seqA)` sort strictly before `(keyB, seqB)`? The predicate form
