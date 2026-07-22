@@ -10,6 +10,7 @@ import type { CanvasPeer } from '@shared/protocol'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { wsSend } from '@/hooks/use-conversations'
 import { parseSceneElements, peerToApply, prunePeers, type RemoteCollaborator } from './canvas-collab-merge'
+import { clearCanvasPeerId, setCanvasPeerId } from './canvas-peer-id'
 import { useCanvasRoom } from './use-canvas-room'
 
 /** Minimal slice of the Excalidraw imperative API the collab layer drives. */
@@ -75,9 +76,16 @@ export function useCanvasCollab(canvasId: string | null, enabled: boolean, name?
     api.current?.updateScene({ elements })
   }, [])
 
-  const applyJoinAck = useCallback((msg: Record<string, unknown>) => {
-    ownPeerId.current = msg.peerId as string
-  }, [])
+  const applyJoinAck = useCallback(
+    (msg: Record<string, unknown>) => {
+      const peerId = msg.peerId as string
+      ownPeerId.current = peerId
+      // Publish it for the autosave PUT, which must name this peer or the broker
+      // broadcasts our own save back to us as an agent write (see canvas-peer-id).
+      if (canvasId && peerId) setCanvasPeerId(canvasId, peerId)
+    },
+    [canvasId],
+  )
 
   // Inbound canvas_* -> handler map (stable; the room hook depends on its identity).
   const handlers = useMemo(
@@ -93,8 +101,9 @@ export function useCanvasCollab(canvasId: string | null, enabled: boolean, name?
   const resetRoom = useCallback(() => {
     collaborators.current.clear()
     ownPeerId.current = null
+    if (canvasId) clearCanvasPeerId(canvasId)
     setPeers([])
-  }, [])
+  }, [canvasId])
 
   // Join/leave lifecycle (waits for a live socket, re-joins on reconnect). See
   // use-canvas-room.ts -- the socket-open gating THERE is the multiplayer fix.

@@ -7,6 +7,7 @@
 import type { CanvasSummary } from '@shared/protocol'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { loadCanvas, renameCanvas, saveCanvasScene } from './canvas-editor-io'
+import { getCanvasPeerId } from './canvas-peer-id'
 import { createSaveStateStore, type SaveStateStore } from './canvas-save-store'
 
 const SAVE_DEBOUNCE_MS = 1500
@@ -105,9 +106,14 @@ export function useCanvasDocument(id: string | null): CanvasDocument {
   useEffect(() => {
     const onUnload = () => {
       if (pending.current == null || !id) return
+      // peerId rides along here too -- the room may outlive this tab's unload
+      // (another window, a share guest), and an unnamed write would reach them
+      // as an agent write. See canvas-peer-id.ts.
       navigator.sendBeacon?.(
         `/api/canvases/${encodeURIComponent(id)}/scene`,
-        new Blob([JSON.stringify({ scene: pending.current })], { type: 'application/json' }),
+        new Blob([JSON.stringify({ scene: pending.current, peerId: getCanvasPeerId(id) })], {
+          type: 'application/json',
+        }),
       )
     }
     win.addEventListener('beforeunload', onUnload)

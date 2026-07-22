@@ -6,6 +6,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { getCanvasPeerId } from './canvas-peer-id'
 import {
   loadPublicCanvas,
   type PublicCanvas,
@@ -45,6 +46,10 @@ export function usePublicCanvas(token: string): PublicCanvasDoc {
   if (baseIds.current === null) baseIds.current = new Set()
   const tier = useRef<PublicCanvas['tier']>('read')
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // The guest joins the room under the CANVAS id (see public-canvas-view), but
+  // saves by TOKEN -- so the save path needs the id kept alongside to look up
+  // this tab's peerId and stop its own write echoing back at it.
+  const canvasId = useRef<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -53,6 +58,7 @@ export function usePublicCanvas(token: string): PublicCanvasDoc {
       if (!loaded) return setState('missing')
       baseIds.current = sceneElementIds(loaded.scene)
       tier.current = loaded.tier
+      canvasId.current = loaded.canvas.id
       setDoc(loaded)
       setSeed(parse(loaded.scene))
       setState('ready')
@@ -69,7 +75,8 @@ export function usePublicCanvas(token: string): PublicCanvasDoc {
       setSaveState('saving')
       clearTimeout(timer.current)
       timer.current = setTimeout(async () => {
-        const ok = await savePublicCanvasScene(token, payload)
+        const peerId = canvasId.current ? getCanvasPeerId(canvasId.current) : undefined
+        const ok = await savePublicCanvasScene(token, payload, peerId)
         setSaveState(ok ? 'saved' : 'rejected')
       }, SAVE_DEBOUNCE_MS)
     },
