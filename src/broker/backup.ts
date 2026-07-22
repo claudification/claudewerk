@@ -139,6 +139,23 @@ function parseBackupTimestamp(filename: string): Date | null {
 
 // ── Create ──────────────────────────────────────────────────────
 
+// Reclaim orphaned working dirs from a prior run that was OOM-killed (SIGKILL
+// bypasses the finally that would normally rm the temp). Each leaked dir holds
+// a full uncompressed db snapshot -- one failed run left 9.2GB behind. Runs
+// before a new backup so a crash can never let temp accumulate unbounded.
+export function sweepStaleTempDirs(destDir: string): void {
+  if (!existsSync(destDir)) return
+  for (const name of readdirSync(destDir)) {
+    if (!name.startsWith('_tmp_backup_')) continue
+    const p = join(destDir, name)
+    try {
+      if (statSync(p).isDirectory()) rmSync(p, { recursive: true, force: true })
+    } catch {
+      // best-effort reclaim; a live concurrent run's dir may vanish mid-sweep.
+    }
+  }
+}
+
 export async function createBackup(opts: BackupCreateOptions): Promise<string> {
   const { cacheDir, destDir, includeBlobs = false, retainHours = 24, retainDays = 7 } = opts
   const start = Date.now()
@@ -149,6 +166,7 @@ export async function createBackup(opts: BackupCreateOptions): Promise<string> {
   const archivePath = join(destDir, archiveName)
 
   mkdirSync(destDir, { recursive: true })
+  sweepStaleTempDirs(destDir)
   mkdirSync(tmpDir, { recursive: true })
 
   const manifestFiles: BackupManifest['files'] = []

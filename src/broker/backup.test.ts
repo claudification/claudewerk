@@ -1,9 +1,19 @@
 import { createHash } from 'node:crypto'
-import { closeSync, createReadStream, ftruncateSync, mkdtempSync, openSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  closeSync,
+  createReadStream,
+  existsSync,
+  ftruncateSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, expect, test } from 'bun:test'
-import { sha256File } from './backup'
+import { sha256File, sweepStaleTempDirs } from './backup'
 
 // Independent reference hash: stream via createReadStream (a different code path
 // than sha256File's readSync loop) so the two can't share a bug.
@@ -46,3 +56,19 @@ test('sha256File streams a >2GB file without ENOMEM', async () => {
   closeSync(fd)
   expect(sha256File(path)).toBe(await referenceHash(path))
 }, 60_000)
+
+test('sweepStaleTempDirs reclaims orphaned temp but spares backups', () => {
+  const d = mkdtempSync(join(tmpdir(), 'backup-sweep-'))
+  mkdirSync(join(d, '_tmp_backup_20260101-000000'))
+  mkdirSync(join(d, '_tmp_backup_20260102-000000'))
+  writeFileSync(join(d, 'backup-20260101-000000.tar.gz'), 'keep me')
+  writeFileSync(join(d, 'manifest.json'), '{}')
+
+  sweepStaleTempDirs(d)
+
+  expect(existsSync(join(d, '_tmp_backup_20260101-000000'))).toBe(false)
+  expect(existsSync(join(d, '_tmp_backup_20260102-000000'))).toBe(false)
+  expect(existsSync(join(d, 'backup-20260101-000000.tar.gz'))).toBe(true)
+  expect(existsSync(join(d, 'manifest.json'))).toBe(true)
+  rmSync(d, { recursive: true, force: true })
+})
