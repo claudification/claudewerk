@@ -68,8 +68,9 @@ function handleCompact(entry: TranscriptEntry, state: GroupingState): void {
 }
 
 /**
- * Flag an already-rendered user group as queued, when one matching this text is
- * the most recent user group. Returns false when there is nothing to flag.
+ * Flag an already-rendered user group as queued, when one of its entries matches
+ * this text and it is the most recent user group. Returns false when there is
+ * nothing to flag.
  *
  * Headless needs this: the agent host emits an optimistic user entry the moment
  * it writes to CC's stdin (stream-backend `sendUserMessage`), so by the time the
@@ -77,14 +78,24 @@ function handleCompact(entry: TranscriptEntry, state: GroupingState): void {
  * the message would render twice -- once normally, once as a queued ghost.
  * PTY/daemon have no optimistic entry, find no match, and keep the old
  * create-a-synthetic-group behaviour.
+ *
+ * Match ANY entry in the group, not just entries[0]: two messages queued
+ * back-to-back merge into ONE user group (consecutive user echoes merge), so the
+ * second enqueue's content sits at a NON-ZERO index. Checking only entries[0]
+ * there missed it and spawned a duplicate synthetic bubble -- the message showed
+ * once inside the merged bubble and again on its own (incident 2026-07-22). Still
+ * scoped to the most-recent user group: an older non-match means this is a fresh
+ * interjection, so fall through and let the caller create the synthetic.
  */
 function flagExistingUserGroupAsQueued(content: string, state: GroupingState): boolean {
   for (let gi = state.groups.length - 1; gi >= 0; gi--) {
     const g = state.groups[gi]
     if (g.type !== 'user') continue
-    const first = g.entries[0] as TranscriptUserEntry | undefined
-    const text = typeof first?.message?.content === 'string' ? first.message.content : undefined
-    if (text !== content) return false
+    const matches = g.entries.some(e => {
+      const c = (e as TranscriptUserEntry).message?.content
+      return typeof c === 'string' && c === content
+    })
+    if (!matches) return false
     // Replace rather than mutate: a currently-rendering React tree must not be
     // disturbed mid-commit (React #300).
     const flagged: DisplayGroup = { ...g, queued: true }

@@ -12,10 +12,11 @@ function group(entries: TranscriptEntry[]): GroupingState {
 // CC delivers Stop/SubagentStop hook feedback as a plain user entry (NOT
 // isMeta) whose message.content is a text-block array. `userEntry` accepts a
 // bare string too, to cover the legacy/string-content shape.
-function userEntry(content: string | { type: 'text'; text: string }[]): TranscriptEntry {
+function userEntry(content: string | { type: 'text'; text: string }[], seq?: number): TranscriptEntry {
   return {
     type: 'user',
     timestamp: '2026-05-16T21:20:00.000Z',
+    ...(seq !== undefined ? { seq } : {}),
     message: { role: 'user', content },
   } as unknown as TranscriptEntry
 }
@@ -247,10 +248,13 @@ describe('processEntry - queue-operation', () => {
   })
 
   it('clears only the oldest queued group on a single remove (FIFO)', () => {
+    // Distinct seq buckets keep the two echoes in SEPARATE user groups (a
+    // seq-bucket break stops the merge), so this exercises the genuine
+    // two-queued-groups FIFO, not the merged-into-one case below.
     const { groups } = group([
-      userEntry('first'),
+      userEntry('first', 1),
       queueOp('enqueue', 'first'),
-      userEntry('second'),
+      userEntry('second', 20),
       queueOp('enqueue', 'second'),
       queueOp('remove'),
     ])
@@ -262,14 +266,39 @@ describe('processEntry - queue-operation', () => {
 
   it('clears every queued group on popAll', () => {
     const { groups } = group([
-      userEntry('first'),
+      userEntry('first', 1),
       queueOp('enqueue', 'first'),
-      userEntry('second'),
+      userEntry('second', 20),
       queueOp('enqueue', 'second'),
       queueOp('popAll'),
     ])
 
+    expect(groups).toHaveLength(2)
     expect(groups.every(g => !g.queued)).toBe(true)
+  })
+
+  it('does not duplicate the second of two MERGED queued messages (regression)', () => {
+    // Two messages queued back-to-back merge into ONE user group (consecutive
+    // user echoes merge). The enqueue for the SECOND then sits at a non-zero
+    // index in that group -- flagging must find it there instead of spawning a
+    // duplicate synthetic bubble. Real incident 2026-07-22: an image message
+    // rendered once inside the first bubble AND again on its own, seconds apart.
+    const { groups } = group([
+      userEntry('ALSO NOT Updating over shares'),
+      userEntry('the image message'), // no seq gap -> merges with the first
+      queueOp('enqueue', 'ALSO NOT Updating over shares'),
+      queueOp('enqueue', 'the image message'),
+    ])
+
+    // One merged group holding both messages, queued -- and crucially NO third
+    // (synthetic) bubble echoing the second message.
+    expect(groups).toHaveLength(1)
+    expect(groups[0].entries).toHaveLength(2)
+    expect(groups[0].queued).toBe(true)
+    const copiesOfSecond = groups.filter(g =>
+      g.entries.some(e => (e as { message?: { content?: unknown } }).message?.content === 'the image message'),
+    )
+    expect(copiesOfSecond).toHaveLength(1)
   })
 
   it('replaces the group object rather than mutating it (React #300)', () => {
