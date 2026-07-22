@@ -139,8 +139,8 @@ export function connectToBroker(ctx: AgentHostContext, deps: BrokerConnectionDep
     onError(error) {
       debug(`Broker error: ${error.message}`)
     },
-    onInput(input, crDelay) {
-      handleInput(ctx, deps, input, crDelay)
+    onInput(input, crDelay, source) {
+      handleInput(ctx, deps, input, crDelay, source)
     },
     onTerminalInput(data) {
       if (ctx.ptyProcess) {
@@ -359,7 +359,13 @@ function handleConnected(ctx: AgentHostContext, deps: BrokerConnectionDeps, ccSe
   startTaskWatching(ctx)
 }
 
-function handleInput(ctx: AgentHostContext, deps: BrokerConnectionDeps, input: string, crDelay?: number) {
+function handleInput(
+  ctx: AgentHostContext,
+  deps: BrokerConnectionDeps,
+  input: string,
+  crDelay?: number,
+  source?: string,
+) {
   if (deps.headless) {
     if (!ctx.streamProc || !input) return
     const trimmed = input.trimEnd()
@@ -400,7 +406,9 @@ function handleInput(ctx: AgentHostContext, deps: BrokerConnectionDeps, input: s
       prefixed.run(trimmed.slice(prefixed.prefix.length).trim())
       return
     }
-    ctx.streamProc.sendUserMessage(input)
+    // `source` (e.g. "Orb") attributes an injected-as-user message: the model
+    // gets the raw text, the transcript entry gets a "from <source>" badge.
+    ctx.streamProc.sendUserMessage(input, source ? { origin: { kind: 'channel', server: source } } : undefined)
     return
   }
 

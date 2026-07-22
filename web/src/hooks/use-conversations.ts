@@ -1771,7 +1771,7 @@ export function cancelBackgroundTask(conversationId: string, taskId: string): bo
   return sendConversationControl(conversationId, 'cancel_background_task', { taskId })
 }
 
-export function sendInput(conversationId: string, input: string): boolean {
+export function sendInput(conversationId: string, input: string, opts?: { source?: string }): boolean {
   // Bare control commands (/clear, /quit, :q, /model X, /effort X) bypass the
   // model and go straight to the agent host's control channel. Everything else
   // flows through send_input as before.
@@ -1784,7 +1784,12 @@ export function sendInput(conversationId: string, input: string): boolean {
     })
   }
   const crDelay = (useConversationsStore.getState().globalSettings.carriageReturnDelay as number) || 0
-  const ok = wsSend('send_input', { conversationId, input, ...(crDelay > 0 && { crDelay }) })
+  const ok = wsSend('send_input', {
+    conversationId,
+    input,
+    ...(crDelay > 0 && { crDelay }),
+    ...(opts?.source && { source: opts.source }),
+  })
   // Ad-hoc authorization: if this message references other conversations (via the
   // `:` completer's <conversation> token), grant a project-level link so the agent
   // can send_message to them. Broker is idempotent (no-op if already linked/blocked).

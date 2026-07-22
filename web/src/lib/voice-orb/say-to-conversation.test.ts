@@ -6,7 +6,7 @@ let selectedConversationId: string | null = null
 
 vi.mock('@/hooks/use-conversations', () => ({
   useConversationsStore: { getState: () => ({ conversationsById, selectedConversationId }) },
-  sendInput: (id: string, text: string) => sendInput(id, text),
+  sendInput: (id: string, text: string, opts?: unknown) => sendInput(id, text, opts),
 }))
 vi.mock('@/lib/slim-conversation', () => ({
   selectConversations: (byId: Record<string, unknown>) => Object.values(byId),
@@ -35,7 +35,8 @@ beforeEach(() => {
 describe('the conversation on screen (target: null)', () => {
   it('sends to the selected conversation and reports where it landed', () => {
     const out = runSayToConversation({ message: 'retry the deploy', target: null })
-    expect(sendInput).toHaveBeenCalledWith('c1', 'retry the deploy')
+    // Poses as the user, but attributed "from Orb" so the transcript shows it.
+    expect(sendInput).toHaveBeenCalledWith('c1', 'retry the deploy', { source: 'Orb' })
     expect(out).toMatchObject({ sent: true, to: 'station bar', conversationId: 'c1' })
   })
 
@@ -58,7 +59,7 @@ describe('the conversation on screen (target: null)', () => {
 describe('a NAMED conversation', () => {
   it('resolves the spoken name against live titles', () => {
     const out = runSayToConversation({ message: 'we are live', target: 'Station Bar' })
-    expect(sendInput).toHaveBeenCalledWith('c1', 'we are live')
+    expect(sendInput).toHaveBeenCalledWith('c1', 'we are live', { source: 'Orb' })
     expect(out).toMatchObject({ sent: true, to: 'station bar' })
   })
 

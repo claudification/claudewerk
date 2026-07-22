@@ -71,14 +71,19 @@ const sendInput: MessageHandler = (ctx, data) => {
   if (!ws) throw new GuardError('Conversation not connected')
 
   const crDelay = typeof data.crDelay === 'number' && data.crDelay > 0 ? data.crDelay : undefined
+  // Attribution for an injected-as-user message (the voice orb relaying speech).
+  // Bounded so a junk value can never bloat the transcript badge.
+  const source =
+    typeof data.source === 'string' && data.source.length > 0 && data.source.length <= 32 ? data.source : undefined
   const inputMsg: SendInput = {
     type: 'input',
     conversationId,
     input,
     ...(crDelay && { crDelay }),
+    ...(source && { source }),
   }
   ws.send(JSON.stringify(inputMsg))
-  ctx.log.debug(`send_input: ${conversationId.slice(0, 8)} "${input.slice(0, 50)}"`)
+  ctx.log.debug(`send_input: ${conversationId.slice(0, 8)}${source ? ` [via ${source}]` : ''} "${input.slice(0, 50)}"`)
   ctx.reply({ type: 'send_input_result', ok: true })
 }
 

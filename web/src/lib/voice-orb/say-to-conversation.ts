@@ -57,8 +57,13 @@ export function runSayToConversation(args: SayArgs): Record<string, unknown> {
   return deliver(resolved.conversation, message)
 }
 
+/** How the orb's relayed messages are attributed in the target's transcript:
+ *  they pose as the user (the conversation acts on them) but render "from Orb"
+ *  so it is clear the voice agent spoke, not the human typing directly. */
+const ORB_SENDER = 'Orb'
+
 function deliver(target: Candidate, message: string): Record<string, unknown> {
-  const ok = sendInput(target.conversationId, message)
+  const ok = sendInput(target.conversationId, message, { source: ORB_SENDER })
   if (!ok) return { error: `could not reach "${target.title || target.conversationId}" -- it may have just ended` }
   // The orb reads this back: "posted to X". Never claim a send we did not make.
   return {

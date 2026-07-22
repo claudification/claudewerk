@@ -72,7 +72,12 @@ export function ChatBubble({
             />
           )}
           <TimeStamp ts={ts} className="text-muted-foreground/50 text-[9px]" />
-          {channelServer === 'rclaude' && <span className="text-teal-400/40 text-[9px]">channel</span>}
+          {channelServer &&
+            (channelServer === 'rclaude' ? (
+              <span className="text-teal-400/40 text-[9px]">channel</span>
+            ) : (
+              <span className="text-teal-400/70 text-[9px] font-bold">from {channelServer}</span>
+            ))}
           {effortBadge && <span className="text-orange-400/60 text-[9px]">{effortBadge.symbol}</span>}
         </div>
       </div>

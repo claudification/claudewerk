@@ -587,6 +587,11 @@ export interface TranscriptUserEntry extends TranscriptEntryBase {
   isVisibleInTranscriptOnly?: boolean
   imagePasteIds?: number[]
   permissionMode?: string
+  /** Set when this user turn was INJECTED by a surface (not typed by the human)
+   *  and should render attributed. `kind:'channel'` + `server` drives the
+   *  "CHANNEL: <server>" badge (group-header / chat-bubble). The turn still
+   *  counts as user input to the model -- attribution is display-only. */
+  origin?: { kind: string; server: string }
 }
 
 export interface TranscriptAssistantEntry extends TranscriptEntryBase {
@@ -1332,6 +1337,11 @@ export interface SendInput {
   conversationId: string
   input: string
   crDelay?: number // carriage return delay in ms (dashboard setting, optional)
+  /** Attribution for a message that POSES AS THE USER (the agent acts on it as
+   *  normal user input) but was injected by a surface, not typed by the human --
+   *  e.g. the voice orb relaying spoken words. Renders as a "from <server>"
+   *  channel badge; does NOT change what the model receives (raw text). */
+  source?: string
 }
 
 // Transcript streaming: broker -> rclaude

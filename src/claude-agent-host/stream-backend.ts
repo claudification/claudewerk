@@ -159,7 +159,7 @@ export interface ControlRequestResult {
 
 export interface StreamProcess {
   proc: Subprocess
-  sendUserMessage: (text: string, source?: string) => void
+  sendUserMessage: (text: string, opts?: { origin?: { kind: string; server: string } }) => void
   sendPermissionResponse: (
     requestId: string,
     allow: boolean,
@@ -382,7 +382,9 @@ function nextRequestId(prefix: string): string {
   return `${prefix}-${++controlSeq}`
 }
 
-function buildStreamProcess(
+// Exported for unit tests (sendUserMessage attribution): the real caller is
+// spawnStreamClaude, which needs a live subprocess.
+export function buildStreamProcess(
   proc: Subprocess<'pipe', 'pipe', 'pipe'>,
   writeStdin: (json: Record<string, unknown>) => void,
   options: StreamBackendOptions,
@@ -392,11 +394,13 @@ function buildStreamProcess(
   return {
     proc,
 
-    sendUserMessage(text: string, source?: string) {
-      const content = source
-        ? `<conduit source="${source}" ts="${new Date().toISOString()}">\n${text}\n</conduit>`
-        : text
-      debug(`Sending user message${source ? ` (${source})` : ''}: ${text.slice(0, 80)}...`)
+    sendUserMessage(text: string, opts?: { origin?: { kind: string; server: string } }) {
+      // The model always gets RAW text -- an injected-as-user message (e.g. the
+      // voice orb relaying speech) must read as normal user input, never a
+      // wrapper. Attribution rides on the transcript ENTRY only (opts.origin),
+      // so it renders "from <server>" without changing what the model sees.
+      const content = text
+      debug(`Sending user message${opts?.origin ? ` (via ${opts.origin.server})` : ''}: ${text.slice(0, 80)}...`)
       writeStdin({
         type: 'user',
         session_id: '',
@@ -418,6 +422,7 @@ function buildStreamProcess(
             timestamp: new Date().toISOString(),
             message: { role: 'user', content },
             uuid,
+            ...(opts?.origin && { origin: opts.origin }),
           } as TranscriptEntry,
         ],
         false,

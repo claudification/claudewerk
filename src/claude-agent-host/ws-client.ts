@@ -68,7 +68,7 @@ export interface WsClientOptions {
   onDisconnected?: () => void
   onError?: (error: Error) => void
   capabilities?: AgentHostCapability[]
-  onInput?: (input: string, crDelay?: number) => void
+  onInput?: (input: string, crDelay?: number, source?: string) => void
   onTerminalAttach?: (cols: number, rows: number) => void
   onTerminalDetach?: () => void
   onTerminalInput?: (data: string) => void
@@ -362,7 +362,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
         break
       case 'input':
         // Forward input to PTY
-        onInput?.(message.input, message.crDelay)
+        onInput?.(message.input, message.crDelay, typeof message.source === 'string' ? message.source : undefined)
         break
       case 'terminal_attach':
         onTerminalAttach?.(message.cols, message.rows)
