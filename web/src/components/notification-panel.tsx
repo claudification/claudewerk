@@ -1,7 +1,8 @@
 import { projectIdentityKey } from '@shared/project-uri'
 import type { ReactNode } from 'react'
+import { useShallow } from 'zustand/react/shallow'
+import { AskRow, LinkRow, NotifyRow, PermissionRow, PlanApprovalRow } from '@/components/notification-items'
 import { ProjectIcon } from '@/components/project-icons'
-import { BannerButton, ConversationBanner } from '@/components/ui/conversation-banner'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { projectPath } from '@/lib/types'
 import { haptic, projectDisplayName } from '@/lib/utils'
@@ -19,20 +20,45 @@ interface GroupedItem {
 }
 
 export function NotificationPanel({ onClose }: NotificationPanelProps) {
-  const conversations = useConversationsStore(s => s.conversationsById)
-  const projectSettings = useConversationsStore(s => s.projectSettings)
-  const selectConversation = useConversationsStore(s => s.selectConversation)
+  const {
+    conversationsById: conversations,
+    projectSettings,
+    selectConversation,
+    pendingPermissions: perms,
+    respondToPermission: respondPerm,
+    sendPermissionRule: sendRule,
+    pendingProjectLinks: links,
+    respondToProjectLink: respondLink,
+    pendingAskQuestions: asks,
+    pendingDialogs: dialogs,
+    notifications: notifs,
+    dismissNotification: dismissNotif,
+  } = useConversationsStore(
+    useShallow(s => ({
+      conversationsById: s.conversationsById,
+      projectSettings: s.projectSettings,
+      selectConversation: s.selectConversation,
+      pendingPermissions: s.pendingPermissions,
+      respondToPermission: s.respondToPermission,
+      sendPermissionRule: s.sendPermissionRule,
+      pendingProjectLinks: s.pendingProjectLinks,
+      respondToProjectLink: s.respondToProjectLink,
+      pendingAskQuestions: s.pendingAskQuestions,
+      pendingDialogs: s.pendingDialogs,
+      notifications: s.notifications,
+      dismissNotification: s.dismissNotification,
+    })),
+  )
 
-  const perms = useConversationsStore(s => s.pendingPermissions)
-  const respondPerm = useConversationsStore(s => s.respondToPermission)
-  const sendRule = useConversationsStore(s => s.sendPermissionRule)
-  const links = useConversationsStore(s => s.pendingProjectLinks)
-  const respondLink = useConversationsStore(s => s.respondToProjectLink)
-  const asks = useConversationsStore(s => s.pendingAskQuestions)
-  const dialogs = useConversationsStore(s => s.pendingDialogs)
-  const notifs = useConversationsStore(s => s.notifications)
-  const dismissNotif = useConversationsStore(s => s.dismissNotification)
+  function navigate(conversationId: string) {
+    haptic('tap')
+    selectConversation(conversationId, 'notification-panel')
+    onClose()
+  }
 
+  // Each pending thing becomes a GroupedItem whose render() delegates to a row
+  // component (see notification-items.tsx). Keeping the row JSX out of here is
+  // what keeps this builder flat.
   const items: GroupedItem[] = []
 
   for (const p of perms) {
@@ -41,48 +67,7 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
       key: `perm-${p.requestId}`,
       conversationId: p.conversationId,
       timestamp: p.timestamp,
-      render: () => (
-        <ConversationBanner
-          accent="amber"
-          label="PERMISSION"
-          title={<span className="font-bold">{p.toolName}</span>}
-          actions={
-            <>
-              <BannerButton
-                accent="emerald"
-                label="ALLOW"
-                size="sm"
-                onClick={() => {
-                  haptic('success')
-                  respondPerm(p.conversationId, p.requestId, 'allow')
-                }}
-              />
-              <BannerButton
-                accent="blue"
-                label="ALWAYS"
-                size="sm"
-                onClick={() => {
-                  haptic('double')
-                  respondPerm(p.conversationId, p.requestId, 'allow')
-                  sendRule(p.conversationId, p.toolName, 'allow')
-                }}
-              />
-              <BannerButton
-                accent="red"
-                label="DENY"
-                size="sm"
-                onClick={() => {
-                  haptic('error')
-                  respondPerm(p.conversationId, p.requestId, 'deny')
-                }}
-              />
-            </>
-          }
-        >
-          {p.description && <div className="text-foreground/70 text-[11px]">{p.description}</div>}
-          {p.inputPreview && <PermissionPreview toolName={p.toolName} input={p.inputPreview} />}
-        </ConversationBanner>
-      ),
+      render: () => <PermissionRow item={p} respondPerm={respondPerm} sendRule={sendRule} />,
     })
   }
 
@@ -93,22 +78,7 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
       key: `plan-${dialog.dialogId}`,
       conversationId,
       timestamp: dialog.timestamp,
-      render: () => (
-        <ConversationBanner accent="blue" label="PLAN APPROVAL">
-          <div className="text-foreground/70 text-[11px] line-clamp-3">Plan ready for review</div>
-          <div className="flex items-center gap-2 mt-0.5">
-            <BannerButton
-              accent="emerald"
-              label="VIEW"
-              size="sm"
-              onClick={() => {
-                haptic('tap')
-                navigate(conversationId)
-              }}
-            />
-          </div>
-        </ConversationBanner>
-      ),
+      render: () => <PlanApprovalRow conversationId={conversationId} navigate={navigate} />,
     })
   }
 
@@ -118,24 +88,7 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
       key: `ask-${ask.toolUseId}`,
       conversationId: ask.conversationId,
       timestamp: ask.timestamp,
-      render: () => (
-        <ConversationBanner accent="violet" label="QUESTION">
-          <div className="text-foreground/70 text-[11px] line-clamp-2">
-            {ask.questions[0]?.question || 'Waiting for input'}
-          </div>
-          <div className="flex items-center gap-2 mt-0.5">
-            <BannerButton
-              accent="violet"
-              label="ANSWER"
-              size="sm"
-              onClick={() => {
-                haptic('tap')
-                navigate(ask.conversationId)
-              }}
-            />
-          </div>
-        </ConversationBanner>
-      ),
+      render: () => <AskRow item={ask} navigate={navigate} />,
     })
   }
 
@@ -145,42 +98,7 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
       key: `link-${link.fromConversation}-${link.toConversation}`,
       conversationId: link.toConversation,
       timestamp: Date.now(),
-      render: () => (
-        <ConversationBanner
-          accent="teal"
-          label="LINK"
-          layout="row"
-          title={
-            <>
-              <span className="text-teal-300">{link.fromProject}</span>
-              {' -> '}
-              <span className="text-teal-300">{link.toProject}</span>
-            </>
-          }
-          actions={
-            <>
-              <BannerButton
-                accent="emerald"
-                label="ALLOW"
-                size="sm"
-                onClick={() => {
-                  haptic('success')
-                  respondLink(link.fromConversation, link.toConversation, 'approve')
-                }}
-              />
-              <BannerButton
-                accent="red"
-                label="BLOCK"
-                size="sm"
-                onClick={() => {
-                  haptic('error')
-                  respondLink(link.fromConversation, link.toConversation, 'block')
-                }}
-              />
-            </>
-          }
-        />
-      ),
+      render: () => <LinkRow item={link} respondLink={respondLink} />,
     })
   }
 
@@ -190,26 +108,7 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
       key: n.id,
       conversationId: n.conversationId,
       timestamp: n.timestamp,
-      render: () => (
-        <ConversationBanner
-          accent="muted"
-          label="NOTIFY"
-          layout="row"
-          title={<span className="text-foreground/70">{n.message}</span>}
-          meta={formatTime(n.timestamp)}
-          actions={
-            <BannerButton
-              accent="muted"
-              label="X"
-              size="sm"
-              onClick={() => {
-                haptic('tick')
-                dismissNotif(n.id)
-              }}
-            />
-          }
-        />
-      ),
+      render: () => <NotifyRow item={n} navigate={navigate} dismissNotif={dismissNotif} />,
     })
   }
 
@@ -225,12 +124,6 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
     const bMax = Math.max(...b[1].map(i => i.timestamp))
     return bMax - aMax
   })
-
-  function navigate(conversationId: string) {
-    haptic('tap')
-    selectConversation(conversationId, 'notification-panel')
-    onClose()
-  }
 
   if (items.length === 0) {
     return <div className="p-6 text-center text-muted-foreground text-xs">No pending notifications</div>
@@ -277,35 +170,4 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
       })}
     </div>
   )
-}
-
-function PermissionPreview({ toolName, input }: { toolName: string; input: string }) {
-  try {
-    const parsed = JSON.parse(input)
-    if ((toolName === 'Write' || toolName === 'Edit') && parsed.file_path) {
-      return <div className="text-amber-300 text-[10px] truncate">{parsed.file_path}</div>
-    }
-    if (toolName === 'Bash' && (parsed.command || parsed.cmd)) {
-      return (
-        <pre className="text-cyan-400 text-[10px] bg-background/50 px-1.5 py-0.5 rounded whitespace-pre-wrap line-clamp-2">
-          {(parsed.command || parsed.cmd).slice(0, 200)}
-        </pre>
-      )
-    }
-    if (toolName === 'Read' && parsed.file_path) {
-      return <div className="text-amber-300 text-[10px] truncate">{parsed.file_path}</div>
-    }
-  } catch {
-    // ignore
-  }
-  return input.length > 0 ? (
-    <pre className="text-muted-foreground text-[9px] bg-background/50 px-1.5 py-0.5 rounded whitespace-pre-wrap line-clamp-2">
-      {input.slice(0, 150)}
-    </pre>
-  ) : null
-}
-
-function formatTime(ts: number): string {
-  const d = new Date(ts)
-  return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`
 }

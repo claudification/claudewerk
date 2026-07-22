@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
 type BannerAccent = 'teal' | 'amber' | 'cyan' | 'violet' | 'emerald' | 'red' | 'blue' | 'muted'
@@ -92,7 +92,8 @@ export function ConversationBanner({
 interface BannerButtonProps {
   accent: BannerAccent
   label: string
-  onClick: () => void
+  /** Receives the click event so callers can `stopPropagation()` when the button sits inside a clickable row. */
+  onClick: (e: ReactMouseEvent) => void
   disabled?: boolean
   size?: 'sm' | 'md' | 'lg'
   className?: string

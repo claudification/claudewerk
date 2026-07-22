@@ -1,9 +1,9 @@
-import { Copy, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { haptic } from '@/lib/utils'
+import { ToastCard } from './toast-card'
 
-interface Toast {
+export interface Toast {
   id: number
   title: string
   /** Optional right-aligned chip next to the title (e.g. "7-day · 84%"). */
@@ -111,56 +111,7 @@ export function ToastContainer() {
   return (
     <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm">
       {toasts.map(t => (
-        // toast wraps nested copy/dismiss buttons; semantic <button> would nest buttons
-        // react-doctor-disable-next-line react-doctor/prefer-tag-over-role
-        <div
-          key={t.id}
-          className={`bg-background border rounded-lg shadow-lg p-3 animate-in slide-in-from-right-5 fade-in duration-200 ${t.variant === 'warning' ? 'border-orange-500/50' : t.variant === 'success' ? 'border-amber-500/50' : 'border-accent/50'} ${t.conversationId || t.taskId ? 'cursor-pointer hover:border-accent' : ''}`}
-          onClick={() => handleClick(t)}
-          onKeyDown={e => {
-            if (e.key === 'Enter') handleClick(t)
-          }}
-          role="button"
-          tabIndex={0}
-        >
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-baseline justify-between gap-2">
-                <div
-                  className={`text-xs font-bold uppercase tracking-wider ${t.variant === 'warning' ? 'text-orange-400' : 'text-accent'}`}
-                >
-                  {t.title}
-                </div>
-                {t.meta ? <div className="text-[10px] font-mono text-muted-foreground shrink-0">{t.meta}</div> : null}
-              </div>
-              <div className="text-sm text-foreground mt-1 whitespace-pre-line">{t.body}</div>
-              {t.copyText ? (
-                <button
-                  type="button"
-                  onClick={e => {
-                    e.stopPropagation()
-                    navigator.clipboard?.writeText(t.copyText!).catch(() => {})
-                    haptic('tap')
-                  }}
-                  className="mt-2 inline-flex items-center gap-1 text-[11px] font-mono px-2 py-1 rounded bg-muted hover:bg-muted/70 text-foreground"
-                >
-                  <Copy className="size-3" />
-                  copy command
-                </button>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              onClick={e => {
-                e.stopPropagation()
-                dismiss(t.id, t.toastId)
-              }}
-              className="shrink-0 text-muted-foreground hover:text-foreground"
-            >
-              <X className="size-3" />
-            </button>
-          </div>
-        </div>
+        <ToastCard key={t.id} toast={t} onClick={() => handleClick(t)} onDismiss={() => dismiss(t.id, t.toastId)} />
       ))}
     </div>
   )
