@@ -5,12 +5,19 @@
  * (`sampleRate`, `AudioWorkletProcessor`, `registerProcessor`) that bun does not
  * have, and it cannot be imported. So we eval it with those globals stubbed and
  * drive the real classes -- no duplicated DSP, the shipped code is what runs.
+ *
+ * Runner: this file lives under `web/`, so it runs under VITEST. Importing
+ * `bun:test` here makes vitest fail the whole file at load time while
+ * `bun test` (scoped to `src/` by bunfig.toml) never picks it up -- i.e. the
+ * tests silently stop running. Keep the imports vitest-native.
  */
-import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { expect, test } from 'vitest'
 
-const SOURCE = readFileSync(join(import.meta.dir, 'pcm-worklet.js'), 'utf8')
+// Vite rewrites `import.meta.url` to a non-file URL, so resolve from the vitest
+// root (`web/`) instead.
+const SOURCE = readFileSync(join(process.cwd(), 'public/pcm-worklet.js'), 'utf8')
 
 interface WorkletExports {
   PcmCaptureProcessor: new () => {
