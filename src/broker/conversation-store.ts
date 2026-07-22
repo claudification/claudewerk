@@ -4,7 +4,7 @@
  */
 
 import type { ServerWebSocket } from 'bun'
-import { resolveContextWindow } from '../shared/context-window'
+import { resolveContextWindow, sanitizePersistedContextMode } from '../shared/context-window'
 import { deltaOrFull } from '../shared/delta-sync'
 import { deriveModelName } from '../shared/models'
 import {
@@ -1099,6 +1099,16 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     try {
       const records = store.conversations.list()
       let droppedBadIds = 0
+      let healedContextModes = 0
+      // Wrapper so the heal is counted for the summary log line below.
+      const healContextMode = (
+        mode: Conversation['contextMode'],
+        model: string | undefined,
+      ): Conversation['contextMode'] => {
+        const healed = sanitizePersistedContextMode(mode, model)
+        if (healed !== mode) healedContextModes++
+        return healed
+      }
       for (const rec of records) {
         // Defense in depth: SQLite TEXT PRIMARY KEY does not enforce NOT NULL,
         // so a pre-fix broker that wrote conversations with id=undefined could
@@ -1154,7 +1164,10 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
           configuredModel: fullMeta.configuredModel as string | undefined,
           permissionMode: fullMeta.permissionMode as string | undefined,
           effortLevel: fullMeta.effortLevel as string | undefined,
-          contextMode: fullMeta.contextMode as Conversation['contextMode'],
+          contextMode: healContextMode(
+            fullMeta.contextMode as Conversation['contextMode'],
+            deriveModelName(rec.model, fullMeta.configuredModel as string | undefined),
+          ),
           args: fullMeta.args as string[] | undefined,
           capabilities: fullMeta.capabilities as AgentHostCapability[] | undefined,
           version: fullMeta.version as string | undefined,
@@ -1227,6 +1240,11 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       if (records.length > 0) {
         const loaded = records.length - droppedBadIds
         console.log(`[store] Loaded ${loaded} conversations from SQLite`)
+        if (healedContextModes > 0) {
+          console.log(
+            `[store] context mode: healed ${healedContextModes} conversation(s) carrying contextMode='standard' on a default-1M model (pre-fix /model stdout parser read the missing "(1M context)" label as 200K). Window now resolves from the model registry; re-persisted on next update.`,
+          )
+        }
         if (droppedBadIds > 0) {
           console.warn(
             `[store] BAD DATA: dropped ${droppedBadIds} conversation record(s) with null/empty id from SQLite. These are leftover from a pre-validation broker that accepted malformed meta. The broker self-cleans these on next persistConversation cycle.`,

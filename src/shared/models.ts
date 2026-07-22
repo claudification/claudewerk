@@ -345,6 +345,24 @@ export function isDefault1MFamily(slug: string): boolean {
 }
 
 /**
+ * Every string that identifies a model in FREE TEXT -- accepted slug, family id,
+ * or display name -- paired with the family id it resolves to. Sorted longest
+ * needle first so `claude-sonnet-4-6` beats the bare `sonnet` alias and
+ * `Opus 4.8` beats `Opus 4`.
+ *
+ * Exists so `/model` and `/context` stdout can be classified against the SINGLE
+ * registry instead of a local regex. CC prints those payloads in three shapes:
+ * `opus (claude-opus-4-8)`, `claude-sonnet-4-6[1m]`, and the PTY display-name
+ * form `Opus 4.8 for this session`.
+ */
+export const MODEL_TEXT_IDENTIFIERS: readonly { needle: string; familyId: string }[] = CC_MODELS.flatMap(m =>
+  [...m.acceptedSlugs, m.familyId, m.displayName].map(needle => ({
+    needle: needle.toLowerCase(),
+    familyId: m.familyId,
+  })),
+).sort((a, b) => b.needle.length - a.needle.length)
+
+/**
  * Score a model name by specificity. Higher = more informative.
  *
  *   "opus"                  -> 1  (bare alias)
