@@ -24,14 +24,14 @@
  *
  * ## The table
  *
- * |                | incremental (tail)     | isInitial (boot/compaction/resend) |
- * |----------------|------------------------|------------------------------------|
- * | PTY / daemon   | everything             | everything                         |
- * | headless       | HEADLESS_LIVE_TYPES    | everything EXCEPT those            |
+ * |                | incremental (tail)     | isInitial (boot/compaction/resend)      |
+ * |----------------|------------------------|-----------------------------------------|
+ * | PTY / daemon   | everything             | everything                              |
+ * | headless       | HEADLESS_LIVE_TYPES    | everything EXCEPT LIVE and NEVER types  |
  *
- * The two headless cells are exact complements, which is what makes this a
- * policy rather than a special case: an entry is forwarded live or in the
- * initial batch, never both, never neither.
+ * The headless cells are complements save for HEADLESS_NEVER_TYPES, which are
+ * forwarded in neither (JSONL-only, no renderer -- see below): an entry is
+ * forwarded live, or in the initial batch, or (if it renders nowhere) not at all.
  *
  * The `isInitial` column matters because an `isInitial` batch REPLACES the
  * broker's transcript cache -- it is the full-record path, and stripping
@@ -54,9 +54,27 @@ import type { TranscriptEntry } from '../shared/protocol'
  */
 const HEADLESS_LIVE_TYPES = new Set(['queue-operation'])
 
+/**
+ * JSONL-only types that headless forwards in NEITHER cell.
+ *
+ * `attachment` and `last-prompt` are invisible to stdout AND have no renderer,
+ * so they only ever reach the broker via an `isInitial` file resend -- minutes
+ * late, under CC's own uuids, at MAX(seq)+1. With the store as seq authority
+ * that lands ~100 stale rows at the tail on every resend: they eat the display
+ * window (real entries fall off) and shove ordering around. Since nothing shows
+ * them, drop them from the initial batch too (pre-`f4f67ad4` behavior). Move a
+ * type OUT of here and INTO HEADLESS_LIVE_TYPES the day it gets a renderer.
+ */
+const HEADLESS_NEVER_TYPES = new Set(['attachment', 'last-prompt'])
+
 /** True for entries headless forwards from the file live rather than via stdout. */
 export function isHeadlessLiveEntry(entry: TranscriptEntry): boolean {
   return HEADLESS_LIVE_TYPES.has((entry as { type?: string }).type ?? '')
+}
+
+/** True for JSONL-only entries headless never forwards (no renderer, resend-only). */
+function isHeadlessNeverEntry(entry: TranscriptEntry): boolean {
+  return HEADLESS_NEVER_TYPES.has((entry as { type?: string }).type ?? '')
 }
 
 export interface ForwardSelection {
@@ -75,5 +93,7 @@ export function selectForwardableEntries(
   { headless, isInitial }: ForwardSelection,
 ): TranscriptEntry[] {
   if (!headless) return entries
-  return isInitial ? entries.filter(e => !isHeadlessLiveEntry(e)) : entries.filter(isHeadlessLiveEntry)
+  return isInitial
+    ? entries.filter(e => !isHeadlessLiveEntry(e) && !isHeadlessNeverEntry(e))
+    : entries.filter(isHeadlessLiveEntry)
 }

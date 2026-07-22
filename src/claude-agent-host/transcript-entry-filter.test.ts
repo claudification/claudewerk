@@ -7,8 +7,9 @@ const assistant = { type: 'assistant', message: { content: 'yo' } } as Transcrip
 const enqueue = { type: 'queue-operation', operation: 'enqueue', content: 'hi' } as unknown as TranscriptEntry
 const remove = { type: 'queue-operation', operation: 'remove', content: 'hi' } as unknown as TranscriptEntry
 const attachment = { type: 'attachment' } as unknown as TranscriptEntry
+const lastPrompt = { type: 'last-prompt' } as unknown as TranscriptEntry
 
-const batch = [user, enqueue, assistant, remove, attachment]
+const batch = [user, enqueue, assistant, remove, attachment, lastPrompt]
 
 describe('selectForwardableEntries', () => {
   describe('PTY / daemon (headless: false)', () => {
@@ -28,24 +29,24 @@ describe('selectForwardableEntries', () => {
       expect(selectForwardableEntries(batch, { headless: true, isInitial: false })).toEqual([enqueue, remove])
     })
 
-    it('forwards the full record MINUS those types on an isInitial batch', () => {
+    it('forwards the full record MINUS live AND never types on an isInitial batch', () => {
       // isInitial REPLACES the broker's transcript cache, so it must carry the
-      // conversation itself, not just queue transitions.
-      expect(selectForwardableEntries(batch, { headless: true, isInitial: true })).toEqual([
-        user,
-        assistant,
-        attachment,
-      ])
+      // conversation itself -- but NOT the JSONL-only no-renderer types, which
+      // would otherwise re-insert at the tail on every resend (the regression).
+      expect(selectForwardableEntries(batch, { headless: true, isInitial: true })).toEqual([user, assistant])
     })
 
-    it('the two headless columns are exact complements', () => {
+    it('drops attachment / last-prompt from BOTH cells (no renderer, resend-only)', () => {
       const live = selectForwardableEntries(batch, { headless: true, isInitial: false })
       const initial = selectForwardableEntries(batch, { headless: true, isInitial: true })
-
-      expect(live.length + initial.length).toBe(batch.length)
-      expect(live.filter(e => initial.includes(e))).toEqual([])
-      for (const entry of batch) {
+      for (const neverEntry of [attachment, lastPrompt]) {
+        expect(live).not.toContain(neverEntry)
+        expect(initial).not.toContain(neverEntry)
+      }
+      // Everything else is still forwarded in exactly one cell.
+      for (const entry of batch.filter(e => e !== attachment && e !== lastPrompt)) {
         expect(live.includes(entry) || initial.includes(entry)).toBe(true)
+        expect(live.includes(entry) && initial.includes(entry)).toBe(false)
       }
     })
   })

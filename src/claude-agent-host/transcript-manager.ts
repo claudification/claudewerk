@@ -19,6 +19,7 @@ import { normalizeTodoStatus } from '../shared/task-normalize'
 import type { AgentHostContext } from './agent-host-context'
 import { debug as _debug, DEBUG } from './debug'
 import { translateClaudeToolResult, translateClaudeToolUse } from './dialect/from-claude'
+import { unifyHeadlessPromptUuids } from './synthetic-user-uuid'
 import { selectForwardableEntries } from './transcript-entry-filter'
 import { createTranscriptWatcher } from './transcript-watcher'
 import { detectWorktreeCwd } from './worktree-detect'
@@ -303,6 +304,7 @@ export async function sendTranscriptEntriesChunked(
   isInitial: boolean,
   agentId?: string,
 ) {
+  if (ctx.headless && !agentId) unifyHeadlessPromptUuids(ctx.conversationId, entries)
   stampDeterministicUuids(entries)
 
   if (!ctx.claudeSessionId) {

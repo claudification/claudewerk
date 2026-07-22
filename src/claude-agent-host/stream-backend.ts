@@ -4,7 +4,6 @@
  * Parses structured output and converts to TranscriptEntry format.
  */
 
-import { createHash } from 'node:crypto'
 import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Subprocess } from 'bun'
@@ -14,6 +13,7 @@ import { debug as _debug } from './debug'
 import { type HandlerContext, handleMessage } from './stream-handlers'
 import { createMonitorTracker } from './stream-monitors'
 import { createReplayBuffer, flushReplayBuffer } from './stream-replay'
+import { syntheticUserUuid, userContentHash } from './synthetic-user-uuid'
 
 const SHOW_PRETTY = !!process.env.RCLAUDE_SHOW_TRANSCRIPT_PRETTY
 const SHOW_TRANSCRIPT = SHOW_PRETTY || !!process.env.RCLAUDE_SHOW_TRANSCRIPT
@@ -406,12 +406,11 @@ function buildStreamProcess(
       // Stash a deterministic UUID so the CC echo (which arrives later,
       // after the current turn finishes) produces the same UUID. The broker
       // deduplicates via INSERT OR IGNORE -- the synthetic (correct position)
-      // wins, the CC echo (displaced) is dropped.
-      const contentHash = createHash('sha1').update(content).digest('hex').slice(0, 16)
-      const stash = options.syntheticUserUuids
-      const h = createHash('sha1').update(`user:${options.conversationId}:${contentHash}`).digest('hex')
-      const uuid = `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${((Number.parseInt(h[16], 16) & 0x3) | 0x8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`
-      stash?.set(contentHash, uuid)
+      // wins, the CC echo (displaced) is dropped. The SAME derivation is
+      // re-applied on the JSONL file-watcher path (transcript-manager) so a file
+      // resend dedups even after this stash is consumed/cleared.
+      const uuid = syntheticUserUuid(options.conversationId, content)
+      options.syntheticUserUuids?.set(userContentHash(content), uuid)
       options.onTranscriptEntries?.(
         [
           {
