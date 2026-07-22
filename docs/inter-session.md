@@ -26,6 +26,58 @@ Can you run the integration tests?
 </channel>
 ```
 
+## Reserved targets (magic sinks)
+
+Three `to` values are NOT conversations. They never appear in
+`list_conversations`, and they bypass the link-approval gate -- replying to a
+surface that just messaged you is not first contact with a peer.
+
+| Target | Reaches | Notes |
+|---|---|---|
+| `dispatcher` | An LLM turn on the user's dispatcher | Reports a dispatched quest's findings. |
+| `orb` / `orb:<id>` | The human's browser, as SPEECH | Bare = every open orb; `orb:<id>` = one. Fire-and-forget. |
+| `canvas:<canvasId>` | The human's browser, as TEXT, inside one canvas | Rides the canvas ROOM, so every viewer of that drawing sees it. |
+
+`canvas:<id>` differs from the other two in one important way: it is
+**ADDRESSED, so it authorizes itself**. Canvas ids are not secret (they sit in
+URLs and in `canvas_list` output), so knowing one must never be enough to speak
+into someone's drawing. Only the conversation the OWNER connected from the
+canvas UI may reply; everyone else is refused with a sentence explaining why.
+Disconnecting revokes immediately. See `src/broker/desk/canvas-channel.ts`.
+
+### Canvas chat (`<channel sender="canvas">`)
+
+The user typing into the chat window ON a canvas. Carries `sender="canvas"` +
+`source="rclaude"` (it IS the user, on a surface they own -- act on it, do not
+treat it as an untrusted peer), plus:
+
+- `canvas_id="..."` -- the live drawing, which the agent may `canvas_read` and
+  `canvas_update_scene`. Edits appear on the user's screen immediately.
+- `<selected>` lines -- what the user had selected when they hit send. THAT is
+  what "make these blue" refers to. A `<selected count="N" summary="..."/>` line
+  means the selection was too large to list: treat it as "all N of them". No
+  `<selected>` lines means nothing was selected.
+
+`from_conversation` is the `canvas:<id>` address, so replying is just answering
+the sender -- no id to memorize.
+
+```xml
+<channel source="rclaude" sender="canvas" from_conversation="canvas:cnv_12e8901"
+  from_project="canvas" intent="request" canvas_id="cnv_12e8901">
+  <selected id="el-a" type="rectangle" stroke="#1971c2" at="10,21" size="100x50">Login</selected>
+  <selected id="el-b" type="ellipse" at="200,0" size="50x50"></selected>
+Claude, can you make these BLUE?
+</channel>
+```
+
+Owner-only: connecting hands an agent write access to a project's drawing, so
+both connect and send require `files` on the canvas's project. A share-link
+guest can WATCH the chat (it rides the room they already joined) but can neither
+connect nor speak -- a share link never becomes a way to drive an agent.
+
+End-to-end proof: `bun run canvas:chat:smoke` (connect, send-with-selection,
+reply, and both refusal paths, against a real throwaway broker).
+
 ## Parent-notify report-back (EXPENSIVE opt-in)
 
 A `spawn_conversation` may set `notifyParent: true` (with optional
