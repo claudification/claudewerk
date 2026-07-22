@@ -1,11 +1,11 @@
 import type { ProjectSettings } from '@shared/protocol'
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import { useState } from 'react'
 import { CacheExpiredBanner } from '@/components/cache-timer'
 import type { Conversation } from '@/lib/types'
-import { cn } from '@/lib/utils'
 import { HeaderCollapsedBar } from './header-collapsed-bar'
 import { HeaderExpandedPanel } from './header-expanded-panel'
+import { RecapPreview } from './header-recap-preview'
+import { HeaderTitleLine } from './header-title-line'
 
 export interface ConversationTarget {
   projectA: string
@@ -57,6 +57,7 @@ export function ConversationHeader({
           />
         )}
       </button>
+      {!infoExpanded && <HeaderTitleLine conversation={conversation} />}
       {!infoExpanded && (conversation.recap || conversation.description) && (
         <RecapPreview conversation={conversation} />
       )}
@@ -76,51 +77,5 @@ export function ConversationHeader({
         />
       )}
     </div>
-  )
-}
-
-function RecapPreview({ conversation }: { conversation: Conversation }) {
-  const [expanded, setExpanded] = useState(false)
-  const text = conversation.recap?.content || conversation.description
-  if (!text) return null
-
-  return (
-    <button
-      type="button"
-      onClick={e => {
-        e.stopPropagation()
-        setExpanded(v => !v)
-      }}
-      className="w-full text-left px-3 pb-1 -mt-1"
-    >
-      {expanded ? (
-        <div className="space-y-0.5 pb-0.5">
-          {conversation.description && conversation.recap && (
-            <div className="text-[10px] text-muted-foreground/70 italic truncate">{conversation.description}</div>
-          )}
-          <div
-            className={cn(
-              'text-[10px] whitespace-pre-wrap',
-              conversation.recap && conversation.recapFresh
-                ? 'text-zinc-300 border-l-2 border-zinc-500/60 pl-2 bg-zinc-800/20 rounded-r py-1'
-                : conversation.recap
-                  ? 'text-zinc-400'
-                  : 'text-muted-foreground/70 italic',
-            )}
-          >
-            {conversation.recap?.title && (
-              <span className="font-medium text-zinc-300/90">{conversation.recap.title}: </span>
-            )}
-            {text}
-          </div>
-        </div>
-      ) : (
-        <div className="text-[10px] text-muted-foreground/50 truncate">
-          {conversation.recap?.title
-            ? `${conversation.recap.title}...`
-            : text.slice(0, 60).trim() + (text.length > 60 ? '...' : '')}
-        </div>
-      )}
-    </button>
   )
 }
