@@ -11,6 +11,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import type { CaptureHandle } from '@/hooks/voice-capture-shared'
+import { startMediaRecorderCapture } from '@/hooks/voice-mediarecorder-capture'
 import {
   acquireMicStream,
   isStreamLive,
@@ -18,8 +20,15 @@ import {
   scheduleStreamRelease,
   setMicExpired,
 } from '@/hooks/voice-mic-stream'
-import { PCM_ENCODING, PCM_SAMPLE_RATE, type PcmCaptureHandle, startPcmCapture } from '@/hooks/voice-pcm-capture'
+import { PCM_ENCODING, PCM_SAMPLE_RATE, startPcmCapture } from '@/hooks/voice-pcm-capture'
 import { addVoiceHistoryEntry } from '@/lib/voice-history'
+
+/** Which mic-capture engine to drive. 'mediarecorder' (container -> Deepgram
+ *  native endpointing) is the default: the raw-PCM 'pcm' path regressed real
+ *  dictation with unbounded growing ASR lag + mishearing. 'pcm' stays available
+ *  behind the Voice setting for the Safari-lag case it was built for. */
+type CaptureEngine = 'mediarecorder' | 'pcm'
+const DEFAULT_CAPTURE_ENGINE: CaptureEngine = 'mediarecorder'
 
 // Re-export the warm-stream public API so existing consumers
 // (voice-key, settings-page, use-global-commands) keep importing from here.
@@ -109,7 +118,10 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
 
   const stateRef = useRef<VoiceState>('idle')
   const backendReadyRef = useRef(false)
-  const pcmCaptureRef = useRef<PcmCaptureHandle | null>(null)
+  const captureRef = useRef<CaptureHandle | null>(null)
+  // Pinned per-recording so the reconnect voice_start and beginCapture agree on
+  // one engine even if the pref changes mid-session.
+  const engineRef = useRef<CaptureEngine>(DEFAULT_CAPTURE_ENGINE)
   const streamRef = useRef<MediaStream | null>(null)
   const wsListenerRef = useRef<((event: MessageEvent) => void) | null>(null)
   const cancelledRef = useRef(false)
@@ -157,8 +169,8 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
   }, [])
 
   function cleanup() {
-    pcmCaptureRef.current?.stop()
-    pcmCaptureRef.current = null
+    captureRef.current?.stop()
+    captureRef.current = null
     streamRef.current = null
     scheduleStreamRelease()
     if (utteranceTimerRef.current) {
@@ -462,8 +474,7 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
       type: 'voice_start',
       conversationId: target,
       accumulated: accumulatedTextRef.current,
-      encoding: PCM_ENCODING,
-      sampleRate: PCM_SAMPLE_RATE,
+      ...audioStartFields(),
     })
     armConnectTimeout()
     // voice_ready handler will replay the buffer and flip state to 'recording'
@@ -501,9 +512,16 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     }
   }
 
-  /** Route one PCM chunk (base64 linear16) to the broker, or the offline buffer. */
+  /** The audio-format fields on voice_start. PCM must declare encoding+rate
+   *  (raw linear16 has no container); MediaRecorder sends nothing so the broker
+   *  falls back to Deepgram container auto-detect. */
+  function audioStartFields(): Record<string, unknown> {
+    return engineRef.current === 'pcm' ? { encoding: PCM_ENCODING, sampleRate: PCM_SAMPLE_RATE } : {}
+  }
+
+  /** Route one audio chunk (base64) to the broker, or the offline buffer. */
   let chunkSeq = 0
-  function onPcmChunk(base64: string) {
+  function onAudioChunk(base64: string) {
     const seq = ++chunkSeq
     if (seq === 1 || seq % 20 === 0) {
       console.log(`[voice] ${elapsed()} chunk #${seq}: ${base64.length}B64 (ws=${wsIsOpen() ? 'open' : 'closed'})`)
@@ -515,20 +533,21 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     }
   }
 
-  /** Start the AudioWorklet PCM capture; store the handle. Returns false if the
-   *  user cancelled during worklet init (async), in which case the capture is
-   *  torn down and start() must abort. */
-  async function beginPcmCapture(stream: MediaStream): Promise<boolean> {
-    const capture = await startPcmCapture(stream, {
-      onChunk: onPcmChunk,
-      onError: err => console.error(`[voice] ${elapsed()} pcm chunk encode failed:`, err),
+  /** Start the pinned capture engine; store the handle. Returns false if the
+   *  user cancelled during (async) engine init, in which case it's torn down
+   *  and start() must abort. */
+  async function beginCapture(stream: MediaStream): Promise<boolean> {
+    const start = engineRef.current === 'pcm' ? startPcmCapture : startMediaRecorderCapture
+    const capture = await start(stream, {
+      onChunk: onAudioChunk,
+      onError: err => console.error(`[voice] ${elapsed()} chunk encode failed:`, err),
     })
     if (cancelledRef.current) {
-      console.log(`[voice] ${elapsed()} cancelled during worklet init`)
+      console.log(`[voice] ${elapsed()} cancelled during capture init`)
       capture.stop()
       return false
     }
-    pcmCaptureRef.current = capture
+    captureRef.current = capture
     return true
   }
 
@@ -560,11 +579,14 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     setTargetConversationId(target)
     targetConversationIdRef.current = target
 
+    // Pin the capture engine for this whole recording (reconnect included).
+    engineRef.current = useConversationsStore.getState().controlPanelPrefs.voiceCaptureEngine ?? DEFAULT_CAPTURE_ENGINE
+
     voiceSeqRef.current++
     const seq = voiceSeqRef.current
     startTsRef.current = performance.now()
     setMicExpired(false)
-    console.log(`[voice] start() (target=${target ?? 'none'}, seq=${seq})`)
+    console.log(`[voice] start() (target=${target ?? 'none'}, seq=${seq}, engine=${engineRef.current})`)
 
     cancelledRef.current = false
     pendingStopRef.current = false
@@ -614,14 +636,12 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
       streamRef.current = stream
       watchTrackDeath(stream)
       chunkSeq = 0
-      sendWs({ type: 'voice_start', conversationId: target, encoding: PCM_ENCODING, sampleRate: PCM_SAMPLE_RATE })
+      sendWs({ type: 'voice_start', conversationId: target, ...audioStartFields() })
       console.log(`[voice] ${elapsed()} voice_start sent`)
       armConnectTimeout()
 
-      // AudioWorklet PCM capture: ~50ms linear16/16k chunks (deterministic on
-      // every browser). Replaces MediaRecorder, whose Safari audio/mp4 fallback
-      // emitted ~1s fragments and IGNORED the timeslice -- the whole voice lag.
-      if (!(await beginPcmCapture(stream))) return
+      // Start the pinned capture engine (mediarecorder default, pcm opt-in).
+      if (!(await beginCapture(stream))) return
       // Instant feel: flip to 'recording' NOW. Mic is live, chunks flow to the
       // broker immediately. Broker buffers them until Deepgram connects, then
       // flushes -- zero audio loss. The connect timeout still guards a silent
@@ -629,7 +649,7 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
       // 'recording' and routes to WS, not the offline buffer.
       stateRef.current = 'recording'
       setState('recording')
-      console.log(`[voice] ${elapsed()} pcm capture started -- recording (backend warming up)`)
+      console.log(`[voice] ${elapsed()} capture started (${engineRef.current}) -- recording (backend warming up)`)
     } catch (err) {
       failVoice(err instanceof Error ? err.message : 'Mic access denied', `recording failed: ${err}`)
     }
@@ -637,14 +657,14 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
   }, [sendWs])
 
   function doStop() {
-    const capture = pcmCaptureRef.current
+    const capture = captureRef.current
     if (capture) {
-      // flush() drains the worklet's sub-frame remainder (its 'audio' message
-      // fires onPcmChunk BEFORE resolving), so every captured sample reaches the
+      // flush() drains the engine's buffered remainder (each drained chunk fires
+      // onAudioChunk BEFORE resolving), so every captured sample reaches the
       // broker before voice_stop -- no truncated tail.
       capture.flush().then(() => {
         capture.stop()
-        pcmCaptureRef.current = null
+        captureRef.current = null
         streamRef.current = null
         scheduleStreamRelease()
         sendWs({ type: 'voice_stop' })

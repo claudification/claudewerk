@@ -12,6 +12,7 @@
  * chunk has been posted; stop() tears the graph down.
  */
 
+import { bufferToBase64, type CaptureHandle, type StartCaptureOptions } from '@/hooks/voice-capture-shared'
 import { BUILD_VERSION } from '../../../src/shared/version'
 
 // The worklet is a real served file in web/public (NOT bundled): Vite would
@@ -25,38 +26,13 @@ const WORKLET_URL = `/pcm-worklet.js?v=${BUILD_VERSION.gitHashShort}`
 export const PCM_ENCODING = 'linear16'
 export const PCM_SAMPLE_RATE = 16000
 
-/** Base64-encode without spreading the whole array (Safari argument-count limit). */
-function bufferToBase64(buffer: ArrayBuffer): string {
-  const u8 = new Uint8Array(buffer)
-  const CHUNK = 0x8000 // 32 KiB per fromCharCode call
-  const parts: string[] = []
-  for (let i = 0; i < u8.length; i += CHUNK) {
-    parts.push(String.fromCharCode.apply(null, u8.subarray(i, i + CHUNK) as unknown as number[]))
-  }
-  return btoa(parts.join(''))
-}
-
-export interface PcmCaptureHandle {
-  /** Drain the worklet's partial-frame remainder; resolves after the final chunk posts. */
-  flush(): Promise<void>
-  /** Disconnect the graph and close the AudioContext. Idempotent. */
-  stop(): void
-}
-
-interface StartOptions {
-  /** Fires once per ~50ms PCM chunk, base64-encoded, ready for voice_data. */
-  onChunk: (base64: string) => void
-  /** Optional per-chunk failure log hook (base64 encode errors are near-impossible but logged). */
-  onError?: (err: unknown) => void
-}
-
 /**
  * Start capturing `stream` as linear16/16k PCM. The AudioContext runs at the
  * device's NATIVE rate (forcing 16k retriggers the CoreAudio HAL reconfigure
  * Jonas fixed by opening the mic raw -- see voice-mic-stream.ts); the worklet
  * resamples to 16k internally.
  */
-export async function startPcmCapture(stream: MediaStream, opts: StartOptions): Promise<PcmCaptureHandle> {
+export async function startPcmCapture(stream: MediaStream, opts: StartCaptureOptions): Promise<CaptureHandle> {
   const ctx = new AudioContext()
   // Safari can hand back a suspended context even inside a user gesture.
   if (ctx.state === 'suspended') await ctx.resume()

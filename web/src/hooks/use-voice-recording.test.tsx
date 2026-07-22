@@ -64,6 +64,12 @@ vi.mock('@/hooks/voice-pcm-capture', () => ({
   startPcmCapture: async () => ({ flush: async () => {}, stop: vi.fn() }),
 }))
 
+// Default capture engine is 'mediarecorder' (jsdom has no MediaRecorder); stub it
+// so the hook's state/WS logic is exercised regardless of which engine is pinned.
+vi.mock('@/hooks/voice-mediarecorder-capture', () => ({
+  startMediaRecorderCapture: async () => ({ flush: async () => {}, stop: vi.fn() }),
+}))
+
 vi.mock('@/lib/voice-history', () => ({
   addVoiceHistoryEntry: (e: { raw: string; refined: string }) => historyEntries.push(e),
 }))

@@ -419,6 +419,25 @@ const SETTINGS: SettingItem[] = [
   {
     tab: 'input',
     group: 'Voice',
+    label: 'Fast raw-PCM capture (Safari lag fix)',
+    description:
+      'Off (default) = MediaRecorder container, Deepgram endpoints natively -- the accurate path. On = AudioWorklet raw linear16: lower Safari latency, but on a raw mic it can grow ASR lag and mishear. Takes effect on the next recording.',
+    keywords: 'voice capture engine pcm mediarecorder worklet linear16 lag accuracy deepgram',
+    render: (ctx, ariaLabel) => (
+      <input
+        aria-label={ariaLabel}
+        type="checkbox"
+        checked={ctx.prefs.voiceCaptureEngine === 'pcm'}
+        onChange={e => {
+          ctx.updatePrefs({ voiceCaptureEngine: e.target.checked ? 'pcm' : 'mediarecorder' })
+        }}
+        className="accent-primary size-4"
+      />
+    ),
+  },
+  {
+    tab: 'input',
+    group: 'Voice',
     label: 'Audio input device',
     description: 'Microphone to use for voice input (change takes effect on next recording)',
     keywords: 'mic microphone device headphones audio input select',
