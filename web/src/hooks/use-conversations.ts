@@ -247,7 +247,8 @@ interface ConversationsState {
   /** Per-conversation resolved permissions (keyed by conversationId) */
   conversationPermissions: Record<string, ResolvedPermissions>
   projectOrder: ProjectOrder
-  serverCapabilities: { voice: boolean }
+  /** `voice` = Deepgram dictation. `realtimeVoice` = the voice ORB (OpenAI). */
+  serverCapabilities: { voice: boolean; realtimeVoice?: boolean }
   setServerCapabilities: (caps: { voice: boolean }) => void
   isConnected: boolean
   connectSeq: number // increments on each WS connect, used to trigger re-fetches
@@ -895,7 +896,7 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   permissions: DEFAULT_PERMISSIONS,
   conversationPermissions: {},
   projectOrder: { tree: [] },
-  serverCapabilities: { voice: false },
+  serverCapabilities: { voice: false, realtimeVoice: false },
   setServerCapabilities: caps => set({ serverCapabilities: caps }),
   isConnected: false,
   connectSeq: 0,
@@ -1889,7 +1890,7 @@ export async function getPushStatus(): Promise<{ supported: boolean; subscribed:
 }
 
 // Server capabilities
-export async function fetchServerCapabilities(): Promise<{ voice: boolean }> {
+export async function fetchServerCapabilities(): Promise<{ voice: boolean; realtimeVoice?: boolean }> {
   try {
     const res = await fetch(`${API_BASE}/api/capabilities`)
     if (!res.ok) return { voice: false }

@@ -1,0 +1,114 @@
+/**
+ * The orb's own styling. Everything here is state-driven off `.voice-orb--*`;
+ * the component sets the class and one inline transform (audio swell).
+ * Colours ride the app's oklch tokens so the orb sits in the theme, not on it.
+ */
+
+.voice-orb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  isolation: isolate;
+}
+
+.voice-orb__core,
+.voice-orb__halo,
+.voice-orb__ring {
+  position: absolute;
+  border-radius: 50%;
+  inset: 0;
+}
+
+/* The body: a soft sphere lit from the top-left. */
+.voice-orb__core {
+  inset: 18%;
+  background:
+    radial-gradient(70% 70% at 32% 26%, color-mix(in oklch, var(--primary) 75%, white) 0%, transparent 60%),
+    radial-gradient(120% 120% at 50% 50%, var(--primary) 0%, color-mix(in oklch, var(--primary) 35%, black) 100%);
+  box-shadow:
+    0 0 18px color-mix(in oklch, var(--primary) 45%, transparent),
+    inset 0 -6px 14px color-mix(in oklch, black 35%, transparent);
+  animation: voice-orb-breathe 4s ease-in-out infinite;
+}
+
+/* The halo: the reactive glow. Scale is driven inline by audio level. */
+.voice-orb__halo {
+  background: radial-gradient(circle, color-mix(in oklch, var(--primary) 30%, transparent) 0%, transparent 68%);
+  transition: transform 90ms linear;
+  opacity: 0.9;
+}
+
+/* The ring: only visible while the orb is working. */
+.voice-orb__ring {
+  inset: 6%;
+  border: 2px solid transparent;
+  border-top-color: color-mix(in oklch, var(--accent) 80%, transparent);
+  opacity: 0;
+}
+
+/* ── States ─────────────────────────────────────────────────────── */
+
+.voice-orb--listening .voice-orb__core {
+  animation-duration: 3s;
+}
+
+.voice-orb--speaking .voice-orb__core {
+  animation-duration: 1.1s;
+}
+.voice-orb--speaking .voice-orb__halo {
+  opacity: 1;
+}
+
+.voice-orb--thinking .voice-orb__ring {
+  opacity: 1;
+  animation: voice-orb-spin 900ms linear infinite;
+}
+.voice-orb--thinking .voice-orb__core {
+  animation-duration: 1.6s;
+}
+
+.voice-orb--connecting .voice-orb__core {
+  filter: saturate(0.5);
+  animation-duration: 1.4s;
+}
+.voice-orb--connecting .voice-orb__ring {
+  opacity: 0.7;
+  animation: voice-orb-spin 1.4s linear infinite;
+}
+
+/* Dozing / muted: dimmed and slowed, still clearly present. */
+.voice-orb--asleep .voice-orb__core {
+  filter: saturate(0.25) brightness(0.7);
+  animation-duration: 7s;
+}
+.voice-orb--asleep .voice-orb__halo {
+  opacity: 0.35;
+}
+
+@keyframes voice-orb-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+
+@keyframes voice-orb-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-orb__core,
+  .voice-orb__ring {
+    animation: none;
+  }
+  .voice-orb__halo {
+    transition: none;
+  }
+}

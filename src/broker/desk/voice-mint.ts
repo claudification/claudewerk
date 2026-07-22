@@ -14,39 +14,22 @@
  * without network and the route owns where the key comes from (process.env).
  */
 
-import { voiceTools } from './voice-tools'
+import type { RealtimeTool } from './realtime-schema'
+import { buildVoiceInstructions } from './voice-persona'
 
 export const REALTIME_MODEL = 'gpt-realtime-2'
 const VOICE = 'marin'
 const CLIENT_SECRETS_URL = 'https://api.openai.com/v1/realtime/client_secrets'
 
-/** Jarvis's standing instructions -- it is the fleet's voice dispatcher. */
-export const VOICE_INSTRUCTIONS = [
-  "You are Jarvis, the voice dispatcher for the user's fleet of coding conversations.",
-  'You DRIVE the system by calling tools -- you do not just talk.',
-  'When the user expresses an intent, call `dispatch` with it and let the dispatcher',
-  'decide whether to spawn a new conversation, route into an existing one, or revive',
-  'an ended one. Only pass target/disposition when the user is explicit.',
-  'If the dispatcher asks the user to choose between conversations, read the top',
-  'candidates aloud and call `conversation_select` with their pick. If it warns a',
-  'route is very expensive, state the cost plainly and call `confirm_expensive` with',
-  'their yes/no. Use `control_screen` to open/close modals or navigate when asked.',
-  '',
-  'VOICE IS LOSSY -- transcription mangles PRECISE details: email addresses, phone',
-  'numbers, IDs, names, URLs, file paths, amounts. NEVER pass these through to a',
-  'tool unconfirmed. Read the value back and get an explicit confirmation first',
-  '(and once the input-prompt UI tool ships, use it to show the parsed value for',
-  'the user to verify/correct before you act). Free-form prose is fine as-is; it',
-  'is only the exact-string details that must be confirmed.',
-  '',
-  'Be concise. One action at a time. Confirm what you did in a short spoken line.',
-].join('\n')
-
-export function buildVoiceSessionConfig(instructions: string = VOICE_INSTRUCTIONS) {
+/** The session is configured AT MINT (a client `session.update` after connect
+ *  does not apply consistently). `tools` is the phase's voice contract; the
+ *  persona is composed from those same names so it never coaches a verb the
+ *  contract does not offer. */
+export function buildVoiceSessionConfig(tools: RealtimeTool[], instructions?: string) {
   return {
     type: 'realtime' as const,
     model: REALTIME_MODEL,
-    instructions,
+    instructions: instructions ?? buildVoiceInstructions(tools.map(t => t.name)),
     audio: {
       input: {
         transcription: { model: 'whisper-1' },
@@ -54,7 +37,7 @@ export function buildVoiceSessionConfig(instructions: string = VOICE_INSTRUCTION
       },
       output: { voice: VOICE },
     },
-    tools: voiceTools,
+    tools,
     tool_choice: 'auto' as const,
   }
 }
@@ -68,9 +51,12 @@ export interface MintedVoiceToken {
 export interface MintVoiceOptions {
   /** The OpenAI secret key -- supplied server-side from process.env, never the browser. */
   apiKey: string
+  /** The phase's voice contract (voice-tools.ts `voiceRealtimeTools`). Explicit --
+   *  there is no default, so a caller can never accidentally mint the wide set. */
+  tools: RealtimeTool[]
   /** Test seam. Defaults to globalThis.fetch. */
   fetcher?: typeof fetch
-  /** Override the session instructions. */
+  /** Override the session instructions (default: composed from `tools`). */
   instructions?: string
   /** OpenAI-Safety-Identifier (e.g. `desk-<userId>`). */
   safetyId?: string
@@ -89,7 +75,7 @@ export async function mintVoiceToken(opts: MintVoiceOptions): Promise<MintedVoic
   const res = await fetcher(CLIENT_SECRETS_URL, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ session: buildVoiceSessionConfig(opts.instructions) }),
+    body: JSON.stringify({ session: buildVoiceSessionConfig(opts.tools, opts.instructions) }),
   })
 
   if (!res.ok) {
