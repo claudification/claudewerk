@@ -689,6 +689,30 @@ interface QueuedSender {
   callerProject: string | undefined
 }
 
+/**
+ * The voice orb is a sanctioned surface == the user's own voice. When an
+ * orb->conversation message rides this GENERIC channel path (post the "orb is a
+ * real channel" refactor) the delivery envelope must still carry sender="orb" +
+ * source="rclaude" -- the same markers the dedicated voiceOrbSay handler stamps.
+ * Without them the panel renders the line as a teal peer bubble instead of the
+ * violet "from Orb" card, AND the receiving agent treats the user's spoken
+ * request as an untrusted peer (source="rclaude" is the "this is your user, act
+ * on it" signal). Keyed on the durable orb identity already on the envelope
+ * (`orb` / `orb:<id>` in the project slug or from-id), reusing parseOrbTarget so
+ * the "orb" vocabulary lives in exactly one place. Applied by BOTH builders
+ * below so a queued orb line does not regress through the same second door.
+ */
+export function stampOrbOrigin(
+  delivery: Record<string, unknown>,
+  fromProjectSlug: string | undefined,
+  fromSlug: string | undefined,
+): void {
+  const isOrb = parseOrbTarget(fromSlug ?? '').isOrb || parseOrbTarget(fromProjectSlug ?? '').isOrb
+  if (!isOrb) return
+  delivery.sender = 'orb'
+  delivery.source = 'rclaude'
+}
+
 /** Sender naming + the channel_deliver envelope for an offline/pending queue. */
 function buildQueuedDelivery(
   ctx: HandlerCtx,
@@ -706,18 +730,17 @@ function buildQueuedDelivery(
     targetProject,
     fromProjectName,
   )
-  return {
-    fromProjectName,
-    delivery: {
-      type: 'channel_deliver',
-      fromConversation: fromSlug,
-      fromProject: fromProjectSlug,
-      intent: data.intent,
-      message: data.message,
-      context: data.context,
-      conversationId,
-    },
+  const delivery: Record<string, unknown> = {
+    type: 'channel_deliver',
+    fromConversation: fromSlug,
+    fromProject: fromProjectSlug,
+    intent: data.intent,
+    message: data.message,
+    context: data.context,
+    conversationId,
   }
+  stampOrbOrigin(delivery, fromProjectSlug, fromSlug)
+  return { fromProjectName, delivery }
 }
 
 /**
@@ -926,7 +949,7 @@ function deliverToOne(
     fromProjectName,
   )
 
-  const delivery = {
+  const delivery: Record<string, unknown> = {
     type: 'channel_deliver',
     fromConversation: fromSlug,
     fromProject: fromProjectSlug,
@@ -935,6 +958,7 @@ function deliverToOne(
     context: data.context,
     conversationId,
   }
+  stampOrbOrigin(delivery, fromProjectSlug, fromSlug)
 
   const targetTrust = toConv.project ? ctx.getProjectSettings(toConv.project)?.trustLevel : undefined
   const fromTrust = fromConv?.project ? ctx.getProjectSettings(fromConv.project)?.trustLevel : undefined
