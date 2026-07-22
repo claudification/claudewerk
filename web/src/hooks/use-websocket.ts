@@ -158,7 +158,16 @@ function scheduleFlush() {
   }
 }
 
-export function useWebSocket() {
+/**
+ * @param opts.conversationChannels When false, this socket NEVER subscribes to
+ *   conversation transcript/events/tasks/bg_output channels. Standalone surfaces
+ *   like the canvas popout only need the `canvas` channel, and pulling a busy
+ *   conversation's multi-KB transcript entries would balloon the socket's send
+ *   buffer into backpressure (megabytes), starving the canvas broadcasts that
+ *   share it. Defaults true (the full dashboard).
+ */
+export function useWebSocket(opts?: { conversationChannels?: boolean }) {
+  const subscribeConvChannels = opts?.conversationChannels !== false
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -214,8 +223,8 @@ export function useWebSocket() {
         // Reset subscription tracking - only current conversation
         clearSubscribedConversations()
 
-        // Subscribe current conversation immediately
-        if (selectedConversationId) {
+        // Subscribe current conversation immediately (skipped on a canvas-only socket).
+        if (subscribeConvChannels && selectedConversationId) {
           for (const ch of CONVERSATION_CHANNELS) {
             send({ type: 'channel_subscribe', channel: ch, conversationId: selectedConversationId })
           }
@@ -573,6 +582,8 @@ export function useWebSocket() {
     let _lastSelectedId: string | null = null
     let _lastTranscriptKeys: string = ''
     const unsubConversation = useConversationsStore.subscribe(state => {
+      // Canvas-only sockets never manage conversation-channel subscriptions.
+      if (!subscribeConvChannels) return
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
 
       // Quick check: bail if nothing subscription-relevant changed

@@ -76,7 +76,9 @@ export function PublicCanvasView({ token }: { token: string }) {
   // ?share=<token>, which the broker upgrades into a canvas-scoped guest socket
   // (shareCanvasId/tier) -- the thing the live room join, cursors, and scene
   // deltas all ride. Without it the "changes save live" promise is a lie.
-  useWebSocket()
+  // conversationChannels:false -- a share guest has no conversation to subscribe
+  // to anyway, and it keeps this socket lean so canvas broadcasts never backpressure.
+  useWebSocket({ conversationChannels: false })
   const { doc, seed, state, saveState, onSnapshot } = usePublicCanvas(token)
   const { name: guestName, rename } = useGuestName()
   // Guests join the SAME room members do -- the share-mode socket already carries

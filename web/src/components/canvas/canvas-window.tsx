@@ -54,7 +54,10 @@ function CanvasSurface({ canvasId }: { canvasId: string | null }) {
   // that socket -- wsSend reads store.ws and inbound canvas_* is funnelled in
   // useWebSocket -- so without this the whole room is silent. Authed via the
   // same-origin session cookie, exactly like PopoutShell.
-  useWebSocket()
+  // conversationChannels:false -- this window only needs the `canvas` channel;
+  // subscribing it to a busy conversation's transcript would flood the socket
+  // into backpressure and starve the canvas broadcasts.
+  useWebSocket({ conversationChannels: false })
   const { canvas, seed, state, saveStore, onSnapshot, onRename } = useCanvasDocument(canvasId)
   // Live multiplayer is on for the hosted canvas window (a solo editor is just a
   // room of one). The Draw dialog block stays solo (no collab prop).
