@@ -12,7 +12,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import type { CaptureHandle } from '@/hooks/voice-capture-shared'
-import { type DeepgramDirectSession, fetchDeepgramToken, startDeepgramDirect } from '@/hooks/voice-deepgram-direct'
+import { type DeepgramDirectSession, startDeepgramDirect } from '@/hooks/voice-deepgram-direct'
+import { fetchDeepgramToken } from '@/hooks/voice-deepgram-token'
 import { startMediaRecorderCapture } from '@/hooks/voice-mediarecorder-capture'
 import {
   acquireMicStream,

@@ -1,6 +1,3 @@
-// fallow-ignore-file unused-file -- foundation module; wired into
-// use-voice-recording behind the voiceDirectToDeepgram flag in the next commit.
-// Committed alone as a checkpoint (mint validated against live Deepgram).
 /**
  * voice-deepgram-direct - the browser streams mic audio STRAIGHT to Deepgram's
  * live STT WebSocket. NO broker in the audio path.
@@ -17,35 +14,13 @@
  * real time and shredding transcripts) are out of the loop.
  */
 
+import { VoiceLagMeter } from '@/hooks/voice-lag-meter'
+
 const DG_LIVE_URL = 'wss://api.deepgram.com/v1/listen'
 // Deepgram drops an idle socket after ~10s; a KeepAlive holds it through gaps.
 const KEEPALIVE_MS = 8000
 // If Deepgram never acknowledges the stop handshake, resolve anyway rather than hang.
 const STOP_BACKSTOP_MS = 3000
-
-export interface DeepgramToken {
-  accessToken: string
-  expiresIn: number
-}
-
-/** Mint a short-lived Deepgram token from the broker. The real DEEPGRAM_API_KEY
- *  never leaves the server (see src/broker/deepgram-mint.ts). */
-export async function fetchDeepgramToken(): Promise<DeepgramToken> {
-  // Standard authed-mint fetch+error boilerplate; intentionally separate from the
-  // orb's OpenAI token mint (different endpoint + response shape).
-  // fallow-ignore-next-line code-duplication
-  const res = await fetch('/api/voice/deepgram-token', {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-  })
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string }
-    if (body.code === 'voice_unconfigured') throw new Error('the broker has no Deepgram key configured')
-    throw new Error(body.error ?? `deepgram token mint failed (${res.status})`)
-  }
-  return (await res.json()) as DeepgramToken
-}
 
 export interface TranscriptUpdate {
   /** This message's transcript text (interim or final). */
@@ -76,6 +51,9 @@ interface DeepgramResults {
   type: string
   is_final?: boolean
   speech_final?: boolean
+  /** Audio-timeline position of this result, in seconds -- the lag meter's ruler. */
+  start?: number
+  duration?: number
   channel?: { alternatives?: Array<{ transcript?: string }> }
 }
 
@@ -107,6 +85,8 @@ export function startDeepgramDirect(opts: DeepgramDirectOptions): DeepgramDirect
   let keepAlive: ReturnType<typeof setInterval> | null = null
   let finalResolve: ((text: string) => void) | null = null
   let torn = false
+  // Which half of the pipe is slow -- see voice-lag-meter.ts for what it measures.
+  const lag = new VoiceLagMeter()
 
   // CRAP inflated by a zero-coverage estimate -- a browser-only WebSocket/
   // MediaRecorder teardown, exercised live, not unit-mockable in jsdom.
@@ -114,6 +94,7 @@ export function startDeepgramDirect(opts: DeepgramDirectOptions): DeepgramDirect
   function teardown() {
     if (torn) return
     torn = true
+    lag.report()
     if (keepAlive) {
       clearInterval(keepAlive)
       keepAlive = null
@@ -135,8 +116,10 @@ export function startDeepgramDirect(opts: DeepgramDirectOptions): DeepgramDirect
     const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/mp4'
     recorder = new MediaRecorder(opts.stream, { mimeType })
     recorder.ondataavailable = ev => {
+      lag.chunk(ev.data.size, ws.bufferedAmount, mimeType)
       if (ev.data.size > 0 && ws.readyState === WebSocket.OPEN) ws.send(ev.data)
     }
+    lag.audioStarted()
     recorder.start(100)
     keepAlive = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'KeepAlive' }))
@@ -155,6 +138,8 @@ export function startDeepgramDirect(opts: DeepgramDirectOptions): DeepgramDirect
     }
     if (msg.type === 'Results') {
       const transcript = msg.channel?.alternatives?.[0]?.transcript ?? ''
+      // Interims are what the user watches, so they are what "laggy" means.
+      if (!msg.is_final) lag.interim(msg.start ?? 0, msg.duration ?? 0, transcript)
       if (msg.is_final) accumulated = [accumulated, transcript].filter(Boolean).join(' ').trim()
       if (transcript || msg.is_final) {
         opts.callbacks.onTranscript({
