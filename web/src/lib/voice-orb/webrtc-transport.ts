@@ -18,6 +18,9 @@ const CALLS_URL = 'https://api.openai.com/v1/realtime/calls'
 export interface MintedToken {
   value: string
   model: string
+  /** The audio block the broker created the session with, echoed back on any
+   *  session.update so a partial update cannot drop the rest of it. */
+  audio?: unknown
 }
 
 export interface TransportHandlers {

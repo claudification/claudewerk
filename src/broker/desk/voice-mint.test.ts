@@ -76,6 +76,23 @@ describe('mintVoiceToken -- key protection', () => {
     expect(JSON.stringify(out)).not.toContain('sk-secret')
   })
 
+  it('returns the EXACT audio block it minted, for later session.updates', async () => {
+    let sentBody: Record<string, unknown> = {}
+    const fetcher = (async (_url: string, init: RequestInit) => {
+      sentBody = JSON.parse(String(init.body)) as Record<string, unknown>
+      return jsonResponse({ client_secret: { value: 'ek_1' } })
+    }) as unknown as typeof fetch
+
+    const out = await mintVoiceToken({ apiKey: 'sk', tools: TOOLS, fetcher, voice: 'ash', speed: 1.4 })
+    const session = sentBody.session as { audio: unknown }
+    // What comes back must be what went in -- the client echoes it verbatim on
+    // an update, so a drift here silently reconfigures the live session.
+    expect(out.audio).toEqual(session.audio)
+    expect(out.audio).toMatchObject({ output: { voice: 'ash', speed: 1.4 } })
+    expect(out.audio).toHaveProperty('input.transcription')
+    expect(out.audio).toHaveProperty('input.turn_detection')
+  })
+
   it('supports the flat {value} response shape too', async () => {
     const fetcher = (async () => jsonResponse({ value: 'ek_flat' })) as unknown as typeof fetch
     const out = await mintVoiceToken({ apiKey: 'sk', tools: TOOLS, fetcher })

@@ -21,7 +21,11 @@ vi.mock('./webrtc-transport', () => ({
 
 const { VoiceSession } = await import('./voice-session')
 
-const TOKEN = { value: 'ek_1', model: 'gpt-realtime-2' }
+const MINTED_AUDIO = {
+  input: { transcription: { model: 'whisper-1' }, turn_detection: { type: 'semantic_vad' } },
+  output: { voice: 'marin', speed: 1.3 },
+}
+const TOKEN = { value: 'ek_1', model: 'gpt-realtime-2', audio: MINTED_AUDIO }
 
 function feed(ev: Record<string, unknown>) {
   handlers?.onMessage(JSON.stringify(ev))
@@ -207,7 +211,21 @@ describe('speaking rate', () => {
     handlers?.onOpen()
     sent.length = 0
     session.setSpeed(1.4)
-    expect(sent).toEqual([{ type: 'session.update', session: { audio: { output: { speed: 1.4 } } } }])
+    // The `type` tag is REQUIRED (without it: "Missing required parameter:
+    // 'session.type'"), and the WHOLE minted audio block goes back so a partial
+    // update cannot drop transcription or turn detection.
+    expect(sent).toEqual([
+      {
+        type: 'session.update',
+        session: {
+          type: 'realtime',
+          audio: {
+            input: MINTED_AUDIO.input,
+            output: { voice: 'marin', speed: 1.4 },
+          },
+        },
+      },
+    ])
   })
 
   it('is a no-op once the session is gone', async () => {

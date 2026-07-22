@@ -37,6 +37,8 @@ export class VoiceSession {
   private transport?: RealtimeTransport
   private responseActive = false
   private closed = false
+  /** The audio config the session was minted with (see MintedToken.audio). */
+  private mintedAudio: Record<string, unknown> | null = null
 
   constructor(
     private readonly cfg: VoiceSessionConfig,
@@ -48,6 +50,8 @@ export class VoiceSession {
     let token: MintedToken
     try {
       token = await this.cfg.mintToken()
+      const audio = token.audio
+      if (audio && typeof audio === 'object') this.mintedAudio = audio as Record<string, unknown>
     } catch (e) {
       this.fail(`could not start the voice session: ${(e as Error).message}`)
       throw e
@@ -166,7 +170,18 @@ export class VoiceSession {
    *  turns (never mid-response), so a change made while it is talking lands on
    *  its next sentence -- no reconnect, no re-mint. */
   setSpeed(speed: number): void {
-    this.transport?.send({ type: 'session.update', session: { audio: { output: { speed } } } })
+    // TWO things this call got wrong before, both user-visible:
+    //  1. `session` is a TAGGED union in the GA API -- without `type:
+    //     'realtime'` the server rejects the update with "Missing required
+    //     parameter: 'session.type'", which lands as a red error the moment the
+    //     orb connects (the panel pushes the dial on every session start).
+    //  2. the docs do not say whether an update MERGES or REPLACES, so sending
+    //     `{audio:{output:{speed}}}` alone risks dropping the input
+    //     transcription and the turn detection -- no transcripts, no barge-in.
+    //     Echo the whole minted block back with only the speed changed.
+    const output = { ...(this.mintedAudio?.output as Record<string, unknown>), speed }
+    const audio = { ...this.mintedAudio, output }
+    this.transport?.send({ type: 'session.update', session: { type: 'realtime', audio } })
   }
 
   /** Live mic + remote streams, for the orb's audio reactivity. */

@@ -7,6 +7,7 @@ import {
   Command,
   ListChecks,
   MessageSquarePlus,
+  Orbit,
   PenLine,
   Power,
   RefreshCw,
@@ -21,6 +22,7 @@ import { useDispatchStore } from './dispatch-overlay/dispatch-store'
 import { openReviveDialog } from './revive-dialog-trigger'
 import { openSpawnDialog } from './spawn-dialog-trigger'
 import { openTerminateConfirm } from './terminate-confirm-trigger'
+import { summonVoiceOrb } from './voice-orb/voice-orb-bus'
 
 export interface FanAction {
   id: string
@@ -32,14 +34,31 @@ export interface FanAction {
   dangerous?: boolean
 }
 
+/** The ORB, top of the fan: on mobile there is no command palette to summon it
+ *  from, and talking is most of the point of a phone. Absent unless the broker
+ *  actually has a realtime key, so the button can never fail at mint. */
+function orbAction(): FanAction[] {
+  if (useConversationsStore.getState().serverCapabilities.realtimeVoice !== true) return []
+  return [
+    {
+      id: 'voice-orb',
+      icon: <Orbit className="size-4" />,
+      label: 'Orb',
+      action: () => summonVoiceOrb(),
+      color: 'bg-red-500',
+    },
+  ]
+}
+
 export function buildActions(
   conversation: Conversation | undefined,
   selectedConversationId: string | null,
 ): FanAction[] {
   const actions: FanAction[] = [
+    ...orbAction(),
     {
-      // The dispatcher is the global front desk -- top of the fan, the mobile
-      // counterpart to the ⌘D desktop shortcut.
+      // The dispatcher is the global front desk -- the mobile counterpart to
+      // the ⌘D desktop shortcut.
       id: 'dispatch',
       icon: <Sparkles className="size-4" />,
       label: 'Dispatch',

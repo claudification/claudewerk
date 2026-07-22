@@ -59,6 +59,12 @@ export interface MintedVoiceToken {
   value: string
   model: string
   expiresAt?: number
+  /** The EXACT audio block the session was created with. The client echoes this
+   *  back (with one field changed) on a session.update, so a partial update can
+   *  never drop the input transcription or the turn detection -- the API does
+   *  not document whether an update merges or replaces, and losing VAD to find
+   *  out is not a good trade. */
+  audio?: unknown
 }
 
 export interface MintVoiceOptions {
@@ -91,17 +97,16 @@ export async function mintVoiceToken(opts: MintVoiceOptions): Promise<MintedVoic
   }
   if (opts.safetyId) headers['OpenAI-Safety-Identifier'] = opts.safetyId
 
+  const session = buildVoiceSessionConfig(opts.tools, {
+    instructions: opts.instructions,
+    tone: opts.tone,
+    speed: opts.speed,
+    voice: opts.voice,
+  })
   const res = await fetcher(CLIENT_SECRETS_URL, {
     method: 'POST',
     headers,
-    body: JSON.stringify({
-      session: buildVoiceSessionConfig(opts.tools, {
-        instructions: opts.instructions,
-        tone: opts.tone,
-        speed: opts.speed,
-        voice: opts.voice,
-      }),
-    }),
+    body: JSON.stringify({ session }),
   })
 
   if (!res.ok) {
@@ -115,5 +120,10 @@ export async function mintVoiceToken(opts: MintVoiceOptions): Promise<MintedVoic
   }
   const value = data.client_secret?.value ?? data.value
   if (!value) throw new Error('client_secrets: no token in response')
-  return { value, model: REALTIME_MODEL, expiresAt: data.client_secret?.expires_at }
+  return {
+    value,
+    model: REALTIME_MODEL,
+    expiresAt: data.client_secret?.expires_at,
+    audio: session.audio,
+  }
 }
