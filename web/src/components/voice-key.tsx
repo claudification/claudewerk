@@ -83,6 +83,8 @@ export function VoiceKey() {
 
   const displayText = voice.finalText || ''
   const displayInterim = voice.displayInterim
+  // What Copy salvages: whatever transcript exists, even a failed/partial one.
+  const copyable = [displayText, displayInterim].filter(Boolean).join(' ').trim()
   const keyLabel = voiceHoldKey ? formatKeyCode(voiceHoldKey) : ''
 
   if (micExpired && voice.state === 'idle') {
@@ -92,7 +94,7 @@ export function VoiceKey() {
   return (
     <div className="fixed top-0 left-0 right-0 z-[60] pointer-events-none">
       <div className="mx-auto max-w-[600px] px-4 pt-2 animate-in slide-in-from-top duration-200">
-        <div className="px-4 py-2.5 rounded-xl backdrop-blur-xl bg-background/90 border border-border/50 shadow-lg">
+        <div className="px-4 py-2.5 rounded-xl backdrop-blur-xl bg-background/90 border border-border/50 shadow-lg pointer-events-auto">
           {/* Status line */}
           <div className="flex items-center gap-2 mb-1">
             {voice.state === 'connecting' && (
@@ -128,6 +130,32 @@ export function VoiceKey() {
                 {voice.errorMsg || 'Error'}
               </span>
             )}
+            {/* Controls: always reachable so a wedged banner (error / stuck
+                'Processing…') is recoverable without reloading. Copy salvages the
+                transcript when a submission fails; ✕ (cancel) sends voice_stop +
+                resets the hook to idle. */}
+            <div className="ml-auto flex shrink-0 items-center gap-1">
+              {copyable && (
+                <button
+                  type="button"
+                  aria-label="Copy transcript"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(copyable).then(() => haptic('tick'))
+                  }}
+                  className="px-1.5 py-0.5 text-[10px] font-bold font-mono uppercase tracking-wider text-muted-foreground hover:text-accent transition-colors"
+                >
+                  Copy
+                </button>
+              )}
+              <button
+                type="button"
+                aria-label="Dismiss voice recording"
+                onClick={() => voice.cancel()}
+                className="px-1.5 py-0.5 text-[10px] font-bold font-mono text-muted-foreground hover:text-red-400 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
           </div>
 
           {/* Transcript text - matching FAB style with yellow interim */}
