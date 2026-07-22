@@ -89,6 +89,7 @@ export async function runAgent(input: RunAgentInput, chat: ChatFn): Promise<RunA
   for (let round = 0; round < maxRounds; round++) {
     const last = round === maxRounds - 1
     const res: ChatResponse = await chat({
+      feature: 'desk-agent',
       model: input.model,
       system,
       messages,

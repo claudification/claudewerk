@@ -49,6 +49,7 @@ interface ExtractedContext {
 async function extractContext(rawText: string, apiKey: string, keyterms: string[]): Promise<string> {
   const keytermHint = keyterms.length > 0 ? `\nKnown project terms: ${keyterms.join(', ')}` : ''
   const res = await chat({
+    feature: 'voice-refiner-context',
     model: VOICE_REFINER_MODEL,
     apiKey,
     system: `You analyze voice transcripts to extract context that helps correct ASR errors.${keytermHint}`,
@@ -161,6 +162,7 @@ export async function refineTranscript(rawText: string, keyterms: string[]): Pro
 
   try {
     const res = await chat({
+      feature: 'voice-refiner-refine',
       model: VOICE_REFINER_MODEL,
       apiKey,
       messages: buildMessages(systemPrompt, keyterms, contextBlockFrom(contextJson), rawText),

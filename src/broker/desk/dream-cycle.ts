@@ -16,7 +16,7 @@
  */
 
 import type { ChatFn } from './classify'
-import { MAX_MEMORY_CHARS, MEMORY_BLOCK_ID } from './consolidate'
+import { cap, MAX_MEMORY_CHARS, MEMORY_BLOCK_ID } from './consolidate'
 import { type LivingHistory, upsertBlock } from './living-history'
 
 /** The dream-cycle's model. Opus by design -- this is the rare, high-quality pass
@@ -53,11 +53,6 @@ export interface DreamResult {
   model?: string
 }
 
-function cap(text: string, max: number): string {
-  const t = text.trim()
-  return t.length > max ? `${t.slice(0, max).trimEnd()}…` : t
-}
-
 /**
  * Re-ground the rolling `<memory>` block with the stronger model. No-op (no LLM
  * call) when the memory is too short to be worth it or absent. On LLM failure the
@@ -75,6 +70,7 @@ export async function dreamCycle(
   }
   try {
     const res = await chat({
+      feature: 'desk-dream-cycle',
       model,
       system: SYSTEM,
       user: memory,

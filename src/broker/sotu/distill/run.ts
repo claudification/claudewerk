@@ -162,6 +162,7 @@ async function runScribe(
 ): Promise<ChronicleSections> {
   const prompt = buildScribePrompt(prior, ctx.newItems)
   const raw = await runSotuLlmCall(deps.chat, ledger, 'scribe', {
+    feature: 'sotu-distill',
     model,
     system: prompt.system,
     user: prompt.user,
@@ -185,6 +186,7 @@ async function runReconcile(
 ): Promise<ChronicleSections> {
   const prompt = buildReconcilePrompt(scribed, ctx.gitFabric)
   const raw = await runSotuLlmCall(deps.chat, ledger, 'reconcile', {
+    feature: 'sotu-distill',
     model,
     system: prompt.system,
     user: prompt.user,

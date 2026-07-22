@@ -10,8 +10,8 @@ import { matchProjectUri, tryParseProjectUri } from '../../shared/project-uri'
 import type { FetchArtifact, FetchArtifactResult } from '../../shared/protocol'
 import { getAuthenticatedUser } from '../auth-routes'
 import type { ConversationStore } from '../conversation-store'
-import { buildDispatchRuntime } from '../desk/runtime'
 import { mintDeepgramToken } from '../deepgram-mint'
+import { buildDispatchRuntime } from '../desk/runtime'
 import { asVoiceName, clampVoiceSpeed, mintVoiceToken } from '../desk/voice-mint'
 import { asVoiceTone } from '../desk/voice-tones'
 import { voiceRealtimeTools } from '../desk/voice-tools'
@@ -26,6 +26,7 @@ import {
   setProjectSettings,
 } from '../project-settings'
 import { addSubscription, getSubscriptionCount, isPushConfigured, removeSubscription, sendPushToAll } from '../push'
+import { chat } from '../recap/shared/openrouter-client'
 import type { StoreDriver } from '../store/types'
 import { appendSharedFile, dismissSharedFile, mediaTypeToExt, readSharedFiles, storeBlobStreaming } from './blob-store'
 import { fetchLinkPreview, isSafePreviewUrl } from './link-preview'
@@ -567,15 +568,14 @@ export function createApiRouter(
 
     console.log(`[keyterms] Generating keyterms for ${projectPath} from ${fileContents.length} files`)
 
-    const llmRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${openrouterKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    // Through the shared client (feature-tagged spend log + usage) rather than a
+    // raw fetch -- keyterms is one OpenRouter call, so it rides the same chokepoint.
+    let raw: string
+    try {
+      const res = await chat({
+        feature: 'keyterms',
         model: 'anthropic/claude-haiku-4.5',
-        messages: [
-          {
-            role: 'system',
-            content: `Extract domain-specific terms from these project files for voice transcription keyword boosting. Focus on:
+        system: `Extract domain-specific terms from these project files for voice transcription keyword boosting. Focus on:
 - Project names, tool names, library names
 - Technical terms specific to this project
 - Abbreviations, acronyms, unusual spellings
@@ -583,21 +583,15 @@ export function createApiRouter(
 - Any term a speech-to-text engine would likely misspell
 
 Output a JSON array of strings. Each string should be the correct spelling of one term. Include 10-30 terms, most important first. Only output the JSON array, nothing else.`,
-          },
-          { role: 'user', content: fileContents.join('\n\n') },
-        ],
-        max_tokens: 1024,
-      }),
-    })
-
-    if (!llmRes.ok) {
-      const err = await llmRes.text().catch(() => '')
-      console.error(`[keyterms] LLM failed: ${llmRes.status} ${err.slice(0, 500)}`)
+        user: fileContents.join('\n\n'),
+        maxTokens: 1024,
+        apiKey: openrouterKey,
+      })
+      raw = res.content.trim() || '[]'
+    } catch (err) {
+      console.error(`[keyterms] LLM failed: ${err instanceof Error ? err.message : String(err)}`)
       return c.json({ error: 'Failed to generate keyterms' }, 500)
     }
-
-    const llmData = (await llmRes.json()) as { choices?: Array<{ message?: { content?: string } }> }
-    const raw = llmData.choices?.[0]?.message?.content?.trim() || '[]'
     let keyterms: string[]
     try {
       const cleaned = raw.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '')

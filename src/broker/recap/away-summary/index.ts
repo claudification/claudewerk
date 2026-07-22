@@ -117,6 +117,7 @@ async function callOpenRouter(
 ): Promise<string | null> {
   try {
     const res = await chat({
+      feature: 'recap-away-summary',
       model: AWAY_SUMMARY_MODEL,
       system: AWAY_SUMMARY_PROMPT,
       user: condensed,

@@ -39,14 +39,15 @@ describe('chat()', () => {
   it('throws NoApiKeyError when no key is configured and no override is given', async () => {
     delete process.env.OPENROUTER_API_KEY
     const { fn } = makeFetcher(() => jsonResponse('hi'))
-    await expect(chat({ model: 'anthropic/claude-haiku-4-5', user: 'x', fetcher: fn })).rejects.toBeInstanceOf(
-      NoApiKeyError,
-    )
+    await expect(
+      chat({ feature: 'test', model: 'anthropic/claude-haiku-4-5', user: 'x', fetcher: fn }),
+    ).rejects.toBeInstanceOf(NoApiKeyError)
   })
 
   it('packs system + user shorthand into messages array in order', async () => {
     const { fn, calls } = makeFetcher(() => jsonResponse('ok'))
     await chat({
+      feature: 'test',
       model: 'anthropic/claude-haiku-4-5',
       system: 'sys',
       user: 'usr',
@@ -69,7 +70,7 @@ describe('chat()', () => {
 
   it('returns content + raw + usage', async () => {
     const { fn } = makeFetcher(() => jsonResponse('hello world', { prompt_tokens: 5, completion_tokens: 2 }))
-    const res = await chat({ model: 'anthropic/claude-haiku-4-5', user: 'x', fetcher: fn, retries: 0 })
+    const res = await chat({ feature: 'test', model: 'anthropic/claude-haiku-4-5', user: 'x', fetcher: fn, retries: 0 })
     expect(res.content).toBe('hello world')
     expect(res.usage.inputTokens).toBe(5)
     expect(res.usage.outputTokens).toBe(2)
@@ -79,7 +80,7 @@ describe('chat()', () => {
     const { fn } = makeFetcher(() => new Response('bad', { status: 400 }))
     let caught: unknown
     try {
-      await chat({ model: 'm', user: 'x', fetcher: fn, retries: 0 })
+      await chat({ feature: 'test', model: 'm', user: 'x', fetcher: fn, retries: 0 })
     } catch (err) {
       caught = err
     }
@@ -94,7 +95,7 @@ describe('chat()', () => {
       if (n < 2) return new Response('boom', { status: 503 })
       return jsonResponse('finally')
     })
-    const res = await chat({ model: 'm', user: 'x', fetcher: fn, retries: 2 })
+    const res = await chat({ feature: 'test', model: 'm', user: 'x', fetcher: fn, retries: 2 })
     expect(res.content).toBe('finally')
     expect(getAttempt()).toBe(2)
   })
@@ -103,7 +104,7 @@ describe('chat()', () => {
     const { fn } = makeFetcher(() => new Response('limit', { status: 429, headers: { 'Retry-After': '0' } }))
     let caught: unknown
     try {
-      await chat({ model: 'm', user: 'x', fetcher: fn, retries: 0 })
+      await chat({ feature: 'test', model: 'm', user: 'x', fetcher: fn, retries: 0 })
     } catch (err) {
       caught = err
     }
@@ -119,7 +120,7 @@ describe('chat()', () => {
     })
     let caught: unknown
     try {
-      await chat({ model: 'm', user: 'x', fetcher: fn, retries: 0, timeoutMs: 5 })
+      await chat({ feature: 'test', model: 'm', user: 'x', fetcher: fn, retries: 0, timeoutMs: 5 })
     } catch (err) {
       caught = err
     }
@@ -130,7 +131,7 @@ describe('chat()', () => {
     const { fn } = makeFetcher(() => jsonResponse(''))
     let caught: unknown
     try {
-      await chat({ model: 'm', user: 'x', fetcher: fn, retries: 0 })
+      await chat({ feature: 'test', model: 'm', user: 'x', fetcher: fn, retries: 0 })
     } catch (err) {
       caught = err
     }
@@ -156,7 +157,7 @@ describe('chat()', () => {
   it('enforces timeoutMs even when the fetch never settles and ignores abort', async () => {
     const { fn, getAttempt } = makeFetcher(neverSettles)
     const caught = await catchErr(
-      chat({ model: 'm', user: 'x', fetcher: fn, retries: 0, timeoutRetries: 0, timeoutMs: 30 }),
+      chat({ feature: 'test', model: 'm', user: 'x', fetcher: fn, retries: 0, timeoutRetries: 0, timeoutMs: 30 }),
     )
     expect(caught).toBeInstanceOf(TimeoutError)
     expect(getAttempt()).toBe(1)
@@ -168,7 +169,7 @@ describe('chat()', () => {
     const hangingBody = { ok: true, status: 200, json: () => new Promise(() => {}) } as unknown as Response
     const { fn } = makeFetcher(() => hangingBody)
     const caught = await catchErr(
-      chat({ model: 'm', user: 'x', fetcher: fn, retries: 0, timeoutRetries: 0, timeoutMs: 30 }),
+      chat({ feature: 'test', model: 'm', user: 'x', fetcher: fn, retries: 0, timeoutRetries: 0, timeoutMs: 30 }),
     )
     expect(caught).toBeInstanceOf(TimeoutError)
   })
@@ -177,7 +178,7 @@ describe('chat()', () => {
     // Always times out. retries=5 but timeoutRetries=1 -> exactly 2 attempts.
     const { fn, getAttempt } = makeFetcher(neverSettles)
     const caught = await catchErr(
-      chat({ model: 'm', user: 'x', fetcher: fn, retries: 5, timeoutRetries: 1, timeoutMs: 20 }),
+      chat({ feature: 'test', model: 'm', user: 'x', fetcher: fn, retries: 5, timeoutRetries: 1, timeoutMs: 20 }),
     )
     expect(caught).toBeInstanceOf(TimeoutError)
     expect(getAttempt()).toBe(2)
@@ -191,7 +192,7 @@ describe('chat()', () => {
       if (n < 4) return new Response('slow down', { status: 429 })
       return jsonResponse('recovered')
     })
-    const res = await chat({ model: 'm', user: 'x', fetcher: fn, retries: 3, timeoutRetries: 0 })
+    const res = await chat({ feature: 'test', model: 'm', user: 'x', fetcher: fn, retries: 3, timeoutRetries: 0 })
     expect(res.content).toBe('recovered')
     expect(getAttempt()).toBe(4)
   })
@@ -226,6 +227,7 @@ describe('chat() tool-calling', () => {
   it('serializes tools into the function-tool wire shape + tool_choice', async () => {
     const { fn, calls } = makeFetcher(() => toolCallResponse())
     await chat({
+      feature: 'test',
       model: 'anthropic/claude-haiku-4-5',
       user: 'list everything',
       tools: [{ name: 'list_conversations', description: 'list', parameters: { type: 'object', properties: {} } }],
@@ -244,7 +246,7 @@ describe('chat() tool-calling', () => {
 
   it('parses tool_calls + finishReason and does NOT throw on empty content', async () => {
     const { fn } = makeFetcher(() => toolCallResponse())
-    const res = await chat({ model: 'anthropic/claude-haiku-4-5', user: 'x', fetcher: fn })
+    const res = await chat({ feature: 'test', model: 'anthropic/claude-haiku-4-5', user: 'x', fetcher: fn })
     expect(res.content).toBe('')
     expect(res.finishReason).toBe('tool_calls')
     expect(res.toolCalls).toEqual([{ id: 'call_a', name: 'list_conversations', arguments: '{"status":"live"}' }])
@@ -253,6 +255,7 @@ describe('chat() tool-calling', () => {
   it('round-trips assistant tool_calls + tool result messages onto the wire', async () => {
     const { fn, calls } = makeFetcher(() => jsonResponse('done'))
     await chat({
+      feature: 'test',
       model: 'anthropic/claude-haiku-4-5',
       messages: [
         { role: 'user', content: 'go' },
@@ -266,5 +269,58 @@ describe('chat() tool-calling', () => {
       { id: 'call_a', type: 'function', function: { name: 'ping', arguments: '{}' } },
     ])
     expect(msgs[2]).toEqual({ role: 'tool', content: 'pong', tool_call_id: 'call_a' })
+  })
+})
+
+describe('spend log (the [openrouter] cost line)', () => {
+  const original = console.log
+  let lines: string[]
+  beforeEach(() => {
+    lines = []
+    console.log = (...args: unknown[]) => {
+      lines.push(args.map(String).join(' '))
+    }
+  })
+  afterEach(() => {
+    console.log = original
+  })
+  const spendLines = () => lines.filter(l => l.startsWith('[openrouter]'))
+
+  it('emits ONE feature-tagged line per successful call with tokens + cost + source', async () => {
+    const { fn } = makeFetcher(() => jsonResponse('hi', { prompt_tokens: 12, completion_tokens: 4, cost: 0.0009 }))
+    await chat({ feature: 'desk-agent', model: 'anthropic/claude-haiku-4-5', user: 'x', fetcher: fn, retries: 0 })
+    expect(spendLines()).toHaveLength(1)
+    const line = spendLines()[0]
+    expect(line).toContain('feature=desk-agent')
+    expect(line).toContain('model=anthropic/claude-haiku-4-5')
+    expect(line).toContain('in=12 out=4')
+    expect(line).toContain('cost=$0.000900')
+    expect(line).toContain('src=openrouter')
+    expect(line).toContain('ok=true')
+  })
+
+  it('logs cache token breakdown only when present', async () => {
+    const { fn } = makeFetcher(() =>
+      jsonResponse('hi', {
+        prompt_tokens: 100,
+        completion_tokens: 5,
+        prompt_tokens_details: { cached_tokens: 80 },
+      }),
+    )
+    await chat({ feature: 'recap-period', model: 'm', user: 'x', fetcher: fn, retries: 0 })
+    expect(spendLines()[0]).toContain('cache_r=80')
+  })
+
+  it('still logs on FAILURE (ok=false + err, no token/cost) so failed spend is visible', async () => {
+    const { fn } = makeFetcher(() => new Response('nope', { status: 400 }))
+    await expect(
+      chat({ feature: 'voice-refiner', model: 'm', user: 'x', fetcher: fn, retries: 0 }),
+    ).rejects.toBeInstanceOf(OpenRouterError)
+    expect(spendLines()).toHaveLength(1)
+    const line = spendLines()[0]
+    expect(line).toContain('feature=voice-refiner')
+    expect(line).toContain('ok=false')
+    expect(line).toContain('err=')
+    expect(line).not.toContain('cost=$')
   })
 })

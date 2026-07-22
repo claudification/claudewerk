@@ -97,6 +97,7 @@ export async function refineMemory(instruction: string, chat: ChatFn, model?: st
   const before = readMemoryRaw()
   const useModel = model || DIGEST_MODEL
   const res = await chat({
+    feature: 'desk-memory',
     model: useModel,
     system: REFINE_SYSTEM,
     user: `CURRENT MEMORY FILE:\n\`\`\`\n${before || '(empty)'}\n\`\`\`\n\nINSTRUCTION: ${instruction}`,
@@ -153,6 +154,7 @@ export async function digestTurn(input: DigestInput, chat: ChatFn): Promise<stri
     `DISPATCHER REPLIED:\n${input.reply}`,
   ].join('\n\n')
   const res = await chat({
+    feature: 'desk-memory-digest',
     model: DIGEST_MODEL,
     system: DIGEST_SYSTEM,
     user,

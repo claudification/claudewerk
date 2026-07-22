@@ -56,6 +56,26 @@ broker-cli passkey list
 
 **Ad-hoc spawn:** `[ad-hoc]` prefix at every step for easy grep.
 
+**OpenRouter spend:** every `chat()` call (the single client in
+`src/broker/recap/shared/openrouter-client.ts`) emits one `[openrouter]` line via
+`recordOpenRouterSpend`, tagged with the spending feature. This is how you answer
+"what is OpenRouter costing us, by feature":
+```bash
+# per-call lines: feature, model, tokens, billed cost + source, ms, ok
+docker compose logs broker | grep '\[openrouter\]'
+# roll up cost by feature (src=openrouter is the real charge; litellm = estimate)
+docker compose logs --no-log-prefix broker | grep -oE '\[openrouter\].*' \
+  | sed -E 's/.*feature=([^ ]+).*cost=\$([0-9.]+).*/\1 \2/' \
+  | awk '{c[$1]+=$2} END{for(f in c) printf "%-22s $%.4f\n", f, c[f]}' | sort -k2 -rn
+```
+`feature=` values: `desk-agent`/`desk-classify`/`desk-brief`/`desk-condenser`/
+`desk-consolidate`/`desk-memory`/`desk-memory-digest`/`desk-dream-cycle` (Front
+Desk / dispatcher), `recap-period`, `recap-away-summary`, `sotu-distill`,
+`voice-refiner-context`/`voice-refiner-refine`, `keyterms`. The `feature` field is
+REQUIRED on every `ChatRequest`, so a new caller cannot add untracked spend. To
+later persist spend to a DB, add the write inside `recordOpenRouterSpend` -- every
+call site is already covered.
+
 ## Diag Mnemonics
 
 Paste `diag:{sessionId}` -> fetch and analyze:

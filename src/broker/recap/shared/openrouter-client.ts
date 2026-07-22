@@ -52,6 +52,10 @@ export interface ChatMessage {
 
 export interface ChatRequest {
   model: string
+  /** WHICH broker feature is spending here (e.g. 'desk-agent', 'recap-period',
+   *  'voice-refiner'). REQUIRED so every OpenRouter call is attributable in the
+   *  `[openrouter]` cost log -- a call with no owner is un-traceable spend. */
+  feature: string
   system?: string
   user?: string
   messages?: ChatMessage[]
@@ -98,7 +102,60 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
     maxRetries: retries,
     timeoutRetries: req.timeoutRetries ?? retries,
   }
-  return runWithRetry(ctx)
+  const t0 = Date.now()
+  try {
+    const res = await runWithRetry(ctx)
+    recordOpenRouterSpend({ feature: req.feature, model: req.model, ms: Date.now() - t0, ok: true, usage: res.usage })
+    return res
+  } catch (err) {
+    recordOpenRouterSpend({
+      feature: req.feature,
+      model: req.model,
+      ms: Date.now() - t0,
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    throw err
+  }
+}
+
+/** One structured record per OpenRouter round-trip (success OR failure). This
+ *  is the shape a future persistence sink (a `openrouter_spend` table / kv
+ *  rollup) would store -- keep it self-contained so wiring a DB is a one-line
+ *  change inside `recordOpenRouterSpend`, not a call-site refactor. */
+interface OpenRouterSpendRecord {
+  /** WHICH broker feature spent (the `feature` tag on the ChatRequest). */
+  feature: string
+  /** Model as REQUESTED (req.model; the response's resolved model lives in usage forensics). */
+  model: string
+  /** Wall-clock ms for the whole call incl. retries. */
+  ms: number
+  /** true = billed a usable completion; false = errored/timed-out (no usable tokens). */
+  ok: boolean
+  /** Normalised token counts + billed cost. Present on success only. */
+  usage?: NormalizedUsage
+  /** Failure message. Present when ok=false. */
+  error?: string
+}
+
+/**
+ * THE single spend sink. Every `chat()` call -- the one chokepoint every feature
+ * passes through -- funnels here, so `docker compose logs broker | grep
+ * '\[openrouter\]'` is the whole spend picture and `grep feature=<x>` attributes
+ * cost per feature. Today it emits one greppable line; to later persist spend to
+ * a DB/kv, add the write HERE and every existing call site is covered for free.
+ */
+function recordOpenRouterSpend(rec: OpenRouterSpendRecord): void {
+  console.log(`[openrouter] ${formatSpendLine(rec)}`)
+}
+
+function formatSpendLine(rec: OpenRouterSpendRecord): string {
+  const head = `feature=${rec.feature} model=${rec.model} ms=${rec.ms} ok=${rec.ok}`
+  if (!rec.ok || !rec.usage) return `${head} err=${rec.error ?? 'unknown'}`
+  const u = rec.usage
+  const cache =
+    u.cacheReadTokens || u.cacheWriteTokens ? ` cache_r=${u.cacheReadTokens} cache_w=${u.cacheWriteTokens}` : ''
+  return `${head} in=${u.inputTokens} out=${u.outputTokens}${cache} cost=$${u.costUsd.toFixed(6)} src=${u.costSource}`
 }
 
 interface AttemptContext {

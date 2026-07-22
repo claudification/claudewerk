@@ -86,6 +86,7 @@ async function oneTurn(history: LivingHistory, cache = false): Promise<Normalize
   // prefix. The provider bills the matched prefix as cacheRead on the next call.
   if (cache && messages.length >= 2) messages[messages.length - 2].cacheControl = true
   const res = await chat({
+    feature: 'test',
     model: LOOP_MODEL,
     system: SYSTEM,
     messages,

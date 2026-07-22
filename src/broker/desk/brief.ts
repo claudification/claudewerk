@@ -49,6 +49,7 @@ export async function generateBriefing(input: BriefInput, chat: ChatFn): Promise
   ].join('\n\n')
 
   const res = await chat({
+    feature: 'desk-brief',
     model: BRIEF_MODEL,
     system: BRIEF_SYSTEM,
     user,

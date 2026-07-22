@@ -68,6 +68,7 @@ export async function classifyDispatch(input: ClassifyInput, chat: ChatFn): Prom
   let parsed: LlmDecision
   try {
     const res = await chat({
+      feature: 'desk-classify',
       model: CLASSIFY_MODEL,
       system: SYSTEM_PROMPT,
       user: buildUserPrompt(input),

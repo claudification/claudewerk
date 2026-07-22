@@ -87,7 +87,9 @@ function dropTurns(h: LivingHistory, aged: Turn[]): void {
   h.turns = h.turns.filter(t => !drop.has(t))
 }
 
-function cap(text: string, max: number): string {
+/** Trim + hard-cap text to `max` chars with an ellipsis. Shared with the
+ *  dream-cycle (both cap the rewritten `<memory>` block the same way). */
+export function cap(text: string, max: number): string {
   const t = text.trim()
   return t.length > max ? `${t.slice(0, max).trimEnd()}…` : t
 }
@@ -108,6 +110,7 @@ export async function consolidate(input: ConsolidateInput, chat: ChatFn): Promis
   const memory = currentMemory(history)
   try {
     const res = await chat({
+      feature: 'desk-consolidate',
       model: input.model ?? CONSOLIDATE_MODEL,
       system: SYSTEM,
       user: buildUser(memory, aged),

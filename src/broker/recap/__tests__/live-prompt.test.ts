@@ -29,6 +29,7 @@ describeLive('LIVE OpenRouter recap prompt round-trip', () => {
     const prompt = buildPrompt(inputs)
 
     const response = await chat({
+      feature: 'test',
       model: 'anthropic/claude-haiku-4.5',
       system: prompt.system,
       user: prompt.user,

@@ -60,6 +60,7 @@ function buildUser(input: CondenseInput): string {
 export async function condenseBrief(input: CondenseInput, chat: ChatFn): Promise<string> {
   try {
     const res = await chat({
+      feature: 'desk-condenser',
       model: CONDENSE_MODEL,
       system: SYSTEM,
       user: buildUser(input),

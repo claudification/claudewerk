@@ -668,6 +668,7 @@ async function synthesizeFromMerged(
     ov.effInstructions,
   )
   const content = await runLlmCall(deps, targetId, ledger, 'reduce', {
+    feature: 'recap-period',
     model,
     system: synth.system,
     user: synth.user,
@@ -1136,6 +1137,7 @@ async function callLlm(
   opts?: { temperature?: number; maxTokens?: number },
 ): Promise<string> {
   return runLlmCall(deps, recapId, ledger, 'oneshot', {
+    feature: 'recap-period',
     model,
     system: prompt.system,
     user: prompt.user,
@@ -1162,6 +1164,7 @@ async function parseOrRetry(
   } catch (err) {
     if (!(err instanceof RecapParseError)) throw err
     const retry = await runLlmCall(deps, recapId, ledger, 'retry', {
+      feature: 'recap-period',
       model,
       apiKey,
       retries: 1,
@@ -1283,6 +1286,7 @@ export async function runMapStage(
           ledger,
           'map',
           {
+            feature: 'recap-period',
             model: mapModel,
             system: prompt.system,
             user: prompt.user,
@@ -1483,6 +1487,7 @@ async function runChunked(
     p.args.instructions,
   )
   const content = await runLlmCall(deps, recapId, ledger, 'reduce', {
+    feature: 'recap-period',
     model: models.reduceModel,
     system: synth.system,
     user: synth.user,
