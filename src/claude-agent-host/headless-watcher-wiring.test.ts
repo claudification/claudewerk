@@ -84,14 +84,21 @@ describe('headless boot wiring', () => {
     expect(started).toEqual([ctx.parentTranscriptPath ?? ''])
   })
 
-  it('does not re-point the watcher when the path is already known', () => {
+  it('STILL starts the watcher when the SessionStart hook already set the path', () => {
+    // The regression that shipped in f4f67ad: the start call sat inside the
+    // `!ctx.parentTranscriptPath` derivation branch, and in any hooked spawn
+    // the SessionStart hook sets that path first -- so the branch was skipped
+    // and the watcher never started. Silent: transcript fine, badge missing.
+    // Caught only by a live spawn, never by a unit test, because the earlier
+    // version of this test asserted the skip was correct.
     const started: string[] = []
     const ctx = makeCtx(started)
     ctx.parentTranscriptPath = join('/already', 'known.jsonl')
 
     buildHeadlessSpawnOptions(makeDeps(ctx)).onInit?.(init('abc12345-0000-0000-0000-000000000000'))
 
+    // Path is left alone (the hook's value wins) but the watcher DOES start.
     expect(ctx.parentTranscriptPath).toBe(join('/already', 'known.jsonl'))
-    expect(started).toEqual([])
+    expect(started).toEqual([join('/already', 'known.jsonl')])
   })
 })

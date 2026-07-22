@@ -80,7 +80,10 @@ export function processHookEvent(ctx: AgentHostContext, event: HookEvent): HookD
         // Brand new projects can take 60-90s before Claude creates the JSONL file.
         // Use exponential backoff: 500ms, 1s, 2s, 4s... capped at 10s, ~2.5 min total
         async function tryStartTranscriptWatcher(path: string) {
-          if (ctx.headless) return // no transcript file watching in headless mode
+          // Headless watches too, for the entries CC writes ONLY to the file
+          // (queue-operation). It seeks to end and forwards a narrow slice --
+          // see transcript-entry-filter.ts -- so it cannot duplicate what the
+          // stdout stream already delivered.
           let delay = 500
           const maxDelay = 10_000
           const maxTotal = 900_000 // 15 minutes total (slow-starting sessions can take 6+ min)
