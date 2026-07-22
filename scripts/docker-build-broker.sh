@@ -89,6 +89,22 @@ docker build \
   -t "$IMAGE:$SHORT" \
   -f Dockerfile - < "$TAR"
 
+# Prune old image tags so deploys don't silently accumulate ~2GB per commit.
+# (The 2026-07 incident: dozens of remote-claude-broker:<sha> tags + hundreds of
+# dangling layers reached 271GB of reclaimable images.) Keep :latest plus the
+# KEEP_IMAGES newest tagged builds; untag/remove the rest, then sweep dangling.
+KEEP_IMAGES="${KEEP_IMAGES:-5}"
+echo ""
+echo "[docker-build] pruning old $IMAGE tags (keeping :latest + $KEEP_IMAGES newest)"
+docker images "$IMAGE" --format '{{.Tag}}' \
+  | grep -vx 'latest' \
+  | tail -n +"$((KEEP_IMAGES + 1))" \
+  | while read -r tag; do
+      echo "  rmi $IMAGE:$tag"
+      docker rmi "$IMAGE:$tag" >/dev/null 2>&1 || true
+    done
+docker image prune -f >/dev/null 2>&1 || true
+
 echo ""
 echo "[docker-build] done"
 echo "  image: $IMAGE:latest"
