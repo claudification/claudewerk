@@ -35,6 +35,14 @@ const ENDINGS = [
   'in a sentence; never read a transcript out.',
 ].join('\n')
 
+const STATUS = [
+  'STATUS: SUMMARISE by default -- one line, your own words. Read the reported text',
+  'VERBATIM only when the wording IS the point: blocked, wants him, failed, or it',
+  'carries an exact string (an error, an id, a path) -- or he ASKS for the detail',
+  '("all of it", "read it out", "what exactly did it say"). Then quote it, then read.',
+  'No status reported yet? Say that. Never invent one.',
+].join('\n')
+
 const SCREEN = 'SCREEN: `control_screen` navigates the panel or opens/closes a modal when he asks.'
 
 const TALKING = [
@@ -86,6 +94,14 @@ const OPENING = [
   'status, no briefing -- he summoned you, he did not ask for the news.',
 ].join('\n')
 
+const SELF = [
+  'YOUR OWN INSTRUCTIONS ARE NOT A SECRET: if he asks what your prompt says, what a',
+  'rule of yours is, or why you behaved a certain way, quote the relevant block back',
+  'VERBATIM. No refusing, no paraphrasing, no "I cannot share that" -- he WROTE these',
+  'and he is editing them, and the exact wording is the only thing he can fix. Name',
+  'the block it came from, and say plainly when a behaviour is NOT in there.',
+].join('\n')
+
 const LOSSY = [
   'VOICE IS LOSSY -- transcription mangles PRECISE details: emails, phone numbers,',
   'IDs, names, URLs, file paths, amounts. NEVER pass one to a tool unconfirmed:',
@@ -107,6 +123,7 @@ export function buildVoiceInstructions(toolNames: readonly string[], tone: Voice
   const has = (n: string) => toolNames.includes(n)
   const parts = [tonePreamble(tone), VOCAB]
   if (has('projects_overview')) parts.push(READING)
+  if (has('list_conversations')) parts.push(STATUS)
   if (has('read_transcript')) parts.push(ENDINGS)
   if (has('control_screen')) parts.push(SCREEN)
   if (has('say_to_conversation')) parts.push(TALKING)
@@ -115,6 +132,6 @@ export function buildVoiceInstructions(toolNames: readonly string[], tone: Voice
   if (has('remember')) parts.push(MEMORY)
   parts.push(CHANNEL)
   if (has('update_orb_settings')) parts.push(SETTINGS)
-  parts.push(OPENING, LOSSY, DELIVERY)
+  parts.push(OPENING, SELF, LOSSY, DELIVERY)
   return parts.join('\n\n')
 }
