@@ -10,6 +10,13 @@ import type { ConversationStore } from './conversation-store'
 import { getGlobalSettings } from './global-settings'
 import { getProjectSettings } from './project-settings'
 import { chat } from './recap/shared/openrouter-client'
+import {
+  createEndpointerState,
+  type EndpointerState,
+  evaluateEndpointer,
+  FORCE_FINALIZE_MS,
+  noteNaturalClose,
+} from './voice-endpointer'
 import { bytesPerSecondFor, createLatencyTracker, type LatencyTracker } from './voice-latency'
 
 const VOICE_REFINER_MODEL = 'anthropic/claude-haiku-4.5'
@@ -68,6 +75,9 @@ const KEEPALIVE_INTERVAL_MS = 5_000 // Deepgram kills connection after 10s of no
 // source. Every firing is logged as a warning, so a normal path silently
 // degrading into this one stays visible instead of becoming the new normal.
 const TERMINAL_SAFETY_MS = 8_000
+// How often we re-evaluate whether the open segment has outstayed its welcome.
+// Finer than FORCE_FINALIZE_MS so the cap is enforced with ~1s resolution.
+const ENDPOINTER_TICK_MS = 1_000
 
 interface VoiceSession {
   dgWs: WebSocket
@@ -79,6 +89,10 @@ interface VoiceSession {
   audioBuffer: Buffer[] // Buffer chunks while DG WS is connecting
   timeoutTimer: ReturnType<typeof setTimeout>
   keepaliveTimer: ReturnType<typeof setInterval>
+  // Forces segment closure when the raw mic starves Deepgram's VAD (see
+  // voice-endpointer.ts). Null until the first audio chunk arms it.
+  endpointerTimer: ReturnType<typeof setInterval> | null
+  endpointer: EndpointerState
   closed: boolean
   // Per-session audio accounting. These USED to be module-level globals, which
   // collided across concurrent sessions (multi-user broker) and got reset
@@ -205,6 +219,32 @@ function relayTranscript(session: VoiceSession, transcript: string, isFinal: boo
   )
 }
 
+/**
+ * One endpointer tick: if the open segment has been receiving speech past the
+ * cap, force Deepgram to close it. The resulting from_finalize Results is inert
+ * for session termination (that path is gated on session.stopping) -- it just
+ * flushes the segment and resets the decode window.
+ */
+function tickEndpointer(session: VoiceSession) {
+  const active = session.dgWs.readyState === WebSocket.OPEN && !session.stopping && session.firstAudioAt > 0
+  const { finalize, next } = evaluateEndpointer(session.endpointer, {
+    now: Date.now(),
+    audioBytes: session.audioBytes,
+    active,
+  })
+  session.endpointer = next
+  if (!finalize) return
+  console.log(
+    `[voice-stream] forced Finalize -- segment open >${FORCE_FINALIZE_MS}ms of continuous speech ` +
+      `(VAD starved by raw mic); flushing to keep Deepgram real-time`,
+  )
+  try {
+    session.dgWs.send(JSON.stringify({ type: 'Finalize' }))
+  } catch (err) {
+    console.warn('[voice-stream] forced Finalize send failed:', err)
+  }
+}
+
 /** One Results message: measure it, relay it, and notice when it terminates the session. */
 function handleDeepgramResults(ws: ServerWebSocket<unknown>, session: VoiceSession, msg: DeepgramMessage) {
   const alt = msg.channel?.alternatives?.[0]
@@ -212,6 +252,10 @@ function handleDeepgramResults(ws: ServerWebSocket<unknown>, session: VoiceSessi
 
   const transcript = alt.transcript || ''
   const isFinal = msg.is_final === true
+
+  // A natural VAD close restarts the endpointer clock, so a well-behaved session
+  // never triggers a forced Finalize at all.
+  if (msg.speech_final === true) session.endpointer = noteNaturalClose(session.endpointer, Date.now())
 
   logResultDiagnostics(session, msg, transcript, isFinal)
   if (transcript) relayTranscript(session, transcript, isFinal, msg.speech_final === true)
@@ -283,6 +327,8 @@ export function handleVoiceStart(
     firstAudioAt: 0,
     stopping: false,
     finalized: false,
+    endpointerTimer: null,
+    endpointer: createEndpointerState(Date.now()),
     latency: createLatencyTracker(bytesPerSecondFor(data.encoding, data.sampleRate), () => voiceSession.firstAudioAt),
     timeoutTimer: setTimeout(() => {
       console.log(`[voice-stream] Session timed out (${VOICE_TIMEOUT_MS / 1000}s)`)
@@ -295,6 +341,10 @@ export function handleVoiceStart(
       }
     }, KEEPALIVE_INTERVAL_MS),
   }
+
+  // Forced-endpointing timer: caps how long a segment can stay open when the raw
+  // mic starves Deepgram's VAD. Bounds the decode window so asrLag stays flat.
+  voiceSession.endpointerTimer = setInterval(() => tickEndpointer(voiceSession), ENDPOINTER_TICK_MS)
 
   voiceSessions.set(ws, voiceSession)
 
@@ -550,6 +600,10 @@ function stopVoiceSession(ws: ServerWebSocket<unknown>, reason: string) {
   session.closed = true
   clearTimeout(session.timeoutTimer)
   clearInterval(session.keepaliveTimer)
+  if (session.endpointerTimer) {
+    clearInterval(session.endpointerTimer)
+    session.endpointerTimer = null
+  }
 
   if (session.dgWs.readyState === WebSocket.OPEN) {
     // DG connected - flush and close; Deepgram's own terminal marker completes
@@ -770,6 +824,10 @@ function stripPreamble(text: string): string {
 function cleanupTimers(session: VoiceSession) {
   clearTimeout(session.timeoutTimer)
   clearInterval(session.keepaliveTimer)
+  if (session.endpointerTimer) {
+    clearInterval(session.endpointerTimer)
+    session.endpointerTimer = null
+  }
 }
 
 function closeDgWs(session: VoiceSession) {
