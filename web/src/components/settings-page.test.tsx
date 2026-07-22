@@ -9,6 +9,11 @@
 
 import { cleanup, render } from '@testing-library/react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
+// Static, not `await import()` inside the test. vi.mock is hoisted above this,
+// so the mocks still apply -- and settings-page's module graph costs several
+// seconds to transform on a cold run, which blew the 5s per-test timeout when
+// that cost sat inside the test body.
+import { SettingsDialog } from './settings-page'
 
 const STORE_STATE = {
   conversations: [],
@@ -46,12 +51,11 @@ afterEach(() => {
 })
 
 describe('SettingsDialog setTimeout cleanup', () => {
-  test('clears the 50ms filter-focus timer when unmounted before it fires', async () => {
-    // Import BEFORE the fake timers go in. settings-page is a large chunk, and
-    // resolving it under fake timers made this test a load-sensitive flake: on a
-    // busy full-suite run the dynamic import alone blew the 5s test timeout. The
-    // timer under test is scheduled by render(), not by import, so nothing is lost.
-    const { SettingsDialog } = await import('./settings-page')
+  // 30s, not the 5s default. SettingsDialog is a heavy render and this file runs
+  // alongside 158 others -- under that parallel load the single render pushed
+  // past 5s and the file failed, while passing in isolation. The timeout is the
+  // honest knob here: nothing is hanging, the work is just genuinely slow.
+  test('clears the 50ms filter-focus timer when unmounted before it fires', () => {
     vi.useFakeTimers()
     const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout')
     const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout')
@@ -62,9 +66,5 @@ describe('SettingsDialog setTimeout cleanup', () => {
     const focusTimerId = setTimeoutSpy.mock.results[focusCall].value
     unmount()
     expect(clearTimeoutSpy).toHaveBeenCalledWith(focusTimerId)
-    // 30s, not the 5s default: this mounts the whole settings dialog, one of the
-    // largest chunks in the app. On a loaded full-suite run the import + render
-    // alone blew 5s and the test failed as a timeout while asserting nothing
-    // about speed. The timeout is a hang guard here, not a perf budget.
   }, 30_000)
 })

@@ -33,6 +33,12 @@ const RECORDER_STOP_TIMEOUT_MS = 500
 export interface UplinkCallbacks {
   /** Buffered past the bound -- the socket is never coming up. Fatal. */
   onOverflow(bufferedBytes: number): void
+  /**
+   * Every MediaRecorder delivery, for the lag meter: a gap here means the ENCODER
+   * starved us, while a non-zero `buffered` means the SOCKET is the bottleneck.
+   * Observation only -- it must not affect what gets sent.
+   */
+  onDelivery?(size: number, buffered: number, mimeType: string): void
 }
 
 export interface Uplink {
@@ -62,8 +68,10 @@ export function startUplink(stream: MediaStream, callbacks: UplinkCallbacks): Up
   let disposed = false
   let overflowed = false
 
-  const recorder = new MediaRecorder(stream, { mimeType: pickMimeType() })
+  const mimeType = pickMimeType()
+  const recorder = new MediaRecorder(stream, { mimeType })
   recorder.ondataavailable = ev => {
+    callbacks.onDelivery?.(ev.data.size, socket?.bufferedAmount ?? 0, mimeType)
     if (disposed || ev.data.size === 0) return
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(ev.data)

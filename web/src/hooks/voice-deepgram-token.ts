@@ -8,7 +8,10 @@
  * WS-CONNECT time, so it is cached for its lifetime and pre-warmed alongside the
  * mic; a warm press pays 0ms.
  *
- * The real DEEPGRAM_API_KEY never reaches the browser (see src/broker/deepgram-mint.ts).
+ * Kept apart from voice-deepgram-direct.ts because minting is an authed HTTP
+ * concern with its own failure modes, while that file is purely the live
+ * streaming session. The real DEEPGRAM_API_KEY never reaches the browser (see
+ * src/broker/deepgram-mint.ts); the browser only ever holds the short-lived token.
  */
 
 /** Re-mint this far before real expiry so a token never dies mid-connect. */

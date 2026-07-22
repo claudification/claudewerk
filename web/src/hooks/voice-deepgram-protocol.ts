@@ -54,6 +54,9 @@ export interface DeepgramResults {
   type: string
   is_final?: boolean
   speech_final?: boolean
+  /** Audio-timeline position of this result, in seconds -- the lag meter's ruler. */
+  start?: number
+  duration?: number
   channel?: { alternatives?: Array<{ transcript?: string }> }
 }
 

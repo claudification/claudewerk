@@ -12,6 +12,12 @@ import type { ChannelStats, SubscriberDiag, SubscriptionChannel, SubscriptionsDi
 // Safe to share because callers only read (`.has()`, iteration); never mutate.
 const EMPTY_SUBSCRIBER_SET: Set<ServerWebSocket<unknown>> = new Set()
 
+// A backpressured send only forces a socket close once the socket's OWN buffered
+// amount has genuinely ballooned past this (4 MB = 1/4 of Bun's 16 MB default cap)
+// -- i.e. a consumer that is truly not draining. A transient -1 on a small message
+// with a near-empty buffer is dropped, not closed, so we don't spin reconnects.
+const BACKPRESSURE_CLOSE_BYTES = 4 * 1024 * 1024
+
 export interface SubscriberEntry {
   id: string
   protocolVersion: number
@@ -210,21 +216,39 @@ export function createChannelRegistry(deps: ChannelRegistryDeps): ChannelRegistr
           const sent_ = ws.send(json)
           if (sent_ < 0) {
             const subInfo = subscriberRegistry.get(ws)
-            console.warn(
-              `[broadcast] backpressure: ${subInfo?.id || 'unknown'} channel=${channel}:${conversationId.slice(0, 8)} bytes=${bytes} -- closing to force reconnect`,
-            )
-            subs.delete(ws)
-            if (subs.size === 0) channelSubscribers.delete(key)
-            try {
-              // 4290 (echoes HTTP 429) -- a TRANSIENT "slow down, reconnect" signal,
-              // NOT auth. Must never collide with the auth codes (4401) or the WS
-              // policy code (1008): the control panel maps those to a hard SESSION
-              // EXPIRED lockout, and backpressure is not an expiry. See the close
-              // handler in web/src/hooks/use-websocket.ts.
-              ws.close(4290, 'backpressure')
-            } catch {
-              /* already closing */
+            const buffered = ws.getBufferedAmount?.() ?? 0
+            // `ws.send()` returning < 0 means "enqueued, but backpressure applied".
+            // On its own that is NOT a reason to tear down the whole multiplexed
+            // socket: a single -1 on a 150-byte message with a near-empty buffer is
+            // a transient hiccup, and closing it just spins the client through
+            // reconnect -> catch-up burst -> backpressure -> close again (observed
+            // live: 4290 every ~second on 158-byte transcript + 179-byte canvas
+            // messages alike). Only a GENUINE backlog -- the buffer actually ballooning
+            // past BACKPRESSURE_CLOSE_BYTES because the consumer is truly not draining
+            // -- justifies the close-to-resync. Everything else: drop this message and
+            // keep the socket. Durable channels self-heal via the periodic sync_check;
+            // canvas is ephemeral (next cursor in ~50ms, scene deltas re-sent on edit).
+            if (channel !== 'canvas' && buffered > BACKPRESSURE_CLOSE_BYTES) {
+              console.warn(
+                `[broadcast] backpressure: ${subInfo?.id || 'unknown'} channel=${channel}:${conversationId.slice(0, 8)} bytes=${bytes} buffered=${buffered} -- closing to force reconnect (genuine backlog)`,
+              )
+              subs.delete(ws)
+              if (subs.size === 0) channelSubscribers.delete(key)
+              try {
+                // 4290 (echoes HTTP 429) -- a TRANSIENT "slow down, reconnect" signal,
+                // NOT auth. Must never collide with the auth codes (4401) or the WS
+                // policy code (1008): the control panel maps those to a hard SESSION
+                // EXPIRED lockout, and backpressure is not an expiry. See the close
+                // handler in web/src/hooks/use-websocket.ts.
+                ws.close(4290, 'backpressure')
+              } catch {
+                /* already closing */
+              }
+              continue
             }
+            console.warn(
+              `[broadcast] backpressure: ${subInfo?.id || 'unknown'} channel=${channel}:${conversationId.slice(0, 8)} bytes=${bytes} buffered=${buffered} -- DROPPED (socket kept)`,
+            )
             continue
           }
           sent.add(ws)

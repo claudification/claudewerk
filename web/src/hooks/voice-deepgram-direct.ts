@@ -20,6 +20,7 @@
 import type { DeepgramDirectOptions, DeepgramDirectSession, DeepgramResults } from '@/hooks/voice-deepgram-protocol'
 import { liveUrl } from '@/hooks/voice-deepgram-protocol'
 import { startUplink, type Uplink } from '@/hooks/voice-deepgram-uplink'
+import { VoiceLagMeter } from '@/hooks/voice-lag-meter'
 
 // Deepgram drops an idle socket after ~10s; a KeepAlive holds it through gaps.
 const KEEPALIVE_MS = 8000
@@ -43,13 +44,18 @@ export function startDeepgramDirect(opts: DeepgramDirectOptions): DeepgramDirect
   // by stop(); consumed on open when the user released before the socket was up.
   let audioDone = false
 
+  // Which half of the pipe is slow -- see voice-lag-meter.ts for what it measures.
+  const lag = new VoiceLagMeter()
+  lag.audioStarted()
   const uplink: Uplink = startUplink(opts.stream, {
     onOverflow: bytes => opts.callbacks.onError(`buffered ${Math.round(bytes / 1024)}KB with no connection`, 'buffer'),
+    onDelivery: (size, buffered, mimeType) => lag.chunk(size, buffered, mimeType),
   })
 
   function teardown() {
     if (torn) return
     torn = true
+    lag.report()
     if (keepAlive) {
       clearInterval(keepAlive)
       keepAlive = null
@@ -114,6 +120,8 @@ export function startDeepgramDirect(opts: DeepgramDirectOptions): DeepgramDirect
     }
     if (msg.type === 'Results') {
       const transcript = msg.channel?.alternatives?.[0]?.transcript ?? ''
+      // Interims are what the user watches, so they are what "laggy" means.
+      if (!msg.is_final) lag.interim(msg.start ?? 0, msg.duration ?? 0, transcript)
       if (msg.is_final) accumulated = [accumulated, transcript].filter(Boolean).join(' ').trim()
       if (transcript || msg.is_final) {
         opts.callbacks.onTranscript({
