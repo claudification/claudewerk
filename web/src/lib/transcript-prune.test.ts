@@ -83,16 +83,47 @@ describe('store: hold / release / return-to-bottom collapse', () => {
     expect(useConversationsStore.getState().transcriptHeadHeld[SID]).toBe(true)
   })
 
-  it('release (conversation switch) collapses to the live cap and clears the hold', () => {
+  // The real switch-away path (use-transcript-head-hold.ts cleanup) calls ONLY
+  // releaseTranscriptHead -- it does NOT manually reset scrollbackActive. So
+  // releaseTranscriptHead itself must clear the scrollback latch, or a
+  // background conversation's live tail defers pruning forever (unbounded
+  // memory leak: the 93ea8702 climb `live=101 -> 132 ...` in the perf log).
+
+  it('release (switch-away, head held) collapses AND clears the scrollback latch', () => {
     useConversationsStore.getState().holdTranscriptHead(SID)
-    useConversationsStore.getState().setScrollbackActive(SID, false)
+    // scrollbackActive is left true (beforeEach) -- user scrolled up and never
+    // returned to the bottom before clicking away. Only release fires:
     useConversationsStore.getState().releaseTranscriptHead(SID)
     const state = useConversationsStore.getState()
     expect(state.transcripts[SID].length).toBe(TRANSCRIPT_LIVE_CAP)
     expect(state.transcriptHeadHeld[SID]).toBeUndefined()
+    expect(state.scrollbackActive[SID]).toBeFalsy()
   })
 
-  it('release without a hold is a no-op', () => {
+  it('release (switch-away, never held) still clears the scrollback latch and collapses', () => {
+    // Scrolled up but never loaded older history -> no head hold. Old code
+    // early-returned here and left scrollbackActive=true forever.
+    useConversationsStore.getState().releaseTranscriptHead(SID)
+    const state = useConversationsStore.getState()
+    expect(state.scrollbackActive[SID]).toBeFalsy()
+    expect(state.transcripts[SID].length).toBe(TRANSCRIPT_LIVE_CAP)
+  })
+
+  it('after release, a ws-broadcast prune resumes (no longer deferred)', () => {
+    useConversationsStore.getState().releaseTranscriptHead(SID)
+    const sb = !!useConversationsStore.getState().scrollbackActive[SID]
+    // This is exactly what the ws-broadcast prune site reads for `scrollback`.
+    const grown = entries(150)
+    const kept = pruneLiveTranscript({ sid: SID, entries: grown, scrollback: sb, held: false, source: 'ws-broadcast' })
+    expect(kept.length).toBe(TRANSCRIPT_LIVE_CAP)
+  })
+
+  it('release with no latches set is a no-op', () => {
+    useConversationsStore.setState({
+      transcripts: { [SID]: entries(50) },
+      scrollbackActive: {},
+      transcriptHeadHeld: {},
+    })
     const before = useConversationsStore.getState().transcripts[SID]
     useConversationsStore.getState().releaseTranscriptHead(SID)
     expect(useConversationsStore.getState().transcripts[SID]).toBe(before)

@@ -1440,10 +1440,19 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
       console.debug(`[transcript-prune] ${conversationId.slice(0, 8)} HOLD head (older history loaded this visit)`)
       return { transcriptHeadHeld: { ...state.transcriptHeadHeld, [conversationId]: true } }
     }),
+  // The authoritative "left this conversation" action (fired from the
+  // use-transcript-head-hold cleanup on cacheKey change / unmount). It must
+  // clear BOTH visit-scoped latches -- transcriptHeadHeld AND scrollbackActive
+  // -- or a background conversation whose reader scrolled up before switching
+  // away keeps `scrollback:true` forever, so every subsequent ws-broadcast
+  // prune is DEFERRED and its live tail grows without bound (memory leak).
   releaseTranscriptHead: conversationId =>
     set(state => {
-      if (!state.transcriptHeadHeld[conversationId]) return state
-      const { [conversationId]: _, ...restHeld } = state.transcriptHeadHeld
+      const wasHeld = !!state.transcriptHeadHeld[conversationId]
+      const wasScrollback = !!state.scrollbackActive[conversationId]
+      if (!wasHeld && !wasScrollback) return state
+      const { [conversationId]: _held, ...restHeld } = state.transcriptHeadHeld
+      const { [conversationId]: _sb, ...restScrollback } = state.scrollbackActive
       const existing = state.transcripts[conversationId] || []
       const kept = pruneLiveTranscript({
         sid: conversationId,
@@ -1452,13 +1461,15 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
         held: false,
         source: 'release-on-switch',
       })
-      console.debug(`[transcript-prune] ${conversationId.slice(0, 8)} RELEASE head (conversation switch)`)
-      if (kept === existing) return { transcriptHeadHeld: restHeld }
-      return {
-        transcriptHeadHeld: restHeld,
-        transcripts: { ...state.transcripts, [conversationId]: kept },
-        newDataSeq: state.newDataSeq + 1,
+      console.debug(
+        `[transcript-prune] ${conversationId.slice(0, 8)} RELEASE head (conversation switch, held=${wasHeld} scrollback=${wasScrollback})`,
+      )
+      const patch: Partial<ConversationsState> = { transcriptHeadHeld: restHeld, scrollbackActive: restScrollback }
+      if (kept !== existing) {
+        patch.transcripts = { ...state.transcripts, [conversationId]: kept }
+        patch.newDataSeq = state.newDataSeq + 1
       }
+      return patch
     }),
   setTasks: (conversationId, tasks) => set(state => ({ tasks: { ...state.tasks, [conversationId]: tasks } })),
   setProjectSettings: settings => set({ projectSettings: settings }),
