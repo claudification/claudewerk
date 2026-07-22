@@ -102,12 +102,33 @@ function mintDevKey(cacheDir: string): string {
   return token
 }
 
-/** A joined canvas-room peer: collects every inbound canvas_* frame. */
+/**
+ * A joined canvas-room peer, modelling what the BROWSER actually does: collect
+ * inbound frames AND apply scene deltas to a local scene (use-canvas-collab.ts
+ * pushes them into the Excalidraw API). That local copy is what its next edit
+ * is built on -- which is exactly the property check D is about, so a peer that
+ * ignored deltas would be testing a merge guarantee the design never made.
+ */
 interface RoomPeer {
   ws: WebSocket
   frames: Record<string, unknown>[]
   of(type: string): Record<string, unknown>[]
+  /** Newest scene this peer has applied, seeded from canvas_join_ack. */
+  localScene(): string | null
   close(): void
+}
+
+/** Frame types that carry a full scene the client adopts wholesale: the join
+ *  ack seeds it, every later delta replaces it (replace-on-delta, no merge). */
+const SCENE_BEARING = new Set(['canvas_join_ack', 'canvas_scene_delta'])
+
+/** Fold a frame log into the scene a client would currently be showing. */
+function foldScene(frames: Record<string, unknown>[]): string | null {
+  let scene: string | null = null
+  for (const f of frames) {
+    if (SCENE_BEARING.has(String(f.type)) && typeof f.scene === 'string') scene = f.scene
+  }
+  return scene
 }
 
 /** Open an authenticated dashboard socket and start collecting frames. */
@@ -142,7 +163,13 @@ async function joinRoom(canvasId: string, cookie: string): Promise<RoomPeer> {
   const { ws, frames } = await openSocket(cookie)
   ws.send(JSON.stringify({ type: 'canvas_join', canvasId, name: 'smoke-human' }))
   await awaitJoinAck(frames)
-  return { ws, frames, of: type => frames.filter(f => f.type === type), close: () => ws.close() }
+  return {
+    ws,
+    frames,
+    of: type => frames.filter(f => f.type === type),
+    localScene: () => foldScene(frames),
+    close: () => ws.close(),
+  }
 }
 
 const results: { name: string; ok: boolean; detail: string }[] = []
@@ -210,9 +237,14 @@ async function checkLivePush(id: string, human: RoomPeer): Promise<void> {
 }
 
 /**
- * D: the human draws AFTER the agent wrote. Their open editor still holds the
- * pre-agent scene, so its next delta is that stale scene plus their own
- * element. If the room takes it as-is, the agent's work is gone.
+ * D: the human draws AFTER the agent wrote.
+ *
+ * This is the end-to-end consequence of C, and the check that actually caught
+ * the data loss. Scene sync is last-writer-wins replace-on-delta -- the broker
+ * does NOT merge -- so the agent's work survives for exactly one reason: the
+ * human's editor received the agent's delta and built its next edit on top. If
+ * the broadcast regresses, this peer's local scene goes stale and its next
+ * write silently deletes the agent's elements, which is the original bug.
  */
 async function checkClobber(id: string, human: RoomPeer): Promise<void> {
   const humanElement = {
@@ -227,17 +259,20 @@ async function checkClobber(id: string, human: RoomPeer): Promise<void> {
     seed: 2,
     isDeleted: false,
   }
-  human.ws.send(
-    JSON.stringify({ type: 'canvas_scene_delta', canvasId: id, scene: scene('agent-edit-1', [humanElement]) }),
-  )
+  // The human draws on top of WHAT THEY CURRENTLY SEE, exactly like the browser.
+  const current = human.localScene()
+  const parsed = JSON.parse(current ?? scene('empty')) as { elements: Record<string, unknown>[] }
+  parsed.elements = [...parsed.elements, humanElement]
+  human.ws.send(JSON.stringify({ type: 'canvas_scene_delta', canvasId: id, scene: JSON.stringify(parsed) }))
+
   await Bun.sleep(2500) // past the 1.5s room persist debounce
   const ids = await storedIds(id)
-  const survived = ids.includes('agent-edit-live')
+  const survived = ids.includes('agent-edit-live') && ids.includes('human-edit')
   check(
     "D. the agent's write survives the human's next edit",
     survived,
     `stored element ids after the human's edit: [${ids.join(', ')}]` +
-      (survived ? '' : ' -- the agent element was OVERWRITTEN'),
+      (survived ? '' : " -- expected BOTH 'agent-edit-live' and 'human-edit'; the agent element was OVERWRITTEN"),
   )
 }
 

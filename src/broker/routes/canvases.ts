@@ -22,6 +22,7 @@ import { randomBytes } from 'node:crypto'
 import { type Context, Hono } from 'hono'
 import type { CanvasShareTier, CanvasSummary } from '../../shared/protocol'
 import { getAuthenticatedUser } from '../auth-routes'
+import { AGENT_PEER_ID, applySceneWrite, baselineScene } from '../canvas-room'
 import { enforceCanvasTier, sanitizeCanvasScene } from '../canvas-sanitize'
 import { BLANK_SCENE, readScene, readThumb } from '../canvas-scenes'
 import {
@@ -120,16 +121,46 @@ export function createCanvasesRouter(conversationStore: ConversationStore, helpe
 
   /** Run a guest scene write through tier enforcement + sanitize + persist,
    *  returning the route Response. Kept out of the route to hold its branch
-   *  count (and the public PUT handler's) under the complexity bar. */
-  function applyGuestWrite(c: Context, canvas: CanvasSummary, nextRaw: string): Response {
+   *  count (and the public PUT handler's) under the complexity bar.
+   *
+   *  Judged against `baselineScene` (live room first, disk second) for the same
+   *  reason the WS path is: disk lags the room by up to the persist debounce, so
+   *  a disk baseline would measure a guest's annotation against a scene nobody
+   *  is looking at. Publishes through the same chokepoint so a guest edit shows
+   *  up live for everyone else instead of only after a reload. */
+  function applyGuestWrite(c: Context, canvas: CanvasSummary, nextRaw: string, peerId: string): Response {
     const tier = (canvas.shareTier ?? 'read') as CanvasShareTier
-    const verdict = enforceCanvasTier(readScene(canvas.id) ?? BLANK_SCENE, nextRaw, tier)
+    const verdict = enforceCanvasTier(baselineScene(canvas.id), nextRaw, tier)
     if (!verdict.ok || !verdict.json) {
       console.log(`[canvas] guest write rejected id=${canvas.id} tier=${tier} reason=${verdict.reason}`)
       return c.json({ error: verdict.reason ?? 'rejected' }, 403)
     }
     saveCanvasScene(canvas.id, verdict.json)
+    const room = applySceneWrite(conversationStore, canvas.id, verdict.json, { peerId, persist: 'already-saved' })
+    console.log(
+      `[canvas] guest write OK id=${canvas.id.slice(0, 12)} tier=${tier} ` +
+        `bytes=${verdict.json.length} -> published to room=${room}`,
+    )
     return c.json({ ok: true })
+  }
+
+  /** Who wrote this scene. A browser autosave names its own room peer so it can
+   *  drop its own echo; anything without one is a server-side (agent) write. */
+  function writerPeerId(body: Record<string, unknown> | null | undefined): string {
+    const raw = body?.peerId
+    return typeof raw === 'string' && raw ? raw : AGENT_PEER_ID
+  }
+
+  /** Publish an already-persisted HTTP scene write into the live room + log it.
+   *  Pairs with the PERSIST log in saveCanvasScene: PUT + PERSIST = an HTTP save
+   *  landed; PERSIST alone = the WS delta-debounce save. */
+  function publishHttpWrite(canvasId: string, sceneJson: string, peerId: string, user: string): void {
+    const room = applySceneWrite(conversationStore, canvasId, sceneJson, { peerId, persist: 'already-saved' })
+    const by = peerId === AGENT_PEER_ID ? 'agent' : peerId.slice(0, 8)
+    console.log(
+      `[canvas] http PUT scene ${canvasId.slice(0, 12)} bytes=${sceneJson.length} ` +
+        `user=${user} by=${by} -> published to room=${room}`,
+    )
   }
 
   /** Parse + sanitize an optional scene field from a request body. Returns the
@@ -175,17 +206,26 @@ export function createCanvasesRouter(conversationStore: ConversationStore, helpe
   })
 
   // ─── save scene (+ optional thumbnail) ───────────────────────────
+  //
+  // Two very different callers land here, and `peerId` is what tells them apart:
+  //   - an AGENT (canvas_update_scene) has no room peer, so the write publishes
+  //     under AGENT_PEER_ID -- which matches nobody's ownPeerId, so every human
+  //     with the canvas open applies it instead of dropping it as an echo.
+  //   - the BROWSER's autosave sends its own room peerId, so the originator
+  //     drops the echo (re-applying its own snapshot, by then up to 1.5s old,
+  //     would wipe strokes drawn since) while other peers apply it harmlessly.
+  //
+  // Persist stays synchronous (the response implies durability and the thumbnail
+  // rides along), so the room is told 'already-saved' -- which ALSO cancels any
+  // pending debounced write still holding the pre-write scene.
   app.put('/api/canvases/:id/scene', async c => {
     const g = await guardWithBody(c, 'files')
     if ('res' in g) return g.res
     const s = sceneFromBody(c, g.body)
     if ('res' in s) return s.res
     if (!s.json) return c.json({ error: 'scene required' }, 400)
-    // HTTP autosave path (owner + guest onSnapshot PUT). Pairs with the PERSIST
-    // log in saveCanvasScene: PUT + PERSIST = an HTTP save landed; PERSIST alone
-    // = the WS delta-debounce save. Lets us see which path is actually firing.
-    console.log(`[canvas] http PUT scene ${g.canvas.id.slice(0, 12)} bytes=${s.json.length} user=${getAuthenticatedUser(c.req.raw) ?? 'guest'}`)
     saveCanvasScene(g.canvas.id, s.json, decodeThumb(g.body?.thumb))
+    publishHttpWrite(g.canvas.id, s.json, writerPeerId(g.body), getAuthenticatedUser(c.req.raw) ?? 'guest')
     return c.json({ canvas: getCanvas(g.canvas.id) })
   })
 
@@ -268,9 +308,10 @@ export function createCanvasesRouter(conversationStore: ConversationStore, helpe
   app.put('/shared/public/canvas/:token/scene', async c => {
     const g = guardPublic(c)
     if ('res' in g) return g.res
-    const next = ((await c.req.json().catch(() => null)) as Record<string, unknown> | null)?.scene
+    const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null
+    const next = body?.scene
     if (typeof next !== 'string' || !next.trim()) return c.json({ error: 'scene required' }, 400)
-    return applyGuestWrite(c, g.canvas, next)
+    return applyGuestWrite(c, g.canvas, next, writerPeerId(body))
   })
 
   // Pretty shorthand: /c/:token -> the SPA in canvas share mode. The SPA mounts
