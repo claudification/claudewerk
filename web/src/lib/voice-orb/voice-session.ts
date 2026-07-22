@@ -7,7 +7,7 @@
  */
 
 import { type FunctionCall, toVoiceAction, type VoiceAction } from './realtime-events'
-import { announceItem, RESPONSE_CANCEL, RESPONSE_CREATE, speedUpdate, toolOutputItem } from './session-messages'
+import { announceItem, RESPONSE_CANCEL, RESPONSE_CREATE, speedUpdate, toolOutputItem, voiceUpdate } from './session-messages'
 import type { VoiceHandlers, VoiceSessionConfig } from './session-types'
 import { createSpeedLatch, type SpeedLatch } from './speed-latch'
 import { connectRealtime, type MintedToken, type RealtimeTransport } from './webrtc-transport'
@@ -183,6 +183,22 @@ export class VoiceSession {
   private pushSpeed(speed: number): void {
     console.debug('[voice-orb] speaking rate ->', speed)
     this.transport?.send(speedUpdate(this.mintedAudio, speed))
+  }
+
+  /** Swap the speaking VOICE on the live session (from the picker or the orb's
+   *  own `update_orb_settings`). OpenAI applies it between turns; if it has
+   *  already produced audio it may lock the voice until the next session -- the
+   *  pref is saved regardless, so it always lands on the next summon. We also
+   *  update mintedAudio so a later speed change does not reset the voice. */
+  // Reached via useLiveSettings through a structural param type (same as
+  // setSpeed, which fallow also cannot trace) -- not dead.
+  // fallow-ignore-next-line unused-class-member
+  setVoice(voice: string): void {
+    if (this.mintedAudio) {
+      const output = { ...(this.mintedAudio.output as Record<string, unknown>), voice }
+      this.mintedAudio = { ...this.mintedAudio, output }
+    }
+    this.transport?.send(voiceUpdate(this.mintedAudio, voice))
   }
 
   /** Live mic + remote streams, for the orb's audio reactivity. */

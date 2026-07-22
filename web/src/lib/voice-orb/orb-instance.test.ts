@@ -6,6 +6,10 @@ describe('orb instance id', () => {
     expect(getOrbInstanceId()).toBe(getOrbInstanceId())
   })
 
+  it('is a SHORT speakable id (6 base36 chars), not a UUID', () => {
+    expect(getOrbInstanceId()).toMatch(/^[a-z0-9]{6}$/)
+  })
+
   it('accepts broadcast deliveries (null/empty target)', () => {
     expect(isForThisOrb(null)).toBe(true)
     expect(isForThisOrb(undefined)).toBe(true)

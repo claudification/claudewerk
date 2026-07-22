@@ -41,6 +41,7 @@ export const VOICE_READ_TOOLS = [
   'search_transcripts',
   'control_screen',
   'reload_yourself',
+  'update_orb_settings',
 ] as const
 
 /** The ACTION verbs, behind the persona's spoken confirm. Two, both EXPLICIT
@@ -127,6 +128,17 @@ const CLIENT_LOCAL_TOOLS: Toolset = {
       target: z.string().nullable().describe('The conversation he named, or null for the question you read out.'),
     }),
     execute: () => ({ clientLocal: 'answer_dialog is handled in the browser' }),
+  }),
+
+  update_orb_settings: defineTool({
+    description:
+      'Change how YOU sound when he tells you to -- "faster", "slow down", "different voice", "use Cedar", "go professional/snarky". Pass only what he changed; leave the rest null. Speed (0.25-1.5) and voice take effect immediately; a tone change lands on your next summon (say so). Values are checked -- if a voice or tone comes back rejected, read out the real options and let him pick. Settings persist. NOT for anything about a conversation.',
+    inputSchema: z.object({
+      speed: z.number().nullable().describe('Speaking rate 0.25-1.5, or null. Clamped to range.'),
+      voice: z.string().nullable().describe('An OpenAI voice name (marin, cedar, ...), or null.'),
+      tone: z.string().nullable().describe('professional | snarky | homicidal | overkill, or null.'),
+    }),
+    execute: () => ({ clientLocal: 'update_orb_settings is handled in the browser' }),
   }),
 }
 

@@ -11,8 +11,9 @@
  * An unresolved or ambiguous name sends NOTHING and comes back with candidates.
  */
 
-import { sendInput, useConversationsStore } from '@/hooks/use-conversations'
+import { useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import { selectConversations } from '@/lib/slim-conversation'
+import { getOrbInstanceId } from './orb-instance'
 import { type Candidate, resolveSpokenConversation } from './resolve-conversation'
 
 export interface SayArgs {
@@ -57,13 +58,17 @@ export function runSayToConversation(args: SayArgs): Record<string, unknown> {
   return deliver(resolved.conversation, message)
 }
 
-/** How the orb's relayed messages are attributed in the target's transcript:
- *  they pose as the user (the conversation acts on them) but render "from Orb"
- *  so it is clear the voice agent spoke, not the human typing directly. */
-const ORB_SENDER = 'Orb'
-
+/** Deliver as a real channel message (the send_message rail), not a bare user
+ *  turn: the broker stamps `sender="orb"` + `source="rclaude"` +
+ *  `from_conversation="orb:<thisBrowser>"`, so it renders "from Orb", the
+ *  conversation acts on it as the user's input, and any reply routes back to
+ *  THIS orb -- no address the orb has to recite. */
 function deliver(target: Candidate, message: string): Record<string, unknown> {
-  const ok = sendInput(target.conversationId, message, { source: ORB_SENDER })
+  const ok = wsSend('voice_orb_say', {
+    conversationId: target.conversationId,
+    message,
+    orbId: getOrbInstanceId(),
+  })
   if (!ok) return { error: `could not reach "${target.title || target.conversationId}" -- it may have just ended` }
   // The orb reads this back: "posted to X". Never claim a send we did not make.
   return {

@@ -159,7 +159,7 @@ export interface ControlRequestResult {
 
 export interface StreamProcess {
   proc: Subprocess
-  sendUserMessage: (text: string, opts?: { origin?: { kind: string; server: string } }) => void
+  sendUserMessage: (text: string) => void
   sendPermissionResponse: (
     requestId: string,
     allow: boolean,
@@ -382,9 +382,7 @@ function nextRequestId(prefix: string): string {
   return `${prefix}-${++controlSeq}`
 }
 
-// Exported for unit tests (sendUserMessage attribution): the real caller is
-// spawnStreamClaude, which needs a live subprocess.
-export function buildStreamProcess(
+function buildStreamProcess(
   proc: Subprocess<'pipe', 'pipe', 'pipe'>,
   writeStdin: (json: Record<string, unknown>) => void,
   options: StreamBackendOptions,
@@ -394,13 +392,9 @@ export function buildStreamProcess(
   return {
     proc,
 
-    sendUserMessage(text: string, opts?: { origin?: { kind: string; server: string } }) {
-      // The model always gets RAW text -- an injected-as-user message (e.g. the
-      // voice orb relaying speech) must read as normal user input, never a
-      // wrapper. Attribution rides on the transcript ENTRY only (opts.origin),
-      // so it renders "from <server>" without changing what the model sees.
+    sendUserMessage(text: string) {
       const content = text
-      debug(`Sending user message${opts?.origin ? ` (via ${opts.origin.server})` : ''}: ${text.slice(0, 80)}...`)
+      debug(`Sending user message: ${text.slice(0, 80)}...`)
       writeStdin({
         type: 'user',
         session_id: '',
@@ -422,7 +416,6 @@ export function buildStreamProcess(
             timestamp: new Date().toISOString(),
             message: { role: 'user', content },
             uuid,
-            ...(opts?.origin && { origin: opts.origin }),
           } as TranscriptEntry,
         ],
         false,

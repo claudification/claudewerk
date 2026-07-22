@@ -38,14 +38,23 @@ const DIRECTION_THEME: Record<ChannelDirection, DirectionTheme> = {
   },
 }
 
-/** `◀ IN` (teal) or `OUT ▶` (indigo) -- arrow sits on the outer edge. */
-export function DirectionChip({ direction }: { direction: ChannelDirection }) {
+// The voice orb is neither a peer conversation nor a system notice -- give it its
+// own hue (violet) so a "from Orb" card never reads as another agent messaging in.
+// Direction (in/out) still shows via the arrow glyph + edge side.
+const ORB_CHIP = 'bg-violet-500/15 text-violet-300 border-violet-400/40'
+function orbCard(direction: ChannelDirection): string {
+  const edge = direction === 'in' ? 'border-l-2 border-l-violet-400' : 'border-r-2 border-r-violet-400'
+  return `border-violet-500/30 bg-violet-500/5 ${edge}`
+}
+
+/** `◀ IN` (teal) or `OUT ▶` (indigo); violet when `orb`. Arrow on the outer edge. */
+export function DirectionChip({ direction, orb }: { direction: ChannelDirection; orb?: boolean }) {
   const t = DIRECTION_THEME[direction]
   return (
     <span
       className={cn(
         'inline-flex items-center gap-1 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider border rounded',
-        t.chip,
+        orb ? ORB_CHIP : t.chip,
       )}
     >
       {direction === 'in' ? (
@@ -80,19 +89,19 @@ export function IntentBadge({ intent }: { intent?: string }) {
   )
 }
 
-/** Direction-tinted body card (rounded fill + mirrored edge accent). */
+/** Direction-tinted body card (rounded fill + mirrored edge accent); violet when
+ *  `orb`. */
 export function ChannelBodyCard({
   direction,
+  orb,
   className,
   children,
 }: {
   direction: ChannelDirection
+  orb?: boolean
   className?: string
   children: ReactNode
 }) {
-  return (
-    <div className={cn('rounded-lg border px-3 py-2.5 my-1', DIRECTION_THEME[direction].card, className)}>
-      {children}
-    </div>
-  )
+  const card = orb ? orbCard(direction) : DIRECTION_THEME[direction].card
+  return <div className={cn('rounded-lg border px-3 py-2.5 my-1', card, className)}>{children}</div>
 }

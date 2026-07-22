@@ -119,3 +119,75 @@ describe('voice_tool_call -- the contract gate', () => {
     expect(String(replies[0].error)).toContain('Forbidden')
   })
 })
+
+/** Drive a voice_orb_say through the router with a conversation lookup + socket. */
+async function runSay(
+  data: MessageData,
+  opts: { conv?: { title?: string }; connected?: boolean; permit?: boolean } = {},
+): Promise<{ replies: Record<string, unknown>[]; sent: string[] }> {
+  const replies: Record<string, unknown>[] = []
+  const sent: string[] = []
+  const socket = opts.connected ? { send: (s: string) => sent.push(s) } : undefined
+  const ctx = {
+    ws: { data: { userName: 'jonas', isControlPanel: true }, send() {} },
+    conversations: {
+      getAllConversations: () => [],
+      getConversation: () => opts.conv,
+      findSocketByConversationId: () => socket,
+      getConversationSocket: () => socket,
+    },
+    store: { transcripts: { search: () => [] } },
+    reply: (m: Record<string, unknown>) => replies.push(m),
+    requirePermission: () => {
+      if (opts.permit === false) throw new Error("Forbidden: missing 'spawn' permission")
+    },
+    log: { info() {}, error() {}, debug() {} },
+  } as unknown as HandlerContext
+  routeMessage(ctx, 'voice_orb_say', data)
+  await new Promise(r => setTimeout(r, 0))
+  return { replies, sent }
+}
+
+const SAY = (over: Partial<MessageData> = {}): MessageData =>
+  ({ conversationId: 'conv_1', message: 'run the tests', orbId: 'k7p2qz', ...over }) as MessageData
+
+describe('voice_orb_say -- the orb speaking TO a conversation', () => {
+  it('delivers a channel_deliver from orb:<id> (source=rclaude, sender=orb)', async () => {
+    const { replies, sent } = await runSay(SAY(), { conv: { title: 'the arr one' }, connected: true })
+    expect(sent).toHaveLength(1)
+    expect(JSON.parse(sent[0])).toEqual({
+      type: 'channel_deliver',
+      fromConversation: 'orb:k7p2qz',
+      fromProject: 'orb',
+      sender: 'orb',
+      source: 'rclaude',
+      intent: 'request',
+      message: 'run the tests',
+    })
+    expect(replies[0]).toMatchObject({ ok: true, to: 'the arr one', from: 'orb:k7p2qz' })
+  })
+
+  it('no orbId -> broadcasts from bare "orb"', async () => {
+    const { sent } = await runSay(SAY({ orbId: undefined }), { conv: { title: 'x' }, connected: true })
+    expect(JSON.parse(sent[0]).fromConversation).toBe('orb')
+  })
+
+  it('missing message -> ok:false, nothing sent', async () => {
+    const { replies, sent } = await runSay(SAY({ message: '' }), { conv: { title: 'x' }, connected: true })
+    expect(replies[0]).toMatchObject({ ok: false })
+    expect(String(replies[0].error)).toContain('required')
+    expect(sent).toHaveLength(0)
+  })
+
+  it('conversation not connected -> ok:false', async () => {
+    const { replies, sent } = await runSay(SAY(), { conv: { title: 'x' }, connected: false })
+    expect(String(replies[0].error)).toContain('not connected')
+    expect(sent).toHaveLength(0)
+  })
+
+  it('permission denied -> ok:false, nothing sent', async () => {
+    const { replies, sent } = await runSay(SAY(), { conv: { title: 'x' }, connected: true, permit: false })
+    expect(replies[0]).toMatchObject({ ok: false })
+    expect(sent).toHaveLength(0)
+  })
+})

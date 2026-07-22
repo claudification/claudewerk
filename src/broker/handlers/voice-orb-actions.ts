@@ -20,6 +20,7 @@
  * Thin by design: no dispatch logic lives here, it all stays in desk/.
  */
 
+import type { InterConversationDelivery } from '../../shared/protocol'
 import { buildDispatchRuntime } from '../desk/runtime'
 import type { ToolDef } from '../desk/tool-def'
 import { ACTIVE_VOICE_TOOLS, buildVoiceToolset } from '../desk/voice-tools'
@@ -100,7 +101,68 @@ const voiceToolCall: MessageHandler = async (ctx: HandlerContext, data: MessageD
   }
 }
 
+/**
+ * The orb SPEAKING TO a conversation (`say_to_conversation`). The browser
+ * resolves which conversation (spoken name -> live title, refuses ambiguity),
+ * then this delivers a real `channel_deliver` -- the SAME rail send_message
+ * rides -- carrying:
+ *   - `sender="orb"`      so it renders "from Orb", not an anonymous user turn,
+ *   - `source="rclaude"`  so the conversation treats it as the USER's input and
+ *                         acts on it (the orb IS the user's voice),
+ *   - `from_conversation="orb:<id>"`  so a reply routes straight back to THIS
+ *                         orb (the conversation just replies to that address --
+ *                         no UUID recited, no address the orb has to speak).
+ * Bypasses the inter-conversation link gate: the orb is a sanctioned surface.
+ */
+type OrbSayResolved =
+  | { error: string }
+  | { ws: { send(s: string): void }; to: string; from: string; message: string; convId: string }
+
+/** Validate + resolve the say request. Kept out of the handler so the handler
+ *  stays a straight line (parse -> deliver -> reply). Cyclomatic (12) + cognitive
+ *  (11) are both under threshold; only fallow's ESTIMATED-coverage CRAP trips,
+ *  and it is covered by voice-orb-actions.test.ts (5 cases). */
+// fallow-ignore-next-line complexity
+function resolveOrbSay(ctx: HandlerContext, data: MessageData): OrbSayResolved {
+  const conversationId = typeof data.conversationId === 'string' ? data.conversationId : ''
+  const message = typeof data.message === 'string' ? data.message : ''
+  const orbId = typeof data.orbId === 'string' && data.orbId ? data.orbId : null
+  if (!conversationId || !message) return { error: 'conversationId and message are required' }
+  const target = ctx.conversations.getConversation(conversationId)
+  const ws =
+    ctx.conversations.findSocketByConversationId(conversationId) ||
+    ctx.conversations.getConversationSocket(conversationId)
+  if (!target || !ws) return { error: 'that conversation is not connected' }
+  return { ws, to: target.title || conversationId, from: orbId ? `orb:${orbId}` : 'orb', message, convId: conversationId }
+}
+
+const voiceOrbSay: MessageHandler = (ctx: HandlerContext, data: MessageData) => {
+  try {
+    ctx.requirePermission('spawn')
+  } catch (e) {
+    ctx.reply({ type: 'voice_orb_say_result', ok: false, error: (e as Error).message })
+    return
+  }
+  const r = resolveOrbSay(ctx, data)
+  if ('error' in r) {
+    ctx.reply({ type: 'voice_orb_say_result', ok: false, error: r.error })
+    return
+  }
+  const delivery: InterConversationDelivery = {
+    type: 'channel_deliver',
+    fromConversation: r.from,
+    fromProject: 'orb',
+    sender: 'orb',
+    source: 'rclaude',
+    intent: 'request',
+    message: r.message,
+  }
+  r.ws.send(JSON.stringify(delivery))
+  ctx.reply({ type: 'voice_orb_say_result', ok: true, to: r.to, from: r.from })
+  ctx.log.debug(`[orb-say] ${r.from} -> ${r.convId.slice(0, 8)} "${r.message.slice(0, 50)}"`)
+}
+
 export function registerVoiceOrbHandlers(): void {
   // Control panel only -- a share (guest) viewer must never drive the fleet by voice.
-  registerHandlers({ voice_tool_call: voiceToolCall }, CONTROL_PANEL_ONLY)
+  registerHandlers({ voice_tool_call: voiceToolCall, voice_orb_say: voiceOrbSay }, CONTROL_PANEL_ONLY)
 }

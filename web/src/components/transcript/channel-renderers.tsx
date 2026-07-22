@@ -32,12 +32,17 @@ export function ChannelItem({ item }: { item: ChannelRenderItem }) {
 // teal hue, left edge accent, `◀ IN` chip. See channel-message-parts.tsx for
 // the matching outgoing treatment.
 function InterConversationChannel({ item }: { item: ChannelRenderItem }) {
+  const orb = item.isOrbChannel
   return (
-    <ChannelBodyCard direction="in">
+    <ChannelBodyCard direction="in" orb={orb}>
       <div className="flex items-center gap-2 mb-1.5">
-        <DirectionChip direction="in" />
-        <span className="text-[10px] font-mono text-teal-400/60">from</span>
-        <ConversationTag idOrSlug={item.conversationId || item.source || ''} className="text-xs" />
+        <DirectionChip direction="in" orb={orb} />
+        <span className={cn('text-[10px] font-mono', orb ? 'text-violet-400/60' : 'text-teal-400/60')}>from</span>
+        {orb ? (
+          <span className="text-xs font-bold text-violet-300">Orb</span>
+        ) : (
+          <ConversationTag idOrSlug={item.conversationId || item.source || ''} className="text-xs" />
+        )}
         <IntentBadge intent={item.intent} />
       </div>
       <div className="text-sm">

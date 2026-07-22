@@ -41,13 +41,28 @@ function orbSpeed(): number {
   return Math.min(1.5, Math.max(0.25, raw))
 }
 
-/** Push the dial to a LIVE session whenever it moves. Its own hook so the main
- *  one stays a flat state machine. */
-function useLiveSpeed(live: { session: { setSpeed(n: number): void } } | null): void {
+/** Push speed + voice prefs to the LIVE session whenever they move (from the
+ *  pickers or the orb's own `update_orb_settings`). One hook so the main one
+ *  stays a flat state machine. Voice skips its first run so it never re-sends
+ *  the voice the session was just minted with. */
+function useLiveSettings(live: { session: { setSpeed(n: number): void; setVoice(v: string): void } } | null): void {
   const speed = useConversationsStore(st => st.controlPanelPrefs.voiceOrbSpeed)
+  const voice = useConversationsStore(st => st.controlPanelPrefs.voiceOrbVoice)
+  const voiceMounted = useRef(false)
   useEffect(() => {
     live?.session.setSpeed(orbSpeed())
   }, [speed, live])
+  useEffect(() => {
+    if (!live) {
+      voiceMounted.current = false
+      return
+    }
+    if (!voiceMounted.current) {
+      voiceMounted.current = true
+      return
+    }
+    live.session.setVoice(voice)
+  }, [voice, live])
 }
 
 export function useVoiceOrb(): VoiceOrb {
@@ -111,7 +126,7 @@ export function useVoiceOrb(): VoiceOrb {
     void liveRef.current.session.setMicEnabled(!next)
   }, [muted])
 
-  useLiveSpeed(liveRef.current)
+  useLiveSettings(liveRef.current)
 
   const audioStreams = useCallback(() => liveRef.current?.session.audioStreams() ?? [], [])
   const announce = useCallback((note: string) => liveRef.current?.session.announce(note), [])

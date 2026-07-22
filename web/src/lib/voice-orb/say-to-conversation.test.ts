@@ -1,16 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const sendInput = vi.fn(() => true)
+const wsSend = vi.fn(() => true)
 let conversationsById: Record<string, unknown> = {}
 let selectedConversationId: string | null = null
 
 vi.mock('@/hooks/use-conversations', () => ({
   useConversationsStore: { getState: () => ({ conversationsById, selectedConversationId }) },
-  sendInput: (id: string, text: string, opts?: unknown) => sendInput(id, text, opts),
+  wsSend: (type: string, data: unknown) => wsSend(type, data),
 }))
 vi.mock('@/lib/slim-conversation', () => ({
   selectConversations: (byId: Record<string, unknown>) => Object.values(byId),
 }))
+vi.mock('./orb-instance', () => ({ getOrbInstanceId: () => 'orb123' }))
 
 const { runSayToConversation } = await import('./say-to-conversation')
 
@@ -22,8 +23,8 @@ const conv = (id: string, title: string, project = 'claude://d/p/remote-claude',
 })
 
 beforeEach(() => {
-  sendInput.mockClear()
-  sendInput.mockReturnValue(true)
+  wsSend.mockClear()
+  wsSend.mockReturnValue(true)
   selectedConversationId = 'c1'
   conversationsById = {
     c1: conv('c1', 'station bar'),
@@ -33,17 +34,20 @@ beforeEach(() => {
 })
 
 describe('the conversation on screen (target: null)', () => {
-  it('sends to the selected conversation and reports where it landed', () => {
+  it('delivers a voice_orb_say to the selected conversation and reports where it landed', () => {
     const out = runSayToConversation({ message: 'retry the deploy', target: null })
-    // Poses as the user, but attributed "from Orb" so the transcript shows it.
-    expect(sendInput).toHaveBeenCalledWith('c1', 'retry the deploy', { source: 'Orb' })
+    expect(wsSend).toHaveBeenCalledWith('voice_orb_say', {
+      conversationId: 'c1',
+      message: 'retry the deploy',
+      orbId: 'orb123',
+    })
     expect(out).toMatchObject({ sent: true, to: 'station bar', conversationId: 'c1' })
   })
 
   it('refuses with candidates when nothing is open, instead of picking one', () => {
     selectedConversationId = null
     const out = runSayToConversation({ message: 'hello', target: null })
-    expect(sendInput).not.toHaveBeenCalled()
+    expect(wsSend).not.toHaveBeenCalled()
     expect(String(out.error)).toContain('no conversation is open')
     expect((out.candidates as unknown[]).length).toBeGreaterThan(0)
   })
@@ -51,7 +55,7 @@ describe('the conversation on screen (target: null)', () => {
   it('refuses when the selection points at an ended conversation', () => {
     selectedConversationId = 'c3'
     const out = runSayToConversation({ message: 'hello', target: null })
-    expect(sendInput).not.toHaveBeenCalled()
+    expect(wsSend).not.toHaveBeenCalled()
     expect(out.error).toBeTruthy()
   })
 })
@@ -59,7 +63,11 @@ describe('the conversation on screen (target: null)', () => {
 describe('a NAMED conversation', () => {
   it('resolves the spoken name against live titles', () => {
     const out = runSayToConversation({ message: 'we are live', target: 'Station Bar' })
-    expect(sendInput).toHaveBeenCalledWith('c1', 'we are live', { source: 'Orb' })
+    expect(wsSend).toHaveBeenCalledWith('voice_orb_say', {
+      conversationId: 'c1',
+      message: 'we are live',
+      orbId: 'orb123',
+    })
     expect(out).toMatchObject({ sent: true, to: 'station bar' })
   })
 
@@ -72,20 +80,20 @@ describe('a NAMED conversation', () => {
     conversationsById = { a: conv('a', 'build it'), b: conv('b', 'build it') }
     selectedConversationId = 'a'
     const out = runSayToConversation({ message: 'go', target: 'build it' })
-    expect(sendInput).not.toHaveBeenCalled()
+    expect(wsSend).not.toHaveBeenCalled()
     expect(String(out.error)).toContain('ambiguous')
     expect((out.candidates as unknown[]).length).toBe(2)
   })
 
   it('SENDS NOTHING when the name matches nothing', () => {
     const out = runSayToConversation({ message: 'go', target: 'kubernetes' })
-    expect(sendInput).not.toHaveBeenCalled()
+    expect(wsSend).not.toHaveBeenCalled()
     expect(String(out.error)).toContain('nothing live matches')
   })
 
   it('never targets an ENDED conversation by name', () => {
     const out = runSayToConversation({ message: 'go', target: 'dead one' })
-    expect(sendInput).not.toHaveBeenCalled()
+    expect(wsSend).not.toHaveBeenCalled()
     expect(out.sent).toBeUndefined()
   })
 })
@@ -96,11 +104,11 @@ describe('guards', () => {
       const out = runSayToConversation({ message, target: null })
       expect(String(out.error)).toContain('nothing to send')
     }
-    expect(sendInput).not.toHaveBeenCalled()
+    expect(wsSend).not.toHaveBeenCalled()
   })
 
   it('never claims a delivery the wire refused', () => {
-    sendInput.mockReturnValue(false)
+    wsSend.mockReturnValue(false)
     const out = runSayToConversation({ message: 'hi', target: null })
     expect(out.sent).toBeUndefined()
     expect(String(out.error)).toContain('could not reach')

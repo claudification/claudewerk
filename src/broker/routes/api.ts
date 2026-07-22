@@ -200,19 +200,14 @@ export function createApiRouter(
       // Narrowed against the enum here -- an unknown value falls back to the
       // default rather than minting a session with no persona at all.
       const body = await c.req
-        .json<{ tone?: unknown; speed?: unknown; voice?: unknown; orbId?: unknown }>()
-        .catch(() => ({}) as { tone?: unknown; speed?: unknown; voice?: unknown; orbId?: unknown })
-      // The orb's per-browser instance id -- kept only if it is a plausible id
-      // (a bounded string), so a junk value can never bloat the persona prompt.
-      const orbId =
-        typeof body.orbId === 'string' && body.orbId.length > 0 && body.orbId.length <= 64 ? body.orbId : undefined
+        .json<{ tone?: unknown; speed?: unknown; voice?: unknown }>()
+        .catch(() => ({}) as { tone?: unknown; speed?: unknown; voice?: unknown })
       const minted = await mintVoiceToken({
         apiKey,
         tools,
         tone: asVoiceTone(body.tone),
         speed: clampVoiceSpeed(body.speed),
         voice: asVoiceName(body.voice),
-        orbId,
         safetyId: 'desk-voice',
       })
       return c.json(minted)

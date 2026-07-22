@@ -43,8 +43,8 @@ export function GroupHeader({
         (channelServer === 'rclaude' ? (
           <span className="text-[9px] text-teal-400/50 font-mono">via channel</span>
         ) : (
-          <span className="px-1.5 py-0.5 text-[10px] font-bold bg-teal-400/20 text-teal-400 border border-teal-400/50">
-            from {channelServer}
+          <span className="px-1.5 py-0.5 text-[10px] font-bold bg-teal-400/20 text-teal-400 border border-teal-400/50 animate-pulse">
+            CHANNEL: {channelServer}
           </span>
         ))}
       {effortBadge && (

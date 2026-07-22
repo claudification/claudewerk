@@ -273,7 +273,11 @@ export function createMcpServer(
           const orb = parseOrbTarget(t)
           if (orb.isOrb) {
             const res = relayToOrb(conversationStore, callerConversationId, message, orb.orbId)
-            return { to: t, ok: res.ok, status: 'delivered' as const }
+            const note =
+              res.subscribers > 0
+                ? `spoken to the orb (${res.subscribers} listening)`
+                : 'no orb is summoned right now -- nobody heard it'
+            return { to: t, ok: res.ok, status: 'delivered' as const, note }
           }
           const target = conversations.find(c => c.id === t || c.title === t || c.agentName === t)
           if (!target) {
@@ -301,6 +305,8 @@ export function createMcpServer(
           const why = r.error ? `: ${r.error}` : ' not found or not connected'
           return { content: [{ type: 'text', text: `Target "${r.to}"${why}` }] }
         }
+        const note = (r as { note?: string }).note
+        if (note) return { content: [{ type: 'text', text: note }] }
         const dest = r.targetConversationId ?? r.to // `dispatcher` has no conv id
         return { content: [{ type: 'text', text: `Message sent to ${dest}` }] }
       }

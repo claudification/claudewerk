@@ -8,7 +8,6 @@
  */
 
 import type { VoiceOrbTone } from '@/components/voice-orb/voice-orb-tone'
-import { getOrbInstanceId } from './orb-instance'
 import type { FunctionCall, VoiceState } from './realtime-events'
 import type { ToolBridge } from './tool-bridge'
 import type { VoiceSession } from './voice-session'
@@ -42,7 +41,6 @@ async function mintToken(opts: {
   tone: string
   speed: number
   voice: string
-  orbId: string
 }): Promise<{ value: string; model: string }> {
   const res = await fetch('/api/desk/voice/token', {
     method: 'POST',
@@ -65,6 +63,7 @@ export async function openVoiceSession(cb: OpenSessionCallbacks): Promise<OpenSe
     await Promise.all([import('./tool-bridge'), import('./voice-session'), import('./control-screen')])
   const { runSayToConversation } = await import('./say-to-conversation')
   const { runAnswerDialog } = await import('./answer-dialog')
+  const { runUpdateOrbSettings } = await import('./update-orb-settings')
 
   const bridge = createToolBridge({
     send: cb.send,
@@ -74,6 +73,8 @@ export async function openVoiceSession(cb: OpenSessionCallbacks): Promise<OpenSe
       say_to_conversation: args => runSayToConversation(args),
       // His answer to a question on screen, through the dialog's own submit path.
       answer_dialog: args => runAnswerDialog(args),
+      // The orb changing its own speed/voice/tone on command.
+      update_orb_settings: args => runUpdateOrbSettings(args),
       // Answered immediately and acted on after a beat, so the orb's last
       // words make it out before the session is torn down under it.
       reload_yourself: () => {
@@ -86,8 +87,7 @@ export async function openVoiceSession(cb: OpenSessionCallbacks): Promise<OpenSe
 
   const session = new Session(
     {
-      mintToken: () =>
-        mintToken({ tone: String(cb.tone()), speed: cb.speed(), voice: cb.voice(), orbId: getOrbInstanceId() }),
+      mintToken: () => mintToken({ tone: String(cb.tone()), speed: cb.speed(), voice: cb.voice() }),
       runTool: (call: FunctionCall) => bridge.run(call),
     },
     { onState: cb.onState, onError: cb.onError, onTranscript: cb.onTranscript },

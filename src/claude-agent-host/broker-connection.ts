@@ -139,8 +139,8 @@ export function connectToBroker(ctx: AgentHostContext, deps: BrokerConnectionDep
     onError(error) {
       debug(`Broker error: ${error.message}`)
     },
-    onInput(input, crDelay, source) {
-      handleInput(ctx, deps, input, crDelay, source)
+    onInput(input, crDelay) {
+      handleInput(ctx, deps, input, crDelay)
     },
     onTerminalInput(data) {
       if (ctx.ptyProcess) {
@@ -359,13 +359,7 @@ function handleConnected(ctx: AgentHostContext, deps: BrokerConnectionDeps, ccSe
   startTaskWatching(ctx)
 }
 
-function handleInput(
-  ctx: AgentHostContext,
-  deps: BrokerConnectionDeps,
-  input: string,
-  crDelay?: number,
-  source?: string,
-) {
+function handleInput(ctx: AgentHostContext, deps: BrokerConnectionDeps, input: string, crDelay?: number) {
   if (deps.headless) {
     if (!ctx.streamProc || !input) return
     const trimmed = input.trimEnd()
@@ -406,9 +400,7 @@ function handleInput(
       prefixed.run(trimmed.slice(prefixed.prefix.length).trim())
       return
     }
-    // `source` (e.g. "Orb") attributes an injected-as-user message: the model
-    // gets the raw text, the transcript entry gets a "from <source>" badge.
-    ctx.streamProc.sendUserMessage(input, source ? { origin: { kind: 'channel', server: source } } : undefined)
+    ctx.streamProc.sendUserMessage(input)
     return
   }
 
@@ -417,12 +409,7 @@ function handleInput(
   const isSlashCommand = input.trimStart().startsWith('/')
 
   if (deps.channelEnabled && isMcpChannelReady() && !isSlashCommand) {
-    // An injected-as-user message from a surface (e.g. the voice orb): attribute
-    // it so the PTY transcript renders "from <source>". `source="rclaude"` keeps
-    // it USER input (the agent acts on it), `sender` carries the label -- the
-    // same meta mechanism the inter-conversation path uses to render attributed.
-    const meta = source ? { source: 'rclaude', sender: 'orb', server: source } : undefined
-    pushChannelMessage(input, meta)
+    pushChannelMessage(input)
       .then(sent => {
         if (sent) {
           ctx.diag('channel', `Input via MCP (${input.length} chars)`)
@@ -571,9 +558,15 @@ async function retryTranscriptWatcher(ctx: AgentHostContext, path: string) {
 }
 
 function handleChannelDeliver(ctx: AgentHostContext, deps: BrokerConnectionDeps, delivery: InterConversationDelivery) {
+  // Default: an untrusted peer conversation. The voice orb overrides sender="orb"
+  // + source="rclaude" so the message renders "from Orb" and counts as the user's
+  // own input (act on it), not a peer's request.
+  const sender = delivery.sender ?? 'conversation'
+  const source = delivery.source
   if (deps.headless && ctx.streamProc) {
     const attrs = [
-      `sender="conversation"`,
+      ...(source ? [`source="${source}"`] : []),
+      `sender="${sender}"`,
       `from_conversation="${delivery.fromConversation}"`,
       `from_project="${delivery.fromProject}"`,
       `intent="${delivery.intent}"`,
@@ -581,14 +574,15 @@ function handleChannelDeliver(ctx: AgentHostContext, deps: BrokerConnectionDeps,
     ].join(' ')
     const wrapped = `<channel ${attrs}>\n${delivery.message}\n</channel>`
     ctx.streamProc.sendUserMessage(wrapped)
-    ctx.diag('headless', `Channel from ${delivery.fromProject}: ${delivery.message.slice(0, 60)}`)
+    ctx.diag('headless', `Channel from ${delivery.fromConversation}: ${delivery.message.slice(0, 60)}`)
   } else if (deps.channelEnabled && isMcpChannelReady()) {
     const meta: Record<string, string> = {
-      sender: 'conversation',
+      sender,
       from_conversation: delivery.fromConversation,
       from_project: delivery.fromProject,
       intent: delivery.intent,
     }
+    if (source) meta.source = source
     if (delivery.conversationId) meta.conversation_id = delivery.conversationId
     if (delivery.context) meta.context = delivery.context
     pushChannelMessage(delivery.message, meta).catch(err => {

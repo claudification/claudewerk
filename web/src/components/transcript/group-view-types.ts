@@ -61,6 +61,8 @@ export type RenderItem =
       conversationId?: string
       intent?: string
       isInterConversation?: boolean
+      /** The voice orb relayed this (renders violet "from Orb", not a peer). */
+      isOrbChannel?: boolean
       isDialog?: boolean
       /** A live (persistent) dialog the user just submitted -- rendered rich, not raw. */
       isDialogSubmit?: boolean

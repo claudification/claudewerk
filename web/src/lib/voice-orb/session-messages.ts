@@ -28,6 +28,14 @@ export function speedUpdate(mintedAudio: Record<string, unknown> | null, speed: 
   return { type: 'session.update', session: { type: 'realtime', audio: { ...mintedAudio, output } } }
 }
 
+/** Same shape as speedUpdate, for the OUTPUT voice -- echo the whole minted
+ *  audio block with only `voice` changed so transcription + turn detection
+ *  survive the update. */
+export function voiceUpdate(mintedAudio: Record<string, unknown> | null, voice: string): RealtimeClientEvent {
+  const output = { ...(mintedAudio?.output as Record<string, unknown>), voice }
+  return { type: 'session.update', session: { type: 'realtime', audio: { ...mintedAudio, output } } }
+}
+
 /**
  * Something the orb says WITHOUT being asked (proactive narration), injected as
  * a conversation item so it answers IN PERSONA and remembers saying it -- a

@@ -75,14 +75,11 @@ const CHANNEL = [
   '"[orb channel] ...". Deliver it to him in one sentence, named to its source.',
 ].join('\n')
 
-/** Only when the session was minted with an instance id -- lets the orb hand out
- *  its own address so a conversation can report back to THIS screen. */
-function addressLine(orbId: string): string {
-  return (
-    `YOUR ADDRESS: this screen is "orb:${orbId}". To make a conversation report back ` +
-    `to THIS screen, have it message "orb:${orbId}"; plain "orb" reaches every screen he has open.`
-  )
-}
+const SETTINGS = [
+  'SETTINGS: when he says how you should sound -- "faster", "slow down", "different',
+  'voice", "go professional" -- call `update_orb_settings`. Speed and voice change',
+  'now; a tone change lands on your next summon -- tell him so.',
+].join('\n')
 
 const OPENING = [
   'WHEN THE SESSION OPENS: one line, then stop. Do NOT call a tool, do NOT volunteer',
@@ -105,14 +102,8 @@ const DELIVERY = [
   'One exception: before a slow tool, a short line so there is no dead air.',
 ].join('\n')
 
-/** Compose the instructions for exactly the tools being minted, at `tone`.
- *  `orbId` (the browser's instance id) adds the one-line address block so the orb
- *  can route targeted replies back to this screen. */
-export function buildVoiceInstructions(
-  toolNames: readonly string[],
-  tone: VoiceTone = DEFAULT_VOICE_TONE,
-  orbId?: string,
-): string {
+/** Compose the instructions for exactly the tools being minted, at `tone`. */
+export function buildVoiceInstructions(toolNames: readonly string[], tone: VoiceTone = DEFAULT_VOICE_TONE): string {
   const has = (n: string) => toolNames.includes(n)
   const parts = [tonePreamble(tone), VOCAB]
   if (has('projects_overview')) parts.push(READING)
@@ -123,7 +114,7 @@ export function buildVoiceInstructions(
   if (has('dispatch_quest')) parts.push(QUESTS, COST)
   if (has('remember')) parts.push(MEMORY)
   parts.push(CHANNEL)
-  if (orbId) parts.push(addressLine(orbId))
+  if (has('update_orb_settings')) parts.push(SETTINGS)
   parts.push(OPENING, LOSSY, DELIVERY)
   return parts.join('\n\n')
 }

@@ -87,11 +87,19 @@ function parseChannelContent(channelMatch: RegExpMatchArray, items: RenderItem[]
     pushSystemChannelItem(getAttr, msg, items)
     return
   }
-  // A message the voice orb relayed on the user's behalf (PTY path): source
-  // "rclaude" keeps it user input; render it attributed "from Orb" so it is
-  // clear the orb spoke, not the human typing directly.
+  // A message the voice orb relayed on the user's behalf. source="rclaude" keeps
+  // it user input (the agent acts on it); `isOrbChannel` renders it in the orb's
+  // own colour, and `from_conversation` (orb:<id>) is the reply address.
   if (source === 'rclaude' && sender === 'orb') {
-    items.push({ kind: 'channel', text: msg, source: getAttr('server') || 'Orb', isInterConversation: true })
+    items.push({
+      kind: 'channel',
+      text: msg,
+      source: 'Orb',
+      conversationId: getAttr('from_conversation'),
+      intent: intent || undefined,
+      isInterConversation: true,
+      isOrbChannel: true,
+    })
     return
   }
   if (source === 'rclaude') {

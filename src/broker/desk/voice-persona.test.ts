@@ -72,12 +72,9 @@ describe('the orb channel', () => {
     expect(flat(buildVoiceInstructions(READ))).toContain('named to its source')
   })
 
-  it('adds the instance address ONLY when an orbId is minted', () => {
-    expect(flat(buildVoiceInstructions(ALL, DEFAULT_VOICE_TONE))).not.toContain('YOUR ADDRESS')
-    const withId = flat(buildVoiceInstructions(ALL, DEFAULT_VOICE_TONE, 'abc123'))
-    expect(withId).toContain('YOUR ADDRESS')
-    expect(withId).toContain('orb:abc123')
-    expect(withId).toContain('reaches every screen')
+  it('teaches the settings verb only when it is minted', () => {
+    expect(flat(buildVoiceInstructions(['projects_overview']))).not.toContain('`update_orb_settings`')
+    expect(flat(buildVoiceInstructions(['update_orb_settings']))).toContain('`update_orb_settings`')
   })
 })
 

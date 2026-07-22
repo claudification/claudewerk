@@ -21,9 +21,10 @@ function framedSubmit(state: object, title = 'Plan: X') {
   ].join('\n')
 }
 
-describe('voice-orb relayed message (PTY channel path)', () => {
-  it('renders source="rclaude" sender="orb" as an attributed "from Orb" item', () => {
-    const wrapped = '<channel source="rclaude" sender="orb" server="Orb">\nretry the deploy\n</channel>'
+describe('voice-orb relayed message', () => {
+  it('renders source="rclaude" sender="orb" as an attributed, orb-coloured "from Orb" item', () => {
+    const wrapped =
+      '<channel source="rclaude" sender="orb" from_conversation="orb:abc123" intent="request">\nretry the deploy\n</channel>'
     const items = parseGroupEntries([userEntry(wrapped)], noResult)
     expect(items).toHaveLength(1)
     const it0 = items[0]
@@ -31,6 +32,8 @@ describe('voice-orb relayed message (PTY channel path)', () => {
     if (it0.kind !== 'channel') return
     expect(it0.source).toBe('Orb')
     expect(it0.isInterConversation).toBe(true)
+    expect(it0.isOrbChannel).toBe(true)
+    expect(it0.conversationId).toBe('orb:abc123')
     expect(it0.text).toBe('retry the deploy')
   })
 })
