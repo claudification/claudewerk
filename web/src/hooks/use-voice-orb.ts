@@ -88,6 +88,7 @@ export function useVoiceOrb(): VoiceOrb {
         send: wsSend,
         tone: () => useConversationsStore.getState().controlPanelPrefs.voiceOrbTone,
         speed: () => orbSpeed(),
+        voice: () => useConversationsStore.getState().controlPanelPrefs.voiceOrbVoice,
       })
     } catch (e) {
       setError((e as Error).message)

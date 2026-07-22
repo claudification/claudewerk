@@ -1,3 +1,4 @@
+import { DEFAULT_VOICE_ORB_SPEED, DEFAULT_VOICE_ORB_VOICE } from '@shared/voice-orb-options'
 import type { VirtualizerLabPrefs } from './virtualizer-lab'
 
 export interface ToolDisplayPrefs {
@@ -62,6 +63,8 @@ export interface ControlPanelPrefs {
   voiceOrbTone: string
   /** Voice orb speaking rate, 0.25..1.5 (OpenAI's own bounds). */
   voiceOrbSpeed: number
+  /** Which OpenAI voice the orb speaks with. */
+  voiceOrbVoice: string
   voiceDeviceLabel: string // last-known label for voiceDeviceId, so the picker shows the right mic name before/without a mic grant (Google-Meet-style). '' when unknown.
   chatBubbleColor: string // tailwind color class prefix (e.g. 'blue', 'teal', 'purple')
   defaultConversationCwd: string // auto-select this project on dashboard load (per-device)
@@ -122,7 +125,8 @@ const defaultPrefs: ControlPanelPrefs = {
   voiceNoiseSuppression: false,
   voiceDeviceId: '',
   voiceOrbTone: 'snarky',
-  voiceOrbSpeed: 1.3,
+  voiceOrbSpeed: DEFAULT_VOICE_ORB_SPEED,
+  voiceOrbVoice: DEFAULT_VOICE_ORB_VOICE,
   voiceDeviceLabel: '',
   chatBubbleColor: 'blue',
   showDiag: false,

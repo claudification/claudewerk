@@ -7,33 +7,35 @@
  * `reload_yourself` covers.
  */
 
+import {
+  asVoiceOrbTone,
+  DEFAULT_VOICE_ORB_TONE,
+  MAX_VOICE_ORB_SPEED,
+  MIN_VOICE_ORB_SPEED,
+  VOICE_ORB_TONES,
+  type VoiceOrbTone,
+} from '@shared/voice-orb-options'
 import { useConversationsStore } from '@/hooks/use-conversations'
 
-export const VOICE_ORB_TONES = ['professional', 'snarky', 'homicidal', 'overkill'] as const
-export type VoiceOrbTone = (typeof VOICE_ORB_TONES)[number]
-
-const DEFAULT_TONE: VoiceOrbTone = 'snarky'
-
-/** OpenAI's own bounds for `audio.output.speed` -- 1.6 is a 400 from the API. */
-export const MIN_ORB_SPEED = 0.25
-export const MAX_ORB_SPEED = 1.5
+export { VOICE_ORB_TONES, type VoiceOrbTone }
+export const MIN_ORB_SPEED = MIN_VOICE_ORB_SPEED
+export const MAX_ORB_SPEED = MAX_VOICE_ORB_SPEED
 
 /** What each dial position gets you, in the orb's own register. */
 const TONE_BLURB: Record<VoiceOrbTone, string> = {
   professional: 'Attitude off. Answers only.',
   snarky: 'The default. Dry contempt, correct data.',
   homicidal: 'Calmly menacing. Still does the work.',
-  overkill: 'Operatic. Profanity permitted.',
+  overkill: 'Bar-room opera. Profanity permitted.',
 }
 
 export function currentTone(): VoiceOrbTone {
-  const raw = useConversationsStore.getState().controlPanelPrefs.voiceOrbTone
-  return VOICE_ORB_TONES.includes(raw as VoiceOrbTone) ? (raw as VoiceOrbTone) : DEFAULT_TONE
+  return asVoiceOrbTone(useConversationsStore.getState().controlPanelPrefs.voiceOrbTone)
 }
 
 export function nextTone(tone: VoiceOrbTone): VoiceOrbTone {
   const i = VOICE_ORB_TONES.indexOf(tone)
-  return VOICE_ORB_TONES[(i + 1) % VOICE_ORB_TONES.length] as VoiceOrbTone
+  return VOICE_ORB_TONES[(i + 1) % VOICE_ORB_TONES.length] ?? DEFAULT_VOICE_ORB_TONE
 }
 
 /** Cycle the dial and return what it landed on. */

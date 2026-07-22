@@ -11,7 +11,7 @@ import type { FetchArtifact, FetchArtifactResult } from '../../shared/protocol'
 import { getAuthenticatedUser } from '../auth-routes'
 import type { ConversationStore } from '../conversation-store'
 import { buildDispatchRuntime } from '../desk/runtime'
-import { clampVoiceSpeed, mintVoiceToken } from '../desk/voice-mint'
+import { asVoiceName, clampVoiceSpeed, mintVoiceToken } from '../desk/voice-mint'
 import { asVoiceTone } from '../desk/voice-tones'
 import { voiceRealtimeTools } from '../desk/voice-tools'
 import { getGlobalSettings, updateGlobalSettings } from '../global-settings'
@@ -200,13 +200,14 @@ export function createApiRouter(
       // Narrowed against the enum here -- an unknown value falls back to the
       // default rather than minting a session with no persona at all.
       const body = await c.req
-        .json<{ tone?: unknown; speed?: unknown }>()
-        .catch(() => ({}) as { tone?: unknown; speed?: unknown })
+        .json<{ tone?: unknown; speed?: unknown; voice?: unknown }>()
+        .catch(() => ({}) as { tone?: unknown; speed?: unknown; voice?: unknown })
       const minted = await mintVoiceToken({
         apiKey,
         tools,
         tone: asVoiceTone(body.tone),
         speed: clampVoiceSpeed(body.speed),
+        voice: asVoiceName(body.voice),
         safetyId: 'desk-voice',
       })
       return c.json(minted)

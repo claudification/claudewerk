@@ -104,7 +104,12 @@ export class VoiceSession {
         const t = action as Extract<VoiceAction, { kind: 'transcript' }>
         this.handlers.onTranscript?.(t.role, t.text, t.partial)
       },
-      error: () => this.handlers.onError?.((action as Extract<VoiceAction, { kind: 'error' }>).message),
+      error: () => {
+        const e = action as Extract<VoiceAction, { kind: 'error' }>
+        // A race is not a failure -- log it, never put it in front of the user.
+        if (e.benign) console.debug('[voice-orb] benign realtime error:', e.message)
+        else this.handlers.onError?.(e.message)
+      },
       ignore: () => {},
     }
     apply[action.kind]()

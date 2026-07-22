@@ -22,7 +22,7 @@ import {
 import { SettingsShell, type SettingsShellTab } from './settings/settings-shell'
 import { VirtualizerLabSection } from './settings/virtualizer-lab-section'
 import { VoiceDevicePicker } from './settings/voice-device-picker'
-import { VoiceOrbSpeedRow, VoiceOrbToneRow } from './settings/voice-orb-rows'
+import { VoiceOrbSpeedRow, VoiceOrbToneRow, VoiceOrbVoiceRow } from './settings/voice-orb-rows'
 import { ThemeSelector } from './theme-selector'
 import { WebControlToggle } from './web-control-toggle'
 
@@ -314,6 +314,14 @@ const SETTINGS: SettingItem[] = [
     description: 'How much attitude the orb ships with. Applies on its next summon.',
     keywords: 'voice orb tone persona snark professional homicidal overkill personality',
     render: (ctx, ariaLabel) => <VoiceOrbToneRow ctx={ctx} ariaLabel={ariaLabel} />,
+  },
+  {
+    tab: 'input',
+    group: 'Voice orb',
+    label: 'Voice',
+    description: 'Which OpenAI voice it speaks with. Applies on its next summon.',
+    keywords: 'voice orb speaker timbre marin cedar alloy ash ballad coral echo sage shimmer verse',
+    render: (ctx, ariaLabel) => <VoiceOrbVoiceRow ctx={ctx} ariaLabel={ariaLabel} />,
   },
   {
     tab: 'input',

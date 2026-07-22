@@ -14,23 +14,16 @@
  * without network and the route owns where the key comes from (process.env).
  */
 
+import { asVoiceOrbVoice, clampVoiceOrbSpeed, type VoiceOrbVoice } from '../../shared/voice-orb-options'
 import type { RealtimeTool } from './realtime-schema'
 import { buildVoiceInstructions } from './voice-persona'
 import { DEFAULT_VOICE_TONE, type VoiceTone } from './voice-tones'
 
 export const REALTIME_MODEL = 'gpt-realtime-2'
-const VOICE = 'marin'
-/** OpenAI's own bounds for `audio.output.speed` (verified: 1.6 is a 400). */
-const MIN_VOICE_SPEED = 0.25
-const MAX_VOICE_SPEED = 1.5
-const DEFAULT_VOICE_SPEED = 1.3
 
-/** Clamp an untrusted speed to the API's range; junk falls back to default. */
-export function clampVoiceSpeed(raw: unknown): number {
-  const n = typeof raw === 'number' ? raw : Number(raw)
-  if (!Number.isFinite(n)) return DEFAULT_VOICE_SPEED
-  return Math.min(MAX_VOICE_SPEED, Math.max(MIN_VOICE_SPEED, n))
-}
+/** Re-exported so the route validates with the SAME rules the mint applies. */
+export const clampVoiceSpeed = clampVoiceOrbSpeed
+export const asVoiceName = asVoiceOrbVoice
 const CLIENT_SECRETS_URL = 'https://api.openai.com/v1/realtime/client_secrets'
 
 /** The session is configured AT MINT (a client `session.update` after connect
@@ -39,7 +32,7 @@ const CLIENT_SECRETS_URL = 'https://api.openai.com/v1/realtime/client_secrets'
  *  contract does not offer. */
 export function buildVoiceSessionConfig(
   tools: RealtimeTool[],
-  opts: { instructions?: string; tone?: VoiceTone; speed?: number } = {},
+  opts: { instructions?: string; tone?: VoiceTone; speed?: number; voice?: VoiceOrbVoice } = {},
 ) {
   return {
     type: 'realtime' as const,
@@ -55,7 +48,7 @@ export function buildVoiceSessionConfig(
         transcription: { model: 'whisper-1' },
         turn_detection: { type: 'semantic_vad', eagerness: 'medium' as const },
       },
-      output: { voice: VOICE, speed: clampVoiceSpeed(opts.speed) },
+      output: { voice: asVoiceName(opts.voice), speed: clampVoiceSpeed(opts.speed) },
     },
     tools,
     tool_choice: 'auto' as const,
@@ -82,6 +75,8 @@ export interface MintVoiceOptions {
   tone?: VoiceTone
   /** Speaking rate, 0.25..1.5 (post-processing on the generated audio). */
   speed?: number
+  /** Which OpenAI voice speaks (verified list in shared/voice-orb-options). */
+  voice?: VoiceOrbVoice
   /** OpenAI-Safety-Identifier (e.g. `desk-<userId>`). */
   safetyId?: string
 }
@@ -104,6 +99,7 @@ export async function mintVoiceToken(opts: MintVoiceOptions): Promise<MintedVoic
         instructions: opts.instructions,
         tone: opts.tone,
         speed: opts.speed,
+        voice: opts.voice,
       }),
     }),
   })

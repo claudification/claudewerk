@@ -22,8 +22,21 @@ export type VoiceAction =
   | { kind: 'done'; calls: FunctionCall[] } // response.done (may carry tool calls)
   | { kind: 'barge-in' } // the user started talking over the orb
   | { kind: 'transcript'; role: 'agent' | 'user'; text: string; partial: boolean }
-  | { kind: 'error'; message: string }
+  | { kind: 'error'; message: string; benign: boolean }
   | { kind: 'ignore' }
+
+/**
+ * Errors that are RACES, not faults -- the server's view of "is a response in
+ * flight" and ours drift by milliseconds, so barging in exactly as a response
+ * lands makes us cancel something already finished. Nothing is broken and there
+ * is nothing the user could do, so these must never reach the caption; they get
+ * logged and dropped.
+ */
+const BENIGN_ERRORS = [/cancellation failed/i, /no active response/i, /already has an active response/i]
+
+export function isBenignRealtimeError(message: string): boolean {
+  return BENIGN_ERRORS.some(re => re.test(message))
+}
 
 /** Pull the function_call items out of a response.done event's output array. */
 export function parseFunctionCalls(ev: { [k: string]: unknown }): FunctionCall[] {
@@ -73,11 +86,10 @@ export function toVoiceAction(ev: { type: string; [k: string]: unknown }): Voice
     // The user's own speech -- the final completed utterance.
     case 'conversation.item.input_audio_transcription.completed':
       return { kind: 'transcript', role: 'user', text: String(ev.transcript ?? ''), partial: false }
-    case 'error':
-      return {
-        kind: 'error',
-        message: String((ev as { error?: { message?: string } }).error?.message ?? 'realtime error'),
-      }
+    case 'error': {
+      const message = String((ev as { error?: { message?: string } }).error?.message ?? 'realtime error')
+      return { kind: 'error', message, benign: isBenignRealtimeError(message) }
+    }
     default:
       return { kind: 'ignore' }
   }

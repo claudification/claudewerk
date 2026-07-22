@@ -24,6 +24,8 @@ export interface OpenSessionCallbacks {
   tone(): VoiceOrbTone | string
   /** Speaking rate at mint time (0.25..1.5). */
   speed(): number
+  /** Which OpenAI voice speaks. */
+  voice(): string
 }
 
 export interface OpenSession {
@@ -35,12 +37,16 @@ export interface OpenSession {
  *  off. Long enough for "fine, rebooting", short enough not to feel hung. */
 const RELOAD_GRACE_MS = 1200
 
-async function mintToken(tone: string, speed: number): Promise<{ value: string; model: string }> {
+async function mintToken(opts: {
+  tone: string
+  speed: number
+  voice: string
+}): Promise<{ value: string; model: string }> {
   const res = await fetch('/api/desk/voice/token', {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tone, speed }),
+    body: JSON.stringify(opts),
   })
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string }
@@ -75,7 +81,7 @@ export async function openVoiceSession(cb: OpenSessionCallbacks): Promise<OpenSe
 
   const session = new Session(
     {
-      mintToken: () => mintToken(String(cb.tone()), cb.speed()),
+      mintToken: () => mintToken({ tone: String(cb.tone()), speed: cb.speed(), voice: cb.voice() }),
       runTool: (call: FunctionCall) => bridge.run(call),
     },
     { onState: cb.onState, onError: cb.onError, onTranscript: cb.onTranscript },

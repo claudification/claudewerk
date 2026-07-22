@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseFunctionCalls, toVoiceAction } from './realtime-events'
+import { isBenignRealtimeError, parseFunctionCalls, toVoiceAction } from './realtime-events'
 
 describe('parseFunctionCalls', () => {
   it('extracts function_call items and parses their args, echoing call_id', () => {
@@ -83,8 +83,22 @@ describe('toVoiceAction', () => {
   })
 
   it('maps errors and ignores the unknown', () => {
-    expect(toVoiceAction({ type: 'error', error: { message: 'boom' } })).toEqual({ kind: 'error', message: 'boom' })
-    expect(toVoiceAction({ type: 'error' })).toEqual({ kind: 'error', message: 'realtime error' })
+    expect(toVoiceAction({ type: 'error', error: { message: 'boom' } })).toEqual({
+      kind: 'error',
+      message: 'boom',
+      benign: false,
+    })
+    expect(toVoiceAction({ type: 'error' })).toMatchObject({ kind: 'error', message: 'realtime error' })
     expect(toVoiceAction({ type: 'something.else' })).toEqual({ kind: 'ignore' })
+  })
+
+  it('flags the barge-in RACES as benign -- they are not the user problem', () => {
+    // Barging in exactly as a response lands: we cancel something already done.
+    const raced = toVoiceAction({ type: 'error', error: { message: 'Cancellation failed: no active response' } })
+    expect(raced).toMatchObject({ kind: 'error', benign: true })
+    expect(isBenignRealtimeError('Conversation already has an active response')).toBe(true)
+    // A real failure is still a real failure.
+    expect(isBenignRealtimeError('Your session has expired')).toBe(false)
+    expect(isBenignRealtimeError('invalid_request_error: bad tool schema')).toBe(false)
   })
 })

@@ -10,11 +10,26 @@
  * immediately.
  */
 
+import { VOICE_ORB_VOICES } from '@shared/voice-orb-options'
 import { MAX_ORB_SPEED, MIN_ORB_SPEED, VOICE_ORB_TONES } from '@/components/voice-orb/voice-orb-tone'
 
 interface RowContext {
-  prefs: { voiceOrbTone: string; voiceOrbSpeed: number }
+  prefs: { voiceOrbTone: string; voiceOrbSpeed: number; voiceOrbVoice: string }
   updatePrefs: (patch: Record<string, unknown>) => void
+}
+
+/** Every one of these was verified to mint against the live API. */
+const VOICE_BLURB: Record<string, string> = {
+  marin: 'marin -- the default',
+  cedar: 'cedar -- warm, low',
+  alloy: 'alloy -- neutral',
+  ash: 'ash -- dry, gravelly',
+  ballad: 'ballad -- lilting',
+  coral: 'coral -- bright',
+  echo: 'echo -- flat, clipped',
+  sage: 'sage -- calm',
+  shimmer: 'shimmer -- airy',
+  verse: 'verse -- theatrical',
 }
 
 const TONE_LABEL: Record<string, string> = {
@@ -35,6 +50,23 @@ export function VoiceOrbToneRow({ ctx, ariaLabel }: { ctx: RowContext; ariaLabel
       {VOICE_ORB_TONES.map(tone => (
         <option key={tone} value={tone}>
           {TONE_LABEL[tone] ?? tone}
+        </option>
+      ))}
+    </select>
+  )
+}
+
+export function VoiceOrbVoiceRow({ ctx, ariaLabel }: { ctx: RowContext; ariaLabel: string }) {
+  return (
+    <select
+      aria-label={ariaLabel}
+      value={ctx.prefs.voiceOrbVoice}
+      onChange={e => ctx.updatePrefs({ voiceOrbVoice: e.target.value })}
+      className="border border-border bg-muted px-2 py-1 font-mono text-foreground text-xs"
+    >
+      {VOICE_ORB_VOICES.map(v => (
+        <option key={v} value={v}>
+          {VOICE_BLURB[v] ?? v}
         </option>
       ))}
     </select>

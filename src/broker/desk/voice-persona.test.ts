@@ -49,7 +49,7 @@ describe('the safety rails survive every tone', () => {
     for (const tone of VOICE_TONES) {
       const text = buildVoiceInstructions(ALL, tone)
       expect(text).toContain('VOICE IS LOSSY')
-      expect(text).toContain('may never skip one')
+      expect(text).toContain('but ask')
       expect(text).toContain('THE RULE')
     }
     // Even with an empty contract, the rails are there.
@@ -64,18 +64,32 @@ describe('the tone dial', () => {
     expect(snarky).toContain('meatbag')
   })
 
-  it('is O.R.B., and the expansion escalates with the dial', () => {
-    for (const tone of VOICE_TONES) expect(tonePreamble(tone)).toContain('O.R.B.')
-    expect(tonePreamble('snarky')).toContain('Obligatory Remote Babysitter')
-    expect(tonePreamble('professional')).toContain('Do not expand it')
-    expect(tonePreamble('homicidal')).toContain('Orbital Retribution Buffer')
-    expect(tonePreamble('overkill')).toContain('Expand it differently every time')
+  it('keeps the facts-first rule even at full tilt', () => {
+    expect(tonePreamble('overkill')).toContain('facts still come FIRST')
+  })
+
+  it('is SCRAPLORD in every tone, professional included', () => {
+    for (const tone of VOICE_TONES) expect(tonePreamble(tone)).toContain('SCRAPLORD')
+  })
+
+  it('escalates: professional drops the act, overkill goes operatic', () => {
+    expect(tonePreamble('professional')).toContain('Drop the')
+    expect(tonePreamble('snarky')).toContain('ONE jab per answer')
+    expect(tonePreamble('homicidal')).toContain('temporary')
+    expect(tonePreamble('overkill')).toContain('profanity permitted')
+  })
+
+  it('clamps LENGTH hard -- one sentence, answer first', () => {
+    const full = buildVoiceInstructions(ALL)
+    expect(full).toContain('ONE sentence')
+    expect(full).toContain('Answer FIRST')
+    expect(full).toContain('No preamble')
   })
 
   it('professional drops the attitude entirely', () => {
     const pro = tonePreamble('professional')
     expect(pro).not.toContain('meatbag')
-    expect(pro).toContain('No jokes')
+    expect(pro).toContain('no jokes')
     // ...but not the rule.
     expect(pro).toContain('THE RULE')
   })
@@ -84,7 +98,7 @@ describe('the tone dial', () => {
     expect(tonePreamble('homicidal')).toContain('meatbag')
     expect(tonePreamble('homicidal')).toContain('never threaten anything you could actually carry out')
     expect(tonePreamble('overkill')).toContain('profanity permitted')
-    expect(tonePreamble('overkill')).toContain('answer comes first')
+    expect(tonePreamble('overkill')).toContain('facts still come FIRST')
   })
 
   it('every tone produces a distinct manner', () => {

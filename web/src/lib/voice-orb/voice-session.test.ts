@@ -166,6 +166,12 @@ describe('VoiceSession event pump', () => {
     feed({ type: 'error', error: { message: 'rate limited' } })
     expect(errors).toEqual(['rate limited'])
   })
+
+  it('never surfaces a benign race -- the caption is for things he can act on', async () => {
+    const { errors } = await startSession()
+    feed({ type: 'error', error: { message: 'Cancellation failed: no active response' } })
+    expect(errors).toEqual([])
+  })
 })
 
 describe('proactive narration', () => {
