@@ -123,8 +123,9 @@ export function useGlobalCommands(toggleSidebar: () => void) {
   // The voice orb. Hidden unless the broker has a realtime key -- summoning an
   // orb that can only fail at mint is worse than not offering it.
   const orbAvailable = () => useConversationsStore.getState().serverCapabilities.realtimeVoice === true
-  useCommand('summon-voice-orb', summonVoiceOrb, {
+  useChordCommand('summon-voice-orb', summonVoiceOrb, {
     label: 'Voice orb (talk to the fleet)',
+    key: 'o',
     group: 'Navigation',
     when: orbAvailable,
   })
