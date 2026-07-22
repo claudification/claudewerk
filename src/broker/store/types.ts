@@ -243,8 +243,16 @@ export interface TranscriptStore {
   /** Append entries, assigning each a monotonic `seq` scoped to its
    *  `(conversationId, agentId)` partition. Parent entries (agentId absent) and
    *  each agent's sub-stream get independent seq spaces, so diverting agent
-   *  chatter out of the parent stream never punches gaps in either. */
-  append(conversationId: string, syncEpoch: string, entries: TranscriptEntryInput[]): void
+   *  chatter out of the parent stream never punches gaps in either.
+   *
+   *  THE STORE IS THE SOLE SEQ AUTHORITY. Callers must take the seq from the
+   *  returned results rather than numbering entries themselves -- an in-memory
+   *  counter cannot survive a broker restart, and one that tried produced
+   *  transcripts whose broadcast seq disagreed with the stored seq for 10% of
+   *  all rows. Results come back in input order, one per input entry; a uuid
+   *  that already exists reports `inserted: false` and the EXISTING row's seq,
+   *  and does NOT consume a number. */
+  append(conversationId: string, syncEpoch: string, entries: TranscriptEntryInput[]): TranscriptAppendResult[]
   getPage(conversationId: string, opts: PageOpts & { agentId?: string | null }): TranscriptPage
   getLatest(conversationId: string, limit: number, agentId?: string | null): TranscriptEntryRecord[]
   /** Delta sync within a scope. `agentId` selects the scope: undefined = all
@@ -269,6 +277,12 @@ export interface TranscriptStore {
     agentId?: string | null,
   ): { entries: TranscriptEntryRecord[]; oldestSeq: number; hasMore: boolean }
   getLastSeq(conversationId: string): number
+  /** True when `(conversationId, uuid)` is already stored. The durable arm of
+   *  replay dedup: `append` already refuses the row via
+   *  `UNIQUE(conversation_id, uuid)`, but a caller that wants to skip the
+   *  seq-stamping + broadcast that surrounds the append needs to ask FIRST.
+   *  Scope-agnostic -- uuid is unique per conversation across all scopes. */
+  hasUuid(conversationId: string, uuid: string): boolean
   find(conversationId: string, filter: TranscriptFilter): TranscriptEntryRecord[]
   search(query: string, opts?: SearchOpts): SearchHit[]
   getWindow(conversationId: string, opts: WindowOpts): TranscriptEntryRecord[]
@@ -282,6 +296,16 @@ export interface TranscriptStore {
   getIndexStats(): SearchIndexStats
   /** Drop and rebuild the FTS index from transcript_entries. Memory driver no-ops. */
   rebuildIndex(): RebuildResult
+}
+
+/** What `TranscriptStore.append` decided for one input entry. `inserted: false`
+ *  means the uuid was already stored -- `seq` is then the existing row's seq,
+ *  so a caller can still stamp + route the entry correctly without duplicating
+ *  it (the replay case). */
+export interface TranscriptAppendResult {
+  uuid: string
+  seq: number
+  inserted: boolean
 }
 
 export interface TranscriptEntryInput {

@@ -28,6 +28,7 @@ import type { HandlerContext, MessageHandler } from '../handler-context'
 import { DASHBOARD_ROLES, registerHandlers } from '../message-router'
 import { getProjectSettings } from '../project-settings'
 import { dispatchSpawn } from '../spawn-dispatch'
+import { ingestAndBroadcast } from '../transcript-ingest'
 
 /** Auto-deny pending approvals older than 24h. */
 const APPROVAL_TTL_MS = 24 * 60 * 60 * 1000
@@ -45,13 +46,7 @@ function appendNotification(
   conversationId: string,
   entry: TranscriptSpawnNotificationEntry,
 ): void {
-  store.addTranscriptEntries(conversationId, [entry], false)
-  store.broadcastToChannel('conversation:transcript', conversationId, {
-    type: 'transcript_entries',
-    conversationId,
-    entries: [entry],
-    isInitial: false,
-  })
+  ingestAndBroadcast(store, conversationId, [entry])
 }
 
 function clearPending(store: ConversationStore, conversationId: string): void {

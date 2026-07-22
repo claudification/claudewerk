@@ -1,5 +1,11 @@
 import type { Database, Statement } from 'bun:sqlite'
-import type { SearchHit, TranscriptEntryInput, TranscriptEntryRecord, TranscriptStore } from '../types'
+import type {
+  SearchHit,
+  TranscriptAppendResult,
+  TranscriptEntryInput,
+  TranscriptEntryRecord,
+  TranscriptStore,
+} from '../types'
 
 type Params = Record<string, string | number | bigint | boolean | null>
 
@@ -90,6 +96,13 @@ export function createSqliteTranscriptStore(db: Database): TranscriptStore {
   )
   const stmtMaxSeqNoAgent = db.prepare(
     'SELECT COALESCE(MAX(seq), 0) as max_seq FROM transcript_entries WHERE conversation_id = $conversationId AND agent_id IS NULL',
+  )
+
+  // Seq-by-uuid probe -- served straight off the UNIQUE(conversation_id, uuid)
+  // index, so it stays O(log n) on the append hot path. Doubles as the
+  // existence check behind `hasUuid`.
+  const stmtSeqByUuid = db.prepare(
+    'SELECT seq FROM transcript_entries WHERE conversation_id = $conversationId AND uuid = $uuid LIMIT 1',
   )
 
   const stmtCount = db.prepare('SELECT COUNT(*) as cnt FROM transcript_entries WHERE conversation_id = $conversationId')
@@ -238,42 +251,71 @@ export function createSqliteTranscriptStore(db: Database): TranscriptStore {
     return row?.id ?? null
   }
 
+  /** Highest seq currently stored in one scope of a conversation. The base a
+   *  batch counts up from. */
+  function scopeBaseSeq(conversationId: string, agentId: string | null): number {
+    const row =
+      agentId === null
+        ? stmtMaxSeqNoAgent.get({ conversationId: conversationId })
+        : stmtMaxSeqAgent.get({ conversationId: conversationId, agentId })
+    return (row as { max_seq: number }).max_seq
+  }
+
+  /**
+   * Insert one entry and report the seq it ended up with.
+   *
+   * `seqByScope` is the batch's running per-scope counter, seeded lazily from
+   * the stored max so a batch mixing parent + agent entries keeps each scope
+   * independent and monotonic. An ignored duplicate leaves that counter exactly
+   * where it was, so the number is NOT burned -- consuming it is what turned one
+   * conversation's 9,782 rows into a 37,339-wide seq space, and the REST delta
+   * gap check misfires on holes that wide.
+   */
+  function appendOne(
+    conversationId: string,
+    syncEpoch: string,
+    e: TranscriptEntryInput,
+    seqByScope: Map<string, number>,
+    ingestedAt: number,
+  ): TranscriptAppendResult {
+    const agentId = e.agentId ?? null
+    const scopeKey = agentId ?? ' parent'
+    const base = seqByScope.get(scopeKey) ?? scopeBaseSeq(conversationId, agentId)
+    const candidate = base + 1
+    const { changes } = stmtInsert.run({
+      conversationId: conversationId,
+      seq: candidate,
+      syncEpoch,
+      type: e.type,
+      subtype: e.subtype ?? null,
+      agentId,
+      uuid: e.uuid,
+      content: JSON.stringify(e.content),
+      timestamp: e.timestamp,
+      ingestedAt,
+    })
+    if (changes > 0) {
+      seqByScope.set(scopeKey, candidate)
+      return { uuid: e.uuid, seq: candidate, inserted: true }
+    }
+    // Already stored (replay / full-file re-read) -- report the existing row's seq.
+    seqByScope.set(scopeKey, base)
+    const existing = stmtSeqByUuid.get({ conversationId, uuid: e.uuid }) as { seq: number } | null
+    return { uuid: e.uuid, seq: existing?.seq ?? candidate, inserted: false }
+  }
+
   return {
-    append(conversationId, syncEpoch, entries: TranscriptEntryInput[]) {
+    append(conversationId, syncEpoch, entries: TranscriptEntryInput[]): TranscriptAppendResult[] {
+      const results: TranscriptAppendResult[] = []
+      const seqByScope = new Map<string, number>()
+      const now = Date.now()
       const doAppend = db.transaction(() => {
-        // Track the running seq per scope. Seeded lazily from the per-scope MAX
-        // so a batch mixing parent + agent entries (or several agents) keeps each
-        // scope's seq independent and monotonic.
-        const seqByScope = new Map<string, number>()
-        const now = Date.now()
         for (const e of entries) {
-          const agentId = e.agentId ?? null
-          const scopeKey = agentId ?? ' parent'
-          let seq = seqByScope.get(scopeKey)
-          if (seq === undefined) {
-            seq = (
-              (agentId === null
-                ? stmtMaxSeqNoAgent.get({ conversationId: conversationId })
-                : stmtMaxSeqAgent.get({ conversationId: conversationId, agentId })) as { max_seq: number }
-            ).max_seq
-          }
-          seq++
-          seqByScope.set(scopeKey, seq)
-          stmtInsert.run({
-            conversationId: conversationId,
-            seq: seq,
-            syncEpoch,
-            type: e.type,
-            subtype: e.subtype ?? null,
-            agentId: e.agentId ?? null,
-            uuid: e.uuid,
-            content: JSON.stringify(e.content),
-            timestamp: e.timestamp,
-            ingestedAt: now,
-          })
+          results.push(appendOne(conversationId, syncEpoch, e, seqByScope, now))
         }
       })
       doAppend()
+      return results
     },
 
     getPage(conversationId, opts) {
@@ -351,6 +393,10 @@ export function createSqliteTranscriptStore(db: Database): TranscriptStore {
 
     getLastSeq(conversationId) {
       return (stmtMaxSeq.get({ conversationId: conversationId }) as { max_seq: number }).max_seq
+    },
+
+    hasUuid(conversationId, uuid) {
+      return stmtSeqByUuid.get({ conversationId, uuid }) != null
     },
 
     find(conversationId, filter) {

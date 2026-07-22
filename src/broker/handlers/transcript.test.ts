@@ -26,8 +26,13 @@ function fakeCtx() {
   const ctx = {
     ws: { data: {} },
     conversations: {
-      addTranscriptEntries: (conversationId: string, entries: TranscriptEntry[], isInitial: boolean) =>
-        parentAdds.push({ conversationId, entries, isInitial }),
+      // Mirrors the real contract: returns the entries the caller should
+      // broadcast. This fake accepts everything; the "already stored" case is
+      // covered against a real store in add-transcript-entries.test.ts.
+      addTranscriptEntries: (conversationId: string, entries: TranscriptEntry[], isInitial: boolean) => {
+        parentAdds.push({ conversationId, entries, isInitial })
+        return entries
+      },
       addSubagentTranscriptEntries: (
         conversationId: string,
         agentId: string,

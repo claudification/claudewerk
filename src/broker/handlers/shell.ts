@@ -27,6 +27,7 @@ import { GuardError, type HandlerContext, type MessageData, type MessageHandler 
 import { registerHandlers, SENTINEL_ONLY, type WsRole } from '../message-router'
 import type { Permission } from '../permissions'
 import { type BrokerShell, type SubscribeAction, shellRegistry, type UnsubscribeAction } from '../shell-registry'
+import { ingestAndBroadcast } from '../transcript-ingest'
 import { deterministicUuid } from './transcript-uuid'
 
 /** Raw shells are control-panel-only: a `$SHELL` PTY is RCE as the host user, so
@@ -128,13 +129,7 @@ function emitShellReceipt(
     timestamp: new Date().toISOString(),
     uuid: deterministicUuid(`${conv.id}:shell:${entry.shellId}:${event}`),
   }
-  ctx.conversations.addTranscriptEntries(conv.id, [tEntry], false)
-  ctx.conversations.broadcastToChannel('conversation:transcript', conv.id, {
-    type: 'transcript_entries',
-    conversationId: conv.id,
-    entries: [tEntry],
-    isInitial: false,
-  })
+  ingestAndBroadcast(ctx.conversations, conv.id, [tEntry])
 }
 
 interface OpenParams {

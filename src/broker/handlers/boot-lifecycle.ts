@@ -190,16 +190,22 @@ const bootEvent: MessageHandler = (ctx, data) => {
   }
 
   // Append to the conversation's transcript + broadcast to dashboard subscribers.
-  ctx.conversations.addTranscriptEntries(conv.id, [entry], false)
+  // `accepted` is empty when the store already had this uuid, in which case the
+  // dashboards already have it too and re-broadcasting would duplicate the card.
+  const accepted = ctx.conversations.addTranscriptEntries(conv.id, [entry], false)
+  if (accepted.length === 0) return
   ctx.conversations.broadcastToChannel('conversation:transcript', conv.id, {
     type: 'transcript_entries',
     conversationId: conv.id,
-    entries: [entry],
+    entries: accepted,
     isInitial: false,
   })
 }
 
-const launchEvent: MessageHandler = (ctx, data) => {
+/** Exported for direct testing (see boot-lifecycle.test.ts) -- the replay path
+ *  is the whole point of this handler and deserves a test that does not have to
+ *  go through the router. */
+export const launchEvent: MessageHandler = (ctx, data) => {
   const conversationId = data.conversationId as string
   const step = data.step as AgentHostLaunchStep
   const launchId = data.launchId as string
@@ -224,15 +230,28 @@ const launchEvent: MessageHandler = (ctx, data) => {
     step,
     detail: (data.detail as string | undefined) ?? undefined,
     raw: (data.raw as Record<string, unknown> | undefined) ?? undefined,
-    timestamp: new Date().toISOString(),
+    // The HOST's clock, not ours. The launch card renders each step's elapsed
+    // time relative to the first step, so stamping receipt time collapses a
+    // replayed timeline to "+0.0s, +0.0s, +0.0s" -- which is how a duplicated
+    // LAUNCH card announced itself in the first place.
+    timestamp: new Date(typeof data.t === 'number' ? data.t : Date.now()).toISOString(),
     uuid: deterministicUuid(`${conv.id}:launch:${launchId}:${step}`),
   }
 
-  ctx.conversations.addTranscriptEntries(conv.id, [entry], false)
+  // The agent host replays its ENTIRE launch-event buffer on every WS
+  // (re)connect (replayLaunchEvents in src/claude-agent-host/launch-events.ts),
+  // so a broker restart re-delivers these for every live conversation. The uuid
+  // is deterministic per (conversation, launch, step), so the store recognises
+  // the replay and `accepted` comes back empty -- no second card.
+  const accepted = ctx.conversations.addTranscriptEntries(conv.id, [entry], false)
+  if (accepted.length === 0) {
+    ctx.log.debug(`[launch] replayed step ignored: conv=${conv.id.slice(0, 8)} launch=${launchId.slice(0, 8)} ${step}`)
+    return
+  }
   ctx.conversations.broadcastToChannel('conversation:transcript', conv.id, {
     type: 'transcript_entries',
     conversationId: conv.id,
-    entries: [entry],
+    entries: accepted,
     isInitial: false,
   })
 }

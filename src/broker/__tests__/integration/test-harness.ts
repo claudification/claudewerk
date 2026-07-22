@@ -96,8 +96,7 @@ function createMockWs(data: Partial<WsData> = {}): MockWs {
       // delta once a baseline exists. Counting only one of them makes a test pass
       // or fail on broadcast history instead of on what it means to assert.
       return sent.filter(
-        m =>
-          m.type === 'conversation_created' || m.type === 'conversation_update' || m.type === 'conversation_patch',
+        m => m.type === 'conversation_created' || m.type === 'conversation_update' || m.type === 'conversation_patch',
       )
     },
     conversationState(conversationId: string) {
@@ -193,12 +192,13 @@ function createMockStoreDriver(): StoreDriver {
   return {
     conversations: noopStore,
     transcripts: {
-      append: noop,
+      append: () => [],
       getPage: () => ({ entries: [], nextCursor: null, prevCursor: null, totalCount: 0 }),
       getLatest: () => [],
       getSinceSeq: () => ({ entries: [], lastSeq: 0, gap: false }),
       getBeforeSeq: () => ({ entries: [], oldestSeq: 0, hasMore: false }),
       getLastSeq: () => 0,
+      hasUuid: () => false,
       find: () => [],
       search: () => [],
       getWindow: () => [],

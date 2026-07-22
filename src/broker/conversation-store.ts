@@ -177,9 +177,17 @@ export interface ConversationStore {
    *  without timer mocking. */
   _runMaintenancePassForTesting: () => void
   // Transcript cache methods
-  addTranscriptEntries: (conversationId: string, entries: TranscriptEntry[], isInitial: boolean) => void
+  /** Returns the entries the caller should BROADCAST -- scope-guard survivors,
+   *  minus anything the store already had on a non-initial append. Prefer
+   *  `ingestAndBroadcast` (transcript-ingest.ts) over calling this directly. */
+  addTranscriptEntries: (conversationId: string, entries: TranscriptEntry[], isInitial: boolean) => TranscriptEntry[]
   getTranscriptEntries: (conversationId: string, limit?: number) => TranscriptEntry[]
   hasTranscriptCache: (conversationId: string) => boolean
+  /** True when this conversation already holds a transcript entry with `uuid`.
+   *  Replay guard for handlers whose source re-sends the same logical event
+   *  (see handlers/launch-event.ts): the store answer SURVIVES broker restart,
+   *  which is exactly when agent hosts replay their buffers. */
+  hasTranscriptUuid: (conversationId: string, uuid: string) => boolean
   loadTranscriptFromStore: (conversationId: string, limit: number) => TranscriptEntry[] | null
   /** Backward pagination for infinite scrollback: the `limit` entries with
    *  seq < beforeSeq (oldest-first), plus the cursor for the next older page. */
@@ -2824,8 +2832,12 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
    *  broadcasts (which share the same entry objects) carry the stamp.
    *  If `reset` is true, the counter is reset to 0 first (isInitial path). */
   // Transcript cache methods
-  function addTranscriptEntries(conversationId: string, entries: TranscriptEntry[], isInitial: boolean): void {
-    addTranscriptEntriesImpl(ctx, conversationId, entries, isInitial)
+  function addTranscriptEntries(
+    conversationId: string,
+    entries: TranscriptEntry[],
+    isInitial: boolean,
+  ): TranscriptEntry[] {
+    return addTranscriptEntriesImpl(ctx, conversationId, entries, isInitial)
   }
 
   function getTranscriptEntries(conversationId: string, limit?: number): TranscriptEntry[] {
@@ -2838,6 +2850,14 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
 
   function hasTranscriptCache(conversationId: string): boolean {
     return transcriptCache.has(conversationId)
+  }
+
+  /** Durable-first uuid probe. The store is authoritative (it outlives the
+   *  in-memory cache across a broker restart); the cache scan is only the
+   *  no-store fallback, bounded by MAX_TRANSCRIPT_ENTRIES. */
+  function hasTranscriptUuid(conversationId: string, uuid: string): boolean {
+    if (store) return store.transcripts.hasUuid(conversationId, uuid)
+    return (transcriptCache.get(conversationId) || []).some(e => e.uuid === uuid)
   }
 
   function loadTranscriptFromStore(conversationId: string, limit: number): TranscriptEntry[] | null {
@@ -3271,6 +3291,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     getClaudeEfficiency,
     addTranscriptEntries,
     getTranscriptEntries,
+    hasTranscriptUuid,
     hasTranscriptCache,
     loadTranscriptFromStore,
     loadTranscriptPageBefore,

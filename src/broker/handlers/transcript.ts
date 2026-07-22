@@ -18,6 +18,7 @@ import type { MessageHandler } from '../handler-context'
 import { AGENT_HOST_ONLY, DASHBOARD_ROLES, registerHandlers } from '../message-router'
 import { noteCapacityUsageEvent } from '../nightshift-orchestrator'
 import { generateRecapManual } from '../recap/away-summary'
+import { ingestAndBroadcast } from '../transcript-ingest'
 import { requireStrings } from './validate'
 
 /** Stored conversation_info snapshot shape used for cross-turn diffing. */
@@ -161,8 +162,15 @@ export const transcriptEntries: MessageHandler = (ctx, data) => {
   const { parent, agents } = partitionByAgentScope(entries)
 
   if (parent.length > 0 || agents.size === 0) {
-    ctx.conversations.addTranscriptEntries(conversationId, parent, isInitial)
-    ctx.conversations.broadcastToChannel('conversation:transcript', conversationId, { ...data, entries: parent })
+    // Broadcast what the ingest ACCEPTED, not what arrived. On a non-initial
+    // batch that drops anything the store already had -- a host that re-sends
+    // an entry (reconnect replay, overlapping tail read) would otherwise get it
+    // appended to every open dashboard a second time, since the client dedups
+    // by seq and a re-ingest used to mint a fresh one.
+    const accepted = ctx.conversations.addTranscriptEntries(conversationId, parent, isInitial)
+    if (accepted.length > 0 || isInitial) {
+      ctx.conversations.broadcastToChannel('conversation:transcript', conversationId, { ...data, entries: accepted })
+    }
   }
   for (const [agentId, agentEntries] of agents) {
     ctx.conversations.addSubagentTranscriptEntries(conversationId, agentId, agentEntries, isInitial)
@@ -302,13 +310,7 @@ const conversationInfo: MessageHandler = (ctx, data) => {
         level: 'warning',
         timestamp: new Date().toISOString(),
       }
-      ctx.conversations.addTranscriptEntries(conversationId, [warningEntry], false)
-      ctx.conversations.broadcastToChannel('conversation:transcript', conversationId, {
-        type: 'transcript_entries',
-        conversationId,
-        entries: [warningEntry],
-        isInitial: false,
-      })
+      ingestAndBroadcast(ctx.conversations, conversationId, [warningEntry])
       ctx.conversations.broadcastConversationUpdate(conversationId)
     }
   }
@@ -326,13 +328,7 @@ const conversationInfo: MessageHandler = (ctx, data) => {
   if (hadPrevious) {
     const changes = diffConversationInfo(prevSnapshot, nextSnapshot)
     if (changes.length > 0) {
-      ctx.conversations.addTranscriptEntries(conversationId, changes, false)
-      ctx.conversations.broadcastToChannel('conversation:transcript', conversationId, {
-        type: 'transcript_entries',
-        conversationId,
-        entries: changes,
-        isInitial: false,
-      })
+      ingestAndBroadcast(ctx.conversations, conversationId, changes)
       ctx.log.info(`conversation_info diff: ${changes.map(c => c.step).join(', ')} (${conversationId.slice(0, 8)})`)
     }
   }
@@ -482,13 +478,7 @@ function emitRateLimitEntry(
     uuid: randomUUID(),
     timestamp: new Date().toISOString(),
   }
-  ctx.conversations.addTranscriptEntries(conversationId, [entry], false)
-  ctx.conversations.broadcastToChannel('conversation:transcript', conversationId, {
-    type: 'transcript_entries',
-    conversationId,
-    entries: [entry],
-    isInitial: false,
-  })
+  ingestAndBroadcast(ctx.conversations, conversationId, [entry])
 }
 
 // Rate limit status from headless backend.

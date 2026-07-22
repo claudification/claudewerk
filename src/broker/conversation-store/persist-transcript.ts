@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { TranscriptEntry } from '../../shared/protocol'
-import type { StoreDriver, TranscriptEntryInput } from '../store/types'
+import type { StoreDriver, TranscriptAppendResult, TranscriptEntryInput } from '../store/types'
 
 /** Resolve a transcript entry's timestamp (ISO string or absent) to epoch ms. */
 export function resolveEntryTimestamp(raw: unknown): number {
@@ -9,14 +9,19 @@ export function resolveEntryTimestamp(raw: unknown): number {
 }
 
 /** Map a live transcript entry to the store's input shape, tagging it with the
- *  scope `agentId` and synthesizing a uuid when the live wire omitted one. */
+ *  scope `agentId` and synthesizing a uuid when the live wire omitted one.
+ *
+ *  The synthesized uuid is written BACK onto the entry: uuid is the store's
+ *  dedup key, so an entry that keeps it only in the stored row is one the
+ *  dashboard can never dedup either. */
 function toTranscriptInput(e: TranscriptEntry, agentId: string | undefined): TranscriptEntryInput {
   const subtype = (e as Record<string, unknown>).subtype
+  if (!e.uuid) e.uuid = randomUUID()
   return {
     type: e.type,
     subtype: typeof subtype === 'string' ? subtype : undefined,
     agentId,
-    uuid: e.uuid || randomUUID(),
+    uuid: e.uuid,
     content: e as unknown as Record<string, unknown>,
     timestamp: resolveEntryTimestamp(e.timestamp),
   }
@@ -41,6 +46,11 @@ function toTranscriptInput(e: TranscriptEntry, agentId: string | undefined): Tra
  * store row with no Map entry is unreachable; skipping keeps store and Map
  * consistent. Failures are swallowed: search degrades, transcript ingest keeps
  * working for the dashboard.
+ *
+ * Returns the store's per-entry seq decisions (input order, one per entry), or
+ * `null` when nothing was persisted -- no store, orphan-guarded, or the append
+ * threw. `null` means "the store has no opinion on these seqs", and the caller
+ * must fall back to the in-memory counter.
  */
 export function persistTranscriptEntries(
   store: Pick<StoreDriver, 'transcripts'> | undefined,
@@ -48,15 +58,15 @@ export function persistTranscriptEntries(
   conversationId: string,
   entries: TranscriptEntry[],
   agentId?: string,
-): void {
-  if (!store || entries.length === 0) return
+): TranscriptAppendResult[] | null {
+  if (!store || entries.length === 0) return null
   if (!isRegistered) {
     console.warn(
       `[transcript-store] skipped ${entries.length} entries for unregistered conversation ${conversationId.slice(0, 8)} (orphan-prevented)`,
     )
-    return
+    return null
   }
-  appendToStore(store, conversationId, entries, agentId)
+  return appendToStore(store, conversationId, entries, agentId)
 }
 
 /** Map + append the batch, swallowing store errors so transcript ingest never
@@ -66,14 +76,15 @@ function appendToStore(
   conversationId: string,
   entries: TranscriptEntry[],
   agentId: string | undefined,
-): void {
+): TranscriptAppendResult[] | null {
   try {
-    store.transcripts.append(
+    return store.transcripts.append(
       conversationId,
       'live',
       entries.map(e => toTranscriptInput(e, agentId)),
     )
   } catch (err) {
     console.error('[transcript-store] append failed:', err instanceof Error ? err.message : err)
+    return null
   }
 }

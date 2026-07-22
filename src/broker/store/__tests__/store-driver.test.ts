@@ -419,6 +419,83 @@ function runStoreTests(name: string, createDriver: () => StoreDriver) {
         expect(all).toHaveLength(1)
       })
 
+      // --- seq authority (the store, and only the store, numbers entries) ---
+
+      it('append reports the seq it assigned to each entry, in input order', () => {
+        const CONV = 'tx-seq-report'
+        const results = store.transcripts.append(CONV, EPOCH, [
+          makeTranscriptEntry('user', 'sr-1'),
+          makeTranscriptEntry('assistant', 'sr-2'),
+        ])
+        expect(results.map(r => r.uuid)).toEqual(['sr-1', 'sr-2'])
+        expect(results.map(r => r.inserted)).toEqual([true, true])
+        expect(results.map(r => r.seq)).toEqual([1, 2])
+        // The reported seq is the one a reader gets back.
+        expect(store.transcripts.getLatest(CONV, 10, null).map(r => r.seq)).toEqual([1, 2])
+      })
+
+      it('a duplicate uuid reports inserted=false and the EXISTING row seq', () => {
+        const CONV = 'tx-seq-dup'
+        const dup = makeTranscriptEntry('user', 'sd-1')
+        store.transcripts.append(CONV, EPOCH, [dup])
+        const again = store.transcripts.append(CONV, EPOCH, [dup])
+        expect(again).toEqual([{ uuid: 'sd-1', seq: 1, inserted: false }])
+      })
+
+      // Regression: the old append computed a candidate seq, then INSERT OR
+      // IGNOREd. An ignored insert burned the number anyway, so a conversation
+      // that re-read its transcript a few times ended up with 74% of its seq
+      // space as holes -- and the REST delta gap check (oldestSeq > sinceSeq+1)
+      // misfires on holes, making the dashboard full-replace instead of append.
+      it('an ignored duplicate does not consume a seq number', () => {
+        const CONV = 'tx-seq-holes'
+        const first = makeTranscriptEntry('user', 'sh-1')
+        store.transcripts.append(CONV, EPOCH, [first])
+        store.transcripts.append(CONV, EPOCH, [first])
+        store.transcripts.append(CONV, EPOCH, [first])
+        const next = store.transcripts.append(CONV, EPOCH, [makeTranscriptEntry('user', 'sh-2')])
+        expect(next[0].seq).toBe(2)
+        expect(store.transcripts.getLatest(CONV, 10, null).map(r => r.seq)).toEqual([1, 2])
+      })
+
+      it('a mixed batch numbers only the genuinely new entries', () => {
+        const CONV = 'tx-seq-mixed'
+        const a = makeTranscriptEntry('user', 'sm-1')
+        const b = makeTranscriptEntry('assistant', 'sm-2')
+        store.transcripts.append(CONV, EPOCH, [a, b])
+        const mixed = store.transcripts.append(CONV, EPOCH, [a, b, makeTranscriptEntry('user', 'sm-3')])
+        expect(mixed).toEqual([
+          { uuid: 'sm-1', seq: 1, inserted: false },
+          { uuid: 'sm-2', seq: 2, inserted: false },
+          { uuid: 'sm-3', seq: 3, inserted: true },
+        ])
+      })
+
+      it('parent and agent scopes are numbered independently', () => {
+        const CONV = 'tx-seq-scopes'
+        const parent = store.transcripts.append(CONV, EPOCH, [
+          makeTranscriptEntry('user', 'ss-p1'),
+          makeTranscriptEntry('assistant', 'ss-p2'),
+        ])
+        const agent = store.transcripts.append(CONV, EPOCH, [
+          makeTranscriptEntry('assistant', 'ss-a1', { agentId: 'agent-1' }),
+        ])
+        expect(parent.map(r => r.seq)).toEqual([1, 2])
+        expect(agent.map(r => r.seq)).toEqual([1])
+      })
+
+      // The restart case. A brand-new driver over the SAME data must keep
+      // climbing from the stored max -- this is what the in-memory counter
+      // failed to do, giving one conversation DB seqs 20..13686 while the
+      // broadcast carried 1..651 for the very same rows.
+      it('hasUuid answers from durable state', () => {
+        const CONV = 'tx-has-uuid'
+        store.transcripts.append(CONV, EPOCH, [makeTranscriptEntry('user', 'hu-1')])
+        expect(store.transcripts.hasUuid(CONV, 'hu-1')).toBe(true)
+        expect(store.transcripts.hasUuid(CONV, 'hu-nope')).toBe(false)
+        expect(store.transcripts.hasUuid('other-conv', 'hu-1')).toBe(false)
+      })
+
       it('deleteForConversation removes every entry and returns the count', () => {
         // Dedicated id: the shared SESSION accumulates entries across this
         // describe's tests, so assert against an isolated conversation.
