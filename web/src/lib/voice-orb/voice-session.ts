@@ -144,6 +144,19 @@ export class VoiceSession {
     this.transport?.send({ type: 'response.create' })
   }
 
+  /** Make the orb say something it was not asked for (proactive narration).
+   *  Injected as a conversation item so the orb answers IN PERSONA and
+   *  remembers it said it -- a `response.instructions` override would replace
+   *  the persona for that turn, which is how a snarky orb suddenly sounds like
+   *  a form letter. */
+  announce(note: string): void {
+    this.transport?.send({
+      type: 'conversation.item.create',
+      item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: note }] },
+    })
+    this.transport?.send({ type: 'response.create' })
+  }
+
   /** Live mic + remote streams, for the orb's audio reactivity. */
   audioStreams(): MediaStream[] {
     return this.transport?.audioStreams() ?? []
@@ -162,6 +175,9 @@ export class VoiceSession {
     if (this.closed) return
     this.closed = true
     this.transport?.close()
+    // Drop the reference too: a late announce / mute after teardown must be a
+    // no-op, not a send into a dead peer connection.
+    this.transport = undefined
     this.handlers.onState?.('idle')
   }
 }

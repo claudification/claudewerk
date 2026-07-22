@@ -62,6 +62,14 @@ describe('VoiceOrbHost', () => {
     expect(screen.getByTitle('microphone permission denied')).toBeTruthy()
   })
 
+  it('the ORB opens the desk; dismissing is its own control', () => {
+    render(<VoiceOrbHost />)
+    summon()
+    // The orb is not a second transcript surface -- it opens the text face.
+    expect(screen.getByLabelText('Voice orb -- open the dispatch desk')).toBeTruthy()
+    expect(screen.getByLabelText('Dismiss the voice orb')).toBeTruthy()
+  })
+
   it('dismissing STOPS the session -- the mic must not stay hot', () => {
     render(<VoiceOrbHost />)
     summon()

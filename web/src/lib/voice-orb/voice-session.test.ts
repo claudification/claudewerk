@@ -168,6 +168,33 @@ describe('VoiceSession event pump', () => {
   })
 })
 
+describe('proactive narration', () => {
+  it('injects the note as a conversation item so the orb answers IN PERSONA', async () => {
+    const { session } = await startSession()
+    handlers?.onOpen()
+    sent.length = 0
+    session.announce('[fleet event] the deploy one needs him')
+    expect(sent[0]).toEqual({
+      type: 'conversation.item.create',
+      item: {
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text: '[fleet event] the deploy one needs him' }],
+      },
+    })
+    // No `response.instructions` override -- that would replace the persona.
+    expect(sent[1]).toEqual({ type: 'response.create' })
+  })
+
+  it('is a no-op after teardown', async () => {
+    const { session } = await startSession()
+    session.close()
+    sent.length = 0
+    session.announce('too late')
+    expect(sent).toEqual([])
+  })
+})
+
 describe('VoiceSession teardown', () => {
   it('closes the transport once and reports idle', async () => {
     const { session, states } = await startSession()

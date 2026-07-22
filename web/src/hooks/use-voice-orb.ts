@@ -1,21 +1,19 @@
 /**
  * The voice orb's React glue: summon -> live realtime session -> un-summon.
  *
- * LAZY LOAD: the WebRTC transport, the session and the tool bridge are pulled in
- * with a dynamic `import()` on the FIRST summon, so none of that code ships in
- * the index bundle. This hook itself only lives inside the already-lazy orb
- * host, and holds no heavy static imports.
+ * State only. Every moving part (the lazy chunk imports, the tool bridge, the
+ * mint, the session) lives in lib/voice-orb/open-session.ts, which is itself
+ * pulled in dynamically -- so none of the WebRTC path ships in the index bundle
+ * and this file stays a readable state machine.
  *
- * The orb never composes instructions or tools -- the broker bakes both into the
- * minted token (voice-tools.ts is the contract). The client half is: mint,
- * connect, pump events, execute the client-local verbs.
+ * The orb never composes instructions or tools: the broker bakes both into the
+ * minted token (voice-tools.ts is the contract).
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useConversationsStore, wsSend } from '@/hooks/use-conversations'
+import type { OpenSession } from '@/lib/voice-orb/open-session'
 import type { VoiceState } from '@/lib/voice-orb/realtime-events'
-import type { ToolBridge } from '@/lib/voice-orb/tool-bridge'
-import type { VoiceSession } from '@/lib/voice-orb/voice-session'
 
 export interface VoiceOrbLine {
   role: 'agent' | 'user'
@@ -37,24 +35,8 @@ export interface VoiceOrb {
   reload(): Promise<void>
   /** Live mic + remote streams for the orb's audio reactivity. */
   audioStreams(): MediaStream[]
-}
-
-async function mintToken(): Promise<{ value: string; model: string }> {
-  // The tone dial rides in on the mint -- the broker bakes the matching persona
-  // into the session, so it can only change between sessions, never mid-turn.
-  const tone = useConversationsStore.getState().controlPanelPrefs.voiceOrbTone
-  const res = await fetch('/api/desk/voice/token', {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tone }),
-  })
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string }
-    if (body.code === 'voice_unconfigured') throw new Error('the broker has no OpenAI key configured')
-    throw new Error(body.error ?? `mint failed (${res.status})`)
-  }
-  return (await res.json()) as { value: string; model: string }
+  /** Make the orb volunteer something (proactive fleet narration). */
+  announce(note: string): void
 }
 
 export function useVoiceOrb(): VoiceOrb {
@@ -63,60 +45,37 @@ export function useVoiceOrb(): VoiceOrb {
   const [lastLine, setLastLine] = useState<VoiceOrbLine | null>(null)
   const [muted, setMuted] = useState(false)
 
-  const sessionRef = useRef<VoiceSession | null>(null)
-  const bridgeRef = useRef<ToolBridge | null>(null)
+  const liveRef = useRef<OpenSession | null>(null)
   const startingRef = useRef(false)
-  // A reload must not be mistaken for the user closing the orb.
-  const reloadingRef = useRef(false)
 
   const stop = useCallback(() => {
-    sessionRef.current?.close()
-    sessionRef.current = null
-    bridgeRef.current?.dispose()
-    bridgeRef.current = null
+    liveRef.current?.session.close()
+    liveRef.current?.bridge.dispose()
+    liveRef.current = null
     void import('@/lib/voice-orb/tool-bridge').then(m => m.setActiveToolBridge(null))
     setState('idle')
     setMuted(false)
   }, [])
 
+  // `start` triggers reload (via the model's own verb) and reload calls start;
+  // the ref breaks the cycle without re-creating either callback.
+  const reloadRef = useRef<() => void>(() => {})
+
   const start = useCallback(async () => {
-    if (sessionRef.current || startingRef.current) return
+    if (liveRef.current || startingRef.current) return
     startingRef.current = true
     setError(null)
     setState('connecting')
     try {
-      const [{ createToolBridge, setActiveToolBridge }, { VoiceSession: Session }, { runControlScreen }] =
-        await Promise.all([
-          import('@/lib/voice-orb/tool-bridge'),
-          import('@/lib/voice-orb/voice-session'),
-          import('@/lib/voice-orb/control-screen'),
-        ])
-
-      const bridge = createToolBridge({
-        send: (type, data) => wsSend(type, data),
-        local: {
-          control_screen: args => runControlScreen(args),
-          // Answered here AND acted on after the model hears it, so its last
-          // words make it out before the session is torn down.
-          reload_yourself: () => {
-            setTimeout(() => void reloadRef.current(), 1200)
-            return { reloading: true }
-          },
-        },
+      const { openVoiceSession } = await import('@/lib/voice-orb/open-session')
+      liveRef.current = await openVoiceSession({
+        onState: setState,
+        onError: setError,
+        onTranscript: (role, text, partial) => setLastLine({ role, text, partial }),
+        onReload: () => reloadRef.current(),
+        send: wsSend,
+        tone: () => useConversationsStore.getState().controlPanelPrefs.voiceOrbTone,
       })
-      setActiveToolBridge(bridge)
-      bridgeRef.current = bridge
-
-      const session = new Session(
-        { mintToken, runTool: call => bridge.run(call) },
-        {
-          onState: setState,
-          onError: msg => setError(msg),
-          onTranscript: (role, text, partial) => setLastLine({ role, text, partial }),
-        },
-      )
-      sessionRef.current = session
-      await session.start()
     } catch (e) {
       setError((e as Error).message)
       stop()
@@ -126,27 +85,20 @@ export function useVoiceOrb(): VoiceOrb {
   }, [stop])
 
   const reload = useCallback(async () => {
-    reloadingRef.current = true
     stop()
-    try {
-      await start()
-    } finally {
-      reloadingRef.current = false
-    }
+    await start()
   }, [start, stop])
-  // `start` closes over reload; a ref breaks the cycle without re-creating either.
-  const reloadRef = useRef(reload)
-  reloadRef.current = reload
+  reloadRef.current = () => void reload()
 
   const toggleMute = useCallback(() => {
-    const session = sessionRef.current
-    if (!session) return
+    if (!liveRef.current) return
     const next = !muted
     setMuted(next)
-    void session.setMicEnabled(!next)
+    void liveRef.current.session.setMicEnabled(!next)
   }, [muted])
 
-  const audioStreams = useCallback(() => sessionRef.current?.audioStreams() ?? [], [])
+  const audioStreams = useCallback(() => liveRef.current?.session.audioStreams() ?? [], [])
+  const announce = useCallback((note: string) => liveRef.current?.session.announce(note), [])
 
   // Releasing the mic is not optional -- unmounting with a live session leaves
   // the OS capture indicator on.
@@ -163,5 +115,6 @@ export function useVoiceOrb(): VoiceOrb {
     toggleMute,
     reload,
     audioStreams,
+    announce,
   }
 }

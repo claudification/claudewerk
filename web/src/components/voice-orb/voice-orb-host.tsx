@@ -16,6 +16,7 @@ import { useVoiceOrb } from '@/hooks/use-voice-orb'
 import { OrbCaption, pickCaption } from './orb-caption'
 import { toOrbState } from './orb-state'
 import { useAudioLevel } from './use-audio-level'
+import { useOrbNarration } from './use-orb-narration'
 import { useOrbSummon } from './use-orb-summon'
 import { VoiceOrb } from './voice-orb'
 
@@ -31,6 +32,12 @@ export function VoiceOrbHost() {
   const { summoned, dozing, steppedAway, acknowledgeSteppedAway } = summon
   // The halo breathes with whoever is actually talking.
   const level = useAudioLevel(summoned && !dozing, orb.audioStreams)
+  // While it is up, the orb volunteers fleet news instead of waiting to be asked.
+  useOrbNarration(summoned && orb.live, orb.state, orb.announce)
+
+  const openDesk = () => {
+    void import('@/components/dispatch-overlay/dispatch-store').then(m => m.useDispatchStore.getState().openOverlay())
+  }
 
   // Left alone long enough, the orb leaves and says so through the app's own
   // toast -- no bespoke modal for a five-second message.
@@ -78,6 +85,17 @@ export function VoiceOrbHost() {
           onClick={summon.dismiss}
           aria-label="Dismiss the voice orb"
           title="Dismiss (ends the session, releases the mic)"
+          className="rounded-full border border-border bg-card/85 px-2.5 py-1 text-[11px] text-muted-foreground shadow backdrop-blur hover:text-foreground"
+        >
+          dismiss
+        </button>
+        {/* The orb itself opens the DESK -- the text face of the same brain --
+            rather than being a second transcript surface of its own. */}
+        <button
+          type="button"
+          onClick={openDesk}
+          aria-label="Voice orb -- open the dispatch desk"
+          title="Open the dispatch desk"
           className="size-20 rounded-full focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
         >
           <VoiceOrb state={toOrbState(orb.state, orb.muted, dozing)} level={level} />
