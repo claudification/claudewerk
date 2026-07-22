@@ -7,10 +7,10 @@
  */
 
 import type { CanvasPeer } from '@shared/protocol'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { wsSend } from '@/hooks/use-conversations'
-import { registerCanvasListener, unregisterCanvasListener } from './canvas-collab-bus'
 import { parseSceneElements, peerToApply, prunePeers, type RemoteCollaborator } from './canvas-collab-merge'
+import { useCanvasRoom } from './use-canvas-room'
 
 /** Minimal slice of the Excalidraw imperative API the collab layer drives. */
 export interface CollabApi {
@@ -27,6 +27,12 @@ export interface CanvasCollab {
   onLocalChange: (sceneJson: string) => void
 }
 
+// Cognitive score here is driven by hook COUNT (many trivial memoized inbound
+// updaters), not branching: cyclomatic is 2, maintainability 86.7. The room
+// lifecycle is already split out (use-canvas-room); fragmenting the cohesive
+// cursor/scene apply callbacks further to satisfy the per-hook penalty would hurt
+// readability, not help it.
+// fallow-ignore-next-line complexity
 export function useCanvasCollab(canvasId: string | null, enabled: boolean, name?: string): CanvasCollab {
   const [peers, setPeers] = useState<CanvasPeer[]>([])
   const api = useRef<CollabApi | null>(null)
@@ -69,28 +75,30 @@ export function useCanvasCollab(canvasId: string | null, enabled: boolean, name?
     api.current?.updateScene({ elements })
   }, [])
 
-  useEffect(() => {
-    if (!enabled || !canvasId) return
+  const applyJoinAck = useCallback((msg: Record<string, unknown>) => {
+    ownPeerId.current = msg.peerId as string
+  }, [])
 
-    const byType: Record<string, (m: Record<string, unknown>) => void> = {
-      canvas_join_ack: m => {
-        ownPeerId.current = m.peerId as string
-      },
+  // Inbound canvas_* -> handler map (stable; the room hook depends on its identity).
+  const handlers = useMemo(
+    () => ({
+      canvas_join_ack: applyJoinAck,
       canvas_presence: applyPresence,
       canvas_pointer: applyPointer,
       canvas_scene_delta: applySceneDelta,
-    }
-    registerCanvasListener(canvasId, msg => byType[msg.type as string]?.(msg))
-    wsSend('canvas_join', { canvasId, name })
+    }),
+    [applyJoinAck, applyPresence, applyPointer, applySceneDelta],
+  )
 
-    return () => {
-      wsSend('canvas_leave', { canvasId })
-      unregisterCanvasListener(canvasId)
-      collaborators.current.clear()
-      ownPeerId.current = null
-      setPeers([])
-    }
-  }, [canvasId, enabled, name, applyPresence, applyPointer, applySceneDelta])
+  const resetRoom = useCallback(() => {
+    collaborators.current.clear()
+    ownPeerId.current = null
+    setPeers([])
+  }, [])
+
+  // Join/leave lifecycle (waits for a live socket, re-joins on reconnect). See
+  // use-canvas-room.ts -- the socket-open gating THERE is the multiplayer fix.
+  useCanvasRoom(canvasId, enabled, name, handlers, resetRoom)
 
   const bindApi = useCallback((next: CollabApi | null) => {
     api.current = next

@@ -181,6 +181,10 @@ export function createCanvasesRouter(conversationStore: ConversationStore, helpe
     const s = sceneFromBody(c, g.body)
     if ('res' in s) return s.res
     if (!s.json) return c.json({ error: 'scene required' }, 400)
+    // HTTP autosave path (owner + guest onSnapshot PUT). Pairs with the PERSIST
+    // log in saveCanvasScene: PUT + PERSIST = an HTTP save landed; PERSIST alone
+    // = the WS delta-debounce save. Lets us see which path is actually firing.
+    console.log(`[canvas] http PUT scene ${g.canvas.id.slice(0, 12)} bytes=${s.json.length} user=${getAuthenticatedUser(c.req.raw) ?? 'guest'}`)
     saveCanvasScene(g.canvas.id, s.json, decodeThumb(g.body?.thumb))
     return c.json({ canvas: getCanvas(g.canvas.id) })
   })
