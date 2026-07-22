@@ -3,6 +3,7 @@
  * Defines the message format between agent host and broker
  */
 
+import type { CanvasSelection } from './canvas-selection'
 import type { JobRecord } from './cc-daemon/types'
 import type { DialogOp, DialogSnapshot } from './dialog-live'
 import type { DialogLayout, DialogResult } from './dialog-schema'
@@ -1438,6 +1439,13 @@ export interface InterConversationDelivery {
    *  treats it as the USER's input (act on it), not an untrusted peer. The voice
    *  orb uses this: it is the user speaking through the orb. */
   source?: string
+  /** The canvas this line came from, when it arrived via a canvas chat window.
+   *  Emitted as `canvas_id="..."` on the wrapper so the agent knows which canvas
+   *  its tools should read/edit -- and which address to reply to. */
+  canvasId?: string
+  /** What the user had selected on that canvas when they hit send. Rendered as
+   *  `<selected>` lines inside the wrapper: the context for "make these blue". */
+  selection?: CanvasSelection
 }
 
 /**

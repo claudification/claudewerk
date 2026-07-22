@@ -4,6 +4,7 @@
  */
 
 import { registerBootLifecycleHandlers } from './boot-lifecycle'
+import { registerCanvasChatHandlers } from './canvas-chat'
 import { registerCanvasSyncHandlers } from './canvas-sync'
 import { registerChannelHandlers } from './channel'
 import { registerChecklistHandlers } from './checklist'
@@ -46,6 +47,7 @@ export function registerAllHandlers(): void {
   registerDebugControlHandlers()
   registerSentinelHandlers()
   registerBootLifecycleHandlers()
+  registerCanvasChatHandlers()
   registerCanvasSyncHandlers()
   registerChannelHandlers()
   registerChecklistHandlers()
