@@ -45,17 +45,19 @@ export function useCanvasFlush(
 
   return useCallback(
     async (elements, appState, files) => {
-      // Persistence keeps files INLINE (disk snapshot is self-contained, so a
-      // reload/join needs no fetch). Only the live WS delta strips them.
       const fullJson = serializeAsJSON(elements, appState, files ?? {}, 'local')
       onSnapshot?.(fullJson, utf8Bytes(fullJson))
       if (!collab) return
+      // Upload the bytes to the slot first (await), so a live peer can fetch them the
+      // instant the broker's files-LESS broadcast lands.
       await uploadNewFiles(files)
-      // With an upload slot the delta carries fileIds only; without one, fall back
-      // to inline files so the image still reaches peers.
-      const deltaJson = uploadFile ? serializeAsJSON(elements, appState, {}, 'local') : fullJson
-      collab.onChange(deltaJson)
+      // Send the FAT scene on the WS delta. The BROKER derives the files-less wire
+      // copy (toWireScene) and persists our input VERBATIM -- so the scene it stores
+      // is self-contained. If the client stripped here (as it used to), the broker
+      // would persist a THINNED scene and the image would vanish on reload. The
+      // N-way broadcast stays lean because the broker, not us, strips it.
+      collab.onChange(fullJson)
     },
-    [collab, onSnapshot, uploadFile, uploadNewFiles],
+    [collab, onSnapshot, uploadNewFiles],
   )
 }
