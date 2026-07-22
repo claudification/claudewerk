@@ -30,7 +30,7 @@ import { enforceCanvasTier } from '../canvas-sanitize'
 import { BLANK_SCENE, readScene } from '../canvas-scenes'
 import { getCanvas, saveCanvasScene } from '../canvas-store'
 import type { ConversationStore } from '../conversation-store'
-import type { HandlerContext, MessageHandler } from '../handler-context'
+import type { HandlerContext, MessageData, MessageHandler } from '../handler-context'
 import { DASHBOARD_ROLES, registerHandlers } from '../message-router'
 
 /** Cursor colours assigned round-robin as peers join a room. */
@@ -49,6 +49,29 @@ const rooms = new Map<string, Map<string, Peer>>()
 /** canvasId -> pending persist. */
 const persistTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const PERSIST_DEBOUNCE_MS = 1500
+
+/** `${canvasId}:${peerId}` we've already info-logged a pointer event for (valid
+ *  OR non-member), so the high-frequency cursor path logs once per peer, not per
+ *  move. Cleared when the peer leaves. */
+const pointerLogged = new Set<string>()
+
+/** Log `msg` at most once per key -- the cursor path is far too hot to log every
+ *  move, so join/non-member cursor notices fire once per (canvas,peer). */
+function logPointerOnce(key: string, msg: string, log: (m: string) => void): void {
+  if (pointerLogged.has(key)) return
+  pointerLogged.add(key)
+  log(msg)
+}
+
+/** Log-context for a join: the client build marker (absent => a stale cached
+ *  bundle is talking) and whether the socket arrived as a share guest or an
+ *  authed project member. Kept out of the handler to hold its branch count down. */
+function joinMeta(ctx: HandlerContext, data: MessageData): { client: string; via: string } {
+  return {
+    client: typeof data.client === 'string' ? data.client : 'MISSING(old-bundle?)',
+    via: ctx.ws.data.shareCanvasId ? 'share' : 'member',
+  }
+}
 
 /**
  * canvasId -> the newest ACCEPTED scene in the room.
@@ -114,16 +137,24 @@ function resolveJoinTier(ctx: HandlerContext, canvas: CanvasSummary): CanvasShar
 
 const handleCanvasJoin: MessageHandler = (ctx, data) => {
   const { canvasId, name: reqName } = data as Partial<CanvasJoin>
-  if (!canvasId) return
+  // `client` is a build marker the web app stamps on every join; absent => an OLD
+  // cached bundle (popped-out windows have no console, so this log is the only
+  // place it shows). `via` = share guest vs authed member.
+  const { client, via } = joinMeta(ctx, data)
+  if (!canvasId) {
+    ctx.log.info(`[canvas] join REJECTED -- no canvasId (client=${client} via=${via})`)
+    return
+  }
   const canvas = getCanvas(canvasId)
   if (!canvas) {
+    ctx.log.info(`[canvas] join REJECTED ${canvasId.slice(0, 12)} -- canvas not found (client=${client})`)
     ctx.reply({ type: 'canvas_error', canvasId, error: 'not found' })
     return
   }
   const tier = resolveJoinTier(ctx, canvas)
   if (!tier) {
     ctx.reply({ type: 'canvas_error', canvasId, error: 'not found' })
-    ctx.log.debug(`[canvas] join DENIED ${canvasId.slice(0, 12)} -- share bound to another canvas`)
+    ctx.log.info(`[canvas] join DENIED ${canvasId.slice(0, 12)} -- share bound to another canvas (via=${via})`)
     return
   }
 
@@ -148,14 +179,19 @@ const handleCanvasJoin: MessageHandler = (ctx, data) => {
   }
   ctx.reply(ack as unknown as Record<string, unknown>)
   broadcastPresence(ctx.conversations, canvasId)
-  ctx.log.debug(`[canvas] join ${canvasId.slice(0, 12)} peer=${peerId.slice(0, 8)} room=${room.size}`)
+  ctx.log.info(
+    `[canvas] JOIN ${canvasId.slice(0, 12)} peer=${peerId.slice(0, 8)} name="${name}" ` +
+      `via=${via} tier=${tier} room=${room.size} client=${client}`,
+  )
 }
 
 function removePeer(store: ConversationStore, ws: ServerWebSocket<unknown>, canvasId: string): boolean {
   const room = rooms.get(canvasId)
   const peerId = peerIdOf(ws)
   if (!room?.delete(peerId)) return false
+  pointerLogged.delete(`${canvasId}:${peerId}`)
   store.unsubscribeChannel(ws, 'canvas', canvasId)
+  console.log(`[canvas] LEAVE ${canvasId.slice(0, 12)} peer=${peerId.slice(0, 8)} room=${room.size}`)
   if (room.size === 0) {
     // Last peer out: drop the live scene so the next room re-reads from disk
     // (which the pending persist is about to have written) instead of trusting a
@@ -174,7 +210,18 @@ const handleCanvasLeave: MessageHandler = (ctx, data) => {
 const handleCanvasPointer: MessageHandler = (ctx, data) => {
   const canvasId = data.canvasId as string
   const peer = memberPeer(ctx.ws, canvasId)
-  if (!peer) return
+  if (!peer) {
+    // SMOKING GUN for the join race: a client streaming cursors but never in the
+    // room. Logged once per (canvas,peer) so it doesn't flood.
+    const id = String(canvasId).slice(0, 12)
+    logPointerOnce(`${canvasId}:${peerIdOf(ctx.ws)}`, `[canvas] pointer from NON-MEMBER ${id} -- never joined the room (ignored)`, m => ctx.log.info(m))
+    return
+  }
+  logPointerOnce(
+    `${canvasId}:${peer.peerId}`,
+    `[canvas] pointer OK ${canvasId.slice(0, 12)} peer=${peer.peerId.slice(0, 8)} (first; room=${rooms.get(canvasId)?.size ?? 0})`,
+    m => ctx.log.info(m),
+  )
   // Rebroadcast to the whole room (incl. sender); clients drop their own peerId.
   // tool/button ride along so peers can render a laser trail (Excalidraw draws it
   // only for tool 'laser' while button is 'down'); both are narrowed to their
@@ -207,7 +254,12 @@ function schedulePersist(canvasId: string, scene: string): void {
 const handleCanvasSceneDelta: MessageHandler = (ctx, data) => {
   const canvasId = data.canvasId as string
   const peer = memberPeer(ctx.ws, canvasId)
-  if (!peer) return
+  if (!peer) {
+    // SMOKING GUN for the join race: an editor pushing scene deltas that never
+    // joined the room, so every edit it makes is dropped here and no peer sees it.
+    ctx.log.info(`[canvas] delta from NON-MEMBER ${String(canvasId).slice(0, 12)} -- never joined the room (DROPPED)`)
+    return
+  }
   const raw = data.scene
   if (typeof raw !== 'string' || !raw.trim()) return
 
@@ -216,7 +268,7 @@ const handleCanvasSceneDelta: MessageHandler = (ctx, data) => {
   const verdict = enforceCanvasTier(baselineScene(canvasId), raw, peer.tier)
   if (!verdict.ok || !verdict.json) {
     ctx.reply({ type: 'canvas_error', canvasId, error: verdict.reason ?? 'rejected' })
-    ctx.log.debug(
+    ctx.log.info(
       `[canvas] delta REJECTED ${canvasId.slice(0, 12)} peer=${peer.peerId.slice(0, 8)} ` +
         `tier=${peer.tier} reason=${verdict.reason}`,
     )
@@ -226,6 +278,11 @@ const handleCanvasSceneDelta: MessageHandler = (ctx, data) => {
   latestScene.set(canvasId, verdict.json)
   const msg: CanvasSceneDelta = { type: 'canvas_scene_delta', canvasId, scene: verdict.json, peerId: peer.peerId }
   ctx.conversations.broadcastToChannel('canvas', canvasId, msg)
+  const room = rooms.get(canvasId)?.size ?? 0
+  ctx.log.info(
+    `[canvas] delta OK ${canvasId.slice(0, 12)} peer=${peer.peerId.slice(0, 8)} ` +
+      `bytes=${verdict.json.length} -> rebroadcast to room=${room} (${Math.max(0, room - 1)} other peer(s))`,
+  )
   schedulePersist(canvasId, verdict.json)
 }
 
@@ -241,6 +298,7 @@ export function _resetCanvasRooms(): void {
   persistTimers.clear()
   rooms.clear()
   latestScene.clear()
+  pointerLogged.clear()
 }
 
 /** Handler map -- exported for direct unit testing; registered below. */

@@ -154,6 +154,9 @@ export function saveCanvasScene(id: string, sceneJson: string, thumb?: Uint8Arra
     has_thumb: sceneHasThumb(id) ? 1 : 0,
     updated_at: Date.now(),
   })
+  // The ONLY persist chokepoint (WS debounce + HTTP PUT both land here). Logged so
+  // "is autosave even reaching the backend?" is answerable from `docker logs`.
+  console.log(`[canvas] PERSIST ${id.slice(0, 12)} bytes=${bytes}${thumb ? ' +thumb' : ''}`)
 }
 
 export function renameCanvas(id: string, name: string): void {
