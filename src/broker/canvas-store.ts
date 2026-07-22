@@ -28,6 +28,7 @@ let stmtSaveScene: Statement | null = null
 let stmtRename: Statement | null = null
 let stmtArchive: Statement | null = null
 let stmtSetShare: Statement | null = null
+let stmtSetConnection: Statement | null = null
 let stmtDelete: Statement | null = null
 
 function newId(): string {
@@ -41,6 +42,15 @@ function migrateShareExpiry(database: Database): void {
   if (cols.some(c => c.name === 'share_expires_at')) return
   database.run('ALTER TABLE canvases ADD COLUMN share_expires_at INTEGER')
   console.log('[canvas] Migrated: added share_expires_at')
+}
+
+/** The canvas<->conversation chat link postdates the table. Existing rows get
+ *  NULL = not connected, which is the correct pre-feature behaviour. */
+function migrateChatConnection(database: Database): void {
+  const cols = database.query('PRAGMA table_info(canvases)').all() as { name: string }[]
+  if (cols.some(c => c.name === 'connected_conversation_id')) return
+  database.run('ALTER TABLE canvases ADD COLUMN connected_conversation_id TEXT')
+  console.log('[canvas] Migrated: added connected_conversation_id')
 }
 
 export function initCanvasStore(cacheDir: string): void {
@@ -63,10 +73,12 @@ export function initCanvasStore(cacheDir: string): void {
       share_token TEXT,
       share_tier  TEXT,
       share_expires_at INTEGER,
+      connected_conversation_id TEXT,
       archived_at INTEGER
     )
   `)
   migrateShareExpiry(db)
+  migrateChatConnection(db)
   db.run('CREATE INDEX IF NOT EXISTS idx_canvas_project ON canvases(project_uri, updated_at DESC)')
   db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_canvas_token ON canvases(share_token) WHERE share_token IS NOT NULL')
 
@@ -88,6 +100,9 @@ export function initCanvasStore(cacheDir: string): void {
     `UPDATE canvases SET shared = $shared, share_token = $share_token, share_tier = $share_tier,
      share_expires_at = $share_expires_at, updated_at = $updated_at WHERE id = $id`,
   )
+  stmtSetConnection = db.prepare(
+    'UPDATE canvases SET connected_conversation_id = $conversation_id, updated_at = $updated_at WHERE id = $id',
+  )
   stmtDelete = db.prepare('DELETE FROM canvases WHERE id = $id')
 
   const count = (db.query('SELECT COUNT(*) as n FROM canvases').get() as { n: number }).n
@@ -104,7 +119,7 @@ export function closeCanvasStore(): void {
   }
   db = null
   stmtList = stmtGet = stmtByToken = stmtInsert = null
-  stmtSaveScene = stmtRename = stmtArchive = stmtSetShare = stmtDelete = null
+  stmtSaveScene = stmtRename = stmtArchive = stmtSetShare = stmtSetConnection = stmtDelete = null
 }
 
 /** Active (non-archived) canvases for a project, most recently edited first. */
@@ -167,6 +182,21 @@ export function renameCanvas(id: string, name: string): void {
 
 export function archiveCanvas(id: string, archived: boolean): void {
   stmtArchive?.run({ id, archived_at: archived ? Date.now() : null, updated_at: Date.now() })
+}
+
+/**
+ * Wire this canvas's chat window to a conversation, or clear it with null.
+ *
+ * Persisted rather than held in memory because it is USER INTENT ("this drawing
+ * is being worked on with that agent"), not session state -- a broker restart
+ * must not silently unwire it. It doubles as the authorization for the
+ * `canvas:<id>` send_message sink: only the connected conversation may reply in.
+ */
+export function setCanvasConnection(id: string, conversationId: string | null): void {
+  stmtSetConnection?.run({ id, conversation_id: conversationId, updated_at: Date.now() })
+  console.log(
+    `[canvas] connection ${id.slice(0, 12)} -> ${conversationId ? conversationId.slice(0, 8) : 'DISCONNECTED'}`,
+  )
 }
 
 /** Set or clear a canvas's public share (token + tier + expiry). token=null clears.

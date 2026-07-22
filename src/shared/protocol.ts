@@ -4520,12 +4520,35 @@ export interface CanvasSummary {
   shareToken?: string
   /** epoch ms the share link dies. Undefined = shared until explicitly revoked. */
   shareExpiresAt?: number
+  /** Conversation this canvas's chat window is connected to, if any. Set by the
+   *  OWNER from the canvas UI; it is also the authorization for the
+   *  `canvas:<id>` send_message sink -- only this conversation may reply in. */
+  connectedConversationId?: string
   /** true if a thumbnail PNG has been stored. */
   hasThumb: boolean
   /** byte length of the stored scene JSON (0 for a blank canvas). */
   sceneBytes: number
   /** null unless archived; epoch ms. */
   archivedAt: number | null
+}
+
+/**
+ * Broker -> every control panel with this canvas open: a line from the connected
+ * conversation, arriving via the `canvas:<id>` send_message sink.
+ *
+ * Rides the canvas ROOM (channel='canvas'), so it reaches exactly the peers
+ * looking at that drawing -- which is also what makes the chat multiplayer.
+ */
+export interface CanvasChatMessage {
+  type: 'canvas_chat_message'
+  canvasId: string
+  /** Always 'agent': the user's own lines are echoed locally by the sender. */
+  role: 'agent'
+  sourceConversationId: string
+  /** Display name for the sender -- conversation title, else project, else id. */
+  sourceName: string
+  body: string
+  ts: number
 }
 
 // ─── Canvas live multiplayer (Phase E) ──────────────────────────────────────

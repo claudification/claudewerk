@@ -16,6 +16,7 @@ import {
 import { slugify } from '../address-book'
 import { getUser } from '../auth'
 import { deliverDispatcherReport } from '../desk/async-impulse'
+import { deliverToCanvasSink, parseCanvasTarget } from '../desk/canvas-channel'
 import { parseOrbTarget, relayToOrb } from '../desk/orb-channel'
 import { refreshAliasUse } from '../former-slugs'
 import { GuardError, type HandlerContext, type MessageHandler } from '../handler-context'
@@ -770,6 +771,23 @@ function deliverToOne(
     )
     ctx.log.debug(`[dispatcher-sink] ${fromConversation.slice(0, 8)} -> dispatcher (link gate bypassed)`)
     return { to: toTarget, ok: true, status: 'delivered' }
+  }
+
+  // RESERVED `canvas:<id>` SINK: reply into the chat window on a canvas. Also a
+  // surface, not a peer, so the link gate does not apply -- but unlike `orb` and
+  // `dispatcher` it is ADDRESSED, so it carries its own authorization: only the
+  // conversation the user connected from that canvas may speak into it.
+  const canvasTarget = parseCanvasTarget(toTarget)
+  if (canvasTarget.isCanvas) {
+    const message = typeof data.message === 'string' ? data.message : ''
+    const out = deliverToCanvasSink(ctx.conversations, canvasTarget.canvasId, fromConversation, message)
+    ctx.log.info(
+      `[canvas-sink] ${fromConversation.slice(0, 8)} -> ${toTarget} ` +
+        (out.ok
+          ? `as "${out.sourceName}" (${out.subscribers} panel(s) with the canvas open, link gate bypassed)`
+          : `REFUSED: ${out.error}`),
+    )
+    return out.ok ? { to: toTarget, ok: true, status: 'delivered' } : { to: toTarget, ok: false, error: out.error }
   }
 
   // RESERVED `orb` SINK: speak this line aloud to the user through the live

@@ -20,12 +20,14 @@ export interface CanvasRow {
   share_tier: CanvasShareTier | null
   /** Epoch ms the share link dies; null = no expiry (share until revoked). */
   share_expires_at: number | null
+  /** Conversation this canvas's chat window is wired to; null = not connected. */
+  connected_conversation_id: string | null
   archived_at: number | null
 }
 
 /** Columns selected for every read, in row order. */
 export const CANVAS_COLS =
-  'id, project_uri, name, created_by, created_at, updated_at, scene_bytes, has_thumb, shared, share_token, share_tier, share_expires_at, archived_at'
+  'id, project_uri, name, created_by, created_at, updated_at, scene_bytes, has_thumb, shared, share_token, share_tier, share_expires_at, connected_conversation_id, archived_at'
 
 export function rowToSummary(r: CanvasRow): CanvasSummary {
   return {
@@ -39,6 +41,7 @@ export function rowToSummary(r: CanvasRow): CanvasSummary {
     shareTier: r.share_tier ?? undefined,
     shareToken: r.share_token ?? undefined,
     shareExpiresAt: r.share_expires_at ?? undefined,
+    connectedConversationId: r.connected_conversation_id ?? undefined,
     hasThumb: r.has_thumb === 1,
     sceneBytes: r.scene_bytes,
     archivedAt: r.archived_at,

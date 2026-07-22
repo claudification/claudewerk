@@ -15,6 +15,7 @@ import { BUILD_VERSION } from '../../shared/version'
 import { resolveAuth } from '../auth-routes'
 import type { ConversationStore } from '../conversation-store'
 import { deliverDispatcherReport } from '../desk/async-impulse'
+import { deliverToCanvasSink, parseCanvasTarget } from '../desk/canvas-channel'
 import { parseOrbTarget, relayToOrb } from '../desk/orb-channel'
 import { runDispatch } from '../desk/runtime'
 import { listThreads } from '../desk/threads'
@@ -265,6 +266,15 @@ export function createMcpServer(
           if (t === 'dispatcher') {
             const res = await deliverDispatcherReport(conversationStore, callerConversationId, message)
             return { to: t, ok: res.ok, status: 'delivered' as const, error: res.ok ? undefined : res.detail }
+          }
+          // RESERVED `canvas:<id>` SINK: reply into the chat window on a canvas.
+          // Addressed, so it authorizes itself -- only the conversation the user
+          // connected from that canvas may speak into it. A refusal explains why,
+          // so the agent can correct its address instead of failing silently.
+          const canvasTarget = parseCanvasTarget(t)
+          if (canvasTarget.isCanvas) {
+            const out = deliverToCanvasSink(conversationStore, canvasTarget.canvasId, callerConversationId, message)
+            return { to: t, ok: out.ok, status: 'delivered' as const, error: out.error, note: out.note }
           }
           // RESERVED `orb` SINK: speak this line aloud to the user through the
           // live voice orb. Like `dispatcher`, it is a system notification, not a
