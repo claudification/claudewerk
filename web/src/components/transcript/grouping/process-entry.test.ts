@@ -301,6 +301,46 @@ describe('processEntry - queue-operation', () => {
     expect(copiesOfSecond).toHaveLength(1)
   })
 
+  it('does not duplicate a message that merged behind a [Request interrupted] row (regression)', () => {
+    // Real incident 2026-07-23: an interrupt writes a `[Request interrupted by
+    // user]` user row (ARRAY content) that merges AHEAD of the real message, so
+    // the real message is not at entries[0]. The enqueue must still find it in
+    // the group (by any string entry) and NOT spawn a duplicate synthetic.
+    const { groups } = group([
+      userEntry(textBlocks('[Request interrupted by user]')), // array content, merges first
+      userEntry('STOP FUCKING AROUND'),
+      queueOp('enqueue', 'STOP FUCKING AROUND'),
+    ])
+
+    expect(groups).toHaveLength(1)
+    expect(groups[0].queued).toBe(true)
+    const copies = groups.filter(g =>
+      g.entries.some(e => (e as { message?: { content?: unknown } }).message?.content === 'STOP FUCKING AROUND'),
+    )
+    expect(copies).toHaveLength(1)
+  })
+
+  it('flags a queued message even when a NEWER unrelated user group sits above it', () => {
+    // The enqueue can arrive after a later, different user bubble already
+    // rendered. Scanning only the most-recent user group would miss the match
+    // and duplicate; scan back through all of them.
+    const { groups } = group([
+      userEntry('the queued one', 1),
+      userEntry('a newer unrelated message', 40),
+      queueOp('enqueue', 'the queued one'),
+    ])
+
+    expect(groups).toHaveLength(2)
+    const queued = groups.filter(g => g.queued)
+    expect(queued).toHaveLength(1)
+    expect((queued[0].entries[0] as { message?: { content?: unknown } }).message?.content).toBe('the queued one')
+    // No third (synthetic) bubble.
+    const copies = groups.filter(g =>
+      g.entries.some(e => (e as { message?: { content?: unknown } }).message?.content === 'the queued one'),
+    )
+    expect(copies).toHaveLength(1)
+  })
+
   it('replaces the group object rather than mutating it (React #300)', () => {
     const state: GroupingState = { groups: [], current: null, pendingSkillName: undefined }
     processEntry(userEntry('deploy the thing'), state)

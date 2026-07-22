@@ -67,10 +67,34 @@ function handleCompact(entry: TranscriptEntry, state: GroupingState): void {
   }
 }
 
+/** Does any entry of this user group carry exactly this string content? */
+function userGroupHasText(g: DisplayGroup, content: string): boolean {
+  return g.entries.some(e => {
+    const c = (e as TranscriptUserEntry).message?.content
+    return typeof c === 'string' && c === content
+  })
+}
+
+/** Does any user group already render this text via ARRAY content (joined text
+ *  blocks)? The dup-canary: flagExistingUserGroupAsQueued only matches string
+ *  content, so an array copy of the same text would slip past and get a
+ *  duplicate synthetic. */
+function userGroupHasArrayText(content: string, state: GroupingState): boolean {
+  for (const g of state.groups) {
+    if (g.type !== 'user') continue
+    for (const e of g.entries) {
+      const c = (e as TranscriptUserEntry).message?.content
+      if (!Array.isArray(c)) continue
+      const text = c.map(b => (b.type === 'text' && typeof b.text === 'string' ? b.text : '')).join('')
+      if (text === content) return true
+    }
+  }
+  return false
+}
+
 /**
  * Flag an already-rendered user group as queued, when one of its entries matches
- * this text and it is the most recent user group. Returns false when there is
- * nothing to flag.
+ * this text. Returns false only when the text is present in NO user group.
  *
  * Headless needs this: the agent host emits an optimistic user entry the moment
  * it writes to CC's stdin (stream-backend `sendUserMessage`), so by the time the
@@ -79,23 +103,21 @@ function handleCompact(entry: TranscriptEntry, state: GroupingState): void {
  * PTY/daemon have no optimistic entry, find no match, and keep the old
  * create-a-synthetic-group behaviour.
  *
- * Match ANY entry in the group, not just entries[0]: two messages queued
- * back-to-back merge into ONE user group (consecutive user echoes merge), so the
- * second enqueue's content sits at a NON-ZERO index. Checking only entries[0]
- * there missed it and spawned a duplicate synthetic bubble -- the message showed
- * once inside the merged bubble and again on its own (incident 2026-07-22). Still
- * scoped to the most-recent user group: an older non-match means this is a fresh
- * interjection, so fall through and let the caller create the synthetic.
+ * TWO reasons this scans ALL user groups and ALL of each group's entries, not
+ * just entries[0] of the most-recent one (both are real 2026-07-22 incidents):
+ *   1. Two messages queued back-to-back MERGE into one user group, so the second
+ *      enqueue's content sits at a non-zero index.
+ *   2. An interrupt writes a `[Request interrupted by user]` user row that merges
+ *      ahead of the real message, so the real message is not at entries[0] AND a
+ *      newer user group may sit above it.
+ * If a matching bubble exists ANYWHERE, flagging it (never synthesising) is the
+ * only way to avoid rendering the message twice. A synthetic is created ONLY
+ * when the text is genuinely absent (the PTY/daemon no-optimistic case).
  */
 function flagExistingUserGroupAsQueued(content: string, state: GroupingState): boolean {
   for (let gi = state.groups.length - 1; gi >= 0; gi--) {
     const g = state.groups[gi]
-    if (g.type !== 'user') continue
-    const matches = g.entries.some(e => {
-      const c = (e as TranscriptUserEntry).message?.content
-      return typeof c === 'string' && c === content
-    })
-    if (!matches) return false
+    if (g.type !== 'user' || !userGroupHasText(g, content)) continue
     // Replace rather than mutate: a currently-rendering React tree must not be
     // disturbed mid-commit (React #300).
     const flagged: DisplayGroup = { ...g, queued: true }
@@ -128,6 +150,18 @@ function handleQueue(entry: TranscriptEntry, state: GroupingState): void {
         })
       }
     } else if (!flagExistingUserGroupAsQueued(entry.content, state)) {
+      // Canary: we are about to synthesise a queued bubble because no user group
+      // holds this text as a STRING. If a group holds the SAME text as ARRAY
+      // content (an interrupted turn, a resend), the synthetic is a DUPLICATE
+      // that flagExistingUserGroupAsQueued can't dedup. Warn so a recurrence is
+      // greppable in devtools. (Console only -- a popped-out window has no console;
+      // routing client diag over WS to the broker is tracked separately.)
+      if (userGroupHasArrayText(entry.content, state)) {
+        console.warn('[queue] synthesising a queued bubble whose text already renders as array content -- likely dup', {
+          preview: entry.content.slice(0, 60),
+          groups: state.groups.length,
+        })
+      }
       const synthetic: TranscriptUserEntry = {
         type: 'user',
         timestamp: entry.timestamp,
