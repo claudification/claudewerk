@@ -4,6 +4,6 @@
  */
 
 export { TranscriptDropZone } from './drop-zone'
-// The renderer switch (plainTranscript pref) is the public entry; the concrete
+// The renderer switch (transcriptRenderer pref) is the public entry; the concrete
 // renderers are imported directly by it, not re-exported here.
 export { TranscriptViewSwitch } from './transcript-view-switch'

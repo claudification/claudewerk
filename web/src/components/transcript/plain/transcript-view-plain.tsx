@@ -1,8 +1,8 @@
 /**
- * TranscriptViewPlain -- non-virtualized transcript renderer.
- * Flag: controlPanelPrefs.plainTranscript (Settings > Experiments), A/B
- * sibling of the TanStack `TranscriptView`. Plan + prior-art rationale:
- * .claude/docs/plan-transcript-non-virtualized.md.
+ * TranscriptViewPlain -- non-virtualized transcript renderer. DEFAULT engine.
+ * Selected when controlPanelPrefs.transcriptRenderer === 'plain' (Settings >
+ * Experiments), the opt-out sibling of the legacy TanStack `TranscriptView`.
+ * Plan + prior-art rationale: .claude/docs/plan-transcript-non-virtualized.md.
  *
  * Groups render in normal document flow; browser-native mechanisms do the
  * rest. ONE scroll writer -- nothing else may write scrollTop:

@@ -783,18 +783,20 @@ const SETTINGS: SettingItem[] = [
   {
     tab: 'experiments',
     group: 'Transcript Renderer',
-    label: 'Plain renderer (non-virtualized)',
+    label: 'Renderer',
     description:
-      'A/B: render transcripts in plain document flow with the stick-to-bottom engine + browser-native scroll mechanics (scrollHeight prepend anchor, IntersectionObserver scrollback, content-visibility offscreen skipping) instead of the TanStack virtualizer. Per-device. Watch [follow]/[window] console lines when comparing.',
-    keywords: 'plain transcript renderer virtualizer stick to bottom scroll follow experiment ab',
+      'Plain (default) renders transcripts in plain document flow with the stick-to-bottom engine + browser-native scroll mechanics (scrollHeight prepend anchor, IntersectionObserver scrollback, content-visibility offscreen skipping). TanStack virtualizer is the legacy engine; choosing it reveals the Virtualizer Lab knobs below. Per-device. Watch [follow]/[window] console lines when comparing.',
+    keywords: 'plain transcript renderer virtualizer virtualized tanstack stick to bottom scroll follow experiment',
     render: (ctx, ariaLabel) => (
-      <input
+      <select
         aria-label={ariaLabel}
-        type="checkbox"
-        checked={ctx.prefs.plainTranscript}
-        onChange={e => ctx.updatePrefs({ plainTranscript: e.target.checked })}
-        className="accent-primary size-4"
-      />
+        value={ctx.prefs.transcriptRenderer}
+        onChange={e => ctx.updatePrefs({ transcriptRenderer: e.target.value as 'plain' | 'virtualized' })}
+        className="bg-muted border border-border px-2 py-1 text-xs font-mono text-foreground"
+      >
+        <option value="plain">Plain (default)</option>
+        <option value="virtualized">TanStack virtualizer</option>
+      </select>
     ),
   },
   {
@@ -1233,10 +1235,13 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         </div>
       )}
 
-      {/* Virtualizer Lab -- pinned to Experiments tab */}
-      {(isFiltering
-        ? 'virtualizer lab experiments transcript scroll follow pin jumpy'.includes(lowerFilter)
-        : activeTab === 'experiments') && (
+      {/* Virtualizer Lab -- pinned to Experiments tab; only meaningful for the
+          TanStack virtualizer, so hidden entirely unless it is the chosen
+          renderer (even under an active filter). */}
+      {prefs.transcriptRenderer === 'virtualized' &&
+        (isFiltering
+          ? 'virtualizer lab experiments transcript scroll follow pin jumpy'.includes(lowerFilter)
+          : activeTab === 'experiments') && (
         <div>
           <GroupHeader label="Virtualizer Lab" />
           <VirtualizerLabSection />

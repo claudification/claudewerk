@@ -94,11 +94,13 @@ export interface ControlPanelPrefs {
    *  partial so knobs added later inherit their defaults; resolve with
    *  resolveVirtualizerLab() at the point of use. {} = production behavior. */
   virtualizerLab: Partial<VirtualizerLabPrefs>
-  /** EXPERIMENTAL A/B: render transcripts with the non-virtualized plain
-   *  renderer (TranscriptViewPlain -- stick-to-bottom engine + browser-native
-   *  scroll mechanics) instead of the TanStack virtualizer. Per-device.
-   *  Plan: .claude/docs/plan-transcript-non-virtualized.md. */
-  plainTranscript: boolean
+  /** Transcript scroll/measure engine. 'plain' (DEFAULT) = the non-virtualized
+   *  TranscriptViewPlain (stick-to-bottom engine + browser-native scroll
+   *  mechanics: scrollHeight prepend anchor, IntersectionObserver scrollback,
+   *  content-visibility offscreen skipping). 'virtualized' = the legacy TanStack
+   *  virtualizer (opt-in; the Virtualizer Lab experiments only apply to it).
+   *  Per-device. Plan: .claude/docs/plan-transcript-non-virtualized.md. */
+  transcriptRenderer: 'plain' | 'virtualized'
 }
 
 export type SettingsTab = 'general' | 'display' | 'input' | 'sessions' | 'sentinels' | 'system' | 'experiments'
@@ -144,13 +146,21 @@ const defaultPrefs: ControlPanelPrefs = {
   listViewMode: 'default',
   activeWorkspaceId: null,
   virtualizerLab: {},
-  plainTranscript: false,
+  transcriptRenderer: 'plain',
 }
 
 export function loadPrefs(): ControlPanelPrefs {
   try {
     const raw = localStorage.getItem('control-panel-prefs')
-    if (raw) return { ...defaultPrefs, ...JSON.parse(raw) }
+    if (raw) {
+      const stored = JSON.parse(raw)
+      // Legacy: `plainTranscript` was an opt-IN to plain (default TanStack).
+      // Plain is now the default on every device, TanStack a deliberate opt-in
+      // via `transcriptRenderer`. Drop the dead key rather than migrate -- a
+      // stale `plainTranscript:false` must NOT strand a device on TanStack.
+      delete stored.plainTranscript
+      return { ...defaultPrefs, ...stored }
+    }
   } catch {}
   return defaultPrefs
 }
