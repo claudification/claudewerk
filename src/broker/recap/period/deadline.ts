@@ -15,11 +15,27 @@
  * CLAUDWERK_RECAP_* seams.
  */
 
-/** Linear budget per conversation. 6s/conv reproduces Jonas's example exactly:
- *  10 conv -> 60s (floor), 250 conv -> 1_500_000ms = 25min. */
+/**
+ * Per-call timeout for the calls that generate the FULL document (oneshot /
+ * reduce, up to 32k output tokens). A legitimate Opus synthesis runs MINUTES.
+ * It lives here, next to the overall deadline, on purpose: the overall deadline
+ * must never out-race the per-call timeout it governs, and the only way to
+ * guarantee that is to derive one from the other in a single file.
+ */
+export const RECAP_SYNTHESIS_TIMEOUT_MS = 240_000
+/** The MAP call is fast, cheap extraction -- it gets a much tighter bound. */
+export const RECAP_MAP_TIMEOUT_MS = 120_000
+/** A hung call must not draw the full rate-limit retry budget (240s x 3 = 12min
+ *  of dead air). One timeout retry, then degrade -- the stage deadline backstops. */
+export const RECAP_TIMEOUT_RETRIES = 1
+
+/** Linear budget per conversation -- this covers GATHER + the parallel map
+ *  stage, the parts that genuinely scale with how many conversations there are. */
 const MS_PER_CONV = 6_000
-/** Floor: even a tiny recap gets at least this (one slow Opus reduce fits). */
-const FLOOR_MS = 60_000
+/** Slack on top of the synthesis call itself: parse-retry, finalize, persist. */
+const SYNTHESIS_SLACK_MS = 60_000
+/** Floor: reserve + slack, so even a 1-conv recap can finish a slow synthesis. */
+const FLOOR_MS = RECAP_SYNTHESIS_TIMEOUT_MS + SYNTHESIS_SLACK_MS
 /** Ceil: keeps even a huge month-recap bounded (was the old 45min map ceil). */
 const CEIL_MS = 30 * 60_000
 
@@ -29,9 +45,23 @@ function envMs(key: string): number | undefined {
 }
 
 /**
- * Overall wall-clock budget (ms) for a recap render, given its conversation
- * count. A flat CLAUDWERK_RECAP_OVERALL_DEADLINE_MS override wins outright (ops
- * kill-switch / tests); otherwise the per-conv/floor/ceil knobs each override.
+ * Fixed wall-clock reserved for the final synthesis, INDEPENDENT of conversation
+ * count. Incident recap_gztgs07tmyn8: the old budget scaled only with conv count
+ * (6s x 15 = 90s) while the one Opus call it had to cover took 131.8s -- so the
+ * run was force-failed 42s before its own successful, already-billed output
+ * landed. Whether a recap merges 15 conversations or 150, it ends in ONE
+ * document-generating call bounded by RECAP_SYNTHESIS_TIMEOUT_MS; that cost is
+ * a constant, so it belongs in the budget as a constant.
+ */
+export function synthesisReserveMs(): number {
+  return envMs('CLAUDWERK_RECAP_SYNTHESIS_RESERVE_MS') ?? RECAP_SYNTHESIS_TIMEOUT_MS
+}
+
+/**
+ * Overall wall-clock budget (ms) for a recap render: the fixed synthesis reserve
+ * PLUS the per-conversation gather/map budget, clamped to [floor, ceil]. A flat
+ * CLAUDWERK_RECAP_OVERALL_DEADLINE_MS override wins outright (ops kill-switch /
+ * tests); otherwise the reserve/per-conv/floor/ceil knobs each override.
  */
 export function overallDeadlineMs(convCount: number): number {
   const flat = envMs('CLAUDWERK_RECAP_OVERALL_DEADLINE_MS')
@@ -39,7 +69,7 @@ export function overallDeadlineMs(convCount: number): number {
   const perConv = envMs('CLAUDWERK_RECAP_MS_PER_CONV') ?? MS_PER_CONV
   const floor = envMs('CLAUDWERK_RECAP_DEADLINE_FLOOR_MS') ?? FLOOR_MS
   const ceil = envMs('CLAUDWERK_RECAP_DEADLINE_CEIL_MS') ?? CEIL_MS
-  const raw = Math.max(0, Math.ceil(convCount)) * perConv
+  const raw = synthesisReserveMs() + Math.max(0, Math.ceil(convCount)) * perConv
   return Math.min(ceil, Math.max(floor, raw))
 }
 
