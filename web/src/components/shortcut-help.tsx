@@ -3,9 +3,10 @@
  * Shows all available shortcuts in a demoscene-aesthetic modal
  */
 
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
-import { formatShortcut, getCommandGeneration, getCommands, useCommand } from '@/lib/commands'
+import { useRegisteredShortcuts } from '@/hooks/use-registered-shortcuts'
+import { useCommand } from '@/lib/commands'
 
 const INPUT_SHORTCUTS = [
   { keys: 'Enter', action: 'Send message' },
@@ -23,21 +24,7 @@ export function ShortcutHelp() {
     group: 'Help',
   })
 
-  const _gen = getCommandGeneration()
-  // biome-ignore lint/correctness/useExhaustiveDependencies: _gen is a generation counter dep key that invalidates memoized command list when registry changes
-  const shortcuts = useMemo(() => {
-    // Dedupe by label so chord aliases (⌘K X + ⌘G X) show as a single row with two kbds
-    const byLabel = new Map<string, string[]>()
-    for (const c of getCommands()) {
-      if (!c.shortcut) continue
-      const keys = formatShortcut(c.shortcut)
-      const existing = byLabel.get(c.label)
-      if (existing) existing.push(keys)
-      else byLabel.set(c.label, [keys])
-    }
-    return Array.from(byLabel.entries()).map(([action, keys]) => ({ action, keys }))
-    // react-doctor-disable-next-line react-doctor/exhaustive-deps
-  }, [_gen])
+  const shortcuts = useRegisteredShortcuts()
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

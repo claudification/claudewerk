@@ -110,7 +110,17 @@ export interface ControlPanelPrefs {
   transcriptRenderer: 'plain' | 'virtualized'
 }
 
-export type SettingsTab = 'general' | 'display' | 'input' | 'sessions' | 'sentinels' | 'system' | 'experiments'
+// 'general' is legacy (tab removed 2026-07; kept so stored prefs still typecheck --
+// the dialog falls back to 'display' for unknown ids).
+export type SettingsTab =
+  | 'general'
+  | 'display'
+  | 'input'
+  | 'voice'
+  | 'sessions'
+  | 'sentinels'
+  | 'system'
+  | 'experiments'
 
 const defaultPrefs: ControlPanelPrefs = {
   showEndedConversations: true,

@@ -2,11 +2,9 @@ import type { ReactNode } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
+import { SettingsNavRail, SettingsNavStrip, type SettingsShellTab } from './settings-nav'
 
-export interface SettingsShellTab {
-  id: string
-  label: string
-}
+export type { SettingsShellTab }
 
 interface SettingsShellProps {
   open: boolean
@@ -20,6 +18,9 @@ interface SettingsShellProps {
   footer?: ReactNode
   children: ReactNode
   maxWidth?: 'sm' | 'md' | 'lg'
+  /** Desktop-first layout: wide fixed-height dialog with a left nav rail
+   *  (mobile keeps a horizontal tab strip). Default = legacy narrow stack. */
+  wide?: boolean
 }
 
 const MAX_WIDTH_CLASS = {
@@ -28,7 +29,42 @@ const MAX_WIDTH_CLASS = {
   lg: 'max-w-lg',
 } as const
 
-export function SettingsShell({
+export function SettingsShell(props: SettingsShellProps) {
+  return props.wide ? <WideShell {...props} /> : <StackedShell {...props} />
+}
+
+function WideShell({
+  open,
+  onOpenChange,
+  title,
+  tabs,
+  activeTab,
+  onTabChange,
+  showTabs = true,
+  headerContent,
+  footer,
+  children,
+}: SettingsShellProps) {
+  const nav = showTabs && tabs.length > 1
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="p-0 gap-0 overflow-hidden flex flex-col w-[94vw] sm:max-w-[960px] h-[85vh]">
+        <div className="flex items-center gap-4 px-4 sm:px-6 pt-4 pb-3 pr-12 border-b border-border shrink-0">
+          <DialogTitle className="uppercase tracking-wider shrink-0">{title}</DialogTitle>
+          {headerContent && <div className="flex-1 max-w-xs ml-auto">{headerContent}</div>}
+        </div>
+        {nav && <SettingsNavStrip tabs={tabs} activeTab={activeTab} onTabChange={onTabChange} />}
+        <div className="flex flex-1 min-h-0">
+          {nav && <SettingsNavRail tabs={tabs} activeTab={activeTab} onTabChange={onTabChange} />}
+          <div className="flex-1 min-w-0 overflow-y-auto px-4 sm:px-6 py-4 space-y-3">{children}</div>
+        </div>
+        {footer && <div className="px-4 sm:px-6 py-3 border-t border-border shrink-0">{footer}</div>}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function StackedShell({
   open,
   onOpenChange,
   title,
