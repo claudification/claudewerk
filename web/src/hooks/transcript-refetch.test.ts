@@ -14,11 +14,17 @@
  *
  * Both defects need the same two properties, so both are pinned below:
  *   ORDER    -- a late gap-fill renders where it happened, not at the tail.
- *   IDENTITY -- dedup is by uuid, because a resend can carry a fresh seq for an
- *               entry we already hold (a user row with ARRAY content gets a
- *               timestamp-derived uuid that differs between the live stdin echo
- *               and the later file resend, so the broker's INSERT OR IGNORE
- *               never collapses the pair -- see synthetic-user-uuid.ts).
+ *   IDENTITY -- dedup is by uuid, because seq is an arrival counter and a resend
+ *               can hand back an entry we already hold under a fresh one.
+ *
+ * The uuid rule is defence in depth, NOT a patch for a known storage bug. An
+ * earlier draft of this comment claimed the broker persists two rows for one
+ * logical user entry when the content is an array (a timestamp-derived uuid on
+ * the live echo vs CC's own on the file resend). That was a hypothesis, and the
+ * production store refuses it: grouping array-content user rows by conversation
+ * + timestamp + content finds NO group carrying more than one uuid. Rows that
+ * share a timestamp are parallel tool_results, each genuinely distinct. Treat
+ * the claim as dead unless a real repro turns up.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
