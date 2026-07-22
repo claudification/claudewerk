@@ -6,44 +6,39 @@
  * normalized by realtime-events.ts.
  */
 
-import { type FunctionCall, toVoiceAction, type VoiceAction, type VoiceState } from './realtime-events'
+import { type FunctionCall, toVoiceAction, type VoiceAction } from './realtime-events'
+import { announceItem, RESPONSE_CANCEL, RESPONSE_CREATE, speedUpdate, toolOutputItem } from './session-messages'
+import type { VoiceHandlers, VoiceSessionConfig } from './session-types'
+import { createSpeedLatch, type SpeedLatch } from './speed-latch'
 import { connectRealtime, type MintedToken, type RealtimeTransport } from './webrtc-transport'
 
-export interface VoiceSessionConfig {
-  /** Mint the ephemeral token (POST /api/desk/voice/token). */
-  mintToken(): Promise<MintedToken>
-  /** Run a tool the model called -- the tool-bridge: client-local verbs are
-   *  answered in the browser, everything else crosses the broker's gated
-   *  `voice_tool_call` seam. */
-  runTool(call: FunctionCall): Promise<unknown>
-}
-
-export interface VoiceHandlers {
-  /** The orb started a new spoken response. */
-  onResponseStart?(): void
-  /** A response finished with NO pending tool calls -- the turn is sealed. */
-  onResponseEnd?(): void
-  /** The user started speaking -- the turn boundary (seals the open turn now,
-   *  since the user's own transcript arrives late and async). */
-  onUserSpeechStart?(): void
-  /** Orb speech (partial = streaming delta) or the user's final transcript. */
-  onTranscript?(role: 'agent' | 'user', text: string, partial: boolean): void
-  onState?(state: VoiceState): void
-  onOpen?(): void
-  onError?(msg: string): void
-}
+export type { VoiceHandlers, VoiceSessionConfig } from './session-types'
 
 export class VoiceSession {
   private transport?: RealtimeTransport
   private responseActive = false
+  /** We ASKED for a response but the first audio event has not landed yet. A
+   *  turn starts at `response.create`, not at the first sound -- without this
+   *  the gap between them looks idle and a rate change sent into it is dropped
+   *  by the API with nothing left to retry. */
+  private responsePending = false
   private closed = false
   /** The audio config the session was minted with (see MintedToken.audio). */
   private mintedAudio: Record<string, unknown> | null = null
+  /** Holds the wanted speaking rate until a turn boundary (see speed-latch.ts). */
+  private readonly speed: SpeedLatch
 
   constructor(
     private readonly cfg: VoiceSessionConfig,
     private readonly handlers: VoiceHandlers,
-  ) {}
+  ) {
+    this.speed = createSpeedLatch({
+      // No transport yet, or mid-response: both are windows where the API
+      // ignores a rate change, so the latch holds it instead of burning it.
+      isBusy: () => this.responseActive || this.responsePending || !this.transport,
+      apply: rate => this.pushSpeed(rate),
+    })
+  }
 
   async start(): Promise<void> {
     this.handlers.onState?.('connecting')
@@ -51,7 +46,11 @@ export class VoiceSession {
     try {
       token = await this.cfg.mintToken()
       const audio = token.audio
-      if (audio && typeof audio === 'object') this.mintedAudio = audio as Record<string, unknown>
+      if (audio && typeof audio === 'object') {
+        this.mintedAudio = audio as Record<string, unknown>
+        const minted = (this.mintedAudio.output as { speed?: unknown } | undefined)?.speed
+        if (typeof minted === 'number') this.speed.minted(minted)
+      }
     } catch (e) {
       this.fail(`could not start the voice session: ${(e as Error).message}`)
       throw e
@@ -74,7 +73,7 @@ export class VoiceSession {
   private onChannelOpen(): void {
     this.handlers.onOpen?.()
     this.handlers.onState?.('listening')
-    this.transport?.send({ type: 'response.create' })
+    this.requestResponse()
   }
 
   private onTransportClose(reason: string): void {
@@ -119,10 +118,22 @@ export class VoiceSession {
     apply[action.kind]()
   }
 
+  /** Ask for a turn. The pending flag makes the latch treat the whole request
+   *  as busy, not just the part where sound is coming out. */
+  private requestResponse(): void {
+    this.responsePending = true
+    this.transport?.send(RESPONSE_CREATE)
+  }
+
   private onResponseDone(action: Extract<VoiceAction, { kind: 'done' }>): void {
     this.responseActive = false
+    this.responsePending = false
     this.handlers.onState?.('listening')
-    if (action.calls.length === 0) this.handlers.onResponseEnd?.()
+    // A turn boundary is the ONLY moment the API accepts a new speaking rate.
+    if (action.calls.length === 0) {
+      this.speed.turnEnded()
+      this.handlers.onResponseEnd?.()
+    }
     for (const call of action.calls) void this.dispatchTool(call)
   }
 
@@ -133,7 +144,7 @@ export class VoiceSession {
     this.handlers.onState?.('listening')
     this.handlers.onUserSpeechStart?.()
     if (!this.responseActive) return
-    this.transport?.send({ type: 'response.cancel' })
+    this.transport?.send(RESPONSE_CANCEL)
     this.responseActive = false
   }
 
@@ -146,42 +157,32 @@ export class VoiceSession {
       output = { error: String(e) }
     }
     if (this.closed) return
-    this.transport?.send({
-      type: 'conversation.item.create',
-      item: { type: 'function_call_output', call_id: call.callId, output: JSON.stringify(output) },
-    })
-    this.transport?.send({ type: 'response.create' })
+    this.transport?.send(toolOutputItem(call.callId, output))
+    this.requestResponse()
   }
 
-  /** Make the orb say something it was not asked for (proactive narration).
-   *  Injected as a conversation item so the orb answers IN PERSONA and
-   *  remembers it said it -- a `response.instructions` override would replace
-   *  the persona for that turn, which is how a snarky orb suddenly sounds like
-   *  a form letter. */
+  /** Make the orb say something it was not asked for (proactive narration). */
   announce(note: string): void {
-    this.transport?.send({
-      type: 'conversation.item.create',
-      item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: note }] },
-    })
-    this.transport?.send({ type: 'response.create' })
+    this.transport?.send(announceItem(note))
+    this.requestResponse()
   }
 
-  /** Change the speaking rate on the LIVE session. OpenAI applies it between
-   *  turns (never mid-response), so a change made while it is talking lands on
-   *  its next sentence -- no reconnect, no re-mint. */
+  /** Change the speaking rate on the LIVE session. The API only accepts this
+   *  BETWEEN turns, so the latch holds it until one and re-sends there -- a
+   *  slider moved mid-sentence used to be swallowed for the rest of the
+   *  session. No reconnect, no re-mint. */
   setSpeed(speed: number): void {
-    // TWO things this call got wrong before, both user-visible:
-    //  1. `session` is a TAGGED union in the GA API -- without `type:
-    //     'realtime'` the server rejects the update with "Missing required
-    //     parameter: 'session.type'", which lands as a red error the moment the
-    //     orb connects (the panel pushes the dial on every session start).
-    //  2. the docs do not say whether an update MERGES or REPLACES, so sending
-    //     `{audio:{output:{speed}}}` alone risks dropping the input
-    //     transcription and the turn detection -- no transcripts, no barge-in.
-    //     Echo the whole minted block back with only the speed changed.
-    const output = { ...(this.mintedAudio?.output as Record<string, unknown>), speed }
-    const audio = { ...this.mintedAudio, output }
-    this.transport?.send({ type: 'session.update', session: { type: 'realtime', audio } })
+    this.speed.want(speed)
+  }
+
+  /** What the live session is speaking at, as far as we know (null before mint). */
+  currentSpeed(): number | null {
+    return this.speed.applied()
+  }
+
+  private pushSpeed(speed: number): void {
+    console.debug('[voice-orb] speaking rate ->', speed)
+    this.transport?.send(speedUpdate(this.mintedAudio, speed))
   }
 
   /** Live mic + remote streams, for the orb's audio reactivity. */

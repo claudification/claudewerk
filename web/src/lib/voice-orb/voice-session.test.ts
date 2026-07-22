@@ -206,9 +206,10 @@ describe('proactive narration', () => {
 })
 
 describe('speaking rate', () => {
-  it('pushes a session.update to the LIVE session (applies on its next turn)', async () => {
+  it('pushes a session.update to the LIVE session once the turn is over', async () => {
     const { session } = await startSession()
-    handlers?.onOpen()
+    handlers?.onOpen() // the orb greets: a turn is already in flight here
+    feed({ type: 'response.done', response: { output: [] } })
     sent.length = 0
     session.setSpeed(1.4)
     // The `type` tag is REQUIRED (without it: "Missing required parameter:
@@ -233,6 +234,35 @@ describe('speaking rate', () => {
     session.close()
     sent.length = 0
     session.setSpeed(1.1)
+    expect(sent).toEqual([])
+  })
+
+  // THE BUG Jonas hit: the API only accepts a rate change BETWEEN turns, so a
+  // slider moved while the orb was talking was dropped -- and never re-sent.
+  // The session kept its minted rate for the rest of its life.
+  it('holds a change made MID-SENTENCE and applies it at the turn boundary', async () => {
+    const { session } = await startSession()
+    handlers?.onOpen()
+    feed({ type: 'response.created' })
+    sent.length = 0
+    session.setSpeed(1.25)
+    expect(sent).toEqual([])
+    feed({ type: 'response.done', response: { output: [] } })
+    expect(sent).toEqual([
+      {
+        type: 'session.update',
+        session: { type: 'realtime', audio: { ...MINTED_AUDIO, output: { voice: 'marin', speed: 1.25 } } },
+      },
+    ])
+    expect(session.currentSpeed()).toBe(1.25)
+  })
+
+  it('never re-sends the rate the session was minted at', async () => {
+    const { session } = await startSession()
+    handlers?.onOpen()
+    sent.length = 0
+    session.setSpeed(1.3) // == MINTED_AUDIO.output.speed
+    feed({ type: 'response.done', response: { output: [] } })
     expect(sent).toEqual([])
   })
 })
