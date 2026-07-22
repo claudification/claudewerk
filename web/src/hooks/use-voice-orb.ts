@@ -12,20 +12,15 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useConversationsStore, wsSend } from '@/hooks/use-conversations'
+import { foldCaption, type SpokenLine } from '@/lib/voice-orb/caption-fold'
 import type { OpenSession } from '@/lib/voice-orb/open-session'
 import type { VoiceState } from '@/lib/voice-orb/realtime-events'
-
-export interface VoiceOrbLine {
-  role: 'agent' | 'user'
-  text: string
-  partial: boolean
-}
 
 export interface VoiceOrb {
   state: VoiceState
   error: string | null
   /** The most recent spoken line either way -- the orb's caption. */
-  lastLine: VoiceOrbLine | null
+  lastLine: SpokenLine | null
   muted: boolean
   live: boolean
   start(): Promise<void>
@@ -39,10 +34,26 @@ export interface VoiceOrb {
   announce(note: string): void
 }
 
+/** The dial's current position, clamped to what the API accepts. */
+function orbSpeed(): number {
+  const raw = Number(useConversationsStore.getState().controlPanelPrefs.voiceOrbSpeed)
+  if (!Number.isFinite(raw)) return 1.3
+  return Math.min(1.5, Math.max(0.25, raw))
+}
+
+/** Push the dial to a LIVE session whenever it moves. Its own hook so the main
+ *  one stays a flat state machine. */
+function useLiveSpeed(live: { session: { setSpeed(n: number): void } } | null): void {
+  const speed = useConversationsStore(st => st.controlPanelPrefs.voiceOrbSpeed)
+  useEffect(() => {
+    live?.session.setSpeed(orbSpeed())
+  }, [speed, live])
+}
+
 export function useVoiceOrb(): VoiceOrb {
   const [state, setState] = useState<VoiceState>('idle')
   const [error, setError] = useState<string | null>(null)
-  const [lastLine, setLastLine] = useState<VoiceOrbLine | null>(null)
+  const [lastLine, setLastLine] = useState<SpokenLine | null>(null)
   const [muted, setMuted] = useState(false)
 
   const liveRef = useRef<OpenSession | null>(null)
@@ -71,10 +82,12 @@ export function useVoiceOrb(): VoiceOrb {
       liveRef.current = await openVoiceSession({
         onState: setState,
         onError: setError,
-        onTranscript: (role, text, partial) => setLastLine({ role, text, partial }),
+        // Deltas are FRAGMENTS -- fold them, never display one as the line.
+        onTranscript: (role, text, partial) => setLastLine(prev => foldCaption(prev, { role, text, partial })),
         onReload: () => reloadRef.current(),
         send: wsSend,
         tone: () => useConversationsStore.getState().controlPanelPrefs.voiceOrbTone,
+        speed: () => orbSpeed(),
       })
     } catch (e) {
       setError((e as Error).message)
@@ -96,6 +109,8 @@ export function useVoiceOrb(): VoiceOrb {
     setMuted(next)
     void liveRef.current.session.setMicEnabled(!next)
   }, [muted])
+
+  useLiveSpeed(liveRef.current)
 
   const audioStreams = useCallback(() => liveRef.current?.session.audioStreams() ?? [], [])
   const announce = useCallback((note: string) => liveRef.current?.session.announce(note), [])

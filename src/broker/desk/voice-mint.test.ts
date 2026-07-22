@@ -41,6 +41,16 @@ describe('buildVoiceSessionConfig', () => {
     expect(buildVoiceSessionConfig(TOOLS, { tone: 'professional' }).instructions).not.toContain('meatbag')
   })
 
+  it('mints at the requested speaking rate, clamped to the API range', () => {
+    const speedOf = (cfg: ReturnType<typeof buildVoiceSessionConfig>) => cfg.audio.output.speed
+    expect(speedOf(buildVoiceSessionConfig(TOOLS, { speed: 1.4 }))).toBe(1.4)
+    // 1.6 is a hard 400 from OpenAI -- clamp rather than mint a broken session.
+    expect(speedOf(buildVoiceSessionConfig(TOOLS, { speed: 1.6 }))).toBe(1.5)
+    expect(speedOf(buildVoiceSessionConfig(TOOLS, { speed: 0.05 }))).toBe(0.25)
+    expect(speedOf(buildVoiceSessionConfig(TOOLS, { speed: Number.NaN }))).toBe(1.3)
+    expect(speedOf(buildVoiceSessionConfig(TOOLS))).toBe(1.3)
+  })
+
   it('honours an explicit instructions override', () => {
     expect(buildVoiceSessionConfig(TOOLS, { instructions: 'be brief' }).instructions).toBe('be brief')
   })

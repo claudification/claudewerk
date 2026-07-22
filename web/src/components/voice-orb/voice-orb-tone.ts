@@ -14,6 +14,10 @@ export type VoiceOrbTone = (typeof VOICE_ORB_TONES)[number]
 
 const DEFAULT_TONE: VoiceOrbTone = 'snarky'
 
+/** OpenAI's own bounds for `audio.output.speed` -- 1.6 is a 400 from the API. */
+export const MIN_ORB_SPEED = 0.25
+export const MAX_ORB_SPEED = 1.5
+
 /** What each dial position gets you, in the orb's own register. */
 const TONE_BLURB: Record<VoiceOrbTone, string> = {
   professional: 'Attitude off. Answers only.',

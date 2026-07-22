@@ -6,10 +6,13 @@
 
 import { cn } from '@/lib/utils'
 
-export type CaptionTone = 'speech' | 'error' | 'leaving'
+export type CaptionTone = 'speech' | 'heard' | 'error' | 'leaving'
 
 const TONE: Record<CaptionTone, string> = {
   speech: 'border-border bg-card/85 text-muted-foreground',
+  // What it HEARD you say -- dimmer and italic, so it never reads as the orb
+  // talking. This is also the read-back you check before it acts on a detail.
+  heard: 'border-border/60 bg-muted/60 text-muted-foreground/80 italic',
   error: 'border-destructive/40 bg-destructive/15 text-destructive-foreground',
   leaving: 'border-accent/50 bg-accent/15 text-foreground',
 }
@@ -35,12 +38,15 @@ export function pickCaption(opts: {
   error: string | null
   leavingSoon: boolean
   remainingMs: number
-  lastLine: string | undefined
+  lastLine: { role: 'agent' | 'user'; text: string } | null | undefined
 }): { text: string; tone: CaptionTone } {
   if (opts.error) return { text: opts.error, tone: 'error' }
   if (opts.leavingSoon) {
     const secs = Math.max(1, Math.round(opts.remainingMs / 1000))
     return { text: `stepping away in ${secs}s -- say something`, tone: 'leaving' }
   }
-  return { text: opts.lastLine ?? '', tone: 'speech' }
+  const line = opts.lastLine
+  if (!line?.text) return { text: '', tone: 'speech' }
+  if (line.role === 'user') return { text: `heard: ${line.text}`, tone: 'heard' }
+  return { text: line.text, tone: 'speech' }
 }

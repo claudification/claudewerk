@@ -11,17 +11,12 @@
 
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { useModalManagerStore } from '@/hooks/use-modal-manager'
-import { selectConversations } from '@/lib/slim-conversation'
+import { resolveSpokenConversation } from './resolve-conversation'
+import { liveCandidates } from './say-to-conversation'
 
 export interface ControlScreenArgs {
   action?: unknown
   target?: unknown
-}
-
-interface Candidate {
-  conversationId: string
-  title: string
-  project: string
 }
 
 /** Modal names the orb may open, mapped to the opener that reveals them. */
@@ -30,49 +25,14 @@ const OPENABLE: Record<string, () => void> = {
     import('@/components/dispatch-overlay/dispatch-store').then(m => m.useDispatchStore.getState().openOverlay()),
 }
 
-function liveCandidates(): Candidate[] {
-  const store = useConversationsStore.getState()
-  return selectConversations(store.conversationsById)
-    .filter(c => c.status !== 'ended')
-    .map(c => ({ conversationId: c.id, title: c.title ?? '', project: c.project ?? '' }))
-}
-
-/** Rank a conversation against a spoken target. 0 = no match. */
-function score(c: Candidate, needle: string): number {
-  if (c.conversationId === needle) return 100
-  const title = c.title.toLowerCase()
-  const project = c.project.toLowerCase()
-  if (title === needle) return 90
-  if (title.includes(needle)) return 70
-  if (project.includes(needle)) return 50
-  // Spoken titles lose punctuation ("transcript perf" vs "transcript-perf").
-  const loose = needle.replace(/[\s-_]+/g, '')
-  if (title.replace(/[\s-_]+/g, '').includes(loose)) return 60
-  return 0
-}
-
 function navigate(rawTarget: string): Record<string, unknown> {
-  const needle = rawTarget.trim().toLowerCase()
-  if (!needle) return { error: 'navigate needs a conversation id, title, or project' }
-
-  const ranked = liveCandidates()
-    .map(c => ({ c, s: score(c, needle) }))
-    .filter(r => r.s > 0)
-    .sort((a, b) => b.s - a.s)
-
-  const best = ranked[0]
-  if (!best) {
-    return {
-      error: `nothing live matches "${rawTarget}"`,
-      candidates: liveCandidates().slice(0, 5),
-    }
-  }
-  const tie = ranked[1]
-  if (tie && tie.s === best.s) {
-    return { error: `"${rawTarget}" is ambiguous -- ask which one`, candidates: ranked.slice(0, 4).map(r => r.c) }
-  }
-  useConversationsStore.getState().selectConversation(best.c.conversationId, 'voice-orb')
-  return { navigated: best.c }
+  const live = liveCandidates()
+  // Same matcher as say_to_conversation: "which one did he mean" must not have
+  // two answers, or the orb navigates to one and talks to another.
+  const resolved = resolveSpokenConversation(rawTarget, live)
+  if (!resolved.ok) return { error: resolved.error, candidates: resolved.candidates }
+  useConversationsStore.getState().selectConversation(resolved.conversation.conversationId, 'voice-orb')
+  return { navigated: resolved.conversation }
 }
 
 function openModal(rawTarget: string): Record<string, unknown> {

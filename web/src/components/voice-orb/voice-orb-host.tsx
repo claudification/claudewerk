@@ -59,7 +59,7 @@ export function VoiceOrbHost() {
     error: orb.error,
     leavingSoon: summon.leavingSoon,
     remainingMs: summon.leavingInMs,
-    lastLine: orb.lastLine?.text,
+    lastLine: orb.lastLine,
   })
 
   return (

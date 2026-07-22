@@ -22,6 +22,7 @@ import {
 import { SettingsShell, type SettingsShellTab } from './settings/settings-shell'
 import { VirtualizerLabSection } from './settings/virtualizer-lab-section'
 import { VoiceDevicePicker } from './settings/voice-device-picker'
+import { VoiceOrbSpeedRow, VoiceOrbToneRow } from './settings/voice-orb-rows'
 import { ThemeSelector } from './theme-selector'
 import { WebControlToggle } from './web-control-toggle'
 
@@ -305,6 +306,23 @@ const SETTINGS: SettingItem[] = [
         className="accent-primary size-4"
       />
     ),
+  },
+  {
+    tab: 'input',
+    group: 'Voice orb',
+    label: 'Tone',
+    description: 'How much attitude the orb ships with. Applies on its next summon.',
+    keywords: 'voice orb tone persona snark professional homicidal overkill personality',
+    render: (ctx, ariaLabel) => <VoiceOrbToneRow ctx={ctx} ariaLabel={ariaLabel} />,
+  },
+  {
+    tab: 'input',
+    group: 'Voice orb',
+    label: 'Speaking rate',
+    description:
+      'How fast the orb talks (0.25x - 1.5x, the API ceiling). Applies to a live session on its next sentence.',
+    keywords: 'voice orb speed rate faster slower pace speech tempo',
+    render: (ctx, ariaLabel) => <VoiceOrbSpeedRow ctx={ctx} ariaLabel={ariaLabel} />,
   },
   {
     tab: 'input',

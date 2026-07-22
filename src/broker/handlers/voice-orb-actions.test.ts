@@ -56,20 +56,29 @@ describe('voice_tool_call -- the contract gate', () => {
     }
   })
 
-  it('ACCEPTS the action verbs (P2) -- they clear the contract gate', async () => {
+  it('ACCEPTS the explicit action verbs -- they clear the contract gate', async () => {
     // Schema rejection proves it got PAST the contract check to the zod gate.
-    const replies = await run({ requestId: 'v3', name: 'dispatch', args: {} }, CONTROL_PANEL)
+    const replies = await run({ requestId: 'v3', name: 'dispatch_quest', args: {} }, CONTROL_PANEL)
     expect(String(replies[0].error)).toContain('invalid args')
     expect(String(replies[0].error)).not.toContain('not in the voice contract')
   })
 
-  it('carries a cost-gate release through: an unknown decision is refused, not executed', async () => {
+  it('REFUSES the dispatcher ROUTING brain -- the orb reads it, never drives it', async () => {
+    for (const name of ['dispatch', 'conversation_select', 'confirm_expensive']) {
+      const replies = await run({ requestId: 'v3b', name, args: { intent: 'do a thing' } }, CONTROL_PANEL)
+      expect(String(replies[0].error)).toContain('not in the voice contract')
+    }
+  })
+
+  it('never executes say_to_conversation server-side -- it is client-local', async () => {
+    // The browser intercepts it; if it ever reaches the broker the stub says so
+    // rather than silently doing nothing.
     const replies = await run(
-      { requestId: 'v3b', name: 'confirm_expensive', args: { decisionId: 'dec_nope', confirm: true } },
+      { requestId: 'v3d', name: 'say_to_conversation', args: { message: 'hi', target: null } },
       CONTROL_PANEL,
     )
-    expect(replies[0]).toMatchObject({ ok: false, name: 'confirm_expensive' })
-    expect(String(replies[0].error)).toContain('unknown decision')
+    expect(replies[0]).toMatchObject({ ok: true })
+    expect(JSON.stringify(replies[0].result)).toContain('handled in the browser')
   })
 
   it('rejects a quest with a complexity the schema does not know', async () => {

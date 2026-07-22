@@ -157,6 +157,13 @@ export class VoiceSession {
     this.transport?.send({ type: 'response.create' })
   }
 
+  /** Change the speaking rate on the LIVE session. OpenAI applies it between
+   *  turns (never mid-response), so a change made while it is talking lands on
+   *  its next sentence -- no reconnect, no re-mint. */
+  setSpeed(speed: number): void {
+    this.transport?.send({ type: 'session.update', session: { audio: { output: { speed } } } })
+  }
+
   /** Live mic + remote streams, for the orb's audio reactivity. */
   audioStreams(): MediaStream[] {
     return this.transport?.audioStreams() ?? []

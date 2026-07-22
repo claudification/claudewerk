@@ -20,13 +20,27 @@ import { DEFAULT_VOICE_TONE, type VoiceTone } from './voice-tones'
 
 export const REALTIME_MODEL = 'gpt-realtime-2'
 const VOICE = 'marin'
+/** OpenAI's own bounds for `audio.output.speed` (verified: 1.6 is a 400). */
+const MIN_VOICE_SPEED = 0.25
+const MAX_VOICE_SPEED = 1.5
+const DEFAULT_VOICE_SPEED = 1.3
+
+/** Clamp an untrusted speed to the API's range; junk falls back to default. */
+export function clampVoiceSpeed(raw: unknown): number {
+  const n = typeof raw === 'number' ? raw : Number(raw)
+  if (!Number.isFinite(n)) return DEFAULT_VOICE_SPEED
+  return Math.min(MAX_VOICE_SPEED, Math.max(MIN_VOICE_SPEED, n))
+}
 const CLIENT_SECRETS_URL = 'https://api.openai.com/v1/realtime/client_secrets'
 
 /** The session is configured AT MINT (a client `session.update` after connect
  *  does not apply consistently). `tools` is the phase's voice contract; the
  *  persona is composed from those same names so it never coaches a verb the
  *  contract does not offer. */
-export function buildVoiceSessionConfig(tools: RealtimeTool[], opts: { instructions?: string; tone?: VoiceTone } = {}) {
+export function buildVoiceSessionConfig(
+  tools: RealtimeTool[],
+  opts: { instructions?: string; tone?: VoiceTone; speed?: number } = {},
+) {
   return {
     type: 'realtime' as const,
     model: REALTIME_MODEL,
@@ -41,7 +55,7 @@ export function buildVoiceSessionConfig(tools: RealtimeTool[], opts: { instructi
         transcription: { model: 'whisper-1' },
         turn_detection: { type: 'semantic_vad', eagerness: 'medium' as const },
       },
-      output: { voice: VOICE },
+      output: { voice: VOICE, speed: clampVoiceSpeed(opts.speed) },
     },
     tools,
     tool_choice: 'auto' as const,
@@ -66,6 +80,8 @@ export interface MintVoiceOptions {
   instructions?: string
   /** How much attitude to mint with (voice-tones.ts). Default: snarky. */
   tone?: VoiceTone
+  /** Speaking rate, 0.25..1.5 (post-processing on the generated audio). */
+  speed?: number
   /** OpenAI-Safety-Identifier (e.g. `desk-<userId>`). */
   safetyId?: string
 }
@@ -84,7 +100,11 @@ export async function mintVoiceToken(opts: MintVoiceOptions): Promise<MintedVoic
     method: 'POST',
     headers,
     body: JSON.stringify({
-      session: buildVoiceSessionConfig(opts.tools, { instructions: opts.instructions, tone: opts.tone }),
+      session: buildVoiceSessionConfig(opts.tools, {
+        instructions: opts.instructions,
+        tone: opts.tone,
+        speed: opts.speed,
+      }),
     }),
   })
 

@@ -11,7 +11,7 @@ import type { FetchArtifact, FetchArtifactResult } from '../../shared/protocol'
 import { getAuthenticatedUser } from '../auth-routes'
 import type { ConversationStore } from '../conversation-store'
 import { buildDispatchRuntime } from '../desk/runtime'
-import { mintVoiceToken } from '../desk/voice-mint'
+import { clampVoiceSpeed, mintVoiceToken } from '../desk/voice-mint'
 import { asVoiceTone } from '../desk/voice-tones'
 import { voiceRealtimeTools } from '../desk/voice-tools'
 import { getGlobalSettings, updateGlobalSettings } from '../global-settings'
@@ -199,8 +199,16 @@ export function createApiRouter(
       // The TONE DIAL rides in on the mint (the panel persists the user's pick).
       // Narrowed against the enum here -- an unknown value falls back to the
       // default rather than minting a session with no persona at all.
-      const body = await c.req.json<{ tone?: unknown }>().catch(() => ({}) as { tone?: unknown })
-      const minted = await mintVoiceToken({ apiKey, tools, tone: asVoiceTone(body.tone), safetyId: 'desk-voice' })
+      const body = await c.req
+        .json<{ tone?: unknown; speed?: unknown }>()
+        .catch(() => ({}) as { tone?: unknown; speed?: unknown })
+      const minted = await mintVoiceToken({
+        apiKey,
+        tools,
+        tone: asVoiceTone(body.tone),
+        speed: clampVoiceSpeed(body.speed),
+        safetyId: 'desk-voice',
+      })
       return c.json(minted)
     } catch (e) {
       return c.json({ error: `voice token mint failed: ${(e as Error).message}` }, 502)

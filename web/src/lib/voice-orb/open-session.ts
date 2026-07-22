@@ -22,6 +22,8 @@ export interface OpenSessionCallbacks {
   send(type: string, data: Record<string, unknown>): void
   /** The tone dial's current position -- baked into the session at mint. */
   tone(): VoiceOrbTone | string
+  /** Speaking rate at mint time (0.25..1.5). */
+  speed(): number
 }
 
 export interface OpenSession {
@@ -33,12 +35,12 @@ export interface OpenSession {
  *  off. Long enough for "fine, rebooting", short enough not to feel hung. */
 const RELOAD_GRACE_MS = 1200
 
-async function mintToken(tone: string): Promise<{ value: string; model: string }> {
+async function mintToken(tone: string, speed: number): Promise<{ value: string; model: string }> {
   const res = await fetch('/api/desk/voice/token', {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tone }),
+    body: JSON.stringify({ tone, speed }),
   })
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string }
@@ -53,11 +55,14 @@ async function mintToken(tone: string): Promise<{ value: string; model: string }
 export async function openVoiceSession(cb: OpenSessionCallbacks): Promise<OpenSession> {
   const [{ createToolBridge, setActiveToolBridge }, { VoiceSession: Session }, { runControlScreen }] =
     await Promise.all([import('./tool-bridge'), import('./voice-session'), import('./control-screen')])
+  const { runSayToConversation } = await import('./say-to-conversation')
 
   const bridge = createToolBridge({
     send: cb.send,
     local: {
       control_screen: args => runControlScreen(args),
+      // The direct path: his words, to the conversation he means.
+      say_to_conversation: args => runSayToConversation(args),
       // Answered immediately and acted on after a beat, so the orb's last
       // words make it out before the session is torn down under it.
       reload_yourself: () => {
@@ -70,7 +75,7 @@ export async function openVoiceSession(cb: OpenSessionCallbacks): Promise<OpenSe
 
   const session = new Session(
     {
-      mintToken: () => mintToken(String(cb.tone())),
+      mintToken: () => mintToken(String(cb.tone()), cb.speed()),
       runTool: (call: FunctionCall) => bridge.run(call),
     },
     { onState: cb.onState, onError: cb.onError, onTranscript: cb.onTranscript },

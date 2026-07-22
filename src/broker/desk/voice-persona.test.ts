@@ -9,19 +9,33 @@ const ALL = [...VOICE_READ_TOOLS, ...VOICE_ACTION_TOOLS]
 describe('the contract drives the instructions', () => {
   it('never coaches a verb that is not minted', () => {
     const readOnly = buildVoiceInstructions(READ)
-    expect(readOnly).not.toContain('`dispatch`')
+    expect(readOnly).not.toContain('`say_to_conversation`')
     expect(readOnly).not.toContain('`dispatch_quest`')
-    expect(readOnly).not.toContain('`confirm_expensive`')
     expect(readOnly).toContain('`projects_overview`')
     expect(readOnly).toContain('`control_screen`')
   })
 
-  it('adds the driving + cost paragraphs once the action verbs are minted', () => {
+  it('adds the talking + quest + cost paragraphs once the action verbs are minted', () => {
     const full = buildVoiceInstructions(ALL)
-    expect(full).toContain('`dispatch`')
+    expect(full).toContain('`say_to_conversation`')
     expect(full).toContain('`dispatch_quest`')
-    expect(full).toContain('`confirm_expensive`')
     expect(full).toContain('COST:')
+  })
+
+  it('makes DIRECT talk the main job and forbids routing through the dispatcher', () => {
+    const full = buildVoiceInstructions(ALL)
+    expect(full).toContain('STRAIGHT to the conversation')
+    expect(full).toContain('no routing, no classifier')
+    expect(full).toContain('you READ it, you never')
+    // And it must acknowledge delivery out loud.
+    expect(full).toContain('posted to')
+  })
+
+  it('never coaches the routing brain, which is not in the contract at all', () => {
+    const full = buildVoiceInstructions(ALL)
+    expect(full).not.toContain('`dispatch`')
+    expect(full).not.toContain('`conversation_select`')
+    expect(full).not.toContain('`confirm_expensive`')
   })
 
   it('speaks the fleet vocabulary', () => {
@@ -48,7 +62,14 @@ describe('the tone dial', () => {
     expect(DEFAULT_VOICE_TONE).toBe('snarky')
     const snarky = buildVoiceInstructions(ALL)
     expect(snarky).toContain('meatbag')
-    expect(snarky).toContain('the orb')
+  })
+
+  it('is O.R.B., and the expansion escalates with the dial', () => {
+    for (const tone of VOICE_TONES) expect(tonePreamble(tone)).toContain('O.R.B.')
+    expect(tonePreamble('snarky')).toContain('Obligatory Remote Babysitter')
+    expect(tonePreamble('professional')).toContain('Do not expand it')
+    expect(tonePreamble('homicidal')).toContain('Orbital Retribution Buffer')
+    expect(tonePreamble('overkill')).toContain('Expand it differently every time')
   })
 
   it('professional drops the attitude entirely', () => {

@@ -195,6 +195,24 @@ describe('proactive narration', () => {
   })
 })
 
+describe('speaking rate', () => {
+  it('pushes a session.update to the LIVE session (applies on its next turn)', async () => {
+    const { session } = await startSession()
+    handlers?.onOpen()
+    sent.length = 0
+    session.setSpeed(1.4)
+    expect(sent).toEqual([{ type: 'session.update', session: { audio: { output: { speed: 1.4 } } } }])
+  })
+
+  it('is a no-op once the session is gone', async () => {
+    const { session } = await startSession()
+    session.close()
+    sent.length = 0
+    session.setSpeed(1.1)
+    expect(sent).toEqual([])
+  })
+})
+
 describe('VoiceSession teardown', () => {
   it('closes the transport once and reports idle', async () => {
     const { session, states } = await startSession()

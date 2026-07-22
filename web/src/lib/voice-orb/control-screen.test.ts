@@ -6,7 +6,8 @@ let conversationsById: Record<string, unknown> = {}
 let modalRecords: Record<string, unknown> = {}
 
 vi.mock('@/hooks/use-conversations', () => ({
-  useConversationsStore: { getState: () => ({ conversationsById, selectConversation }) },
+  useConversationsStore: { getState: () => ({ conversationsById, selectConversation, selectedConversationId: null }) },
+  sendInput: () => true,
 }))
 vi.mock('@/hooks/use-modal-manager', () => ({
   useModalManagerStore: { getState: () => ({ records: modalRecords, close: closeModal }) },
@@ -70,7 +71,7 @@ describe('navigate', () => {
   })
 
   it('rejects an empty target', () => {
-    expect(String(runControlScreen({ action: 'navigate', target: '  ' }).error)).toContain('needs a conversation')
+    expect(String(runControlScreen({ action: 'navigate', target: '  ' }).error)).toContain('no conversation named')
   })
 })
 

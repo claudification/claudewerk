@@ -23,8 +23,14 @@ import { buildDispatchRuntimeToolDeps, type DispatchRuntime } from './runtime'
 import { defineTool, type Toolset } from './tool-def'
 import { buildDispatchToolset as buildDeskToolset } from './tools'
 
-/** P0 -- the READ set + the two client-local verbs. Nothing here mutates the
- *  fleet: worst case the model reads status aloud or moves the user's screen. */
+/** The READ set + the client-local verbs. Nothing here mutates the fleet:
+ *  worst case the model reads status aloud or moves the user's screen.
+ *
+ *  THE DISPATCHER IS A STATUS SURFACE HERE (Jonas, 2026-07-22): its overview /
+ *  SOTU / roster reads are what the orb uses it for. Its ROUTING brain
+ *  (`dispatch`, `conversation_select`, `confirm_expensive`) is deliberately NOT
+ *  in the voice contract -- routing a spoken sentence through a classifier is
+ *  how "tell this one X" ends up in some other conversation. */
 export const VOICE_READ_TOOLS = [
   'projects_overview',
   'list_conversations',
@@ -35,18 +41,22 @@ export const VOICE_READ_TOOLS = [
   'reload_yourself',
 ] as const
 
-/** P2 -- the ACTION verbs, gated behind the persona's spoken confirm + the cost
- *  gate (`confirm_expensive`). Added to the minted contract only at P2. */
-export const VOICE_ACTION_TOOLS = [
-  'dispatch',
-  'conversation_select',
-  'confirm_expensive',
-  'dispatch_quest',
-  'list_threads',
-  'commit_thread',
-] as const
+/** The ACTION verbs, behind the persona's spoken confirm. Two, both EXPLICIT
+ *  about their target -- nothing here guesses where a message should land:
+ *   - `say_to_conversation` talks to the conversation ON SCREEN, or to one the
+ *     user NAMES -- the name is resolved client-side against live titles and an
+ *     ambiguous match refuses instead of guessing (no raw ids from speech),
+ *   - `dispatch_quest` starts new work in a NAMED project.
+ *  Plus the desk's own notes. */
+export const VOICE_ACTION_TOOLS = ['say_to_conversation', 'dispatch_quest', 'list_threads', 'commit_thread'] as const
 
-/** Verbs that must NEVER reach the voice session, at any phase. Asserted. */
+/** Verbs that must NEVER reach the voice session, at any phase. Asserted.
+ *
+ *  `inject` is here and STAYS here: it takes an arbitrary conversationId, so a
+ *  misheard name delivers your message to the wrong agent, silently.
+ *  `say_to_conversation` is the sanctioned direct path -- same capability, but
+ *  the target is resolved against what is actually on screen and a near-miss
+ *  comes back as a question, not a delivery. */
 export const VOICE_FORBIDDEN_TOOLS = [
   'terminate',
   'interrupt',
@@ -56,18 +66,19 @@ export const VOICE_FORBIDDEN_TOOLS = [
   'revive',
   'link',
   'unlink',
+  // The routing brain: the orb reads the dispatcher, it does not drive it.
+  'dispatch',
+  'conversation_select',
 ] as const
 
 /**
- * What is minted TODAY (P2): the read set PLUS the action verbs.
+ * What is minted TODAY: the read set PLUS the two explicit action verbs.
  *
- * The actions are safe to offer because three independent gates stand behind
- * them, none of which the model can talk its way past:
- *   1. the persona's confirm ritual (voice-persona.ts -- say it, get a yes),
- *   2. the COST GATE: a `very_expensive` route comes back `awaitingConfirmation`
- *      and executes nothing until `confirm_expensive` (orchestrate.ts:126),
- *   3. the forbidden list is still absent -- nothing here can END a conversation.
- * The worst a misheard sentence can do is spawn a worker or route a message.
+ * What keeps this safe is SHAPE, not a gate the model could talk past: every
+ * verb that changes anything names its target explicitly (the selected
+ * conversation, or a named project), and nothing offered can end, interrupt or
+ * reconfigure a conversation. The worst a misheard sentence does is send the
+ * wrong words to the conversation you are already looking at.
  */
 export const ACTIVE_VOICE_TOOLS: readonly string[] = [...VOICE_READ_TOOLS, ...VOICE_ACTION_TOOLS]
 
@@ -81,16 +92,25 @@ const CLIENT_LOCAL_TOOLS: Toolset = {
     inputSchema: z.object({}),
     execute: () => ({ clientLocal: 'reload_yourself is handled in the browser' }),
   }),
+
+  say_to_conversation: defineTool({
+    description:
+      'Send a message DIRECTLY to a live conversation -- the "tell it to do X" / "ask it Y" / "answer its question" / "tell the arr one to retry" path. THIS is how the user talks to his fleet through you: use it whenever he is addressing a conversation rather than asking you about one. Leave `target` null for the conversation he currently has open (the default, and what "it" means); set it to the name he said when he names one. Tidy his phrasing into a clear instruction -- keep his meaning and any exact strings verbatim. Returns which conversation it landed in; say that back to him. NOT for starting unrelated new work -- that is dispatch_quest.',
+    inputSchema: z.object({
+      message: z.string().describe('The instruction to deliver, cleaned up but faithful to what he meant.'),
+      target: z
+        .string()
+        .nullable()
+        .describe('The conversation he named, or null for the one on screen. Never invent an id.'),
+    }),
+    execute: () => ({ clientLocal: 'say_to_conversation is handled in the browser' }),
+  }),
 }
 
-/** Every tool the voice contract may pick from, bound to the live broker.
- *
- *  `dispatch` here is the DETERMINISTIC path (`runDispatch` via
- *  buildDispatchRuntimeToolDeps), not the richer `runDispatchAgent` loop the
- *  text overlay uses. Deliberate for voice: one classifier hop is already a
- *  nested-LLM round trip inside a spoken turn, and the agent loop would need
- *  userId + tool-event streaming plumbed through this seam to stream its
- *  progress. Swapping it is a one-line deps change when that lands. */
+/** Every tool the voice contract may pick from, bound to the live broker. The
+ *  dispatcher's routing verbs are built here but never PICKED (see
+ *  VOICE_FORBIDDEN_TOOLS) -- the orb reads the dispatcher, it does not drive
+ *  it. */
 function availableVoiceTools(rt: DispatchRuntime): Toolset {
   return {
     ...buildDeskToolset(buildDispatchRuntimeToolDeps(rt)),

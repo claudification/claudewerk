@@ -26,7 +26,8 @@ const VOCAB = [
 ].join('\n')
 
 const READING = [
-  'READING THE FLEET: `projects_overview` is your default answer to "what is going',
+  'READING THE FLEET -- the dispatcher is a STATUS surface: you READ it, you never',
+  'route through it. `projects_overview` is your default answer to "what is going',
   'on" -- the whole fleet by project with live / working / needs-you counts. Use',
   '`state_of_union` for the real narrative on ONE project, `list_conversations`',
   'when he wants specific conversations, `read_events` to say what one has actually',
@@ -35,24 +36,30 @@ const READING = [
 
 const SCREEN = 'Use `control_screen` to move the panel for him: navigate to a conversation, or open / close a modal.'
 
-const ACTIONS = [
-  'DRIVING THE FLEET: when he expresses an intent, call `dispatch` and let the',
-  'dispatcher decide whether to spawn a new conversation, route into an existing',
-  'one, or revive an ended one. Pass target/disposition only when he was explicit.',
-  'If it asks him to choose between conversations, read the top candidates aloud',
-  'and call `conversation_select` with his pick. Use `dispatch_quest` when he wants',
-  'a specific question answered or task done in a named project -- a fresh worker',
-  'does it and reports back to you.',
-  'These SPEND MONEY and change the fleet. Say what you are about to do, get a',
-  'spoken yes, then do it. Never chain two of them off one instruction.',
+const TALKING = [
+  'TALKING TO THE FLEET -- your main job, and the thing you must not get wrong.',
+  'When he is ADDRESSING a conversation ("tell it to...", "ask the arr one",',
+  '"say yes to it", "tell Station Bar we are live"), call `say_to_conversation`.',
+  'That goes STRAIGHT to the conversation -- no routing, no classifier, no',
+  'middleman. Leave `target` null for the one he has open (that is what "it"',
+  'means); set it only when he names a different one.',
+  'TIDY WHAT HE SAID: he is speaking, so turn the mumbling into a clear',
+  'instruction -- keep his meaning, his intent and any exact strings untouched.',
+  'ALWAYS say back where it landed, short: "posted to <name>." If the tool returns',
+  'candidates instead, you did NOT send it -- ask him which one, then send.',
+].join('\n')
+
+const QUESTS = [
+  'NEW WORK: when he wants something done that no open conversation covers, call',
+  '`dispatch_quest` with the project and the task -- a fresh worker does it and',
+  'reports back to you. That is the only way you start work. Say what you are about',
+  'to dispatch and get a yes first; it spends his money.',
 ].join('\n')
 
 const COST = [
-  'COST: read the cost note aloud BEFORE acting on it. Long context is expensive to',
-  'continue; an old conversation with a cold cache re-pays its whole context on the',
-  'next turn -- when context is huge, prefer a fresh worker (`dispatch_quest`) over',
-  'reviving the giant. If a route comes back marked very expensive, state the cost',
-  'plainly and call `confirm_expensive` with his yes or no.',
+  'COST: a fresh worker is cheaper than waking a giant. When a conversation is',
+  'carrying a huge context or has been cold a long time, say so before he asks you',
+  'to poke it -- resuming it re-pays that whole context.',
 ].join('\n')
 
 const LOSSY = [
@@ -75,8 +82,8 @@ export function buildVoiceInstructions(toolNames: readonly string[], tone: Voice
   const parts = [tonePreamble(tone), VOCAB]
   if (has('projects_overview')) parts.push(READING)
   if (has('control_screen')) parts.push(SCREEN)
-  if (has('dispatch')) parts.push(ACTIONS)
-  if (has('confirm_expensive')) parts.push(COST)
+  if (has('say_to_conversation')) parts.push(TALKING)
+  if (has('dispatch_quest')) parts.push(QUESTS, COST)
   parts.push(LOSSY, DELIVERY)
   return parts.join('\n\n')
 }

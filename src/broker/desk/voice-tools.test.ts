@@ -24,13 +24,22 @@ describe('the voice contract', () => {
     expect([...ACTIVE_VOICE_TOOLS]).toEqual([...VOICE_READ_TOOLS, ...VOICE_ACTION_TOOLS])
   })
 
-  it('still offers no way to END anything -- the cost gate is the only brake', () => {
+  it('offers no way to END anything, and no way to ROUTE by classifier', () => {
     for (const forbidden of VOICE_FORBIDDEN_TOOLS) {
       expect(ACTIVE_VOICE_TOOLS).not.toContain(forbidden)
     }
-    // `confirm_expensive` MUST ship alongside the verbs it gates, or a held
-    // decision can never be released and the orb looks broken on expensive routes.
-    expect(ACTIVE_VOICE_TOOLS).toContain('confirm_expensive')
+    // The dispatcher is a STATUS surface for the orb (Jonas, 2026-07-22): a
+    // spoken sentence must never be routed by a classifier, it goes direct.
+    expect(ACTIVE_VOICE_TOOLS).not.toContain('dispatch')
+    expect(ACTIVE_VOICE_TOOLS).not.toContain('conversation_select')
+  })
+
+  it('every mutating verb names its target explicitly -- nothing guesses', () => {
+    // `say_to_conversation` resolves against what is ON SCREEN (client-local),
+    // `dispatch_quest` takes a named project. Neither accepts a raw id from speech.
+    expect(ACTIVE_VOICE_TOOLS).toContain('say_to_conversation')
+    expect(ACTIVE_VOICE_TOOLS).toContain('dispatch_quest')
+    expect(ACTIVE_VOICE_TOOLS).not.toContain('inject')
   })
 
   it('ABSENCE IS THE GATE: no destructive verb appears on any phase list', () => {

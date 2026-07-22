@@ -60,6 +60,8 @@ export interface ControlPanelPrefs {
    *  Sent with the mint; the broker narrows it and picks the persona preamble.
    *  Per-device, like every other pref here. */
   voiceOrbTone: string
+  /** Voice orb speaking rate, 0.25..1.5 (OpenAI's own bounds). */
+  voiceOrbSpeed: number
   voiceDeviceLabel: string // last-known label for voiceDeviceId, so the picker shows the right mic name before/without a mic grant (Google-Meet-style). '' when unknown.
   chatBubbleColor: string // tailwind color class prefix (e.g. 'blue', 'teal', 'purple')
   defaultConversationCwd: string // auto-select this project on dashboard load (per-device)
@@ -120,6 +122,7 @@ const defaultPrefs: ControlPanelPrefs = {
   voiceNoiseSuppression: false,
   voiceDeviceId: '',
   voiceOrbTone: 'snarky',
+  voiceOrbSpeed: 1.3,
   voiceDeviceLabel: '',
   chatBubbleColor: 'blue',
   showDiag: false,
