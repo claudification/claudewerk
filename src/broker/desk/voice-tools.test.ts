@@ -1,31 +1,74 @@
 import { describe, expect, it } from 'bun:test'
-import { dispatchToolSchemas } from './tools'
-import { voiceTools } from './voice-tools'
+import type { Conversation } from '../../shared/protocol'
+import type { DispatchRuntime } from './runtime'
+import {
+  ACTIVE_VOICE_TOOLS,
+  buildVoiceToolset,
+  VOICE_ACTION_TOOLS,
+  VOICE_FORBIDDEN_TOOLS,
+  VOICE_READ_TOOLS,
+  voiceRealtimeTools,
+} from './voice-tools'
 
-describe('voice tool contract (derived from the one tool set)', () => {
-  it('derives one Realtime tool per dispatcher tool schema', () => {
-    expect(voiceTools.map(t => t.name).sort()).toEqual(Object.keys(dispatchToolSchemas).sort())
+/** Only the shape the toolset BUILDERS touch -- nothing here executes a tool. */
+function fakeRt(): DispatchRuntime {
+  return {
+    store: { getAllConversations: () => [] as Conversation[] },
+    callerConversationId: null,
+    searchTranscripts: () => [],
+  } as unknown as DispatchRuntime
+}
+
+describe('the voice contract', () => {
+  it('P0 mints the READ set only -- no action verb is offered', () => {
+    expect([...ACTIVE_VOICE_TOOLS]).toEqual([...VOICE_READ_TOOLS])
+    for (const action of VOICE_ACTION_TOOLS) {
+      expect(ACTIVE_VOICE_TOOLS).not.toContain(action)
+    }
   })
 
-  it('includes the dispatch verbs + threads + screen control', () => {
-    const names = voiceTools.map(t => t.name)
-    expect(names).toContain('dispatch')
-    expect(names).toContain('conversation_select')
-    expect(names).toContain('confirm_expensive')
-    expect(names).toContain('control_screen')
-    expect(names).toContain('list_threads')
+  it('ABSENCE IS THE GATE: no destructive verb appears on any phase list', () => {
+    const everyPhase: string[] = [...VOICE_READ_TOOLS, ...VOICE_ACTION_TOOLS]
+    for (const forbidden of VOICE_FORBIDDEN_TOOLS) {
+      expect(everyPhase).not.toContain(forbidden)
+    }
   })
 
-  it('every derived tool is a strict function schema', () => {
-    for (const t of voiceTools) {
+  it('binds every contract name to a real executor (both phases)', () => {
+    const all: string[] = [...VOICE_READ_TOOLS, ...VOICE_ACTION_TOOLS]
+    const toolset = buildVoiceToolset(fakeRt(), all)
+    expect(Object.keys(toolset).sort()).toEqual([...all].sort())
+    for (const tool of Object.values(toolset)) {
+      expect(typeof tool.execute).toBe('function')
+      expect(tool.description.length).toBeGreaterThan(20)
+    }
+  })
+
+  it('throws loudly on a contract name that no desk toolset provides', () => {
+    expect(() => buildVoiceToolset(fakeRt(), ['no_such_tool'])).toThrow("no tool named 'no_such_tool'")
+  })
+
+  it('a runtime with no transcript search cannot mint search_transcripts', () => {
+    const bare = { store: { getAllConversations: () => [] } } as unknown as DispatchRuntime
+    expect(() => buildVoiceToolset(bare, ['search_transcripts'])).toThrow('search_transcripts')
+  })
+})
+
+describe('derived Realtime schemas', () => {
+  const all: string[] = [...VOICE_READ_TOOLS, ...VOICE_ACTION_TOOLS]
+  const tools = voiceRealtimeTools(fakeRt(), all)
+
+  it('derives one strict function-schema per contract tool', () => {
+    expect(tools.map(t => t.name).sort()).toEqual([...all].sort())
+    for (const t of tools) {
       expect(t.type).toBe('function')
       expect(t.parameters.strict).toBe(true)
       expect(t.parameters.additionalProperties).toBe(false)
     }
   })
 
-  it('required lists every property (OpenAI strict-mode rule)', () => {
-    for (const t of voiceTools) {
+  it('required lists every property (the OpenAI strict-mode rule)', () => {
+    for (const t of tools) {
       const props = Object.keys(t.parameters.properties).sort()
       expect([...t.parameters.required].sort()).toEqual(props)
     }

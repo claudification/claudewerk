@@ -10,7 +10,9 @@ import { matchProjectUri, tryParseProjectUri } from '../../shared/project-uri'
 import type { FetchArtifact, FetchArtifactResult } from '../../shared/protocol'
 import { getAuthenticatedUser } from '../auth-routes'
 import type { ConversationStore } from '../conversation-store'
+import { buildDispatchRuntime } from '../desk/runtime'
 import { mintVoiceToken } from '../desk/voice-mint'
+import { voiceRealtimeTools } from '../desk/voice-tools'
 import { getGlobalSettings, updateGlobalSettings } from '../global-settings'
 import { getModels, getModelsFetchedAt } from '../model-pricing'
 import { hasPermissionAnyCwd, resolvePermissions, type UserGrant } from '../permissions'
@@ -58,7 +60,12 @@ export function createApiRouter(
   app.get('/api/models', c => c.json({ models: getModels(), fetchedAt: getModelsFetchedAt() }))
 
   // ─── Server capabilities ───────────────────────────────────────────
-  app.get('/api/capabilities', c => c.json({ voice: !!process.env.DEEPGRAM_API_KEY }))
+  // `voice` = Deepgram DICTATION (the mic-to-text path). `realtimeVoice` = the
+  // Jarvis voice ORB (OpenAI Realtime); the orb's summon command hides itself
+  // when the broker has no OPENAI_API_KEY rather than failing at mint.
+  app.get('/api/capabilities', c =>
+    c.json({ voice: !!process.env.DEEPGRAM_API_KEY, realtimeVoice: !!process.env.OPENAI_API_KEY }),
+  )
 
   // ─── Link preview (mobile in-app pane) ───────────────────────────
   // Server-side fetch of an external URL's framing headers + OG metadata so the
@@ -184,7 +191,11 @@ export function createApiRouter(
     const apiKey = process.env.OPENAI_API_KEY
     if (!apiKey) return c.json({ error: 'voice not configured', code: 'voice_unconfigured' }, 503)
     try {
-      const minted = await mintVoiceToken({ apiKey, safetyId: 'desk-voice' })
+      // The contract is derived from the BOUND toolset -- the same one
+      // `voice_tool_call` executes -- so the schemas the model is offered can
+      // never drift from what the broker will actually run.
+      const tools = voiceRealtimeTools(buildDispatchRuntime(conversationStore, store.transcripts))
+      const minted = await mintVoiceToken({ apiKey, tools, safetyId: 'desk-voice' })
       return c.json(minted)
     } catch (e) {
       return c.json({ error: `voice token mint failed: ${(e as Error).message}` }, 502)

@@ -29,7 +29,12 @@ import {
 } from '../desk/memory'
 import type { DispatchCommand } from '../desk/orchestrate'
 import type { ProjectOverviewRow } from '../desk/overview'
-import { type DispatchRuntime, listDispatchRosterCandidates, runDispatch } from '../desk/runtime'
+import {
+  buildDispatchRuntime,
+  type DispatchRuntime,
+  listDispatchRosterCandidates,
+  runDispatch,
+} from '../desk/runtime'
 import { workspaceSnapshot } from '../desk/workspace'
 import { GuardError, type HandlerContext, type MessageData, type MessageHandler } from '../handler-context'
 import { CONTROL_PANEL_ONLY, registerHandlers } from '../message-router'
@@ -128,18 +133,9 @@ const dispatchRequest: MessageHandler = async (ctx: HandlerContext, data: Messag
     return
   }
 
-  const rt: DispatchRuntime = {
-    store: ctx.conversations,
-    callerConversationId: null,
-    // B5: let the dispatcher search transcripts itself (the cheap expert path).
-    searchTranscripts: (query, limit) =>
-      ctx.store.transcripts.search(query, { limit }).map(h => ({
-        conversationId: h.conversationId,
-        seq: h.seq,
-        type: h.type,
-        snippet: h.snippet,
-      })),
-  }
+  // B5: the runtime carries transcript search so the dispatcher can look things
+  // up itself (the cheap expert path) instead of waking a conversation.
+  const rt = buildDispatchRuntime(ctx.conversations, ctx.store.transcripts)
   try {
     const decision = await resolveDecision(ctx, data, cmd, rt, userId, requestId)
     // Stamp the per-user owner on the correlated reply (read-layer scoping).

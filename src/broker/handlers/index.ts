@@ -39,6 +39,7 @@ import { registerTerminalHandlers } from './terminal'
 import { registerThinkingProgressHandlers } from './thinking-progress'
 import { registerTranscriptHandlers } from './transcript'
 import { registerVoiceHandlers } from './voice'
+import { registerVoiceOrbHandlers } from './voice-orb-actions'
 import { registerWebControlHandlers } from './web-control'
 
 export function registerAllHandlers(): void {
@@ -50,6 +51,7 @@ export function registerAllHandlers(): void {
   registerChecklistHandlers()
   registerDashboardActionHandlers()
   registerDispatchHandlers()
+  registerVoiceOrbHandlers()
   registerDialogHandlers()
   registerDialogLiveHandlers()
   registerGatewayHandlers()

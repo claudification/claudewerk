@@ -44,6 +44,30 @@ export interface TranscriptHit {
   snippet: string
 }
 
+/** The slice of the StoreDriver's transcript store the desk needs (structural,
+ *  so runtime.ts stays free of the store types). */
+export interface TranscriptSearchSource {
+  search(query: string, opts?: { limit?: number }): TranscriptHit[]
+}
+
+/** Assemble a live DispatchRuntime for a control-panel caller. ONE place: the
+ *  dispatch overlay WS seam, the voice `voice_tool_call` seam, and the voice
+ *  mint all need the identical binding, and a drifting third copy is how one
+ *  driver silently loses `search_transcripts`. */
+export function buildDispatchRuntime(store: ConversationStore, transcripts?: TranscriptSearchSource): DispatchRuntime {
+  const rt: DispatchRuntime = { store, callerConversationId: null }
+  if (transcripts) {
+    rt.searchTranscripts = (query, limit) =>
+      transcripts.search(query, { limit }).map(h => ({
+        conversationId: h.conversationId,
+        seq: h.seq,
+        type: h.type,
+        snippet: h.snippet,
+      }))
+  }
+  return rt
+}
+
 // ─── Roster (per-project opt-in gated) ──────────────────────────────
 
 function sumContextTokens(c: Conversation): number | undefined {
