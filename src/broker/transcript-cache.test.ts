@@ -33,7 +33,15 @@ describe('TranscriptCache', () => {
     expect(result.map(e => e.seq)).toEqual([1, 2, 3])
   })
 
-  it('initial batch replaces previous entries and resets seq counter', () => {
+  // CONTRACT CHANGE (transcript-cache-write.ts): an initial batch RECONCILES,
+  // it does not replace. It used to replace, and that was a data-loss bug: in
+  // headless the "initial" batch is read from CC's JSONL and narrowed by
+  // selectForwardableEntries, so it carries none of the stdout-only entries
+  // (system/status, notification, away_summary, queue-operation). Overwriting
+  // the cache with it deleted them, and handlers/transcript.ts serves the cache
+  // ahead of the store -- so the next conversation open rendered a gutted
+  // transcript. With no store configured the merge is by uuid.
+  it('initial batch reconciles with what the cache already holds', () => {
     const store = createConversationStore({ enablePersistence: false })
     store.createConversation('s1', '/tmp')
 
@@ -41,10 +49,10 @@ describe('TranscriptCache', () => {
     store.addTranscriptEntries('s1', [makeEntry(10)], true)
 
     const result = store.getTranscriptEntries('s1')
-    expect(result.length).toBe(1)
-    expect(result[0]).toMatchObject(makeEntry(10))
-    // isInitial=true resets counter -> new single entry restarts at seq 1.
-    expect(result[0].seq).toBe(1)
+    expect(result.length).toBe(3)
+    expect(result[2]).toMatchObject(makeEntry(10))
+    // isInitial still resets the counter, so the new entry restarts at seq 1.
+    expect(result[2].seq).toBe(1)
   })
 
   it('respects limit parameter', () => {

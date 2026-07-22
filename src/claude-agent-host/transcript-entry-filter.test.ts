@@ -66,3 +66,32 @@ describe('selectForwardableEntries', () => {
     expect(selectForwardableEntries([untyped], { headless: true, isInitial: true })).toEqual([untyped])
   })
 })
+
+// stop_hook_summary / api_error are FILE-ONLY (measured: 82/0 and 1/0 file vs
+// stdout in one production day), but the policy doc called `system` stdout-only,
+// so they were never forwarded live -- they reached the broker only on a resend,
+// 28 minutes late on average, taking a fresh high seq with an old timestamp.
+describe('file-only system subtypes', () => {
+  const sys = (subtype: string): TranscriptEntry => ({ type: 'system', subtype }) as unknown as TranscriptEntry
+
+  it('forwards stop_hook_summary and api_error live in headless', () => {
+    const out = selectForwardableEntries([sys('stop_hook_summary'), sys('api_error')], {
+      headless: true,
+      isInitial: false,
+    })
+    expect(out).toHaveLength(2)
+  })
+
+  it('still forwards them in the initial batch -- no stdout twin to duplicate', () => {
+    const out = selectForwardableEntries([sys('stop_hook_summary'), sys('api_error')], {
+      headless: true,
+      isInitial: true,
+    })
+    expect(out).toHaveLength(2)
+  })
+
+  it('does not forward stdout-owned system subtypes from the file', () => {
+    const stdoutOwned = [sys('status'), sys('notification'), sys('away_summary'), sys('background_tasks_changed')]
+    expect(selectForwardableEntries(stdoutOwned, { headless: true, isInitial: false })).toHaveLength(0)
+  })
+})

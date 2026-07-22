@@ -13,9 +13,18 @@
  * neither is a superset of the other. Measured against CC 2.1.215 on a single
  * session (`be2113d5`):
  *
- *   JSONL only : queue-operation, attachment, last-prompt
- *   stdout only: system, stream_event, result, rate_limit_event, tool_progress
+ *   JSONL only : queue-operation, attachment, last-prompt,
+ *                system/stop_hook_summary, system/api_error
+ *   stdout only: system (every OTHER subtype), stream_event, result,
+ *                rate_limit_event, tool_progress
  *   both       : user, assistant
+ *
+ * `system` splits by SUBTYPE, and getting that wrong cost us: this table used to
+ * read "stdout only: system", so `stop_hook_summary` was never forwarded live.
+ * The production store settles it -- in one day, `stop_hook_summary` was 82 rows
+ * from the FILE and 0 from stdout, `api_error` 1 and 0, while `status` (4123),
+ * `away_summary` (112), `notification` (88) and `background_tasks_changed` (31)
+ * were 100% stdout and never appear in the JSONL at all.
  *
  * PTY and daemon have no stdout stream, so they forward the file verbatim.
  * Headless already receives user/assistant live over stdout, so re-forwarding
@@ -55,6 +64,23 @@ import type { TranscriptEntry } from '../shared/protocol'
 const HEADLESS_LIVE_TYPES = new Set(['queue-operation'])
 
 /**
+ * `system` subtypes CC writes only to the JSONL, so headless must take them from
+ * the file or never see them.
+ *
+ * These were resend-only until now, and resend-only means late: every one of the
+ * 82 `stop_hook_summary` rows in a measured day reached the broker on a
+ * reconnect or compaction, 28 minutes late on average and 2.5 hours at worst,
+ * keeping its original timestamp while taking a fresh high seq. An `api_error`
+ * -- the entry you most want in position -- had the same fate.
+ *
+ * Unlike the rest of `HEADLESS_LIVE_TYPES` these are ALSO kept in the isInitial
+ * batch rather than being its complement. There is no stdout twin to duplicate,
+ * the store dedups on CC's own uuid anyway, and the complement would strand the
+ * historical ones when a resumed conversation's only source is the file.
+ */
+const HEADLESS_LIVE_SYSTEM_SUBTYPES = new Set(['stop_hook_summary', 'api_error'])
+
+/**
  * JSONL-only types that headless forwards in NEITHER cell.
  *
  * `attachment` and `last-prompt` are invisible to stdout AND have no renderer,
@@ -69,7 +95,15 @@ const HEADLESS_NEVER_TYPES = new Set(['attachment', 'last-prompt'])
 
 /** True for entries headless forwards from the file live rather than via stdout. */
 export function isHeadlessLiveEntry(entry: TranscriptEntry): boolean {
-  return HEADLESS_LIVE_TYPES.has((entry as { type?: string }).type ?? '')
+  const e = entry as { type?: string }
+  if (e.type === 'system') return isHeadlessFileOnlySystemEntry(entry)
+  return HEADLESS_LIVE_TYPES.has(e.type ?? '')
+}
+
+/** True for the file-only `system` subtypes -- forwarded in BOTH cells. */
+function isHeadlessFileOnlySystemEntry(entry: TranscriptEntry): boolean {
+  const e = entry as { type?: string; subtype?: string }
+  return e.type === 'system' && HEADLESS_LIVE_SYSTEM_SUBTYPES.has(e.subtype ?? '')
 }
 
 /** True for JSONL-only entries headless never forwards (no renderer, resend-only). */
@@ -94,6 +128,6 @@ export function selectForwardableEntries(
 ): TranscriptEntry[] {
   if (!headless) return entries
   return isInitial
-    ? entries.filter(e => !isHeadlessLiveEntry(e) && !isHeadlessNeverEntry(e))
+    ? entries.filter(e => isHeadlessFileOnlySystemEntry(e) || (!isHeadlessLiveEntry(e) && !isHeadlessNeverEntry(e)))
     : entries.filter(isHeadlessLiveEntry)
 }

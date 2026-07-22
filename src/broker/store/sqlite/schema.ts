@@ -188,6 +188,12 @@ export function createSchema(db: Database) {
     'CREATE INDEX IF NOT EXISTS idx_transcript_conversation_agent ON transcript_entries(conversation_id, agent_id)',
   )
   db.run('CREATE INDEX IF NOT EXISTS idx_transcript_timestamp ON transcript_entries(timestamp)')
+  // Render order is (timestamp, seq) -- see CHRONO_ASC in sqlite/transcripts.ts.
+  // Without this every transcript read sorts on the heap; with it getLatest,
+  // getSinceSeq, getBeforeSeq and getWindow all walk the index directly.
+  db.run(
+    'CREATE INDEX IF NOT EXISTS idx_transcript_conversation_chrono ON transcript_entries(conversation_id, timestamp, seq)',
+  )
 
   db.run(`
     CREATE VIRTUAL TABLE IF NOT EXISTS transcript_fts USING fts5(

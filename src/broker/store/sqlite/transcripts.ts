@@ -31,6 +31,24 @@ function rowToEntry(row: Params): TranscriptEntryRecord {
 // Encoded as [agentVariant][direction][hasCursor]: 0=all, 1=noAgent, 2=agent
 
 const BASE = 'SELECT * FROM transcript_entries WHERE conversation_id = $conversationId'
+
+/**
+ * RENDER ORDER IS `(timestamp, seq)`, NOT `seq`.
+ *
+ * `seq` is an ARRIVAL counter (`MAX(seq)+1` per scope, in the order batches
+ * reach the broker). Arrival and chronology diverge whenever an entry reaches
+ * the broker late, which in headless is routine, not exceptional: anything the
+ * stdout pipe never carries -- `system/stop_hook_summary`, `api_error`, and any
+ * entry stdout dropped during a socket blip -- arrives only via a file resend,
+ * minutes to hours after the fact. It keeps its ORIGINAL timestamp and takes a
+ * BRAND NEW high seq, so ordering by seq pinned a 20:23 entry below a 20:42 one
+ * forever. Measured: 82 of 82 `stop_hook_summary` rows in one day, average 28
+ * minutes late, and 1318 seq/timestamp inversions in that day against 1/day
+ * before. `seq` remains the dedup and delta cursor; it just stops pretending to
+ * be the clock.
+ */
+const CHRONO_ASC = 'ORDER BY timestamp ASC, seq ASC'
+const CHRONO_DESC = 'ORDER BY timestamp DESC, seq DESC'
 const PAGE_SQLS: string[][][] = [[], [], []] // [agentVariant][dir][hasCursor]
 
 for (const [av, agentFrag] of [
@@ -52,10 +70,12 @@ for (const [av, agentFrag] of [
   }
 }
 
+// "The last N entries" means the chronologically last N, not the last N
+// INGESTED -- a gap-fill recovered from the file is newly ingested but old.
 const LATEST_SQLS = [
-  `${BASE} ORDER BY id DESC LIMIT $limit`,
-  `${BASE} AND agent_id IS NULL ORDER BY id DESC LIMIT $limit`,
-  `${BASE} AND agent_id = $agentId ORDER BY id DESC LIMIT $limit`,
+  `${BASE} ${CHRONO_DESC} LIMIT $limit`,
+  `${BASE} AND agent_id IS NULL ${CHRONO_DESC} LIMIT $limit`,
+  `${BASE} AND agent_id = $agentId ${CHRONO_DESC} LIMIT $limit`,
 ]
 
 // Cursor-navigation stmts (getNextId / getPrevId):
@@ -172,48 +192,78 @@ export function createSqliteTranscriptStore(db: Database): TranscriptStore {
   const sinceSelectStmts: Statement[][] = [
     [
       db.prepare(
-        'SELECT * FROM transcript_entries WHERE conversation_id = $conversationId AND seq > $sinceSeq ORDER BY seq ASC',
+        `SELECT * FROM transcript_entries WHERE conversation_id = $conversationId AND seq > $sinceSeq ${CHRONO_ASC}`,
       ),
       db.prepare(
-        'SELECT * FROM transcript_entries WHERE conversation_id = $conversationId AND seq > $sinceSeq ORDER BY seq ASC LIMIT $limit',
-      ),
-    ],
-    [
-      db.prepare(
-        'SELECT * FROM transcript_entries WHERE conversation_id = $conversationId AND seq > $sinceSeq AND agent_id IS NULL ORDER BY seq ASC',
-      ),
-      db.prepare(
-        'SELECT * FROM transcript_entries WHERE conversation_id = $conversationId AND seq > $sinceSeq AND agent_id IS NULL ORDER BY seq ASC LIMIT $limit',
+        `SELECT * FROM transcript_entries WHERE conversation_id = $conversationId AND seq > $sinceSeq ${CHRONO_ASC} LIMIT $limit`,
       ),
     ],
     [
       db.prepare(
-        'SELECT * FROM transcript_entries WHERE conversation_id = $conversationId AND seq > $sinceSeq AND agent_id = $agentId ORDER BY seq ASC',
+        `SELECT * FROM transcript_entries WHERE conversation_id = $conversationId AND seq > $sinceSeq AND agent_id IS NULL ${CHRONO_ASC}`,
       ),
       db.prepare(
-        'SELECT * FROM transcript_entries WHERE conversation_id = $conversationId AND seq > $sinceSeq AND agent_id = $agentId ORDER BY seq ASC LIMIT $limit',
+        `SELECT * FROM transcript_entries WHERE conversation_id = $conversationId AND seq > $sinceSeq AND agent_id IS NULL ${CHRONO_ASC} LIMIT $limit`,
+      ),
+    ],
+    [
+      db.prepare(
+        `SELECT * FROM transcript_entries WHERE conversation_id = $conversationId AND seq > $sinceSeq AND agent_id = $agentId ${CHRONO_ASC}`,
+      ),
+      db.prepare(
+        `SELECT * FROM transcript_entries WHERE conversation_id = $conversationId AND seq > $sinceSeq AND agent_id = $agentId ${CHRONO_ASC} LIMIT $limit`,
       ),
     ],
   ]
 
+  // Backward pagination is CHRONOLOGICAL, matching the render order: "older
+  // than the cursor" means it sorts before `(cursorTs, cursorSeq)`, not that it
+  // has a smaller seq. Spelled out rather than using a row-value comparison so
+  // the planner can still use the (conversation_id, timestamp, seq) index.
+  // The caller keeps passing a plain seq -- the cursor's timestamp is looked up
+  // here, so the wire API and the client are unchanged.
+  const olderThanCursor = '(timestamp < $beforeTs OR (timestamp = $beforeTs AND seq < $beforeSeq))'
   const beforeSelectStmts = [
-    db.prepare(
-      'SELECT * FROM transcript_entries WHERE conversation_id = $conversationId AND seq < $beforeSeq ORDER BY seq DESC LIMIT $limit',
-    ),
-    db.prepare(
-      'SELECT * FROM transcript_entries WHERE conversation_id = $conversationId AND seq < $beforeSeq AND agent_id IS NULL ORDER BY seq DESC LIMIT $limit',
-    ),
-    db.prepare(
-      'SELECT * FROM transcript_entries WHERE conversation_id = $conversationId AND seq < $beforeSeq AND agent_id = $agentId ORDER BY seq DESC LIMIT $limit',
-    ),
+    db.prepare(`${BASE} AND ${olderThanCursor} ${CHRONO_DESC} LIMIT $limit`),
+    db.prepare(`${BASE} AND agent_id IS NULL AND ${olderThanCursor} ${CHRONO_DESC} LIMIT $limit`),
+    db.prepare(`${BASE} AND agent_id = $agentId AND ${olderThanCursor} ${CHRONO_DESC} LIMIT $limit`),
   ]
   const beforeHasMoreStmts = [
-    db.prepare('SELECT 1 FROM transcript_entries WHERE conversation_id = $conversationId AND seq < $oldestSeq LIMIT 1'),
     db.prepare(
-      'SELECT 1 FROM transcript_entries WHERE conversation_id = $conversationId AND seq < $oldestSeq AND agent_id IS NULL LIMIT 1',
+      `SELECT 1 FROM transcript_entries WHERE conversation_id = $conversationId AND ${olderThanCursor} LIMIT 1`,
     ),
     db.prepare(
-      'SELECT 1 FROM transcript_entries WHERE conversation_id = $conversationId AND seq < $oldestSeq AND agent_id = $agentId LIMIT 1',
+      `SELECT 1 FROM transcript_entries WHERE conversation_id = $conversationId AND agent_id IS NULL AND ${olderThanCursor} LIMIT 1`,
+    ),
+    db.prepare(
+      `SELECT 1 FROM transcript_entries WHERE conversation_id = $conversationId AND agent_id = $agentId AND ${olderThanCursor} LIMIT 1`,
+    ),
+  ]
+  // Resolve a seq cursor to its row's timestamp, per scope.
+  const beforeCursorTsStmts = [
+    db.prepare(
+      'SELECT timestamp FROM transcript_entries WHERE conversation_id = $conversationId AND seq = $seq LIMIT 1',
+    ),
+    db.prepare(
+      'SELECT timestamp FROM transcript_entries WHERE conversation_id = $conversationId AND seq = $seq AND agent_id IS NULL LIMIT 1',
+    ),
+    db.prepare(
+      'SELECT timestamp FROM transcript_entries WHERE conversation_id = $conversationId AND seq = $seq AND agent_id = $agentId LIMIT 1',
+    ),
+  ]
+  // Fallback for a cursor seq no row carries -- seq space has holes (a batch
+  // that lost its rows to the scope guard, or a client cursor minted by the
+  // no-store path). The nearest LOWER seq is the closest real position to page
+  // from; scrollback degrades by a row or two instead of dead-ending.
+  const beforeCursorNearestStmts = [
+    db.prepare(
+      'SELECT timestamp, seq FROM transcript_entries WHERE conversation_id = $conversationId AND seq < $seq ORDER BY seq DESC LIMIT 1',
+    ),
+    db.prepare(
+      'SELECT timestamp, seq FROM transcript_entries WHERE conversation_id = $conversationId AND seq < $seq AND agent_id IS NULL ORDER BY seq DESC LIMIT 1',
+    ),
+    db.prepare(
+      'SELECT timestamp, seq FROM transcript_entries WHERE conversation_id = $conversationId AND seq < $seq AND agent_id = $agentId ORDER BY seq DESC LIMIT 1',
     ),
   ]
 
@@ -222,7 +272,7 @@ export function createSqliteTranscriptStore(db: Database): TranscriptStore {
     'SELECT seq FROM transcript_entries WHERE id = $id AND conversation_id = $conversationId',
   )
   const stmtWindowSelect = db.prepare(
-    'SELECT * FROM transcript_entries WHERE conversation_id = $conversationId AND seq >= $minSeq AND seq <= $maxSeq ORDER BY seq ASC',
+    `SELECT * FROM transcript_entries WHERE conversation_id = $conversationId AND seq >= $minSeq AND seq <= $maxSeq ${CHRONO_ASC}`,
   )
 
   // Misc single-use hoisted stmts
@@ -304,6 +354,25 @@ export function createSqliteTranscriptStore(db: Database): TranscriptStore {
     return { uuid: e.uuid, seq: existing?.seq ?? candidate, inserted: false }
   }
 
+  /** The chronological cursor a `before=<seq>` request means: the named row's
+   *  `(timestamp, seq)`, or -- when that seq names a hole -- the nearest lower
+   *  seq, widened by one so that row is itself included. `null` when the
+   *  conversation holds nothing older. */
+  function resolveBeforeCursor(
+    av: number,
+    conversationId: string,
+    seq: number,
+    agentParams: Params,
+  ): { beforeTs: number; beforeSeq: number } | null {
+    const exact = beforeCursorTsStmts[av].get({ conversationId, seq, ...agentParams }) as { timestamp: number } | null
+    if (exact) return { beforeTs: exact.timestamp, beforeSeq: seq }
+    const nearest = beforeCursorNearestStmts[av].get({ conversationId, seq, ...agentParams }) as {
+      timestamp: number
+      seq: number
+    } | null
+    return nearest ? { beforeTs: nearest.timestamp, beforeSeq: nearest.seq + 1 } : null
+  }
+
   return {
     append(conversationId, syncEpoch, entries: TranscriptEntryInput[]): TranscriptAppendResult[] {
       const results: TranscriptAppendResult[] = []
@@ -379,16 +448,29 @@ export function createSqliteTranscriptStore(db: Database): TranscriptStore {
 
     getBeforeSeq(conversationId, beforeSeq, limit, agentId) {
       const [av, agentParams] = agentVariant(agentId)
-      // The `limit` highest-seq entries below beforeSeq, fetched DESC then
-      // reversed to oldest-first (ready to prepend in the client).
+      // The cursor is a seq on the wire but chronological in meaning, so resolve
+      // it to its row's timestamp first, falling back to the nearest lower seq
+      // when the cursor names a hole.
+      const cursor = resolveBeforeCursor(av, conversationId, beforeSeq, agentParams)
+      if (!cursor) return { entries: [], oldestSeq: 0, hasMore: false }
+      // The `limit` chronologically newest entries below the cursor, fetched
+      // DESC then reversed to oldest-first (ready to prepend in the client).
       const rows = (
-        beforeSelectStmts[av].all({ conversationId, beforeSeq, limit, ...agentParams }) as Params[]
+        beforeSelectStmts[av].all({ conversationId, ...cursor, limit, ...agentParams }) as Params[]
       ).reverse()
       const entries = rows.map(rowToEntry)
-      const oldestSeq = entries.length > 0 ? entries[0].seq : 0
-      // More history exists iff any entry is strictly older than the oldest one we just returned.
-      const hasMore = oldestSeq > 0 && !!beforeHasMoreStmts[av].get({ conversationId, oldestSeq, ...agentParams })
-      return { entries, oldestSeq, hasMore }
+      const oldest = entries[0]
+      // More history exists iff anything sorts strictly before the oldest entry
+      // we just returned.
+      const hasMore =
+        !!oldest &&
+        !!beforeHasMoreStmts[av].get({
+          conversationId,
+          beforeTs: oldest.timestamp,
+          beforeSeq: oldest.seq,
+          ...agentParams,
+        })
+      return { entries, oldestSeq: oldest?.seq ?? 0, hasMore }
     },
 
     getLastSeq(conversationId) {

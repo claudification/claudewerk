@@ -11,9 +11,9 @@ import type {
 } from '../../shared/protocol'
 import type { TranscriptAppendResult } from '../store/types'
 import { agentScopeOf } from './agent-scope'
-import { MAX_TRANSCRIPT_ENTRIES } from './constants'
 import { assignTranscriptSeqs, type ConversationStoreContext } from './event-context'
 import { persistTranscriptEntries, resolveEntryTimestamp } from './persist-transcript'
+import { writeTranscriptCache } from './transcript-cache-write'
 import { handleAssistantEntry, perMessageTokenSample } from './transcript-handlers/assistant-entry'
 import { detectBgTaskNotifications } from './transcript-handlers/bg-task-notifications'
 import { handleMentionNotifications } from './transcript-handlers/mention-notify'
@@ -73,11 +73,14 @@ export function addTranscriptEntries(
   // broadcast the objects this function returns, so the wire payload carries
   // the same seq a REST reader would get for that uuid.
   const fresh = stampSeqsFromStore(ctx, conversationId, entries, isInitial)
-  // isInitial is a REPLACE on both sides -- the cache and the dashboard swap in
-  // the whole snapshot, so it must carry already-stored entries too. A
-  // non-initial batch is an APPEND, where a re-sent entry would be a duplicate.
+  // isInitial still BROADCASTS the whole snapshot -- the dashboard treats it as
+  // a replace and dropping stored entries would blank the transcript. The CACHE
+  // no longer takes it at face value: `writeTranscriptCache` reconciles an
+  // isInitial batch against the store, because in headless that batch is only
+  // the FILE's share of the record. A non-initial batch is an APPEND, where a
+  // re-sent entry would be a duplicate.
   const toApply = isInitial ? entries : fresh
-  appendToCache(ctx, conversationId, toApply, isInitial)
+  writeTranscriptCache(ctx, conversationId, toApply, isInitial)
   ctx.dirtyTranscripts.add(conversationId)
 
   const conv = ctx.conversations.get(conversationId)
@@ -344,24 +347,6 @@ function persistToStore(
   entries: TranscriptEntry[],
 ): TranscriptAppendResult[] | null {
   return persistTranscriptEntries(ctx.store, ctx.conversations.has(conversationId), conversationId, entries)
-}
-
-function appendToCache(
-  ctx: ConversationStoreContext,
-  conversationId: string,
-  entries: TranscriptEntry[],
-  isInitial: boolean,
-): void {
-  if (isInitial) {
-    ctx.transcriptCache.set(conversationId, entries.slice(-MAX_TRANSCRIPT_ENTRIES))
-    return
-  }
-  const existing = ctx.transcriptCache.get(conversationId) || []
-  existing.push(...entries)
-  if (existing.length > MAX_TRANSCRIPT_ENTRIES) {
-    existing.splice(0, existing.length - MAX_TRANSCRIPT_ENTRIES)
-  }
-  ctx.transcriptCache.set(conversationId, existing)
 }
 
 function resetConversationMetadataAndStats(

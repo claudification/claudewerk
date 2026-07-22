@@ -36,6 +36,7 @@ import { useDispatchStore } from '@/components/dispatch-overlay/dispatch-store'
 import { handleLaunchProfilesUpdatedMessage } from '@/components/launch-profiles/use-launch-profiles'
 import { daemonControlToast } from '@/lib/daemon-control'
 import { forgetFull, rememberFull, slimConversation } from '@/lib/slim-conversation'
+import { applyTranscriptBatch } from '@/lib/transcript-apply'
 import { pruneLiveTranscript, TRANSCRIPT_LIVE_CAP } from '@/lib/transcript-prune'
 import type {
   ClaudeEfficiencyUpdate,
@@ -576,45 +577,23 @@ function handleTranscriptEntries(msg: DashboardMessage) {
   }
   useConversationsStore.setState(state => {
     const existing = state.transcripts[sid] || []
-    // isInitial=true REPLACES the cache. The agent host fires this on WS
-    // reconnect (resendTranscriptFromFile in headless) and on PTY
-    // truncation. If the snapshot is SMALLER than what we already have
-    // AND the first entry matches, the snapshot was taken before CC
-    // flushed the newest entries -- swallowing the replace would wipe
-    // live entries the client already displayed. Skip in that case
-    // (mirrors setTranscript's guard). When first entries differ
-    // (e.g. /clear created a new conversation, or compaction rewrote
-    // the prefix) the replace is legitimate -- proceed.
-    let result: TranscriptEntry[]
-    let skipped = false
-    if (initial && existing.length > newEntries.length && existing.length > 0 && newEntries.length > 0) {
-      const fp = (e: TranscriptEntry) => {
-        const m = (e as { message?: { content?: unknown } }).message
-        const c = m?.content
-        return JSON.stringify(c ?? e.type)?.slice(0, 100)
-      }
-      if (fp(existing[0]) === fp(newEntries[0])) {
-        result = existing
-        skipped = true
-      } else {
-        result = newEntries
-      }
-    } else if (initial) {
-      result = newEntries
-    } else {
-      // Incremental append -- dedup by seq against our last-applied.
-      // Guards the race where a sync_check delta fetch raced with a live
-      // WS broadcast and we applied the delta first. Without this guard,
-      // the broadcast would re-append entries we already have.
-      const localMax = state.lastAppliedTranscriptSeq[sid] ?? 0
-      const fresh = newEntries.filter(e => e.seq === undefined || e.seq > localMax)
-      if (fresh.length === 0) {
-        return {}
-      }
-      result = [...existing, ...fresh]
+    // Both cells RECONCILE -- union by uuid, ordered by (timestamp, seq).
+    // isInitial used to REPLACE, which deleted every stdout-only entry whenever
+    // a headless resend (file-sourced, and so strictly narrower) claimed to be
+    // a snapshot. See lib/transcript-apply.ts for the full why.
+    const applied = applyTranscriptBatch({
+      existing,
+      incoming: newEntries,
+      initial,
+      localMax: state.lastAppliedTranscriptSeq[sid] ?? 0,
+    })
+    const skipped = applied.unchanged
+    if (skipped && !initial) return {}
+    let result = applied.result
+    if (!initial && !skipped) {
       // Passive prune: tail grew, head may now exceed the cap. Skipped on the
-      // initial-replace path -- that's a server-determined snapshot, not a
-      // live tail-grow. Policy (scrollback defer, held-history back-off) is
+      // initial path -- that's a server-determined reconciliation, not a live
+      // tail-grow. Policy (scrollback defer, held-history back-off) is
       // documented in lib/transcript-prune.ts.
       result = pruneLiveTranscript({
         sid,

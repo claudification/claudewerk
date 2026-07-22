@@ -446,15 +446,19 @@ describe('transcript cache', () => {
     expect(cached[1].type).toBe('assistant')
   })
 
-  it('addTranscriptEntries with isInitial=true replaces existing cache', () => {
+  // CONTRACT CHANGE (transcript-cache-write.ts): isInitial RECONCILES, it does
+  // not replace. Replacing was a data-loss bug -- a headless resend is read from
+  // CC's JSONL and narrowed by the host's forward policy, so it never carries
+  // the stdout-only entries, and swapping the cache for it deleted them.
+  it('addTranscriptEntries with isInitial=true reconciles rather than replacing', () => {
     store.createConversation('tc-replace', '/cwd')
     store.addTranscriptEntries('tc-replace', [makeTranscriptEntry('user')], true)
-    // Replace with a fresh initial load
+    // A second initial load brings two entries the cache did not hold.
     store.addTranscriptEntries('tc-replace', [makeTranscriptEntry('assistant'), makeTranscriptEntry('user')], true)
 
     const cached = store.getTranscriptEntries('tc-replace')
-    expect(cached).toHaveLength(2)
-    expect(cached[0].type).toBe('assistant')
+    expect(cached).toHaveLength(3)
+    expect(cached.map(e => e.type)).toEqual(['user', 'assistant', 'user'])
   })
 
   it('subagent: hasSubagentTranscriptCache returns false before entries added', () => {
