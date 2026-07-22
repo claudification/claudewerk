@@ -15,19 +15,20 @@
  * NOTE: Excalidraw fetches its fonts from a CDN by default. To self-host, set
  * window.EXCALIDRAW_ASSET_PATH and ship dist assets -- a follow-up, not needed for the spike.
  */
-import { Excalidraw, serializeAsJSON } from '@excalidraw/excalidraw'
+import { Excalidraw } from '@excalidraw/excalidraw'
 import '@excalidraw/excalidraw/index.css'
-import { utf8Bytes } from '@shared/draw'
 import { isDslScene } from '@shared/draw-dsl'
 import { type ComponentProps, type ReactNode, useCallback, useRef, useState } from 'react'
 import { CANVAS_UI_OPTIONS, CanvasMainMenu } from '@/components/canvas/canvas-chrome'
+import { useCanvasFlush } from './use-canvas-flush'
 import { useInitialData } from './excalidraw-initial-data'
 import { useDslSeed } from './use-dsl-seed'
 
 type ExcalidrawProps = ComponentProps<typeof Excalidraw>
 type ChangeHandler = NonNullable<ExcalidrawProps['onChange']>
-type ChangeElements = Parameters<ChangeHandler>[0]
-type ChangeFiles = Parameters<ChangeHandler>[2]
+export type ChangeElements = Parameters<ChangeHandler>[0]
+export type ChangeAppState = Parameters<ChangeHandler>[1]
+export type ChangeFiles = Parameters<ChangeHandler>[2]
 type ExcalidrawAPI = Parameters<NonNullable<ExcalidrawProps['excalidrawAPI']>>[0]
 
 /**
@@ -63,6 +64,7 @@ export interface CanvasCollabBinding {
     api: {
       updateScene(scene: { elements?: readonly unknown[]; collaborators?: Map<string, unknown> }): void
       addFiles?(files: readonly unknown[]): void
+      getFiles?(): Record<string, unknown>
     } | null,
   ) => void
   /** Local cursor moved (scene coords). tool + button ride along so a remote
@@ -81,12 +83,23 @@ export interface DrawCanvasProps {
   onSnapshot?: (json: string, bytes: number) => void
   /** Opt-in multiplayer binding. Undefined = solo (Draw block, private canvas). */
   collab?: CanvasCollabBinding
+  /** Upload an image's bytes to the canvas file slot. When present, image bytes go
+   *  to the slot and the WS delta carries only fileIds (kept off the hot path);
+   *  when absent (Draw block), files stay inline in the delta. */
+  uploadFile?: (fileId: string, dataURL: string) => Promise<void>
   /** Chrome to float in excalidraw's own top-right island stack (hosted canvas
    *  name / save state / presence / Share). Undefined = no island (Draw block). */
   topRight?: ReactNode
 }
 
-export default function ExcalidrawCanvas({ initialSnapshot, readOnly, onSnapshot, collab, topRight }: DrawCanvasProps) {
+export default function ExcalidrawCanvas({
+  initialSnapshot,
+  readOnly,
+  onSnapshot,
+  collab,
+  uploadFile,
+  topRight,
+}: DrawCanvasProps) {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   // Last content signature we acted on -- seeded from the initial scene so the
   // first settling onChange for an already-saved canvas is a no-op.
@@ -103,6 +116,9 @@ export default function ExcalidrawCanvas({ initialSnapshot, readOnly, onSnapshot
   // agent patched the block via update_dialog), (re-)expand and push through the live API.
   useDslSeed(apiRef, initialSnapshot, apiReady)
 
+  // Persist + upload-new-files + emit files-less delta (see use-canvas-flush).
+  const flushChange = useCanvasFlush(collab, onSnapshot, uploadFile)
+
   const handleChange = useCallback<ChangeHandler>(
     (elements, appState, files) => {
       if (readOnly) return
@@ -113,13 +129,9 @@ export default function ExcalidrawCanvas({ initialSnapshot, readOnly, onSnapshot
       if (sig === lastSig.current) return
       lastSig.current = sig
       clearTimeout(timer.current)
-      timer.current = setTimeout(() => {
-        const json = serializeAsJSON(elements, appState, files, 'local')
-        onSnapshot?.(json, utf8Bytes(json))
-        collab?.onChange(json)
-      }, 500)
+      timer.current = setTimeout(() => void flushChange(elements, appState, files), 500)
     },
-    [readOnly, onSnapshot, collab],
+    [readOnly, flushChange],
   )
 
   // Throttle cursor broadcasts -- onPointerUpdate fires on every mouse move. The

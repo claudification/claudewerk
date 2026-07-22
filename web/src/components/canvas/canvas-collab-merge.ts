@@ -63,6 +63,18 @@ export function parseSceneFiles(sceneJson: unknown): unknown[] {
   }
 }
 
+/** The fileIds referenced by (live, non-deleted) image elements in a delta. These
+ *  are the image bytes a receiver must have loaded before applying the elements,
+ *  or Excalidraw prunes the fileless image and it blinks. */
+export function imageFileIds(elements: readonly unknown[]): string[] {
+  const ids: string[] = []
+  for (const el of elements) {
+    const e = el as { type?: string; fileId?: string; isDeleted?: boolean }
+    if (e.type === 'image' && typeof e.fileId === 'string' && !e.isDeleted) ids.push(e.fileId)
+  }
+  return ids
+}
+
 /** Drop collaborators no longer in the presence roster (mutates the map). */
 export function prunePeers(collaborators: Map<string, RemoteCollaborator>, roster: CanvasPeer[]): void {
   for (const id of [...collaborators.keys()]) {

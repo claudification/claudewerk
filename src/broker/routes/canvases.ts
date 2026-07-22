@@ -23,6 +23,7 @@ import { type Context, Hono } from 'hono'
 import type { CanvasShareTier, CanvasSummary } from '../../shared/protocol'
 import { getAuthenticatedUser } from '../auth-routes'
 import { AGENT_PEER_ID, applySceneWrite, baselineScene } from '../canvas-room'
+import { isSafeFileId, readCanvasImage, writeCanvasImage } from '../canvas-files'
 import { enforceCanvasTier, sanitizeCanvasScene } from '../canvas-sanitize'
 import { BLANK_SCENE, readScene, readThumb } from '../canvas-scenes'
 import {
@@ -63,6 +64,31 @@ export function parseShareRequest(
   }
   if (hours > MAX_SHARE_HOURS) return { error: `Maximum share duration is ${MAX_SHARE_HOURS / 24} days` }
   return { tier, expiresAt: Date.now() + hours * 60 * 60 * 1000 }
+}
+
+/** A generous ceiling on an uploaded image's dataURL (base64 inflates ~33%, so
+ *  ~11MB of actual image). Bounds a single canvas-file write. */
+const MAX_IMAGE_DATAURL_BYTES = 15 * 1024 * 1024
+
+/** Validate + store an uploaded image dataURL for (canvasId, fileId). Shared by
+ *  the authed and guest upload routes; the caller has already authorized. */
+function storeCanvasImage(c: Context, canvasId: string, fileId: unknown, body: Record<string, unknown> | null): Response {
+  if (!isSafeFileId(fileId)) return c.json({ error: 'bad fileId' }, 400)
+  const dataURL = body?.dataURL
+  if (typeof dataURL !== 'string' || !dataURL.startsWith('data:')) return c.json({ error: 'dataURL required' }, 400)
+  if (dataURL.length > MAX_IMAGE_DATAURL_BYTES) return c.json({ error: 'image too large' }, 413)
+  writeCanvasImage(canvasId, fileId, dataURL)
+  return c.json({ ok: true, fileId })
+}
+
+/** Serve a stored image dataURL by (canvasId, fileId), or 404. Bytes are keyed by
+ *  Excalidraw's content-derived fileId, so the response is immutable-cacheable. */
+function serveCanvasImage(c: Context, canvasId: string, fileId: unknown): Response {
+  if (!isSafeFileId(fileId)) return c.json({ error: 'bad fileId' }, 400)
+  const dataURL = readCanvasImage(canvasId, fileId)
+  if (!dataURL) return c.json({ error: 'not found' }, 404)
+  c.header('cache-control', 'public, max-age=31536000, immutable')
+  return c.json({ id: fileId, dataURL })
 }
 
 /** Decode a thumbnail field (raw base64 or a data: URL) to bytes, or undefined. */
@@ -256,6 +282,20 @@ export function createCanvasesRouter(conversationStore: ConversationStore, helpe
     return new Response(bytes, { headers: { 'content-type': 'image/png', 'cache-control': 'no-cache' } })
   })
 
+  // ─── image files (uploaded once, referenced by fileId in the scene) ──
+  // Bytes ride their own slot, NOT the scene delta, so deltas stay small. GET is
+  // read-gated; POST is write-gated (an image add is a canvas mutation).
+  app.get('/api/canvases/:id/files/:fileId', c => {
+    const g = guard(c, 'files:read')
+    if ('res' in g) return g.res
+    return serveCanvasImage(c, g.canvas.id, c.req.param('fileId'))
+  })
+  app.post('/api/canvases/:id/files/:fileId', async c => {
+    const g = await guardWithBody(c, 'files')
+    if ('res' in g) return g.res
+    return storeCanvasImage(c, g.canvas.id, c.req.param('fileId'), g.body)
+  })
+
   // ─── create / update public share (owner-only) ───────────────────
   // Mints (or re-tiers) a public share token for the canvas. Re-sharing a
   // canvas that was previously revoked mints a NEW token, so the old link
@@ -312,6 +352,23 @@ export function createCanvasesRouter(conversationStore: ConversationStore, helpe
     const next = body?.scene
     if (typeof next !== 'string' || !next.trim()) return c.json({ error: 'scene required' }, 400)
     return applyGuestWrite(c, g.canvas, next, writerPeerId(body))
+  })
+
+  // ─── public image files (share-token scoped) ────────────────────────
+  // GET: any valid share tier may fetch bytes for an image the scene references.
+  // POST: the share token mints a TEMPORARY upload capability, but only at EDIT
+  // tier -- a read/comment guest cannot push image bytes.
+  app.get('/shared/public/canvas/:token/files/:fileId', c => {
+    const g = guardPublic(c)
+    if ('res' in g) return g.res
+    return serveCanvasImage(c, g.canvas.id, c.req.param('fileId'))
+  })
+  app.post('/shared/public/canvas/:token/files/:fileId', async c => {
+    const g = guardPublic(c)
+    if ('res' in g) return g.res
+    if ((g.canvas.shareTier ?? 'read') !== 'edit') return c.json({ error: 'Forbidden' }, 403)
+    const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null
+    return storeCanvasImage(c, g.canvas.id, c.req.param('fileId'), body)
   })
 
   // Pretty shorthand: /c/:token -> the SPA in canvas share mode. The SPA mounts

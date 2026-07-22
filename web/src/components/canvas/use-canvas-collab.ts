@@ -10,12 +10,14 @@ import type { CanvasPeer } from '@shared/protocol'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { wsSend } from '@/hooks/use-conversations'
 import {
+  imageFileIds,
   parseSceneElements,
   parseSceneFiles,
   peerToApply,
   prunePeers,
   type RemoteCollaborator,
 } from './canvas-collab-merge'
+import type { FetchFile } from './canvas-file-transport'
 import { clearCanvasPeerId, setCanvasPeerId } from './canvas-peer-id'
 import { useCanvasRoom } from './use-canvas-room'
 
@@ -25,6 +27,8 @@ export interface CollabApi {
   /** Register image bytes (BinaryFileData). Present on the real Excalidraw API;
    *  optional so the Draw-block stub can omit it. */
   addFiles?(files: readonly unknown[]): void
+  /** Currently-loaded image files, keyed by fileId -- so we only fetch what we lack. */
+  getFiles?(): Record<string, unknown>
 }
 
 /** A remote apply within this window suppresses the resulting local onChange. */
@@ -43,7 +47,12 @@ export interface CanvasCollab {
 // cursor/scene apply callbacks further to satisfy the per-hook penalty would hurt
 // readability, not help it.
 // fallow-ignore-next-line complexity
-export function useCanvasCollab(canvasId: string | null, enabled: boolean, name?: string): CanvasCollab {
+export function useCanvasCollab(
+  canvasId: string | null,
+  enabled: boolean,
+  name?: string,
+  fetchFile?: FetchFile,
+): CanvasCollab {
   const [peers, setPeers] = useState<CanvasPeer[]>([])
   const api = useRef<CollabApi | null>(null)
   const ownPeerId = useRef<string | null>(null)
@@ -77,18 +86,37 @@ export function useCanvasCollab(canvasId: string | null, enabled: boolean, name?
     [pushCollaborators],
   )
 
-  const applySceneDelta = useCallback((msg: Record<string, unknown>) => {
-    if ((msg.peerId as string) === ownPeerId.current) return
-    const elements = parseSceneElements(msg.scene)
-    if (!elements) return // malformed -- keep current scene
-    suppressUntil.current = Date.now() + ECHO_SUPPRESS_MS
-    // Files BEFORE elements: an image element applied before its bytes exist renders
-    // a broken placeholder that Excalidraw prunes and echoes back -> the image
-    // blinks. addFiles is idempotent, so re-sending known files is harmless.
-    const files = parseSceneFiles(msg.scene)
-    if (files.length) api.current?.addFiles?.(files)
-    api.current?.updateScene({ elements })
-  }, [])
+  // Load any image bytes an incoming scene references but we don't have yet, from
+  // the file slot. Deltas carry only fileIds now (bytes ride their own route), so
+  // without this the image element applies fileless -> pruned + echoed -> blink.
+  const ensureFilesFor = useCallback(
+    async (elements: readonly unknown[]) => {
+      if (!fetchFile) return
+      const have = api.current?.getFiles?.() ?? {}
+      const missing = imageFileIds(elements).filter(id => !have[id])
+      if (!missing.length) return
+      const fetched = (await Promise.all(missing.map(id => fetchFile(id).catch(() => null)))).filter(Boolean)
+      if (fetched.length) api.current?.addFiles?.(fetched)
+    },
+    [fetchFile],
+  )
+
+  const applySceneDelta = useCallback(
+    async (msg: Record<string, unknown>) => {
+      if ((msg.peerId as string) === ownPeerId.current) return
+      const elements = parseSceneElements(msg.scene)
+      if (!elements) return // malformed -- keep current scene
+      // Inline files (legacy/interim senders) applied immediately; then fetch any
+      // still-missing bytes from the slot. Files MUST land before elements or the
+      // fileless image is pruned + echoed back -> blink. addFiles is idempotent.
+      const inline = parseSceneFiles(msg.scene)
+      if (inline.length) api.current?.addFiles?.(inline)
+      await ensureFilesFor(elements)
+      suppressUntil.current = Date.now() + ECHO_SUPPRESS_MS
+      api.current?.updateScene({ elements })
+    },
+    [ensureFilesFor],
+  )
 
   const applyJoinAck = useCallback(
     (msg: Record<string, unknown>) => {

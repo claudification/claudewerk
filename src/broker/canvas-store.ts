@@ -15,6 +15,7 @@ import type { Database, Statement } from 'bun:sqlite'
 import { resolve } from 'node:path'
 import type { CanvasShareTier, CanvasSummary } from '../shared/protocol'
 import { CANVAS_COLS, type CanvasRow, rowToSummary } from './canvas-row'
+import { deleteCanvasImages, initCanvasFiles } from './canvas-files'
 import { deleteSceneFiles, initCanvasScenes, hasThumb as sceneHasThumb, writeScene, writeThumb } from './canvas-scenes'
 import { openWalDatabase } from './sqlite-open'
 
@@ -46,6 +47,7 @@ export function initCanvasStore(cacheDir: string): void {
   const dbPath = resolve(cacheDir, 'canvases.db')
   db = openWalDatabase(dbPath)
   initCanvasScenes(cacheDir)
+  initCanvasFiles(cacheDir)
 
   db.run(`
     CREATE TABLE IF NOT EXISTS canvases (
@@ -225,4 +227,5 @@ export function reapExpiredCanvasShares(): number {
 export function deleteCanvas(id: string): void {
   stmtDelete?.run({ id })
   deleteSceneFiles(id)
+  deleteCanvasImages(id) // the per-canvas image dir has no per-file GC; drop it with the canvas
 }

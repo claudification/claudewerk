@@ -7,8 +7,10 @@
  */
 
 import type { CanvasPeer } from '@shared/protocol'
+import { useMemo } from 'react'
 import ExcalidrawCanvas, { type CanvasCollabBinding } from '@/components/dialog/excalidraw-canvas'
 import { useWebSocket } from '@/hooks/use-websocket'
+import { makeCanvasFileTransport } from './canvas-file-transport'
 import { PresenceDots } from './canvas-presence-dots'
 import { useCanvasCollab } from './use-canvas-collab'
 import { useGuestName } from './use-guest-name'
@@ -81,6 +83,9 @@ export function PublicCanvasView({ token }: { token: string }) {
   useWebSocket({ conversationChannels: false })
   const { doc, seed, state, saveState, onSnapshot } = usePublicCanvas(token)
   const { name: guestName, rename } = useGuestName()
+  // Image bytes ride the share-token-scoped file slot (upload = edit tier only,
+  // enforced broker-side; fetch = any tier), not inline in the delta.
+  const files = useMemo(() => makeCanvasFileTransport(`/shared/public/canvas/${encodeURIComponent(token)}`), [token])
   // Guests join the SAME room members do -- the share-mode socket already carries
   // ?share=<token>, and the broker pins it to this canvas at the token's tier.
   // Read-tier guests still join: they receive cursors and live edits, and simply
@@ -89,6 +94,7 @@ export function PublicCanvasView({ token }: { token: string }) {
     doc?.canvas.id ?? null,
     state === 'ready',
     guestName,
+    files.fetch,
   )
   const collab: CanvasCollabBinding = { bindApi, onPointer: onLocalPointer, onChange: onLocalChange }
 
@@ -117,6 +123,7 @@ export function PublicCanvasView({ token }: { token: string }) {
           readOnly={readOnly}
           onSnapshot={readOnly ? undefined : onSnapshot}
           collab={collab}
+          uploadFile={files.upload}
         />
       </div>
     </div>
