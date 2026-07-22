@@ -6,13 +6,8 @@
 
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { sendInput, useConversationsStore } from '@/hooks/use-conversations'
-import {
-  dismissMicExpired,
-  getMicExpired,
-  prewarmMicStream,
-  subscribeMicExpired,
-  useVoiceRecording,
-} from '@/hooks/use-voice-recording'
+import { dismissMicExpired, getMicExpired, subscribeMicExpired, useVoiceRecording } from '@/hooks/use-voice-recording'
+import { prewarmVoice, prewarmVoiceTransport } from '@/hooks/voice-prewarm'
 import { haptic } from '@/lib/utils'
 import { formatKeyCode } from './settings/key-capture-format'
 
@@ -28,8 +23,14 @@ export function VoiceKey() {
   const micExpired = useMicExpired()
 
   useEffect(() => {
-    if (keepMicOpen && voiceHoldKey) prewarmMicStream()
+    if (keepMicOpen && voiceHoldKey) prewarmVoice()
   }, [keepMicOpen, voiceHoldKey])
+
+  // The token is not a device: warm it whenever push-to-talk is armed, not only
+  // under keepMicOpen, so the first press never waits on the mint.
+  useEffect(() => {
+    if (voiceHoldKey) prewarmVoiceTransport()
+  }, [voiceHoldKey])
 
   useEffect(() => {
     if (!voiceHoldKey) return
@@ -192,7 +193,7 @@ function MicExpiredBanner({ keyLabel }: { keyLabel: string }) {
           </span>
           <button
             type="button"
-            onClick={() => prewarmMicStream()}
+            onClick={() => prewarmVoice()}
             className="px-2 py-0.5 text-[10px] font-bold font-mono text-amber-400 bg-amber-500/20 border border-amber-500/40 rounded hover:bg-amber-500/30 transition-colors uppercase"
           >
             Re-warm

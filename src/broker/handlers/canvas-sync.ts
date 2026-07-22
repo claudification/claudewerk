@@ -12,6 +12,10 @@
  * The room registry is the shared channel registry (channel='canvas', the
  * canvasId in the id slot); presence + the persist debounce are module state,
  * cleaned on canvas_leave AND on socket close via leaveAllCanvasRooms().
+ *
+ * ROOM STATE + the scene-write chokepoint live in ../canvas-room.ts, because the
+ * HTTP routes write scenes too (the canvas MCP tools and the browser autosave).
+ * This file is the WS handler layer on top of it: auth, tier gating, logging.
  */
 
 import type { ServerWebSocket } from 'bun'
@@ -19,36 +23,30 @@ import type {
   CanvasJoin,
   CanvasJoinAck,
   CanvasLeave,
-  CanvasPeer,
   CanvasPointer,
-  CanvasPresence,
-  CanvasSceneDelta,
   CanvasShareTier,
   CanvasSummary,
 } from '../../shared/protocol'
+import {
+  applySceneWrite,
+  baselineScene,
+  broadcastPresence,
+  ensureRoom,
+  memberPeer,
+  PALETTE,
+  peerIdOf,
+  removePeer,
+  resetCanvasRoomState,
+  roomSize,
+  roomsFor,
+  roster,
+} from '../canvas-room'
 import { enforceCanvasTier } from '../canvas-sanitize'
-import { BLANK_SCENE, readScene } from '../canvas-scenes'
-import { getCanvas, saveCanvasScene } from '../canvas-store'
+import { readScene } from '../canvas-scenes'
+import { getCanvas } from '../canvas-store'
 import type { ConversationStore } from '../conversation-store'
 import type { HandlerContext, MessageData, MessageHandler } from '../handler-context'
 import { DASHBOARD_ROLES, registerHandlers } from '../message-router'
-
-/** Cursor colours assigned round-robin as peers join a room. */
-const PALETTE = ['#38bdf8', '#f472b6', '#4ade80', '#facc15', '#a78bfa', '#fb923c', '#22d3ee', '#f87171']
-
-interface Peer extends CanvasPeer {
-  ws: ServerWebSocket<unknown>
-  /** What this peer may write. Resolved ONCE at join and never re-read from the
-   *  wire, so a client cannot talk its way up a tier after the fact. */
-  tier: CanvasShareTier
-}
-
-/** canvasId -> peerId -> peer. Module state (room membership beyond the raw
- *  channel subscription, so presence rosters + colours survive per connection). */
-const rooms = new Map<string, Map<string, Peer>>()
-/** canvasId -> pending persist. */
-const persistTimers = new Map<string, ReturnType<typeof setTimeout>>()
-const PERSIST_DEBOUNCE_MS = 1500
 
 /** `${canvasId}:${peerId}` we've already info-logged a pointer event for (valid
  *  OR non-member), so the high-frequency cursor path logs once per peer, not per
@@ -71,51 +69,6 @@ function joinMeta(ctx: HandlerContext, data: MessageData): { client: string; via
     client: typeof data.client === 'string' ? data.client : 'MISSING(old-bundle?)',
     via: ctx.ws.data.shareCanvasId ? 'share' : 'member',
   }
-}
-
-/**
- * canvasId -> the newest ACCEPTED scene in the room.
- *
- * The tier check needs the baseline a comment peer must preserve, and the stored
- * scene lags the room by up to PERSIST_DEBOUNCE_MS. Judging against disk would
- * reject every annotation made within 1.5s of someone else's edit -- and measure
- * it against a base the guest is not even looking at. So the room keeps the live
- * scene and disk is only the fallback for a room that has not written yet.
- */
-const latestScene = new Map<string, string>()
-
-/** The baseline for a tier check: live room scene, else stored, else blank. */
-function baselineScene(canvasId: string): string {
-  return latestScene.get(canvasId) ?? readScene(canvasId) ?? BLANK_SCENE
-}
-
-function peerIdOf(ws: ServerWebSocket<unknown>): string {
-  return (ws.data as { wsConnId?: string }).wsConnId ?? `peer_${Math.abs(hashWs(ws))}`
-}
-
-/** Stable-ish fallback id when wsConnId is somehow absent (should not happen). */
-function hashWs(ws: ServerWebSocket<unknown>): number {
-  const s = String((ws.data as { connectedAt?: number }).connectedAt ?? 0)
-  let h = 0
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0
-  return h
-}
-
-function roster(canvasId: string): CanvasPeer[] {
-  const room = rooms.get(canvasId)
-  if (!room) return []
-  return [...room.values()].map(({ peerId, name, color }) => ({ peerId, name, color }))
-}
-
-/** The caller's peer in a room, or undefined when they never joined it. */
-function memberPeer(ws: ServerWebSocket<unknown>, canvasId: string | undefined): Peer | undefined {
-  if (!canvasId) return undefined
-  return rooms.get(canvasId)?.get(peerIdOf(ws))
-}
-
-function broadcastPresence(store: ConversationStore, canvasId: string): void {
-  const msg: CanvasPresence = { type: 'canvas_presence', canvasId, peers: roster(canvasId) }
-  store.broadcastToChannel('canvas', canvasId, msg)
 }
 
 /**
@@ -159,11 +112,7 @@ const handleCanvasJoin: MessageHandler = (ctx, data) => {
   }
 
   const peerId = peerIdOf(ctx.ws)
-  let room = rooms.get(canvasId)
-  if (!room) {
-    room = new Map()
-    rooms.set(canvasId, room)
-  }
+  const room = ensureRoom(canvasId)
   const color = PALETTE[room.size % PALETTE.length]
   const name = (typeof reqName === 'string' && reqName.trim()) || ctx.ws.data.userName || 'guest'
   room.set(peerId, { peerId, name, color, ws: ctx.ws, tier })
@@ -185,26 +134,16 @@ const handleCanvasJoin: MessageHandler = (ctx, data) => {
   )
 }
 
-function removePeer(store: ConversationStore, ws: ServerWebSocket<unknown>, canvasId: string): boolean {
-  const room = rooms.get(canvasId)
-  const peerId = peerIdOf(ws)
-  if (!room?.delete(peerId)) return false
-  pointerLogged.delete(`${canvasId}:${peerId}`)
-  store.unsubscribeChannel(ws, 'canvas', canvasId)
-  console.log(`[canvas] LEAVE ${canvasId.slice(0, 12)} peer=${peerId.slice(0, 8)} room=${room.size}`)
-  if (room.size === 0) {
-    // Last peer out: drop the live scene so the next room re-reads from disk
-    // (which the pending persist is about to have written) instead of trusting a
-    // cached copy that could outlive the canvas being edited elsewhere.
-    rooms.delete(canvasId)
-    latestScene.delete(canvasId)
-  } else broadcastPresence(store, canvasId)
-  return true
+/** Room removal plus this layer's own bookkeeping (the once-per-peer pointer
+ *  log key, which is a logging concern and stays out of canvas-room). */
+function dropPeer(store: ConversationStore, ws: ServerWebSocket<unknown>, canvasId: string): boolean {
+  pointerLogged.delete(`${canvasId}:${peerIdOf(ws)}`)
+  return removePeer(store, ws, canvasId)
 }
 
 const handleCanvasLeave: MessageHandler = (ctx, data) => {
   const { canvasId } = data as Partial<CanvasLeave>
-  if (canvasId) removePeer(ctx.conversations, ctx.ws, canvasId)
+  if (canvasId) dropPeer(ctx.conversations, ctx.ws, canvasId)
 }
 
 const handleCanvasPointer: MessageHandler = (ctx, data) => {
@@ -214,12 +153,16 @@ const handleCanvasPointer: MessageHandler = (ctx, data) => {
     // SMOKING GUN for the join race: a client streaming cursors but never in the
     // room. Logged once per (canvas,peer) so it doesn't flood.
     const id = String(canvasId).slice(0, 12)
-    logPointerOnce(`${canvasId}:${peerIdOf(ctx.ws)}`, `[canvas] pointer from NON-MEMBER ${id} -- never joined the room (ignored)`, m => ctx.log.info(m))
+    logPointerOnce(
+      `${canvasId}:${peerIdOf(ctx.ws)}`,
+      `[canvas] pointer from NON-MEMBER ${id} -- never joined the room (ignored)`,
+      m => ctx.log.info(m),
+    )
     return
   }
   logPointerOnce(
     `${canvasId}:${peer.peerId}`,
-    `[canvas] pointer OK ${canvasId.slice(0, 12)} peer=${peer.peerId.slice(0, 8)} (first; room=${rooms.get(canvasId)?.size ?? 0})`,
+    `[canvas] pointer OK ${canvasId.slice(0, 12)} peer=${peer.peerId.slice(0, 8)} (first; room=${roomSize(canvasId)})`,
     m => ctx.log.info(m),
   )
   // Rebroadcast to the whole room (incl. sender); clients drop their own peerId.
@@ -238,17 +181,6 @@ const handleCanvasPointer: MessageHandler = (ctx, data) => {
     button: data.button === 'down' ? 'down' : 'up',
   }
   ctx.conversations.broadcastToChannel('canvas', canvasId, msg)
-}
-
-function schedulePersist(canvasId: string, scene: string): void {
-  clearTimeout(persistTimers.get(canvasId))
-  persistTimers.set(
-    canvasId,
-    setTimeout(() => {
-      persistTimers.delete(canvasId)
-      saveCanvasScene(canvasId, scene)
-    }, PERSIST_DEBOUNCE_MS),
-  )
 }
 
 const handleCanvasSceneDelta: MessageHandler = (ctx, data) => {
@@ -275,29 +207,25 @@ const handleCanvasSceneDelta: MessageHandler = (ctx, data) => {
     return
   }
 
-  latestScene.set(canvasId, verdict.json)
-  const msg: CanvasSceneDelta = { type: 'canvas_scene_delta', canvasId, scene: verdict.json, peerId: peer.peerId }
-  ctx.conversations.broadcastToChannel('canvas', canvasId, msg)
-  const room = rooms.get(canvasId)?.size ?? 0
+  const room = applySceneWrite(ctx.conversations, canvasId, verdict.json, {
+    peerId: peer.peerId,
+    persist: 'debounced',
+  })
   ctx.log.info(
     `[canvas] delta OK ${canvasId.slice(0, 12)} peer=${peer.peerId.slice(0, 8)} ` +
       `bytes=${verdict.json.length} -> rebroadcast to room=${room} (${Math.max(0, room - 1)} other peer(s))`,
   )
-  schedulePersist(canvasId, verdict.json)
 }
 
 /** Socket-close cleanup: drop this ws from every canvas room it was in, flush no
  *  persist (the debounce already holds the latest), broadcast updated rosters. */
 export function leaveAllCanvasRooms(ws: ServerWebSocket<unknown>, store: ConversationStore): void {
-  for (const canvasId of [...rooms.keys()]) removePeer(store, ws, canvasId)
+  for (const canvasId of roomsFor()) dropPeer(store, ws, canvasId)
 }
 
 /** Test/lifecycle helper: clear all room + timer state. */
 export function _resetCanvasRooms(): void {
-  for (const t of persistTimers.values()) clearTimeout(t)
-  persistTimers.clear()
-  rooms.clear()
-  latestScene.clear()
+  resetCanvasRoomState()
   pointerLogged.clear()
 }
 

@@ -63,12 +63,15 @@ export function tagAnnotations(sceneJson: string, baseIds: Set<string>): string 
   return JSON.stringify(s)
 }
 
-/** Save a guest scene. Returns true on accept, false on tier rejection (403). */
-export async function savePublicCanvasScene(token: string, sceneJson: string): Promise<boolean> {
+/** Save a guest scene. Returns true on accept, false on tier rejection (403).
+ *  `peerId` names this guest's room peer so the broker's room broadcast comes
+ *  back stamped with our own id and we drop it instead of re-applying a stale
+ *  snapshot over our own in-flight strokes (see canvas-peer-id.ts). */
+export async function savePublicCanvasScene(token: string, sceneJson: string, peerId?: string): Promise<boolean> {
   const res = await fetch(`/shared/public/canvas/${encodeURIComponent(token)}/scene`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ scene: sceneJson }),
+    body: JSON.stringify({ scene: sceneJson, peerId }),
   })
   return res.ok
 }

@@ -9,6 +9,7 @@
 import type { CanvasShareTier, CanvasSummary } from '@shared/protocol'
 import { exportScenePng } from '@/components/dialog/draw-export'
 import { appendShareParam } from '@/lib/share-mode'
+import { getCanvasPeerId } from './canvas-peer-id'
 
 export interface LoadedCanvas {
   canvas: CanvasSummary
@@ -38,13 +39,21 @@ async function sceneThumbDataUrl(sceneJson: string): Promise<string | undefined>
   }
 }
 
-/** Persist a scene (with a fresh thumbnail). Returns true on success. */
+/**
+ * Persist a scene (with a fresh thumbnail). Returns true on success.
+ *
+ * `peerId` names US as the writer so the broker, which now publishes every
+ * scene write into the live room, stamps the broadcast with our own id -- which
+ * this tab then drops as an echo. Omit it and the write looks like an agent's:
+ * the broker sends it to everyone including us, and we re-apply a snapshot up
+ * to a debounce-interval old, wiping whatever was drawn since.
+ */
 export async function saveCanvasScene(canvasId: string, sceneJson: string): Promise<boolean> {
   const thumb = await sceneThumbDataUrl(sceneJson)
   const res = await fetch(`/api/canvases/${encodeURIComponent(canvasId)}/scene`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ scene: sceneJson, thumb }),
+    body: JSON.stringify({ scene: sceneJson, thumb, peerId: getCanvasPeerId(canvasId) }),
   })
   if (res.ok) window.dispatchEvent(new CustomEvent('rclaude-canvas-changed'))
   return res.ok

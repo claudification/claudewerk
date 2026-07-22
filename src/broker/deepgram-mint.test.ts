@@ -27,7 +27,8 @@ describe('mintDeepgramToken', () => {
   })
 
   it('hits the grant endpoint with the ttl in the body, clamped to 1..3600', async () => {
-    let seenUrl = '', seenBody: unknown = null
+    let seenUrl = '',
+      seenBody: unknown = null
     const fetcher = fakeFetch(200, { access_token: 't', expires_in: 3600 }, (u, init) => {
       seenUrl = u
       seenBody = JSON.parse(init.body as string)
@@ -40,13 +41,13 @@ describe('mintDeepgramToken', () => {
     expect(seenBody).toEqual({ ttl_seconds: 1 })
   })
 
-  it('defaults ttl to 60s when unspecified', async () => {
+  it('defaults ttl to 300s when unspecified', async () => {
     let seenBody: unknown = null
-    const fetcher = fakeFetch(200, { access_token: 't', expires_in: 60 }, (_u, init) => {
+    const fetcher = fakeFetch(200, { access_token: 't', expires_in: 300 }, (_u, init) => {
       seenBody = JSON.parse(init.body as string)
     })
     await mintDeepgramToken({ apiKey: 'k', fetcher })
-    expect(seenBody).toEqual({ ttl_seconds: 60 })
+    expect(seenBody).toEqual({ ttl_seconds: 300 })
   })
 
   it('throws without an api key (never calls out)', async () => {

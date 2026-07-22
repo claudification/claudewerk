@@ -12,7 +12,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import type { CaptureHandle } from '@/hooks/voice-capture-shared'
-import { type DeepgramDirectSession, fetchDeepgramToken, startDeepgramDirect } from '@/hooks/voice-deepgram-direct'
+import { startDeepgramDirect } from '@/hooks/voice-deepgram-direct'
+import type { DeepgramDirectSession, DirectFailure } from '@/hooks/voice-deepgram-protocol'
+import { getDeepgramToken } from '@/hooks/voice-deepgram-token'
 import { startMediaRecorderCapture } from '@/hooks/voice-mediarecorder-capture'
 import {
   acquireMicStream,
@@ -28,15 +30,10 @@ import { addVoiceHistoryEntry } from '@/lib/voice-history'
 // engine was deleted -- on a raw mic it regressed dictation with unbounded growing
 // ASR lag + mishearing, and there is no reason to keep a broken path reachable.
 
-// Re-export the warm-stream public API so existing consumers
-// (voice-key, settings-page, use-global-commands) keep importing from here.
-export {
-  dismissMicExpired,
-  getMicExpired,
-  invalidateWarmStream,
-  prewarmMicStream,
-  subscribeMicExpired,
-} from '@/hooks/voice-mic-stream'
+// Re-export the warm-stream public API so existing consumers (voice-key,
+// settings-page) keep importing from here. Warming is NOT here: it lives in
+// voice-prewarm, which warms the mic and the transport together.
+export { dismissMicExpired, getMicExpired, invalidateWarmStream, subscribeMicExpired } from '@/hooks/voice-mic-stream'
 
 type VoiceState = 'idle' | 'connecting' | 'recording' | 'recording-offline' | 'refining' | 'submitting' | 'error'
 
@@ -442,12 +439,20 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     setState('error')
   }
 
-  /** Backend guard: if voice_ready never lands, surface the failure honestly
-   *  even though the user is already in 'recording' state (instant feel). */
+  /** Backend guard: if the transcriber never comes up, surface the failure
+   *  honestly even though the user is already in 'recording' state (instant
+   *  feel). Audio is buffered meanwhile, so this is about honesty, not loss. */
   function armConnectTimeout() {
     connectTimerRef.current = setTimeout(() => {
       connectTimerRef.current = null
       if (backendReadyRef.current) return
+      if (directModeRef.current) {
+        failVoice(
+          'Voice service did not connect. Try again.',
+          `direct connect timeout after ${CONNECT_TIMEOUT_MS}ms -- deepgram socket never opened`,
+        )
+        return
+      }
       const leg = brokerAckedRef.current
         ? 'transcriber did not connect'
         : 'server never acknowledged (connection dropped?)'
@@ -560,31 +565,33 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     }
   }
 
-  /** Direct-to-Deepgram transport: mint a short-lived token, open the live WS
-   *  straight to Deepgram, and route its transcripts into the same interim/final
-   *  state the broker path uses. The broker never touches the audio. */
-  async function beginDirect(stream: MediaStream): Promise<void> {
-    let token: string
-    try {
-      token = (await fetchDeepgramToken()).accessToken
-    } catch (err) {
-      failVoice('Voice service unavailable', `deepgram token mint failed: ${err}`)
-      return
-    }
-    if (cancelledRef.current) {
-      console.log(`[voice] ${elapsed()} cancelled during token mint`)
-      scheduleStreamRelease()
-      return
-    }
+  /** User-facing wording per failing leg -- a mint failure is a service problem,
+   *  a dead socket is a connection problem, and they should not read alike. */
+  const DIRECT_FAILURE_TEXT: Record<DirectFailure, string> = {
+    token: 'Voice service unavailable',
+    socket: 'Lost connection to voice service',
+    buffer: 'Voice service did not connect',
+  }
+
+  /**
+   * Direct-to-Deepgram transport: capture starts NOW and the token mint + WS dial
+   * happen underneath, with audio buffered and flushed on open. Nothing the user
+   * says between press and connect is lost, and nothing waits on the mint.
+   * Transcripts route into the same interim/final state the broker path uses.
+   */
+  function beginDirect(stream: MediaStream, token: Promise<string>): void {
     directSessionRef.current = startDeepgramDirect({
       stream,
       token,
       model: 'nova-3',
       callbacks: {
-        onOpen: () => {
+        onOpen: flushed => {
+          clearConnectTimer()
           backendReadyRef.current = true
           setBackendReady(true)
-          console.log(`[voice] ${elapsed()} deepgram direct open`)
+          console.log(
+            `[voice] ${elapsed()} deepgram direct open (flushed ${flushed.chunks} pre-open chunks / ${flushed.bytes}B)`,
+          )
         },
         onTranscript: u => {
           if (stateRef.current === 'submitting' || stateRef.current === 'idle') return
@@ -596,12 +603,23 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
             setInterim(u.transcript)
           }
         },
-        onError: msg => failVoice('Voice error', `deepgram direct: ${msg}`),
+        onError: (msg, kind) => failVoice(DIRECT_FAILURE_TEXT[kind], `deepgram direct (${kind}): ${msg}`),
       },
     })
+    // Honest: the mic IS recording from this point, buffered until the socket is
+    // up. backendReady stays false until onOpen, so the warmup indicator is real.
     stateRef.current = 'recording'
     setState('recording')
-    console.log(`[voice] ${elapsed()} direct capture started -- recording`)
+    armConnectTimeout()
+    console.log(`[voice] ${elapsed()} direct capture started -- recording (socket dialing)`)
+
+    // Quick tap: the user already released while the mic was still being
+    // acquired. Nothing else consumes this on the direct path (voice_ready is a
+    // broker-path message), so honour it here or the recorder never stops.
+    if (pendingStopRef.current) {
+      pendingStopRef.current = false
+      stop()
+    }
   }
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: attachWsListener and stop are stable functions defined in this scope
@@ -642,6 +660,14 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
 
     if (!attachWsListener(seq)) return
 
+    // Mint IN PARALLEL with the mic acquire. It is usually already cached (see
+    // prewarmDeepgramToken), and even cold it now overlaps getUserMedia instead
+    // of running after it. The rejection is handled inside startDeepgramDirect;
+    // the throwaway catch here only stops an unhandled rejection if the mic
+    // fails first and we never hand the promise over.
+    const tokenPromise = directModeRef.current ? getDeepgramToken() : null
+    tokenPromise?.catch(() => {})
+
     try {
       const stream = await Promise.race([
         acquireMicStream(),
@@ -672,10 +698,11 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
       streamRef.current = stream
       watchTrackDeath(stream)
 
-      // Direct-to-Deepgram: mint a token, open the WS straight to Deepgram, and
-      // the broker never touches the audio. The broker path below is skipped.
-      if (directModeRef.current) {
-        await beginDirect(stream)
+      // Direct-to-Deepgram: start capturing immediately and let the token + WS
+      // come up underneath. The broker never touches the audio; the broker path
+      // below is skipped.
+      if (tokenPromise) {
+        beginDirect(stream, tokenPromise)
         return
       }
 

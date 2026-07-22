@@ -24,7 +24,7 @@ import { cycleVoiceOrbTone } from '@/components/voice-orb/voice-orb-tone'
 import { fetchTranscript, sendInput, useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import { openNightshiftModal } from '@/hooks/use-nightshift-modal'
 import { useShellsStore } from '@/hooks/use-shells'
-import { prewarmMicStream } from '@/hooks/use-voice-recording'
+import { prewarmVoice } from '@/hooks/voice-prewarm'
 import { formatShortcut, useChordCommand, useCommand, validateChordBindings } from '@/lib/commands'
 import { canRespawnStaleDaemon } from '@/lib/daemon-control'
 import { focusInputEditor } from '@/lib/focus-input'
@@ -530,7 +530,7 @@ export function useGlobalCommands(toggleSidebar: () => void) {
       const next = !store.controlPanelPrefs.keepMicOpen
       store.updateControlPanelPrefs({ keepMicOpen: next })
       if (next) {
-        prewarmMicStream()
+        prewarmVoice()
       }
     },
     { label: keepMicOpen ? 'Keep mic open: ON (disable)' : 'Keep mic open: OFF (enable)', group: 'Voice' },

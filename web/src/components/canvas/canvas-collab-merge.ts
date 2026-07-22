@@ -48,6 +48,21 @@ export function parseSceneElements(sceneJson: unknown): readonly unknown[] | nul
   }
 }
 
+/** Parse the image `files` (BinaryFileData values) out of a scene-delta payload.
+ *  Excalidraw keeps image bytes in a `files` map applied via addFiles(), SEPARATE
+ *  from elements/updateScene. A remote peer that applies the element but not the
+ *  file renders a missing-image placeholder that then gets pruned + echoed back --
+ *  the image blinks in and out. Returns [] on absence/malformed (never throws). */
+export function parseSceneFiles(sceneJson: unknown): unknown[] {
+  if (typeof sceneJson !== 'string') return []
+  try {
+    const scene = JSON.parse(sceneJson) as { files?: Record<string, unknown> }
+    return scene.files ? Object.values(scene.files) : []
+  } catch {
+    return []
+  }
+}
+
 /** Drop collaborators no longer in the presence roster (mutates the map). */
 export function prunePeers(collaborators: Map<string, RemoteCollaborator>, roster: CanvasPeer[]): void {
   for (const id of [...collaborators.keys()]) {

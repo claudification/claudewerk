@@ -9,12 +9,22 @@
 import type { CanvasPeer } from '@shared/protocol'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { wsSend } from '@/hooks/use-conversations'
-import { parseSceneElements, peerToApply, prunePeers, type RemoteCollaborator } from './canvas-collab-merge'
+import {
+  parseSceneElements,
+  parseSceneFiles,
+  peerToApply,
+  prunePeers,
+  type RemoteCollaborator,
+} from './canvas-collab-merge'
+import { clearCanvasPeerId, setCanvasPeerId } from './canvas-peer-id'
 import { useCanvasRoom } from './use-canvas-room'
 
 /** Minimal slice of the Excalidraw imperative API the collab layer drives. */
 export interface CollabApi {
   updateScene(scene: { elements?: readonly unknown[]; collaborators?: Map<string, unknown> }): void
+  /** Register image bytes (BinaryFileData). Present on the real Excalidraw API;
+   *  optional so the Draw-block stub can omit it. */
+  addFiles?(files: readonly unknown[]): void
 }
 
 /** A remote apply within this window suppresses the resulting local onChange. */
@@ -72,12 +82,24 @@ export function useCanvasCollab(canvasId: string | null, enabled: boolean, name?
     const elements = parseSceneElements(msg.scene)
     if (!elements) return // malformed -- keep current scene
     suppressUntil.current = Date.now() + ECHO_SUPPRESS_MS
+    // Files BEFORE elements: an image element applied before its bytes exist renders
+    // a broken placeholder that Excalidraw prunes and echoes back -> the image
+    // blinks. addFiles is idempotent, so re-sending known files is harmless.
+    const files = parseSceneFiles(msg.scene)
+    if (files.length) api.current?.addFiles?.(files)
     api.current?.updateScene({ elements })
   }, [])
 
-  const applyJoinAck = useCallback((msg: Record<string, unknown>) => {
-    ownPeerId.current = msg.peerId as string
-  }, [])
+  const applyJoinAck = useCallback(
+    (msg: Record<string, unknown>) => {
+      const peerId = msg.peerId as string
+      ownPeerId.current = peerId
+      // Publish it for the autosave PUT, which must name this peer or the broker
+      // broadcasts our own save back to us as an agent write (see canvas-peer-id).
+      if (canvasId && peerId) setCanvasPeerId(canvasId, peerId)
+    },
+    [canvasId],
+  )
 
   // Inbound canvas_* -> handler map (stable; the room hook depends on its identity).
   const handlers = useMemo(
@@ -93,8 +115,9 @@ export function useCanvasCollab(canvasId: string | null, enabled: boolean, name?
   const resetRoom = useCallback(() => {
     collaborators.current.clear()
     ownPeerId.current = null
+    if (canvasId) clearCanvasPeerId(canvasId)
     setPeers([])
-  }, [])
+  }, [canvasId])
 
   // Join/leave lifecycle (waits for a live socket, re-joins on reconnect). See
   // use-canvas-room.ts -- the socket-open gating THERE is the multiplayer fix.
