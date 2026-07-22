@@ -26,7 +26,7 @@
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { Glob } from 'bun'
+import { scanSourceFiles } from './lib/source-files'
 
 const ROOT = join(import.meta.dir, '..')
 const PROTOCOL = 'src/shared/protocol.ts'
@@ -72,11 +72,9 @@ function collectMessages(source: string): WireMessage[] {
 
 function readDir(dir: string): string[] {
   const abs = join(ROOT, dir)
-  const glob = new Glob('**/*.{ts,tsx}')
   const out: string[] = []
-  for (const rel of glob.scanSync({ cwd: abs, absolute: false })) {
-    const path = join(dir, rel)
-    if (path === PROTOCOL || path.includes('node_modules')) continue
+  for (const rel of scanSourceFiles(abs, '**/*.{ts,tsx}')) {
+    if (join(dir, rel) === PROTOCOL) continue
     out.push(readFileSync(join(abs, rel), 'utf8'))
   }
   return out

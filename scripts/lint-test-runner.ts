@@ -20,7 +20,7 @@
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { Glob } from 'bun'
+import { scanSourceFiles } from './lib/source-files'
 
 const ROOT = join(import.meta.dir, '..')
 
@@ -54,10 +54,8 @@ function bannedImportLine(source: string, banned: string): number {
 
 function scanRule(rule: Rule): Violation[] {
   const abs = join(ROOT, rule.dir)
-  const glob = new Glob('**/*.{test,spec}.{ts,tsx}')
   const found: Violation[] = []
-  for (const rel of glob.scanSync({ cwd: abs, absolute: false })) {
-    if (rel.includes('node_modules')) continue
+  for (const rel of scanSourceFiles(abs, '**/*.{test,spec}.{ts,tsx}')) {
     const line = bannedImportLine(readFileSync(join(abs, rel), 'utf8'), rule.banned)
     if (line > 0) found.push({ file: join(rule.dir, rel), line, banned: rule.banned, runner: rule.runner })
   }
