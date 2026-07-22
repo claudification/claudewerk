@@ -122,10 +122,50 @@ filesystem for rsync, rclone, or any off-site replication.
 
 ```bash
 # Add to crontab (host machine, not inside container)
-0 * * * * /path/to/scripts/backup-cron.sh >> /var/log/broker-backup.log 2>&1
+0 * * * * /path/to/scripts/backup-cron.sh
 ```
 
-Override the container name with `BROKER_CONTAINER=my-broker` if needed.
+The script self-logs to `~/Library/Logs/claudewerk/backup.log` (override with
+`CLAUDEWERK_LOG_DIR`), so a crontab redirect is optional. It resolves `docker`
+robustly regardless of cron's minimal PATH -- the 2026-06 incident: cron could
+not find `docker` (it lives in `/usr/local/bin`, off cron's PATH) and every run
+died for a month, the failure masked as "container not running" and logged only
+to `/tmp` (wiped on reboot). Override `BROKER_CONTAINER` / `DOCKER_BIN` if needed.
+
+## Monitoring (staleness + disk watchdog)
+
+`scripts/backup-monitor.sh` is a **docker-free** watchdog -- it reads the real
+backup archives on the host bind-mount and the host filesystem directly, so it
+still reports correctly when the broker (or docker itself) is down, which is
+exactly when backups tend to stop.
+
+```bash
+# 30 min after the backup, so it reads a settled state
+30 * * * * /path/to/scripts/backup-monitor.sh
+```
+
+It writes a machine-readable health file and a human log (no push channel by
+design -- grep/tail them, or wire an alert onto the non-zero exit):
+
+- `~/Library/Logs/claudewerk/backup-health.json` -- `overall`, `backup_status`
+  (`OK`/`STALE`/`MISSING`), newest archive + age, `disk_status`, `disk_used_pct`.
+- `~/Library/Logs/claudewerk/backup-monitor.log` -- one line per run.
+
+Thresholds via env: `STALE_HOURS` (default 3), `DISK_WARN_PCT` (default 90),
+`BACKUP_DIR` (default repo `./backups`). Exit is non-zero on any ATTENTION state.
+
+## Disk hygiene
+
+Two things keep the broker from filling the disk:
+
+- **Deploy prune.** `scripts/docker-build-broker.sh` prunes old
+  `remote-claude-broker:<sha>` image tags after each build (keep `:latest` +
+  `KEEP_IMAGES` newest, default 5) then sweeps dangling layers. Without this,
+  every deploy left a ~2GB image behind -- they had reached 271GB reclaimable.
+- **Temp sweep.** `createBackup` removes any orphaned `_tmp_backup_*` working
+  dir at the start of each run. A backup OOM-killed mid-VACUUM leaks its temp
+  (a full uncompressed db snapshot; one leak was 9.2GB) because SIGKILL bypasses
+  the cleanup -- the sweep reclaims it on the next run.
 
 ## Sizing
 
