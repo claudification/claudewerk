@@ -210,6 +210,23 @@ export function createChannelRegistry(deps: ChannelRegistryDeps): ChannelRegistr
           const sent_ = ws.send(json)
           if (sent_ < 0) {
             const subInfo = subscriberRegistry.get(ws)
+            // The `canvas` channel carries ONLY ephemeral, self-healing broadcasts
+            // (presence, cursors/laser, LWW scene deltas). Tearing down the whole
+            // multiplexed dashboard socket over one backpressured 100-200 byte
+            // message would kill every OTHER subscription on it, and -- because the
+            // client auto-reconnects and re-joins the room -- immediately trigger
+            // the same backpressure again: a tight close/reconnect storm (observed
+            // live, code 4290 every ~second). So for canvas we DROP this message and
+            // keep the socket; the next presence/cursor arrives in ~50ms and scene
+            // deltas are re-sent on the next edit. Durable channels
+            // (conversation:transcript/events/...) still close-to-resync below,
+            // because for them a dropped message is missing data, not a stale cursor.
+            if (channel === 'canvas') {
+              console.warn(
+                `[broadcast] backpressure: ${subInfo?.id || 'unknown'} channel=${channel}:${conversationId.slice(0, 8)} bytes=${bytes} -- DROPPED (ephemeral; socket kept)`,
+              )
+              continue
+            }
             console.warn(
               `[broadcast] backpressure: ${subInfo?.id || 'unknown'} channel=${channel}:${conversationId.slice(0, 8)} bytes=${bytes} -- closing to force reconnect`,
             )
