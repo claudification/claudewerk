@@ -69,10 +69,10 @@ export function processHookEvent(ctx: AgentHostContext, event: HookEvent): HookD
       // boot / rekey / confirm and performs the right broker action.
       // Safe to call redundantly -- stream-json onInit calls it too; whoever
       // fires first does the work.
-      const transition = observeClaudeSessionId(ctx, newSessionId, 'hook', newModel)
-      const sessionChanged = transition.kind === 'rekey' || transition.kind === 'boot'
+      observeClaudeSessionId(ctx, newSessionId, 'hook', newModel)
 
-      // Start/restart transcript watcher if path is available and session changed
+      // Start/re-point the transcript watcher when the path is available. The
+      // decision keys on the FILE, not on the session transition -- see below.
       if (data.transcript_path && typeof data.transcript_path === 'string') {
         const transcriptPath = data.transcript_path
         ctx.parentTranscriptPath = transcriptPath
@@ -91,17 +91,24 @@ export function processHookEvent(ctx: AgentHostContext, event: HookEvent): HookD
           let attempt = 0
           while (elapsed < maxTotal) {
             if (existsSync(path)) {
-              if (sessionChanged || !ctx.transcriptWatcher) {
-                if (ctx.transcriptWatcher) {
-                  debug('Stopping old transcript watcher (session changed)')
-                  ctx.transcriptWatcher.stop()
-                  ctx.transcriptWatcher = null
-                }
-                debug(`Starting transcript watcher: ${path}`)
-                startTranscriptWatcherFn(ctx, path)
-              } else {
-                debug('Transcript watcher already running for correct session')
+              // Restart only when the FILE actually changed (/clear and
+              // compaction mint a new JSONL), never merely because the session
+              // id did. A same-file restart is pointless for PTY and harmful in
+              // headless: the fresh watcher seeks to end again, so anything
+              // appended between stop() and the new seek is lost. `boot` fires
+              // here right after onInit already started the watcher on this
+              // very path, so that redundant restart was the common case.
+              if (ctx.transcriptWatcher && ctx.transcriptWatcher.getPath() === path) {
+                debug(`Transcript watcher already running for this file: ${path}`)
+                return
               }
+              if (ctx.transcriptWatcher) {
+                debug(`Stopping old transcript watcher (file changed: ${ctx.transcriptWatcher.getPath()} -> ${path})`)
+                ctx.transcriptWatcher.stop()
+                ctx.transcriptWatcher = null
+              }
+              debug(`Starting transcript watcher: ${path}`)
+              startTranscriptWatcherFn(ctx, path)
               return
             }
             attempt++
