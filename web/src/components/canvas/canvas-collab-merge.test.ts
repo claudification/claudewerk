@@ -13,13 +13,31 @@ type Peer = { peerId: string; name: string; color: string }
 describe('pointerCollaborator', () => {
   it('maps a full pointer message', () => {
     const c = pointerCollaborator({ peerId: 'p', name: 'Ada', color: '#abc', x: 3, y: 4 })
-    expect(c).toEqual({ username: 'Ada', color: { background: '#abc', stroke: '#1e293b' }, pointer: { x: 3, y: 4 } })
+    expect(c).toEqual({
+      username: 'Ada',
+      color: { background: '#abc', stroke: '#1e293b' },
+      pointer: { x: 3, y: 4, tool: 'pointer' },
+      button: 'up',
+    })
   })
   it('applies defaults for missing fields', () => {
     const c = pointerCollaborator({})
     expect(c.username).toBe('guest')
     expect(c.color.background).toBe('#888')
-    expect(c.pointer).toEqual({ x: 0, y: 0 })
+    expect(c.pointer).toEqual({ x: 0, y: 0, tool: 'pointer' })
+    expect(c.button).toBe('up')
+  })
+  it('carries laser tool + down button so Excalidraw draws the remote trail', () => {
+    // The whole point: without tool==='laser' AND button==='down' reaching the
+    // collaborators map, no laser trail is ever drawn for the peer.
+    const c = pointerCollaborator({ name: 'Bo', x: 1, y: 2, tool: 'laser', button: 'down' })
+    expect(c.pointer).toEqual({ x: 1, y: 2, tool: 'laser' })
+    expect(c.button).toBe('down')
+  })
+  it('narrows unknown tool/button values to safe defaults', () => {
+    const c = pointerCollaborator({ tool: 'wat', button: 'sideways' })
+    expect(c.pointer?.tool).toBe('pointer')
+    expect(c.button).toBe('up')
   })
 })
 

@@ -4582,6 +4582,12 @@ export interface CanvasPointer {
   canvasId: string
   x: number
   y: number
+  /** Which pointer this is. 'laser' + button 'down' is what makes Excalidraw draw
+   *  a fading laser trail for the remote collaborator (else it's a plain cursor). */
+  tool?: 'pointer' | 'laser'
+  /** Mouse button state. Excalidraw's laser trail only starts/continues while a
+   *  collaborator's button is 'down', so it must ride the wire alongside tool. */
+  button?: 'up' | 'down'
   /** Set by the broker on rebroadcast (absent on the inbound client message). */
   peerId?: string
   name?: string

@@ -112,7 +112,38 @@ test('two peers see a 2-roster; pointer rebroadcasts with peer identity', () => 
   store.broadcasts.length = 0
   canvasSyncHandlers.canvas_pointer(makeCtx(store, fakeWs('conn_a')).ctx, { canvasId, x: 5, y: 9 })
   const ptr = store.broadcasts.find(b2 => b2.msg.type === 'canvas_pointer')
-  expect(ptr?.msg).toMatchObject({ peerId: 'conn_a', name: 'Alice', x: 5, y: 9 })
+  // Plain move: defaults keep it a cursor, never an accidental laser.
+  expect(ptr?.msg).toMatchObject({ peerId: 'conn_a', name: 'Alice', x: 5, y: 9, tool: 'pointer', button: 'up' })
+})
+
+test('laser pointer rebroadcasts tool + button so peers can draw the trail', () => {
+  const store: MockStore = { subscribed: [], unsubscribed: [], broadcasts: [] }
+  joinPeer(store, 'conn_a', 'Alice')
+  store.broadcasts.length = 0
+  canvasSyncHandlers.canvas_pointer(makeCtx(store, fakeWs('conn_a')).ctx, {
+    canvasId,
+    x: 5,
+    y: 9,
+    tool: 'laser',
+    button: 'down',
+  })
+  const ptr = store.broadcasts.find(b2 => b2.msg.type === 'canvas_pointer')
+  expect(ptr?.msg).toMatchObject({ tool: 'laser', button: 'down' })
+})
+
+test('a bogus tool/button is narrowed to safe defaults on rebroadcast', () => {
+  const store: MockStore = { subscribed: [], unsubscribed: [], broadcasts: [] }
+  joinPeer(store, 'conn_a', 'Alice')
+  store.broadcasts.length = 0
+  canvasSyncHandlers.canvas_pointer(makeCtx(store, fakeWs('conn_a')).ctx, {
+    canvasId,
+    x: 0,
+    y: 0,
+    tool: 'evil',
+    button: 'sideways',
+  })
+  const ptr = store.broadcasts.find(b2 => b2.msg.type === 'canvas_pointer')
+  expect(ptr?.msg).toMatchObject({ tool: 'pointer', button: 'up' })
 })
 
 test('pointer from a non-member is ignored', () => {

@@ -23,7 +23,7 @@ const ECHO_SUPPRESS_MS = 300
 export interface CanvasCollab {
   peers: CanvasPeer[]
   bindApi: (api: CollabApi | null) => void
-  onLocalPointer: (x: number, y: number) => void
+  onLocalPointer: (x: number, y: number, tool?: 'pointer' | 'laser', button?: 'up' | 'down') => void
   onLocalChange: (sceneJson: string) => void
 }
 
@@ -97,8 +97,8 @@ export function useCanvasCollab(canvasId: string | null, enabled: boolean, name?
   }, [])
 
   const onLocalPointer = useCallback(
-    (x: number, y: number) => {
-      if (canvasId) wsSend('canvas_pointer', { canvasId, x, y })
+    (x: number, y: number, tool?: 'pointer' | 'laser', button?: 'up' | 'down') => {
+      if (canvasId) wsSend('canvas_pointer', { canvasId, x, y, tool, button })
     },
     [canvasId],
   )

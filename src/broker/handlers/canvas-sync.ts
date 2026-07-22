@@ -176,6 +176,9 @@ const handleCanvasPointer: MessageHandler = (ctx, data) => {
   const peer = memberPeer(ctx.ws, canvasId)
   if (!peer) return
   // Rebroadcast to the whole room (incl. sender); clients drop their own peerId.
+  // tool/button ride along so peers can render a laser trail (Excalidraw draws it
+  // only for tool 'laser' while button is 'down'); both are narrowed to their
+  // enums so a client cannot smuggle arbitrary values into the collaborators map.
   const msg: CanvasPointer = {
     type: 'canvas_pointer',
     canvasId,
@@ -184,6 +187,8 @@ const handleCanvasPointer: MessageHandler = (ctx, data) => {
     color: peer.color,
     x: Number(data.x) || 0,
     y: Number(data.y) || 0,
+    tool: data.tool === 'laser' ? 'laser' : 'pointer',
+    button: data.button === 'down' ? 'down' : 'up',
   }
   ctx.conversations.broadcastToChannel('canvas', canvasId, msg)
 }

@@ -6,11 +6,14 @@
 
 import type { CanvasPeer } from '@shared/protocol'
 
-/** Excalidraw collaborator shape (the slice we populate for remote cursors). */
+/** Excalidraw collaborator shape (the slice we populate for remote cursors).
+ *  pointer.tool + button are what Excalidraw keys the remote LASER trail off:
+ *  it only draws (and continues) a trail while tool==='laser' and button==='down'. */
 export interface RemoteCollaborator {
   username: string
   color: { background: string; stroke: string }
-  pointer?: { x: number; y: number }
+  pointer?: { x: number; y: number; tool: 'pointer' | 'laser' }
+  button?: 'up' | 'down'
 }
 
 /** Build a collaborator entry from a canvas_pointer message (with defaults). */
@@ -18,7 +21,8 @@ export function pointerCollaborator(msg: Record<string, unknown>): RemoteCollabo
   return {
     username: (msg.name as string) || 'guest',
     color: { background: (msg.color as string) || '#888', stroke: '#1e293b' },
-    pointer: { x: Number(msg.x) || 0, y: Number(msg.y) || 0 },
+    pointer: { x: Number(msg.x) || 0, y: Number(msg.y) || 0, tool: msg.tool === 'laser' ? 'laser' : 'pointer' },
+    button: msg.button === 'down' ? 'down' : 'up',
   }
 }
 

@@ -62,8 +62,10 @@ export interface CanvasCollabBinding {
   bindApi: (
     api: { updateScene(scene: { elements?: readonly unknown[]; collaborators?: Map<string, unknown> }): void } | null,
   ) => void
-  /** Local cursor moved (scene coords). */
-  onPointer: (x: number, y: number) => void
+  /** Local cursor moved (scene coords). tool + button ride along so a remote
+   *  Excalidraw can draw this peer's laser trail (needs tool 'laser' + button
+   *  'down'); both default sensibly when omitted (plain cursor). */
+  onPointer: (x: number, y: number, tool?: 'pointer' | 'laser', button?: 'up' | 'down') => void
   /** Local scene changed -- serialized JSON. */
   onChange: (json: string) => void
 }
@@ -117,15 +119,21 @@ export default function ExcalidrawCanvas({ initialSnapshot, readOnly, onSnapshot
     [readOnly, onSnapshot, collab],
   )
 
-  // Throttle cursor broadcasts -- onPointerUpdate fires on every mouse move.
+  // Throttle cursor broadcasts -- onPointerUpdate fires on every mouse move. The
+  // button EDGE (press/release) always flushes, throttle or not: Excalidraw only
+  // starts a peer's laser trail on the 'down' frame and ends it on 'up', so a
+  // dropped edge means a laser stroke that never draws or never stops.
   const lastPointerAt = useRef(0)
+  const lastButton = useRef<'up' | 'down'>('up')
   const handlePointer = useCallback<NonNullable<ExcalidrawProps['onPointerUpdate']>>(
     payload => {
       if (!collab) return
       const now = performance.now()
-      if (now - lastPointerAt.current < 50) return
+      const edge = payload.button !== lastButton.current
+      if (!edge && now - lastPointerAt.current < 50) return
       lastPointerAt.current = now
-      collab.onPointer(payload.pointer.x, payload.pointer.y)
+      lastButton.current = payload.button
+      collab.onPointer(payload.pointer.x, payload.pointer.y, payload.pointer.tool, payload.button)
     },
     [collab],
   )

@@ -8,6 +8,7 @@
 
 import type { CanvasPeer } from '@shared/protocol'
 import ExcalidrawCanvas, { type CanvasCollabBinding } from '@/components/dialog/excalidraw-canvas'
+import { useWebSocket } from '@/hooks/use-websocket'
 import { PresenceDots } from './canvas-presence-dots'
 import { useCanvasCollab } from './use-canvas-collab'
 import { useGuestName } from './use-guest-name'
@@ -70,6 +71,12 @@ function ViewerHeader({
 
 // fallow-ignore-next-line complexity -- loading/missing/ready three-state view, irreducible.
 export function PublicCanvasView({ token }: { token: string }) {
+  // App routes here BEFORE any other useWebSocket() (Dashboard/PopoutShell), so
+  // the share socket is opened here or not at all. buildWsUrl() appends
+  // ?share=<token>, which the broker upgrades into a canvas-scoped guest socket
+  // (shareCanvasId/tier) -- the thing the live room join, cursors, and scene
+  // deltas all ride. Without it the "changes save live" promise is a lie.
+  useWebSocket()
   const { doc, seed, state, saveState, onSnapshot } = usePublicCanvas(token)
   const { name: guestName, rename } = useGuestName()
   // Guests join the SAME room members do -- the share-mode socket already carries
