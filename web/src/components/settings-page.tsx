@@ -1242,11 +1242,11 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         (isFiltering
           ? 'virtualizer lab experiments transcript scroll follow pin jumpy'.includes(lowerFilter)
           : activeTab === 'experiments') && (
-        <div>
-          <GroupHeader label="Virtualizer Lab" />
-          <VirtualizerLabSection />
-        </div>
-      )}
+          <div>
+            <GroupHeader label="Virtualizer Lab" />
+            <VirtualizerLabSection />
+          </div>
+        )}
 
       {/* Version -- pinned to System tab */}
       {(isFiltering ? 'version build commit'.includes(lowerFilter) : activeTab === 'system') && (
