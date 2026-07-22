@@ -11,32 +11,12 @@
  */
 
 import { VOICE_ORB_VOICES } from '@shared/voice-orb-options'
+import { TONE_LABEL, VOICE_LABEL } from '@/components/voice-orb/orb-menu-model'
 import { MAX_ORB_SPEED, MIN_ORB_SPEED, VOICE_ORB_TONES } from '@/components/voice-orb/voice-orb-tone'
 
 interface RowContext {
   prefs: { voiceOrbTone: string; voiceOrbSpeed: number; voiceOrbVoice: string }
   updatePrefs: (patch: Record<string, unknown>) => void
-}
-
-/** Every one of these was verified to mint against the live API. */
-const VOICE_BLURB: Record<string, string> = {
-  marin: 'marin -- the default',
-  cedar: 'cedar -- warm, low',
-  alloy: 'alloy -- neutral',
-  ash: 'ash -- dry, gravelly',
-  ballad: 'ballad -- lilting',
-  coral: 'coral -- bright',
-  echo: 'echo -- flat, clipped',
-  sage: 'sage -- calm',
-  shimmer: 'shimmer -- airy',
-  verse: 'verse -- theatrical',
-}
-
-const TONE_LABEL: Record<string, string> = {
-  professional: 'Professional -- attitude off',
-  snarky: 'Snarky -- the default',
-  homicidal: 'Homicidal -- calmly menacing',
-  overkill: 'Overkill -- operatic, swears',
 }
 
 export function VoiceOrbToneRow({ ctx, ariaLabel }: { ctx: RowContext; ariaLabel: string }) {
@@ -66,7 +46,7 @@ export function VoiceOrbVoiceRow({ ctx, ariaLabel }: { ctx: RowContext; ariaLabe
     >
       {VOICE_ORB_VOICES.map(v => (
         <option key={v} value={v}>
-          {VOICE_BLURB[v] ?? v}
+          {VOICE_LABEL[v] ?? v}
         </option>
       ))}
     </select>

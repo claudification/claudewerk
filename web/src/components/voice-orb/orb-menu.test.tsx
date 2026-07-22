@@ -63,6 +63,9 @@ describe('the orb menu opens on right-click, NOT on click', () => {
     // The rate is reachable from the orb itself, not only from Settings.
     expect(screen.getByText('Speaking rate')).toBeTruthy()
     expect(screen.getByText('1.5x')).toBeTruthy()
+    // ...and so are the voice and tone dials, each a one-tap-deep submenu.
+    expect(screen.getByText('Voice')).toBeTruthy()
+    expect(screen.getByText('Tone')).toBeTruthy()
   })
 
   it('runs the action it was asked for', () => {

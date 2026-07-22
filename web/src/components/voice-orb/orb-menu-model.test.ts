@@ -1,5 +1,6 @@
+import { VOICE_ORB_TONES, VOICE_ORB_VOICES } from '@shared/voice-orb-options'
 import { describe, expect, it } from 'vitest'
-import { nearestSpeedStep, ORB_SPEED_STEPS, speedLabel } from './orb-menu-model'
+import { nearestSpeedStep, ORB_SPEED_STEPS, speedLabel, TONE_LABEL, VOICE_LABEL } from './orb-menu-model'
 
 describe('the orb menu speed steps', () => {
   it('labels a rate the way the slider does', () => {
@@ -25,6 +26,20 @@ describe('the orb menu speed steps', () => {
     for (const step of ORB_SPEED_STEPS) {
       expect(step).toBeGreaterThanOrEqual(0.25)
       expect(step).toBeLessThanOrEqual(1.5)
+    }
+  })
+})
+
+describe('the voice + tone labels', () => {
+  it('has a label for every voice the API accepts -- no bare id ever shown', () => {
+    for (const voice of VOICE_ORB_VOICES) {
+      expect(VOICE_LABEL[voice], `voice ${voice} has no label`).toBeTruthy()
+    }
+  })
+
+  it('has a label for every tone', () => {
+    for (const tone of VOICE_ORB_TONES) {
+      expect(TONE_LABEL[tone], `tone ${tone} has no label`).toBeTruthy()
     }
   })
 })
