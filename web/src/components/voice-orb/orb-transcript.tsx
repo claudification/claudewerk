@@ -14,7 +14,7 @@
  */
 
 import { X } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { ChatComposer, usePinToBottom } from '@/components/chat-bits/chat-bits'
 import { cn, haptic } from '@/lib/utils'
 import type { SpokenLine } from '@/lib/voice-orb/caption-fold'
 import { type OrbMenuActions, OrbMenuButton } from './orb-menu'
@@ -37,31 +37,7 @@ function speaker(role: SpokenLine['role']): string {
 }
 
 export function OrbTranscript({ lines, onSend, onClose, menuActions, live }: OrbTranscriptProps) {
-  const [draft, setDraft] = useState('')
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLTextAreaElement>(null)
-
-  // Pin to the newest line. Depends on the LENGTH and the tail text so a
-  // streaming agent turn (which rewrites the last entry in place) still scrolls.
-  const tail = lines.at(-1)?.text ?? ''
-  // biome-ignore lint/correctness/useExhaustiveDependencies: length + tail ARE the change signal; depending on `lines` re-runs on every identity change for no extra coverage
-  useEffect(() => {
-    const el = scrollRef.current
-    if (el) el.scrollTop = el.scrollHeight
-  }, [lines.length, tail])
-
-  // Opening it is a request to type -- land the caret in the box.
-  useEffect(() => {
-    inputRef.current?.focus()
-  }, [])
-
-  function send() {
-    const text = draft.trim()
-    if (!text || !live) return
-    haptic('tap')
-    onSend(text)
-    setDraft('')
-  }
+  const scrollRef = usePinToBottom(lines)
 
   return (
     <section
@@ -104,22 +80,11 @@ export function OrbTranscript({ lines, onSend, onClose, menuActions, live }: Orb
       </div>
 
       <div className="border-t border-border p-2">
-        <textarea
-          ref={inputRef}
-          rows={2}
-          value={draft}
+        <ChatComposer
+          onSend={onSend}
           disabled={!live}
-          onChange={e => setDraft(e.target.value)}
-          // Enter sends because this is a chat box; Shift+Enter is the newline,
-          // and a paste of several lines stays one message either way.
-          onKeyDown={e => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              send()
-            }
-          }}
+          autoFocus
           placeholder={live ? 'Type or paste, Enter to send' : 'The orb is not listening'}
-          className="w-full resize-none rounded border border-border bg-background px-2 py-1 font-mono text-[11px] placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-primary"
         />
       </div>
     </section>

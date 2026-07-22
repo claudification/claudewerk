@@ -25,7 +25,14 @@ vi.mock('@/components/dialog/excalidraw-canvas', () => ({ default: () => null })
 // useWebSocket() call, which sits at the very top of the component body).
 vi.mock('./use-canvas-document', () => ({
   canvasIdFromPath: () => 'cnv_test',
-  useCanvasDocument: () => ({ canvas: null, seed: null, state: 'missing', saveStore: {}, onSnapshot: () => {}, onRename: () => {} }),
+  useCanvasDocument: () => ({
+    canvas: null,
+    seed: null,
+    state: 'missing',
+    saveStore: {},
+    onSnapshot: () => {},
+    onRename: () => {},
+  }),
 }))
 vi.mock('./use-public-canvas', () => ({
   usePublicCanvas: () => ({ doc: null, seed: null, state: 'missing', saveState: 'idle', onSnapshot: () => {} }),

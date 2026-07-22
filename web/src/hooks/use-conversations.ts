@@ -454,6 +454,9 @@ interface ConversationsState {
   checklistHandler: ((msg: Record<string, unknown>) => void) | null
   /** Canvas live-multiplayer messages (canvas_*), dispatched by canvasId. */
   canvasHandler: ((msg: Record<string, unknown>) => void) | null
+  /** Canvas CHAT messages, dispatched by canvasId. Separate slot from
+   *  canvasHandler so the chat panel's lifecycle cannot disturb the room's. */
+  canvasChatHandler: ((msg: Record<string, unknown>) => void) | null
   nightshiftHandler: ((msg: Record<string, unknown>) => void) | null
   nightshiftWatchdogHandler: ((msg: Record<string, unknown>) => void) | null
   sendWsMessage: (msg: Record<string, unknown>) => void
@@ -947,6 +950,7 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   projectHandler: null,
   checklistHandler: null,
   canvasHandler: null,
+  canvasChatHandler: null,
   nightshiftHandler: null,
   nightshiftWatchdogHandler: null,
   showTerminal: false,

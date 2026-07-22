@@ -5,6 +5,7 @@
     "bun:test",
     "@codemirror/theme-one-dark",
     "@ast-grep/cli",
+    "@shared/canvas-selection",
     "@shared/project-order-types",
     "@shared/project-uri",
     "@shared/protocol"

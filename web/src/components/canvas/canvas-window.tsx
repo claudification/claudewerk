@@ -10,11 +10,14 @@
  */
 
 import type { CanvasSummary } from '@shared/protocol'
-import { type ReactNode, useMemo } from 'react'
+import { type ReactNode, useCallback, useMemo } from 'react'
 import ExcalidrawCanvas, { type CanvasCollabBinding } from '@/components/dialog/excalidraw-canvas'
 import { useWebSocket } from '@/hooks/use-websocket'
-import { CanvasIsland } from './canvas-island'
+import { CanvasChatPanel } from './canvas-chat-panel'
 import { makeCanvasFileTransport } from './canvas-file-transport'
+import { CanvasIsland } from './canvas-island'
+import { type SelectionSource, setSelectionSource } from './canvas-selection-source'
+import { useCanvasChat } from './use-canvas-chat'
 import { useCanvasCollab } from './use-canvas-collab'
 import { canvasIdFromPath, type DocState, useCanvasDocument } from './use-canvas-document'
 
@@ -77,7 +80,18 @@ function CanvasSurface({ canvasId }: { canvasId: string | null }) {
     undefined,
     files?.fetch,
   )
-  const collab: CanvasCollabBinding = { bindApi, onPointer: onLocalPointer, onChange: onLocalChange }
+  // The chat needs the SELECTION, which is not collab state (per-viewer, never
+  // broadcast), so it is captured through its own registry rather than widening
+  // CollabApi. Both bindings hang off the same api instance.
+  const bindBoth = useCallback(
+    (api: Parameters<typeof bindApi>[0]) => {
+      bindApi(api)
+      if (canvasId) setSelectionSource(canvasId, (api as SelectionSource | null) ?? null)
+    },
+    [bindApi, canvasId],
+  )
+  const collab: CanvasCollabBinding = { bindApi: bindBoth, onPointer: onLocalPointer, onChange: onLocalChange }
+  const chat = useCanvasChat(canvas)
 
   if (state === 'missing') {
     return <div className="fixed inset-0 grid place-items-center text-muted-foreground text-sm">Canvas not found.</div>
@@ -92,7 +106,12 @@ function CanvasSurface({ canvasId }: { canvasId: string | null }) {
         onSnapshot={onSnapshot}
         collab={collab}
         uploadFile={files?.upload ?? (async () => {})}
-        topRight={<CanvasIsland canvas={canvas} saveStore={saveStore} peers={peers} onRename={onRename} />}
+        topRight={
+          <div className="flex flex-col items-end gap-2">
+            <CanvasIsland canvas={canvas} saveStore={saveStore} peers={peers} onRename={onRename} />
+            {canvas && <CanvasChatPanel chat={chat} />}
+          </div>
+        }
       />
     </div>
   )

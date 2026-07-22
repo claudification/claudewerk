@@ -11,6 +11,7 @@ import { unstable_batchedUpdates as batchUpdates } from 'react-dom'
 // Graceful fallback if unstable_batchedUpdates is ever removed
 const batch: (fn: () => void) => void = batchUpdates ?? (fn => fn())
 
+import { isCanvasChatMessage } from '@/components/canvas/canvas-chat-bus'
 import { beginMessage, endMessage, setFlushBatch } from '@/lib/perf-message-context'
 import { isPerfEnabled, record as perfRecord } from '@/lib/perf-metrics'
 import { buildWsUrl, isShareView } from '@/lib/share-mode'
@@ -140,7 +141,6 @@ function summarizeFlush(pending: DashboardMessage[]): string {
 function dominantFlushType(pending: DashboardMessage[]): string {
   return flushTypeCounts(pending)[0]?.[0] ?? 'unknown'
 }
-
 
 function processMessage(msg: DashboardMessage) {
   // All sync responses may carry staleTranscripts - handle once before type-specific logic
@@ -385,6 +385,15 @@ export function useWebSocket(opts?: { conversationChannels?: boolean }) {
           if (typeof msg.type === 'string' && msg.type.startsWith('checklist_')) {
             const handler = useConversationsStore.getState().checklistHandler
             handler?.(msg as unknown as Record<string, unknown>)
+            return
+          }
+
+          // Canvas CHAT (chat_message / connect_result / send_result) -> its own
+          // bus. Split from the collab bus below because the chat panel mounts
+          // and unmounts independently of the room: sharing one listener slot
+          // would let closing the chat take the room's cursors with it.
+          if (isCanvasChatMessage(msg.type)) {
+            useConversationsStore.getState().canvasChatHandler?.(msg as unknown as Record<string, unknown>)
             return
           }
 
