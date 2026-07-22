@@ -128,7 +128,13 @@ describe('TranscriptView -- seqless render loop', () => {
   it('does NOT throw React #301 on a fully-seqless transcript with follow on', () => {
     expect(() =>
       render(
-        <TranscriptView conversationId="c1" entries={seqlessTranscript(100)} follow showThinking cacheKey="conv_seqless" />,
+        <TranscriptView
+          conversationId="c1"
+          entries={seqlessTranscript(100)}
+          follow
+          showThinking
+          cacheKey="conv_seqless"
+        />,
       ),
     ).not.toThrow()
   })

@@ -15,7 +15,7 @@
  * it goes in canvas-chrome.css against excalidraw's own class hooks.
  */
 
-import { Excalidraw, MainMenu } from '@excalidraw/excalidraw'
+import { type Excalidraw, MainMenu } from '@excalidraw/excalidraw'
 import type { ComponentProps } from 'react'
 import './canvas-chrome.css'
 

@@ -10,12 +10,12 @@ import { ProjectIcon } from '../project-icons'
 import { ProjectSettingsButton } from '../project-settings-button'
 import { ProjectSettingsEditor } from '../project-settings-editor-lazy'
 import { ConversationContextMenu } from './conversation-context-menu'
-import { PinnedProjectContextMenu, ProjectContextMenu } from './project-context-menu'
 import { ConversationItemCompact, SpawnRootStub } from './conversation-item'
 import { ConversationItemRail } from './conversation-item-rail'
 import { InlineConfirmButton } from './inline-confirm-button'
 import { groupByLineage, neededOrphanRootIds } from './lineage'
 import { partitionConversations } from './partition'
+import { PinnedProjectContextMenu, ProjectContextMenu } from './project-context-menu'
 import { useHydratedConversations } from './row-hooks'
 
 function idsEqual(a: string[], b: string[]): boolean {

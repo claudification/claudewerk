@@ -1,5 +1,5 @@
-import { expect, test } from 'vitest'
 import type { ChecklistItem } from '@shared/protocol'
+import { expect, test } from 'vitest'
 import { groupByResolvedDate } from './checklist-dategroup'
 
 const NOW = Date.parse('2026-06-16T12:00:00')

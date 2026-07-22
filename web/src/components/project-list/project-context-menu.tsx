@@ -46,11 +46,7 @@ function ProjectMenuShell({
   )
 }
 
-export function PinnedProjectContextMenu(props: {
-  project: string
-  onOpenSettings: () => void
-  children: ReactNode
-}) {
+export function PinnedProjectContextMenu(props: { project: string; onOpenSettings: () => void; children: ReactNode }) {
   return <ProjectMenuShell {...props} />
 }
 

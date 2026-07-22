@@ -70,8 +70,7 @@ export function ProjectCanvasesSection({ projectUri }: { projectUri: string }) {
           + New
         </button>
       </div>
-      {!collapsed &&
-        canvases.map(c => <CanvasListRow key={c.id} canvas={c} onOpen={() => openCanvas(c.id)} />)}
+      {!collapsed && canvases.map(c => <CanvasListRow key={c.id} canvas={c} onOpen={() => openCanvas(c.id)} />)}
     </div>
   )
 }

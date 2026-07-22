@@ -10,7 +10,6 @@ export const menuItemClass =
   'flex items-center px-3 py-1.5 text-[11px] font-mono cursor-pointer outline-none data-[highlighted]:bg-accent/20 data-[highlighted]:text-accent'
 
 /** The popup panel itself (root content + submenu content share this). */
-export const menuContentClass =
-  'min-w-[180px] bg-popover border border-border rounded-md shadow-lg py-1 z-50'
+export const menuContentClass = 'min-w-[180px] bg-popover border border-border rounded-md shadow-lg py-1 z-50'
 
 export const menuSeparatorClass = 'h-px bg-border my-1'

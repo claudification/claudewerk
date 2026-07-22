@@ -1,9 +1,4 @@
-import type {
-  TranscriptAssistantEntry,
-  TranscriptEntry,
-  TranscriptQueueEntry,
-  TranscriptUserEntry,
-} from '@/lib/types'
+import type { TranscriptAssistantEntry, TranscriptEntry, TranscriptQueueEntry, TranscriptUserEntry } from '@/lib/types'
 import type { TaskNotification } from './types'
 
 export function isUser(e: TranscriptEntry): e is TranscriptUserEntry {

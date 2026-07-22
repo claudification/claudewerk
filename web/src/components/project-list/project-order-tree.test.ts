@@ -6,13 +6,7 @@
 
 import { expect, test } from 'vitest'
 import type { ProjectOrderGroup, ProjectOrderNode } from '@/lib/types'
-import {
-  createGroupWith,
-  groupIdFor,
-  moveIntoGroup,
-  removeFromGroups,
-  terminateAllSummary,
-} from './project-order-tree'
+import { createGroupWith, groupIdFor, moveIntoGroup, removeFromGroups, terminateAllSummary } from './project-order-tree'
 
 const proj = (id: string): ProjectOrderNode => ({ id, type: 'project' })
 const group = (id: string, children: string[]): ProjectOrderGroup => ({

@@ -93,10 +93,7 @@ export function ConversationMenuActions({
         onSelect={() => window.open(`/conversation/${conversation.id}`, `conv-${conversation.id}`, 'noopener')}
       />
       <Item label="Rename…" onSelect={() => store().setRenamingConversationId(conversation.id)} />
-      <Item
-        label="Edit description…"
-        onSelect={() => store().setEditingDescriptionConversationId(conversation.id)}
-      />
+      <Item label="Edit description…" onSelect={() => store().setEditingDescriptionConversationId(conversation.id)} />
       {/* Conversation-level "old recap" (per-conversation away_summary) kept for
           now; the project-level period recap submenu follows. */}
       <Item
