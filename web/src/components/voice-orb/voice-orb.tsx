@@ -43,6 +43,9 @@ export function VoiceOrb({
     >
       <span className="voice-orb__halo" style={{ transform: `scale(${swell})` }} />
       <span className="voice-orb__core" />
+      <span className="voice-orb__sheen" />
+      {/* The pupil dilates with whoever is talking -- the menace lives here. */}
+      <span className="voice-orb__iris" style={{ transform: `scale(${1 + (swell - 1) * 0.8})` }} />
       <span className="voice-orb__ring" />
     </span>
   )

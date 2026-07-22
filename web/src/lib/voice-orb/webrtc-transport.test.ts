@@ -26,8 +26,13 @@ function build(track: MediaStreamTrack | null = fakeTrack()) {
 const getUserMedia = vi.fn()
 
 // jsdom ships neither MediaStream nor mediaDevices.
+let streamSeq = 0
 class FakeMediaStream {
+  readonly id = `fake-stream-${++streamSeq}`
   constructor(readonly tracks: MediaStreamTrack[] = []) {}
+  getAudioTracks() {
+    return this.tracks
+  }
 }
 
 beforeEach(() => {
@@ -117,5 +122,28 @@ describe('audioStreams', () => {
   it('is empty before any track lands', () => {
     const { transport } = build(null)
     expect(transport.audioStreams()).toEqual([])
+  })
+
+  // THE LEAK: a fresh wrapper per call made the analyser build a new native
+  // AudioNode every animation frame until Safari killed the tab.
+  it('returns the SAME mic stream object across calls', () => {
+    const { transport } = build()
+    const first = transport.audioStreams()[0]
+    for (let frame = 0; frame < 60; frame++) {
+      expect(transport.audioStreams()[0]).toBe(first)
+    }
+  })
+
+  it('rebuilds the wrapper only when the underlying track changes', async () => {
+    const { transport } = build()
+    const before = transport.audioStreams()[0]
+    await transport.setMicEnabled(false)
+    expect(transport.audioStreams()).toEqual([])
+    const fresh = fakeTrack()
+    getUserMedia.mockResolvedValue({ getTracks: () => [fresh] })
+    await transport.setMicEnabled(true)
+    const after = transport.audioStreams()[0]
+    expect(after).toBeDefined()
+    expect(after).not.toBe(before)
   })
 })

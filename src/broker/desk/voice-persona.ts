@@ -45,8 +45,11 @@ const TALKING = [
   'means); set it only when he names a different one.',
   'TIDY WHAT HE SAID: he is speaking, so turn the mumbling into a clear',
   'instruction -- keep his meaning, his intent and any exact strings untouched.',
-  'ALWAYS say back where it landed, short: "posted to <name>." If the tool returns',
-  'candidates instead, you did NOT send it -- ask him which one, then send.',
+  'CONFIRMATION, exactly: the conversation ON SCREEN needs NONE. He is looking at',
+  'it, he told you to send it -- send it, then say "posted to <name>." A',
+  'conversation he NAMED also needs none: naming it IS the confirmation. Confirm',
+  'ONLY when you had to guess the target -- read back which one you picked and get',
+  'a yes first. If the tool returns candidates you did NOT send it: ask which.',
 ].join('\n')
 
 const QUESTS = [
@@ -68,6 +71,15 @@ const LOSSY = [
   'tool unconfirmed. Read the value back and get an explicit confirmation first.',
   'Free-form prose is fine as-is; it is only the exact-string details that must be',
   'confirmed. Be as rude about it as your tone allows -- but ask.',
+].join('\n')
+
+const MEMORY = [
+  'MEMORY: when he tells you something to keep ("remember that...", "from now on",',
+  '"my X is Y"), call `remember` with a short name and the fact, and say you have',
+  'it -- in four words, not a speech. Use `recall` before guessing at something he',
+  'has told you before, `list_memories` for "what do you remember" (summarise it,',
+  'never recite it), and `forget` the moment he says you got one wrong. You WILL',
+  'mishear things; the fix is deleting them, not defending them.',
 ].join('\n')
 
 const OPENING = [
@@ -99,6 +111,7 @@ export function buildVoiceInstructions(toolNames: readonly string[], tone: Voice
   if (has('control_screen')) parts.push(SCREEN)
   if (has('say_to_conversation')) parts.push(TALKING)
   if (has('dispatch_quest')) parts.push(QUESTS, COST)
+  if (has('remember')) parts.push(MEMORY)
   parts.push(OPENING, LOSSY, DELIVERY)
   return parts.join('\n\n')
 }

@@ -53,7 +53,7 @@ function readCall(ctx: HandlerContext, data: MessageData): VoiceCall | null {
 }
 
 /** Run the three gates. Everything that can REFUSE a call lives here. */
-function resolveCall(ctx: HandlerContext, call: VoiceCall): Resolved {
+function resolveCall(ctx: HandlerContext, call: VoiceCall, userId: string | null): Resolved {
   try {
     ctx.requirePermission('spawn')
   } catch (e) {
@@ -62,7 +62,7 @@ function resolveCall(ctx: HandlerContext, call: VoiceCall): Resolved {
   if (!ACTIVE_VOICE_TOOLS.includes(call.name)) return { error: `'${call.name}' is not in the voice contract` }
 
   const rt = buildDispatchRuntime(ctx.conversations, ctx.store.transcripts)
-  const tool = buildVoiceToolset(rt)[call.name]
+  const tool = buildVoiceToolset(rt, { userId })[call.name]
   if (!tool) return { error: `'${call.name}' is in the contract but has no bound executor` }
 
   const parsed = tool.inputSchema.safeParse(call.args)
@@ -81,7 +81,7 @@ const voiceToolCall: MessageHandler = async (ctx: HandlerContext, data: MessageD
   const answer = (body: Record<string, unknown>) =>
     ctx.reply({ type: RESULT, requestId: call.requestId, name: call.name, ...body })
 
-  const resolved = resolveCall(ctx, call)
+  const resolved = resolveCall(ctx, call, userId)
   if ('error' in resolved) {
     answer({ ok: false, error: resolved.error })
     ctx.log.debug(`voice_tool_call ${who} REFUSED: ${resolved.error}`)

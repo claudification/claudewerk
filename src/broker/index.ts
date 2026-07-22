@@ -28,7 +28,6 @@ import {
 } from './auth-routes'
 import { buildReviveMessage } from './build-revive'
 import { closeCanvasStore, initCanvasStore, reapExpiredCanvasShares } from './canvas-store'
-import { resolveShareUpgrade } from './share-upgrade'
 import { wireCapacityAdmission } from './capacity-wiring'
 import { closeChecklistStore, initChecklistStore } from './checklist-store'
 import { recordInboundForSocket, registerConnection, unregisterConnection } from './connection-registry'
@@ -48,6 +47,7 @@ import { emitDeskEvent } from './desk/event-registry'
 import { setFleetSheafProvider } from './desk/fleet-sheaf'
 import { initDispatchMemory, initSystemAppend } from './desk/memory'
 import { initUserNotes } from './desk/notes'
+import { initOrbMemory } from './desk/orb-memory'
 import { closeProjectMemory, initProjectMemory } from './desk/project-memory'
 import { closeDispatchThreads, initDispatchThreads } from './desk/threads'
 import { startExternalStatusPolling, stopExternalStatusPolling } from './external-status'
@@ -99,6 +99,7 @@ import { initRecapOrchestrator } from './recap-orchestrator'
 import { startRecapReaper } from './recap-reaper'
 import { createRouter } from './routes'
 import { createSentinelRegistry } from './sentinel-registry'
+import { resolveShareUpgrade } from './share-upgrade'
 import {
   cleanExpired as cleanExpiredShares,
   initShares,
@@ -378,6 +379,7 @@ async function main() {
   initDispatchMemory(authCacheDir)
   initSystemAppend(authCacheDir)
   initUserNotes(authCacheDir) // the user's permanent notes file ("take my notes")
+  initOrbMemory(authCacheDir) // the voice orb's keyed per-user memories
   // Per-project condensed memory (the dispatcher BRAIN's durable store). The
   // always-on desk-memory SERVICE that feeds it is started after recap init
   // (it backfills from recaps).

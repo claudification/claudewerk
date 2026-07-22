@@ -36,6 +36,11 @@ export class RealtimeTransport {
   private micTrack: MediaStreamTrack | undefined
   private micSender: RTCRtpSender | undefined
   private closed = false
+  // STABLE wrapper around the current mic track. Rebuilding this per call --
+  // which `audioStreams()` used to do -- hands the analyser a brand new object
+  // every animation frame, and it dutifully builds a fresh AudioNode for each
+  // one. Sixty native nodes a second is how you get a Safari tab OOM-killed.
+  private micStream: MediaStream | undefined
 
   constructor(parts: {
     pc: RTCPeerConnection
@@ -63,10 +68,22 @@ export class RealtimeTransport {
    *  stream already plays through `audioEl`. */
   audioStreams(): MediaStream[] {
     const out: MediaStream[] = []
-    if (this.micTrack) out.push(new MediaStream([this.micTrack]))
+    const mic = this.micStreamFor(this.micTrack)
+    if (mic) out.push(mic)
     const remote = this.audioEl?.srcObject
     if (remote instanceof MediaStream) out.push(remote)
     return out
+  }
+
+  /** The wrapper for `track`, built once and reused until the track changes. */
+  private micStreamFor(track: MediaStreamTrack | undefined): MediaStream | undefined {
+    if (!track) {
+      this.micStream = undefined
+      return undefined
+    }
+    const current = this.micStream?.getAudioTracks()[0]
+    if (!this.micStream || current !== track) this.micStream = new MediaStream([track])
+    return this.micStream
   }
 
   /** Mute / unmute WITHOUT tearing down the session. Muting RELEASES the
@@ -101,6 +118,7 @@ export class RealtimeTransport {
     // device track live.
     this.micTrack?.stop()
     this.micTrack = undefined
+    this.micStream = undefined
     this.dc.close()
     this.pc.close()
     this.audioEl?.remove()

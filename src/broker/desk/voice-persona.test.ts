@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'bun:test'
 import { buildVoiceInstructions } from './voice-persona'
 import { asVoiceTone, DEFAULT_VOICE_TONE, tonePreamble, VOICE_TONES } from './voice-tones'
-import { VOICE_ACTION_TOOLS, VOICE_READ_TOOLS } from './voice-tools'
+import { ACTIVE_VOICE_TOOLS, VOICE_ACTION_TOOLS, VOICE_READ_TOOLS } from './voice-tools'
 
 const READ = [...VOICE_READ_TOOLS]
-const ALL = [...VOICE_READ_TOOLS, ...VOICE_ACTION_TOOLS]
+const ALL = [...ACTIVE_VOICE_TOOLS]
 
 describe('the contract drives the instructions', () => {
   it('never coaches a verb that is not minted', () => {
@@ -64,6 +64,18 @@ describe('the tone dial', () => {
     expect(snarky).toContain('meatbag')
   })
 
+  it('has paperwork for MEATBAG and U.S.E.R., on request only', () => {
+    const snarky = tonePreamble('snarky')
+    expect(snarky).toContain('M.E.A.T.B.A.G.')
+    expect(snarky).toContain('Marginally Efficient Autonomous Terminal')
+    expect(snarky).toContain('U.S.E.R.')
+    expect(snarky).toContain('Unreliable Squishy Executive')
+    expect(snarky).toContain('IF HE ASKS')
+    expect(snarky).toContain('never volunteer them twice')
+    // Professional has no jokes to explain.
+    expect(tonePreamble('professional')).not.toContain('M.E.A.T.B.A.G.')
+  })
+
   it('keeps the facts-first rule even at full tilt', () => {
     expect(tonePreamble('overkill')).toContain('facts still come FIRST')
   })
@@ -77,6 +89,21 @@ describe('the tone dial', () => {
     expect(tonePreamble('snarky')).toContain('ONE jab per answer')
     expect(tonePreamble('homicidal')).toContain('temporary')
     expect(tonePreamble('overkill')).toContain('profanity permitted')
+  })
+
+  it('asks for confirmation ONLY when it had to guess the target', () => {
+    const full = buildVoiceInstructions(ALL)
+    expect(full).toContain('ON SCREEN needs NONE')
+    expect(full).toContain('naming it IS the confirmation')
+    expect(full).toContain('ONLY when you had to guess')
+  })
+
+  it('teaches the memory verbs, including deleting a mishearing', () => {
+    const full = buildVoiceInstructions(ALL)
+    expect(full).toContain('`remember`')
+    expect(full).toContain('`forget`')
+    expect(full).toContain('never recite it')
+    expect(buildVoiceInstructions(READ)).not.toContain('`remember`')
   })
 
   it('clamps LENGTH hard -- one sentence, answer first', () => {

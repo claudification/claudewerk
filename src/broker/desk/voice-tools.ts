@@ -18,6 +18,7 @@
 
 import { z } from 'zod'
 import { buildDispatchToolset as buildWideToolset } from './dispatch-tools'
+import { orbMemoryTools } from './orb-memory-tools'
 import { type RealtimeTool, toRealtimeTools } from './realtime-schema'
 import { buildDispatchRuntimeToolDeps, type DispatchRuntime } from './runtime'
 import { defineTool, type Toolset } from './tool-def'
@@ -50,6 +51,11 @@ export const VOICE_READ_TOOLS = [
  *  Plus the desk's own notes. */
 export const VOICE_ACTION_TOOLS = ['say_to_conversation', 'dispatch_quest', 'list_threads', 'commit_thread'] as const
 
+/** The orb's own MEMORY -- keyed, per-user, and none of it touches the fleet.
+ *  `forget` is the point: a voice agent mishears, so anything it saved must be
+ *  listable and deletable by the person it saved it about. */
+export const VOICE_MEMORY_TOOLS = ['remember', 'recall', 'list_memories', 'forget'] as const
+
 /** Verbs that must NEVER reach the voice session, at any phase. Asserted.
  *
  *  `inject` is here and STAYS here: it takes an arbitrary conversationId, so a
@@ -80,7 +86,7 @@ export const VOICE_FORBIDDEN_TOOLS = [
  * reconfigure a conversation. The worst a misheard sentence does is send the
  * wrong words to the conversation you are already looking at.
  */
-export const ACTIVE_VOICE_TOOLS: readonly string[] = [...VOICE_READ_TOOLS, ...VOICE_ACTION_TOOLS]
+export const ACTIVE_VOICE_TOOLS: readonly string[] = [...VOICE_READ_TOOLS, ...VOICE_ACTION_TOOLS, ...VOICE_MEMORY_TOOLS]
 
 /** Verbs the BROWSER answers itself -- the server executor is a stub that must
  *  never be reached (the tool-bridge intercepts them before the wire). Kept in
@@ -111,18 +117,27 @@ const CLIENT_LOCAL_TOOLS: Toolset = {
  *  dispatcher's routing verbs are built here but never PICKED (see
  *  VOICE_FORBIDDEN_TOOLS) -- the orb reads the dispatcher, it does not drive
  *  it. */
-function availableVoiceTools(rt: DispatchRuntime): Toolset {
+function availableVoiceTools(rt: DispatchRuntime, userId: string | null | undefined): Toolset {
   return {
     ...buildDeskToolset(buildDispatchRuntimeToolDeps(rt)),
     ...buildWideToolset(rt),
+    ...orbMemoryTools(userId),
     ...CLIENT_LOCAL_TOOLS,
   }
 }
 
+export interface VoiceToolsetOptions {
+  /** Which tools to pick. Defaults to the active contract. */
+  names?: readonly string[]
+  /** Whose memories the memory verbs read and write. */
+  userId?: string | null
+}
+
 /** The bound voice toolset: exactly `names`, in contract order. Throws on an
  *  unknown name so a typo in the contract fails loudly at mint, not mid-call. */
-export function buildVoiceToolset(rt: DispatchRuntime, names: readonly string[] = ACTIVE_VOICE_TOOLS): Toolset {
-  const available = availableVoiceTools(rt)
+export function buildVoiceToolset(rt: DispatchRuntime, opts: VoiceToolsetOptions = {}): Toolset {
+  const names = opts.names ?? ACTIVE_VOICE_TOOLS
+  const available = availableVoiceTools(rt, opts.userId)
   const picked: Toolset = {}
   for (const name of names) {
     const tool = available[name]
@@ -133,6 +148,6 @@ export function buildVoiceToolset(rt: DispatchRuntime, names: readonly string[] 
 }
 
 /** The Realtime `tools[]` array for the mint -- same source as the executors. */
-export function voiceRealtimeTools(rt: DispatchRuntime, names?: readonly string[]): RealtimeTool[] {
-  return toRealtimeTools(buildVoiceToolset(rt, names))
+export function voiceRealtimeTools(rt: DispatchRuntime, opts: VoiceToolsetOptions = {}): RealtimeTool[] {
+  return toRealtimeTools(buildVoiceToolset(rt, opts))
 }

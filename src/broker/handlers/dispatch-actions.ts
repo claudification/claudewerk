@@ -29,12 +29,7 @@ import {
 } from '../desk/memory'
 import type { DispatchCommand } from '../desk/orchestrate'
 import type { ProjectOverviewRow } from '../desk/overview'
-import {
-  buildDispatchRuntime,
-  type DispatchRuntime,
-  listDispatchRosterCandidates,
-  runDispatch,
-} from '../desk/runtime'
+import { buildDispatchRuntime, type DispatchRuntime, listDispatchRosterCandidates, runDispatch } from '../desk/runtime'
 import { workspaceSnapshot } from '../desk/workspace'
 import { GuardError, type HandlerContext, type MessageData, type MessageHandler } from '../handler-context'
 import { CONTROL_PANEL_ONLY, registerHandlers } from '../message-router'
