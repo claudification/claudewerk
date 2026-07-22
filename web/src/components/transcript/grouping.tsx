@@ -160,10 +160,28 @@ interface GroupingCache {
   /** Reference of the entries array last seen -- distinguishes an append
    *  (same array, grown) from a full HTTP refetch (replaced array). */
   lastEntries: TranscriptEntry[] | null
+  /** The entry that sat at the tail (index len-1) after the last regroup. The
+   *  incremental path assumes new entries append AT THE TAIL and only regroups
+   *  `entries.slice(len)`. But `insertTranscriptEntriesInOrder` orders by
+   *  (timestamp, seq), so an out-of-chronology arrival (a queue `remove`, a
+   *  late file-resend) SPLICES into the middle -- growing length without
+   *  touching the tail. That grows `entries.length` past `len` yet the sliced
+   *  tail never contains the spliced entry, so a queue `remove` silently never
+   *  clears the "queued" badge. Detect it: if this reference is no longer at
+   *  `entries[len-1]`, the prefix shifted -> force a full regroup. */
+  tailEntry: TranscriptEntry | null
 }
 
 function freshGroupingCache(): GroupingCache {
-  return { len: 0, resultMap: new Map(), groups: [], lastGroup: null, pendingSkillName: undefined, lastEntries: null }
+  return {
+    len: 0,
+    resultMap: new Map(),
+    groups: [],
+    lastGroup: null,
+    pendingSkillName: undefined,
+    lastEntries: null,
+    tailEntry: null,
+  }
 }
 
 // Module-level per-conversation grouping cache. Phase 1 (commit 05d3862e)
@@ -266,10 +284,20 @@ export function useIncrementalGroups(
     const signalChanged = resetSignal !== lastResetSignalRef.current
     lastResetSignalRef.current = resetSignal
 
+    // An out-of-chronology arrival splices mid-array (see cache.tailEntry): the
+    // prefix [0, len) shifted, so the entry that was at the tail is no longer at
+    // index len-1. The count-based slice below would skip the spliced entry
+    // entirely (the classic stuck "queued" badge), so treat it as a reset and
+    // regroup the whole array. Guarded on len>0 and in-bounds.
+    const tailShifted =
+      cache.len > 0 && cache.len <= entries.length && entries[cache.len - 1] !== cache.tailEntry
     // Full reset if entries shrunk OR array was replaced entirely (HTTP refetch)
-    // OR the caller signalled a window change.
+    // OR the caller signalled a window change OR an entry landed mid-array.
     const isReset =
-      signalChanged || entries.length < cache.len || (entries !== cache.lastEntries && entries.length <= cache.len)
+      signalChanged ||
+      entries.length < cache.len ||
+      (entries !== cache.lastEntries && entries.length <= cache.len) ||
+      tailShifted
     cache.lastEntries = entries
     // Snapshot prior groups (pre-wipe) for group-id reconciliation -- needed on
     // BOTH the incremental and reset paths so ids carry across a tail-append and
@@ -301,6 +329,7 @@ export function useIncrementalGroups(
     // Process only the new entries
     const newEntries = entries.slice(cache.len)
     cache.len = entries.length
+    cache.tailEntry = entries.length > 0 ? entries[entries.length - 1] : null
 
     // Incremental buildResultMap - clone before mutating so existing renders aren't affected
     const newResultMap = new Map(cache.resultMap)
