@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DOZE_MS, useOrbSummon } from './use-orb-summon'
+import { DOZE_MS, IDLE_TIMEOUT_MS, IDLE_WARN_LEAD_MS, useOrbSummon } from './use-orb-summon'
 import { voiceOrbBus } from './voice-orb-bus'
 
 function setup(over: Partial<Parameters<typeof useOrbSummon>[0]> = {}) {
@@ -83,5 +83,48 @@ describe('doze', () => {
     const { view } = setup()
     act(() => vi.advanceTimersByTime(DOZE_MS * 3))
     expect(view.result.current.dozing).toBe(false)
+  })
+})
+
+describe('idle: the orb leaves rather than holding a hot mic forever', () => {
+  it('warns near the end, then steps away -- stopping the session', () => {
+    const { view, stop } = setup()
+    summon()
+    act(() => vi.advanceTimersByTime(IDLE_TIMEOUT_MS - IDLE_WARN_LEAD_MS))
+    expect(view.result.current.leavingSoon).toBe(true)
+    expect(view.result.current.summoned).toBe(true)
+    act(() => vi.advanceTimersByTime(IDLE_WARN_LEAD_MS))
+    expect(view.result.current.summoned).toBe(false)
+    expect(view.result.current.steppedAway).toBe(true)
+    expect(stop).toHaveBeenCalled()
+  })
+
+  it('activity resets the whole span -- talking keeps it around', () => {
+    const { view, input, stop } = setup()
+    summon()
+    act(() => vi.advanceTimersByTime(IDLE_TIMEOUT_MS - 1000))
+    act(() => view.rerender({ ...input, activity: 'speaking:still here' }))
+    expect(view.result.current.leavingSoon).toBe(false)
+    act(() => vi.advanceTimersByTime(IDLE_TIMEOUT_MS - 1000))
+    expect(view.result.current.summoned).toBe(true)
+    expect(stop).not.toHaveBeenCalled()
+  })
+
+  it('never times out while away', () => {
+    const { view, stop } = setup()
+    act(() => vi.advanceTimersByTime(IDLE_TIMEOUT_MS * 2))
+    expect(view.result.current.steppedAway).toBe(false)
+    expect(stop).not.toHaveBeenCalled()
+  })
+
+  it('the notice is one-shot, and going away keeps it clear', () => {
+    const { view } = setup()
+    summon()
+    act(() => vi.advanceTimersByTime(IDLE_TIMEOUT_MS))
+    expect(view.result.current.steppedAway).toBe(true)
+    act(() => view.result.current.acknowledgeSteppedAway())
+    expect(view.result.current.steppedAway).toBe(false)
+    act(() => vi.advanceTimersByTime(IDLE_TIMEOUT_MS))
+    expect(view.result.current.steppedAway).toBe(false)
   })
 })
