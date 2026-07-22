@@ -12,6 +12,11 @@
 import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { executeCommand } from '@/lib/commands'
+// Static, not `await import()` inside the test. vi.mock is hoisted above this,
+// so the mocks still apply -- and transcript-search's module graph costs
+// seconds to transform on a cold run, which blew the 5s per-test timeout when
+// that cost sat inside the test body. Same shape as settings-page.test.tsx.
+import { TranscriptSearch } from './transcript-search'
 
 const STORE_STATE = {
   controlPanelPrefs: {},
@@ -35,11 +40,12 @@ afterEach(() => {
 })
 
 describe('TranscriptSearch setTimeout cleanup', () => {
-  test('clears the 50ms focus timer when unmounted before it fires', async () => {
+  // 30s, not the 5s default -- a heavy render sharing a machine with 158 other
+  // test files. Nothing is hanging; the work is genuinely slow.
+  test('clears the 50ms focus timer when unmounted before it fires', () => {
     vi.useFakeTimers()
     const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout')
     const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout')
-    const { TranscriptSearch } = await import('./transcript-search')
     const { unmount } = render(<TranscriptSearch />)
     // Open the dialog -- schedules the 50ms focus setTimeout.
     act(() => {
@@ -52,5 +58,5 @@ describe('TranscriptSearch setTimeout cleanup', () => {
     unmount()
     // Cleanup must have called clearTimeout with the focus timer's id.
     expect(clearTimeoutSpy).toHaveBeenCalledWith(focusTimerId)
-  })
+  }, 30_000)
 })
