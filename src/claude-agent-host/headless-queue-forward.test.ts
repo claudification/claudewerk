@@ -174,3 +174,34 @@ describe('headless queue-operation forwarding', () => {
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
+
+describe('watcher re-point', () => {
+  it('a same-file re-point keeps the offset, so nothing appended is skipped', async () => {
+    // The hook fires `boot` right after onInit already started the watcher on
+    // this exact path. Restarting there re-seeks to end in headless, silently
+    // dropping whatever landed in between. Guarded by comparing getPath().
+    await withTranscript(async path => {
+      await writeFile(path, line(USER))
+
+      const sent: Sent[] = []
+      const ctx = makeCtx(sent, true)
+      ctx.parentTranscriptPath = path
+      await startTranscriptWatcher(ctx, path)
+      await delay(150)
+
+      const first = ctx.transcriptWatcher
+      expect(first?.getPath()).toBe(path)
+
+      // Second call for the SAME file must be a no-op, not a restart.
+      await startTranscriptWatcher(ctx, path)
+      expect(ctx.transcriptWatcher).toBe(first)
+
+      await appendFile(path, line(ENQUEUE))
+      await delay(400)
+
+      ctx.transcriptWatcher?.stop()
+
+      expect(types(sent)).toEqual(['queue-operation'])
+    })
+  })
+})

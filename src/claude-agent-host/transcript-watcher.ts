@@ -75,6 +75,9 @@ export interface TranscriptWatcher {
   stop: () => void
   resend: () => Promise<void>
   getEntryCount: () => number
+  /** File currently being watched ('' before start). Lets callers tell a real
+   *  file change from a redundant re-point. */
+  getPath: () => string
 }
 
 /**
@@ -303,5 +306,9 @@ export function createTranscriptWatcher(options: TranscriptWatcherOptions): Tran
     return entryCount
   }
 
-  return { start, stop, resend, getEntryCount }
+  function getPath(): string {
+    return filePath
+  }
+
+  return { start, stop, resend, getEntryCount, getPath }
 }

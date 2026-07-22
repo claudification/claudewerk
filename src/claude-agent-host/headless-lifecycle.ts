@@ -159,15 +159,20 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
         debug(
           `[headless] Derived transcript path: ${ctx.parentTranscriptPath}${ctx.resumeId ? ` (resumed from ${ctx.resumeId})` : ''}`,
         )
-        // Tail the JSONL even in headless. Not for the transcript -- stdout owns
-        // that -- but for the entries CC writes ONLY to the file and never to
-        // the stream-json pipe. `queue-operation` is the one that matters: it is
-        // the sole record that a mid-turn message is sitting in CC's queue
-        // rather than already being worked on. The watcher seeks to end and
-        // `selectForwardableEntries` narrows it to those types, so this cannot
-        // duplicate what stdout already delivered.
-        ctx.startTranscriptWatcher(ctx.parentTranscriptPath)
       }
+      // Tail the JSONL even in headless. Not for the transcript -- stdout owns
+      // that -- but for the entries CC writes ONLY to the file and never to the
+      // stream-json pipe. `queue-operation` is the one that matters: it is the
+      // sole record that a mid-turn message is sitting in CC's queue rather
+      // than already being worked on. The watcher seeks to end and
+      // `selectForwardableEntries` narrows it to those types, so this cannot
+      // duplicate what stdout already delivered.
+      //
+      // OUTSIDE the derivation branch on purpose: in a hooked spawn the
+      // SessionStart hook sets parentTranscriptPath first, so anything nested
+      // in `!ctx.parentTranscriptPath` never runs there. startTranscriptWatcher
+      // is idempotent, so whichever path gets here first wins.
+      if (ctx.parentTranscriptPath) ctx.startTranscriptWatcher(ctx.parentTranscriptPath)
       // Forward full init metadata to broker for dashboard autocomplete
       if (ctx.wsClient?.isConnected()) {
         const conversationInfo = {
