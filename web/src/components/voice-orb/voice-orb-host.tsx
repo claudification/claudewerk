@@ -17,6 +17,7 @@ import { OrbCaption, pickCaption } from './orb-caption'
 import { toOrbState } from './orb-state'
 import { useAudioLevel } from './use-audio-level'
 import { useOrbChannel } from './use-orb-channel'
+import { useOrbDialog } from './use-orb-dialog'
 import { useOrbNarration } from './use-orb-narration'
 import { useOrbSummon } from './use-orb-summon'
 import { VoiceOrb } from './voice-orb'
@@ -37,6 +38,8 @@ export function VoiceOrbHost() {
   useOrbNarration(summoned && orb.live, orb.state, orb.announce)
   // ...and speaks any line a conversation addressed to it (send_message to:"orb").
   useOrbChannel(summoned && orb.live, orb.state, orb.announce)
+  // ...and puts an open question to him out loud, then answers it with his voice.
+  useOrbDialog(summoned && orb.live, orb.state, orb.announce)
 
   const openDesk = () => {
     void import('@/components/dispatch-overlay/dispatch-store').then(m => m.useDispatchStore.getState().openOverlay())

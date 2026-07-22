@@ -9,7 +9,7 @@
  * clock + the subscription, mirroring use-orb-narration.ts.
  */
 
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { decideOrbChannel } from '@/lib/voice-orb/orb-channel'
 import {
   getOrbChannelQueue,
@@ -17,16 +17,14 @@ import {
   setOrbChannelQueue,
   subscribeOrbChannel,
 } from '@/lib/voice-orb/orb-channel-bus'
+import { useOrbSpeaker } from './use-orb-speaker'
 
 /** Re-check the queue this often so a cooldown expiry or a freshly-stale line is
  *  acted on even without a new arrival. */
 const TICK_MS = 2_000
 
 export function useOrbChannel(active: boolean, orbState: string, announce: (note: string) => void): void {
-  const orbStateRef = useRef(orbState)
-  orbStateRef.current = orbState
-  const announceRef = useRef(announce)
-  announceRef.current = announce
+  const speaker = useOrbSpeaker(orbState, announce)
 
   useEffect(() => {
     setOrbChannelDraining(active)
@@ -36,7 +34,7 @@ export function useOrbChannel(active: boolean, orbState: string, announce: (note
     const drain = () => {
       const decision = decideOrbChannel({
         queue: getOrbChannelQueue(),
-        orbState: orbStateRef.current,
+        orbState: speaker.orbState(),
         lastSpokeAt,
         now: Date.now(),
       })
@@ -44,7 +42,7 @@ export function useOrbChannel(active: boolean, orbState: string, announce: (note
       setOrbChannelQueue(decision.remaining)
       if (!decision.say) return
       lastSpokeAt = Date.now()
-      announceRef.current(decision.say)
+      speaker.announce(decision.say)
     }
 
     const unsub = subscribeOrbChannel(drain)
@@ -55,5 +53,5 @@ export function useOrbChannel(active: boolean, orbState: string, announce: (note
       clearInterval(interval)
       setOrbChannelDraining(false)
     }
-  }, [active])
+  }, [active, speaker])
 }

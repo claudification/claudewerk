@@ -40,6 +40,12 @@ const TALKING = [
   'NOTHING -- ask which.',
 ].join('\n')
 
+const ANSWERING = [
+  'OPEN QUESTIONS: one arrives as "[open question] ...". Put it to him with the',
+  'options in one line, then `answer_dialog` with what he says -- his words, not a',
+  'tidied id. Options back instead of `answered` means NOTHING was sent; ask again.',
+].join('\n')
+
 const QUESTS = [
   'NEW WORK: `dispatch_quest` (project + task) spawns a worker that reports back.',
   'Your only way to start work. Say what you are dispatching, get a yes, go.',
@@ -104,6 +110,7 @@ export function buildVoiceInstructions(
   if (has('projects_overview')) parts.push(READING)
   if (has('control_screen')) parts.push(SCREEN)
   if (has('say_to_conversation')) parts.push(TALKING)
+  if (has('answer_dialog')) parts.push(ANSWERING)
   if (has('dispatch_quest')) parts.push(QUESTS, COST)
   if (has('remember')) parts.push(MEMORY)
   parts.push(CHANNEL)

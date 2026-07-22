@@ -10,6 +10,8 @@
  * rather than picking, and the caller turns that into a spoken question.
  */
 
+import { rankSpoken } from './rank-spoken'
+
 export interface Candidate {
   conversationId: string
   title: string
@@ -37,21 +39,9 @@ export function resolveSpokenConversation(spoken: string, live: Candidate[]): Re
   const needle = spoken.trim().toLowerCase()
   if (!needle) return { ok: false, error: 'no conversation named', candidates: live.slice(0, 5) }
 
-  const ranked = live
-    .map(c => ({ c, s: score(c, needle) }))
-    .filter(r => r.s > 0)
-    .sort((a, b) => b.s - a.s)
-
-  const best = ranked[0]
-  if (!best) return { ok: false, error: `nothing live matches "${spoken}"`, candidates: live.slice(0, 5) }
-
-  const runnerUp = ranked[1]
-  if (runnerUp && runnerUp.s === best.s) {
-    return {
-      ok: false,
-      error: `"${spoken}" is ambiguous -- ask which one`,
-      candidates: ranked.slice(0, 4).map(r => r.c),
-    }
-  }
-  return { ok: true, conversation: best.c }
+  // Same refusal rule as the option matcher -- a tie is not a decision.
+  const { ranked, winner, tied } = rankSpoken(live, c => score(c, needle))
+  if (tied) return { ok: false, error: `"${spoken}" is ambiguous -- ask which one`, candidates: ranked.slice(0, 4) }
+  if (!winner) return { ok: false, error: `nothing live matches "${spoken}"`, candidates: live.slice(0, 5) }
+  return { ok: true, conversation: winner }
 }

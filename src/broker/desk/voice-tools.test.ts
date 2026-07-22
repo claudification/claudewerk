@@ -43,6 +43,14 @@ describe('the voice contract', () => {
     expect(ACTIVE_VOICE_TOOLS).not.toContain('inject')
   })
 
+  it('answers an open question only through the panel -- the server executor is a stub', () => {
+    expect(ACTIVE_VOICE_TOOLS).toContain('answer_dialog')
+    const { answer_dialog: tool } = buildVoiceToolset(fakeRt(), { names: ['answer_dialog'] })
+    // What is open on screen is a fact only the panel holds; a server-side
+    // execution would be answering a question it cannot see.
+    expect(tool?.execute({}, {} as never)).toMatchObject({ clientLocal: expect.stringContaining('browser') })
+  })
+
   it('ABSENCE IS THE GATE: no destructive verb appears on any phase list', () => {
     const everyPhase: string[] = [...ACTIVE_VOICE_TOOLS]
     for (const forbidden of VOICE_FORBIDDEN_TOOLS) {

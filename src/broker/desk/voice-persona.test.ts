@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import { buildVoiceInstructions } from './voice-persona'
 import { asVoiceTone, DEFAULT_VOICE_TONE, tonePreamble, VOICE_TONES } from './voice-tones'
-import { ACTIVE_VOICE_TOOLS, VOICE_ACTION_TOOLS, VOICE_READ_TOOLS } from './voice-tools'
+import { ACTIVE_VOICE_TOOLS, VOICE_READ_TOOLS } from './voice-tools'
 
 /** The prompt is ONE string to the model -- where it wraps is incidental, so
  *  assertions must not be hostage to it. Flatten before matching. */
@@ -24,6 +24,15 @@ describe('the contract drives the instructions', () => {
     expect(flat(full)).toContain('`say_to_conversation`')
     expect(flat(full)).toContain('`dispatch_quest`')
     expect(flat(full)).toContain('COST:')
+  })
+
+  it('teaches answering an open question ONLY when answer_dialog is minted', () => {
+    expect(flat(buildVoiceInstructions(READ))).not.toContain('`answer_dialog`')
+    const full = flat(buildVoiceInstructions(ALL))
+    expect(full).toContain('[open question]')
+    expect(full).toContain('`answer_dialog`')
+    // The refusal is the point: options back means it submitted NOTHING.
+    expect(full).toContain('NOTHING was sent')
   })
 
   it('makes DIRECT talk the main job and forbids routing through the dispatcher', () => {

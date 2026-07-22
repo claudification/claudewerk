@@ -49,7 +49,13 @@ export const VOICE_READ_TOOLS = [
  *     ambiguous match refuses instead of guessing (no raw ids from speech),
  *   - `dispatch_quest` starts new work in a NAMED project.
  *  Plus the desk's own notes. */
-export const VOICE_ACTION_TOOLS = ['say_to_conversation', 'dispatch_quest', 'list_threads', 'commit_thread'] as const
+export const VOICE_ACTION_TOOLS = [
+  'say_to_conversation',
+  'answer_dialog',
+  'dispatch_quest',
+  'list_threads',
+  'commit_thread',
+] as const
 
 /** The orb's own MEMORY -- keyed, per-user, and none of it touches the fleet.
  *  `forget` is the point: a voice agent mishears, so anything it saved must be
@@ -110,6 +116,16 @@ const CLIENT_LOCAL_TOOLS: Toolset = {
         .describe('The conversation he named, or null for the one on screen. Never invent an id.'),
     }),
     execute: () => ({ clientLocal: 'say_to_conversation is handled in the browser' }),
+  }),
+
+  answer_dialog: defineTool({
+    description:
+      'Answer a question that is OPEN ON SCREEN -- the dialog or ask-a-question box a conversation is blocked on. Use it the moment he says which option he wants after you read one out. `answer` is what he said, in his words ("the second one", "rollback", "yes"); it is matched against the options for him. `target` is the conversation he named, or null for the question you just read out. It submits exactly as if he had clicked, so the conversation carries on. If it comes back with options instead of `answered`, NOTHING was submitted -- read them out and ask again. NOT for talking to a conversation that is not asking; that is say_to_conversation.',
+    inputSchema: z.object({
+      answer: z.string().describe('What he said his answer is, verbatim. Never invent one.'),
+      target: z.string().nullable().describe('The conversation he named, or null for the question you read out.'),
+    }),
+    execute: () => ({ clientLocal: 'answer_dialog is handled in the browser' }),
   }),
 }
 

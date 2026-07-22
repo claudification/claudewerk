@@ -6,10 +6,11 @@
  * lib/voice-orb/narration.ts; this is the store subscription and the clock.
  */
 
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { selectConversations } from '@/lib/slim-conversation'
 import { decideNarration, type NarratableConversation, newlyWaiting, snapshotStates } from '@/lib/voice-orb/narration'
+import { useOrbSpeaker } from './use-orb-speaker'
 
 function readFleet(): NarratableConversation[] {
   const byId = useConversationsStore.getState().conversationsById
@@ -19,10 +20,7 @@ function readFleet(): NarratableConversation[] {
 }
 
 export function useOrbNarration(active: boolean, orbState: string, announce: (note: string) => void): void {
-  const orbStateRef = useRef(orbState)
-  orbStateRef.current = orbState
-  const announceRef = useRef(announce)
-  announceRef.current = announce
+  const speaker = useOrbSpeaker(orbState, announce)
 
   useEffect(() => {
     if (!active) return
@@ -36,13 +34,13 @@ export function useOrbNarration(active: boolean, orbState: string, announce: (no
       previous = snapshotStates(fleet)
       const decision = decideNarration({
         waiting,
-        orbState: orbStateRef.current,
+        orbState: speaker.orbState(),
         lastSpokeAt,
         now: Date.now(),
       })
       if (!decision.say) return
       lastSpokeAt = Date.now()
-      announceRef.current(decision.say)
+      speaker.announce(decision.say)
     })
-  }, [active])
+  }, [active, speaker])
 }

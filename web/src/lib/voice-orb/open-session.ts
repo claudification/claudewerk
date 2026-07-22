@@ -64,6 +64,7 @@ export async function openVoiceSession(cb: OpenSessionCallbacks): Promise<OpenSe
   const [{ createToolBridge, setActiveToolBridge }, { VoiceSession: Session }, { runControlScreen }] =
     await Promise.all([import('./tool-bridge'), import('./voice-session'), import('./control-screen')])
   const { runSayToConversation } = await import('./say-to-conversation')
+  const { runAnswerDialog } = await import('./answer-dialog')
 
   const bridge = createToolBridge({
     send: cb.send,
@@ -71,6 +72,8 @@ export async function openVoiceSession(cb: OpenSessionCallbacks): Promise<OpenSe
       control_screen: args => runControlScreen(args),
       // The direct path: his words, to the conversation he means.
       say_to_conversation: args => runSayToConversation(args),
+      // His answer to a question on screen, through the dialog's own submit path.
+      answer_dialog: args => runAnswerDialog(args),
       // Answered immediately and acted on after a beat, so the orb's last
       // words make it out before the session is torn down under it.
       reload_yourself: () => {
