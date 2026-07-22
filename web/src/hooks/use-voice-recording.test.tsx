@@ -58,14 +58,8 @@ vi.mock('@/hooks/voice-mic-stream', () => ({
   subscribeMicExpired: () => () => {},
 }))
 
-vi.mock('@/hooks/voice-pcm-capture', () => ({
-  PCM_ENCODING: 'linear16',
-  PCM_SAMPLE_RATE: 16000,
-  startPcmCapture: async () => ({ flush: async () => {}, stop: vi.fn() }),
-}))
-
-// Default capture engine is 'mediarecorder' (jsdom has no MediaRecorder); stub it
-// so the hook's state/WS logic is exercised regardless of which engine is pinned.
+// jsdom has no MediaRecorder; stub the capture engine so the hook's state/WS
+// logic is exercised without a real recorder.
 vi.mock('@/hooks/voice-mediarecorder-capture', () => ({
   startMediaRecorderCapture: async () => ({ flush: async () => {}, stop: vi.fn() }),
 }))

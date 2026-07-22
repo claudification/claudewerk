@@ -65,21 +65,6 @@ export const VOICE_ENGINE_ITEMS: SettingItem[] = [
   },
   {
     tab: 'voice',
-    group: 'Capture',
-    label: 'Fast raw-PCM capture (Safari lag fix)',
-    description:
-      'Off (default) = MediaRecorder container, Deepgram endpoints natively -- the accurate path. On = AudioWorklet raw linear16: lower Safari latency, but on a raw mic it can grow ASR lag and mishear. Takes effect on the next recording.',
-    keywords: 'voice capture engine pcm mediarecorder worklet linear16 lag accuracy deepgram',
-    render: (ctx, ariaLabel) => (
-      <SettingCheckbox
-        ariaLabel={ariaLabel}
-        checked={ctx.prefs.voiceCaptureEngine === 'pcm'}
-        onChange={v => ctx.updatePrefs({ voiceCaptureEngine: v ? 'pcm' : 'mediarecorder' })}
-      />
-    ),
-  },
-  {
-    tab: 'voice',
     group: 'Transcription',
     label: 'Deepgram model',
     description: 'STT model for voice transcription',

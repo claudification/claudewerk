@@ -20,15 +20,12 @@ import {
   scheduleStreamRelease,
   setMicExpired,
 } from '@/hooks/voice-mic-stream'
-import { PCM_ENCODING, PCM_SAMPLE_RATE, startPcmCapture } from '@/hooks/voice-pcm-capture'
 import { addVoiceHistoryEntry } from '@/lib/voice-history'
 
-/** Which mic-capture engine to drive. 'mediarecorder' (container -> Deepgram
- *  native endpointing) is the default: the raw-PCM 'pcm' path regressed real
- *  dictation with unbounded growing ASR lag + mishearing. 'pcm' stays available
- *  behind the Voice setting for the Safari-lag case it was built for. */
-type CaptureEngine = 'mediarecorder' | 'pcm'
-const DEFAULT_CAPTURE_ENGINE: CaptureEngine = 'mediarecorder'
+// Capture is MediaRecorder-only: a real container (webm/opus, Safari audio/mp4)
+// that the broker hands Deepgram for NATIVE endpointing. The raw-PCM AudioWorklet
+// engine was deleted -- on a raw mic it regressed dictation with unbounded growing
+// ASR lag + mishearing, and there is no reason to keep a broken path reachable.
 
 // Re-export the warm-stream public API so existing consumers
 // (voice-key, settings-page, use-global-commands) keep importing from here.
@@ -119,9 +116,6 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
   const stateRef = useRef<VoiceState>('idle')
   const backendReadyRef = useRef(false)
   const captureRef = useRef<CaptureHandle | null>(null)
-  // Pinned per-recording so the reconnect voice_start and beginCapture agree on
-  // one engine even if the pref changes mid-session.
-  const engineRef = useRef<CaptureEngine>(DEFAULT_CAPTURE_ENGINE)
   const streamRef = useRef<MediaStream | null>(null)
   const wsListenerRef = useRef<((event: MessageEvent) => void) | null>(null)
   const cancelledRef = useRef(false)
@@ -474,7 +468,6 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
       type: 'voice_start',
       conversationId: target,
       accumulated: accumulatedTextRef.current,
-      ...audioStartFields(),
     })
     armConnectTimeout()
     // voice_ready handler will replay the buffer and flip state to 'recording'
@@ -512,13 +505,6 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     }
   }
 
-  /** The audio-format fields on voice_start. PCM must declare encoding+rate
-   *  (raw linear16 has no container); MediaRecorder sends nothing so the broker
-   *  falls back to Deepgram container auto-detect. */
-  function audioStartFields(): Record<string, unknown> {
-    return engineRef.current === 'pcm' ? { encoding: PCM_ENCODING, sampleRate: PCM_SAMPLE_RATE } : {}
-  }
-
   /** Route one audio chunk (base64) to the broker, or the offline buffer. */
   let chunkSeq = 0
   function onAudioChunk(base64: string) {
@@ -533,12 +519,11 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     }
   }
 
-  /** Start the pinned capture engine; store the handle. Returns false if the
-   *  user cancelled during (async) engine init, in which case it's torn down
-   *  and start() must abort. */
+  /** Start MediaRecorder capture; store the handle. Returns false if the user
+   *  cancelled during (async) init, in which case it's torn down and start()
+   *  must abort. */
   async function beginCapture(stream: MediaStream): Promise<boolean> {
-    const start = engineRef.current === 'pcm' ? startPcmCapture : startMediaRecorderCapture
-    const capture = await start(stream, {
+    const capture = await startMediaRecorderCapture(stream, {
       onChunk: onAudioChunk,
       onError: err => console.error(`[voice] ${elapsed()} chunk encode failed:`, err),
     })
@@ -579,14 +564,11 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     setTargetConversationId(target)
     targetConversationIdRef.current = target
 
-    // Pin the capture engine for this whole recording (reconnect included).
-    engineRef.current = useConversationsStore.getState().controlPanelPrefs.voiceCaptureEngine ?? DEFAULT_CAPTURE_ENGINE
-
     voiceSeqRef.current++
     const seq = voiceSeqRef.current
     startTsRef.current = performance.now()
     setMicExpired(false)
-    console.log(`[voice] start() (target=${target ?? 'none'}, seq=${seq}, engine=${engineRef.current})`)
+    console.log(`[voice] start() (target=${target ?? 'none'}, seq=${seq})`)
 
     cancelledRef.current = false
     pendingStopRef.current = false
@@ -636,7 +618,7 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
       streamRef.current = stream
       watchTrackDeath(stream)
       chunkSeq = 0
-      sendWs({ type: 'voice_start', conversationId: target, ...audioStartFields() })
+      sendWs({ type: 'voice_start', conversationId: target })
       console.log(`[voice] ${elapsed()} voice_start sent`)
       armConnectTimeout()
 
@@ -649,7 +631,7 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
       // 'recording' and routes to WS, not the offline buffer.
       stateRef.current = 'recording'
       setState('recording')
-      console.log(`[voice] ${elapsed()} capture started (${engineRef.current}) -- recording (backend warming up)`)
+      console.log(`[voice] ${elapsed()} capture started -- recording (backend warming up)`)
     } catch (err) {
       failVoice(err instanceof Error ? err.message : 'Mic access denied', `recording failed: ${err}`)
     }

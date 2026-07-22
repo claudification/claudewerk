@@ -56,13 +56,6 @@ export interface ControlPanelPrefs {
   voiceLingerMs: number // how long to keep recording after releasing push-to-talk (catches trailing words)
   voiceWarmStreamMs: number // how long to keep mic stream warm after recording (0 = release immediately)
   voiceNoiseSuppression: boolean // ask the browser for noise suppression + AGC. OFF by default: on macOS/Safari it can route the mic through Apple's voice-processing unit, which ducks other media (see voice-mic-stream.ts). Flip it if the room is noisy and judge for yourself.
-  /** Mic-capture engine. 'mediarecorder' (DEFAULT) streams a webm/opus (or
-   *  Safari audio/mp4) container the broker hands Deepgram for NATIVE endpointing
-   *  -- the path that worked. 'pcm' is the AudioWorklet raw-linear16 engine built
-   *  to shave a Safari lag, but on a RAW mic it regressed dictation badly
-   *  (unbounded growing ASR lag + mishearing). Opt into 'pcm' only for that
-   *  Safari-lag case. Per-device. See voice-capture-shared.ts. */
-  voiceCaptureEngine: 'mediarecorder' | 'pcm'
   voiceDeviceId: string // preferred audio input device ID ('' = system default)
   /** The voice ORB's tone dial (Professional | Snarky | Homicidal | Overkill).
    *  Sent with the mint; the broker narrows it and picks the persona preamble.
@@ -142,7 +135,6 @@ const defaultPrefs: ControlPanelPrefs = {
   voiceLingerMs: 1500,
   voiceWarmStreamMs: 30_000,
   voiceNoiseSuppression: false,
-  voiceCaptureEngine: 'mediarecorder',
   voiceDeviceId: '',
   voiceOrbTone: 'snarky',
   voiceOrbSpeed: DEFAULT_VOICE_ORB_SPEED,

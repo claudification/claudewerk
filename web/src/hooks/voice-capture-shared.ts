@@ -1,12 +1,10 @@
 /**
- * voice-capture-shared - the contract every mic-capture engine implements, plus
- * the one helper they both need.
+ * voice-capture-shared - the mic-capture contract + its base64 helper.
  *
- * Two engines exist: voice-pcm-capture (AudioWorklet -> linear16/16k, added to
- * kill a Safari lag) and voice-mediarecorder-capture (MediaRecorder -> webm/opus
- * or audio/mp4 container, the original path). use-voice-recording picks one at
- * start() time behind the `voiceCaptureEngine` pref and drives it through this
- * handle, so the rest of the hook is engine-agnostic.
+ * One engine: voice-mediarecorder-capture (MediaRecorder -> webm/opus or Safari
+ * audio/mp4 container, handed to Deepgram for native endpointing). A raw-PCM
+ * AudioWorklet engine also lived here; it was deleted after it regressed real
+ * dictation. use-voice-recording drives the engine through this handle.
  */
 
 /** What use-voice-recording holds and drives, regardless of capture engine. */
