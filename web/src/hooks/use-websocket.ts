@@ -14,17 +14,12 @@ const batch: (fn: () => void) => void = batchUpdates ?? (fn => fn())
 import { beginMessage, endMessage, setFlushBatch } from '@/lib/perf-message-context'
 import { isPerfEnabled, record as perfRecord } from '@/lib/perf-metrics'
 import { buildWsUrl, isShareView } from '@/lib/share-mode'
-import { pruneLiveTranscript } from '@/lib/transcript-prune'
 import { addVoiceHistoryEntry } from '@/lib/voice-history'
 import { handleWebControlRequest } from '@/lib/web-control-dispatch'
 import { buildWebControlAdvertise } from '@/lib/web-control-grant'
 import { resubscribeAgentScopes, subscribeAgentScope, unsubscribeAgentScope } from './agent-scope-subscription'
-import {
-  fetchTranscript,
-  handleBgTaskOutputMessage,
-  resolveConfigResponse,
-  useConversationsStore,
-} from './use-conversations'
+import { refetchStaleTranscripts } from './transcript-refetch'
+import { handleBgTaskOutputMessage, resolveConfigResponse, useConversationsStore } from './use-conversations'
 import { dispatchShellData } from './use-shells'
 import { type DashboardMessage, handlers } from './use-websocket-handlers'
 import { recordIn, recordOut } from './ws-stats'
@@ -146,94 +141,6 @@ function dominantFlushType(pending: DashboardMessage[]): string {
   return flushTypeCounts(pending)[0]?.[0] ?? 'unknown'
 }
 
-// Server now reports staleTranscripts as { [sid]: serverLastSeq }. Compare
-// against our lastAppliedTranscriptSeq to decide what to refetch, and fetch
-// via ?sinceSeq=N delta so we only pull the gap rather than the entire tail.
-//
-// Edge case: server returns `gap: true` when its cache has evicted entries
-// older than our sinceSeq (MAX_TRANSCRIPT_ENTRIES rolled over past us). Treat
-// gap=true as "full replace with what you got", not an append -- otherwise
-// we'd have a hole between our lastAppliedSeq and the first returned seq.
-function refetchStaleTranscripts(staleTranscripts?: Record<string, number>): void {
-  if (!staleTranscripts) return
-  const { lastAppliedTranscriptSeq, setTranscript } = useConversationsStore.getState()
-  const sids = Object.keys(staleTranscripts)
-  const actuallyStale = sids.filter(s => {
-    const localSeq = lastAppliedTranscriptSeq[s] ?? 0
-    const serverSeq = staleTranscripts[s]
-    return serverSeq > localSeq
-  })
-  if (actuallyStale.length === 0) {
-    console.log(`[sync] staleTranscripts=${sids.length} all-in-sync (no refetch)`)
-    return
-  }
-  console.log(
-    `[sync] STALE transcripts: ${actuallyStale
-      .map(s => `${s.slice(0, 8)} serverSeq=${staleTranscripts[s]} localSeq=${lastAppliedTranscriptSeq[s] ?? 0}`)
-      .join(', ')}`,
-  )
-  for (const sid of actuallyStale) {
-    const sinceSeq = lastAppliedTranscriptSeq[sid] ?? 0
-    fetchTranscript(sid, sinceSeq).then(result => {
-      if (!result) {
-        console.log(`[sync] REFETCH transcript ${sid.slice(0, 8)}: FAILED (null response)`)
-        return
-      }
-      if (result.gap) {
-        // Server couldn't fulfil the delta (we were behind by more than the
-        // cache holds). Full replace from whatever server has.
-        console.log(
-          `[sync] REFETCH transcript ${sid.slice(0, 8)}: GAP delta=${result.entries.length} lastSeq=${result.lastSeq} -- full replace`,
-        )
-        setTranscript(sid, result.entries)
-        return
-      }
-      if (result.entries.length === 0) {
-        // Nothing to apply -- but bump our lastAppliedSeq to server's lastSeq
-        // so we stop asking. Happens if server advanced its counter without
-        // net-new cached entries (e.g. all new entries got evicted between
-        // sync_check and our fetch).
-        useConversationsStore.setState(state => ({
-          lastAppliedTranscriptSeq: { ...state.lastAppliedTranscriptSeq, [sid]: result.lastSeq },
-        }))
-        console.log(`[sync] REFETCH transcript ${sid.slice(0, 8)}: no new entries, bumped seq -> ${result.lastSeq}`)
-        return
-      }
-      // Normal delta: append to existing transcript.
-      useConversationsStore.setState(state => {
-        const existing = state.transcripts[sid] || []
-        // Guard: only append entries strictly newer than what we have.
-        // Handles the race where a WS transcript_entries broadcast landed
-        // between our sync_check send and this HTTP response.
-        const localMax = state.lastAppliedTranscriptSeq[sid] ?? 0
-        const fresh = result.entries.filter(e => (e.seq ?? 0) > localMax)
-        if (fresh.length === 0) {
-          return {
-            lastAppliedTranscriptSeq: { ...state.lastAppliedTranscriptSeq, [sid]: Math.max(localMax, result.lastSeq) },
-          }
-        }
-        console.log(
-          `[sync] REFETCH transcript ${sid.slice(0, 8)}: +${fresh.length} delta entries (lastSeq ${localMax} -> ${result.lastSeq})`,
-        )
-        // Passive prune: mirror the WS broadcast path -- the delta is a real
-        // tail-grow. Policy (scrollback defer, held-history back-off) lives in
-        // lib/transcript-prune.ts, shared by both call sites.
-        const merged = pruneLiveTranscript({
-          sid,
-          entries: [...existing, ...fresh],
-          scrollback: !!state.scrollbackActive[sid],
-          held: !!state.transcriptHeadHeld[sid],
-          source: 'delta-refetch',
-        })
-        return {
-          transcripts: { ...state.transcripts, [sid]: merged },
-          lastAppliedTranscriptSeq: { ...state.lastAppliedTranscriptSeq, [sid]: result.lastSeq },
-          newDataSeq: state.newDataSeq + 1,
-        }
-      })
-    })
-  }
-}
 
 function processMessage(msg: DashboardMessage) {
   // All sync responses may carry staleTranscripts - handle once before type-specific logic
