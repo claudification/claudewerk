@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import type { Conversation } from '../../shared/protocol'
+import { VOICE_ORB_TONES, VOICE_ORB_VOICES } from '../../shared/voice-orb-options'
 import type { DispatchRuntime } from './runtime'
 import {
   ACTIVE_VOICE_TOOLS,
@@ -106,5 +107,22 @@ describe('derived Realtime schemas', () => {
       const props = Object.keys(t.parameters.properties).sort()
       expect([...t.parameters.required].sort()).toEqual(props)
     }
+  })
+
+  // The orb has to be able to ANSWER "what voices have you got" without calling
+  // anything, and a misheard name must die at the schema rather than come back
+  // as a rejection it then has to explain. Free strings did neither.
+  it('spells out every voice and tone in the update_orb_settings schema', () => {
+    const props = tools.find(t => t.name === 'update_orb_settings')?.parameters.properties as Record<
+      string,
+      { anyOf?: Array<{ enum?: string[] }> }
+    >
+    const optionsOf = (key: string) => props[key]?.anyOf?.find(b => b.enum)?.enum
+    // Straight off the shared lists -- the pickers, the mint and the orb cannot
+    // end up offering three different sets of voices.
+    expect(optionsOf('voice')).toEqual([...VOICE_ORB_VOICES])
+    expect(optionsOf('tone')).toEqual([...VOICE_ORB_TONES])
+    // Nullable survives the enum: "change the voice only" must stay expressible.
+    expect(props.voice?.anyOf?.some(b => !b.enum)).toBe(true)
   })
 })

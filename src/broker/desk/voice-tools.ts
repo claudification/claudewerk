@@ -17,6 +17,12 @@
  */
 
 import { z } from 'zod'
+import {
+  MAX_VOICE_ORB_SPEED,
+  MIN_VOICE_ORB_SPEED,
+  VOICE_ORB_TONES,
+  VOICE_ORB_VOICES,
+} from '../../shared/voice-orb-options'
 import { buildDispatchToolset as buildWideToolset } from './dispatch-tools'
 import { orbMemoryTools } from './orb-memory-tools'
 import { type RealtimeTool, toRealtimeTools } from './realtime-schema'
@@ -133,10 +139,19 @@ const CLIENT_LOCAL_TOOLS: Toolset = {
   update_orb_settings: defineTool({
     description:
       'Change how YOU sound when he tells you to -- "faster", "slow down", "different voice", "use Cedar", "go professional/snarky". Pass only what he changed; leave the rest null. Speed (0.25-1.5) and voice take effect immediately; a tone change lands on your next summon (say so). Values are checked -- if a voice or tone comes back rejected, read out the real options and let him pick. Settings persist. NOT for anything about a conversation.',
+    // ENUMS, not free strings: the model can then SEE every voice and tone it is
+    // allowed to pick (so "what voices have you got" is answerable without a tool
+    // call, and a misheard name is caught at the schema instead of coming back as
+    // a rejection). `enum` is one of the keywords OpenAI strict mode supports --
+    // number `minimum`/`maximum` is NOT, so speed stays a plain number and keeps
+    // its clamp on the client.
     inputSchema: z.object({
-      speed: z.number().nullable().describe('Speaking rate 0.25-1.5, or null. Clamped to range.'),
-      voice: z.string().nullable().describe('An OpenAI voice name (marin, cedar, ...), or null.'),
-      tone: z.string().nullable().describe('professional | snarky | homicidal | overkill, or null.'),
+      speed: z
+        .number()
+        .nullable()
+        .describe(`Speaking rate ${MIN_VOICE_ORB_SPEED}-${MAX_VOICE_ORB_SPEED}, or null. Clamped to range.`),
+      voice: z.enum(VOICE_ORB_VOICES).nullable().describe('Which voice speaks, or null to leave it.'),
+      tone: z.enum(VOICE_ORB_TONES).nullable().describe('How much attitude, or null to leave it.'),
     }),
     execute: () => ({ clientLocal: 'update_orb_settings is handled in the browser' }),
   }),
