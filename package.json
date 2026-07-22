@@ -55,6 +55,7 @@
     "test": "bun test",
     "harness:smoke": "bun run scripts/harness-smoke.ts",
     "canvas:smoke": "bun run scripts/canvas-agent-write-smoke.ts",
+    "canvas:chat:smoke": "bun run scripts/canvas-chat-smoke.ts",
     "test:contract": "bun test src/shared/bun-contract/",
     "test:changed": "bun test --changed",
     "test:isolate": "bun test --isolate",

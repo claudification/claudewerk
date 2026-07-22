@@ -22,10 +22,8 @@
  * C and D are the ones that matter for the chat feature -- a user watching the
  * canvas while the agent draws on it. Failures print WHAT broke and WHERE.
  */
-import { spawn } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createSmokeReport, mintDevKey, openSmokeSocket, type SmokeSocket, startSmokeBroker } from './lib/smoke-broker'
 
 const PORT = Number(process.env.CANVAS_SMOKE_PORT) || 9348
 const BASE = `http://localhost:${PORT}`
@@ -69,39 +67,6 @@ function elementIds(sceneJson: string | null): string[] {
   }
 }
 
-function bootBroker(cacheDir: string) {
-  return spawn(
-    'bun',
-    ['run', 'src/broker/index.ts', '--cache-dir', cacheDir, '--port', String(PORT), '--rclaude-secret', SECRET],
-    {
-      cwd: REPO,
-      env: { ...process.env, VAPID_PUBLIC_KEY: '', VAPID_PRIVATE_KEY: '', DEV_HARNESS_ENABLED: '1' },
-      stdio: 'ignore',
-    },
-  )
-}
-
-async function waitHealth(): Promise<void> {
-  for (let i = 0; i < 40; i++) {
-    try {
-      if ((await fetch(`${BASE}/health`)).ok) return
-    } catch {}
-    await Bun.sleep(500)
-  }
-  throw new Error(`broker did not become healthy on ${BASE}`)
-}
-
-function mintDevKey(cacheDir: string): string {
-  const r = Bun.spawnSync(
-    ['bun', 'run', 'src/broker/cli.ts', 'mint-dev-key', '--as', 'smoke-user', '--cache-dir', cacheDir],
-    { cwd: REPO, env: { ...process.env, DEV_HARNESS_ENABLED: '1' } },
-  )
-  const out = r.stdout.toString() + r.stderr.toString()
-  const token = out.match(/dvk_[A-Za-z0-9_\-.]+/)?.[0]
-  if (!token) throw new Error(`could not mint a dev key:\n${out}`)
-  return token
-}
-
 /**
  * A joined canvas-room peer, modelling what the BROWSER actually does: collect
  * inbound frames AND apply scene deltas to a local scene (use-canvas-collab.ts
@@ -109,13 +74,9 @@ function mintDevKey(cacheDir: string): string {
  * is built on -- which is exactly the property check D is about, so a peer that
  * ignored deltas would be testing a merge guarantee the design never made.
  */
-interface RoomPeer {
-  ws: WebSocket
-  frames: Record<string, unknown>[]
-  of(type: string): Record<string, unknown>[]
+interface RoomPeer extends SmokeSocket {
   /** Newest scene this peer has applied, seeded from canvas_join_ack. */
   localScene(): string | null
-  close(): void
 }
 
 /** Frame types that carry a full scene the client adopts wholesale: the join
@@ -131,52 +92,17 @@ function foldScene(frames: Record<string, unknown>[]): string | null {
   return scene
 }
 
-/** Open an authenticated dashboard socket and start collecting frames. */
-async function openSocket(cookie: string): Promise<{ ws: WebSocket; frames: Record<string, unknown>[] }> {
-  const ws = new WebSocket(`ws://localhost:${PORT}/ws`, { headers: { Cookie: `cw-session=${cookie}` } } as never)
-  const frames: Record<string, unknown>[] = []
-  ws.addEventListener('message', ev => {
-    try {
-      frames.push(JSON.parse(String(ev.data)) as Record<string, unknown>)
-    } catch {}
-  })
-  await new Promise<void>((resolve, reject) => {
-    ws.addEventListener('open', () => resolve())
-    ws.addEventListener('error', () => reject(new Error('WS connect failed')))
-    setTimeout(() => reject(new Error('WS connect timed out')), 5000)
-  })
-  return { ws, frames }
-}
-
-/** Wait for the join to be acked, surfacing a refusal as a thrown error. */
-async function awaitJoinAck(frames: Record<string, unknown>[]): Promise<void> {
-  for (let i = 0; i < 40; i++) {
-    if (frames.some(f => f.type === 'canvas_join_ack')) return
-    const refusal = frames.find(f => f.type === 'canvas_error')
-    if (refusal) throw new Error(`canvas_join refused: ${JSON.stringify(refusal)}`)
-    await Bun.sleep(100)
-  }
-  throw new Error('never got canvas_join_ack')
-}
-
 async function joinRoom(canvasId: string, cookie: string): Promise<RoomPeer> {
-  const { ws, frames } = await openSocket(cookie)
-  ws.send(JSON.stringify({ type: 'canvas_join', canvasId, name: 'smoke-human' }))
-  await awaitJoinAck(frames)
-  return {
-    ws,
-    frames,
-    of: type => frames.filter(f => f.type === type),
-    localScene: () => foldScene(frames),
-    close: () => ws.close(),
-  }
+  const sock = await openSmokeSocket(`ws://localhost:${PORT}/ws`, { Cookie: `cw-session=${cookie}` })
+  sock.send({ type: 'canvas_join', canvasId, name: 'smoke-human' })
+  const acked = await sock.until(f => f.some(x => x.type === 'canvas_join_ack' || x.type === 'canvas_error'))
+  const refusal = sock.frames.find(f => f.type === 'canvas_error')
+  if (refusal) throw new Error(`canvas_join refused: ${JSON.stringify(refusal)}`)
+  if (!acked) throw new Error('never got canvas_join_ack')
+  return { ...sock, localScene: () => foldScene(sock.frames) }
 }
 
-const results: { name: string; ok: boolean; detail: string }[] = []
-function check(name: string, ok: boolean, detail: string): void {
-  results.push({ name, ok, detail })
-  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}\n      ${detail}`)
-}
+const { check, finish } = createSmokeReport()
 
 /** The MCP `canvas_read` path: stored element ids for a canvas. */
 async function storedIds(id: string): Promise<string[]> {
@@ -288,17 +214,17 @@ async function run(cookie: string): Promise<void> {
   }
 }
 
-const cacheDir = mkdtempSync(join(tmpdir(), 'canvas-smoke-'))
-const broker = bootBroker(cacheDir)
+const broker = await startSmokeBroker({
+  port: PORT,
+  secret: SECRET,
+  repo: REPO,
+  label: 'canvas-smoke',
+  logs: !!process.env.CANVAS_SMOKE_LOGS,
+})
 try {
-  await waitHealth()
-  const cookie = mintDevKey(cacheDir)
-  await run(cookie)
+  await run(mintDevKey(REPO, broker.cacheDir))
 } finally {
-  broker.kill()
-  rmSync(cacheDir, { recursive: true, force: true })
+  broker.stop()
 }
 
-const failed = results.filter(r => !r.ok)
-console.log(`\n${results.length - failed.length}/${results.length} checks passed.`)
-process.exit(failed.length ? 1 : 0)
+finish()
