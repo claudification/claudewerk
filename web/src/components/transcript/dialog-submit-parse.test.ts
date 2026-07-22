@@ -21,6 +21,20 @@ function framedSubmit(state: object, title = 'Plan: X') {
   ].join('\n')
 }
 
+describe('voice-orb relayed message (PTY channel path)', () => {
+  it('renders source="rclaude" sender="orb" as an attributed "from Orb" item', () => {
+    const wrapped = '<channel source="rclaude" sender="orb" server="Orb">\nretry the deploy\n</channel>'
+    const items = parseGroupEntries([userEntry(wrapped)], noResult)
+    expect(items).toHaveLength(1)
+    const it0 = items[0]
+    expect(it0.kind).toBe('channel')
+    if (it0.kind !== 'channel') return
+    expect(it0.source).toBe('Orb')
+    expect(it0.isInterConversation).toBe(true)
+    expect(it0.text).toBe('retry the deploy')
+  })
+})
+
 describe('dialog-untrusted submit parsing', () => {
   it('flags isDialogSubmit and extracts the fenced form JSON (not the wrapper)', () => {
     const items = parseGroupEntries([userEntry(framedSubmit({ verdict: 'revise', comments: 'tighten it' }))], noResult)

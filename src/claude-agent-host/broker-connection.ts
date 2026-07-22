@@ -417,7 +417,12 @@ function handleInput(
   const isSlashCommand = input.trimStart().startsWith('/')
 
   if (deps.channelEnabled && isMcpChannelReady() && !isSlashCommand) {
-    pushChannelMessage(input)
+    // An injected-as-user message from a surface (e.g. the voice orb): attribute
+    // it so the PTY transcript renders "from <source>". `source="rclaude"` keeps
+    // it USER input (the agent acts on it), `sender` carries the label -- the
+    // same meta mechanism the inter-conversation path uses to render attributed.
+    const meta = source ? { source: 'rclaude', sender: 'orb', server: source } : undefined
+    pushChannelMessage(input, meta)
       .then(sent => {
         if (sent) {
           ctx.diag('channel', `Input via MCP (${input.length} chars)`)
