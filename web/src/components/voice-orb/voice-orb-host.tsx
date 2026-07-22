@@ -14,6 +14,7 @@
 import { useEffect } from 'react'
 import { useVoiceOrb } from '@/hooks/use-voice-orb'
 import { OrbCaption, pickCaption } from './orb-caption'
+import { OrbMenu } from './orb-menu'
 import { toOrbState } from './orb-state'
 import { useAudioLevel } from './use-audio-level'
 import { useOrbChannel } from './use-orb-channel'
@@ -78,34 +79,26 @@ export function VoiceOrbHost() {
     >
       <OrbCaption text={caption.text} tone={caption.tone} />
       <div className="pointer-events-auto flex items-center gap-2">
-        <button
-          type="button"
-          onClick={orb.toggleMute}
-          className="rounded-full border border-border bg-card/85 px-2.5 py-1 text-[11px] text-muted-foreground shadow backdrop-blur hover:text-foreground"
-          title={orb.muted ? 'Unmute the mic' : 'Mute the mic (releases the device)'}
+        {/* Everything the orb can do to itself lives in ONE menu now (mute,
+            rate, restart, dismiss, desk) -- click, tap or right-click it. */}
+        <OrbMenu
+          actions={{
+            muted: orb.muted,
+            toggleMute: orb.toggleMute,
+            reload: () => void orb.reload(),
+            dismiss: summon.dismiss,
+            openDesk,
+          }}
         >
-          {orb.muted ? 'unmute' : 'mute'}
-        </button>
-        <button
-          type="button"
-          onClick={summon.dismiss}
-          aria-label="Dismiss the voice orb"
-          title="Dismiss (ends the session, releases the mic)"
-          className="rounded-full border border-border bg-card/85 px-2.5 py-1 text-[11px] text-muted-foreground shadow backdrop-blur hover:text-foreground"
-        >
-          dismiss
-        </button>
-        {/* The orb itself opens the DESK -- the text face of the same brain --
-            rather than being a second transcript surface of its own. */}
-        <button
-          type="button"
-          onClick={openDesk}
-          aria-label="Voice orb -- open the dispatch desk"
-          title="Open the dispatch desk"
-          className="size-20 rounded-full focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
-        >
-          <VoiceOrb state={toOrbState(orb.state, orb.muted, dozing)} level={level} />
-        </button>
+          <button
+            type="button"
+            aria-label="Voice orb -- open its menu"
+            title="Click or right-click for the orb's menu"
+            className="size-20 rounded-full focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
+          >
+            <VoiceOrb state={toOrbState(orb.state, orb.muted, dozing)} level={level} />
+          </button>
+        </OrbMenu>
       </div>
     </div>
   )
