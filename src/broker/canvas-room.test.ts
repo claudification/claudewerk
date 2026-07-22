@@ -16,7 +16,9 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { writeCanvasImage } from './canvas-files'
 import { AGENT_PEER_ID, applySceneWrite, baselineScene, resetCanvasRoomState } from './canvas-room'
+import { enforceCanvasTier } from './canvas-sanitize'
 import { readScene } from './canvas-scenes'
 import { closeCanvasStore, createCanvas, initCanvasStore, saveCanvasScene } from './canvas-store'
 import type { ConversationStore } from './conversation-store'
@@ -46,15 +48,46 @@ function scene(tag: string): string {
   return JSON.stringify({ type: 'excalidraw', elements: [{ id: tag, type: 'rectangle' }] })
 }
 
+const PNG = 'data:image/png;base64,aGk='
+
+/** A FAT scene the way the browser autosave PUTs one: an image element plus its
+ *  bytes inline in `files`. `tag` also names the fileId. */
+function fatScene(tag: string): string {
+  return JSON.stringify({
+    type: 'excalidraw',
+    elements: [{ id: tag, type: 'image', fileId: tag }],
+    files: { [tag]: { id: tag, dataURL: PNG, mimeType: 'image/png' } },
+  })
+}
+
+function fileKeys(json: string | null | undefined): string[] {
+  if (!json) return []
+  return Object.keys((JSON.parse(json) as { files?: Record<string, unknown> }).files ?? {})
+}
+
+/** The fileIds ON DISK -- readScene, never baselineScene (see storedIds). */
+function storedFileKeys(): string[] {
+  return fileKeys(readScene(canvasId))
+}
+
+/** The scene the room was actually sent by the last broadcast. */
+function lastBroadcastScene(broadcasts: Broadcast[]): string {
+  const deltas = broadcasts.filter(b => b.msg.type === 'canvas_scene_delta')
+  return deltas[deltas.length - 1]?.msg.scene as string
+}
+
 /** Element ids currently ON DISK for the test canvas.
  *
  *  Deliberately readScene, NOT baselineScene: the baseline answers from the live
  *  in-memory scene first, so using it here would make the persist assertions
  *  pass without any write ever reaching the file. */
-function storedIds(): string[] {
-  const raw = readScene(canvasId)
+function idsIn(raw: string | null | undefined): string[] {
   if (!raw) return []
   return (JSON.parse(raw) as { elements?: { id: string }[] }).elements?.map(e => e.id) ?? []
+}
+
+function storedIds(): string[] {
+  return idsIn(readScene(canvasId))
 }
 
 beforeEach(() => {
@@ -120,4 +153,94 @@ test('a debounced write does persist when nothing supersedes it', async () => {
 
   await Bun.sleep(PERSIST_DEBOUNCE_MS + 400)
   expect(storedIds()).toEqual(['settled'])
+})
+
+// ─── fat disk / lean wire ───────────────────────────────────────────
+//
+// The browser autosave PUTs the scene FAT (image bytes inline) because disk must
+// be self-contained: the fat PUT fires BEFORE the best-effort upload to the file
+// slot, and legacy/import/paste bytes never reach the slot at all. So the slot
+// can LACK what disk has, and only the broadcast may be thinned.
+
+test('a fat write persists FAT and broadcasts STRIPPED', async () => {
+  const { store, broadcasts } = mockStore()
+  applySceneWrite(store, canvasId, fatScene('img'), { peerId: 'conn_a', persist: 'debounced' })
+
+  // The wire is lean -- this is the flood the strip exists to stop.
+  expect(fileKeys(lastBroadcastScene(broadcasts))).toEqual([])
+  // ...and disk still holds the bytes. Read from the FILE, not the room.
+  await Bun.sleep(PERSIST_DEBOUNCE_MS + 400)
+  expect(storedFileKeys()).toEqual(['img'])
+  expect(storedIds()).toEqual(['img'])
+})
+
+test('the tier baseline is the copy the room was handed, not the fat one', () => {
+  const { store, broadcasts } = mockStore()
+  applySceneWrite(store, canvasId, fatScene('img'), { peerId: 'conn_a', persist: 'debounced' })
+
+  // A comment guest is judged against what they are holding; anything else
+  // measures them against a scene they were never sent.
+  expect(baselineScene(canvasId)).toBe(lastBroadcastScene(broadcasts))
+  expect(fileKeys(baselineScene(canvasId))).toEqual([])
+})
+
+test('the baseline has ONE shape whether it comes from the room or from disk', () => {
+  const { store } = mockStore()
+  saveCanvasScene(canvasId, fatScene('img'))
+
+  // Cold room: baseline falls back to the fat stored scene...
+  expect(fileKeys(baselineScene(canvasId))).toEqual([])
+  const cold = baselineScene(canvasId)
+  // ...warm room: same write, now via the live scene. Same shape, or a guest's
+  // verdict would depend on whether anyone else happened to be editing.
+  applySceneWrite(store, canvasId, fatScene('img'), { peerId: 'conn_a', persist: 'debounced' })
+  expect(fileKeys(baselineScene(canvasId))).toEqual([])
+  expect(baselineScene(canvasId)).toBe(cold)
+})
+
+test('a comment guest is judged the same whether their write is fat or lean', () => {
+  const { store } = mockStore()
+  applySceneWrite(store, canvasId, fatScene('img'), { peerId: 'conn_a', persist: 'debounced' })
+  const prev = baselineScene(canvasId)
+
+  // Same base design either way -- carrying image bytes is not an edit.
+  expect(enforceCanvasTier(prev, fatScene('img'), 'comment').ok).toBe(true)
+  expect(enforceCanvasTier(prev, prev, 'comment').ok).toBe(true)
+})
+
+test('the HTTP path strips the wire too, and leaves the caller-persisted scene fat', () => {
+  const { store, broadcasts } = mockStore()
+  // The autosave PUT: the route persists fat, then publishes. Both halves in one
+  // test, because the bug was the ASYMMETRY between them.
+  saveCanvasScene(canvasId, fatScene('img'))
+  applySceneWrite(store, canvasId, fatScene('img'), { peerId: 'conn_a', persist: 'already-saved' })
+
+  expect(fileKeys(lastBroadcastScene(broadcasts))).toEqual([])
+  expect(storedFileKeys()).toEqual(['img'])
+})
+
+// ─── dangling fileIds ───────────────────────────────────────────────
+
+test('an image with no bytes anywhere is dropped from the wire but kept on disk', async () => {
+  const { store, broadcasts } = mockStore()
+  // A scene referencing a fileId nobody ever uploaded: peers would fetch null,
+  // Excalidraw would prune the fileless image, and that prune echoes back
+  // through this chokepoint as a write that DELETES it.
+  const ghost = JSON.stringify({ type: 'excalidraw', elements: [{ id: 'g', type: 'image', fileId: 'ghost' }] })
+  applySceneWrite(store, canvasId, ghost, { persist: 'debounced' })
+
+  const wire = JSON.parse(lastBroadcastScene(broadcasts)) as { elements: unknown[] }
+  expect(wire.elements).toEqual([])
+  // Never at the cost of disk -- persistence takes the write verbatim.
+  await Bun.sleep(PERSIST_DEBOUNCE_MS + 400)
+  expect(storedIds()).toEqual(['g'])
+})
+
+test('an image whose bytes are in the file slot survives the wire copy', () => {
+  const { store, broadcasts } = mockStore()
+  writeCanvasImage(canvasId, 'img', PNG)
+  const lean = JSON.stringify({ type: 'excalidraw', elements: [{ id: 'g', type: 'image', fileId: 'img' }] })
+  applySceneWrite(store, canvasId, lean, { persist: 'debounced' })
+
+  expect(idsIn(lastBroadcastScene(broadcasts))).toEqual(['g'])
 })

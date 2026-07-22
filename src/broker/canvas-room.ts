@@ -17,8 +17,9 @@
 
 import type { ServerWebSocket } from 'bun'
 import type { CanvasPeer, CanvasPresence, CanvasSceneDelta, CanvasShareTier } from '../shared/protocol'
+import { cancelAllPendingPersists, cancelPendingPersist, schedulePersist } from './canvas-persist-debounce'
+import { stripSceneFiles, toWireScene } from './canvas-scene-files'
 import { BLANK_SCENE, readScene } from './canvas-scenes'
-import { saveCanvasScene } from './canvas-store'
 import type { ConversationStore } from './conversation-store'
 
 /** Cursor colours assigned round-robin as peers join a room. */
@@ -34,18 +35,19 @@ export interface Peer extends CanvasPeer {
 /** canvasId -> peerId -> peer. Module state (room membership beyond the raw
  *  channel subscription, so presence rosters + colours survive per connection). */
 const rooms = new Map<string, Map<string, Peer>>()
-/** canvasId -> pending persist. */
-const persistTimers = new Map<string, ReturnType<typeof setTimeout>>()
-const PERSIST_DEBOUNCE_MS = 1500
 
 /**
- * canvasId -> the newest ACCEPTED scene in the room.
+ * canvasId -> the newest scene the room was ACTUALLY SENT (the wire copy).
  *
  * The tier check needs the baseline a comment peer must preserve, and the stored
- * scene lags the room by up to PERSIST_DEBOUNCE_MS. Judging against disk would
+ * scene lags the room by up to the persist debounce. Judging against disk would
  * reject every annotation made within 1.5s of someone else's edit -- and measure
  * it against a base the guest is not even looking at. So the room keeps the live
  * scene and disk is only the fallback for a room that has not written yet.
+ *
+ * It holds the BROADCAST copy, not the persisted one -- what a peer must
+ * preserve is what that peer was handed, and the two differ (fat disk, lean
+ * wire: see canvas-scene-files.ts).
  */
 const latestScene = new Map<string, string>()
 
@@ -70,9 +72,22 @@ export interface SceneWriteOptions {
   persist: PersistMode
 }
 
-/** The baseline for a tier check: live room scene, else stored, else blank. */
+/**
+ * The baseline for a tier check: live room scene, else stored, else blank.
+ *
+ * ONE SHAPE, whichever source answers. The live scene is already the lean wire
+ * copy; the stored one is fat, so it is stripped here. Without that a comment
+ * guest would be judged against a baseline that carries image bytes on a cold
+ * room and not on a warm one -- an inconsistency that has nothing to do with
+ * what they drew. (The proposed side needs no strip: a tier verdict is computed
+ * from element ids + versions only, and the sanitized JSON it returns is what
+ * gets PERSISTED, so stripping it there would thin disk.)
+ */
 export function baselineScene(canvasId: string): string {
-  return latestScene.get(canvasId) ?? readScene(canvasId) ?? BLANK_SCENE
+  const live = latestScene.get(canvasId)
+  if (live !== undefined) return live
+  const stored = readScene(canvasId)
+  return stored === null ? BLANK_SCENE : stripSceneFiles(stored)
 }
 
 export function roomSize(canvasId: string): number {
@@ -118,27 +133,20 @@ export function broadcastPresence(store: ConversationStore, canvasId: string): v
 }
 
 /**
- * Cancel any pending debounced persist for a canvas.
- *
- * NOT just tidiness: a timer scheduled by an earlier room delta still holds the
- * scene as it was THEN. If it fires after a newer write it writes that stale
- * scene back over it -- the same clobber this module exists to kill, on a 1.5s
- * fuse. Every write cancels the old timer before deciding how to persist.
- */
-function cancelPendingPersist(canvasId: string): void {
-  const pending = persistTimers.get(canvasId)
-  if (!pending) return
-  clearTimeout(pending)
-  persistTimers.delete(canvasId)
-}
-
-/**
  * THE scene-write chokepoint. Publish a new scene to the room and settle its
  * persistence:
- *   1. it becomes the live scene (so the tier baseline is never stale),
- *   2. any pending debounced persist is cancelled (it holds an older scene),
- *   3. it is broadcast to every peer as a `canvas_scene_delta`,
- *   4. persisted -- debounced for the WS path, already done for the HTTP path.
+ *   1. any pending debounced persist is cancelled (it holds an older scene),
+ *   2. the scene is persisted VERBATIM -- debounced for the WS path, already
+ *      done by the caller for the HTTP path,
+ *   3. a lean wire copy is derived (toWireScene) and broadcast to every peer as
+ *      a `canvas_scene_delta`,
+ *   4. that same wire copy becomes the live scene, so the tier baseline is both
+ *      fresh and identical to what the room is holding.
+ *
+ * Step 2 takes `sceneJson` UNTOUCHED and that is deliberate: persistence is
+ * independent of the upload slot (the browser PUTs fat BEFORE its best-effort
+ * upload; legacy/import/paste bytes were never uploaded at all), so the slot can
+ * lack what disk has. Thinning what is persisted would lose those bytes.
  *
  * Returns the room size, for the caller's log line.
  */
@@ -148,21 +156,14 @@ export function applySceneWrite(
   sceneJson: string,
   opts: SceneWriteOptions,
 ): number {
-  latestScene.set(canvasId, sceneJson)
   cancelPendingPersist(canvasId)
-  if (opts.persist === 'debounced') {
-    persistTimers.set(
-      canvasId,
-      setTimeout(() => {
-        persistTimers.delete(canvasId)
-        saveCanvasScene(canvasId, sceneJson)
-      }, PERSIST_DEBOUNCE_MS),
-    )
-  }
+  if (opts.persist === 'debounced') schedulePersist(canvasId, sceneJson)
+  const wire = toWireScene(canvasId, sceneJson)
+  latestScene.set(canvasId, wire)
   const msg: CanvasSceneDelta = {
     type: 'canvas_scene_delta',
     canvasId,
-    scene: sceneJson,
+    scene: wire,
     peerId: opts.peerId ?? AGENT_PEER_ID,
   }
   store.broadcastToChannel('canvas', canvasId, msg)
@@ -193,8 +194,7 @@ export function roomsFor(): string[] {
 
 /** Test/lifecycle helper: clear all room + timer state. */
 export function resetCanvasRoomState(): void {
-  for (const t of persistTimers.values()) clearTimeout(t)
-  persistTimers.clear()
+  cancelAllPendingPersists()
   rooms.clear()
   latestScene.clear()
 }
