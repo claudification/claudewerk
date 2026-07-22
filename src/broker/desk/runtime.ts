@@ -18,6 +18,7 @@ import type { ConversationStore } from '../conversation-store'
 import { getGlobalSettings } from '../global-settings'
 import { getProjectSettings } from '../project-settings'
 import { chat } from '../recap/shared/openrouter-client'
+import type { StoredTranscriptRow } from '../recap/shared/transcript-record'
 import { broadcastToSubscribers } from '../routes/shared'
 import { dispatchSpawn, type SpawnDispatchDeps } from '../spawn-dispatch'
 import { getDecision, recordDecision } from './audit'
@@ -35,6 +36,10 @@ export interface DispatchRuntime {
    *  ITSELF -- the cheap "ask an expert" path -- instead of waking a conversation
    *  behind the cost gate. Bound where the StoreDriver is available. */
   searchTranscripts?: (query: string, limit: number) => TranscriptHit[]
+  /** Optional DURABLE transcript tail: the last `limit` stored entries of one
+   *  conversation's parent stream. Durable-first on purpose -- the in-memory
+   *  cache is evicted, so an ENDED conversation only reads back from the store. */
+  readTranscriptTail?: (conversationId: string, limit: number) => StoredTranscriptRow[]
 }
 
 export interface TranscriptHit {
@@ -45,9 +50,11 @@ export interface TranscriptHit {
 }
 
 /** The slice of the StoreDriver's transcript store the desk needs (structural,
- *  so runtime.ts stays free of the store types). */
+ *  so runtime.ts stays free of the store types). `getLatest` is optional because
+ *  the test fakes only ever needed search -- a real StoreDriver has both. */
 export interface TranscriptSearchSource {
   search(query: string, opts?: { limit?: number }): TranscriptHit[]
+  getLatest?(conversationId: string, limit: number, agentId?: string | null): StoredTranscriptRow[]
 }
 
 /** Assemble a live DispatchRuntime for a control-panel caller. ONE place: the
@@ -64,6 +71,10 @@ export function buildDispatchRuntime(store: ConversationStore, transcripts?: Tra
         type: h.type,
         snippet: h.snippet,
       }))
+    const getLatest = transcripts.getLatest?.bind(transcripts)
+    // Pin the parent stream (agentId null): unscoped, a conversation's tail
+    // would come back interleaved with its subagents' chatter.
+    if (getLatest) rt.readTranscriptTail = (conversationId, limit) => getLatest(conversationId, limit, null)
   }
   return rt
 }

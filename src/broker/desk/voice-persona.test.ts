@@ -19,6 +19,15 @@ describe('the contract drives the instructions', () => {
     expect(flat(readOnly)).toContain('`control_screen`')
   })
 
+  it('teaches reading how a conversation ENDED, only when read_transcript is minted', () => {
+    expect(flat(buildVoiceInstructions(['list_conversations']))).not.toContain('`read_transcript`')
+    const withIt = flat(buildVoiceInstructions([...READ, 'read_transcript']))
+    expect(withIt).toContain('`read_transcript`')
+    expect(withIt).toContain('how did that one end')
+    // Reading a transcript ALOUD is the failure mode this tool invites.
+    expect(withIt).toContain('never read a transcript out')
+  })
+
   it('adds the talking + quest + cost paragraphs once the action verbs are minted', () => {
     const full = buildVoiceInstructions(ALL)
     expect(flat(full)).toContain('`say_to_conversation`')

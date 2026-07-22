@@ -25,6 +25,7 @@ import { composeProjectsOverview, type OverviewConv, type ProjectOverviewRow } f
 import { getBrief, recallBriefs } from './project-memory'
 import { listDeskProjects, projectKeyOf, resolveDeskProject } from './projects'
 import { type QuestSpawn, questTools } from './quest-tool'
+import { readTranscriptTool } from './read-transcript-tool'
 import { type DispatchRuntime, runDispatch } from './runtime'
 import { defineTool, type Toolset } from './tool-def'
 
@@ -203,6 +204,7 @@ export function buildDispatchToolset(
     ...projectTools(rt),
     ...questTools(rt, questSpawn),
     ...lookupTools(rt),
+    ...readTranscriptTool(rt),
     ...awarenessTools(),
     ...notifyTool(rt),
     ...control,

@@ -1,5 +1,6 @@
-import type { StoreDriver, TranscriptEntryRecord } from '../../../store/types'
+import type { StoreDriver } from '../../../store/types'
 import { extractUserPromptsAndFinals, type PeriodTurn } from '../../shared/transcript-extract'
+import { toTranscriptEntry } from '../../shared/transcript-record'
 import type { ConversationDigest, PeriodScope, TranscriptDigest } from './types'
 
 export function gatherTranscripts(
@@ -27,15 +28,5 @@ function digestForConversation(
     limit: 1000,
   })
   if (entries.length === 0) return []
-  return extractUserPromptsAndFinals(entries.map(toLooseTranscriptEntry), { includeInternals })
-}
-
-function toLooseTranscriptEntry(rec: TranscriptEntryRecord): never {
-  return {
-    type: rec.type,
-    uuid: rec.uuid,
-    timestamp: rec.timestamp,
-    ...(rec.subtype ? { subtype: rec.subtype } : {}),
-    ...rec.content,
-  } as never
+  return extractUserPromptsAndFinals(entries.map(toTranscriptEntry), { includeInternals })
 }

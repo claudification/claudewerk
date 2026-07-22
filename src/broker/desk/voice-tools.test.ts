@@ -35,6 +35,16 @@ describe('the voice contract', () => {
     expect(ACTIVE_VOICE_TOOLS).not.toContain('conversation_select')
   })
 
+  it('can read how a conversation ENDED, not just what it has been doing', () => {
+    // `read_events` is lifecycle noise and `search_transcripts` needs a query you
+    // already know -- neither answers "how did that one finish?".
+    expect(ACTIVE_VOICE_TOOLS).toContain('read_transcript')
+    // And it survives a runtime with no durable transcript store bound: the mint
+    // throws on a contract name it cannot find, so absence would kill the orb.
+    const bare = { store: {}, callerConversationId: null } as unknown as DispatchRuntime
+    expect(buildVoiceToolset(bare, { names: ['read_transcript'] }).read_transcript).toBeDefined()
+  })
+
   it('every mutating verb names its target explicitly -- nothing guesses', () => {
     // `say_to_conversation` resolves against what is ON SCREEN (client-local),
     // `dispatch_quest` takes a named project. Neither accepts a raw id from speech.

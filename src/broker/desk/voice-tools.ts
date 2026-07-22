@@ -36,6 +36,7 @@ export const VOICE_READ_TOOLS = [
   'projects_overview',
   'list_conversations',
   'read_events',
+  'read_transcript',
   'state_of_union',
   'search_transcripts',
   'control_screen',

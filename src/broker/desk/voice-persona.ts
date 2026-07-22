@@ -27,6 +27,14 @@ const READING = [
   'has been doing; `search_transcripts` for "did we ever".',
 ].join('\n')
 
+const ENDINGS = [
+  'HOW ONE ENDED: `read_transcript` (a conversationId, from `list_conversations`)',
+  'gives you its status, its own last progress report, and the last few turns --',
+  'use it for "how did that one end", "what did it come back with", "is it done",',
+  'and for anything ENDED, where `read_events` only has lifecycle noise. Summarise',
+  'in a sentence; never read a transcript out.',
+].join('\n')
+
 const SCREEN = 'SCREEN: `control_screen` navigates the panel or opens/closes a modal when he asks.'
 
 const TALKING = [
@@ -108,6 +116,7 @@ export function buildVoiceInstructions(
   const has = (n: string) => toolNames.includes(n)
   const parts = [tonePreamble(tone), VOCAB]
   if (has('projects_overview')) parts.push(READING)
+  if (has('read_transcript')) parts.push(ENDINGS)
   if (has('control_screen')) parts.push(SCREEN)
   if (has('say_to_conversation')) parts.push(TALKING)
   if (has('answer_dialog')) parts.push(ANSWERING)
