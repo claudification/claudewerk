@@ -16,8 +16,14 @@
  */
 
 const GRANT_URL = 'https://api.deepgram.com/v1/auth/grant'
-/** Deepgram default is 30s; 60s gives comfortable slack for the mint->connect hop. */
-const DEFAULT_TTL_SECONDS = 60
+/**
+ * Deepgram's own default is 30s. We mint 5 minutes so the browser can CACHE the
+ * token across presses (voice-deepgram-token.ts) instead of paying two network
+ * hops in front of every dictation. The token only has to be valid at WS-connect
+ * time, and it grants nothing but STT -- 5 minutes is a modest exposure window
+ * for taking the mint off the critical path entirely.
+ */
+const DEFAULT_TTL_SECONDS = 300
 /** Deepgram accepts 1..3600s. */
 const MIN_TTL_SECONDS = 1
 const MAX_TTL_SECONDS = 3600

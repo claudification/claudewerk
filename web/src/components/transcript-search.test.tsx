@@ -36,10 +36,14 @@ afterEach(() => {
 
 describe('TranscriptSearch setTimeout cleanup', () => {
   test('clears the 50ms focus timer when unmounted before it fires', async () => {
+    // Import BEFORE the fake timers go in -- resolving a large chunk under fake
+    // timers made this a load-sensitive flake (the import alone blew the 5s test
+    // timeout on a busy run). The timer under test is scheduled by opening the
+    // dialog, not by importing it.
+    const { TranscriptSearch } = await import('./transcript-search')
     vi.useFakeTimers()
     const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout')
     const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout')
-    const { TranscriptSearch } = await import('./transcript-search')
     const { unmount } = render(<TranscriptSearch />)
     // Open the dialog -- schedules the 50ms focus setTimeout.
     act(() => {
@@ -52,5 +56,7 @@ describe('TranscriptSearch setTimeout cleanup', () => {
     unmount()
     // Cleanup must have called clearTimeout with the focus timer's id.
     expect(clearTimeoutSpy).toHaveBeenCalledWith(focusTimerId)
-  })
+    // 30s, not the 5s default -- see settings-page.test.tsx: a heavy chunk import
+    // plus render on a loaded run is not a speed assertion, just a hang guard.
+  }, 30_000)
 })

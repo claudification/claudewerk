@@ -227,9 +227,13 @@ export function createApiRouter(
       return c.json({ error: 'Forbidden: voice permission required' }, 403)
     const apiKey = process.env.DEEPGRAM_API_KEY
     if (!apiKey) return c.json({ error: 'voice not configured', code: 'voice_unconfigured' }, 503)
+    const t0 = Date.now()
     try {
-      return c.json(await mintDeepgramToken({ apiKey }))
+      const token = await mintDeepgramToken({ apiKey })
+      console.log(`[voice] deepgram token minted in ${Date.now() - t0}ms (ttl ${token.expiresIn}s)`)
+      return c.json(token)
     } catch (e) {
+      console.error(`[voice] deepgram token mint FAILED after ${Date.now() - t0}ms: ${(e as Error).message}`)
       return c.json({ error: `deepgram token mint failed: ${(e as Error).message}` }, 502)
     }
   })
