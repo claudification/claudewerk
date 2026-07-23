@@ -116,7 +116,17 @@ export function createToolBridge(opts: ToolBridgeOptions): ToolBridge {
 
 let activeBridge: ToolBridge | null = null
 
-export function setActiveToolBridge(bridge: ToolBridge | null): void {
+/** Register (or clear) the bridge that live tool results route to.
+ *
+ *  A RESTART tears the old session down and stands a new one up back-to-back,
+ *  and the old teardown's clear is async (it awaits a dynamic import). Without a
+ *  guard, that late `setActiveToolBridge(null)` can land AFTER the new session
+ *  already registered its bridge and wipe it -- so every tool call the new orb
+ *  makes would silently never route back. `only` makes a clear a COMPARE-and-
+ *  clear: the old session passes its own bridge, and the clear is ignored once a
+ *  newer session has taken over. */
+export function setActiveToolBridge(bridge: ToolBridge | null, only?: ToolBridge): void {
+  if (bridge === null && only && activeBridge !== only) return
   activeBridge = bridge
 }
 

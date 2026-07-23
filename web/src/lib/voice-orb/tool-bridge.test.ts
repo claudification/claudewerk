@@ -118,4 +118,25 @@ describe('the active-bridge slot', () => {
     deliverVoiceToolResult({ requestId: 'req1', ok: true, result: 'via slot' })
     await expect(p).resolves.toBe('via slot')
   })
+
+  it('a late clear from the OLD session does not wipe the NEW one (restart race)', async () => {
+    const { bridge: oldBridge } = harness()
+    const { bridge: newBridge } = harness()
+    // Restart order: new session registers, THEN the old teardown's async clear
+    // lands. Compare-and-clear must ignore it because a newer bridge took over.
+    setActiveToolBridge(newBridge)
+    setActiveToolBridge(null, oldBridge)
+    // The new session's tool call still routes -- the slot was not wiped.
+    const p = newBridge.run(call('projects_overview'))
+    deliverVoiceToolResult({ requestId: 'req1', ok: true, result: 'still routed' })
+    await expect(p).resolves.toBe('still routed')
+  })
+
+  it('a clear that DOES own the slot still clears it', () => {
+    const { bridge } = harness()
+    setActiveToolBridge(bridge)
+    setActiveToolBridge(null, bridge)
+    // Nothing is active now -- a stray result is a harmless no-op.
+    expect(() => deliverVoiceToolResult({ requestId: 'req1', ok: true, result: 1 })).not.toThrow()
+  })
 })

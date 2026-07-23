@@ -12,6 +12,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useConversationsStore, wsSend } from '@/hooks/use-conversations'
+import { orbSpeed, useOrbLiveSettings } from '@/hooks/use-orb-live-settings'
 import { foldCaption, type SpokenLine } from '@/lib/voice-orb/caption-fold'
 import type { OpenSession } from '@/lib/voice-orb/open-session'
 import type { VoiceState } from '@/lib/voice-orb/realtime-events'
@@ -29,8 +30,6 @@ export interface VoiceOrb {
   start(): Promise<void>
   stop(): void
   toggleMute(): void
-  /** Tear down and restart with a fresh session (the `reload_yourself` verb). */
-  reload(): Promise<void>
   /** Live mic + remote streams for the orb's audio reactivity. */
   audioStreams(): MediaStream[]
   /** Make the orb volunteer something (proactive fleet narration). */
@@ -44,38 +43,14 @@ export interface VoiceOrb {
   say(text: string): void
 }
 
-/** The dial's current position, clamped to what the API accepts. */
-function orbSpeed(): number {
-  const raw = Number(useConversationsStore.getState().controlPanelPrefs.voiceOrbSpeed)
-  if (!Number.isFinite(raw)) return 1.3
-  return Math.min(1.5, Math.max(0.25, raw))
-}
-
-/** Push speed + voice prefs to the LIVE session whenever they move (from the
- *  pickers or the orb's own `update_orb_settings`). One hook so the main one
- *  stays a flat state machine. Voice skips its first run so it never re-sends
- *  the voice the session was just minted with. */
-function useLiveSettings(live: { session: { setSpeed(n: number): void; setVoice(v: string): void } } | null): void {
-  const speed = useConversationsStore(st => st.controlPanelPrefs.voiceOrbSpeed)
-  const voice = useConversationsStore(st => st.controlPanelPrefs.voiceOrbVoice)
-  const voiceMounted = useRef(false)
-  useEffect(() => {
-    live?.session.setSpeed(orbSpeed())
-  }, [speed, live])
-  useEffect(() => {
-    if (!live) {
-      voiceMounted.current = false
-      return
-    }
-    if (!voiceMounted.current) {
-      voiceMounted.current = true
-      return
-    }
-    live.session.setVoice(voice)
-  }, [voice, live])
-}
-
-export function useVoiceOrb(): VoiceOrb {
+/** The orb session, as a hook. RESTART is not a method here -- it is a REMOUNT:
+ *  the host keys this hook's component on a generation counter and bumps it, so
+ *  a restart fully tears the session down (mic + audio sink + analyser + every
+ *  ref) and stands a clean one up. `onReloadRequest` is how the things that live
+ *  INSIDE the session (the model's `reload_yourself`, a voice change) ask the
+ *  host for that remount. */
+export function useVoiceOrb(opts: { onReloadRequest: () => void }): VoiceOrb {
+  const { onReloadRequest } = opts
   const [state, setState] = useState<VoiceState>('idle')
   const [error, setError] = useState<string | null>(null)
   const [lastLine, setLastLine] = useState<SpokenLine | null>(null)
@@ -84,22 +59,25 @@ export function useVoiceOrb(): VoiceOrb {
 
   const liveRef = useRef<OpenSession | null>(null)
   const startingRef = useRef(false)
+  // False once we unmount. A restart remounts fast, so a session can finish
+  // connecting AFTER this instance is gone -- without this it leaks a live
+  // session and a hot mic that nothing will ever close.
+  const mountedRef = useRef(true)
 
   const stop = useCallback(() => {
-    liveRef.current?.session.close()
-    liveRef.current?.bridge.dispose()
+    const gone = liveRef.current
+    gone?.session.close()
+    gone?.bridge.dispose()
     liveRef.current = null
-    void import('@/lib/voice-orb/tool-bridge').then(m => m.setActiveToolBridge(null))
+    // Compare-and-clear: on a restart a fresh session mounts while this clear is
+    // still awaiting its import, so only clear if we are still the active one.
+    void import('@/lib/voice-orb/tool-bridge').then(m => m.setActiveToolBridge(null, gone?.bridge))
     setState('idle')
     setMuted(false)
     // The realtime conversation is GONE -- keeping its transcript on screen
     // would read as scrollback the orb still remembers. It does not.
     setLines([])
   }, [])
-
-  // `start` triggers reload (via the model's own verb) and reload calls start;
-  // the ref breaks the cycle without re-creating either callback.
-  const reloadRef = useRef<() => void>(() => {})
 
   const start = useCallback(async () => {
     if (liveRef.current || startingRef.current) return
@@ -108,7 +86,7 @@ export function useVoiceOrb(): VoiceOrb {
     setState('connecting')
     try {
       const { openVoiceSession } = await import('@/lib/voice-orb/open-session')
-      liveRef.current = await openVoiceSession({
+      const session = await openVoiceSession({
         onState: setState,
         onError: setError,
         // Deltas are FRAGMENTS -- fold them, never display one as the line.
@@ -116,25 +94,29 @@ export function useVoiceOrb(): VoiceOrb {
           setLastLine(prev => foldCaption(prev, { role, text, partial }))
           setLines(prev => foldLog(prev, { role, text, partial }))
         },
-        onReload: () => reloadRef.current(),
+        // The model's `reload_yourself` verb -- ask the host to remount us.
+        onReload: onReloadRequest,
         send: wsSend,
         tone: () => useConversationsStore.getState().controlPanelPrefs.voiceOrbTone,
         speed: () => orbSpeed(),
         voice: () => useConversationsStore.getState().controlPanelPrefs.voiceOrbVoice,
       })
+      // Unmounted while we were connecting (a fast restart): tear the fresh
+      // session down at once instead of leaving it live and orphaned.
+      if (!mountedRef.current) {
+        session.session.close()
+        session.bridge.dispose()
+        void import('@/lib/voice-orb/tool-bridge').then(m => m.setActiveToolBridge(null, session.bridge))
+        return
+      }
+      liveRef.current = session
     } catch (e) {
       setError((e as Error).message)
       stop()
     } finally {
       startingRef.current = false
     }
-  }, [stop])
-
-  const reload = useCallback(async () => {
-    stop()
-    await start()
-  }, [start, stop])
-  reloadRef.current = () => void reload()
+  }, [stop, onReloadRequest])
 
   const toggleMute = useCallback(() => {
     if (!liveRef.current) return
@@ -143,7 +125,8 @@ export function useVoiceOrb(): VoiceOrb {
     void liveRef.current.session.setMicEnabled(!next)
   }, [muted])
 
-  useLiveSettings(liveRef.current)
+  // A voice change cannot apply to a live session -- it re-mints via a remount.
+  useOrbLiveSettings(liveRef.current, onReloadRequest)
 
   const audioStreams = useCallback(() => liveRef.current?.session.audioStreams() ?? [], [])
   const announce = useCallback((note: string) => liveRef.current?.session.announce(note), [])
@@ -159,9 +142,19 @@ export function useVoiceOrb(): VoiceOrb {
     liveRef.current.session.announce(trimmed)
   }, [])
 
-  // Releasing the mic is not optional -- unmounting with a live session leaves
-  // the OS capture indicator on.
-  useEffect(() => stop, [stop])
+  // The session starts on MOUNT and stops on UNMOUNT: mounting this hook's
+  // component IS the summon, and a restart is a remount, so this is the whole
+  // lifecycle. Releasing the mic on unmount is not optional -- leaving a live
+  // session behind keeps the OS capture indicator on. `start` no-ops if a
+  // session is already up, so a benign re-run is harmless.
+  useEffect(() => {
+    mountedRef.current = true
+    void start()
+    return () => {
+      mountedRef.current = false
+      stop()
+    }
+  }, [start, stop])
 
   return {
     state,
@@ -173,7 +166,6 @@ export function useVoiceOrb(): VoiceOrb {
     start,
     stop,
     toggleMute,
-    reload,
     audioStreams,
     announce,
     say,

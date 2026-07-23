@@ -16,7 +16,8 @@ export const VOICE_ORB_ITEMS: SettingItem[] = [
     tab: 'voice',
     group: 'Voice orb',
     label: 'Voice',
-    description: 'Which OpenAI voice it speaks with. Applies on its next summon.',
+    description:
+      'Which OpenAI voice it speaks with. Changing it restarts the orb (OpenAI locks the voice once it has spoken).',
     keywords: 'voice orb speaker timbre marin cedar alloy ash ballad coral echo sage shimmer verse',
     render: (ctx, ariaLabel) => <VoiceOrbVoiceRow ctx={ctx} ariaLabel={ariaLabel} />,
   },

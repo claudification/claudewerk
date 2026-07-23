@@ -35,6 +35,14 @@ describe('runUpdateOrbSettings', () => {
     expect(String(out.note)).toContain('next summon')
   })
 
+  it('a voice change notes the RESTART, and wins the note over a tone change', () => {
+    const out = runUpdateOrbSettings({ voice: 'cedar', tone: 'professional' })
+    expect(updatePrefs).toHaveBeenCalledWith({ voiceOrbVoice: 'cedar', voiceOrbTone: 'professional' })
+    // Voice re-mints (a visible restart), so its note takes precedence.
+    expect(String(out.note)).toContain('restart')
+    expect(String(out.note)).not.toContain('next summon')
+  })
+
   it('REJECTS an unknown tone', () => {
     const out = runUpdateOrbSettings({ tone: 'evil' })
     expect(updatePrefs).not.toHaveBeenCalled()

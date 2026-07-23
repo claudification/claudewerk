@@ -3,9 +3,10 @@
  * faster", "different voice", "go professional").
  *
  * Client-local: the settings are the panel's own control-panel prefs, so this
- * writes them directly (which persists to localStorage) and the live-push hooks
- * (`useLiveSpeed` / `useLiveVoice`) apply speed + voice to the running session at
- * once; a tone change is baked at mint, so it lands on the next summon.
+ * writes them directly (which persists to localStorage) and `useOrbLiveSettings`
+ * reacts -- speed is pushed into the running session at once, a VOICE change
+ * re-mints (the orb restarts itself, because OpenAI locks the voice once it has
+ * spoken), and a tone change is baked at mint, so it lands on the next summon.
  *
  * VALIDATED against the canonical lists -- voice is lossy, so a misheard voice or
  * tone is REJECTED (with the real options read back) rather than silently
@@ -23,11 +24,7 @@ export interface OrbSettingsArgs {
 
 /** Narrow a spoken value against a fixed list. null = not provided; otherwise a
  *  match or a rejection with the real options read back (voice is lossy). */
-function pickFromList(
-  raw: unknown,
-  list: readonly string[],
-  kind: string,
-): { ok: string } | { bad: string } | null {
+function pickFromList(raw: unknown, list: readonly string[], kind: string): { ok: string } | { bad: string } | null {
   if (typeof raw !== 'string' || !raw.trim()) return null
   const v = raw.trim().toLowerCase()
   if (list.includes(v)) return { ok: v }
@@ -66,7 +63,17 @@ export function runUpdateOrbSettings(args: OrbSettingsArgs): Record<string, unkn
   return {
     applied: applied.length ? applied : undefined,
     rejected: rejected.length ? rejected : undefined,
-    // Speed + voice are live; tone needs a fresh session.
-    note: patch.voiceOrbTone ? 'the tone change applies on your next summon' : undefined,
+    // Speed is live. A VOICE change re-mints -- the orb restarts itself in a
+    // beat to pick it up (OpenAI locks the voice once it has spoken). Tone is
+    // baked at mint, so it waits for the next summon.
+    note: noteFor(patch),
   }
+}
+
+/** One line telling the persona what will and won't take effect at once. Voice
+ *  wins the note because a restart is the most visible consequence. */
+function noteFor(patch: { voiceOrbVoice?: string; voiceOrbTone?: string }): string | undefined {
+  if (patch.voiceOrbVoice) return 'the voice change restarts me in a beat -- say bye and I am back with it'
+  if (patch.voiceOrbTone) return 'the tone change applies on your next summon'
+  return undefined
 }

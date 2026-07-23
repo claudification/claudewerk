@@ -101,4 +101,10 @@ describe('toVoiceAction', () => {
     expect(isBenignRealtimeError('Your session has expired')).toBe(false)
     expect(isBenignRealtimeError('invalid_request_error: bad tool schema')).toBe(false)
   })
+
+  it('swallows the voice-lock error -- a voice change re-mints, it is never a fault', () => {
+    // We no longer push a live voice update (a change restarts the session), but
+    // if one ever slips through, OpenAI's rejection must not hit the caption.
+    expect(isBenignRealtimeError("Cannot update a conversation's voice if assistant audio is present")).toBe(true)
+  })
 })

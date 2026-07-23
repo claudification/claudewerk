@@ -3,6 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 type Line = { role: 'agent' | 'user'; text: string; partial: boolean }
 
+// The session hook is mounted by <OrbSession>, keyed on a restart generation.
+// A restart REMOUNTS it. Start/stop are now the hook's own mount/unmount, not
+// host calls, so a remount is proven behaviorally: it resets the child's local
+// state (an open transcript closes) where a mere re-render would not.
 const orb = {
   state: 'listening',
   error: null as string | null,
@@ -13,12 +17,18 @@ const orb = {
   start: vi.fn(),
   stop: vi.fn(),
   toggleMute: vi.fn(),
-  reload: vi.fn(),
   audioStreams: () => [],
   announce: vi.fn(),
   say: vi.fn(),
 }
-vi.mock('@/hooks/use-voice-orb', () => ({ useVoiceOrb: () => orb }))
+// The onReloadRequest the host hands the session -- the model's reload_yourself.
+let reloadRequest: (() => void) | null = null
+vi.mock('@/hooks/use-voice-orb', () => ({
+  useVoiceOrb: (opts: { onReloadRequest: () => void }) => {
+    reloadRequest = opts.onReloadRequest
+    return orb
+  },
+}))
 
 const { VoiceOrbHost } = await import('./voice-orb-host')
 const { voiceOrbBus } = await import('./voice-orb-bus')
@@ -39,6 +49,7 @@ beforeEach(() => {
   orb.stop.mockClear()
   orb.toggleMute.mockClear()
   orb.say.mockClear()
+  reloadRequest = null
 })
 afterEach(() => {
   cleanup()
@@ -55,7 +66,6 @@ describe('VoiceOrbHost', () => {
     render(<VoiceOrbHost />)
     summon()
     expect(screen.getByLabelText('Voice orb -- listening')).toBeTruthy()
-    expect(orb.start).toHaveBeenCalled()
   })
 
   it('captions the last spoken line', () => {
@@ -134,13 +144,40 @@ describe('VoiceOrbHost', () => {
     expect(screen.getByText('Dismiss the orb')).toBeTruthy()
   })
 
-  it('dismissing STOPS the session -- the mic must not stay hot', () => {
+  it('dismissing UNMOUNTS the session -- the mic teardown rides the unmount', () => {
     render(<VoiceOrbHost />)
     summon()
     openOrbMenu()
     act(() => screen.getByText('Dismiss the orb').click())
-    expect(orb.stop).toHaveBeenCalled()
+    // The session subtree is gone; useVoiceOrb's own unmount cleanup frees the
+    // mic (covered in the hook's tests). Nothing is left on screen.
     expect(screen.queryByLabelText(/Voice orb --/)).toBeNull()
+  })
+
+  it('Restart REMOUNTS the session (resets its state) without un-summoning', () => {
+    render(<VoiceOrbHost />)
+    summon()
+    openTranscript()
+    expect(screen.getByLabelText('Orb transcript')).toBeTruthy()
+    openOrbMenu()
+    act(() => screen.getByText('Restart the orb').click())
+    // The generation key bumped -> React unmounted the old session and mounted a
+    // fresh one, so the child's open-transcript state reset (a re-render would
+    // have left it open)...
+    expect(screen.queryByLabelText('Orb transcript')).toBeNull()
+    // ...and the orb is still here (a restart is not a dismiss).
+    expect(screen.getByLabelText(/^Voice orb -- (open|close) the transcript$/)).toBeTruthy()
+  })
+
+  it('the model reloading itself remounts the session too', () => {
+    render(<VoiceOrbHost />)
+    summon()
+    openTranscript()
+    expect(screen.getByLabelText('Orb transcript')).toBeTruthy()
+    // reload_yourself lands as the onReloadRequest handed to the hook.
+    act(() => reloadRequest?.())
+    expect(screen.queryByLabelText('Orb transcript')).toBeNull()
+    expect(screen.getByLabelText(/^Voice orb -- (open|close) the transcript$/)).toBeTruthy()
   })
 
   it('mute toggles, and a muted orb reads as asleep', () => {

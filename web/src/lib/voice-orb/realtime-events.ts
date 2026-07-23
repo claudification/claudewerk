@@ -32,7 +32,16 @@ export type VoiceAction =
  * is nothing the user could do, so these must never reach the caption; they get
  * logged and dropped.
  */
-const BENIGN_ERRORS = [/cancellation failed/i, /no active response/i, /already has an active response/i]
+const BENIGN_ERRORS = [
+  /cancellation failed/i,
+  /no active response/i,
+  /already has an active response/i,
+  // The output voice is locked once the orb has spoken. We no longer try to
+  // change it on a live session (a voice change re-mints), but if one ever
+  // slips through it is not a fault the user can act on -- drop it, never
+  // surface the red "Cannot update a conversation's voice ..." error.
+  /voice if assistant audio is present/i,
+]
 
 export function isBenignRealtimeError(message: string): boolean {
   return BENIGN_ERRORS.some(re => re.test(message))

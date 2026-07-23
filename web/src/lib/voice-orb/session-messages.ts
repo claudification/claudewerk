@@ -28,13 +28,12 @@ export function speedUpdate(mintedAudio: Record<string, unknown> | null, speed: 
   return { type: 'session.update', session: { type: 'realtime', audio: { ...mintedAudio, output } } }
 }
 
-/** Same shape as speedUpdate, for the OUTPUT voice -- echo the whole minted
- *  audio block with only `voice` changed so transcription + turn detection
- *  survive the update. */
-export function voiceUpdate(mintedAudio: Record<string, unknown> | null, voice: string): RealtimeClientEvent {
-  const output = { ...(mintedAudio?.output as Record<string, unknown>), voice }
-  return { type: 'session.update', session: { type: 'realtime', audio: { ...mintedAudio, output } } }
-}
+// NO voiceUpdate: the OUTPUT voice is NOT changeable on a live session. OpenAI
+// locks it the instant the model produces its first audio ("Cannot update a
+// conversation's voice if assistant audio is present"), and the orb greets on
+// connect -- so by the time anyone could change it, it is already locked. A
+// voice change re-mints instead (a full session restart, voice baked in at
+// mint). See use-orb-live-settings.ts (useOrbLiveSettings -> onReloadRequest).
 
 /**
  * Something the orb says WITHOUT being asked (proactive narration), injected as
