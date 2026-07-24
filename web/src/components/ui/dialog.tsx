@@ -41,14 +41,22 @@ function DialogOverlay({ className, ...props }: React.ComponentProps<typeof Dial
 
 function DialogContent({ className, children, ...props }: React.ComponentProps<typeof DialogPrimitive.Content>) {
   // In a popout the dialog is non-modal, so Radix's own Overlay renders nothing
-  // (it only mounts for modal dialogs). Draw a plain, non-blocking backdrop for
-  // the modal look; pointer-events-none lets an outside click reach the board
-  // and dismiss via Radix's pointer-down-outside, exactly like the modal case.
+  // (it only mounts for modal dialogs) and its cross-document outside-click
+  // detection is unreliable. Draw our OWN backdrop as a Close target: clicking
+  // the dim area dismisses the dialog -- same "click outside to close" UX as the
+  // inline modal, but scoped to the popout window so the opener never freezes.
   const popout = usePopoutContainer()
   return (
     <DialogPortal>
       {popout ? (
-        <div data-slot="dialog-overlay" className="pointer-events-none fixed inset-0 z-50 bg-black/80" />
+        <DialogPrimitive.Close asChild>
+          <button
+            type="button"
+            aria-label="Close"
+            data-slot="dialog-overlay"
+            className="fixed inset-0 z-50 cursor-default bg-black/80"
+          />
+        </DialogPrimitive.Close>
       ) : (
         <DialogOverlay />
       )}

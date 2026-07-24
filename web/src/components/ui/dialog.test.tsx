@@ -1,5 +1,5 @@
-import { cleanup, render } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { cleanup, fireEvent, render } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PopoutContainerContext } from '../popout/popout-container-context'
 import { Dialog, DialogContent, DialogTitle } from './dialog'
 
@@ -86,5 +86,31 @@ describe('Dialog portal container (detached popout)', () => {
 
     expect(document.body.style.pointerEvents).toBe('none')
     expect(document.body.hasAttribute('data-scroll-locked')).toBe(true)
+  })
+
+  // "Click outside to dismiss" must work in a popout too. The dim backdrop is a
+  // Close target, so clicking it closes the dialog (Radix's own outside-click
+  // detection is unreliable across the popout document).
+  it('dismisses when the popout backdrop is clicked', () => {
+    const popout = document.createElement('div')
+    document.body.appendChild(popout)
+    const onOpenChange = vi.fn()
+
+    render(
+      <PopoutContainerContext.Provider value={popout}>
+        <Dialog open onOpenChange={onOpenChange}>
+          <DialogContent>
+            <DialogTitle>Edit task</DialogTitle>
+          </DialogContent>
+        </Dialog>
+      </PopoutContainerContext.Provider>,
+    )
+
+    const backdrop = popout.querySelector('[data-slot="dialog-overlay"]')
+    expect(backdrop).not.toBeNull()
+    fireEvent.click(backdrop as Element)
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+
+    popout.remove()
   })
 })
