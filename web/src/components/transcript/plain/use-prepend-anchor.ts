@@ -23,15 +23,16 @@ import type { useStickToBottom } from 'use-stick-to-bottom'
 
 type Engine = ReturnType<typeof useStickToBottom>
 
-export function usePrependAnchor(engine: Engine): () => void {
+export function usePrependAnchor(engine: Engine, enabled = true): () => void {
   const { scrollRef, state } = engine
   const pendingRef = useRef<{ scrollHeight: number; scrollTop: number; armedAt: number } | null>(null)
 
   const arm = useCallback(() => {
+    if (!enabled) return // Plain Renderer Lab: anchor disabled -- record nothing.
     const el = scrollRef.current
     if (!el) return
     pendingRef.current = { scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, armedAt: performance.now() }
-  }, [scrollRef])
+  }, [scrollRef, enabled])
 
   // Runs on EVERY commit (no dep array): the prepend may land one or two
   // commits after arm(). Fires before paint, so the reader never sees the

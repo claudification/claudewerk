@@ -15,6 +15,8 @@
  */
 
 import { memo, useCallback } from 'react'
+import { useConversationsStore } from '@/hooks/use-conversations'
+import { resolvePlainRendererLab } from '@/lib/plain-renderer-lab'
 import { MaybeProfiler } from '../../perf-profiler'
 import { TranscriptEmptyState } from '../ghost-peek'
 import { stableGroupKey } from '../group-content'
@@ -48,11 +50,15 @@ export const TranscriptViewPlain = memo(function TranscriptViewPlain({
   const lastEntry = entries.length > 0 ? entries[entries.length - 1] : null
   const tailSignal = lastEntry ? (lastEntry.seq ?? entries.length) : 0
 
+  // Plain Renderer Lab: per-device scroll-back anchoring knobs. Defaults
+  // reproduce production; resolved live from prefs (lib/plain-renderer-lab.ts).
+  const lab = resolvePlainRendererLab(useConversationsStore(s => s.controlPanelPrefs.plainRendererLab))
+
   const engine = usePlainFollow({ cacheKey, follow, tailSignal, onUserScroll, onReachedBottom })
-  const armPrependAnchor = usePrependAnchor(engine)
+  const armPrependAnchor = usePrependAnchor(engine, lab.prependAnchor)
   // Scroll-anchoring polyfill: compensates content-visibility estimate->real
   // inflation ABOVE a detached reader (Safari has no native anchoring).
-  useAboveViewportAnchor(engine)
+  useAboveViewportAnchor(engine, lab.aboveAnchor)
 
   // Shared progressive-window + scrollback data logic. No backfill group
   // breaks needed here: the scrollHeight-delta anchor measures the whole
@@ -111,9 +117,10 @@ export const TranscriptViewPlain = memo(function TranscriptViewPlain({
       ref={engine.scrollRef}
       data-perf-region="transcript"
       className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4"
-      // overflow-anchor:none -- Chrome/Firefox native scroll anchoring would
-      // double-compensate against our prepend anchor (Safari has neither).
-      style={{ overscrollBehavior: 'contain', touchAction: 'pan-y', overflowAnchor: 'none' }}
+      // overflow-anchor default 'none' -- Chrome/Firefox native scroll
+      // anchoring would double-compensate against our prepend anchor (Safari
+      // has neither). Plain Renderer Lab can flip it to 'auto' to test native.
+      style={{ overscrollBehavior: 'contain', touchAction: 'pan-y', overflowAnchor: lab.overflowAnchor }}
     >
       {isEmpty && <TranscriptEmptyState conversationId={cacheKey} />}
       <div ref={engine.contentRef}>
@@ -121,6 +128,8 @@ export const TranscriptViewPlain = memo(function TranscriptViewPlain({
         <MaybeProfiler id="TranscriptGroupsPlain">
           <PlainGroupList
             groups={mainGroups}
+            contentVisibility={lab.contentVisibility}
+            intrinsicSize={lab.intrinsicSize}
             conversationId={conversationId}
             getResult={getResult}
             settings={transcriptSettings}

@@ -1,4 +1,5 @@
 import { DEFAULT_VOICE_ORB_SPEED, DEFAULT_VOICE_ORB_VOICE } from '@shared/voice-orb-options'
+import type { PlainRendererLabPrefs } from './plain-renderer-lab'
 import type { VirtualizerLabPrefs } from './virtualizer-lab'
 
 export interface ToolDisplayPrefs {
@@ -98,6 +99,12 @@ export interface ControlPanelPrefs {
    *  partial so knobs added later inherit their defaults; resolve with
    *  resolveVirtualizerLab() at the point of use. {} = production behavior. */
   virtualizerLab: Partial<VirtualizerLabPrefs>
+  /** Plain Renderer Lab experiment knobs (Experiments settings tab; only shown
+   *  when transcriptRenderer==='plain'). Stored as a partial so knobs added
+   *  later inherit their defaults; resolve with resolvePlainRendererLab() at
+   *  the point of use. {} = production behavior. Governs scroll-back anchoring
+   *  (content-visibility, prepend/above anchors, overflow-anchor). */
+  plainRendererLab: Partial<PlainRendererLabPrefs>
   /** Transcript scroll/measure engine. 'plain' (DEFAULT) = the non-virtualized
    *  TranscriptViewPlain (stick-to-bottom engine + browser-native scroll
    *  mechanics: scrollHeight prepend anchor, IntersectionObserver scrollback,
@@ -161,6 +168,7 @@ const defaultPrefs: ControlPanelPrefs = {
   listViewMode: 'default',
   activeWorkspaceId: null,
   virtualizerLab: {},
+  plainRendererLab: {},
   transcriptRenderer: 'plain',
 }
 

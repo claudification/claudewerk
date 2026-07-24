@@ -5,6 +5,7 @@
  * the plain renderer doesn't duplicate the switch.
  */
 
+import type { CSSProperties } from 'react'
 import { cn } from '@/lib/utils'
 import { CompactedDivider, CompactingBanner, MemoizedGroupView, SkillDivider } from './group-view'
 import type { TranscriptSettings } from './group-view-types'
@@ -47,6 +48,7 @@ export function AnimatedGroupContent({
   clearEntering,
   clearSettling,
   className,
+  style,
   ...content
 }: GroupContentProps & {
   isEntering: boolean
@@ -54,9 +56,13 @@ export function AnimatedGroupContent({
   clearEntering: () => void
   clearSettling: () => void
   className?: string
+  /** Inline overrides for the content-visibility box (Plain Renderer Lab
+   *  drives content-visibility / contain-intrinsic-size through here). */
+  style?: CSSProperties
 }) {
   return (
     <div
+      style={style}
       className={cn(className, isEntering && 'transcript-entry-enter', isSettling && 'assistant-settle')}
       onAnimationEnd={
         isEntering || isSettling

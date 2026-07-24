@@ -9,6 +9,7 @@ import type { ControlPanelPrefs, SettingsTab } from '@/lib/control-panel-prefs'
 import { ProjectLinksSection } from './conversation-links-section'
 import { openManageProjectLinks } from './manage-project-links-trigger'
 import { NotificationsSection } from './notifications-section'
+import { PlainRendererLabSection } from './plain-renderer-lab-section'
 import { GroupHeader } from './settings-inputs'
 import { ShortcutsSection, shortcutsSectionMatches } from './shortcuts-section'
 import { ToolDisplaySection, toolDisplayMatches } from './tool-display-section'
@@ -83,6 +84,23 @@ export const PINNED_SECTIONS: PinnedSection[] = [
       <div>
         <GroupHeader label="Virtualizer Lab" />
         <VirtualizerLabSection />
+      </div>
+    ),
+  },
+  {
+    // Scroll-back anchoring knobs for the plain renderer; hidden unless it is
+    // the chosen renderer (even under an active filter).
+    id: 'plain-renderer-lab',
+    tab: 'experiments',
+    enabled: prefs => prefs.transcriptRenderer === 'plain',
+    matches: f =>
+      'plain renderer lab experiments transcript scrollback anchor content-visibility overflow-anchor jumpy'.includes(
+        f,
+      ),
+    render: () => (
+      <div>
+        <GroupHeader label="Plain Renderer Lab" />
+        <PlainRendererLabSection />
       </div>
     ),
   },

@@ -44,10 +44,11 @@ function compensableDelta(entry: ResizeObserverEntry, heights: WeakMap<Element, 
   return el.getBoundingClientRect().top + oldH <= scrollerTop + 1 ? newH - oldH : 0
 }
 
-export function useAboveViewportAnchor(engine: Engine): void {
+export function useAboveViewportAnchor(engine: Engine, enabled = true): void {
   const { scrollRef, contentRef, state } = engine
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refs + state are stable engine identities
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refs + state are stable engine identities; `enabled` re-runs on toggle
   useEffect(() => {
+    if (!enabled) return // Plain Renderer Lab: above-viewport anchor disabled.
     const content = contentRef.current
     const scroller = scrollRef.current
     if (!content || !scroller) return
@@ -84,5 +85,5 @@ export function useAboveViewportAnchor(engine: Engine): void {
       ro.disconnect()
       mo.disconnect()
     }
-  }, [])
+  }, [enabled])
 }

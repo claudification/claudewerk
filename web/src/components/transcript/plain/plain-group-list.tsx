@@ -6,9 +6,19 @@
  * 18.1+, older engines degrade to render-everything -- slower but correct).
  */
 
+import type { CSSProperties } from 'react'
 import { cn } from '@/lib/utils'
 import { AnimatedGroupContent, type GroupContentProps, stableGroupKey } from '../group-content'
 import type { DisplayGroup } from '../grouping'
+
+/** Plain Renderer Lab knobs that shape the content-visibility box. Same for
+ *  every group, so computed once. `undefined` = the .transcript-plain-group CSS
+ *  class owns it (the production default path -- no inline override). */
+function boxStyle(contentVisibility: boolean, intrinsicSize: number): CSSProperties | undefined {
+  if (!contentVisibility) return { contentVisibility: 'visible' }
+  if (intrinsicSize !== 200) return { containIntrinsicSize: `auto ${intrinsicSize}px` }
+  return undefined
+}
 
 export function PlainGroupList({
   groups,
@@ -16,6 +26,8 @@ export function PlainGroupList({
   settlingKey,
   clearEntering,
   clearSettling,
+  contentVisibility,
+  intrinsicSize,
   ...content
 }: Omit<GroupContentProps, 'group'> & {
   groups: DisplayGroup[]
@@ -23,7 +35,11 @@ export function PlainGroupList({
   settlingKey: string | null
   clearEntering: () => void
   clearSettling: () => void
+  /** Plain Renderer Lab: content-visibility on/off + its intrinsic-size seed. */
+  contentVisibility: boolean
+  intrinsicSize: number
 }) {
+  const style = boxStyle(contentVisibility, intrinsicSize)
   return (
     <>
       {groups.map(group => {
@@ -37,6 +53,7 @@ export function PlainGroupList({
             // the whole box up avoids the clip. continuationOffset={false} stops
             // GroupView from also applying it inside.
             className={cn('transcript-plain-group', group.continuation && '-mt-2')}
+            style={style}
             group={group}
             continuationOffset={false}
             isEntering={enteringKey === key}
