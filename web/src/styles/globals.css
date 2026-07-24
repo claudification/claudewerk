@@ -590,6 +590,17 @@ body:has([data-mobile-compose-panel]) [data-voice-fab] {
 	display: none !important;
 }
 
+/* Hide the FABs while any BLOCKING modal is up. The FABs sit at z-[55]/[56]
+   but Radix dialogs (Settings, ModalSurface inline, confirms) render their
+   backdrop + content at z-50, so the FABs would paint ON TOP of the modal
+   (the mic + "+" bleeding over the Settings panel on mobile). We key off the
+   dialog OVERLAY, which only renders for blocking/inline modals -- a merely
+   docked/detached managed surface has no overlay, so its FABs stay live. */
+body:has([data-slot='dialog-overlay']) [data-action-fab],
+body:has([data-slot='dialog-overlay']) [data-voice-fab] {
+	display: none !important;
+}
+
 /* Tab-hidden animation suspension -- COMPOSITE/LAYER MEMORY WIN.
  *
  * Infinite CSS animations (Tailwind `animate-spin` on every active/booting
