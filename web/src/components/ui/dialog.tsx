@@ -4,8 +4,15 @@ import type * as React from 'react'
 import { cn } from '@/lib/utils'
 import { usePopoutContainer } from '../popout/popout-container-context'
 
-function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />
+function Dialog({ modal, ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
+  // Inside a detached PopoutWindow, force NON-modal. Radix's modal machinery
+  // (RemoveScroll scroll-lock, `pointer-events: none` on body, focus trap,
+  // aria-hidden) is applied to the GLOBAL/opener document -- so a modal dialog
+  // portaled into the popout freezes the MAIN window (dead scroll + clicks) and
+  // the focus trap fights across documents. modal={false} keeps all of that off;
+  // we render our own backdrop for the modal look. An explicit `modal` wins.
+  const popout = usePopoutContainer()
+  return <DialogPrimitive.Root data-slot="dialog" modal={modal ?? (popout ? false : undefined)} {...props} />
 }
 
 function _DialogTrigger({ ...props }: React.ComponentProps<typeof DialogPrimitive.Trigger>) {
@@ -33,9 +40,18 @@ function DialogOverlay({ className, ...props }: React.ComponentProps<typeof Dial
 }
 
 function DialogContent({ className, children, ...props }: React.ComponentProps<typeof DialogPrimitive.Content>) {
+  // In a popout the dialog is non-modal, so Radix's own Overlay renders nothing
+  // (it only mounts for modal dialogs). Draw a plain, non-blocking backdrop for
+  // the modal look; pointer-events-none lets an outside click reach the board
+  // and dismiss via Radix's pointer-down-outside, exactly like the modal case.
+  const popout = usePopoutContainer()
   return (
     <DialogPortal>
-      <DialogOverlay />
+      {popout ? (
+        <div data-slot="dialog-overlay" className="pointer-events-none fixed inset-0 z-50 bg-black/80" />
+      ) : (
+        <DialogOverlay />
+      )}
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(

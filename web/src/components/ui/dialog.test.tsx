@@ -49,4 +49,42 @@ describe('Dialog portal container (detached popout)', () => {
 
     popout.remove()
   })
+
+  // Regression for the MAIN-WINDOW FREEZE: Radix's modal machinery binds to the
+  // opener document -- it sets `pointer-events: none` on <body> (dead clicks) and
+  // locks body scroll (`data-scroll-locked`). A dialog in a popout must be
+  // NON-modal so the MAIN window keeps its scroll + clicks. These two body
+  // signatures are exactly what froze the opener.
+  it('leaves the opener window interactive when the dialog is in a popout', () => {
+    const popout = document.createElement('div')
+    document.body.appendChild(popout)
+
+    render(
+      <PopoutContainerContext.Provider value={popout}>
+        <Dialog open>
+          <DialogContent>
+            <DialogTitle>Edit task</DialogTitle>
+          </DialogContent>
+        </Dialog>
+      </PopoutContainerContext.Provider>,
+    )
+
+    expect(document.body.style.pointerEvents).not.toBe('none')
+    expect(document.body.hasAttribute('data-scroll-locked')).toBe(false)
+
+    popout.remove()
+  })
+
+  it('stays modal (locks the opener) for a normal inline dialog', () => {
+    render(
+      <Dialog open>
+        <DialogContent>
+          <DialogTitle>Edit task</DialogTitle>
+        </DialogContent>
+      </Dialog>,
+    )
+
+    expect(document.body.style.pointerEvents).toBe('none')
+    expect(document.body.hasAttribute('data-scroll-locked')).toBe(true)
+  })
 })
