@@ -23,7 +23,7 @@
  */
 
 import type { TranscriptEntry } from '@shared/protocol'
-import { insertTranscriptEntriesInOrder } from '@shared/transcript-order'
+import { insertTranscriptEntriesInOrder, sortTranscriptEntries } from '@shared/transcript-order'
 
 export interface ApplyTranscriptBatch {
   existing: TranscriptEntry[]
@@ -51,6 +51,18 @@ export function applyTranscriptBatch({
   const candidates = initial ? incoming : incoming.filter(e => e.seq === undefined || e.seq > localMax)
   const fresh = withoutHeldUuids(existing, candidates)
   if (fresh.length === 0) return { result: existing, unchanged: true }
+
+  // An isInitial batch is an unordered SNAPSHOT, not a near-sorted append. A
+  // headless resend is read from CC's JSONL in FILE order, which puts a skill's
+  // injected body (stamped ~150ms before the tool_result that names it) AHEAD of
+  // its invocation. The incremental splice below cannot repair that: its
+  // jitter clamp only fires for an entry whose seq continues the tail, and the
+  // invocation's seq is LOWER than the body it must precede -- so the body kept
+  // its wrong lead and the grouper rendered it as a fat user bubble instead of a
+  // `/skill` band. A full clamp-sort of the union restores `(timestamp, seq)`
+  // arrival order for every inverted pair (skills, compact, stop-hook, api_error
+  // late-arrivals alike). The live/incremental path stays a cheap tail-splice.
+  if (initial) return { result: sortTranscriptEntries([...existing, ...fresh]), unchanged: false }
 
   const result = [...existing]
   insertTranscriptEntriesInOrder(result, fresh)

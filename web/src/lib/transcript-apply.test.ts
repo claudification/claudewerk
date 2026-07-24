@@ -96,4 +96,27 @@ describe('applyTranscriptBatch', () => {
     })
     expect(ids(result)).toEqual(['a', 'b'])
   })
+
+  // The skill-band regression. A Skill-tool invocation lands as a tool_result
+  // user entry carrying the skill name; the injected body follows it, but CC
+  // stamps the body's clock ~150ms BEFORE the invocation (15 of 15 in the
+  // production store). An isInitial RESEND is read from CC's JSONL in FILE order
+  // -- body first -- so the batch arrives [body, invocation] even though their
+  // seqs (112, 111) put the invocation first. The incremental splice cannot
+  // repair a sub-minute inversion whose later-seq entry it has already placed
+  // (its clamp only fires when seq > tailSeq, and 111 < 112), so it left the
+  // body ahead of its name gate and the grouper rendered it as a fat user
+  // bubble instead of a `/skill` band. An isInitial batch is an unordered
+  // snapshot, not a near-sorted append -- it must be fully clamp-sorted.
+  it('orders a file-order [body, invocation] isInitial snapshot as [invocation, body]', () => {
+    const invocation = at('invocation', 5, 111, 'user') // tool_result naming the skill
+    const body = at('body', 4, 112, 'user') // injected isMeta body, stamped earlier
+    const { result } = applyTranscriptBatch({
+      existing: [],
+      incoming: [body, invocation], // host FILE order: body first
+      initial: true,
+      localMax: 0,
+    })
+    expect(ids(result)).toEqual(['invocation', 'body'])
+  })
 })
