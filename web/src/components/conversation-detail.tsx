@@ -44,7 +44,7 @@ export const ConversationDetail = memo(function ConversationDetail({ conversatio
     setInfoExpanded,
     conversationTarget,
     setConversationTarget,
-  } = useConversationTab(conversationId, conversation?.status)
+  } = useConversationTab(conversationId)
 
   const { canAdmin, canChat, canReadTerminal, canFiles, canSpawn } = useConversationsStore(
     useShallow(s => {

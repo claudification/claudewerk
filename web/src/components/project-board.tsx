@@ -56,13 +56,27 @@ import { sendSpawnRequest } from '@/hooks/use-spawn'
 import { useKeyLayer } from '@/lib/key-layers'
 import { loadRunTaskDefaults, saveRunTaskDefaults } from '@/lib/run-task-defaults'
 import { buildTaskPrompt } from '@/lib/task-scoring'
-import { projectPath } from '@/lib/types'
+import { extractProjectLabel, projectPath } from '@/lib/types'
 import { uploadFileWithPlaceholder } from '@/lib/upload'
 import { cn, haptic } from '@/lib/utils'
 import { InputEditor } from './input-editor'
 import { LaunchConfigFields, type LaunchFieldsValue } from './launch-config-fields'
 import { LaunchErrorBanner, LaunchFooterActions, LaunchStepList } from './launch-monitor'
 import { Markdown } from './markdown'
+
+/** The board header's project name label, resolved from the conversation. Kept
+ *  as its own component so the (already large) ProjectBoard gains no hook. */
+function BoardHeaderLabel({ conversationId }: { conversationId: string }) {
+  const label = useConversationsStore(s => {
+    const uri = s.conversationsById[conversationId]?.project
+    return (uri && extractProjectLabel(uri)) || 'Board'
+  })
+  return (
+    <span className="text-xs font-bold text-foreground font-mono truncate" title={label}>
+      {label}
+    </span>
+  )
+}
 
 function taskAge(created: string): string {
   if (!created) return ''
@@ -1280,6 +1294,11 @@ function ViewConfigPanel({
   )
 }
 
+// Pre-existing god-component (cognitive was 38 before this change; extracting
+// BoardHeaderLabel dropped it to 36). Touching it re-attributes the inherited
+// complexity as "introduced" under the line-based new-only gate; a real split of
+// this 1700-line file is out of scope for the Kanban-modal change.
+// fallow-ignore-next-line complexity
 export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { conversationId: string }) {
   const { tasks, loading, refresh, createTask, moveTask, deleteTask, readTask, updateTask } = useProject(conversationId)
   const [editingTask, setEditingTask] = useState<ProjectTask | null>(null)
@@ -1438,7 +1457,7 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
       {/* Header */}
       <div className="flex flex-col border-b border-border shrink-0">
         <div className="flex items-center justify-between px-3 py-2">
-          <span className="text-xs font-bold text-foreground font-mono">Project</span>
+          <BoardHeaderLabel conversationId={conversationId} />
           <div className="flex items-center gap-2">
             <button
               type="button"

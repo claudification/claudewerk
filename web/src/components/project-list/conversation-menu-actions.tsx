@@ -10,6 +10,7 @@
 import { projectIdentityKey } from '@shared/project-uri'
 import { ContextMenu } from 'radix-ui'
 import { updateProjectSettings, useConversationsStore, wsSend } from '@/hooks/use-conversations'
+import { openKanbanModal } from '@/hooks/use-kanban-modal'
 import { usePinnedConversations } from '@/lib/conversation-pins'
 import type { Conversation } from '@/lib/types'
 import { projectPath } from '@/lib/types'
@@ -62,6 +63,7 @@ function ProjectRows({ project }: { project: string }) {
         tone="text-cyan-400"
         onSelect={() => openSpawnDialog({ path: projectPath(project), projectUri: project })}
       />
+      <Item label="Kanban board…" tone="text-accent" onSelect={() => openKanbanModal(project)} />
       <Item label="Manage links…" onSelect={() => openManageProjectLinks(project)} />
       <Item
         label={ps?.pinned ? 'Unpin project' : 'Pin project'}

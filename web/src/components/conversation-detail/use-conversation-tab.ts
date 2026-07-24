@@ -3,7 +3,24 @@ import { useConversationsStore } from '@/hooks/use-conversations'
 import { setConversationTab } from '@/lib/ui-state'
 import type { Tab } from './conversation-tabs'
 
-export function useConversationTab(selectedConversationId: string | null, conversationStatus: string | undefined) {
+const KNOWN_TABS: ReadonlySet<string> = new Set([
+  'transcript',
+  'tty',
+  'json_stream',
+  'events',
+  'agents',
+  'tasks',
+  'shared',
+  'diag',
+])
+
+/** Coerce a requested/remembered tab to a real one. Legacy 'project' (now a
+ *  modal launcher, not a tab) and any unknown value fall back to transcript. */
+function sanitizeTab(tab: string): Tab {
+  return (KNOWN_TABS.has(tab) ? tab : 'transcript') as Tab
+}
+
+export function useConversationTab(selectedConversationId: string | null) {
   const [activeTab, setActiveTab] = useState<Tab>('transcript')
   const [follow, setFollow] = useState(true)
   const [infoExpanded, setInfoExpanded] = useState(false)
@@ -29,17 +46,8 @@ export function useConversationTab(selectedConversationId: string | null, conver
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: requestedTabSeq is a counter dep key
   useEffect(() => {
-    if (requestedTab) setActiveTab(requestedTab as Tab)
+    if (requestedTab) setActiveTab(sanitizeTab(requestedTab))
   }, [requestedTab, requestedTabSeq])
-
-  // Kick back to transcript when a conversation ends while on the project tab.
-  const [prevStatus, setPrevStatus] = useState(conversationStatus)
-  if (conversationStatus !== prevStatus) {
-    setPrevStatus(conversationStatus)
-    if (conversationStatus === 'ended' && activeTab === 'project') {
-      setActiveTab('transcript')
-    }
-  }
 
   useEffect(() => {
     if (selectedConversationId) setConversationTab(selectedConversationId, activeTab)

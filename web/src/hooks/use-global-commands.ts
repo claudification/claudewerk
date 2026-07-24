@@ -22,6 +22,7 @@ import { openTerminateLineageConfirm } from '@/components/terminate-lineage-conf
 import { summonVoiceOrb } from '@/components/voice-orb/voice-orb-bus'
 import { cycleVoiceOrbTone } from '@/components/voice-orb/voice-orb-tone'
 import { fetchTranscript, sendInput, useConversationsStore, wsSend } from '@/hooks/use-conversations'
+import { openKanbanModal } from '@/hooks/use-kanban-modal'
 import { openNightshiftModal } from '@/hooks/use-nightshift-modal'
 import { useShellsStore } from '@/hooks/use-shells'
 import { prewarmVoice } from '@/hooks/voice-prewarm'
@@ -437,11 +438,9 @@ export function useGlobalCommands(toggleSidebar: () => void) {
       const sid = store.selectedConversationId
       if (!sid) return
       const conversation = store.conversationsById[sid]
-      if (conversation && conversation.status !== 'ended') {
-        store.openTab(sid, 'project')
-      }
+      if (conversation) openKanbanModal(conversation.project)
     },
-    { label: 'Open project board', key: 'p', group: 'Navigation' },
+    { label: 'Open Kanban board', key: 'p', group: 'Navigation' },
   )
 
   const goHome = useCallback(() => {

@@ -6,6 +6,7 @@
 import { projectIdentityKey } from '@shared/project-uri'
 import { ContextMenu } from 'radix-ui'
 import { updateProjectSettings, useConversationsStore } from '@/hooks/use-conversations'
+import { openKanbanModal } from '@/hooks/use-kanban-modal'
 import { openNightshiftModal } from '@/hooks/use-nightshift-modal'
 import { projectPath } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
@@ -31,6 +32,15 @@ export function ProjectMenuItems({ project, onOpenSettings }: { project: string;
       </ContextMenu.Item>
       <RecapMenuItems projectUri={project} />
       <CanvasMenuItems projectUri={project} />
+      <ContextMenu.Item
+        className={cn(menuItemClass, 'text-accent')}
+        onSelect={() => {
+          haptic('tap')
+          openKanbanModal(project)
+        }}
+      >
+        Kanban board…
+      </ContextMenu.Item>
       <ContextMenu.Item
         className={cn(menuItemClass, 'text-amber-400')}
         onSelect={() => {

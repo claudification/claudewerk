@@ -38,13 +38,13 @@ describe('tabVisibility', () => {
     expect(v.events).toBe(true)
     expect(v.diag).toBe(true)
     expect(v.verbose).toBe(true)
-    expect(v.project).toBe(true)
+    expect(v.kanban).toBe(true)
   })
 
-  test('a share-link guest never gets JSON or Project, even with full perms', () => {
+  test('a share-link guest never gets JSON or Kanban, even with full perms', () => {
     const v = tabVisibility({ ...FULL, shareView: true })
     expect(v.json).toBe(false)
-    expect(v.project).toBe(false)
+    expect(v.kanban).toBe(false)
   })
 
   test('JSON needs the json stream + terminal read', () => {
@@ -80,8 +80,8 @@ describe('tabVisibility', () => {
     expect(tabVisibility({ ...FULL, conversation: conv({ archivedTaskCount: 1 }) }).tasks).toBe(true)
   })
 
-  test('project tab hides once the conversation has ended', () => {
-    expect(tabVisibility({ ...FULL, conversation: conv({ status: 'ended' }) }).project).toBe(false)
+  test('kanban tab hides once the conversation has ended', () => {
+    expect(tabVisibility({ ...FULL, conversation: conv({ status: 'ended' }) }).kanban).toBe(false)
   })
 
   test('diag needs admin AND showDiag', () => {

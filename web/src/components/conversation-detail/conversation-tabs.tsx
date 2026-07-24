@@ -1,14 +1,15 @@
-import { Braces, Terminal } from 'lucide-react'
+import { Braces, KanbanSquare, Terminal } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import { openKanbanModal } from '@/hooks/use-kanban-modal'
 import { isShareView } from '@/lib/share-mode'
 import type { Conversation } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
 
 // react-doctor:only-export-components -- Tab type + tabVisibility are co-located
 // with ConversationTabs and exported for unit tests; splitting hurts cohesion.
-export type Tab = 'transcript' | 'tty' | 'json_stream' | 'events' | 'agents' | 'tasks' | 'shared' | 'project' | 'diag'
+export type Tab = 'transcript' | 'tty' | 'json_stream' | 'events' | 'agents' | 'tasks' | 'shared' | 'diag'
 
 interface ConversationTabsProps {
   conversation: Conversation
@@ -58,7 +59,7 @@ function tabClickHandler(target: Tab, onSetActiveTab: (tab: Tab) => void) {
 
 /** Which optional tabs are visible. Pure -- pulls all the gating predicates out
  *  of the component so the render stays flat. `shareView` (a share-link guest)
- *  hard-hides the host-internal JSON + Project tabs; the broker independently
+ *  hard-hides the host-internal JSON + Kanban tabs; the broker independently
  *  bars both channels for share grants. Exported for unit tests. */
 export function tabVisibility(p: {
   conversation: Conversation
@@ -77,7 +78,7 @@ export function tabVisibility(p: {
     events: p.canAdmin,
     agents: p.canAdmin && hasAgents,
     tasks: c.taskCount > 0 || (c.archivedTaskCount ?? 0) > 0,
-    project: c.status !== 'ended' && !p.shareView,
+    kanban: c.status !== 'ended' && !p.shareView,
     diag: p.canAdmin && p.showDiag,
     verbose: p.canAdmin,
   }
@@ -171,9 +172,18 @@ export function ConversationTabs({
         </TabButton>
       )}
 
-      {vis.project && (
-        <TabButton active={activeTab === 'project'} onClick={tabClickHandler('project', onSetActiveTab)}>
-          Project
+      {vis.kanban && (
+        <TabButton
+          active={false}
+          className="flex items-center gap-1"
+          title="Open the Kanban board (detachable)"
+          onClick={() => {
+            haptic('tick')
+            openKanbanModal(conversation.project)
+          }}
+        >
+          <KanbanSquare className="size-3" />
+          Kanban
         </TabButton>
       )}
 

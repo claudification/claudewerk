@@ -1,6 +1,7 @@
 import { projectIdentityKey } from '@shared/project-uri'
 import { useState } from 'react'
 import { useConversations, useConversationsStore, wsSend } from '@/hooks/use-conversations'
+import { openKanbanModal } from '@/hooks/use-kanban-modal'
 import { useShellsStore } from '@/hooks/use-shells'
 import { openShell, projectShellCapable } from '@/lib/shell-commands'
 import type { Conversation } from '@/lib/types'
@@ -270,6 +271,16 @@ export function ProjectActionPanel({ projectUri }: { projectUri: string }) {
             className="px-4 py-1.5 text-xs font-mono border border-cyan-400/50 text-cyan-400 hover:bg-cyan-400/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             LAUNCH
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              haptic('tap')
+              openKanbanModal(projectUri)
+            }}
+            className="px-4 py-1.5 text-xs font-mono border border-accent/50 text-accent hover:bg-accent/10 transition-colors"
+          >
+            KANBAN
           </button>
           {shellCapable && (
             <button

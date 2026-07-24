@@ -7,7 +7,6 @@ import { ConversationView } from '../conversation-view'
 import { DiagView } from '../diag-view'
 import { EventsView } from '../events-view'
 import { JsonStreamPanel } from '../json-stream-panel'
-import { ProjectBoard } from '../project-board'
 import { SharedView } from '../shared-view'
 import { SubagentView } from '../subagent-view'
 import { TasksView } from '../tasks-view'
@@ -148,11 +147,6 @@ export function TabContentPanels({
       {!conversationTarget && activeTab === 'tasks' && selectedConversationId && (
         <div className="flex-1 min-h-0 overflow-hidden">
           <TasksView conversationId={selectedConversationId} pendingCount={conversation.pendingTaskCount} />
-        </div>
-      )}
-      {!conversationTarget && activeTab === 'project' && selectedConversationId && (
-        <div className="flex-1 min-h-0 overflow-hidden">
-          <ProjectBoard conversationId={selectedConversationId} />
         </div>
       )}
       {!conversationTarget && activeTab === 'shared' && conversation && (

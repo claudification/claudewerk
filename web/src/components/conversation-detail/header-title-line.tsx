@@ -3,17 +3,22 @@ import { rowTitle } from '@/lib/conversation-row'
 import { isShareView } from '@/lib/share-mode'
 import type { Conversation } from '@/lib/types'
 import { haptic } from '@/lib/utils'
+import { ConversationContextMenu } from '../project-list/conversation-context-menu'
 
 /**
  * The conversation's own identity, directly under the project line in the
  * collapsed header: name (prominent) + short id (dim, click-to-copy).
  * Share guests get the name only -- the id is host-side plumbing.
+ *
+ * Right-clicking the title opens the same conversation context menu as the
+ * sidebar rows (Kanban board, launch, recaps, rename, ...). Share guests get a
+ * plain title -- no menu (the menu's actions are host-side).
  */
 export function HeaderTitleLine({ conversation }: { conversation: Conversation }) {
   // 200 = "don't cap here"; the CSS truncate owns the visual cut.
   const title = rowTitle(conversation, 200)
 
-  return (
+  const line = (
     <div className="flex items-baseline gap-2 min-w-0 px-3 sm:px-4 -mt-2 pb-1">
       <span className="text-sm font-semibold text-foreground truncate" title={title}>
         {title}
@@ -21,6 +26,9 @@ export function HeaderTitleLine({ conversation }: { conversation: Conversation }
       {!isShareView() && <IdChip id={conversation.id} />}
     </div>
   )
+
+  if (isShareView()) return line
+  return <ConversationContextMenu conversation={conversation}>{line}</ConversationContextMenu>
 }
 
 function IdChip({ id }: { id: string }) {

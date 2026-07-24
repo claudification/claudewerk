@@ -557,7 +557,10 @@ let defaultApplied = false
 
 const STATUS_PRIORITY: Record<string, number> = { active: 0, idle: 1, starting: 2, ended: 3 }
 
-function findBestConversationForProject(conversations: Conversation[], projectUri: string): Conversation | undefined {
+export function findBestConversationForProject(
+  conversations: Conversation[],
+  projectUri: string,
+): Conversation | undefined {
   let best: Conversation | undefined
   let bestPrio = Infinity
   for (const s of conversations) {

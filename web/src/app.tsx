@@ -88,6 +88,9 @@ const PublicCanvasView = lazy(() =>
 const NightshiftModal = lazy(() =>
   import('@/components/nightshift/nightshift-modal').then(m => ({ default: m.NightshiftModal })),
 )
+// Parkable, maximizable, detachable, project-scoped Kanban board modal. The
+// board (dnd-kit + CodeMirror) rides this lazy chunk, off the index bundle.
+const KanbanModal = lazy(() => import('@/components/kanban/kanban-modal').then(m => ({ default: m.KanbanModal })))
 // Admin-only debug tool -- kept out of the index bundle (incl. its lazy YAML view).
 const DebugControlModal = lazy(() =>
   import('@/components/debug/debug-control-modal').then(m => ({ default: m.DebugControlModal })),
@@ -509,6 +512,9 @@ function Dashboard() {
       <RenameModal />
       <Suspense fallback={null}>
         <NightshiftModal />
+      </Suspense>
+      <Suspense fallback={null}>
+        <KanbanModal />
       </Suspense>
       {canAdmin && (
         <Suspense fallback={null}>
