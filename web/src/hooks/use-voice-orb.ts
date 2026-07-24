@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import { orbSpeed, useOrbLiveSettings } from '@/hooks/use-orb-live-settings'
+import { useWakeLock } from '@/hooks/use-wake-lock'
 import { foldCaption, type SpokenLine } from '@/lib/voice-orb/caption-fold'
 import type { OpenSession } from '@/lib/voice-orb/open-session'
 import type { VoiceState } from '@/lib/voice-orb/realtime-events'
@@ -127,6 +128,10 @@ export function useVoiceOrb(opts: { onReloadRequest: () => void }): VoiceOrb {
 
   // A voice change cannot apply to a live session -- it re-mints via a remount.
   useOrbLiveSettings(liveRef.current, onReloadRequest)
+
+  // Keep the screen awake for the whole live span (connecting..speaking): the
+  // user is talking to the orb, not tapping, so let the phone not dim or lock.
+  useWakeLock(state !== 'idle')
 
   const audioStreams = useCallback(() => liveRef.current?.session.audioStreams() ?? [], [])
   const announce = useCallback((note: string) => liveRef.current?.session.announce(note), [])
