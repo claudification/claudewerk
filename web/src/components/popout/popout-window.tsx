@@ -15,6 +15,7 @@
 
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { PopoutContainerContext } from './popout-container-context'
 import { adoptStyles } from './stylesheet-adopt'
 
 interface PopoutWindowProps {
@@ -64,5 +65,10 @@ export function PopoutWindow({ win, title, onClose, children }: PopoutWindowProp
   }, [ready, title, win])
 
   if (!ready) return null
-  return createPortal(children, win.document.body)
+  // Provide this window's body so nested Radix portals (Dialog/Select) stay in
+  // the popout instead of escaping to the opener window's document.
+  return createPortal(
+    <PopoutContainerContext.Provider value={win.document.body}>{children}</PopoutContainerContext.Provider>,
+    win.document.body,
+  )
 }

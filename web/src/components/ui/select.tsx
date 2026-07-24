@@ -3,6 +3,7 @@ import { Select as SelectPrimitive } from 'radix-ui'
 import type * as React from 'react'
 
 import { cn } from '@/lib/utils'
+import { usePopoutContainer } from '../popout/popout-container-context'
 
 function Select({ ...props }: React.ComponentProps<typeof SelectPrimitive.Root>) {
   return <SelectPrimitive.Root data-slot="select" {...props} />
@@ -46,8 +47,10 @@ function SelectContent({
   position = 'popper',
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
+  // Keep the dropdown in the detached PopoutWindow when there is one.
+  const popout = usePopoutContainer()
   return (
-    <SelectPrimitive.Portal>
+    <SelectPrimitive.Portal container={popout ?? undefined}>
       <SelectPrimitive.Content
         data-slot="select-content"
         className={cn(

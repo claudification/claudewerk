@@ -2,6 +2,7 @@ import { XIcon } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
 import type * as React from 'react'
 import { cn } from '@/lib/utils'
+import { usePopoutContainer } from '../popout/popout-container-context'
 
 function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />
@@ -11,8 +12,11 @@ function _DialogTrigger({ ...props }: React.ComponentProps<typeof DialogPrimitiv
   return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />
 }
 
-function DialogPortal({ ...props }: React.ComponentProps<typeof DialogPrimitive.Portal>) {
-  return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />
+function DialogPortal({ container, ...props }: React.ComponentProps<typeof DialogPrimitive.Portal>) {
+  // Inside a detached PopoutWindow, target its body so the dialog stays in the
+  // popout instead of jumping to the opener window. Explicit container wins.
+  const popout = usePopoutContainer()
+  return <DialogPrimitive.Portal data-slot="dialog-portal" container={container ?? popout ?? undefined} {...props} />
 }
 
 function DialogOverlay({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Overlay>) {
