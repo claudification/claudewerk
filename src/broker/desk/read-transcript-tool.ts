@@ -6,10 +6,14 @@
  * answers "what did it actually say / where did it land", which is the single
  * most common thing to ask about a conversation that is finished.
  *
- * So this returns two things together:
- *  - THE END STATE: lifecycle status plus the agent's own last `set_status`
- *    report (done / pending / blocked), marked stale when a later user message
- *    superseded it.
+ * So this returns three things together:
+ *  - THE LIVE STATE: the lifecycle `status` (active = mid-turn NOW / idle /
+ *    ended), `waitingFor` (the un-fakeable pendingAttention umbrella -- blocked
+ *    on the user for a permission / plan / dialog / question), and any
+ *    `lastError` / `rateLimit`. These are broker-derived, so they cannot go
+ *    stale the way the self-report can.
+ *  - THE SELF-REPORT: the agent's own last `set_status` (done / pending /
+ *    blocked), marked stale when a later user message superseded it.
  *  - THE TAIL: the last N turns, each a user prompt + the assistant's final
  *    reply, extracted by the SAME walker the recaps use.
  *
@@ -18,7 +22,7 @@
  */
 
 import { z } from 'zod'
-import { isLiveStatusSuperseded, type LiveStatus } from '../../shared/protocol'
+import { type Conversation, isLiveStatusSuperseded, type LiveStatus } from '../../shared/protocol'
 import { extractUserPromptsAndFinals } from '../recap/shared/transcript-extract'
 import { toTranscriptEntry } from '../recap/shared/transcript-record'
 import type { DispatchRuntime } from './runtime'
@@ -52,6 +56,41 @@ function minutesAgo(at: number | undefined, now: number): number | undefined {
   return at ? Math.round((now - at) / 60_000) : undefined
 }
 
+/** What the conversation is BLOCKED ON THE USER for, if anything -- the
+ *  denormalized `pendingAttention` umbrella (permission / plan / dialog / ask /
+ *  elicitation / spawn). This is the UN-FAKEABLE "it wants you" signal, distinct
+ *  from a self-reported `needs_you`: the broker sets it from the actual open
+ *  prompt, so it cannot be stale the way `reportedStatus` can. Empty fields are
+ *  dropped -- only what pins down the ask survives. */
+function waitingOn(conv: Conversation): Record<string, unknown> | undefined {
+  const p = conv.pendingAttention
+  if (!p) return undefined
+  const out: Record<string, unknown> = { type: p.type }
+  if (p.question) out.question = p.question
+  if (p.toolName) out.toolName = p.toolName
+  if (p.filePath) out.filePath = p.filePath
+  return out
+}
+
+/** The last hard error / rate-limit the conversation hit, flattened + aged so
+ *  the orb can weigh whether it still matters (a 2h-old error on a since-revived
+ *  conversation is noise). Returns nothing when the field is unset. */
+function faultSignals(conv: Conversation, now: number): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  const e = conv.lastError
+  if (e) {
+    out.lastError = {
+      ...(e.errorType ? { type: e.errorType } : {}),
+      ...(e.errorMessage ? { message: e.errorMessage } : {}),
+      ...(e.stopReason ? { stopReason: e.stopReason } : {}),
+      minutesAgo: minutesAgo(e.timestamp, now),
+    }
+  }
+  const rl = conv.rateLimit
+  if (rl) out.rateLimit = { message: rl.message, ...(rl.profile ? { profile: rl.profile } : {}) }
+  return out
+}
+
 function readTail(rt: DispatchRuntime, conversationId: string, turns: number) {
   const read = rt.readTranscriptTail
   if (!read) return { turns: [], note: 'no durable transcript store on this broker' }
@@ -68,7 +107,7 @@ function readTail(rt: DispatchRuntime, conversationId: string, turns: number) {
 }
 
 const DESCRIPTION =
-  'Read the END of one conversation: its status, the agent\'s own last progress report (done / pending / blocked), and the last few turns of what was actually said. THIS is how you answer "how did that one end", "what did it come back with", "is it finished", or any question about a conversation that is no longer live -- it works the same on ENDED conversations as on live ones. Take `conversationId` from list_conversations or search_transcripts; never invent one. Summarise what you get, do not read it out verbatim.'
+  'Read WHERE ONE CONVERSATION IS: its live turn-state, whether it is waiting on the user, any recent error, the agent\'s own last progress report, and the last few turns of what was actually said. Use it for "how did that one end", "what did it come back with", "is it finished", "is it stuck / waiting on me", or any "what\'s the status of X" -- works the same on ENDED conversations as on live ones. TRUST THE FIELDS over the self-report: `status:"active"` = genuinely mid-turn RIGHT NOW; `status:"idle"` = live but between turns; `status:"ended"` = finished. `waitingFor` = blocked on the USER (a permission / plan / dialog / question) and is un-fakeable, unlike `reportedStatus` which the agent sets by hand and can be stale. `lastError` / `rateLimit` = it hit trouble. ANSWER SMART: do not just read `reportedStatus` back -- combine the turn-state + waitingFor + the LAST turn to say what it is doing and the last thing it said. Take `conversationId` from list_conversations or search_transcripts; never invent one. Summarise, do not read it out verbatim.'
 
 /** UNCONDITIONAL, unlike `search_transcripts`: it is in the voice contract, and
  *  `buildVoiceToolset` THROWS on a contract name it cannot find -- so a tool that
@@ -100,6 +139,9 @@ export function readTranscriptTool(rt: DispatchRuntime): Toolset {
           status: conv.status,
           idleMinutes: minutesAgo(conv.lastActivity, now),
         }
+        const waiting = waitingOn(conv)
+        if (waiting) out.waitingFor = waiting
+        Object.assign(out, faultSignals(conv, now))
         if (conv.liveStatus) {
           out.reportedStatus = reportedStatus(
             conv.liveStatus,

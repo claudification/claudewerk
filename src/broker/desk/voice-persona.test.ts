@@ -23,7 +23,12 @@ describe('the contract drives the instructions', () => {
     expect(flat(buildVoiceInstructions(['list_conversations']))).not.toContain('`read_transcript`')
     const withIt = flat(buildVoiceInstructions([...READ, 'read_transcript']))
     expect(withIt).toContain('`read_transcript`')
-    expect(withIt).toContain('how did that one end')
+    expect(withIt).toContain('how did that end')
+    // The SMART-status rule: trust the broker fields over the hand-set report,
+    // and resolve which conversation before answering (never the last one).
+    expect(withIt).toContain('`waitingFor`')
+    expect(withIt).toContain('do not just')
+    expect(withIt).toContain('NEVER the')
     // Reading a transcript ALOUD is the failure mode this tool invites.
     expect(withIt).toContain('never read a transcript out')
   })

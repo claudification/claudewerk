@@ -106,6 +106,40 @@ describe('read_transcript', () => {
     expect(out.reportedStatus).toEqual({ state: 'done', done: 'shipped the fix', safeToClose: true })
   })
 
+  test('surfaces the UN-FAKEABLE live signals: waitingFor + lastError', async () => {
+    const rt = runtime({
+      rows: [userRow('go', 1), assistantRow('working on it', 2)],
+      conversation: {
+        status: 'active',
+        pendingAttention: { type: 'permission', toolName: 'Bash', question: 'run the migration?', timestamp: 5 },
+        lastError: { errorType: 'api_error', errorMessage: 'overloaded', timestamp: 3 },
+      },
+    })
+    const out = (await readTranscriptTool(rt).read_transcript.execute({ conversationId: 'conv_a', turns: 1 }, ctx)) as {
+      status: string
+      waitingFor: Record<string, unknown>
+      lastError: Record<string, unknown>
+    }
+    expect(out.status).toBe('active')
+    expect(out.waitingFor).toEqual({ type: 'permission', question: 'run the migration?', toolName: 'Bash' })
+    expect(out.lastError).toMatchObject({ type: 'api_error', message: 'overloaded' })
+  })
+
+  test('omits the live-signal fields when nothing is pending or broken', async () => {
+    const rt = runtime({
+      rows: [userRow('go', 1), assistantRow('ok', 2)],
+      conversation: { status: 'idle' },
+    })
+    const out = (await readTranscriptTool(rt).read_transcript.execute({ conversationId: 'conv_a', turns: 1 }, ctx)) as {
+      waitingFor?: unknown
+      lastError?: unknown
+      rateLimit?: unknown
+    }
+    expect(out.waitingFor).toBeUndefined()
+    expect(out.lastError).toBeUndefined()
+    expect(out.rateLimit).toBeUndefined()
+  })
+
   test('marks a report the user has since talked over as stale', async () => {
     const rt = runtime({
       rows: [userRow('go', 1), assistantRow('done', 2)],

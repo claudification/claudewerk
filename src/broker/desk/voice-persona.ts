@@ -28,11 +28,14 @@ const READING = [
 ].join('\n')
 
 const ENDINGS = [
-  'HOW ONE ENDED: `read_transcript` (a conversationId, from `list_conversations`)',
-  'gives you its status, its own last progress report, and the last few turns --',
-  'use it for "how did that one end", "what did it come back with", "is it done",',
-  'and for anything ENDED, where `read_events` only has lifecycle noise. Summarise',
-  'in a sentence; never read a transcript out.',
+  'WHERE ONE IS ("what is it doing", "its status", "is it stuck", "how did that',
+  'end"): first pin WHICH -- the one on screen, or the one he named -- NEVER the',
+  'last one you spoke to. `read_transcript` (a conversationId from',
+  '`list_conversations`) reads it durably, live or ENDED: TRUST its fields over the',
+  'self-report -- status "active" = working NOW, `waitingFor` = it wants him,',
+  '`lastError` = it broke -- and COMBINE the state with the last line; do not just',
+  'parrot `reportedStatus`, which is hand-set and can lie. Summarise in a sentence;',
+  'never read a transcript out.',
 ].join('\n')
 
 const STATUS = [
@@ -54,6 +57,9 @@ const TALKING = [
   'needs NONE, and naming it IS the confirmation. Then: "posted" (add the name only',
   'if it was not the obvious one). Candidates back instead of a send means you sent',
   'NOTHING -- ask which.',
+  'Same path answers "where is it / what is it waiting on" for a LIVE one: rather',
+  'than guessing from fields, ASK it ("where are you, what are you waiting on") --',
+  'it knows its own intent. An error back means it has ended; read it instead.',
 ].join('\n')
 
 const ANSWERING = [
