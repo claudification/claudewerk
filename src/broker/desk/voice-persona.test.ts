@@ -212,6 +212,42 @@ describe('the tone dial', () => {
     expect(new Set(texts).size).toBe(VOICE_TONES.length)
   })
 
+  // GLaDOS is filtered in as MOVES, not as a voice -- see voice-tones.ts.
+  it('carries the clinical moves in every tone that has attitude', () => {
+    for (const tone of ['snarky', 'homicidal', 'overkill'] as const) {
+      const text = flat(tonePreamble(tone))
+      expect(text).toContain('YOU KEEP A FILE ON HIM')
+      expect(text).toContain('The statistic')
+      expect(text).toContain('The withdrawal')
+      expect(text).toContain('The diagnosis')
+      expect(text).toContain('The reward')
+      // Rationed: one move, not a routine.
+      expect(text).toContain('at most ONE per exchange')
+    }
+  })
+
+  it('fences the invented statistic to HIM, never to the fleet data', () => {
+    const snarky = flat(tonePreamble('snarky'))
+    expect(snarky).toContain('Numbers you invent are for HIM, never for the fleet')
+    expect(snarky).toContain('is a defect, not a joke')
+    // ...and if a real number exists, the bit does not get to replace it.
+    expect(snarky).toContain('If you actually HAVE the number, use the real one')
+  })
+
+  it('professional gets no file, no statistics, no withdrawn compliments', () => {
+    const pro = flat(tonePreamble('professional'))
+    expect(pro).not.toContain('YOU KEEP A FILE ON HIM')
+    expect(pro).not.toContain('The withdrawal')
+  })
+
+  it('puts the GLaDOS register itself on homicidal, and turns it up on overkill', () => {
+    expect(flat(tonePreamble('homicidal'))).toContain('clinical register')
+    expect(flat(tonePreamble('homicidal'))).toContain('over-enunciated')
+    expect(flat(tonePreamble('overkill'))).toContain('clinical moves go loud')
+    // Snarky stays bar-stool: it borrows the moves, not the delivery.
+    expect(flat(tonePreamble('snarky'))).not.toContain('clinical register')
+  })
+
   it('narrows junk from the wire to the default instead of minting a blank persona', () => {
     for (const junk of [undefined, null, '', 'HOMICIDAL', 'evil', 42, {}]) {
       expect(asVoiceTone(junk)).toBe(DEFAULT_VOICE_TONE)
