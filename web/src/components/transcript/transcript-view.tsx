@@ -24,135 +24,13 @@ import { cn } from '@/lib/utils'
 import { labSummary, resolveVirtualizerLab } from '@/lib/virtualizer-lab'
 import { TranscriptEmptyState } from './ghost-peek'
 import { AnimatedGroupContent, stableGroupKey } from './group-content'
+import { estimateGroupSize, getConvSizeCache, trimConvSizeCache } from './group-sizing'
 import { type DisplayGroup, useIncrementalGroups } from './grouping'
 import { BannersBlock, InFlightBlock } from './transcript-bottom'
 import { useFollowSignals } from './use-follow-signals'
 import { useTailAnimations } from './use-tail-animations'
 import { useLiveGroups, usePlanContext, useTranscriptSettings } from './use-transcript-derivations'
 import { useTranscriptWindow } from './use-transcript-window'
-
-/** Content-aware size estimation to minimize layout shift on first render.
- *  Falls back to measuredSizes cache for groups that have been rendered before. */
-function estimateGroupSize(
-  group: DisplayGroup,
-  measuredSizes: Map<string, number>,
-  key: string,
-  liveEstimate: number,
-): number {
-  // The scrollback spacer's height is authoritative-by-computation (olderCount *
-  // avgPerEntry), NOT by measurement -- bypass the cache so refinements take
-  // effect and a stale measured height never sticks.
-  if (group.type === 'scrollback_spacer') return group.spacerHeight ?? 0
-
-  const cached = measuredSizes.get(key)
-  if (cached !== undefined) return cached
-
-  switch (group.type) {
-    case 'live':
-      // First-frame estimate only; measureElement reports the real height once
-      // the streaming/spinner content renders. Modest so the initial pin is
-      // close. Lab-tunable: the estimate->measured snap is a residual jump
-      // suspect (virtualizerLab.liveEstimate).
-      return liveEstimate
-    case 'compacted':
-      return 40
-    case 'compacting':
-      return 56
-    case 'skill':
-      return 44
-    case 'system':
-      return group.notifications ? 56 : 48
-    case 'boot':
-      // ~22px per step, plus a small header + padding. Clamp so a very long
-      // boot timeline doesn't eat the whole viewport.
-      return Math.min(48 + group.entries.length * 22, 400)
-    case 'launch':
-      return Math.min(48 + group.entries.length * 22, 400)
-    case 'shell':
-      // Single compact receipt card (open/exit) -- one row plus optional detail.
-      return 48
-    case 'advisor': {
-      // Header row + optional advice text body (virtualizer re-measures anyway).
-      const text = (group.entries[0] as { text?: string })?.text ?? ''
-      return Math.min(56 + Math.ceil(text.length / 60) * 16, 320)
-    }
-    case 'user': {
-      const entries = group.entries
-      let textLen = 0
-      for (const entry of entries) {
-        const content = (entry as Record<string, unknown>).message as
-          | { content?: string | Array<{ type: string; text?: string }> }
-          | undefined
-        if (typeof content?.content === 'string') textLen += content.content.length
-        else if (Array.isArray(content?.content)) {
-          for (const b of content.content) {
-            if (b.type === 'text' && b.text) textLen += b.text.length
-          }
-        }
-      }
-      // Header ~40px + ~20px per 80-char line, clamped
-      return Math.max(56, Math.min(40 + Math.ceil(textLen / 80) * 20, 400))
-    }
-    case 'assistant': {
-      let toolCount = 0
-      let textLen = 0
-      for (const entry of group.entries) {
-        const content = (entry as Record<string, unknown>).message as
-          | { content?: string | Array<{ type: string; text?: string }> }
-          | undefined
-        if (!Array.isArray(content?.content)) continue
-        for (const b of content.content) {
-          if (b.type === 'tool_use') toolCount++
-          if (b.type === 'text' && b.text) textLen += b.text.length
-        }
-      }
-      // Base + collapsed tool lines (~52px each) + text lines. The cap was
-      // 1500 when a group could hold a whole agentic turn; with the seq-bucket
-      // group bound (GROUP_SEQ_SPAN) groups are small, so a higher cap lets a
-      // genuinely tall markdown entry estimate CLOSE instead of popping
-      // +2000px on first measure during scrollback.
-      const base = 48
-      const toolHeight = toolCount * 52
-      const textHeight = Math.ceil(textLen / 80) * 20
-      return Math.max(80, Math.min(base + toolHeight + textHeight, 4000))
-    }
-    default:
-      return 120
-  }
-}
-
-// Per-conversation cache of measured group heights, keyed by conversationId at
-// module scope. Phase 1 introduced this to survive the TranscriptView remount
-// on every conversation switch. Phase 2 (this commit) DROPPED that remount --
-// TranscriptView is kept mounted across switches and the cacheKey prop changes
-// instead. The view re-selects the right Map via useMemo([cacheKey]) below.
-// Either way, keeping real heights warm across switches lets estimateSize
-// return accurate sizes immediately, so the scroll lands without thrashing
-// the layout/measure feedback loop that defined the switch-lag beach ball.
-const CONV_SIZE_CACHE_MAX = 25
-// Inner cap: prevent one long-scrolled conversation from accumulating unbounded
-// height entries. At 2000 measured groups the cache is already warm for any
-// realistic window; entries beyond this are just dead weight.
-const CONV_SIZE_CACHE_INNER_MAX = 2000
-const convSizeCaches = new Map<string, Map<string, number>>()
-
-function getConvSizeCache(conversationId: string | null): Map<string, number> {
-  if (!conversationId) return new Map()
-  const existing = convSizeCaches.get(conversationId)
-  if (existing) {
-    // LRU bump -- most-recently-used conversation stays warmest.
-    convSizeCaches.delete(conversationId)
-    convSizeCaches.set(conversationId, existing)
-    return existing
-  }
-  const fresh = new Map<string, number>()
-  convSizeCaches.set(conversationId, fresh)
-  if (convSizeCaches.size > CONV_SIZE_CACHE_MAX) {
-    const oldest = convSizeCaches.keys().next().value
-    if (oldest !== undefined) convSizeCaches.delete(oldest)
-  }
-  return fresh
-}
 
 // Progressive transcript loading + infinite scrollback data logic lives in
 // use-transcript-window.ts (shared with TranscriptViewPlain).
@@ -566,17 +444,9 @@ export const TranscriptView = memo(function TranscriptView({
     const liveSize = measuredSizes.get(liveKey)
     if (liveSize !== undefined) measuredSizes.set(stableGroupKey(lastMainGroup), liveSize)
   }
-  // Inner cap: drop oldest entries (insertion-order) when the per-conversation
-  // size cache exceeds CONV_SIZE_CACHE_INNER_MAX. LRU trim keeps recently-visible
-  // groups warm while preventing unbounded growth on long scrollback sessions.
-  if (measuredSizes.size > CONV_SIZE_CACHE_INNER_MAX) {
-    const excess = measuredSizes.size - CONV_SIZE_CACHE_INNER_MAX
-    let trimmed = 0
-    for (const key of measuredSizes.keys()) {
-      measuredSizes.delete(key)
-      if (++trimmed >= excess) break
-    }
-  }
+  // Inner cap: drop oldest entries (insertion-order) so a long scrollback
+  // session cannot grow one conversation's size cache without bound.
+  trimConvSizeCache(measuredSizes)
   // Refine the per-entry height average from currently-measured REAL groups
   // (exclude the synthetic spacer + live slot). Drives the scrollback spacer's
   // reserved height; one-frame lag is fine (the spacer is an estimate).

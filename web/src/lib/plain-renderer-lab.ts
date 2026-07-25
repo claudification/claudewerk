@@ -1,57 +1,61 @@
 /**
  * Plain Renderer Lab -- per-device experiment knobs for the plain
  * (non-virtualized) transcript renderer's SCROLL-BACK machinery. Stick-to-
- * bottom is settled; the open problem is keeping the reader's position stable
- * while older history loads and content-visibility groups inflate from their
- * estimate to real height. Every default reproduces CURRENT production
- * behavior exactly, so a fresh device changes nothing. The Experiments
+ * bottom is settled; the problem this lab exists for is keeping the reader's
+ * position stable while older history loads and content-visibility groups
+ * inflate from their reserved height to their real one. The Experiments
  * settings tab flips these live (zustand prefs, localStorage) so we can A/B
- * the anchoring approaches on-device without a rebuild per variant.
+ * on-device without a rebuild per variant.
  *
- * The four mechanisms under test (see plain/ + globals.css):
+ * THE DEFAULTS ARE THE ANSWER, not a placeholder: accurate per-group heights
+ * so nothing inflates by much, and the browser's own scroll anchoring wherever
+ * it exists. The knobs below exist to fall BACK to the older behaviors and
+ * prove which one is doing the work.
+ *
+ * The mechanisms under test (see components/transcript/plain/ + globals.css):
  *  - content-visibility: auto + contain-intrinsic-size on each group. Skips
- *    offscreen layout, but seeds a flat estimate that inflates to real height
- *    on first encounter -- the scroll-back jump amplifier.
+ *    offscreen layout. Its reserved height is the scroll-back jump amplifier:
+ *    whatever it under-reserves gets shoved into the reader's face when the
+ *    box becomes relevant. `sizing` picks how that height is chosen.
+ *  - native scroll anchoring (`overflow-anchor: auto`) -- in layout, never a
+ *    frame late. Chrome/Firefox for years, WebKit from Safari 27.
  *  - prepend anchor (use-prepend-anchor.ts): scrollHeight-delta compensation
- *    on the commit where older content lands. The classic Safari-safe trick.
+ *    on the commit where older content lands. The Safari-26-and-older path.
  *  - above-viewport anchor (use-above-anchor.ts): ResizeObserver polyfill that
- *    compensates the estimate->real inflation of groups above the viewport.
- *  - overflow-anchor: browser-native scroll anchoring. 'none' today (it would
- *    double-compensate the prepend anchor); 'auto' hands the job to Chrome/
- *    Firefox natively (Safari has no support either way).
+ *    compensates inflation of groups above the viewport. Same fallback path.
  * See memory: project_transcript_scrollback_hold, project_transcript_plain_renderer.
  */
 
+import type { AnchorMode, GroupSizing } from '@/components/transcript/plain/anchor-strategy'
+
 export interface PlainRendererLabPrefs {
+  /** Who holds the reader's position while content above changes.
+   *  'auto' (default) = native scroll anchoring where the engine has it, our
+   *  JS anchors where it does not. 'native' / 'js' force one side, for A/B.
+   *  Never both: they double-compensate every prepend. */
+  anchorMode: AnchorMode
+  /** How a not-yet-rendered group's reserved height is chosen.
+   *  'measured' (default) = real height from the shared per-conversation cache,
+   *  else a content-derived estimate (group-sizing.ts).
+   *  'flat' = one `intrinsicSize` for every group -- the original guess, kept
+   *  so the "is accurate sizing actually doing anything?" question stays
+   *  answerable on-device. */
+  sizing: GroupSizing
   /** content-visibility:auto on each group (offscreen layout skipping). OFF =
    *  plain document flow, real heights from first layout, so nothing inflates
    *  above the viewport -- kills the jump at the source (costs offscreen-skip
    *  perf on very large windows). */
   contentVisibility: boolean
-  /** contain-intrinsic-size estimate (px) for a not-yet-rendered group. Only
-   *  meaningful while contentVisibility is ON. The flat 200px default is far
-   *  below typical group heights, so first-encounter inflation is large;
-   *  raising it trades one jump direction for the other. */
+  /** The flat reserved height (px), used only while `sizing` is 'flat'. 200 is
+   *  far below a typical group, which is exactly why 'measured' is default. */
   intrinsicSize: number
-  /** scrollHeight-delta prepend anchor (use-prepend-anchor.ts). The proven
-   *  Safari-safe compensation applied when older content is inserted above. */
-  prependAnchor: boolean
-  /** above-viewport ResizeObserver anchor (use-above-anchor.ts). Compensates a
-   *  content-visibility group inflating from estimate to real height while it
-   *  sits above the viewport. Redundant when contentVisibility is OFF. */
-  aboveAnchor: boolean
-  /** CSS overflow-anchor on the scroller. 'none' = we own anchoring in JS
-   *  (today). 'auto' = native browser scroll anchoring drives it (Chrome/
-   *  Firefox); pair with the JS anchors OFF to avoid double-compensation. */
-  overflowAnchor: 'none' | 'auto'
 }
 
 export const DEFAULT_PLAIN_RENDERER_LAB: PlainRendererLabPrefs = {
+  anchorMode: 'auto',
+  sizing: 'measured',
   contentVisibility: true,
   intrinsicSize: 200,
-  prependAnchor: true,
-  aboveAnchor: true,
-  overflowAnchor: 'none',
 }
 
 /** Merge a possibly-partial stored value over the defaults (prefs written by

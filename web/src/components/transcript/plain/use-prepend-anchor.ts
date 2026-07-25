@@ -1,10 +1,14 @@
 /**
- * Prepend-without-jump for the plain renderer: the classic, Safari-safe
- * scrollHeight-delta anchor. `overflow-anchor` cannot do this job (no Safari
- * support, July 2026), and item/node-granular anchoring is structurally blind
- * to prepends that MERGE into the head of the boundary group (the TanStack
- * breakSeqs saga) -- measuring the whole container catches every inserted
- * pixel regardless of grouping.
+ * Prepend-without-jump for the plain renderer: the classic scrollHeight-delta
+ * anchor. FALLBACK PATH ONLY -- anchor-strategy.ts runs this where the engine
+ * has no native scroll anchoring (Safari 26 and older) and stands it down
+ * where the browser does the job itself, since both at once double-compensate
+ * every prepend.
+ *
+ * Why the whole-container delta rather than node-granular anchoring: it is
+ * structurally blind to prepends that MERGE into the head of the boundary
+ * group (the TanStack breakSeqs saga) -- measuring the whole container catches
+ * every inserted pixel regardless of grouping.
  *
  * arm() is called synchronously RIGHT BEFORE the state/store mutation that
  * inserts content above the viewport (useTranscriptWindow's onBeforePrepend);

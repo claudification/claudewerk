@@ -49,6 +49,7 @@ export function AnimatedGroupContent({
   clearSettling,
   className,
   style,
+  groupKey,
   ...content
 }: GroupContentProps & {
   isEntering: boolean
@@ -59,10 +60,14 @@ export function AnimatedGroupContent({
   /** Inline overrides for the content-visibility box (Plain Renderer Lab
    *  drives content-visibility / contain-intrinsic-size through here). */
   style?: CSSProperties
+  /** Stable group key, surfaced as `data-group-key` so the plain renderer's
+   *  height recorder can attribute a measured box to its group. */
+  groupKey?: string
 }) {
   return (
     <div
       style={style}
+      data-group-key={groupKey}
       className={cn(className, isEntering && 'transcript-entry-enter', isSettling && 'assistant-settle')}
       onAnimationEnd={
         isEntering || isSettling

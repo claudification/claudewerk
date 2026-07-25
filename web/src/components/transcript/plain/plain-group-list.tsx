@@ -4,20 +4,43 @@
  * Offscreen cost is handled by the browser via `content-visibility: auto` +
  * `contain-intrinsic-size` (.transcript-plain-group in globals.css; Safari
  * 18.1+, older engines degrade to render-everything -- slower but correct).
+ *
+ * Each box's reserved height comes from the shared size cache / content-derived
+ * estimate (group-sizing.ts) rather than one flat number for every group -- see
+ * use-group-heights.ts for why that is the scroll-back fix and not a nicety.
  */
 
 import type { CSSProperties } from 'react'
 import { cn } from '@/lib/utils'
 import { AnimatedGroupContent, type GroupContentProps, stableGroupKey } from '../group-content'
+import { estimateGroupSize } from '../group-sizing'
 import type { DisplayGroup } from '../grouping'
+import type { GroupSizing } from './anchor-strategy'
+import { intrinsicStyle } from './use-group-heights'
 
-/** Plain Renderer Lab knobs that shape the content-visibility box. Same for
- *  every group, so computed once. `undefined` = the .transcript-plain-group CSS
- *  class owns it (the production default path -- no inline override). */
-function boxStyle(contentVisibility: boolean, intrinsicSize: number): CSSProperties | undefined {
-  if (!contentVisibility) return { contentVisibility: 'visible' }
-  if (intrinsicSize !== 200) return { containIntrinsicSize: `auto ${intrinsicSize}px` }
-  return undefined
+/** Plain Renderer Lab knobs that shape the content-visibility box. */
+export interface BoxSizing {
+  /** content-visibility on each group (offscreen layout skipping). */
+  contentVisibility: boolean
+  /** 'measured' = per-group height from the shared cache/estimator (default).
+   *  'flat' = one `intrinsicSize` for every group (the legacy guess). */
+  sizing: GroupSizing
+  /** The flat seed, used only when `sizing` is 'flat'. */
+  intrinsicSize: number
+  /** Per-conversation measured heights, filled by useGroupHeights. */
+  sizes: Map<string, number>
+}
+
+const VISIBLE: CSSProperties = { contentVisibility: 'visible' }
+
+/** Style for ONE group's content-visibility box. `undefined` = the
+ *  .transcript-plain-group CSS class owns it (no inline override). */
+function boxStyle(group: DisplayGroup, key: string, box: BoxSizing): CSSProperties | undefined {
+  if (!box.contentVisibility) return VISIBLE
+  if (box.sizing === 'flat') {
+    return box.intrinsicSize === 200 ? undefined : intrinsicStyle(box.intrinsicSize, 1)
+  }
+  return intrinsicStyle(estimateGroupSize(group, box.sizes, key))
 }
 
 export function PlainGroupList({
@@ -26,8 +49,7 @@ export function PlainGroupList({
   settlingKey,
   clearEntering,
   clearSettling,
-  contentVisibility,
-  intrinsicSize,
+  box,
   ...content
 }: Omit<GroupContentProps, 'group'> & {
   groups: DisplayGroup[]
@@ -35,11 +57,8 @@ export function PlainGroupList({
   settlingKey: string | null
   clearEntering: () => void
   clearSettling: () => void
-  /** Plain Renderer Lab: content-visibility on/off + its intrinsic-size seed. */
-  contentVisibility: boolean
-  intrinsicSize: number
+  box: BoxSizing
 }) {
-  const style = boxStyle(contentVisibility, intrinsicSize)
   return (
     <>
       {groups.map(group => {
@@ -47,13 +66,14 @@ export function PlainGroupList({
         return (
           <AnimatedGroupContent
             key={key}
+            groupKey={key}
             // The continuation tuck lives on THIS wrapper (the content-visibility
             // box), not on GroupView's inner box -- a child pulled above the box
             // top would be clipped by contain:paint (the "cut text" bug). Moving
             // the whole box up avoids the clip. continuationOffset={false} stops
             // GroupView from also applying it inside.
             className={cn('transcript-plain-group', group.continuation && '-mt-2')}
-            style={style}
+            style={boxStyle(group, key, box)}
             group={group}
             continuationOffset={false}
             isEntering={enteringKey === key}

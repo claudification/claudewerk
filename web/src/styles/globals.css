@@ -721,11 +721,15 @@ html[data-tab-hidden] *::after {
 /* Plain transcript renderer (TranscriptViewPlain): browser-native offscreen
    skipping. content-visibility:auto skips layout + paint for offscreen groups
    (Safari 18.1+; older engines ignore it and render everything -- slower but
-   correct). contain-intrinsic-size `auto 200px` = 200px estimate on first
-   encounter, then the browser REMEMBERS the last rendered size, so scrollbar /
-   scrollHeight stay stable once a group has been seen. The stick-to-bottom
-   engine's resize pin absorbs the estimate->real settle while at bottom (the
-   Open WebUI initial-scroll gotcha). */
+   correct). The 200px here is only a FLOOR: the renderer overrides
+   contain-intrinsic-size per group with that group's real height (from the
+   shared size cache) or a content-derived estimate -- see
+   plain/use-group-heights.ts, and the Plain Renderer Lab's "flat" sizing knob
+   for the old one-number-for-everything behavior. The `auto` keyword makes the
+   browser REMEMBER a rendered box's real size, so scrollbar / scrollHeight
+   stay stable for as long as that DOM node lives. The stick-to-bottom engine's
+   resize pin absorbs the residual settle while at bottom (the Open WebUI
+   initial-scroll gotcha). */
 .transcript-plain-group {
 	content-visibility: auto;
 	contain-intrinsic-size: auto 200px;
