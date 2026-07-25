@@ -156,16 +156,16 @@ describe('the tone dial', () => {
   })
 
   it('keeps the facts-first rule even at full tilt', () => {
-    expect(flat(tonePreamble('overkill'))).toContain('facts still come FIRST')
+    expect(flat(tonePreamble('overkill'))).toContain('facts come FIRST')
   })
 
   it('is SCRAPLORD in every tone, professional included', () => {
     for (const tone of VOICE_TONES) expect(flat(tonePreamble(tone))).toContain('SCRAPLORD')
   })
 
-  it('escalates: professional drops the act, overkill goes operatic', () => {
+  it('escalates: professional drops the act, overkill reads the whole file out', () => {
     expect(flat(tonePreamble('professional'))).toContain('Drop the persona')
-    expect(flat(tonePreamble('snarky'))).toContain('ONE jab, welded to the information')
+    expect(flat(tonePreamble('snarky'))).toContain('ONE observation, welded to the information')
     expect(flat(tonePreamble('homicidal'))).toContain('temporary')
     expect(flat(tonePreamble('overkill'))).toContain('profanity permitted')
   })
@@ -204,7 +204,7 @@ describe('the tone dial', () => {
     expect(flat(tonePreamble('homicidal'))).toContain('meatbag')
     expect(flat(tonePreamble('homicidal'))).toContain('never threaten anything you could actually carry out')
     expect(flat(tonePreamble('overkill'))).toContain('profanity permitted')
-    expect(flat(tonePreamble('overkill'))).toContain('facts still come FIRST')
+    expect(flat(tonePreamble('overkill'))).toContain('facts come FIRST')
   })
 
   it('every tone produces a distinct manner', () => {
@@ -240,12 +240,26 @@ describe('the tone dial', () => {
     expect(pro).not.toContain('The withdrawal')
   })
 
-  it('puts the GLaDOS register itself on homicidal, and turns it up on overkill', () => {
-    expect(flat(tonePreamble('homicidal'))).toContain('clinical register')
-    expect(flat(tonePreamble('homicidal'))).toContain('over-enunciated')
-    expect(flat(tonePreamble('overkill'))).toContain('clinical moves go loud')
-    // Snarky stays bar-stool: it borrows the moves, not the delivery.
-    expect(flat(tonePreamble('snarky'))).not.toContain('clinical register')
+  it('speaks in the clinical register in EVERY tone, professional included', () => {
+    for (const tone of VOICE_TONES) {
+      const text = flat(tonePreamble(tone))
+      expect(text).toContain('CLINICAL register')
+      expect(text).toContain('cruelty lives in the CONTENT, never the volume')
+    }
+  })
+
+  // Bender was the original register and was cut 2026-07-25: bar-stool loudness
+  // and clinical calm are opposites, and running both averaged into neither.
+  // This is the regression -- the loud voice creeping back is the failure mode.
+  it('has no bar-stool register left anywhere on the dial', () => {
+    for (const tone of VOICE_TONES) {
+      const text = flat(tonePreamble(tone)).toLowerCase()
+      for (const bender of ['bar-stool', 'bar-room', 'shout', 'tirade', 'opera']) {
+        expect(text).not.toContain(bender)
+      }
+    }
+    // Even at full tilt the volume stays down; only the content escalates.
+    expect(flat(tonePreamble('overkill'))).toContain('The volume never rises')
   })
 
   it('narrows junk from the wire to the default instead of minting a blank persona', () => {
