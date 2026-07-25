@@ -38,7 +38,7 @@ export const KNOBS: Knob[] = [
     kind: 'bool',
     label: 'content-visibility',
     description:
-      'Skip offscreen group layout via content-visibility:auto. OFF = plain flow, real heights from first layout, nothing inflates above the viewport (the jump amplifier is gone; costs offscreen-skip perf on huge windows)',
+      'OFF by default: plain document flow, real heights from first layout, so nothing above the reader ever changes size -- and WebKit stops eating SVG text and refusing to expand details inside these boxes. ON skips offscreen layout (not React work) and brings the first-encounter inflation back with it',
   },
   {
     key: 'intrinsicSize',

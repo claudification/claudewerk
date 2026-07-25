@@ -31,16 +31,28 @@ export interface BoxSizing {
   sizes: Map<string, number>
 }
 
-const VISIBLE: CSSProperties = { contentVisibility: 'visible' }
-
-/** Style for ONE group's content-visibility box. `undefined` = the
- *  .transcript-plain-group CSS class owns it (no inline override). */
+/** Style for ONE group's box. `undefined` -- the default -- means plain
+ *  document flow: no content-visibility, so the group lays out at its real
+ *  height immediately and can never shove the reader by inflating later. Only
+ *  the opt-in offscreen-skipping path needs an inline style. */
 function boxStyle(group: DisplayGroup, key: string, box: BoxSizing): CSSProperties | undefined {
-  if (!box.contentVisibility) return VISIBLE
-  if (box.sizing === 'flat') {
-    return box.intrinsicSize === 200 ? undefined : intrinsicStyle(box.intrinsicSize, 1)
-  }
-  return intrinsicStyle(estimateGroupSize(group, box.sizes, key))
+  if (!box.contentVisibility) return undefined
+  const reserved =
+    box.sizing === 'flat'
+      ? intrinsicStyle(box.intrinsicSize, 1)
+      : intrinsicStyle(estimateGroupSize(group, box.sizes, key))
+  return skippingStyle(reserved)
+}
+
+/** `content-visibility: auto` paired with a reserved height, memoized on the
+ *  reserved-height object so identity stays stable per bucket. */
+const skippingStyles = new WeakMap<CSSProperties, CSSProperties>()
+function skippingStyle(reserved: CSSProperties): CSSProperties {
+  const existing = skippingStyles.get(reserved)
+  if (existing) return existing
+  const style: CSSProperties = { contentVisibility: 'auto', ...reserved }
+  skippingStyles.set(reserved, style)
+  return style
 }
 
 export function PlainGroupList({

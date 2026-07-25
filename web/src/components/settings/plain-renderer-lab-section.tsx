@@ -23,8 +23,9 @@ export function PlainRendererLabSection() {
     <div className="space-y-3">
       <div className="text-[10px] text-muted-foreground leading-relaxed">
         Live experiment knobs for the plain renderer's scroll-back anchoring. Stick-to-bottom is settled; this is the
-        load-older / height-inflation path. Defaults = accurate per-group heights + the browser's own scroll anchoring.
-        Change one knob at a time and watch the <span className="font-mono">[window]</span> console lines.
+        load-older / height-inflation path. Safari-first: defaults are plain document flow (no content-visibility) plus
+        the browser's own scroll anchoring where it exists. Change one knob at a time and watch the{' '}
+        <span className="font-mono">[window]</span> console lines.
       </div>
       <LabResetHeader summary={plainLabSummary(lab)} onReset={() => updatePrefs({ plainRendererLab: {} })} />
       <div className="text-[10px] font-mono text-muted-foreground">

@@ -71,8 +71,11 @@ export function usePlainTranscript({
   // content-visibility reserved->real inflation ABOVE a detached reader.
   useAboveViewportAnchor(engine, anchor.aboveAnchor)
   // Real heights back into the shared size cache, so each box reserves what it
-  // actually needs and there is nothing for an anchor to chase.
-  const sizes = useGroupHeights(engine.contentRef, cacheKey, lab.sizing === 'measured')
+  // actually needs. Only the offscreen-skipping path consumes them, so with
+  // content-visibility off (the default) the recorder stands down rather than
+  // running a ResizeObserver over every group for nobody -- and RO callbacks
+  // during a scroll are precisely what we are trying not to do on WebKit.
+  const sizes = useGroupHeights(engine.contentRef, cacheKey, lab.sizing === 'measured' && lab.contentVisibility)
 
   // Shared progressive-window + scrollback data logic. No backfill group
   // breaks needed here: the scrollHeight-delta anchor measures the whole

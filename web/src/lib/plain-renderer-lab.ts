@@ -7,16 +7,23 @@
  * settings tab flips these live (zustand prefs, localStorage) so we can A/B
  * on-device without a rebuild per variant.
  *
- * THE DEFAULTS ARE THE ANSWER, not a placeholder: accurate per-group heights
- * so nothing inflates by much, and the browser's own scroll anchoring wherever
- * it exists. The knobs below exist to fall BACK to the older behaviors and
- * prove which one is doing the work.
+ * THE DEFAULTS ARE THE ANSWER, not a placeholder. THIS IS A SAFARI-FIRST
+ * SURFACE -- Safari is the browser that has to be right; Chrome is a bonus.
  *
- * The mechanisms under test (see components/transcript/plain/ + globals.css):
+ * The mechanisms (see components/transcript/plain/ + globals.css):
  *  - content-visibility: auto + contain-intrinsic-size on each group. Skips
- *    offscreen layout. Its reserved height is the scroll-back jump amplifier:
- *    whatever it under-reserves gets shoved into the reader's face when the
- *    box becomes relevant. `sizing` picks how that height is chosen.
+ *    offscreen LAYOUT (not React work -- every windowed group is in the DOM
+ *    either way). DEFAULT OFF, because on WebKit it is a net loss:
+ *      * its reserved height is the scroll-back jump amplifier -- whatever it
+ *        under-reserves gets shoved into the reader's face when the box turns
+ *        relevant, which while scrolling UP is just above the viewport;
+ *      * WebKit never paints SVG text inside such a box (our Mermaid blocks)
+ *        -- https://adactio.com/journal/21498;
+ *      * details/summary inside such a box will not expand (Safari 18
+ *        regression, https://bugs.webkit.org/show_bug.cgi?id=277573).
+ *    OFF means real heights from first layout, so nothing above the reader
+ *    ever changes size and there is nothing for an anchor to chase. The knob
+ *    turns it back on for the offscreen-layout win on engines that behave.
  *  - native scroll anchoring (`overflow-anchor: auto`) -- in layout, never a
  *    frame late. Chrome/Firefox for years, WebKit from Safari 27.
  *  - prepend anchor (use-prepend-anchor.ts): scrollHeight-delta compensation
@@ -41,10 +48,11 @@ export interface PlainRendererLabPrefs {
    *  so the "is accurate sizing actually doing anything?" question stays
    *  answerable on-device. */
   sizing: GroupSizing
-  /** content-visibility:auto on each group (offscreen layout skipping). OFF =
-   *  plain document flow, real heights from first layout, so nothing inflates
-   *  above the viewport -- kills the jump at the source (costs offscreen-skip
-   *  perf on very large windows). */
+  /** content-visibility:auto on each group (offscreen layout skipping).
+   *  DEFAULT OFF: plain document flow, real heights from first layout, so
+   *  nothing inflates above the viewport -- the jump dies at the source, and
+   *  WebKit's two content-visibility painting bugs go with it. ON restores
+   *  offscreen layout skipping, and with it the first-encounter inflation. */
   contentVisibility: boolean
   /** The flat reserved height (px), used only while `sizing` is 'flat'. 200 is
    *  far below a typical group, which is exactly why 'measured' is default. */
@@ -54,7 +62,7 @@ export interface PlainRendererLabPrefs {
 export const DEFAULT_PLAIN_RENDERER_LAB: PlainRendererLabPrefs = {
   anchorMode: 'auto',
   sizing: 'measured',
-  contentVisibility: true,
+  contentVisibility: false,
   intrinsicSize: 200,
 }
 

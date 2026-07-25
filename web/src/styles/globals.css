@@ -718,21 +718,21 @@ html[data-tab-hidden] *::after {
    motion setting. If a reduced-motion opt-out is wanted, make it a control-panel
    pref rather than honoring the OS flag here. */
 
-/* Plain transcript renderer (TranscriptViewPlain): browser-native offscreen
-   skipping. content-visibility:auto skips layout + paint for offscreen groups
-   (Safari 18.1+; older engines ignore it and render everything -- slower but
-   correct). The 200px here is only a FLOOR: the renderer overrides
-   contain-intrinsic-size per group with that group's real height (from the
-   shared size cache) or a content-derived estimate -- see
-   plain/use-group-heights.ts, and the Plain Renderer Lab's "flat" sizing knob
-   for the old one-number-for-everything behavior. The `auto` keyword makes the
-   browser REMEMBER a rendered box's real size, so scrollbar / scrollHeight
-   stay stable for as long as that DOM node lives. The stick-to-bottom engine's
-   resize pin absorbs the residual settle while at bottom (the Open WebUI
-   initial-scroll gotcha). */
+/* Plain transcript renderer (TranscriptViewPlain): marker class for one group
+   box. The observers (above-viewport anchor, height recorder) select on it, and
+   the renderer applies content-visibility + contain-intrinsic-size INLINE when
+   the Plain Renderer Lab's content-visibility knob is on.
+
+   It is OFF by default, and deliberately so on a Safari-first surface: skipping
+   offscreen layout buys nothing that WebKit does not take back. A skipped box
+   reserves an estimated height and snaps to its real one exactly as you scroll
+   up toward it, shoving the reader; WebKit also never paints SVG text inside
+   such a box (our Mermaid blocks, https://adactio.com/journal/21498) and will
+   not expand details/summary inside one (https://bugs.webkit.org/show_bug.cgi?id=277573).
+   Note it never skipped React work either -- every windowed group is in the DOM
+   regardless; this was only ever a browser layout/paint optimization. */
 .transcript-plain-group {
-	content-visibility: auto;
-	contain-intrinsic-size: auto 200px;
+	/* intentionally empty -- see above */
 }
 
 /* Draw block chrome-on-hover: on a real pointer device, keep the Excalidraw UI
