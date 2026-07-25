@@ -14,11 +14,12 @@
  * (`spawn-schema.ts`), and the runtime context-window resolver
  * (`context-window.ts`). Adding a model = ONE new object in `CC_MODELS`.
  *
- * Model data extracted from the CC v2.1.197 binary (2026-07-01) for the
- * `claude-sonnet-5` family (default `sonnet` alias now resolves here);
- * `claude-fable-5` / `claude-mythos-5` / `claude-opus-4-8` from the v2.1.170
- * cut (2026-06-10); older entries reflect earlier extractions. When a new CC
- * version ships, re-extract:
+ * Model data: `claude-opus-5` from the CC v2.1.219 changelog (2026-07-24) --
+ * the bare `opus` alias now resolves here (it became CC's default Opus). The
+ * `claude-sonnet-5` family from the CC v2.1.197 binary (2026-07-01, default
+ * `sonnet` alias resolves there); `claude-fable-5` / `claude-mythos-5` /
+ * `claude-opus-4-8` from the v2.1.170 cut (2026-06-10); older entries reflect
+ * earlier extractions. When a new CC version ships, re-extract:
  *   strings $(readlink -f $(which claude)) | grep -oE \
  *     'key:value' patterns (see extraction notes in docs/ops.md)
  * and add/update the family in `CC_MODELS` below.
@@ -112,6 +113,25 @@ const CC_MODELS: readonly CCModelFamily[] = [
     fallbackPriceUsdPerMTok: { input: 10, output: 50 },
   },
   {
+    familyId: 'claude-opus-5',
+    displayName: 'Opus 5',
+    defaultOutputTokens: 64_000,
+    maxOutputTokens: 128_000,
+    supports1M: true,
+    // 1M context is the default (CC 2.1.219: "/model picker showing the merged
+    // Opus row as ... Opus (1M context)"). No [1m] suffix needed, like Opus 4.7+.
+    default1M: true,
+    tier: 'current',
+    // CC v2.1.219 makes Opus 5 the DEFAULT Opus, so the bare `opus`/`opus[1m]`
+    // aliases now resolve here (moved off claude-opus-4-8). `/fast` applies to
+    // Opus 5 + Opus 4.8; fast mode is a 2x price multiplier applied elsewhere,
+    // not in this registry.
+    acceptedSlugs: ['claude-opus-5', 'claude-opus-5[1m]', 'opus', 'opus[1m]'],
+    // Anthropic launch pricing (2026-07-24): $5/$25 per MTok, unchanged from
+    // Opus 4.8. Fallback until LiteLLM publishes the new model id.
+    fallbackPriceUsdPerMTok: { input: 5, output: 25 },
+  },
+  {
     familyId: 'claude-opus-4-8',
     displayName: 'Opus 4.8',
     defaultOutputTokens: 64_000,
@@ -119,10 +139,9 @@ const CC_MODELS: readonly CCModelFamily[] = [
     supports1M: true,
     default1M: true,
     tier: 'current',
-    // CC v2.1.170 maps the bare `opus` alias to this family
-    // (i8_={opus:"claude-opus-4-8",...} in the binary). `opus[1m]` is a valid
-    // bare alias in CC's alias array ($NH) -- include it so it validates + resolves.
-    acceptedSlugs: ['claude-opus-4-8', 'claude-opus-4-8[1m]', 'opus', 'opus[1m]'],
+    // Bare `opus`/`opus[1m]` moved to claude-opus-5 (CC's new default Opus).
+    // 4.8 keeps only its qualified slugs -- still typeable to pin the version.
+    acceptedSlugs: ['claude-opus-4-8', 'claude-opus-4-8[1m]'],
   },
   {
     familyId: 'claude-opus-4-7',
@@ -435,7 +454,7 @@ export function validateModel(slug: string): ModelValidationResult {
 }
 
 function formatModelError(slug: string): string {
-  const lines = [`Unknown model "${slug}". Valid models (CC v2.1.197):`, '']
+  const lines = [`Unknown model "${slug}". Valid models (CC v2.1.219):`, '']
   const current = CC_MODELS.filter(m => !m.familyId.startsWith('claude-3-'))
   const legacy = CC_MODELS.filter(m => m.familyId.startsWith('claude-3-'))
 
@@ -487,10 +506,10 @@ const MODEL_CATALOG: readonly ModelEntry[] = [
     showInCompleter: true,
   },
   {
-    // Bare `opus` alias -> claude-opus-4-8. Default-1M family, so no [1m] needed.
+    // Bare `opus` alias -> claude-opus-5. Default-1M family, so no [1m] needed.
     id: 'opus',
     label: 'Opus (latest)',
-    info: 'Opus 4.8 · 1M default · 128K output',
+    info: 'Opus 5 · 1M default · 128K output',
     window: 1_000_000,
     showInDropdown: true,
     showInCompleter: true,
@@ -533,7 +552,7 @@ const MODEL_CATALOG: readonly ModelEntry[] = [
     // typeable via `/model` for users who spell out the suffix.
     id: 'opus[1m]',
     label: 'Opus (latest, 1M)',
-    info: 'Opus 4.8 · 1M · 128K output',
+    info: 'Opus 5 · 1M · 128K output',
     window: 1_000_000,
     showInDropdown: false,
     showInCompleter: true,
@@ -551,6 +570,14 @@ const MODEL_CATALOG: readonly ModelEntry[] = [
   },
 
   // --- Explicit pinned versions ---
+  {
+    id: 'claude-opus-5',
+    label: 'Opus 5',
+    info: 'Pinned · 1M default · 128K output',
+    window: 1_000_000,
+    showInDropdown: true,
+    showInCompleter: true,
+  },
   {
     id: 'claude-opus-4-8',
     label: 'Opus 4.8',

@@ -53,7 +53,8 @@ describe('Fable 5 / Mythos 5 registry', () => {
   })
 
   test('the [1m] aliases resolve to their family + 1M window', () => {
-    expect(resolveModelFamily('opus[1m]')?.familyId).toBe('claude-opus-4-8')
+    // Bare `opus` now resolves to Opus 5 -- CC 2.1.219 made it the default Opus.
+    expect(resolveModelFamily('opus[1m]')?.familyId).toBe('claude-opus-5')
     expect(resolveModelFamily('sonnet[1m]')?.familyId).toBe('claude-sonnet-5')
     expect(resolveContextWindow('opus[1m]')).toBe(1_000_000)
     expect(resolveContextWindow('sonnet[1m]')).toBe(1_000_000)
@@ -62,6 +63,39 @@ describe('Fable 5 / Mythos 5 registry', () => {
   test('Fable lands in the Current dropdown group as the `fable` alias', () => {
     const current = MODEL_OPTION_GROUPS.find(g => g.group === 'Current')
     expect(current?.options.some(o => o.value === 'fable')).toBe(true)
+  })
+})
+
+describe('Opus 5 registry (CC 2.1.219 default Opus)', () => {
+  test('family resolves with correct limits + tier + default-1M', () => {
+    const opus5 = resolveModelFamily('claude-opus-5')
+    expect(opus5?.displayName).toBe('Opus 5')
+    expect(opus5?.tier).toBe('current')
+    expect(opus5?.maxOutputTokens).toBe(128_000)
+    expect(opus5?.default1M).toBe(true)
+  })
+
+  test('bare `opus`/`opus[1m]` resolve to Opus 5, not 4.8', () => {
+    for (const slug of ['opus', 'opus[1m]', 'claude-opus-5', 'claude-opus-5[1m]']) {
+      expect(resolveModelFamily(slug)?.familyId).toBe('claude-opus-5')
+    }
+    // 4.8 keeps only its qualified slugs
+    expect(resolveModelFamily('claude-opus-4-8')?.familyId).toBe('claude-opus-4-8')
+  })
+
+  test('Opus 5 is 1M context by default (no [1m] suffix)', () => {
+    expect(resolveContextWindow('opus')).toBe(1_000_000)
+    expect(resolveContextWindow('claude-opus-5')).toBe(1_000_000)
+    expect(isDefault1MFamily('claude-opus-5')).toBe(true)
+    // forward date-pinned slug still resolves via family prefix
+    expect(isDefault1MFamily('claude-opus-5-20260724')).toBe(true)
+    // explicit downgrade still honored
+    expect(resolveContextWindow('claude-opus-5[200k]')).toBe(200_000)
+  })
+
+  test('Opus 5 lands in the Current dropdown group as the `opus` alias', () => {
+    const current = MODEL_OPTION_GROUPS.find(g => g.group === 'Current')
+    expect(current?.options.some(o => o.value === 'opus')).toBe(true)
   })
 })
 
@@ -106,6 +140,12 @@ describe('registry pricing fallback', () => {
     expect(fable?.inputCostPerToken).toBe(10 / 1_000_000)
     expect(fable?.outputCostPerToken).toBe(50 / 1_000_000)
     expect(getModelInfo('claude-mythos-5')?.outputCostPerToken).toBe(50 / 1_000_000)
+    // Opus 5 is brand new -- LiteLLM won't have it yet, so the $5/$25 launch
+    // fallback must fill the gap (bare `opus` alias resolves through the family).
+    const opus5 = getModelInfo('claude-opus-5')
+    expect(opus5?.inputCostPerToken).toBe(5 / 1_000_000)
+    expect(opus5?.outputCostPerToken).toBe(25 / 1_000_000)
+    expect(getModelInfo('opus')?.outputCostPerToken).toBe(25 / 1_000_000)
     // a model with no fallback price + not in LiteLLM => undefined (unchanged)
     expect(getModelInfo('claude-opus-4-8')).toBeUndefined()
   })
