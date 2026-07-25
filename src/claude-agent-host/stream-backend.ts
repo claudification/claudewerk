@@ -122,6 +122,8 @@ export interface StreamInitMessage {
   model: string
   tools: Array<{ name: string; type?: string }>
   mcp_servers?: Array<{ name: string; status?: string }>
+  // CC 2.1.219+: --mcp-config entries skipped by config validation. Opaque shape.
+  mcp_server_errors?: Array<{ name?: string; error?: string }>
   claude_code_version?: string
   permissionMode?: string
   [key: string]: unknown

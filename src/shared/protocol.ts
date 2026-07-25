@@ -935,6 +935,7 @@ export type AgentHostLaunchStep =
   | 'permission_mode_changed' // detail: "old -> new". raw: { from, to }
   | 'fast_mode_changed' // detail: "on/off". raw: { from, to }
   | 'mcp_servers_changed' // detail: "+1 / -2". raw: { added, removed, current }
+  | 'mcp_server_errors' // CC skipped --mcp-config entries on config validation. detail: "N skipped". raw: { errors, count }
   | 'tools_changed' // detail: "+N / -N". raw: { added, removed, count }
   | 'slash_commands_changed' // detail: "+N / -N". raw: { added, removed, count }
   | 'skills_changed' // detail: "+N / -N". raw: { added, removed, count }
@@ -1159,6 +1160,10 @@ export interface ConversationInfoUpdate {
   skills: string[]
   agents: string[]
   mcpServers: Array<{ name: string; status?: string }>
+  // MCP servers CC skipped during config validation (CC 2.1.219+). Absent on
+  // older CC. Shape is best-effort -- each entry names the offending server
+  // and/or the validation error; treated as opaque passthrough.
+  mcpServerErrors?: Array<{ name?: string; error?: string }>
   plugins: Array<{ name: string; source?: string }>
   model: string
   permissionMode: string
@@ -3238,12 +3243,18 @@ export interface Conversation {
   team?: TeamInfo
   diagLog: Array<{ t: number; type: string; msg: string; args?: unknown }>
   effortLevel?: string // 'speed' field from API usage: e.g. 'standard', maps to low/medium/high
+  // The Conversation shape intentionally mirrors web/src/lib/types.ts (the broker
+  // <-> control-panel wire contract) and the broker's ConversationInfoSnapshot;
+  // the mcpServerErrors add-on shifted pre-existing clone regions across both.
+  // fallow-ignore-next-line code-duplication
   conversationInfo?: {
+    // fallow-ignore-next-line code-duplication
     tools?: unknown[]
     slashCommands?: unknown[]
     skills?: unknown[]
     agents?: unknown[]
     mcpServers?: Array<{ name: string; status?: string }>
+    mcpServerErrors?: Array<{ name?: string; error?: string }>
     plugins?: unknown[]
     model?: string
     permissionMode?: string

@@ -667,6 +667,7 @@ function handleConversationInfo(msg: DashboardMessage) {
         skills: (msg.skills as string[]) || [],
         agents: (msg.agents as string[]) || [],
         mcpServers: (msg.mcpServers as Array<{ name: string; status?: string }>) || [],
+        mcpServerErrors: msg.mcpServerErrors as Array<{ name?: string; error?: string }> | undefined,
         model: (msg.model as string) || '',
         permissionMode: (msg.permissionMode as string) || '',
         claudeCodeVersion: (msg.claudeCodeVersion as string) || '',

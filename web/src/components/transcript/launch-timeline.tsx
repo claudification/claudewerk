@@ -27,6 +27,7 @@ const STEP_LABEL: Record<AgentHostLaunchStep, string> = {
   permission_mode_changed: 'permission mode changed',
   fast_mode_changed: 'fast mode changed',
   mcp_servers_changed: 'mcp servers changed',
+  mcp_server_errors: 'mcp servers skipped (config error)',
   tools_changed: 'tools changed',
   slash_commands_changed: 'slash commands changed',
   skills_changed: 'skills changed',
@@ -40,6 +41,7 @@ const LIVE_STEPS = new Set<AgentHostLaunchStep>([
   'permission_mode_changed',
   'fast_mode_changed',
   'mcp_servers_changed',
+  'mcp_server_errors',
   'tools_changed',
   'slash_commands_changed',
   'skills_changed',
@@ -48,7 +50,7 @@ const LIVE_STEPS = new Set<AgentHostLaunchStep>([
 ])
 
 function stepColor(step: AgentHostLaunchStep): string {
-  if (step === 'clear_requested') return 'text-amber-400'
+  if (step === 'clear_requested' || step === 'mcp_server_errors') return 'text-amber-400'
   if (step === 'process_killed' || step === 'conversation_exit') return 'text-red-400'
   if (step === 'init_received' || step === 'ready') return 'text-emerald-400'
   if (LIVE_STEPS.has(step)) return 'text-cyan-400'

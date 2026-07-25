@@ -234,6 +234,7 @@ interface ConversationsState {
       skills: string[]
       agents: string[]
       mcpServers: Array<{ name: string; status?: string }>
+      mcpServerErrors?: Array<{ name?: string; error?: string }>
       model: string
       permissionMode: string
       claudeCodeVersion: string

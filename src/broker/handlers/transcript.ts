@@ -21,13 +21,18 @@ import { generateRecapManual } from '../recap/away-summary'
 import { ingestAndBroadcast } from '../transcript-ingest'
 import { requireStrings } from './validate'
 
-/** Stored conversation_info snapshot shape used for cross-turn diffing. */
+/** Stored conversation_info snapshot shape used for cross-turn diffing.
+ *  Deliberately mirrors the wire type (protocol.ts ConversationInfoUpdate /
+ *  Conversation.conversationInfo); a shared type across the broker/shared
+ *  boundary would over-couple an 11-line interface. */
 interface ConversationInfoSnapshot {
+  // fallow-ignore-next-line code-duplication
   tools?: unknown[]
   slashCommands?: unknown[]
   skills?: unknown[]
   agents?: unknown[]
   mcpServers?: Array<{ name: string; status?: string }>
+  mcpServerErrors?: Array<{ name?: string; error?: string }>
   plugins?: unknown[]
   model?: string
   permissionMode?: string
@@ -118,7 +123,26 @@ function diffConversationInfo(prev: ConversationInfoSnapshot, next: Conversation
     out.push(mkEntry(step, parts.join(' / '), { added, removed, count: nextNames.length }))
   }
 
+  // MCP config-validation errors (CC 2.1.219+). Separate from mcpServers: these
+  // entries can lack a `name` (the whole point is the server was too broken to
+  // load), so the name-based diff above would silently miss them. Compare the
+  // FULL serialized set and surface the raw errors so the user sees WHY a server
+  // is missing rather than just a "-1" on mcp_servers_changed.
+  const prevErrKeys = errorKeys(prev.mcpServerErrors)
+  const nextErrKeys = errorKeys(next.mcpServerErrors)
+  const { added: addedErr } = setDiff(prevErrKeys, nextErrKeys)
+  if (addedErr.length > 0) {
+    const errors = next.mcpServerErrors || []
+    out.push(mkEntry('mcp_server_errors', `${errors.length} skipped`, { errors, count: errors.length }))
+  }
+
   return out
+}
+
+/** Stable identity for an MCP error entry -- name+error, or JSON if neither. */
+function errorKeys(errors?: Array<{ name?: string; error?: string }>): string[] {
+  if (!Array.isArray(errors)) return []
+  return errors.map(e => `${e?.name ?? ''}:${e?.error ?? JSON.stringify(e)}`)
 }
 
 const tasksUpdate: MessageHandler = (ctx, data) => {
@@ -281,6 +305,7 @@ const conversationInfo: MessageHandler = (ctx, data) => {
     skills: data.skills as unknown[] | undefined,
     agents: data.agents as unknown[] | undefined,
     mcpServers: data.mcpServers as Array<{ name: string; status?: string }> | undefined,
+    mcpServerErrors: data.mcpServerErrors as Array<{ name?: string; error?: string }> | undefined,
     plugins: data.plugins as unknown[] | undefined,
     model: data.model as string | undefined,
     permissionMode: data.permissionMode as string | undefined,
