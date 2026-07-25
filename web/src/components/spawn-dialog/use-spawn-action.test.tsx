@@ -20,6 +20,8 @@ function makeCtx(overrides: Partial<SpawnActionContext> = {}): SpawnActionContex
     permissionMode: '',
     autocompactPct: '' as number | '',
     maxBudgetUsd: '',
+    maxConcurrentSubagents: '',
+    maxSubagentSpawnDepth: '',
     resumeId: '',
     includePartialMessages: true,
     useWorktree: false,

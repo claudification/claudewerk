@@ -109,6 +109,8 @@ export function SpawnDialog() {
   const [permissionMode, setPermissionMode] = useState('')
   const [autocompactPct, setAutocompactPct] = useState<number | ''>('')
   const [maxBudgetUsd, setMaxBudgetUsd] = useState('')
+  const [maxConcurrentSubagents, setMaxConcurrentSubagents] = useState('')
+  const [maxSubagentSpawnDepth, setMaxSubagentSpawnDepth] = useState('')
   const [includePartialMessages, setIncludePartialMessages] = useState(true)
   const [configTab, setConfigTab] = useState<'basic' | 'advanced'>('basic')
   const [resumeId, setResumeId] = useState('')
@@ -395,6 +397,8 @@ export function SpawnDialog() {
     permissionMode,
     autocompactPct,
     maxBudgetUsd,
+    maxConcurrentSubagents,
+    maxSubagentSpawnDepth,
     resumeId,
     includePartialMessages,
     useWorktree,
@@ -531,6 +535,8 @@ export function SpawnDialog() {
     setPermissionMode('')
     setAutocompactPct('')
     setMaxBudgetUsd('')
+    setMaxConcurrentSubagents('')
+    setMaxSubagentSpawnDepth('')
     setIncludePartialMessages(true)
     setEnvText('')
     haptic('tap')
@@ -575,14 +581,19 @@ export function SpawnDialog() {
   const shortPath = effectivePath.replace(/^\/Users\/[^/]+/, '~')
   const displayError = progress.error || progress.launch.error
 
+  // Patch-fan-out idiom shared with project-board's RunTask onChange; both grew
+  // the same two cap-field branches.
   function applyFieldsPatch(patch: Partial<LaunchFieldsValue>) {
     if ('model' in patch) setModel(patch.model ?? '')
     if ('effort' in patch) setEffort(patch.effort ?? '')
     if ('agent' in patch) setAgent(patch.agent ?? '')
     if ('advisor' in patch) setAdvisor(patch.advisor ?? '')
     if ('permissionMode' in patch) setPermissionMode(patch.permissionMode ?? '')
+    // fallow-ignore-next-line code-duplication
     if ('autocompactPct' in patch) setAutocompactPct(patch.autocompactPct ?? '')
     if ('maxBudgetUsd' in patch) setMaxBudgetUsd(patch.maxBudgetUsd ?? '')
+    if ('maxConcurrentSubagents' in patch) setMaxConcurrentSubagents(patch.maxConcurrentSubagents ?? '')
+    if ('maxSubagentSpawnDepth' in patch) setMaxSubagentSpawnDepth(patch.maxSubagentSpawnDepth ?? '')
     if ('useWorktree' in patch) setUseWorktree(!!patch.useWorktree)
     if ('worktreeName' in patch) setWorktreeName(patch.worktreeName ?? '')
     if ('envText' in patch) setEnvText(patch.envText ?? '')
@@ -627,6 +638,8 @@ export function SpawnDialog() {
     permissionMode,
     autocompactPct,
     maxBudgetUsd,
+    maxConcurrentSubagents,
+    maxSubagentSpawnDepth,
     includePartialMessages,
     useWorktree,
     worktreeName,
@@ -1061,6 +1074,8 @@ export function SpawnDialog() {
                             permissionMode: true,
                             autocompactPct: true,
                             maxBudgetUsd: headless,
+                            maxConcurrentSubagents: true,
+                            maxSubagentSpawnDepth: true,
                             includePartialMessages: headless,
                             worktree: true,
                             repl: true,

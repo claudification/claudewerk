@@ -33,3 +33,28 @@ export function parseEnvText(text: string): [Record<string, string> | null, stri
   }
   return [errors.length ? null : Object.keys(env).length ? env : null, errors]
 }
+
+/**
+ * Fold the advanced subagent caps (exposed as first-class numeric fields in the
+ * launch modal) into the spawn env record as the CLAUDE_CODE_* vars CC reads.
+ * These are env-var settings by nature, so they ride the existing `env`
+ * passthrough rather than getting their own wire plumbing. Blank/invalid values
+ * are ignored (CC applies its own defaults: 20 concurrent, and no nesting).
+ *
+ * Returns the merged record, or null when nothing was set AND the base was null
+ * (so callers keep treating "no env" as undefined).
+ */
+export function applySubagentCapEnv(
+  base: Record<string, string> | null,
+  caps: { maxConcurrentSubagents?: string; maxSubagentSpawnDepth?: string },
+): Record<string, string> | null {
+  const additions: Record<string, string> = {}
+  const add = (key: string, raw?: string) => {
+    const n = Number(raw?.trim())
+    if (raw?.trim() && Number.isFinite(n) && n >= 1) additions[key] = String(Math.floor(n))
+  }
+  add('CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS', caps.maxConcurrentSubagents)
+  add('CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH', caps.maxSubagentSpawnDepth)
+  if (Object.keys(additions).length === 0) return base
+  return { ...(base ?? {}), ...additions }
+}

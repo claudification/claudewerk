@@ -35,6 +35,8 @@ type LaunchFieldKey =
   | 'autoCommit'
   | 'leaveRunning'
   | 'maxBudgetUsd'
+  | 'maxConcurrentSubagents'
+  | 'maxSubagentSpawnDepth'
   | 'timeout'
   | 'name'
   | 'description'
@@ -53,6 +55,10 @@ export type LaunchFieldsValue = {
   permissionMode?: string
   autocompactPct?: number | ''
   maxBudgetUsd?: string
+  /** CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS (blank = CC default 20). Maps to env. */
+  maxConcurrentSubagents?: string
+  /** CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH (blank = CC default). Maps to env. */
+  maxSubagentSpawnDepth?: string
   name?: string
   description?: string
   envText?: string
@@ -307,6 +313,46 @@ export function LaunchConfigFields({
             value={value.maxBudgetUsd ?? ''}
             onChange={e => onChange({ maxBudgetUsd: e.target.value })}
             disabled={disabled.maxBudgetUsd}
+            className="w-[100px] text-[10px] font-mono bg-surface-inset border border-primary/20 text-foreground px-2 py-1 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+          />
+        </Row>
+      )}
+      {show.maxConcurrentSubagents && (
+        <Row
+          label="Max concurrent subagents"
+          subtitle="Cap parallel subagents one message can fan out (blank = CC default 20)"
+          htmlFor="lcf-max-subagents"
+        >
+          <input
+            id="lcf-max-subagents"
+            aria-label="Maximum concurrent subagents"
+            type="number"
+            min={1}
+            step={1}
+            placeholder="20"
+            value={value.maxConcurrentSubagents ?? ''}
+            onChange={e => onChange({ maxConcurrentSubagents: e.target.value })}
+            disabled={disabled.maxConcurrentSubagents}
+            className="w-[100px] text-[10px] font-mono bg-surface-inset border border-primary/20 text-foreground px-2 py-1 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+          />
+        </Row>
+      )}
+      {show.maxSubagentSpawnDepth && (
+        <Row
+          label="Max subagent nesting depth"
+          subtitle="How deep subagents may spawn subagents (blank = CC default; 1 = no nesting)"
+          htmlFor="lcf-subagent-depth"
+        >
+          <input
+            id="lcf-subagent-depth"
+            aria-label="Maximum subagent spawn depth"
+            type="number"
+            min={1}
+            step={1}
+            placeholder="(default)"
+            value={value.maxSubagentSpawnDepth ?? ''}
+            onChange={e => onChange({ maxSubagentSpawnDepth: e.target.value })}
+            disabled={disabled.maxSubagentSpawnDepth}
             className="w-[100px] text-[10px] font-mono bg-surface-inset border border-primary/20 text-foreground px-2 py-1 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
           />
         </Row>

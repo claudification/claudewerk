@@ -5,7 +5,7 @@ import { useConversationsStore } from '@/hooks/use-conversations'
 import type { DaemonRosterEntry } from '@/hooks/use-daemon-roster'
 import type { useLaunchProgress } from '@/hooks/use-launch-progress'
 import { sendSpawnRequest } from '@/hooks/use-spawn'
-import { parseEnvText } from '@/lib/env-parse'
+import { applySubagentCapEnv, parseEnvText } from '@/lib/env-parse'
 import { haptic } from '@/lib/utils'
 import type { BackendKind } from './backend-select'
 import {
@@ -45,6 +45,8 @@ export interface SpawnActionContext {
   permissionMode: string
   autocompactPct: number | ''
   maxBudgetUsd: string
+  maxConcurrentSubagents: string
+  maxSubagentSpawnDepth: string
   resumeId: string
   includePartialMessages: boolean
   useWorktree: boolean
@@ -133,6 +135,8 @@ function buildStandardSpawnRequest(
     permissionMode,
     autocompactPct,
     maxBudgetUsd,
+    maxConcurrentSubagents,
+    maxSubagentSpawnDepth,
     resumeId,
     includePartialMessages,
     useWorktree,
@@ -148,6 +152,7 @@ function buildStandardSpawnRequest(
   } = ctx
   const [parsedEnv, errors] = parseEnvText(envText)
   if (errors.length) return { envError: true }
+  const env = applySubagentCapEnv(parsedEnv, { maxConcurrentSubagents, maxSubagentSpawnDepth })
   if (!state.options) return { envError: true }
   const trimmedResumeId = resumeId.trim()
   return {
@@ -173,7 +178,7 @@ function buildStandardSpawnRequest(
       sentinel: state.options.sentinel || undefined,
       profile: sentinelProfile || undefined,
       pool: sentinelPool || undefined,
-      env: parsedEnv || undefined,
+      env: env || undefined,
       jobId: newJobId,
       backend: backend !== 'claude' ? backend : undefined,
       transport: backend === 'claude' ? transport : undefined,

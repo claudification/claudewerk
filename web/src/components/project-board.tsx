@@ -53,6 +53,7 @@ import { enqueueNightshiftTask } from '@/hooks/use-nightshift-queue'
 import type { ProjectTask } from '@/hooks/use-project'
 import { type ProjectTaskMeta, type TaskStatus, useProject } from '@/hooks/use-project'
 import { sendSpawnRequest } from '@/hooks/use-spawn'
+import { applySubagentCapEnv } from '@/lib/env-parse'
 import { useKeyLayer } from '@/lib/key-layers'
 import { loadRunTaskDefaults, saveRunTaskDefaults } from '@/lib/run-task-defaults'
 import { buildTaskPrompt } from '@/lib/task-scoring'
@@ -602,6 +603,8 @@ export function RunTaskDialog({
   const [autoCommit, setAutoCommit] = useState(savedDefaults.autoCommit)
   const [leaveRunning, setLeaveRunning] = useState(savedDefaults.leaveRunning)
   const [maxBudgetUsd, setMaxBudgetUsd] = useState(savedDefaults.maxBudgetUsd)
+  const [maxConcurrentSubagents, setMaxConcurrentSubagents] = useState('')
+  const [maxSubagentSpawnDepth, setMaxSubagentSpawnDepth] = useState('')
   const [includePartialMessages, setIncludePartialMessages] = useState(savedDefaults.includePartialMessages)
   const [timeout, setTimeout_] = useState(savedDefaults.timeout)
 
@@ -754,6 +757,7 @@ export function RunTaskDialog({
         ) ?? undefined,
       includePartialMessages: includePartialMessages || undefined,
       maxBudgetUsd: maxBudgetUsd ? Number(maxBudgetUsd) : undefined,
+      env: applySubagentCapEnv(null, { maxConcurrentSubagents, maxSubagentSpawnDepth }) || undefined,
       jobId: newJobId,
     }
     const result = await sendSpawnRequest(spawnReq)
@@ -861,16 +865,24 @@ export function RunTaskDialog({
                   autoCommit,
                   leaveRunning,
                   maxBudgetUsd,
+                  maxConcurrentSubagents,
+                  maxSubagentSpawnDepth,
                   timeout,
                 }}
+                // Patch-fan-out idiom shared with spawn-dialog's applyFieldsPatch;
+                // two new cap fields tipped this god-component handler past thresholds.
+                // fallow-ignore-next-line complexity
                 onChange={(patch: Partial<LaunchFieldsValue>) => {
                   if ('model' in patch) setModel(patch.model ?? '')
                   if ('effort' in patch) setEffort(patch.effort ? patch.effort : 'default')
                   if ('useWorktree' in patch) setUseWorktree(!!patch.useWorktree)
                   if ('worktreeName' in patch) setBranchName(patch.worktreeName ?? '')
                   if ('autoCommit' in patch) setAutoCommit(!!patch.autoCommit)
+                  // fallow-ignore-next-line code-duplication
                   if ('leaveRunning' in patch) setLeaveRunning(!!patch.leaveRunning)
                   if ('maxBudgetUsd' in patch) setMaxBudgetUsd(patch.maxBudgetUsd ?? '')
+                  if ('maxConcurrentSubagents' in patch) setMaxConcurrentSubagents(patch.maxConcurrentSubagents ?? '')
+                  if ('maxSubagentSpawnDepth' in patch) setMaxSubagentSpawnDepth(patch.maxSubagentSpawnDepth ?? '')
                   if ('includePartialMessages' in patch) setIncludePartialMessages(!!patch.includePartialMessages)
                   if ('timeout' in patch) setTimeout_(patch.timeout ?? '30')
                 }}
@@ -882,6 +894,8 @@ export function RunTaskDialog({
                   autoCommit: true,
                   leaveRunning: true,
                   maxBudgetUsd: true,
+                  maxConcurrentSubagents: true,
+                  maxSubagentSpawnDepth: true,
                   timeout: true,
                 }}
               />
