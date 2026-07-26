@@ -1,11 +1,11 @@
 import { Bell, BellOff } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { getPushStatus, subscribeToPush } from '@/hooks/use-conversations'
+import { getPushStatus, subscribeToPush, unsubscribeFromPush } from '@/lib/push'
+import { PUSH_BUSY, PUSH_STATE_STYLES, type PushState } from './notifications-section-states'
 
 export function NotificationsSection() {
-  const [pushState, setPushState] = useState<
-    'loading' | 'unsupported' | 'prompt' | 'subscribing' | 'subscribed' | 'denied'
-  >('loading')
+  const [pushState, setPushState] = useState<PushState>('loading')
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     getPushStatus().then(status => {
@@ -16,26 +16,38 @@ export function NotificationsSection() {
     })
   }, [])
 
-  async function handlePushToggle() {
-    if (pushState === 'subscribing') return
+  async function enable() {
+    setError(null)
     setPushState('subscribing')
     const result = await subscribeToPush()
+    if (!result.success) setError(result.error ?? null)
     setPushState(result.success ? 'subscribed' : 'denied')
   }
 
-  async function handleReRegister() {
-    if (pushState === 'subscribing') return
-    setPushState('subscribing')
-    try {
-      const reg = await navigator.serviceWorker.getRegistration('/sw.js')
-      if (reg) {
-        const sub = await reg.pushManager.getSubscription()
-        if (sub) await sub.unsubscribe()
-      }
-    } catch {}
-    const result = await subscribeToPush()
-    setPushState(result.success ? 'subscribed' : 'denied')
+  async function disable() {
+    setError(null)
+    setPushState('unsubscribing')
+    const result = await unsubscribeFromPush()
+    if (!result.success) setError(result.error ?? null)
+    // Even on a partial failure the browser subscription is gone, so the honest
+    // state is "off". Permission stays granted, so re-enabling is one click.
+    setPushState('prompt')
   }
+
+  function handlePushToggle() {
+    if (PUSH_BUSY.has(pushState)) return
+    return pushState === 'subscribed' ? disable() : enable()
+  }
+
+  /** Drop both halves and re-subscribe -- for when the VAPID key rotated. */
+  async function handleReRegister() {
+    if (PUSH_BUSY.has(pushState)) return
+    setPushState('unsubscribing')
+    await unsubscribeFromPush()
+    await enable()
+  }
+
+  const style = PUSH_STATE_STYLES[pushState]
 
   return (
     <div className="space-y-2">
@@ -48,25 +60,14 @@ export function NotificationsSection() {
           type="button"
           onClick={handlePushToggle}
           disabled={pushState === 'unsupported' || pushState === 'loading'}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs border transition-colors ${
-            pushState === 'subscribed'
-              ? 'bg-active/20 text-active border-active/50'
-              : pushState === 'denied'
-                ? 'bg-red-400/20 text-red-400 border-red-400/50'
-                : pushState === 'unsupported'
-                  ? 'bg-muted text-muted-foreground border-border cursor-not-allowed'
-                  : 'bg-transparent text-foreground border-border hover:border-primary'
-          }`}
+          title={pushState === 'subscribed' ? 'Click to turn push notifications off' : undefined}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs border transition-colors ${style.className}`}
         >
-          {pushState === 'subscribed' ? <Bell className="size-3" /> : <BellOff className="size-3" />}
-          {pushState === 'loading' && '...'}
-          {pushState === 'unsupported' && 'Not supported'}
-          {pushState === 'subscribing' && 'Enabling...'}
-          {pushState === 'subscribed' && 'Enabled'}
-          {pushState === 'denied' && 'Denied'}
-          {pushState === 'prompt' && 'Enable'}
+          {style.bell ? <Bell className="size-3" /> : <BellOff className="size-3" />}
+          {style.label}
         </button>
       </div>
+      {error && <div className="text-[10px] text-red-400">{error}</div>}
       {pushState === 'subscribed' && (
         <button
           type="button"
