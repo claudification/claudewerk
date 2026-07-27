@@ -201,3 +201,72 @@ describe('PeriodRecapStore', () => {
     expect(store.get('recap_test_1')).toBeNull()
   })
 })
+
+describe('PeriodRecapStore map cache (cross-run extraction reuse)', () => {
+  let cacheDir: string
+  let driver: StoreDriver
+  let store: PeriodRecapStore
+
+  beforeEach(() => {
+    cacheDir = mkdtempSync(join(tmpdir(), 'period-recap-mapcache-'))
+    driver = createSqliteDriver({ type: 'sqlite', dataDir: cacheDir })
+    driver.init()
+    store = createPeriodRecapStore(cacheDir)
+  })
+
+  afterEach(() => {
+    driver.close?.()
+    rmSync(cacheDir, { recursive: true, force: true })
+  })
+
+  const meta = (kw: string) =>
+    ({
+      keywords: [kw],
+      hashtags: [],
+      goals: [],
+      discoveries: [],
+      side_effects: [],
+      features: [],
+      bugs: [],
+      fixes: [],
+      incidents: [],
+      decisions: [],
+      dead_ends: [],
+      gotchas: [],
+      frustrations: [],
+      open_questions: [],
+      stakeholders: [],
+    }) as Parameters<typeof store.mapCachePut>[0]['metadata']
+
+  it('round-trips an extraction by content key', () => {
+    store.mapCachePut({ key: 'k1', conversationId: 'c1', metadata: meta('alpha'), model: 'm' })
+    expect(store.mapCacheGetMany(['k1']).get('k1')?.keywords).toEqual(['alpha'])
+  })
+
+  it('returns nothing for unknown keys and tolerates an empty ask', () => {
+    expect(store.mapCacheGetMany([]).size).toBe(0)
+    expect(store.mapCacheGetMany(['nope']).size).toBe(0)
+  })
+
+  it('survives more keys than SQLite will bind at once', () => {
+    // A month-long recap can ask about more conversations than the 999-variable
+    // limit; the lookup chunks its IN(...) so this must not throw.
+    const keys = Array.from({ length: 1500 }, (_, i) => `k${i}`)
+    store.mapCachePut({ key: 'k1200', conversationId: 'c', metadata: meta('deep'), model: 'm' })
+    const found = store.mapCacheGetMany(keys)
+    expect(found.get('k1200')?.keywords).toEqual(['deep'])
+  })
+
+  it('re-putting the same key does not duplicate or throw', () => {
+    store.mapCachePut({ key: 'k1', conversationId: 'c1', metadata: meta('first'), model: 'm' })
+    store.mapCachePut({ key: 'k1', conversationId: 'c1', metadata: meta('first'), model: 'm' })
+    expect(store.mapCacheGetMany(['k1']).size).toBe(1)
+  })
+
+  it('prunes only entries unused past the cutoff', () => {
+    store.mapCachePut({ key: 'k1', conversationId: 'c1', metadata: meta('alpha'), model: 'm' })
+    expect(store.mapCachePrune(60_000)).toBe(0) // just written -- still hot
+    expect(store.mapCachePrune(-1)).toBe(1) // cutoff in the future -- everything goes
+    expect(store.mapCacheGetMany(['k1']).size).toBe(0)
+  })
+})

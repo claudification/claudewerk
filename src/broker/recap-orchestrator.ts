@@ -31,6 +31,10 @@ let singleton: RecapOrchestrator | null = null
 /** Keep banked map/merge output ~30 days for a cost-safe resume, then reclaim
  *  disk. Overridable via CLAUDWERK_RECAP_BUNDLE_RETENTION_MS. */
 const DEFAULT_BUNDLE_RETENTION_MS = 30 * 24 * 60 * 60_000
+/** Map-cache retention, measured from LAST USE. Comfortably past the longest
+ *  period a recap covers (last_30) so a monthly recap still hits everything the
+ *  nightlies already extracted. */
+const DEFAULT_MAP_CACHE_RETENTION_MS = 60 * 24 * 60 * 60_000
 
 export interface RecapOrchestrator {
   start(args: StartArgs): Promise<StartResult>
@@ -50,6 +54,8 @@ export interface RecapOrchestrator {
   /** Retention: delete terminal on-disk bundles past the retention window (default
    *  ~30 days, env CLAUDWERK_RECAP_BUNDLE_RETENTION_MS). Returns removed recapIds. */
   pruneBundles(): string[]
+  /** Drop map-cache entries unused past retention. Returns how many went. */
+  pruneMapCache(): number
   cancel(recapId: string): void
   dismiss(recapId: string): void
   list(filter: { projectUri?: string; status?: RecapStatus[]; limit?: number }): RecapSummary[]
@@ -171,6 +177,14 @@ export function initRecapOrchestrator(opts: InitOptions): RecapOrchestrator {
       const envMs = Number(process.env.CLAUDWERK_RECAP_BUNDLE_RETENTION_MS)
       const retentionMs = Number.isFinite(envMs) && envMs > 0 ? envMs : DEFAULT_BUNDLE_RETENTION_MS
       return bundle.pruneOlderThan(retentionMs)
+    },
+    pruneMapCache() {
+      // Retention is on LAST USE, not age: a conversation that keeps showing up
+      // in the window keeps its entry, and one that has aged out of every recap
+      // costs a single map call to rebuild if it ever returns.
+      const envMs = Number(process.env.CLAUDWERK_RECAP_MAP_CACHE_RETENTION_MS)
+      const retentionMs = Number.isFinite(envMs) && envMs > 0 ? envMs : DEFAULT_MAP_CACHE_RETENTION_MS
+      return store.mapCachePrune(retentionMs)
     },
     cancel(recapId: string) {
       const row = store.get(recapId)

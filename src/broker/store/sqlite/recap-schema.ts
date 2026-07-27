@@ -6,6 +6,31 @@ export function createRecapSchema(db: Database) {
   createRecapChunksTable(db)
   createRecapTagsTable(db)
   createRecapsFtsTable(db)
+  createRecapMapCacheTable(db)
+}
+
+/**
+ * Cross-run MAP-stage cache: extraction JSON keyed on the CONTENT hash of one
+ * conversation (see recap/period/chunk/map-cache.ts).
+ *
+ * Deliberately NOT tied to a recap id -- the whole point is surviving to the
+ * next run. The nightly recap re-extracted ~6 of every 7 conversations from
+ * scratch every night because the only reuse we had (the bundle) was scoped to
+ * a single recapId; map was 69% of all recap spend. Rows are disposable: a miss
+ * costs one map call, so the reaper prunes by last_used_at without ceremony.
+ */
+function createRecapMapCacheTable(db: Database) {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS recap_map_cache (
+      key             TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL,
+      model           TEXT NOT NULL,
+      metadata_json   TEXT NOT NULL,
+      created_at      INTEGER NOT NULL,
+      last_used_at    INTEGER NOT NULL
+    )
+  `)
+  db.run('CREATE INDEX IF NOT EXISTS idx_recap_map_cache_used ON recap_map_cache(last_used_at)')
 }
 
 function createRecapsTable(db: Database) {

@@ -22,6 +22,7 @@ import {
 import { RECAP_PIPELINE_VERSION, type RecapBundleCallPrompt, type RecapBundleWriter } from './bundle'
 import { buildMapPrompt, MapParseError, parseMapOutput } from './chunk/map-prompt'
 import { makeEmptyMetadata, mergeMetadata } from './chunk/merge'
+import { planMapStage } from './chunk/plan-map'
 import {
   DEFAULT_CHUNK_SIZE_CHARS,
   DEFAULT_CHUNK_THRESHOLD_CHARS,
@@ -1241,6 +1242,10 @@ export function mapStageDeadlineMs(chunkCount: number): number {
 
 export interface MapStageResult {
   metas: RecapMetadata[]
+  /** Chunk indices whose extraction actually PARSED. Only these are safe to file
+   *  in the cross-run map cache -- failures degrade to empty metadata, and
+   *  caching that would pin the conversation to "no facts". */
+  trusted: Set<number>
   /** Chunks that errored/timed-out/tripped the deadline (drive 'partial'). */
   failed: number
   /** Chunks skipped by the G8 empty-input gate (NOT failures). */
@@ -1272,6 +1277,11 @@ export async function runMapStage(
 ): Promise<MapStageResult> {
   const stageDeadlineMs = mapStageDeadlineMs(chunks.length)
   const state = { failed: 0, skippedEmpty: 0, reused: 0, stageTimedOut: false }
+  // Which chunk indices produced a REAL extraction. A failed chunk degrades to
+  // empty metadata so the run can carry on, but that placeholder must never be
+  // filed in the cross-run cache -- it would poison that conversation into
+  // "no facts" for as long as the entry lives. Only trusted results get stored.
+  const trusted = new Set<number>()
   let stageTimer: ReturnType<typeof setTimeout> | undefined
   const stageDeadline = new Promise<never>((_, reject) => {
     stageTimer = setTimeout(() => {
@@ -1344,6 +1354,7 @@ export async function runMapStage(
       // Pillar C+: persist the per-chunk extraction so a resume can re-merge
       // without re-paying the (expensive) map stage.
       deps.bundle?.recordMapParsed(recapId, chunk.index, parsedChunk)
+      trusted.add(chunk.index)
       return parsedChunk
     } catch (err) {
       if (!(err instanceof MapParseError)) throw err
@@ -1360,7 +1371,7 @@ export async function runMapStage(
     }
   })
   if (stageTimer) clearTimeout(stageTimer) // disarm before reduce so it can't fire late
-  return { metas, ...state }
+  return { metas, trusted, ...state }
 }
 
 interface ProduceArgs {
@@ -1444,7 +1455,12 @@ async function runChunked(
   const { built, promptInputs, audience } = p
   const t = p.args.tuning ?? {}
   const models = chunkModels({ mapModel: t.mapModel, reduceModel: t.reduceModel })
-  const chunks = splitIntoChunks(promptInputs.transcripts, t.chunkSize)
+  // Cross-run extraction cache: an ended conversation's transcript is immutable,
+  // and a rolling last_7 window re-presents ~6 of every 7 conversations each
+  // night. Everything already extracted is served from the cache and only the
+  // rest is chunked (1:1 with a conversation, so results stay attributable).
+  const plan = planMapStage(promptInputs.transcripts, models.mapModel, deps.store, t.chunkSize)
+  const chunks = plan.chunks
   deps.store.update(recapId, { model: models.reduceModel })
   persistRecipe(deps, recapId, 'chunked', models.reduceModel, t, p.recipe, {
     mapModel: models.mapModel,
@@ -1455,12 +1471,20 @@ async function runChunked(
     'render/chunk',
     `chunked map-reduce: ${chunks.length} chunk(s), map=${models.mapModel}, reduce=${models.reduceModel}, prompt=${built.inputChars} chars`,
   )
+  // Funnel log -- NO SILENT CAPS. This is also the line that proves the cache is
+  // earning its keep (or has quietly stopped hitting).
+  emit.emit(
+    'info',
+    'render/chunk',
+    `map cache: ${plan.stats.hits}/${plan.stats.conversations} conversation(s) served from cache, ` +
+      `${plan.stats.misses} to extract${plan.stats.oversize > 0 ? `, ${plan.stats.oversize} oversize (uncacheable)` : ''}`,
+  )
   emit.setProgress(45, 'render/map')
 
   // MAP -- parallel extraction with per-call timeout + overall stage deadline +
   // the G8 empty gate + resume-from-map reuse. Degrades dropped chunks rather
   // than hanging the barrier.
-  const { metas, failed, skippedEmpty, reused, stageTimedOut } = await runMapStage(
+  const { metas, trusted, failed, skippedEmpty, reused, stageTimedOut } = await runMapStage(
     deps,
     recapId,
     ledger,
@@ -1492,11 +1516,27 @@ async function runChunked(
     )
   }
 
-  // MERGE -- pure deterministic dedup, no LLM.
+  // File the fresh extractions so tomorrow's run does not re-pay for them. Only
+  // chunks that genuinely parsed (`trusted`) are stored -- see MapStageResult.
+  for (const [chunkIndex, ref] of plan.cacheKeyByChunk) {
+    if (!trusted.has(chunkIndex)) continue
+    const metadata = metas[chunkIndex]
+    if (metadata) {
+      deps.store.mapCachePut({ key: ref.key, conversationId: ref.conversationId, metadata, model: models.mapModel })
+    }
+  }
+
+  // MERGE -- pure deterministic dedup, no LLM. Cache hits join the fresh
+  // extractions here; the merge is order-independent, so they are indistinguishable
+  // from having been mapped this run (which is the whole point).
   emit.setProgress(72, 'render/merge')
-  const merged = mergeMetadata(metas)
+  const merged = mergeMetadata([...plan.cached, ...metas])
   deps.bundle?.recordMerged(recapId, merged)
-  emit.emit('info', 'render/merge', `merged ${chunks.length} chunk(s) -> ${countItems(merged)} item(s) after dedup`)
+  emit.emit(
+    'info',
+    'render/merge',
+    `merged ${chunks.length} chunk(s) + ${plan.cached.length} cached -> ${countItems(merged)} item(s) after dedup`,
+  )
 
   // REDUCE -- one synthesis pass on the small merged JSON (not the raw bulk).
   // The merged JSON is banked (recordMerged above) BEFORE the call, so the

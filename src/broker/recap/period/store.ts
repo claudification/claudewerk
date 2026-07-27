@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { join } from 'node:path'
-import type { RecapAudience, RecapCostLedger, RecapMeta, RecapStatus } from '../../../shared/protocol'
+import type { RecapAudience, RecapCostLedger, RecapMeta, RecapMetadata, RecapStatus } from '../../../shared/protocol'
 
 // RecapStatus is owned by src/shared/protocol.ts -- re-exported here so the many
 // store-layer importers keep their `from './store'` path. Single source of truth.
@@ -150,6 +150,12 @@ export interface PeriodRecapStore {
   upsertFts(recapId: string, fields: FtsFields): void
   searchFts(query: string, opts?: { limit?: number; projectUri?: string }): FtsHit[]
   findCacheHit(args: CacheLookupArgs): RecapRow | null
+  /** MAP-stage cross-run cache (recap/period/chunk/map-cache.ts). Keyed on the
+   *  content hash of ONE conversation, NOT on a recap id -- surviving to the
+   *  next run is the entire point. */
+  mapCacheGetMany(keys: string[]): Map<string, RecapMetadata>
+  mapCachePut(entry: { key: string; conversationId: string; metadata: RecapMetadata; model: string }): void
+  mapCachePrune(olderThanMs: number): number
 }
 
 export interface ListFilter {
@@ -434,6 +440,65 @@ class SqlitePeriodRecapStore implements PeriodRecapStore {
         cutoff,
       }) as RawRecapRow | undefined
     return row ? hydrate(row) : null
+  }
+
+  // --- MAP-stage cache (cross-run; see recap/period/chunk/map-cache.ts) ---
+
+  mapCacheGetMany(keys: string[]): Map<string, RecapMetadata> {
+    const out = new Map<string, RecapMetadata>()
+    if (keys.length === 0) return out
+    // Chunked IN(...) -- SQLite's variable limit is 999 and a month-long recap
+    // can ask about more conversations than that.
+    for (let i = 0; i < keys.length; i += 400) {
+      const slice = keys.slice(i, i + 400)
+      const rows = this.db
+        .prepare(`SELECT key, metadata_json FROM recap_map_cache WHERE key IN (${slice.map(() => '?').join(',')})`)
+        .all(...slice) as Array<{ key: string; metadata_json: string }>
+      for (const r of rows) {
+        try {
+          out.set(r.key, JSON.parse(r.metadata_json) as RecapMetadata)
+        } catch {
+          // A corrupt row is a cache MISS, never a failed recap: the caller just
+          // re-maps that conversation and overwrites it on the way past.
+        }
+      }
+    }
+    if (out.size > 0) this.mapCacheTouch([...out.keys()])
+    return out
+  }
+
+  mapCachePut(entry: { key: string; conversationId: string; metadata: RecapMetadata; model: string }): void {
+    const now = Date.now()
+    this.db
+      .prepare(
+        `INSERT INTO recap_map_cache (key, conversation_id, model, metadata_json, created_at, last_used_at)
+         VALUES ($key, $conversationId, $model, $metadataJson, $now, $now)
+         ON CONFLICT(key) DO UPDATE SET last_used_at = $now`,
+      )
+      .run({
+        key: entry.key,
+        conversationId: entry.conversationId,
+        model: entry.model,
+        metadataJson: JSON.stringify(entry.metadata),
+        now,
+      })
+  }
+
+  /** Keep hot entries alive so retention prunes by genuine disuse, not by age. */
+  private mapCacheTouch(keys: string[]): void {
+    const now = Date.now()
+    for (let i = 0; i < keys.length; i += 400) {
+      const slice = keys.slice(i, i + 400)
+      this.db
+        .prepare(`UPDATE recap_map_cache SET last_used_at = ? WHERE key IN (${slice.map(() => '?').join(',')})`)
+        .run(now, ...slice)
+    }
+  }
+
+  /** Drop entries unused for `olderThanMs`. Returns how many went. */
+  mapCachePrune(olderThanMs: number): number {
+    const cutoff = Date.now() - olderThanMs
+    return this.db.prepare('DELETE FROM recap_map_cache WHERE last_used_at < ?').run(cutoff).changes
   }
 }
 

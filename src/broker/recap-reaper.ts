@@ -9,8 +9,9 @@
  * the reap ceiling, so a recap is ALWAYS driven to a terminal, reported state --
  * never a forever-spinning bar.
  *
- * It also runs the bundle retention prune (keep banked map/merge output ~30 days
- * for cost-safe resume, then reclaim disk), gated to at most once an hour.
+ * It also runs the retention prunes -- bundles (banked map/merge output, ~30 days
+ * for cost-safe resume, then reclaim disk) and the cross-run map cache (dropped
+ * on disuse) -- gated to at most once an hour.
  *
  * Mirrors nightshift-watchdog: a plain setInterval, no LLM, self-catching so a
  * sweep crash never takes the broker down.
@@ -25,7 +26,7 @@ const SWEEP_MS = 60_000
 const PRUNE_INTERVAL_MS = 60 * 60_000
 
 export interface RecapReaperDeps {
-  orchestrator: Pick<RecapOrchestrator, 'reapStale' | 'pruneBundles'>
+  orchestrator: Pick<RecapOrchestrator, 'reapStale' | 'pruneBundles' | 'pruneMapCache'>
   /** Injectable clock for tests. */
   now?: () => number
 }
@@ -45,6 +46,8 @@ export function startRecapReaper(deps: RecapReaperDeps): { stop: () => void; swe
       lastPruneAt = now()
       const pruned = deps.orchestrator.pruneBundles()
       if (pruned.length > 0) console.log(`[recap-reaper] pruned ${pruned.length} expired bundle(s)`)
+      const mapEntries = deps.orchestrator.pruneMapCache()
+      if (mapEntries > 0) console.log(`[recap-reaper] pruned ${mapEntries} unused map-cache entry(ies)`)
     }
   }
 

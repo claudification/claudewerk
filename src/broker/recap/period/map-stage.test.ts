@@ -132,3 +132,44 @@ describe('runMapStage', () => {
     expect(result.failed).toBe(0)
   })
 })
+
+// The cross-run map cache stores a chunk's extraction so tomorrow's run does not
+// re-pay for it. A FAILED chunk still yields empty metadata (so the run can go
+// on), and filing THAT would pin the conversation to "no facts" for the life of
+// the entry -- silently gutting every future recap that touches it. `trusted` is
+// the guard, so it has to be exactly the chunks that really parsed.
+describe('runMapStage trusted set (what is safe to cache)', () => {
+  it('trusts only chunks whose extraction actually parsed', async () => {
+    process.env.CLAUDWERK_RECAP_MAP_TIMEOUT_MS = '40'
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      const body = String(init?.body ?? '')
+      if (body.includes('HANG')) return new Promise<Response>(() => {}) // -> failed
+      if (body.includes('JUNK')) {
+        return new Response(JSON.stringify({ choices: [{ message: { content: 'not json at all' } }] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"keywords":["k"]}' } }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }) as unknown as typeof fetch
+
+    const chunks = [chunk(0, null), chunk(1, 'GOOD'), chunk(2, 'HANG'), chunk(3, 'JUNK')]
+    const result = await runMapStage(
+      makeDeps(),
+      'recap_test',
+      new RecapLedger(),
+      noopEmit,
+      chunks,
+      'anthropic/claude-sonnet-4',
+      {},
+    )
+
+    expect([...result.trusted]).toEqual([1]) // ONLY the chunk that parsed
+    expect(result.trusted.has(0)).toBe(false) // empty/skipped -- no evidence either way
+    expect(result.trusted.has(2)).toBe(false) // timed out
+    expect(result.trusted.has(3)).toBe(false) // unparseable
+  })
+})

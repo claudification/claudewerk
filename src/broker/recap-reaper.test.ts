@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import { startRecapReaper } from './recap-reaper'
 
 function fakeOrchestrator() {
-  const calls = { reap: 0, prune: 0 }
+  const calls = { reap: 0, prune: 0, pruneMapCache: 0 }
   return {
     calls,
     reapStale() {
@@ -12,6 +12,10 @@ function fakeOrchestrator() {
     pruneBundles() {
       calls.prune++
       return ['recap_old']
+    },
+    pruneMapCache() {
+      calls.pruneMapCache++
+      return 3
     },
   }
 }
@@ -23,6 +27,9 @@ describe('startRecapReaper', () => {
     const { stop } = startRecapReaper({ orchestrator: orch, now: () => t })
     expect(orch.calls.reap).toBe(1)
     expect(orch.calls.prune).toBe(1) // lastPruneAt starts at -Inf -> first sweep always prunes
+    // The map cache is pruned on the SAME hourly gate -- an unbounded content
+    // cache is a disk leak, and it is the one table nothing else reaps.
+    expect(orch.calls.pruneMapCache).toBe(1)
     stop()
   })
 
@@ -43,6 +50,7 @@ describe('startRecapReaper', () => {
     sweep()
     expect(orch.calls.reap).toBe(bootReap + 2)
     expect(orch.calls.prune).toBe(bootPrune + 1)
+    expect(orch.calls.pruneMapCache).toBe(bootPrune + 1)
     stop()
   })
 
@@ -54,6 +62,9 @@ describe('startRecapReaper', () => {
       },
       pruneBundles() {
         return []
+      },
+      pruneMapCache() {
+        return 0
       },
     }
     // Boot sweep runs synchronously inside start; it must not throw out.

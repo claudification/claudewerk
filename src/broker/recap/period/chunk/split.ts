@@ -115,6 +115,49 @@ export function splitIntoChunks(
   return chunks
 }
 
+/**
+ * One chunk per conversation (oversize ones still break into turn-aligned
+ * pieces). Trades a few more map calls for a chunk boundary that is 1:1 with a
+ * conversation -- which is what makes the extraction output ATTRIBUTABLE, and
+ * therefore cacheable across runs (see chunk/map-cache.ts).
+ *
+ * The greedy packer above exists to amortise per-call overhead, but that
+ * overhead is one small system prompt, while the thing it was costing us was
+ * re-extracting ~6 of every 7 conversations from scratch every night. Paying
+ * ~50 extra system prompts once beats re-paying the whole map stage daily.
+ */
+export function splitPerConversation(
+  transcripts: TranscriptDigest[],
+  chunkSize: number = DEFAULT_CHUNK_SIZE_CHARS,
+): TranscriptChunk[] {
+  const chunks: TranscriptChunk[] = []
+  for (const t of transcripts) {
+    const chars = transcriptChars(t)
+    if (chars > chunkSize) {
+      for (const piece of splitOversize(t, chunkSize)) {
+        chunks.push({
+          index: chunks.length,
+          transcripts: [piece],
+          chars: transcriptChars(piece),
+          partialConversationIds: [piece.conversationId],
+        })
+      }
+      continue
+    }
+    chunks.push({ index: chunks.length, transcripts: [t], chars, partialConversationIds: [] })
+  }
+  return chunks
+}
+
+/** Conversations the splitter will cut across chunks at this chunk size. They
+ *  can never be cached whole -- their bytes depend on where the cut landed. */
+export function oversizeConversationIds(
+  transcripts: TranscriptDigest[],
+  chunkSize: number = DEFAULT_CHUNK_SIZE_CHARS,
+): Set<string> {
+  return new Set(transcripts.filter(t => transcriptChars(t) > chunkSize).map(t => t.conversationId))
+}
+
 /** Break one oversize conversation into turn-aligned pieces, each <= chunkSize
  *  (except a single turn larger than chunkSize, which stands alone). */
 function splitOversize(t: TranscriptDigest, chunkSize: number): TranscriptDigest[] {
