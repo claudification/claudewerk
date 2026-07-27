@@ -19,6 +19,17 @@ const AGENT_MODEL = process.env.CLAUDWERK_RECAP_AGENT_MODEL || process.env.RCLAU
 // and per-call overridable (Pillar D) -- pinned here so all recap model slugs
 // live in ONE file. The map model being ~5x cheaper on input than reduce is the
 // whole point: stop paying Opus for raw transcript bulk.
+//
+// MEASURED, do not re-litigate without new numbers (2026-07-27): Haiku 4.5 was
+// evaluated against Sonnet 5 for the map stage on a real conversation through
+// the real map prompt, 3 runs each. Both parsed 3/3, but Haiku extracted ~40%
+// fewer items (avg 8.0 vs 13.3) and far fewer list values (23 flat, every run,
+// vs 54-113). Haiku is only 2x cheaper ($1/$5 per M vs $2/$10) -- and since the
+// cross-run map cache landed, the whole nightly map stage is ~$0.25, so the swap
+// saves roughly $4/month in exchange for permanently thinner extraction. Worse,
+// extractions are CACHED for 60 days, so a quality regression here is sticky.
+// Not worth it. (Haiku was ~3x faster; irrelevant now the cache removed the
+// wall-clock pressure.)
 const MAP_MODEL = process.env.CLAUDWERK_RECAP_MAP_MODEL || process.env.RCLAUDE_RECAP_MAP_MODEL || SONNET_MODEL
 const REDUCE_MODEL = process.env.CLAUDWERK_RECAP_REDUCE_MODEL || process.env.RCLAUDE_RECAP_REDUCE_MODEL || OPUS_MODEL
 
