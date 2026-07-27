@@ -78,6 +78,8 @@ export interface InitOptions {
   /** A SCHEDULED recap died with nobody waiting on it. Wired by the broker to a
    *  push; see OrchestratorDeps.onScheduledFailure for the incident. */
   onScheduledFailure?: (info: { recapId: string; projectUri: string; error: string; costUsd: number }) => void
+  /** The project's configured default model suite (see OrchestratorDeps). */
+  projectSuiteDefault?: (projectUri: string) => string | undefined
 }
 
 export function initRecapOrchestrator(opts: InitOptions): RecapOrchestrator {
@@ -94,6 +96,7 @@ export function initRecapOrchestrator(opts: InitOptions): RecapOrchestrator {
           broadcaster: opts.broadcaster,
           informConversation: opts.informConversation,
           onScheduledFailure: opts.onScheduledFailure,
+          projectSuiteDefault: opts.projectSuiteDefault,
           gatherCommits: opts.gatherCommits,
           bundle,
         },
@@ -107,6 +110,7 @@ export function initRecapOrchestrator(opts: InitOptions): RecapOrchestrator {
           broadcaster: opts.broadcaster,
           informConversation: opts.informConversation,
           onScheduledFailure: opts.onScheduledFailure,
+          projectSuiteDefault: opts.projectSuiteDefault,
           gatherCommits: opts.gatherCommits,
           bundle,
         },
@@ -119,6 +123,7 @@ export function initRecapOrchestrator(opts: InitOptions): RecapOrchestrator {
           brokerStore: opts.brokerStore,
           broadcaster: opts.broadcaster,
           informConversation: opts.informConversation,
+          projectSuiteDefault: opts.projectSuiteDefault,
           gatherCommits: opts.gatherCommits,
           bundle,
         },

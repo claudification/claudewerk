@@ -7,6 +7,7 @@ import type { CanvasSelection } from './canvas-selection'
 import type { JobRecord } from './cc-daemon/types'
 import type { DialogOp, DialogSnapshot } from './dialog-live'
 import type { DialogLayout, DialogResult } from './dialog-schema'
+import type { RecapSuiteId } from './recap-suites'
 import type {
   NightshiftBlocked,
   NightshiftConfig,
@@ -3100,6 +3101,11 @@ export interface ProjectSettings {
    *  scavenger produces a lessons-learned recap for this project. Default off
    *  (opt-in). [[project_lessons_scavenger]] */
   lessonsEnabled?: boolean
+  /** DEFAULT model suite for this project's recaps ('accurate' | 'cheap' --
+   *  shared/recap-suites.ts). Overrides the provenance fallback, and is itself
+   *  overridden by a suite named on an individual recap_create. Unset = let the
+   *  broker decide from how the run was started. */
+  recapSuite?: RecapSuiteId
   /** Epoch ms of the last successful nightly lessons scavenge for this project.
    *  Used only for activity-gating / observability; the window is a fixed
    *  rolling 7d, so this is not a strict watermark. */
@@ -6276,6 +6282,11 @@ export interface RecapCreateMessage {
    *  is reframed neutral + constructive. Facts + citations are preserved; only the
    *  voice changes. Opt-in, NOT benevolent-gated; a product mode like retrospect. */
   customerFriendly?: boolean
+  /** MODEL SUITE: which bundle of per-stage models to synthesize with
+   *  ('accurate' | 'cheap' -- see shared/recap-suites.ts). Omit to let the
+   *  broker resolve a default from the project setting and how the run was
+   *  started. An unknown id falls back to the default rather than erroring. */
+  suite?: RecapSuiteId
   /** Free-text shaping directives for the FINAL written recap, e.g. "emphasize
    *  shipping wins, skip the testing noise" or "keep it upbeat, one paragraph per
    *  feature". Applied ONLY at the last refinement stage (Opus oneshot/synthesize),

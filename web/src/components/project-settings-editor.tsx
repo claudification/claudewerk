@@ -1,4 +1,5 @@
 import { projectIdentityKey } from '@shared/project-uri'
+import { listSuites, type RecapSuiteId } from '@shared/recap-suites'
 import { OPENCODE_TOOL_PERMISSION_OPTIONS, type OpenCodeToolPermission } from '@shared/spawn-schema'
 import { Check, Search, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
@@ -61,6 +62,8 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
     (current.defaultOpenCodeToolPermission ?? 'safe') as OpenCodeToolPermission,
   )
   const [lessonsEnabled, setLessonsEnabled] = useState(current.lessonsEnabled ?? false)
+  // undefined = Auto: let the broker pick from how each recap was started.
+  const [recapSuite, setRecapSuite] = useState<RecapSuiteId | undefined>(current.recapSuite)
   const [keytermInput, setKeytermInput] = useState('')
   const [iconSearch, setIconSearch] = useState('')
   const [saving, setSaving] = useState(false)
@@ -81,6 +84,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
     setOpenCodeModel(c.defaultOpenCodeModel || '')
     setOpenCodeToolPermission((c.defaultOpenCodeToolPermission ?? 'safe') as OpenCodeToolPermission)
     setLessonsEnabled(c.lessonsEnabled ?? false)
+    setRecapSuite(c.recapSuite)
   }, [projectSettings, project])
 
   const filteredIcons = useMemo(() => {
@@ -104,6 +108,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
       defaultOpenCodeModel: openCodeModel.trim() || undefined,
       defaultOpenCodeToolPermission: openCodeToolPermission === 'safe' ? undefined : openCodeToolPermission,
       lessonsEnabled: lessonsEnabled || undefined,
+      recapSuite,
     }
     updateProjectSettings(project, settings)
     setSaving(false)
@@ -156,7 +161,8 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
     model.trim() !== (current.defaultModel || '') ||
     openCodeModel.trim() !== (current.defaultOpenCodeModel || '') ||
     openCodeToolPermission !== ((current.defaultOpenCodeToolPermission ?? 'safe') as OpenCodeToolPermission) ||
-    lessonsEnabled !== (current.lessonsEnabled ?? false)
+    lessonsEnabled !== (current.lessonsEnabled ?? false) ||
+    recapSuite !== current.recapSuite
 
   const hasAnySettings =
     current.label ||
@@ -414,6 +420,30 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
                     {opt.label}
                   </button>
                 ))}
+              </div>
+            </SettingRow>
+            <SettingRow
+              label="Recap synthesis model"
+              description="Which model writes this project's recaps. Auto uses the cheap model for scheduled background recaps and the accurate one for anything you asked for. Extraction quality is identical either way."
+            >
+              <div className="flex gap-1">
+                {[{ value: undefined, label: 'Auto' }, ...listSuites().map(s => ({ value: s.id, label: s.label }))].map(
+                  opt => (
+                    <button
+                      key={opt.value ?? 'auto'}
+                      type="button"
+                      onClick={() => setRecapSuite(opt.value)}
+                      className={cn(
+                        'px-2 py-1 text-[10px] font-mono border rounded transition-colors',
+                        recapSuite === opt.value
+                          ? 'border-accent bg-accent/20 text-foreground'
+                          : 'border-border/50 text-muted-foreground hover:text-foreground',
+                      )}
+                    >
+                      {opt.label}
+                    </button>
+                  ),
+                )}
               </div>
             </SettingRow>
           </>

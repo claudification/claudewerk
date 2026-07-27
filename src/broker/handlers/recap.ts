@@ -7,6 +7,7 @@ import type {
 } from '../../shared/protocol'
 import type { HandlerContext, MessageData, MessageHandler } from '../handler-context'
 import { DASHBOARD_ROLES, detectRole, registerHandlers, type WsRole } from '../message-router'
+import { isRecapSuiteId } from '../../shared/recap-suites'
 import { buildTemplateList } from '../recap/templates'
 import { getRecapOrchestrator } from '../recap-orchestrator'
 import { requireStrings } from './validate'
@@ -72,6 +73,11 @@ function recapCreate(ctx: HandlerContext, data: MessageData): void {
   // Templates (PLAN phase 3): `template` selects the deliverable shape (default
   // 'project-recap', the byte-identical anchor); `options` overrides the selected
   // template's declared option defaults. Both resolved + validated orchestrator-side.
+  // Model suite: a product-level choice like retrospect/customerFriendly, NOT a
+  // tuning override -- picking 'cheap' vs 'accurate' is a normal user decision,
+  // not an eval-harness escape hatch. Validated here so a typo falls back to the
+  // resolved default instead of reaching the orchestrator as junk.
+  const suite = isRecapSuiteId(data.suite) ? data.suite : undefined
   const template = typeof data.template === 'string' ? data.template : undefined
   const options =
     data.options && typeof data.options === 'object' && !Array.isArray(data.options)
@@ -88,6 +94,7 @@ function recapCreate(ctx: HandlerContext, data: MessageData): void {
       ...(audience ? { audience } : {}),
       ...(retrospect ? { retrospect: true } : {}),
       ...(customerFriendly ? { customerFriendly: true } : {}),
+      ...(suite ? { suite } : {}),
       ...(instructions ? { instructions } : {}),
       ...(template ? { template } : {}),
       ...(options ? { options } : {}),

@@ -118,6 +118,10 @@ export interface RecapBundleManifest {
   instructions?: string
   /** Resolved render mode (set once produce decides oneshot vs chunked). */
   mode?: RecapBundleMode
+  /** The RESOLVED model suite id this run used. Recorded so a regenerate off
+   *  this bundle reproduces the same models instead of silently re-resolving to
+   *  whatever the default is today. */
+  suite?: string
   /** Resolved per-stage models actually used. */
   models?: { map?: string; reduce?: string; oneshot?: string }
   chunkCount?: number
@@ -142,6 +146,7 @@ export type RecapBundleManifestPatch = Partial<
   Pick<
     RecapBundleManifest,
     | 'mode'
+    | 'suite'
     | 'models'
     | 'chunkCount'
     | 'recipe'

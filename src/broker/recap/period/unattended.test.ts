@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { resolveTier } from './llm/escalate'
+import { resolveSuiteId } from '../../../shared/recap-suites'
 import { isUnattendedRun } from './orchestrator'
 
 // REGRESSION -- the nightly lessons scavenger failed 19 of 20 nights and spent
@@ -28,19 +28,19 @@ describe('isUnattendedRun', () => {
 // gets an error. Verified against the live store on 2026-07-27: createdBy is
 // set ONLY by machine schedulers (lessons-scavenger 20, lessons-ledger 1) and
 // is NULL on all 43 user-requested rows.
-describe('tier routing follows provenance', () => {
-  it('routes the nightly scavenger to economy', () => {
-    expect(resolveTier({ unattended: isUnattendedRun({ createdBy: 'lessons-scavenger' }) })).toBe('economy')
+describe('suite routing follows provenance', () => {
+  it('routes the nightly scavenger to the cheap suite', () => {
+    expect(resolveSuiteId({ unattended: isUnattendedRun({ createdBy: 'lessons-scavenger' }) }).id).toBe('cheap')
   })
 
-  it('routes a dashboard recap (no createdBy) to premium', () => {
-    expect(resolveTier({ unattended: isUnattendedRun({}) })).toBe('premium')
+  it('routes a dashboard recap (no createdBy) to the accurate suite', () => {
+    expect(resolveSuiteId({ unattended: isUnattendedRun({}) }).id).toBe('accurate')
   })
 
-  it('routes an agent-requested recap with an inform target to premium', () => {
+  it('routes an agent-requested recap with an inform target to the accurate suite', () => {
     // A conversation asked and is waiting on the answer -- that is a user, via a proxy.
-    expect(resolveTier({ unattended: isUnattendedRun({ createdBy: 'agent', informConversationId: 'conv_1' }) })).toBe(
-      'premium',
-    )
+    expect(
+      resolveSuiteId({ unattended: isUnattendedRun({ createdBy: 'agent', informConversationId: 'conv_1' }) }).id,
+    ).toBe('accurate')
   })
 })

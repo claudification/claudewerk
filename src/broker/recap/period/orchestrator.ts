@@ -7,6 +7,7 @@ import type {
   RecapTuning,
 } from '../../../shared/protocol'
 import { isRecapInFlight } from '../../../shared/protocol'
+import { type RecapSuiteId, resolveSuiteId } from '../../../shared/recap-suites'
 import type { StoreDriver } from '../../store/types'
 import { type ChatRequest, chat } from '../shared/openrouter-client'
 import type { NormalizedUsage } from '../shared/pricing'
@@ -55,7 +56,7 @@ import {
 } from './gather'
 import type { CommitDigest } from './gather/types'
 import { RecapLedger } from './ledger'
-import { chunkModels, pickModel, reduceModelForTier, resolveTier } from './llm/escalate'
+import { chunkModels, oneshotModelForSuite, pickModel, reduceModelForSuite } from './llm/escalate'
 import { buildPrompt, type PresentationSelection, type PromptInputs, swapInstructions } from './llm/prompt-builder'
 import { createProgressEmitter, type ProgressBroadcaster, type ProgressEmitter } from './progress'
 import { buildRecapDigest } from './render/digest'
@@ -108,6 +109,11 @@ export interface OrchestratorDeps {
    * the broker (push); absent in tests -> log only.
    */
   onScheduledFailure?: (info: { recapId: string; projectUri: string; error: string; costUsd: number }) => void
+  /** The project's configured DEFAULT model suite, if the user set one. Injected
+   *  by the broker (which owns project settings) so this module stays free of
+   *  the settings store. Sits between an explicitly-requested suite and the
+   *  provenance fallback -- see resolveSuiteId. */
+  projectSuiteDefault?: (projectUri: string) => string | undefined
 }
 
 export interface StartArgs extends RecapCreateMessage {
@@ -686,7 +692,7 @@ async function synthesizeFromMerged(
   merged: RecapMetadata,
   ov: RefineOverrides,
 ): Promise<{ parsed: ParsedRecap; model: string }> {
-  const model = args.model ?? manifest.models?.reduce ?? reduceModelForTier('premium')
+  const model = args.model ?? manifest.models?.reduce ?? reduceModelForSuite(manifest.suite)
   emit.setProgress(55, 'regenerate/synthesize')
   const synth = buildSynthesizePrompt(
     merged,
@@ -736,7 +742,7 @@ async function replayOneshot(
 ): Promise<{ parsed: ParsedRecap; model: string }> {
   const prompt = deps.bundle?.readStagePrompt(sourceId, 'oneshot')
   if (!prompt?.system || !prompt.user) throw new Error('no merged JSON or oneshot prompt available to synthesize')
-  const model = args.model ?? manifest.models?.oneshot ?? reduceModelForTier('premium')
+  const model = args.model ?? manifest.models?.oneshot ?? oneshotModelForSuite(manifest.suite)
   emit.setProgress(55, 'regenerate/synthesize')
   const system = ov.instructionsProvided ? swapInstructions(prompt.system, ov.effInstructions) : prompt.system
   const built = { system, user: prompt.user }
@@ -898,6 +904,18 @@ async function runRecap(
     args.instructions,
   )
   emit.setStatus('rendering')
+  // Resolve the MODEL SUITE once, here, so both render paths agree and the
+  // choice is recorded rather than re-derived. Precedence lives in
+  // shared/recap-suites.ts; `source` is logged so a past recap can explain why
+  // it used the models it used.
+  const suite = resolveSuiteId({
+    requested: args.suite,
+    projectDefault: deps.projectSuiteDefault?.(args.projectUri),
+    unattended: isUnattendedRun(args),
+    customerFriendly: args.customerFriendly,
+  })
+  deps.bundle?.updateManifest(recapId, { suite: suite.id })
+  emit.emit('info', 'render/prompt', `model suite: ${suite.id} (${suite.source})`)
   // ONESHOT for small periods (one Opus pass), CHUNKED map-reduce for big ones
   // (parallel cheap extraction -> code merge -> one Opus synthesis). Both feed
   // the SAME parseRecapOutput/finalize downstream. The WHOLE render races the
@@ -920,6 +938,7 @@ async function runRecap(
       recipe,
       reuseMap,
       signal,
+      suite: suite.id,
     }),
   )
   const partialReason = partial
@@ -1418,6 +1437,9 @@ interface ProduceArgs {
    *  ChatRequest below so an abandoned recap stops billing immediately instead
    *  of running its synthesis (and parse repair) to completion for nobody. */
   signal: AbortSignal
+  /** RESOLVED model suite for this run (see shared/recap-suites.ts). Resolved
+   *  once upstream so both render paths agree and the choice is recorded. */
+  suite: RecapSuiteId
 }
 
 interface ProduceResult {
@@ -1451,7 +1473,7 @@ async function produceRecap(
   })
   if (chunked) return runChunked(deps, recapId, ledger, emit, p)
 
-  const model = t.oneshotModel || pickModel(built.inputChars, audience).model
+  const model = t.oneshotModel || pickModel(built.inputChars, audience, p.suite).model
   deps.store.update(recapId, { model })
   persistRecipe(deps, recapId, 'oneshot', model, t, p.recipe)
   emit.emit('info', 'render/prompt', `oneshot model=${model}, prompt=${built.inputChars} chars`)
@@ -1483,12 +1505,7 @@ async function runChunked(
 ): Promise<ProduceResult> {
   const { built, promptInputs, audience } = p
   const t = p.args.tuning ?? {}
-  // Tier the synthesis: an unattended scheduled run is machinery feeding the
-  // searchable layer and takes the economy model; anything a person asked for,
-  // or that is customer-facing, gets the premium one. An explicit tuning
-  // override still beats both.
-  const tier = resolveTier({ unattended: isUnattendedRun(p.args), customerFriendly: p.args.customerFriendly })
-  const models = chunkModels({ mapModel: t.mapModel, reduceModel: t.reduceModel }, tier)
+  const models = chunkModels({ mapModel: t.mapModel, reduceModel: t.reduceModel }, p.suite)
   // Cross-run extraction cache: an ended conversation's transcript is immutable,
   // and a rolling last_7 window re-presents ~6 of every 7 conversations each
   // night. Everything already extracted is served from the cache and only the
@@ -1503,7 +1520,7 @@ async function runChunked(
   emit.emit(
     'info',
     'render/chunk',
-    `chunked map-reduce: ${chunks.length} chunk(s), map=${models.mapModel}, reduce=${models.reduceModel} (${tier}${t.reduceModel ? ', overridden' : ''}), prompt=${built.inputChars} chars`,
+    `chunked map-reduce: ${chunks.length} chunk(s), map=${models.mapModel}, reduce=${models.reduceModel} (suite=${p.suite}${t.reduceModel ? ', overridden' : ''}), prompt=${built.inputChars} chars`,
   )
   // Funnel log -- NO SILENT CAPS. This is also the line that proves the cache is
   // earning its keep (or has quietly stopped hitting).

@@ -8,6 +8,7 @@
  */
 
 import type { RecapPeriodLabel } from '@shared/protocol'
+import type { RecapSuiteId } from '@shared/recap-suites'
 import { Dialog as DialogPrimitive } from 'radix-ui'
 import { useEffect, useRef, useState } from 'react'
 import { Kbd } from '@/components/ui/kbd'
@@ -17,6 +18,7 @@ import { type RecapConfigOptions, recapConfigBus } from './recap-config-trigger'
 import { RECAP_PRESETS, retrospectDefault } from './recap-period'
 import { defaultOptionFlags, fetchRecapTemplates, type RecapTemplateMeta } from './recap-templates'
 import { createRecap } from './recap-wire'
+import { SuitePicker } from './suite-picker'
 
 const FALLBACK_TEMPLATE_ID = 'project-recap'
 
@@ -50,6 +52,9 @@ export function RecapConfigDialog() {
   // Customer-friendly tone: sanitize the recap for sharing outside the team. Off
   // by default -- an internal recap keeps the unfiltered frustration signal.
   const [customerFriendly, setCustomerFriendly] = useState(false)
+  // Model suite. undefined = Auto: let the broker resolve it from the project
+  // default + how the run was started, which is right almost always.
+  const [suite, setSuite] = useState<RecapSuiteId | undefined>(undefined)
   // Optional free-text steer for the final written prose (never the extraction
   // stage). Highly optional -- blank is the norm and byte-identical to before.
   const [instructions, setInstructions] = useState('')
@@ -159,6 +164,7 @@ export function RecapConfigDialog() {
         end: endMs,
         retrospect,
         customerFriendly,
+        suite,
         template: templateId,
         options: optionFlags,
         instructions,
@@ -170,6 +176,7 @@ export function RecapConfigDialog() {
         label,
         retrospect,
         customerFriendly,
+        suite,
         template: templateId,
         options: optionFlags,
         instructions,
@@ -336,6 +343,8 @@ export function RecapConfigDialog() {
                 </span>
               </span>
             </label>
+
+            <SuitePicker value={suite} onChange={setSuite} />
 
             <div>
               <span className="block mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">

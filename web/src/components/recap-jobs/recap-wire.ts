@@ -5,6 +5,7 @@
  */
 
 import type { RecapPeriodLabel } from '@shared/protocol'
+import type { RecapSuiteId } from '@shared/recap-suites'
 import { wsSend } from '@/hooks/use-conversations'
 
 function browserTimeZone(): string {
@@ -30,6 +31,9 @@ export interface CreateRecapOptions {
   /** Sanitize the recap's tone for sharing outside the team (drop frustrations,
    *  reframe harsh language). Top-level product mode -- NOT a tuning knob. */
   customerFriendly?: boolean
+  /** Model suite for the synthesis pass ('accurate' | 'cheap'). Omit to let the
+   *  broker resolve it from the project default / how the run was started. */
+  suite?: RecapSuiteId
   /** Named presentation template id (default 'project-recap', the byte-identical
    *  anchor). Selects the deliverable shape; templates re-present, never re-extract. */
   template?: string
@@ -60,6 +64,7 @@ export function createRecap(opts: CreateRecapOptions): boolean {
     ...(opts.force ? { force: true } : {}),
     ...(opts.retrospect ? { retrospect: true } : {}),
     ...(opts.customerFriendly ? { customerFriendly: true } : {}),
+    ...(opts.suite ? { suite: opts.suite } : {}),
     ...(opts.template ? { template: opts.template } : {}),
     ...(opts.options && Object.keys(opts.options).length ? { options: opts.options } : {}),
     ...(opts.instructions?.trim() ? { instructions: opts.instructions.trim() } : {}),

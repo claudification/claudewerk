@@ -582,6 +582,9 @@ async function main() {
     // Recap grounding: gather real commits via the sentinel git_log RPC. The
     // broker owns sentinel connections; the recap module stays FS-agnostic.
     gatherCommits: makeCommitGatherer(conversationStore),
+    // The project's configured DEFAULT model suite. The recap module owns the
+    // precedence rules but not the settings store, so the lookup is injected.
+    projectSuiteDefault: projectUri => getProjectSettings(projectUri)?.recapSuite,
     // inform_on_complete: push a recap-completed system channel message into
     // the requesting conversation. Connected-only -- if the conversation is
     // offline the push is skipped (the caller can still poll recap_get).

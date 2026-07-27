@@ -18,6 +18,7 @@
  */
 
 import { cwdToProjectUri } from '../../../shared/project-uri'
+import { isRecapSuiteId, SUITE_IDS } from '../../../shared/recap-suites'
 import type {
   PeriodRecapDoc,
   RecapPeriodLabel,
@@ -286,6 +287,17 @@ function recapCreateTool(ctx: McpToolContext): ToolDef {
             'section is omitted and harsh / blaming / profane language is reframed neutral and ' +
             'constructive. Facts and citations are preserved; only the tone changes. Opt-in; off by default.',
         },
+        suite: {
+          type: 'string',
+          enum: SUITE_IDS,
+          description:
+            'MODEL SUITE for the synthesis pass. "accurate" (Opus 4.8, ~$0.89) for anything a ' +
+            'person will read or that leaves the team; "cheap" (GLM-5.2, ~$0.09, roughly 90% less, ' +
+            'slightly thinner coverage) for automated/background recaps. Omit to let the broker ' +
+            'choose: it uses the project default if one is set, otherwise "cheap" for unattended ' +
+            'scheduled runs and "accurate" for anything you are waiting on. Extraction quality is ' +
+            'identical either way -- suites only change the synthesis model.',
+        },
         instructions: {
           type: 'string',
           description:
@@ -395,6 +407,7 @@ function recapCreateTool(ctx: McpToolContext): ToolDef {
       const audience = raw.audience === 'human' ? 'human' : 'agent'
       const retrospect = raw.retrospect === true
       const customerFriendly = raw.customerFriendly === true
+      const suite = isRecapSuiteId(raw.suite) ? raw.suite : undefined
       const instructions =
         typeof raw.instructions === 'string' && raw.instructions.trim() ? raw.instructions.trim() : undefined
       const informOnComplete = raw.inform_on_complete === true
@@ -409,6 +422,7 @@ function recapCreateTool(ctx: McpToolContext): ToolDef {
             audience,
             ...(retrospect ? { retrospect: true } : {}),
             ...(customerFriendly ? { customerFriendly: true } : {}),
+            ...(suite ? { suite } : {}),
             ...(instructions ? { instructions } : {}),
             ...(signals ? { signals } : {}),
             ...(template ? { template } : {}),
