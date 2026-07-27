@@ -75,6 +75,9 @@ export interface InitOptions {
   /** Real commit gathering via the sentinel git_log RPC (recap grounding).
    *  Wired by the broker (which owns sentinel connections). */
   gatherCommits?: (scope: PeriodScope) => Promise<CommitDigest>
+  /** A SCHEDULED recap died with nobody waiting on it. Wired by the broker to a
+   *  push; see OrchestratorDeps.onScheduledFailure for the incident. */
+  onScheduledFailure?: (info: { recapId: string; projectUri: string; error: string; costUsd: number }) => void
 }
 
 export function initRecapOrchestrator(opts: InitOptions): RecapOrchestrator {
@@ -90,6 +93,7 @@ export function initRecapOrchestrator(opts: InitOptions): RecapOrchestrator {
           brokerStore: opts.brokerStore,
           broadcaster: opts.broadcaster,
           informConversation: opts.informConversation,
+          onScheduledFailure: opts.onScheduledFailure,
           gatherCommits: opts.gatherCommits,
           bundle,
         },
@@ -102,6 +106,7 @@ export function initRecapOrchestrator(opts: InitOptions): RecapOrchestrator {
           brokerStore: opts.brokerStore,
           broadcaster: opts.broadcaster,
           informConversation: opts.informConversation,
+          onScheduledFailure: opts.onScheduledFailure,
           gatherCommits: opts.gatherCommits,
           bundle,
         },

@@ -603,6 +603,20 @@ async function main() {
       )
       console.log(`[recap] inform delivered -> conversation ${conversationId.slice(0, 8)} (recap=${msg.recapId})`)
     },
+    // A scheduled recap (the nightly lessons scavenger) has no conversation
+    // waiting on it, so its failure reached nothing but a log line: it failed 19
+    // nights running and spent $58 before anyone looked. Push it -- an
+    // unattended job that fails silently forever is a broken job.
+    onScheduledFailure: info => {
+      console.error(
+        `[recap] SCHEDULED FAILURE ${info.recapId} project=${info.projectUri} cost=$${info.costUsd.toFixed(4)}: ${info.error}`,
+      )
+      if (!isPushConfigured()) return
+      sendPushToAll({
+        title: 'Scheduled recap failed',
+        body: `${info.projectUri.split('/').pop() ?? info.projectUri}: ${info.error.slice(0, 140)} ($${info.costUsd.toFixed(2)} spent)`,
+      }).catch(err => console.error('[recap] scheduled-failure push failed:', err))
+    },
   })
 
   // Start the always-on dispatcher memory service (P2+P3): it subscribes to the

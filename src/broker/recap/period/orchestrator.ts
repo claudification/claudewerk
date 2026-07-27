@@ -28,7 +28,7 @@ import {
   DEFAULT_CHUNK_THRESHOLD_CHARS,
   DEFAULT_CHUNK_THRESHOLD_CONVS,
   shouldChunk,
-  splitIntoChunks,
+  type splitIntoChunks,
 } from './chunk/split'
 import { buildSynthesizePrompt } from './chunk/synthesize-prompt'
 import {
@@ -100,6 +100,14 @@ export interface OrchestratorDeps {
   /** Pillar C+: on-disk run-artifact bundle writer (incremental, best-effort).
    *  Absent in tests -> the run proceeds without a bundle. */
   bundle?: RecapBundleWriter
+  /**
+   * A SCHEDULED recap died. Nobody is watching a 04:00 job: the nightly failed
+   * 19 nights running and burned $58 before anyone noticed, because a scheduled
+   * run has no inform target and the failure only ever reached a log line. An
+   * unattended job that can fail silently forever is a broken job. Injected by
+   * the broker (push); absent in tests -> log only.
+   */
+  onScheduledFailure?: (info: { recapId: string; projectUri: string; error: string; costUsd: number }) => void
 }
 
 export interface StartArgs extends RecapCreateMessage {
@@ -107,6 +115,16 @@ export interface StartArgs extends RecapCreateMessage {
   /** Conversation to notify on completion. Resolved broker-side from the
    *  caller's WS connection when inform_on_complete is set. */
   informConversationId?: string
+}
+
+/**
+ * Is this run one nobody is waiting on? `createdBy` marks a machine-scheduled
+ * run (the nightly lessons scavenger); `informConversationId` means a specific
+ * conversation asked and will be told either way. Unattended AND untold is the
+ * combination whose failures vanish -- and did, 19 nights and $58 running.
+ */
+export function isUnattendedRun(args: Pick<StartArgs, 'createdBy' | 'informConversationId'>): boolean {
+  return Boolean(args.createdBy) && !args.informConversationId
 }
 
 export interface StartResult {
@@ -228,6 +246,17 @@ function scheduleRun(
         deps.informConversation(args.informConversationId, {
           recapId,
           text: `Recap ${recapId} failed: ${describe(err)}`,
+        })
+      }
+      // Nobody is waiting on a scheduled run, so its failure has to come find
+      // someone. Without this a nightly can fail every night forever, spending
+      // real money, and the only trace is a log line no one reads.
+      if (isUnattendedRun(args) && deps.onScheduledFailure) {
+        deps.onScheduledFailure({
+          recapId,
+          projectUri: args.projectUri,
+          error: describe(err),
+          costUsd: built.summary.totalCostUsd,
         })
       }
     })
@@ -1576,16 +1605,7 @@ async function runChunked(
   })
   emit.setProgress(88, 'render/synthesize-done')
   deps.bundle?.recordFinalResponse(recapId, content)
-  const parsed = await parseOrRetry(
-    deps,
-    recapId,
-    ledger,
-    content,
-    synth,
-    models.reduceModel,
-    deps.apiKey,
-    p.signal,
-  )
+  const parsed = await parseOrRetry(deps, recapId, ledger, content, synth, models.reduceModel, deps.apiKey, p.signal)
   return {
     parsed,
     model: models.reduceModel,
