@@ -71,7 +71,7 @@ describe('overallDeadlineMs (synthesis reserve + conv-scaled)', () => {
   it('floors small recaps and ceils huge ones', () => {
     expect(overallDeadlineMs(0)).toBe(synthesisReserveMs()) // floor == the whole synthesis phase
     expect(overallDeadlineMs(1)).toBe(synthesisReserveMs() + 6_000) // reserve + its one conv
-    expect(overallDeadlineMs(100_000)).toBe(45 * 60_000) // ceil
+    expect(overallDeadlineMs(100_000)).toBe(90 * 60_000) // ceil
   })
 
   // The ceil is an upper bound on the CONV-SCALED part, never a licence to
@@ -100,7 +100,7 @@ describe('overallDeadlineMs (synthesis reserve + conv-scaled)', () => {
 
 describe('reapCeilingMs', () => {
   it('sits above the deadline ceil by default', () => {
-    expect(reapCeilingMs()).toBe(45 * 60_000 + 5 * 60_000)
+    expect(reapCeilingMs()).toBe(90 * 60_000 + 5 * 60_000)
   })
   it('honours the env override', () => {
     process.env.CLAUDWERK_RECAP_REAP_CEILING_MS = '777'

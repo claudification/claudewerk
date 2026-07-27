@@ -21,8 +21,16 @@
  * It lives here, next to the overall deadline, on purpose: the overall deadline
  * must never out-race the per-call timeout it governs, and the only way to
  * guarantee that is to derive one from the other in a single file.
+ *
+ * 900s (Jonas: "give Opus plenty of time"). Every increase so far was forced by
+ * a run this bound killed after it had already been PAID for -- 240s cut off a
+ * 467s synthesis that succeeded, and measured runs have since taken 380s and
+ * 467s. This bound exists to catch a genuinely WEDGED call, not a slow one, so
+ * it should sit far above the slowest legitimate run rather than near it. The
+ * cost of setting it generously is bounded: cancellation means an abandoned run
+ * stops billing the instant the overall deadline fires.
  */
-export const RECAP_SYNTHESIS_TIMEOUT_MS = 420_000
+export const RECAP_SYNTHESIS_TIMEOUT_MS = 900_000
 /** The MAP call is fast, cheap extraction -- it gets a much tighter bound. */
 export const RECAP_MAP_TIMEOUT_MS = 120_000
 /** A hung call must not draw the full rate-limit retry budget (240s x 3 = 12min
@@ -51,15 +59,18 @@ const SYNTHESIS_SLACK_MS = 60_000
 /**
  * Ceil: keeps even a huge month-recap bounded.
  *
- * Raised 30min -> 45min alongside the honest reserve. The reserve is now ~22min
- * of the budget, so a 30min ceil left barely 8min of per-conversation headroom
- * and silently squeezed anything past ~80 conversations -- the 2026-07-22
- * nightly (81 convs) landed exactly there. A ceil that eats the reserve
- * re-creates the bug it is supposed to bound. Wall-clock is not what costs
- * money here (the call count is, and cancellation now bounds that), so the ceil
- * can afford to sit above the worst legitimate run.
+ * Tracks the reserve, which is derived from the per-call timeout: at 900s x 3
+ * attempts the reserve alone is ~46min, so the previous 45min ceil would have
+ * sat BELOW it and squeezed every recap back into the original bug. The floor
+ * ordering in overallDeadlineMs already makes that un-fatal, but a ceil under
+ * the floor is a dead knob, so it moves with it. 90min leaves real
+ * per-conversation headroom on top of a worst-case synthesis phase.
+ *
+ * Wall-clock is not what costs money here -- the call count is, and cancellation
+ * bounds that -- so a generous ceil costs nothing but a slower declaration of
+ * death for a genuinely wedged run, which the reaper backstops 5min later.
  */
-const CEIL_MS = 45 * 60_000
+const CEIL_MS = 90 * 60_000
 
 function envMs(key: string): number | undefined {
   const v = Number(process.env[key])

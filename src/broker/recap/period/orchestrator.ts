@@ -55,7 +55,7 @@ import {
 } from './gather'
 import type { CommitDigest } from './gather/types'
 import { RecapLedger } from './ledger'
-import { chunkModels, pickModel } from './llm/escalate'
+import { chunkModels, pickModel, reduceModelForTier, resolveTier } from './llm/escalate'
 import { buildPrompt, type PresentationSelection, type PromptInputs, swapInstructions } from './llm/prompt-builder'
 import { createProgressEmitter, type ProgressBroadcaster, type ProgressEmitter } from './progress'
 import { buildRecapDigest } from './render/digest'
@@ -686,7 +686,7 @@ async function synthesizeFromMerged(
   merged: RecapMetadata,
   ov: RefineOverrides,
 ): Promise<{ parsed: ParsedRecap; model: string }> {
-  const model = args.model ?? manifest.models?.reduce ?? 'anthropic/claude-opus-5'
+  const model = args.model ?? manifest.models?.reduce ?? reduceModelForTier('premium')
   emit.setProgress(55, 'regenerate/synthesize')
   const synth = buildSynthesizePrompt(
     merged,
@@ -736,7 +736,7 @@ async function replayOneshot(
 ): Promise<{ parsed: ParsedRecap; model: string }> {
   const prompt = deps.bundle?.readStagePrompt(sourceId, 'oneshot')
   if (!prompt?.system || !prompt.user) throw new Error('no merged JSON or oneshot prompt available to synthesize')
-  const model = args.model ?? manifest.models?.oneshot ?? 'anthropic/claude-opus-5'
+  const model = args.model ?? manifest.models?.oneshot ?? reduceModelForTier('premium')
   emit.setProgress(55, 'regenerate/synthesize')
   const system = ov.instructionsProvided ? swapInstructions(prompt.system, ov.effInstructions) : prompt.system
   const built = { system, user: prompt.user }
@@ -1483,7 +1483,12 @@ async function runChunked(
 ): Promise<ProduceResult> {
   const { built, promptInputs, audience } = p
   const t = p.args.tuning ?? {}
-  const models = chunkModels({ mapModel: t.mapModel, reduceModel: t.reduceModel })
+  // Tier the synthesis: an unattended scheduled run is machinery feeding the
+  // searchable layer and takes the economy model; anything a person asked for,
+  // or that is customer-facing, gets the premium one. An explicit tuning
+  // override still beats both.
+  const tier = resolveTier({ unattended: isUnattendedRun(p.args), customerFriendly: p.args.customerFriendly })
+  const models = chunkModels({ mapModel: t.mapModel, reduceModel: t.reduceModel }, tier)
   // Cross-run extraction cache: an ended conversation's transcript is immutable,
   // and a rolling last_7 window re-presents ~6 of every 7 conversations each
   // night. Everything already extracted is served from the cache and only the
@@ -1498,7 +1503,7 @@ async function runChunked(
   emit.emit(
     'info',
     'render/chunk',
-    `chunked map-reduce: ${chunks.length} chunk(s), map=${models.mapModel}, reduce=${models.reduceModel}, prompt=${built.inputChars} chars`,
+    `chunked map-reduce: ${chunks.length} chunk(s), map=${models.mapModel}, reduce=${models.reduceModel} (${tier}${t.reduceModel ? ', overridden' : ''}), prompt=${built.inputChars} chars`,
   )
   // Funnel log -- NO SILENT CAPS. This is also the line that proves the cache is
   // earning its keep (or has quietly stopped hitting).

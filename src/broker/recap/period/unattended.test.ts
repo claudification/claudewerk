@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import { resolveTier } from './llm/escalate'
 import { isUnattendedRun } from './orchestrator'
 
 // REGRESSION -- the nightly lessons scavenger failed 19 of 20 nights and spent
@@ -18,5 +19,28 @@ describe('isUnattendedRun', () => {
   it('is false for a human clicking Generate -- they are looking at the failure', () => {
     expect(isUnattendedRun({})).toBe(false)
     expect(isUnattendedRun({ informConversationId: 'conv_1' })).toBe(false)
+  })
+})
+
+// The tier routing hangs off this predicate, so the mapping is load-bearing:
+// if anything ever starts stamping createdBy on dashboard-initiated recaps,
+// every user-requested recap silently drops to the economy model and nobody
+// gets an error. Verified against the live store on 2026-07-27: createdBy is
+// set ONLY by machine schedulers (lessons-scavenger 20, lessons-ledger 1) and
+// is NULL on all 43 user-requested rows.
+describe('tier routing follows provenance', () => {
+  it('routes the nightly scavenger to economy', () => {
+    expect(resolveTier({ unattended: isUnattendedRun({ createdBy: 'lessons-scavenger' }) })).toBe('economy')
+  })
+
+  it('routes a dashboard recap (no createdBy) to premium', () => {
+    expect(resolveTier({ unattended: isUnattendedRun({}) })).toBe('premium')
+  })
+
+  it('routes an agent-requested recap with an inform target to premium', () => {
+    // A conversation asked and is waiting on the answer -- that is a user, via a proxy.
+    expect(resolveTier({ unattended: isUnattendedRun({ createdBy: 'agent', informConversationId: 'conv_1' }) })).toBe(
+      'premium',
+    )
   })
 })
