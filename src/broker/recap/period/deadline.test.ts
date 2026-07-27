@@ -4,6 +4,7 @@ import {
   RECAP_SYNTHESIS_TIMEOUT_MS,
   RecapDeadlineError,
   reapCeilingMs,
+  SYNTHESIS_ATTEMPT_BUDGET,
   synthesisReserveMs,
   withDeadline,
 } from './deadline'
@@ -43,15 +44,42 @@ describe('overallDeadlineMs (synthesis reserve + conv-scaled)', () => {
     }
   })
 
+  // REGRESSION -- incident recap_794ve8zetwsa (2026-07-27). The reserve covered
+  // exactly ONE synthesis attempt while the call site was configured for two
+  // (timeoutRetries: RECAP_TIMEOUT_RETRIES) plus a possible parse repair. The
+  // reduce timed out at 240s, retried, succeeded at 467s -- and was thrown away
+  // because the 567s budget had already expired. 19 of 20 nightly runs died this
+  // way. A budget that cannot cover its own retry policy is not a budget.
+  it('covers every attempt the synthesis phase is ALLOWED to make', () => {
+    // Worst case: synthesize + its timeout retries + one parse repair.
+    const worstCaseMs = RECAP_SYNTHESIS_TIMEOUT_MS * SYNTHESIS_ATTEMPT_BUDGET
+    for (const convs of [0, 1, 15, 55, 81, 250]) {
+      expect(overallDeadlineMs(convs)).toBeGreaterThanOrEqual(worstCaseMs)
+    }
+  })
+
+  it('would have survived the run it killed (55 convs, 467s synthesis)', () => {
+    // gather 3s + map 267s + synthesis 467s = 737s of real, successful work.
+    expect(overallDeadlineMs(55)).toBeGreaterThan(737_000)
+  })
+
   it('adds the per-conv gather/map budget ON TOP of the fixed reserve', () => {
     expect(overallDeadlineMs(15)).toBe(synthesisReserveMs() + 15 * 6_000)
     expect(overallDeadlineMs(81)).toBe(synthesisReserveMs() + 81 * 6_000) // the 07-22 nightly
   })
 
   it('floors small recaps and ceils huge ones', () => {
-    expect(overallDeadlineMs(0)).toBe(300_000) // floor
-    expect(overallDeadlineMs(1)).toBe(300_000) // floor
-    expect(overallDeadlineMs(100_000)).toBe(30 * 60_000) // ceil
+    expect(overallDeadlineMs(0)).toBe(synthesisReserveMs()) // floor == the whole synthesis phase
+    expect(overallDeadlineMs(1)).toBe(synthesisReserveMs() + 6_000) // reserve + its one conv
+    expect(overallDeadlineMs(100_000)).toBe(45 * 60_000) // ceil
+  })
+
+  // The ceil is an upper bound on the CONV-SCALED part, never a licence to
+  // hand back less than one synthesis phase needs -- that inversion is how a
+  // careless env override would quietly resurrect the original bug.
+  it('never lets a too-low ceil undercut the reserve', () => {
+    process.env.CLAUDWERK_RECAP_DEADLINE_CEIL_MS = '1000'
+    expect(overallDeadlineMs(250)).toBe(synthesisReserveMs())
   })
 
   it('honours the flat override outright', () => {
@@ -72,7 +100,7 @@ describe('overallDeadlineMs (synthesis reserve + conv-scaled)', () => {
 
 describe('reapCeilingMs', () => {
   it('sits above the deadline ceil by default', () => {
-    expect(reapCeilingMs()).toBe(30 * 60_000 + 5 * 60_000)
+    expect(reapCeilingMs()).toBe(45 * 60_000 + 5 * 60_000)
   })
   it('honours the env override', () => {
     process.env.CLAUDWERK_RECAP_REAP_CEILING_MS = '777'
@@ -96,5 +124,30 @@ describe('withDeadline', () => {
     await expect(withDeadline(10, 5, boom)).rejects.toBeInstanceOf(RecapDeadlineError)
     // Give the leaked promise time to reject; if it were unhandled the test run flags it.
     await new Promise(r => setTimeout(r, 60))
+  })
+
+  // REGRESSION -- incident 2026-07-26. The deadline force-failed the run at
+  // 570s; the losing work carried on, completed its Opus synthesis, and then
+  // fired a parse repair. $1.77 billed AFTER the row already read `failed`.
+  // Losing the race must also mean losing the wallet.
+  it('aborts the signal handed to fn when the deadline wins', async () => {
+    let seen: AbortSignal | undefined
+    const slow = (signal: AbortSignal) => {
+      seen = signal
+      return new Promise<string>(r => setTimeout(() => r('late'), 200))
+    }
+    await expect(withDeadline(20, 5, slow)).rejects.toBeInstanceOf(RecapDeadlineError)
+    expect(seen?.aborted).toBe(true)
+  })
+
+  it('leaves the signal unaborted when fn wins', async () => {
+    let seen: AbortSignal | undefined
+    await expect(
+      withDeadline(1000, 5, async signal => {
+        seen = signal
+        return 'ok'
+      }),
+    ).resolves.toBe('ok')
+    expect(seen?.aborted).toBe(false)
   })
 })

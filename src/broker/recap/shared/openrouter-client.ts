@@ -10,7 +10,7 @@
  * a SEPARATE (smaller) retry budget for timeouts, and normalised usage extraction.
  */
 
-import { NoApiKeyError, OpenRouterError, RateLimitError, TimeoutError } from './errors'
+import { CancelledError, NoApiKeyError, OpenRouterError, RateLimitError, TimeoutError } from './errors'
 import { type NormalizedUsage, normalizeUsage } from './pricing'
 
 const ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions'
@@ -68,6 +68,12 @@ export interface ChatRequest {
   toolChoice?: 'auto' | 'none' | 'required'
   timeoutMs?: number
   retries?: number
+  /** Caller's cancellation signal. When it aborts, the in-flight attempt is
+   *  abandoned and NO further retry is started -- the call rejects with
+   *  CancelledError. Without this a caller that has already given up (e.g. the
+   *  recap overall deadline) keeps paying for a document nobody will read:
+   *  incident 2026-07-26, $1.77 of Opus billed AFTER the run was marked failed. */
+  signal?: AbortSignal
   /** Retries specifically for a TIMEOUT (the attempt exceeding timeoutMs).
    *  Defaults to `retries`. A slow/hung provider must NOT draw the full
    *  rate-limit retry budget -- e.g. 240s x 3 attempts = 12min of dead air
@@ -101,6 +107,7 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
     model: req.model,
     maxRetries: retries,
     timeoutRetries: req.timeoutRetries ?? retries,
+    ...(req.signal ? { signal: req.signal } : {}),
   }
   const t0 = Date.now()
   try {
@@ -168,6 +175,20 @@ interface AttemptContext {
   maxRetries: number
   /** Retry budget for TimeoutError specifically (kept smaller on purpose). */
   timeoutRetries: number
+  /** Caller's cancellation signal (see ChatRequest.signal). */
+  signal?: AbortSignal
+}
+
+/** Reject as soon as `signal` aborts. Used to race the in-flight attempt and to
+ *  cut a backoff sleep short -- a cancelled caller should not wait out a nap. */
+function abortPromise(signal: AbortSignal): Promise<never> {
+  return new Promise((_, reject) => {
+    if (signal.aborted) {
+      reject(new CancelledError())
+      return
+    }
+    signal.addEventListener('abort', () => reject(new CancelledError()), { once: true })
+  })
 }
 
 // Timeouts and rate-limit/5xx errors draw from SEPARATE budgets: a hung provider
@@ -179,6 +200,10 @@ async function runWithRetry(ctx: AttemptContext): Promise<ChatResponse> {
   let otherRetriesUsed = 0
   const hardCap = ctx.maxRetries + ctx.timeoutRetries + 1
   for (let total = 0; total < hardCap; total++) {
+    // Checked BEFORE every attempt, not just around them: the caller may have
+    // given up during the previous attempt or its backoff, and starting a fresh
+    // billable call for an abandoned job is the exact waste this guards.
+    if (ctx.signal?.aborted) throw new CancelledError()
     try {
       return await attemptOnce(ctx)
     } catch (err) {
@@ -186,11 +211,11 @@ async function runWithRetry(ctx: AttemptContext): Promise<ChatResponse> {
       if (err instanceof TimeoutError) {
         if (timeoutRetriesUsed >= ctx.timeoutRetries) throw err
         timeoutRetriesUsed++
-        await sleep(backoffMs(timeoutRetriesUsed, err))
+        await sleep(backoffMs(timeoutRetriesUsed, err), ctx.signal)
       } else {
         if (otherRetriesUsed >= ctx.maxRetries) throw err
         otherRetriesUsed++
-        await sleep(backoffMs(otherRetriesUsed, err))
+        await sleep(backoffMs(otherRetriesUsed, err), ctx.signal)
       }
     }
   }
@@ -268,6 +293,9 @@ function assembleMessages(req: ChatRequest): ChatMessage[] {
  */
 async function attemptOnce(ctx: AttemptContext): Promise<ChatResponse> {
   const ctrl = new AbortController()
+  // The caller's cancellation rides the SAME controller as the timeout, so an
+  // abandoned job tears the socket down instead of streaming to completion.
+  const unlinkSignal = linkAbort(ctx.signal, ctrl)
   let timer: ReturnType<typeof setTimeout> | undefined
   const work = (async (): Promise<ChatResponse> => {
     const res = await ctx.fetcher(ENDPOINT, {
@@ -294,13 +322,32 @@ async function attemptOnce(ctx: AttemptContext): Promise<ChatResponse> {
           reject(new TimeoutError())
         }, ctx.timeoutMs)
       }),
+      ...(ctx.signal ? [abortPromise(ctx.signal)] : []),
     ])
   } catch (err) {
-    if ((err as Error).name === 'AbortError') throw new TimeoutError()
+    // An AbortError once the caller cancelled is OUR abort, not a slow provider.
+    if ((err as Error).name === 'AbortError') {
+      throw ctx.signal?.aborted ? new CancelledError() : new TimeoutError()
+    }
     throw err
   } finally {
     if (timer) clearTimeout(timer)
+    unlinkSignal()
   }
+}
+
+/** Mirror an external abort onto `ctrl`. Returns an unsubscribe so a long-lived
+ *  caller signal does not accumulate a listener per attempt (a slow leak that
+ *  also trips Node's MaxListenersExceeded warning on a chunky recap). */
+function linkAbort(signal: AbortSignal | undefined, ctrl: AbortController): () => void {
+  if (!signal) return () => {}
+  const onAbort = () => ctrl.abort()
+  if (signal.aborted) {
+    ctrl.abort()
+    return () => {}
+  }
+  signal.addEventListener('abort', onAbort, { once: true })
+  return () => signal.removeEventListener('abort', onAbort)
 }
 
 async function errorForStatus(res: Response): Promise<Error> {
@@ -374,6 +421,9 @@ async function parseResponse(model: string, res: Response): Promise<ChatResponse
 
 // fallow-ignore-next-line complexity
 function shouldRetry(err: unknown): boolean {
+  // Explicit, not merely "falls through to false": retrying a call the caller
+  // already abandoned is the waste this whole signal exists to stop.
+  if (err instanceof CancelledError) return false
   if (err instanceof RateLimitError) return true
   if (err instanceof TimeoutError) return true
   if (err instanceof OpenRouterError) {
@@ -387,6 +437,24 @@ function backoffMs(attempt: number, err: unknown): number {
   return Math.min(8000, 250 * 2 ** (attempt - 1))
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise(r => setTimeout(r, ms))
+/** Backoff nap, cut short if the caller cancels. Rejects with CancelledError in
+ *  that case so the retry loop unwinds instead of napping then firing a call
+ *  nobody is waiting for. */
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return new Promise(r => setTimeout(r, ms))
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new CancelledError())
+      return
+    }
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(new CancelledError())
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
 }

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { NoApiKeyError, OpenRouterError, RateLimitError, TimeoutError } from './errors'
+import { CancelledError, NoApiKeyError, OpenRouterError, RateLimitError, TimeoutError } from './errors'
 import { chat } from './openrouter-client'
 
 interface CapturedCall {
@@ -322,5 +322,52 @@ describe('spend log (the [openrouter] cost line)', () => {
     expect(line).toContain('ok=false')
     expect(line).toContain('err=')
     expect(line).not.toContain('cost=$')
+  })
+})
+
+// REGRESSION -- incident 2026-07-26. The recap overall deadline force-failed a
+// run, but nothing told the in-flight OpenRouter call to stop: it completed its
+// Opus synthesis and the pipeline then fired a parse repair, billing $1.77
+// against a row that already said `failed`. Across 30 days $58 of $75 in recap
+// spend bought output nobody could ever read. Cancellation is the wallet's
+// half of the deadline.
+describe('chat() cancellation', () => {
+  it('rejects with CancelledError when the signal is already aborted', async () => {
+    const { fn, getAttempt } = makeFetcher(() => jsonResponse('never'))
+    await expect(
+      chat({ model: 'm', feature: 'test', user: 'hi', fetcher: fn, signal: AbortSignal.abort() }),
+    ).rejects.toBeInstanceOf(CancelledError)
+    // The point of the whole exercise: not one billable request left the box.
+    expect(getAttempt()).toBe(0)
+  })
+
+  it('rejects mid-flight when the caller aborts', async () => {
+    const ctrl = new AbortController()
+    const { fn } = makeFetcher(() => new Promise<Response>(r => setTimeout(() => r(jsonResponse('late')), 500)))
+    const p = chat({ model: 'm', feature: 'test', user: 'hi', fetcher: fn, timeoutMs: 5_000, signal: ctrl.signal })
+    setTimeout(() => ctrl.abort(), 20)
+    await expect(p).rejects.toBeInstanceOf(CancelledError)
+  })
+
+  it('does NOT start a retry once the caller has aborted', async () => {
+    const ctrl = new AbortController()
+    // First attempt 429s (normally retried); the caller gives up during backoff.
+    const { fn, getAttempt } = makeFetcher((_c, attempt) => {
+      if (attempt === 1) {
+        setTimeout(() => ctrl.abort(), 5)
+        return new Response('rate limited', { status: 429, headers: { 'retry-after': '1' } })
+      }
+      return jsonResponse('should never happen')
+    })
+    await expect(
+      chat({ model: 'm', feature: 'test', user: 'hi', fetcher: fn, retries: 3, signal: ctrl.signal }),
+    ).rejects.toBeInstanceOf(CancelledError)
+    expect(getAttempt()).toBe(1) // the retry was never billed
+  })
+
+  it('is unaffected when no signal is passed (existing callers)', async () => {
+    const { fn } = makeFetcher(() => jsonResponse('fine'))
+    const res = await chat({ model: 'm', feature: 'test', user: 'hi', fetcher: fn })
+    expect(res.content).toBe('fine')
   })
 })

@@ -48,8 +48,11 @@ describe('mapStageDeadlineMs (conv-count scaled)', () => {
   it('scales up with chunk count and ceils at 20min', () => {
     // Ceil dropped 45min -> 20min: the overall conv-scaled deadline (deadline.ts)
     // is now the master cap for the whole render, so the map stage sits under it.
-    expect(mapStageDeadlineMs(10)).toBeGreaterThan(10 * 60_000)
-    expect(mapStageDeadlineMs(10)).toBeLessThan(20 * 60_000)
+    // At MAP_CONCURRENCY=8 (raised from 4 on 2026-07-27) 10 chunks are 2 waves,
+    // which prices under the floor -- the floor is what they get.
+    expect(mapStageDeadlineMs(10)).toBe(10 * 60_000) // floor
+    expect(mapStageDeadlineMs(20)).toBeGreaterThan(10 * 60_000) // 3 waves clears it
+    expect(mapStageDeadlineMs(20)).toBeLessThan(20 * 60_000)
     expect(mapStageDeadlineMs(1000)).toBe(20 * 60_000) // ceil
   })
   it('honours the env override (test/ops seam)', () => {

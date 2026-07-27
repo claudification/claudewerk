@@ -45,7 +45,7 @@ describe('chunkModels (Pillar A/D map+reduce resolution)', () => {
   test('defaults map to Sonnet, reduce to Opus', () => {
     expect(chunkModels()).toEqual({
       mapModel: 'anthropic/claude-sonnet-5',
-      reduceModel: 'anthropic/claude-opus-4.8',
+      reduceModel: 'anthropic/claude-opus-5',
     })
   })
 
@@ -59,7 +59,7 @@ describe('chunkModels (Pillar A/D map+reduce resolution)', () => {
   test('falls back to default when an override is empty/undefined', () => {
     expect(chunkModels({ mapModel: '' })).toEqual({
       mapModel: 'anthropic/claude-sonnet-5',
-      reduceModel: 'anthropic/claude-opus-4.8',
+      reduceModel: 'anthropic/claude-opus-5',
     })
   })
 })

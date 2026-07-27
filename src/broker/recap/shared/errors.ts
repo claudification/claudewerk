@@ -32,3 +32,17 @@ export class TimeoutError extends Error {
     this.name = 'TimeoutError'
   }
 }
+
+/**
+ * The CALLER gave up (its own deadline fired, the job was reaped) while this
+ * request was in flight or between retries. Distinct from TimeoutError: a
+ * timeout means THIS call was too slow and retrying may help, a cancellation
+ * means nobody is waiting for the answer any more, so retrying is pure spend.
+ * Never retried -- see `shouldRetry`.
+ */
+export class CancelledError extends Error {
+  constructor(message = 'Request cancelled by caller') {
+    super(message)
+    this.name = 'CancelledError'
+  }
+}

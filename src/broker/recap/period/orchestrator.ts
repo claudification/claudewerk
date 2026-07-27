@@ -33,6 +33,7 @@ import { buildSynthesizePrompt } from './chunk/synthesize-prompt'
 import {
   overallDeadlineMs,
   RECAP_MAP_TIMEOUT_MS,
+  RECAP_PARSE_REPAIR_TIMEOUT_RETRIES,
   RECAP_SYNTHESIS_TIMEOUT_MS,
   RECAP_TIMEOUT_RETRIES,
   withDeadline,
@@ -655,7 +656,7 @@ async function synthesizeFromMerged(
   merged: RecapMetadata,
   ov: RefineOverrides,
 ): Promise<{ parsed: ParsedRecap; model: string }> {
-  const model = args.model ?? manifest.models?.reduce ?? 'anthropic/claude-opus-4.8'
+  const model = args.model ?? manifest.models?.reduce ?? 'anthropic/claude-opus-5'
   emit.setProgress(55, 'regenerate/synthesize')
   const synth = buildSynthesizePrompt(
     merged,
@@ -705,7 +706,7 @@ async function replayOneshot(
 ): Promise<{ parsed: ParsedRecap; model: string }> {
   const prompt = deps.bundle?.readStagePrompt(sourceId, 'oneshot')
   if (!prompt?.system || !prompt.user) throw new Error('no merged JSON or oneshot prompt available to synthesize')
-  const model = args.model ?? manifest.models?.oneshot ?? 'anthropic/claude-opus-4.8'
+  const model = args.model ?? manifest.models?.oneshot ?? 'anthropic/claude-opus-5'
   emit.setProgress(55, 'regenerate/synthesize')
   const system = ov.instructionsProvided ? swapInstructions(prompt.system, ov.effInstructions) : prompt.system
   const built = { system, user: prompt.user }
@@ -880,7 +881,7 @@ async function runRecap(
     `[recap] ${recapId} render start: ${convCount} conv(s), ${inputChars} chars, ` +
       `overall deadline ${Math.round(overallMs / 1000)}s (${Math.round(remainingMs / 1000)}s left after gather)`,
   )
-  const { parsed, model, partial } = await withDeadline(remainingMs, convCount, () =>
+  const { parsed, model, partial } = await withDeadline(remainingMs, convCount, signal =>
     produceRecap(deps, recapId, ledger, emit, {
       built,
       promptInputs,
@@ -888,6 +889,7 @@ async function runRecap(
       args,
       recipe,
       reuseMap,
+      signal,
     }),
   )
   const partialReason = partial
@@ -1119,10 +1121,26 @@ function toBundlePrompt(stage: RecapLedgerStage, req: ChatRequest, chunkIndex?: 
   }
 }
 
-/** Persist the ledger snapshot to ledger_json. Cheap (small JSON); called after
- *  every LLM call for incremental durability. */
+/**
+ * Persist the ledger snapshot. Cheap (small JSON); called after every LLM call
+ * for incremental durability.
+ *
+ * The cost COLUMNS move with it, not just ledger_json. They used to diverge:
+ * the failure path stamped llm_cost_usd from the ledger as it stood the instant
+ * the deadline fired, but a call still in flight kept running and flushed its
+ * own (larger) ledger afterwards. Result across 30 days: $40.70 recorded against
+ * $58.02 actually billed -- the rows under-reported failed spend by 43%, which
+ * is exactly the number you would consult to notice this bug. One writer, one
+ * truth: whatever the ledger says, the columns say.
+ */
 function flushLedger(deps: OrchestratorDeps, recapId: string, ledger: RecapLedger): void {
-  deps.store.update(recapId, { ledgerJson: JSON.stringify(ledger.build()) })
+  const built = ledger.build()
+  deps.store.update(recapId, {
+    ledgerJson: JSON.stringify(built),
+    inputTokens: built.summary.totalInputTokens,
+    outputTokens: built.summary.totalOutputTokens,
+    llmCostUsd: built.summary.totalCostUsd,
+  })
 }
 
 async function callLlm(
@@ -1132,7 +1150,7 @@ async function callLlm(
   prompt: { system: string; user: string },
   model: string,
   apiKey?: string,
-  opts?: { temperature?: number; maxTokens?: number },
+  opts?: { temperature?: number; maxTokens?: number; signal?: AbortSignal },
 ): Promise<string> {
   return runLlmCall(deps, recapId, ledger, 'oneshot', {
     feature: 'recap-period',
@@ -1145,6 +1163,7 @@ async function callLlm(
     temperature: opts?.temperature ?? 0.2,
     retries: 2,
     apiKey,
+    ...(opts?.signal ? { signal: opts.signal } : {}),
   })
 }
 
@@ -1156,6 +1175,7 @@ async function parseOrRetry(
   built: { system: string; user: string },
   model: string,
   apiKey?: string,
+  signal?: AbortSignal,
 ) {
   try {
     return parseRecapOutput(content)
@@ -1168,8 +1188,11 @@ async function parseOrRetry(
       retries: 1,
       maxTokens: RECAP_MAX_TOKENS,
       timeoutMs: RECAP_SYNTHESIS_TIMEOUT_MS,
-      timeoutRetries: RECAP_TIMEOUT_RETRIES,
+      // No timeout retry: this IS the second bite at the same document, and the
+      // deadline reserve budgets it as exactly one call (SYNTHESIS_ATTEMPT_BUDGET).
+      timeoutRetries: RECAP_PARSE_REPAIR_TIMEOUT_RETRIES,
       temperature: 0.1,
+      ...(signal ? { signal } : {}),
       messages: [
         { role: 'system', content: built.system },
         { role: 'user', content: built.user },
@@ -1187,7 +1210,13 @@ async function parseOrRetry(
 
 // Bounded parallelism for the map stage: a month-long recap can produce dozens
 // of chunks; firing them all at once would hammer OpenRouter + risk 429s.
-const MAP_CONCURRENCY = Number(process.env.CLAUDWERK_RECAP_MAP_CONCURRENCY) || 4
+//
+// Raised 4 -> 8 (2026-07-27). At 4, the nightly's 18 chunks ran as 5 sequential
+// waves of ~55s = 267s, nearly HALF the whole 570s budget, squeezing the very
+// synthesis the budget exists to protect. The calls are independent and the
+// client already backs off on 429 with Retry-After, so waves were buying
+// nothing; 8 halves the stage to ~2-3 waves. Still bounded, still env-tunable.
+const MAP_CONCURRENCY = Number(process.env.CLAUDWERK_RECAP_MAP_CONCURRENCY) || 8
 
 // Overall map-stage deadline. Per-call timeouts (Phase 1) bound a SINGLE call,
 // but with bounded concurrency a big all-slow recap is still sum-of-waves; this
@@ -1239,6 +1268,7 @@ export async function runMapStage(
   mapModel: string,
   t: RecapTuning,
   reuseMap?: (index: number) => RecapMetadata | null,
+  signal?: AbortSignal,
 ): Promise<MapStageResult> {
   const stageDeadlineMs = mapStageDeadlineMs(chunks.length)
   const state = { failed: 0, skippedEmpty: 0, reused: 0, stageTimedOut: false }
@@ -1295,6 +1325,7 @@ export async function runMapStage(
             temperature: t.temperature?.map ?? 0.1,
             retries: 2,
             apiKey: deps.apiKey,
+            ...(signal ? { signal } : {}),
           },
           chunk.index,
         ),
@@ -1343,6 +1374,10 @@ interface ProduceArgs {
   /** Resume-from-map: return a chunk's already-parsed extraction (from the
    *  bundle) to reuse it instead of re-paying the map call. null -> re-map. */
   reuseMap?: (index: number) => RecapMetadata | null
+  /** Fires when the overall deadline force-fails the run. Threaded into EVERY
+   *  ChatRequest below so an abandoned recap stops billing immediately instead
+   *  of running its synthesis (and parse repair) to completion for nobody. */
+  signal: AbortSignal
 }
 
 interface ProduceResult {
@@ -1384,10 +1419,11 @@ async function produceRecap(
   const content = await callLlm(deps, recapId, ledger, built, model, deps.apiKey, {
     temperature: t.temperature?.oneshot,
     maxTokens: t.maxTokens?.oneshot,
+    signal: p.signal,
   })
   emit.setProgress(85, 'render/llm-done')
   deps.bundle?.recordFinalResponse(recapId, content)
-  const parsed = await parseOrRetry(deps, recapId, ledger, content, built, model, deps.apiKey)
+  const parsed = await parseOrRetry(deps, recapId, ledger, content, built, model, deps.apiKey, p.signal)
   return { parsed, model }
 }
 
@@ -1433,6 +1469,7 @@ async function runChunked(
     models.mapModel,
     t,
     p.reuseMap,
+    p.signal,
   )
   if (failed === chunks.length) {
     throw new Error(`chunked map stage failed: all ${chunks.length} chunk(s) errored`)
@@ -1495,10 +1532,20 @@ async function runChunked(
     temperature: t.temperature?.reduce ?? 0.2,
     retries: 2,
     apiKey: deps.apiKey,
+    signal: p.signal,
   })
   emit.setProgress(88, 'render/synthesize-done')
   deps.bundle?.recordFinalResponse(recapId, content)
-  const parsed = await parseOrRetry(deps, recapId, ledger, content, synth, models.reduceModel, deps.apiKey)
+  const parsed = await parseOrRetry(
+    deps,
+    recapId,
+    ledger,
+    content,
+    synth,
+    models.reduceModel,
+    deps.apiKey,
+    p.signal,
+  )
   return {
     parsed,
     model: models.reduceModel,
