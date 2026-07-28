@@ -307,23 +307,22 @@ describe('processEntry - queue-operation', () => {
   })
 
   it('does not duplicate the second of two MERGED queued messages (regression)', () => {
-    // Two messages queued back-to-back merge into ONE user group (consecutive
-    // user echoes merge). The enqueue for the SECOND then sits at a non-zero
-    // index in that group -- flagging must find it there instead of spawning a
-    // duplicate synthetic bubble. Real incident 2026-07-22: an image message
-    // rendered once inside the first bubble AND again on its own, seconds apart.
+    // Two messages queued back-to-back. The enqueue for the SECOND must find the
+    // existing bubble instead of spawning a duplicate synthetic. Real incident
+    // 2026-07-22: an image message rendered once inside the first bubble AND
+    // again on its own, seconds apart.
+    //
+    // They used to share ONE group (consecutive user echoes merge), which is
+    // what later made a whole batch read as queued. A queued group is now closed
+    // to merges, so this is two groups -- both queued, still no duplicate.
     const { groups } = group([
       userEntry('ALSO NOT Updating over shares'),
-      userEntry('the image message'), // no seq gap -> merges with the first
+      userEntry('the image message'), // no seq gap, but the first group is queued
       queueOp('enqueue', 'ALSO NOT Updating over shares'),
       queueOp('enqueue', 'the image message'),
     ])
 
-    // One merged group holding both messages, queued -- and crucially NO third
-    // (synthetic) bubble echoing the second message.
-    expect(groups).toHaveLength(1)
-    expect(groups[0].entries).toHaveLength(2)
-    expect(groups[0].queued).toBe(true)
+    expect(groups.every(g => g.queued)).toBe(true)
     const copiesOfSecond = groups.filter(g =>
       g.entries.some(e => (e as { message?: { content?: unknown } }).message?.content === 'the image message'),
     )
@@ -335,18 +334,21 @@ describe('processEntry - queue-operation', () => {
     // user]` user row (ARRAY content) that merges AHEAD of the real message, so
     // the real message is not at entries[0]. The enqueue must still find it in
     // the group (by any string entry) and NOT spawn a duplicate synthetic.
+    //
+    // Flagging now splits the group so the interrupt row is not dragged to the
+    // queued rail alongside the message -- two groups, one of them queued.
     const { groups } = group([
       userEntry(textBlocks('[Request interrupted by user]')), // array content, merges first
       userEntry('STOP FUCKING AROUND'),
       queueOp('enqueue', 'STOP FUCKING AROUND'),
     ])
 
-    expect(groups).toHaveLength(1)
-    expect(groups[0].queued).toBe(true)
+    expect(groups.filter(g => g.queued)).toHaveLength(1)
     const copies = groups.filter(g =>
       g.entries.some(e => (e as { message?: { content?: unknown } }).message?.content === 'STOP FUCKING AROUND'),
     )
     expect(copies).toHaveLength(1)
+    expect(copies[0].queued).toBe(true)
   })
 
   it('flags a queued message even when a NEWER unrelated user group sits above it', () => {

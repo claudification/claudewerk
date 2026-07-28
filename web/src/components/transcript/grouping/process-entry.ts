@@ -18,6 +18,7 @@ import {
   NOISE_SYSTEM_SUBTYPES,
   parseTaskNotifications,
 } from './parsers'
+import { handleQueue } from './queue-groups'
 import type { DisplayGroup, GroupingState } from './types'
 
 function handleBoot(entry: TranscriptEntry, state: GroupingState): void {
@@ -64,124 +65,6 @@ function handleCompact(entry: TranscriptEntry, state: GroupingState): void {
       timestamp: entry.timestamp || '',
       entries: [entry],
     })
-  }
-}
-
-/** Does any entry of this user group carry exactly this string content? */
-function userGroupHasText(g: DisplayGroup, content: string): boolean {
-  return g.entries.some(e => {
-    const c = (e as TranscriptUserEntry).message?.content
-    return typeof c === 'string' && c === content
-  })
-}
-
-/** Does any user group already render this text via ARRAY content (joined text
- *  blocks)? The dup-canary: flagExistingUserGroupAsQueued only matches string
- *  content, so an array copy of the same text would slip past and get a
- *  duplicate synthetic. */
-function userGroupHasArrayText(content: string, state: GroupingState): boolean {
-  for (const g of state.groups) {
-    if (g.type !== 'user') continue
-    for (const e of g.entries) {
-      const c = (e as TranscriptUserEntry).message?.content
-      if (!Array.isArray(c)) continue
-      const text = c.map(b => (b.type === 'text' && typeof b.text === 'string' ? b.text : '')).join('')
-      if (text === content) return true
-    }
-  }
-  return false
-}
-
-/**
- * Flag an already-rendered user group as queued, when one of its entries matches
- * this text. Returns false only when the text is present in NO user group.
- *
- * Headless needs this: the agent host emits an optimistic user entry the moment
- * it writes to CC's stdin (stream-backend `sendUserMessage`), so by the time the
- * `enqueue` arrives from the JSONL the bubble already exists. Without the match
- * the message would render twice -- once normally, once as a queued ghost.
- * PTY/daemon have no optimistic entry, find no match, and keep the old
- * create-a-synthetic-group behaviour.
- *
- * TWO reasons this scans ALL user groups and ALL of each group's entries, not
- * just entries[0] of the most-recent one (both are real 2026-07-22 incidents):
- *   1. Two messages queued back-to-back MERGE into one user group, so the second
- *      enqueue's content sits at a non-zero index.
- *   2. An interrupt writes a `[Request interrupted by user]` user row that merges
- *      ahead of the real message, so the real message is not at entries[0] AND a
- *      newer user group may sit above it.
- * If a matching bubble exists ANYWHERE, flagging it (never synthesising) is the
- * only way to avoid rendering the message twice. A synthetic is created ONLY
- * when the text is genuinely absent (the PTY/daemon no-optimistic case).
- */
-function flagExistingUserGroupAsQueued(content: string, state: GroupingState): boolean {
-  for (let gi = state.groups.length - 1; gi >= 0; gi--) {
-    const g = state.groups[gi]
-    if (g.type !== 'user' || !userGroupHasText(g, content)) continue
-    // Replace rather than mutate: a currently-rendering React tree must not be
-    // disturbed mid-commit (React #300).
-    const flagged: DisplayGroup = { ...g, queued: true }
-    state.groups[gi] = flagged
-    if (state.current === g) state.current = flagged
-    return true
-  }
-  return false
-}
-
-// queue-operation: enqueue = user interject, remove = consumed by Claude.
-// enqueue flags the existing user bubble (headless) or creates a queued user
-// group (PTY/daemon); remove clears the queued flag on the most recent queued
-// group (FIFO - multiple enqueues, bulk remove).
-function handleQueue(entry: TranscriptEntry, state: GroupingState): void {
-  if (!isQueue(entry)) return
-  if (entry.operation === 'enqueue' && entry.content) {
-    // Task-notifications are enqueued too but shouldn't float as queued.
-    // They're fire-and-forget system notifications - render inline immediately.
-    // Their dequeue entries may never arrive (different consumption path).
-    if (entry.content.startsWith('<task-notification>')) {
-      const notifications = parseTaskNotifications(entry.content)
-      if (notifications.length > 0) {
-        state.current = null
-        state.groups.push({
-          type: 'system',
-          timestamp: entry.timestamp || '',
-          entries: [entry],
-          notifications,
-        })
-      }
-    } else if (!flagExistingUserGroupAsQueued(entry.content, state)) {
-      // Canary: we are about to synthesise a queued bubble because no user group
-      // holds this text as a STRING. If a group holds the SAME text as ARRAY
-      // content (an interrupted turn, a resend), the synthetic is a DUPLICATE
-      // that flagExistingUserGroupAsQueued can't dedup. Warn so a recurrence is
-      // greppable in devtools. (Console only -- a popped-out window has no console;
-      // routing client diag over WS to the broker is tracked separately.)
-      if (userGroupHasArrayText(entry.content, state)) {
-        console.warn('[queue] synthesising a queued bubble whose text already renders as array content -- likely dup', {
-          preview: entry.content.slice(0, 60),
-          groups: state.groups.length,
-        })
-      }
-      const synthetic: TranscriptUserEntry = {
-        type: 'user',
-        timestamp: entry.timestamp,
-        message: { role: 'user', content: entry.content },
-      }
-      state.current = { type: 'user', timestamp: entry.timestamp || '', entries: [synthetic], queued: true }
-      state.groups.push(state.current)
-    }
-  } else if (entry.operation === 'remove' || entry.operation === 'dequeue' || entry.operation === 'popAll') {
-    // CC drains via `dequeue` (taken straight away, never actually held),
-    // `remove` (held, then folded into a running turn) or `popAll`. Only
-    // popAll clears more than the oldest queued group.
-    for (let gi = 0; gi < state.groups.length; gi++) {
-      const g = state.groups[gi]
-      if (!g.queued) continue
-      const cleared: DisplayGroup = { ...g, queued: false }
-      state.groups[gi] = cleared
-      if (state.current === g) state.current = cleared
-      if (entry.operation !== 'popAll') break
-    }
   }
 }
 
@@ -422,7 +305,12 @@ function mergeMessageEntry(entry: TranscriptEntry, state: GroupingState): void {
   const curBucket = state.current ? seqBucket(state.current.entries[0]) : null
   const newBucket = seqBucket(entry)
   const bucketBreak = curBucket !== null && newBucket !== null && newBucket !== curBucket
-  if (state.current && sameClass && !bucketBreak) {
+  // A QUEUED group is closed. `queued` means "this message is still waiting",
+  // and merging the next message in would hand it the same badge and the same
+  // hoist to the bottom rail -- the whole batch then reads as queued when only
+  // the first one is (see queue-groups.ts). The split done at flag time cannot
+  // defend itself against a later append; this is the other half of that rule.
+  if (state.current && sameClass && !bucketBreak && !state.current.queued) {
     state.current.entries.push(entry)
   } else {
     // A bucket-forced split of a same-type run is a CONTINUATION: rendered
