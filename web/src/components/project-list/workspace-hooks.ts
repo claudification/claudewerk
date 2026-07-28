@@ -40,8 +40,11 @@ function mutateOrder(fn: (order: ProjectOrder) => ProjectOrder) {
   saveProjectOrder(next)
 }
 
+// Always an object, never undefined: the broker reads an OMITTED workspaceTrees
+// as "leave it alone", and JSON drops undefined on the wire -- so emptying the
+// last workspace tree has to travel as an explicit `{}` or it won't stick.
 function setTrees(o: ProjectOrder, trees: Record<string, ProjectOrderNode[]>): ProjectOrder {
-  return { ...o, workspaceTrees: Object.keys(trees).length > 0 ? trees : undefined }
+  return { ...o, workspaceTrees: trees }
 }
 
 export function useWorkspaceActions() {

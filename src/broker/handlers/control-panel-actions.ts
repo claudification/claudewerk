@@ -19,6 +19,8 @@ import { GuardError, type HandlerContext, type MessageHandler, type WsData } fro
 import { DASHBOARD_ROLES, detectRole, registerHandlers } from '../message-router'
 import { resolvePermissions } from '../permissions'
 import { getProjectOrder, type ProjectOrder, setProjectOrder } from '../project-order'
+import { advertiseProjectOrder } from '../project-order-broadcast'
+import { orderUserForSocket } from '../project-order-owner'
 import {
   deleteProjectSettings,
   getAllProjectSettings,
@@ -172,37 +174,12 @@ const updateProjectOrder: MessageHandler = (ctx, data) => {
   }
   ctx.requirePermission('settings')
 
-  setProjectOrder(order)
-  const saved = getProjectOrder()
-
-  // Broadcast filtered order per subscriber's grants (same as HTTP POST handler)
-  for (const ws of ctx.conversations.getSubscribers()) {
-    try {
-      const wsGrants = (ws.data as WsData).grants
-      if (!wsGrants) {
-        ws.send(JSON.stringify({ type: 'project_order_updated', order: saved }))
-      } else {
-        const grants = wsGrants
-        function filterNodes(nodes: ProjectOrder['tree']): ProjectOrder['tree'] {
-          const result: ProjectOrder['tree'] = []
-          for (const node of nodes) {
-            if (node.type === 'project') {
-              const projectUri = node.id
-              const { permissions } = resolvePermissions(grants, projectUri)
-              if (permissions.has('chat:read')) result.push(node)
-            } else if (node.type === 'group') {
-              const children = filterNodes(node.children)
-              if (children.length > 0) result.push({ ...node, children })
-            }
-          }
-          return result
-        }
-        ws.send(JSON.stringify({ type: 'project_order_updated', order: { ...saved, tree: filterNodes(saved.tree) } }))
-      }
-    } catch {
-      /* dead socket */
-    }
-  }
+  // The order is per user: this socket's own row, advertised to that same
+  // user's other devices and nobody else's.
+  const user = orderUserForSocket((ctx.ws.data as WsData).userName)
+  setProjectOrder(user, order)
+  const saved = getProjectOrder(user)
+  advertiseProjectOrder(ctx.conversations, user, saved)
 
   ctx.reply({ type: 'update_project_order_result', ok: true, order: saved })
 }

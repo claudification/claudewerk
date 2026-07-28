@@ -1,6 +1,6 @@
 import { projectIdentityKey } from '@shared/project-uri'
 import { useCallback, useMemo, useState } from 'react'
-import { saveProjectOrder, useConversationStructure, useConversationsStore } from '@/hooks/use-conversations'
+import { saveProjectTree, useConversationStructure, useConversationsStore } from '@/hooks/use-conversations'
 import { extractProjectLabel, flattenProjectOrderTree, type ProjectOrderNode } from '@/lib/types'
 import { parseWorktreeUri } from '@/lib/utils'
 import { applyProjectDragEnd } from '../project-list/use-project-drag-drop'
@@ -119,10 +119,10 @@ export function useOrganizeDraft(): OrganizeDraft {
     [tree, mutate],
   )
 
+  // saveProjectTree, not saveProjectOrder: this modal only edits the tree, and a
+  // bare `{ tree }` used to take every workspace down with it.
   const save = useCallback(() => {
-    const order = { tree: flattenProjectOrderTree(tree) }
-    useConversationsStore.getState().setProjectOrder(order)
-    saveProjectOrder(order)
+    saveProjectTree(flattenProjectOrderTree(tree))
   }, [tree])
 
   return { tree, pool, labelOf, countOf, addGroup, renameGroup, deleteGroup, ungroup, applyDrag, save, dirty }

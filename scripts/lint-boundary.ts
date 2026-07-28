@@ -89,7 +89,9 @@ const ALLOWED_CWD_TO_URI_FILES = new Set([
   'project-store.ts',
   'project-links.ts',
   'project-settings.ts',
-  'project-order.ts',
+  // The `cwd:<path>` -> URI upgrade moved here when project-order.ts split into
+  // store + normalize; same one-time legacy migration, new filename.
+  'project-order-normalize.ts',
   'analytics-store.ts',
   'conversation-store.ts',
   'conversation-store/project-links.ts',

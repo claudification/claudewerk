@@ -39,6 +39,7 @@ import {
   type HookEvent,
   type ProfileUsageSnapshot,
   type ProjectOrder,
+  type ProjectOrderNode,
   type ProjectSettings,
   type ProjectSettingsMap,
   type SubagentInfo,
@@ -1942,4 +1943,19 @@ export async function fetchProjectOrder(): Promise<ProjectOrder> {
 export function saveProjectOrder(order: ProjectOrder): void {
   const flat: ProjectOrder = { ...order, tree: flattenProjectOrderTree(order.tree) }
   wsSend('update_project_order', { order: flat })
+}
+
+/**
+ * Save a TREE-ONLY edit -- group moves, renames, the Organize modal. Those
+ * callers rebuild the tree and know nothing about workspaces, so the workspace
+ * fields are carried over from the current order rather than dropped. Posting a
+ * bare `{ tree }` used to wipe every workspace (2026-07-28); the broker now
+ * merges too, but the store update here is what keeps the sidebar honest before
+ * the round-trip lands.
+ */
+export function saveProjectTree(tree: ProjectOrderNode[]): void {
+  const current = useConversationsStore.getState().projectOrder as ProjectOrder
+  const next: ProjectOrder = { ...current, tree }
+  useConversationsStore.getState().setProjectOrder(next)
+  saveProjectOrder(next)
 }
