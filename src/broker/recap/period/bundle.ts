@@ -50,7 +50,13 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
-import type { RecapAudience, RecapLedgerSummary, RecapPeriodLabel, RecapStatus } from '../../../shared/protocol'
+import type {
+  RecapAudience,
+  RecapChunkFailure,
+  RecapLedgerSummary,
+  RecapPeriodLabel,
+  RecapStatus,
+} from '../../../shared/protocol'
 
 /**
  * Pipeline/schema version. BUMP THIS when the chunk extraction schema, the
@@ -171,8 +177,14 @@ export interface RecapBundleWriter {
   recordCallPrompt(recapId: string, prompt: RecapBundleCallPrompt): number
   /** Record the raw response / failure for a prior recordCallPrompt seq. */
   recordCallResponse(recapId: string, seq: number, prompt: RecapBundleCallPrompt, res: RecapBundleCallResponse): void
-  /** Per-chunk parsed CHUNKED:Intermediary metadata. */
+  /** Per-chunk parsed CHUNKED:Intermediary metadata. Clears any prior failure
+   *  record for that chunk -- a chunk cannot be both extracted and lost. */
   recordMapParsed(recapId: string, chunkIndex: number, parsed: unknown): void
+  /** Per-chunk failure/salvage record. Makes "this chunk was LOST" an artifact
+   *  on disk instead of something a reader has to infer from a missing file --
+   *  which cannot tell a failure apart from an empty chunk or one that never
+   *  ran. Drives the partial banner + the resume UI. */
+  recordMapFailure(recapId: string, chunkIndex: number, record: RecapChunkFailure): void
   /** Deterministic <merge> output. */
   recordMerged(recapId: string, merged: unknown): void
   /** Raw final-stage response text (CHUNKED:Final / ONESHOT) that parsed. Stored
@@ -191,6 +203,8 @@ export interface RecapBundleWriter {
   /** Read one chunk's persisted parsed extraction (resume-from-map reuses these
    *  instead of re-paying the map call). null if that chunk was never persisted. */
   readMapParsed<T = unknown>(recapId: string, chunkIndex: number): T | null
+  /** Every chunk failure recorded for this recap, ascending by chunk index. */
+  readMapFailures(recapId: string): RecapChunkFailure[]
   /** Read the saved final-stage raw response (render-stage input). */
   readFinalResponse(recapId: string): string | null
   /** Read the first assembled prompt recorded for a stage (e.g. 'oneshot'). */
@@ -331,6 +345,10 @@ export function createRecapBundleWriter(cacheDir: string): RecapBundleWriter {
           join(bundleDir(recapId), 'chunks', `map-${chunkIndex}.parsed.json`),
           `${JSON.stringify(parsed, null, 2)}\n`,
         )
+        // A resume that finally extracts this chunk must retract the old verdict,
+        // or the recap stays branded partial over a casualty it no longer has.
+        const stale = join(bundleDir(recapId), 'chunks', `map-${chunkIndex}.failed.json`)
+        if (existsSync(stale)) rmSync(stale, { force: true })
         const manifest = readManifest(recapId)
         if (manifest) {
           manifest.artifacts.mapChunks = Math.max(manifest.artifacts.mapChunks, chunkIndex + 1)
@@ -339,6 +357,17 @@ export function createRecapBundleWriter(cacheDir: string): RecapBundleWriter {
         }
       } catch (err) {
         console.error(`[recap-bundle] map-parsed write failed for ${recapId} chunk=${chunkIndex}:`, describe(err))
+      }
+    },
+
+    recordMapFailure(recapId, chunkIndex, record) {
+      try {
+        writeFileSync(
+          join(bundleDir(recapId), 'chunks', `map-${chunkIndex}.failed.json`),
+          `${JSON.stringify(record, null, 2)}\n`,
+        )
+      } catch (err) {
+        console.error(`[recap-bundle] map-failure write failed for ${recapId} chunk=${chunkIndex}:`, describe(err))
       }
     },
 
@@ -386,6 +415,22 @@ export function createRecapBundleWriter(cacheDir: string): RecapBundleWriter {
 
     readMapParsed<T = unknown>(recapId: string, chunkIndex: number): T | null {
       return readJsonFile<T>(join(bundleDir(recapId), 'chunks', `map-${chunkIndex}.parsed.json`))
+    },
+
+    readMapFailures(recapId: string): RecapChunkFailure[] {
+      const dir = join(bundleDir(recapId), 'chunks')
+      if (!existsSync(dir)) return []
+      const out: RecapChunkFailure[] = []
+      try {
+        for (const name of readdirSync(dir)) {
+          if (!name.endsWith('.failed.json')) continue
+          const record = readJsonFile<RecapChunkFailure>(join(dir, name))
+          if (record) out.push(record)
+        }
+      } catch (err) {
+        console.error(`[recap-bundle] failure scan failed for ${recapId}:`, describe(err))
+      }
+      return out.sort((a, b) => a.chunkIndex - b.chunkIndex)
     },
 
     readFinalResponse(recapId) {

@@ -7,7 +7,7 @@ import { describeSalvage, salvageMapOutput } from './salvage'
 /** The actual response that cost recap_zquf15w44ufh a conversation on
  *  2026-07-28 -- complete (finish_reason=stop), valid in every key except
  *  `dead_ends`, and rejected wholesale by JSON.parse. */
-const INCIDENT = readFileSync(join(import.meta.dir, '__fixtures__', 'malformed-map-dead-ends.json'), 'utf8')
+const INCIDENT = readFileSync(join(import.meta.dir, '__fixtures__', 'malformed-map-dead-ends.txt'), 'utf8')
 
 describe('salvageMapOutput -- the incident fixture', () => {
   test('the fixture really is unparseable (guards the premise)', () => {
@@ -43,7 +43,7 @@ describe('salvageMapOutput -- the incident fixture', () => {
 
   test('recovers enough to be worth keeping', () => {
     const r = salvageMapOutput(INCIDENT)
-    // 24 of 27 items in the original response. Dropping all of it (the old
+    // 29 of 32 items in the original response. Dropping all of it (the old
     // behaviour) is what made the recap partial.
     expect(r.recovered).toBeGreaterThanOrEqual(20)
   })

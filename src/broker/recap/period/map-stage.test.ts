@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { TranscriptChunk } from './chunk/split'
 import { RecapLedger } from './ledger'
 import { mapStageDeadlineMs, type OrchestratorDeps, runMapStage } from './orchestrator'
@@ -171,5 +173,46 @@ describe('runMapStage trusted set (what is safe to cache)', () => {
     expect(result.trusted.has(0)).toBe(false) // empty/skipped -- no evidence either way
     expect(result.trusted.has(2)).toBe(false) // timed out
     expect(result.trusted.has(3)).toBe(false) // unparseable
+  })
+})
+
+describe('runMapStage -- salvage + repair wiring', () => {
+  const INCIDENT = readFileSync(join(import.meta.dir, 'chunk', '__fixtures__', 'malformed-map-dead-ends.txt'), 'utf8')
+
+  function respondOnce(bodies: string[]) {
+    globalThis.fetch = (async () => {
+      const content = bodies.shift() ?? '{"keywords":[]}'
+      return new Response(JSON.stringify({ choices: [{ message: { content } }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }) as unknown as typeof fetch
+  }
+
+  it('repairs a malformed chunk and trusts the result', async () => {
+    respondOnce([INCIDENT, '{"keywords":["k"]}'])
+    const result = await runMapStage(makeDeps(), 'recap_r', new RecapLedger(), noopEmit, [chunk(0, 'BIG')], 'm', {})
+    expect(result.failed).toBe(0)
+    expect(result.salvaged).toBe(0)
+    expect(result.trusted.has(0)).toBe(true)
+    expect(result.failures).toHaveLength(0)
+  })
+
+  it('a salvaged chunk is NOT trusted -- it must never be cached or banked', async () => {
+    respondOnce([INCIDENT, 'still not json'])
+    const result = await runMapStage(makeDeps(), 'recap_s', new RecapLedger(), noopEmit, [chunk(0, 'BIG')], 'm', {})
+    expect(result.salvaged).toBe(1)
+    expect(result.failed).toBe(0)
+    expect(result.trusted.has(0)).toBe(false)
+    expect(result.metas[0].goals).toHaveLength(3) // the data still made it into the run
+    expect(result.failures[0]?.outcome).toBe('salvaged')
+  })
+
+  it('names the conversations behind every casualty', async () => {
+    respondOnce(['not json at all', 'still not'])
+    const result = await runMapStage(makeDeps(), 'recap_n', new RecapLedger(), noopEmit, [chunk(0, 'BIG')], 'm', {})
+    expect(result.failed).toBe(1)
+    expect(result.failures[0]?.conversations.length).toBeGreaterThan(0)
+    expect(result.failures[0]?.conversations[0]?.id).toBeTruthy()
   })
 })

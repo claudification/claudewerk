@@ -7,7 +7,6 @@ import type { CanvasSelection } from './canvas-selection'
 import type { JobRecord } from './cc-daemon/types'
 import type { DialogOp, DialogSnapshot } from './dialog-live'
 import type { DialogLayout, DialogResult } from './dialog-schema'
-import type { RecapSuiteId } from './recap-suites'
 import type {
   NightshiftBlocked,
   NightshiftConfig,
@@ -34,6 +33,7 @@ import type {
   QuestStatusReport,
   QuestTarget,
 } from './quest-schema'
+import type { RecapSuiteId } from './recap-suites'
 import type { SpawnRequest } from './spawn-schema'
 
 export type { LaunchProfile } from './launch-profile'
@@ -5999,6 +5999,9 @@ export interface RecapMeta {
   /** COST 2 -- per-call engine-cost ledger (oneshot/map/reduce/retry).
    *  Absent on pre-ledger recaps; llmCostUsd remains the aggregate. */
   costLedger?: RecapCostLedger
+  /** PARTIAL recaps only: which conversations fell out and why, so the panel
+   *  can show the casualties and offer a resolution instead of a bare count. */
+  failures?: RecapChunkFailure[]
 }
 
 export interface RecapSummary {
@@ -6090,6 +6093,35 @@ export interface RecapMetadata {
   tech_discovered?: RecapItem[]
 }
 
+/**
+ * One chunk of a chunked recap that did NOT produce a clean extraction.
+ *
+ * Persisted per chunk in the run bundle AND carried on the recap row, because
+ * "1 of 169 chunk(s) failed" tells a reader nothing they can act on: it names
+ * no conversation, so the only way to learn what a $9 recap is missing is to
+ * diff the bundle by hand. Chunks are 1:1 with conversations, so we can always
+ * say exactly which ones fell out -- and let the reader decide whether to
+ * re-run them, drop them, or accept the recap as-is.
+ */
+export interface RecapChunkFailure {
+  chunkIndex: number
+  /** 'failed' -- nothing usable came back. 'salvaged' -- a malformed response
+   *  was partially recovered, so the chunk is present but incomplete. */
+  outcome: 'failed' | 'salvaged'
+  /** Conversations whose facts this chunk carried. */
+  conversations: Array<{ id: string; title: string }>
+  /** Why it failed, in the terms an operator needs to decide what to do. */
+  error: string
+  /** True if a repair re-ask was spent trying to recover it. */
+  reAsked?: boolean
+  /** Salvage accounting (outcome='salvaged'): items recovered vs lost. */
+  recovered?: number
+  dropped?: number
+  /** Per-key salvage detail, e.g. "salvaged 29 item(s) (lost: dead_ends -3)". */
+  detail?: string
+  at: number
+}
+
 export interface RecapDigestConversation {
   id: string
   title: string
@@ -6179,7 +6211,11 @@ export interface RecapDigest {
 export type RecapLedgerCostSource = 'openrouter' | 'litellm' | 'unknown'
 
 /** The pipeline stage that issued one LLM call. */
-export type RecapLedgerStage = 'oneshot' | 'map' | 'reduce' | 'retry'
+/** 'retry' = the synthesis re-ask on a malformed final document.
+ *  'map-repair' = the map-stage re-ask on a malformed chunk extraction. Kept
+ *  distinct from 'map' so repair spend is visible in the ledger rather than
+ *  hiding inside the map total. */
+export type RecapLedgerStage = 'oneshot' | 'map' | 'map-repair' | 'reduce' | 'retry'
 
 /** One LLM call in a recap run -- COST 2 (what the recap ENGINE spent),
  *  distinct from COST 1 (what the project spent, in RecapDigest.cost).

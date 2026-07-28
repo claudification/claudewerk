@@ -1,6 +1,13 @@
 import { Database } from 'bun:sqlite'
 import { join } from 'node:path'
-import type { RecapAudience, RecapCostLedger, RecapMeta, RecapMetadata, RecapStatus } from '../../../shared/protocol'
+import type {
+  RecapAudience,
+  RecapChunkFailure,
+  RecapCostLedger,
+  RecapMeta,
+  RecapMetadata,
+  RecapStatus,
+} from '../../../shared/protocol'
 
 // RecapStatus is owned by src/shared/protocol.ts -- re-exported here so the many
 // store-layer importers keep their `from './store'` path. Single source of truth.
@@ -43,6 +50,9 @@ export interface RecapRow {
   ledgerJson: string | null
   /** Resolved tuning-param recipe used to generate this recap (Pillar D). */
   argsJson: string | null
+  /** RecapChunkFailure[] JSON: which conversations a PARTIAL recap is missing
+   *  and why. NULL on a clean recap and on rows that predate the column. */
+  failuresJson: string | null
 }
 
 export interface RecapInsert {
@@ -84,6 +94,7 @@ export type RecapPatch = Partial<
     | 'digestJson'
     | 'ledgerJson'
     | 'argsJson'
+    | 'failuresJson'
   >
 >
 
@@ -535,6 +546,7 @@ interface RawRecapRow {
   digest_json: string | null
   ledger_json: string | null
   args_json: string | null
+  failures_json: string | null
 }
 
 function hydrate(row: RawRecapRow): RecapRow {
@@ -571,6 +583,7 @@ function hydrate(row: RawRecapRow): RecapRow {
     digestJson: row.digest_json,
     ledgerJson: row.ledger_json,
     argsJson: row.args_json,
+    failuresJson: row.failures_json ?? null,
   }
 }
 
@@ -594,6 +607,7 @@ function safeParseJson(value: string): unknown {
 // fallow-ignore-next-line complexity
 export function rowToRecapMeta(row: RecapRow): RecapMeta {
   const costLedger = parseLedger(row.ledgerJson)
+  const failures = parseFailures(row.failuresJson)
   return {
     recapId: row.id,
     projectUri: row.projectUri,
@@ -617,11 +631,21 @@ export function rowToRecapMeta(row: RecapRow): RecapMeta {
     startedAt: row.startedAt ?? undefined,
     completedAt: row.completedAt ?? undefined,
     ...(costLedger ? { costLedger } : {}),
+    ...(failures.length > 0 ? { failures } : {}),
   }
 }
 
 /** Parse the persisted ledger_json into the wire RecapCostLedger, tolerating
  *  NULL (pre-ledger rows) and malformed JSON (returns undefined, never throws). */
+/** Parse the persisted casualty list. Tolerates NULL (clean recap, or a row
+ *  predating the column) and malformed JSON -- never throws, since a broken
+ *  failure record must not be able to take down reading the recap itself. */
+function parseFailures(json: string | null): RecapChunkFailure[] {
+  if (!json) return []
+  const parsed = safeParseJson(json)
+  return Array.isArray(parsed) ? (parsed as RecapChunkFailure[]) : []
+}
+
 function parseLedger(json: string | null): RecapCostLedger | undefined {
   if (!json) return undefined
   const parsed = safeParseJson(json)

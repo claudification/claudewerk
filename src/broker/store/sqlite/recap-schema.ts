@@ -67,7 +67,8 @@ function createRecapsTable(db: Database) {
       audience        TEXT NOT NULL DEFAULT 'human',
       inform_conversation_id TEXT,
       ledger_json     TEXT,
-      args_json       TEXT
+      args_json       TEXT,
+      failures_json   TEXT
     )
   `)
   // ALTER ADD COLUMN for upgrades from the pre-audience shape. SQLite ALTER
@@ -94,6 +95,12 @@ function createRecapsTable(db: Database) {
   }
   if (!recapCols.has('args_json')) {
     db.run('ALTER TABLE recaps ADD COLUMN args_json TEXT')
+  }
+  // Salvage/resilience: per-chunk casualty records (RecapChunkFailure[]) for a
+  // PARTIAL recap -- which conversations fell out and why. Additive; a recap
+  // that predates it keeps NULL and shows only the legacy count in its reason.
+  if (!recapCols.has('failures_json')) {
+    db.run('ALTER TABLE recaps ADD COLUMN failures_json TEXT')
   }
   db.run('CREATE INDEX IF NOT EXISTS idx_recaps_project ON recaps(project_uri, created_at DESC)')
   db.run('CREATE INDEX IF NOT EXISTS idx_recaps_status ON recaps(status)')
