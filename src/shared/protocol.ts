@@ -7,7 +7,6 @@ import type { CanvasSelection } from './canvas-selection'
 import type { JobRecord } from './cc-daemon/types'
 import type { DialogOp, DialogSnapshot } from './dialog-live'
 import type { DialogLayout, DialogResult } from './dialog-schema'
-import type { RecapSuiteId } from './recap-suites'
 import type {
   NightshiftBlocked,
   NightshiftConfig,
@@ -34,6 +33,7 @@ import type {
   QuestStatusReport,
   QuestTarget,
 } from './quest-schema'
+import type { RecapSuiteId } from './recap-suites'
 import type { SpawnRequest } from './spawn-schema'
 
 export type { LaunchProfile } from './launch-profile'

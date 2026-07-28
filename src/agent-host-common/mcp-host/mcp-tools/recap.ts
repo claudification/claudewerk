@@ -18,7 +18,6 @@
  */
 
 import { cwdToProjectUri } from '../../../shared/project-uri'
-import { isRecapSuiteId, SUITE_IDS } from '../../../shared/recap-suites'
 import type {
   PeriodRecapDoc,
   RecapPeriodLabel,
@@ -27,6 +26,7 @@ import type {
   RecapSummary,
   RecapTemplateInfo,
 } from '../../../shared/protocol'
+import { isRecapSuiteId, SUITE_IDS } from '../../../shared/recap-suites'
 import { brokerRpc, hasBrokerRpcSender } from './lib/broker-rpc'
 import { errResult as err, jsonResult, notConnected } from './lib/results'
 import type { McpToolContext, ToolDef } from './types'

@@ -20,8 +20,8 @@ import '@excalidraw/excalidraw/index.css'
 import { isDslScene } from '@shared/draw-dsl'
 import { type ComponentProps, type ReactNode, useCallback, useRef, useState } from 'react'
 import { CANVAS_UI_OPTIONS, CanvasMainMenu } from '@/components/canvas/canvas-chrome'
-import { useCanvasFlush } from './use-canvas-flush'
 import { useInitialData } from './excalidraw-initial-data'
+import { useCanvasFlush } from './use-canvas-flush'
 import { useDslSeed } from './use-dsl-seed'
 
 type ExcalidrawProps = ComponentProps<typeof Excalidraw>

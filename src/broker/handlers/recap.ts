@@ -5,9 +5,9 @@ import type {
   RecapTemplatesRequest,
   RecapTemplatesResult,
 } from '../../shared/protocol'
+import { isRecapSuiteId } from '../../shared/recap-suites'
 import type { HandlerContext, MessageData, MessageHandler } from '../handler-context'
 import { DASHBOARD_ROLES, detectRole, registerHandlers, type WsRole } from '../message-router'
-import { isRecapSuiteId } from '../../shared/recap-suites'
 import { buildTemplateList } from '../recap/templates'
 import { getRecapOrchestrator } from '../recap-orchestrator'
 import { requireStrings } from './validate'

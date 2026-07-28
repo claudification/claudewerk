@@ -38,7 +38,13 @@ const MSG = "![img.png](https://x/y.png)\n.. trend is.. we're spending $10 / day
 function userEntry(seq: number, ts: string, content: string, uuid: string): TranscriptEntry {
   return { type: 'user', seq, timestamp: ts, uuid, message: { role: 'user', content } } as unknown as TranscriptEntry
 }
-function queueOp(seq: number, ts: string, operation: 'enqueue' | 'remove', content: string, uuid: string): TranscriptEntry {
+function queueOp(
+  seq: number,
+  ts: string,
+  operation: 'enqueue' | 'remove',
+  content: string,
+  uuid: string,
+): TranscriptEntry {
   return { type: 'queue-operation', seq, timestamp: ts, uuid, operation, content } as unknown as TranscriptEntry
 }
 function statusEntry(seq: number, ts: string, uuid: string): TranscriptEntry {
@@ -75,7 +81,9 @@ describe('queued badge clears when the remove arrives out of chronology', () => 
     // Sanity: the remove really did splice mid-array (not tail) -- proves the
     // scenario under test, not a degenerate append.
     expect(rendered[rendered.length - 1].type).toBe('system')
-    expect(rendered.some(e => e.type === 'queue-operation' && (e as { operation?: string }).operation === 'remove')).toBe(true)
+    expect(
+      rendered.some(e => e.type === 'queue-operation' && (e as { operation?: string }).operation === 'remove'),
+    ).toBe(true)
 
     const groups = result.current.groups
     const stuck = groups.filter(g => g.queued)

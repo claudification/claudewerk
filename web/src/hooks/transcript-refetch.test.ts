@@ -109,11 +109,7 @@ describe('refetchStaleTranscripts', () => {
     // waves it through and the span renders twice.
     seed([at('user_2329', '23:29:20', 10, 'user'), at('err_2358', '23:58:44', 11)], 11)
     fetchTranscript.mockResolvedValue({
-      entries: [
-        at('user_2329', '23:29:20', 12, 'user'),
-        at('err_2358', '23:58:44', 13),
-        at('fresh', '23:59:30', 14),
-      ],
+      entries: [at('user_2329', '23:29:20', 12, 'user'), at('err_2358', '23:58:44', 13), at('fresh', '23:59:30', 14)],
       lastSeq: 14,
     })
 
@@ -145,7 +141,11 @@ describe('refetchStaleTranscripts', () => {
 
   it('replaces wholesale when the server reports a gap it cannot fill', async () => {
     seed([at('stale', '23:10:00', 1)], 1)
-    fetchTranscript.mockResolvedValue({ entries: [at('x', '23:50:00', 90), at('y', '23:51:00', 91)], lastSeq: 91, gap: true })
+    fetchTranscript.mockResolvedValue({
+      entries: [at('x', '23:50:00', 90), at('y', '23:51:00', 91)],
+      lastSeq: 91,
+      gap: true,
+    })
 
     refetchStaleTranscripts({ [SID]: 91 })
     await settle()

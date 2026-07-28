@@ -289,8 +289,7 @@ export function useIncrementalGroups(
     // index len-1. The count-based slice below would skip the spliced entry
     // entirely (the classic stuck "queued" badge), so treat it as a reset and
     // regroup the whole array. Guarded on len>0 and in-bounds.
-    const tailShifted =
-      cache.len > 0 && cache.len <= entries.length && entries[cache.len - 1] !== cache.tailEntry
+    const tailShifted = cache.len > 0 && cache.len <= entries.length && entries[cache.len - 1] !== cache.tailEntry
     // Full reset if entries shrunk OR array was replaced entirely (HTTP refetch)
     // OR the caller signalled a window change OR an entry landed mid-array.
     const isReset =
