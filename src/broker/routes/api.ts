@@ -19,6 +19,8 @@ import { getGlobalSettings, updateGlobalSettings } from '../global-settings'
 import { getModels, getModelsFetchedAt } from '../model-pricing'
 import { hasPermissionAnyCwd, resolvePermissions, type UserGrant } from '../permissions'
 import { getProjectOrder, type ProjectOrder, setProjectOrder } from '../project-order'
+import { advertiseProjectOrder, scopeOrderToGrants } from '../project-order-broadcast'
+import { orderUserForRequest } from '../project-order-owner'
 import {
   deleteProjectSettings,
   getAllProjectSettings,
@@ -719,28 +721,10 @@ Output a JSON array of strings. Each string should be the correct spelling of on
     return c.json({ ok })
   })
 
-  // Filter a project-order tree to only include nodes the grants can read.
-  function filterProjectOrderTree(nodes: ProjectOrder['tree'], grants: UserGrant[]): ProjectOrder['tree'] {
-    const result: ProjectOrder['tree'] = []
-    for (const node of nodes) {
-      if (node.type === 'project') {
-        const projectUri = node.id
-        const { permissions } = resolvePermissions(grants, projectUri)
-        if (permissions.has('chat:read')) result.push(node)
-      } else if (node.type === 'group') {
-        const children = filterProjectOrderTree(node.children, grants)
-        if (children.length > 0) result.push({ ...node, children })
-      }
-    }
-    return result
-  }
-
-  // ─── Project order ─────────────────────────────────────────────────
+  // ─── Project order (per user) ──────────────────────────────────────
   app.get('/api/project-order', c => {
-    const order = getProjectOrder()
-    const grants = resolveHttpGrants(c.req.raw)
-    if (!grants) return c.json(order) // admin sees full tree
-    return c.json({ ...order, tree: filterProjectOrderTree(order.tree, grants) })
+    const order = getProjectOrder(orderUserForRequest(c.req.raw))
+    return c.json(scopeOrderToGrants(order, resolveHttpGrants(c.req.raw)))
   })
 
   app.post('/api/project-order', async c => {
@@ -750,18 +734,11 @@ Output a JSON array of strings. Each string should be the correct spelling of on
     if (!Array.isArray(body.tree)) {
       return c.json({ error: 'Invalid project order: expected { tree: [...] }' }, 400)
     }
-    setProjectOrder(body as ProjectOrder)
-    const order = getProjectOrder()
-    // Broadcast filtered order per subscriber's grants
-    for (const ws of conversationStore.getSubscribers()) {
-      try {
-        const wsGrants = (ws.data as { grants?: UserGrant[] }).grants
-        const scopedOrder = wsGrants ? { ...order, tree: filterProjectOrderTree(order.tree, wsGrants) } : order
-        ws.send(JSON.stringify({ type: 'project_order_updated', order: scopedOrder }))
-      } catch {
-        /* dead socket */
-      }
-    }
+    const user = orderUserForRequest(c.req.raw)
+    setProjectOrder(user, body as ProjectOrder)
+    const order = getProjectOrder(user)
+    // Only this user's own devices care -- everyone else has their own row.
+    advertiseProjectOrder(conversationStore, user, order)
     return c.json({ success: true, order })
   })
 

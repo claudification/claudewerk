@@ -1,13 +1,19 @@
 /**
- * Project Order - persistent tree structure for the sidebar project list.
+ * Project Order -- the persistent sidebar structure: the project/group tree plus
+ * the workspace tier (`workspaces` + per-workspace trees).
  *
- * Each leaf node represents a project keyed by its project URI
- * (e.g. `claude:///Users/jonas/projects/remote-claude`).
- * Legacy `cwd:<path>` node IDs are migrated on load.
- * Backed by StoreDriver KVStore (replaces JSON file persistence).
+ * PER USER. Each user owns a row at `project-order:<user>`; nobody sees anyone
+ * else's tabs or grouping. The pre-per-user shared row (`project-order`) is the
+ * SEED: a user with no row of their own starts from it, and forks on first write.
+ * The seed row is never written again, so it stays a stable starting point.
+ *
+ * Leaf node IDs are canonical project URIs (`claude://default/path`); legacy
+ * `cwd:<path>` IDs migrate on load. Normalization lives in
+ * project-order-normalize.ts; owner resolution in project-order-owner.ts.
  */
 
-import { cwdToProjectUri, projectIdentityKey } from '../shared/project-uri'
+import type { ProjectOrder } from '../shared/project-order-types'
+import { isLegacyFormat, normalize } from './project-order-normalize'
 import type { KVStore } from './store/types'
 
 // Types live in the shared module so the broker + web never drift. Only
@@ -15,196 +21,78 @@ import type { KVStore } from './store/types'
 // directly from the shared module).
 export type { ProjectOrder } from '../shared/project-order-types'
 
-import type { ProjectOrder, ProjectOrderNode, Workspace } from '../shared/project-order-types'
-
-// Guard-heavy input validator: cyclomatic is driven entirely by inherent type
-// guards (cognitively trivial), and fallow's CRAP threshold grandfathers the far
-// more complex normalize() in this same file. Kept as one readable function.
-// fallow-ignore-next-line complexity
-function sanitizeWorkspaces(raw: unknown): Workspace[] | undefined {
-  if (!Array.isArray(raw)) return undefined
-  const out: Workspace[] = []
-  const seen = new Set<string>()
-  for (const w of raw) {
-    if (!w || typeof w !== 'object') continue
-    const o = w as Record<string, unknown>
-    if (typeof o.id !== 'string' || typeof o.name !== 'string' || seen.has(o.id)) continue
-    seen.add(o.id)
-    out.push({ id: o.id, name: o.name, ...(typeof o.color === 'string' ? { color: o.color } : {}) })
-  }
-  return out.length > 0 ? out : undefined
-}
-
-/** Sanitize per-workspace trees. Only keeps entries for valid workspace ids. */
-function sanitizeWorkspaceTrees(
-  raw: unknown,
-  validWs: Set<string>,
-  walkFn: (nodes: unknown[]) => ProjectOrderNode[],
-): Record<string, ProjectOrderNode[]> | undefined {
-  if (!raw || typeof raw !== 'object') return undefined
-  const out: Record<string, ProjectOrderNode[]> = {}
-  for (const [wsId, tree] of Object.entries(raw as Record<string, unknown>)) {
-    if (!validWs.has(wsId) || !Array.isArray(tree)) continue
-    const walked = walkFn(tree)
-    if (walked.length > 0) out[wsId] = walked
-  }
-  return Object.keys(out).length > 0 ? out : undefined
-}
-
-/** Migrate legacy assignments to workspaceTrees. For each assignment, find
- *  the root node in the global tree and copy it into the workspace tree. */
-function migrateAssignments(
-  assignments: Record<string, string>,
-  globalTree: ProjectOrderNode[],
-): Record<string, ProjectOrderNode[]> {
-  const trees: Record<string, ProjectOrderNode[]> = {}
-  for (const [nodeId, wsId] of Object.entries(assignments)) {
-    const node = globalTree.find(n => n.id === nodeId)
-    if (!node) continue
-    const list = trees[wsId] ?? []
-    list.push(structuredClone(node))
-    trees[wsId] = list
-  }
-  return trees
-}
-
-const KV_KEY = 'project-order'
+/** Pre-per-user row. Read-only seed once a user has their own row. */
+const SEED_KEY = 'project-order'
+const keyFor = (user: string) => `project-order:${user}`
 
 let kv: KVStore | null = null
-let order: ProjectOrder = { tree: [] }
+/** userId -> that user's order. Populated lazily on first read. */
+const cache = new Map<string, ProjectOrder>()
 
-/** Migrate a node ID from legacy `cwd:<path>` format to a canonical project URI.
- *  Also collapses profile userinfo, empty authority, quad-slash scars, and
- *  conversation fragments so sibling tree entries that name the same project
- *  dedupe into one node. */
-function migrateNodeId(id: string): string {
-  const upgraded = id.startsWith('cwd:') ? cwdToProjectUri(id.slice(4)) : id
-  return projectIdentityKey(upgraded)
-}
-
-/**
- * Normalize legacy in-memory shapes to the current format. Accepts:
- *   - Current: { tree: [...] } with node.type === 'project' | 'group'
- *   - Legacy v2: { version: 2, tree: [...] } with leaf node.type === 'session'
- *   - Legacy node IDs: `cwd:<path>` -> project URI
- * Anything else returns an empty tree.
- */
-// fallow-ignore-next-line complexity
-function normalize(raw: unknown): { order: ProjectOrder; migrated: boolean } {
-  if (!raw || typeof raw !== 'object') return { order: { tree: [] }, migrated: false }
-  const obj = raw as Record<string, unknown>
-  if (!Array.isArray(obj.tree)) return { order: { tree: [] }, migrated: false }
-
-  let migrated = false
-
-  function walk(nodes: unknown[]): ProjectOrderNode[] {
-    const out: ProjectOrderNode[] = []
-    // Dedupe project IDs within this level -- profile-collapsed siblings
-    // would otherwise produce duplicate keys that dnd-kit chokes on.
-    const seenProjects = new Set<string>()
-    for (const n of nodes) {
-      if (!n || typeof n !== 'object') continue
-      const node = n as Record<string, unknown>
-      if (node.type === 'group' && typeof node.id === 'string' && typeof node.name === 'string') {
-        const children = Array.isArray(node.children) ? walk(node.children) : []
-        out.push({
-          id: node.id,
-          type: 'group',
-          name: node.name,
-          children,
-          ...(typeof node.isOpen === 'boolean' ? { isOpen: node.isOpen } : {}),
-        })
-      } else if ((node.type === 'project' || node.type === 'session') && typeof node.id === 'string') {
-        const newId = migrateNodeId(node.id)
-        if (newId !== node.id) migrated = true
-        if (seenProjects.has(newId)) {
-          migrated = true
-          continue
-        }
-        seenProjects.add(newId)
-        out.push({ id: newId, type: 'project' })
-      }
-    }
-    return out
-  }
-
-  const globalTree = walk(obj.tree)
-  const workspaces = sanitizeWorkspaces(obj.workspaces)
-  const validWsIds = new Set((workspaces ?? []).map(w => w.id))
-
-  // Migrate legacy assignments -> workspaceTrees
-  let workspaceTrees = sanitizeWorkspaceTrees(obj.workspaceTrees, validWsIds, walk)
-  if (!workspaceTrees && obj.assignments && typeof obj.assignments === 'object') {
-    const legacy: Record<string, string> = {}
-    for (const [k, v] of Object.entries(obj.assignments as Record<string, unknown>)) {
-      if (typeof v === 'string' && validWsIds.has(v)) legacy[k] = v
-    }
-    if (Object.keys(legacy).length > 0) {
-      workspaceTrees = migrateAssignments(legacy, globalTree)
-      migrated = true
-    }
-  }
-
-  return {
-    order: {
-      tree: globalTree,
-      ...(workspaces ? { workspaces } : {}),
-      ...(workspaceTrees ? { workspaceTrees } : {}),
-    },
-    migrated,
-  }
-}
+const EMPTY: ProjectOrder = { tree: [] }
 
 export function initProjectOrder(store: KVStore): void {
   kv = store
+  cache.clear()
+}
 
-  const raw = kv.get<Record<string, unknown>>(KV_KEY)
-  if (raw) {
-    try {
-      const wasLegacyFormat =
-        'version' in raw || JSON.stringify((raw as { tree?: unknown }).tree ?? []).includes('"type":"session"')
-
-      const { order: normalized, migrated: hadCwdIds } = normalize(raw)
-      order = normalized
-
-      if (wasLegacyFormat || hadCwdIds) save()
-    } catch {
-      order = { tree: [] }
-    }
+/** Read + normalize one KV row. Re-saves in place when the stored shape was
+ *  legacy, so the migration happens once rather than on every read. */
+function loadRow(key: string, persistMigration: boolean): ProjectOrder | null {
+  if (!kv) return null
+  const raw = kv.get<Record<string, unknown>>(key)
+  if (!raw) return null
+  try {
+    const { order, migrated } = normalize(raw)
+    if (persistMigration && (isLegacyFormat(raw) || migrated)) kv.set(key, order)
+    return order
+  } catch {
+    return EMPTY
   }
 }
 
-function save(): void {
-  if (!kv) return
-  kv.set(KV_KEY, order)
-}
-
-export function getProjectOrder(): ProjectOrder {
+/**
+ * A user's order. Falls back to the shared seed row for a user who has never
+ * saved -- so nobody lands on an empty sidebar the first time they log in after
+ * the per-user cutover.
+ */
+export function getProjectOrder(user: string): ProjectOrder {
+  const cached = cache.get(user)
+  if (cached) return cached
+  const own = loadRow(keyFor(user), true)
+  // The seed is normalized but NOT re-saved under its own key: it stays the
+  // untouched starting point for every user who has not forked yet.
+  const order = own ?? loadRow(SEED_KEY, false) ?? EMPTY
+  cache.set(user, order)
   return order
 }
 
-export function setProjectOrder(update: ProjectOrder): void {
-  if (!update || !Array.isArray(update.tree)) return
-  const { order: normalized } = normalize(update)
-  order = normalized
-  save()
-}
-
-/** Extract all project URIs from a subtree. Routes through migrateNodeId so
- *  legacy or profile-bearing leaf IDs return their canonical form. */
-function getAllTreeProjects(nodes: ProjectOrderNode[] = order.tree): Set<string> {
-  const uris = new Set<string>()
-  for (const node of nodes) {
-    if (node.type === 'project') {
-      uris.add(migrateNodeId(node.id))
-    } else {
-      for (const u of getAllTreeProjects(node.children)) uris.add(u)
-    }
+/**
+ * Merge a partial update onto the user's stored order: a field the writer
+ * OMITTED means "leave it alone", never "delete it".
+ *
+ * This exists because the control panel has writers that predate workspaces --
+ * "Move to group", "Rename group", the Organize Projects modal -- and each
+ * rebuilds a bare `{ tree }`. Under the old wholesale replace, every one of
+ * those group operations silently destroyed `workspaces` + `workspaceTrees`
+ * (the 2026-07-28 wipe, unrecoverable from backups).
+ *
+ * Deleting is still possible, it just has to be deliberate: send an explicit
+ * empty `[]` / `{}`. Note that `undefined` does NOT survive JSON transport, so
+ * a key-presence check would read "explicitly cleared" as "omitted" on the wire
+ * -- explicit-empty is the only delete signal that crosses the socket intact.
+ */
+function mergeOntoStored(update: ProjectOrder, stored: ProjectOrder): ProjectOrder {
+  return {
+    ...update,
+    workspaces: update.workspaces ?? stored.workspaces,
+    workspaceTrees: update.workspaceTrees ?? stored.workspaceTrees,
   }
-  return uris
 }
 
-/** @deprecated Use getAllTreeProjects() instead. */
-function _getAllTreeCwds(nodes: ProjectOrderNode[] = order.tree): Set<string> {
-  return getAllTreeProjects(nodes)
+export function setProjectOrder(user: string, update: ProjectOrder): void {
+  if (!update || !Array.isArray(update.tree)) return
+  const { order } = normalize(mergeOntoStored(update, getProjectOrder(user)))
+  cache.set(user, order)
+  kv?.set(keyFor(user), order)
 }

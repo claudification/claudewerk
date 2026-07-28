@@ -2,12 +2,12 @@ import { projectIdentityKey } from '@shared/project-uri'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   type ConversationStructure,
-  saveProjectOrder,
+  saveProjectTree,
   useConversationStructure,
   useConversationsStore,
   wsSend,
 } from '@/hooks/use-conversations'
-import type { ProjectOrder, ProjectOrderNode } from '@/lib/types'
+import type { ProjectOrderNode } from '@/lib/types'
 import { parseWorktreeUri } from '@/lib/utils'
 import { MaybeProfiler } from './perf-profiler'
 import { ConversationCompactPeek, InactiveProjectItem } from './project-list/conversation-item'
@@ -308,9 +308,8 @@ export function ProjectList() {
           return n
         })
       }
-      const newOrder: ProjectOrder = { tree: renameInTree(projectOrder.tree) }
-      useConversationsStore.getState().setProjectOrder(newOrder)
-      saveProjectOrder(newOrder)
+      // Tree-only edit -- saveProjectTree carries the workspace fields over.
+      saveProjectTree(renameInTree(projectOrder.tree))
     },
     [projectOrder],
   )

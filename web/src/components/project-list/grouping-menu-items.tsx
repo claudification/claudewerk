@@ -5,7 +5,7 @@
  */
 
 import { ContextMenu } from 'radix-ui'
-import { saveProjectOrder, useConversationsStore } from '@/hooks/use-conversations'
+import { saveProjectTree, useConversationsStore } from '@/hooks/use-conversations'
 import type { ProjectOrder, ProjectOrderGroup } from '@/lib/types'
 import { haptic } from '@/lib/utils'
 import { menuContentClass, menuItemClass, menuSeparatorClass } from './menu-shared'
@@ -18,22 +18,23 @@ function useProjectGroupingActions(project: string) {
   const groups = projectOrder.tree.filter((n): n is ProjectOrderGroup => n.type === 'group')
 
   // The tree edits themselves are pure and live in project-order-tree.ts; this
-  // hook only supplies the current tree, the haptic, and the save.
+  // hook only supplies the current tree, the haptic, and the save. saveProjectTree
+  // (not saveProjectOrder) because a bare `{ tree }` drops the workspace fields.
   function moveToGroup(groupId: string) {
     haptic('tap')
-    saveProjectOrder({ tree: moveIntoGroup(projectOrder.tree, project, groupId) })
+    saveProjectTree(moveIntoGroup(projectOrder.tree, project, groupId))
   }
 
   function ungroup() {
     haptic('tap')
-    saveProjectOrder({ tree: removeFromGroups(projectOrder.tree, project) })
+    saveProjectTree(removeFromGroups(projectOrder.tree, project))
   }
 
   function createGroupAndMove() {
     const name = prompt('Group name:')
     if (!name?.trim()) return
     haptic('tap')
-    saveProjectOrder({ tree: createGroupWith(projectOrder.tree, project, name, Date.now()) })
+    saveProjectTree(createGroupWith(projectOrder.tree, project, name, Date.now()))
   }
 
   return { groups, moveToGroup, ungroup, createGroupAndMove }
