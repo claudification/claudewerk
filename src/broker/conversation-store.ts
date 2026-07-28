@@ -1356,7 +1356,10 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
         store.conversations.update(conv.id, {
           status: conv.status,
           model: conv.model,
-          title: conv.title,
+          // `?? null` so a CLEARED title (rename back to the auto name) actually
+          // reaches the column. `undefined` means "don't touch", which left the
+          // old custom title in SQLite to resurrect on the next restart.
+          title: conv.title ?? null,
           summary: conv.summary,
           lastActivity: conv.lastActivity,
           endedAt: conv.status === 'ended' ? conv.lastActivity : undefined,

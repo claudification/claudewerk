@@ -81,7 +81,10 @@ export interface ConversationCreate {
 export interface ConversationPatch {
   status?: string
   model?: string
-  title?: string
+  /** `undefined` = leave the column alone. `null` = CLEAR it -- a rename back to
+   *  the auto-generated name has no title, and without an explicit null the
+   *  clear was dropped and the old custom title returned on the next restart. */
+  title?: string | null
   summary?: string
   label?: string
   icon?: string

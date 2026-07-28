@@ -11,7 +11,7 @@
 
 import { describe, expect, it } from 'bun:test'
 import { GuardError, type HandlerContext, type WsData } from '../handler-context'
-import { renameConversation } from './control-panel-actions'
+import { renameConversation } from './rename-conversation'
 
 interface MockConversation {
   id: string
@@ -29,6 +29,10 @@ interface CtxOpts {
   updates: string[]
   replies: Record<string, unknown>[]
   permissionThrows: boolean
+  /** Messages the handler pushed down the agent-host socket. */
+  hostSends: Record<string, unknown>[]
+  /** false = no live agent host (ended conversation / host not booted). */
+  hasHostSocket: boolean
 }
 
 function makeCtx(conversation: MockConversation | undefined, opts: Partial<CtxOpts> = {}): HandlerContext {
@@ -40,14 +44,20 @@ function makeCtx(conversation: MockConversation | undefined, opts: Partial<CtxOp
     updates: [],
     replies: [],
     permissionThrows: false,
+    hostSends: [],
+    hasHostSocket: true,
     ...opts,
   }
+  const hostSocket = { send: (raw: string) => o.hostSends.push(JSON.parse(raw)) }
   return {
     ws: { data: o.wsData },
     conversations: {
       getConversation: (id: string) => (conversation && conversation.id === id ? conversation : undefined),
       persistConversationById: (id: string) => o.persisted.push(id),
       broadcastConversationUpdate: (id: string) => o.updates.push(id),
+      getConversationSocket: () => (o.hasHostSocket ? hostSocket : undefined),
+      getConnectionIds: () => [],
+      findSocketByConversationId: () => undefined,
     },
     requireBenevolent: () => {
       if (!o.benevolent) throw new GuardError('Requires benevolent trust level')
@@ -144,6 +154,48 @@ describe('rename_conversation authz', () => {
     const ctx = makeCtx(conv, { wsData: { conversationId: 'conv_self' } })
     renameConversation(ctx, { conversationId: 'conv_self', name: 'first-name' })
     expect(conv.formerSlugs ?? []).toEqual([])
+  })
+
+  // The broker's title and CC's own title are two copies of one fact. If only
+  // the broker's copy moves, CC's stale `custom-title` JSONL line reverts the
+  // rename on the next transcript replay -- which is exactly how renames looked
+  // "not persisted" after a broker restart.
+  it('REGRESSION: pushes set_title down to the live agent host so CC renames itself', () => {
+    const conv: MockConversation = { id: 'conv_self', project: 'claude:///x', title: 'stellar-cobra' }
+    const hostSends: Record<string, unknown>[] = []
+    const ctx = makeCtx(conv, { wsData: { conversationId: 'conv_self' }, hostSends })
+
+    renameConversation(ctx, { conversationId: 'conv_self', name: 'bug-rename-clobber' })
+
+    expect(hostSends).toEqual([{ type: 'control', action: 'set_title', title: 'bug-rename-clobber' }])
+  })
+
+  it('pushes nothing when the title is CLEARED -- there is no name to give CC', () => {
+    const conv: MockConversation = { id: 'conv_self', project: 'claude:///x', title: 'old', titleUserSet: true }
+    const hostSends: Record<string, unknown>[] = []
+    const ctx = makeCtx(conv, { wsData: { conversationId: 'conv_self' }, hostSends })
+
+    renameConversation(ctx, { conversationId: 'conv_self', name: '' })
+
+    expect(hostSends).toEqual([])
+  })
+
+  it('still persists + replies when there is no live agent host to push to', () => {
+    const conv: MockConversation = { id: 'conv_self', project: 'claude:///x' }
+    const replies: Record<string, unknown>[] = []
+    const persisted: string[] = []
+    const ctx = makeCtx(conv, {
+      wsData: { conversationId: 'conv_self' },
+      hasHostSocket: false,
+      replies,
+      persisted,
+    })
+
+    renameConversation(ctx, { conversationId: 'conv_self', name: 'offline-rename' })
+
+    expect(conv.title).toBe('offline-rename')
+    expect(persisted).toEqual(['conv_self'])
+    expect(replies[0]).toMatchObject({ ok: true })
   })
 
   it('renaming back to a former name drops it from formerSlugs', () => {

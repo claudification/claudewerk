@@ -160,8 +160,16 @@ export interface WsClientOptions {
       | 'set_model'
       | 'set_effort'
       | 'set_permission_mode'
-      | 'cancel_background_task',
-    args: { model?: string; effort?: string; permissionMode?: string; taskId?: string; fromConversation?: string },
+      | 'cancel_background_task'
+      | 'set_title',
+    args: {
+      model?: string
+      effort?: string
+      permissionMode?: string
+      taskId?: string
+      title?: string
+      fromConversation?: string
+    },
   ) => void
   /** Optional sink for structured diagnostics from inside the ws client.
    *  Wired to ctx.diag by index.ts so the dashboard's diag endpoint can
@@ -451,24 +459,28 @@ export function createWsClient(options: WsClientOptions): WsClient {
       }
       case 'control': {
         const action = message.action
-        if (
-          action === 'clear' ||
-          action === 'quit' ||
-          action === 'interrupt' ||
-          action === 'set_model' ||
-          action === 'set_effort' ||
-          action === 'set_permission_mode' ||
-          action === 'cancel_background_task'
-        ) {
-          onControl?.(action, {
-            model: typeof message.model === 'string' ? message.model : undefined,
-            effort: typeof message.effort === 'string' ? message.effort : undefined,
-            permissionMode: typeof message.permissionMode === 'string' ? message.permissionMode : undefined,
-            taskId: typeof message.taskId === 'string' ? message.taskId : undefined,
-            fromConversation: typeof message.fromConversation === 'string' ? message.fromConversation : undefined,
-          })
-        } else {
-          debug(`control: unknown action "${String(action)}"`)
+        // Fall-through allowlist: every known verb lands on the same dispatch,
+        // anything else is logged and dropped. Adding a verb = adding a case.
+        switch (action) {
+          case 'clear':
+          case 'quit':
+          case 'interrupt':
+          case 'set_model':
+          case 'set_effort':
+          case 'set_permission_mode':
+          case 'cancel_background_task':
+          case 'set_title':
+            onControl?.(action, {
+              model: typeof message.model === 'string' ? message.model : undefined,
+              effort: typeof message.effort === 'string' ? message.effort : undefined,
+              permissionMode: typeof message.permissionMode === 'string' ? message.permissionMode : undefined,
+              taskId: typeof message.taskId === 'string' ? message.taskId : undefined,
+              title: typeof message.title === 'string' ? message.title : undefined,
+              fromConversation: typeof message.fromConversation === 'string' ? message.fromConversation : undefined,
+            })
+            break
+          default:
+            debug(`control: unknown action "${String(action)}"`)
         }
         break
       }

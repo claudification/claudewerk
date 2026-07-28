@@ -2581,14 +2581,23 @@ export interface ConversationControlResult {
   error?: string
 }
 
+/**
+ * Verbs the broker delivers to an agent host. A superset of the user-facing
+ * `ConversationControlAction`: `set_title` is broker-INTERNAL, emitted by the
+ * rename handler so CC renames itself. It is deliberately NOT a dashboard or
+ * MCP verb -- `rename_conversation` stays the single rename surface.
+ */
+export type AgentHostControlAction = ConversationControlAction | 'set_title'
+
 /** Broker -> agent host: execute a control verb against the local CC. */
 export interface ControlDeliver {
   type: 'control'
-  action: ConversationControlAction
+  action: AgentHostControlAction
   model?: string
   effort?: string
   permissionMode?: string
   taskId?: string // required when action === 'cancel_background_task'
+  title?: string // required when action === 'set_title'
   fromConversation?: string
 }
 

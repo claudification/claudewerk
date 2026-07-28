@@ -61,6 +61,25 @@ function runStoreTests(name: string, createDriver: () => StoreDriver) {
         expect(conv.agentType).toBe('claude')
       })
 
+      // REGRESSION: renaming to an empty name clears the title, but `undefined`
+      // in a patch means "leave this column alone" -- so the clear was silently
+      // dropped and the old custom title came back on the next broker restart.
+      // `null` is the explicit "set this column to NULL".
+      it('title: null clears the column (undefined still means "do not touch")', () => {
+        store.conversations.create({
+          id: 'sess-clear',
+          scope: 'scope-1',
+          agentType: 'claude',
+          title: 'user-renamed',
+        })
+
+        store.conversations.update('sess-clear', { model: 'opus' })
+        expect(store.conversations.get('sess-clear')!.title).toBe('user-renamed')
+
+        store.conversations.update('sess-clear', { title: null })
+        expect(store.conversations.get('sess-clear')!.title).toBeUndefined()
+      })
+
       it('delete removes the conversation', () => {
         store.conversations.create({ id: 'sess-del', scope: 's', agentType: 'claude' })
         store.conversations.delete('sess-del')

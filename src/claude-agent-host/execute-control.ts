@@ -9,7 +9,14 @@ import { canonicalizeModelSlug } from '../shared/models'
 import type { AgentHostContext } from './agent-host-context'
 import { beginLaunch, emitLaunchEvent } from './launch-events'
 
-type ControlArgs = { model?: string; effort?: string; permissionMode?: string; taskId?: string; source?: string }
+type ControlArgs = {
+  model?: string
+  effort?: string
+  permissionMode?: string
+  taskId?: string
+  title?: string
+  source?: string
+}
 
 type ControlAction =
   | 'clear'
@@ -19,6 +26,7 @@ type ControlAction =
   | 'set_effort'
   | 'set_permission_mode'
   | 'cancel_background_task'
+  | 'set_title'
 
 /**
  * Expand claudewerk-only model aliases (e.g. `mythos` -> claude-mythos-5) before
@@ -46,7 +54,7 @@ export function executeControl(ctx: AgentHostContext, action: ControlAction, arg
 function executeHeadlessControl(
   ctx: AgentHostContext,
   action: string,
-  args: { model?: string; effort?: string; permissionMode?: string; taskId?: string },
+  args: { model?: string; effort?: string; permissionMode?: string; taskId?: string; title?: string },
   source: string,
 ): boolean {
   if (!ctx.streamProc) return false
@@ -94,6 +102,19 @@ function executeHeadlessControl(
       ctx.diag('conversation', `Set permission mode requested (${source}): ${args.permissionMode}`)
       ctx.streamProc.sendSetPermissionMode(args.permissionMode)
       return true
+    case 'set_title': {
+      if (!args.title) return false
+      const title = args.title
+      // Keep CC's own title in step with the broker's. Without this the two
+      // copies diverge and CC's stale `custom-title` JSONL line reverts the
+      // rename on the next transcript replay. Fire-and-forget: the broker has
+      // already persisted + broadcast, this is the second writer catching up.
+      ctx.diag('conversation', `Set title requested (${source}): ${title}`)
+      void ctx.streamProc.sendControlRequest('rename_session', { title }).then(r => {
+        if (!r.ok) ctx.diag('conversation', `rename_session failed: ${r.error ?? 'unknown'}`)
+      })
+      return true
+    }
     case 'cancel_background_task': {
       if (!args.taskId) return false
       const taskId = args.taskId
@@ -114,7 +135,7 @@ function executeHeadlessControl(
 function executePtyControl(
   ctx: AgentHostContext,
   action: string,
-  args: { model?: string; effort?: string; permissionMode?: string; taskId?: string },
+  args: { model?: string; effort?: string; permissionMode?: string; taskId?: string; title?: string },
   source: string,
 ): boolean {
   if (!ctx.ptyProcess) return false
@@ -147,6 +168,14 @@ function executePtyControl(
       if (!args.permissionMode) return false
       ctx.diag('conversation', `Set permission mode not supported in PTY mode (${source}): ${args.permissionMode}`)
       return false
+    case 'set_title':
+      if (!args.title) return false
+      // PTY has no control_request channel -- `/rename` is CC's own slash
+      // command for the same thing, and its "Session renamed to:" reply is
+      // what detectRename already parses back out. Same trick as /model above.
+      ctx.diag('conversation', `Set title requested (${source}): ${args.title}`)
+      ctx.ptyProcess.write(`/rename ${args.title}\r`)
+      return true
     case 'cancel_background_task':
       // Background tasks are a headless/stream-json feature; a PTY session has
       // no control_request channel to stop one. No-op.

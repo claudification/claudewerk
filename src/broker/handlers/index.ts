@@ -27,6 +27,7 @@ import { registerProjectHandlers } from './project'
 import { registerQuestHandlers } from './quest'
 import { registerRclaudeConfigHandlers } from './rclaude-config'
 import { registerRecapHandlers } from './recap'
+import { registerRenameHandlers } from './rename-conversation'
 import { registerSentinelHandlers } from './sentinel'
 import { registerShellHandlers } from './shell'
 import { registerSotuHandlers } from './sotu'
@@ -52,6 +53,7 @@ export function registerAllHandlers(): void {
   registerChannelHandlers()
   registerChecklistHandlers()
   registerDashboardActionHandlers()
+  registerRenameHandlers()
   registerDispatchHandlers()
   registerVoiceOrbHandlers()
   registerDialogHandlers()
