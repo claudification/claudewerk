@@ -17,6 +17,7 @@ import type {
 } from '../shared/protocol'
 import { normalizeTodoStatus } from '../shared/task-normalize'
 import type { AgentHostContext } from './agent-host-context'
+import { splitCoalescedPrompts } from './coalesced-prompt-split'
 import { debug as _debug, DEBUG } from './debug'
 import { translateClaudeToolResult, translateClaudeToolUse } from './dialect/from-claude'
 import { unifyHeadlessPromptUuids } from './synthetic-user-uuid'
@@ -584,11 +585,16 @@ export function startTranscriptWatcher(ctx: AgentHostContext, transcriptPath: st
     // than losing the watcher to a one-shot ENOENT.
     waitForFileMs: ctx.headless ? 15_000 : 0,
     onEntries(entries, isInitial) {
-      // Filter out subagent entries -- they have their own file watchers
-      const parentEntries = selectForwardableEntries(filterParentEntries(entries), {
-        headless: ctx.headless,
-        isInitial,
-      })
+      // Filter out subagent entries -- they have their own file watchers.
+      // The coalescing split runs BEFORE the forward filter because it reads the
+      // `queue-operation` rows, which the headless isInitial cell strips. It is
+      // headless-only: it exists to collapse the file echo into a LIVE echo, and
+      // PTY has no live echo for it to collide with.
+      const own = filterParentEntries(entries)
+      const parentEntries = selectForwardableEntries(
+        ctx.headless ? splitCoalescedPrompts(own, ctx.conversationId) : own,
+        { headless: ctx.headless, isInitial },
+      )
       if (parentEntries.length > 0) {
         sendTranscriptEntriesChunked(ctx, parentEntries, isInitial)
       }

@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { TranscriptEntry } from '../shared/protocol'
 import type { AgentHostContext } from './agent-host-context'
+import { syntheticUserUuid } from './synthetic-user-uuid'
 import { resendTranscriptFromFile, startTranscriptWatcher } from './transcript-manager'
 
 interface Sent {
@@ -150,6 +151,48 @@ describe('headless queue-operation forwarding', () => {
 
       expect(types(sent)).toEqual(['user', 'assistant'])
       expect(sent[0].isInitial).toBe(true)
+    })
+  })
+
+  // THE COALESCED-PROMPT REGRESSION (conv daf1f369, 2026-07-28). Two prompts
+  // queued mid-turn, popped together, written by CC as ONE `\n`-joined user row.
+  // Hashing the joined string produced a uuid matching neither live echo, so the
+  // broker inserted it fresh at MAX(seq)+1 -- a duplicate, 432s displaced. The
+  // resend must hand the broker the two ORIGINAL prompts, each under the frozen
+  // uuid its live echo already carries, so INSERT OR IGNORE collapses them.
+  it('resend splits a coalesced prompt back into its enqueued halves', async () => {
+    await withTranscript(async path => {
+      const first = { ...ENQUEUE, content: 'all ok?', timestamp: '2026-07-28T05:38:00.846Z' }
+      const second = { ...ENQUEUE, content: '(check pending etc)', timestamp: '2026-07-28T05:38:07.737Z' }
+      const coalesced = {
+        type: 'user',
+        timestamp: '2026-07-28T05:38:20.238Z',
+        message: { role: 'user', content: 'all ok?\n(check pending etc)' },
+      }
+      await writeFile(path, line(first) + line(second) + line(coalesced))
+
+      const sent: Sent[] = []
+      const ctx = makeCtx(sent, true)
+      ctx.parentTranscriptPath = path
+      await startTranscriptWatcher(ctx, path)
+      await delay(150)
+      sent.length = 0
+
+      resendTranscriptFromFile(ctx)
+      await delay(400)
+      ctx.transcriptWatcher?.stop()
+
+      const users = flatten(sent).filter(e => e.type === 'user')
+      expect(users.map(e => (e as unknown as { message: { content: string } }).message.content)).toEqual([
+        'all ok?',
+        '(check pending etc)',
+      ])
+      expect(users.map(e => e.uuid)).toEqual([
+        syntheticUserUuid('conv_test', 'all ok?'),
+        syntheticUserUuid('conv_test', '(check pending etc)'),
+      ])
+      // Each half is dated where it was SENT, not where the turn popped it.
+      expect(users.map(e => e.timestamp)).toEqual(['2026-07-28T05:38:00.846Z', '2026-07-28T05:38:07.737Z'])
     })
   })
 
