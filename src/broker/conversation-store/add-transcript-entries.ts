@@ -301,9 +301,9 @@ function dispatchCustomTitleEntry(
   conversationId: string,
   conv: Conversation,
   entry: TranscriptEntry,
-  isInitial: boolean,
+  _isInitial: boolean,
 ): boolean {
-  return handleCustomTitleEntry(conversationId, conv, entry as TranscriptCustomTitleEntry, isInitial)
+  return handleCustomTitleEntry(conversationId, conv, entry as TranscriptCustomTitleEntry)
 }
 
 function dispatchAgentNameEntry(

@@ -25,30 +25,38 @@ export function handleSummaryEntry(conversationId: string, conv: Conversation, e
 /**
  * CC's own title, read off its JSONL `custom-title` control line.
  *
- * `isInitial` marks a REPLAY -- a resync (broker restart, host reconnect,
- * revive, truncation recovery) re-sends the whole transcript, and
- * `stream-replay.ts` deliberately hoists metadata entries past the 500-entry
- * truncation, so this stale line arrives on EVERY reconnect. It carries the
- * name CC knows: the launch name, older than any rename made since. Applying it
- * blindly is what dragged renamed conversations back to their launch name after
- * a broker restart (2026-07-28: 3242 clobbers across ~40 conversations in one
- * boot). A replay may FILL an unpinned title; it may never overwrite a pinned
- * one. A LIVE entry (`/rename` typed inside CC) is a fresh user action and
- * still wins -- same rule the `conversation_name` wire handler already applies.
+ * A user-set title ALWAYS wins here -- a transcript entry never overrides one.
+ *
+ * The entry is CC's copy of the title, and it is stale by construction: it
+ * holds the launch name, while the user may have renamed since. Every resync
+ * (broker restart, host reconnect, revive, truncation recovery) re-sends the
+ * transcript, and `stream-replay.ts` deliberately hoists metadata entries past
+ * the 500-entry truncation so this line arrives on EVERY reconnect. Applying it
+ * dragged renamed conversations back to their launch name (2026-07-28: 3242
+ * clobbers across ~40 conversations in a single boot).
+ *
+ * Gating on `isInitial` was tried and is NOT sufficient: a replay is chunked
+ * and `sendTranscriptEntriesChunked` sets `isInitial` on the FIRST chunk only
+ * (transcript-manager.ts), so a `custom-title` landing in any later chunk looks
+ * live. There is no trustworthy per-entry "is this a replay" bit, so we don't
+ * pretend there is -- the pin is unconditional instead.
+ *
+ * A live `/rename` typed inside CC is NOT lost by this: the agent host detects
+ * it separately and sends a `conversation_name` wire message, which is the one
+ * channel that can legitimately carry user intent (its `userSet` flag).
  */
 export function handleCustomTitleEntry(
   conversationId: string,
   conv: Conversation,
   entry: TranscriptCustomTitleEntry,
-  isInitial: boolean,
 ): boolean {
   const t = entry.customTitle
   if (typeof t !== 'string' || !t.trim()) return false
   const title = t.trim()
   if (conv.title === title) return false
-  if (isInitial && conv.titleUserSet) {
+  if (conv.titleUserSet) {
     console.log(
-      `[meta] title: replayed "${title}" ignored -- user-set title "${conv.title}" preserved ` +
+      `[meta] title: transcript "${title}" ignored -- user-set title "${conv.title}" preserved ` +
         `(conversation ${conversationId.slice(0, 8)})`,
     )
     return false

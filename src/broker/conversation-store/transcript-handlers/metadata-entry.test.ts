@@ -24,38 +24,44 @@ describe('handleCustomTitleEntry', () => {
   it('REGRESSION: a replayed launch name never clobbers a user-set title', () => {
     const c = conv({ title: 'bug-rename-clobber', titleUserSet: true })
 
-    const changed = handleCustomTitleEntry('conv_1', c, titleEntry('stellar-cobra'), true)
+    const changed = handleCustomTitleEntry('conv_1', c, titleEntry('stellar-cobra'))
 
     expect(changed).toBe(false)
     expect(c.title).toBe('bug-rename-clobber')
   })
 
-  it('a replay still fills in a title that was never user-set', () => {
-    const c = conv({ title: undefined, titleUserSet: false })
+  // The first cut of this fix gated on `isInitial`, and a chunked replay walked
+  // straight through it: sendTranscriptEntriesChunked sets isInitial on the
+  // FIRST chunk only, so a custom-title entry in chunk 2+ looked live and
+  // clobbered the rename anyway (caught in production minutes after deploy).
+  // The pin is unconditional now -- position in the replay cannot matter.
+  it('REGRESSION: a user-set title survives regardless of where the entry lands in a chunked replay', () => {
+    const c = conv({ title: 'bug-rename-clobber', titleUserSet: true })
 
-    expect(handleCustomTitleEntry('conv_1', c, titleEntry('stellar-cobra'), true)).toBe(true)
-    expect(c.title).toBe('stellar-cobra')
+    // Same entry arriving as if it were live (a non-first replay chunk).
+    expect(handleCustomTitleEntry('conv_1', c, titleEntry('stellar-cobra'))).toBe(false)
+    expect(c.title).toBe('bug-rename-clobber')
   })
 
-  it('a LIVE /rename inside CC wins even over a user-set title (it IS a user action)', () => {
-    const c = conv({ title: 'old-name', titleUserSet: true })
+  it('still fills in a title that was never user-set', () => {
+    const c = conv({ title: undefined, titleUserSet: false })
 
-    expect(handleCustomTitleEntry('conv_1', c, titleEntry('typed-in-cc'), false)).toBe(true)
-    expect(c.title).toBe('typed-in-cc')
+    expect(handleCustomTitleEntry('conv_1', c, titleEntry('stellar-cobra'))).toBe(true)
+    expect(c.title).toBe('stellar-cobra')
   })
 
   it('an unchanged title reports no change -- no re-broadcast, no log spam on replay', () => {
     const c = conv({ title: 'stellar-cobra', titleUserSet: false })
 
-    expect(handleCustomTitleEntry('conv_1', c, titleEntry('stellar-cobra'), true)).toBe(false)
+    expect(handleCustomTitleEntry('conv_1', c, titleEntry('stellar-cobra'))).toBe(false)
     expect(c.title).toBe('stellar-cobra')
   })
 
   it('ignores a blank/missing title', () => {
     const c = conv({ title: 'keep-me' })
 
-    expect(handleCustomTitleEntry('conv_1', c, titleEntry('   '), false)).toBe(false)
-    expect(handleCustomTitleEntry('conv_1', c, {} as TranscriptCustomTitleEntry, false)).toBe(false)
+    expect(handleCustomTitleEntry('conv_1', c, titleEntry('   '))).toBe(false)
+    expect(handleCustomTitleEntry('conv_1', c, {} as TranscriptCustomTitleEntry)).toBe(false)
     expect(c.title).toBe('keep-me')
   })
 })
