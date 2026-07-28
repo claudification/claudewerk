@@ -4,6 +4,7 @@ import type {
   RecapChunkFailure,
   RecapCreateMessage,
   RecapLedgerStage,
+  RecapResolutionMode,
   RecapSignal,
   RecapTuning,
 } from '../../../shared/protocol'
@@ -203,7 +204,7 @@ function scheduleRun(
   args: StartArgs,
   period: ResolvedPeriod,
   timeZone: string,
-  reuseMap?: (index: number) => RecapMetadata | null,
+  reuseMap?: MapReuse,
 ): void {
   setImmediate(() => {
     // The ledger lives at this scope so the failure path can persist whatever
@@ -439,6 +440,8 @@ export function regenerateRecap(deps: OrchestratorDeps, args: RegenerateArgs): R
 export interface ResumeResult {
   recapId: string
   resumeCount: number
+  /** Which resolution ran -- echoed back so the panel can report what it did. */
+  mode: Exclude<RecapResolutionMode, 'accept'>
   /** Chunks reusable from the bundle (won't be re-paid). */
   reusableChunks: number
   totalChunks: number
@@ -456,7 +459,11 @@ export const MAX_RESUME_ATTEMPTS = 2
  * at MAX_RESUME_ATTEMPTS. Validates synchronously; runs in the background.
  */
 // fallow-ignore-next-line complexity
-export function resumeRecap(deps: OrchestratorDeps, recapId: string): ResumeResult {
+export function resumeRecap(
+  deps: OrchestratorDeps,
+  recapId: string,
+  mode: Exclude<RecapResolutionMode, 'accept'> = 'retry_failed',
+): ResumeResult {
   const row = deps.store.get(recapId)
   if (!row) throw new Error(`recap ${recapId} not found`)
   if (!deps.bundle) throw new Error('run-artifact bundles are not enabled on this broker')
@@ -540,16 +547,26 @@ export function resumeRecap(deps: OrchestratorDeps, recapId: string): ResumeResu
   const resumeCount = priorResumes + 1
   deps.bundle.updateManifest(recapId, { status: 'rendering', resumeCount })
   deps.store.update(recapId, { status: 'rendering', progress: 0, error: null })
-  scheduleRun(
-    deps,
-    recapId,
-    args,
-    period,
-    row.timeZone,
-    i => deps.bundle?.readMapParsed<RecapMetadata>(recapId, i) ?? null,
-  )
+  scheduleRun(deps, recapId, args, period, row.timeZone, makeReuse(deps, recapId, mode))
 
-  return { recapId, resumeCount, reusableChunks, totalChunks }
+  return { recapId, resumeCount, reusableChunks, totalChunks, mode }
+}
+
+/**
+ * How a resumed run treats a chunk with nothing banked.
+ *
+ * retry_failed re-maps it (null -> a fresh call, the expensive-but-complete
+ * choice). synthesize_only hands back empty metadata marked `abandoned`, so the
+ * reduce runs against what already exists and the casualty is recorded rather
+ * than re-paid. The reader picks; the pipeline does not guess.
+ */
+function makeReuse(deps: OrchestratorDeps, recapId: string, mode: RecapResolutionMode): MapReuse {
+  return (index: number) => {
+    const banked = deps.bundle?.readMapParsed<RecapMetadata>(recapId, index) ?? null
+    if (banked) return { metadata: banked }
+    if (mode === 'synthesize_only') return { metadata: makeEmptyMetadata(), abandoned: true }
+    return null
+  }
 }
 
 function jsonParseOr(raw: string | null | undefined): unknown {
@@ -811,7 +828,7 @@ async function runRecap(
   timeZone: string,
   ledger: RecapLedger,
   /** Resume-from-map: reuse persisted chunk extractions instead of re-paying. */
-  reuseMap?: (index: number) => RecapMetadata | null,
+  reuseMap?: MapReuse,
 ): Promise<void> {
   const startedAt = Date.now()
   // Re-derive the SAME recipe startRecap resolved (deterministic from args): the
@@ -1310,6 +1327,23 @@ export function mapStageDeadlineMs(chunkCount: number): number {
   return Math.min(MAP_STAGE_CEIL_MS, Math.max(MAP_STAGE_FLOOR_MS, raw))
 }
 
+/**
+ * Resume-from-map lookup: what a prior run already banked for a chunk, or null
+ * to map it fresh.
+ *
+ * `abandoned` is the difference between the two resume intents a reader can
+ * have about a casualty: retry_failed re-maps it (null -> a fresh call), while
+ * synthesize_only gives up on it for good (abandoned -> no call, no cost, and
+ * the conversation stays on the casualty list so the recap never quietly
+ * upgrades itself to complete).
+ */
+export type MapReuse = (index: number) => MapReuseResult | null
+
+export interface MapReuseResult {
+  metadata: RecapMetadata
+  abandoned?: boolean
+}
+
 export interface MapStageResult {
   metas: RecapMetadata[]
   /** Chunk indices whose extraction actually PARSED. Only these are safe to file
@@ -1323,6 +1357,9 @@ export interface MapStageResult {
   /** Chunks recovered from a malformed response but missing some facts. Also
    *  drives 'partial' -- incomplete is not complete -- but they keep their data. */
   salvaged: number
+  /** Chunks the reader gave up on via a synthesize-only resolution. Still
+   *  casualties -- they just cost nothing to leave behind. */
+  abandoned: number
   /** Chunks skipped by the G8 empty-input gate (NOT failures). */
   skippedEmpty: number
   /** Chunks reused from the bundle on a resume (NOT re-mapped, NOT failures). */
@@ -1358,11 +1395,11 @@ export async function runMapStage(
   chunks: ReturnType<typeof splitIntoChunks>,
   mapModel: string,
   t: RecapTuning,
-  reuseMap?: (index: number) => RecapMetadata | null,
+  reuseMap?: MapReuse,
   signal?: AbortSignal,
 ): Promise<MapStageResult> {
   const stageDeadlineMs = mapStageDeadlineMs(chunks.length)
-  const state = { failed: 0, salvaged: 0, skippedEmpty: 0, reused: 0, stageTimedOut: false }
+  const state = { failed: 0, salvaged: 0, abandoned: 0, skippedEmpty: 0, reused: 0, stageTimedOut: false }
   // Which chunk indices produced a REAL extraction. A failed chunk degrades to
   // empty metadata so the run can carry on, but that placeholder must never be
   // filed in the cross-run cache -- it would poison that conversation into
@@ -1383,10 +1420,19 @@ export async function runMapStage(
     // Resume-from-map: a chunk already extracted on a prior run is reused from
     // the bundle -- no LLM call, no cost. NOT a failure, NOT empty.
     const reused = reuseMap?.(chunk.index) ?? null
+    if (reused?.abandoned) {
+      // The reader chose synthesize-only: this casualty is not coming back, and
+      // saying so out loud (plus keeping it on the casualty list) is the whole
+      // difference between a decision and a silent omission.
+      emit.emit('warn', phase, `chunk ${chunk.index + 1} abandoned by resolution -- not re-mapped, facts stay lost`)
+      state.abandoned++
+      failures.push(lostChunk(chunk, 'abandoned by resolution (synthesize-only)'))
+      return reused.metadata
+    }
     if (reused) {
       emit.emit('info', phase, `chunk ${chunk.index + 1} reused from bundle (resume -- not re-mapped)`)
       state.reused++
-      return reused
+      return reused.metadata
     }
     // G8 empty-input gate: nothing to send -> skip the call. An empty/whitespace
     // prompt wastes spend and can hang a provider; a content-free chunk is just
@@ -1466,7 +1512,7 @@ interface ProduceArgs {
   recipe: ResolvedRecipe
   /** Resume-from-map: return a chunk's already-parsed extraction (from the
    *  bundle) to reuse it instead of re-paying the map call. null -> re-map. */
-  reuseMap?: (index: number) => RecapMetadata | null
+  reuseMap?: MapReuse
   /** Fires when the overall deadline force-fails the run. Threaded into EVERY
    *  ChatRequest below so an abandoned recap stops billing immediately instead
    *  of running its synthesis (and parse repair) to completion for nobody. */
@@ -1484,7 +1530,7 @@ interface ProduceResult {
    *  'partial' terminal status + banner. Skipped empty chunks (G8) do NOT
    *  count -- they carried no evidence to lose. `failures` names the
    *  conversations, so no surface has to report a bare count. */
-  partial?: { failed: number; salvaged: number; total: number; failures: RecapChunkFailure[] }
+  partial?: { failed: number; salvaged: number; abandoned: number; total: number; failures: RecapChunkFailure[] }
 }
 
 /**
@@ -1581,17 +1627,8 @@ async function runChunked(
   // MAP -- parallel extraction with per-call timeout + overall stage deadline +
   // the G8 empty gate + resume-from-map reuse. Degrades dropped chunks rather
   // than hanging the barrier.
-  const { metas, trusted, failed, salvaged, skippedEmpty, reused, stageTimedOut, failures } = await runMapStage(
-    deps,
-    recapId,
-    ledger,
-    emit,
-    chunks,
-    models.mapModel,
-    t,
-    p.reuseMap,
-    p.signal,
-  )
+  const { metas, trusted, failed, salvaged, abandoned, skippedEmpty, reused, stageTimedOut, failures } =
+    await runMapStage(deps, recapId, ledger, emit, chunks, models.mapModel, t, p.reuseMap, p.signal)
   if (failed === chunks.length) {
     throw new Error(`chunked map stage failed: all ${chunks.length} chunk(s) errored`)
   }
@@ -1716,7 +1753,9 @@ async function runChunked(
   return {
     parsed,
     model: models.reduceModel,
-    ...(failed > 0 || salvaged > 0 ? { partial: { failed, salvaged, total: chunks.length, failures } } : {}),
+    ...(failed > 0 || salvaged > 0 || abandoned > 0
+      ? { partial: { failed, salvaged, abandoned, total: chunks.length, failures } }
+      : {}),
   }
 }
 

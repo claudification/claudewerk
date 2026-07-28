@@ -1,13 +1,14 @@
 import type {
   RecapAudience,
   RecapCreateMessage,
+  RecapResolutionMode,
   RecapStatus,
   RecapTemplatesRequest,
   RecapTemplatesResult,
 } from '../../shared/protocol'
+import { isRecapSuiteId } from '../../shared/recap-suites'
 import type { HandlerContext, MessageData, MessageHandler } from '../handler-context'
 import { DASHBOARD_ROLES, detectRole, registerHandlers, type WsRole } from '../message-router'
-import { isRecapSuiteId } from '../../shared/recap-suites'
 import { buildTemplateList } from '../recap/templates'
 import { getRecapOrchestrator } from '../recap-orchestrator'
 import { requireStrings } from './validate'
@@ -179,6 +180,34 @@ function recapDismissFailed(ctx: HandlerContext, data: MessageData): void {
   ctx.reply({ type: 'recap_dismissed', recapId: fields.recapId })
 }
 
+const RESOLUTION_MODES = new Set<RecapResolutionMode>(['retry_failed', 'synthesize_only', 'accept'])
+
+/** Act on a partial recap the way the reader chose. Distinct from recap_resume
+ *  (which is always "re-run what is missing") because two of the three choices
+ *  here deliberately do NOT re-run anything. */
+function recapResolve(ctx: HandlerContext, data: MessageData): void {
+  const fields = requireStrings(ctx, data, ['recapId', 'mode'] as const, 'recap_resolve')
+  if (!fields) return
+  const mode = fields.mode as RecapResolutionMode
+  if (!RESOLUTION_MODES.has(mode)) {
+    ctx.reply({ type: 'recap_error', error: `unknown resolution mode "${fields.mode}"` })
+    return
+  }
+  const orchestrator = getRecapOrchestrator()
+  if (!orchestrator) {
+    ctx.reply({ type: 'recap_error', error: 'recap orchestrator not initialised' })
+    return
+  }
+  try {
+    const result = orchestrator.resolve(fields.recapId, mode, ctx.ws.data.userName)
+    ctx.reply({ type: 'recap_resolved_ack', recapId: fields.recapId, mode, result })
+  } catch (err) {
+    // Guard failures (not partial / not chunked / in-flight / cap hit) surface
+    // synchronously rather than as a silent no-op.
+    ctx.reply({ type: 'recap_error', error: describe(err) })
+  }
+}
+
 function recapResume(ctx: HandlerContext, data: MessageData): void {
   const fields = requireStrings(ctx, data, ['recapId'] as const, 'recap_resume')
   if (!fields) return
@@ -345,6 +374,7 @@ export function registerRecapHandlers(): void {
       recap_cancel: recapCancel,
       recap_dismiss_failed: recapDismissFailed,
       recap_resume: recapResume,
+      recap_resolve: recapResolve,
       recap_list: recapList,
       recap_get: recapGet,
     } satisfies Record<string, MessageHandler>,

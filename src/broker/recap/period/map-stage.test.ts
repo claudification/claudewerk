@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { makeEmptyMetadata as makeEmpty } from './chunk/merge'
 import type { TranscriptChunk } from './chunk/split'
 import { RecapLedger } from './ledger'
 import { mapStageDeadlineMs, type OrchestratorDeps, runMapStage } from './orchestrator'
@@ -214,5 +215,50 @@ describe('runMapStage -- salvage + repair wiring', () => {
     expect(result.failed).toBe(1)
     expect(result.failures[0]?.conversations.length).toBeGreaterThan(0)
     expect(result.failures[0]?.conversations[0]?.id).toBeTruthy()
+  })
+})
+
+describe('runMapStage -- resume reuse modes', () => {
+  it('reuses a banked chunk without calling the model', async () => {
+    globalThis.fetch = (async () => {
+      throw new Error('should not call')
+    }) as unknown as typeof fetch
+    const banked = { ...makeEmpty(), goals: ['banked'] }
+    const result = await runMapStage(
+      makeDeps(),
+      'recap_b',
+      new RecapLedger(),
+      noopEmit,
+      [chunk(0, 'GOOD')],
+      'm',
+      {},
+      () => ({ metadata: banked }),
+    )
+    expect(result.reused).toBe(1)
+    expect(result.metas[0].goals).toEqual(['banked'])
+    expect(result.failures).toHaveLength(0)
+  })
+
+  it('an abandoned chunk costs nothing but STAYS a casualty', async () => {
+    globalThis.fetch = (async () => {
+      throw new Error('should not call')
+    }) as unknown as typeof fetch
+    const result = await runMapStage(
+      makeDeps(),
+      'recap_a',
+      new RecapLedger(),
+      noopEmit,
+      [chunk(0, 'GOOD')],
+      'm',
+      {},
+      () => ({ metadata: makeEmpty(), abandoned: true }),
+    )
+    expect(result.abandoned).toBe(1)
+    expect(result.reused).toBe(0)
+    // The whole point: giving up on it is a DECISION, not a silent upgrade to
+    // complete. The conversation stays named on the casualty list.
+    expect(result.failures).toHaveLength(1)
+    expect(result.failures[0]?.error).toContain('abandoned by resolution')
+    expect(result.failures[0]?.conversations[0]?.id).toBe('conv_good')
   })
 })

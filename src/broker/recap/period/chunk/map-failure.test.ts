@@ -44,7 +44,10 @@ describe('describeFailure', () => {
 
 describe('describePartial', () => {
   test('names the conversation instead of counting chunks', () => {
-    const reason = describePartial([lostChunk(chunk(148, '488cbece-b42', 'AWS SES production access'), 'bad json')], 169)
+    const reason = describePartial(
+      [lostChunk(chunk(148, '488cbece-b42', 'AWS SES production access'), 'bad json')],
+      169,
+    )
     // The line that replaces "1 of 169 chunk(s) failed -- recap is partial".
     expect(reason).toBe('1 conversation(s) dropped of 169 -- AWS SES production access (488cbece)')
   })

@@ -1,8 +1,20 @@
+import type { RecapResolution, RecapResolutionMode } from '../../../shared/protocol'
 import type { RecapBundleWriter } from './bundle'
 import type { PeriodRecapStore, RecapLogLevel, RecapStatus } from './store'
 
 export interface ProgressBroadcaster {
-  broadcast(msg: ProgressMessage | RecapBroadcastMessage): void
+  broadcast(msg: ProgressMessage | RecapBroadcastMessage | RecapResolvedMessage): void
+}
+
+/** EVERYTHING IS A STRUCTURED MESSAGE: resolving a partial recap is a state
+ *  change (the reader decided what to do about missing data), so it goes on the
+ *  wire like every other one rather than only landing in the store. */
+export interface RecapResolvedMessage {
+  type: 'recap_resolved'
+  recapId: string
+  mode: RecapResolutionMode
+  resolution: RecapResolution
+  meta: unknown
 }
 
 export interface ProgressMessage {

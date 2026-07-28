@@ -6002,6 +6002,11 @@ export interface RecapMeta {
   /** PARTIAL recaps only: which conversations fell out and why, so the panel
    *  can show the casualties and offer a resolution instead of a bare count. */
   failures?: RecapChunkFailure[]
+  /** Set once the reader has decided what to do about a partial recap. */
+  resolution?: RecapResolution
+  /** Resumes already spent, against MAX_RESUME_ATTEMPTS -- so the panel can say
+   *  how many are left instead of failing the user's third click. */
+  resumeCount?: number
 }
 
 export interface RecapSummary {
@@ -6120,6 +6125,32 @@ export interface RecapChunkFailure {
   /** Per-key salvage detail, e.g. "salvaged 29 item(s) (lost: dead_ends -3)". */
   detail?: string
   at: number
+}
+
+/**
+ * What the reader decided to do about a PARTIAL recap. These are judgment
+ * calls only a human can make -- sometimes the missing conversation matters and
+ * is worth re-paying for, sometimes it is a dead-end thread nobody will miss --
+ * so the pipeline offers the choice rather than guessing.
+ *
+ *  retry_failed    -- re-map just the casualties, then re-synthesize. Costs one
+ *                     map call per casualty plus a full reduce.
+ *  synthesize_only -- give up on the casualties for good and rebuild the
+ *                     document from the banked map output. Costs a reduce.
+ *  accept          -- keep the recap exactly as it is. Costs nothing. The
+ *                     casualties stay on the record; the recap stops asking.
+ */
+export type RecapResolutionMode = 'retry_failed' | 'synthesize_only' | 'accept'
+
+/** The decision, recorded. A partial recap that was consciously accepted is a
+ *  different thing from one nobody has looked at yet, and the panel must be
+ *  able to tell them apart. */
+export interface RecapResolution {
+  mode: RecapResolutionMode
+  at: number
+  /** Who/what resolved it, when known. */
+  by?: string
+  note?: string
 }
 
 export interface RecapDigestConversation {

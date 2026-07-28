@@ -6,6 +6,7 @@ import type {
   RecapCostLedger,
   RecapMeta,
   RecapMetadata,
+  RecapResolution,
   RecapStatus,
 } from '../../../shared/protocol'
 
@@ -53,6 +54,9 @@ export interface RecapRow {
   /** RecapChunkFailure[] JSON: which conversations a PARTIAL recap is missing
    *  and why. NULL on a clean recap and on rows that predate the column. */
   failuresJson: string | null
+  /** RecapResolution JSON: what the reader decided about a partial recap.
+   *  NULL = undecided, which is NOT the same as accepted. */
+  resolutionJson: string | null
 }
 
 export interface RecapInsert {
@@ -95,6 +99,7 @@ export type RecapPatch = Partial<
     | 'ledgerJson'
     | 'argsJson'
     | 'failuresJson'
+    | 'resolutionJson'
   >
 >
 
@@ -547,6 +552,7 @@ interface RawRecapRow {
   ledger_json: string | null
   args_json: string | null
   failures_json: string | null
+  resolution_json: string | null
 }
 
 function hydrate(row: RawRecapRow): RecapRow {
@@ -584,6 +590,7 @@ function hydrate(row: RawRecapRow): RecapRow {
     ledgerJson: row.ledger_json,
     argsJson: row.args_json,
     failuresJson: row.failures_json ?? null,
+    resolutionJson: row.resolution_json ?? null,
   }
 }
 
@@ -608,6 +615,7 @@ function safeParseJson(value: string): unknown {
 export function rowToRecapMeta(row: RecapRow): RecapMeta {
   const costLedger = parseLedger(row.ledgerJson)
   const failures = parseFailures(row.failuresJson)
+  const resolution = parseResolution(row.resolutionJson)
   return {
     recapId: row.id,
     projectUri: row.projectUri,
@@ -632,6 +640,7 @@ export function rowToRecapMeta(row: RecapRow): RecapMeta {
     completedAt: row.completedAt ?? undefined,
     ...(costLedger ? { costLedger } : {}),
     ...(failures.length > 0 ? { failures } : {}),
+    ...(resolution ? { resolution } : {}),
   }
 }
 
@@ -644,6 +653,17 @@ function parseFailures(json: string | null): RecapChunkFailure[] {
   if (!json) return []
   const parsed = safeParseJson(json)
   return Array.isArray(parsed) ? (parsed as RecapChunkFailure[]) : []
+}
+
+/** Parse the persisted resolution. Malformed -> undefined (undecided), never a
+ *  throw: a broken decision record must not make the recap unreadable. */
+function parseResolution(json: string | null): RecapResolution | undefined {
+  if (!json) return undefined
+  const parsed = safeParseJson(json)
+  if (parsed && typeof parsed === 'object' && typeof (parsed as RecapResolution).mode === 'string') {
+    return parsed as RecapResolution
+  }
+  return undefined
 }
 
 function parseLedger(json: string | null): RecapCostLedger | undefined {

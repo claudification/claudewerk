@@ -4,6 +4,7 @@ import type {
   RecapLogEntry,
   RecapMetadata,
   RecapPeriodLabel,
+  RecapResolutionMode,
   RecapSearchHit,
   RecapStatus,
   RecapSummary,
@@ -23,8 +24,12 @@ import {
   startRecap,
 } from './recap/period/orchestrator'
 import type { ProgressBroadcaster } from './recap/period/progress'
+import { type AcceptResult, acceptPartial } from './recap/period/resolve'
 import { createPeriodRecapStore, type PeriodRecapStore, type RecapRow, rowToRecapMeta } from './recap/period/store'
 import type { StoreDriver } from './store/types'
+
+/** What resolve() did: spent nothing (accepted) or scheduled a re-run. */
+export type RecapResolveResult = ({ kind: 'accepted' } & AcceptResult) | ({ kind: 'resumed' } & ResumeResult)
 
 let singleton: RecapOrchestrator | null = null
 
@@ -43,6 +48,11 @@ export interface RecapOrchestrator {
   /** G3: resume an interrupted/partial/failed chunked recap, reusing persisted
    *  chunks and re-running only the missing ones. */
   resume(recapId: string): ResumeResult
+  /** Act on a partial recap the way the READER chose: re-run the casualties,
+   *  abandon them and re-synthesize, or accept the recap as it stands. */
+  resolve(recapId: string, mode: RecapResolutionMode, by?: string): RecapResolveResult
+  /** resume() with an explicit mode (resolve() dispatches through this). */
+  resumeWith(recapId: string, mode: Exclude<RecapResolutionMode, 'accept'>): ResumeResult
   /** G2: on broker boot, reclaim recaps stuck in-flight (their async died with the
    *  process) -> 'interrupted' (resumable, never auto-resumed). Returns what it swept. */
   sweepInterrupted(): Array<{ id: string; prevStatus: RecapStatus; progress: number }>
@@ -115,6 +125,35 @@ export function initRecapOrchestrator(opts: InitOptions): RecapOrchestrator {
           bundle,
         },
         args,
+      ),
+    resolve(recapId, mode, by) {
+      if (mode === 'accept') {
+        const accepted = acceptPartial({ store, bundle }, recapId, by)
+        opts.broadcaster.broadcast({
+          type: 'recap_resolved',
+          recapId,
+          mode,
+          resolution: accepted.resolution,
+          meta: rowToRecapMeta(store.get(recapId) ?? ({} as RecapRow)),
+        })
+        return { kind: 'accepted', ...accepted }
+      }
+      const resumed = this.resumeWith(recapId, mode)
+      return { kind: 'resumed', ...resumed }
+    },
+    resumeWith: (recapId, mode) =>
+      resumeRecap(
+        {
+          store,
+          brokerStore: opts.brokerStore,
+          broadcaster: opts.broadcaster,
+          informConversation: opts.informConversation,
+          projectSuiteDefault: opts.projectSuiteDefault,
+          gatherCommits: opts.gatherCommits,
+          bundle,
+        },
+        recapId,
+        mode,
       ),
     resume: recapId =>
       resumeRecap(

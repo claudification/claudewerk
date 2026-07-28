@@ -68,7 +68,8 @@ function createRecapsTable(db: Database) {
       inform_conversation_id TEXT,
       ledger_json     TEXT,
       args_json       TEXT,
-      failures_json   TEXT
+      failures_json   TEXT,
+      resolution_json TEXT
     )
   `)
   // ALTER ADD COLUMN for upgrades from the pre-audience shape. SQLite ALTER
@@ -101,6 +102,11 @@ function createRecapsTable(db: Database) {
   // that predates it keeps NULL and shows only the legacy count in its reason.
   if (!recapCols.has('failures_json')) {
     db.run('ALTER TABLE recaps ADD COLUMN failures_json TEXT')
+  }
+  // What the reader decided about a PARTIAL recap (RecapResolution JSON). NULL
+  // means nobody has looked at it yet -- which is NOT the same as accepting it.
+  if (!recapCols.has('resolution_json')) {
+    db.run('ALTER TABLE recaps ADD COLUMN resolution_json TEXT')
   }
   db.run('CREATE INDEX IF NOT EXISTS idx_recaps_project ON recaps(project_uri, created_at DESC)')
   db.run('CREATE INDEX IF NOT EXISTS idx_recaps_status ON recaps(status)')
