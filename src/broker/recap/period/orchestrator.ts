@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto'
 import type {
   RecapAudience,
+  RecapChunkFailure,
   RecapCreateMessage,
   RecapLedgerStage,
+  RecapResolutionMode,
   RecapSignal,
   RecapTuning,
 } from '../../../shared/protocol'
@@ -21,7 +23,8 @@ import {
   resolveTemplateSignals,
 } from '../templates'
 import { RECAP_PIPELINE_VERSION, type RecapBundleCallPrompt, type RecapBundleWriter } from './bundle'
-import { buildMapPrompt, MapParseError, parseMapOutput } from './chunk/map-prompt'
+import { type MapChunkResult, runMapChunk } from './chunk/map-chunk'
+import { describeFailure, describePartial, lostChunk } from './chunk/map-failure'
 import { makeEmptyMetadata, mergeMetadata } from './chunk/merge'
 import { planMapStage } from './chunk/plan-map'
 import {
@@ -30,6 +33,7 @@ import {
   DEFAULT_CHUNK_THRESHOLD_CONVS,
   shouldChunk,
   type splitIntoChunks,
+  type TranscriptChunk,
 } from './chunk/split'
 import { buildSynthesizePrompt } from './chunk/synthesize-prompt'
 import {
@@ -200,7 +204,7 @@ function scheduleRun(
   args: StartArgs,
   period: ResolvedPeriod,
   timeZone: string,
-  reuseMap?: (index: number) => RecapMetadata | null,
+  reuseMap?: MapReuse,
 ): void {
   setImmediate(() => {
     // The ledger lives at this scope so the failure path can persist whatever
@@ -436,6 +440,8 @@ export function regenerateRecap(deps: OrchestratorDeps, args: RegenerateArgs): R
 export interface ResumeResult {
   recapId: string
   resumeCount: number
+  /** Which resolution ran -- echoed back so the panel can report what it did. */
+  mode: Exclude<RecapResolutionMode, 'accept'>
   /** Chunks reusable from the bundle (won't be re-paid). */
   reusableChunks: number
   totalChunks: number
@@ -453,7 +459,11 @@ export const MAX_RESUME_ATTEMPTS = 2
  * at MAX_RESUME_ATTEMPTS. Validates synchronously; runs in the background.
  */
 // fallow-ignore-next-line complexity
-export function resumeRecap(deps: OrchestratorDeps, recapId: string): ResumeResult {
+export function resumeRecap(
+  deps: OrchestratorDeps,
+  recapId: string,
+  mode: Exclude<RecapResolutionMode, 'accept'> = 'retry_failed',
+): ResumeResult {
   const row = deps.store.get(recapId)
   if (!row) throw new Error(`recap ${recapId} not found`)
   if (!deps.bundle) throw new Error('run-artifact bundles are not enabled on this broker')
@@ -537,16 +547,26 @@ export function resumeRecap(deps: OrchestratorDeps, recapId: string): ResumeResu
   const resumeCount = priorResumes + 1
   deps.bundle.updateManifest(recapId, { status: 'rendering', resumeCount })
   deps.store.update(recapId, { status: 'rendering', progress: 0, error: null })
-  scheduleRun(
-    deps,
-    recapId,
-    args,
-    period,
-    row.timeZone,
-    i => deps.bundle?.readMapParsed<RecapMetadata>(recapId, i) ?? null,
-  )
+  scheduleRun(deps, recapId, args, period, row.timeZone, makeReuse(deps, recapId, mode))
 
-  return { recapId, resumeCount, reusableChunks, totalChunks }
+  return { recapId, resumeCount, reusableChunks, totalChunks, mode }
+}
+
+/**
+ * How a resumed run treats a chunk with nothing banked.
+ *
+ * retry_failed re-maps it (null -> a fresh call, the expensive-but-complete
+ * choice). synthesize_only hands back empty metadata marked `abandoned`, so the
+ * reduce runs against what already exists and the casualty is recorded rather
+ * than re-paid. The reader picks; the pipeline does not guess.
+ */
+function makeReuse(deps: OrchestratorDeps, recapId: string, mode: RecapResolutionMode): MapReuse {
+  return (index: number) => {
+    const banked = deps.bundle?.readMapParsed<RecapMetadata>(recapId, index) ?? null
+    if (banked) return { metadata: banked }
+    if (mode === 'synthesize_only') return { metadata: makeEmptyMetadata(), abandoned: true }
+    return null
+  }
 }
 
 function jsonParseOr(raw: string | null | undefined): unknown {
@@ -722,7 +742,15 @@ async function synthesizeFromMerged(
     apiKey: deps.apiKey,
   })
   deps.bundle?.recordFinalResponse(targetId, content)
-  const parsed = await parseOrRetry(deps, targetId, ledger, content, synth, model, deps.apiKey)
+  const parsed = await parseOrRetry({
+    deps,
+    recapId: targetId,
+    ledger,
+    content,
+    built: synth,
+    model,
+    apiKey: deps.apiKey,
+  })
   return { parsed, model }
 }
 
@@ -751,7 +779,7 @@ async function replayOneshot(
     maxTokens: ov.maxTokens,
   })
   deps.bundle?.recordFinalResponse(targetId, content)
-  const parsed = await parseOrRetry(deps, targetId, ledger, content, built, model, deps.apiKey)
+  const parsed = await parseOrRetry({ deps, recapId: targetId, ledger, content, built, model, apiKey: deps.apiKey })
   return { parsed, model }
 }
 
@@ -800,7 +828,7 @@ async function runRecap(
   timeZone: string,
   ledger: RecapLedger,
   /** Resume-from-map: reuse persisted chunk extractions instead of re-paying. */
-  reuseMap?: (index: number) => RecapMetadata | null,
+  reuseMap?: MapReuse,
 ): Promise<void> {
   const startedAt = Date.now()
   // Re-derive the SAME recipe startRecap resolved (deterministic from args): the
@@ -941,9 +969,10 @@ async function runRecap(
       suite: suite.id,
     }),
   )
-  const partialReason = partial
-    ? `${partial.failed} of ${partial.total} chunk(s) failed -- recap is partial`
-    : undefined
+  // NAME the casualties rather than counting them. "1 of 169 chunk(s) failed"
+  // sends the reader to the container with a diff; naming the conversation
+  // lets them decide (re-run it / drop it / accept) without leaving the panel.
+  const partialReason = partial ? describePartial(partial.failures, partial.total) : undefined
   const baseTitle = `${promptInputs.projectLabel} - ${period.human}`
   const titleTemplate = args.tuning?.variantLabel ? `${baseTitle} [${args.tuning.variantLabel}]` : baseTitle
   const finalMarkdown = renderFinalMarkdown({
@@ -981,6 +1010,7 @@ async function runRecap(
     projectUri: args.projectUri,
     status: partial ? 'partial' : 'done',
     partialReason,
+    ...(partial ? { failures: partial.failures } : {}),
   })
   emit.setProgress(100, 'persist')
   emit.setStatus(partial ? 'partial' : 'done')
@@ -1076,11 +1106,6 @@ function mapCallTimeoutMs(): number {
   const override = Number(process.env.CLAUDWERK_RECAP_MAP_TIMEOUT_MS)
   return Number.isFinite(override) && override > 0 ? override : RECAP_MAP_TIMEOUT_MS
 }
-// A map extraction that came back this large almost certainly hit the output
-// token cap (finish_reason=length) and is truncated mid-JSON -- a normal map
-// output is well under 20k chars. Used only to LABEL the failure actionably;
-// the authoritative finish_reason is in the bundle's raw response.
-const TRUNCATION_HINT_CHARS = 50_000
 
 // Usage recorded when a chat() call THROWS (timeout/4xx/5xx): the attempt
 // happened but carries no token/cost data. costSource 'unknown' marks it.
@@ -1216,20 +1241,32 @@ async function callLlm(
   })
 }
 
-async function parseOrRetry(
-  deps: OrchestratorDeps,
-  recapId: string,
-  ledger: RecapLedger,
-  content: string,
-  built: { system: string; user: string },
-  model: string,
-  apiKey?: string,
-  signal?: AbortSignal,
-) {
+interface ParseOrRetryArgs {
+  deps: OrchestratorDeps
+  recapId: string
+  ledger: RecapLedger
+  content: string
+  built: { system: string; user: string }
+  model: string
+  apiKey?: string
+  signal?: AbortSignal
+  /** Progress sink. The re-ask below is a whole extra synthesis call -- on the
+   *  2026-07-28 run it cost $1.99 and 256s with NOT ONE line in the progress
+   *  trail, so the only evidence it happened at all was a stray ledger entry. */
+  emit?: ProgressEmitter
+}
+
+async function parseOrRetry(args: ParseOrRetryArgs) {
+  const { deps, recapId, ledger, content, built, model, apiKey, signal, emit } = args
   try {
     return parseRecapOutput(content)
   } catch (err) {
     if (!(err instanceof RecapParseError)) throw err
+    emit?.emit(
+      'warn',
+      'render/synthesize',
+      `synthesis output was malformed (${describe(err)}) -- re-asking once against the same merged input`,
+    )
     const retry = await runLlmCall(deps, recapId, ledger, 'retry', {
       feature: 'recap-period',
       model,
@@ -1253,7 +1290,9 @@ async function parseOrRetry(
         },
       ],
     })
-    return parseRecapOutput(retry)
+    const parsed = parseRecapOutput(retry)
+    emit?.emit('info', 'render/synthesize', 'synthesis re-ask parsed cleanly')
+    return parsed
   }
 }
 
@@ -1288,30 +1327,66 @@ export function mapStageDeadlineMs(chunkCount: number): number {
   return Math.min(MAP_STAGE_CEIL_MS, Math.max(MAP_STAGE_FLOOR_MS, raw))
 }
 
+/**
+ * Resume-from-map lookup: what a prior run already banked for a chunk, or null
+ * to map it fresh.
+ *
+ * `abandoned` is the difference between the two resume intents a reader can
+ * have about a casualty: retry_failed re-maps it (null -> a fresh call), while
+ * synthesize_only gives up on it for good (abandoned -> no call, no cost, and
+ * the conversation stays on the casualty list so the recap never quietly
+ * upgrades itself to complete).
+ */
+export type MapReuse = (index: number) => MapReuseResult | null
+
+export interface MapReuseResult {
+  metadata: RecapMetadata
+  abandoned?: boolean
+}
+
 export interface MapStageResult {
   metas: RecapMetadata[]
   /** Chunk indices whose extraction actually PARSED. Only these are safe to file
    *  in the cross-run map cache -- failures degrade to empty metadata, and
-   *  caching that would pin the conversation to "no facts". */
+   *  caching that would pin the conversation to "no facts". A SALVAGED chunk is
+   *  deliberately absent: it is usable for this run but incomplete, so caching
+   *  or banking it would make a partial extraction permanent. */
   trusted: Set<number>
   /** Chunks that errored/timed-out/tripped the deadline (drive 'partial'). */
   failed: number
+  /** Chunks recovered from a malformed response but missing some facts. Also
+   *  drives 'partial' -- incomplete is not complete -- but they keep their data. */
+  salvaged: number
+  /** Chunks the reader gave up on via a synthesize-only resolution. Still
+   *  casualties -- they just cost nothing to leave behind. */
+  abandoned: number
   /** Chunks skipped by the G8 empty-input gate (NOT failures). */
   skippedEmpty: number
   /** Chunks reused from the bundle on a resume (NOT re-mapped, NOT failures). */
   reused: number
   /** True if the overall stage deadline fired. */
   stageTimedOut: boolean
+  /** Per-chunk casualty records, so every downstream surface can name the
+   *  conversations a partial recap is missing instead of counting them. */
+  failures: RecapChunkFailure[]
 }
 
 /**
  * MAP stage: parallel extraction with a per-call timeout (Phase 1) AND an overall
- * stage deadline (a backstop so one pathological run can't hold the barrier). A
- * chunk that errors/times-out/trips the deadline degrades to empty metadata and
- * counts as `failed`; an EMPTY chunk (G8) is skipped without a call and is NOT a
- * failure. Extracted from runChunked for testability + lower complexity.
+ * stage deadline (a backstop so one pathological run can't hold the barrier).
+ *
+ * Per-chunk outcomes, all of them named rather than counted:
+ *  - reused   -- banked by a prior run, no call, no cost
+ *  - empty    -- G8 gate, nothing to send
+ *  - parsed   -- clean extraction; trusted, cached, banked
+ *  - salvaged -- recovered from a malformed response but incomplete (runMapChunk)
+ *  - failed   -- call errored / deadline / nothing recoverable
+ *
+ * Salvaged and failed chunks BOTH make the recap partial and BOTH record a
+ * casualty (which conversation, why) so no data leaves silently. The escalation
+ * itself lives in runMapChunk; this function owns concurrency, the deadline,
+ * and the bookkeeping.
  */
-// fallow-ignore-next-line complexity
 export async function runMapStage(
   deps: OrchestratorDeps,
   recapId: string,
@@ -1320,16 +1395,17 @@ export async function runMapStage(
   chunks: ReturnType<typeof splitIntoChunks>,
   mapModel: string,
   t: RecapTuning,
-  reuseMap?: (index: number) => RecapMetadata | null,
+  reuseMap?: MapReuse,
   signal?: AbortSignal,
 ): Promise<MapStageResult> {
   const stageDeadlineMs = mapStageDeadlineMs(chunks.length)
-  const state = { failed: 0, skippedEmpty: 0, reused: 0, stageTimedOut: false }
+  const state = { failed: 0, salvaged: 0, abandoned: 0, skippedEmpty: 0, reused: 0, stageTimedOut: false }
   // Which chunk indices produced a REAL extraction. A failed chunk degrades to
   // empty metadata so the run can carry on, but that placeholder must never be
   // filed in the cross-run cache -- it would poison that conversation into
   // "no facts" for as long as the entry lives. Only trusted results get stored.
   const trusted = new Set<number>()
+  const failures: RecapChunkFailure[] = []
   let stageTimer: ReturnType<typeof setTimeout> | undefined
   const stageDeadline = new Promise<never>((_, reject) => {
     stageTimer = setTimeout(() => {
@@ -1344,10 +1420,19 @@ export async function runMapStage(
     // Resume-from-map: a chunk already extracted on a prior run is reused from
     // the bundle -- no LLM call, no cost. NOT a failure, NOT empty.
     const reused = reuseMap?.(chunk.index) ?? null
+    if (reused?.abandoned) {
+      // The reader chose synthesize-only: this casualty is not coming back, and
+      // saying so out loud (plus keeping it on the casualty list) is the whole
+      // difference between a decision and a silent omission.
+      emit.emit('warn', phase, `chunk ${chunk.index + 1} abandoned by resolution -- not re-mapped, facts stay lost`)
+      state.abandoned++
+      failures.push(lostChunk(chunk, 'abandoned by resolution (synthesize-only)'))
+      return reused.metadata
+    }
     if (reused) {
       emit.emit('info', phase, `chunk ${chunk.index + 1} reused from bundle (resume -- not re-mapped)`)
       state.reused++
-      return reused
+      return reused.metadata
     }
     // G8 empty-input gate: nothing to send -> skip the call. An empty/whitespace
     // prompt wastes spend and can hang a provider; a content-free chunk is just
@@ -1357,25 +1442,20 @@ export async function runMapStage(
       state.skippedEmpty++
       return makeEmptyMetadata()
     }
-    const prompt = buildMapPrompt(chunk)
     emit.emit(
       'info',
       phase,
       `mapping chunk ${chunk.index + 1}/${chunks.length} (${chunk.chars} chars, ${chunk.transcripts.length} conv)`,
     )
-    let content: string
+    let result: MapChunkResult
     try {
-      content = await Promise.race([
-        runLlmCall(
-          deps,
-          recapId,
-          ledger,
-          'map',
-          {
+      result = await runMapChunk(
+        {
+          call: (stage, req, chunkIndex) =>
+            Promise.race([runLlmCall(deps, recapId, ledger, stage, req, chunkIndex), stageDeadline]),
+          request: {
             feature: 'recap-period',
             model: mapModel,
-            system: prompt.system,
-            user: prompt.user,
             responseFormat: { type: 'json_object' },
             maxTokens: t.maxTokens?.map ?? RECAP_MAX_TOKENS,
             timeoutMs: mapCallTimeoutMs(),
@@ -1385,41 +1465,41 @@ export async function runMapStage(
             apiKey: deps.apiKey,
             ...(signal ? { signal } : {}),
           },
-          chunk.index,
-        ),
-        stageDeadline,
-      ])
+          emit: (level, message) => emit.emit(level, phase, message),
+        },
+        chunk,
+      )
     } catch (err) {
       state.failed++
       const reason = state.stageTimedOut
         ? `map stage deadline (${Math.round(stageDeadlineMs / 1000)}s) hit`
         : describe(err)
       emit.emit('warn', phase, `chunk ${chunk.index + 1} map call failed: ${reason}`)
+      const failure = lostChunk(chunk, reason)
+      failures.push(failure)
+      deps.bundle?.recordMapFailure(recapId, chunk.index, failure)
       return makeEmptyMetadata()
     }
-    try {
-      const parsedChunk = parseMapOutput(content)
+    if (result.failure) {
+      failures.push(result.failure)
+      deps.bundle?.recordMapFailure(recapId, chunk.index, result.failure)
+    }
+    if (result.outcome === 'parsed') {
       // Pillar C+: persist the per-chunk extraction so a resume can re-merge
       // without re-paying the (expensive) map stage.
-      deps.bundle?.recordMapParsed(recapId, chunk.index, parsedChunk)
+      deps.bundle?.recordMapParsed(recapId, chunk.index, result.metadata)
       trusted.add(chunk.index)
-      return parsedChunk
-    } catch (err) {
-      if (!(err instanceof MapParseError)) throw err
+    } else if (result.outcome === 'salvaged') {
+      // Usable now, NOT banked and NOT cached: a resume must get a clean run at
+      // it rather than inheriting an extraction we already know is incomplete.
+      state.salvaged++
+    } else {
       state.failed++
-      // finish_reason=length truncates the JSON mid-structure -> unparseable. A
-      // huge response is the tell. Label it so the fix is obvious (shrink
-      // CLAUDWERK_RECAP_CHUNK_SIZE_CHARS) rather than a generic parse error.
-      const detail =
-        content.length > TRUNCATION_HINT_CHARS
-          ? `map output truncated at the token cap (${content.length} chars) -- chunk too large, reduce chunk size`
-          : `map JSON unparseable: ${describe(err)}`
-      emit.emit('warn', phase, `chunk ${chunk.index + 1} ${detail}`)
-      return makeEmptyMetadata()
     }
+    return result.metadata
   })
   if (stageTimer) clearTimeout(stageTimer) // disarm before reduce so it can't fire late
-  return { metas, trusted, ...state }
+  return { metas, trusted, failures: failures.sort((a, b) => a.chunkIndex - b.chunkIndex), ...state }
 }
 
 interface ProduceArgs {
@@ -1432,7 +1512,7 @@ interface ProduceArgs {
   recipe: ResolvedRecipe
   /** Resume-from-map: return a chunk's already-parsed extraction (from the
    *  bundle) to reuse it instead of re-paying the map call. null -> re-map. */
-  reuseMap?: (index: number) => RecapMetadata | null
+  reuseMap?: MapReuse
   /** Fires when the overall deadline force-fails the run. Threaded into EVERY
    *  ChatRequest below so an abandoned recap stops billing immediately instead
    *  of running its synthesis (and parse repair) to completion for nobody. */
@@ -1446,9 +1526,11 @@ interface ProduceResult {
   parsed: ParsedRecap
   model: string
   /** Present iff the chunked map stage DROPPED >=1 chunk (timeout / truncation /
-   *  stage-deadline). Drives the 'partial' terminal status + banner. Skipped
-   *  empty chunks (G8) do NOT count -- they carried no evidence to lose. */
-  partial?: { failed: number; total: number }
+   *  stage-deadline) or SALVAGED one (recovered but incomplete). Drives the
+   *  'partial' terminal status + banner. Skipped empty chunks (G8) do NOT
+   *  count -- they carried no evidence to lose. `failures` names the
+   *  conversations, so no surface has to report a bare count. */
+  partial?: { failed: number; salvaged: number; abandoned: number; total: number; failures: RecapChunkFailure[] }
 }
 
 /**
@@ -1485,7 +1567,17 @@ async function produceRecap(
   })
   emit.setProgress(85, 'render/llm-done')
   deps.bundle?.recordFinalResponse(recapId, content)
-  const parsed = await parseOrRetry(deps, recapId, ledger, content, built, model, deps.apiKey, p.signal)
+  const parsed = await parseOrRetry({
+    deps,
+    recapId,
+    ledger,
+    content,
+    built,
+    model,
+    apiKey: deps.apiKey,
+    signal: p.signal,
+    emit,
+  })
   return { parsed, model }
 }
 
@@ -1535,17 +1627,8 @@ async function runChunked(
   // MAP -- parallel extraction with per-call timeout + overall stage deadline +
   // the G8 empty gate + resume-from-map reuse. Degrades dropped chunks rather
   // than hanging the barrier.
-  const { metas, trusted, failed, skippedEmpty, reused, stageTimedOut } = await runMapStage(
-    deps,
-    recapId,
-    ledger,
-    emit,
-    chunks,
-    models.mapModel,
-    t,
-    p.reuseMap,
-    p.signal,
-  )
+  const { metas, trusted, failed, salvaged, abandoned, skippedEmpty, reused, stageTimedOut, failures } =
+    await runMapStage(deps, recapId, ledger, emit, chunks, models.mapModel, t, p.reuseMap, p.signal)
   if (failed === chunks.length) {
     throw new Error(`chunked map stage failed: all ${chunks.length} chunk(s) errored`)
   }
@@ -1555,6 +1638,19 @@ async function runChunked(
       'render/map-done',
       `${failed}/${chunks.length} chunk(s) failed${stageTimedOut ? ' (stage deadline hit)' : ''}; synthesizing from the rest`,
     )
+  }
+  if (salvaged > 0) {
+    emit.emit(
+      'warn',
+      'render/map-done',
+      `${salvaged}/${chunks.length} chunk(s) partially recovered from a malformed response (facts lost)`,
+    )
+  }
+  // NAME the casualties. A count tells nobody which conversation is missing;
+  // one line per casualty means the operator never has to diff the bundle by
+  // hand to find out what a partial recap actually cost them.
+  for (const failure of failures) {
+    emit.emit('warn', 'render/map-done', describeFailure(failure))
   }
   if (skippedEmpty > 0) {
     emit.emit('info', 'render/map-done', `${skippedEmpty}/${chunks.length} chunk(s) skipped (empty -- no content)`)
@@ -1612,6 +1708,17 @@ async function runChunked(
     presentationOf(p.recipe),
     p.args.instructions,
   )
+  // LOG EVERYTHING: the reduce is the single longest and most expensive call in
+  // the run (on 2026-07-28: 598s and $3.86 of a $9.08 recap) and it used to emit
+  // NOTHING between merge and done -- ten minutes of dead air in which a reader
+  // could not tell a working synthesis from a wedged one.
+  const synthStartedAt = Date.now()
+  emit.emit(
+    'info',
+    'render/synthesize',
+    `synthesizing with ${models.reduceModel} from ${countItems(merged)} merged item(s)` +
+      ` (${synth.user.length} chars, timeout ${Math.round(RECAP_SYNTHESIS_TIMEOUT_MS / 1000)}s)`,
+  )
   const content = await runLlmCall(deps, recapId, ledger, 'reduce', {
     feature: 'recap-period',
     model: models.reduceModel,
@@ -1625,13 +1732,30 @@ async function runChunked(
     apiKey: deps.apiKey,
     signal: p.signal,
   })
+  emit.emit(
+    'info',
+    'render/synthesize',
+    `synthesis returned ${content.length} chars in ${Math.round((Date.now() - synthStartedAt) / 1000)}s`,
+  )
   emit.setProgress(88, 'render/synthesize-done')
   deps.bundle?.recordFinalResponse(recapId, content)
-  const parsed = await parseOrRetry(deps, recapId, ledger, content, synth, models.reduceModel, deps.apiKey, p.signal)
+  const parsed = await parseOrRetry({
+    deps,
+    recapId,
+    ledger,
+    content,
+    built: synth,
+    model: models.reduceModel,
+    apiKey: deps.apiKey,
+    signal: p.signal,
+    emit,
+  })
   return {
     parsed,
     model: models.reduceModel,
-    ...(failed > 0 ? { partial: { failed, total: chunks.length } } : {}),
+    ...(failed > 0 || salvaged > 0 || abandoned > 0
+      ? { partial: { failed, salvaged, abandoned, total: chunks.length, failures } }
+      : {}),
   }
 }
 
@@ -1724,9 +1848,13 @@ interface FinalizeArgs {
    *  'partial' = the doc rendered but some map chunks were dropped (timeout /
    *  truncation / stage deadline). Defaults to 'done'. */
   status?: 'done' | 'partial'
-  /** Human note for a partial recap (e.g. "2 of 6 chunks failed"). Stored in
-   *  the `error` column so the existing UI surfaces it; null on a clean 'done'. */
+  /** Human note for a partial recap, NAMING the conversations that fell out.
+   *  Stored in the `error` column so the existing UI surfaces it; null on a
+   *  clean 'done'. */
   partialReason?: string
+  /** The casualty records behind that note -- persisted so the panel can offer
+   *  a resolution (re-run / drop / accept) instead of just reporting a number. */
+  failures?: RecapChunkFailure[]
 }
 
 function finalize(deps: OrchestratorDeps, recapId: string, ledger: RecapLedger, args: FinalizeArgs): void {
@@ -1750,6 +1878,7 @@ function finalize(deps: OrchestratorDeps, recapId: string, ledger: RecapLedger, 
     outputTokens: built.summary.totalOutputTokens,
     llmCostUsd: built.summary.totalCostUsd,
     ledgerJson: JSON.stringify(built),
+    failuresJson: args.failures?.length ? JSON.stringify(args.failures) : null,
   })
   // Pillar C+: seal the bundle manifest with the final status + cost summary.
   deps.bundle?.updateManifest(recapId, { status, completedAt, cost: built.summary })

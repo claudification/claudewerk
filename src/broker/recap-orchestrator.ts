@@ -4,12 +4,13 @@ import type {
   RecapLogEntry,
   RecapMetadata,
   RecapPeriodLabel,
+  RecapResolutionMode,
   RecapSearchHit,
   RecapStatus,
   RecapSummary,
 } from '../shared/protocol'
 import { isRecapTerminal } from '../shared/protocol'
-import { createRecapBundleWriter } from './recap/period/bundle'
+import { createRecapBundleWriter, type RecapBundleManifest } from './recap/period/bundle'
 import { reapCeilingMs } from './recap/period/deadline'
 import type { CommitDigest, PeriodScope } from './recap/period/gather/types'
 import {
@@ -23,8 +24,12 @@ import {
   startRecap,
 } from './recap/period/orchestrator'
 import type { ProgressBroadcaster } from './recap/period/progress'
+import { type AcceptResult, acceptPartial } from './recap/period/resolve'
 import { createPeriodRecapStore, type PeriodRecapStore, type RecapRow, rowToRecapMeta } from './recap/period/store'
 import type { StoreDriver } from './store/types'
+
+/** What resolve() did: spent nothing (accepted) or scheduled a re-run. */
+export type RecapResolveResult = ({ kind: 'accepted' } & AcceptResult) | ({ kind: 'resumed' } & ResumeResult)
 
 let singleton: RecapOrchestrator | null = null
 
@@ -43,6 +48,11 @@ export interface RecapOrchestrator {
   /** G3: resume an interrupted/partial/failed chunked recap, reusing persisted
    *  chunks and re-running only the missing ones. */
   resume(recapId: string): ResumeResult
+  /** Act on a partial recap the way the READER chose: re-run the casualties,
+   *  abandon them and re-synthesize, or accept the recap as it stands. */
+  resolve(recapId: string, mode: RecapResolutionMode, by?: string): RecapResolveResult
+  /** resume() with an explicit mode (resolve() dispatches through this). */
+  resumeWith(recapId: string, mode: Exclude<RecapResolutionMode, 'accept'>): ResumeResult
   /** G2: on broker boot, reclaim recaps stuck in-flight (their async died with the
    *  process) -> 'interrupted' (resumable, never auto-resumed). Returns what it swept. */
   sweepInterrupted(): Array<{ id: string; prevStatus: RecapStatus; progress: number }>
@@ -115,6 +125,35 @@ export function initRecapOrchestrator(opts: InitOptions): RecapOrchestrator {
           bundle,
         },
         args,
+      ),
+    resolve(recapId, mode, by) {
+      if (mode === 'accept') {
+        const accepted = acceptPartial({ store, bundle }, recapId, by)
+        opts.broadcaster.broadcast({
+          type: 'recap_resolved',
+          recapId,
+          mode,
+          resolution: accepted.resolution,
+          meta: rowToRecapMeta(store.get(recapId) ?? ({} as RecapRow)),
+        })
+        return { kind: 'accepted', ...accepted }
+      }
+      const resumed = this.resumeWith(recapId, mode)
+      return { kind: 'resumed', ...resumed }
+    },
+    resumeWith: (recapId, mode) =>
+      resumeRecap(
+        {
+          store,
+          brokerStore: opts.brokerStore,
+          broadcaster: opts.broadcaster,
+          informConversation: opts.informConversation,
+          projectSuiteDefault: opts.projectSuiteDefault,
+          gatherCommits: opts.gatherCommits,
+          bundle,
+        },
+        recapId,
+        mode,
       ),
     resume: recapId =>
       resumeRecap(
@@ -220,13 +259,7 @@ export function initRecapOrchestrator(opts: InitOptions): RecapOrchestrator {
     get(recapId, includeLogs) {
       const row = store.get(recapId)
       if (!row) return null
-      const recap = rowToDoc(row)
-      // Surface the refinement inputs the write-up was generated with (bundle
-      // manifest, not a DB column) so the regenerate modal prefills them.
-      const manifest = bundle.readManifest(recapId)
-      if (manifest?.instructions) recap.instructions = manifest.instructions
-      const variantLabel = manifest?.recipe?.variantLabel
-      if (typeof variantLabel === 'string' && variantLabel) recap.variantLabel = variantLabel
+      const recap = applyManifestFields(rowToDoc(row), bundle.readManifest(recapId))
       if (!includeLogs) return { recap }
       return { recap, logs: store.getLogs(recapId) as RecapLogEntry[] }
     },
@@ -294,6 +327,23 @@ function variantLabelOf(row: RecapRow): string | undefined {
   const recipe = parseJsonOr<Record<string, unknown>>(row.argsJson)
   const label = recipe?.variantLabel
   return typeof label === 'string' && label ? label : undefined
+}
+
+/**
+ * Fold in the fields that live in the run bundle's manifest rather than a DB
+ * column: the refinement inputs the write-up was generated with (so the
+ * regenerate modal can prefill "what was used"), and the resume count (so the
+ * panel can say how many attempts are left instead of failing the reader's
+ * third click). Split out of get() to keep that method a lookup rather than a
+ * growing pile of optional-field guards.
+ */
+function applyManifestFields(recap: PeriodRecapDoc, manifest: RecapBundleManifest | null): PeriodRecapDoc {
+  if (!manifest) return recap
+  if (manifest.instructions) recap.instructions = manifest.instructions
+  const variantLabel = manifest.recipe?.variantLabel
+  if (typeof variantLabel === 'string' && variantLabel) recap.variantLabel = variantLabel
+  if (typeof manifest.resumeCount === 'number') recap.resumeCount = manifest.resumeCount
+  return recap
 }
 
 function rowToDoc(row: RecapRow): PeriodRecapDoc {

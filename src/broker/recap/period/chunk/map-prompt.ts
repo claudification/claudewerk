@@ -115,6 +115,14 @@ export function parseMapOutput(raw: string): RecapMetadata {
   } catch (err) {
     throw new MapParseError(`map output JSON parse failed: ${(err as Error).message}`, raw)
   }
+  return coerceMapObject(obj)
+}
+
+/** The SHAPE half of parseMapOutput, split out so the salvage path (salvage.ts)
+ *  coerces recovered keys through the exact same rules instead of growing a
+ *  second, subtly-different copy. `obj` may be sparse -- a missing key coerces
+ *  to [] like any other non-array. */
+export function coerceMapObject(obj: Record<string, unknown>): RecapMetadata {
   const out = makeEmptyMetadata()
   out.keywords = stringArray(obj.keywords)
   out.hashtags = stringArray(obj.hashtags)

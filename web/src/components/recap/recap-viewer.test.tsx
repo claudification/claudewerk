@@ -77,6 +77,34 @@ describe('RecapViewer', () => {
     expect(screen.getByText(/0\.0123/)).toBeTruthy()
   })
 
+  test('renders a PARTIAL recap document instead of a fake progress bar', async () => {
+    // REGRESSION: the viewer hand-rolled an isTerminal() that omitted 'partial',
+    // so a partial recap rendered "Generating recap... partial" forever (and
+    // re-polled every 2s in perpetuity). The document was finished and on disk
+    // the whole time, and completely unreachable from the UI.
+    mockFetchOnce(
+      doneRecap({
+        status: 'partial',
+        error: '1 conversation(s) dropped of 169 -- AWS SES production access (488cbece)',
+      }),
+    )
+    render(<RecapViewer />)
+    dispatchOpen('recap_partial')
+    await waitFor(() => {
+      expect(screen.getByText('Sample Recap')).toBeTruthy()
+    })
+    expect(screen.queryByText(/Generating recap/)).toBeNull()
+  })
+
+  test('renders an INTERRUPTED recap that still has a document', async () => {
+    mockFetchOnce(doneRecap({ status: 'interrupted' }))
+    render(<RecapViewer />)
+    dispatchOpen('recap_int')
+    await waitFor(() => {
+      expect(screen.getByText('Sample Recap')).toBeTruthy()
+    })
+  })
+
   test('shows error when fetch returns 404', async () => {
     mockFetchOnce(null)
     render(<RecapViewer />)
