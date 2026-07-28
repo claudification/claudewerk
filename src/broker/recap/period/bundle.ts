@@ -203,6 +203,18 @@ export interface RecapBundleWriter {
   /** Read one chunk's persisted parsed extraction (resume-from-map reuses these
    *  instead of re-paying the map call). null if that chunk was never persisted. */
   readMapParsed<T = unknown>(recapId: string, chunkIndex: number): T | null
+  /** Record which conversations each chunk index covered, so a later resume can
+   *  find a banked extraction by CONVERSATION rather than by position.
+   *
+   *  Chunk numbering is only meaningful within the run that produced it: the
+   *  map plan chunks cache MISSES only, so once the cross-run cache warms up
+   *  the same conversation lands on a different index. Without this map, a
+   *  resume reads a neighbour's extraction and never re-runs the real
+   *  casualty (incident 2026-07-28, recap_zquf15w44ufh). */
+  recordMapIndex(recapId: string, byConversation: Record<string, number>): void
+  /** conversationId -> chunk index for a prior run. Empty for bundles written
+   *  before this existed; callers must handle the miss. */
+  readMapIndex(recapId: string): Record<string, number>
   /** Every chunk failure recorded for this recap, ascending by chunk index. */
   readMapFailures(recapId: string): RecapChunkFailure[]
   /** Read the saved final-stage raw response (render-stage input). */
@@ -415,6 +427,21 @@ export function createRecapBundleWriter(cacheDir: string): RecapBundleWriter {
 
     readMapParsed<T = unknown>(recapId: string, chunkIndex: number): T | null {
       return readJsonFile<T>(join(bundleDir(recapId), 'chunks', `map-${chunkIndex}.parsed.json`))
+    },
+
+    recordMapIndex(recapId, byConversation) {
+      try {
+        writeFileSync(
+          join(bundleDir(recapId), 'chunks', 'by-conversation.json'),
+          `${JSON.stringify(byConversation, null, 2)}\n`,
+        )
+      } catch (err) {
+        console.error(`[recap-bundle] map-index write failed for ${recapId}:`, describe(err))
+      }
+    },
+
+    readMapIndex(recapId) {
+      return readJsonFile<Record<string, number>>(join(bundleDir(recapId), 'chunks', 'by-conversation.json')) ?? {}
     },
 
     readMapFailures(recapId: string): RecapChunkFailure[] {

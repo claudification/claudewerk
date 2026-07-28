@@ -561,12 +561,39 @@ export function resumeRecap(
  * than re-paid. The reader picks; the pipeline does not guess.
  */
 function makeReuse(deps: OrchestratorDeps, recapId: string, mode: RecapResolutionMode): MapReuse {
-  return (index: number) => {
-    const banked = deps.bundle?.readMapParsed<RecapMetadata>(recapId, index) ?? null
+  const byConversation = deps.bundle?.readMapIndex(recapId) ?? {}
+  const hasIndex = Object.keys(byConversation).length > 0
+  return (chunk: TranscriptChunk) => {
+    const banked = hasIndex ? readBankedByConversation(deps, recapId, byConversation, chunk) : null
     if (banked) return { metadata: banked }
     if (mode === 'synthesize_only') return { metadata: makeEmptyMetadata(), abandoned: true }
     return null
   }
+}
+
+/**
+ * Find the prior run's extraction for THIS chunk's conversation.
+ *
+ * Only a chunk that covers exactly one whole conversation can be matched: a
+ * multi-conversation or turn-split chunk's extraction is a function of where
+ * the splitter happened to cut, so reusing it under different boundaries would
+ * silently mix content. Those re-map instead -- correct beats cheap.
+ *
+ * A bundle written before the index existed returns nothing, so the resume
+ * re-maps everything rather than reusing by position (which is the bug).
+ */
+function readBankedByConversation(
+  deps: OrchestratorDeps,
+  recapId: string,
+  byConversation: Record<string, number>,
+  chunk: TranscriptChunk,
+): RecapMetadata | null {
+  if (chunk.transcripts.length !== 1 || chunk.partialConversationIds.length > 0) return null
+  const conversationId = chunk.transcripts[0]?.conversationId
+  if (!conversationId) return null
+  const priorIndex = byConversation[conversationId]
+  if (typeof priorIndex !== 'number') return null
+  return deps.bundle?.readMapParsed<RecapMetadata>(recapId, priorIndex) ?? null
 }
 
 function jsonParseOr(raw: string | null | undefined): unknown {
@@ -1328,8 +1355,15 @@ export function mapStageDeadlineMs(chunkCount: number): number {
 }
 
 /**
- * Resume-from-map lookup: what a prior run already banked for a chunk, or null
- * to map it fresh.
+ * Resume-from-map lookup: what a prior run already banked for this chunk, or
+ * null to map it fresh.
+ *
+ * Takes the CHUNK, not its index, and that is load-bearing. Chunk numbering is
+ * only meaningful within the run that produced it -- the map plan chunks cache
+ * MISSES only, so as the cross-run cache warms up the same conversation slides
+ * to a different index. Keying reuse on the index therefore hands a resume some
+ * neighbour's extraction while the actual casualty is never re-run
+ * (incident 2026-07-28). The conversation id is the stable key.
  *
  * `abandoned` is the difference between the two resume intents a reader can
  * have about a casualty: retry_failed re-maps it (null -> a fresh call), while
@@ -1337,7 +1371,7 @@ export function mapStageDeadlineMs(chunkCount: number): number {
  * the conversation stays on the casualty list so the recap never quietly
  * upgrades itself to complete).
  */
-export type MapReuse = (index: number) => MapReuseResult | null
+export type MapReuse = (chunk: TranscriptChunk) => MapReuseResult | null
 
 export interface MapReuseResult {
   metadata: RecapMetadata
@@ -1419,7 +1453,7 @@ export async function runMapStage(
     const phase = `render/map ${chunk.index + 1}/${chunks.length}`
     // Resume-from-map: a chunk already extracted on a prior run is reused from
     // the bundle -- no LLM call, no cost. NOT a failure, NOT empty.
-    const reused = reuseMap?.(chunk.index) ?? null
+    const reused = reuseMap?.(chunk) ?? null
     if (reused?.abandoned) {
       // The reader chose synthesize-only: this casualty is not coming back, and
       // saying so out loud (plus keeping it on the casualty list) is the whole
@@ -1581,6 +1615,20 @@ async function produceRecap(
   return { parsed, model }
 }
 
+/** conversationId -> chunk index, for the chunks that hold exactly one whole
+ *  conversation. Multi-conversation and turn-split chunks are deliberately
+ *  omitted: their extraction depends on where the splitter cut, so it is not
+ *  reusable under different boundaries. */
+export function mapIndexByConversation(chunks: TranscriptChunk[]): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const chunk of chunks) {
+    if (chunk.transcripts.length !== 1 || chunk.partialConversationIds.length > 0) continue
+    const id = chunk.transcripts[0]?.conversationId
+    if (id) out[id] = chunk.index
+  }
+  return out
+}
+
 /**
  * CHUNKED map-reduce path (Pillar A). split -> parallel map (extraction JSON via
  * the cheap map model) -> code merge/dedup -> one Opus synthesis -> parseRecapOutput.
@@ -1604,6 +1652,11 @@ async function runChunked(
   // rest is chunked (1:1 with a conversation, so results stay attributable).
   const plan = planMapStage(promptInputs.transcripts, models.mapModel, deps.store, t.chunkSize)
   const chunks = plan.chunks
+  // Bank WHICH conversation each chunk index covers. The index alone is
+  // meaningless to a later run (the plan chunks cache misses only, so the
+  // numbering shifts as the cache warms); this is what lets a resume find a
+  // banked extraction by conversation instead of by position.
+  deps.bundle?.recordMapIndex(recapId, mapIndexByConversation(chunks))
   deps.store.update(recapId, { model: models.reduceModel })
   persistRecipe(deps, recapId, 'chunked', models.reduceModel, t, p.recipe, {
     mapModel: models.mapModel,
