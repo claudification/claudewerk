@@ -129,7 +129,9 @@ function JobCard({ job, onOpen }: { job: RecapJob; onOpen: (id: string) => void 
               title={
                 isFailed
                   ? 'Retry (reuse banked map/merge output, re-run only what failed -- extraction is not re-paid)'
-                  : 'Resume (reuse paid chunks, re-run only what is missing)'
+                  : isPartial
+                    ? 'Re-run the missing conversations (open the recap to also drop them or accept it as-is)'
+                    : 'Resume (reuse paid chunks, re-run only what is missing)'
               }
             >
               {isFailed ? 'Retry' : 'Resume'}

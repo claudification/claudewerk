@@ -12,6 +12,7 @@
  */
 
 import type { PeriodRecapDoc, RecapSummary } from '@shared/protocol'
+import { isRecapInFlight } from '@shared/protocol'
 import { Link2 } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -21,6 +22,7 @@ import { useConversationsStore } from '@/hooks/use-conversations'
 import { useRecapJobsStore } from '@/hooks/use-recap-jobs'
 import { appendShareParam } from '@/lib/share-mode'
 import { cn, haptic } from '@/lib/utils'
+import { PartialBanner } from './parts/partial-banner'
 import { fetchRecapList, modelLabel, selectSiblings } from './recap-forks'
 import { recapOpenBus } from './recap-open-trigger'
 import { RecapReport } from './recap-report'
@@ -38,8 +40,18 @@ interface RecapDocResponse {
   error?: string
 }
 
-function isTerminal(status: PeriodRecapDoc['status']): boolean {
-  return status === 'done' || status === 'failed' || status === 'cancelled'
+/**
+ * A recap is worth polling only while it is genuinely RUNNING.
+ *
+ * This used to be a hand-rolled `isTerminal` listing done/failed/cancelled,
+ * which silently drifted from the shared status model when `partial` and
+ * `interrupted` were added: a partial recap was treated as still-generating, so
+ * the viewer showed "Generating recap... partial" over a document that had been
+ * finished and on disk for hours -- and re-polled it every 2s forever. Ask the
+ * shared helper instead of keeping a second opinion about status in the panel.
+ */
+function isRunning(status: PeriodRecapDoc['status']): boolean {
+  return isRecapInFlight(status)
 }
 
 async function fetchRecap(recapId: string): Promise<PeriodRecapDoc | null> {
@@ -380,7 +392,7 @@ export function RecapViewer() {
   // Poll while still running.
   useEffect(() => {
     if (!recapId || !recap) return
-    if (isTerminal(recap.status)) return
+    if (!isRunning(recap.status)) return
     pollRef.current = setInterval(() => {
       void refresh(recapId)
     }, POLL_MS)
@@ -426,9 +438,18 @@ export function RecapViewer() {
             <div className="p-6 text-sm text-red-400">{error}</div>
           ) : !recap ? (
             <div className="p-6 text-sm text-muted-foreground">Loading…</div>
-          ) : isTerminal(recap.status) && recap.markdown ? (
+          ) : recap.markdown && !isRunning(recap.status) ? (
             <>
               <RecapHeader recap={recap} />
+              {recap.status === 'partial' && (
+                <PartialBanner
+                  recapId={recap.recapId}
+                  reason={recap.error}
+                  failures={recap.failures}
+                  resolution={recap.resolution}
+                  resumeCount={recap.resumeCount}
+                />
+              )}
               <RecapTabs mode={mode} setMode={setMode} />
               <div className="flex-1 overflow-y-auto px-4 py-3">
                 {mode === 'raw' ? (

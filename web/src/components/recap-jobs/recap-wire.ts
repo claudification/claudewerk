@@ -4,7 +4,7 @@
  * (the submenu also imports the dialog, which would form a cycle).
  */
 
-import type { RecapPeriodLabel } from '@shared/protocol'
+import type { RecapPeriodLabel, RecapResolutionMode } from '@shared/protocol'
 import type { RecapSuiteId } from '@shared/recap-suites'
 import { wsSend } from '@/hooks/use-conversations'
 
@@ -104,4 +104,11 @@ export function regenerateRecap(opts: RegenerateRecapOptions): boolean {
     ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
     ...(opts.maxTokens !== undefined ? { maxTokens: opts.maxTokens } : {}),
   })
+}
+
+/** Send recap_resolve over the dashboard WS: act on a partial recap the way the
+ *  reader chose (re-run the casualties, abandon them, or accept as-is). The
+ *  broker replies recap_resolved_ack and broadcasts recap_resolved. */
+export function resolveRecap(recapId: string, mode: RecapResolutionMode): boolean {
+  return wsSend('recap_resolve', { recapId, mode })
 }

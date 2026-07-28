@@ -266,6 +266,9 @@ export function initRecapOrchestrator(opts: InitOptions): RecapOrchestrator {
       if (manifest?.instructions) recap.instructions = manifest.instructions
       const variantLabel = manifest?.recipe?.variantLabel
       if (typeof variantLabel === 'string' && variantLabel) recap.variantLabel = variantLabel
+      // Resumes already spent (manifest, not a DB column) so the panel can say
+      // how many are left instead of failing the reader's third click.
+      if (typeof manifest?.resumeCount === 'number') recap.resumeCount = manifest.resumeCount
       if (!includeLogs) return { recap }
       return { recap, logs: store.getLogs(recapId) as RecapLogEntry[] }
     },
