@@ -110,4 +110,50 @@ describe('insertTranscriptEntriesInOrder', () => {
     insertTranscriptEntriesInOrder(list, [atMs('body', 5016, 398)])
     expect(ids(list)).toEqual(['invoke', 'body'])
   })
+
+  // THE UNDATED-TAIL REGRESSION (conv daf1f369, 2026-07-28). `agent-name` and
+  // `custom-title` carry NO timestamp, and one of them landing at the tail
+  // turned this splice into a blind append for EVERYTHING after it: the tail's
+  // RAW time read -Infinity, nothing sorts before that, so a prompt recovered
+  // from the JSONL 7 minutes late was pushed below entries stamped 7 minutes
+  // AFTER it. `orderKeys` says an undated entry inherits its predecessor's key;
+  // this path has to agree, or the two orderings disagree on the same list.
+  it('splices past an undated tail instead of blind-appending', () => {
+    const list = [at('early', 10, 1), at('a', 500, 2), undated('title', 3), undated('name', 4)]
+    insertTranscriptEntriesInOrder(list, [at('late', 20, 5)])
+    expect(ids(list)).toEqual(['early', 'late', 'a', 'title', 'name'])
+  })
+
+  it('still appends past an undated tail when the entry really is newest', () => {
+    const list = [at('a', 10, 1), undated('title', 2)]
+    insertTranscriptEntriesInOrder(list, [at('newest', 500, 3)])
+    expect(ids(list)).toEqual(['a', 'title', 'newest'])
+  })
+
+  // The jitter clamp must keep working THROUGH an undated tail: the carried key
+  // is the dated predecessor's, so a sub-minute-behind arrival still belongs at
+  // the end rather than being spliced in front of the undated rows.
+  it('keeps the jitter clamp alive across an undated tail', () => {
+    const list = [atMs('invoke', 5671, 397), undated('title', 398)]
+    insertTranscriptEntriesInOrder(list, [atMs('body', 5016, 399)])
+    expect(ids(list)).toEqual(['invoke', 'title', 'body'])
+  })
+
+  // A list that is ONLY undated entries has no clock to place anything by.
+  it('appends when the list carries no timestamps at all', () => {
+    const list = [undated('a', 1), undated('b', 2)]
+    insertTranscriptEntriesInOrder(list, [at('c', 10, 3)])
+    expect(ids(list)).toEqual(['a', 'b', 'c'])
+  })
+
+  // The splice and the full sort must agree -- they order the SAME list, one
+  // incrementally and one from scratch, and a disagreement is what makes a
+  // reload move entries around on screen.
+  it('agrees with sortTranscriptEntries on the undated-tail case', () => {
+    const list = [at('early', 10, 1), at('a', 500, 2), undated('title', 3), undated('name', 4)]
+    const late = at('late', 20, 5)
+    const spliced = [...list]
+    insertTranscriptEntriesInOrder(spliced, [late])
+    expect(ids(spliced)).toEqual(ids(sortTranscriptEntries([...list, late])))
+  })
 })
