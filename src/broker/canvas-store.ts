@@ -14,8 +14,8 @@
 import type { Database, Statement } from 'bun:sqlite'
 import { resolve } from 'node:path'
 import type { CanvasShareTier, CanvasSummary } from '../shared/protocol'
-import { deleteCanvasImages, initCanvasFiles } from './canvas-files'
 import { CANVAS_COLS, type CanvasRow, rowToSummary } from './canvas-row'
+import { deleteCanvasImages, initCanvasFiles } from './canvas-files'
 import { deleteSceneFiles, initCanvasScenes, hasThumb as sceneHasThumb, writeScene, writeThumb } from './canvas-scenes'
 import { openWalDatabase } from './sqlite-open'
 

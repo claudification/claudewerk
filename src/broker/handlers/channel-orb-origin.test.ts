@@ -27,11 +27,7 @@ describe('stampOrbOrigin', () => {
   })
 
   it('leaves a normal peer delivery untouched -- it must render as a peer, not the user', () => {
-    const d: Record<string, unknown> = {
-      type: 'channel_deliver',
-      fromConversation: 'arr:viral-zebra',
-      fromProject: 'arr',
-    }
+    const d: Record<string, unknown> = { type: 'channel_deliver', fromConversation: 'arr:viral-zebra', fromProject: 'arr' }
     stampOrbOrigin(d, 'arr', 'arr:viral-zebra')
     expect(d.sender).toBeUndefined()
     expect(d.source).toBeUndefined()

@@ -10,7 +10,7 @@ import type {
   RecapSummary,
 } from '../shared/protocol'
 import { isRecapTerminal } from '../shared/protocol'
-import { createRecapBundleWriter } from './recap/period/bundle'
+import { createRecapBundleWriter, type RecapBundleManifest } from './recap/period/bundle'
 import { reapCeilingMs } from './recap/period/deadline'
 import type { CommitDigest, PeriodScope } from './recap/period/gather/types'
 import {
@@ -259,16 +259,7 @@ export function initRecapOrchestrator(opts: InitOptions): RecapOrchestrator {
     get(recapId, includeLogs) {
       const row = store.get(recapId)
       if (!row) return null
-      const recap = rowToDoc(row)
-      // Surface the refinement inputs the write-up was generated with (bundle
-      // manifest, not a DB column) so the regenerate modal prefills them.
-      const manifest = bundle.readManifest(recapId)
-      if (manifest?.instructions) recap.instructions = manifest.instructions
-      const variantLabel = manifest?.recipe?.variantLabel
-      if (typeof variantLabel === 'string' && variantLabel) recap.variantLabel = variantLabel
-      // Resumes already spent (manifest, not a DB column) so the panel can say
-      // how many are left instead of failing the reader's third click.
-      if (typeof manifest?.resumeCount === 'number') recap.resumeCount = manifest.resumeCount
+      const recap = applyManifestFields(rowToDoc(row), bundle.readManifest(recapId))
       if (!includeLogs) return { recap }
       return { recap, logs: store.getLogs(recapId) as RecapLogEntry[] }
     },
@@ -336,6 +327,23 @@ function variantLabelOf(row: RecapRow): string | undefined {
   const recipe = parseJsonOr<Record<string, unknown>>(row.argsJson)
   const label = recipe?.variantLabel
   return typeof label === 'string' && label ? label : undefined
+}
+
+/**
+ * Fold in the fields that live in the run bundle's manifest rather than a DB
+ * column: the refinement inputs the write-up was generated with (so the
+ * regenerate modal can prefill "what was used"), and the resume count (so the
+ * panel can say how many attempts are left instead of failing the reader's
+ * third click). Split out of get() to keep that method a lookup rather than a
+ * growing pile of optional-field guards.
+ */
+function applyManifestFields(recap: PeriodRecapDoc, manifest: RecapBundleManifest | null): PeriodRecapDoc {
+  if (!manifest) return recap
+  if (manifest.instructions) recap.instructions = manifest.instructions
+  const variantLabel = manifest.recipe?.variantLabel
+  if (typeof variantLabel === 'string' && variantLabel) recap.variantLabel = variantLabel
+  if (typeof manifest.resumeCount === 'number') recap.resumeCount = manifest.resumeCount
+  return recap
 }
 
 function rowToDoc(row: RecapRow): PeriodRecapDoc {

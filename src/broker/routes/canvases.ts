@@ -22,8 +22,8 @@ import { randomBytes } from 'node:crypto'
 import { type Context, Hono } from 'hono'
 import type { CanvasShareTier, CanvasSummary } from '../../shared/protocol'
 import { getAuthenticatedUser } from '../auth-routes'
-import { isSafeFileId, readCanvasImage, writeCanvasImage } from '../canvas-files'
 import { AGENT_PEER_ID, applySceneWrite, baselineScene } from '../canvas-room'
+import { isSafeFileId, readCanvasImage, writeCanvasImage } from '../canvas-files'
 import { enforceCanvasTier, sanitizeCanvasScene } from '../canvas-sanitize'
 import { BLANK_SCENE, readScene, readThumb } from '../canvas-scenes'
 import {
@@ -72,12 +72,7 @@ const MAX_IMAGE_DATAURL_BYTES = 15 * 1024 * 1024
 
 /** Validate + store an uploaded image dataURL for (canvasId, fileId). Shared by
  *  the authed and guest upload routes; the caller has already authorized. */
-function storeCanvasImage(
-  c: Context,
-  canvasId: string,
-  fileId: unknown,
-  body: Record<string, unknown> | null,
-): Response {
+function storeCanvasImage(c: Context, canvasId: string, fileId: unknown, body: Record<string, unknown> | null): Response {
   if (!isSafeFileId(fileId)) return c.json({ error: 'bad fileId' }, 400)
   const dataURL = body?.dataURL
   if (typeof dataURL !== 'string' || !dataURL.startsWith('data:')) return c.json({ error: 'dataURL required' }, 400)

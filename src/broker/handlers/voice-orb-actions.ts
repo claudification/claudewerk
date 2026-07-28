@@ -133,13 +133,7 @@ function resolveOrbSay(ctx: HandlerContext, data: MessageData): OrbSayResolved {
     ctx.conversations.findSocketByConversationId(conversationId) ||
     ctx.conversations.getConversationSocket(conversationId)
   if (!target || !ws) return { error: 'that conversation is not connected' }
-  return {
-    ws,
-    to: target.title || conversationId,
-    from: orbId ? `orb:${orbId}` : 'orb',
-    message,
-    convId: conversationId,
-  }
+  return { ws, to: target.title || conversationId, from: orbId ? `orb:${orbId}` : 'orb', message, convId: conversationId }
 }
 
 const voiceOrbSay: MessageHandler = (ctx: HandlerContext, data: MessageData) => {

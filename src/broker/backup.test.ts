@@ -1,4 +1,3 @@
-import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import {
   closeSync,
@@ -13,6 +12,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { sha256File, sweepStaleTempDirs } from './backup'
 
 // Independent reference hash: stream via createReadStream (a different code path
@@ -21,7 +21,7 @@ function referenceHash(path: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const h = createHash('sha256')
     createReadStream(path)
-      .on('data', c => h.update(c))
+      .on('data', (c) => h.update(c))
       .on('error', reject)
       .on('end', () => resolve(h.digest('hex')))
   })
