@@ -25,11 +25,15 @@
  * so a replayed rename is self-evidently old and loses on arithmetic. No replay
  * bit is consulted anywhere in this file, and that is the point.
  *
- * `cc-observed` has no timestamp, so it cannot join that comparison -- it is
- * held back by ORIGIN instead (rule 3), never by date. That deliberately leaves
- * CC's auto-titler able to keep re-titling an unpinned conversation, which is
- * the only channel it has. Stopping a REPLAYED auto-title from re-applying is a
- * different fix at a different layer (fold over store-fresh entries only).
+ * `cc-observed` has no timestamp, so it cannot join that comparison at all --
+ * it is held back by ORIGIN instead, and only ever SEEDS a title, never changes
+ * one. Measured before deciding that: every `custom-title` value written across
+ * this fleet since 2026-06-15 is either a slug WE generated or a name the
+ * spawn request supplied. CC echoes back the title we gave it; it does not
+ * author one. So the line mirrors our own state rather than sourcing it, and
+ * the only case where it carries something we do not already know is a session
+ * adopted from outside claudewerk (import / attach) -- which is exactly the
+ * "nothing set yet" case it is still allowed to fill.
  */
 
 /** Who wrote a title. The first two are authoritative; the last two are CC's. */
@@ -87,6 +91,9 @@ export function decideTitleWrite(state: TitleState, write: TitleWrite, now: numb
   const title = write.title?.trim() || undefined
   if (title === state.title) return { accept: false, reason: 'unchanged' }
 
+  // CC's own copy may SEED a title and never change one -- it is a mirror of
+  // what we told CC, so anything it disagrees with is us having moved on.
+  if (write.origin === 'cc-observed' && state.title) return { accept: false, reason: 'pinned' }
   if (!USER_AUTHORED.has(write.origin) && isPinned(state)) return { accept: false, reason: 'pinned' }
 
   const clamped = write.at !== undefined && write.at > now

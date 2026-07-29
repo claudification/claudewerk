@@ -37,9 +37,19 @@ describe('decideTitleWrite', () => {
       expect(verdict).toEqual({ accept: false, reason: 'pinned' })
     })
 
-    it('still lets CC re-title an UNPINNED conversation -- the auto-titler has no other channel', () => {
+    it("SEEDS a title CC knows and we don't -- the adopted / imported-session case", () => {
+      expect(decideTitleWrite({}, { title: 'from-cc', origin: 'cc-observed' }, NOW)).toMatchObject({ accept: true })
+    })
+
+    it('but never CHANGES a title we already hold, even an unpinned one', () => {
+      // CC's copy is a mirror of what we told it: every custom-title value in
+      // the fleet is a slug we generated or a name a spawn supplied. So a
+      // DISAGREEMENT means we moved on, not that CC learned something.
       const auto: TitleState = { title: 'old-auto', titleOrigin: 'cc-observed' }
-      expect(decideTitleWrite(auto, { title: 'new-auto', origin: 'cc-observed' }, NOW)).toMatchObject({ accept: true })
+      expect(decideTitleWrite(auto, { title: 'new-auto', origin: 'cc-observed' }, NOW)).toEqual({
+        accept: false,
+        reason: 'pinned',
+      })
     })
 
     it('honours an agent rename over a CC-set title', () => {
@@ -70,9 +80,19 @@ describe('decideTitleWrite', () => {
       expect(decideTitleWrite(state, { title: 'other', origin: 'user', at: NOW }, NOW)).toMatchObject({ accept: true })
     })
 
-    it('does not date-compare an undated write -- it is held back by origin alone', () => {
+    it('does not date-compare an undated write -- origin decides it, not the clock', () => {
+      // An undated cc-observed write is rejected for being cc-observed against a
+      // title we hold, NOT for being stale -- it has no clock to be stale by.
       const auto: TitleState = { title: 'old-auto', titleOrigin: 'cc-observed', titleSetAt: NOW }
-      expect(decideTitleWrite(auto, { title: 'new-auto', origin: 'cc-observed' }, NOW)).toMatchObject({ accept: true })
+      expect(decideTitleWrite(auto, { title: 'new-auto', origin: 'cc-observed' }, NOW)).toEqual({
+        accept: false,
+        reason: 'pinned',
+      })
+      // ...while an undated write onto an EMPTY title is accepted despite the
+      // stored clock being newer than nothing.
+      expect(decideTitleWrite({ titleSetAt: NOW }, { title: 'seed', origin: 'cc-observed' }, NOW)).toMatchObject({
+        accept: true,
+      })
     })
   })
 
