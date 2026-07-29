@@ -70,15 +70,23 @@ vi.mock('@/lib/voice-history', () => ({
 
 const { useVoiceRecording } = await import('@/hooks/use-voice-recording')
 
+/** Screen Wake Lock stub -- jsdom has no `navigator.wakeLock` at all. */
+const wakeRelease = vi.fn(async () => {})
+const wakeRequest = vi.fn(async () => ({ release: wakeRelease }))
+
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
   listeners = []
   historyEntries.length = 0
   sendWsMessage.mockClear()
+  wakeRequest.mockClear()
+  wakeRelease.mockClear()
+  Object.defineProperty(navigator, 'wakeLock', { value: { request: wakeRequest }, configurable: true })
 })
 
 afterEach(() => {
   vi.useRealTimers()
+  Reflect.deleteProperty(navigator, 'wakeLock')
 })
 
 /** Start a recording and get it into the 'recording' state with Deepgram ready. */
@@ -184,4 +192,27 @@ test('voice_stop is sent to the broker on release', async () => {
   await waitFor(() => {
     expect(sendWsMessage.mock.calls.some(([m]) => m?.type === 'voice_stop')).toBe(true)
   })
+})
+
+/**
+ * Regression: the screen saver used to fire mid-dictation.
+ *
+ * Speaking generates ZERO HID events, so macOS counts the machine idle and runs
+ * its screen-saver timer to completion while the user is still talking -- which
+ * kills the mic. The orb already held a wake lock for its live span; the
+ * dictation path did not. It does now.
+ */
+test('the mic being live holds a screen wake lock, and releases it when dictation ends', async () => {
+  const hook = await startRecording()
+
+  await waitFor(() => expect(wakeRequest).toHaveBeenCalledWith('screen'))
+  expect(wakeRelease).not.toHaveBeenCalled()
+
+  hook.unmount()
+  await waitFor(() => expect(wakeRelease).toHaveBeenCalled())
+})
+
+test('an idle mic holds no wake lock -- the display must be free to sleep', async () => {
+  renderHook(() => useVoiceRecording())
+  await waitFor(() => expect(wakeRequest).not.toHaveBeenCalled())
 })

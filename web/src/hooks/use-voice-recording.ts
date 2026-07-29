@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import { useWakeLock } from '@/hooks/use-wake-lock'
 import type { CaptureHandle } from '@/hooks/voice-capture-shared'
 import { startDeepgramDirect } from '@/hooks/voice-deepgram-direct'
 import type { DeepgramDirectSession, DirectFailure } from '@/hooks/voice-deepgram-protocol'
@@ -836,6 +837,14 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
   }, [sendWs, reset, elapsed])
 
   const interimStillMeaningful = state === 'recording' || state === 'recording-offline' || state === 'refining'
+
+  // Dictating is HID-silent: no key, no mouse, so macOS counts the machine idle
+  // and fires the screen saver mid-sentence (its idle timer is independent of,
+  // and often SHORTER than, display sleep). Hold the wake lock for the whole
+  // mic-live span -- connecting through submitting -- exactly like the orb does.
+  // 'error' is excluded on purpose: it persists until the user dismisses it, and
+  // pinning the display awake on a dead session would never release.
+  useWakeLock(state !== 'idle' && state !== 'error')
 
   return {
     state,
