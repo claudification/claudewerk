@@ -4,7 +4,6 @@
  * TodoWrite interception, background task output watching, and subagent watchers.
  */
 
-import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { structuredPatch as computeStructuredPatch } from 'diff'
 import type {
@@ -20,6 +19,7 @@ import { splitCoalescedPrompts } from './coalesced-prompt-split'
 import { debug as _debug, DEBUG } from './debug'
 import { renameRequestsIn } from './detect-rename'
 import { translateClaudeToolResult, translateClaudeToolUse } from './dialect/from-claude'
+import { stampDeterministicUuids } from './entry-uuid'
 import { unifyHeadlessPromptUuids } from './synthetic-user-uuid'
 import { selectForwardableEntries } from './transcript-entry-filter'
 import { createTranscriptWatcher } from './transcript-watcher'
@@ -265,40 +265,6 @@ async function processImageReadResults(ctx: AgentHostContext, entries: Transcrip
 /**
  * Send transcript entries to broker in fixed-size chunks.
  */
-/**
- * What makes two same-typed entries at the same timestamp distinct.
- *
- * Only queue-operation needs one: it carries no `message`, so the hash below
- * would otherwise see nothing but type+timestamp -- and CC writes the `enqueue`
- * and its matching `dequeue` on the SAME millisecond whenever a message is
- * taken straight away instead of being held. Both would collapse onto one uuid,
- * the broker's INSERT OR IGNORE would drop the dequeue, and the "queued" badge
- * would survive every reload with nothing left to clear it.
- */
-function uuidDisambiguator(entry: TranscriptEntry): string {
-  if (entry.type !== 'queue-operation') return ''
-  const raw = entry as Record<string, unknown>
-  return `:${raw.operation}:${String(raw.content ?? '').slice(0, 120)}`
-}
-
-/**
- * Stamp deterministic UUIDs on entries that lack them. CC doesn't assign UUIDs
- * to user-typed messages (only tool results). Without stable UUIDs, duplicates
- * from ring buffer replay or CC replay can't be deduped by the broker (INSERT
- * OR IGNORE on uuid). Applies to BOTH headless (stream-json) and PTY (JSONL
- * watcher) paths since both funnel through sendTranscriptEntriesChunked.
- */
-function stampDeterministicUuids(entries: TranscriptEntry[]): void {
-  for (const e of entries) {
-    if (e.uuid) continue
-    const content = JSON.stringify((e as Record<string, unknown>).message ?? e.type).slice(0, 200)
-    const h = createHash('sha1')
-      .update(`${e.type}:${e.timestamp}:${content}${uuidDisambiguator(e)}`)
-      .digest('hex')
-    e.uuid = `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${((Number.parseInt(h[16], 16) & 0x3) | 0x8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`
-  }
-}
-
 export async function sendTranscriptEntriesChunked(
   ctx: AgentHostContext,
   entries: TranscriptEntry[],

@@ -86,10 +86,18 @@ export function addTranscriptEntries(
   const conv = ctx.conversations.get(conversationId)
   if (!conv) return toApply
 
-  if (!conv.stats || isInitial) resetConversationMetadataAndStats(conv, isInitial)
+  if (!conv.stats) conv.stats = emptyStats()
 
+  // Fold conversation state over the entries the STORE had not already seen --
+  // NOT over the whole batch. `fresh` is the same dedup the store just did, so a
+  // replay contributes nothing and cannot double-count, revert a newer value, or
+  // re-fire a metadata write. That is what retired the `isInitial` reset: the
+  // reset only existed to undo the double-counting this avoids, and it did so by
+  // WIPING derived state and re-deriving it from whatever the replay carried --
+  // which silently rewrote a long conversation's lifetime totals to the
+  // tail-500 the watcher ships, and blanked any metadata the replay omitted.
   let conversationChanged = false
-  for (const entry of entries) {
+  for (const entry of fresh) {
     // gitBranch lives on the base type and applies to any entry
     if (!conv.gitBranch && entry.gitBranch) {
       conv.gitBranch = entry.gitBranch
@@ -349,20 +357,20 @@ function persistToStore(
   return persistTranscriptEntries(ctx.store, ctx.conversations.has(conversationId), conversationId, entries)
 }
 
-function resetConversationMetadataAndStats(
-  conv: NonNullable<ReturnType<ConversationStoreContext['conversations']['get']>>,
-  isInitial: boolean,
-): void {
-  // Reset metadata + stats on initial load to avoid double-counting when
-  // the transcript watcher re-reads the full file (restart, reconnect,
-  // truncation recovery). Preserve user-set titles (set via spawn dialog).
-  if (isInitial) {
-    conv.summary = undefined
-    if (!conv.titleUserSet) conv.title = undefined
-    conv.agentName = undefined
-    conv.prLinks = undefined
-  }
-  conv.stats = {
+/**
+ * Zeroed stats for a conversation that has none yet.
+ *
+ * This used to be a RESET, re-run on every `isInitial` batch along with a wipe
+ * of summary / title / agentName / prLinks. Both existed to stop a replay from
+ * double-counting, and both were the wrong cure: the wipe threw away persisted
+ * state (`conv.stats` is stored and re-hydrated) and re-derived it from whatever
+ * the replay happened to contain, so a reconnect on a conversation past the
+ * watcher's 500-entry truncation quietly rewrote its lifetime totals downward,
+ * and any metadata line the replay omitted came back empty. The fold now runs
+ * over store-fresh entries only, so there is nothing to undo.
+ */
+function emptyStats(): NonNullable<ReturnType<ConversationStoreContext['conversations']['get']>>['stats'] {
+  return {
     totalInputTokens: 0,
     totalOutputTokens: 0,
     totalCacheCreation: 0,
