@@ -9,7 +9,6 @@ import { existsSync } from 'node:fs'
 import { structuredPatch as computeStructuredPatch } from 'diff'
 import type {
   ConversationModelUpdate,
-  ConversationNameUpdate,
   TaskInfo,
   TasksUpdate,
   TranscriptContentBlock,
@@ -19,6 +18,7 @@ import { normalizeTodoStatus } from '../shared/task-normalize'
 import type { AgentHostContext } from './agent-host-context'
 import { splitCoalescedPrompts } from './coalesced-prompt-split'
 import { debug as _debug, DEBUG } from './debug'
+import { renameRequestsIn } from './detect-rename'
 import { translateClaudeToolResult, translateClaudeToolUse } from './dialect/from-claude'
 import { unifyHeadlessPromptUuids } from './synthetic-user-uuid'
 import { selectForwardableEntries } from './transcript-entry-filter'
@@ -372,21 +372,13 @@ export async function flushPendingTranscriptEntries(ctx: AgentHostContext): Prom
   }
 }
 
+/** Forward every `/rename` typed inside CC as an authoritative, DATED rename.
+ *  Shape matching and the no-replay-guessing rationale live in detect-rename.ts,
+ *  which the daemon host shares. */
 function detectRename(ctx: AgentHostContext, entries: TranscriptEntry[]): void {
-  for (const entry of entries) {
-    const e = entry as Record<string, unknown>
-    if (e.type !== 'system' || e.subtype !== 'local_command' || typeof e.content !== 'string') continue
-    const match = e.content.match(/Session renamed to: ([^<]+)/)
-    if (match) {
-      const name = match[1].trim()
-      debug(`Detected /rename: "${name}"`)
-      const msg: ConversationNameUpdate = {
-        type: 'conversation_name',
-        conversationId: ctx.claudeSessionId || ctx.conversationId,
-        name,
-      }
-      ctx.wsClient?.send(msg)
-    }
+  for (const msg of renameRequestsIn(ctx.conversationId, entries)) {
+    debug(`Detected /rename: "${msg.name}" (at=${msg.at ?? 'undated'})`)
+    ctx.wsClient?.send(msg)
   }
 }
 

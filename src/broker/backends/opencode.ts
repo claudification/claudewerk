@@ -24,6 +24,7 @@ import type { Conversation } from '../../shared/protocol'
 import { deriveConversationName, validateConversationName } from '../../shared/spawn-naming'
 import type { SpawnRequest } from '../../shared/spawn-schema'
 // Shared spawn-progress emit helper (transport reframe Phase 6 de-duplication).
+import { applyTitleWrite } from '../conversation-store/title-authority'
 import { emitLaunchProgress as emitProgress } from './launch-progress'
 // Shared sentinel spawn round-trip (transport reframe Phase 6 de-duplication).
 import { awaitSentinelSpawn } from './sentinel-spawn'
@@ -235,7 +236,14 @@ async function spawnOpenCode(req: SpawnRequest, deps: SpawnDeps): Promise<SpawnR
     [META_TOOL_PERMISSION]: toolPermission,
   }
   conv.project = project
-  conv.title = req.name || conversationName
+  // Same rule as the daemon backend: a requested name is the user's and pins,
+  // a generated one is fair game. Routed through title-authority so the spawn
+  // carries a clock and cannot be outranked by a replayed historical rename.
+  applyTitleWrite(
+    conv,
+    { title: req.name || conversationName, origin: req.name?.trim() ? 'user' : 'cc-auto', at: Date.now() },
+    Date.now(),
+  )
   if (req.description) conv.description = req.description
   deps.conversationStore.persistConversationById(conversationId)
 

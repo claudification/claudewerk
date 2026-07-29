@@ -615,6 +615,7 @@ async function main(): Promise<void> {
     })
     transcriptBridge = createTranscriptBridge({
       transport,
+      conversationId: cfg.conversationId,
       onError: err => debug(`transcript error: ${err.message}`),
       debug: debugEnabled ? (m: string) => debug(`[tx] ${m}`) : undefined,
     })

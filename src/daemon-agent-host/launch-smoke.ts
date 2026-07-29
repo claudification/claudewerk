@@ -90,6 +90,9 @@ export async function waitUntil<T>(
 export interface InMemoryBroker {
   /** The HostTransport the transcript bridge / orchestration sends through. */
   readonly transport: HostTransport
+  /** The conversation this broker stands in for -- what host-emitted messages
+   *  (transcript batches, renames) are addressed to. */
+  readonly conversationId: string
   /** Every message the host sent, in order (stored opaquely). */
   messages(): readonly AgentHostMessage[]
   /** Flattened transcript entries from every `transcript_entries` message. */
@@ -122,6 +125,7 @@ export function createInMemoryBroker(conversationId: string): InMemoryBroker {
 
   return {
     transport,
+    conversationId,
     messages: () => log,
     transcriptEntries,
     batchCount: () => log.filter(m => m.type === 'transcript_entries').length,

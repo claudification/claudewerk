@@ -14,6 +14,7 @@ import {
   type BgTaskSnapshotItem,
   reconcileBackgroundTasks,
 } from '../conversation-store/event-handlers/background-tasks'
+import { applyTitleWrite } from '../conversation-store/title-authority'
 import type { MessageHandler } from '../handler-context'
 import { AGENT_HOST_ONLY, DASHBOARD_ROLES, registerHandlers } from '../message-router'
 import { noteCapacityUsageEvent } from '../nightshift-orchestrator'
@@ -664,26 +665,34 @@ const turnCost: MessageHandler = (ctx, data) => {
   }
 }
 
+/**
+ * The LAUNCH name, sent once when an agent host connects: either the human's
+ * choice from the spawn dialog (`userSet`) or CC's own `--name` default. Not an
+ * auto-titler -- CC re-titles through its `custom-title` JSONL line instead.
+ *
+ * Precedence is `title-authority`'s call. A human-chosen launch name is a `user`
+ * write like any other; CC's default is `cc-auto` and loses to anything already
+ * claimed by a human or an agent.
+ */
 const conversationName: MessageHandler = (ctx, data) => {
   const conversationId = data.conversationId as string
   const name = data.name as string
   const description = typeof data.description === 'string' ? data.description : undefined
   const conversation = ctx.conversations.getConversation(conversationId)
-  if (conversation && name) {
-    if (data.userSet) {
-      conversation.titleUserSet = true
-    }
-    if (conversation.titleUserSet && !data.userSet) {
-      ctx.log.debug(`Ignoring auto conversation name "${name}" -- user-set title "${conversation.title}" preserved`)
-      return
-    }
-    conversation.title = name
-    if (description !== undefined) {
-      conversation.description = description || undefined
-    }
-    ctx.conversations.broadcastConversationUpdate(conversationId)
-    ctx.log.info(`Conversation name: "${name}" (${conversationId.slice(0, 8)})`)
+  if (!conversation || !name) return
+
+  const verdict = applyTitleWrite(conversation, { title: name, origin: data.userSet ? 'user' : 'cc-auto' }, Date.now())
+  if (description !== undefined) {
+    conversation.description = description || undefined
+  } else if (!verdict.accept) {
+    ctx.log.debug(
+      `Ignoring conversation name "${name}" (${conversationId.slice(0, 8)}) -- ${verdict.reason}, ` +
+        `title "${conversation.title}" origin=${conversation.titleOrigin ?? '-'} kept`,
+    )
+    return
   }
+  ctx.conversations.broadcastConversationUpdate(conversationId)
+  ctx.log.info(`Conversation name: "${name}" (${conversationId.slice(0, 8)}) applied=${verdict.accept}`)
 }
 
 // Monitor lifecycle events - update conversation monitor state and broadcast

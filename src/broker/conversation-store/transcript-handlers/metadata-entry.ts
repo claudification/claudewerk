@@ -5,6 +5,7 @@ import type {
   TranscriptPrLinkEntry,
   TranscriptSummaryEntry,
 } from '../../../shared/protocol'
+import { applyTitleWrite } from '../title-authority'
 
 /**
  * Top-level transcript entries that carry conversation metadata. Each one mutates
@@ -25,25 +26,29 @@ export function handleSummaryEntry(conversationId: string, conv: Conversation, e
 /**
  * CC's own title, read off its JSONL `custom-title` control line.
  *
- * A user-set title ALWAYS wins here -- a transcript entry never overrides one.
+ * This is the weakest title writer there is, and `title-authority` ranks it as
+ * `cc-observed` for two reasons:
  *
- * The entry is CC's copy of the title, and it is stale by construction: it
- * holds the launch name, while the user may have renamed since. Every resync
- * (broker restart, host reconnect, revive, truncation recovery) re-sends the
- * transcript, and `stream-replay.ts` deliberately hoists metadata entries past
- * the 500-entry truncation so this line arrives on EVERY reconnect. Applying it
- * dragged renamed conversations back to their launch name (2026-07-28: 3242
- * clobbers across ~40 conversations in a single boot).
+ * 1. It is STALE by construction. Every resync (broker restart, host reconnect,
+ *    revive, truncation recovery) re-sends the transcript, and `stream-replay.ts`
+ *    deliberately hoists metadata entries past the 500-entry truncation so this
+ *    line arrives on EVERY reconnect carrying whatever CC last wrote. Applying it
+ *    dragged renamed conversations back to their launch name (2026-07-28: 3242
+ *    clobbers across ~40 conversations in a single boot).
+ * 2. It is UNDATED. The line is `{type, customTitle, sessionId}` and nothing
+ *    else -- no uuid, no timestamp -- so it cannot even be compared against a
+ *    newer write. Origin is the only thing that can hold it back.
  *
- * Gating on `isInitial` was tried and is NOT sufficient: a replay is chunked
- * and `sendTranscriptEntriesChunked` sets `isInitial` on the FIRST chunk only
+ * Gating on `isInitial` was tried and is NOT sufficient: a replay is chunked and
+ * `sendTranscriptEntriesChunked` sets `isInitial` on the FIRST chunk only
  * (transcript-manager.ts), so a `custom-title` landing in any later chunk looks
- * live. There is no trustworthy per-entry "is this a replay" bit, so we don't
- * pretend there is -- the pin is unconditional instead.
+ * live. There is no trustworthy per-entry "is this a replay" bit and this file
+ * no longer pretends there is.
  *
- * A live `/rename` typed inside CC is NOT lost by this: the agent host detects
- * it separately and sends a `conversation_name` wire message, which is the one
- * channel that can legitimately carry user intent (its `userSet` flag).
+ * It is still allowed to title an UNPINNED conversation, because CC's auto-titler
+ * has no other channel to reach us through. A live `/rename` typed inside CC is a
+ * different thing entirely -- the agent host detects it and sends a DATED `user`
+ * write, which outranks this one.
  */
 export function handleCustomTitleEntry(
   conversationId: string,
@@ -52,16 +57,17 @@ export function handleCustomTitleEntry(
 ): boolean {
   const t = entry.customTitle
   if (typeof t !== 'string' || !t.trim()) return false
-  const title = t.trim()
-  if (conv.title === title) return false
-  if (conv.titleUserSet) {
-    console.log(
-      `[meta] title: transcript "${title}" ignored -- user-set title "${conv.title}" preserved ` +
-        `(conversation ${conversationId.slice(0, 8)})`,
-    )
+
+  const verdict = applyTitleWrite(conv, { title: t.trim(), origin: 'cc-observed' }, Date.now())
+  if (!verdict.accept) {
+    if (verdict.reason !== 'unchanged') {
+      console.log(
+        `[meta] title: transcript "${t.trim()}" ignored (${verdict.reason}) -- "${conv.title}" ` +
+          `origin=${conv.titleOrigin ?? '-'} preserved (conversation ${conversationId.slice(0, 8)})`,
+      )
+    }
     return false
   }
-  conv.title = title
   console.log(`[meta] title: "${conv.title}" (conversation ${conversationId.slice(0, 8)})`)
   return true
 }

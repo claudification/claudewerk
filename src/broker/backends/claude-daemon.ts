@@ -32,6 +32,7 @@ import type { Conversation, LaunchConfig, SpawnResult as SentinelSpawnResult } f
 import { deriveConversationName, validateConversationName } from '../../shared/spawn-naming'
 import type { SpawnRequest } from '../../shared/spawn-schema'
 import type { ConversationStore, CreateConversationLineage } from '../conversation-store'
+import { applyTitleWrite } from '../conversation-store/title-authority'
 import { computeSpawnLineage, resolveNotifyParentSettleMs } from '../spawn-lineage'
 import { emitLaunchProgress } from './launch-progress'
 import { awaitSentinelSpawn } from './sentinel-spawn'
@@ -469,15 +470,17 @@ function finalizeDaemonConversation(
   // block). Separate from the opaque agentHostMeta revive bag above.
   conv.launchConfig = buildDaemonLaunchConfig(req, cfg)
   conv.project = project
-  conv.title = req.name || conversationName
-  // Pin user-supplied names against the initial-transcript reset path
-  // (`resetConversationMetadataAndStats` clears titles where `titleUserSet`
-  // is false). Daemon's transcript doesn't write a `customTitle` entry, so
-  // without this pin the spawn-supplied name gets wiped on the daemon-host's
-  // first transcript read. Mirrors the PTY/headless `userSet:!!env` semantics
-  // emitted by `claude-agent-host/index.ts`. Generated names stay unpinned
-  // so a later rename via transcript metadata wins.
-  conv.titleUserSet = !!req.name?.trim()
+  // A spawn-supplied name is the requester's choice and pins the title; a
+  // generated one is `cc-auto` and stays fair game for CC's own titler. Both go
+  // through title-authority so the spawn is stamped with a clock like every
+  // other writer -- without one, a `/rename` replayed out of an OLD transcript
+  // would outrank a name chosen seconds ago. Mirrors the PTY/headless
+  // `userSet:!!env` semantics emitted by `claude-agent-host/index.ts`.
+  applyTitleWrite(
+    conv,
+    { title: req.name || conversationName, origin: req.name?.trim() ? 'user' : 'cc-auto', at: Date.now() },
+    Date.now(),
+  )
   if (req.description) conv.description = req.description
   // ATTACH reactivates a previously read-only / ended roster mirror row.
   if (conv.status === 'ended') conv.endedBy = undefined

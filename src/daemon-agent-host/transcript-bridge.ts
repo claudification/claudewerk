@@ -12,6 +12,7 @@
  * tool-name map, and starts fresh on the new file.
  */
 
+import { renameRequestsIn } from '../claude-agent-host/detect-rename'
 import { translateClaudeToolResult, translateClaudeToolUse } from '../claude-agent-host/dialect/from-claude'
 import { createTranscriptWatcher, type TranscriptWatcher } from '../claude-agent-host/transcript-watcher'
 import type { HostTransport } from '../shared/host-transport'
@@ -24,6 +25,9 @@ import { transcriptJsonlPath } from './transcript-path'
 
 export interface TranscriptBridgeOptions {
   transport: HostTransport
+  /** OUR stable conversation id (not the worker's ccSessionId) -- the rename
+   *  messages this bridge emits are addressed to the broker by it. */
+  conversationId: string
   onError?: (err: Error) => void
   debug?: (msg: string) => void
 }
@@ -72,7 +76,7 @@ function translateBlocks(entries: TranscriptEntry[], toolNameByUseId: Map<string
 // ---------------------------------------------------------------------------
 
 export function createTranscriptBridge(opts: TranscriptBridgeOptions): TranscriptBridge {
-  const { transport, onError, debug } = opts
+  const { transport, conversationId, onError, debug } = opts
 
   let watcher: TranscriptWatcher | null = null
   let stopped = false
@@ -96,6 +100,14 @@ export function createTranscriptBridge(opts: TranscriptBridgeOptions): Transcrip
         if (stopped) return
         translateBlocks(entries, toolNameByUseId)
         transport.sendTranscriptEntries(entries, isInitial)
+        // A `/rename` typed inside the daemon worker reaches us only as a JSONL
+        // entry -- there is no stdout stream here. Without this the daemon fleet
+        // could not rename itself at all. Not gated on isInitial: the rename
+        // carries CC's own clock, so the broker drops a replayed one as stale.
+        for (const msg of renameRequestsIn(conversationId, entries)) {
+          debug?.(`detected /rename: "${msg.name}" (at=${msg.at ?? 'undated'})`)
+          transport.send(msg)
+        }
       },
       onError(err) {
         onError?.(err)

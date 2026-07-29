@@ -170,7 +170,10 @@ export async function mirrorWorker(opts: MirrorOptions): Promise<WorkerMirror> {
     log.detail(`attaching to worker ${short} (mode=${mode}) ...`)
     attachHandle = await runAttachStep({ controlSock, short, log: msg => log.detail(msg) })
     log.detail(`attach ack: state=${attachHandle.ack.state} via=${attachHandle.ack.via}`)
-    transcriptBridge = createTranscriptBridge({ transport: broker.transport })
+    transcriptBridge = createTranscriptBridge({
+      transport: broker.transport,
+      conversationId: broker.conversationId,
+    })
     await transcriptBridge.watch(id, cwd)
     log.detail(`transcript bridge watching ${id}.jsonl`)
     return attachHandle.ack.state

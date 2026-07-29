@@ -1052,6 +1052,7 @@ export type AgentHostMessage =
   | AgentHostRateLimitStatus
   | ConversationInfoUpdate
   | ConversationNameUpdate
+  | RenameConversationRequest
   | ConversationModelUpdate
   | CwdChangedMessage
   | ThinkingProgress
@@ -1080,10 +1081,40 @@ export type AgentHostMessage =
   | SotuConfigureRequest
   | SotuEvalRequest
 
+/** Who authored a conversation title. `user`/`agent` are authoritative and
+ *  DATED; `cc-auto` is CC's launch name; `cc-observed` is CC's own undated
+ *  `custom-title` JSONL copy. Precedence lives in one module -- see
+ *  `broker/conversation-store/title-authority.ts`. */
+export type TitleOrigin = 'user' | 'agent' | 'cc-auto' | 'cc-observed'
+
+/**
+ * THE rename verb. Sent by the control panel, by an agent renaming a
+ * conversation over MCP, and by the agent host when it sees a `/rename` typed
+ * inside CC.
+ *
+ * `origin` + `at` are what let the broker rank competing writers instead of
+ * taking whoever spoke last: `at` is the WRITER's own clock, so a rename
+ * replayed out of an old transcript is visibly older than the title it would
+ * overwrite and loses. Omit `at` when the caller has no meaningful clock (a
+ * panel click) -- the broker stamps its own.
+ */
+export interface RenameConversationRequest {
+  type: 'rename_conversation'
+  conversationId: string
+  /** Empty or absent clears the custom title back to the auto-generated name. */
+  name?: string
+  description?: string
+  origin?: TitleOrigin
+  at?: number
+}
+
 export interface ConversationNameUpdate {
   type: 'conversation_name'
   conversationId: string
   name: string
+  /** True when a human chose this name (spawn dialog / `--name` from the panel)
+   *  rather than it being CC's launch default. */
+  userSet?: boolean
   description?: string
 }
 
@@ -3388,6 +3419,12 @@ export interface Conversation {
   summary?: string // AI-generated conversation summary
   title?: string // custom conversation title (from /rename or auto-generated)
   titleUserSet?: boolean // true if title was explicitly set by user (spawn dialog) -- prevents auto-name overwrite
+  /** WHO last set `title`, and WHEN by their own clock. Together they decide who
+   *  wins when two writers disagree -- see `broker/conversation-store/title-authority.ts`.
+   *  `titleSetAt` is what makes a REPLAYED rename lose to a newer one without
+   *  anyone having to guess whether a batch is a replay. */
+  titleOrigin?: TitleOrigin
+  titleSetAt?: number
   /** Addressable slugs this conversation shed via rename, with decay bookkeeping.
    *  Lets peers that cached an OLD name keep routing for a window. Broker-owned
    *  (dedicated former_slugs column, NOT agentHostMeta). See plan-conversation-rename. */

@@ -9,7 +9,9 @@
  * host so CC renames itself.
  */
 
+import type { TitleOrigin } from '../../shared/protocol'
 import { slugify } from '../address-book'
+import { applyTitleWrite } from '../conversation-store/title-authority'
 import { recordRetiredSlug } from '../former-slugs'
 import { GuardError, type HandlerContext, type MessageHandler } from '../handler-context'
 import { DASHBOARD_ROLES, detectRole, registerHandlers } from '../message-router'
@@ -44,48 +46,111 @@ function pushTitleToAgentHost(ctx: HandlerContext, conversationId: string, title
  * Shared by the dashboard rename path and the agent-host (self / benevolent)
  * rename path so the mutation rules stay in one place. An empty `name` clears
  * the user-set title and reverts to the auto-generated name; any non-empty name
- * (whether set by a human OR a benevolent agent) pins `titleUserSet` so CC's
+ * (whether set by a human OR a benevolent agent) pins the title so CC's
  * auto-titler will not clobber it.
+ *
+ * WHO WINS is `title-authority`'s call, not this function's -- including the
+ * "nothing actually changed" verdict, which is load-bearing: the rename we push
+ * down to CC comes back as a `/rename` echo, and applying it again would push
+ * again, forever. Rejecting the unchanged echo is what terminates that loop.
  */
+interface TitleWriteRequest {
+  origin: TitleOrigin
+  at?: number
+}
+
+/** Why a rejected write was rejected, with both sides of the comparison, so a
+ *  future reader can tell a pin from a stale replay from a no-op echo. */
+function logRejected(
+  ctx: HandlerContext,
+  conversation: Conversation,
+  conversationId: string,
+  name: string | undefined,
+  write: TitleWriteRequest,
+  reason: string,
+): void {
+  ctx.log.debug(
+    `[rename] ${conversationId.slice(0, 8)} ignored origin=${write.origin} at=${write.at ?? '-'} ` +
+      `name="${name || '(cleared)'}" -- ${reason} (title "${conversation.title}" ` +
+      `origin=${conversation.titleOrigin ?? '-'} at=${conversation.titleSetAt ?? '-'})`,
+  )
+}
+
+/** Retire the slug the conversation answered to BEFORE this rename, so peers
+ *  that cached the OLD name keep routing for the decay window. Only a CUSTOM old
+ *  title is worth retaining: an empty one meant the addressable slug was the
+ *  id-slice fallback, which the stable-id resolver still resolves -- no alias
+ *  needed. (plan-conversation-rename Phase 2b) */
+function retireOldSlug(conversation: Conversation, oldSlug: string): void {
+  const newSlug = slugify(conversation.title || conversation.id.slice(0, 8))
+  if (oldSlug !== newSlug) {
+    conversation.formerSlugs = recordRetiredSlug(conversation.formerSlugs, oldSlug, newSlug, Date.now())
+  }
+}
+
+/** A description edit rides the same verb and is worth committing even when the
+ *  title write itself is rejected (renaming to the SAME name while editing the
+ *  description is an ordinary thing to do from the panel). */
+function isDescriptionChanged(conversation: Conversation, description: string | undefined): boolean {
+  return description !== undefined && (description || undefined) !== conversation.description
+}
+
+/** Persist + broadcast a decided rename. Slug retirement belongs here because it
+ *  must see the title AFTER the write but the old slug from BEFORE it. */
+function commitRename(
+  ctx: HandlerContext,
+  conversation: Conversation,
+  conversationId: string,
+  description: string | undefined,
+  oldSlug: string,
+): void {
+  if (description !== undefined) conversation.description = description || undefined
+  retireOldSlug(conversation, oldSlug)
+  ctx.conversations.persistConversationById(conversationId)
+  ctx.conversations.broadcastConversationUpdate(conversationId)
+}
+
 function applyRename(
   ctx: HandlerContext,
   conversation: Conversation,
   conversationId: string,
   name: string | undefined,
   description: string | undefined,
-): void {
-  // Capture the slug the conversation answered to BEFORE mutating the title, so
-  // we can retire it for the rename-alias decay window. Only a CUSTOM old title
-  // is worth retaining: if the old title was empty, the addressable slug was the
-  // id-slice fallback, which the stable-id resolver still resolves -- no alias
-  // needed. (plan-conversation-rename Phase 2b)
+  write: TitleWriteRequest,
+): boolean {
   const oldSlug = conversation.title ? slugify(conversation.title) : ''
+  const verdict = applyTitleWrite(conversation, { title: name, origin: write.origin, at: write.at }, Date.now())
 
-  if (name) {
-    conversation.title = name
-    conversation.titleUserSet = true
-  } else {
-    conversation.title = undefined
-    conversation.titleUserSet = false
+  if (!verdict.accept && !isDescriptionChanged(conversation, description)) {
+    logRejected(ctx, conversation, conversationId, name, write, verdict.reason)
+    return false
   }
-  if (description !== undefined) {
-    conversation.description = description || undefined
+  if (verdict.accept && verdict.clamped) {
+    ctx.log.info(`[rename] ${conversationId.slice(0, 8)} CLOCK SKEW -- at=${write.at} is ahead of us, clamped to now`)
   }
 
-  const newSlug = slugify(conversation.title || conversation.id.slice(0, 8))
-  if (oldSlug !== newSlug) {
-    conversation.formerSlugs = recordRetiredSlug(conversation.formerSlugs, oldSlug, newSlug, Date.now())
-  }
+  commitRename(ctx, conversation, conversationId, description, oldSlug)
+  // Only push a title CC does not already have. A rename that ORIGINATED inside
+  // CC needs no push back, and pushing it would restart the echo.
+  if (verdict.accept && write.origin !== 'cc-observed') pushTitleToAgentHost(ctx, conversationId, conversation.title)
+  return true
+}
 
-  ctx.conversations.persistConversationById(conversationId)
-  ctx.conversations.broadcastConversationUpdate(conversationId)
-  pushTitleToAgentHost(ctx, conversationId, conversation.title)
+/** The wire's `origin`, narrowed. An unknown or absent value means a caller that
+ *  predates title provenance -- treat it as a deliberate human rename, which is
+ *  what every existing caller of this verb actually is. */
+function readOrigin(raw: unknown): TitleOrigin {
+  return raw === 'agent' || raw === 'cc-auto' || raw === 'cc-observed' ? raw : 'user'
 }
 
 export const renameConversation: MessageHandler = (ctx, data) => {
   const conversationId = data.conversationId as string
   const name = (data.name as string)?.trim()
   const description = typeof data.description === 'string' ? data.description.trim() : undefined
+  const origin = readOrigin(data.origin)
+  // A dated write is what makes replay protection work. An undated one (every
+  // panel rename) is stamped with the broker's clock at apply time.
+  const at = typeof data.at === 'number' && Number.isFinite(data.at) ? data.at : undefined
   if (!conversationId) throw new GuardError('Missing conversationId')
 
   const conversation = ctx.conversations.getConversation(conversationId)
@@ -105,9 +170,10 @@ export const renameConversation: MessageHandler = (ctx, data) => {
     ctx.requirePermission('chat', conversation.project)
   }
 
-  applyRename(ctx, conversation, conversationId, name, description)
+  const applied = applyRename(ctx, conversation, conversationId, name, description, { origin, at })
   ctx.log.debug(
     `[rename] ${conversationId.slice(0, 8)} role=${role} self=${ctx.ws.data.conversationId === conversationId} ` +
+      `origin=${origin} at=${at ?? '-'} applied=${applied} ` +
       `name="${name || '(cleared)'}"${description !== undefined ? ` desc-set` : ''}`,
   )
   ctx.reply({ type: 'rename_conversation_result', ok: true })

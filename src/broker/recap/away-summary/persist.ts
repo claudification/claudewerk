@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Conversation, TranscriptSystemEntry } from '../../../shared/protocol'
 import type { ConversationStore } from '../../conversation-store'
+import { applyTitleWrite } from '../../conversation-store/title-authority'
 import { parseRecapContent } from '../shared/json-parse'
 import { condenseTranscript } from './condense'
 import { sanitizeSuggestedName } from './name'
@@ -45,9 +46,12 @@ export function persistResult(
 }
 
 /**
- * Adopt the model-suggested name as the conversation's auto title. Same
- * pinning rule as CC's auto-titler (`conversation_name` with userSet=false):
- * a user-set title is never overwritten, an auto title is fair game.
+ * Adopt the model-suggested name as the conversation's auto title.
+ *
+ * Ranked `cc-auto`: a machine-chosen name, so it titles an unclaimed
+ * conversation but never overrules a human or an agent. Undated on purpose --
+ * the suggestion describes the conversation's whole history, not a moment in
+ * it, so it has no meaningful clock to compare against.
  */
 function applySuggestedName(
   store: ConversationStore,
@@ -55,18 +59,19 @@ function applySuggestedName(
   conv: Conversation,
   name: string | null,
 ): void {
-  if (!name || conv.title === name) return
-  if (conv.titleUserSet) {
-    console.log(
-      `[recap] suggested name "${name}" ignored for ${conversationId.slice(0, 8)} -- ` +
-        `user-set title "${conv.title}" pinned`,
-    )
+  if (!name) return
+  const before = conv.title ?? '(none)'
+  const verdict = applyTitleWrite(conv, { title: name, origin: 'cc-auto' }, Date.now())
+  if (!verdict.accept) {
+    if (verdict.reason !== 'unchanged') {
+      console.log(
+        `[recap] suggested name "${name}" ignored for ${conversationId.slice(0, 8)} -- ${verdict.reason}, ` +
+          `title "${conv.title}" (origin=${conv.titleOrigin ?? '-'}) kept`,
+      )
+    }
     return
   }
-  console.log(
-    `[recap] conversation name: "${conv.title ?? '(none)'}" -> "${name}" (${conversationId.slice(0, 8)}, auto)`,
-  )
-  conv.title = name
+  console.log(`[recap] conversation name: "${before}" -> "${name}" (${conversationId.slice(0, 8)}, auto)`)
   store.persistConversationById(conversationId)
 }
 

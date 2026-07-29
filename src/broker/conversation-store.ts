@@ -83,6 +83,7 @@ import {
   syncStamp as syncStampImpl,
 } from './conversation-store/sync-protocol'
 import { createTerminalRegistry } from './conversation-store/terminal-registry'
+import { backfillTitleSetAt } from './conversation-store/title-authority'
 import { createTrafficTracker } from './conversation-store/traffic'
 import type { ControlPanelMessage } from './conversation-store/types'
 import { createViewerRegistry } from './conversation-store/viewer-registry'
@@ -1100,6 +1101,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       const records = store.conversations.list()
       let droppedBadIds = 0
       let healedContextModes = 0
+      let backfilledTitleClocks = 0
       // Wrapper so the heal is counted for the summary log line below.
       const healContextMode = (
         mode: Conversation['contextMode'],
@@ -1201,6 +1203,8 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
           resolvedProfile: fullMeta.resolvedProfile as string | undefined,
           title: rec.title || (fullMeta.title as string | undefined),
           titleUserSet: fullMeta.titleUserSet as boolean | undefined,
+          titleOrigin: fullMeta.titleOrigin as Conversation['titleOrigin'],
+          titleSetAt: fullMeta.titleSetAt as number | undefined,
           formerSlugs: full?.formerSlugs as Conversation['formerSlugs'],
           description: fullMeta.description as string | undefined,
           summary: (full as unknown as { summary?: string })?.summary || (fullMeta.summary as string | undefined),
@@ -1235,7 +1239,17 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
             conv.status = 'idle'
           }
         }
+        // A title pinned before title provenance existed carries no clock. Stamp
+        // it at hydrate so every historical `/rename` still sitting in a JSONL
+        // reads as OLDER than the pin and cannot revert it on the next replay --
+        // while a live rename arriving after boot is newer and still wins.
+        if (backfillTitleSetAt(conv, Date.now())) backfilledTitleClocks++
         conversations.set(conv.id, conv)
+      }
+      if (backfilledTitleClocks > 0) {
+        console.log(
+          `[store] title provenance: stamped ${backfilledTitleClocks} pinned title(s) that predate titleSetAt. Re-persisted on next update.`,
+        )
       }
       if (records.length > 0) {
         const loaded = records.length - droppedBadIds
@@ -1295,6 +1309,8 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
         recapFresh: conv.recapFresh,
         resolvedProfile: conv.resolvedProfile,
         titleUserSet: conv.titleUserSet,
+        titleOrigin: conv.titleOrigin,
+        titleSetAt: conv.titleSetAt,
         description: conv.description,
         agentName: conv.agentName,
         prLinks: conv.prLinks?.length ? conv.prLinks : undefined,
