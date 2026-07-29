@@ -20,6 +20,7 @@ import { debug as _debug, DEBUG } from './debug'
 import { renameRequestsIn } from './detect-rename'
 import { translateClaudeToolResult, translateClaudeToolUse } from './dialect/from-claude'
 import { stampDeterministicUuids } from './entry-uuid'
+import { cutKnownPrefix } from './resend-cursor'
 import { unifyHeadlessPromptUuids } from './synthetic-user-uuid'
 import { selectForwardableEntries } from './transcript-entry-filter'
 import { createTranscriptWatcher } from './transcript-watcher'
@@ -263,6 +264,32 @@ async function processImageReadResults(ctx: AgentHostContext, entries: Transcrip
 }
 
 /**
+ * Trim a resend to the delta the broker is actually missing, when it armed a
+ * cursor. A no-op otherwise, which is every live batch.
+ *
+ * MUST run after uuid stamping: the entries CC leaves unidentified only have a
+ * uuid to match the cursor against once we have given them one. Parent scope
+ * only -- a subagent batch is its own stream and the broker's cursor does not
+ * describe it. The cursor is consumed here so a later batch replays in full.
+ */
+function applyResendCursor(
+  ctx: AgentHostContext,
+  entries: TranscriptEntry[],
+  isInitial: boolean,
+  agentId: string | undefined,
+): TranscriptEntry[] {
+  const known = ctx.resendKnownUuids
+  if (agentId || !isInitial || !known) return entries
+  ctx.resendKnownUuids = null
+  const cut = cutKnownPrefix(entries, known)
+  debug(
+    `resendTranscript: cursor ${cut.matched ? 'matched' : 'MISSED -- full replay'}, ` +
+      `skipped ${cut.skipped}/${entries.length}`,
+  )
+  return cut.entries
+}
+
+/**
  * Send transcript entries to broker in fixed-size chunks.
  */
 export async function sendTranscriptEntriesChunked(
@@ -273,6 +300,9 @@ export async function sendTranscriptEntriesChunked(
 ) {
   if (ctx.headless && !agentId) unifyHeadlessPromptUuids(ctx.conversationId, entries)
   stampDeterministicUuids(entries)
+
+  entries = applyResendCursor(ctx, entries, isInitial, agentId)
+  if (entries.length === 0) return
 
   if (!ctx.claudeSessionId) {
     debug(`Buffering ${entries.length} transcript entries (claudeSessionId not set yet)`)
@@ -494,12 +524,17 @@ function scanForBgTasks(ctx: AgentHostContext, entries: TranscriptEntry[]) {
  * headless `queue-operation` strip that also used to live here is now the
  * `isInitial` column of `selectForwardableEntries`.
  */
-export function resendTranscriptFromFile(ctx: AgentHostContext) {
+export function resendTranscriptFromFile(ctx: AgentHostContext, knownUuids?: string[]) {
   const path = ctx.parentTranscriptPath
   if (!path || !existsSync(path)) {
     debug(`resendTranscript: no file (path=${path || 'none'})`)
     return
   }
+  // Armed for the NEXT initial batch only, and consumed there. Live batches
+  // (isInitial=false) never look at it, so a resend racing with live output
+  // cannot swallow anything.
+  ctx.resendKnownUuids = knownUuids?.length ? new Set(knownUuids) : null
+  if (ctx.resendKnownUuids) debug(`resendTranscript: cursor armed with ${ctx.resendKnownUuids.size} known uuids`)
   // No watcher yet (failed to start, or the path only just became known):
   // start it. For a transport that emits its initial batch, that first read IS
   // the resend and there is nothing more to do. Headless seeks to end instead,

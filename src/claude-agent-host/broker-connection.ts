@@ -207,8 +207,8 @@ export function connectToBroker(ctx: AgentHostContext, deps: BrokerConnectionDep
     onConfigSet(requestId: string, config: RclaudePermissionConfig) {
       handleConfigSet(ctx, requestId, config, cwd)
     },
-    onTranscriptRequest() {
-      resendTranscriptFromFile(ctx)
+    onTranscriptRequest(_limit, knownUuids) {
+      resendTranscriptFromFile(ctx, knownUuids)
     },
     onTranscriptKick() {
       handleTranscriptKick(ctx)

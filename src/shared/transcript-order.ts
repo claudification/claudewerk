@@ -25,7 +25,7 @@
  */
 
 import type { TranscriptEntry } from './protocol'
-import { carriedTailKey, CLOCK_JITTER_MS, entryTime, orderKeys, sortsBefore } from './transcript-order-keys'
+import { CLOCK_JITTER_MS, carriedTailKey, entryTime, orderKeys, sortsBefore } from './transcript-order-keys'
 
 /** Sort a batch chronologically. Stable, so equal keys keep arrival order. */
 export function sortTranscriptEntries(entries: TranscriptEntry[]): TranscriptEntry[] {

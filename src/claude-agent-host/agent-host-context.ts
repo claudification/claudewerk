@@ -122,6 +122,12 @@ export interface AgentHostContext {
   // Flushed by session-transition once claudeSessionId becomes available.
   readonly pendingTranscriptEntries: Array<{ entries: TranscriptEntry[]; isInitial: boolean; agentId?: string }>
 
+  /** Entry uuids the broker said it already holds, armed by a cursored
+   *  `transcript_request` and consumed by the NEXT parent initial batch, which
+   *  is then trimmed to just the delta. Null when the next resend should send
+   *  the whole file. See `resend-cursor.ts`. */
+  resendKnownUuids: Set<string> | null
+
   // Event queue
   readonly eventQueue: HookEvent[]
 

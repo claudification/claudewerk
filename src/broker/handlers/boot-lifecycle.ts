@@ -8,13 +8,14 @@
  * on the conversation (the conversationId store key stays the same).
  */
 
-import type {
-  AgentHostCapability,
-  AgentHostLaunchPhase,
-  AgentHostLaunchStep,
-  BootStep,
-  TranscriptBootEntry,
-  TranscriptLaunchEntry,
+import {
+  type AgentHostCapability,
+  type AgentHostLaunchPhase,
+  type AgentHostLaunchStep,
+  type BootStep,
+  RESEND_CURSOR_WINDOW,
+  type TranscriptBootEntry,
+  type TranscriptLaunchEntry,
 } from '../../shared/protocol'
 import type { MessageHandler } from '../handler-context'
 import { AGENT_HOST_ONLY, registerHandlers } from '../message-router'
@@ -286,8 +287,14 @@ const conversationPromote: MessageHandler = (ctx, data) => {
   if (!ctx.conversations.hasTranscriptCache(conversationId)) {
     const socket = ctx.conversations.getConversationSocket(conversationId)
     if (socket) {
-      socket.send(JSON.stringify({ type: 'transcript_request', conversationId }))
-      console.log(`[${conversationId.slice(0, 8)}] [boot] requested transcript from agent host`)
+      // Tell the host what we already have so it can answer with a delta. An
+      // empty in-memory cache does NOT mean an empty STORE -- after a restart
+      // the rows are all still on disk, and re-sending them was pure waste.
+      const knownUuids = ctx.conversations.recentTranscriptUuids(conversationId, RESEND_CURSOR_WINDOW)
+      socket.send(JSON.stringify({ type: 'transcript_request', conversationId, knownUuids }))
+      console.log(
+        `[${conversationId.slice(0, 8)}] [boot] requested transcript from agent host (known=${knownUuids.length})`,
+      )
     }
   }
 }

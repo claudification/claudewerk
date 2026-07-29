@@ -418,7 +418,10 @@ async function main(): Promise<void> {
       return
     }
     if (t === 'transcript_request' || t === 'transcript_kick') {
-      transcriptBridge?.resend().catch((err: unknown) => debug(`resend failed: ${(err as Error).message}`))
+      // A cursored request gets a delta; transcript_kick carries none and still
+      // replays the file, which is what a kick is for.
+      const knownUuids = (msg as { knownUuids?: string[] }).knownUuids
+      transcriptBridge?.resend(knownUuids).catch((err: unknown) => debug(`resend failed: ${(err as Error).message}`))
       return
     }
     // terminal_data / terminal_resize / terminal_attach / terminal_detach -> PTY

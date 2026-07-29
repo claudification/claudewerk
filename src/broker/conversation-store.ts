@@ -189,6 +189,7 @@ export interface ConversationStore {
    *  (see handlers/launch-event.ts): the store answer SURVIVES broker restart,
    *  which is exactly when agent hosts replay their buffers. */
   hasTranscriptUuid: (conversationId: string, uuid: string) => boolean
+  recentTranscriptUuids: (conversationId: string, limit: number) => string[]
   loadTranscriptFromStore: (conversationId: string, limit: number) => TranscriptEntry[] | null
   /** Backward pagination for infinite scrollback: the `limit` entries with
    *  seq < beforeSeq (oldest-first), plus the cursor for the next older page. */
@@ -2897,6 +2898,22 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     return (transcriptCache.get(conversationId) || []).some(e => e.uuid === uuid)
   }
 
+  /**
+   * The most recent parent-scope entry uuids, oldest-first -- the resend cursor
+   * a `transcript_request` carries.
+   *
+   * Durable-first for the same reason as `hasTranscriptUuid`: the rows outlive
+   * the in-memory cache, and it is precisely after a restart (cache empty, store
+   * full) that answering "I already have these" saves an entire file replay.
+   */
+  function recentTranscriptUuids(conversationId: string, limit: number): string[] {
+    if (store) return store.transcripts.getLatest(conversationId, limit, null).map(r => r.uuid)
+    return (transcriptCache.get(conversationId) || [])
+      .slice(-limit)
+      .map(e => e.uuid)
+      .filter((u): u is string => !!u)
+  }
+
   function loadTranscriptFromStore(conversationId: string, limit: number): TranscriptEntry[] | null {
     if (!store) return null
     // Scope to the parent stream (agent_id IS NULL). Once subagent rows are
@@ -3330,6 +3347,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     getTranscriptEntries,
     hasTranscriptUuid,
     hasTranscriptCache,
+    recentTranscriptUuids,
     loadTranscriptFromStore,
     loadTranscriptPageBefore,
     addSubagentTranscriptEntries,

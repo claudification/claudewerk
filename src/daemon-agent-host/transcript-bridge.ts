@@ -14,6 +14,8 @@
 
 import { renameRequestsIn } from '../claude-agent-host/detect-rename'
 import { translateClaudeToolResult, translateClaudeToolUse } from '../claude-agent-host/dialect/from-claude'
+import { stampDeterministicUuids } from '../claude-agent-host/entry-uuid'
+import { cutKnownPrefix } from '../claude-agent-host/resend-cursor'
 import { createTranscriptWatcher, type TranscriptWatcher } from '../claude-agent-host/transcript-watcher'
 import type { HostTransport } from '../shared/host-transport'
 import type { TranscriptContentBlock, TranscriptEntry } from '../shared/protocol'
@@ -39,7 +41,7 @@ export interface TranscriptBridge {
   watch(ccSessionId: string, cwd: string): Promise<void>
   /** Re-read the whole current transcript file and re-send it as the initial
    *  batch. No-op if no watcher is running. */
-  resend(): Promise<void>
+  resend(knownUuids?: string[]): Promise<void>
   /** Stop watching. Idempotent. */
   stop(): void
 }
@@ -80,6 +82,8 @@ export function createTranscriptBridge(opts: TranscriptBridgeOptions): Transcrip
 
   let watcher: TranscriptWatcher | null = null
   let stopped = false
+  /** Broker-known uuids, armed by a cursored resend and consumed by its emit. */
+  let resendKnown: Set<string> | null = null
   // One map per session -- cleared on each watch() re-point.
   const toolNameByUseId = new Map<string, string>()
 
@@ -96,8 +100,15 @@ export function createTranscriptBridge(opts: TranscriptBridgeOptions): Transcrip
     debug?.(`watch: pointing at ${path}`)
 
     watcher = createTranscriptWatcher({
-      onEntries(entries, isInitial) {
+      onEntries(rawEntries, isInitial) {
         if (stopped) return
+        // Stamp before cutting: the entries CC leaves unidentified only have a
+        // uuid to match the broker's cursor against once we have given them one.
+        stampDeterministicUuids(rawEntries)
+        const cut = isInitial ? cutKnownPrefix(rawEntries, resendKnown) : { entries: rawEntries, skipped: 0 }
+        if (cut.skipped) debug?.(`resend: broker already had ${cut.skipped}/${rawEntries.length}, sending the rest`)
+        const entries = cut.entries
+        if (entries.length === 0) return
         translateBlocks(entries, toolNameByUseId)
         transport.sendTranscriptEntries(entries, isInitial)
         // A `/rename` typed inside the daemon worker reaches us only as a JSONL
@@ -122,9 +133,14 @@ export function createTranscriptBridge(opts: TranscriptBridgeOptions): Transcrip
     await watcher.start(path)
   }
 
-  async function resend(): Promise<void> {
+  async function resend(knownUuids?: string[]): Promise<void> {
     if (!watcher) return
+    // Armed for the next emit and consumed there -- see resend-cursor.ts. The
+    // daemon reads only the JSONL, so unlike headless every entry the broker
+    // knows about has a counterpart here and the cursor almost always matches.
+    resendKnown = knownUuids?.length ? new Set(knownUuids) : null
     await watcher.resend()
+    resendKnown = null
   }
 
   function stop(): void {

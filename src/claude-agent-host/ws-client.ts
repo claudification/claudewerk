@@ -75,7 +75,7 @@ export interface WsClientOptions {
   onTerminalResize?: (cols: number, rows: number) => void
   onJsonStreamAttach?: () => void
   onJsonStreamDetach?: () => void
-  onTranscriptRequest?: (limit?: number) => void
+  onTranscriptRequest?: (limit?: number, knownUuids?: string[]) => void
   onSubagentTranscriptRequest?: (agentId: string, limit?: number) => void
   onAck?: (origins: string[]) => void
   onTranscriptKick?: () => void
@@ -392,7 +392,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
         onTerminalResize?.(message.cols, message.rows)
         break
       case 'transcript_request':
-        onTranscriptRequest?.(message.limit)
+        onTranscriptRequest?.(message.limit, message.knownUuids)
         break
       case 'subagent_transcript_request':
         onSubagentTranscriptRequest?.(message.agentId, message.limit)

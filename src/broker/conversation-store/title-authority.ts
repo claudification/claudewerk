@@ -122,6 +122,25 @@ export function applyTitleWrite(state: TitleState, write: TitleWrite, now: numbe
 }
 
 /**
+ * The title a freshly-spawned conversation starts with.
+ *
+ * A name the requester supplied is THEIR choice and pins the conversation; a
+ * generated one is `cc-auto` and stays fair game for CC's own titler. Shared by
+ * every spawn backend so they cannot drift, and routed through the precedence
+ * rule so a spawn is stamped with a clock like any other writer -- without one,
+ * a `/rename` replayed out of an OLD transcript would outrank a name chosen
+ * seconds ago.
+ */
+export function applySpawnTitle(state: TitleState, requestedName: string | undefined, generatedName: string): void {
+  const now = Date.now()
+  applyTitleWrite(
+    state,
+    { title: requestedName || generatedName, origin: requestedName?.trim() ? 'user' : 'cc-auto', at: now },
+    now,
+  )
+}
+
+/**
  * One-time stamp for titles pinned before this module existed.
  *
  * Called at hydrate. An unstamped pin means "set at some unknown point in the

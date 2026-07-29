@@ -141,6 +141,7 @@ async function main() {
     outstandingInteractions: new Map(),
 
     pendingTranscriptEntries: [],
+    resendKnownUuids: null,
     eventQueue: [],
     diagBuffer: [],
     diagFlushTimer: null,

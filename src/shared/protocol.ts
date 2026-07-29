@@ -1372,11 +1372,28 @@ export interface SendInput {
   crDelay?: number // carriage return delay in ms (dashboard setting, optional)
 }
 
+/**
+ * How many uuids a `transcript_request` offers as its resend cursor. Matched to
+ * the agent host watcher's own 500-entry initial-read window -- knowing more
+ * than the host would ever re-send buys nothing, and this rides once per
+ * reconnect.
+ */
+export const RESEND_CURSOR_WINDOW = 600
+
 // Transcript streaming: broker -> rclaude
 export interface TranscriptRequest {
   type: 'transcript_request'
   conversationId: string
   limit?: number
+  /**
+   * The most recent entry uuids the broker already holds, newest-last.
+   *
+   * A resend answers this by forwarding only what follows the newest of these
+   * it can find in the file, instead of re-sending the whole transcript. Absent
+   * or empty means "I have nothing" -- reply with everything, which is what
+   * every host did unconditionally before this field existed.
+   */
+  knownUuids?: string[]
 }
 
 export interface SubagentTranscriptRequest {
