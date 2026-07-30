@@ -1221,6 +1221,30 @@ describe('addSubagentTranscriptEntries durability (Checkpoint B)', () => {
     expect(loaded?.[0].seq).toBe(1)
   })
 
+  it('loadTranscriptPageBefore returns the PARENT scope only (scrollback leak guard)', () => {
+    const driver = createStore({ type: 'memory' })
+    driver.init()
+    const s = createConversationStore({ store: driver, enablePersistence: true })
+    s.createConversation('conv-b4', '/cwd')
+
+    // Parent stream: seq 1..3. Agent sub-stream: its own seq 1..2, interleaved
+    // in time, so a chronological page over BOTH scopes would mix them.
+    s.addTranscriptEntries('conv-b4', [subEntry('p1', 'one'), subEntry('p2', 'two')], true)
+    s.addSubagentTranscriptEntries(
+      'conv-b4',
+      'agent-x',
+      [subEntry('a1', 'agent prompt'), subEntry('a2', 'agent reply')],
+      true,
+    )
+    s.addTranscriptEntries('conv-b4', [subEntry('p3', 'three')], false)
+
+    // Scrolling back from the newest parent entry must surface parent history
+    // ONLY -- an unscoped page pulls the agent's own entries (the Task prompt
+    // among them) into the main transcript.
+    const page = s.loadTranscriptPageBefore('conv-b4', 3, 50)
+    expect(page?.entries.map(e => e.uuid)).toEqual(['p1', 'p2'])
+  })
+
   it('skips persistence for an unregistered conversation (orphan write guard)', () => {
     const driver = createStore({ type: 'memory' })
     driver.init()

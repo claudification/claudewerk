@@ -2961,7 +2961,12 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     limit: number,
   ): { entries: TranscriptEntry[]; oldestSeq: number; hasMore: boolean } | null {
     if (!store) return null
-    const page = store.transcripts.getBeforeSeq(conversationId, beforeSeq, limit)
+    // Pin the PARENT scope, same as loadTranscriptFromStore. `getBeforeSeq`
+    // reads an omitted agentId as "every scope", so leaving it off prepended
+    // each subagent's sub-stream -- its first `user` entry IS the Task prompt,
+    // which then rendered as a user chat bubble in the main transcript the
+    // moment anyone scrolled back past an Agent call.
+    const page = store.transcripts.getBeforeSeq(conversationId, beforeSeq, limit, null)
     const entries = page.entries.map(r => ({ ...r.content, seq: r.seq }) as TranscriptEntry)
     // NOTE: does NOT touch transcriptSeqCounters -- this is OLDER history, it
     // must not move the live-tail seq cursor.

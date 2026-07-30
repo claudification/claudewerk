@@ -115,7 +115,10 @@ function filterByOpenLoop(
   for (const c of candidates) {
     if (threads.length >= cap || probed >= workingSet) break
     probed++
-    const open = detectOpenLoopFromRecords(store.transcripts.getLatest(c.conversationId, TAIL_ENTRIES))
+    // Parent scope only: an open loop is about what the CONVERSATION last said,
+    // and an omitted agentId means "every scope" -- subagent chatter would sit
+    // in the tail and answer the question for it.
+    const open = detectOpenLoopFromRecords(store.transcripts.getLatest(c.conversationId, TAIL_ENTRIES, null))
     if (!open) continue // ended clean / pruned transcript -> not a loose end
     threads.push({
       ...c,
