@@ -4,14 +4,11 @@
  * group-view.tsx. Seq-bucket continuation groups skip this header entirely so
  * a size-bound split reads as one uninterrupted turn.
  */
-import type { RobotIdentity } from '@/lib/robot-identity'
 import { cn } from '@/lib/utils'
-import { RobotAvatar } from '../robot-avatar'
 import { TimeStamp } from './timestamp'
 
 export function GroupHeader({
   label,
-  robot,
   customColor,
   borderColor,
   labelBg,
@@ -23,9 +20,6 @@ export function GroupHeader({
   ts,
 }: {
   label: string
-  /** Assistant groups only: the session robot whose face sits left of the
-   *  label. Absent on user groups and on pre-session-id history. */
-  robot?: RobotIdentity | null
   customColor: string
   borderColor: string
   labelBg: string
@@ -39,7 +33,6 @@ export function GroupHeader({
   return (
     <div className="flex items-center gap-2 mb-2">
       <span className={cn('text-[10px]', borderColor)}>{'┌──'}</span>
-      {robot && <RobotAvatar seed={robot.seed} backgroundColor={robot.backgroundColor} />}
       <span
         className={cn('px-2 py-0.5 font-bold', sizeClass, !customColor && labelBg)}
         style={customColor ? { backgroundColor: customColor, color: '#0a0a0a' } : undefined}
