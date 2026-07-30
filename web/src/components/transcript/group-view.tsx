@@ -1,4 +1,5 @@
 import { memo } from 'react'
+import { assistantRobot } from '@/lib/robot-identity'
 import type { TranscriptAssistantEntry } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { AdvisorCard } from './advisor-card'
@@ -104,7 +105,12 @@ function GroupView({
           | undefined
       )?.attributionSkill
 
-  const label = isUser ? userLabel : agentLabel
+  // Each CC session gets its own robot: a `/clear` mints a new ccSessionId, so
+  // the face + handle CHANGE mid-transcript at exactly the session boundary.
+  // Falls back to the configured agentLabel for history predating the field.
+  const robot = isUser ? null : assistantRobot(group.entries)
+
+  const label = isUser ? userLabel : (robot?.name ?? agentLabel)
   const customColor = isUser ? userColor : agentColor
   const borderColor = isUser ? 'border-event-prompt' : 'border-primary'
   const labelBg = isUser ? 'bg-event-prompt text-background' : 'bg-primary text-primary-foreground'
@@ -148,6 +154,7 @@ function GroupView({
       {!group.continuation && (
         <GroupHeader
           label={label}
+          robot={robot}
           customColor={customColor}
           borderColor={borderColor}
           labelBg={labelBg}
