@@ -342,7 +342,14 @@ export function ProjectList() {
 
   return (
     <MaybeProfiler id="ProjectList">
-      <div className="space-y-2 overflow-y-auto" data-perf-region="sidebar">
+      {/* select-none: drag-select here only fights drag-to-reorder and smears the
+          cards blue. Carve-outs: text fields (WebKit lets an inherited none swallow
+          selection INSIDE an input, killing inline rename) and the per-project
+          checklist, which opts back in on its own root. */}
+      <div
+        className="space-y-2 overflow-y-auto select-none [&_input]:select-text [&_textarea]:select-text"
+        data-perf-region="sidebar"
+      >
         <WorkspaceTabs />
         {filteredTree.map(node => {
           if (node.type === 'group') {

@@ -26,6 +26,11 @@ import { addChecklistItems } from '@/lib/checklist-client'
 import { openChecklistArchive, openChecklistBulkEdit } from './checklist-bus'
 import { ChecklistRow } from './checklist-row'
 
+// The conversation list around us is `select-none` (see project-list.tsx) -- this
+// block is the one carve-out, because the items ARE the user's own prose and he
+// should be able to drag across them and copy.
+const BLOCK = 'border-t border-border/40 bg-muted/10 py-1 select-text'
+
 export function ProjectChecklist({ project }: { project: string }) {
   const { open } = useChecklist(project)
   const [text, setText] = useState('')
@@ -89,7 +94,7 @@ export function ProjectChecklist({ project }: { project: string }) {
   if (!hasItems) {
     return (
       <div className="hidden sm:block overflow-hidden transition-[max-height] duration-150 [@media(hover:hover)]:max-h-0 [@media(hover:hover)]:group-hover/projhead:max-h-16">
-        <div className="border-t border-border/40 bg-muted/10 py-1">
+        <div className={BLOCK}>
           {addField}
           {footer}
         </div>
@@ -98,7 +103,7 @@ export function ProjectChecklist({ project }: { project: string }) {
   }
 
   return (
-    <div className="hidden sm:block border-t border-border/40 bg-muted/10 py-1">
+    <div className={`hidden sm:block ${BLOCK}`}>
       {open.map(item => (
         <ChecklistRow key={item.id} project={project} item={item} />
       ))}
