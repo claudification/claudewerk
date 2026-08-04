@@ -116,6 +116,12 @@ export const spawnRequestSchema = z.object({
     ),
   bare: z.boolean().optional().describe('Launch without injecting hooks'),
   repl: z.boolean().optional().describe('Launch CC in REPL mode'),
+  thinkingSummaries: z
+    .boolean()
+    .optional()
+    .describe(
+      'Return readable thinking summaries instead of empty (redacted) thinking blocks. Default: on. Omit unless the user explicitly wants thinking hidden.',
+    ),
   name: z.string().optional().describe('Display label in sidebar'),
   description: z
     .string()

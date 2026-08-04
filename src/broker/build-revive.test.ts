@@ -52,4 +52,19 @@ describe('buildReviveMessage -- sentinel profile pin', () => {
     const msg = buildReviveMessage(conv, 'conv-2')
     expect(msg.profile).toBeUndefined()
   })
+
+  test('carries a stored thinkingSummaries opt-out through revive', () => {
+    const conv = makeConversation({ launchConfig: { headless: true, thinkingSummaries: false } })
+    expect(buildReviveMessage(conv, 'conv-2').thinkingSummaries).toBe(false)
+  })
+
+  test('leaves thinkingSummaries undefined for a pre-feature conversation (sentinel defaults it ON)', () => {
+    const conv = makeConversation({ launchConfig: { headless: true } })
+    expect(buildReviveMessage(conv, 'conv-2').thinkingSummaries).toBeUndefined()
+  })
+
+  test('override wins over the stored launch config', () => {
+    const conv = makeConversation({ launchConfig: { headless: true, thinkingSummaries: false } })
+    expect(buildReviveMessage(conv, 'conv-2', { thinkingSummaries: true }).thinkingSummaries).toBe(true)
+  })
 })

@@ -128,6 +128,10 @@ function launchFieldsShowFor(backend: BackendKind, isDaemon: boolean) {
     maxBudgetUsd: !isDaemon,
     repl: isClaude,
     bare: isClaude,
+    // NOT gated on isDaemon: unlike the agent-host runtime flags above, the
+    // thinking-display opt-in rides the WORKER argv, so the daemon transport
+    // honors it too (see sentinel/daemon-dispatch.ts buildWorkerFlags).
+    thinkingSummaries: backend === 'claude',
     includePartialMessages: isClaude,
   }
 }

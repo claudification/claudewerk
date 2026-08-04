@@ -13,6 +13,7 @@ function makeCtx(overrides: Partial<SpawnActionContext> = {}): SpawnActionContex
     headless: true,
     bare: false,
     repl: false,
+    thinkingSummaries: true,
     model: '',
     effort: '',
     agent: '',

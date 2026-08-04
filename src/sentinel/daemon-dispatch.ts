@@ -20,6 +20,7 @@
  * (the dispatch op + the DispatchSpec wire shape).
  */
 import type { DaemonResponse, DispatchLaunch, DispatchSpec } from '../shared/cc-daemon/types'
+import { THINKING_DISPLAY_FLAG, thinkingDisplayValue } from '../shared/thinking-display'
 
 /** Daemon launch mode. ATTACH never dispatches a worker. */
 export type DaemonLaunchMode = 'new' | 'resume' | 'attach'
@@ -83,6 +84,11 @@ export interface DispatchSpecOpts {
   hostMcpConfigPath?: string
   /** Text appended to the system prompt -- `--append-system-prompt <text>`. */
   appendSystemPrompt?: string
+  /** Readable thinking summaries vs CC's redacted (empty) thinking blocks.
+   *  `undefined` resolves to the ON default. The daemon worker is forked by
+   *  CC's own supervisor, so it never sees the agent host's env -- the choice
+   *  must ride in the worker ARGV. See src/shared/thinking-display.ts. */
+  thinkingSummaries?: boolean
   /** Worker env delta (profile env + per-spawn env + CLAUDE_CONFIG_DIR). The
    *  daemon applies it over its own base env -- pass only the deltas. */
   env?: Record<string, string>
@@ -101,6 +107,10 @@ function buildWorkerFlags(opts: DispatchSpecOpts): string[] {
     if (value) flags.push(flag, value)
   }
   push('--model', opts.model)
+  // Opt-IN only: `omitted` is already CC's default, so "summaries off" pushes no
+  // flag at all. Mirrors the agent host (cli-args.ts) exactly.
+  const thinkingDisplay = thinkingDisplayValue(opts.thinkingSummaries)
+  push(THINKING_DISPLAY_FLAG, thinkingDisplay === 'summarized' ? thinkingDisplay : undefined)
   push('--settings', opts.settingsPath)
   // CC's `--mcp-config` is variadic + merges. The host config (Phase 3b) leads;
   // a caller-supplied mcpConfigPath follows. Single flag, multiple values --

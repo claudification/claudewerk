@@ -44,6 +44,7 @@ type LaunchFieldKey =
   | 'headless'
   | 'bare'
   | 'repl'
+  | 'thinkingSummaries'
 
 export type LaunchFieldsValue = {
   // Subset of SpawnRequest -- parent owns canonical state
@@ -74,6 +75,9 @@ export type LaunchFieldsValue = {
   headless?: boolean
   bare?: boolean
   repl?: boolean
+  /** Readable thinking summaries vs CC's redacted (empty) thinking blocks.
+   *  Defaults ON -- CC's own API default is the opposite. */
+  thinkingSummaries?: boolean
 
   // Prompt-suffix flags (not part of SpawnRequest)
   autoCommit?: boolean
@@ -431,6 +435,15 @@ export function LaunchConfigFields({
             />
           )}
         </div>
+      )}
+      {show.thinkingSummaries && (
+        <TileToggleRow
+          title="Thinking summaries"
+          subtitle="Readable reasoning in the transcript (off = empty thinking blocks)"
+          checked={value.thinkingSummaries ?? true}
+          onToggle={() => onChange({ thinkingSummaries: !(value.thinkingSummaries ?? true) })}
+          disabled={disabled.thinkingSummaries}
+        />
       )}
       {show.repl && (
         <TileToggleRow

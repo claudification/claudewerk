@@ -12,6 +12,10 @@ import {
 /** Minted worker identity shared by the buildDispatchSpec cases. */
 const ID = { short: 'cb2892db', nonce: '08c8b601', sessionId: 'df140babfa311efb1c4c30f77e6d231d' }
 
+/** Thinking summaries default ON, so every worker argv carries the opt-in
+ *  unless `thinkingSummaries:false` is passed. See thinking-display.ts. */
+const TD_FLAGS = ['--thinking-display', 'summarized'] as const
+
 function specOpts(overrides: Partial<DispatchSpecOpts> = {}): DispatchSpecOpts {
   return { mode: 'new', ...ID, cwd: '/tmp/probe', ...overrides }
 }
@@ -39,8 +43,8 @@ describe('buildDispatchSpec -- common fields', () => {
 describe('buildDispatchSpec -- NEW mode', () => {
   it('puts a bare prompt as the only launch.args element', () => {
     const spec = buildDispatchSpec(specOpts({ prompt: 'do the thing' }))
-    expect(spec.launch).toEqual({ mode: 'prompt', args: ['do the thing'] })
-    expect(spec.respawnFlags).toEqual([])
+    expect(spec.launch).toEqual({ mode: 'prompt', args: [...TD_FLAGS, 'do the thing'] })
+    expect(spec.respawnFlags).toEqual([...TD_FLAGS])
   })
 
   it('orders --model/--settings/--mcp-config/--append-system-prompt flags before the prompt', () => {
@@ -56,6 +60,7 @@ describe('buildDispatchSpec -- NEW mode', () => {
     const flags = [
       '--model',
       'claude-haiku-4-5-20251001',
+      ...TD_FLAGS,
       '--settings',
       '/abs/settings.json',
       '--mcp-config',
@@ -74,23 +79,23 @@ describe('buildDispatchSpec -- NEW mode', () => {
     )
     expect(spec.launch).toEqual({
       mode: 'prompt',
-      args: ['--mcp-config', '/abs/host-mcp.json', '/abs/user-mcp.json', 'go'],
+      args: [...TD_FLAGS, '--mcp-config', '/abs/host-mcp.json', '/abs/user-mcp.json', 'go'],
     })
   })
 
   it('emits the host --mcp-config alone when no caller mcp-config is supplied', () => {
     const spec = buildDispatchSpec(specOpts({ hostMcpConfigPath: '/abs/host-mcp.json' }))
-    expect(spec.launch).toEqual({ mode: 'prompt', args: ['--mcp-config', '/abs/host-mcp.json'] })
+    expect(spec.launch).toEqual({ mode: 'prompt', args: [...TD_FLAGS, '--mcp-config', '/abs/host-mcp.json'] })
   })
 
   it('supports a PROMPTLESS dispatch -- empty launch.args when no prompt', () => {
     const spec = buildDispatchSpec(specOpts({ model: 'm' }))
-    expect(spec.launch).toEqual({ mode: 'prompt', args: ['--model', 'm'] })
+    expect(spec.launch).toEqual({ mode: 'prompt', args: ['--model', 'm', ...TD_FLAGS] })
   })
 
   it('treats a whitespace-only prompt as absent', () => {
     const spec = buildDispatchSpec(specOpts({ prompt: '   ', model: 'm' }))
-    expect(spec.launch).toEqual({ mode: 'prompt', args: ['--model', 'm'] })
+    expect(spec.launch).toEqual({ mode: 'prompt', args: ['--model', 'm', ...TD_FLAGS] })
   })
 
   it('derives seed.name from the conversation name and seed.intent from the prompt', () => {
@@ -100,6 +105,21 @@ describe('buildDispatchSpec -- NEW mode', () => {
 
   it('defaults seed.intent to claudewerk for a promptless NEW dispatch with no name', () => {
     expect(buildDispatchSpec(specOpts()).seed).toEqual({ intent: 'claudewerk' })
+  })
+
+  it('opts INTO thinking summaries by default (CC redacts thinking otherwise)', () => {
+    expect(buildDispatchSpec(specOpts()).respawnFlags).toEqual(['--thinking-display', 'summarized'])
+    expect(buildDispatchSpec(specOpts({ thinkingSummaries: true })).respawnFlags).toEqual([
+      '--thinking-display',
+      'summarized',
+    ])
+  })
+
+  it('emits NO thinking-display flag when summaries are turned off', () => {
+    // `omitted` is already CC's own default, so the off state passes no flag at
+    // all -- which also keeps it working on a claude too old to know the flag.
+    expect(buildDispatchSpec(specOpts({ thinkingSummaries: false })).respawnFlags).toEqual([])
+    expect(buildDispatchSpec(specOpts({ thinkingSummaries: false, model: 'm' })).respawnFlags).toEqual(['--model', 'm'])
   })
 })
 
@@ -112,13 +132,18 @@ describe('buildDispatchSpec -- RESUME mode', () => {
       mode: 'resume',
       sessionId: '27dc07b0-cafe',
       fork: true,
-      flagArgs: ['--model', 'm', 'next turn'],
+      flagArgs: ['--model', 'm', ...TD_FLAGS, 'next turn'],
     })
   })
 
   it('drops the trailing prompt positional when resume has no prompt', () => {
     const spec = buildDispatchSpec(specOpts({ mode: 'resume', resumeSessionId: 'sess-1', model: 'm' }))
-    expect(spec.launch).toEqual({ mode: 'resume', sessionId: 'sess-1', fork: true, flagArgs: ['--model', 'm'] })
+    expect(spec.launch).toEqual({
+      mode: 'resume',
+      sessionId: 'sess-1',
+      fork: true,
+      flagArgs: ['--model', 'm', ...TD_FLAGS],
+    })
   })
 
   it('defaults seed.intent to resume when a resume carries no prompt', () => {

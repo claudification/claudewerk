@@ -13,6 +13,7 @@ export function launchFieldsFromProfile(p: LaunchProfile): LaunchFieldsValue {
     headless: p.spawn.headless ?? true,
     bare: p.spawn.bare ?? false,
     repl: p.spawn.repl ?? false,
+    thinkingSummaries: p.spawn.thinkingSummaries ?? true,
     includePartialMessages: p.spawn.includePartialMessages ?? true,
   }
 }
@@ -33,6 +34,9 @@ export function spawnPatchFromLaunchFields(patch: Partial<LaunchFieldsValue>): P
   if (patch.headless !== undefined) out.headless = patch.headless
   if (patch.bare !== undefined) out.bare = patch.bare || undefined
   if (patch.repl !== undefined) out.repl = patch.repl || undefined
+  // Stored only when OFF: on is the resolver default, so an absent field means
+  // "inherit", and a profile does not pin a value the user never changed.
+  if (patch.thinkingSummaries !== undefined) out.thinkingSummaries = patch.thinkingSummaries ? undefined : false
   if (patch.includePartialMessages !== undefined) out.includePartialMessages = patch.includePartialMessages
   return out
 }

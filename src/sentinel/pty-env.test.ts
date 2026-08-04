@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { ptyCrossBoundaryEnvKeys, shouldInjectConfigDir } from './pty-env'
+import { ptyCrossBoundaryEnvEntry, ptyCrossBoundaryEnvKeys, shouldInjectConfigDir } from './pty-env'
 import type { ResolvedProfile } from './sentinel-config'
 
 function profile(partial: Partial<ResolvedProfile>): ResolvedProfile {
@@ -59,6 +59,28 @@ describe('ptyCrossBoundaryEnvKeys', () => {
 
   it('ignores an empty custom env object', () => {
     expect(ptyCrossBoundaryEnvKeys(profile({ configDir: '/p/.claude' }), {})).toBe('CLAUDE_CONFIG_DIR')
+  })
+
+  it('appends caller extraKeys last so they survive the tmux seam', () => {
+    // The PTY path always sets CLAUDWERK_THINKING_DISPLAY; without forwarding
+    // it the tmux pane inherits the stale server env and the opt-in evaporates.
+    expect(ptyCrossBoundaryEnvKeys(undefined, undefined, ['CLAUDWERK_THINKING_DISPLAY'])).toBe(
+      'CLAUDWERK_THINKING_DISPLAY',
+    )
+    expect(
+      ptyCrossBoundaryEnvKeys(profile({ configDir: '/p/.claude' }), undefined, ['CLAUDWERK_THINKING_DISPLAY']),
+    ).toBe('CLAUDE_CONFIG_DIR CLAUDWERK_THINKING_DISPLAY')
+  })
+
+  it('defaults extraKeys to empty (existing callers unchanged)', () => {
+    expect(ptyCrossBoundaryEnvKeys(undefined, undefined)).toBe('')
+  })
+
+  it('ptyCrossBoundaryEnvEntry spreads the var, or nothing when there are no keys', () => {
+    expect(ptyCrossBoundaryEnvEntry(undefined, undefined)).toEqual({})
+    expect(
+      ptyCrossBoundaryEnvEntry(profile({ configDir: '/p/.claude' }), undefined, ['CLAUDWERK_THINKING_DISPLAY']),
+    ).toEqual({ CLAUDWERK_PTY_ENV_KEYS: 'CLAUDE_CONFIG_DIR CLAUDWERK_THINKING_DISPLAY' })
   })
 
   it('produces only whitespace-safe identifier names (bash word-split safe)', () => {

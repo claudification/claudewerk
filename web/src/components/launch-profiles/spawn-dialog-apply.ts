@@ -24,6 +24,9 @@ export interface SpawnFormSetters {
   setAdvisor: (v: string) => void
   setBare: (v: boolean) => void
   setRepl: (v: boolean) => void
+  /** Thinking-summary opt-in. Optional so callers that don't render the toggle
+   *  stay agnostic. Applies to the daemon transport too. */
+  setThinkingSummaries?: (v: boolean) => void
   setPermissionMode: (v: string) => void
   setAutocompactPct: (v: number | '') => void
   setMaxBudgetUsd: (v: string) => void
@@ -47,39 +50,53 @@ export interface SpawnFormSetters {
   setSentinelPool?: (v: string) => void
 }
 
+type ProfileSpawn = LaunchProfile['spawn']
+
+/**
+ * Sentinel-profile + pool INTENT. Both launch paths (daemon and the generic
+ * claude form) restore it identically -- a daemon worker also runs under the
+ * resolved profile's `CLAUDE_CONFIG_DIR`. Empty string = follow the sentinel's
+ * own `defaultSelection` / `defaultPool`.
+ */
+function applySentinelIntent(s: ProfileSpawn, setters: SpawnFormSetters): void {
+  setters.setSentinelProfile?.(s.profile ?? '')
+  setters.setSentinelPool?.(s.pool ?? '')
+}
+
+/** Blank-coalesce a stored optional string field onto its form value. */
+const orEmpty = (v: string | undefined): string => v ?? ''
+
 export function applyProfileToForm(profile: LaunchProfile, setters: SpawnFormSetters): void {
   const s = profile.spawn
+  // Applied BEFORE the daemon early-return: the thinking-display opt-in rides
+  // the worker argv, so it is honored on every claude transport including
+  // claude-daemon (unlike the agent-host-only flags below).
+  setters.setThinkingSummaries?.(s.thinkingSummaries !== false)
   // Daemon profiles drive a separate config form (DaemonModeFormValue), not the
   // generic per-field state -- restore that and stop. Detected via the canonical
   // `transport` discriminator.
   if (s.transport === 'claude-daemon') {
     applyDaemonProfileToForm(s, setters)
-    // Daemon launches also honor the sentinel-profile pick (the daemon worker
-    // runs under the resolved profile's `CLAUDE_CONFIG_DIR`).
-    if (setters.setSentinelProfile) setters.setSentinelProfile(s.profile ?? '')
-    if (setters.setSentinelPool) setters.setSentinelPool(s.pool ?? '')
+    applySentinelIntent(s, setters)
     return
   }
   setters.setIsDaemon?.(false)
   if (s.headless !== undefined) setters.setHeadless(s.headless)
-  setters.setModel(s.model ?? '')
-  setters.setEffort(s.effort ?? '')
-  setters.setAgent(s.agent ?? '')
-  setters.setAdvisor(s.advisor ?? '')
-  setters.setBare(s.bare ?? false)
-  setters.setRepl(s.repl ?? false)
-  setters.setPermissionMode(s.permissionMode ?? '')
+  setters.setModel(orEmpty(s.model))
+  setters.setEffort(orEmpty(s.effort))
+  setters.setAgent(orEmpty(s.agent))
+  setters.setAdvisor(orEmpty(s.advisor))
+  setters.setBare(s.bare === true)
+  setters.setRepl(s.repl === true)
+  setters.setPermissionMode(orEmpty(s.permissionMode))
   setters.setAutocompactPct(s.autocompactPct ?? '')
   setters.setMaxBudgetUsd(s.maxBudgetUsd != null ? String(s.maxBudgetUsd) : '')
   if (s.includePartialMessages !== undefined) setters.setIncludePartialMessages(s.includePartialMessages)
   if (s.backend) setters.setBackend(s.backend as BackendKind)
   setters.setEnvText(envObjectToText(s.env))
-  if (s.openCodeModel && setters.setOpenCodeModel) setters.setOpenCodeModel(s.openCodeModel)
-  if (s.toolPermission && setters.setOpenCodeToolPermission) setters.setOpenCodeToolPermission(s.toolPermission)
-  // Sentinel-profile intent -- empty string = follow sentinel default.
-  if (setters.setSentinelProfile) setters.setSentinelProfile(s.profile ?? '')
-  // Sentinel-pool intent (Balanced/Random) -- empty string = follow defaultPool.
-  if (setters.setSentinelPool) setters.setSentinelPool(s.pool ?? '')
+  if (s.openCodeModel) setters.setOpenCodeModel?.(s.openCodeModel)
+  if (s.toolPermission) setters.setOpenCodeToolPermission?.(s.toolPermission)
+  applySentinelIntent(s, setters)
 }
 
 function envObjectToText(env: Record<string, string> | undefined): string {
@@ -146,6 +163,8 @@ export interface FormSnapshotInput {
   headless: boolean
   bare: boolean
   repl: boolean
+  /** Thinking-summary opt-in. Optional -- omitted snapshots mean "on". */
+  thinkingSummaries?: boolean
   includePartialMessages: boolean
   backend: BackendKind
   envText: string
@@ -177,6 +196,9 @@ export function formSnapshotToProfileSpawn(snap: FormSnapshotInput): LaunchProfi
     const out = daemonFormToProfileSpawn(snap.daemonForm ?? blankDaemonForm())
     if (snap.sentinelProfile) out.profile = snap.sentinelProfile
     if (snap.sentinelPool) out.pool = snap.sentinelPool
+    // Stored only when OFF (on is the resolver default). Daemon workers honor
+    // the flag too, so this survives the daemon snapshot path as well.
+    if (snap.thinkingSummaries === false) out.thinkingSummaries = false
     return out
   }
   const out: LaunchProfile['spawn'] = {}
@@ -193,6 +215,7 @@ export function formSnapshotToProfileSpawn(snap: FormSnapshotInput): LaunchProfi
   out.headless = snap.headless
   if (snap.bare) out.bare = true
   if (snap.repl) out.repl = true
+  if (snap.thinkingSummaries === false) out.thinkingSummaries = false
   out.includePartialMessages = snap.includePartialMessages
   if (snap.backend !== 'claude') out.backend = snap.backend
   const env = parseEnvSimple(snap.envText)

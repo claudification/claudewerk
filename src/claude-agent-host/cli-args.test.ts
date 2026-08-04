@@ -23,6 +23,54 @@ describe('buildMcpConfigArgs', () => {
   })
 })
 
+describe('parseCliArgs -- thinking-display injection', () => {
+  const prev = process.env.CLAUDWERK_THINKING_DISPLAY
+
+  beforeEach(() => {
+    delete process.env.CLAUDWERK_THINKING_DISPLAY
+  })
+
+  afterEach(() => {
+    if (prev === undefined) delete process.env.CLAUDWERK_THINKING_DISPLAY
+    else process.env.CLAUDWERK_THINKING_DISPLAY = prev
+  })
+
+  /** Value following --thinking-display, or undefined when the flag is absent. */
+  const displayValue = (args: string[]): string | undefined => {
+    const i = args.indexOf('--thinking-display')
+    return i >= 0 ? args[i + 1] : undefined
+  }
+
+  it('opts in by default when the env is unset (CC redacts thinking otherwise)', async () => {
+    const cfg = await parseCliArgs([])
+    expect(displayValue(cfg.claudeArgs)).toBe('summarized')
+  })
+
+  it('opts in when the sentinel resolved summaries ON', async () => {
+    process.env.CLAUDWERK_THINKING_DISPLAY = 'summarized'
+    const cfg = await parseCliArgs([])
+    expect(displayValue(cfg.claudeArgs)).toBe('summarized')
+  })
+
+  it('emits NO flag when summaries are off -- omitted is already CC behavior', async () => {
+    process.env.CLAUDWERK_THINKING_DISPLAY = 'omitted'
+    const cfg = await parseCliArgs([])
+    expect(cfg.claudeArgs).not.toContain('--thinking-display')
+  })
+
+  it('falls back to the ON default when the env value is junk', async () => {
+    process.env.CLAUDWERK_THINKING_DISPLAY = 'yes-please'
+    const cfg = await parseCliArgs([])
+    expect(displayValue(cfg.claudeArgs)).toBe('summarized')
+  })
+
+  it('never double-injects over a user-supplied --thinking-display', async () => {
+    const cfg = await parseCliArgs(['--thinking-display', 'omitted'])
+    expect(cfg.claudeArgs.filter(a => a === '--thinking-display')).toHaveLength(1)
+    expect(displayValue(cfg.claudeArgs)).toBe('omitted')
+  })
+})
+
 describe('parseCliArgs -- append-system-prompt injection', () => {
   let dir: string
   const prevInline = process.env.CLAUDWERK_APPEND_SYSTEM_PROMPT

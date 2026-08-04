@@ -41,6 +41,9 @@ const GlobalSettingsSchema = z.object({
   // Spawn dialog defaults
   defaultBare: z.boolean().default(false),
   defaultRepl: z.boolean().default(false),
+  // Readable thinking summaries instead of CC's redacted (empty) thinking
+  // blocks. ON by default -- see src/shared/thinking-display.ts.
+  defaultThinkingSummaries: z.boolean().default(true),
   defaultPermissionMode: z.enum(['default', 'plan', 'acceptEdits', 'auto', 'bypassPermissions']).default('default'),
   defaultAutocompactPct: z.number().min(0).max(99).default(0), // 0 = use CC default
   defaultMaxBudgetUsd: z.number().min(0).default(0), // 0 = no limit

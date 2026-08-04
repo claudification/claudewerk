@@ -70,6 +70,7 @@ import type {
 } from '../shared/protocol'
 import { DEFAULT_BROKER_URL, HEARTBEAT_INTERVAL_MS } from '../shared/protocol'
 import { secureTmpPath, writeSecureFile } from '../shared/secure-temp'
+import { THINKING_DISPLAY_ENV, thinkingDisplayValue } from '../shared/thinking-display'
 import { getAcpRecipe, listAcpRecipes } from './acp-recipes'
 import { BUILTIN_ARTIFACT_PATTERNS, handleFetchArtifact } from './artifact-handlers'
 import { type CcVersionWatcher, createCcVersionWatcher, type LastSeenCcVersion } from './cc-version-watcher'
@@ -103,7 +104,7 @@ import {
   handleProjectWriteFile,
 } from './project-handlers'
 import { stopAllWatches, unwatchProject, watchProject } from './project-watch'
-import { ptyCrossBoundaryEnvKeys, shouldInjectConfigDir } from './pty-env'
+import { ptyProfileEnvBlock, shouldInjectConfigDir } from './pty-env'
 import { handleQuestOp } from './quest-handlers'
 import { pickProfile, type UsageHeadroom } from './selection'
 import {
@@ -564,6 +565,7 @@ const RCLAUDE_CONVERSATION_VARS = new Set([
   'CLAUDWERK_APPEND_SYSTEM_PROMPT_FILE',
   'CLAUDWERK_SETTINGS_PATH',
   'CLAUDWERK_MCP_CONFIG_PATH',
+  THINKING_DISPLAY_ENV,
   DAEMON_MCP_ENDPOINT_ENV,
 ])
 
@@ -640,6 +642,9 @@ function buildHeadlessEnv(opts: {
   bare?: boolean
   repl?: boolean
   includePartialMessages?: boolean
+  /** Readable thinking summaries vs CC's redacted (empty) thinking blocks.
+   *  `undefined` resolves to the ON default -- see `thinkingDisplayValue`. */
+  thinkingSummaries?: boolean
   appendSystemPrompt?: string
   /** Backend-general `--settings` path (transport-reframe Phase 2). The agent
    *  host MERGES it into its generated hooks settings file. */
@@ -691,6 +696,10 @@ function buildHeadlessEnv(opts: {
     env.CLAUDE_CODE_ENABLE_EXPERIMENTAL_ADVISOR_TOOL = '1'
   }
   if (opts.includePartialMessages === false) env.RCLAUDE_INCLUDE_PARTIAL_MESSAGES = '0'
+  // Always concrete: CC's API default is `omitted`, so "unset" must not mean
+  // "inherit CC's default" -- it means OUR default (on). cli-args turns this
+  // into `--thinking-display <value>` on the claude argv.
+  env[THINKING_DISPLAY_ENV] = thinkingDisplayValue(opts.thinkingSummaries)
   if (opts.appendSystemPrompt) env.CLAUDWERK_APPEND_SYSTEM_PROMPT = opts.appendSystemPrompt
   if (opts.settingsPath) env.CLAUDWERK_SETTINGS_PATH = opts.settingsPath
   if (opts.mcpConfigPath) env.CLAUDWERK_MCP_CONFIG_PATH = opts.mcpConfigPath
@@ -1161,6 +1170,9 @@ async function dispatchDaemonWorker(opts: {
   /** Sentinel-computed host MCP config -- leads the worker's `--mcp-config`. */
   hostMcpConfigPath?: string
   appendSystemPrompt?: string
+  /** Readable thinking summaries vs CC's redacted (empty) thinking blocks.
+   *  Rides in the worker ARGV -- a daemon worker never sees the host env. */
+  thinkingSummaries?: boolean
   env?: Record<string, string>
   jobId?: string
   /** Resolved sentinel profile. Its `configDir` is injected as
@@ -1207,6 +1219,7 @@ async function dispatchDaemonWorker(opts: {
       mcpConfigPath: opts.mcpConfigPath,
       hostMcpConfigPath: opts.hostMcpConfigPath,
       appendSystemPrompt: opts.appendSystemPrompt,
+      thinkingSummaries: opts.thinkingSummaries,
       env: workerEnv,
     })
   } catch (e: unknown) {
@@ -1920,6 +1933,7 @@ async function reviveConversation(
   agent?: string,
   profile?: ResolvedProfile,
   advisor?: string,
+  thinkingSummaries?: boolean,
 ): Promise<ReviveResult & { tmuxPaneId?: string }> {
   const result: ReviveResult = {
     type: 'revive_result',
@@ -1975,6 +1989,7 @@ async function reviveConversation(
       advisor,
       effort,
       model,
+      thinkingSummaries,
       worktree: adHocWorktree,
       env,
       configDir: profile?.configDir,
@@ -2026,18 +2041,10 @@ async function reviveConversation(
     ...(maxBudgetUsd ? { RCLAUDE_MAX_BUDGET_USD: String(maxBudgetUsd) } : {}),
     ...(adHocWorktree ? { RCLAUDE_WORKTREE: adHocWorktree } : {}),
     ...(agent ? { RCLAUDE_AGENT: agent } : {}),
-    ...(env && Object.keys(env).length ? { RCLAUDE_CUSTOM_ENV: JSON.stringify(env) } : {}),
-    // Sentinel profile -- inject CLAUDE_CONFIG_DIR + profile.env DIRECTLY
-    // so revive-session.sh, the tmux child, and the rclaude binary all see
-    // them as real env. Profile-Env Boundary: never echo over the wire.
-    // Implicit default (~/.claude): omit CLAUDE_CONFIG_DIR so CC's Keychain
-    // credential fallback still fires -- see `shouldInjectConfigDir`.
-    ...(shouldInjectConfigDir(profile?.configDir) ? { CLAUDE_CONFIG_DIR: profile.configDir } : {}),
-    ...(profile?.env ?? {}),
-    // Tell revive-session.sh which of the above to re-export across the tmux
-    // boundary via `tmux -e` (a new pane inherits the tmux server's stale env,
-    // not this one). Names only -- values stay in the spawned process env.
-    ...(ptyCrossBoundaryEnvKeys(profile, env) ? { CLAUDWERK_PTY_ENV_KEYS: ptyCrossBoundaryEnvKeys(profile, env) } : {}),
+    [THINKING_DISPLAY_ENV]: thinkingDisplayValue(thinkingSummaries),
+    // Custom env + sentinel profile (CLAUDE_CONFIG_DIR, profile.env) + the
+    // tmux cross-boundary key list. See `ptyProfileEnvBlock`.
+    ...ptyProfileEnvBlock(profile, env, [THINKING_DISPLAY_ENV]),
   }
   // NO OAuth-token injection on the PTY/interactive path. The setup-token is
   // inference-only -- it authenticates `claude -p` (headless) but CANNOT
@@ -2154,6 +2161,8 @@ async function spawnConversation(
   mcpConfigPath?: string,
   /** Advisor model (CC 2.1.170 server-side advisor tool). */
   advisor?: string,
+  /** Readable thinking summaries vs CC's redacted (empty) thinking blocks. */
+  thinkingSummaries?: boolean,
 ): Promise<{ success: boolean; error?: string; tmuxSession?: string; tmuxPaneId?: string }> {
   launchLog(jobId, 'Validating directory', 'info', cwd)
 
@@ -2275,6 +2284,7 @@ async function spawnConversation(
       bare,
       repl,
       includePartialMessages,
+      thinkingSummaries,
       appendSystemPrompt,
       settingsPath,
       mcpConfigPath,
@@ -2354,6 +2364,7 @@ async function spawnConversation(
     ...(leaveRunning ? { RCLAUDE_LEAVE_RUNNING: '1' } : {}),
     ...(promptFile ? { RCLAUDE_INITIAL_PROMPT_FILE: promptFile } : {}),
     ...(includePartialMessages === false ? { RCLAUDE_INCLUDE_PARTIAL_MESSAGES: '0' } : {}),
+    [THINKING_DISPLAY_ENV]: thinkingDisplayValue(thinkingSummaries),
     ...(worktree ? { RCLAUDE_WORKTREE: shellSafe(worktree) } : {}),
     ...(agent ? { RCLAUDE_AGENT: shellSafe(agent) } : {}),
     // Backend-general config injection (transport-reframe Phase 2). Paths are
@@ -2362,18 +2373,9 @@ async function spawnConversation(
     ...(settingsPath ? { CLAUDWERK_SETTINGS_PATH: shellSafe(settingsPath) } : {}),
     ...(mcpConfigPath ? { CLAUDWERK_MCP_CONFIG_PATH: shellSafe(mcpConfigPath) } : {}),
     ...(appendSystemPromptFile ? { CLAUDWERK_APPEND_SYSTEM_PROMPT_FILE: appendSystemPromptFile } : {}),
-    ...(env && Object.keys(env).length ? { RCLAUDE_CUSTOM_ENV: JSON.stringify(env) } : {}),
-    // Sentinel profile -- CLAUDE_CONFIG_DIR + profile.env injected DIRECTLY
-    // so revive-session.sh, the tmux shell, and rclaude all see them as real
-    // env vars. Profile-Env Boundary: never echo over the wire.
-    // Implicit default (~/.claude): omit CLAUDE_CONFIG_DIR so CC's Keychain
-    // credential fallback still fires -- see `shouldInjectConfigDir`.
-    ...(shouldInjectConfigDir(profile?.configDir) ? { CLAUDE_CONFIG_DIR: profile.configDir } : {}),
-    ...(profile?.env ?? {}),
-    // Tell revive-session.sh which of the above to re-export across the tmux
-    // boundary via `tmux -e` (a new pane inherits the tmux server's stale env,
-    // not this one). Names only -- values stay in the spawned process env.
-    ...(ptyCrossBoundaryEnvKeys(profile, env) ? { CLAUDWERK_PTY_ENV_KEYS: ptyCrossBoundaryEnvKeys(profile, env) } : {}),
+    // Custom env + sentinel profile (CLAUDE_CONFIG_DIR, profile.env) + the
+    // tmux cross-boundary key list. See `ptyProfileEnvBlock`.
+    ...ptyProfileEnvBlock(profile, env, [THINKING_DISPLAY_ENV]),
   }
   // NO OAuth-token injection on the PTY/interactive path -- the setup-token is
   // inference-only and cannot establish an interactive subscription session.
@@ -3153,6 +3155,7 @@ function connect(
             reviveMsg.agent,
             resolvedReviveProfile,
             reviveMsg.advisor,
+            reviveMsg.thinkingSummaries,
           )
           // Strip sentinel-internal tmuxPaneId before sending over WS. Echo the
           // resolved profile NAME (not configDir / env -- Profile-Env Boundary).
@@ -3756,6 +3759,7 @@ function connect(
                 mcpConfigPath: daemonMcpConfigPath,
                 hostMcpConfigPath: hostMcp.configPath,
                 appendSystemPrompt: daemonAppendSystemPrompt,
+                thinkingSummaries: spawnMsg.thinkingSummaries,
                 env: spawnMsg.env,
                 jobId: spawnMsg.jobId,
               })
@@ -3868,6 +3872,7 @@ function connect(
             effectiveSettingsPath,
             spawnMsg.mcpConfigPath,
             spawnMsg.advisor,
+            spawnMsg.thinkingSummaries,
           )
           const response: SpawnResult = {
             type: 'spawn_result',

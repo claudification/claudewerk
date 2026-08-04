@@ -55,6 +55,9 @@ export function shouldInjectConfigDir(configDir: string | undefined): configDir 
 export function ptyCrossBoundaryEnvKeys(
   profile: ResolvedProfile | undefined,
   customEnv: Record<string, string> | undefined,
+  /** Extra var names the caller set on the PTY env that must also survive the
+   *  tmux seam (e.g. CLAUDWERK_THINKING_DISPLAY). Names only -- same contract. */
+  extraKeys: readonly string[] = [],
 ): string {
   const keys: string[] = []
   if (shouldInjectConfigDir(profile?.configDir)) keys.push('CLAUDE_CONFIG_DIR')
@@ -62,5 +65,48 @@ export function ptyCrossBoundaryEnvKeys(
   // RCLAUDE_CUSTOM_ENV is a single JSON blob read by the agent host
   // (cli-args.ts) from process.env -- it too must survive the tmux boundary.
   if (customEnv && Object.keys(customEnv).length) keys.push('RCLAUDE_CUSTOM_ENV')
+  keys.push(...extraKeys)
   return keys.join(' ')
+}
+
+/**
+ * The `CLAUDWERK_PTY_ENV_KEYS` env entry to spread into a PTY spawn/revive env,
+ * or `{}` when there is nothing to forward. Both tmux paths (spawn + revive)
+ * build it identically -- having one helper keeps them from drifting and
+ * computes the key list ONCE instead of per-spread.
+ */
+export function ptyCrossBoundaryEnvEntry(
+  profile: ResolvedProfile | undefined,
+  customEnv: Record<string, string> | undefined,
+  extraKeys: readonly string[] = [],
+): { CLAUDWERK_PTY_ENV_KEYS?: string } {
+  const keys = ptyCrossBoundaryEnvKeys(profile, customEnv, extraKeys)
+  return keys ? { CLAUDWERK_PTY_ENV_KEYS: keys } : {}
+}
+
+/**
+ * The complete profile/custom-env tail of a PTY spawn OR revive env, spread as
+ * one block. Both tmux paths need exactly this and nothing about it differs
+ * between them, so it lives here rather than being copy-pasted into each:
+ *
+ *  - `RCLAUDE_CUSTOM_ENV` -- user env as a single JSON blob (read by cli-args).
+ *  - `CLAUDE_CONFIG_DIR`  -- injected DIRECTLY so revive-session.sh, the tmux
+ *    child, and the rclaude binary all see it as real env. Skipped for the
+ *    implicit `~/.claude` default so CC's Keychain fallback still fires.
+ *  - `profile.env`        -- e.g. ANTHROPIC_API_KEY for an alt account.
+ *    PROFILE-ENV BOUNDARY: these values are never echoed over the wire.
+ *  - `CLAUDWERK_PTY_ENV_KEYS` -- the NAMES revive-session.sh re-exports across
+ *    the tmux seam (a new pane inherits the tmux server's stale env, not this).
+ */
+export function ptyProfileEnvBlock(
+  profile: ResolvedProfile | undefined,
+  customEnv: Record<string, string> | undefined,
+  extraKeys: readonly string[] = [],
+): Record<string, string> {
+  return {
+    ...(customEnv && Object.keys(customEnv).length ? { RCLAUDE_CUSTOM_ENV: JSON.stringify(customEnv) } : {}),
+    ...(shouldInjectConfigDir(profile?.configDir) ? { CLAUDE_CONFIG_DIR: profile.configDir } : {}),
+    ...(profile?.env ?? {}),
+    ...ptyCrossBoundaryEnvEntry(profile, customEnv, extraKeys),
+  }
 }

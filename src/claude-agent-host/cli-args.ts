@@ -6,6 +6,12 @@ import { readFileSync, realpathSync, unlinkSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { claudeConfigDir } from '../shared/claude-config-dir'
 import { DEFAULT_BROKER_URL } from '../shared/protocol'
+import {
+  parseThinkingDisplay,
+  THINKING_DISPLAY_ENV,
+  THINKING_DISPLAY_FLAG,
+  thinkingDisplayValue,
+} from '../shared/thinking-display'
 import { checkForUpdate, formatUpdateResult, formatVersion } from '../shared/update-check'
 import { wsToHttpUrl } from '../shared/ws-url'
 import { debug } from './debug'
@@ -391,6 +397,22 @@ export async function parseCliArgs(args: string[]): Promise<CliConfig> {
   // sentinel alongside RCLAUDE_ADVISOR.
   if (process.env.RCLAUDE_ADVISOR && !claudeArgs.includes('--advisor')) {
     claudeArgs.push('--advisor', process.env.RCLAUDE_ADVISOR)
+  }
+
+  // Thinking summaries. CC's `thinking.display` API default is `omitted` on every
+  // 4.7+ model -- an empty `thinking` string with only a signature -- so readable
+  // reasoning is an OPT-IN we have to ask for. The sentinel resolves the choice
+  // per conversation into CLAUDWERK_THINKING_DISPLAY; a bare `rclaude` with no env
+  // still opts in (our default is on).
+  //
+  // We only ever push the opt-IN: `omitted` is already CC's own behavior, so
+  // turning summaries off means passing NO flag. That keeps the off state a clean
+  // escape hatch on any `claude` too old to know the flag (it is real but hidden
+  // from `--help`; verified present in 2.1.220 + 2.1.221). A user-supplied
+  // --thinking-display always wins.
+  const thinkingDisplay = parseThinkingDisplay(process.env[THINKING_DISPLAY_ENV]) ?? thinkingDisplayValue(undefined)
+  if (thinkingDisplay === 'summarized' && !claudeArgs.includes(THINKING_DISPLAY_FLAG)) {
+    claudeArgs.push(THINKING_DISPLAY_FLAG, thinkingDisplay)
   }
 
   // Append-system-prompt injection (transport-reframe Phase 2). Headless passes

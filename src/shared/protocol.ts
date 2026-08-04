@@ -3136,6 +3136,9 @@ export interface ProjectSettings {
   // Spawn dialog defaults (override global)
   defaultBare?: boolean
   defaultRepl?: boolean
+  /** Readable thinking summaries vs CC's redacted (empty) thinking blocks.
+   *  Unset = inherit global (which is ON). See src/shared/thinking-display.ts. */
+  defaultThinkingSummaries?: boolean
   defaultPermissionMode?: 'default' | 'plan' | 'acceptEdits' | 'auto' | 'bypassPermissions'
   defaultAutocompactPct?: number // 0 = use CC default
   defaultMaxBudgetUsd?: number // 0 = no limit
@@ -3547,6 +3550,10 @@ export interface LaunchConfig {
   advisor?: string
   bare?: boolean
   repl?: boolean
+  /** Readable thinking summaries vs CC's redacted (empty) thinking blocks.
+   *  Resolved by spawn-defaults (ON by default); the sentinel turns it into
+   *  `--thinking-display`. See src/shared/thinking-display.ts. */
+  thinkingSummaries?: boolean
   permissionMode?: string
   autocompactPct?: number
   maxBudgetUsd?: number
@@ -5442,6 +5449,10 @@ export interface ReviveConversation {
   advisor?: string
   bare?: boolean
   repl?: boolean
+  /** Readable thinking summaries vs CC's redacted (empty) thinking blocks.
+   *  Resolved by spawn-defaults (ON by default); the sentinel turns it into
+   *  `--thinking-display`. See src/shared/thinking-display.ts. */
+  thinkingSummaries?: boolean
   permissionMode?: string
   // Limits
   autocompactPct?: number
@@ -5489,6 +5500,10 @@ export interface SpawnConversation {
   advisor?: string
   bare?: boolean
   repl?: boolean
+  /** Readable thinking summaries vs CC's redacted (empty) thinking blocks.
+   *  Resolved by spawn-defaults (ON by default); the sentinel turns it into
+   *  `--thinking-display`. See src/shared/thinking-display.ts. */
+  thinkingSummaries?: boolean
   permissionMode?: string
   // Limits
   autocompactPct?: number

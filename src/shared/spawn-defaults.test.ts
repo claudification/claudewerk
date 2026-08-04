@@ -262,6 +262,44 @@ describe('resolveSpawnConfig', () => {
     })
   })
 
+  describe('thinkingSummaries', () => {
+    it('resolves CONCRETE true with nothing set -- CC redacts thinking otherwise', () => {
+      expect(resolveSpawnConfig({}, null, null).thinkingSummaries).toBe(true)
+    })
+
+    it('explicit false wins over every default tier', () => {
+      expect(
+        resolveSpawnConfig(
+          { thinkingSummaries: false },
+          { defaultThinkingSummaries: true },
+          { defaultThinkingSummaries: true },
+          { defaultThinkingSummaries: true },
+        ).thinkingSummaries,
+      ).toBe(false)
+    })
+
+    it('honors an explicit true over a project/global opt-out', () => {
+      expect(
+        resolveSpawnConfig({ thinkingSummaries: true }, { defaultThinkingSummaries: false }, null).thinkingSummaries,
+      ).toBe(true)
+    })
+
+    it('walks profile > project > global', () => {
+      expect(
+        resolveSpawnConfig({}, { defaultThinkingSummaries: true }, null, { defaultThinkingSummaries: false })
+          .thinkingSummaries,
+      ).toBe(false)
+      expect(resolveSpawnConfig({}, { defaultThinkingSummaries: false }, null).thinkingSummaries).toBe(false)
+      expect(resolveSpawnConfig({}, null, { defaultThinkingSummaries: false }).thinkingSummaries).toBe(false)
+    })
+
+    it('carries a profile opt-out through profileToDefaultsSource', () => {
+      const off = profileToDefaultsSource(makeProfile({ thinkingSummaries: false }))
+      expect(off?.defaultThinkingSummaries).toBe(false)
+      expect(resolveSpawnConfig({}, null, null, off).thinkingSummaries).toBe(false)
+    })
+  })
+
   describe('profile tier', () => {
     const profile = profileToDefaultsSource(makeProfile({ model: 'claude-opus-4-7', effort: 'high' }))
 

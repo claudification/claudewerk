@@ -8,6 +8,7 @@ export interface ReviveOverrides {
   advisor?: string
   bare?: boolean
   repl?: boolean
+  thinkingSummaries?: boolean
   permissionMode?: string
   autocompactPct?: number
   maxBudgetUsd?: number
@@ -55,6 +56,9 @@ export function buildReviveMessage(
     advisor: overrides?.advisor ?? lc?.advisor ?? undefined,
     bare: overrides?.bare ?? lc?.bare ?? undefined,
     repl: overrides?.repl ?? lc?.repl ?? undefined,
+    // Undefined is FINE here: the sentinel resolves it to the ON default. A
+    // conversation spawned before this field existed revives with summaries on.
+    thinkingSummaries: overrides?.thinkingSummaries ?? lc?.thinkingSummaries ?? undefined,
     permissionMode: overrides?.permissionMode ?? lc?.permissionMode ?? undefined,
     autocompactPct: overrides?.autocompactPct ?? lc?.autocompactPct ?? conversation.autocompactPct,
     maxBudgetUsd: overrides?.maxBudgetUsd ?? lc?.maxBudgetUsd ?? conversation.maxBudgetUsd,

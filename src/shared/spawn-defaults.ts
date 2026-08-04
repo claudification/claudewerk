@@ -14,6 +14,7 @@
 import type { LaunchProfile } from './launch-profile'
 import { canonicalizeModelSlug } from './models'
 import type { SpawnRequest } from './spawn-schema'
+import { DEFAULT_THINKING_SUMMARIES } from './thinking-display'
 
 export type DefaultsSource = {
   defaultModel?: string
@@ -25,6 +26,7 @@ export type DefaultsSource = {
   defaultBare?: boolean
   defaultRepl?: boolean
   defaultIncludePartialMessages?: boolean
+  defaultThinkingSummaries?: boolean
   /**
    * The per-backend default transport for AGENT-SPAWNED conversations that name
    * no transport explicitly (the cutover knob). Only the GLOBAL tier carries it.
@@ -180,6 +182,17 @@ export function resolveSpawnConfig(
   const bare = partial.bare ?? profile?.defaultBare ?? project?.defaultBare ?? global?.defaultBare ?? undefined
   const repl = partial.repl ?? profile?.defaultRepl ?? project?.defaultRepl ?? global?.defaultRepl ?? undefined
 
+  // Unlike bare/repl this resolves CONCRETE rather than to undefined: thinking
+  // summaries are on by default (CC's own API default is the opposite), so the
+  // resolved value is always carried explicitly to the sentinel instead of
+  // relying on a downstream fallback nobody can see in a spawn log.
+  const thinkingSummaries =
+    partial.thinkingSummaries ??
+    profile?.defaultThinkingSummaries ??
+    project?.defaultThinkingSummaries ??
+    global?.defaultThinkingSummaries ??
+    DEFAULT_THINKING_SUMMARIES
+
   const includePartialMessages = partial.adHoc
     ? (partial.includePartialMessages ?? false)
     : (partial.includePartialMessages ??
@@ -206,6 +219,7 @@ export function resolveSpawnConfig(
     bare,
     repl,
     includePartialMessages,
+    thinkingSummaries,
   }
 }
 
@@ -222,6 +236,7 @@ export function profileToDefaultsSource(profile: LaunchProfile | null | undefine
     defaultBare: spawn.bare,
     defaultRepl: spawn.repl,
     defaultIncludePartialMessages: spawn.includePartialMessages,
+    defaultThinkingSummaries: spawn.thinkingSummaries,
   }
 }
 

@@ -38,6 +38,7 @@ export interface SpawnActionContext {
   headless: boolean
   bare: boolean
   repl: boolean
+  thinkingSummaries: boolean
   model: string
   effort: string
   agent: string
@@ -128,6 +129,7 @@ function buildStandardSpawnRequest(
     headless,
     bare,
     repl,
+    thinkingSummaries,
     model,
     effort,
     agent,
@@ -164,6 +166,11 @@ function buildStandardSpawnRequest(
       headless,
       bare: bare || undefined,
       repl: repl || undefined,
+      // Always explicit. The toggle is SEEDED from the project/global default,
+      // so once the dialog is open its value IS the user's choice -- sending
+      // `undefined` for `true` would let a project default of `false` silently
+      // override a toggle the user can see is on.
+      thinkingSummaries,
       name: name.trim() || undefined,
       description: description.trim() || undefined,
       model: (model || undefined) as SpawnRequest['model'],

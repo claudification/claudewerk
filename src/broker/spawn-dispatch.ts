@@ -437,6 +437,7 @@ async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): 
     maxBudgetUsd,
     bare,
     repl,
+    thinkingSummaries,
     includePartialMessages,
     transport,
   } = resolved
@@ -482,6 +483,7 @@ async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): 
       effort,
       bare,
       repl,
+      thinkingSummaries,
       permissionMode,
       autocompactPct,
       maxBudgetUsd,
@@ -518,6 +520,7 @@ async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): 
       advisor,
       bare: bare || false,
       repl: repl || false,
+      thinkingSummaries,
       permissionMode,
       autocompactPct,
       includePartialMessages,
@@ -549,6 +552,7 @@ async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): 
           model,
           bare: bare || false,
           repl: repl || false,
+          thinkingSummaries,
           conversationName:
             deriveConversationName(req) ??
             generateConversationName(

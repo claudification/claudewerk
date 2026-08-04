@@ -96,6 +96,7 @@ export function SpawnDialog() {
   const [advisor, setAdvisor] = useState('')
   const [bare, setBare] = useState(false)
   const [repl, setRepl] = useState(false)
+  const [thinkingSummaries, setThinkingSummaries] = useState(true)
   const [useWorktree, setUseWorktree] = useState(false)
   const [worktreeName, setWorktreeName] = useState('')
   // When the launch trigger path lives under `.../<project>/.claude/worktrees/<name>`
@@ -202,6 +203,7 @@ export function SpawnDialog() {
       setAdvisor('')
       setBare(ps?.defaultBare ?? (gs.defaultBare as boolean) ?? false)
       setRepl(ps?.defaultRepl ?? (gs.defaultRepl as boolean) ?? false)
+      setThinkingSummaries(ps?.defaultThinkingSummaries ?? (gs.defaultThinkingSummaries as boolean) ?? true)
       setUseWorktree(false)
       setWorktreeName('')
       setName('')
@@ -271,6 +273,7 @@ export function SpawnDialog() {
           setAdvisor,
           setBare,
           setRepl,
+          setThinkingSummaries,
           setPermissionMode,
           setAutocompactPct,
           setMaxBudgetUsd,
@@ -390,6 +393,7 @@ export function SpawnDialog() {
     headless,
     bare,
     repl,
+    thinkingSummaries,
     model,
     effort,
     agent,
@@ -494,6 +498,7 @@ export function SpawnDialog() {
       defaultModel: model || '',
       defaultBare: bare,
       defaultRepl: repl,
+      defaultThinkingSummaries: thinkingSummaries,
       defaultPermissionMode: permissionMode
         ? (permissionMode as 'plan' | 'acceptEdits' | 'auto' | 'bypassPermissions')
         : ('default' as const),
@@ -532,6 +537,7 @@ export function SpawnDialog() {
     setAdvisor('')
     setBare(false)
     setRepl(false)
+    setThinkingSummaries(true)
     setPermissionMode('')
     setAutocompactPct('')
     setMaxBudgetUsd('')
@@ -606,6 +612,7 @@ export function SpawnDialog() {
     }
     if ('bare' in patch) setBare(!!patch.bare)
     if ('repl' in patch) setRepl(!!patch.repl)
+    if ('thinkingSummaries' in patch) setThinkingSummaries(patch.thinkingSummaries ?? true)
   }
 
   function patchDaemonForm(patch: Partial<DaemonModeFormValue>) {
@@ -649,6 +656,7 @@ export function SpawnDialog() {
     headless,
     bare,
     repl,
+    thinkingSummaries,
   }
 
   return (
@@ -740,6 +748,7 @@ export function SpawnDialog() {
                       setAdvisor,
                       setBare,
                       setRepl,
+                      setThinkingSummaries,
                       setPermissionMode,
                       setAutocompactPct,
                       setMaxBudgetUsd,
@@ -769,6 +778,7 @@ export function SpawnDialog() {
                       headless,
                       bare,
                       repl,
+                      thinkingSummaries,
                       includePartialMessages,
                       backend,
                       envText,
@@ -1078,6 +1088,7 @@ export function SpawnDialog() {
                             maxSubagentSpawnDepth: true,
                             includePartialMessages: headless,
                             worktree: true,
+                            thinkingSummaries: true,
                             repl: true,
                             bare: true,
                           }}
