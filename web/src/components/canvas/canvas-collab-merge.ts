@@ -4,6 +4,7 @@
  * closures stay thin).
  */
 
+import { isDslScene, type Scene } from '@shared/draw-dsl'
 import type { CanvasPeer } from '@shared/protocol'
 
 /** Excalidraw collaborator shape (the slice we populate for remote cursors).
@@ -37,15 +38,32 @@ export function peerToApply(
   return { id, collaborator: pointerCollaborator(msg) }
 }
 
-/** Parse the elements array out of a scene-delta payload, or null if unusable. */
-export function parseSceneElements(sceneJson: unknown): readonly unknown[] | null {
+function parseJson(sceneJson: unknown): unknown {
   if (typeof sceneJson !== 'string') return null
   try {
-    const scene = JSON.parse(sceneJson) as { elements?: unknown[] }
-    return (scene.elements ?? []) as readonly unknown[]
+    return JSON.parse(sceneJson)
   } catch {
     return null
   }
+}
+
+/** Parse the elements array out of a raw Excalidraw scene-delta payload, or null
+ *  if unusable. Null means "keep the current scene" -- and an ABSENT `elements`
+ *  counts as unusable, not as an empty canvas. Returning [] there let a payload
+ *  that simply isn't a raw scene (an agent's draw-dsl scene, see parseDslScene)
+ *  wipe the receiver's canvas, and the client then autosaved the blank over the
+ *  real drawing (2026-08-05). A genuine clear still arrives as `elements: []`. */
+export function parseSceneElements(sceneJson: unknown): readonly unknown[] | null {
+  const scene = parseJson(sceneJson) as { elements?: unknown } | null
+  return Array.isArray(scene?.elements) ? (scene.elements as readonly unknown[]) : null
+}
+
+/** Parse an agent-authored draw-dsl scene out of a delta payload, or null when it
+ *  isn't one. These arrive from canvas_update_scene and must be EXPANDED before
+ *  they can be applied -- the same thing the open path does when seeding. */
+export function parseDslScene(sceneJson: unknown): Scene | null {
+  const scene = parseJson(sceneJson)
+  return isDslScene(scene) ? scene : null
 }
 
 /** Parse the image `files` (BinaryFileData values) out of a scene-delta payload.

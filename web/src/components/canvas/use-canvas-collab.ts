@@ -9,14 +9,8 @@
 import type { CanvasPeer } from '@shared/protocol'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { wsSend } from '@/hooks/use-conversations'
-import {
-  imageFileIds,
-  parseSceneElements,
-  parseSceneFiles,
-  peerToApply,
-  prunePeers,
-  type RemoteCollaborator,
-} from './canvas-collab-merge'
+import { imageFileIds, parseSceneFiles, peerToApply, prunePeers, type RemoteCollaborator } from './canvas-collab-merge'
+import { deltaElements } from './canvas-delta-elements'
 import type { FetchFile } from './canvas-file-transport'
 import { clearCanvasPeerId, setCanvasPeerId } from './canvas-peer-id'
 import { useCanvasRoom } from './use-canvas-room'
@@ -104,8 +98,9 @@ export function useCanvasCollab(
   const applySceneDelta = useCallback(
     async (msg: Record<string, unknown>) => {
       if ((msg.peerId as string) === ownPeerId.current) return
-      const elements = parseSceneElements(msg.scene)
-      if (!elements) return // malformed -- keep current scene
+      // Raw scene, or an agent draw-dsl scene expanded on the fly (canvas_update_scene).
+      const elements = await deltaElements(msg.scene)
+      if (!elements) return // unusable -- keep current scene
       // Inline files (legacy/interim senders) applied immediately; then fetch any
       // still-missing bytes from the slot. Files MUST land before elements or the
       // fileless image is pruned + echoed back -> blink. addFiles is idempotent.

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  parseDslScene,
   parseSceneElements,
   parseSceneFiles,
   peerToApply,
@@ -58,12 +59,34 @@ describe('parseSceneElements', () => {
   it('returns the elements array', () => {
     expect(parseSceneElements('{"elements":[{"id":"a"}]}')).toEqual([{ id: 'a' }])
   })
-  it('returns [] when elements is absent', () => {
-    expect(parseSceneElements('{}')).toEqual([])
+  it('returns an empty array for a genuinely empty scene', () => {
+    expect(parseSceneElements('{"elements":[]}')).toEqual([])
+  })
+  // Regression (2026-08-05): a delta with no `elements` used to resolve to [],
+  // which WIPED the receiver's canvas -- and the blank was then autosaved over
+  // the real drawing. Absent/!array = unusable, keep what we have.
+  it('returns null when elements is absent (never a wipe)', () => {
+    expect(parseSceneElements('{}')).toBeNull()
+    expect(parseSceneElements('{"elements":"nope"}')).toBeNull()
+  })
+  it('returns null for a draw-dsl scene (it carries nodes, not elements)', () => {
+    expect(parseSceneElements('{"v":1,"nodes":[{"id":"a","kind":"box","text":"hi"}]}')).toBeNull()
   })
   it('returns null for non-string / malformed input', () => {
     expect(parseSceneElements(42)).toBeNull()
     expect(parseSceneElements('{bad')).toBeNull()
+  })
+})
+
+describe('parseDslScene', () => {
+  it('returns the scene for an agent-authored draw-dsl payload', () => {
+    const scene = '{"v":1,"nodes":[{"id":"a","kind":"box","text":"hi"}]}'
+    expect(parseDslScene(scene)).toEqual({ v: 1, nodes: [{ id: 'a', kind: 'box', text: 'hi' }] })
+  })
+  it('returns null for a raw excalidraw scene and for junk', () => {
+    expect(parseDslScene('{"elements":[]}')).toBeNull()
+    expect(parseDslScene('{bad')).toBeNull()
+    expect(parseDslScene(42)).toBeNull()
   })
 })
 
