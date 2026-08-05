@@ -53,18 +53,33 @@ function messageText(entry: SystemEntry): string {
 }
 
 /**
+ * Our OWN Stop-hook set_status nudge (`src/claude-agent-host/status-nudge.ts`). Machinery
+ * talking to machinery: the reason is four paragraphs of prose aimed at the agent, so echoing
+ * it smeared 160 amber chars across the timeline for an event the reader never acts on. It
+ * collapses to one muted label instead. Sniffing the prose is the only channel available --
+ * Claude Code hands the reason back as opaque user text, and any marker we embedded would also
+ * land in the agent's own context.
+ */
+const STATUS_NUDGE_RE = /never called set_status|set_status\(\{/
+
+/**
  * `hook-feedback` is synthesized by the grouper from a USER entry carrying the hook reason at
  * message.content -- not a real system entry, so its `content` is empty. Summarize the
  * "<Event> hook feedback:\n<reason>" payload onto one line; the full text stays one click
  * away in the JSON inspector.
+ *
+ * Only the reason's FIRST line survives. Joining every line into one string turned a
+ * multi-paragraph reason into an unreadable smear that the clamp then cut mid-word.
  */
 const hookFeedback: Describer = entry => {
-  const lines = messageText(entry)
+  const text = messageText(entry)
+  const lines = text
     .split('\n')
     .map(line => line.trim())
     .filter(Boolean)
   const header = lines[0]?.replace(/\s*feedback:?\s*$/i, '') || 'Hook'
-  const reason = lines.slice(1).join(' ')
+  if (STATUS_NUDGE_RE.test(text)) return { text: `${header}: set_status nudge`, severity: 'muted' }
+  const reason = lines[1] ?? ''
   return { text: clamp(reason ? `${header}: ${reason}` : header), severity: 'warn' }
 }
 

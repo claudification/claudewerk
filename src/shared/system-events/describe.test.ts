@@ -212,6 +212,37 @@ describe('hooks', () => {
   })
 })
 
+describe('hook-feedback -- a blocked stop, carried on a user entry', () => {
+  /** The grouper's synthesized shape: subtype set, reason in message.content text blocks. */
+  const feedback = (text: string): EventLine =>
+    sys('hook_feedback', { message: { role: 'user', content: [{ type: 'text', text }] } })
+
+  it('collapses our own set_status nudge to one muted label', () => {
+    const line = feedback(
+      "Stop hook feedback:\nYou did real work this turn but never called set_status. Make the call: if this rises to a triage-worthy state -- you FINISHED what the user asked, you're BLOCKED on the user, or you're STUCK on something else -- set one so the user can triage this conversation at a glance:\n\n  set_status({ state: 'working' | 'done' | 'needs_you' | 'blocked', ... })\n\nKeep the text fields sparse -- empty is fine.",
+    )
+    expect(line.text).toBe('Stop hook: set_status nudge')
+    expect(line.severity).toBe('muted')
+  })
+
+  it('keeps a foreign hook loud, but only its first line', () => {
+    const line = feedback('SubagentStop hook feedback:\nTests are failing.\nRun bun test first.')
+    expect(line.text).toBe('SubagentStop hook: Tests are failing.')
+    expect(line.severity).toBe('warn')
+  })
+
+  it('survives a reason-less payload without printing a wire key', () => {
+    expect(feedback('Stop hook feedback:').text).toBe('Stop hook')
+  })
+
+  it('reads a string content payload too, not just text blocks', () => {
+    const line = sys('hook_feedback', {
+      message: { role: 'user', content: 'Stop hook feedback:\nnever called set_status here' },
+    })
+    expect(line.severity).toBe('muted')
+  })
+})
+
 describe('task-updated', () => {
   it('reads the newer patch shape and the older top-level one', () => {
     expect(sys('task_updated', { patch: { description: 'compiling' } }).text).toBe('Task: compiling')
