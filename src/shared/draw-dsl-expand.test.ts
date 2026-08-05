@@ -48,14 +48,44 @@ describe('expandScene -- flowchart (auto layout + bound arrows)', () => {
     expect(c.y).toBe(d.y) // siblings share a rank
   })
 
-  it('emits id-bound arrows with explicit routing (stick to shapes, render statically)', () => {
+  it('emits explicitly routed arrows, one per edge', () => {
     const arrows = skeletons.filter(s => s.type === 'arrow')
     expect(arrows).toHaveLength(3)
-    const ab = arrows.find(s => s.start?.id === 'a')
-    expect(ab?.end?.id).toBe('b')
+    const ab = byId(skeletons, 'a~edge~b')
     // explicit orthogonal points, not the unrouted convert stub
     expect((ab?.points?.length ?? 0) >= 2).toBe(true)
-    expect(arrows.find(s => s.start?.id === 'b' && s.end?.id === 'c')).toBeDefined()
+    expect(byId(skeletons, 'b~edge~c')).toBeDefined()
+  })
+
+  // A bound arrow is re-anchored to both elements' CENTRES, so it renders straight
+  // through the boxes. We route it ourselves instead -- see draw-dsl-edges.ts.
+  it('does NOT bind a routed arrow to its endpoints', () => {
+    for (const a of skeletons.filter(s => s.type === 'arrow')) {
+      expect(a.start).toBeUndefined()
+      expect(a.end).toBeUndefined()
+    }
+  })
+
+  it('keeps every arrow endpoint outside both boxes it joins', () => {
+    const rect = (id: string) => {
+      const s = byId(skeletons, id) as Skeleton
+      return { x: s.x ?? 0, y: s.y ?? 0, w: s.width ?? 0, h: s.height ?? 0 }
+    }
+    const inside = (r: ReturnType<typeof rect>, x: number, y: number) =>
+      x > r.x && x < r.x + r.w && y > r.y && y < r.y + r.h
+    for (const [edgeId, from, to] of [
+      ['a~edge~b', 'a', 'b'],
+      ['b~edge~c', 'b', 'c'],
+      ['b~edge~d', 'b', 'd'],
+    ]) {
+      const a = byId(skeletons, edgeId) as Skeleton
+      for (const [px, py] of a.points ?? []) {
+        const x = (a.x ?? 0) + px
+        const y = (a.y ?? 0) + py
+        expect(inside(rect(from), x, y)).toBe(false)
+        expect(inside(rect(to), x, y)).toBe(false)
+      }
+    }
   })
 
   it('renders an edge label as a pill chip (clean Nunito), not the arrow bound label', () => {

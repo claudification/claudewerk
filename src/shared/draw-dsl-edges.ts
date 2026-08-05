@@ -29,9 +29,14 @@ export function edgeSkeletons(e: Edge, placed: Skeleton[], id: string): Skeleton
     id,
     x: path?.x ?? 0,
     y: path?.y ?? 0,
-    ...(path ? { points: path.points } : {}),
-    start: { id: e.from },
-    end: { id: e.to },
+    // Our own edge-to-edge routing when we have geometry; the id bindings ONLY as the
+    // fallback for an edge we could not place. They are mutually exclusive on purpose:
+    // a bound arrow gets re-anchored by Excalidraw to both elements' CENTRES (focus 0),
+    // which discards the elbow and draws the connector straight THROUGH the boxes it
+    // joins -- the arrows-on-top-of-boxes render (2026-08-05). Binding also only half
+    // worked: the target's `boundElements` came back empty, so the drag-follow it was
+    // there for did not happen anyway.
+    ...(path ? { points: path.points } : { start: { id: e.from }, end: { id: e.to } }),
     strokeStyle: e.dashed ? 'dashed' : 'solid',
     ...(line ? {} : { endArrowhead: 'arrow', startArrowhead: e.arrow === '<->' ? 'arrow' : null }),
   }
