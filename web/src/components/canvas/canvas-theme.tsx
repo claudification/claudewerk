@@ -18,11 +18,18 @@
  * palette -- retheming the panel retheme's the canvas chrome for free.
  */
 
-import type { CSSProperties, ReactNode } from 'react'
+import { type CSSProperties, type ReactNode, useCallback, useRef } from 'react'
 import { findTheme } from '@/lib/themes'
 import { cn } from '@/lib/utils'
 
 export type CanvasTheme = 'light' | 'dark'
+
+/** Excalidraw's appState theme, narrowed. Anything unexpected reads as light --
+ *  the default, and the safer half of a wrong guess (dark chrome on white paper
+ *  is the bug this file exists to kill). */
+export function themeOf(theme: unknown): CanvasTheme {
+  return theme === 'dark' ? 'dark' : 'light'
+}
 
 /** What a canvas opens as, everywhere. */
 export const DEFAULT_CANVAS_THEME: CanvasTheme = 'light'
@@ -38,6 +45,25 @@ function toVars(theme: CanvasTheme): CSSProperties {
 
 /** Built once -- the token sets are static. */
 const VARS: Record<CanvasTheme, CSSProperties> = { light: toVars('light'), dark: toVars('dark') }
+
+/**
+ * Report a theme flip, once per flip.
+ *
+ * Excalidraw only announces the theme inside `onChange`, which also fires for
+ * every pan, zoom and keystroke -- so the edge has to be found here rather than
+ * handed to a caller that would re-render on each frame.
+ */
+export function useCanvasThemeWatch(onThemeChange?: (theme: CanvasTheme) => void) {
+  const last = useRef<CanvasTheme>(DEFAULT_CANVAS_THEME)
+  return useCallback(
+    (theme: CanvasTheme) => {
+      if (theme === last.current) return
+      last.current = theme
+      onThemeChange?.(theme)
+    },
+    [onThemeChange],
+  )
+}
 
 /**
  * Scope every design token to the canvas's theme. `text-foreground` is explicit

@@ -17,14 +17,15 @@
  */
 import { Excalidraw } from '@excalidraw/excalidraw'
 import '@excalidraw/excalidraw/index.css'
-import { useCallback, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useRef, useState } from 'react'
 import { CANVAS_UI_OPTIONS, CanvasMainMenu } from '@/components/canvas/canvas-chrome'
-import { type CanvasTheme, CanvasThemeScope, DEFAULT_CANVAS_THEME } from '@/components/canvas/canvas-theme'
+import { CanvasThemeScope, DEFAULT_CANVAS_THEME, themeOf, useCanvasThemeWatch } from '@/components/canvas/canvas-theme'
 import type { ChangeHandler, DrawCanvasProps, ExcalidrawAPI, ExcalidrawProps } from './excalidraw-canvas-types'
 import { useInitialData } from './excalidraw-initial-data'
 import { sceneSignature, seedSignature } from './excalidraw-scene-signature'
 import { useCanvasFlush } from './use-canvas-flush'
 import { useDslSeed } from './use-dsl-seed'
+import { usePointerBroadcast } from './use-pointer-broadcast'
 
 export type {
   CanvasCollabBinding,
@@ -33,6 +34,14 @@ export type {
   ChangeFiles,
   DrawCanvasProps,
 } from './excalidraw-canvas-types'
+
+/** Our chrome, dressed in the canvas's own theme. Excalidraw hands the live
+ *  appState to this hook on every render, so the scope follows a theme toggle
+ *  without any state of ours. */
+function themedTopRight(topRight: ReactNode): ExcalidrawProps['renderTopRightUI'] {
+  if (!topRight) return undefined
+  return (_isMobile, appState) => <CanvasThemeScope theme={themeOf(appState.theme)}>{topRight}</CanvasThemeScope>
+}
 
 export default function ExcalidrawCanvas({
   initialSnapshot,
@@ -65,14 +74,10 @@ export default function ExcalidrawCanvas({
   // The theme lives in appState, so a toggle arrives as a plain onChange -- and it
   // must be read BEFORE the readOnly / signature short-circuits below, which a
   // theme flip would otherwise be swallowed by (it changes no element).
-  const lastTheme = useRef<CanvasTheme>(DEFAULT_CANVAS_THEME)
+  const watchTheme = useCanvasThemeWatch(onThemeChange)
   const handleChange = useCallback<ChangeHandler>(
     (elements, appState, files) => {
-      const theme = appState.theme === 'dark' ? 'dark' : 'light'
-      if (theme !== lastTheme.current) {
-        lastTheme.current = theme
-        onThemeChange?.(theme)
-      }
+      watchTheme(themeOf(appState.theme))
       if (readOnly) return
       // Only persist when the actual drawing changed. Excalidraw fires onChange
       // on pan/zoom/selection and on plain re-renders too; those keep the same
@@ -83,27 +88,11 @@ export default function ExcalidrawCanvas({
       clearTimeout(timer.current)
       timer.current = setTimeout(() => void flushChange(elements, appState, files), 500)
     },
-    [readOnly, flushChange, onThemeChange],
+    [readOnly, flushChange, watchTheme],
   )
 
-  // Throttle cursor broadcasts -- onPointerUpdate fires on every mouse move. The
-  // button EDGE (press/release) always flushes, throttle or not: Excalidraw only
-  // starts a peer's laser trail on the 'down' frame and ends it on 'up', so a
-  // dropped edge means a laser stroke that never draws or never stops.
-  const lastPointerAt = useRef(0)
-  const lastButton = useRef<'up' | 'down'>('up')
-  const handlePointer = useCallback<NonNullable<ExcalidrawProps['onPointerUpdate']>>(
-    payload => {
-      if (!collab) return
-      const now = performance.now()
-      const edge = payload.button !== lastButton.current
-      if (!edge && now - lastPointerAt.current < 50) return
-      lastPointerAt.current = now
-      lastButton.current = payload.button
-      collab.onPointer(payload.pointer.x, payload.pointer.y, payload.pointer.tool, payload.button)
-    },
-    [collab],
-  )
+  // Throttled cursor frames for multiplayer -- undefined when solo.
+  const handlePointer = usePointerBroadcast(collab)
 
   // .canvas-chrome scopes the CSS-only chrome trims (see canvas-chrome.css).
   return (
@@ -117,19 +106,13 @@ export default function ExcalidrawCanvas({
         }}
         viewModeEnabled={readOnly}
         onChange={handleChange}
-        onPointerUpdate={collab ? handlePointer : undefined}
+        onPointerUpdate={handlePointer}
         UIOptions={CANVAS_UI_OPTIONS}
         // Constant on purpose: excalidraw only re-asserts this prop when it
         // CHANGES, so passing it pins the OPENING theme (over the saved scene's
         // appState) while leaving the in-app toggle free for the session.
         theme={DEFAULT_CANVAS_THEME}
-        renderTopRightUI={
-          topRight
-            ? (_isMobile, appState) => (
-                <CanvasThemeScope theme={appState.theme === 'dark' ? 'dark' : 'light'}>{topRight}</CanvasThemeScope>
-              )
-            : undefined
-        }
+        renderTopRightUI={themedTopRight(topRight)}
       >
         <CanvasMainMenu />
       </Excalidraw>
