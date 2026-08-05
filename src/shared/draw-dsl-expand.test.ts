@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import type { Scene, Skeleton } from './draw-dsl'
 import { isDslScene } from './draw-dsl'
 import { expandScene } from './draw-dsl-expand'
+import { FONT_FAMILY } from './scheme-variants'
 
 const byId = (sks: Skeleton[], id: string) => sks.find(s => s.id === id)
 
@@ -88,15 +89,22 @@ describe('expandScene -- flowchart (auto layout + bound arrows)', () => {
     }
   })
 
-  it('renders an edge label as a pill chip (clean Nunito), not the arrow bound label', () => {
-    const text = byId(skeletons, 'b~edge~c~pilltext')
-    expect(text?.type).toBe('text')
-    expect(text?.text).toBe('yes')
-    expect(byId(skeletons, 'b~edge~c~pill')?.type).toBe('rectangle')
-    // the pill rides the edge's dslId so the round-trip treats it as part of the edge
-    expect(metaById['b~edge~c~pilltext'].dslId).toBe('b~edge~c')
-    // the arrow itself carries no bound label any more
-    expect(skeletons.filter(s => s.type === 'arrow').every(a => a.label === undefined)).toBe(true)
+  it('binds an edge label ON the connector, in the hand-drawn font', () => {
+    const arrow = byId(skeletons, 'b~edge~c')
+    expect(arrow?.type).toBe('arrow')
+    expect(arrow?.label?.text).toBe('yes')
+    expect(arrow?.label?.fontFamily).toBe(FONT_FAMILY.excalifont)
+  })
+
+  it('never emits a free chip on top of a connector -- a dragged box would strand it', () => {
+    expect(skeletons.some(s => s.id?.includes('~pill'))).toBe(false)
+    // one skeleton per edge, label included: nothing to leave behind
+    expect(skeletons.filter(s => s.type === 'arrow')).toHaveLength(3)
+    expect(metaById['b~edge~c'].dslId).toBe('b~edge~c')
+  })
+
+  it('leaves an unlabelled edge label-free', () => {
+    expect(byId(skeletons, 'a~edge~b')?.label).toBeUndefined()
   })
 })
 

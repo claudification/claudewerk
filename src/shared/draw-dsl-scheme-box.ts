@@ -35,12 +35,15 @@ export function schemeBox(node: ShapeNode, p: Placed, id: string): Skeleton[] {
   const out: Skeleton[] = [rect]
   const { titleH, blockH } = schemeBlock(title ?? '', sub ?? '')
   let y = p.y + (p.h - blockH) / 2
-  const titleFont = node.style?.font ? FONT_FAMILY[node.style.font] : R.titleFont
+  // One font for the whole box. Default is the hand-drawn Excalifont; `style.font` opts the
+  // box into the clean sans (facts) or the mono (code) -- and when it does, the subtitle
+  // follows the title rather than staying in a different hand.
+  const font = node.style?.font ? FONT_FAMILY[node.style.font] : R.titleFont
   if (title) {
-    out.push(centeredText(`${id}~title`, title, p, y, R.titlePx, R.titleColor, titleFont))
+    out.push(centeredText(`${id}~title`, title, p, y, R.titlePx, R.titleColor, font))
     y += titleH + R.lineGap
   }
-  if (sub) out.push(centeredText(`${id}~sub`, sub, p, y, R.subPx, R.subColor, R.subFont))
+  if (sub) out.push(centeredText(`${id}~sub`, sub, p, y, R.subPx, R.subColor, node.style?.font ? font : R.subFont))
   return out
 }
 

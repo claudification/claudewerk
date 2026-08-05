@@ -105,7 +105,9 @@ export interface Skeleton {
   width?: number
   height?: number
   text?: string
-  label?: { text: string; fontSize?: number; strokeColor?: string }
+  /** Bound label -- Excalidraw ties it to this element (containerId + boundElements), so it
+   * travels with a dragged box or a re-routed arrow. NOT a free text placed on top. */
+  label?: { text: string; fontSize?: number; strokeColor?: string; fontFamily?: number }
   fontSize?: number
   strokeColor?: string
   backgroundColor?: string

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import type { Scene, Skeleton } from './draw-dsl'
 import { expandScene } from './draw-dsl-expand'
 import { type RawElement, reverseScene } from './draw-dsl-reverse'
-import { SCHEME_FILLS, SCHEME_RECIPE } from './scheme-variants'
+import { FONT_FAMILY, SCHEME_FILLS, SCHEME_RECIPE } from './scheme-variants'
 
 const byId = (sks: Skeleton[], id: string): Skeleton | undefined => sks.find(s => s.id === id)
 
@@ -40,6 +40,28 @@ describe('scheme box -- variant + title + subtitle', () => {
 
     expect(metaById['a~title'].dslId).toBe('a')
     expect(metaById['a~sub'].dslId).toBe('a')
+  })
+
+  it('writes prose in the hand-drawn font, and lets facts/code opt out', () => {
+    expect(FONT_FAMILY.excalifont).toBe(SCHEME_RECIPE.titleFont)
+    expect(FONT_FAMILY.excalifont).toBe(SCHEME_RECIPE.subFont)
+    expect(byId(skeletons, 'a~title')?.fontFamily).toBe(FONT_FAMILY.excalifont)
+    expect(byId(skeletons, 'a~sub')?.fontFamily).toBe(FONT_FAMILY.excalifont)
+
+    // A value you might transcribe wants the clean sans; the subtitle follows the title.
+    const facts = expandScene({
+      v: 1,
+      nodes: [{ id: 'f', kind: 'box', title: '99.98%', subtitle: 'p99 uptime', style: { font: 'nunito' } }],
+    }).skeletons
+    expect(byId(facts, 'f~title')?.fontFamily).toBe(FONT_FAMILY.nunito)
+    expect(byId(facts, 'f~sub')?.fontFamily).toBe(FONT_FAMILY.nunito)
+  })
+
+  it('labels the connector ON the line, in the same hand', () => {
+    const edge = byId(skeletons, 'a~edge~b') as Skeleton
+    expect(edge.label?.text).toBe('1. Create')
+    expect(edge.label?.fontFamily).toBe(FONT_FAMILY.excalifont)
+    expect(skeletons.some(s => s.id?.includes('~pill'))).toBe(false)
   })
 
   it('sizes the box generously so the longest line fits with padding', () => {

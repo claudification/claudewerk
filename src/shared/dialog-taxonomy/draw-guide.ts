@@ -59,7 +59,10 @@ swatches -- staying on-palette guarantees the dark filter lands correctly.`,
    URL the panel fetches clean (no CORS). Seed via \`content\` (inline) or \`contentUrl\`.
 4. **\`scrollToContent: true\`** in appState auto-frames the drawing on load -- almost always want it.
 5. **Fonts** fetch from a CDN: \`1\` Virgil / \`2\` Helvetica / \`3\` Cascadia (code) / \`5\`
-   Excalifont (hand-drawn) / \`6\` Nunito.
+   Excalifont (hand-drawn) / \`6\` Nunito. **Default to \`5\`** -- titles, descriptions and
+   connector labels are prose about the drawing and belong in the same hand the user writes
+   in. Use \`6\` only for FACTS (values, metrics, identifiers someone might transcribe) and
+   \`3\` for code.
 6. **Triangles/polygons/flames:** a closed \`line\` whose \`points\` return to origin
    (\`[0,0]\` last) + a \`backgroundColor\`/\`fillStyle\`. This is version-safe. A
    \`polygon: true\` flag exists in NEWER Excalidraw builds but is NOT in the pinned schema

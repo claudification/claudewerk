@@ -2,7 +2,7 @@
  * The "scheme" look -- a polished, presentation-grade box preset distilled from a
  * hand-tuned reference (the GATE-sign diagram). A box with a `variant` (or title/subtitle)
  * renders as: a soft pastel fill, a thin near-black SKETCHY border (roughness 1, the warmth),
- * a big ink title, and a small grey subtitle, in Nunito.
+ * a big ink title, and a small grey subtitle, in the hand-drawn Excalifont.
  *
  * Authored in STANDARD LIGHT hexes on purpose: the dark canvas inverts + hue-rotates them
  * into correct pastels (the `draw.colors` covenant), so one light recipe covers BOTH themes.
@@ -21,8 +21,17 @@ export const SCHEME_RECIPE = {
   subColor: '#868e96',
   roughness: 1 as const,
   roundnessType: 3 as const,
-  titleFont: 6, // Nunito
-  subFont: 6, // Nunito
+  // HAND-DRAWN BY DEFAULT. Titles and subtitles are prose about the drawing -- they belong in
+  // Excalifont, like the captions and the user's own annotations, so an agent-drawn scene and
+  // a hand-drawn one read as the same artifact. The clean sans (`font: 'nunito'`) and the mono
+  // (`font: 'code'`) are opt-in per node, for the two things a sketch font hurts: FACTS
+  // (values, metrics, identifiers you might transcribe) and CODE.
+  titleFont: 5, // Excalifont
+  subFont: 5, // Excalifont
+  /** Edge labels are prose too -- same hand, one size down from a title. */
+  edgeFont: 5,
+  edgePx: 16,
+  edgeColor: '#343a40',
   titlePx: 22,
   subPx: 14,
   /** Stacked title+subtitle line gap (px). */
@@ -30,10 +39,11 @@ export const SCHEME_RECIPE = {
   /** Min inner breathing room used by the measure pass. */
   padX: 30,
   padY: 26,
-  /** Rough Nunito glyph advance as a fraction of font size -- drives box width + centering
+  /** Rough Excalifont glyph advance as a fraction of font size -- drives box width + centering
    * (the same constant on both sides keeps text centered within the box). Generous so text
-   * never overflows; the slack becomes centering margin. */
-  glyphW: 0.55,
+   * never overflows; the slack becomes centering margin. The sketch font runs a touch wider
+   * than the sans this used to measure, hence 0.6 rather than 0.55. */
+  glyphW: 0.6,
 } as const
 
 /**
