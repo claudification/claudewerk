@@ -34,14 +34,25 @@ export function extractAuthUrl(response: unknown): AuthUrl {
   return { url, state }
 }
 
+/** Split CC's `code#state` blob. The manual redirect page hands the user ONE
+ *  string with the state glued on after a `#`; CC's own TUI splits on the first
+ *  `#` before exchanging, and `/oauth/token` 400s on the whole thing, so the
+ *  fragment MUST come off before the code goes on the wire. */
+function splitCodeHash(raw: string): { code: string; state?: string } {
+  const hash = raw.indexOf('#')
+  if (hash === -1) return { code: raw }
+  return { code: raw.slice(0, hash), state: raw.slice(hash + 1) || undefined }
+}
+
 /** Extract the auth code (and any embedded state) from what the user pasted --
- *  either the full callback URL or the bare code. */
+ *  the full callback URL, a bare `code#state` blob, or a naked code. */
 export function parsePastedCode(input: string): { code: string; state?: string } {
   const trimmed = input.trim()
-  if (!trimmed.includes('code=')) return { code: trimmed }
+  if (!trimmed.includes('code=')) return splitCodeHash(trimmed)
   const qs = trimmed.includes('?') ? trimmed.slice(trimmed.indexOf('?') + 1) : trimmed
   const params = new URLSearchParams(qs)
-  return { code: params.get('code') ?? trimmed, state: params.get('state') ?? undefined }
+  const split = splitCodeHash(params.get('code') ?? trimmed)
+  return { code: split.code, state: params.get('state') ?? split.state }
 }
 
 /** Validate a pasted response against the issued state and return the code.
