@@ -12,6 +12,7 @@
 import { useState } from 'react'
 import { ChatComposer, usePinToBottom } from '@/components/chat-bits/chat-bits'
 import { cn } from '@/lib/utils'
+import { ConnectPicker } from './canvas-chat-connect-picker'
 import { CanvasChatHeader } from './canvas-chat-header'
 import type { CanvasChat, ChatLine } from './use-canvas-chat'
 
@@ -22,28 +23,6 @@ function Line({ line }: { line: ChatLine }) {
       {line.text}
       {line.context ? <span className="ml-1.5 font-mono text-[10px] text-sky-400">[{line.context}]</span> : null}
     </p>
-  )
-}
-
-/** The picker shown before a canvas is wired to anything. */
-function ConnectPicker({ chat }: { chat: CanvasChat }) {
-  if (chat.candidates.length === 0) {
-    return <p className="px-3 py-2 text-[11px] text-muted-foreground">No live conversations in this project.</p>
-  }
-  return (
-    <div className="flex flex-col gap-1 px-2 py-2">
-      <span className="px-1 font-mono text-[10px] text-muted-foreground uppercase">Connect to</span>
-      {chat.candidates.map(c => (
-        <button
-          key={c.id}
-          type="button"
-          onClick={() => chat.connect(c.id)}
-          className="truncate rounded px-2 py-1 text-left text-[11px] hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary"
-        >
-          {c.name}
-        </button>
-      ))}
-    </div>
   )
 }
 

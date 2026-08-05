@@ -13,6 +13,7 @@ import type { CanvasSummary } from '@shared/protocol'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useConversations, wsSend } from '@/hooks/use-conversations'
 import { registerCanvasChatListener, unregisterCanvasChatListener } from './canvas-chat-bus'
+import { type ChatCandidate, liveCandidates } from './canvas-chat-candidates'
 import { readCanvasSelection } from './canvas-selection-source'
 
 export interface ChatLine {
@@ -26,8 +27,8 @@ export interface ChatLine {
 }
 
 export interface CanvasChat {
-  /** Conversations in this canvas's project that can be connected. */
-  candidates: { id: string; name: string }[]
+  /** ONLINE conversations in this canvas's project, ranked live-first. */
+  candidates: ChatCandidate[]
   connectedId: string | null
   connectedName: string | null
   lines: ChatLine[]
@@ -88,19 +89,18 @@ export function useCanvasChat(canvas: CanvasSummary | null): CanvasChat {
   const [lines, setLines] = useState<ChatLine[]>([])
   const [error, setError] = useState<string | null>(null)
 
-  /** Only conversations in THIS canvas's project -- the broker enforces the same
-   *  rule, so offering anything else would just produce a refusal. */
-  const candidates = useMemo(() => {
-    if (!canvas) return []
-    return conversations
-      .filter(c => c.project === canvas.projectUri)
-      .map(c => ({ id: c.id, name: c.title || c.id.slice(0, 8) }))
-  }, [conversations, canvas])
-
-  const connectedName = useMemo(
-    () => candidates.find(c => c.id === connectedId)?.name ?? (connectedId ? connectedId.slice(0, 8) : null),
-    [candidates, connectedId],
+  /** Local project + online only -- see canvas-chat-candidates for why both. */
+  const candidates = useMemo(
+    () => (canvas ? liveCandidates(conversations, canvas.projectUri) : []),
+    [conversations, canvas],
   )
+
+  /** Resolved off the FULL list, not the candidates: a connection outlives the
+   *  conversation going offline, and the header should still name it. */
+  const connectedName = useMemo(() => {
+    if (!connectedId) return null
+    return conversations.find(c => c.id === connectedId)?.title || connectedId.slice(0, 8)
+  }, [conversations, connectedId])
 
   useEffect(() => {
     if (!canvasId) return
