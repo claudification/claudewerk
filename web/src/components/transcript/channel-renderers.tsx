@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils'
 import { Markdown } from '../markdown'
+import { CanvasChannel } from './canvas-channel'
 import { ChannelBodyCard, DirectionChip, IntentBadge } from './channel-message-parts'
 import { ConversationTag } from './conversation-tag'
 import { DialogChannel, DialogSubmitChannel } from './dialog-channels'
@@ -8,6 +9,17 @@ import type { RenderItem } from './group-view-types'
 type ChannelRenderItem = Extract<RenderItem, { kind: 'channel' }>
 
 export function ChannelItem({ item }: { item: ChannelRenderItem }) {
+  if (item.isCanvasChannel) {
+    return (
+      <CanvasChannel
+        text={item.text}
+        canvasId={item.canvasId ?? null}
+        chips={item.canvasChips ?? []}
+        census={item.canvasCensus}
+        intent={item.intent}
+      />
+    )
+  }
   if (item.isInterConversation) {
     return <InterConversationChannel item={item} />
   }

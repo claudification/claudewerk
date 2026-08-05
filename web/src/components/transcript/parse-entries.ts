@@ -1,4 +1,5 @@
 import type { TranscriptContentBlock } from '@/lib/types'
+import { canvasIdFromChannelAddress, parseCanvasMessage } from './canvas-selected-parse'
 import type { RenderableTranscriptEntry, RenderItem, ResultLookup } from './group-view-types'
 
 const PROJECT_TASK_RE = /^<project-task\s+([^>]*)>([\s\S]*?)<\/project-task>$/
@@ -63,57 +64,94 @@ function parseChannelContent(channelMatch: RegExpMatchArray, items: RenderItem[]
 
   // Inter-conversation messages: broker now sends sender="conversation" + from_conversation
   // (post-naming-covenant rename); accept legacy sender="session" + from_session as a fallback.
+  // Kept ahead of the map because it is the one sender that also needs from_project.
   if ((sender === 'conversation' || sender === 'session') && fromProject) {
-    const fromConversationId = getAttr('from_conversation') || getAttr('from_session')
-    items.push({
-      kind: 'channel',
-      text: msg,
-      source: fromProject,
-      conversationId: fromConversationId,
-      intent: intent || undefined,
-      isInterConversation: true,
-    })
+    pushInterConversation(getAttr, msg, { source: fromProject, intent }, items)
     return
   }
-  if (sender === 'dialog') {
-    pushDialogResult(getAttr, msg, items)
-    return
-  }
-  if (sender === 'dialog-untrusted') {
-    pushDialogSubmit(getAttr, msg, items)
-    return
-  }
-  if (source === 'rclaude' && sender === 'system') {
-    pushSystemChannelItem(getAttr, msg, items)
-    return
-  }
-  // A message the voice orb relayed on the user's behalf. source="rclaude" keeps
-  // it user input (the agent acts on it); `isOrbChannel` renders it in the orb's
-  // own colour, and `from_conversation` (orb:<id>) is the reply address.
-  if (source === 'rclaude' && sender === 'orb') {
-    items.push({
-      kind: 'channel',
-      text: msg,
-      source: 'Orb',
-      conversationId: getAttr('from_conversation'),
-      intent: intent || undefined,
-      isInterConversation: true,
-      isOrbChannel: true,
-    })
-    return
-  }
-  if (source === 'rclaude') {
-    const pt = parseProjectTask(msg)
-    items.push(pt || { kind: 'text', text: msg })
-    return
-  }
-  items.push({ kind: 'channel', text: msg, source })
+  const push = (sender && SENDER_PUSHERS[sender]) || fallbackPusher(source)
+  push(getAttr, msg, { source, intent }, items)
 }
 
 type AttrFn = (name: string) => string | undefined
 
+/** What every pusher gets besides the body: the wrapper's own framing. */
+interface ChannelFraming {
+  source: string
+  intent?: string
+}
+
+type ChannelPusher = (getAttr: AttrFn, msg: string, framing: ChannelFraming, items: RenderItem[]) => void
+
+function pushInterConversation(getAttr: AttrFn, msg: string, framing: ChannelFraming, items: RenderItem[]): void {
+  items.push({
+    kind: 'channel',
+    text: msg,
+    source: framing.source,
+    conversationId: getAttr('from_conversation') || getAttr('from_session'),
+    intent: framing.intent || undefined,
+    isInterConversation: true,
+  })
+}
+
+/** A message the voice orb relayed on the user's behalf. source="rclaude" keeps
+ *  it user input (the agent acts on it); `isOrbChannel` renders it in the orb's
+ *  own colour, and `from_conversation` (orb:<id>) is the reply address. */
+function pushOrbChannel(getAttr: AttrFn, msg: string, framing: ChannelFraming, items: RenderItem[]): void {
+  items.push({
+    kind: 'channel',
+    text: msg,
+    source: 'Orb',
+    conversationId: getAttr('from_conversation'),
+    intent: framing.intent || undefined,
+    isInterConversation: true,
+    isOrbChannel: true,
+  })
+}
+
+/** rclaude's own plain text -- a project-task card if it parses as one. */
+function pushRclaudeText(_getAttr: AttrFn, msg: string, _framing: ChannelFraming, items: RenderItem[]): void {
+  items.push(parseProjectTask(msg) || { kind: 'text', text: msg })
+}
+
+/** Anything we have no treatment for: a labelled quote of the body. */
+function pushRawChannel(_getAttr: AttrFn, msg: string, framing: ChannelFraming, items: RenderItem[]): void {
+  items.push({ kind: 'channel', text: msg, source: framing.source })
+}
+
+/** Dispatch on the wrapper's `sender`. */
+const SENDER_PUSHERS: Record<string, ChannelPusher> = {
+  canvas: pushCanvasChannel,
+  dialog: pushDialogResult,
+  'dialog-untrusted': pushDialogSubmit,
+  system: pushSystemChannelItem,
+  orb: pushOrbChannel,
+}
+
+/** No known sender: rclaude's own frames are text, everyone else's are quoted.
+ *  `system` and `orb` are only meaningful from rclaude, but no other source has
+ *  ever used those names, so the map above is not narrowed further. */
+function fallbackPusher(source: string): ChannelPusher {
+  return source === 'rclaude' ? pushRclaudeText : pushRawChannel
+}
+
+/** A message from a canvas chat window (sender="canvas"). */
+function pushCanvasChannel(getAttr: AttrFn, msg: string, framing: ChannelFraming, items: RenderItem[]): void {
+  const parsed = parseCanvasMessage(msg)
+  items.push({
+    kind: 'channel',
+    text: parsed.text,
+    source: 'canvas',
+    intent: framing.intent || undefined,
+    isCanvasChannel: true,
+    canvasId: canvasIdFromChannelAddress(getAttr('from_conversation')),
+    canvasChips: parsed.chips,
+    canvasCensus: parsed.census,
+  })
+}
+
 /** A one-shot dialog RESULT (sender="dialog"). */
-function pushDialogResult(getAttr: AttrFn, msg: string, items: RenderItem[]): void {
+function pushDialogResult(getAttr: AttrFn, msg: string, _framing: ChannelFraming, items: RenderItem[]): void {
   items.push({
     kind: 'channel',
     text: msg,
@@ -128,7 +166,7 @@ function pushDialogResult(getAttr: AttrFn, msg: string, items: RenderItem[]): vo
 /** A live (persistent) dialog SUBMIT (sender="dialog-untrusted"). The framed body
  *  wraps the form state in a ```json fence; pull it out so the renderer shows the
  *  values, not the untrusted wrapper. */
-function pushDialogSubmit(getAttr: AttrFn, msg: string, items: RenderItem[]): void {
+function pushDialogSubmit(getAttr: AttrFn, msg: string, _framing: ChannelFraming, items: RenderItem[]): void {
   const on = getAttr('on')
   items.push({
     kind: 'channel',
@@ -141,7 +179,7 @@ function pushDialogSubmit(getAttr: AttrFn, msg: string, items: RenderItem[]): vo
 }
 
 /** A `<channel source="rclaude" sender="system">` notice (spawn result, recap-completed, ...). */
-function pushSystemChannelItem(getAttr: (name: string) => string | undefined, msg: string, items: RenderItem[]): void {
+function pushSystemChannelItem(getAttr: AttrFn, msg: string, _framing: ChannelFraming, items: RenderItem[]): void {
   const systemKind = getAttr('spawn_result') || getAttr('event') || getAttr('kind') || undefined
   const recapId = getAttr('recap_id')
   items.push({

@@ -1,4 +1,5 @@
 import type { TranscriptContentBlock, TranscriptImage, TranscriptToolUseResult } from '@/lib/types'
+import type { SelectedChip } from './canvas-selected-parse'
 
 export const BUBBLE_COLORS: Record<string, string> = {
   blue: 'bg-primary/90',
@@ -63,6 +64,12 @@ export type RenderItem =
       isInterConversation?: boolean
       /** The voice orb relayed this (renders violet "from Orb", not a peer). */
       isOrbChannel?: boolean
+      /** Sent from a canvas chat window: `canvasId` links back to it and the
+       *  selection renders as chips instead of raw `<selected>` markup. */
+      isCanvasChannel?: boolean
+      canvasId?: string | null
+      canvasChips?: SelectedChip[]
+      canvasCensus?: { count: number; summary: string }
       isDialog?: boolean
       /** A live (persistent) dialog the user just submitted -- rendered rich, not raw. */
       isDialogSubmit?: boolean
