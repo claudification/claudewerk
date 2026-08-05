@@ -7,11 +7,12 @@
  */
 
 import type { CanvasPeer } from '@shared/protocol'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import ExcalidrawCanvas, { type CanvasCollabBinding } from '@/components/dialog/excalidraw-canvas'
 import { useWebSocket } from '@/hooks/use-websocket'
 import { makeCanvasFileTransport } from './canvas-file-transport'
 import { PresenceDots } from './canvas-presence-dots'
+import { type CanvasTheme, CanvasThemeScope, DEFAULT_CANVAS_THEME } from './canvas-theme'
 import { useCanvasCollab } from './use-canvas-collab'
 import { useGuestName } from './use-guest-name'
 import type { PublicCanvasDoc } from './use-public-canvas'
@@ -97,13 +98,16 @@ export function PublicCanvasView({ token }: { token: string }) {
     files.fetch,
   )
   const collab: CanvasCollabBinding = { bindApi, onPointer: onLocalPointer, onChange: onLocalChange }
+  // The header sits OUTSIDE excalidraw, so it cannot read appState the way the
+  // owner window's floating chrome does -- the canvas tells us instead.
+  const [theme, setTheme] = useState<CanvasTheme>(DEFAULT_CANVAS_THEME)
 
   if (state === 'loading') return <FullScreen>Loading canvas...</FullScreen>
   if (state === 'missing' || !doc) return <FullScreen>This share link is invalid or has been revoked.</FullScreen>
 
   const readOnly = doc.tier === 'read'
   return (
-    <div className="fixed inset-0 flex flex-col bg-background">
+    <CanvasThemeScope theme={theme} className="fixed inset-0 flex flex-col bg-background">
       <ViewerHeader
         name={doc.canvas.name}
         tier={doc.tier}
@@ -124,8 +128,9 @@ export function PublicCanvasView({ token }: { token: string }) {
           onSnapshot={readOnly ? undefined : onSnapshot}
           collab={collab}
           uploadFile={files.upload}
+          onThemeChange={setTheme}
         />
       </div>
-    </div>
+    </CanvasThemeScope>
   )
 }

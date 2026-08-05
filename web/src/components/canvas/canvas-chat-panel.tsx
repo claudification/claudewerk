@@ -42,7 +42,9 @@ function Transcript({ lines }: { lines: ChatLine[] }) {
 }
 
 export function CanvasChatPanel({ chat }: { chat: CanvasChat }) {
-  const [minimized, setMinimized] = useState(false)
+  // Collapsed on load, always: talking to an agent is OPT IN, and a canvas you
+  // just opened should be a canvas, not a conversation picker covering it.
+  const [minimized, setMinimized] = useState(true)
   const connected = chat.connectedId !== null
 
   return (

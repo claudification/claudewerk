@@ -17,80 +17,22 @@
  */
 import { Excalidraw } from '@excalidraw/excalidraw'
 import '@excalidraw/excalidraw/index.css'
-import { isDslScene } from '@shared/draw-dsl'
-import { type ComponentProps, type ReactNode, useCallback, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { CANVAS_UI_OPTIONS, CanvasMainMenu } from '@/components/canvas/canvas-chrome'
+import { type CanvasTheme, CanvasThemeScope, DEFAULT_CANVAS_THEME } from '@/components/canvas/canvas-theme'
+import type { ChangeHandler, DrawCanvasProps, ExcalidrawAPI, ExcalidrawProps } from './excalidraw-canvas-types'
 import { useInitialData } from './excalidraw-initial-data'
+import { sceneSignature, seedSignature } from './excalidraw-scene-signature'
 import { useCanvasFlush } from './use-canvas-flush'
 import { useDslSeed } from './use-dsl-seed'
 
-type ExcalidrawProps = ComponentProps<typeof Excalidraw>
-type ChangeHandler = NonNullable<ExcalidrawProps['onChange']>
-export type ChangeElements = Parameters<ChangeHandler>[0]
-export type ChangeAppState = Parameters<ChangeHandler>[1]
-export type ChangeFiles = Parameters<ChangeHandler>[2]
-type ExcalidrawAPI = Parameters<NonNullable<ExcalidrawProps['excalidrawAPI']>>[0]
-
-/**
- * A cheap fingerprint of the scene's CONTENT -- element ids + their bumping
- * `version` (which ticks on any create/edit/delete) plus the file-id set.
- * Deliberately excludes appState, so pan / zoom / selection / a bare re-render
- * do NOT count as a change. That is what stops the phantom-save loop: Excalidraw
- * fires `onChange` for those non-content reasons too, and without this guard each
- * one scheduled a real save whose state-flip re-rendered us into the next onChange.
- */
-function sceneSignature(elements: ChangeElements, files: ChangeFiles | undefined): string {
-  let sig = ''
-  for (const el of elements) sig += `${el.id}:${el.version};`
-  return `${sig}|${files ? Object.keys(files).join(',') : ''}`
-}
-
-/** Baseline signature from the seed, so reopening a saved scene doesn't fire a
- *  spurious save on its very first (settling) onChange. DSL/blank seed -> null
- *  (the async expansion legitimately persists once). */
-function seedSignature(snapshot: unknown): string | null {
-  if (!snapshot || isDslScene(snapshot)) return null
-  const s = snapshot as { elements?: ChangeElements; files?: ChangeFiles }
-  if (!s.elements) return null
-  return sceneSignature(s.elements, s.files)
-}
-
-/** Opt-in live-collaboration wiring (hosted canvas multiplayer, Phase E). When
- *  present, the canvas streams cursors + scene changes to peers and applies
- *  theirs via the imperative API. Absent for the Draw dialog block (unchanged). */
-export interface CanvasCollabBinding {
-  /** Receive the Excalidraw API so the collab layer can updateScene() + addFiles(). */
-  bindApi: (
-    api: {
-      updateScene(scene: { elements?: readonly unknown[]; collaborators?: Map<string, unknown> }): void
-      addFiles?(files: readonly unknown[]): void
-      getFiles?(): Record<string, unknown>
-    } | null,
-  ) => void
-  /** Local cursor moved (scene coords). tool + button ride along so a remote
-   *  Excalidraw can draw this peer's laser trail (needs tool 'laser' + button
-   *  'down'); both default sensibly when omitted (plain cursor). */
-  onPointer: (x: number, y: number, tool?: 'pointer' | 'laser', button?: 'up' | 'down') => void
-  /** Local scene changed -- serialized JSON. */
-  onChange: (json: string) => void
-}
-
-export interface DrawCanvasProps {
-  /** Parsed Excalidraw scene to seed the canvas (null = blank). */
-  initialSnapshot?: unknown
-  readOnly?: boolean
-  /** Debounced: fires with the serialized scene JSON whenever the user edits. */
-  onSnapshot?: (json: string, bytes: number) => void
-  /** Opt-in multiplayer binding. Undefined = solo (Draw block, private canvas). */
-  collab?: CanvasCollabBinding
-  /** Upload an image's bytes to the canvas file slot. When present, image bytes go
-   *  to the slot and the WS delta carries only fileIds (kept off the hot path);
-   *  when absent (Draw block), files stay inline in the delta. */
-  uploadFile?: (fileId: string, dataURL: string) => Promise<void>
-  /** Chrome to float in excalidraw's own top-right island stack (hosted canvas
-   *  name / save state / presence / Share). Undefined = no island (Draw block). */
-  topRight?: ReactNode
-}
+export type {
+  CanvasCollabBinding,
+  ChangeAppState,
+  ChangeElements,
+  ChangeFiles,
+  DrawCanvasProps,
+} from './excalidraw-canvas-types'
 
 export default function ExcalidrawCanvas({
   initialSnapshot,
@@ -99,6 +41,7 @@ export default function ExcalidrawCanvas({
   collab,
   uploadFile,
   topRight,
+  onThemeChange,
 }: DrawCanvasProps) {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   // Last content signature we acted on -- seeded from the initial scene so the
@@ -119,8 +62,17 @@ export default function ExcalidrawCanvas({
   // Persist + upload-new-files + emit files-less delta (see use-canvas-flush).
   const flushChange = useCanvasFlush(collab, onSnapshot, uploadFile)
 
+  // The theme lives in appState, so a toggle arrives as a plain onChange -- and it
+  // must be read BEFORE the readOnly / signature short-circuits below, which a
+  // theme flip would otherwise be swallowed by (it changes no element).
+  const lastTheme = useRef<CanvasTheme>(DEFAULT_CANVAS_THEME)
   const handleChange = useCallback<ChangeHandler>(
     (elements, appState, files) => {
+      const theme = appState.theme === 'dark' ? 'dark' : 'light'
+      if (theme !== lastTheme.current) {
+        lastTheme.current = theme
+        onThemeChange?.(theme)
+      }
       if (readOnly) return
       // Only persist when the actual drawing changed. Excalidraw fires onChange
       // on pan/zoom/selection and on plain re-renders too; those keep the same
@@ -131,7 +83,7 @@ export default function ExcalidrawCanvas({
       clearTimeout(timer.current)
       timer.current = setTimeout(() => void flushChange(elements, appState, files), 500)
     },
-    [readOnly, flushChange],
+    [readOnly, flushChange, onThemeChange],
   )
 
   // Throttle cursor broadcasts -- onPointerUpdate fires on every mouse move. The
@@ -167,7 +119,17 @@ export default function ExcalidrawCanvas({
         onChange={handleChange}
         onPointerUpdate={collab ? handlePointer : undefined}
         UIOptions={CANVAS_UI_OPTIONS}
-        renderTopRightUI={topRight ? () => <>{topRight}</> : undefined}
+        // Constant on purpose: excalidraw only re-asserts this prop when it
+        // CHANGES, so passing it pins the OPENING theme (over the saved scene's
+        // appState) while leaving the in-app toggle free for the session.
+        theme={DEFAULT_CANVAS_THEME}
+        renderTopRightUI={
+          topRight
+            ? (_isMobile, appState) => (
+                <CanvasThemeScope theme={appState.theme === 'dark' ? 'dark' : 'light'}>{topRight}</CanvasThemeScope>
+              )
+            : undefined
+        }
       >
         <CanvasMainMenu />
       </Excalidraw>

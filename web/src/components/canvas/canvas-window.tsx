@@ -17,6 +17,7 @@ import { CanvasChatPanel } from './canvas-chat-panel'
 import { makeCanvasFileTransport } from './canvas-file-transport'
 import { CanvasIsland } from './canvas-island'
 import { type SelectionSource, setSelectionSource } from './canvas-selection-source'
+import { CanvasThemeScope, DEFAULT_CANVAS_THEME } from './canvas-theme'
 import { useCanvasChat } from './use-canvas-chat'
 import { useCanvasCollab } from './use-canvas-collab'
 import { canvasIdFromPath, type DocState, useCanvasDocument } from './use-canvas-document'
@@ -94,11 +95,20 @@ function CanvasSurface({ canvasId }: { canvasId: string | null }) {
   const chat = useCanvasChat(canvas)
 
   if (state === 'missing') {
-    return <div className="fixed inset-0 grid place-items-center text-muted-foreground text-sm">Canvas not found.</div>
+    return (
+      <CanvasThemeScope
+        theme={DEFAULT_CANVAS_THEME}
+        className="fixed inset-0 grid place-items-center bg-background text-muted-foreground text-sm"
+      >
+        Canvas not found.
+      </CanvasThemeScope>
+    )
   }
 
+  // Scoped to the canvas theme, not the panel's: this window IS a canvas, so the
+  // loading state and the backdrop behind it should not flash the app's palette.
   return (
-    <div className="fixed inset-0 bg-background">
+    <CanvasThemeScope theme={DEFAULT_CANVAS_THEME} className="fixed inset-0 bg-background">
       <CanvasBody
         state={state}
         canvas={canvas}
@@ -113,7 +123,7 @@ function CanvasSurface({ canvasId }: { canvasId: string | null }) {
           </div>
         }
       />
-    </div>
+    </CanvasThemeScope>
   )
 }
 
