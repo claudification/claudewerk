@@ -13,7 +13,7 @@
 import { applyPatch, type DeltaPatch } from '@shared/delta-sync'
 import type { DialogOp, DialogSnapshot } from '@shared/dialog-live'
 import type { DialogLayout } from '@shared/dialog-schema'
-import { formatResetIn } from '@shared/format-reset-time'
+import { formatRateBucketName, formatResetIn } from '@shared/format-reset-time'
 import type { LaunchProfile } from '@shared/launch-profile'
 import type {
   ConversationSummary,
@@ -47,7 +47,7 @@ import type {
   TranscriptEntry,
 } from '@/lib/types'
 import { setLastConversationId } from '@/lib/ui-state'
-import { formatRateBucketName, haptic } from '@/lib/utils'
+import { haptic } from '@/lib/utils'
 import { isOrbChannelDraining, pushOrbChannelMessage } from '@/lib/voice-orb/orb-channel-bus'
 import { isForThisOrb } from '@/lib/voice-orb/orb-instance'
 import { deliverVoiceToolResult, type ToolResultMessage } from '@/lib/voice-orb/tool-bridge'

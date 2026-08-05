@@ -1,3 +1,4 @@
+import { isHiddenEvent } from '@shared/system-events'
 import type { TranscriptAssistantEntry, TranscriptEntry, TranscriptQueueEntry, TranscriptUserEntry } from '@/lib/types'
 import type { TaskNotification } from './types'
 
@@ -9,25 +10,11 @@ export function isQueue(e: TranscriptEntry): e is TranscriptQueueEntry {
   return e.type === 'queue-operation'
 }
 
-// System subtypes that carry NO transcript-visible content: CC's per-API-request
-// `status` heartbeat, internal snapshots, and subagent-only progress. grouping
-// skips them (handleSystem), and the progressive window must not count them
-// toward its displayable budget. Single source of truth -- keep in sync with the
-// skips in process-entry.ts (which imports this set).
-export const NOISE_SYSTEM_SUBTYPES = new Set([
-  'status',
-  'file_snapshot',
-  'post_turn_summary',
-  'task_progress',
-  'task_notification',
-  // CC brackets every hook with started/progress/response and every task with
-  // started/progress/notification. The transcript keeps ONE line per hook
-  // (hook_progress) and lets the tasks panel own task lifecycle, so the opening
-  // frames are noise -- otherwise a single PostToolUse hook draws three lines.
-  // hook_response still renders, but only when the outcome is not success.
-  'hook_started',
-  'task_started',
-])
+// Which entries carry NO transcript-visible content is decided ONCE, in
+// `@shared/system-events` (HIDDEN_KINDS), for every backend dialect. The grouper skips them,
+// the progressive window must not count them toward its displayable budget, and the broker's
+// display filter drops them -- three call sites that used to keep three drifting copies of
+// the list, one of which was missing the 213k-row `status` heartbeat.
 
 // A user entry whose content carries a tool_result block -- the OUTPUT of a tool
 // call. It renders INSIDE the originating tool_use line, never as its own
@@ -62,11 +49,13 @@ export function hasRenderableMessageContent(e: TranscriptEntry): boolean {
 // displayable, so the window can only ever err toward loading MORE real content,
 // never less. Non-message entries (boot/launch/shell/advisor/compact/queue) all
 // render cards -> displayable.
+//
+// The hidden check is registry-wide, not system-only: `attachment` (7.9k rows), `custom-title`
+// (6.4k) and `agent-name` (6.2k) are top-level types that render nothing, and every one of
+// them used to fall through the old `return true` and eat a slot in the window's budget.
 export function isDisplayableEntry(e: TranscriptEntry): boolean {
-  if (e.type === 'system') {
-    const sub = (e as { subtype?: string }).subtype
-    return !(sub && NOISE_SYSTEM_SUBTYPES.has(sub))
-  }
+  if (isHiddenEvent(e as unknown as Record<string, unknown>)) return false
+  if (e.type === 'system') return true
   if (e.type === 'user') return !isToolResultUserEntry(e) && hasRenderableMessageContent(e)
   if (e.type === 'assistant') return hasRenderableMessageContent(e)
   return true

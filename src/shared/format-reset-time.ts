@@ -1,3 +1,7 @@
+// Human-friendly rendering of rate-limit facts: the "resets in ..." countdown and the bucket
+// name. Shared rather than web-only because the transcript event describers (which are pure,
+// see system-events/) format the same rate_limit entry the control panel does.
+//
 // Human-friendly "resets in ..." rendering for rate-limit resetsAt timestamps.
 //
 //   < 1 hour  -> "resets in 42m"
@@ -25,4 +29,14 @@ export function formatResetIn(resetsAt: number | undefined, now: number = Date.n
   const days = Math.floor(totalHours / 24)
   const hours = totalHours % 24
   return hours === 0 ? `resets in ${days}d` : `resets in ${days}d ${hours}h`
+}
+
+/** CC's rate-limit bucket id -> a name a human reads ("five_hour" -> "5-hour"). */
+export function formatRateBucketName(type: string | undefined): string {
+  if (!type) return 'API'
+  const map: Record<string, string> = {
+    seven_day: '7-day',
+    five_hour: '5-hour',
+  }
+  return map[type] || type
 }

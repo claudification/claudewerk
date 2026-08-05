@@ -1,6 +1,5 @@
 import type { TranscriptEntry, TranscriptSystemEntry, TranscriptUserEntry } from './protocol'
-
-const NOISE_SYSTEM_SUBTYPES = new Set(['file_snapshot', 'post_turn_summary', 'task_progress', 'task_notification'])
+import { isHiddenEvent } from './system-events'
 
 function isToolResultOnly(entry: TranscriptEntry): boolean {
   if (entry.type !== 'user') return false
@@ -21,11 +20,15 @@ function isSkillInvocation(entry: TranscriptEntry): boolean {
   return typeof meta?.commandName === 'string' && meta.commandName.length > 0
 }
 
+/**
+ * Entries that render nothing anywhere. Delegates to the shared event registry so the
+ * broker's `filter=display` payload, the transcript grouper and the progressive window's
+ * budget all agree -- they used to keep three separate lists, and THIS one was missing the
+ * `status` heartbeat, so every cold open shipped a pile of entries the client then dropped.
+ */
 function isNoiseSystem(entry: TranscriptEntry): boolean {
-  if (entry.type !== 'system') return false
-  const sys = entry as TranscriptSystemEntry
-  if (!sys.subtype) return true
-  return NOISE_SYSTEM_SUBTYPES.has(sys.subtype)
+  if (entry.type === 'system' && !(entry as TranscriptSystemEntry).subtype) return true
+  return isHiddenEvent(entry as unknown as Record<string, unknown>)
 }
 
 export function isDisplayEntry(entry: TranscriptEntry): boolean {

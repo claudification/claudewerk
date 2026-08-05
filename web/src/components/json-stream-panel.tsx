@@ -1,7 +1,8 @@
+import { formatRateBucketName } from '@shared/format-reset-time'
 import { Check, ChevronRight, Copy, EyeOff, Filter, WifiOff } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { type JsonStreamMessage, useConversationsStore } from '@/hooks/use-conversations'
-import { cn, formatRateBucketName } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 
 interface JsonStreamPanelProps {
   conversationId: string

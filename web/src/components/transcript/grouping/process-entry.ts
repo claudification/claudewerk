@@ -8,6 +8,7 @@
  * `state.pendingSkillName`. Returning void keeps the call sites tight at both
  * callers (one `processEntry(entry, state)` per loop iteration).
  */
+import { isHiddenEvent, kindOf, visibilityOf } from '@shared/system-events'
 import type { TranscriptAssistantEntry, TranscriptEntry, TranscriptUserEntry } from '@/lib/types'
 import {
   extractSkillName,
@@ -15,7 +16,6 @@ import {
   isCardChannelEntry,
   isQueue,
   isSkillContent,
-  NOISE_SYSTEM_SUBTYPES,
   parseTaskNotifications,
 } from './parsers'
 import { handleQueue } from './queue-groups'
@@ -68,35 +68,42 @@ function handleCompact(entry: TranscriptEntry, state: GroupingState): void {
   }
 }
 
-// System messages (slash commands, api retries, informational, state changes, etc.)
-// Returns true if the entry was handled (incl. silently skipped).
+/**
+ * Lifecycle events: `type: "system"` entries in any backend dialect, PLUS the top-level
+ * JSONL types the shared registry claims (pr-link, worktree-state, relocated, mode,
+ * permission-mode). Returns true if the entry was handled, INCLUDING when it was
+ * deliberately skipped.
+ *
+ * Registry-driven on purpose. This used to be a hardcoded `type === 'system'` gate, so every
+ * other type fell through to processEntry's final `return` and was stored-but-invisible --
+ * against the EVERYTHING IS A STRUCTURED MESSAGE covenant. Adding an event is now a row in
+ * `@shared/system-events/sources.ts`, not a branch here.
+ */
 function handleSystem(entry: TranscriptEntry, state: GroupingState): boolean {
-  if (entry.type !== 'system' || !(entry as Record<string, unknown>).subtype) return false
-  const sub = (entry as Record<string, unknown>).subtype as string
-  // Skip transcript-invisible noise subtypes (heartbeat status, internal
-  // snapshots, subagent-only progress). Set is shared with the window's
-  // displayable-budget predicate (NOISE_SYSTEM_SUBTYPES in parsers.ts): CC's
-  // per-API-request `status` heartbeat + file_snapshot/post_turn_summary +
-  // task_progress/task_notification all persist to the broker (events log /
-  // JsonInspector) but render nothing here.
-  if (NOISE_SYSTEM_SUBTYPES.has(sub)) return true
+  const e = entry as Record<string, unknown>
+  const isSystemEntry = e.type === 'system' && typeof e.subtype === 'string' && !!e.subtype
+  const kind = kindOf(e)
+  // A type no dialect claims is not ours -- fall through to the user/assistant path.
+  if (!isSystemEntry && !kind) return false
+  // Heartbeats, snapshots and metadata: persisted and inspectable, never drawn. One source of
+  // truth with the window's displayable budget (parsers.ts) and the broker's display filter.
+  if (isHiddenEvent(e)) return true
 
-  const content = (entry as Record<string, unknown>).content as string | undefined
+  const sub = (e.subtype as string) || (e.type as string) || ''
+  const content = e.content as string | undefined
   // Skip raw slash command input entries (the output entry has the useful info)
   if (sub === 'local_command' && content?.includes('<command-name>')) return true
 
-  // Inline into the current assistant run if active. Without this, every
-  // system blip (api_retry, turn_duration, informational, etc.) splits a
-  // run of tool calls into one-robot-per-call by resetting state.current.
-  // Folding the entry into state.current.entries keeps a single avatar +
-  // timestamp header while preserving timeline order -- the renderer
-  // walks entries in order and emits an inline 'system' RenderItem for
+  // Inline into the current assistant run if active. Without this, every system blip
+  // (api_retry, turn_duration, informational, etc.) splits a run of tool calls into
+  // one-robot-per-call by resetting state.current. Folding the entry into
+  // state.current.entries keeps a single avatar + timestamp header while preserving timeline
+  // order -- the renderer walks entries in order and emits an inline 'system' RenderItem for
   // each system entry it encounters in an assistant group.
   //
-  // away_summary and background_tasks_changed are the exceptions: they render
-  // as full-width bordered cards that would look wrong nested inside an
-  // assistant body, so they always get their own group.
-  if (state.current?.type === 'assistant' && sub !== 'away_summary' && sub !== 'background_tasks_changed') {
+  // Card kinds (recap, bg-tasks) are the exception: they render as full-width bordered blocks
+  // that would look wrong nested inside an assistant body, so they always get their own group.
+  if (state.current?.type === 'assistant' && visibilityOf(e) !== 'card') {
     state.current.entries.push(entry)
     return true
   }
@@ -273,7 +280,7 @@ function handleUser(entry: TranscriptEntry, state: GroupingState): boolean {
  * refetch. Entries without a seq never force a break (rare pre-seq raw-JSONL
  * shapes keep today's behavior).
  */
-export const GROUP_SEQ_SPAN = 10
+const GROUP_SEQ_SPAN = 10
 
 function seqBucket(entry: unknown): number | null {
   const s = (entry as { seq?: number } | undefined)?.seq

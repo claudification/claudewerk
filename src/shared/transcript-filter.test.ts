@@ -86,8 +86,15 @@ describe('isDisplayEntry', () => {
     expect(isDisplayEntry(entry('pr-link', { prNumber: 42 }))).toBe(true)
   })
 
-  test('keeps last-prompt entries', () => {
-    expect(isDisplayEntry(entry('last-prompt', { lastPrompt: 'x' }))).toBe(true)
+  // `last-prompt` has no renderer and no reader anywhere in the panel -- the agent host
+  // already refuses to forward it in headless for that exact reason (HEADLESS_NEVER_TYPES).
+  // Shipping it on the display path was pure payload.
+  test('drops last-prompt entries -- nothing renders or reads them', () => {
+    expect(isDisplayEntry(entry('last-prompt', { lastPrompt: 'x' }))).toBe(false)
+  })
+
+  test('drops the heartbeat that used to dominate every cold-open payload', () => {
+    expect(isDisplayEntry(entry('system', { subtype: 'status' }))).toBe(false)
   })
 })
 
