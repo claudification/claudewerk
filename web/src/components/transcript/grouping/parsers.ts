@@ -20,6 +20,13 @@ export const NOISE_SYSTEM_SUBTYPES = new Set([
   'post_turn_summary',
   'task_progress',
   'task_notification',
+  // CC brackets every hook with started/progress/response and every task with
+  // started/progress/notification. The transcript keeps ONE line per hook
+  // (hook_progress) and lets the tasks panel own task lifecycle, so the opening
+  // frames are noise -- otherwise a single PostToolUse hook draws three lines.
+  // hook_response still renders, but only when the outcome is not success.
+  'hook_started',
+  'task_started',
 ])
 
 // A user entry whose content carries a tool_result block -- the OUTPUT of a tool
