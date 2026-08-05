@@ -23,6 +23,7 @@ import { CanvasThemeScope, DEFAULT_CANVAS_THEME, themeOf, useCanvasThemeWatch } 
 import type { ChangeHandler, DrawCanvasProps, ExcalidrawAPI, ExcalidrawProps } from './excalidraw-canvas-types'
 import { useInitialData } from './excalidraw-initial-data'
 import { sceneSignature, seedSignature } from './excalidraw-scene-signature'
+import { isPreSeedBlank } from './pre-seed-blank'
 import { useCanvasFlush } from './use-canvas-flush'
 import { useDslSeed } from './use-dsl-seed'
 import { usePointerBroadcast } from './use-pointer-broadcast'
@@ -66,7 +67,8 @@ export default function ExcalidrawCanvas({
 
   // DSL seed + agent redraw: when the seeded DSL Scene REFERENCE changes (mount, or the
   // agent patched the block via update_dialog), (re-)expand and push through the live API.
-  useDslSeed(apiRef, initialSnapshot, apiReady)
+  // While that expansion is in flight the canvas is legitimately empty -- see below.
+  const dslSeedPending = useDslSeed(apiRef, initialSnapshot, apiReady)
 
   // Persist + upload-new-files + emit files-less delta (see use-canvas-flush).
   const flushChange = useCanvasFlush(collab, onSnapshot, uploadFile)
@@ -79,6 +81,10 @@ export default function ExcalidrawCanvas({
     (elements, appState, files) => {
       watchTheme(themeOf(appState.theme))
       if (readOnly) return
+      // An empty canvas whose DSL seed has not landed yet is NOT an edit. Saving
+      // it wrote a blank scene over the drawing and broadcast the blank to every
+      // open viewer (see pre-seed-blank.ts).
+      if (isPreSeedBlank({ dslSeedPending, elementCount: elements.length })) return
       // Only persist when the actual drawing changed. Excalidraw fires onChange
       // on pan/zoom/selection and on plain re-renders too; those keep the same
       // signature, so we ignore them and the save loop can't sustain itself.
@@ -88,7 +94,7 @@ export default function ExcalidrawCanvas({
       clearTimeout(timer.current)
       timer.current = setTimeout(() => void flushChange(elements, appState, files), 500)
     },
-    [readOnly, flushChange, watchTheme],
+    [readOnly, flushChange, watchTheme, dslSeedPending],
   )
 
   // Throttled cursor frames for multiplayer -- undefined when solo.

@@ -8,11 +8,25 @@
  */
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import { isDslScene } from '@shared/draw-dsl'
-import { type RefObject, useEffect, useRef } from 'react'
+import { type RefObject, useEffect, useRef, useState } from 'react'
 import { dslToElements } from './excalidraw-dsl-bind'
 
-export function useDslSeed(apiRef: RefObject<ExcalidrawImperativeAPI | null>, snapshot: unknown, ready: boolean): void {
+/**
+ * Returns whether a DSL seed is still IN FLIGHT -- true from mount until the
+ * expansion has been pushed into the canvas (always false for a raw snapshot,
+ * which seeds synchronously through initialData).
+ *
+ * The caller needs this to tell "the canvas is empty because it has not been
+ * filled yet" from "the user emptied the canvas". See pre-seed-blank.ts: getting
+ * that wrong persisted the blank over the drawing.
+ */
+export function useDslSeed(
+  apiRef: RefObject<ExcalidrawImperativeAPI | null>,
+  snapshot: unknown,
+  ready: boolean,
+): boolean {
   const firstSeed = useRef(true)
+  const [seeded, setSeeded] = useState(false)
   useEffect(() => {
     if (!ready || !isDslScene(snapshot)) return
     let cancelled = false
@@ -20,6 +34,7 @@ export function useDslSeed(apiRef: RefObject<ExcalidrawImperativeAPI | null>, sn
       const api = apiRef.current
       if (cancelled || !api) return
       api.updateScene({ elements: elements as never })
+      setSeeded(true)
       if (firstSeed.current) {
         firstSeed.current = false
         api.scrollToContent(elements as never, { fitToContent: true })
@@ -29,4 +44,5 @@ export function useDslSeed(apiRef: RefObject<ExcalidrawImperativeAPI | null>, sn
       cancelled = true
     }
   }, [snapshot, ready, apiRef])
+  return isDslScene(snapshot) && !seeded
 }
