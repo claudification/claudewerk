@@ -57,7 +57,12 @@ function ShareLink({ url, busy, revoke }: { url: string; busy: boolean; revoke: 
 
 function SharePanel({ s }: { s: CanvasShareState }) {
   return (
-    <div className="absolute right-0 top-7 z-50 w-64 border border-border bg-background p-2 space-y-1.5 text-xs shadow-lg">
+    // data-canvas-popover is what the island stack raises itself on -- see
+    // canvas-island-stack.tsx. The z-50 here only orders things INSIDE the island.
+    <div
+      data-canvas-popover
+      className="absolute right-0 top-7 z-50 w-64 border border-border bg-background p-2 space-y-1.5 text-xs shadow-lg"
+    >
       <div className="text-[10px] uppercase tracking-wider text-sky-400/70 px-1">Public share</div>
       {TIERS.map(t => {
         const active = s.shared && s.tier === t.tier

@@ -16,6 +16,7 @@ import { useWebSocket } from '@/hooks/use-websocket'
 import { CanvasChatPanel } from './canvas-chat-panel'
 import { makeCanvasFileTransport } from './canvas-file-transport'
 import { CanvasIsland } from './canvas-island'
+import { CanvasIslandLayer, CanvasIslandStack } from './canvas-island-stack'
 import { type SelectionSource, setSelectionSource } from './canvas-selection-source'
 import { CanvasThemeScope, DEFAULT_CANVAS_THEME } from './canvas-theme'
 import { useCanvasChat } from './use-canvas-chat'
@@ -117,10 +118,16 @@ function CanvasSurface({ canvasId }: { canvasId: string | null }) {
         collab={collab}
         uploadFile={files?.upload ?? (async () => {})}
         topRight={
-          <div className="flex flex-col items-end gap-2">
-            <CanvasIsland canvas={canvas} saveStore={saveStore} peers={peers} onRename={onRename} />
-            {canvas && <CanvasChatPanel chat={chat} />}
-          </div>
+          <CanvasIslandStack>
+            <CanvasIslandLayer>
+              <CanvasIsland canvas={canvas} saveStore={saveStore} peers={peers} onRename={onRename} />
+            </CanvasIslandLayer>
+            {canvas && (
+              <CanvasIslandLayer>
+                <CanvasChatPanel chat={chat} />
+              </CanvasIslandLayer>
+            )}
+          </CanvasIslandStack>
         }
       />
     </CanvasThemeScope>
