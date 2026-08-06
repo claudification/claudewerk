@@ -9,10 +9,12 @@
 import { Hono } from 'hono'
 import type { CommitIngestPayload, CommitQuery, CommitRow } from '../../shared/commit-ledger'
 import { findTranscriptAnchor } from '../commit-ledger/anchor'
-import { countCommits, ledgerStats, queryCommits } from '../commit-ledger/query'
+import { countVisibleCommits, ledgerStats, queryCommits } from '../commit-ledger/query'
+import { redactCommitsForShareGuest } from '../commit-ledger/redact'
 import { getCommitsByHash } from '../commit-ledger/store'
 import type { ConversationStore } from '../conversation-store'
 import type { StoreDriver } from '../store/types'
+import { decorateFeed, nextCursor, parseCursor } from './commits-feed'
 import { hasIngestAuth, ingestCommit } from './commits-ingest'
 import type { RouteHelpers } from './shared'
 
@@ -43,11 +45,25 @@ export function createCommitsRouter(
   const { httpHasPermission } = helpers
   const app = new Hono()
 
-  /** Rows the caller is allowed to see. Gated on the commit's own repo URI --
-   *  and, for a row bound to a conversation, that conversation too, so a share
-   *  token scoped to conversation A never leaks conversation B's commits. */
-  const visible = (req: Request, rows: CommitRow[]): CommitRow[] =>
-    rows.filter(row => httpHasPermission(req, 'chat:read', row.repoUri, row.conversationId ?? undefined))
+  /** Rows the caller is allowed to see, with host paths stripped for share
+   *  guests. Gated on the commit's own repo URI -- and, for a row bound to a
+   *  conversation, that conversation too, so a share token scoped to
+   *  conversation A never leaks conversation B's commits. */
+  const visible = (req: Request, rows: CommitRow[]): CommitRow[] => {
+    const allowed = rows.filter(row =>
+      httpHasPermission(req, 'chat:read', row.repoUri, row.conversationId ?? undefined),
+    )
+    return redactCommitsForShareGuest(allowed, helpers.shareScopedConversationId(req) !== null)
+  }
+
+  /** The count MUST be computed from the permitted rows, not the raw query.
+   *  Returning an unfiltered `total` alongside a filtered list is a disclosure
+   *  oracle: it tells a caller how much work exists in projects they cannot
+   *  read. Costs one narrow scan over an already-indexed result set. */
+  const visibleTotal = (req: Request, query: CommitQuery): number =>
+    countVisibleCommits(query, (repoUri, conversationId) =>
+      httpHasPermission(req, 'chat:read', repoUri, conversationId ?? undefined),
+    )
 
   // ─── Ingest (git post-commit hook) ──────────────────────────────────
   app.post('/api/commits', async c => {
@@ -67,7 +83,28 @@ export function createCommitsRouter(
     const url = new URL(c.req.url)
     const query = parseListQuery(url)
     const rows = visible(c.req.raw, queryCommits(query))
-    return c.json({ commits: rows, total: countCommits(query) })
+    return c.json({ commits: rows, total: visibleTotal(c.req.raw, query) })
+  })
+
+  /** The global browser's feed: flat, newest-first, cursor-paginated, plus the
+   *  decorations its group headers need. NOT grouped server-side -- see
+   *  commits-feed.ts for why that would break run-length headers across pages. */
+  app.get('/api/commits/feed', c => {
+    const url = new URL(c.req.url)
+    const cursor = parseCursor(url.searchParams.get('cursor'))
+    const query: CommitQuery = {
+      ...parseListQuery(url),
+      before: cursor?.before,
+      beforeId: cursor?.beforeId,
+      limit: Math.min(Number(url.searchParams.get('limit')) || 60, 200),
+    }
+    const rows = visible(c.req.raw, queryCommits(query))
+    return c.json({
+      commits: rows,
+      ...decorateFeed(conversationStore, rows),
+      cursor: nextCursor(rows),
+      hasMore: rows.length > 0 && rows.length >= (query.limit ?? 0),
+    })
   })
 
   app.get('/api/commits/stats', c => {

@@ -101,6 +101,10 @@ export interface CommitQuery {
   path?: string
   origin?: CommitOrigin
   includeSuperseded?: boolean
+  /** Keyset cursor: rows strictly older than (before, beforeId). Paired so a
+   *  second holding several commits cannot drop rows across a page boundary. */
+  before?: number
+  beforeId?: number
   limit?: number
   offset?: number
 }

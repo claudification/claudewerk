@@ -37,6 +37,7 @@ import { BUILD_VERSION } from '../shared/version'
 import { clearConversation as clearAnalyticsConversation } from './analytics-store'
 import { rearmAttentionNotify } from './attention-notify'
 import { resolveBackend } from './backends'
+import { getCommitCount } from './commit-ledger/counts'
 import { addEvent as addEventImpl } from './conversation-store/add-event'
 import { addTranscriptEntries as addTranscriptEntriesImpl } from './conversation-store/add-transcript-entries'
 import { createChannelRegistry, type SubscriberEntry } from './conversation-store/channel-registry'
@@ -709,6 +710,9 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
         ...(a.tokenUsage && { tokenUsage: a.tokenUsage }),
       })),
       taskCount: conv.tasks.length,
+      // Commits this conversation landed. From the in-memory ledger map (one
+      // map read, no per-row query) -- see commit-ledger/counts.ts.
+      commitCount: getCommitCount(conv.id),
       pendingTaskCount: conv.tasks.filter(t => t.status === 'pending' || t.status === 'in_progress').length,
       activeTasks: conv.tasks.filter(t => t.status === 'in_progress').map(t => ({ id: t.id, subject: t.subject })),
       pendingTasks: conv.tasks

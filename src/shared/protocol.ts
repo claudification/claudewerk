@@ -5760,6 +5760,10 @@ export interface ConversationTaskFields {
 export interface ConversationSummary extends ConversationTaskFields {
   id: string
   project: string
+  /** Commits this conversation has landed (superseded amends excluded, so the
+   *  pill and the Commits tab always agree). Drives the badge; the rows
+   *  themselves are fetched or streamed separately. */
+  commitCount?: number
   /** Live working directory the agent is in now (worktree, sub-project, cd).
    *  `project` stays pinned to the launch URI; this shifts via `cwd_changed`. */
   currentPath?: string

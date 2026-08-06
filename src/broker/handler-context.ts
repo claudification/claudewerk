@@ -28,6 +28,11 @@ export interface WsData {
   userName?: string
   authToken?: string
   grants?: UserGrant[]
+  /** Commit-ledger subscription tier for this socket. Absent/`counts` = the
+   *  pill-sized `commit_count` frames only; `full` opts into whole commit rows
+   *  (message + every touched path), which only a surface that renders them
+   *  should ask for. See commit-ledger/broadcast.ts. */
+  commitMode?: 'counts' | 'full'
   // Share (guest) access
   isShare?: boolean
   shareToken?: string

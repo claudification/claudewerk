@@ -35,53 +35,72 @@ interface Where {
   order: string
 }
 
-function buildWhere(query: CommitQuery): Where {
-  const clauses: string[] = []
-  const params: Params = {}
-  let join = ''
-  let order = 'c.committed_at DESC'
+/** One filter's contribution to the WHERE clause. Returning `null` means the
+ *  filter is absent and contributes nothing. */
+type Contributor = (query: CommitQuery, params: Params) => string | null
 
-  if (query.conversationId) {
-    clauses.push('c.conversation_id = $conversationId')
-    params.conversationId = query.conversationId
-  }
-
-  if (query.projectUris?.length) {
+/** The filters, each self-contained. A list beats one long if-chain here: every
+ *  entry reads as `what it filters on` next to `the SQL it emits`, and adding a
+ *  filter is one array entry rather than another branch. */
+const CONTRIBUTORS: Contributor[] = [
+  (q, p) => {
+    if (!q.conversationId) return null
+    p.conversationId = q.conversationId
+    return 'c.conversation_id = $conversationId'
+  },
+  (q, p) => {
+    if (!q.projectUris?.length) return null
     // Match repo_uri OR cwd_uri: a conversation launched inside a worktree
     // carries the worktree URI while the ledger's repo_uri is the main repo
     // root, and a project page must show both.
-    const ors = query.projectUris.flatMap((uri, i) => {
-      params[`uri${i}`] = projectIdentityKey(uri)
+    const ors = q.projectUris.flatMap((uri, i) => {
+      p[`uri${i}`] = projectIdentityKey(uri)
       return [`c.repo_uri = $uri${i}`, `c.cwd_uri = $uri${i}`]
     })
-    clauses.push(`(${ors.join(' OR ')})`)
+    return `(${ors.join(' OR ')})`
+  },
+  (q, p) => {
+    if (!q.path) return null
+    p.path = `%${q.path}%`
+    return 'c.files LIKE $path'
+  },
+  (q, p) => {
+    if (!q.origin) return null
+    p.origin = q.origin
+    return 'c.origin = $origin'
+  },
+  (q, p) => {
+    if (q.before == null) return null
+    // Keyset pagination on (committed_at, id): a plain timestamp cursor drops
+    // rows whenever several commits share one second, which a rebase produces
+    // routinely.
+    p.before = q.before
+    p.beforeId = q.beforeId ?? Number.MAX_SAFE_INTEGER
+    return '(c.committed_at < $before OR (c.committed_at = $before AND c.id < $beforeId))'
+  },
+  q => (q.includeSuperseded ? null : 'c.superseded_by IS NULL'),
+]
+
+/** Full-text search is the one filter that also changes the FROM and the ORDER,
+ *  so it stays out of the contributor list rather than pretending to fit it. */
+function applyText(query: CommitQuery, params: Params): { clause: string | null; join: string; order: string } {
+  const match = query.text ? ftsQuery(query.text) : ''
+  if (!match) return { clause: null, join: '', order: 'c.committed_at DESC' }
+  params.match = match
+  // The fts5 table must stay UNALIASED: `f MATCH ...` / `f.rank` are both
+  // "no such column" errors, verified against bun:sqlite 1.3.14.
+  return {
+    clause: 'commits_fts MATCH $match',
+    join: 'JOIN commits_fts ON commits_fts.rowid = c.id',
+    order: 'commits_fts.rank, c.committed_at DESC',
   }
+}
 
-  if (query.text) {
-    const match = ftsQuery(query.text)
-    if (match) {
-      // The fts5 table must stay UNALIASED: `f MATCH ...` / `f.rank` are both
-      // "no such column" errors, verified against bun:sqlite 1.3.14.
-      join = 'JOIN commits_fts ON commits_fts.rowid = c.id'
-      clauses.push('commits_fts MATCH $match')
-      params.match = match
-      order = 'commits_fts.rank, c.committed_at DESC'
-    }
-  }
-
-  if (query.path) {
-    clauses.push('c.files LIKE $path')
-    params.path = `%${query.path}%`
-  }
-
-  if (query.origin) {
-    clauses.push('c.origin = $origin')
-    params.origin = query.origin
-  }
-
-  if (!query.includeSuperseded) clauses.push('c.superseded_by IS NULL')
-
-  return { clauses, params, join, order }
+function buildWhere(query: CommitQuery): Where {
+  const params: Params = {}
+  const text = applyText(query, params)
+  const clauses = [text.clause, ...CONTRIBUTORS.map(fn => fn(query, params))].filter((c): c is string => c !== null)
+  return { clauses, params, join: text.join, order: text.order }
 }
 
 export function queryCommits(query: CommitQuery): CommitRow[] {
@@ -93,6 +112,29 @@ export function queryCommits(query: CommitQuery): CommitRow[] {
   const sql = `SELECT ${commitColumns('c')}
     FROM commits c ${join} ${where} ORDER BY ${order} LIMIT ${limit} OFFSET ${offset}`
   return (commitLedgerDb().prepare(sql).all(params) as RawCommitRow[]).map(toCommitRow)
+}
+
+/** Count only the rows a caller may actually see.
+ *
+ *  A plain `COUNT(*)` next to a permission-filtered list is a DISCLOSURE
+ *  ORACLE -- `{commits: [], total: 412}` tells the caller exactly how much work
+ *  exists in projects they cannot read. Selecting just the two identity columns
+ *  keeps this an index-only scan over the same narrowed set, so the honest
+ *  answer costs about what the dishonest one did.
+ */
+export function countVisibleCommits(
+  query: CommitQuery,
+  isVisible: (repoUri: string, conversationId: string | null) => boolean,
+): number {
+  if (!isCommitLedgerReady()) return 0
+  const { clauses, params, join } = buildWhere(query)
+  const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : ''
+  const rows = commitLedgerDb()
+    .prepare(`SELECT c.repo_uri AS repoUri, c.conversation_id AS conversationId FROM commits c ${join} ${where}`)
+    .all(params) as Array<{ repoUri: string; conversationId: string | null }>
+  let n = 0
+  for (const row of rows) if (isVisible(row.repoUri, row.conversationId)) n++
+  return n
 }
 
 export function countCommits(query: CommitQuery): number {

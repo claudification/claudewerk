@@ -30,6 +30,7 @@ import { buildReviveMessage } from './build-revive'
 import { closeCanvasStore, initCanvasStore, reapExpiredCanvasShares } from './canvas-store'
 import { wireCapacityAdmission } from './capacity-wiring'
 import { closeChecklistStore, initChecklistStore } from './checklist-store'
+import { rebuildCommitCounts } from './commit-ledger/counts'
 import { closeCommitLedger, initCommitLedger } from './commit-ledger/store'
 import { recordInboundForSocket, registerConnection, unregisterConnection } from './connection-registry'
 import {
@@ -374,6 +375,12 @@ async function main() {
   // Initialize the commit ledger (git post-commit hook -> attributed, searchable
   // commit history). See .claude/docs/plan-commit-ledger.md.
   initCommitLedger(authCacheDir)
+  // Per-conversation commit counts: one GROUP BY at boot is authoritative, and
+  // every ingest bumps it from there (commit-ledger/counts.ts).
+  {
+    const convs = rebuildCommitCounts()
+    if (convs > 0) console.log(`[commit-ledger] loaded commit counts for ${convs} conversation(s)`)
+  }
 
   // Initialize per-project hosted canvas store (broker-local config DB + durable scene files)
   initCanvasStore(authCacheDir)

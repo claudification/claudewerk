@@ -8,6 +8,7 @@ import { registerCanvasChatHandlers } from './canvas-chat'
 import { registerCanvasSyncHandlers } from './canvas-sync'
 import { registerChannelHandlers } from './channel'
 import { registerChecklistHandlers } from './checklist'
+import { registerCommitHandlers } from './commits'
 import { registerDashboardActionHandlers } from './control-panel-actions'
 import { registerConversationLifecycleHandlers } from './conversation-lifecycle'
 import { registerConversationReassignHandlers } from './conversation-reassign'
@@ -52,6 +53,7 @@ export function registerAllHandlers(): void {
   registerCanvasSyncHandlers()
   registerChannelHandlers()
   registerChecklistHandlers()
+  registerCommitHandlers()
   registerDashboardActionHandlers()
   registerRenameHandlers()
   registerDispatchHandlers()

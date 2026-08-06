@@ -5,12 +5,13 @@
  * input is untrusted.
  */
 
-import type { CommitIngestPayload } from '../../shared/commit-ledger'
+import type { CommitIngestPayload, CommitRow } from '../../shared/commit-ledger'
 import { resolveAuth } from '../auth-routes'
+import { broadcastCommitCount, broadcastCommitRecorded } from '../commit-ledger/broadcast'
+import { bumpCommitCount } from '../commit-ledger/counts'
 import { CommitPayloadError, normalizeCommit } from '../commit-ledger/normalize'
 import { insertCommit, isCommitLedgerReady } from '../commit-ledger/store'
 import type { ConversationStore } from '../conversation-store'
-import { broadcastToSubscribers } from './shared'
 
 /** Bearer must be an admin/sentinel-grade secret. A cookie session is NOT
  *  enough to write to the ledger: ingest is machine-to-machine. */
@@ -57,10 +58,20 @@ export function ingestCommit(conversationStore: ConversationStore, payload: Comm
     logIngest(commit, result.inserted, result.supersededCount)
 
     if (result.inserted) {
-      broadcastToSubscribers(conversationStore, {
-        type: 'commit_recorded',
-        commit: { ...enriched, id: result.id, profile },
-      })
+      const row = { ...enriched, id: result.id, profile, supersededBy: null } as CommitRow
+      // TWO TIERS, deliberately. The count is safe for anyone who can read the
+      // conversation; the full row carries host disk paths and is gated harder
+      // (see commit-ledger/broadcast.ts). The first version of this shipped
+      // through an unscoped broadcast -- do not collapse them back together.
+      broadcastCommitRecorded(conversationStore, row)
+      if (enriched.conversationId) {
+        broadcastCommitCount(
+          conversationStore,
+          enriched.conversationId,
+          enriched.repoUri,
+          bumpCommitCount(enriched.conversationId),
+        )
+      }
     }
     return {
       status: result.inserted ? 202 : 200,
