@@ -67,9 +67,36 @@ curl -sH "Authorization: Bearer $RCLAUDE_SECRET" \
 
 ## Control panel
 
-- **Commits tab** on a conversation -- what this agent actually landed.
-- **Recent commits** section on the project action panel -- the whole project,
-  every worktree, live via the `commit_recorded` broadcast (no polling).
+- **Commits tab** on a conversation, with a live count pill -- what this agent
+  actually landed.
+- **Recent commits** on the project action panel -- the whole project, every
+  worktree, live (no polling).
+- **The global browser** (`Cmd+P` -> "COMMITS") -- every commit across the
+  fleet, newest first, decluttered by run-length group headers. Chronology is
+  the spine; grouping only collapses ADJACENT repeats, so the same project
+  appears again further down the timeline whenever time moved on. Each header
+  carries the conversation's liveness and clicks through to the project or the
+  conversation (ended ones included). A commit opens a detail surface. Both are
+  parkable / detachable managed modals.
+
+## Live tiers
+
+Two broadcasts, two threat profiles:
+
+| Frame | Payload | Who gets it |
+|---|---|---|
+| `commit_count` | `{conversationId, commitCount}` | anyone with `chat:read` on the project -- drives the pill |
+| `commit_recorded` | the whole row | only sockets that sent `commit_subscribe {mode:'full'}`, and **never** a share-link guest |
+
+A surface that renders commit rows opts in while mounted and drops back to
+counts on unmount, so a phone watching fifteen conversations pays for integers
+rather than file lists.
+
+## For agents (MCP)
+
+- `search_commits` -- text / path / project / conversation / origin.
+- `commit_context` -- hash -> conversation + transcript position; chains into
+  `get_transcript_context({conversationId, aroundSeq})`.
 
 ## Data model notes
 
