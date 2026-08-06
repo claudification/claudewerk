@@ -1,0 +1,6 @@
+export { createBackup } from './create'
+export { sha256File } from './hash'
+export { listBackups, sweepStaleTempDirs } from './list'
+export { pruneBackups } from './prune'
+export { restoreBackup } from './restore'
+export { checkBackupGate } from './sentinel'

@@ -2,13 +2,19 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { UserGrant } from '../permissions'
 
-export const DEFAULT_CACHE_DIR = existsSync('/data/cache')
-  ? '/data/cache'
-  : join(process.env.HOME || process.env.USERPROFILE || '/root', '.cache', 'broker')
+/** Prefer the container path when it exists, else a per-user cache dir. Keeps
+ *  the CLI working identically inside Docker and on a developer's machine. */
+function containerPathOrLocal(containerPath: string, localName: string): string {
+  if (existsSync(containerPath)) return containerPath
+  return join(process.env.HOME || process.env.USERPROFILE || '/root', '.cache', localName)
+}
 
-export const DEFAULT_BACKUP_DIR = existsSync('/data/backups')
-  ? '/data/backups'
-  : join(process.env.HOME || process.env.USERPROFILE || '/root', '.cache', 'broker-backups')
+export const DEFAULT_CACHE_DIR = containerPathOrLocal('/data/cache', 'broker')
+export const DEFAULT_BACKUP_DIR = containerPathOrLocal('/data/backups', 'broker-backups')
+
+/** Cold archives live apart from backups on purpose: /data/backups rotates and
+ *  is pruned, /data/archives is immutable and is never pruned. */
+export const DEFAULT_ARCHIVE_DIR = containerPathOrLocal('/data/archives', 'broker-archives')
 
 const KNOWN_ROLES = new Set(['admin'])
 
@@ -35,12 +41,9 @@ export function parseGrants(grantStrs: string[], notBeforeArg: string, notAfterA
       process.exit(1)
     }
     const scope = s.slice(0, colonIdx)
-    const items = s
-      .slice(colonIdx + 1)
-      .split(',')
-      .map(p => p.trim())
-    const roles = items.filter(i => KNOWN_ROLES.has(i)) as UserGrant['roles']
-    const permissions = items.filter(i => !KNOWN_ROLES.has(i)) as UserGrant['permissions']
+    // Same split-and-classify as the standalone parser; share it rather than
+    // keeping two copies that can drift as KNOWN_ROLES grows.
+    const { roles, permissions } = parsePermissionItems(s.slice(colonIdx + 1))
     return {
       scope,
       ...(roles && roles.length > 0 && { roles }),
@@ -98,10 +101,30 @@ GATEWAY COMMANDS:
   gateway revoke --alias <alias>                            Revoke gateway secret
 
 BACKUP COMMANDS:
-  backup create [--dest <dir>] [--include-blobs]           Create backup (VACUUM INTO + tar.gz)
+  backup create [--dest <dir>] [--include-blobs]           Create backup (VACUUM INTO + tar.zst)
     [--retain-hours N] [--retain-days N]                     Tiered retention (default: 24h + 7d)
-  backup list [--dest <dir>]                                List available backups
+    [--compressor zstd|gzip]                                 Default: zstd when available, else gzip
+  backup list [--dest <dir>]                                List available backups (.tar.gz and .tar.zst)
+  backup prune [--dest <dir>] [--dry-run]                   Apply retention WITHOUT taking a new backup
+    [--retain-hours N] [--retain-days N]
   backup restore <archive> [--cache-dir <dir>]             Restore from backup (broker must be stopped)
+  backup gate [--dest <dir>] [--max-backup-age N]           Check the maintenance gate (verifies last archive)
+
+ARCHIVE COMMANDS (cold transcript storage, one immutable file per UTC month):
+  archive list [--archive-dir <dir>] [--json]               Hot-vs-cold coverage map + gaps
+  archive export <YYYY-MM> [--force] [--level N]            Export a month to NDJSON.zst + meta sidecar
+  archive verify <YYYY-MM> [--against-db]                   Check integrity; --against-db also proves it
+                                                              still matches the rows in store.db
+  archive import <YYYY-MM> [--target-db <path>]             Rehydrate a month (INSERT OR IGNORE, idempotent)
+  archive prune <YYYY-MM> [--confirm]                       DELETE archived rows from the hot database.
+                                                              Dry run unless --confirm. Re-verifies against
+                                                              the DB and rolls back on any row-count drift.
+
+MAINTENANCE COMMAND (intended for cron at 05:00 local, AFTER the hourly backup):
+  maintain [--hot-days 90] [--dry-run] [--confirm-delete]   Gate on a verified backup, then
+    [--max-backup-age 90] [--skip-vacuum]                     archive -> verify -> delete -> checkpoint
+    [--health-url <url>] [--json]                             -> vacuum -> smoketest -> report.
+                                                              Aborts before any delete if the gate fails.
 
 TERMINATION COMMANDS (NDJSON log: {cacheDir}/terminations/YYYY-MM-DD.ndjson):
   termination list [--days N] [--limit N] [--source S]      Recent terminations, newest-first

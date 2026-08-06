@@ -34,8 +34,12 @@ RUN bun run gen-version && bun run build:web && bun run build:broker && bun run 
 # Runtime stage - minimal image
 FROM debian:bookworm-slim
 
+# zstd is NOT in debian:bookworm-slim. Backup + cold-archive compression both
+# prefer it (multi-threaded, several times faster than gzip on an 8.8 GB
+# snapshot) and fall back to gzip when it is absent, so an older image keeps
+# working -- but every image from here on should have it.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl \
+    ca-certificates curl zstd \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy compiled binaries
@@ -45,8 +49,10 @@ COPY --from=builder /build/bin/broker-cli /usr/local/bin/broker-cli
 # Copy web assets built in the builder stage (volume-mounted over in production)
 COPY --from=builder /build/web/dist /srv/web
 
-# Data directories
-RUN mkdir -p /data/cache /data/transcripts
+# Data directories. /data/archives holds the immutable cold transcript archives
+# (transcripts-YYYY-MM.ndjson.zst); it is deliberately separate from
+# /data/backups, which is rotating and prunable.
+RUN mkdir -p /data/cache /data/transcripts /data/archives
 
 # Build provenance: commit SHA the broker binary was built from.
 # Supplied by scripts/docker-build-broker.sh via --build-arg.

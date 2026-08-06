@@ -6,7 +6,9 @@ checkBunVersion()
 
 import { existsSync } from 'node:fs'
 import { initAuth } from './auth'
+import { handleArchive } from './cli/archive-commands'
 import { handleBackup } from './cli/backup-commands'
+import { handleMaintain } from './cli/maintenance-commands'
 import { handleMintDevKey } from './cli/dev-key-commands'
 import { handleGateway } from './cli/gateway-commands'
 import { type ParsedArgs, parseArgs } from './cli/parse-args'
@@ -91,6 +93,17 @@ async function main(): Promise<void> {
   if (args.command === 'backup') {
     await handleBackup(args)
     process.exit(0)
+  }
+
+  if (args.command === 'archive') {
+    await handleArchive(args)
+    process.exit(0)
+  }
+
+  // `maintain` exits with the report's own status, so no process.exit here.
+  if (args.command === 'maintain') {
+    await handleMaintain(args)
+    return
   }
 
   if (args.command === 'termination') {

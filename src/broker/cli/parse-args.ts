@@ -37,6 +37,19 @@ export interface ParsedArgs {
   // mint-dev-key command
   asArg: string
   ttlArg: string
+  // backup / archive / maintain commands
+  compressorArg: string
+  archiveDirArg: string
+  monthArg: string
+  hotDaysArg: string
+  levelArg: string
+  targetDbArg: string
+  maxBackupAgeArg: string
+  healthUrlArg: string
+  confirmFlag: boolean
+  forceFlag: boolean
+  againstDbFlag: boolean
+  skipVacuumFlag: boolean
 }
 
 /** A named-flag handler: applies the flag, returns the last argv index it
@@ -114,6 +127,18 @@ const FLAG_HANDLERS: Record<string, FlagHandler> = {
   '--grep': valueFlag('grepArg'),
   '--as': valueFlag('asArg'),
   '--ttl': valueFlag('ttlArg'),
+  '--compressor': valueFlag('compressorArg'),
+  '--archive-dir': valueFlag('archiveDirArg'),
+  '--month': valueFlag('monthArg'),
+  '--hot-days': valueFlag('hotDaysArg'),
+  '--level': valueFlag('levelArg'),
+  '--target-db': valueFlag('targetDbArg'),
+  '--max-backup-age': valueFlag('maxBackupAgeArg'),
+  '--health-url': valueFlag('healthUrlArg'),
+  '--confirm': boolFlag('confirmFlag'),
+  '--force': boolFlag('forceFlag'),
+  '--against-db': boolFlag('againstDbFlag'),
+  '--skip-vacuum': boolFlag('skipVacuumFlag'),
 }
 
 /** A positional (sub)arg router keyed on the already-parsed `command`. Returns
@@ -152,6 +177,18 @@ const POSITIONAL_HANDLERS: Record<string, PositionalHandler> = {
     }
     if (result.subCommand === 'restore' && !result.backupArchive) {
       result.backupArchive = arg
+      return true
+    }
+    return false
+  },
+  archive: (result, arg) => {
+    if (!result.subCommand) {
+      result.subCommand = arg
+      return true
+    }
+    // `archive export 2026-06` -- accept the month positionally as well as via --month.
+    if (!result.monthArg && /^\d{4}-\d{2}$/.test(arg)) {
+      result.monthArg = arg
       return true
     }
     return false
@@ -207,6 +244,18 @@ export function parseArgs(argv: string[], defaultCacheDir: string): ParsedArgs {
     grepArg: '',
     asArg: '',
     ttlArg: '',
+    compressorArg: '',
+    archiveDirArg: '',
+    monthArg: '',
+    hotDaysArg: '',
+    levelArg: '',
+    targetDbArg: '',
+    maxBackupAgeArg: '',
+    healthUrlArg: '',
+    confirmFlag: false,
+    forceFlag: false,
+    againstDbFlag: false,
+    skipVacuumFlag: false,
   }
 
   for (let i = 0; i < argv.length; i++) {

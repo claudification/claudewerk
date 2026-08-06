@@ -15,7 +15,7 @@
 #   30 * * * * /path/to/scripts/backup-monitor.sh
 #
 # Env overrides:
-#   BACKUP_DIR      host path holding backup-*.tar.gz (default: repo ./backups)
+#   BACKUP_DIR      host path holding backup-*.tar.{gz,zst} (default: repo ./backups)
 #   STALE_HOURS     newest backup older than this -> STALE  (default: 3)
 #   DISK_WARN_PCT   filesystem used% at/above this -> DISK_WARN (default: 90)
 #   CLAUDEWERK_LOG_DIR  where health+log are written
@@ -46,7 +46,10 @@ if [[ -d "$BACKUP_DIR" ]]; then
     [[ -z "$f" ]] && continue
     m=$(stat -f%m "$f" 2>/dev/null || echo 0)
     if (( m > newest_epoch )); then newest_epoch=$m; newest="$f"; fi
-  done < <(find "$BACKUP_DIR" -maxdepth 1 -name 'backup-*.tar.gz' 2>/dev/null)
+    # Both compressors count. Globbing only '*.tar.gz' made the monitor report
+    # MISSING the moment backups switched to zstd -- a watchdog that goes blind
+    # on a format change is worse than no watchdog.
+  done < <(find "$BACKUP_DIR" -maxdepth 1 \( -name 'backup-*.tar.gz' -o -name 'backup-*.tar.zst' \) 2>/dev/null)
 fi
 
 if (( newest_epoch == 0 )); then
