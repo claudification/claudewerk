@@ -5,6 +5,7 @@
 
 import { type Conversation, isLiveStatusSuperseded, type LiveStatus, type TeamInfo } from '../../shared/protocol'
 import { getUser } from '../auth'
+import { getCommitCount } from '../commit-ledger/counts'
 import { getAuthenticatedUser, resolveAuth } from '../auth-routes'
 import type { ConversationStore } from '../conversation-store'
 import { type Permission, resolvePermissions, type UserGrant } from '../permissions'
@@ -154,6 +155,9 @@ export interface ConversationOverview {
   /** Last user-impulse time (UserPromptSubmit). Pairs with liveStatus.updatedAt
    *  to compute statusStale. */
   lastInputAt?: number
+  /** Commits this conversation landed. REST parity with the WS summary's
+   *  `commitCount`, so a panel that hydrates over REST shows the pill too. */
+  commitCount?: number
   /** True when a user impulse landed AFTER the status was set (report superseded).
    *  Keyed off lastInputAt ONLY -- never lastActivity (the agent's own post-status
    *  text always bumps lastActivity just past updatedAt). See applyAgentStatusFields
@@ -191,6 +195,7 @@ export function conversationToOverview(
     directChildCount: directChildCount ?? 0,
     liveStatus: conv.liveStatus,
     lastInputAt: conv.lastInputAt,
+    commitCount: getCommitCount(conv.id),
     statusStale: isLiveStatusSuperseded(conv.liveStatus, conv.lastInputAt),
   }
 }

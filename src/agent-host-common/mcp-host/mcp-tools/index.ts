@@ -1,4 +1,5 @@
 import { registerCanvasTools } from './canvas'
+import { registerCommitTools } from './commits'
 import { registerConversationTools } from './conversations'
 import { registerDialogTool } from './dialog'
 import { registerDialogControlTools } from './dialog-control'
@@ -42,6 +43,7 @@ export function registerAllTools(ctx: McpToolContext): Record<string, ToolDef> {
     ...registerDialogControlTools(ctx),
     ...registerDialogTaxonomyTool(),
     ...registerSearchTools(ctx),
+    ...registerCommitTools(ctx),
     ...registerRecapTools(ctx),
     ...registerSotuTools(ctx),
     ...registerWebControlTools(ctx),

@@ -88,6 +88,14 @@ const PublicCanvasView = lazy(() =>
 const NightshiftModal = lazy(() =>
   import('@/components/nightshift/nightshift-modal').then(m => ({ default: m.NightshiftModal })),
 )
+// LAZY LOAD: the commit surfaces are off the hot path -- the chunk only loads
+// when one is actually opened.
+const CommitBrowserModal = lazy(() =>
+  import('@/components/commits/commit-modals').then(m => ({ default: m.CommitBrowserModal })),
+)
+const CommitDetailModal = lazy(() =>
+  import('@/components/commits/commit-modals').then(m => ({ default: m.CommitDetailModal })),
+)
 // Parkable, maximizable, detachable, project-scoped Kanban board modal. The
 // board (dnd-kit + CodeMirror) rides this lazy chunk, off the index bundle.
 const KanbanModal = lazy(() => import('@/components/kanban/kanban-modal').then(m => ({ default: m.KanbanModal })))
@@ -512,6 +520,8 @@ function Dashboard() {
       <RenameModal />
       <Suspense fallback={null}>
         <NightshiftModal />
+        <CommitBrowserModal />
+        <CommitDetailModal />
       </Suspense>
       <Suspense fallback={null}>
         <KanbanModal />

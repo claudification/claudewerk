@@ -6,11 +6,12 @@
  * #/nightshift + #/nightshift-status fullscreen routes.
  */
 
-import { Maximize2, Minimize2, Minus, Moon } from 'lucide-react'
+import { Moon } from 'lucide-react'
 import { useManagedModal } from '@/hooks/use-modal-manager'
 import { type NightshiftTab, useNightshiftModalStore } from '@/hooks/use-nightshift-modal'
 import { cn } from '@/lib/utils'
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog'
+import { ModalWindowControls } from '../ui/modal-window-controls'
 import { NightshiftOutlook } from './nightshift-outlook'
 import { NightshiftReportBody } from './nightshift-report-body'
 import { NightshiftStatusBody } from './nightshift-status-body'
@@ -62,24 +63,7 @@ function ModalHeader({
         ))}
       </div>
 
-      <div className="ml-auto mr-6 flex items-center gap-1.5 text-muted-foreground">
-        <button
-          type="button"
-          onClick={onToggleMax}
-          title={maximized ? 'Restore' : 'Maximize'}
-          className="hover:text-foreground transition-colors"
-        >
-          {maximized ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
-        </button>
-        <button
-          type="button"
-          onClick={onMinimize}
-          title="Minimize to dock"
-          className="hover:text-foreground transition-colors"
-        >
-          <Minus className="size-4" />
-        </button>
-      </div>
+      <ModalWindowControls maximized={maximized} onToggleMaximize={onToggleMax} onMinimize={onMinimize} />
     </div>
   )
 }

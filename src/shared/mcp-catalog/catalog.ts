@@ -69,6 +69,13 @@ export const MCP_CATALOG: readonly CatalogTool[] = [
   { name: 'send_message', group: 'core', sites: BOTH, summary: 'Send a message to other conversations' },
   { name: 'spawn_conversation', group: 'core', sites: BOTH, summary: 'Spawn a new conversation' },
   { name: 'search_transcripts', group: 'core', sites: BOTH, summary: 'FTS5 search across transcripts' },
+  {
+    name: 'search_commits',
+    group: 'core',
+    sites: BOTH,
+    summary: 'Search the commit ledger (text/path/project/origin)',
+  },
+  { name: 'commit_context', group: 'core', sites: BOTH, summary: 'Commit hash -> conversation + transcript position' },
   { name: 'get_transcript_context', group: 'core', sites: BOTH, summary: 'Transcript window around a seq' },
 
   // ── project board (both sites) ─────────────────────────────────────

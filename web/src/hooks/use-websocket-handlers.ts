@@ -1795,6 +1795,21 @@ function handleCommitRecorded(msg: DashboardMessage) {
   window.dispatchEvent(new CustomEvent('rclaude-commit-recorded', { detail: msg }))
 }
 
+/** The pill tier: an id and an integer. Patches the conversation in place so
+ *  the badge ticks up without refetching anything. Cheap enough that every
+ *  panel gets it for every commit, which is the whole point of the split. */
+function handleCommitCount(msg: DashboardMessage) {
+  const { conversationId, commitCount } = msg as unknown as { conversationId?: string; commitCount?: number }
+  if (!conversationId || typeof commitCount !== 'number') return
+  useConversationsStore.setState(state => {
+    const prev = state.conversationsById[conversationId]
+    if (!prev || prev.commitCount === commitCount) return state
+    return {
+      conversationsById: { ...state.conversationsById, [conversationId]: { ...prev, commitCount } },
+    }
+  })
+}
+
 export const handlers: Record<string, MessageHandler> = {
   // sync
   sync_ok: handleSyncOk,
@@ -1906,5 +1921,6 @@ export const handlers: Record<string, MessageHandler> = {
   sotu_view_result: handleSotuViewResult,
   sotu_contribution: handleSotuContribution,
   commit_recorded: handleCommitRecorded,
+  commit_count: handleCommitCount,
   sotu_updated: handleSotuUpdated,
 }
