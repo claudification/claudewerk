@@ -6,6 +6,8 @@
 
 import type { ReactNode } from 'react'
 import type { ControlPanelPrefs, SettingsTab } from '@/lib/control-panel-prefs'
+import { ArchiveCoverageSection } from './archive-coverage-section'
+import { archiveCoverageMatches } from './archive-coverage-types'
 import { ProjectLinksSection } from './conversation-links-section'
 import { openManageProjectLinks } from './manage-project-links-trigger'
 import { NotificationsSection } from './notifications-section'
@@ -101,6 +103,17 @@ export const PINNED_SECTIONS: PinnedSection[] = [
       <div>
         <GroupHeader label="Plain Renderer Lab" />
         <PlainRendererLabSection />
+      </div>
+    ),
+  },
+  {
+    id: 'archive-coverage',
+    tab: 'system',
+    matches: archiveCoverageMatches,
+    render: () => (
+      <div>
+        <GroupHeader label="Transcript Coverage" />
+        <ArchiveCoverageSection />
       </div>
     ),
   },
