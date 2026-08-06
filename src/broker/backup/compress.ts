@@ -82,51 +82,74 @@ export function compressorForArchive(archivePath: string): Compressor {
   )
 }
 
-/** Run `producer | consumer` and fail loudly if either end does.
- *
- *  Deliberately an explicit pipe rather than tar's `--use-compress-program`:
- *  that flag is GNU-only, and macOS ships bsdtar, so the convenient form works
- *  in the Debian container and blows up on a developer's laptop. Piping also
- *  keeps full control of the zstd flags (`-T0`, `--long=27`), which `--zstd`
- *  would not give us. */
-async function pipeline(producer: string[], consumer: string[], what: string): Promise<void> {
-  const src = Bun.spawn(producer, { stdout: 'pipe', stderr: 'pipe' })
-  const dst = Bun.spawn(consumer, { stdin: src.stdout, stdout: 'pipe', stderr: 'pipe' })
+/** POSIX single-quote escaping, so a path with a space or a quote in it cannot
+ *  turn into extra shell words. */
+function shq(s: string): string {
+  return `'${s.replaceAll("'", `'\\''`)}'`
+}
 
-  const [srcExit, dstExit] = await Promise.all([src.exited, dst.exited])
-  if (srcExit !== 0) {
-    throw new Error(`${what} failed: ${producer[0]} exit ${srcExit}: ${await new Response(src.stderr).text()}`)
-  }
-  if (dstExit !== 0) {
-    throw new Error(`${what} failed: ${consumer[0]} exit ${dstExit}: ${await new Response(dst.stderr).text()}`)
+/** Run a shell pipeline and fail loudly on ANY stage, not just the last.
+ *
+ *  The pipe is handed to `sh` on purpose. Chaining these processes in-process
+ *  (`Bun.spawn(b, { stdin: a.stdout })`, draining `b.stdout` into a FileSink)
+ *  LOOKS equivalent and passes at 200 MB, but silently truncates a 9.3 GB
+ *  stream -- the archive lists fine with `tar -t` up to the cut and the database
+ *  inside comes out `SQLITE_CORRUPT`. A truncated backup that reports success is
+ *  the worst failure this module can have, so the pipe belongs to the kernel.
+ *
+ *  `pipefail` is what makes a mid-pipeline failure (tar dying while the
+ *  compressor happily finishes on a short stream) a non-zero exit instead of a
+ *  quietly short archive. */
+async function shellPipeline(pipe: string, what: string): Promise<void> {
+  const proc = Bun.spawn(['sh', '-c', `set -o pipefail; ${pipe}`], { stdout: 'ignore', stderr: 'pipe' })
+  const exit = await proc.exited
+  if (exit !== 0) {
+    throw new Error(`${what} failed (exit ${exit}): ${await new Response(proc.stderr).text()}`)
   }
 }
 
-/** tar + compress `srcDir`'s contents into `archivePath`.
- *
- *  The output is drained through an explicit FileSink. `Bun.write(path, stream)`
- *  looks like it would do this but does NOT -- it stringifies the stream object
- *  and leaves a 23-byte ASCII file behind, which then fails to decompress. */
+/** tar + compress `srcDir`'s contents into `archivePath`. */
 export async function compressDir(srcDir: string, archivePath: string, compressor: Compressor): Promise<void> {
-  const src = Bun.spawn(['tar', '-cf', '-', '-C', srcDir, '.'], { stdout: 'pipe', stderr: 'pipe' })
-  const zip = Bun.spawn([...compressor.compressArgv], { stdin: src.stdout, stdout: 'pipe', stderr: 'pipe' })
-
-  const sink = Bun.file(archivePath).writer()
-  try {
-    for await (const chunk of zip.stdout as ReadableStream<Uint8Array>) sink.write(chunk)
-  } finally {
-    await sink.end()
-  }
-
-  const [tarExit, zipExit] = await Promise.all([src.exited, zip.exited])
-  if (tarExit !== 0) throw new Error(`tar create failed (exit ${tarExit}): ${await new Response(src.stderr).text()}`)
-  if (zipExit !== 0) {
-    throw new Error(`${compressor.compressArgv[0]} failed (exit ${zipExit}): ${await new Response(zip.stderr).text()}`)
-  }
+  const zip = compressor.compressArgv.map(shq).join(' ')
+  await shellPipeline(`tar -cf - -C ${shq(srcDir)} . | ${zip} > ${shq(archivePath)}`, 'archive create')
 }
 
 /** Decompress + untar `archivePath` into `destDir`, dispatching on extension. */
 export async function extractArchive(archivePath: string, destDir: string): Promise<void> {
   const compressor = compressorForArchive(archivePath)
-  await pipeline([...compressor.decompressArgv, archivePath], ['tar', '-xf', '-', '-C', destDir], 'extract')
+  const unzip = compressor.decompressArgv.map(shq).join(' ')
+  await shellPipeline(`${unzip} ${shq(archivePath)} | tar -xf - -C ${shq(destDir)}`, 'archive extract')
+}
+
+/** Stream the archive through `tar -t` and return the member names.
+ *
+ *  Reads the ENTIRE compressed stream, so a truncated archive fails here rather
+ *  than months later at restore time. This is the check that stands between a
+ *  corrupt archive and a `.last-success.json` that would let the maintenance job
+ *  delete rows against it. */
+export async function listArchiveMembers(archivePath: string): Promise<string[]> {
+  const compressor = compressorForArchive(archivePath)
+  const unzip = compressor.decompressArgv.map(shq).join(' ')
+  const proc = Bun.spawn(['sh', '-c', `set -o pipefail; ${unzip} ${shq(archivePath)} | tar -tf -`], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  const out = await new Response(proc.stdout).text()
+  const exit = await proc.exited
+  if (exit !== 0) {
+    throw new Error(`archive is unreadable or truncated (exit ${exit}): ${await new Response(proc.stderr).text()}`)
+  }
+  return out
+    .split('\n')
+    .map(l => l.replace(/^\.\//, '').replace(/\/$/, ''))
+    .filter(Boolean)
+}
+
+/** Throw unless every expected member is present in a fully-readable archive. */
+export async function assertArchiveComplete(archivePath: string, expected: string[]): Promise<void> {
+  const members = new Set(await listArchiveMembers(archivePath))
+  const missing = expected.filter(e => !members.has(e.replace(/\/$/, '')))
+  if (missing.length > 0) {
+    throw new Error(`archive is missing ${missing.length} expected member(s): ${missing.join(', ')}`)
+  }
 }

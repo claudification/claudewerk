@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, rmSync, statSync } from 'node:fs'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { BUILD_VERSION } from '../../shared/version'
-import { compressDir, pickCompressor } from './compress'
+import { assertArchiveComplete, compressDir, pickCompressor } from './compress'
 import { sha256File } from './hash'
 import { sweepStaleTempDirs } from './list'
 import { pruneBackups } from './prune'
@@ -62,6 +62,14 @@ export async function createBackup(opts: BackupCreateOptions): Promise<string> {
 
     console.log(`Compressing (${compressor.compressArgv.join(' ')})...`)
     await compressDir(tmpDir, archivePath, compressor)
+
+    // Read the whole archive back before calling it a backup. A truncated
+    // archive lists cleanly up to the cut and yields a SQLITE_CORRUPT database,
+    // so "the file exists and has a plausible size" proves nothing. Nothing
+    // downstream -- least of all the retention gate -- may trust an archive that
+    // has not been read end to end.
+    console.log('Verifying archive is complete...')
+    await assertArchiveComplete(archivePath, [...manifestFiles.map(f => f.path), 'manifest.json'])
 
     manifest.durationMs = Date.now() - start
 

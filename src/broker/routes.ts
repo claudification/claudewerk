@@ -21,6 +21,7 @@ import { resolveInJail } from './path-jail'
 import { chat as chatLlm } from './recap/shared/openrouter-client'
 import { createAdminRouter } from './routes/admin'
 import { createApiRouter } from './routes/api'
+import { createArchivesRouter } from './routes/archives'
 import { blobDir, initBlobStore, initSharedFilesLog } from './routes/blob-store'
 import { createCanvasesRouter } from './routes/canvases'
 import { createChatApiRouter } from './routes/chat-api'
@@ -303,6 +304,7 @@ export function createRouter(options: RouteOptions): Hono {
     createApiRouter(conversationStore, store, helpers, rclaudeSecret, cacheDir, blobDir, publicOrigin, vapidPublicKey),
   )
   app.route('/', createCommitsRouter(conversationStore, store, helpers))
+  app.route('/', createArchivesRouter(helpers, cacheDir ?? ''))
   app.route('/', createStatsRouter(conversationStore, store, helpers, serverStartTime))
   app.route('/', createStatuspageWebhookRouter(store, rclaudeSecret))
   app.route('/', createSheafRouter(store, conversationStore, helpers, terminationLog))
