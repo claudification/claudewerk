@@ -49,6 +49,8 @@ export function buildSystemPrompt(opts: PromptOptions): string {
     'To edit: read and write the .md file directly (update frontmatter + body).',
     'Frontmatter: title, priority (high/medium/low), tags [...], refs [...], created (ISO).',
     'Changes are auto-pushed to the dashboard project board via file watcher.',
+    'ALWAYS link a card you mention, never write a bare path: `[card-id](.rclaude/project/{status}/{card-id}.md)`.',
+    'Point at the .md file (not the folder) so the user can click straight through to it.',
     '',
     ...(channelEnabled
       ? [
