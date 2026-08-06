@@ -21,6 +21,26 @@
  *   gpt-5.1     5.6   $0.181   whole threads missing
  *   deepseek-v4-pro, kimi-k2.6  unparseable (no YAML frontmatter)
  *
+ * READ THAT COLUMN CORRECTLY -- it is ONE judge, not the consensus of two.
+ * Those are opus-5's scores. The other judge (gpt-5.1) ranked the SAME two
+ * documents the other way round, and did so again on a 2026-08-06 re-judge:
+ *
+ *                       opus-5 judge      gpt-5.1 judge
+ *   opus-4.8            8.6  /  9.2       8.2  /  8.8
+ *   glm-5.2             8.2  /  9.0       9.0  /  9.8
+ *
+ * Consistent per judge, split between them -- and the judge preferring opus-4.8
+ * is the one sharing its family, by a NARROWER margin (0.4, 0.2) than the
+ * family-neutral judge prefers glm-5.2 (0.8, 1.0). So `accurate` vs `cheap` is
+ * NOT a measured quality win for Opus; on this evidence the two are inside judge
+ * noise and the 10x price gap buys nothing demonstrable. Do not cite 8.6 > 8.2
+ * as the justification for the tier -- it is one scorecard, and self-preference
+ * is the likeliest thing it measures.
+ *
+ * What would actually settle it (not yet run): several DIFFERENT periods rather
+ * than this one replayed prompt, and a third judge family so no candidate shares
+ * a family with a majority of the panel.
+ *
  * Two results worth not re-learning: Opus 5 is NOT here because it is more
  * verbose than 4.8, overruns the 32k output cap and returns documents truncated
  * mid-sentence for 42% more money. And minimax-m3 was rejected despite winning
