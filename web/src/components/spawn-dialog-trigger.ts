@@ -1,7 +1,12 @@
+import type { LaunchTargetSource } from '@/lib/launch-target'
 import { createLazyBus } from '@/lib/lazy-bus'
 
 export interface SpawnDialogOptions {
   path: string
+  /** How `path` was arrived at (see resolveLaunchTarget). Only the two generic
+   *  launch entry points set it; callers that already hold an explicit project
+   *  omit it. The dialog warns when it says no project was resolved. */
+  targetSource?: LaunchTargetSource
   mkdir?: boolean
   sentinel?: string
   /** Source project URI -- when scheme is `opencode://`, the dialog defaults

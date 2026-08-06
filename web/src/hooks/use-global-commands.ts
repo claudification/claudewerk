@@ -29,10 +29,11 @@ import { prewarmVoice } from '@/hooks/voice-prewarm'
 import { formatShortcut, useChordCommand, useCommand, validateChordBindings } from '@/lib/commands'
 import { canRespawnStaleDaemon } from '@/lib/daemon-control'
 import { focusInputEditor } from '@/lib/focus-input'
+import { resolveLaunchTargetFromStore } from '@/lib/launch-target'
 import { remountApp } from '@/lib/remount'
 import { openShell, projectShellCapable } from '@/lib/shell-commands'
 import { selectConversations } from '@/lib/slim-conversation'
-import { canShell, canTerminal, projectPath } from '@/lib/types'
+import { canShell, canTerminal } from '@/lib/types'
 import { isMobileViewport } from '@/lib/utils'
 import { getVoiceHistory } from '@/lib/voice-history'
 import { toggleWebControl } from '@/lib/web-control-actions'
@@ -332,15 +333,8 @@ export function useGlobalCommands(toggleSidebar: () => void) {
   useChordCommand(
     'launch-conversation',
     () => {
-      const store = useConversationsStore.getState()
-      const conversation = store.selectedConversationId
-        ? store.conversationsById[store.selectedConversationId]
-        : undefined
-      const projectUri = conversation?.project ?? store.selectedProjectUri ?? undefined
-      const spawnPath = conversation
-        ? projectPath(conversation.project) || store.controlPanelPrefs.defaultConversationCwd
-        : projectPath(store.selectedProjectUri ?? '') || store.controlPanelPrefs.defaultConversationCwd
-      openSpawnDialog({ path: spawnPath || '~', projectUri })
+      const target = resolveLaunchTargetFromStore()
+      openSpawnDialog({ path: target.path, projectUri: target.projectUri, targetSource: target.source })
     },
     { label: 'Launch conversation', key: 'l', group: 'Conversation' },
   )

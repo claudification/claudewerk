@@ -17,7 +17,8 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useConversationsStore } from '@/hooks/use-conversations'
-import { type Conversation, projectPath } from '@/lib/types'
+import { resolveLaunchTargetFromStore } from '@/lib/launch-target'
+import type { Conversation } from '@/lib/types'
 import { useDispatchStore } from './dispatch-overlay/dispatch-store'
 import { openReviveDialog } from './revive-dialog-trigger'
 import { openSpawnDialog } from './spawn-dialog-trigger'
@@ -90,11 +91,12 @@ export function buildActions(
       id: 'launch',
       icon: <Rocket className="size-4" />,
       label: 'Launch',
-      action: () =>
-        openSpawnDialog({
-          path: conversation ? projectPath(conversation.project) : '.',
-          projectUri: conversation?.project,
-        }),
+      action: () => {
+        // Same resolver as the `l` chord: selected conversation > selected
+        // project > the active workspace's sole project > default cwd.
+        const target = resolveLaunchTargetFromStore()
+        openSpawnDialog({ path: target.path, projectUri: target.projectUri, targetSource: target.source })
+      },
       color: 'bg-warning',
     },
     {

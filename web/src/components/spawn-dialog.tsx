@@ -46,6 +46,7 @@ import { type BackendKind, BackendSelect } from './spawn-dialog/backend-select'
 import { blankDaemonForm, type DaemonMode, type DaemonModeFormValue } from './spawn-dialog/daemon-launch'
 import { DaemonModePanel } from './spawn-dialog/daemon-mode-panel'
 import { DaemonRosterBrowser } from './spawn-dialog/daemon-roster-browser'
+import { LaunchTargetNotice } from './spawn-dialog/launch-target-notice'
 import {
   type ClaudeTransport,
   deriveClaudeTransport,
@@ -167,6 +168,11 @@ export function SpawnDialog() {
   // offer for the target sentinel. NAMES + display only (Profile-Env Boundary).
   const sentinelStatuses = useConversationsStore(s => s.sentinels)
   const profileUsage = useConversationsStore(s => s.profileUsage)
+  // Only for the "assumed the only project in <workspace>" notice -- naming the
+  // workspace is what makes the assumption auditable instead of magic.
+  const activeWorkspaceId = useConversationsStore(s => s.controlPanelPrefs.activeWorkspaceId)
+  const workspaces = useConversationsStore(s => s.projectOrder.workspaces)
+  const activeWorkspaceName = activeWorkspaceId ? workspaces?.find(w => w.id === activeWorkspaceId)?.name : undefined
   const { profiles: launchProfiles } = useLaunchProfiles()
   const launchProfilesRef = useRef(launchProfiles)
   launchProfilesRef.current = launchProfiles
@@ -685,6 +691,13 @@ export function SpawnDialog() {
               worktree. State is per-open (not sticky) -- see useWorktreePath. */}
           <div className="shrink-0 space-y-1">
             <div className="text-[11px] font-mono text-muted-foreground truncate">{shortPath}</div>
+            {phase === 'config' && (
+              <LaunchTargetNotice
+                source={state.options?.targetSource}
+                path={shortPath}
+                workspaceName={activeWorkspaceName}
+              />
+            )}
             {worktreeCtx && !useWorktreePath && (
               <button
                 type="button"
