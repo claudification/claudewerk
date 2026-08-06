@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { openBrokerDatabase } from '../sqlite-open'
 import { sha256File } from './hash'
@@ -48,6 +48,35 @@ function stripDerivedArtifacts(dbPath: string, dbName: string, reclaim: ReclaimM
   }
 }
 
+/** Snapshot one database, preferring a READ-ONLY source handle.
+ *
+ *  VACUUM INTO writes only to the target, and the source is a live database
+ *  another process owns -- a read-write handle lets the backup checkpoint the
+ *  WAL or run recovery on a file it has no business touching.
+ *
+ *  It falls back to read-write rather than failing, because a read-only open of
+ *  a WAL database still needs to create the `-shm` sidecar, so an unwritable
+ *  directory (or an unusual mount) would otherwise turn a hardening measure
+ *  into "no backups at all". The fallback is loud. */
+function vacuumInto(srcPath: string, destPath: string, dbName: string): void {
+  for (const readonly of [true, false]) {
+    try {
+      const db = openBrokerDatabase(srcPath, { readonly })
+      try {
+        db.run(`VACUUM INTO '${destPath}'`)
+      } finally {
+        db.close()
+      }
+      if (!readonly) console.log(`  NOTE: ${dbName} snapshotted via a read-write handle (read-only open failed)`)
+      return
+    } catch (err) {
+      if (!readonly) throw err
+      console.log(`  ${dbName}: read-only snapshot unavailable (${(err as Error).message}); retrying read-write`)
+      rmSync(destPath, { force: true })
+    }
+  }
+}
+
 /** VACUUM INTO each database, strip its derived artifacts, and record it. */
 export function snapshotDatabases(cacheDir: string, tmpDir: string, reclaim: ReclaimMode): ManifestFiles {
   const files: ManifestFiles = []
@@ -59,12 +88,7 @@ export function snapshotDatabases(cacheDir: string, tmpDir: string, reclaim: Rec
       continue
     }
     const destPath = join(tmpDir, dbName)
-    const db = openBrokerDatabase(srcPath)
-    try {
-      db.run(`VACUUM INTO '${destPath}'`)
-    } finally {
-      db.close()
-    }
+    vacuumInto(srcPath, destPath, dbName)
 
     stripDerivedArtifacts(destPath, dbName, reclaim)
 

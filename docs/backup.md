@@ -369,3 +369,50 @@ the ambiguity you do not want at 05:00 with rows already deleted.
 
 **`CONFIRM_DELETE=0` is the default.** Set it to `1` only after a successful
 export+verify round-trip is visible in the log.
+
+---
+
+# Dedup bake-off (measured 2026-08-07) -- restic LOSES
+
+The plan assumed a content-defined-chunking repo would cut hourly storage
+dramatically, since consecutive snapshots are ~99% identical data. **Measured,
+it does not.** Recording the numbers so nobody re-litigates it from intuition.
+
+Method: two `VACUUM INTO` snapshots of the real 8.66 GB `store.db`, the second
+after ~1 hour of simulated drift (1,200 new transcript rows), both fed to a
+restic 0.19.1 repo.
+
+| | Repo size | Wall |
+|---|---|---|
+| after snapshot A | 2.30 GB | 11.8 s |
+| after snapshot B (1 h later) | 3.23 GB | 7.4 s |
+| **incremental cost of one hour** | **~0.93 GB** | |
+
+restic reports 17.33 GiB logical across the two snapshots compressed and
+deduped down to 3.23 GiB (3.28x).
+
+Against the shipped pipeline at **0.75 GB per complete archive**, restic's
+*incremental* is larger than our *full*. Over a 24-hour window: ~23.7 GB for
+restic versus 18 GB for plain hourly zstd archives.
+
+**Why.** Dedup wants a stable byte layout. `VACUUM INTO` guarantees the
+opposite -- it rewrites the entire database with a fresh, defragmented page
+layout, so inserting a handful of rows shifts content throughout the file and
+the rolling-hash chunker finds little to reuse. The very property that makes
+`VACUUM INTO` a safe snapshot (a clean, self-consistent rewrite) is what defeats
+the dedup.
+
+Two caveats stated plainly:
+- restic's absolute numbers are inflated here because its snapshots included the
+  `transcript_fts` index, which our pipeline strips. That does not change the
+  verdict: its per-hour increment still exceeds our per-hour total.
+- **Untested hypothesis:** dedup would likely work far better against the *raw*
+  database file, since page layout is then stable between hours. That trades
+  away the consistent-snapshot property `VACUUM INTO` buys, and was not
+  measured.
+
+**Verdict: keep hourly zstd archives.** Litestream remains the only candidate
+that could beat this (it ships WAL frames, so it never re-reads the whole
+database), but it is a sidecar with a different restore story and does not cover
+`auth.json` / `auth.secret` / `sentinel-registry.json` -- the tar path survives
+either way. Not pursued.
