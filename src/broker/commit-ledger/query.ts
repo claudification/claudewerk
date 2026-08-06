@@ -118,9 +118,11 @@ export function ledgerStats(): LedgerStats {
   if (!isCommitLedgerReady()) return { total: 0, agent: 0, human: 0, projects: 0, conversations: 0, hosts: 0 }
   return commitLedgerDb()
     .prepare(
+      // COALESCE: SUM() over ZERO rows is NULL, not 0 -- an empty ledger would
+      // otherwise serve `{agent: null, human: null}` to the panel.
       `SELECT COUNT(*) AS total,
-              SUM(origin = 'agent') AS agent,
-              SUM(origin = 'human') AS human,
+              COALESCE(SUM(origin = 'agent'), 0) AS agent,
+              COALESCE(SUM(origin = 'human'), 0) AS human,
               COUNT(DISTINCT repo_uri) AS projects,
               COUNT(DISTINCT conversation_id) AS conversations,
               COUNT(DISTINCT host) AS hosts

@@ -159,6 +159,11 @@ test('filters by conversation, origin and touched path', () => {
   expect(queryCommits({ path: 'docs/' }).map(r => r.shortHash)).toEqual(['eeeeeeee'])
 })
 
+test('an empty ledger reports zeros, not nulls', () => {
+  // SUM() over zero rows is NULL in SQLite; the panel must never receive that.
+  expect(ledgerStats()).toEqual({ total: 0, agent: 0, human: 0, projects: 0, conversations: 0, hosts: 0 })
+})
+
 test('ledger stats split agent from human work', () => {
   record({ hash: 'a'.repeat(40), conversationId: 'conv-1' })
   record({ hash: 'e'.repeat(40) })
