@@ -17,6 +17,8 @@ import {
 } from '@/lib/control-panel-prefs'
 import { referencedConversationIds } from '@/lib/conversation-refs'
 import { clearExpandedState } from '@/lib/expanded-state'
+import { enqueueOutbox, useOutboxStore } from '@/lib/outbox'
+import { discardPendingSend, newRequestId, registerPendingSend } from '@/lib/pending-sends'
 import { setPerfEnabled } from '@/lib/perf-metrics'
 import { DEFAULT_PERMISSIONS, type ResolvedPermissions } from '@/lib/permissions'
 import { appendShareParam } from '@/lib/share-mode'
@@ -1793,12 +1795,29 @@ export function sendInput(conversationId: string, input: string, opts?: { source
     })
   }
   const crDelay = (useConversationsStore.getState().globalSettings.carriageReturnDelay as number) || 0
+  // Every send is tracked: `ok` below only proves the bytes left the browser.
+  // The broker's send_input_result (or a socket death) decides delivery, and
+  // anything that fails lands in the outbox for explicit retry.
+  const requestId = newRequestId()
+  registerPendingSend({ requestId, conversationId, text: input, ...(opts?.source && { source: opts.source }) })
   const ok = wsSend('send_input', {
     conversationId,
     input,
+    requestId,
     ...(crDelay > 0 && { crDelay }),
     ...(opts?.source && { source: opts.source }),
   })
+  if (!ok) {
+    // Socket is down -- it never even reached the broker. Queue it here rather
+    // than trusting callers to honour the false return (most never did).
+    discardPendingSend(requestId)
+    enqueueOutbox({
+      conversationId,
+      text: input,
+      error: 'Not connected to the broker',
+      ...(opts?.source && { source: opts.source }),
+    })
+  }
   // Ad-hoc authorization: if this message references other conversations (via the
   // `:` completer's <conversation> token), grant a project-level link so the agent
   // can send_message to them. Broker is idempotent (no-op if already linked/blocked).
@@ -1814,6 +1833,19 @@ export function sendInput(conversationId: string, input: string, opts?: { source
   // No optimistic entry needed -- the broker round-trip is fast enough,
   // and a single source of truth avoids duplication + survives refresh.
   return ok
+}
+
+/**
+ * Re-post a queued message. The entry leaves the outbox optimistically; a send
+ * that fails again re-enters it through the same paths as the original post
+ * (socket-down synchronously, broker rejection on the result), so a retry can
+ * never lose the text.
+ */
+export function retryOutboxEntry(conversationId: string, id: string): boolean {
+  const entry = useOutboxStore.getState().entries[conversationId]?.find(e => e.id === id)
+  if (!entry) return false
+  useOutboxStore.getState().remove(conversationId, id)
+  return sendInput(conversationId, entry.text, entry.source ? { source: entry.source } : undefined)
 }
 
 // Server capabilities

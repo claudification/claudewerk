@@ -7,6 +7,7 @@ import { sendInput, useConversationsStore } from '@/hooks/use-conversations'
 import { focusInputEditor } from '@/lib/focus-input'
 import { canTerminal } from '@/lib/types'
 import { cn, haptic, isMobileViewport } from '@/lib/utils'
+import { OutboxBar } from './outbox-bar'
 
 // ---------------------------------------------------------------------------
 // ScrollToBottomButton
@@ -83,6 +84,17 @@ export const InputBar = memo(function InputBar({ conversationId }: { conversatio
     requestAnimationFrame(() => containerRef.current && focusInputEditor(containerRef.current))
   }
 
+  /** Pull an undelivered message back into the editor, appended to whatever
+   *  is already typed (same merge rule as popping the stash). */
+  function editOutboxEntry(text: string) {
+    const current = inputRef.current
+    const merged = current ? `${current}\n\n${text}` : text
+    setInputValue(merged)
+    useConversationsStore.getState().setInputDraft(conversationId, merged)
+    requestEditorSetValue(merged)
+    requestAnimationFrame(() => containerRef.current && focusInputEditor(containerRef.current))
+  }
+
   function handleStash(text: string) {
     const trimmed = text.trim()
     if (trimmed) {
@@ -130,18 +142,18 @@ export const InputBar = memo(function InputBar({ conversationId }: { conversatio
       return
     }
     haptic('tap')
-    // Clear optimistically -- restore on failure
+    // Clear optimistically -- a failed send lands in the outbox, not back here
     setInputValue('')
     useConversationsStore.getState().setInputDraft(conversationId, '')
     setIsSending(true)
     const success = sendInput(conversationId, text)
     setIsSending(false)
     if (!success) {
+      // sendInput already parked the text in the outbox (rendered by OutboxBar
+      // right above this input), so do NOT restore it into the box -- that would
+      // give the same message two homes and let the next keystroke bury one.
       haptic('error')
-      console.error('[input] sendInput failed for conversation', conversationId)
-      // Restore on failure
-      setInputValue(text)
-      useConversationsStore.getState().setInputDraft(conversationId, text)
+      console.error('[input] sendInput failed, queued in outbox:', conversationId)
     } else {
       // Defensive re-clear (optimistic transcript entry now handled inside sendInput)
       setInputValue('')
@@ -194,6 +206,7 @@ export const InputBar = memo(function InputBar({ conversationId }: { conversatio
           <span className="text-amber-500/60 shrink-0 text-[10px]">open terminal</span>
         </button>
       )}
+      <OutboxBar conversationId={conversationId} onEdit={editOutboxEntry} />
       {stashCount > 0 && (
         <button
           type="button"

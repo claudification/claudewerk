@@ -12,6 +12,7 @@ import { unstable_batchedUpdates as batchUpdates } from 'react-dom'
 const batch: (fn: () => void) => void = batchUpdates ?? (fn => fn())
 
 import { isCanvasChatMessage } from '@/components/canvas/canvas-chat-bus'
+import { failAllPendingSends } from '@/lib/pending-sends'
 import { beginMessage, endMessage, setFlushBatch } from '@/lib/perf-message-context'
 import { isPerfEnabled, record as perfRecord } from '@/lib/perf-metrics'
 import { buildWsUrl, isShareView } from '@/lib/share-mode'
@@ -326,6 +327,13 @@ export function useWebSocket(opts?: { conversationChannels?: boolean }) {
 
       ws.onclose = e => {
         wsRef.current = null
+
+        // Sends still in flight can never be confirmed now -- queue them for
+        // retry rather than letting a mid-post disconnect eat the text.
+        const orphaned = failAllPendingSends('Connection lost mid-send')
+        if (orphaned > 0) {
+          console.warn(`[outbox] queued ${orphaned} unconfirmed message(s) after socket close (code ${e.code})`)
+        }
 
         // Single setState for disconnect state (regardless of why we closed)
         useConversationsStore.setState({

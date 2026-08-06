@@ -30,8 +30,12 @@ import { resolveConversationSocket } from './socket-routing'
 // ─── Send input to a conversation ──────────────────────────────────────
 
 const sendInput: MessageHandler = (ctx, data) => {
-  const conversationId = (data.conversationId || data.conversationId) as string
+  const conversationId = data.conversationId as string
   const input = data.input as string
+  // Echoed on BOTH outcomes so the control panel can resolve the exact in-flight
+  // send. The router already echoes it on the GuardError path; without it here
+  // a delivered message would sit unresolved in the client's pending map.
+  const requestIdEcho = typeof data.requestId === 'string' ? { requestId: data.requestId } : {}
   if (!conversationId || !input || typeof input !== 'string') {
     throw new GuardError('Missing conversationId or input')
   }
@@ -62,7 +66,7 @@ const sendInput: MessageHandler = (ctx, data) => {
       })
       .catch((err: unknown) => ctx.log.error(`[${backend.type}] proxy failed`, err))
     ctx.log.debug(`send_input: ${conversationId.slice(0, 8)} [${backend.type}] "${input.slice(0, 50)}"`)
-    ctx.reply({ type: 'send_input_result', ok: true })
+    ctx.reply({ type: 'send_input_result', ok: true, ...requestIdEcho })
     return
   }
 
@@ -79,7 +83,7 @@ const sendInput: MessageHandler = (ctx, data) => {
   }
   ws.send(JSON.stringify(inputMsg))
   ctx.log.debug(`send_input: ${conversationId.slice(0, 8)} "${input.slice(0, 50)}"`)
-  ctx.reply({ type: 'send_input_result', ok: true })
+  ctx.reply({ type: 'send_input_result', ok: true, ...requestIdEcho })
 }
 
 /** Broadcast project settings filtered per subscriber's grants */

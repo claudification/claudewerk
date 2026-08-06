@@ -35,6 +35,7 @@ import type {
 import { useDispatchStore } from '@/components/dispatch-overlay/dispatch-store'
 import { handleLaunchProfilesUpdatedMessage } from '@/components/launch-profiles/use-launch-profiles'
 import { daemonControlToast } from '@/lib/daemon-control'
+import { resolvePendingSend } from '@/lib/pending-sends'
 import { forgetFull, rememberFull, slimConversation } from '@/lib/slim-conversation'
 import { applyTranscriptBatch } from '@/lib/transcript-apply'
 import { pruneLiveTranscript, TRANSCRIPT_LIVE_CAP } from '@/lib/transcript-prune'
@@ -1363,14 +1364,22 @@ const ACTION_TITLES: Record<string, string> = {
 }
 
 function handleActionResult(msg: DashboardMessage) {
+  if (msg.type === 'send_input_result') {
+    // Resolve the in-flight send. A rejection (agent host gone, conversation
+    // ended, permission denied) moves the text into the outbox -- the input bar
+    // already cleared, so this is the only thing standing between the user and
+    // a lost message.
+    resolvePendingSend(msg.requestId as string | undefined, msg.ok !== false, (msg.error as string) || 'Not delivered')
+  }
   if (msg.ok === false) {
     const type = (msg.type as string) || 'action'
     const error = (msg.error as string) || 'unknown error'
     console.error(`[ws] ${type}: ${error}`)
     const title = ACTION_TITLES[type] ?? `Action failed: ${type}`
+    const body = type === 'send_input_result' ? `${error} -- kept above the input box, retry from there` : error
     window.dispatchEvent(
       new CustomEvent('rclaude-toast', {
-        detail: { title, body: error, variant: 'warning' },
+        detail: { title, body, variant: 'warning' },
       }),
     )
   }
