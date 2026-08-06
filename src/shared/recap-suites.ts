@@ -27,6 +27,27 @@
  * on price because it invented tool names, an endpoint and a test framework this
  * project does not use -- cheaper is not a defence for a durable record that
  * lies.
+ *
+ * QWEN, re-run 2026-08-06 (same prompt, same rubric, same two judges, with both
+ * shipped suites in the field as calibration anchors). Both judges ranked both
+ * Qwens BELOW both incumbents:
+ *
+ *   opus-4.8   9.2 / 8.8   $0.89          <- anchor
+ *   glm-5.2    9.0 / 9.8   $0.091  223s   <- anchor
+ *   qwen3.8-max 7.0 / 8.2  $0.279  419s   thin coverage, 1 fabrication
+ *   qwen3.7-max 6.0 / 6.0  $0.126  113s   FABRICATES (both judges, 3-4 flags)
+ *
+ * qwen3.8-max is 3x the price of glm-5.2 and ~2x the latency for a strictly
+ * worse document, so there is no niche for it in either suite. The mechanism is
+ * visible in the token counts: it spent 24160 output tokens to emit 27.6KB of
+ * text, so most of what we paid for was reasoning, not record -- and the
+ * resulting doc drops whole threads the cheaper model kept.
+ *
+ * Method caveat for whoever re-runs this: the rubric orders the judges to spread
+ * scores across the field, so absolute numbers DRIFT between rounds as the field
+ * changes (glm-5.2 read 8.2 in the July round and 9.0/9.8 here). Only the
+ * within-round ordering is load-bearing. Always include a shipped suite as an
+ * anchor. Harness: `.claude/temp/reduce-ab/` (generate-qwen.ts + judge3.ts).
  */
 
 /** Suite ids. `cheap` and `accurate` name the trade-off in the user's terms. */
