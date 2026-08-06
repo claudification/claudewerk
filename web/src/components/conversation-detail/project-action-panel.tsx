@@ -13,6 +13,7 @@ import { openSpawnDialog } from '../spawn-dialog-trigger'
 import { ProjectCanvasesSection } from './project-canvases-section'
 import { ProjectNightshiftCard } from './project-nightshift-card'
 import { ProjectReadmeSection } from './project-readme-section'
+import { ProjectCommitsSection } from './project-commits-section'
 import { ProjectRecapsSection } from './project-recaps-section'
 
 function matchesFilter(conversation: Conversation, query: string): boolean {
@@ -305,6 +306,9 @@ export function ProjectActionPanel({ projectUri }: { projectUri: string }) {
 
         {/* Recent recaps (last 3 days, finished only) */}
         <ProjectRecapsSection projectUri={projectUri} />
+
+        {/* Commit ledger -- every commit in this project, all worktrees + machines */}
+        <ProjectCommitsSection projectUri={projectUri} />
 
         {/* Hosted canvases (private + shareable Excalidraw) */}
         <ProjectCanvasesSection projectUri={projectUri} />

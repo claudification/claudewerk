@@ -1780,6 +1780,12 @@ function handleSotuUpdated(msg: DashboardMessage) {
   window.dispatchEvent(new CustomEvent('sotu-ws', { detail: msg }))
 }
 
+/** A git post-commit hook just landed a commit in the ledger. Re-broadcast as a
+ *  DOM event so any mounted commit list appends it without polling. */
+function handleCommitRecorded(msg: DashboardMessage) {
+  window.dispatchEvent(new CustomEvent('rclaude-commit-recorded', { detail: msg }))
+}
+
 export const handlers: Record<string, MessageHandler> = {
   // sync
   sync_ok: handleSyncOk,
@@ -1890,5 +1896,6 @@ export const handlers: Record<string, MessageHandler> = {
   sotu_fleet_result: handleSotuFleetResult,
   sotu_view_result: handleSotuViewResult,
   sotu_contribution: handleSotuContribution,
+  commit_recorded: handleCommitRecorded,
   sotu_updated: handleSotuUpdated,
 }

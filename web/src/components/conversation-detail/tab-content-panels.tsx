@@ -19,6 +19,9 @@ import { ScrollToBottomButton } from './conversation-input'
 import type { Tab } from './conversation-tabs'
 
 const InlineTerminal = lazy(() => import('../inline-terminal').then(m => ({ default: m.InlineTerminal })))
+// LAZY LOAD: the commit ledger is off the hot path -- it only mounts when the
+// tab is opened, so it never travels in the index bundle.
+const CommitsView = lazy(() => import('../commits/commits-view').then(m => ({ default: m.CommitsView })))
 
 interface ConversationTarget {
   projectA: string
@@ -147,6 +150,16 @@ export function TabContentPanels({
       {!conversationTarget && activeTab === 'tasks' && selectedConversationId && (
         <div className="flex-1 min-h-0 overflow-hidden">
           <TasksView conversationId={selectedConversationId} pendingCount={conversation.pendingTaskCount} />
+        </div>
+      )}
+      {!conversationTarget && activeTab === 'commits' && selectedConversationId && (
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <Suspense fallback={null}>
+            <CommitsView
+              conversationId={selectedConversationId}
+              emptyHint="This conversation has not committed anything yet. Install the hook with scripts/install-git-hooks.sh."
+            />
+          </Suspense>
         </div>
       )}
       {!conversationTarget && activeTab === 'shared' && conversation && (

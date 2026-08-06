@@ -30,6 +30,7 @@ import { buildReviveMessage } from './build-revive'
 import { closeCanvasStore, initCanvasStore, reapExpiredCanvasShares } from './canvas-store'
 import { wireCapacityAdmission } from './capacity-wiring'
 import { closeChecklistStore, initChecklistStore } from './checklist-store'
+import { closeCommitLedger, initCommitLedger } from './commit-ledger/store'
 import { recordInboundForSocket, registerConnection, unregisterConnection } from './connection-registry'
 import {
   addPersistedConvLink,
@@ -369,6 +370,10 @@ async function main() {
 
   // Initialize per-project checklist store (broker-local config DB)
   initChecklistStore(authCacheDir)
+
+  // Initialize the commit ledger (git post-commit hook -> attributed, searchable
+  // commit history). See .claude/docs/plan-commit-ledger.md.
+  initCommitLedger(authCacheDir)
 
   // Initialize per-project hosted canvas store (broker-local config DB + durable scene files)
   initCanvasStore(authCacheDir)
@@ -750,6 +755,7 @@ async function main() {
     clearInterval(costCleanupTimer)
     closeAnalyticsStore()
     closeProjectStore()
+    closeCommitLedger()
     closeChecklistStore()
     closeCanvasStore()
     closeDispatchAudit()

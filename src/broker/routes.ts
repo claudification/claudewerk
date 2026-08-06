@@ -24,6 +24,7 @@ import { createApiRouter } from './routes/api'
 import { blobDir, initBlobStore, initSharedFilesLog } from './routes/blob-store'
 import { createCanvasesRouter } from './routes/canvases'
 import { createChatApiRouter } from './routes/chat-api'
+import { createCommitsRouter } from './routes/commits'
 import { createConversationsRouter } from './routes/conversations'
 import { createDeskDebugRouter } from './routes/desk-debug'
 import { createGatewayRouter } from './routes/gateways'
@@ -301,6 +302,7 @@ export function createRouter(options: RouteOptions): Hono {
     '/',
     createApiRouter(conversationStore, store, helpers, rclaudeSecret, cacheDir, blobDir, publicOrigin, vapidPublicKey),
   )
+  app.route('/', createCommitsRouter(conversationStore, store, helpers))
   app.route('/', createStatsRouter(conversationStore, store, helpers, serverStartTime))
   app.route('/', createStatuspageWebhookRouter(store, rclaudeSecret))
   app.route('/', createSheafRouter(store, conversationStore, helpers, terminationLog))

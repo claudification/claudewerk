@@ -1,4 +1,4 @@
-import { Braces, KanbanSquare, Terminal } from 'lucide-react'
+import { Braces, GitCommitHorizontal, KanbanSquare, Terminal } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useConversationsStore } from '@/hooks/use-conversations'
@@ -9,7 +9,16 @@ import { cn, haptic } from '@/lib/utils'
 
 // react-doctor:only-export-components -- Tab type + tabVisibility are co-located
 // with ConversationTabs and exported for unit tests; splitting hurts cohesion.
-export type Tab = 'transcript' | 'tty' | 'json_stream' | 'events' | 'agents' | 'tasks' | 'shared' | 'diag'
+export type Tab =
+  | 'transcript'
+  | 'tty'
+  | 'json_stream'
+  | 'events'
+  | 'agents'
+  | 'tasks'
+  | 'commits'
+  | 'shared'
+  | 'diag'
 
 interface ConversationTabsProps {
   conversation: Conversation
@@ -186,6 +195,16 @@ export function ConversationTabs({
           Kanban
         </TabButton>
       )}
+
+      <TabButton
+        active={activeTab === 'commits'}
+        className="flex items-center gap-1"
+        title="Commits this conversation made"
+        onClick={tabClickHandler('commits', onSetActiveTab)}
+      >
+        <GitCommitHorizontal className="size-3" />
+        Commits
+      </TabButton>
 
       <TabButton active={activeTab === 'shared'} onClick={tabClickHandler('shared', onSetActiveTab)}>
         Shared

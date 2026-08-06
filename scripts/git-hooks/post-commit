@@ -1,0 +1,139 @@
+#!/bin/bash
+# CLAUDEWERK commit ledger -- post-commit hook.
+#
+# Reports every commit to the broker so it becomes attributed + searchable:
+# which conversation made it, on which machine, touching which files, and the
+# transcript that led to it. See .claude/docs/plan-commit-ledger.md.
+#
+# THE FOUR RULES THIS HOOK EXISTS TO OBEY:
+#   1. NEVER block the commit. Everything after the guard clauses runs in a
+#      backgrounded subshell with all fds closed, and curl is time-capped. A
+#      post-commit hook's exit code is already ignored by git (the commit exists
+#      before the hook runs), so the only real risk was ever LATENCY.
+#   2. NEVER carry the secret in this file. It comes from the environment; no
+#      env, no post, no error.
+#   3. NEVER be mandatory. RCLAUDE_COMMIT_LEDGER=0 disables it with no uninstall.
+#   4. NEVER lose someone else's hook. The installer chains, it does not clobber.
+#
+# Attribution is free: this hook is a child of whatever ran `git commit`, so an
+# agent's commit inherits RCLAUDE_CONVERSATION_ID from the agent host's env.
+#
+# The whole body is a SUBSHELL FUNCTION (`name() ( ... )`) so that every `exit`
+# below is scoped to the ledger. The installer chains this block onto whatever
+# post-commit hook already existed -- a bare `exit` would silently kill any hook
+# appended after ours.
+
+claudewerk_commit_ledger() (
+  [ "${RCLAUDE_COMMIT_LEDGER:-1}" = "0" ] && exit 0
+  [ -z "${RCLAUDE_BROKER:-}" ] && exit 0
+  [ -z "${RCLAUDE_SECRET:-}" ] && exit 0
+
+  # ─── Everything below is detached: git forks included ──────────────────────
+  (
+    json_escape() {
+      local s=$1
+      s=${s//\\/\\\\}
+      s=${s//\"/\\\"}
+      s=${s//$'\n'/\\n}
+      s=${s//$'\r'/\\r}
+      s=${s//$'\t'/\\t}
+      printf '%s' "$s"
+    }
+
+    # One git call for the whole commit header. \x1f (unit separator) can't
+    # occur in any of these fields, unlike every printable delimiter.
+    raw=$(git log -1 --format=$'%H\x1f%P\x1f%an\x1f%ae\x1f%at\x1f%s\x1f%b' 2>/dev/null) || exit 0
+    IFS=$'\x1f' read -r hash parents author_name author_email at subject body <<<"${raw//$'\n'/$'\x1e'}"
+    body=${body//$'\x1e'/$'\n'}
+    [ -z "$hash" ] && exit 0
+
+    toplevel=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+    common_dir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+    repo_root=${common_dir%/.git}
+    [ -z "$repo_root" ] && repo_root=$toplevel
+    branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+    # The ONLY precise amend signal a post-commit hook can see. Without it an
+    # amended commit is indistinguishable from a sibling commit off the same
+    # parent -- which under WORK MODE (every worktree branches from main) is
+    # routine, so guessing would corrupt the ledger.
+    reflog=$(git reflog -1 --format=%gs 2>/dev/null)
+
+    sentinel=${CLAUDWERK_SENTINEL_NAME:-default}
+    repo_uri="claude://${sentinel}${repo_root}"
+    cwd_uri="claude://${sentinel}${toplevel}"
+    is_worktree=false
+    [ "$toplevel" != "$repo_root" ] && is_worktree=true
+
+    container=""
+    [ -f /.dockerenv ] && container=$(hostname)
+
+    # Files + line counts. name-status gives R100 renames as 3 tab-separated
+    # fields; everything else is 2.
+    files_json=""
+    file_count=0
+    while IFS=$'\t' read -r status path extra; do
+      [ -z "$status" ] && continue
+      file_count=$((file_count + 1))
+      [ "$file_count" -gt 500 ] && continue
+      if [ -n "$extra" ]; then
+        entry="{\"status\":\"$(json_escape "$status")\",\"path\":\"$(json_escape "$extra")\",\"from\":\"$(json_escape "$path")\"}"
+      else
+        entry="{\"status\":\"$(json_escape "$status")\",\"path\":\"$(json_escape "$path")\"}"
+      fi
+      files_json="${files_json:+$files_json,}$entry"
+    done < <(git diff-tree --no-commit-id --name-status -r -M HEAD 2>/dev/null)
+
+    insertions=0
+    deletions=0
+    while read -r added removed _rest; do
+      [ "$added" = "-" ] && continue
+      insertions=$((insertions + ${added:-0}))
+      deletions=$((deletions + ${removed:-0}))
+    done < <(git diff-tree --no-commit-id --numstat -r HEAD 2>/dev/null)
+
+    payload=$(
+      cat <<EOF
+{"hash":"$hash",
+"parents":"$(json_escape "$parents")",
+"repoUri":"$(json_escape "$repo_uri")",
+"cwdUri":"$(json_escape "$cwd_uri")",
+"repoName":"$(json_escape "$(basename "$repo_root")")",
+"branch":"$(json_escape "$branch")",
+"isWorktree":$is_worktree,
+"conversationId":"$(json_escape "${RCLAUDE_CONVERSATION_ID:-}")",
+"conversationName":"$(json_escape "${CLAUDWERK_CONVERSATION_NAME:-}")",
+"sentinel":"$(json_escape "$sentinel")",
+"host":"$(json_escape "$(hostname)")",
+"container":"$(json_escape "$container")",
+"osUser":"$(json_escape "${USER:-}")",
+"authorName":"$(json_escape "$author_name")",
+"authorEmail":"$(json_escape "$author_email")",
+"subject":"$(json_escape "$subject")",
+"body":"$(json_escape "$body")",
+"files":[$files_json],
+"fileCount":$file_count,
+"insertions":$insertions,
+"deletions":$deletions,
+"reflogAction":"$(json_escape "$reflog")",
+"committedAt":$((${at:-0} * 1000))}
+EOF
+    )
+
+    # The broker URL arrives as either an HTTP origin (agent host:
+    # RCLAUDE_BROKER) or a WebSocket one (sentinel: CLAUDWERK_BROKER=wss://...).
+    # REST ingest needs http(s), so normalize rather than demand a second var.
+    broker=${RCLAUDE_BROKER%/}
+    broker=${broker/#wss:/https:}
+    broker=${broker/#ws:/http:}
+
+    curl -sS -X POST "${broker}/api/commits" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer ${RCLAUDE_SECRET}" \
+      --connect-timeout 1 --max-time 3 \
+      -d "$payload"
+  ) >/dev/null 2>&1 &
+
+  exit 0
+)
+
+claudewerk_commit_ledger
